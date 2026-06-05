@@ -20,6 +20,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/event/event_ring.h>
 #include <category/core/fiber/fiber_group.hpp>
 #include <category/core/fiber/fiber_thread_pool.hpp>
 #include <category/core/fiber/priority_pool.hpp>
@@ -45,6 +46,9 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/event/exec_event_ctypes.h>
+#include <category/execution/ethereum/event/exec_event_recorder.hpp>
+#include <category/execution/ethereum/event/record_block_events.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
@@ -728,7 +732,8 @@ namespace
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
         uint64_t const gas_limit, size_t const max_calls,
-        bool emit_native_transfer_logs)
+        bool emit_native_transfer_logs,
+        ExecutionEventRecorder *const exec_recorder)
     {
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
@@ -852,6 +857,21 @@ namespace
                 auto const chain_context =
                     context_buffer.advance(empty_senders, empty_authorities);
 
+                record_block_start(
+                    exec_recorder,
+                    bytes32_t{synthetic_block.header.number},
+                    chain.get_chain_id(),
+                    synthetic_block.header,
+                    synthetic_block.header.parent_hash,
+                    synthetic_block.header.number,
+                    0,
+                    synthetic_block.header.timestamp * 1'000'000'000UL,
+                    synthetic_block.transactions.size(),
+                    std::nullopt,
+                    std::nullopt);
+
+                record_block_marker_event(
+                    exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
                 BOOST_OUTCOME_TRY(
                     auto const receipts,
                     execute_block<traits>(
@@ -869,6 +889,8 @@ namespace
                         chain_context,
                         /*exec_recorder=*/nullptr,
                         emit_native_transfer_logs));
+                record_block_marker_event(
+                    exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
                 // NOTE(dhil): Synthetic blocks are free, so we don't update
                 // `gas_consumed_so_far`.
@@ -876,6 +898,14 @@ namespace
                 bytes32_t const synthetic_block_hash = to_bytes(keccak256(
                     rlp::encode_block_header(synthetic_block.header)));
                 block_hash_buffer.advance(synthetic_block_hash);
+
+                // TODO(ken):
+                (void)record_block_result(
+                    exec_recorder,
+                    BlockExecOutput{
+                        .eth_header = synthetic_block.header,
+                        .eth_block_hash = synthetic_block_hash,
+                    });
 
                 save_eth_simulate_log_entry(
                     synthetic_block,
@@ -918,6 +948,9 @@ namespace
             // Construct state
             // State overrides are applied with an incarnation in the *previous*
             // block, rather than with the current header's block number.
+            // TODO(ken): state overrides are not recorded by execution events,
+            //   but eventually should be. This will wait until the release of
+            //   the execution events V2 schema
             auto const override_incarnation = Incarnation{
                 base_block_number + block_idx, Incarnation::LAST_TX - 1u};
             apply_state_overrides(
@@ -973,6 +1006,21 @@ namespace
                     is_monad_trait_v<traits> ? std::nullopt : bo.withdrawals,
             };
 
+            record_block_start(
+                exec_recorder,
+                bytes32_t{block.header.number},
+                chain.get_chain_id(),
+                block.header,
+                block.header.parent_hash,
+                block.header.number,
+                0,
+                block.header.timestamp * 1'000'000'000UL,
+                block.transactions.size(),
+                std::nullopt,
+                std::nullopt);
+
+            record_block_marker_event(
+                exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
             BOOST_OUTCOME_TRY(
                 auto const receipts,
                 execute_block<traits>(
@@ -988,8 +1036,10 @@ namespace
                     state_tracers,
                     system_call_state_tracer,
                     chain_context,
-                    /*exec_recorder=*/nullptr,
+                    exec_recorder,
                     emit_native_transfer_logs));
+            record_block_marker_event(
+                exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
             // Receipts have cumulative gas_used (YP eq. 22), so
             // the last receipt's value is the total for the block.
@@ -1021,6 +1071,11 @@ namespace
             bytes32_t const block_hash =
                 to_bytes(keccak256(rlp::encode_block_header(block.header)));
             block_hash_buffer.advance(block_hash);
+
+            (void)record_block_result(
+                exec_recorder,
+                BlockExecOutput{
+                    .eth_header = block.header, .eth_block_hash = block_hash});
 
             std::vector<bytes32_t> txn_hashes{};
             txn_hashes.reserve(block.transactions.size());
@@ -1847,6 +1902,7 @@ struct monad_executor
         bytes32_t const &block_id, bytes32_t const &grandparent_id,
         uint64_t const gas_limit, size_t const max_calls,
         bool emit_native_transfer_logs,
+        ExecutionEventRecorder *const exec_recorder,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
         monad_executor_result *const result = new monad_executor_result();
@@ -1879,6 +1935,7 @@ struct monad_executor
              fiber_group = &trace_block_group_,
              tx_exec_group = &trace_tx_exec_group_,
              &vm = vm_,
+             exec_recorder = exec_recorder,
              complete = complete,
              result = result,
              user = user]() {
@@ -1959,7 +2016,8 @@ struct monad_executor
                                 *block_overrides,
                                 gas_limit,
                                 max_calls,
-                                emit_native_transfer_logs);
+                                emit_native_transfer_logs,
+                                exec_recorder);
                             MONAD_ASSERT(false);
                         }
                         else {
@@ -1984,7 +2042,8 @@ struct monad_executor
                                 *block_overrides,
                                 gas_limit,
                                 max_calls,
-                                emit_native_transfer_logs);
+                                emit_native_transfer_logs,
+                                exec_recorder);
                             MONAD_ASSERT(false);
                         }
                     }();
@@ -2229,7 +2288,7 @@ void monad_executor_eth_simulate_submit(
     size_t max_calls,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
-    bool emit_native_transfer_logs,
+    bool emit_native_transfer_logs, monad_event_ring const *exec_event_ring,
     void (*complete)(monad_executor_result *, void *user), void *user)
 {
 
@@ -2278,6 +2337,14 @@ void monad_executor_eth_simulate_submit(
     MONAD_ASSERT(grandparent_block_id_view.empty());
     auto const grandparent_block_id = grandparent_block_id_result.value();
 
+    std::optional<ExecutionEventRecorder> opt_exec_recorder = std::nullopt;
+    if (exec_event_ring != nullptr) {
+        auto ex_recorder =
+            ExecutionEventRecorder::from_event_ring(exec_event_ring);
+        MONAD_ASSERT(ex_recorder);
+        opt_exec_recorder = std::move(*ex_recorder);
+    }
+
     executor->submit_eth_simulate_to_pool(
         chain_config,
         txns,
@@ -2291,6 +2358,7 @@ void monad_executor_eth_simulate_submit(
         gas_limit,
         max_calls,
         emit_native_transfer_logs,
+        opt_exec_recorder ? std::addressof(*opt_exec_recorder) : nullptr,
         complete,
         user);
 }

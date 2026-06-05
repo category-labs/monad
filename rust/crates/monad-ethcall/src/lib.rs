@@ -1070,6 +1070,7 @@ pub async fn eth_simulate_v1(
             state_overrides.as_mut_ptr(),
             block_overrides.as_mut_ptr(),
             emit_native_transfer_logs,
+            /*exec_event_ring*/ std::ptr::null(),
             Some(eth_call_submit_callback),
             sender_ctx_ptr as *mut std::ffi::c_void,
         );

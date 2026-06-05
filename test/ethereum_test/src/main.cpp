@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/config.hpp>
+#include <category/core/event/owned_event_ring.hpp>
 #include <category/core/log.hpp>
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -35,6 +36,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <string>
 #include <thread>
@@ -59,6 +61,7 @@ int main(int argc, char *argv[])
         std::nullopt;
     std::optional<size_t> txn_index = std::nullopt;
     std::string record_exec_events_path;
+    std::unique_ptr<OwnedEventRing> exec_event_ring;
     std::optional<std::filesystem::path> blockchain_tests_path;
     std::optional<std::filesystem::path> transaction_tests_path;
     bool trace_calls = false;
@@ -117,7 +120,7 @@ int main(int argc, char *argv[])
 #endif
 
     if (record_exec_events->count() > 0) {
-        test::init_exec_event_recorder(record_exec_events_path);
+        exec_event_ring = test::init_exec_event_ring(record_exec_events_path);
     }
 
     std::this_thread::sleep_for(std::chrono::seconds{sleep_seconds});
@@ -125,7 +128,11 @@ int main(int argc, char *argv[])
     if (blockchain_tests_path || transaction_tests_path) {
         if (blockchain_tests_path) {
             test::register_blockchain_tests_path(
-                *blockchain_tests_path, revision, vm_mode, trace_calls);
+                *blockchain_tests_path,
+                revision,
+                vm_mode,
+                trace_calls,
+                exec_event_ring ? exec_event_ring->get_event_ring() : nullptr);
         }
         if (transaction_tests_path) {
             test::register_transaction_tests_path(
@@ -133,7 +140,11 @@ int main(int argc, char *argv[])
         }
     }
     else {
-        test::register_blockchain_tests(revision, vm_mode, trace_calls);
+        test::register_blockchain_tests(
+            revision,
+            vm_mode,
+            trace_calls,
+            exec_event_ring ? exec_event_ring->get_event_ring() : nullptr);
         test::register_transaction_tests(revision);
     }
 

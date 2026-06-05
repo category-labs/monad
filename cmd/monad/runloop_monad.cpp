@@ -179,7 +179,8 @@ Result<BlockExecOutput> propose_block(
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashChain &block_hash_chain, MonadChain const &chain, Db &db,
     vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
-    bool const enable_tracing, BlockCache &block_cache)
+    bool const enable_tracing, BlockCache &block_cache,
+    ExecutionEventRecorder *const exec_recorder)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -286,7 +287,7 @@ Result<BlockExecOutput> propose_block(
     BlockExecOutput exec_output;
     BlockMetrics block_metrics;
     BlockState block_state(db, vm);
-    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
+    record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const results,
         execute_block<traits>(
@@ -301,8 +302,9 @@ Result<BlockExecOutput> propose_block(
             call_tracers,
             state_tracers,
             system_call_state_tracer,
-            chain_context));
-    record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
+            chain_context,
+            exec_recorder));
+    record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
@@ -479,7 +481,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
-    bool const enable_tracing)
+    bool const enable_tracing, ExecutionEventRecorder *const exec_recorder)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
     uint64_t const start_block_num = block_num;
@@ -630,13 +632,14 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              chain_id,
              start_block_num,
              enable_tracing,
-             &block_cache](
+             &block_cache,
+             exec_recorder](
                 bytes32_t const &block_id,
                 auto const &header) -> Result<std::pair<uint64_t, uint64_t>> {
             auto const block_time_start = std::chrono::steady_clock::now();
 
             db.update_voted_metadata(header.seqno - 1, header.parent_id());
-            record_block_qc(header, last_finalized_block_number);
+            record_block_qc(exec_recorder, header, last_finalized_block_number);
 
             uint64_t const block_number = header.execution_inputs.number;
             auto body = read_body(header.block_body_id, body_dir);
@@ -652,6 +655,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             };
 
             record_block_start(
+                exec_recorder,
                 block_id,
                 chain_id,
                 header.execution_inputs,
@@ -685,12 +689,13 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     priority_pool,
                     block_number == start_block_num,
                     enable_tracing,
-                    block_cache);
+                    block_cache,
+                    exec_recorder);
                 MONAD_ABORT_PRINTF("handled rev value %d", rev);
             };
             BOOST_OUTCOME_TRY(
                 BlockExecOutput const exec_output,
-                record_block_result(propose_dispatch()));
+                record_block_result(exec_recorder, propose_dispatch()));
 
             db.update_proposed_metadata(header.seqno, block_id);
 
@@ -719,14 +724,14 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 block_id);
             db.finalize(block, block_id);
             block_hash_chain.finalize(block_id);
-            record_block_finalized(block_id, block);
+            record_block_finalized(exec_recorder, block_id, block);
             finalized_block_num = block;
 
             if (!verified_blocks.empty() &&
                 verified_blocks.back() != mpt::INVALID_BLOCK_NUM) {
                 db.update_verified_block(verified_blocks.back());
             }
-            record_block_verified(verified_blocks);
+            record_block_verified(exec_recorder, verified_blocks);
         }
 
         if (!to_finalize.empty()) {

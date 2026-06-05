@@ -73,7 +73,8 @@ ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &header, BlockState &block_state,
     BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
-    CallTracerBase &call_tracer, trace::StateTracer &state_tracer)
+    CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
+    ExecutionEventRecorder *const exec_recorder)
     : chain_{chain}
     , i_{i}
     , tx_{tx}
@@ -84,8 +85,10 @@ ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     , prev_{prev}
     , call_tracer_{call_tracer}
     , state_tracer_{state_tracer}
+    , exec_recorder_{exec_recorder}
 {
-    record_txn_header_events(static_cast<uint32_t>(i), tx, sender, {});
+    record_txn_header_events(
+        exec_recorder_, static_cast<uint32_t>(i), tx, sender, {});
 }
 
 template <Traits traits>
@@ -212,6 +215,7 @@ Receipt ExecuteSystemTransaction<traits>::execute_final(State &state)
     call_tracer_.on_finish(receipt.gas_used);
     trace::run_tracer<traits>(state_tracer_, state);
     record_txn_output_events(
+        exec_recorder_,
         static_cast<uint32_t>(this->i_),
         receipt,
         call_tracer_.get_call_frames(),

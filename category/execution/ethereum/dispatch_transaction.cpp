@@ -28,7 +28,7 @@ Result<Receipt> dispatch_transaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
-    bool const trace_transfers)
+    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
 {
     return ExecuteTransaction<traits>{
         chain,
@@ -44,6 +44,7 @@ Result<Receipt> dispatch_transaction(
         call_tracer,
         state_tracer,
         chain_ctx,
+        exec_recorder,
         trace_transfers}();
 }
 

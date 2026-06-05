@@ -14,10 +14,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/event/event_ring.h>
+#include <category/core/event/owned_event_ring.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 
 #include <monad/test/config.hpp>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -62,6 +64,7 @@ struct ExecutionEvents
 void find_execution_events(
     monad_event_ring const *, monad_event_iterator *, ExecutionEvents *);
 
-void init_exec_event_recorder(std::string event_ring_path);
+std::unique_ptr<OwnedEventRing>
+init_exec_event_ring(std::string event_ring_path);
 
 MONAD_TEST_NAMESPACE_END

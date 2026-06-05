@@ -24,6 +24,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class ExecutionEventRecorder;
+
 template <Traits traits>
 class ExecuteSystemTransaction
 {
@@ -37,13 +39,14 @@ class ExecuteSystemTransaction
     boost::fibers::promise<void> &prev_;
     CallTracerBase &call_tracer_;
     trace::StateTracer &state_tracer_;
+    ExecutionEventRecorder *exec_recorder_;
 
 public:
     ExecuteSystemTransaction(
         Chain const &, uint64_t i, Transaction const &, Address const &,
         BlockHeader const &, BlockState &, BlockMetrics &,
         boost::fibers::promise<void> &prev, CallTracerBase &,
-        trace::StateTracer &);
+        trace::StateTracer &, ExecutionEventRecorder *);
 
     Result<Receipt> operator()();
 

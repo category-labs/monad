@@ -21,9 +21,10 @@
 MONAD_NAMESPACE_BEGIN
 
 void record_mock_consensus_events(
-    bytes32_t const &block_id, uint64_t const block_number)
+    ExecutionEventRecorder *const exec_recorder, bytes32_t const &block_id,
+    uint64_t const block_number)
 {
-    if (auto *exec_recorder = g_exec_event_recorder.get()) {
+    if (exec_recorder != nullptr) {
         ReservedEvent const block_qc =
             exec_recorder->reserve_block_event<monad_exec_block_qc>(
                 MONAD_EXEC_BLOCK_QC);

@@ -226,7 +226,8 @@ Result<BlockExecOutput> execute(
     std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
         &senders_and_authorities_map,
     bool enable_tracing, std::vector<Receipt> &receipts,
-    std::vector<std::vector<CallFrame>> &call_frames)
+    std::vector<std::vector<CallFrame>> &call_frames,
+    ExecutionEventRecorder *const exec_recorder)
 {
     static_assert(traits::evm_rev() > MONAD_ETH_BYZANTIUM);
 
@@ -304,7 +305,8 @@ Result<BlockExecOutput> execute(
             call_tracers,
             state_tracers,
             system_call_state_tracer,
-            chain_context));
+            chain_context,
+            exec_recorder));
 
     block_state.log_debug();
     auto [state, code, _] = std::move(block_state).release();
@@ -354,9 +356,10 @@ Result<std::vector<Receipt>> execute_and_record(
     BlockHashBuffer const &block_hash_buffer,
     std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
         &senders_and_authorities_map,
-    bool enable_tracing)
+    bool enable_tracing, ExecutionEventRecorder *const exec_recorder)
 {
     record_block_start(
+        exec_recorder,
         bytes32_t{block.header.number},
         /*chain_id*/ 1,
         block.header,
@@ -371,15 +374,18 @@ Result<std::vector<Receipt>> execute_and_record(
     std::vector<Receipt> receipts;
     std::vector<std::vector<CallFrame>> call_frames;
 
-    auto result = record_block_result(execute<traits>(
-        block,
-        db,
-        vm,
-        block_hash_buffer,
-        senders_and_authorities_map,
-        enable_tracing,
-        receipts,
-        call_frames));
+    auto result = record_block_result(
+        exec_recorder,
+        execute<traits>(
+            block,
+            db,
+            vm,
+            block_hash_buffer,
+            senders_and_authorities_map,
+            enable_tracing,
+            receipts,
+            call_frames,
+            exec_recorder));
     if (result.has_error()) {
         // TODO(ken): why is std::move required here?
         return std::move(result.error());
@@ -392,7 +398,8 @@ Result<std::vector<Receipt>> execute_and_record(
 template <Traits traits>
 void process_test(
     std::string const &name, nlohmann::json const &j_contents,
-    vm::VM::Mode const vm_mode, bool enable_tracing)
+    vm::VM::Mode const vm_mode, bool enable_tracing,
+    monad_event_ring const *const exec_event_ring)
 {
     static_assert(traits::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
 
@@ -403,6 +410,14 @@ void process_test(
     vm::VM vm{vm_mode};
     mpt::Db &db = test_state->db;
     monad::TrieDb &tdb = test_state->trie_db;
+    std::optional<ExecutionEventRecorder> opt_exec_recorder;
+
+    if (exec_event_ring != nullptr) {
+        auto ex_recorder =
+            ExecutionEventRecorder::from_event_ring(exec_event_ring);
+        ASSERT_TRUE(ex_recorder);
+        opt_exec_recorder = std::move(*ex_recorder);
+    }
 
     auto db_post_state = tdb.to_json();
 
@@ -445,24 +460,25 @@ void process_test(
             vm,
             block_hash_buffer,
             senders_and_authorities_map,
-            enable_tracing);
+            enable_tracing,
+            opt_exec_recorder ? std::addressof(*opt_exec_recorder) : nullptr);
 
         ExecutionEvents exec_events{};
         bool check_exec_events = false; // Won't do gtest checks if disabled
 
-        if (OwnedEventRing const *const r = g_exec_event_ring.get()) {
+        if (exec_event_ring != nullptr) {
             // Event recording is enabled; rewind the iterator to the
             // BLOCK_START event for the given block number
             monad_event_iterator iter;
-            monad_event_ring const *const exec_ring = r->get_event_ring();
-            ASSERT_EQ(monad_event_ring_init_iterator(exec_ring, &iter), 0);
+            ASSERT_EQ(
+                monad_event_ring_init_iterator(exec_event_ring, &iter), 0);
             ASSERT_TRUE(monad_exec_iter_block_number_prev(
                 &iter,
-                exec_ring,
+                exec_event_ring,
                 curr_block_number,
                 MONAD_EXEC_BLOCK_START,
                 nullptr));
-            find_execution_events(exec_ring, &iter, &exec_events);
+            find_execution_events(exec_event_ring, &iter, &exec_events);
             check_exec_events = true;
         }
 
@@ -621,18 +637,29 @@ void process_test(
 void process_test(
     std::variant<monad_eth_revision, monad_revision> const &revision,
     std::string const &name, nlohmann::json const &j_contents,
-    vm::VM::Mode const vm_mode, bool const enable_tracing)
+    vm::VM::Mode const vm_mode, bool const enable_tracing,
+    monad_event_ring const *const exec_event_ring)
 {
     if (std::holds_alternative<monad_eth_revision>(revision)) {
         auto const rev = std::get<monad_eth_revision>(revision);
         MONAD_ASSERT(rev != MONAD_ETH_CONSTANTINOPLE);
         SWITCH_EVM_TRAITS(
-            process_test, name, j_contents, vm_mode, enable_tracing);
+            process_test,
+            name,
+            j_contents,
+            vm_mode,
+            enable_tracing,
+            exec_event_ring);
     }
     else {
         auto const rev = std::get<monad_revision>(revision);
         SWITCH_MONAD_TRAITS(
-            process_test, name, j_contents, vm_mode, enable_tracing);
+            process_test,
+            name,
+            j_contents,
+            vm_mode,
+            enable_tracing,
+            exec_event_ring);
     }
 }
 
@@ -674,7 +701,6 @@ void BlockchainTest::TestBody()
         }
 
         executed = true;
-
         for (auto const vm_mode : vm::VM::all_modes) {
             if (fixed_vm_mode_.has_value() &&
                 fixed_vm_mode_.value() != vm_mode) {
@@ -682,7 +708,13 @@ void BlockchainTest::TestBody()
             }
             auto const enum_name = vm::VM::mode_to_string(vm_mode);
             auto const full_name = name + "(" + enum_name + " VM mode)";
-            process_test(rev, full_name, j_contents, vm_mode, enable_tracing_);
+            process_test(
+                rev,
+                full_name,
+                j_contents,
+                vm_mode,
+                enable_tracing_,
+                exec_event_ring_);
         }
     }
 
@@ -699,35 +731,42 @@ void register_blockchain_tests_path(
     std::filesystem::path const &root,
     std::optional<std::variant<monad_eth_revision, monad_revision>> const
         &revision,
-    std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing)
+    std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing,
+    monad_event_ring const *const exec_event_ring)
 {
     namespace fs = std::filesystem;
     MONAD_ASSERT(fs::exists(root));
 
-    auto register_test = [&root, &revision, vm_mode, enable_tracing](
-                             fs::path const &path) {
-        if (path.extension() == ".json") {
-            MONAD_ASSERT(fs::is_regular_file(path));
+    auto register_test =
+        [&root, &revision, vm_mode, enable_tracing, exec_event_ring](
+            fs::path const &path) {
+            if (path.extension() == ".json") {
+                MONAD_ASSERT(fs::is_regular_file(path));
 
-            auto test_name = path == root ? path.filename().string()
-                                          : fs::relative(path, root).string();
-            // get rid of minus signs, which is a special symbol when used in
-            // filtering
-            std::ranges::replace(test_name, '-', '_');
+                auto test_name = path == root
+                                     ? path.filename().string()
+                                     : fs::relative(path, root).string();
+                // get rid of minus signs, which is a special symbol when used
+                // in filtering
+                std::ranges::replace(test_name, '-', '_');
 
-            testing::RegisterTest(
-                "BlockchainTests",
-                test_name.c_str(),
-                nullptr,
-                nullptr,
-                path.string().c_str(),
-                0,
-                [=] {
-                    return new test::BlockchainTest(
-                        path, revision, vm_mode, enable_tracing);
-                });
-        }
-    };
+                testing::RegisterTest(
+                    "BlockchainTests",
+                    test_name.c_str(),
+                    nullptr,
+                    nullptr,
+                    path.string().c_str(),
+                    0,
+                    [=] {
+                        return new test::BlockchainTest(
+                            path,
+                            revision,
+                            vm_mode,
+                            enable_tracing,
+                            exec_event_ring);
+                    });
+            }
+        };
 
     if (fs::is_directory(root)) {
         for (auto const &entry : fs::recursive_directory_iterator{root}) {
@@ -743,7 +782,8 @@ void register_blockchain_tests_path(
 void register_blockchain_tests(
     std::optional<std::variant<monad_eth_revision, monad_revision>> const
         &revision,
-    std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing)
+    std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing,
+    monad_event_ring const *const exec_event_ring)
 {
     // skip slow tests
     testing::FLAGS_gtest_filter +=
@@ -757,18 +797,21 @@ void register_blockchain_tests(
         test_resource::ethereum_tests_dir / "BlockchainTests",
         revision,
         vm_mode,
-        enable_tracing);
+        enable_tracing,
+        exec_event_ring);
     register_blockchain_tests_path(
         test_resource::internal_blockchain_tests_dir,
         revision,
         vm_mode,
-        enable_tracing);
+        enable_tracing,
+        exec_event_ring);
     register_blockchain_tests_path(
         test_resource::build_dir /
             "src/ExecutionSpecTestFixtures/blockchain_tests",
         revision,
         vm_mode,
-        enable_tracing);
+        enable_tracing,
+        exec_event_ring);
 }
 
 MONAD_TEST_NAMESPACE_END

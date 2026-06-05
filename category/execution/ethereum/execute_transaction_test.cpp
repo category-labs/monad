@@ -117,7 +117,8 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         prev,
         noop_call_tracer,
         noop_state_tracer,
-        chain_ctx)();
+        chain_ctx,
+        /*exec_recorder=*/nullptr)();
 
     ASSERT_TRUE(!receipt.has_error());
 
@@ -226,7 +227,8 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
         prev,
         noop_call_tracer,
         noop_state_tracer,
-        chain_ctx)();
+        chain_ctx,
+        /*exec_recorder=*/nullptr)();
 
     if constexpr (TestFixture::is_monad_trait()) {
         if constexpr (TestFixture::Trait::monad_rev() >= MONAD_TWO) {
@@ -382,7 +384,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
             prev,
             noop_call_tracer,
             noop_state_tracer,
-            chain_ctx)();
+            chain_ctx,
+            /*exec_recorder=*/nullptr)();
 
         ASSERT_TRUE(receipt.has_value());
         EXPECT_EQ(receipt.value().status, 1u);
@@ -440,7 +443,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
             prev,
             noop_call_tracer,
             noop_state_tracer,
-            chain_ctx)();
+            chain_ctx,
+            /*exec_recorder=*/nullptr)();
 
         ASSERT_TRUE(!receipt.has_error());
         EXPECT_EQ(receipt.value().status, 1u);
@@ -543,7 +547,8 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
             prev,
             noop_call_tracer,
             noop_state_tracer,
-            chain_ctx)();
+            chain_ctx,
+            /*exec_recorder=*/nullptr)();
 
         ASSERT_TRUE(!receipt.has_error());
         EXPECT_EQ(receipt.value().status, 1u);
@@ -668,7 +673,8 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
         prev,
         noop_call_tracer,
         noop_state_tracer,
-        chain_ctx)();
+        chain_ctx,
+        /*exec_recorder=*/nullptr)();
 
     ASSERT_TRUE(receipt.has_error());
 

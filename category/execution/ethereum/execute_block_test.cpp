@@ -293,7 +293,8 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
             call_tracers,
             state_tracers,
             system_call_state_tracer,
-            chain_ctx);
+            chain_ctx,
+            /*exec_recorder=*/nullptr);
     };
 
     auto const receipts = [&] {
@@ -459,7 +460,8 @@ TYPED_TEST(TraitsTest, assertion_exception)
             call_tracers,
             state_tracers,
             system_call_state_tracer,
-            chain_ctx);
+            chain_ctx,
+            /*exec_recorder=*/nullptr);
     };
 
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
@@ -615,7 +617,8 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             call_tracers,
             state_tracers,
             system_call_state_tracer,
-            chain_ctx);
+            chain_ctx,
+            /*exec_recorder=*/nullptr);
     };
 
     auto const receipts = [&] {

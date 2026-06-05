@@ -494,7 +494,7 @@ TEST_F(EventRecorderDefaultFixture, CxxInterface)
 
     auto ex_recorder = EventRecorder::from_event_ring(&event_ring_);
     ASSERT_TRUE(ex_recorder);
-    std::unique_ptr<EventRecorder> recorder = std::move(*ex_recorder);
+    EventRecorder recorder = std::move(*ex_recorder);
 
     // Note: the subspan(0) calls are there to make the spans into dynamic
     // extent spans, rather than compile-time fixed-sized spans. Normally this
@@ -503,7 +503,7 @@ TEST_F(EventRecorderDefaultFixture, CxxInterface)
     // trailing data. `std::span{x}` evaluates to a fixed-sized span because
     // our testing data has a compile-time-known extent.
     ReservedEvent const vlt_event =
-        recorder->reserve_event<monad_test_event_vlt>(
+        recorder.reserve_event<monad_test_event_vlt>(
             MONAD_TEST_EVENT_VLT,
             as_bytes(std::span{VLT_ARRAY_1}).subspan(0),
             as_bytes(std::span{VLT_ARRAY_2}).subspan(0));
@@ -515,7 +515,7 @@ TEST_F(EventRecorderDefaultFixture, CxxInterface)
         .vlt_1_length = static_cast<uint32_t>(std::size(VLT_ARRAY_1)),
         .vlt_2_length = static_cast<uint32_t>(std::size(VLT_ARRAY_2))};
     vlt_event.event->content_ext[0] = CONTENT_EXT_0;
-    recorder->commit(vlt_event);
+    recorder.commit(vlt_event);
 
     monad_event_descriptor event;
     ASSERT_TRUE(
@@ -553,11 +553,11 @@ TEST_F(EventRecorderDefaultFixture, CxxOverflowError)
 
     auto ex_recorder = EventRecorder::from_event_ring(&event_ring_);
     ASSERT_TRUE(ex_recorder);
-    std::unique_ptr<EventRecorder> recorder = std::move(*ex_recorder);
+    EventRecorder recorder = std::move(*ex_recorder);
 
     constexpr size_t OverflowSize = 1UL << 32;
     ReservedEvent const vlt_event =
-        recorder->reserve_event<monad_test_event_vlt>(
+        recorder.reserve_event<monad_test_event_vlt>(
             MONAD_TEST_EVENT_VLT,
             std::as_bytes(std::span{truncated}),
             std::span{
@@ -573,7 +573,7 @@ TEST_F(EventRecorderDefaultFixture, CxxOverflowError)
     *vlt_event.payload =
         monad_test_event_vlt{.vlt_1_length = 0, .vlt_2_length = 0};
 
-    recorder->commit(vlt_event);
+    recorder.commit(vlt_event);
 
     monad_event_descriptor event;
     ASSERT_TRUE(

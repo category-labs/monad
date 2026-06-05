@@ -34,7 +34,6 @@
 #include <cstdint>
 #include <expected>
 #include <limits>
-#include <memory>
 #include <span>
 #include <system_error>
 #include <tuple>
@@ -63,14 +62,20 @@ struct ReservedEvent
 class EventRecorder
 {
 public:
-    static std::expected<std::unique_ptr<EventRecorder>, std::errc>
+    EventRecorder(EventRecorder const &) = default;
+    EventRecorder(EventRecorder &&) = default;
+
+    EventRecorder &operator=(EventRecorder const &) = default;
+    EventRecorder &operator=(EventRecorder &&) = default;
+
+    static std::expected<EventRecorder, std::errc>
     from_event_ring(monad_event_ring const *const ring)
     {
-        auto t = std::make_unique<EventRecorder>();
-        if (int const r = monad_event_ring_init_recorder(ring, &t->recorder_)) {
-            return std::unexpected(std::errc{r});
+        EventRecorder r{};
+        if (int const rc = monad_event_ring_init_recorder(ring, &r.recorder_)) {
+            return std::unexpected(std::errc{rc});
         }
-        return t;
+        return r;
     }
 
     /// Reserve resources to record an event; T is the type of the "header"
@@ -101,9 +106,6 @@ protected:
         size_t header_payload_size,
         std::span<std::span<std::byte const> const> payload_bufs,
         size_t original_payload_size);
-
-    friend constexpr std::unique_ptr<EventRecorder>
-    std::make_unique<EventRecorder>();
 
     EventRecorder() noexcept = default;
 };

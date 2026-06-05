@@ -170,7 +170,9 @@ std::vector<std::vector<std::optional<Address>>> recover_authorities(
 }
 
 template <Traits traits>
-void execute_block_header(BlockState &block_state, BlockHeader const &header)
+void execute_block_header(
+    BlockState &block_state, BlockHeader const &header,
+    ExecutionEventRecorder *const exec_recorder)
 {
     static_assert(traits::evm_rev() > MONAD_ETH_HOMESTEAD);
 
@@ -190,7 +192,8 @@ void execute_block_header(BlockState &block_state, BlockHeader const &header)
 
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
-    record_account_access_events(MONAD_ACCT_ACCESS_BLOCK_PROLOGUE, state);
+    record_account_access_events(
+        exec_recorder, MONAD_ACCT_ACCESS_BLOCK_PROLOGUE, state);
 }
 
 EXPLICIT_TRAITS(execute_block_header);
@@ -205,7 +208,8 @@ Result<std::vector<Receipt>> execute_block_transactions(
     fiber::FiberGroup &priority_pool, BlockMetrics &block_metrics,
     std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
-    ChainContext<traits> const &chain_ctx, bool const trace_transfers)
+    ChainContext<traits> const &chain_ctx,
+    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
 {
     MONAD_ASSERT(senders.size() == transactions.size());
     MONAD_ASSERT(senders.size() == call_tracers.size());
@@ -237,8 +241,10 @@ Result<std::vector<Receipt>> execute_block_transactions(
              &call_tracer = *call_tracers[i],
              &state_tracer = *state_tracers[i],
              &chain_ctx = chain_ctx,
+             exec_recorder = exec_recorder,
              trace_transfers = trace_transfers] {
-                record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
+                record_txn_marker_event(
+                    exec_recorder, MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
                 try {
                     results[i] = dispatch_transaction<traits>(
                         chain,
@@ -254,11 +260,14 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         call_tracer,
                         state_tracer,
                         chain_ctx,
+                        exec_recorder,
                         trace_transfers);
                     if (results[i]->has_error()) {
-                        record_txn_error_event(i, results[i]->error());
+                        record_txn_error_event(
+                            exec_recorder, i, results[i]->error());
                     }
-                    record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_EXIT, i);
+                    record_txn_marker_event(
+                        exec_recorder, MONAD_EXEC_TXN_PERF_EVM_EXIT, i);
                     // Call promise.set_value/set_exception the last thing,
                     // because this signals that the transaction is finished.
                     promises[i + 1].set_value();
@@ -309,7 +318,8 @@ Result<std::vector<Receipt>> execute_block(
     std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
     trace::StateTracer &system_call_state_tracer,
-    ChainContext<traits> const &chain_ctx, bool const trace_transfers)
+    ChainContext<traits> const &chain_ctx,
+    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
 {
     static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
@@ -319,7 +329,7 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(senders.size() == call_tracers.size());
     MONAD_ASSERT(senders.size() == state_tracers.size());
 
-    execute_block_header<traits>(block_state, block.header);
+    execute_block_header<traits>(block_state, block.header, exec_recorder);
 
     BOOST_OUTCOME_TRY(
         auto const retvals,
@@ -336,6 +346,7 @@ Result<std::vector<Receipt>> execute_block(
             call_tracers,
             state_tracers,
             chain_ctx,
+            exec_recorder,
             trace_transfers));
 
     State state{
@@ -369,7 +380,8 @@ Result<std::vector<Receipt>> execute_block(
 
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
-    record_account_access_events(MONAD_ACCT_ACCESS_BLOCK_EPILOGUE, state);
+    record_account_access_events(
+        exec_recorder, MONAD_ACCT_ACCESS_BLOCK_EPILOGUE, state);
 
     return retvals;
 }

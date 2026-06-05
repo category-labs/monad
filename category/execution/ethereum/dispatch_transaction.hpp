@@ -35,6 +35,7 @@ MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
 class BlockState;
+class ExecutionEventRecorder;
 class State;
 struct BlockHeader;
 struct BlockMetrics;
@@ -51,6 +52,6 @@ Result<Receipt> dispatch_transaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
-    bool trace_transfers = false);
+    ExecutionEventRecorder *exec_recorder, bool trace_transfers = false);
 
 MONAD_NAMESPACE_END

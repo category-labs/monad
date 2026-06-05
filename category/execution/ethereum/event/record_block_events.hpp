@@ -39,14 +39,16 @@ struct BlockExecOutput
 /// Record the start of block execution: emits a BLOCK_START event and
 /// sets the global block flow sequence number in the recorder
 void record_block_start(
-    bytes32_t const &bft_block_id, uint256_t const &chain_id,
-    BlockHeader const &, bytes32_t const &eth_parent_hash, uint64_t block_round,
-    uint64_t epoch, uint128_t epoch_nano_timestamp, size_t txn_count,
+    ExecutionEventRecorder *, bytes32_t const &bft_block_id,
+    uint256_t const &chain_id, BlockHeader const &,
+    bytes32_t const &eth_parent_hash, uint64_t block_round, uint64_t epoch,
+    uint128_t epoch_nano_timestamp, size_t txn_count,
     std::optional<monad_c_secp256k1_pubkey> const &,
     std::optional<monad_c_native_block_input> const &);
 
 /// Record block execution output events (or an execution error event, if
 /// Result::has_error() is true); also clears the active block flow ID
-Result<BlockExecOutput> record_block_result(Result<BlockExecOutput>);
+Result<BlockExecOutput>
+record_block_result(ExecutionEventRecorder *, Result<BlockExecOutput>);
 
 MONAD_NAMESPACE_END

@@ -18,16 +18,14 @@
 /**
  * @file
  *
- * This file defines the execution event recorder, which is a global object.
- * It is up to the driver code using this library to configure it, otherwise
- * recording will remain disabled.
+ * This file defines the execution event recorder, which builds on the base
+ * EventRecorder and adds block and transaction "flow" content extensions
  */
 
 #include <category/core/config.hpp>
 #include <category/core/event/event_recorder.h>
 #include <category/core/event/event_recorder.hpp>
 #include <category/core/event/event_ring.h>
-#include <category/core/event/owned_event_ring.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 
 #include <concepts>
@@ -35,28 +33,34 @@
 #include <cstdint>
 #include <cstring>
 #include <expected>
-#include <memory>
 #include <span>
 #include <system_error>
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
-/// All execution event recording goes through this class; it extends the
+/// All execution event recording goes through this class; it wraps the
 /// EventRecorder C++ utility and also keeps track of the block flow ID -- the
 /// sequence number of the BLOCK_START event, copied into all subsequent
 /// block-level events
 class ExecutionEventRecorder : private EventRecorder
 {
 public:
-    static std::expected<std::unique_ptr<ExecutionEventRecorder>, std::errc>
+    // Not copyable because of the stateful tracking of the current block number
+    ExecutionEventRecorder(ExecutionEventRecorder const &) = delete;
+    ExecutionEventRecorder(ExecutionEventRecorder &&) = default;
+
+    ExecutionEventRecorder &operator=(ExecutionEventRecorder const &) = delete;
+    ExecutionEventRecorder &operator=(ExecutionEventRecorder &&) = default;
+
+    static std::expected<ExecutionEventRecorder, std::errc>
     from_event_ring(monad_event_ring const *const ring)
     {
-        auto t = std::make_unique<ExecutionEventRecorder>();
-        if (int const r = monad_event_ring_init_recorder(ring, &t->recorder_)) {
-            return std::unexpected(std::errc{r});
+        ExecutionEventRecorder r{};
+        if (int const rc = monad_event_ring_init_recorder(ring, &r.recorder_)) {
+            return std::unexpected(std::errc{rc});
         }
-        return t;
+        return r;
     }
 
     /// Reserve resources to record a BLOCK_START event; also sets the
@@ -94,9 +98,6 @@ public:
 
 private:
     uint64_t cur_block_start_seqno_;
-
-    friend constexpr std::unique_ptr<ExecutionEventRecorder>
-    std::make_unique<ExecutionEventRecorder>();
 
     ExecutionEventRecorder() noexcept
         : EventRecorder{}
@@ -187,34 +188,26 @@ inline uint64_t ExecutionEventRecorder::record_txn_marker_event(
     return seqno;
 }
 
-// Declare the global event ring and recorder objects; these are initialized by
-// the driver process if it wants execution event recording, and are left
-// uninitialized to disable it (all internal functions check if they are
-// `nullptr` before using them); we use a "straight" global variable rather
-// than a "magic static" style singleton, because we don't care as much about
-// preventing initialization races as we do about potential cost of poking at
-// atomic guard variables every time
-extern std::unique_ptr<OwnedEventRing> g_exec_event_ring;
-extern std::unique_ptr<ExecutionEventRecorder> g_exec_event_recorder;
-
 /*
  * Helper free functions for execution event recording
  */
 
-inline uint64_t
-record_block_marker_event(monad_exec_event_type const event_type)
+inline uint64_t record_block_marker_event(
+    ExecutionEventRecorder *const exec_recorder,
+    monad_exec_event_type const event_type)
 {
-    if (auto *const e = g_exec_event_recorder.get()) {
-        return e->record_block_marker_event(event_type);
+    if (exec_recorder != nullptr) {
+        return exec_recorder->record_block_marker_event(event_type);
     }
     return 0;
 }
 
 inline uint64_t record_txn_marker_event(
+    ExecutionEventRecorder *const exec_recorder,
     monad_exec_event_type const event_type, uint32_t const txn_num)
 {
-    if (auto *const e = g_exec_event_recorder.get()) {
-        return e->record_txn_marker_event(event_type, txn_num);
+    if (exec_recorder != nullptr) {
+        return exec_recorder->record_txn_marker_event(event_type, txn_num);
     }
     return 0;
 }

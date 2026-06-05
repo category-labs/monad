@@ -29,15 +29,15 @@
 MONAD_NAMESPACE_BEGIN
 
 void record_block_start(
-    bytes32_t const &bft_block_id, uint256_t const &chain_id,
-    BlockHeader const &eth_block_header, bytes32_t const &eth_parent_hash,
-    uint64_t const block_round, uint64_t const epoch,
-    uint128_t const epoch_nano_timestamp, size_t const txn_count,
+    ExecutionEventRecorder *const exec_recorder, bytes32_t const &bft_block_id,
+    uint256_t const &chain_id, BlockHeader const &eth_block_header,
+    bytes32_t const &eth_parent_hash, uint64_t const block_round,
+    uint64_t const epoch, uint128_t const epoch_nano_timestamp,
+    size_t const txn_count,
     std::optional<monad_c_secp256k1_pubkey> const &opt_block_author,
     std::optional<monad_c_native_block_input> const &opt_monad_input)
 {
-    ExecutionEventRecorder *const exec_recorder = g_exec_event_recorder.get();
-    if (!exec_recorder) {
+    if (exec_recorder == nullptr) {
         return;
     }
 
@@ -78,10 +78,10 @@ void record_block_start(
     exec_recorder->commit(block_start);
 }
 
-Result<BlockExecOutput> record_block_result(Result<BlockExecOutput> result)
+Result<BlockExecOutput> record_block_result(
+    ExecutionEventRecorder *const exec_recorder, Result<BlockExecOutput> result)
 {
-    ExecutionEventRecorder *const exec_recorder = g_exec_event_recorder.get();
-    if (!exec_recorder) {
+    if (exec_recorder == nullptr) {
         return result;
     }
 

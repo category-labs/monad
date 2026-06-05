@@ -304,7 +304,7 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
-    bool const trace_transfers)
+    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
     : ExecuteTransactionNoValidation<
           traits>{chain, tx, sender, authorities, header}
     , i_{i}
@@ -315,9 +315,11 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     , prev_{prev}
     , call_tracer_{call_tracer}
     , state_tracer_{state_tracer}
+    , exec_recorder_{exec_recorder}
     , trace_transfers_{trace_transfers}
 {
-    record_txn_header_events(static_cast<uint32_t>(i), tx, sender, authorities);
+    record_txn_header_events(
+        exec_recorder_, static_cast<uint32_t>(i), tx, sender, authorities);
 }
 
 template <Traits traits>
@@ -410,6 +412,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
     call_tracer_.on_finish(receipt.gas_used);
     trace::run_tracer<traits>(state_tracer_, state);
     record_txn_output_events(
+        exec_recorder_,
         static_cast<uint32_t>(this->i_),
         receipt,
         call_tracer_.get_call_frames(),

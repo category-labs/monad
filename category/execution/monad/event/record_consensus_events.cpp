@@ -27,6 +27,7 @@ MONAD_NAMESPACE_BEGIN
 
 template <class MonadConsensusBlockHeader>
 void record_block_qc(
+    ExecutionEventRecorder *const exec_recorder,
     MonadConsensusBlockHeader const &header, uint64_t finalized_block_num)
 {
     // Before recording a QC for block B, we need to check if that block isn't
@@ -47,7 +48,7 @@ void record_block_qc(
     //
     //   - during the execution of B2, we'll see the QC for B1. Since it has
     //     already been finalized, we'll skip it
-    if (auto *const exec_recorder = g_exec_event_recorder.get()) {
+    if (exec_recorder != nullptr) {
         uint64_t const vote_block_number = header.seqno - 1;
         if (vote_block_number <= finalized_block_num) {
             return;
@@ -65,7 +66,8 @@ void record_block_qc(
 }
 
 #define EXPLICIT_INSTANTIATE_QC_TEMPLATE(HEADER_TYPE)                          \
-    template void record_block_qc<HEADER_TYPE>(HEADER_TYPE const &, uint64_t);
+    template void record_block_qc<HEADER_TYPE>(                                \
+        ExecutionEventRecorder *, HEADER_TYPE const &, uint64_t);
 
 EXPLICIT_INSTANTIATE_QC_TEMPLATE(MonadConsensusBlockHeaderV0);
 EXPLICIT_INSTANTIATE_QC_TEMPLATE(MonadConsensusBlockHeaderV1);
@@ -74,9 +76,10 @@ EXPLICIT_INSTANTIATE_QC_TEMPLATE(MonadConsensusBlockHeaderV2);
 #undef EXPLICIT_INSTANTIATE_QC_TEMPLATE
 
 void record_block_finalized(
-    bytes32_t const &block_id, uint64_t const block_number)
+    ExecutionEventRecorder *const exec_recorder, bytes32_t const &block_id,
+    uint64_t const block_number)
 {
-    if (auto *const exec_recorder = g_exec_event_recorder.get()) {
+    if (exec_recorder != nullptr) {
         ReservedEvent const block_finalized =
             exec_recorder->reserve_block_event<monad_exec_block_finalized>(
                 MONAD_EXEC_BLOCK_FINALIZED);
@@ -86,10 +89,12 @@ void record_block_finalized(
     }
 }
 
-void record_block_verified(std::span<uint64_t const> const verified_blocks)
+void record_block_verified(
+    ExecutionEventRecorder *const exec_recorder,
+    std::span<uint64_t const> const verified_blocks)
 {
-    if (auto *const exec_recorder = g_exec_event_recorder.get()) {
-        for (uint64_t b : verified_blocks) {
+    if (exec_recorder != nullptr) {
+        for (uint64_t const b : verified_blocks) {
             if (b == 0) {
                 continue;
             }

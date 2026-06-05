@@ -341,11 +341,6 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-// These symbols link against the global objects in libmonad_execution_ethereum;
-// they remain uninitialized if execution event recording is disabled
-extern std::unique_ptr<OwnedEventRing> g_exec_event_ring;
-extern std::unique_ptr<ExecutionEventRecorder> g_exec_event_recorder;
-
 // Parse a configuration string, which has the form
 //
 //   <ring-name-or-path>[:<descriptor-shift>:<buf-shift>]
@@ -391,31 +386,16 @@ try_parse_event_ring_config(std::string_view const s)
     return cfg;
 }
 
-int init_execution_event_recorder(EventRingConfig ring_config)
+int init_execution_event_ring(
+    EventRingConfig ring_config, std::unique_ptr<OwnedEventRing> &ring)
 {
-    MONAD_ASSERT(!g_exec_event_ring, "recorder initialized twice?");
-
-    if (int const rc = init_owned_event_ring(
-            std::move(ring_config),
-            MONAD_EVENT_CONTENT_TYPE_EXEC,
-            g_monad_exec_event_schema_hash,
-            DEFAULT_EXEC_RING_DESCRIPTORS_SHIFT,
-            DEFAULT_EXEC_RING_PAYLOAD_BUF_SHIFT,
-            g_exec_event_ring)) {
-        return rc;
-    }
-
-    if (auto ex_recorder = ExecutionEventRecorder::from_event_ring(
-            g_exec_event_ring->get_event_ring())) {
-        g_exec_event_recorder = std::move(*ex_recorder);
-        return 0;
-    }
-    else {
-        g_exec_event_ring.reset();
-        LOG_ERROR(
-            "event library error -- {}", monad_event_ring_get_last_error());
-        return static_cast<int>(ex_recorder.error());
-    }
+    return init_owned_event_ring(
+        std::move(ring_config),
+        MONAD_EVENT_CONTENT_TYPE_EXEC,
+        g_monad_exec_event_schema_hash,
+        DEFAULT_EXEC_RING_DESCRIPTORS_SHIFT,
+        DEFAULT_EXEC_RING_PAYLOAD_BUF_SHIFT,
+        ring);
 }
 
 MONAD_NAMESPACE_END

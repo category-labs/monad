@@ -951,6 +951,13 @@ public:
                         metadata->root_offsets_state.auto_expire_version_ =
                             old_metadata->root_offsets_state
                                 .auto_expire_version_;
+                        // Persist the state machine kind so the restored DB
+                        // reopens with the correct StateMachine. Without this
+                        // the kind stays undefined and create_state_machine
+                        // aborts on the next reopen.
+                        metadata->root_offsets_state.state_machine_kind_ =
+                            old_metadata->root_offsets_state
+                                .state_machine_kind_;
                         // Dual-timeline role + secondary ring header.
                         // Without primary_ring_idx the restored DB would
                         // route the primary role at ring_a even when the
@@ -968,6 +975,9 @@ public:
                             .auto_expire_version_ =
                             old_metadata->secondary_timeline_state
                                 .auto_expire_version_;
+                        metadata->secondary_timeline_state.state_machine_kind_ =
+                            old_metadata->secondary_timeline_state
+                                .state_machine_kind_;
                         // Deliberately NOT copied: pending_shrink_grow stays
                         // at its zero-initialised value (op_kind NONE) so the
                         // restored DB starts quiescent and does not replay an

@@ -163,8 +163,7 @@ Result<void> static_validate_header(BlockHeader const &header)
 EXPLICIT_TRAITS(static_validate_header);
 
 template <Traits traits>
-constexpr Result<void>
-static_validate_ommers(Chain const &chain, Block const &block)
+Result<void> static_validate_ommers(Chain const &chain, Block const &block)
 {
     // YP eq. 33
     if (compute_ommers_hash(block.ommers) != block.header.ommers_hash) {
@@ -203,7 +202,7 @@ static_validate_ommers(Chain const &chain, Block const &block)
 }
 
 template <Traits traits>
-constexpr Result<void> static_validate_4844(Block const &block)
+Result<void> static_validate_4844(Block const &block)
 {
     if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
         uint64_t blob_gas_used = 0;
@@ -224,8 +223,7 @@ constexpr Result<void> static_validate_4844(Block const &block)
 }
 
 template <Traits traits>
-constexpr Result<void>
-static_validate_body(Chain const &chain, Block const &block)
+Result<void> static_validate_body(Chain const &chain, Block const &block)
 {
     // EIP-4895
     if constexpr (traits::evm_rev() < MONAD_ETH_SHANGHAI) {

@@ -167,7 +167,8 @@ public:
 
 chunk_offset_t async_write_node_set_spare(UpdateAux &, Node &, bool is_fast);
 
-chunk_offset_t write_new_root_node(UpdateAux &, Node &root, uint64_t version);
+chunk_offset_t
+write_new_root_node(UpdateAux &, Node &root, uint64_t version, timeline_id tid);
 
 node_writer_unique_ptr_type
 replace_node_writer(UpdateAux &, node_writer_unique_ptr_type const &);
@@ -177,12 +178,13 @@ class UpdateAux
 {
     void reset_node_writers();
 
-    void advance_compact_offsets(Node::SharedPtr prev_root);
+    void advance_compact_offsets(Node::SharedPtr prev_root, timeline_id tid);
 
     void free_compacted_chunks();
 
-    // clear root offsets of versions <= version
-    void clear_root_offsets_up_to_and_including(uint64_t version);
+    // clear a timeline's root offsets of versions <= version
+    void
+    clear_root_offsets_up_to_and_including(uint64_t version, timeline_id tid);
     void release_unreferenced_chunks();
 
     double
@@ -267,8 +269,8 @@ public:
 
     Node::SharedPtr do_update(
         Node::SharedPtr prev_root, StateMachine &, UpdateList &&,
-        uint64_t version, bool compaction = false,
-        bool can_write_to_fast = true, bool write_root = true);
+        uint64_t version, bool compaction, bool can_write_to_fast,
+        bool write_root, timeline_id tid);
 
     void adjust_history_length_based_on_disk_usage();
     void move_trie_version_forward(uint64_t src, uint64_t dest);
@@ -278,12 +280,13 @@ public:
     void collect_expire_stats(bool is_read);
     void collect_number_nodes_created_stats();
     void collect_compaction_read_stats(
-        chunk_offset_t node_offset, unsigned bytes_to_read);
+        chunk_offset_t node_offset, unsigned bytes_to_read, timeline_id tid);
     void collect_compacted_nodes_stats(
         bool copy_node_for_fast, bool rewrite_to_fast,
-        virtual_chunk_offset_t node_offset, uint32_t node_disk_size);
+        virtual_chunk_offset_t node_offset, uint32_t node_disk_size,
+        timeline_id tid);
 
-    void print_update_stats(uint64_t version);
+    void print_update_stats(uint64_t version, timeline_id tid);
 
     using chunk_list = DbMetadataContext::chunk_list;
 
@@ -300,7 +303,7 @@ public:
     }
 
     // clear all versions <= version, release unused disk space
-    void erase_versions_up_to_and_including(uint64_t version);
+    void erase_versions_up_to_and_including(uint64_t version, timeline_id tid);
 
     // translate between virtual and physical addresses chunk_offset_t
     virtual_chunk_offset_t physical_to_virtual(chunk_offset_t) const noexcept;
@@ -406,17 +409,19 @@ void async_read(UpdateAux &aux, Receiver &&receiver)
 // batch upsert, updates can be nested
 Node::SharedPtr upsert(
     UpdateAux &, uint64_t version, StateMachine &, Node::SharedPtr old,
-    UpdateList &&, bool write_root = true);
+    UpdateList &&, bool write_root, timeline_id tid);
 
 // Performs a deep copy of a subtrie from `src_root` trie at
 // `src_prefix` to the `dest_root` trie at `dest_prefix`.
 // Note that `src_root` may be of a different version than `dest_root`.
 // Any pre-existing trie at `dest_prefix` will be overwritten.
 // The in-memory effect is similar to a move operation.
+// `tid` selects which timeline reads the source nodes (and which
+// timeline's root-offset metadata is updated when `write_root` is true).
 Node::SharedPtr copy_trie_to_dest(
     UpdateAux &, Node::SharedPtr src_root, NibblesView src_prefix,
     Node::SharedPtr dest_root, NibblesView dest_prefix, uint64_t dest_version,
-    bool write_root = true);
+    timeline_id tid, bool write_root = true);
 
 // load all nodes as far as caching policy would allow
 size_t load_all(UpdateAux &, StateMachine &, NodeCursor const &);
@@ -515,8 +520,9 @@ the node through blocking read.
 synchronization is provided, and user code should make sure no other place is
 modifying trie.
 */
-find_cursor_result_type
-find_blocking(UpdateAux const &, NodeCursor, NibblesView key, uint64_t version);
+find_cursor_result_type find_blocking(
+    UpdateAux const &, NodeCursor, NibblesView key, uint64_t version,
+    timeline_id tid);
 
 /* This function reads a node from the specified physical offset `node_offset`,
 where the spare bits indicate the number of pages to read. It returns a valid
@@ -524,7 +530,8 @@ where the spare bits indicate the number of pages to read. It returns a valid
 becomes invalid.
 */
 Node::SharedPtr read_node_blocking(
-    UpdateAux const &, chunk_offset_t node_offset, uint64_t version);
+    UpdateAux const &, chunk_offset_t node_offset, uint64_t version,
+    timeline_id tid);
 
 //////////////////////////////////////////////////////////////////////////////
 // helpers

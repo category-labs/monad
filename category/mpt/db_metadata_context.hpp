@@ -278,11 +278,14 @@ public:
     set_auto_expire_version_metadata(timeline_id tid, int64_t version) noexcept;
     void update_history_length_metadata(uint64_t history_len) noexcept;
 
-    // Root offsets operations
-    void append_root_offset(chunk_offset_t root_offset) noexcept;
-    void update_root_offset(size_t i, chunk_offset_t root_offset) noexcept;
-    void fast_forward_next_version(uint64_t version) noexcept;
-    void clear_root_offsets_up_to_and_including(uint64_t version);
+    // Root offsets operations. All wrap the two-copy mutation in
+    // per-copy hold_dirty() scopes so crash recovery can roll back a
+    // half-written update. tid selects which ring to mutate.
+    void
+    append_root_offset(chunk_offset_t root_offset, timeline_id tid) noexcept;
+    void update_root_offset(
+        size_t i, chunk_offset_t root_offset, timeline_id tid) noexcept;
+    void fast_forward_next_version(uint64_t version, timeline_id tid) noexcept;
 
     // DB offsets
     void advance_db_offsets_to(
@@ -294,6 +297,7 @@ public:
     uint64_t db_history_min_valid_version() const noexcept;
     uint64_t db_history_max_version() const noexcept;
     uint64_t db_history_range_lower_bound() const noexcept;
+    uint64_t db_history_range_lower_bound(timeline_id tid) const noexcept;
 
     // Inline accessors
     chunk_offset_t get_start_of_wip_fast_offset() const noexcept

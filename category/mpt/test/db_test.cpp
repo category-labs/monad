@@ -882,6 +882,70 @@ TEST(DbTest, history_length_adjustment_never_under_min)
     remove(dbname);
 }
 
+TEST(DbTest, history_length_adjustment_reclaims_with_active_secondary)
+{
+    // A lagging secondary pins old chunks under disk pressure; the controller's
+    // reclaim prediction must fold in the combined GC boundary or it mistrims
+    // the primary and trips the post-trim disk-usage assert.
+    auto const dbname = create_temp_file(4);
+    OnDiskDbConfig const config{
+        .compaction = true,
+        .sq_thread_cpu{std::nullopt},
+        .dbname_paths = {dbname}};
+    Db db{std::make_unique<StateMachineAlwaysEmpty>(), config};
+
+    constexpr unsigned nkeys = 100;
+    monad::byte_string const large_value(16 * 1024, 0xf);
+
+    auto batch_upsert = [&](Db &target,
+                            Node::SharedPtr &root,
+                            uint64_t const version,
+                            size_t const salt) {
+        UpdateList ls;
+        std::deque<monad::byte_string> bytes_alloc;
+        std::deque<Update> updates_alloc;
+        for (size_t i = 0; i < nkeys; ++i) {
+            ls.push_front(updates_alloc.emplace_back(Update{
+                .key = bytes_alloc.emplace_back(
+                    keccak_int_to_string(salt + version * nkeys + i)),
+                .value = large_value,
+                .incarnation = false,
+                .next = UpdateList{}}));
+        }
+        root = target.upsert(std::move(root), std::move(ls), version);
+    };
+
+    Node::SharedPtr primary_root{};
+    uint64_t version = 0;
+    for (; version < 5; ++version) {
+        batch_upsert(db, primary_root, version, 0);
+    }
+
+    uint64_t const version_cap = version + 100000;
+    {
+        Db secondary_db = db.activate_secondary_timeline(
+            std::make_unique<StateMachineAlwaysEmpty>());
+        // Secondary writes once at the fork then freezes, pinning fork-era
+        // chunks while the primary races ahead.
+        Node::SharedPtr secondary_root{};
+        batch_upsert(secondary_db, secondary_root, version, 0xD00D0000);
+
+        // After activation clamps history to the post-split capacity.
+        uint64_t const start_history = db.get_history_length();
+        while (db.get_history_length() == start_history &&
+               version < version_cap) {
+            batch_upsert(db, primary_root, version, 0);
+            ++version;
+        }
+        EXPECT_LT(db.get_history_length(), start_history)
+            << "controller never shrank history under disk pressure";
+    }
+    EXPECT_GE(db.get_history_length(), MIN_HISTORY_LENGTH);
+
+    db.deactivate_secondary_timeline();
+    remove(dbname);
+}
+
 TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_as_version_expire)
 {
     struct TraverseMachinePruneHistory final : public TraverseMachine
@@ -2983,4 +3047,74 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_updates_auto_expire)
         start_version)
         << "auto_expire_version_metadata should be moved forward with "
            "move_trie_version_forward";
+}
+
+TEST_F(OnDiskDbWithFileFixture, timeline_lifecycle_activate_deactivate)
+{
+    // Insert data on primary timeline
+    auto const k1 = 0x12345678_bytes;
+    auto u1 = make_update(k1, k1);
+    UpdateList ul;
+    ul.push_front(u1);
+    root = db.upsert(std::move(root), std::move(ul), 0);
+    ASSERT_NE(root, nullptr);
+
+    // Initially only primary is active
+    EXPECT_TRUE(db.timeline_active(timeline_id::primary));
+    EXPECT_FALSE(db.timeline_active(timeline_id::secondary));
+
+    // Activate secondary timeline (starts empty; first upsert seeds it)
+    {
+        auto const secondary_db = db.activate_secondary_timeline(
+            std::make_unique<StateMachineAlwaysEmpty>());
+        EXPECT_TRUE(db.timeline_active(timeline_id::secondary));
+    }
+
+    // Deactivate
+    db.deactivate_secondary_timeline();
+    EXPECT_FALSE(db.timeline_active(timeline_id::secondary));
+}
+
+TEST_F(OnDiskDbWithFileFixture, timeline_lifecycle_dual_upsert)
+{
+    // Insert data on primary timeline
+    auto const k1 = 0x12345678_bytes;
+    auto u1 = make_update(k1, k1);
+    UpdateList ul;
+    ul.push_front(u1);
+    root = db.upsert(std::move(root), std::move(ul), 0);
+    ASSERT_NE(root, nullptr);
+
+    // Activate secondary with a different compute
+    auto secondary_db = db.activate_secondary_timeline(
+        std::make_unique<StateMachineAlwaysEmpty>());
+
+    // Upsert the same data on secondary timeline
+    auto const k2 = 0x22345678_bytes;
+    auto u2 = make_update(k2, k2);
+    UpdateList ul2;
+    ul2.push_front(u2);
+
+    // Upsert to primary
+    auto const primary_root = db.upsert(root, std::move(ul2), 1);
+    ASSERT_NE(primary_root, nullptr);
+
+    // Upsert same data to secondary
+    auto u3 = make_update(k2, k2);
+    UpdateList ul3;
+    ul3.push_front(u3);
+    Node::SharedPtr secondary_root;
+    secondary_root =
+        secondary_db.upsert(std::move(secondary_root), std::move(ul3), 1);
+    ASSERT_NE(secondary_root, nullptr);
+
+    // Both roots should exist
+    EXPECT_NE(primary_root.get(), secondary_root.get());
+
+    // Cleanup: destroy secondary Db first, then deactivate
+    {
+        Db const moved_out = std::move(secondary_db);
+        (void)moved_out;
+    }
+    db.deactivate_secondary_timeline();
 }

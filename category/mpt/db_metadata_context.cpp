@@ -605,25 +605,26 @@ void DbMetadataContext::update_history_length_metadata(
 // Root offsets operations
 
 void DbMetadataContext::append_root_offset(
-    chunk_offset_t const root_offset) noexcept
+    chunk_offset_t const root_offset, timeline_id const tid) noexcept
 {
     auto do_ = [&](unsigned const which) {
         auto const g = copies_[which].main->hold_dirty();
-        root_offsets(which).push(root_offset);
+        root_offsets(tid, which).push(root_offset);
     };
     do_(0);
     do_(1);
 }
 
 void DbMetadataContext::update_root_offset(
-    size_t const i, chunk_offset_t const root_offset) noexcept
+    size_t const i, chunk_offset_t const root_offset,
+    timeline_id const tid) noexcept
 {
     auto do_ = [&](unsigned const which) {
         auto const g = copies_[which].main->hold_dirty();
-        auto ro = root_offsets(which);
+        auto ro = root_offsets(tid, which);
         ro.assign(i, root_offset);
-        if (root_offset == INVALID_OFFSET && i == db_history_max_version() &&
-            i == db_history_min_valid_version()) {
+        if (root_offset == INVALID_OFFSET && i == db_history_max_version(tid) &&
+            i == db_history_min_valid_version(tid)) {
             ro.reset_all(0);
             MONAD_ASSERT(ro.max_version() == INVALID_BLOCK_NUM);
         }
@@ -633,11 +634,11 @@ void DbMetadataContext::update_root_offset(
 }
 
 void DbMetadataContext::fast_forward_next_version(
-    uint64_t const new_version) noexcept
+    uint64_t const new_version, timeline_id const tid) noexcept
 {
     auto do_ = [&](unsigned const which) {
         auto const g = copies_[which].main->hold_dirty();
-        auto ro = root_offsets(which);
+        auto ro = root_offsets(tid, which);
         uint64_t curr_version = ro.max_version();
         MONAD_ASSERT(
             curr_version == INVALID_BLOCK_NUM || new_version > curr_version);
@@ -655,16 +656,6 @@ void DbMetadataContext::fast_forward_next_version(
     };
     do_(0);
     do_(1);
-}
-
-void DbMetadataContext::clear_root_offsets_up_to_and_including(
-    uint64_t const version)
-{
-    for (uint64_t v = db_history_range_lower_bound();
-         v != INVALID_BLOCK_NUM && v <= version;
-         v = db_history_range_lower_bound()) {
-        update_root_offset(v, INVALID_OFFSET);
-    }
 }
 
 // DB offsets
@@ -705,13 +696,19 @@ uint64_t DbMetadataContext::oldest_readable_version_(
         ro.max_version(), ro.capacity(), ro.version_lower_bound());
 }
 
-uint64_t DbMetadataContext::db_history_range_lower_bound() const noexcept
+uint64_t DbMetadataContext::db_history_range_lower_bound(
+    timeline_id const tid) const noexcept
 {
-    auto const ro = root_offsets();
+    auto const ro = root_offsets(tid);
     if (ro.max_version() == INVALID_BLOCK_NUM) {
         return INVALID_BLOCK_NUM;
     }
     return ro.version_lower_bound();
+}
+
+uint64_t DbMetadataContext::db_history_range_lower_bound() const noexcept
+{
+    return db_history_range_lower_bound(timeline_id::primary);
 }
 
 bool DbMetadataContext::timeline_active(timeline_id const tid) const noexcept

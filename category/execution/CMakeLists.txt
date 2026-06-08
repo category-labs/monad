@@ -227,6 +227,8 @@ add_library(
   "monad/chain/monad_devnet.cpp"
   "monad/chain/monad_devnet.hpp"
   "monad/chain/monad_devnet_alloc.hpp"
+  "monad/chain/monad_devnet_fork.cpp"
+  "monad/chain/monad_devnet_fork.hpp"
   "monad/chain/monad_mainnet.cpp"
   "monad/chain/monad_mainnet.hpp"
   "monad/chain/monad_mainnet_alloc.hpp"

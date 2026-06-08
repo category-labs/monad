@@ -22,6 +22,7 @@
 #include <category/execution/monad/chain/chain_factory.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
+#include <category/execution/monad/chain/monad_devnet_fork.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 
@@ -36,6 +37,8 @@ std::unique_ptr<Chain> make_chain(monad_chain_config const chain_config)
         return std::make_unique<EthereumMainnet>();
     case CHAIN_CONFIG_MONAD_DEVNET:
         return std::make_unique<MonadDevnet>();
+    case CHAIN_CONFIG_MONAD_DEVNET_FORK:
+        return std::make_unique<MonadDevnetFork>();
     case CHAIN_CONFIG_MONAD_TESTNET:
         return std::make_unique<MonadTestnet>();
     case CHAIN_CONFIG_MONAD_MAINNET:
@@ -52,6 +55,8 @@ make_monad_chain(monad_chain_config const chain_config)
     switch (chain_config) {
     case CHAIN_CONFIG_MONAD_DEVNET:
         return std::make_unique<MonadDevnet>();
+    case CHAIN_CONFIG_MONAD_DEVNET_FORK:
+        return std::make_unique<MonadDevnetFork>();
     case CHAIN_CONFIG_MONAD_TESTNET:
         return std::make_unique<MonadTestnet>();
     case CHAIN_CONFIG_MONAD_MAINNET:

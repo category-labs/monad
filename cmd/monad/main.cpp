@@ -505,13 +505,22 @@ try {
                         "dual db migration mode does not work with "
                         "page-encoded primary db");
                 }
-                else {
-                    MONAD_ASSERT(raw_db.timeline_active(
-                        monad::mpt::timeline_id::secondary));
+                else if (raw_db.timeline_active(
+                             monad::mpt::timeline_id::secondary)) {
                     secondary_db = raw_db.open_secondary_timeline();
                     MONAD_ASSERT(secondary_db.has_value());
                     secondary_triedb.emplace(*secondary_db);
                     MONAD_ASSERT(secondary_triedb->is_page_encoded());
+                }
+                else {
+                    // slot primary with no secondary: pre-migration state,
+                    // run single-db on the previous revision. Reject the
+                    // explicit migration flag — that mode requires a
+                    // secondary to dual-write into.
+                    MONAD_ASSERT(
+                        !dual_db_migration_mode,
+                        "dual db migration mode requires an active "
+                        "secondary timeline");
                 }
                 return runloop_monad(
                     dynamic_cast<MonadChain const &>(*chain),

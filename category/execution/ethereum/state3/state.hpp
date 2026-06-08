@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
+#include <category/vm/evm/access_status.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
@@ -165,10 +166,10 @@ public:
 
     void touch(Address const &);
 
-    evmc_access_status access_account(Address const &);
+    monad_access_status access_account(Address const &);
 
     template <Traits traits>
-    evmc_access_status access_storage(Address const &, bytes32_t const &key);
+    monad_access_status access_storage(Address const &, bytes32_t const &key);
 
     vm::Host::PageStorageStatus update_page(
         Address const &, bytes32_t const &key, evmc_storage_status status);

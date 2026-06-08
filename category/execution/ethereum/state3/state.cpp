@@ -406,14 +406,14 @@ void State::touch(Address const &address)
     account_state.touch();
 }
 
-evmc_access_status State::access_account(Address const &address)
+monad_access_status State::access_account(Address const &address)
 {
     auto &account_state = current_account_state(address);
     return account_state.access();
 }
 
 template <Traits traits>
-evmc_access_status
+monad_access_status
 State::access_storage(Address const &address, bytes32_t const &key)
 {
     auto &account_state = current_account_state(address);

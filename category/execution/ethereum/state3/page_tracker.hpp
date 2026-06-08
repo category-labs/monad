@@ -18,6 +18,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
+#include <category/vm/evm/access_status.h>
 #include <category/vm/host.hpp>
 
 #include <evmc/evmc.h>
@@ -51,16 +52,16 @@ class PageTracker
     }
 
 public:
-    evmc_access_status access_page(bytes32_t const &key)
+    monad_access_status access_page(bytes32_t const &key)
     {
         auto const pkey = compute_page_key(key);
         PageState s = lookup_page_state(pkey);
         if (s.accessed) {
-            return EVMC_ACCESS_WARM;
+            return MONAD_ACCESS_WARM;
         }
         s.accessed = true;
         pages_ = pages_.set(pkey, s);
-        return EVMC_ACCESS_COLD;
+        return MONAD_ACCESS_COLD;
     }
 
     vm::Host::PageStorageStatus

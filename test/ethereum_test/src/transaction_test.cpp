@@ -84,12 +84,13 @@ void process_transaction(
 {
     if (std::holds_alternative<monad_eth_revision>(revision)) {
         auto const rev = std::get<monad_eth_revision>(revision);
-        MONAD_ASSERT(rev != MONAD_ETH_CONSTANTINOPLE);
         SWITCH_EVM_TRAITS(process_transaction, txn, expected);
+        MONAD_ASSERT(false);
     }
     else {
         auto const rev = std::get<monad_revision>(revision);
         SWITCH_MONAD_TRAITS(process_transaction, txn, expected);
+        MONAD_ASSERT(false);
     }
 }
 

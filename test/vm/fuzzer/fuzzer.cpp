@@ -377,7 +377,6 @@ static arguments parse_args(int const argc, char **const argv)
         "Print message result statistics when logging");
 
     auto const rev_map = std::map<std::string, monad_eth_revision>{
-        {"CONSTANTINOPLE", MONAD_ETH_CONSTANTINOPLE},
         {"PETERSBURG", MONAD_ETH_PETERSBURG},
         {"ISTANBUL", MONAD_ETH_ISTANBUL},
         {"BERLIN", MONAD_ETH_BERLIN},

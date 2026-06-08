@@ -464,6 +464,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
 
 TYPED_TEST(TraitsTest, refunds_delete_then_set)
 {
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_CONSTANTINOPLE);
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -566,11 +567,6 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
                 }
 
                 if constexpr (
-                    TestFixture::Trait::evm_rev() == MONAD_ETH_CONSTANTINOPLE) {
-                    return 26'212;
-                }
-
-                if constexpr (
                     TestFixture::Trait::evm_rev() == MONAD_ETH_ISTANBUL) {
                     return 26'812;
                 }
@@ -585,10 +581,6 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
             }();
 
             static constexpr auto storage_refund_evm_uncapped = [] {
-                if constexpr (
-                    TestFixture::Trait::evm_rev() == MONAD_ETH_CONSTANTINOPLE) {
-                    return 4800;
-                }
                 if constexpr (
                     TestFixture::Trait::evm_rev() == MONAD_ETH_ISTANBUL) {
                     return 4200;

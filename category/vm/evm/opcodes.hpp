@@ -292,7 +292,7 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<MONAD_ETH_CONSTANTINOPLE>>()
+    make_opcode_table<EvmTraits<MONAD_ETH_PETERSBURG>>()
     {
         return {
             OpCodeInfo{"STOP", 0, 0, 0, false, 0, 0}, // 0x00
@@ -385,7 +385,7 @@ namespace monad::vm::compiler
             OpCodeInfo{"MSTORE", 0, 2, 0, true, 3, 0}, // 0x52,
             OpCodeInfo{"MSTORE8", 0, 2, 0, true, 3, 0}, // 0x53,
             OpCodeInfo{"SLOAD", 0, 1, 1, true, 200, 0}, // 0x54,
-            OpCodeInfo{"SSTORE", 0, 2, 0, true, 200, 0}, // 0x55,
+            OpCodeInfo{"SSTORE", 0, 2, 0, true, 5000, 0}, // 0x55,
             OpCodeInfo{"JUMP", 0, 1, 0, false, 8, 0}, // 0x56,
             OpCodeInfo{"JUMPI", 0, 2, 0, false, 10, 0}, // 0x57,
             OpCodeInfo{"PC", 0, 0, 1, false, 2, 0}, // 0x58,
@@ -567,19 +567,6 @@ namespace monad::vm::compiler
             unknown_opcode_info,
             OpCodeInfo{"SELFDESTRUCT", 0, 1, 0, true, 5000, 0} // 0xFF,
         };
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<MONAD_ETH_PETERSBURG>>()
-    {
-        auto table = make_opcode_table<
-            EvmTraits<previous_evm_revision(MONAD_ETH_PETERSBURG)>>();
-
-        // EIP-1283 reverted
-        table[SSTORE].min_gas = 5000;
-
-        return table;
     }
 
     template <>

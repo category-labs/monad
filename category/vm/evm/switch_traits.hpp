@@ -41,8 +41,6 @@
         return f<::monad::EvmTraits<MONAD_ETH_ISTANBUL>>(__VA_ARGS__);         \
     case MONAD_ETH_PETERSBURG:                                                 \
         return f<::monad::EvmTraits<MONAD_ETH_PETERSBURG>>(__VA_ARGS__);       \
-    case MONAD_ETH_CONSTANTINOPLE:                                             \
-        return f<::monad::EvmTraits<MONAD_ETH_CONSTANTINOPLE>>(__VA_ARGS__);   \
     default:                                                                   \
         break;                                                                 \
     }

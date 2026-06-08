@@ -25,8 +25,6 @@
 // Template free functions
 
 #define EXPLICIT_EVM_TRAITS(f)                                                 \
-    template decltype(f<::monad::EvmTraits<MONAD_ETH_CONSTANTINOPLE>>)         \
-        f<::monad::EvmTraits<MONAD_ETH_CONSTANTINOPLE>>;                       \
     template decltype(f<::monad::EvmTraits<MONAD_ETH_PETERSBURG>>)             \
         f<::monad::EvmTraits<MONAD_ETH_PETERSBURG>>;                           \
     template decltype(f<::monad::EvmTraits<MONAD_ETH_ISTANBUL>>)               \
@@ -77,7 +75,6 @@
 // Template classes
 
 #define EXPLICIT_EVM_TRAITS_CLASS(c)                                           \
-    template class c<::monad::EvmTraits<MONAD_ETH_CONSTANTINOPLE>>;            \
     template class c<::monad::EvmTraits<MONAD_ETH_PETERSBURG>>;                \
     template class c<::monad::EvmTraits<MONAD_ETH_ISTANBUL>>;                  \
     template class c<::monad::EvmTraits<MONAD_ETH_BERLIN>>;                    \
@@ -140,7 +137,6 @@
     }
 
 #define EXPLICIT_EVM_TRAITS_MEMBER_LIST(f, id)                                 \
-    template void id<&f<::monad::EvmTraits<MONAD_ETH_CONSTANTINOPLE>>>();      \
     template void id<&f<::monad::EvmTraits<MONAD_ETH_PETERSBURG>>>();          \
     template void id<&f<::monad::EvmTraits<MONAD_ETH_ISTANBUL>>>();            \
     template void id<&f<::monad::EvmTraits<MONAD_ETH_BERLIN>>>();              \

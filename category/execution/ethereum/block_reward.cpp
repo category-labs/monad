@@ -34,12 +34,9 @@ MONAD_NAMESPACE_BEGIN
 template <Traits traits>
 constexpr uint256_t block_reward()
 {
-    static_assert(traits::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(traits::evm_rev() > MONAD_ETH_CONSTANTINOPLE);
 
-    if constexpr (traits::evm_rev() < MONAD_ETH_PETERSBURG) {
-        return 3'000'000'000'000'000'000; // YP Eqn. 176, EIP-649
-    }
-    else if constexpr (traits::evm_rev() < MONAD_ETH_PARIS) {
+    if constexpr (traits::evm_rev() < MONAD_ETH_PARIS) {
         return 2'000'000'000'000'000'000; // YP Eqn. 176, EIP-1234
     }
     return 0; // EIP-3675

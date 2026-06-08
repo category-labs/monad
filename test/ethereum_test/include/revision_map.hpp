@@ -30,7 +30,6 @@ MONAD_TEST_NAMESPACE_BEGIN
 inline std::unordered_map<
     std::string, std::variant<monad_eth_revision, monad_revision>> const
     revision_map = {
-        {"Constantinople", MONAD_ETH_CONSTANTINOPLE},
         {"ConstantinopleFix", MONAD_ETH_PETERSBURG},
         {"Petersburg", MONAD_ETH_PETERSBURG},
         {"Istanbul", MONAD_ETH_ISTANBUL},

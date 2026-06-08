@@ -97,7 +97,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageLoadWarm)
 
 TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_BYZANTIUM);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_CONSTANTINOPLE);
 
     using traits = TestFixture::Trait;
     auto load = TestFixture::wrap(sload<traits>);
@@ -139,9 +139,6 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
     if constexpr (traits::evm_rev() == MONAD_ETH_PETERSBURG) {
         do_test(15000, 15000);
     }
-    else if constexpr (traits::evm_rev() == MONAD_ETH_CONSTANTINOPLE) {
-        do_test(19800, 19800);
-    }
     else if constexpr (traits::evm_rev() == MONAD_ETH_ISTANBUL) {
         do_test(19200, 19200);
     }
@@ -152,7 +149,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
 
 TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_BYZANTIUM);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_CONSTANTINOPLE);
 
     using traits = TestFixture::Trait;
     auto load = TestFixture::wrap(sload<traits>);
@@ -205,9 +202,6 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
     }
     if constexpr (traits::evm_rev() == MONAD_ETH_PETERSBURG) {
         do_test(8100, 0);
-    }
-    else if constexpr (traits::evm_rev() == MONAD_ETH_CONSTANTINOPLE) {
-        do_test(8100, 4800);
     }
     else if constexpr (traits::evm_rev() == MONAD_ETH_ISTANBUL) {
         do_test(8100, 4200);

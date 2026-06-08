@@ -300,8 +300,12 @@ try {
     // The on-disk Db ctor reads the persisted state_machine_kind from
     // db_metadata and constructs the StateMachine via the registry. The
     // in-memory path has no metadata to read from and constructs the SM
-    // inline.
+    // inline. Encoding follows the persisted kind, not --chain, so both
+    // factories must be registered before the Db open — a page-encoded
+    // pool created under monad_devnet must still open under, e.g., a
+    // service restart that re-reads the kind from metadata.
     register_ethereum_state_machines();
+    register_monad_state_machines();
     mpt::Db raw_db = [&] {
         if (!db_in_memory) {
             return mpt::Db{mpt::OnDiskDbConfig{
@@ -465,7 +469,6 @@ try {
         case CHAIN_CONFIG_MONAD_DEVNET:
         case CHAIN_CONFIG_MONAD_TESTNET:
         case CHAIN_CONFIG_MONAD_MAINNET:
-            register_monad_state_machines();
             if (as_eth_blocks) {
                 return runloop_monad_ethblocks(
                     dynamic_cast<MonadChain const &>(*chain),

@@ -62,6 +62,7 @@ namespace monad::vm::compiler::test
                 .blob_hashes_count = blob_hashes_.size(),
                 .initcodes = nullptr,
                 .initcodes_count = 0,
+                .block_round = 0,
             };
 
             host.block_hash = store_be_as<bytes32_t>(

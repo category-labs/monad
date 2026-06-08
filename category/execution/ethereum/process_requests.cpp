@@ -88,6 +88,7 @@ Result<byte_string> system_call(
         .blob_hashes_count = 0,
         .initcodes = nullptr,
         .initcodes_count = 0,
+        .block_round = 0,
     };
 
     auto msg_memory = state.vm().message_memory_ref();

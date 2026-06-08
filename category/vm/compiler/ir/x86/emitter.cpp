@@ -7188,6 +7188,99 @@ namespace monad::vm::compiler::native
         return dst;
     }
 
+    // Inline unsigned 256-bit / 64-bit long division.
+    //
+    // Emits the same 4-iteration long division algorithm as
+    // `runtime::udiv` -> `udivrem` -> `long_div` (uint256.hpp), but inline
+    // avoiding the runtime function call and its surrounding caller-save spills.
+    
+    // If `is_mod` is true, returns a fresh `StackElemRef` holding the
+    // remainder.
+    StackElemRef Emitter::udiv_by_uint64(
+        StackElemRef dividend, uint64_t const divisor, bool const is_mod)
+    {
+        MONAD_DEBUG_ASSERT(divisor > 1);
+        MONAD_DEBUG_ASSERT(!dividend->literal().has_value());
+
+        {
+            RegReserv const dividend_reserv{dividend};
+            discharge_deferred_comparison();
+        }
+
+        auto [dst, dst_reserv] = alloc_general_reg();
+        auto dst_gpq = general_reg_to_gpq256(*dst->general_reg());
+        auto const rdx_index = volatile_gpq_index<x86::rdx>();
+        bool const dst_aliases_rdx = dst_gpq[rdx_index] == x86::rdx;
+
+        int32_t rsp_delta = 0;
+
+        if (dst_aliases_rdx) {
+            MONAD_DEBUG_ASSERT(*dst->general_reg() == rdx_general_reg);
+            as_.push(reg_context);
+            rsp_delta += 8;
+            dst_gpq[rdx_index] = reg_context;
+        }
+
+        mov_stack_elem_to_gpq256<true>(dividend, dst_gpq);
+        dividend.reset();
+
+        bool preserve_stack_rdx = false;
+        if (!dst_aliases_rdx &&
+            stack_.general_reg_stack_elem(rdx_general_reg) != nullptr) {
+            as_.push(x86::rdx);
+            rsp_delta += 8;
+            preserve_stack_rdx = true;
+        }
+
+        auto const divisor_mem =
+            x86::qword_ptr(x86::rsp, sp_offset_temp_word1 + rsp_delta);
+        if (divisor <=
+            static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
+            as_.mov(divisor_mem, static_cast<int32_t>(divisor));
+        }
+        else {
+            as_.mov(x86::rax, divisor);
+            as_.mov(divisor_mem, x86::rax);
+        }
+
+        as_.xor_(x86::edx, x86::edx);
+        for (int i = 3; i >= 0; --i) {
+            auto const idx = static_cast<size_t>(i);
+            as_.mov(x86::rax, dst_gpq[idx]);
+            as_.div(divisor_mem);
+            if (!is_mod) {
+                as_.mov(dst_gpq[idx], x86::rax);
+            }
+        }
+        // For UDIV, dst_gpq[0..3] now holds the quotient. For UMOD it still
+        // holds the original dividend. `rdx` holds the final remainder.
+
+        if (is_mod) {
+            as_.mov(dst_gpq[0], x86::rdx);
+            as_.xor_(dst_gpq[1].r32(), dst_gpq[1].r32());
+            as_.xor_(dst_gpq[3].r32(), dst_gpq[3].r32());
+            if (dst_aliases_rdx) {
+                as_.xor_(x86::edx, x86::edx);
+            }
+            else {
+                as_.xor_(dst_gpq[2].r32(), dst_gpq[2].r32());
+            }
+        }
+        else if (dst_aliases_rdx) {
+            as_.mov(x86::rdx, dst_gpq[rdx_index]);
+        }
+
+        if (preserve_stack_rdx) {
+            as_.pop(x86::rdx);
+        }
+
+        if (dst_aliases_rdx) {
+            as_.pop(reg_context);
+        }
+
+        return dst;
+    }
+
     template <bool is_sdiv>
     bool Emitter::div_optimized()
     {
@@ -7260,6 +7353,20 @@ namespace monad::vm::compiler::native
             }
             return true;
         }
+
+        // Divisor fits in a single 64-bit limb: emit inline code instead of calling the runtime.
+        // TODO: Using this flag to allow on/off comparison for benchmarks. Remove when integrated.
+#ifndef MONAD_DISABLE_UDIV_BY_UINT64_OPT
+        if constexpr (!is_sdiv) {
+            MONAD_DEBUG_ASSERT(!needs_negation);
+            if (count_significant_words(b.as_words()) == 1) {
+                stack_.pop();
+                stack_.pop();
+                stack_.push(udiv_by_uint64(std::move(a_elem), b[0], false));
+                return true;
+            }
+        }
+#endif
 
         return false;
     }
@@ -7384,6 +7491,19 @@ namespace monad::vm::compiler::native
             }
             return true;
         }
+
+        // Divisor fits in a single 64-bit limb: emit inline code instead of calling the runtime.
+        // TODO: Using this flag to allow on/off comparison for benchmarks. Remove when integrated.
+#ifndef MONAD_DISABLE_UDIV_BY_UINT64_OPT
+        if constexpr (!is_smod) {
+            if (count_significant_words(b.as_words()) == 1) {
+                stack_.pop();
+                stack_.pop();
+                stack_.push(udiv_by_uint64(std::move(a_elem), b[0], true));
+                return true;
+            }
+        }
+#endif
 
         return false;
     }

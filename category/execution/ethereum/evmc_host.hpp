@@ -28,6 +28,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
+#include <category/vm/evm/access_status.h>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
@@ -201,7 +202,7 @@ struct EvmcHost final : public EvmcHostBase
             if (is_precompile<traits>(address)) {
                 return EVMC_ACCESS_WARM;
             }
-            return state_.access_account(address);
+            return to_evmc_access_status(state_.access_account(address));
         }
         catch (...) {
             capture_current_exception();

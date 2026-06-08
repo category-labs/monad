@@ -199,7 +199,7 @@ evmc_access_status EvmcHostBase::access_storage(
     evmc::address const &address, evmc::bytes32 const &key) noexcept
 {
     try {
-        return state_.access_storage(address, key);
+        return to_evmc_access_status(state_.access_storage(address, key));
     }
     catch (...) {
         capture_current_exception();

@@ -17,6 +17,7 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/vm/evm/access_status.h>
 
 #include <evmc/evmc.h>
 
@@ -79,24 +80,24 @@ public:
     }
 
     // A_a
-    evmc_access_status access()
+    monad_access_status access()
     {
         bool const inserted = !accessed_;
         accessed_ = true;
         if (inserted) {
-            return EVMC_ACCESS_COLD;
+            return MONAD_ACCESS_COLD;
         }
-        return EVMC_ACCESS_WARM;
+        return MONAD_ACCESS_WARM;
     }
 
     // A_K
-    evmc_access_status access_storage(bytes32_t const &key)
+    monad_access_status access_storage(bytes32_t const &key)
     {
         if (accessed_storage_.count(key) == 0) {
             accessed_storage_ = accessed_storage_.insert(key);
-            return EVMC_ACCESS_COLD;
+            return MONAD_ACCESS_COLD;
         }
-        return EVMC_ACCESS_WARM;
+        return MONAD_ACCESS_WARM;
     }
 };
 

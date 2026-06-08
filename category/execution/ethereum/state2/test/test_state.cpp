@@ -162,10 +162,10 @@ TEST_F(InMemoryStateTest, access_account)
 
     State s{bs, Incarnation{1, 1}};
 
-    EXPECT_EQ(s.access_account(a), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_account(a), EVMC_ACCESS_WARM);
-    EXPECT_EQ(s.access_account(b), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_account(b), EVMC_ACCESS_WARM);
+    EXPECT_EQ(s.access_account(a), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(a), MONAD_ACCESS_WARM);
+    EXPECT_EQ(s.access_account(b), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(b), MONAD_ACCESS_WARM);
 }
 
 TEST_F(InMemoryStateTest, account_exists)
@@ -965,14 +965,14 @@ TEST_F(InMemoryStateTest, access_storage)
     BlockState bs{this->tdb, this->vm};
 
     State s{bs, Incarnation{1, 1}};
-    EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage(b, key1), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(b, key1), EVMC_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage(a, key2), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(a, key2), EVMC_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage(b, key2), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(b, key2), EVMC_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage(a, key1), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage(a, key1), MONAD_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage(b, key1), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage(b, key1), MONAD_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage(a, key2), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage(a, key2), MONAD_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage(b, key2), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage(b, key2), MONAD_ACCESS_WARM);
 }
 
 TEST_F(InMemoryStateTest, get_storage)

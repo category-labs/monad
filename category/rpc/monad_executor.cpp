@@ -63,6 +63,7 @@
 #include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
+#include <category/execution/monad/chain/monad_devnet_fork.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
@@ -1357,6 +1358,8 @@ struct monad_executor
                             return std::make_unique<EthereumMainnet>();
                         case CHAIN_CONFIG_MONAD_DEVNET:
                             return std::make_unique<MonadDevnet>();
+                        case CHAIN_CONFIG_MONAD_DEVNET_FORK:
+                            return std::make_unique<MonadDevnetFork>();
                         case CHAIN_CONFIG_MONAD_TESTNET:
                             return std::make_unique<MonadTestnet>();
                         case CHAIN_CONFIG_MONAD_MAINNET:
@@ -1652,6 +1655,8 @@ struct monad_executor
                             return std::make_unique<EthereumMainnet>();
                         case CHAIN_CONFIG_MONAD_DEVNET:
                             return std::make_unique<MonadDevnet>();
+                        case CHAIN_CONFIG_MONAD_DEVNET_FORK:
+                            return std::make_unique<MonadDevnetFork>();
                         case CHAIN_CONFIG_MONAD_TESTNET:
                             return std::make_unique<MonadTestnet>();
                         case CHAIN_CONFIG_MONAD_MAINNET:
@@ -1919,6 +1924,8 @@ struct monad_executor
                                 return std::make_unique<EthereumMainnet>();
                             case CHAIN_CONFIG_MONAD_DEVNET:
                                 return std::make_unique<MonadDevnet>();
+                            case CHAIN_CONFIG_MONAD_DEVNET_FORK:
+                                return std::make_unique<MonadDevnetFork>();
                             case CHAIN_CONFIG_MONAD_TESTNET:
                                 return std::make_unique<MonadTestnet>();
                             case CHAIN_CONFIG_MONAD_MAINNET:

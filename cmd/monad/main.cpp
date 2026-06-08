@@ -45,6 +45,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
+#include <category/execution/monad/chain/monad_devnet_fork.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
@@ -146,6 +147,7 @@ try {
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
         {{"ethereum_mainnet", CHAIN_CONFIG_ETHEREUM_MAINNET},
          {"monad_devnet", CHAIN_CONFIG_MONAD_DEVNET},
+         {"monad_devnet_fork", CHAIN_CONFIG_MONAD_DEVNET_FORK},
          {"monad_testnet", CHAIN_CONFIG_MONAD_TESTNET},
          {"monad_mainnet", CHAIN_CONFIG_MONAD_MAINNET},
          {"hive_net", CHAIN_CONFIG_HIVE_NET}};
@@ -287,6 +289,8 @@ try {
             return std::make_unique<EthereumMainnet>();
         case CHAIN_CONFIG_MONAD_DEVNET:
             return std::make_unique<MonadDevnet>();
+        case CHAIN_CONFIG_MONAD_DEVNET_FORK:
+            return std::make_unique<MonadDevnetFork>();
         case CHAIN_CONFIG_MONAD_TESTNET:
             return std::make_unique<MonadTestnet>();
         case CHAIN_CONFIG_MONAD_MAINNET:
@@ -467,6 +471,7 @@ try {
                 trace_calls,
                 chain_rlp_path);
         case CHAIN_CONFIG_MONAD_DEVNET:
+        case CHAIN_CONFIG_MONAD_DEVNET_FORK:
         case CHAIN_CONFIG_MONAD_TESTNET:
         case CHAIN_CONFIG_MONAD_MAINNET:
             if (as_eth_blocks) {

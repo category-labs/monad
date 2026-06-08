@@ -27,6 +27,7 @@ enum monad_chain_config
     CHAIN_CONFIG_MONAD_TESTNET = 2,
     CHAIN_CONFIG_MONAD_MAINNET = 3,
     CHAIN_CONFIG_HIVE_NET = 4,
+    CHAIN_CONFIG_MONAD_DEVNET_FORK = 5,
 };
 
 #ifdef __cplusplus

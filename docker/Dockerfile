@@ -25,7 +25,7 @@ RUN rustup toolchain install 1.91.1 --profile minimal --component clippy
 RUN rustup toolchain install nightly-2025-12-09 --profile minimal --component rustfmt
 RUN RUSTFLAGS="-C linker=gcc-15" cargo install cargo-shear@1.9.1
 
-FROM base AS build_and_test
+FROM base AS build
 
 COPY . src
 
@@ -38,6 +38,19 @@ ARG GIT_COMMIT_HASH
 ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
 RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CMAKE_TOOLCHAIN_FILE=category/core/toolchains/${TOOLCHAIN:?}.cmake ./scripts/configure.sh
+
+# The `runner` image only needs these three binaries, so build just them rather
+# than the `all` target (which also compiles the ~112 test executables). The
+# integration-test image build targets `runner`, so this keeps that build from
+# compiling and running the entire C++ test suite. CI builds the
+# `build_and_test` stage below, which still produces the full build + tests.
+RUN cd src && cmake --build build --target monad monad-cli monad-mpt
+
+FROM build AS build_and_test
+
+ARG CC
+ARG CXX
+ARG CMAKE_BUILD_TYPE
 
 RUN cd src && ./scripts/build.sh
 
@@ -137,6 +150,6 @@ RUN cd src && cmake --build build -t monad-compiler-fuzzer
 RUN cd src && ./scripts/vm/ci-fuzzer.sh
 
 FROM base AS runner
-COPY --from=build_and_test /src/build/category/mpt/monad-mpt /usr/local/bin/
-COPY --from=build_and_test /src/build/cmd/monad-cli /usr/local/bin/
-COPY --from=build_and_test /src/build/cmd/monad /usr/local/bin/
+COPY --from=build /src/build/category/mpt/monad-mpt /usr/local/bin/
+COPY --from=build /src/build/cmd/monad-cli /usr/local/bin/
+COPY --from=build /src/build/cmd/monad /usr/local/bin/

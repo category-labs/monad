@@ -138,6 +138,10 @@ add_subdirectory("third_party/cthash")
 # ethash
 set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")
+# ethash carries clang::no_sanitize attributes that GCC ignores and warns about.
+# Match the narrow, GNU-only form monad_compile_options() uses above.
+target_compile_options(
+  ethash PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wno-attributes=clang::no_sanitize>)
 
 # fiber (boost)
 # Boost.Fiber's CMakeLists.txt expects granular Boost targets from the
@@ -194,6 +198,9 @@ target_compile_options(
     $<$<AND:$<CXX_COMPILER_ID:GNU>,$<CONFIG:Release>>:-Wno-stringop-overflow>)
 target_compile_options(
   quill PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-tautological-compare>)
+# quill's own sources use the deprecated std::wstring_convert. PRIVATE so it
+# does not disable warnings in our code that includes quill headers.
+target_compile_options(quill PRIVATE -Wno-deprecated-declarations)
 
 # silkpre
 set(OPTIONAL_BUILD_TESTS OFF)
@@ -204,6 +211,12 @@ set(CMAKE_POLICY_VERSION_MINIMUM "${OLD_CMAKE_POLICY_VERSION_MINIMUM}")
 # undo the injection of ccache silkpre/ff does
 set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE)
 set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK)
+# libff (pulled in by silkpre) trips several warnings under our flags: unused
+# parameters/constants in stubbed-out code, and an uninitialized timespec in its
+# profiling clock helper (only flagged once the optimizer runs).
+target_compile_options(
+  ff
+  PRIVATE -Wno-unused-parameter -Wno-unused-const-variable -Wno-uninitialized)
 
 # tbb
 find_package(TBB REQUIRED)

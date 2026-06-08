@@ -22,21 +22,21 @@
 
 MONAD_NAMESPACE_BEGIN
 
-evmc_storage_status AccountState::zero_out_key(
+monad_storage_status AccountState::zero_out_key(
     bytes32_t const &key, bytes32_t const &original_value,
     bytes32_t const &current_value)
 {
     auto const status = [&] {
         if (current_value == bytes32_t{}) {
-            return EVMC_STORAGE_ASSIGNED;
+            return MONAD_STORAGE_ASSIGNED;
         }
         else if (original_value == current_value) {
-            return EVMC_STORAGE_DELETED;
+            return MONAD_STORAGE_DELETED;
         }
         else if (original_value == bytes32_t{}) {
-            return EVMC_STORAGE_ADDED_DELETED;
+            return MONAD_STORAGE_ADDED_DELETED;
         }
-        return EVMC_STORAGE_MODIFIED_DELETED;
+        return MONAD_STORAGE_MODIFIED_DELETED;
     }();
 
     storage_ = storage_.insert({key, bytes32_t{}});
@@ -44,27 +44,27 @@ evmc_storage_status AccountState::zero_out_key(
     return status;
 }
 
-evmc_storage_status AccountState::set_current_value(
+monad_storage_status AccountState::set_current_value(
     bytes32_t const &key, bytes32_t const &value,
     bytes32_t const &original_value, bytes32_t const &current_value)
 {
     auto const status = [&] {
         if (current_value == bytes32_t{}) {
             if (original_value == bytes32_t{}) {
-                return EVMC_STORAGE_ADDED;
+                return MONAD_STORAGE_ADDED;
             }
             else if (value == original_value) {
-                return EVMC_STORAGE_DELETED_RESTORED;
+                return MONAD_STORAGE_DELETED_RESTORED;
             }
-            return EVMC_STORAGE_DELETED_ADDED;
+            return MONAD_STORAGE_DELETED_ADDED;
         }
         else if (original_value == current_value && original_value != value) {
-            return EVMC_STORAGE_MODIFIED;
+            return MONAD_STORAGE_MODIFIED;
         }
         else if (original_value == value && original_value != current_value) {
-            return EVMC_STORAGE_MODIFIED_RESTORED;
+            return MONAD_STORAGE_MODIFIED_RESTORED;
         }
-        return EVMC_STORAGE_ASSIGNED;
+        return MONAD_STORAGE_ASSIGNED;
     }();
 
     storage_ = storage_.insert({key, value});

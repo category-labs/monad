@@ -158,7 +158,7 @@ public:
 
     void subtract_from_balance(Address const &, uint256_t const &delta);
 
-    evmc_storage_status
+    monad_storage_status
     set_storage(Address const &, bytes32_t const &key, bytes32_t const &value);
 
     void set_transient_storage(

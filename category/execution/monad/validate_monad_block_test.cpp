@@ -15,6 +15,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
@@ -26,6 +27,16 @@
 #include <gtest/gtest.h>
 
 using namespace monad;
+
+namespace
+{
+    byte_string reward_calldata()
+    {
+        byte_string data(4, 0);
+        store_be(data.data(), staking::selector::REWARD);
+        return data;
+    }
+}
 
 TYPED_TEST(MonadTraitsTest, no_system_txns)
 {
@@ -90,7 +101,8 @@ TYPED_TEST(MonadTraitsTest, multiple_reward_txns_error)
     };
     std::vector<Transaction> txns(senders.size());
     txns[0].value = 25 * staking::MON;
-    txns[1].value = 1 * staking::MON;
+    txns[0].data = reward_calldata();
+    txns[1].data = reward_calldata();
     auto const res =
         static_validate_monad_body<typename TestFixture::Trait>(senders, txns);
     if constexpr (Trait::monad_rev() < MONAD_FOUR) {
@@ -112,6 +124,7 @@ TYPED_TEST(MonadTraitsTest, reward_txn_exceeds_maximum)
     };
     std::vector<Transaction> txns(senders.size());
     txns[0].value = 26 * staking::MON;
+    txns[0].data = reward_calldata();
     auto const res =
         static_validate_monad_body<typename TestFixture::Trait>(senders, txns);
     if constexpr (Trait::monad_rev() < MONAD_FOUR) {

@@ -34,6 +34,9 @@ using namespace monad::literals;
 // staking contract address
 inline constexpr Address STAKING_CA{0x1000};
 
+inline constexpr Address PRIORITY_FEE_DIST_ADDRESS{
+    0xfee5fee5fee5fee5fee5fee5fee5fee5fee5fee5_address};
+
 // 1e18 constant
 inline constexpr uint256_t MON{1000000000000000000_u256};
 
@@ -104,7 +107,15 @@ namespace limits
     {
         return 1;
     }
-};
+}
+
+// staking contract function selectors
+namespace selector
+{
+    inline constexpr uint32_t REWARD = 0x791bdcf3;
+    inline constexpr uint32_t SNAPSHOT = 0x157eeb21;
+    inline constexpr uint32_t ON_EPOCH_CHANGE = 0x1d4e9f02;
+}
 
 // sanity check: commission rate doesn't exceed 100% (1e18)
 // note that: delegator_reward = (raw_reward * COMMISSION) / 1e18

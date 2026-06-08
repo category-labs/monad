@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/access_status.h>
 #include <category/vm/evm/delegation.hpp>
+#include <category/vm/evm/storage_status.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/types.hpp>

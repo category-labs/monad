@@ -365,7 +365,7 @@ void State::subtract_from_balance(
     rb_.on_debit(address);
 }
 
-evmc_storage_status State::set_storage(
+monad_storage_status State::set_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
     bytes32_t original_value;

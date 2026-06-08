@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
+#include <category/execution/monad/chain/monad_devnet_fork.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
@@ -45,6 +46,8 @@ namespace
         switch (cfg) {
         case CHAIN_CONFIG_MONAD_DEVNET:
             return std::make_unique<monad::MonadDevnet>();
+        case CHAIN_CONFIG_MONAD_DEVNET_FORK:
+            return std::make_unique<monad::MonadDevnetFork>();
         case CHAIN_CONFIG_MONAD_TESTNET:
             return std::make_unique<monad::MonadTestnet>();
         case CHAIN_CONFIG_MONAD_MAINNET:

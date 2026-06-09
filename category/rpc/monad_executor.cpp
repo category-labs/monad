@@ -374,6 +374,16 @@ namespace
         std::span<std::vector<std::optional<Address>> const> const
             authorities_view{authorities.data(), transactions_size};
 
+        // TODO(EXE-60): this re-execution path (and the sibling eth_call /
+        // eth_simulate paths in this file) receives a BlockHeader whose
+        // slot_number is unset (it is in-memory only, not RLP-encoded), so
+        // once SLOTNUM (EIP-7843) is wired the round read via
+        // evmc_tx_context.block_round would be 0. On this historical-trace
+        // path that diverges from how the block actually executed; the
+        // eth_call/eth_simulate paths run against synthetic headers where a 0
+        // round may be acceptable. Repopulate slot_number from the persisted
+        // MonadConsensusBlockHeader::block_round where a real round exists, per
+        // EXE-60.
         // Execute block header
         execute_block_header<traits>(block_state, header);
         BlockMetrics metrics{};

@@ -225,9 +225,7 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
 
 TYPED_TEST(TraitsTest, create_revert_preserves_access_list_trace)
 {
-    if constexpr (!TestFixture::Trait::eip_2929_active()) {
-        GTEST_SKIP() << "access-list tracing requires EIP-2929 access tracking";
-    }
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
@@ -1281,7 +1279,7 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
 
 TYPED_TEST(TraitsTest, cold_account_access)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
@@ -1368,12 +1366,7 @@ TYPED_TEST(TraitsTest, cold_account_access)
             }
         }
         else {
-            if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN) {
-                return 2600;
-            }
-            else {
-                return 700;
-            }
+            return 2600;
         }
     }();
 

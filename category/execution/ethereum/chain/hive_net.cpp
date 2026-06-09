@@ -27,7 +27,7 @@ uint256_t HiveNet::get_chain_id() const
 }
 
 // Fork schedule from the Hive runner tests. Monad execution currently supports
-// Istanbul and later, so the fixture activates earlier forks as Istanbul.
+// Berlin and later, so the fixture activates earlier forks as Berlin.
 monad_eth_revision HiveNet::get_revision(
     uint64_t const block_number, uint64_t const timestamp) const
 {
@@ -46,13 +46,7 @@ monad_eth_revision HiveNet::get_revision(
     if (block_number >= 27) {
         return MONAD_ETH_LONDON;
     }
-    if (block_number >= 24) {
-        return MONAD_ETH_BERLIN;
-    }
-    if (block_number >= 18) {
-        return MONAD_ETH_ISTANBUL;
-    }
-    return MONAD_ETH_ISTANBUL;
+    return MONAD_ETH_BERLIN;
 }
 
 BlobSchedule HiveNet::get_blob_schedule(uint64_t const timestamp) const

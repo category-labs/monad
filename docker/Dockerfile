@@ -16,7 +16,7 @@ RUN apt-get update && \
 FROM base AS base_rust
 
 RUN apt-get update && \
-    apt-get install -y gcc rustup && \
+    apt-get install -y gcc g++ rustup && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
     rm -rf /opt

@@ -176,6 +176,13 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
     }
 
     auto const latest_version = ctx->db.get_latest_version();
+    // The dual-write keeps both timelines in lockstep, so the secondary must be
+    // at the same version as the primary at finalize.
+    if (ctx->secondary_db) {
+        MONAD_ASSERT(
+            latest_version == ctx->secondary_db->get_latest_version(),
+            "dual-db versions should always be in sync");
+    }
 
     MONAD_ASSERT(for_each_code(
         ctx->db, latest_version, [&](bytes32_t const &hash, byte_string_view) {
@@ -186,44 +193,61 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
         return false;
     }
 
-    if (latest_version != tgrt.number) {
-        ctx->db.move_trie_version_forward(latest_version, tgrt.number);
-        bytes32_t expected = tgrt.parent_hash;
-        for (size_t i = 0; i < std::min(tgrt.number, 256ul); ++i) {
-            auto const v = tgrt.number - i - 1;
-            auto const &hdr = ctx->hdrs[v % ctx->hdrs.size()];
-            auto const rlp = rlp::encode_block_header(hdr);
-            auto const hash = to_bytes(keccak256(rlp));
-            if (hash != expected) {
-                return false;
-            }
-            expected = hdr.parent_hash;
+    // Roll one db forward from its synced version to the target, replaying the
+    // trailing block headers, then mark the target finalized. Applied to the
+    // primary and, in dual-db mode, the page-encoded secondary, so both
+    // timelines are version- and finalize-consistent at the target (the
+    // secondary becomes the canonical state source at the MONAD_NEXT fork).
+    // Returns false on a block-header hash mismatch.
+    auto const roll_forward_and_finalize =
+        [ctx, &tgrt, latest_version](mpt::Db &db) -> bool {
+        if (latest_version != tgrt.number) {
+            db.move_trie_version_forward(latest_version, tgrt.number);
+            bytes32_t expected = tgrt.parent_hash;
+            for (size_t i = 0; i < std::min(tgrt.number, 256ul); ++i) {
+                auto const v = tgrt.number - i - 1;
+                auto const &hdr = ctx->hdrs[v % ctx->hdrs.size()];
+                auto const rlp = rlp::encode_block_header(hdr);
+                auto const hash = to_bytes(keccak256(rlp));
+                if (hash != expected) {
+                    return false;
+                }
+                expected = hdr.parent_hash;
 
-            Update block_header_update{
-                .key = block_header_nibbles,
-                .value = rlp,
-                .incarnation = true,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(v)};
-            UpdateList updates;
-            updates.push_front(block_header_update);
-            Update finalized{
-                .key = finalized_nibbles,
-                .value = byte_string_view{},
-                .incarnation = false,
-                .next = std::move(updates),
-                .version = static_cast<int64_t>(v)};
-            UpdateList finalized_updates;
-            finalized_updates.push_front(finalized);
-            ctx->db.upsert(
-                ctx->db.load_root_for_version(v),
-                std::move(finalized_updates),
-                v,
-                false,
-                false);
+                Update block_header_update{
+                    .key = block_header_nibbles,
+                    .value = rlp,
+                    .incarnation = true,
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(v)};
+                UpdateList updates;
+                updates.push_front(block_header_update);
+                Update finalized{
+                    .key = finalized_nibbles,
+                    .value = byte_string_view{},
+                    .incarnation = false,
+                    .next = std::move(updates),
+                    .version = static_cast<int64_t>(v)};
+                UpdateList finalized_updates;
+                finalized_updates.push_front(finalized);
+                db.upsert(
+                    db.load_root_for_version(v),
+                    std::move(finalized_updates),
+                    v,
+                    false,
+                    false);
+            }
         }
+        db.update_finalized_version(tgrt.number);
+        return true;
+    };
+
+    if (!roll_forward_and_finalize(ctx->db)) {
+        return false;
     }
-    ctx->db.update_finalized_version(tgrt.number);
+    if (ctx->secondary_db && !roll_forward_and_finalize(*ctx->secondary_db)) {
+        return false;
+    }
 
     // Pick the right TrieDb to read state_root from based on the target's
     // revision.

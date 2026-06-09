@@ -256,27 +256,50 @@ TEST_F(StateSyncFixture, sync_from_latest)
             std::make_unique<OnDiskMachine>(),
             OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
         TrieDb tdb{db};
-        uint64_t const block_number = N - 257;
-        load_header(
-            db.load_root_for_version(block_number),
-            db,
-            BlockHeader{.number = block_number});
-        for (size_t i = N - 256; i < N; ++i) {
-            BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
-            tdb.set_block_and_prefix(i - 1);
-            commit_sequential(tdb, StateDeltas({}), {}, hdr);
-            parent_hash = to_bytes(
-                keccak256(rlp::encode_block_header(tdb.read_eth_header())));
+        // In dual-db set up, both primary and secondary should stay in
+        // lockstep.
+        {
+            auto db2 = db.open_secondary_timeline(
+                std::make_unique<MonadOnDiskMachine>());
+            MONAD_ASSERT(db2.has_value());
+            TrieDb tdb2{*db2};
+            ASSERT_TRUE(tdb2.is_page_encoded());
+            uint64_t const block_number = N - 257;
+            load_header(
+                db.load_root_for_version(block_number),
+                db,
+                BlockHeader{.number = block_number});
+            load_header(
+                db2->load_root_for_version(block_number),
+                *db2,
+                BlockHeader{.number = block_number});
+            for (size_t i = N - 256; i < N; ++i) {
+                BlockHeader const hdr{.parent_hash = parent_hash, .number = i};
+                tdb.set_block_and_prefix(i - 1);
+                commit_sequential(tdb, StateDeltas({}), {}, hdr);
+                tdb2.set_block_and_prefix(i - 1);
+                commit_sequential(tdb2, StateDeltas({}), {}, hdr);
+                parent_hash = to_bytes(
+                    keccak256(rlp::encode_block_header(tdb.read_eth_header())));
+            }
+            load_db(tdb, N);
+            load_db(tdb2, N);
+            // commit some proposal to client db
+            tdb.set_block_and_prefix(N);
+            commit_simple(
+                tdb,
+                StateDeltas({}),
+                {},
+                bytes32_t{N + 1},
+                BlockHeader{.number = N + 1});
+            tdb2.set_block_and_prefix(N);
+            commit_simple(
+                tdb2,
+                StateDeltas({}),
+                {},
+                bytes32_t{N + 1},
+                BlockHeader{.number = N + 1});
         }
-        load_db(tdb, N);
-        // commit some proposal to client db
-        tdb.set_block_and_prefix(N);
-        commit_simple(
-            tdb,
-            StateDeltas({}),
-            {},
-            bytes32_t{N + 1},
-            BlockHeader{.number = N + 1});
         init();
     }
     handle_target(
@@ -762,6 +785,9 @@ TEST_F(StateSyncFixture, sync_check_secondary_db_state_root)
 
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 
+    // finalize rolls the secondary forward to the target version, so read its
+    // root there (the post-sync block position is the pre-roll version).
+    cctx->secondary_tdb->set_block_and_prefix(N);
     EXPECT_EQ(secondary_stdb.state_root(), cctx->secondary_tdb->state_root());
 }
 

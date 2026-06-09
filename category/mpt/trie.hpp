@@ -273,7 +273,8 @@ public:
         bool write_root, timeline_id tid);
 
     void adjust_history_length_based_on_disk_usage();
-    void move_trie_version_forward(uint64_t src, uint64_t dest);
+    void move_trie_version_forward(
+        uint64_t src, uint64_t dest, timeline_id tid = timeline_id::primary);
 
     // collect and print trie update stats
     void reset_stats();

@@ -402,6 +402,7 @@ public:
         ::boost::fibers::promise<void> promise;
         uint64_t src;
         uint64_t dest;
+        timeline_id tid;
     };
 
     struct FiberLoadRootVersionRequest
@@ -588,7 +589,8 @@ private:
                     }
                     else if (auto *req = std::get_if<5>(&request);
                              req != nullptr) {
-                        aux.move_trie_version_forward(req->src, req->dest);
+                        aux.move_trie_version_forward(
+                            req->src, req->dest, req->tid);
                         req->promise.set_value();
                     }
                     else if (auto *req = std::get_if<6>(&request);
@@ -836,7 +838,10 @@ public:
         ::boost::fibers::promise<void> promise;
         auto fut = promise.get_future();
         worker_thread_->submit(OnDiskDbServiceThread::MoveSubtrieRequest{
-            .promise = std::move(promise), .src = src, .dest = dest});
+            .promise = std::move(promise),
+            .src = src,
+            .dest = dest,
+            .tid = tid_});
         fut.get();
     }
 

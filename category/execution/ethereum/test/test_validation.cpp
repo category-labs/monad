@@ -80,16 +80,9 @@ TYPED_TEST(TraitsTest, validate_enough_gas)
 
 TYPED_TEST(TraitsTest, validate_floor_gas)
 {
-    static constexpr auto gas_limit = [] {
-        // intrinsic gas requirement was much higher pre Istanbul due to 68 gas
-        // cost per non-zero data vs 16 gas post Istanbul
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL) {
-            return 300'000;
-        }
-        else {
-            return 800'000;
-        }
-    }();
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_PETERSBURG);
+
+    static constexpr auto gas_limit = 300'000;
     Transaction const t{
         .sc = {.r = r, .s = s},
         .gas_limit = gas_limit,

@@ -93,7 +93,7 @@ namespace monad::vm::interpreter
     template <Traits traits>
     consteval InstrTable make_instruction_table()
     {
-        static_assert(traits::evm_rev() > MONAD_ETH_BYZANTIUM);
+        static_assert(traits::evm_rev() > MONAD_ETH_PETERSBURG);
 
         constexpr auto since = [](monad_eth_revision first, InstrEval impl) {
             return (traits::evm_rev() >= first) ? impl : invalid;
@@ -175,8 +175,8 @@ namespace monad::vm::interpreter
             number<traits>, // 0x43,
             prevrandao<traits>, // 0x44,
             gaslimit<traits>, // 0x45,
-            since(MONAD_ETH_ISTANBUL, chainid<traits>), // 0x46,
-            since(MONAD_ETH_ISTANBUL, selfbalance<traits>), // 0x47,
+            chainid<traits>, // 0x46,
+            selfbalance<traits>, // 0x47,
             since(MONAD_ETH_LONDON, basefee<traits>), // 0x48,
             since(MONAD_ETH_CANCUN, blobhash<traits>), // 0x49,
             since(MONAD_ETH_CANCUN, blobbasefee<traits>), // 0x4A,

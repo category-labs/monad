@@ -56,6 +56,19 @@ struct BlockHeader
     std::optional<uint64_t> excess_blob_gas{std::nullopt}; // EIP-4844
     std::optional<bytes32_t> parent_beacon_block_root{std::nullopt}; // EIP-4788
     std::optional<bytes32_t> requests_hash{std::nullopt}; // EIP-7685
+    // EIP-7843. In-memory only: deliberately NOT RLP-encoded. Encoding is
+    // deferred to the 7843 activation fork. Adding it to encode_block_header
+    // now would change every block hash with no fork gate, and would lock an
+    // on-wire position that EIP-7843 leaves unpinned relative to a future
+    // EIP-7928 block_access_list_hash. The consensus round is durably carried
+    // in MonadConsensusBlockHeader::block_round, so replay paths can
+    // repopulate this from there without any on-wire encoding.
+    // Coverage: only the consensus execution path (propose_block in
+    // runloop_monad) populates this. Any entrypoint that does not repopulate
+    // it -- RPC/trace re-execution in monad_executor, historical-block replay
+    // runloops -- leaves it nullopt, so the round read via value_or(0) is 0
+    // there.
+    std::optional<uint64_t> slot_number{std::nullopt};
 
     friend bool operator==(BlockHeader const &, BlockHeader const &) = default;
 };
@@ -70,10 +83,10 @@ struct Block
     friend bool operator==(Block const &, Block const &) = default;
 };
 
-static_assert(sizeof(BlockHeader) == 760);
+static_assert(sizeof(BlockHeader) == 776);
 static_assert(alignof(BlockHeader) == 8);
 
-static_assert(sizeof(Block) == 840);
+static_assert(sizeof(Block) == 856);
 static_assert(alignof(Block) == 8);
 
 MONAD_NAMESPACE_END

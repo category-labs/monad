@@ -71,7 +71,8 @@ bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
            !std::memcmp(
                lhs.block_base_fee.bytes,
                rhs.block_base_fee.bytes,
-               sizeof(evmc_bytes32));
+               sizeof(evmc_bytes32)) &&
+           lhs.block_round == rhs.block_round;
 }
 
 TYPED_TEST(TraitsTest, get_tx_context)
@@ -120,6 +121,14 @@ TYPED_TEST(TraitsTest, get_tx_context)
         hdr.prev_randao.bytes,
         sizeof(hdr.prev_randao));
     EXPECT_EQ(pos_result, ctx);
+
+    // slot_number (EIP-7843) is surfaced as block_round (unset -> 0 is
+    // covered by the comparisons above).
+    hdr.slot_number = 9'000'000'000;
+    EXPECT_EQ(
+        get_tx_context<typename TestFixture::Trait>(tx, from, hdr, 1)
+            .block_round,
+        uint64_t{9'000'000'000});
 }
 
 TYPED_TEST(TraitsTest, emit_log)

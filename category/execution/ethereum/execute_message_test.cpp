@@ -26,8 +26,8 @@
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/ethereum/evm.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
+#include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>

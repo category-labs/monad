@@ -24,8 +24,6 @@
 #include <category/execution/ethereum/state3/account_substate.hpp>
 #include <category/vm/evm/storage_status.h>
 
-#include <evmc/evmc.h>
-
 // TODO immer known to trigger incorrect warning
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"

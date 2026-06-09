@@ -3013,6 +3013,112 @@ TEST_F(EthCallFixture, access_list_trace_reverted_call)
     monad_executor_destroy(executor);
 }
 
+// Requires CHAIN_CONFIG_MONAD_DEVNET (MONAD_NEXT), which activates
+// mip_8_active().
+TEST_F(EthCallFixture, access_list_trace_page_dedup)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, sd({}), {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto sender =
+        0x00000000000000000000000000000000deadbeef_address;
+
+    // SSTORE(0, 1); SSTORE(1, 1) — both slots on page 0 (page_shift=7, 128-slot
+    // pages)
+    static constexpr auto contract_address =
+        0x00000000000000000000000000000000aaaaaaaa_address;
+    auto const contract_code = 0x60016000556001600155_bytes;
+    auto const contract_code_hash = to_bytes(keccak256(contract_code));
+    auto const contract_icode = monad::vm::make_shared_intercode(contract_code);
+
+    auto const header = BlockHeader{.number = 256};
+
+    commit_sequential(
+        tdb,
+        sd({{sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = std::numeric_limits<uint256_t>::max(),
+                          .code_hash = NULL_HASH}}}},
+            {contract_address,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0, .code_hash = contract_code_hash}}}}}),
+        Code{
+            {contract_code_hash, contract_icode},
+        },
+        header);
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 1'000'000,
+        .value = 0,
+        .to = contract_address,
+    };
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(sender)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+
+    {
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            ACCESS_LIST_TRACER,
+            true);
+        f.get();
+
+        ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+
+        std::vector<uint8_t> const encoded_trace(
+            ctx.result->encoded_trace,
+            ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+        // Under page_gas, only the minimum slot per page is returned.
+        // Slots 0x00 and 0x01 share page 0; only 0x00 survives dedup.
+        auto const *const expected = R"([
+            {
+                "address" : "0x00000000000000000000000000000000aaaaaaaa",
+                "storageKeys" : [
+                    "0x0000000000000000000000000000000000000000000000000000000000000000"
+                ]
+            }
+        ])";
+
+        EXPECT_EQ(
+            nlohmann::json::parse(expected),
+            nlohmann::json::from_cbor(encoded_trace));
+    }
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
 TEST_F(EthCallFixture, access_list_trace_empty)
 {
     for (uint64_t i = 0; i < 256; ++i) {

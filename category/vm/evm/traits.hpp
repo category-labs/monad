@@ -41,6 +41,8 @@ namespace monad
         inline constexpr size_t MAX_CODE_SIZE_MONAD_TWO = 128 * 1024;
         inline constexpr size_t MAX_INITCODE_SIZE_MONAD_FOUR =
             2 * MAX_CODE_SIZE_MONAD_TWO;
+
+        inline constexpr uint8_t MIP8_STORAGE_PAGE_SHIFT = 7; // 128-slot pages
     }
 
     template <typename T>
@@ -58,6 +60,7 @@ namespace monad
         { T::eip_7883_active() } -> std::same_as<bool>;
         { T::eip_7951_active() } -> std::same_as<bool>;
         { T::mip_3_active() } -> std::same_as<bool>;
+        { T::mip_8_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
 
         // Constants
@@ -125,6 +128,11 @@ namespace monad
         }
 
         static consteval bool mip_3_active() noexcept
+        {
+            return false;
+        }
+
+        static consteval bool mip_8_active() noexcept
         {
             return false;
         }
@@ -252,8 +260,8 @@ namespace monad
             return false;
         }
 
-        // Pricing version 1 activates the changes in:
-        // Monad specification §4: Opcode Gas Costs and Gas Refunds
+        // Pricing version 1 activates Monad-specific opcode/precompile costs
+        // (Monad specification §4). Max return value is 1.
         static consteval uint8_t monad_pricing_version() noexcept
         {
             if constexpr (Rev >= MONAD_SEVEN) {
@@ -261,6 +269,11 @@ namespace monad
             }
 
             return 0;
+        }
+
+        static consteval bool mip_8_active() noexcept
+        {
+            return Rev >= MONAD_NEXT;
         }
 
         static consteval size_t max_code_size() noexcept

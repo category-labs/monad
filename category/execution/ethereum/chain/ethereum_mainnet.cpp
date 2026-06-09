@@ -64,9 +64,6 @@ monad_eth_revision EthereumMainnet::get_revision(
     else if (block_number >= 12244000) {
         return MONAD_ETH_BERLIN;
     }
-    else if (block_number >= 9069000) {
-        return MONAD_ETH_ISTANBUL;
-    }
     MONAD_ASSERT(false, "unsupported fork");
 }
 

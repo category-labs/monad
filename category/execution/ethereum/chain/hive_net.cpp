@@ -50,9 +50,6 @@ monad_eth_revision HiveNet::get_revision(
     if (block_number >= 24) {
         return MONAD_ETH_BERLIN;
     }
-    if (block_number >= 18) {
-        return MONAD_ETH_ISTANBUL;
-    }
     MONAD_ASSERT(false, "unsupported fork");
 }
 

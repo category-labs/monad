@@ -21,7 +21,7 @@
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/contract/events.hpp>
-#include <category/execution/ethereum/evm.hpp>
+#include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>

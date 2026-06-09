@@ -46,6 +46,13 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         std::optional<byte_string_view> value;
         auto const &account = delta.account.second;
         proposal_post_state_.accounts[addr] = account;
+        // The account is reincarnated (destroyed and recreated) when both the
+        // pre- and post-state exist with different incarnations. In that case
+        // the storage subtree is wiped below (incarnation=true), so the new
+        // incarnation starts with empty storage.
+        bool const reincarnated =
+            account.has_value() && delta.account.first.has_value() &&
+            delta.account.first->incarnation != account->incarnation;
         if (account.has_value()) {
             Incarnation const inc = account->incarnation;
 
@@ -65,7 +72,16 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                     auto const slot_off = compute_slot_offset(key);
                     auto [it, inserted] = pages.try_emplace(pg_key);
                     if (inserted) {
-                        it->second = db_.read_storage_page(addr, inc, pg_key);
+                        // On reincarnation, start from an empty page rather
+                        // than read_storage_page: that read is incarnation-
+                        // blind (its on-disk key is keccak(addr)||keccak(
+                        // page_key)) and runs before this block's wipe is
+                        // applied, so it would return the OLD incarnation's
+                        // page and resurrect stale slots into the new one.
+                        it->second =
+                            reincarnated
+                                ? storage_page_t{}
+                                : db_.read_storage_page(addr, inc, pg_key);
                     }
                     it->second.set(slot_off, slot_delta.second);
                 }
@@ -95,14 +111,11 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         }
 
         if (!storage_updates.empty() || delta.account.first != account) {
-            bool const incarnation =
-                account.has_value() && delta.account.first.has_value() &&
-                delta.account.first->incarnation != account->incarnation;
             account_updates.push_front(update_alloc_.emplace_back(Update{
                 .key = hash_alloc_.emplace_back(
                     keccak256({addr.bytes, sizeof(addr.bytes)})),
                 .value = value,
-                .incarnation = incarnation,
+                .incarnation = reincarnated,
                 .next = std::move(storage_updates),
                 .version = static_cast<int64_t>(block_number_)}));
         }

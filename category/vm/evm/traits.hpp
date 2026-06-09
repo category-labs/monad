@@ -32,7 +32,7 @@ namespace monad
     namespace constants
     {
         inline constexpr monad_eth_revision EARLIEST_SUPPORTED_EVM_FORK =
-            MONAD_ETH_ISTANBUL;
+            MONAD_ETH_BERLIN;
 
         // The latest EVM fork whose execution semantics are implemented. Later
         // forks may exist in the monad_eth_revision enum (so the dispatch
@@ -70,8 +70,6 @@ namespace monad
         { T::evm_rev() } -> std::same_as<monad_eth_revision>;
 
         // Feature flags
-        { T::eip_2565_active() } -> std::same_as<bool>;
-        { T::eip_2929_active() } -> std::same_as<bool>;
         { T::eip_4844_active() } -> std::same_as<bool>;
         { T::eip_7685_active() } -> std::same_as<bool>;
         { T::eip_7691_active() } -> std::same_as<bool>;
@@ -100,22 +98,11 @@ namespace monad
     template <monad_eth_revision Rev>
     struct EvmTraits
     {
-        static_assert(
-            Rev >= MONAD_ETH_ISTANBUL, "EVM revision is not supported");
+        static_assert(Rev >= MONAD_ETH_BERLIN, "EVM revision is not supported");
 
         static consteval monad_eth_revision evm_rev() noexcept
         {
             return Rev;
-        }
-
-        static consteval bool eip_2565_active() noexcept
-        {
-            return Rev >= MONAD_ETH_BERLIN;
-        }
-
-        static consteval bool eip_2929_active() noexcept
-        {
-            return Rev >= MONAD_ETH_BERLIN;
         }
 
         static consteval bool eip_4844_active() noexcept
@@ -189,20 +176,12 @@ namespace monad
 
         static consteval int64_t cold_account_cost() noexcept
         {
-            if constexpr (eip_2929_active()) {
-                return 2500;
-            }
-
-            std::unreachable();
+            return 2500;
         }
 
         static consteval int64_t cold_storage_cost() noexcept
         {
-            if constexpr (eip_2929_active()) {
-                return 2000;
-            }
-
-            std::unreachable();
+            return 2000;
         }
 
         static uint64_t id() noexcept
@@ -243,16 +222,6 @@ namespace monad
         static consteval monad_revision monad_rev() noexcept
         {
             return Rev;
-        }
-
-        static consteval bool eip_2565_active() noexcept
-        {
-            return evm_rev() >= MONAD_ETH_BERLIN;
-        }
-
-        static consteval bool eip_2929_active() noexcept
-        {
-            return evm_rev() >= MONAD_ETH_BERLIN;
         }
 
         static consteval bool eip_4844_active() noexcept
@@ -369,11 +338,7 @@ namespace monad
             if constexpr (monad_pricing_version() >= 1) {
                 return 10000;
             }
-            else if constexpr (eip_2929_active()) {
-                return 2500;
-            }
-
-            std::unreachable();
+            return 2500;
         }
 
         static consteval int64_t cold_storage_cost() noexcept
@@ -381,11 +346,7 @@ namespace monad
             if constexpr (monad_pricing_version() >= 1) {
                 return 8000;
             }
-            else if constexpr (eip_2929_active()) {
-                return 2000;
-            }
-
-            std::unreachable();
+            return 2000;
         }
 
         static uint64_t id() noexcept
@@ -413,7 +374,7 @@ namespace monad
         is_specialization_of_v<MonadTraits, T>;
 
     static_assert(is_monad_trait_v<MonadTraits<MONAD_ZERO>> == true);
-    static_assert(is_monad_trait_v<EvmTraits<MONAD_ETH_ISTANBUL>> == false);
+    static_assert(is_monad_trait_v<EvmTraits<MONAD_ETH_BERLIN>> == false);
     static_assert(is_evm_trait_v<MonadTraits<MONAD_ZERO>> == false);
-    static_assert(is_evm_trait_v<EvmTraits<MONAD_ETH_ISTANBUL>> == true);
+    static_assert(is_evm_trait_v<EvmTraits<MONAD_ETH_BERLIN>> == true);
 }

@@ -38,14 +38,14 @@ namespace monad::vm::runtime
     template <Traits traits>
     void sload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr)
     {
+        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+
         auto key = store_be_as<bytes32_t>(*key_ptr);
 
-        if constexpr (traits::eip_2929_active()) {
-            auto const access_status = ctx->host->access_storage(
-                ctx->context, &ctx->env.recipient, &key);
-            if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(traits::cold_storage_cost());
-            }
+        auto const access_status =
+            ctx->host->access_storage(ctx->context, &ctx->env.recipient, &key);
+        if (access_status == EVMC_ACCESS_COLD) {
+            ctx->deduct_gas(traits::cold_storage_cost());
         }
 
         auto const value =
@@ -61,7 +61,7 @@ namespace monad::vm::runtime
         Context *ctx, uint256_t const *key_ptr, uint256_t const *value_ptr,
         int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
+        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & evmc_flags::EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
@@ -103,13 +103,10 @@ namespace monad::vm::runtime
             ctx->deduct_gas(gas_used);
         }
         else {
-            auto access_status = EVMC_ACCESS_COLD;
-            if constexpr (traits::eip_2929_active()) {
-                access_status = ctx->host->access_storage(
-                    ctx->context, &ctx->env.recipient, &key);
-                if (access_status == EVMC_ACCESS_COLD) {
-                    ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
-                }
+            auto const access_status = ctx->host->access_storage(
+                ctx->context, &ctx->env.recipient, &key);
+            if (access_status == EVMC_ACCESS_COLD) {
+                ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
             }
 
             auto const storage_status = ctx->host->set_storage(

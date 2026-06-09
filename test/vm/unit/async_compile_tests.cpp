@@ -163,8 +163,7 @@ TEST(async_compile_test, trait_ids_distinct)
 {
     // One revision per line so the roster stays readable and diffs cleanly.
     // clang-format off
-    std::array<uint64_t, 20> const ids{
-        EvmTraits<MONAD_ETH_ISTANBUL>::id(),
+    std::array<uint64_t, 19> const ids{
         EvmTraits<MONAD_ETH_BERLIN>::id(),
         EvmTraits<MONAD_ETH_LONDON>::id(),
         EvmTraits<MONAD_ETH_PARIS>::id(),

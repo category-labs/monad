@@ -30,7 +30,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     void selfdestruct [[noreturn]] (Context *ctx, uint256_t const *address_ptr)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
@@ -38,13 +38,11 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (traits::eip_2929_active()) {
-            auto const access_status =
-                ctx->host->access_account(ctx->context, &address);
-            if (access_status == EVMC_ACCESS_COLD) {
-                // +100 for the warm account access cost.
-                ctx->deduct_gas(traits::cold_account_cost() + 100);
-            }
+        auto const access_status =
+            ctx->host->access_account(ctx->context, &address);
+        if (access_status == EVMC_ACCESS_COLD) {
+            // +100 for the warm account access cost.
+            ctx->deduct_gas(traits::cold_account_cost() + 100);
         }
 
         auto const non_zero_transfer = [ctx] {

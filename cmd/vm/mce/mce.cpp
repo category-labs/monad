@@ -260,10 +260,7 @@ int main(int argc, char **argv)
     std::ios_base::sync_with_stdio(false);
     auto args = parse_args(argc, argv);
     std::string const rev = uppercase(args.revision);
-    if (rev == "PETERSBURG") {
-        return mce_main<EvmTraits<MONAD_ETH_PETERSBURG>>(args);
-    }
-    else if (rev == "ISTANBUL") {
+    if (rev == "ISTANBUL") {
         return mce_main<EvmTraits<MONAD_ETH_ISTANBUL>>(args);
     }
     else if (rev == "BERLIN") {

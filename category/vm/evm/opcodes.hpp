@@ -292,7 +292,7 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<MONAD_ETH_PETERSBURG>>()
+    make_opcode_table<EvmTraits<MONAD_ETH_ISTANBUL>>()
     {
         return {
             OpCodeInfo{"STOP", 0, 0, 0, false, 0, 0}, // 0x00
@@ -347,7 +347,7 @@ namespace monad::vm::compiler
             unknown_opcode_info,
 
             OpCodeInfo{"ADDRESS", 0, 0, 1, false, 2, 0}, // 0x30,
-            OpCodeInfo{"BALANCE", 0, 1, 1, true, 400, 0}, // 0x31,
+            OpCodeInfo{"BALANCE", 0, 1, 1, true, 700, 0}, // 0x31,
             OpCodeInfo{"ORIGIN", 0, 0, 1, false, 2, 0}, // 0x32,
             OpCodeInfo{"CALLER", 0, 0, 1, false, 2, 0}, // 0x33,
             OpCodeInfo{"CALLVALUE", 0, 0, 1, false, 2, 0}, // 0x34,
@@ -361,7 +361,7 @@ namespace monad::vm::compiler
             OpCodeInfo{"EXTCODECOPY", 0, 4, 0, true, 700, 0}, // 0x3C,
             OpCodeInfo{"RETURNDATASIZE", 0, 0, 1, false, 2, 0}, // 0x3D,
             OpCodeInfo{"RETURNDATACOPY", 0, 3, 0, true, 3, 0}, // 0x3E,
-            OpCodeInfo{"EXTCODEHASH", 0, 1, 1, true, 400, 0}, // 0x3F,
+            OpCodeInfo{"EXTCODEHASH", 0, 1, 1, true, 700, 0}, // 0x3F,
 
             OpCodeInfo{"BLOCKHASH", 0, 1, 1, false, 20, 0}, // 0x40,
             OpCodeInfo{"COINBASE", 0, 0, 1, false, 2, 0}, // 0x41,
@@ -369,8 +369,8 @@ namespace monad::vm::compiler
             OpCodeInfo{"NUMBER", 0, 0, 1, false, 2, 0}, // 0x43,
             OpCodeInfo{"DIFFICULTY", 0, 0, 1, false, 2, 0}, // 0x44,
             OpCodeInfo{"GASLIMIT", 0, 0, 1, false, 2, 0}, // 0x45,
-            unknown_opcode_info,
-            unknown_opcode_info,
+            OpCodeInfo{"CHAINID", 0, 0, 1, false, 2, 0}, // 0x46,
+            OpCodeInfo{"SELFBALANCE", 0, 0, 1, false, 5, 0}, // 0x47,
             unknown_opcode_info,
             unknown_opcode_info,
             unknown_opcode_info,
@@ -384,8 +384,8 @@ namespace monad::vm::compiler
             OpCodeInfo{"MLOAD", 0, 1, 1, true, 3, 0}, // 0x51,
             OpCodeInfo{"MSTORE", 0, 2, 0, true, 3, 0}, // 0x52,
             OpCodeInfo{"MSTORE8", 0, 2, 0, true, 3, 0}, // 0x53,
-            OpCodeInfo{"SLOAD", 0, 1, 1, true, 200, 0}, // 0x54,
-            OpCodeInfo{"SSTORE", 0, 2, 0, true, 5000, 0}, // 0x55,
+            OpCodeInfo{"SLOAD", 0, 1, 1, true, 800, 0}, // 0x54,
+            OpCodeInfo{"SSTORE", 0, 2, 0, true, 800, 0}, // 0x55,
             OpCodeInfo{"JUMP", 0, 1, 0, false, 8, 0}, // 0x56,
             OpCodeInfo{"JUMPI", 0, 2, 0, false, 10, 0}, // 0x57,
             OpCodeInfo{"PC", 0, 0, 1, false, 2, 0}, // 0x58,
@@ -567,27 +567,6 @@ namespace monad::vm::compiler
             unknown_opcode_info,
             OpCodeInfo{"SELFDESTRUCT", 0, 1, 0, true, 5000, 0} // 0xFF,
         };
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<MONAD_ETH_ISTANBUL>>()
-    {
-        auto table = make_opcode_table<
-            EvmTraits<previous_evm_revision(MONAD_ETH_ISTANBUL)>>();
-
-        add_opcode(0x46, table, {"CHAINID", 0, 0, 1, false, 2, 0});
-        add_opcode(0x47, table, {"SELFBALANCE", 0, 0, 1, false, 5, 0});
-
-        // EIP-2200
-        table[SLOAD].min_gas = 800;
-        table[SSTORE].min_gas = 800;
-
-        // EIP-1884
-        table[BALANCE].min_gas = 700;
-        table[EXTCODEHASH].min_gas = 700;
-
-        return table;
     }
 
     template <>

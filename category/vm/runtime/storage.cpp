@@ -59,6 +59,8 @@ namespace monad::vm::runtime
         Context *ctx, uint256_t const *key_ptr, uint256_t const *value_ptr,
         int64_t const remaining_block_base_gas)
     {
+        static_assert(traits::evm_rev() > MONAD_ETH_PETERSBURG);
+
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & evmc_flags::EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
         }
@@ -66,11 +68,8 @@ namespace monad::vm::runtime
         constexpr auto min_gas = minimum_store_gas<traits>();
 
         // EIP-2200
-        if constexpr (traits::evm_rev() >= MONAD_ETH_ISTANBUL) {
-            if (ctx->gas_remaining + remaining_block_base_gas + min_gas <=
-                2300) {
-                ctx->exit(StatusCode::OutOfGas);
-            }
+        if (ctx->gas_remaining + remaining_block_base_gas + min_gas <= 2300) {
+            ctx->exit(StatusCode::OutOfGas);
         }
 
         auto key = store_be_as<bytes32_t>(*key_ptr);

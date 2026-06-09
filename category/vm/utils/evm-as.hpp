@@ -37,11 +37,6 @@ namespace monad::vm::utils::evm_as
         return EvmBuilder<EvmTraits<constants::EARLIEST_SUPPORTED_EVM_FORK>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_PETERSBURG>> petersburg()
-    {
-        return EvmBuilder<EvmTraits<MONAD_ETH_PETERSBURG>>{};
-    }
-
     inline EvmBuilder<EvmTraits<MONAD_ETH_ISTANBUL>> istanbul()
     {
         return EvmBuilder<EvmTraits<MONAD_ETH_ISTANBUL>>{};

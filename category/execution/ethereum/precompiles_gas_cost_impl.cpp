@@ -64,12 +64,9 @@ uint64_t identity_gas_cost(byte_string_view const input)
 template <Traits traits>
 uint64_t ecadd_gas_cost(byte_string_view const)
 {
-    if constexpr (traits::evm_rev() >= MONAD_ETH_ISTANBUL) {
-        return 150; // EIP-1108
-    }
-    else {
-        return 500; // EIP-196
-    }
+    static_assert(traits::evm_rev() > MONAD_ETH_PETERSBURG);
+
+    return 150; // EIP-1108
 }
 
 EXPLICIT_EVM_TRAITS(ecadd_gas_cost);
@@ -77,12 +74,9 @@ EXPLICIT_EVM_TRAITS(ecadd_gas_cost);
 template <Traits traits>
 uint64_t ecmul_gas_cost(byte_string_view const)
 {
-    if constexpr (traits::evm_rev() >= MONAD_ETH_ISTANBUL) {
-        return 6'000; // EIP-1108
-    }
-    else {
-        return 40'000; // EIP-196
-    }
+    static_assert(traits::evm_rev() > MONAD_ETH_PETERSBURG);
+
+    return 6'000; // EIP-1108
 }
 
 EXPLICIT_EVM_TRAITS(ecmul_gas_cost);

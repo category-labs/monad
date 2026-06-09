@@ -301,3 +301,80 @@ TEST(MigrationFork, dual_write_state_root_handoff)
             bytes32_t{uint64_t{0xa2}});
     }
 }
+
+// The page builder must honor the storage wipe on an incarnation change:
+// when an account is destroyed and recreated (incarnation bump) and the new
+// incarnation writes only a subset of its slots, the dead incarnation's
+// untouched slots must NOT survive in the page-encoded Db2. PageCommitBuilder
+// read-modify-merges pages via read_storage_page, which is incarnation-blind
+// and runs before this block's wipe; without the empty-page-on-reincarnation
+// guard it resurrects stale slots only on the page side, diverging the
+// (post-fork canonical) page state root from the slot-encoded, EVM-correct
+// Db1.
+TEST(MigrationFork, reincarnation_does_not_resurrect_page_slots)
+{
+    mpt::Db db1{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{}};
+    mpt::Db db2 =
+        db1.activate_secondary_timeline(std::make_unique<MonadOnDiskMachine>());
+    TrieDb tdb1{db1};
+    TrieDb tdb2{db2};
+    ASSERT_FALSE(tdb1.is_page_encoded());
+    ASSERT_TRUE(tdb2.is_page_encoded());
+
+    GenesisState const GENESIS_STATE = MonadTestnet{}.get_genesis_state();
+    load_genesis_state(GENESIS_STATE, tdb1);
+    load_genesis_state(GENESIS_STATE, tdb2);
+
+    auto const make_block_id = [](uint64_t const n) { return bytes32_t{n}; };
+    bytes32_t prev_id = {};
+
+    // Block 1: create the contract at incarnation {1,0}; seed slot_0 and
+    // slot_1 (same page) plus slot_far (a different page).
+    Account const inc1{.nonce = 1, .incarnation = Incarnation{1, 0}};
+    {
+        tdb1.set_block_and_prefix(0, prev_id);
+        tdb2.set_block_and_prefix(0, prev_id);
+        auto deltas = make_deltas(
+            std::nullopt,
+            inc1,
+            {{slot_0, bytes32_t{}, bytes32_t{uint64_t{0xa1}}},
+             {slot_1, bytes32_t{}, bytes32_t{uint64_t{0xb1}}},
+             {slot_far, bytes32_t{}, bytes32_t{uint64_t{0xfa}}}});
+        drive_commit(tdb1, tdb2, Fork::Post, 1, make_block_id(1), deltas);
+        prev_id = make_block_id(1);
+    }
+
+    // Block 2: reincarnate ({1,0} -> {2,0}) and write ONLY slot_0. slot_1 and
+    // slot_far belong to the dead incarnation; the new incarnation starts with
+    // empty storage, so from its perspective slot_0 goes empty -> 0xc2.
+    Account const inc2{.nonce = 1, .incarnation = Incarnation{2, 0}};
+    {
+        tdb1.set_block_and_prefix(1, prev_id);
+        tdb2.set_block_and_prefix(1, prev_id);
+        auto deltas = make_deltas(
+            inc1, inc2, {{slot_0, bytes32_t{}, bytes32_t{uint64_t{0xc2}}}});
+        drive_commit(tdb1, tdb2, Fork::Post, 2, make_block_id(2), deltas);
+        prev_id = make_block_id(2);
+    }
+
+    // Db1 (slot) wipes exactly on the incarnation change, so it is the
+    // EVM-correct oracle. Db2 (page) must agree slot-for-slot; on-disk reads
+    // are incarnation-blind so the incarnation argument is immaterial here.
+    auto const check = [&](bytes32_t const &slot,
+                           bytes32_t const &want,
+                           char const *const tag) {
+        SCOPED_TRACE(tag);
+        auto const v1 = tdb1.read_storage(ADDR_A, Incarnation{0, 0}, slot);
+        auto const v2 = tdb2.read_storage(ADDR_A, Incarnation{0, 0}, slot);
+        EXPECT_EQ(v1, want) << "slot-encoded Db1 (EVM oracle)";
+        EXPECT_EQ(v2, want)
+            << "page-encoded Db2 must match the oracle (no resurrection)";
+    };
+    check(
+        slot_0,
+        bytes32_t{uint64_t{0xc2}},
+        "slot_0 rewritten by new incarnation");
+    check(slot_1, bytes32_t{}, "slot_1 from dead incarnation must be wiped");
+    check(
+        slot_far, bytes32_t{}, "slot_far from dead incarnation must be wiped");
+}

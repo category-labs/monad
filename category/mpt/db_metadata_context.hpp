@@ -416,6 +416,23 @@ private:
         auto const reservation_bytes = max_chunks * map_bytes;
         auto const entries_per_chunk = map_bytes / sizeof(chunk_offset_t);
 
+        // cnv_chunks_len comes off the on-disk metadata, which has no
+        // checksum. Bound it before it indexes cnv_chunks[] and offsets the
+        // MAP_FIXED mappings below (the reservation is only max_chunks wide),
+        // so a corrupt value aborts cleanly instead of reading out of bounds
+        // or mapping past the reservation. The max_chunks <= capacity arm is
+        // the structural cap that replay_pending_shrink_grow_ relies on.
+        constexpr size_t cnv_chunks_cap =
+            detail::db_metadata::root_offsets_ring_t::CNV_CHUNKS_CAP;
+        MONAD_ASSERT_PRINTF(
+            max_chunks <= cnv_chunks_cap &&
+                storage.cnv_chunks_len <= max_chunks,
+            "corrupt db_metadata: cnv_chunks_len=%u out of range "
+            "(max_chunks=%u, capacity=%zu)",
+            storage.cnv_chunks_len,
+            max_chunks,
+            cnv_chunks_cap);
+
         std::byte *reservation[2];
         for (auto &r : reservation) {
             r = (std::byte *)::mmap(

@@ -100,11 +100,15 @@ namespace detail
         // Two physically-distinct rings of this type live in db_metadata:
         // `root_offsets` (ring_a) and `secondary_timeline` (ring_b). Which one
         // is the logical primary is selected by `primary_ring_idx` below.
-        // SIZE_-1 caps the per-ring cnv_chunks[] list length (vastly over-
-        // provisioned vs. real pools that use at most a handful per ring).
+        // CNV_CHUNKS_CAP caps the per-ring cnv_chunks[] list length (vastly
+        // over-provisioned vs. real pools that use at most a handful per ring).
         struct root_offsets_ring_t
         {
             static constexpr size_t SIZE_ = 32;
+            // Capacity of the per-ring cnv_chunks[] list: the most chunks one
+            // ring can hold. Bound on-disk chunk counts against this before
+            // indexing the array.
+            static constexpr size_t CNV_CHUNKS_CAP = SIZE_ - 1;
 
             friend class MONAD_MPT_NAMESPACE::DbMetadataContext;
             friend inline void
@@ -127,7 +131,7 @@ namespace detail
                     uint32_t high_bits_all_set; // All bits one to deliberately
                                                 // break older codebases
                     uint32_t cnv_chunk_id; // The read-write chunk id
-                } cnv_chunks[SIZE_ - 1];
+                } cnv_chunks[CNV_CHUNKS_CAP];
             } storage_;
 
         public:

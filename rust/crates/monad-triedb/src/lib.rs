@@ -96,8 +96,8 @@ fn parse_triedb_block_num(value: u64) -> Option<u64> {
 
 const ZERO_BYTES32: [u8; 32] = [0u8; 32];
 
-/// Converts a C `monad_c_bytes32` sentinel value (all-zeros = not found) to `Option<[u8; 32]>`.
-fn parse_triedb_block_id(value: ffi::monad_c_bytes32) -> Option<[u8; 32]> {
+/// Converts a C `monad_bytes32` sentinel value (all-zeros = not found) to `Option<[u8; 32]>`.
+fn parse_triedb_block_id(value: ffi::monad_bytes32) -> Option<[u8; 32]> {
     if value.bytes == ZERO_BYTES32 {
         return None;
     }

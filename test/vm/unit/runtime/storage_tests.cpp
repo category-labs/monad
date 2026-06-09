@@ -86,8 +86,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageLoadWarm)
     using traits = TestFixture::Trait;
     auto load = TestFixture::wrap(sload<traits>);
 
-    this->host_.access_storage(
-        this->ctx_.env.recipient, store_be_as<bytes32_t>(key));
+    this->host_.access_storage(this->ctx_.env.recipient, to_evmc(key));
 
     this->ctx_.gas_remaining = 0;
     ASSERT_EQ(load(key), 0);
@@ -156,10 +155,10 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
     auto store = TestFixture::wrap(sstore<traits>);
 
     // current == original
-    auto &loc = this->host_.accounts[this->ctx_.env.recipient]
-                    .storage[store_be_as<bytes32_t>(key)];
-    loc.original = store_be_as<bytes32_t>(val);
-    loc.current = store_be_as<bytes32_t>(val);
+    auto &loc =
+        this->host_.accounts[this->ctx_.env.recipient].storage[to_evmc(key)];
+    loc.original = to_evmc(val);
+    loc.current = to_evmc(val);
 
     auto do_test = [&load, &store, &ctx_ = this->ctx_](
                        int64_t nonempty_same_nonempty_cold_remaining,

@@ -36,7 +36,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     void sload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr)
     {
-        auto key = store_be_as<bytes32_t>(*key_ptr);
+        evmc_bytes32 const key = to_evmc(*key_ptr);
 
         if constexpr (traits::eip_2929_active()) {
             auto const access_status = ctx->host->access_storage(
@@ -46,7 +46,7 @@ namespace monad::vm::runtime
             }
         }
 
-        auto const value =
+        evmc_bytes32 const value =
             ctx->host->get_storage(ctx->context, &ctx->env.recipient, &key);
 
         *result_ptr = load_be<uint256_t>(value);
@@ -73,8 +73,8 @@ namespace monad::vm::runtime
             }
         }
 
-        auto key = store_be_as<bytes32_t>(*key_ptr);
-        auto value = store_be_as<bytes32_t>(*value_ptr);
+        evmc_bytes32 const key = to_evmc(*key_ptr);
+        evmc_bytes32 const value = to_evmc(*value_ptr);
 
         auto access_status = EVMC_ACCESS_COLD;
         if constexpr (traits::eip_2929_active()) {
@@ -110,8 +110,8 @@ namespace monad::vm::runtime
         auto const magic = uint256_t{0xdeb009};
         auto const base = (magic + base_offset) * 1024;
         if (offset == 0) {
-            auto const base_key = store_be_as<bytes32_t>(base);
-            auto const base_value = ctx->host->get_transient_storage(
+            evmc_bytes32 const base_key = to_evmc(base);
+            evmc_bytes32 const base_value = ctx->host->get_transient_storage(
                 ctx->context, &ctx->env.recipient, &base_key);
             if (base_value != bytes32_t{}) {
                 // If this transient storage location has already been written,
@@ -121,12 +121,12 @@ namespace monad::vm::runtime
             }
         }
         for (uint64_t i = 0; i < stack_size; ++i) {
-            auto const key = store_be_as<bytes32_t>(base + i + offset);
+            evmc_bytes32 const key = to_evmc(base + i + offset);
             auto const &x = stack[static_cast<int64_t>(-i) - 1];
             // Make sure we do not store zero, because incorrect non-zero is
             // more likely to be noticed, due to zero being the default:
             auto const s = x < magic ? x + 1 : x;
-            auto const value = store_be_as<bytes32_t>(s);
+            evmc_bytes32 const value = to_evmc(s);
             ctx->host->set_transient_storage(
                 ctx->context, &ctx->env.recipient, &key, &value);
         }

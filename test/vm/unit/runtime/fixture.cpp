@@ -47,24 +47,24 @@ namespace monad::vm::compiler::test
             auto host = evmc::MockedHost{};
 
             host.tx_context = evmc_tx_context{
-                .tx_gas_price = store_be_as<bytes32_t>(uint256_t{56762}),
+                .tx_gas_price = to_evmc(56762),
                 .tx_origin = 0x000000000000000000000000000000005CA1AB1E_address,
                 .block_coinbase =
                     0x00000000000000000000000000000000BA5EBA11_address,
                 .block_number = 23784,
                 .block_timestamp = 1733494490,
                 .block_gas_limit = 30000000,
-                .block_prev_randao = store_be_as<bytes32_t>(uint256_t{89273}),
-                .chain_id = store_be_as<bytes32_t>(uint256_t{2342}),
-                .block_base_fee = store_be_as<bytes32_t>(uint256_t{389}),
-                .blob_base_fee = store_be_as<bytes32_t>(uint256_t{98988}),
+                .block_prev_randao = to_evmc(89273),
+                .chain_id = to_evmc(2342),
+                .block_base_fee = to_evmc(389),
+                .blob_base_fee = to_evmc(98988),
                 .blob_hashes = blob_hashes_.data(),
                 .blob_hashes_count = blob_hashes_.size(),
                 .initcodes = nullptr,
                 .initcodes_count = 0,
             };
 
-            host.block_hash = store_be_as<bytes32_t>(
+            host.block_hash = to_evmc(
                 0x105DF6064F84551C4100A368056B8AF0E491077245DAB1536D2CFA6AB78421CE_u256);
 
             return host;
@@ -72,7 +72,7 @@ namespace monad::vm::compiler::test
     }
 
     RuntimeTestBase::RuntimeTestBase()
-        : blob_hashes_{store_be_as<bytes32_t>(uint256_t{1}), store_be_as<bytes32_t>(uint256_t{2})}
+        : blob_hashes_{to_evmc(1), to_evmc(2)}
         , host_{init_host(blob_hashes_)}
         , test_ctx_{[&](auto &x) {
             x.host = &host_.get_interface(), x.context = host_.to_context(),
@@ -152,8 +152,7 @@ namespace monad::vm::compiler::test
     void
     RuntimeTestBase::set_balance(uint256_t const addr, uint256_t const balance)
     {
-        host_.accounts[address_from_uint256(addr)].balance =
-            store_be_as<bytes32_t>(balance);
+        host_.accounts[address_from_uint256(addr)].balance = to_evmc(balance);
     }
 
     std::basic_string_view<uint8_t> RuntimeTestBase::result_data()
@@ -175,7 +174,7 @@ namespace monad::vm::compiler::test
         auto const account = evmc::MockedAccount{
             .nonce = 0,
             .code = evmc::bytes(code.data(), code.size()),
-            .codehash = codehash_bytes,
+            .codehash = to_evmc(codehash_bytes),
             .balance = {},
             .storage = {},
             .transient_storage = {},

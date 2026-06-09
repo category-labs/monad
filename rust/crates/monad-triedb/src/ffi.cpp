@@ -449,7 +449,7 @@ uint64_t triedb_latest_proposed_version(TriedbRoInner *db)
     return db->db.get_latest_proposed_version();
 }
 
-monad_c_bytes32 triedb_latest_proposed_block_id(TriedbRoInner *db)
+monad_bytes32 triedb_latest_proposed_block_id(TriedbRoInner *db)
 {
     return db->db.get_latest_proposed_block_id();
 }
@@ -459,7 +459,7 @@ uint64_t triedb_latest_voted_version(TriedbRoInner *db)
     return db->db.get_latest_voted_version();
 }
 
-monad_c_bytes32 triedb_latest_voted_block_id(TriedbRoInner *db)
+monad_bytes32 triedb_latest_voted_block_id(TriedbRoInner *db)
 {
     return db->db.get_latest_voted_block_id();
 }

@@ -14,7 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/bytes.hpp>
-#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -78,7 +77,7 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic1_ptr)),
+                to_evmc(*topic1_ptr),
             }});
     }
 
@@ -94,8 +93,8 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic1_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic2_ptr)),
+                to_evmc(*topic1_ptr),
+                to_evmc(*topic2_ptr),
             }});
     }
 
@@ -112,9 +111,9 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic1_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic2_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic3_ptr)),
+                to_evmc(*topic1_ptr),
+                to_evmc(*topic2_ptr),
+                to_evmc(*topic3_ptr),
             }});
     }
 
@@ -131,10 +130,10 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic1_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic2_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic3_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic4_ptr)),
+                to_evmc(*topic1_ptr),
+                to_evmc(*topic2_ptr),
+                to_evmc(*topic3_ptr),
+                to_evmc(*topic4_ptr),
             }});
     }
 

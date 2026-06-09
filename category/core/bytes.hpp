@@ -20,6 +20,7 @@
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes32.h>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
@@ -35,23 +36,28 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct bytes32_t : evmc_bytes32
+struct bytes32_t : monad_bytes32
 {
     constexpr bytes32_t() noexcept
-        : evmc_bytes32{}
+        : monad_bytes32{}
     {
     }
 
     constexpr bytes32_t(bytes32_t const &) noexcept = default;
     constexpr bytes32_t &operator=(bytes32_t const &) noexcept = default;
 
-    explicit(false) constexpr bytes32_t(evmc_bytes32 const &other) noexcept
-        : evmc_bytes32{other}
+    explicit(false) constexpr bytes32_t(evmc_bytes32 const &b) noexcept
+        : monad_bytes32{std::bit_cast<monad_bytes32>(b)}
+    {
+    }
+
+    explicit(false) constexpr bytes32_t(monad_bytes32 const &other) noexcept
+        : monad_bytes32{other}
     {
     }
 
     explicit constexpr bytes32_t(uint64_t const v) noexcept
-        : evmc_bytes32{}
+        : monad_bytes32{}
     {
         for (int i = 0; i < 8; ++i) {
             bytes[31 - i] = static_cast<uint8_t>(v >> (i * 8));
@@ -61,7 +67,7 @@ struct bytes32_t : evmc_bytes32
     template <std::same_as<uint8_t>... Bytes>
         requires(sizeof...(Bytes) >= 1 && sizeof...(Bytes) <= 32)
     explicit(false) constexpr bytes32_t(Bytes... bs) noexcept
-        : evmc_bytes32{{bs...}}
+        : monad_bytes32{{bs...}}
     {
     }
 
@@ -94,6 +100,23 @@ static_assert(sizeof(bytes32_t) == 32);
 static_assert(alignof(bytes32_t) == 1);
 
 using uint256_be_t = bytes32_t;
+
+constexpr evmc_bytes32 to_evmc(monad_bytes32 const &b) noexcept
+{
+    return std::bit_cast<evmc_bytes32>(b);
+}
+
+// evmc_bytes32 variables that represent integer values are always assumed to
+// be encoded in a big-endian representation by convention. This convention
+// is expressed by the fact that `evmc_uint256be` is a just typedef alias of
+// `evmc_bytes32`. On the other hand, our `uint256_t` is always little endian
+// (a `static_assert` in `int.hpp` ensures this) so conversion of uint256_t to
+// evmc_bytes32 performs both a bswap and a bitcast; this overload is syntactic
+// sugar for the conversion sequence `to_evmc(to_bytes(to_big_endian(x)))`
+constexpr evmc_bytes32 to_evmc(uint256_t const &n) noexcept
+{
+    return store_be_as<evmc_bytes32>(bswap(n));
+}
 
 constexpr bytes32_t to_bytes(uint256_t const &n) noexcept
 {

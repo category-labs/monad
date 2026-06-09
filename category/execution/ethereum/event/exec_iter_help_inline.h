@@ -134,7 +134,7 @@ inline bool monad_exec_ring_get_block_number(
 
 inline bool monad_exec_ring_block_id_matches(
     struct monad_event_ring const *event_ring,
-    struct monad_event_descriptor const *event, monad_c_bytes32 const *block_id)
+    struct monad_event_descriptor const *event, monad_bytes32 const *block_id)
 {
     struct monad_event_descriptor buf;
     void const *payload;
@@ -282,7 +282,7 @@ inline bool monad_exec_iter_block_number_prev(
 
 inline bool monad_exec_iter_block_id_prev(
     struct monad_event_iterator *iter,
-    struct monad_event_ring const *event_ring, monad_c_bytes32 const *block_id,
+    struct monad_event_ring const *event_ring, monad_bytes32 const *block_id,
     enum monad_exec_event_type filter, struct monad_event_descriptor *event)
 {
     struct monad_event_descriptor buf;

@@ -52,7 +52,7 @@ evmc::bytes32 EvmcHostBase::get_storage(
     evmc::address const &address, evmc::bytes32 const &key) const noexcept
 {
     try {
-        return state_.get_storage(address, key);
+        return std::bit_cast<evmc::bytes32>(state_.get_storage(address, key));
     }
     catch (...) {
         capture_current_exception();
@@ -112,9 +112,9 @@ EvmcHostBase::get_code_hash(evmc::address const &address) const noexcept
 {
     try {
         if (state_.account_is_dead(address)) {
-            return bytes32_t{};
+            return evmc::bytes32{};
         }
-        return state_.get_code_hash(address);
+        return to_evmc(state_.get_code_hash(address));
     }
     catch (...) {
         capture_current_exception();
@@ -162,12 +162,12 @@ EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
         if (bytes32_t const block_hash = get_block_hash_history(
                 state_, static_cast<uint64_t>(block_number));
             block_hash != bytes32_t{}) {
-            return block_hash;
+            return to_evmc(block_hash);
         }
         bytes32_t const block_hash =
             block_hash_buffer_.get(static_cast<uint64_t>(block_number));
         MONAD_ASSERT(block_hash != bytes32_t{});
-        return block_hash;
+        return to_evmc(block_hash);
     }
     catch (...) {
         capture_current_exception();
@@ -211,7 +211,7 @@ evmc::bytes32 EvmcHostBase::get_transient_storage(
     evmc::address const &address, evmc::bytes32 const &key) const noexcept
 {
     try {
-        return state_.get_transient_storage(address, key);
+        return to_evmc(state_.get_transient_storage(address, key));
     }
     catch (...) {
         capture_current_exception();

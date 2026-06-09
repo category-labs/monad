@@ -20,6 +20,7 @@ fn main() {
         .derive_hash(Some(r"monad_exec_.+"))
         .derive_partialeq_eq(Some(r"monad_exec_.+"))
         .allowlist_files([
+            "category/core/bytes32.h",
             "category/core/event/event_metadata.h",
             "category/execution/ethereum/core/base_ctypes.h",
             "category/execution/ethereum/core/eth_ctypes.h",

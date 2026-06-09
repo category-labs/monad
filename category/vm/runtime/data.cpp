@@ -18,6 +18,7 @@
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/data.hpp>
@@ -35,14 +36,14 @@ namespace monad::vm::runtime
     void
     balance(Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr)
     {
+        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (traits::eip_2929_active()) {
-            auto const access_status =
-                ctx->host->access_account(ctx->context, &address);
-            if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(traits::cold_account_cost());
-            }
+        auto const access_status =
+            ctx->host->access_account(ctx->context, &address);
+        if (access_status == EVMC_ACCESS_COLD) {
+            ctx->deduct_gas(traits::cold_account_cost());
         }
 
         auto const balance = static_cast<bytes32_t>(
@@ -121,6 +122,8 @@ namespace monad::vm::runtime
         uint256_t const *dest_offset_ptr, uint256_t const *offset_ptr,
         uint256_t const *size_ptr)
     {
+        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+
         auto const size = ctx->get_memory_offset(*size_ptr);
         Memory::Offset dest_offset;
 
@@ -135,12 +138,10 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (traits::eip_2929_active()) {
-            auto const access_status =
-                ctx->host->access_account(ctx->context, &address);
-            if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(traits::cold_account_cost());
-            }
+        auto const access_status =
+            ctx->host->access_account(ctx->context, &address);
+        if (access_status == EVMC_ACCESS_COLD) {
+            ctx->deduct_gas(traits::cold_account_cost());
         }
 
         if (*size > 0) {
@@ -195,14 +196,14 @@ namespace monad::vm::runtime
     void extcodehash(
         Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr)
     {
+        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (traits::eip_2929_active()) {
-            auto const access_status =
-                ctx->host->access_account(ctx->context, &address);
-            if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(traits::cold_account_cost());
-            }
+        auto const access_status =
+            ctx->host->access_account(ctx->context, &address);
+        if (access_status == EVMC_ACCESS_COLD) {
+            ctx->deduct_gas(traits::cold_account_cost());
         }
 
         auto const hash = static_cast<bytes32_t>(
@@ -216,14 +217,14 @@ namespace monad::vm::runtime
     void extcodesize(
         Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr)
     {
+        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+
         auto address = address_from_uint256(*address_ptr);
 
-        if constexpr (traits::eip_2929_active()) {
-            auto const access_status =
-                ctx->host->access_account(ctx->context, &address);
-            if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(traits::cold_account_cost());
-            }
+        auto const access_status =
+            ctx->host->access_account(ctx->context, &address);
+        if (access_status == EVMC_ACCESS_COLD) {
+            ctx->deduct_gas(traits::cold_account_cost());
         }
 
         *result_ptr = ctx->host->get_code_size(ctx->context, &address);

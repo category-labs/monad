@@ -26,9 +26,8 @@ uint256_t HiveNet::get_chain_id() const
     return 3503995874084926;
 }
 
-// Fork schedule from the hive tests:
-// see: https://github.com/ethereum/execution-apis/blob/main/tests/genesis.json
-// see: https://github.com/ethereum/execution-apis/blob/main/tests/forkenv.json
+// Fork schedule from the Hive runner tests. Monad execution currently supports
+// Berlin and later, so the fixture activates earlier forks as Berlin.
 monad_eth_revision HiveNet::get_revision(
     uint64_t const block_number, uint64_t const timestamp) const
 {
@@ -47,13 +46,7 @@ monad_eth_revision HiveNet::get_revision(
     if (block_number >= 27) {
         return MONAD_ETH_LONDON;
     }
-    if (block_number >= 24) {
-        return MONAD_ETH_BERLIN;
-    }
-    if (block_number >= 18) {
-        return MONAD_ETH_ISTANBUL;
-    }
-    MONAD_ASSERT(false, "unsupported fork");
+    return MONAD_ETH_BERLIN;
 }
 
 GenesisState HiveNet::get_genesis_state() const

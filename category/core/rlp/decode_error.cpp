@@ -46,6 +46,7 @@ quick_status_code_from_enum<monad::rlp::DecodeError>::value_mappings()
         {DecodeError::LeadingZero, "leading zero", {}},
         {DecodeError::PathTooShort, "path too short", {}},
         {DecodeError::PathTooLong, "path too long", {}},
+        {DecodeError::NonCanonical, "non-canonical encoding", {}},
     };
 
     return v;

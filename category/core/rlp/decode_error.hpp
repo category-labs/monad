@@ -42,6 +42,7 @@ enum class DecodeError
     LeadingZero,
     PathTooShort,
     PathTooLong,
+    NonCanonical,
 };
 
 MONAD_RLP_NAMESPACE_END

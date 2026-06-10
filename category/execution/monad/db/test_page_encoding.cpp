@@ -59,6 +59,53 @@ TEST(PageEncoding, full_page)
     EXPECT_EQ(decode_storage_page(enc).value(), page);
 }
 
+TEST(PageEncoding, decode_rejects_split_zero_runs)
+{
+    // 0x01 0x01 (two adjacent zero-runs) must be 0x02.
+    byte_string enc = {0x01, 0x01, 0x80, 0x05, 0x00};
+    auto const result = decode_storage_page(enc);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
+}
+
+TEST(PageEncoding, decode_rejects_split_data_runs)
+{
+    // Two adjacent data-runs of 1 slot must be one data-run of 2 slots.
+    byte_string enc = {0x80, 0x05, 0x80, 0x06, 0x00};
+    auto const result = decode_storage_page(enc);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
+}
+
+TEST(PageEncoding, decode_rejects_zero_run_before_terminator)
+{
+    // 0x05 0x00 (zero-run then terminator) must be just 0x00.
+    byte_string enc = {0x05, 0x00};
+    auto const result = decode_storage_page(enc);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
+}
+
+TEST(PageEncoding, decode_rejects_zero_value_in_data_run)
+{
+    // RLP empty string (0x80) decodes to the zero value, which cannot
+    // appear inside a data run.
+    byte_string enc = {0x80, 0x80, 0x00};
+    auto const result = decode_storage_page(enc);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
+}
+
+TEST(PageEncoding, decode_rejects_leading_zero_in_value)
+{
+    // 0x82 0x00 0x05 encodes value 5 with a leading zero byte; the
+    // canonical compact form is the single byte 0x05.
+    byte_string enc = {0x80, 0x82, 0x00, 0x05, 0x00};
+    auto const result = decode_storage_page(enc);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
+}
+
 TEST(PageEncoding, decode_rejects_oversized_slot)
 {
     // Malformed encoding: data-run of 1 slot whose RLP string is 33 bytes

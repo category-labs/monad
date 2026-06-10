@@ -254,27 +254,3 @@ TEST(db_metadata, db_copy_preserves_secondary_next_version)
     EXPECT_EQ(dst->secondary_timeline_active_, 1u);
     EXPECT_EQ(dst->primary_ring_idx, 1u);
 }
-
-TEST(oldest_readable_version, pure_arithmetic)
-{
-    using monad::mpt::oldest_readable_version;
-    constexpr uint64_t INV = monad::mpt::INVALID_BLOCK_NUM;
-
-    // Empty ring -> INVALID.
-    EXPECT_EQ(oldest_readable_version(INV, 8, 0), INV);
-
-    // Retention floor dominates (primary steady state: vlb >= wrap floor).
-    // max=100, cap=8 -> wrap floor=93; vlb=95 -> 95.
-    EXPECT_EQ(oldest_readable_version(100, 8, 95), 95u);
-
-    // Wrap floor dominates (secondary wrapped below its retention floor):
-    // max=100, cap=8 -> wrap floor=93; vlb=50 -> 93.
-    EXPECT_EQ(oldest_readable_version(100, 8, 50), 93u);
-
-    // Floors coincide exactly.
-    EXPECT_EQ(oldest_readable_version(100, 8, 93), 93u);
-
-    // max < capacity -> wrap floor is 0.
-    EXPECT_EQ(oldest_readable_version(5, 8, 0), 0u);
-    EXPECT_EQ(oldest_readable_version(5, 8, 3), 3u);
-}

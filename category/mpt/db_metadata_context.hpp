@@ -571,9 +571,6 @@ private:
     // operation to completion before the constructor returns.
     void replay_pending_shrink_grow_();
 
-    uint64_t
-    oldest_readable_version_(root_offsets_delegator const &ro) const noexcept;
-
     MONAD_ASYNC_NAMESPACE::AsyncIO *io_{nullptr};
     metadata_copy copies_[2];
     // db_map_size_ is the logical bytes of live metadata (header +

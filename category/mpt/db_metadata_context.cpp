@@ -734,18 +734,12 @@ uint64_t DbMetadataContext::version_history_length() const noexcept
         ->load(std::memory_order_relaxed);
 }
 
-// Snapshot taken once at entry so a concurrent promote can't flip
-// primary_ring_idx mid-query and mix max_version with another ring's offsets.
-uint64_t DbMetadataContext::oldest_readable_version_(
-    root_offsets_delegator const &ro) const noexcept
-{
-    return oldest_readable_version(
-        ro.max_version(), ro.capacity(), ro.version_lower_bound());
-}
-
 uint64_t DbMetadataContext::db_history_range_lower_bound(
     timeline_id const tid) const noexcept
 {
+    if (!timeline_active(tid)) {
+        return INVALID_BLOCK_NUM;
+    }
     auto const ro = root_offsets(tid);
     if (ro.max_version() == INVALID_BLOCK_NUM) {
         return INVALID_BLOCK_NUM;
@@ -777,10 +771,7 @@ chunk_offset_t DbMetadataContext::get_root_offset_at_version(
         return INVALID_OFFSET;
     }
     auto const ro = root_offsets(tid);
-    if (ro.empty()) {
-        return INVALID_OFFSET;
-    }
-    auto const lower_bound = oldest_readable_version_(ro);
+    auto const lower_bound = db_history_range_lower_bound(tid);
     if (lower_bound == INVALID_BLOCK_NUM || version < lower_bound ||
         version > ro.max_version()) {
         return INVALID_OFFSET;
@@ -811,14 +802,7 @@ uint64_t DbMetadataContext::db_history_max_version() const noexcept
 uint64_t DbMetadataContext::db_history_min_valid_version(
     timeline_id const tid) const noexcept
 {
-    if (!timeline_active(tid)) {
-        return INVALID_BLOCK_NUM;
-    }
-    auto const ro = root_offsets(tid);
-    if (ro.empty()) {
-        return INVALID_BLOCK_NUM;
-    }
-    return oldest_readable_version_(ro);
+    return db_history_range_lower_bound(tid);
 }
 
 uint64_t DbMetadataContext::db_history_min_valid_version() const noexcept

@@ -52,20 +52,6 @@ static constexpr uint64_t INVALID_BLOCK_NUM = uint64_t(-1);
 // sufficient history and can avoid a full statesync.
 static constexpr uint64_t MIN_HISTORY_LENGTH = 300;
 
-// Oldest version a ring can still serve: the later of the wrap floor
-// (max - capacity + 1) and version_lower_bound; INVALID_BLOCK_NUM if empty.
-constexpr uint64_t oldest_readable_version(
-    uint64_t const max_version, uint64_t const capacity,
-    uint64_t const version_lower_bound) noexcept
-{
-    if (max_version == INVALID_BLOCK_NUM) {
-        return INVALID_BLOCK_NUM;
-    }
-    uint64_t const capacity_min_version =
-        max_version >= capacity ? max_version - capacity + 1 : 0;
-    return std::max(capacity_min_version, version_lower_bound);
-}
-
 static byte_string const empty_trie_hash = [] {
     using namespace ::monad::literals;
     return 0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes;

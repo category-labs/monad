@@ -79,7 +79,18 @@ set(ASMJIT_STATIC ON)
 add_subdirectory(third_party/asmjit)
 
 # BLAKE3
+# Force STATIC even when BUILD_SHARED_LIBS=ON (e.g. cargo / cmake-rs).
+# blake3 builds with C_VISIBILITY_PRESET=hidden and only exports its
+# public API; monad/db/storage_page.cpp opts into internal helpers via
+# blake3_impl.h (blake3_compress_in_place, blake3_hash_many) for the
+# page-hash hot path. A SHARED libblake3.so does not export those
+# internals, so linking SHARED would leave libmonad_execution.so with
+# unresolved references that fail at runtime in any consumer (e.g.
+# monad-node loading the .so via the statesync FFI).
+block()
+set(BUILD_SHARED_LIBS OFF)
 add_subdirectory(third_party/BLAKE3/c)
+endblock()
 
 # blst
 set(DOWNLOAD_BLST OFF)

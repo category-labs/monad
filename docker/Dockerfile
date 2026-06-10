@@ -16,7 +16,7 @@ RUN apt-get update && \
 FROM base AS base_rust
 
 RUN apt-get update && \
-    apt-get install -y gcc rustup && \
+    apt-get install -y gcc g++ rustup && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
     rm -rf /opt
@@ -63,14 +63,12 @@ FROM base_rust AS build_and_test_rust
 
 COPY . src
 
-ARG CC
-ARG CXX
 ENV TRIEDB_TARGET="triedb_driver"
 
 RUN cd src/rust && cargo update --workspace --locked
 RUN cd src/rust && cargo +nightly-2025-12-09 fmt --all --check
-RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo build --release --all-targets --all-features
-RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo test  --release --all-targets --all-features
+RUN cd src/rust && CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cargo build --release --all-targets --all-features
+RUN cd src/rust && CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" cargo test  --release --all-targets --all-features
 
 FROM base AS code_quality
 
@@ -91,8 +89,12 @@ FROM base_rust AS code_quality_rust
 
 COPY . src
 
-RUN cd src/rust && cargo shear
-RUN cd src/rust && cargo clippy --all-targets --all-features -- \
+ARG CC
+ARG CXX
+ENV TRIEDB_TARGET="triedb_driver"
+
+RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo shear
+RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo clippy --all-targets --all-features -- \
     -D clippy::suspicious \
     -D clippy::style \
     -D clippy::clone_on_copy \
@@ -116,9 +118,9 @@ RUN cd src/rust && cargo clippy --all-targets --all-features -- \
     -A clippy::mutable_key_type \
     -A clippy::large_enum_variant \
     -A clippy::doc-overindented-list-items
-RUN cd src/rust && cargo check --all-targets --all-features
-RUN cd src/rust && cargo doc --all-features --no-deps
-RUN cd src/rust && cargo test --release --doc --all-features
+RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo check --all-targets --all-features
+RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo doc --all-features --no-deps
+RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo test --release --doc --all-features
 
 FROM base AS base_riscv_gnu_toolchain
 

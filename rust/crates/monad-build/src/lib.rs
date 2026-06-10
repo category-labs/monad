@@ -15,12 +15,17 @@
 
 #[cfg(feature = "cmake")]
 pub use self::cmake::{MonadCMake, MonadCMakeLinkage};
+#[cfg(feature = "cxx")]
+pub use self::cxx::MonadCxx;
 
 #[cfg(feature = "bindgen")]
 pub mod bindgen;
 
 #[cfg(feature = "cmake")]
 mod cmake;
+
+#[cfg(feature = "cxx")]
+mod cxx;
 
 #[cfg(feature = "metadata")]
 pub fn repository_root() -> std::path::PathBuf {

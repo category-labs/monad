@@ -791,6 +791,95 @@ TEST_F(StateSyncFixture, sync_check_secondary_db_state_root)
     EXPECT_EQ(secondary_stdb.state_root(), cctx->secondary_tdb->state_root());
 }
 
+// Post-fork variant of sync_check_secondary_db_state_root. Identical sync
+// (dual client, slot-encoded stream from the server), but the chain is
+// MONAD_NEXT from genesis (CHAIN_CONFIG_MONAD_DEVNET) and the target's
+// canonical state_root is the PAGE secondary's root. finalize therefore
+// selects the page secondary and compares ITS root to the target, exercising
+// the path the page-store-migration integration test
+// (DualDbStatesyncDualCatchupPostFork) fails on. If finalize returns false
+// here, the post-fork dual statesync root mismatch reproduces at unit scope.
+TEST_F(StateSyncFixture, sync_check_secondary_db_state_root_postfork)
+{
+    mpt::Db secondary_sdb =
+        sdb.activate_secondary_timeline(std::make_unique<MonadOnDiskMachine>());
+    TrieDb secondary_stdb{secondary_sdb};
+    ASSERT_TRUE(secondary_stdb.is_page_encoded());
+
+    constexpr auto N = 1'000'000;
+    bytes32_t parent_hash{NULL_HASH};
+    load_header(
+        sdb.load_root_for_version(N - 257),
+        sdb,
+        BlockHeader{.number = N - 257});
+    load_header(
+        secondary_sdb.load_root_for_version(N - 257),
+        secondary_sdb,
+        BlockHeader{.number = N - 257});
+    for (size_t i = N - 256; i < N; ++i) {
+        stdb.set_block_and_prefix(i - 1);
+        secondary_stdb.set_block_and_prefix(i - 1);
+        commit_sequential(
+            stdb, {}, {}, BlockHeader{.parent_hash = parent_hash, .number = i});
+        commit_sequential(
+            secondary_stdb,
+            {},
+            {},
+            BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+
+    constexpr auto slot_a = bytes32_t{uint64_t{0x00}};
+    constexpr auto slot_b = bytes32_t{uint64_t{0x01}};
+    constexpr auto slot_c = bytes32_t{uint64_t{0x7f}};
+    constexpr auto slot_d = bytes32_t{uint64_t{0x80}};
+    constexpr auto slot_e = bytes32_t{uint64_t{0x81}};
+    constexpr auto val_a =
+        0x00000000000000000000000000000000000000000000000000000000000000aa_bytes32;
+    constexpr auto val_b =
+        0x00000000000000000000000000000000000000000000000000000000000000bb_bytes32;
+    constexpr auto val_c =
+        0x00000000000000000000000000000000000000000000000000000000000000cc_bytes32;
+    constexpr auto val_d =
+        0x00000000000000000000000000000000000000000000000000000000000000dd_bytes32;
+    constexpr auto val_e =
+        0x00000000000000000000000000000000000000000000000000000000000000ee_bytes32;
+
+    StateDeltas const storage_deltas{
+        {ADDR_A,
+         StateDelta{
+             .account = {std::nullopt, Account{.balance = 100}},
+             .storage = {
+                 {slot_a, {bytes32_t{}, val_a}},
+                 {slot_b, {bytes32_t{}, val_b}},
+                 {slot_c, {bytes32_t{}, val_c}},
+                 {slot_d, {bytes32_t{}, val_d}},
+                 {slot_e, {bytes32_t{}, val_e}}}}}};
+
+    commit_sequential(stdb, storage_deltas, Code{}, BlockHeader{.number = N});
+    commit_sequential(
+        secondary_stdb, storage_deltas, Code{}, BlockHeader{.number = N});
+
+    // MONAD_DEVNET is MONAD_NEXT from genesis, so finalize treats the target
+    // as post-fork and reads the page secondary's root.
+    init(CHAIN_CONFIG_MONAD_DEVNET);
+
+    handle_target(
+        cctx,
+        BlockHeader{
+            .parent_hash = parent_hash,
+            // Canonical post-fork root is the page secondary's.
+            .state_root = secondary_stdb.state_root(),
+            .number = N});
+    run();
+
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+
+    cctx->secondary_tdb->set_block_and_prefix(N);
+    EXPECT_EQ(secondary_stdb.state_root(), cctx->secondary_tdb->state_root());
+}
+
 TEST_F(StateSyncFixture, sync_empty)
 {
     constexpr auto N = 1'000'000;

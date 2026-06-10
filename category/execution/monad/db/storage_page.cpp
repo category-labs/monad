@@ -260,7 +260,8 @@ bytes32_t page_commit(storage_page_t const &page)
 //                | each encoded via encode_bytes32_compact (leading-zero
 //                | stripped, RLP string framing).
 //
-// Decoding stops when all SLOTS are accounted for or input is exhausted.
+// Decoding is strict: only the canonical encoding produced by
+// encode_storage_page is accepted (see decode_storage_page below).
 //
 // Examples:
 //   All-zero page     → 0x00                             (1 byte)
@@ -296,14 +297,14 @@ byte_string encode_storage_page(storage_page_t const &page)
             i += zeros;
         }
         else {
-            // Count data run (max 128)
+            // Count data run (max SLOTS)
             uint8_t run = 1;
-            while (i + run < SLOTS && run < 128 && page[i + run] != ZERO) {
+            while (i + run < SLOTS && run < SLOTS && page[i + run] != ZERO) {
                 ++run;
             }
-            // Emit data-run header: 0x80 | (count - 1), then compact-encoded
+            // Emit data-run header: SLOTS | (count - 1), then compact-encoded
             // values
-            encoded.push_back(static_cast<uint8_t>(0x80 | (run - 1)));
+            encoded.push_back(static_cast<uint8_t>(SLOTS | (run - 1)));
             for (uint8_t j = 0; j < run; ++j) {
                 encoded += rlp::encode_bytes32_compact(page[i + j]);
             }
@@ -313,10 +314,21 @@ byte_string encode_storage_page(storage_page_t const &page)
     return encoded;
 }
 
+// Strict decoder: accepts exactly the encodings encode_storage_page
+// produces, so encode(decode(x)) == x for every accepted input. This keeps
+// the encoding usable as a canonical identity (hashing, byte comparison).
+// Rejected non-canonical forms:
+//   - adjacent runs of the same type (split zero-runs or data-runs)
+//   - a zero-run reaching the end of the page (must be the 0x00 terminator)
+//   - a zero-run directly before the terminator (must fold into it)
+//   - zero values inside a data run
+//   - slot values with leading zero bytes (non-minimal compact form)
 Result<storage_page_t> decode_storage_page(byte_string_view enc)
 {
     storage_page_t page{};
     size_t i = 0;
+    bool at_start = true;
+    bool prev_is_data_run = false;
     while (i < storage_page_t::SLOTS) {
         if (MONAD_UNLIKELY(enc.empty())) {
             return rlp::DecodeError::InputTooShort;
@@ -324,15 +336,30 @@ Result<storage_page_t> decode_storage_page(byte_string_view enc)
         uint8_t const header = enc[0];
         enc.remove_prefix(1);
         if (header == 0x00) {
-            // Rest is zeros (already zero-initialized)
+            // Terminator: rest of page is zeros (already zero-initialized).
+            // Canonical only for an empty page or directly after a data run.
+            if (MONAD_UNLIKELY(!at_start && !prev_is_data_run)) {
+                return rlp::DecodeError::NonCanonical;
+            }
             break;
         }
-        else if (header < 0x80) {
-            // Zero-run of `header` words
+        if (header < storage_page_t::SLOTS) {
+            // Zero-run of `header` words. Canonically appears only between
+            // data runs (or before the first one).
+            if (MONAD_UNLIKELY(!at_start && !prev_is_data_run)) {
+                return rlp::DecodeError::NonCanonical;
+            }
             i += header;
+            if (MONAD_UNLIKELY(i >= storage_page_t::SLOTS)) {
+                return rlp::DecodeError::NonCanonical;
+            }
+            prev_is_data_run = false;
         }
         else {
             // Data-run: compact-encoded slot values
+            if (MONAD_UNLIKELY(prev_is_data_run)) {
+                return rlp::DecodeError::NonCanonical;
+            }
             size_t const count = (header & 0x7F) + 1;
             if (MONAD_UNLIKELY(i + count > storage_page_t::SLOTS)) {
                 return rlp::DecodeError::InputTooLong;
@@ -340,13 +367,16 @@ Result<storage_page_t> decode_storage_page(byte_string_view enc)
             for (size_t j = 0; j < count; ++j) {
                 BOOST_OUTCOME_TRY(
                     auto const value, rlp::decode_bytes32_compact(enc));
+                // A zero value belongs to a zero-run, never a data run.
+                if (MONAD_UNLIKELY(value == bytes32_t{})) {
+                    return rlp::DecodeError::NonCanonical;
+                }
                 page.set(static_cast<uint8_t>(i + j), value);
             }
             i += count;
+            prev_is_data_run = true;
         }
-    }
-    if (MONAD_UNLIKELY(i > storage_page_t::SLOTS)) {
-        return rlp::DecodeError::InputTooLong;
+        at_start = false;
     }
     if (MONAD_UNLIKELY(!enc.empty())) {
         return rlp::DecodeError::InputTooLong;

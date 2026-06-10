@@ -79,7 +79,17 @@ set(ASMJIT_STATIC ON)
 add_subdirectory(third_party/asmjit)
 
 # BLAKE3
+# Force STATIC even when BUILD_SHARED_LIBS=ON (e.g. cargo / cmake-rs).
+# Some monad code calls private BLAKE3 helpers directly for performance.
+# Those helpers have hidden visibility, so a SHARED libblake3.so does not
+# export them; linking SHARED would then leave libmonad_execution.so with
+# unresolved references that fail at runtime when a consumer loads it.
+# Static linkage absorbs blake3's objects directly so the helpers resolve
+# at link time. The default (static) cmake build was already fine.
+block()
+set(BUILD_SHARED_LIBS OFF)
 add_subdirectory(third_party/BLAKE3/c)
+endblock()
 
 # blst
 set(DOWNLOAD_BLST OFF)

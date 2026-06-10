@@ -16,6 +16,7 @@
 use std::{path::Path, pin::Pin};
 
 use cxx::UniquePtr;
+use tracing::error;
 
 pub use self::{
     read::{TriedbAsyncRead, TriedbRead},
@@ -38,6 +39,11 @@ pub struct NibblesView<'a> {
 
 impl<'a> NibblesView<'a> {
     pub fn new(bytes: &'a [u8], nibble_len: u8) -> Option<Self> {
+        if nibble_len >= u8::MAX - 1 {
+            error!("NibblesView nibble_len exceeds maximum allowed value");
+            return None;
+        }
+
         ((nibble_len as usize).div_ceil(2) <= bytes.len()).then_some(Self { bytes, nibble_len })
     }
 
@@ -45,7 +51,7 @@ impl<'a> NibblesView<'a> {
     /// 127 bytes (would overflow `u8` nibbles).
     pub fn from_bytes(bytes: &'a [u8]) -> Option<Self> {
         let nibble_len = u8::try_from(bytes.len().saturating_mul(2)).ok()?;
-        Some(Self { bytes, nibble_len })
+        Self::new(bytes, nibble_len)
     }
 
     pub const fn empty() -> Self {

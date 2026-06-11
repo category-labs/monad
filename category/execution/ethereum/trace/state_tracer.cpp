@@ -63,6 +63,26 @@ namespace trace
         return std::format("0x{}", to_hex(view));
     }
 
+    namespace
+    {
+        constexpr bytes32_t compute_page_key(bytes32_t const &key) noexcept
+        {
+            constexpr uint8_t shift = constants::MIP8_STORAGE_PAGE_SHIFT;
+            static_assert(
+                shift > 0 && shift < 8,
+                "shift must be in (0, 8): shift >= 8 zeros the carry term "
+                "(and can overshift the operand), shift == 0 is a no-op");
+            bytes32_t result{};
+            result.bytes[0] = static_cast<uint8_t>(key.bytes[0] >> shift);
+            for (int i = 1; i < 32; ++i) {
+                result.bytes[i] = static_cast<uint8_t>(
+                    (key.bytes[i - 1] << (8 - shift)) |
+                    (key.bytes[i] >> shift));
+            }
+            return result;
+        }
+    } // namespace
+
     bool PrestateTracer::retain_beneficiary(State const &state) const
     {
         // The following logic determines whether to include the beneficiary in
@@ -261,7 +281,27 @@ namespace trace
         for (auto const &[address, storage_keys] : accesses_) {
             auto &entry = entries.emplace_back();
             entry.address = address;
-            entry.storage_keys.assign(storage_keys.begin(), storage_keys.end());
+            if constexpr (traits::mip_8_active()) {
+                // Under page-gas (MIP-8), warming one slot per page warms
+                // all 128 slots on that page. Keep only the minimum slot
+                // per page to avoid charging users for redundant entries.
+                Map<bytes32_t, bytes32_t> page_to_min_slot{};
+                for (auto const &key : storage_keys) {
+                    auto const page_key = compute_page_key(key);
+                    auto const [it, inserted] =
+                        page_to_min_slot.try_emplace(page_key, key);
+                    if (!inserted && key < it->second) {
+                        it->second = key;
+                    }
+                }
+                for (auto const &[_, slot] : page_to_min_slot) {
+                    entry.storage_keys.push_back(slot);
+                }
+            }
+            else {
+                entry.storage_keys.assign(
+                    storage_keys.begin(), storage_keys.end());
+            }
             // Match go-ethereum's access-list tracer output order: storage
             // keys are sorted within each address, then entries are sorted by
             // address below.

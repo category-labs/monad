@@ -7222,3 +7222,134 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
     monad_state_override_vec_destroy(state_override);
     monad_executor_destroy(executor);
 }
+
+// Tests that failure to apply state overrides fails gracefully.
+TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
+{
+    static constexpr Address contract =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address sender =
+        0x00000000000000000000000000000000feedface_address;
+
+    // Idea: We deploy a simple contract that does an SSTORE, then we call it
+    // such that it mutates the `BlockState` object held by the eth_simulate_v1
+    // context. Subsequently, we call the same contract again with a state
+    // override for the mutated field, which causes `block_state.can_merge` to
+    // fail because the override is incompatible with the mutated state.
+    // NOTE(dhil): This simulation pattern should probably be allowed, but for
+    // now we just want to check that it fails gracefully with a clear error
+    // message.
+
+    // The SSTORE contract.
+    using namespace monad::vm::utils;
+    auto const store_eb = evm_as::latest().sstore(0, 1).stop();
+    ASSERT_TRUE(evm_as::validate(store_eb));
+    std::vector<uint8_t> code{};
+    evm_as::compile(store_eb, code);
+    byte_string const store_contract{code.data(), code.size()};
+    bytes32_t const store_contract_hash = to_bytes(keccak256(store_contract));
+    vm::SharedIntercode const store_icode =
+        vm::make_shared_intercode(store_contract);
+
+    commit_sequential(
+        tdb,
+        sd({{contract,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{1'000'000},
+                          .code_hash = store_contract_hash,
+                          .nonce = 0}}}},
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 1'000'000, .nonce = 0}}}}}),
+        Code{{store_contract_hash, store_icode}},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, sd({}), {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    auto *const state_override = monad_state_override_vec_create(2);
+    auto *const block_override = monad_block_override_vec_create(2);
+
+    // The state override for the second call.
+    bytes32_t const override_key = 0x00_bytes32;
+    bytes32_t const override_value =
+        0x00000000000000000000000000000000000000000000000000000000000000FF_bytes32;
+
+    add_override_address_at(
+        state_override, 1, contract.bytes, sizeof(contract.bytes));
+    set_override_state_at(
+        state_override,
+        1,
+        contract.bytes,
+        sizeof(contract.bytes),
+        override_key.bytes,
+        sizeof(override_key.bytes),
+        override_value.bytes,
+        sizeof(override_value.bytes));
+
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender))),
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+
+    // The call transaction
+    Transaction const call_tx{
+        .gas_limit = 200'000'000,
+        .to = contract,
+    };
+    auto const encoded_call_tx = rlp::encode_transaction(call_tx);
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(
+            rlp::encode_string2(byte_string_view(encoded_call_tx))),
+        rlp::encode_list2(
+            rlp::encode_string2(byte_string_view(encoded_call_tx)))));
+
+    // Header for the base block (block 256).
+    BlockHeader const header{
+        .number = 255,
+        .gas_limit = 200'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET, // <- Must be configured for Monad.
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        255, // block_number
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        state_override,
+        block_override,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_NE(ctx.result->message, nullptr);
+    EXPECT_STREQ(ctx.result->message, "failed to apply state override");
+
+    monad_block_override_vec_destroy(block_override);
+    monad_state_override_vec_destroy(state_override);
+    monad_executor_destroy(executor);
+}

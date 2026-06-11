@@ -41,6 +41,11 @@ using SelfDestructStorageReads = ankerl::unordered_dense::segmented_map<
 class BlockState final
 {
     Db &db_;
+    // Optional cross-check db: when non-null, every storage read is also
+    // performed against this db and the result asserted to match. Used by
+    // the dual-db migration path to detect divergence between the slot-
+    // encoded primary and the page-encoded secondary.
+    Db *secondary_db_;
     vm::VM &vm_;
     std::unique_ptr<StateDeltas> state_;
     Code code_;
@@ -57,7 +62,7 @@ class BlockState final
     SelfDestructStorageReads self_destruct_storage_reads_;
 
 public:
-    BlockState(Db &, vm::VM &);
+    BlockState(Db &, vm::VM &, Db *secondary_db = nullptr);
 
     vm::VM &vm()
     {

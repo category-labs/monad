@@ -38,14 +38,17 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
+#include <category/execution/monad/chain/monad_devnet_fork.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/execution/monad/db/state_machine_init.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/statesync/statesync_server_network.hpp>
 #include <category/statesync/statesync_thread.hpp>
@@ -145,6 +148,7 @@ try {
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
         {{"ethereum_mainnet", CHAIN_CONFIG_ETHEREUM_MAINNET},
          {"monad_devnet", CHAIN_CONFIG_MONAD_DEVNET},
+         {"monad_devnet_fork", CHAIN_CONFIG_MONAD_DEVNET_FORK},
          {"monad_testnet", CHAIN_CONFIG_MONAD_TESTNET},
          {"monad_mainnet", CHAIN_CONFIG_MONAD_MAINNET},
          {"hive_net", CHAIN_CONFIG_HIVE_NET}};
@@ -271,11 +275,32 @@ try {
     if (!statesync.empty()) {
         net.emplace(statesync.c_str());
     }
+
+    auto chain = [chain_config] -> std::unique_ptr<Chain> {
+        switch (chain_config) {
+        case CHAIN_CONFIG_ETHEREUM_MAINNET:
+            return std::make_unique<EthereumMainnet>();
+        case CHAIN_CONFIG_MONAD_DEVNET:
+            return std::make_unique<MonadDevnet>();
+        case CHAIN_CONFIG_MONAD_DEVNET_FORK:
+            return std::make_unique<MonadDevnetFork>();
+        case CHAIN_CONFIG_MONAD_TESTNET:
+            return std::make_unique<MonadTestnet>();
+        case CHAIN_CONFIG_MONAD_MAINNET:
+            return std::make_unique<MonadMainnet>();
+        case CHAIN_CONFIG_HIVE_NET:
+            return std::make_unique<HiveNet>();
+        }
+        MONAD_ASSERT(false);
+    }();
+
     // The on-disk Db ctor reads the persisted state_machine_kind from
     // db_metadata and constructs the StateMachine via the registry. The
     // in-memory path has no metadata to read from and constructs the SM
     // inline.
     register_ethereum_state_machines();
+    register_monad_state_machines();
+
     mpt::Db raw_db = [&] {
         if (!db_in_memory) {
             return mpt::Db{mpt::OnDiskDbConfig{
@@ -288,29 +313,23 @@ try {
                 .sq_thread_cpu = sq_thread_cpu,
                 .dbname_paths = dbname_paths}};
         }
-        return mpt::Db{std::make_unique<InMemoryMachine>()};
-    }();
-
-    auto chain = [chain_config] -> std::unique_ptr<Chain> {
-        switch (chain_config) {
-        case CHAIN_CONFIG_ETHEREUM_MAINNET:
-            return std::make_unique<EthereumMainnet>();
-        case CHAIN_CONFIG_MONAD_DEVNET:
-            return std::make_unique<MonadDevnet>();
-        case CHAIN_CONFIG_MONAD_TESTNET:
-            return std::make_unique<MonadTestnet>();
-        case CHAIN_CONFIG_MONAD_MAINNET:
-            return std::make_unique<MonadMainnet>();
-        case CHAIN_CONFIG_HIVE_NET:
-            return std::make_unique<HiveNet>();
+        // In memory db: initialize state machine based on chain revision
+        auto const *const monad_chain =
+            dynamic_cast<MonadChain const *>(chain.get());
+        GenesisState const genesis_state = chain->get_genesis_state();
+        if (monad_chain != nullptr &&
+            monad_chain->get_monad_revision(genesis_state.header.timestamp) >=
+                MONAD_NEXT) {
+            return mpt::Db{std::make_unique<MonadInMemoryMachine>()};
         }
-        MONAD_ASSERT(false);
+        else {
+            return mpt::Db{std::make_unique<InMemoryMachine>()};
+        }
     }();
 
     TrieDb triedb{
         raw_db,
-        /*enable_multiblock_cache=*/true}; // init block number to latest
-                                           // finalized block
+        /*enable_multiblock_cache=*/true};
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
         if (!snapshot.empty()) {
@@ -342,6 +361,9 @@ try {
 
     std::unique_ptr<monad::StateSyncServer> sync_server;
     if (!statesync.empty()) {
+        // Works for either encoding: a page-encoded primary expands each
+        // page leaf into slot-format upserts in the server traversal, so no
+        // protocol changes are needed.
         sync_server = monad::make_statesync_server(monad::StateSyncServerConfig{
             .triedb = &triedb,
             .network = &net.value(),
@@ -412,6 +434,7 @@ try {
 
     Db &db = sync_server ? static_cast<Db &>(*sync_server->ctx)
                          : static_cast<Db &>(triedb);
+
     auto const result = [&] {
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:
@@ -440,6 +463,7 @@ try {
                 trace_calls,
                 chain_rlp_path);
         case CHAIN_CONFIG_MONAD_DEVNET:
+        case CHAIN_CONFIG_MONAD_DEVNET_FORK:
         case CHAIN_CONFIG_MONAD_TESTNET:
         case CHAIN_CONFIG_MONAD_MAINNET:
             if (as_eth_blocks) {
@@ -457,6 +481,36 @@ try {
                     block_db_timeout);
             }
             else {
+                // Live monad must be
+                // * slot-encoded primary + page-encoded secondary: dual-db mode
+                //
+                // TODO: after the migration release, we will promote the
+                // page-encoded secondary to be the primary and deprecate the
+                // slot-encoded db, at which point we can remove all dual-db
+                // logic and require a page-encoded single db for live monad.
+                if (chain_config == CHAIN_CONFIG_MONAD_TESTNET ||
+                    chain_config == CHAIN_CONFIG_MONAD_MAINNET) {
+                    MONAD_ASSERT_PRINTF(
+                        raw_db.timeline_active(
+                            monad::mpt::timeline_id::secondary),
+                        "live monad requires a page-encoded secondary during "
+                        "the migration release, but secondary timeline is not "
+                        "active on %s",
+                        chain_config == CHAIN_CONFIG_MONAD_TESTNET
+                            ? "monad_testnet"
+                            : "monad_mainnet"); // TODO: remove at release2
+                }
+                std::optional<mpt::Db> secondary_db;
+                std::optional<TrieDb> secondary_triedb;
+                if (raw_db.timeline_active(
+                        monad::mpt::timeline_id::secondary)) {
+                    secondary_db = raw_db.open_secondary_timeline();
+                    MONAD_ASSERT(secondary_db.has_value());
+                    secondary_triedb.emplace(*secondary_db);
+                    MONAD_ASSERT(
+                        secondary_triedb->is_page_encoded(),
+                        "secondary timeline must be page-encoded");
+                }
                 return runloop_monad(
                     dynamic_cast<MonadChain const &>(*chain),
                     block_db_path,
@@ -468,7 +522,9 @@ try {
                     block_num,
                     end_block_num,
                     stop,
-                    trace_calls);
+                    trace_calls,
+                    secondary_triedb.has_value() ? &*secondary_triedb
+                                                 : nullptr);
             }
         }
         MONAD_ABORT_PRINTF("Unsupported chain");
@@ -512,7 +568,7 @@ try {
             .dbname_paths = dbname_paths,
             .concurrent_read_io_limit = 128});
         mpt::Db db{io_ctx};
-        TrieDb ro_db{db};
+        TrieDb ro_db{db, false};
         write_to_file(ro_db.to_json(), dump_snapshot, block_num);
     }
     return result.has_error() ? EXIT_FAILURE : EXIT_SUCCESS;

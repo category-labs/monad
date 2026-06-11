@@ -219,6 +219,11 @@ monad_statesync_server_context::monad_statesync_server_context(TrieDb &rw)
 {
 }
 
+bool monad_statesync_server_context::is_page_encoded() const
+{
+    return rw.is_page_encoded();
+}
+
 std::optional<Account>
 monad_statesync_server_context::read_account(Address const &addr)
 {
@@ -229,6 +234,13 @@ bytes32_t monad_statesync_server_context::read_storage(
     Address const &addr, Incarnation const incarnation, bytes32_t const &key)
 {
     return rw.read_storage(addr, incarnation, key);
+}
+
+storage_page_t monad_statesync_server_context::read_storage_page(
+    Address const &addr, Incarnation const incarnation,
+    bytes32_t const &page_key)
+{
+    return rw.read_storage_page(addr, incarnation, page_key);
 }
 
 monad::vm::SharedIntercode
@@ -295,17 +307,12 @@ void monad_statesync_server_context::update_proposed_metadata(
 
 void monad_statesync_server_context::commit(
     bytes32_t const &block_id, CommitBuilder &builder,
-    BlockHeader const &header, std::unique_ptr<StateDeltas> state_deltas,
+    BlockHeader const &header, StateDeltas const &state_deltas,
     std::function<void(BlockHeader &)> populate_header_fn)
 {
-    MONAD_ASSERT(state_deltas);
-    on_commit(*this, *state_deltas, header.number, block_id);
+    on_commit(*this, state_deltas, header.number, block_id);
     rw.commit(
-        block_id,
-        builder,
-        header,
-        std::move(state_deltas),
-        std::move(populate_header_fn));
+        block_id, builder, header, state_deltas, std::move(populate_header_fn));
 }
 
 uint64_t monad_statesync_server_context::get_block_number() const

@@ -18,6 +18,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/mpt/update.hpp>
 
@@ -34,16 +35,29 @@ struct Withdrawal;
 
 class CommitBuilder
 {
+protected:
     std::deque<mpt::Update> update_alloc_;
     std::deque<byte_string> bytes_alloc_;
     std::deque<hash256> hash_alloc_;
     mpt::UpdateList updates_;
     uint64_t block_number_;
+    // Per-block post-state assembled by `add_state_deltas`.
+    // Slot based storage fills it with single-slot storage page keyed by
+    // storage slot key, Paged based storage fills it with the actual storage
+    // page keyed by storage page key.
+    ProposalPostState proposal_post_state_;
 
 public:
     explicit CommitBuilder(uint64_t block_number);
+    virtual ~CommitBuilder() = default;
 
-    CommitBuilder &add_state_deltas(StateDeltas const &);
+    virtual CommitBuilder &add_state_deltas(StateDeltas const &);
+
+    // Identifies the storage encoding this builder produces
+    virtual bool is_page_encoded() const
+    {
+        return false;
+    }
 
     CommitBuilder &add_code(Code const &);
 
@@ -64,6 +78,14 @@ public:
     // can be added after a build() call (e.g. add_block_header between the
     // two commit stages), but previously built updates are not retained.
     mpt::UpdateList build(mpt::NibblesView);
+
+    // Move out the proposal post-state assembled by `add_state_deltas`.
+    // Must be called after `add_state_deltas`; calling it twice yields an
+    // empty struct the second time.
+    ProposalPostState take_proposal_post_state()
+    {
+        return std::move(proposal_post_state_);
+    }
 };
 
 MONAD_NAMESPACE_END

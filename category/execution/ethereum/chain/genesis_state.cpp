@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/vm/code.hpp>
 
 #include <nlohmann/json.hpp>
@@ -88,21 +89,28 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
         deltas.emplace(addr, state_delta);
     }
 
-    CommitBuilder builder(genesis.header.number);
-    builder.add_state_deltas(deltas)
+    std::unique_ptr<CommitBuilder> builder;
+    if (db.is_page_encoded()) {
+        builder =
+            std::make_unique<PageCommitBuilder>(genesis.header.number, db);
+    }
+    else {
+        builder = std::make_unique<CommitBuilder>(genesis.header.number);
+    }
+    builder->add_state_deltas(deltas)
         .add_code(code_map)
         .add_receipts(std::vector<Receipt>{})
         .add_transactions(std::vector<Transaction>{}, std::vector<Address>{})
         .add_call_frames(std::vector<std::vector<CallFrame>>{})
         .add_ommers(std::vector<BlockHeader>{});
     if (genesis.header.withdrawals_root == NULL_ROOT) {
-        builder.add_withdrawals({});
+        builder->add_withdrawals({});
     }
     db.commit(
         NULL_HASH_BLAKE3,
-        builder,
+        *builder,
         genesis.header,
-        std::make_unique<StateDeltas>(std::move(deltas)),
+        deltas,
         [&](BlockHeader &h) {
             h.receipts_root = db.receipts_root();
             h.state_root = db.state_root();

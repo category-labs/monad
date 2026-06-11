@@ -36,13 +36,22 @@
 MONAD_NAMESPACE_BEGIN
 
 class CommitBuilder;
+struct storage_page_t;
 
 struct Db
 {
+    virtual bool is_page_encoded() const
+    {
+        return false;
+    }
+
     virtual std::optional<Account> read_account(Address const &) = 0;
 
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
+
+    virtual storage_page_t read_storage_page(
+        Address const &, Incarnation, bytes32_t const &page_key) = 0;
 
     virtual vm::SharedIntercode read_code(bytes32_t const &) = 0;
 
@@ -67,7 +76,7 @@ struct Db
     // two-stage commit
     virtual void commit(
         bytes32_t const &block_id, CommitBuilder &builder,
-        BlockHeader const &header, std::unique_ptr<StateDeltas> state_deltas,
+        BlockHeader const &header, StateDeltas const &state_deltas,
         std::function<void(BlockHeader &)> populate_header_fn) = 0;
 
     virtual std::string print_stats()

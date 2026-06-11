@@ -80,6 +80,21 @@
 #include <unistd.h>
 #include <zstd.h>
 
+char const *
+state_machine_kind_name(MONAD_MPT_NAMESPACE::state_machine_kind const kind)
+{
+    switch (kind) {
+    case MONAD_MPT_NAMESPACE::state_machine_kind::undefined:
+        return "undefined";
+    case MONAD_MPT_NAMESPACE::state_machine_kind::ethereum:
+        return "ethereum";
+    case MONAD_MPT_NAMESPACE::state_machine_kind::monad:
+        return "monad";
+    default:
+        MONAD_ABORT();
+    }
+}
+
 std::string print_bytes(MONAD_ASYNC_NAMESPACE::file_offset_t const bytes_)
 {
     auto bytes = double(bytes_);
@@ -936,6 +951,13 @@ public:
                         metadata->root_offsets_state.auto_expire_version_ =
                             old_metadata->root_offsets_state
                                 .auto_expire_version_;
+                        // Persist the state machine kind so the restored DB
+                        // reopens with the correct StateMachine. Without this
+                        // the kind stays undefined and create_state_machine
+                        // aborts on the next reopen.
+                        metadata->root_offsets_state.state_machine_kind_ =
+                            old_metadata->root_offsets_state
+                                .state_machine_kind_;
                         // Dual-timeline role + secondary ring header.
                         // Without primary_ring_idx the restored DB would
                         // route the primary role at ring_a even when the
@@ -953,6 +975,9 @@ public:
                             .auto_expire_version_ =
                             old_metadata->secondary_timeline_state
                                 .auto_expire_version_;
+                        metadata->secondary_timeline_state.state_machine_kind_ =
+                            old_metadata->secondary_timeline_state
+                                .state_machine_kind_;
                         // Deliberately NOT copied: pending_shrink_grow stays
                         // at its zero-initialised value (op_kind NONE) so the
                         // restored DB starts quiescent and does not replay an
@@ -1598,7 +1623,9 @@ opened.
                         std::string,
                         MONAD_MPT_NAMESPACE::state_machine_kind>{
                         {"ethereum",
-                         MONAD_MPT_NAMESPACE::state_machine_kind::ethereum}},
+                         MONAD_MPT_NAMESPACE::state_machine_kind::ethereum},
+                        {"monad",
+                         MONAD_MPT_NAMESPACE::state_machine_kind::monad}},
                     CLI::ignore_case));
             cli.add_option(
                 "--compression-level",
@@ -1735,7 +1762,8 @@ opened.
         if (aux.metadata_ctx().is_new_pool()) {
             aux.metadata_ctx().set_state_machine_kind(
                 MONAD_MPT_NAMESPACE::timeline_id::primary, impl.state_machine);
-            cout << "Stamped state-machine kind on primary timeline.\n";
+            cout << "Stamped state-machine kind on primary timeline to "
+                 << state_machine_kind_name(impl.state_machine) << ".\n";
         }
 
         // Secondary timeline lifecycle. These execute against the open
@@ -1760,8 +1788,9 @@ opened.
                 MONAD_MPT_NAMESPACE::timeline_id::secondary,
                 impl.state_machine);
             aux.activate_secondary_timeline();
-            cout << "Activated secondary timeline; stamped state-machine "
-                    "kind.\n";
+            cout << "Activated secondary timeline; stamped state-machine kind "
+                    "to "
+                 << state_machine_kind_name(impl.state_machine) << ".\n";
         }
         else if (impl.deactivate_secondary) {
             if (!aux.metadata_ctx().timeline_active(

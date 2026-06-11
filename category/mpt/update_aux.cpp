@@ -236,9 +236,6 @@ void UpdateAux::clear_ondisk_db()
 {
     MONAD_ASSERT(is_on_disk());
     // No finalized version means no anchor for either timeline; wipe both.
-    if (metadata_ctx_->timeline_active(timeline_id::secondary)) {
-        deactivate_secondary_timeline();
-    }
     auto do_ = [&](unsigned const which) {
         auto const g = metadata_ctx_->main_mutable(which)->hold_dirty();
         metadata_ctx_->root_offsets(which).reset_all(0);
@@ -798,31 +795,29 @@ void UpdateAux::clear_root_offsets_up_to_and_including(
 }
 
 void UpdateAux::move_trie_version_forward(
-    uint64_t const src, uint64_t const dest)
+    uint64_t const src, uint64_t const dest, timeline_id const tid)
 {
     MONAD_ASSERT(is_on_disk());
-    MONAD_ASSERT(metadata_ctx_->version_is_valid_ondisk(src));
+    MONAD_ASSERT(metadata_ctx_->version_is_valid_ondisk(src, tid));
     // only allow moving forward
     MONAD_ASSERT(
         dest > src && dest != INVALID_BLOCK_NUM &&
-        dest >= metadata_ctx_->db_history_max_version());
-    auto const offset = metadata_ctx_->get_root_offset_at_version(src);
-    metadata_ctx_->update_root_offset(
-        src, INVALID_OFFSET, timeline_id::primary);
+        dest >= metadata_ctx_->db_history_max_version(tid));
+    auto const offset = metadata_ctx_->get_root_offset_at_version(src, tid);
+    metadata_ctx_->update_root_offset(src, INVALID_OFFSET, tid);
     // Must erase versions that will fall out of history range first
     if (dest >= metadata_ctx_->version_history_length()) {
         erase_versions_up_to_and_including(
-            dest - metadata_ctx_->version_history_length(),
-            timeline_id::primary);
+            dest - metadata_ctx_->version_history_length(), tid);
     }
-    metadata_ctx_->fast_forward_next_version(dest, timeline_id::primary);
-    metadata_ctx_->append_root_offset(offset, timeline_id::primary);
-    MONAD_ASSERT(dest == metadata_ctx_->db_history_max_version());
-    MONAD_ASSERT(metadata_ctx_->version_is_valid_ondisk(dest));
-    if (metadata_ctx_->get_auto_expire_version_metadata(timeline_id::primary) ==
+    metadata_ctx_->fast_forward_next_version(dest, tid);
+    metadata_ctx_->append_root_offset(offset, tid);
+    MONAD_ASSERT(dest == metadata_ctx_->db_history_max_version(tid));
+    MONAD_ASSERT(metadata_ctx_->version_is_valid_ondisk(dest, tid));
+    if (metadata_ctx_->get_auto_expire_version_metadata(tid) ==
         static_cast<int64_t>(src)) {
         metadata_ctx_->set_auto_expire_version_metadata(
-            timeline_id::primary, static_cast<int64_t>(dest));
+            tid, static_cast<int64_t>(dest));
     }
 }
 

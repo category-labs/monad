@@ -30,6 +30,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
+// TODO: template by page_encoded as well. Will need it for release2
 class TrieRODb final : public ::monad::Db
 {
     ::monad::mpt::RODb &db_;
@@ -107,9 +108,15 @@ public:
             return {};
         }
         auto encoded_storage = storage_leaf_res.value().node->value();
-        auto const storage = decode_storage_db_ignore_slot(encoded_storage);
+        auto const storage = decode_storage_db_ignore_key(encoded_storage);
         MONAD_ASSERT(!storage.has_error());
         return to_bytes(storage.value());
+    }
+
+    virtual storage_page_t
+    read_storage_page(Address const &, Incarnation, bytes32_t const &) override
+    {
+        MONAD_ABORT("TrieRODb is slot-encoded; read_storage_page unsupported");
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override
@@ -133,8 +140,7 @@ public:
 
     virtual void commit(
         bytes32_t const &, CommitBuilder &, BlockHeader const &,
-        std::unique_ptr<StateDeltas>,
-        std::function<void(BlockHeader &)>) override
+        StateDeltas const &, std::function<void(BlockHeader &)>) override
     {
         MONAD_ABORT();
     }

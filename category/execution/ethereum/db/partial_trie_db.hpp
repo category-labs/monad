@@ -168,6 +168,9 @@ public:
     bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
 
+    storage_page_t read_storage_page(
+        Address const &, Incarnation, bytes32_t const &page_key) override;
+
     vm::SharedIntercode read_code(bytes32_t const &code_hash) override;
 
     BlockHeader read_eth_header() override;
@@ -185,8 +188,7 @@ public:
 
     void commit(
         bytes32_t const &block_id, CommitBuilder &, BlockHeader const &,
-        std::unique_ptr<StateDeltas>,
-        std::function<void(BlockHeader &)>) override;
+        StateDeltas const &, std::function<void(BlockHeader &)>) override;
 
     // No-op overrides for operations that are irrelevant in the witness
     // context.

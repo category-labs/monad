@@ -27,9 +27,19 @@ MONAD_NAMESPACE_BEGIN
 template <class Bytes>
 struct BytesHashCompare
 {
+    // Ankerl-style hasher requirement.
+    using is_avalanching = void;
+
     size_t hash(Bytes const &a) const
     {
         return komihash(a.bytes, sizeof(Bytes), 0);
+    }
+
+    // TBB concurrent_hash_map calls hash() / equal(); ankerl::unordered_dense
+    // calls operator() / equal(). Provide both shapes from the same type.
+    size_t operator()(Bytes const &a) const
+    {
+        return hash(a);
     }
 
     bool equal(Bytes const &a, Bytes const &b) const

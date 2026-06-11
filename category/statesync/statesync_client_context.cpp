@@ -13,14 +13,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
+#include <category/core/bytes_hash_compare.hpp>
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/chain/monad_devnet.hpp>
+#include <category/execution/monad/chain/monad_devnet_fork.hpp>
+#include <category/execution/monad/chain/monad_mainnet.hpp>
+#include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/update.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_protocol.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <deque>
 #include <sys/sysinfo.h>
@@ -28,13 +38,38 @@
 using namespace monad;
 using namespace monad::mpt;
 
+namespace
+{
+    std::unique_ptr<monad::MonadChain const>
+    make_chain(monad_chain_config const cfg)
+    {
+        switch (cfg) {
+        case CHAIN_CONFIG_MONAD_DEVNET:
+            return std::make_unique<monad::MonadDevnet>();
+        case CHAIN_CONFIG_MONAD_DEVNET_FORK:
+            return std::make_unique<monad::MonadDevnetFork>();
+        case CHAIN_CONFIG_MONAD_TESTNET:
+            return std::make_unique<monad::MonadTestnet>();
+        case CHAIN_CONFIG_MONAD_MAINNET:
+            return std::make_unique<monad::MonadMainnet>();
+        case CHAIN_CONFIG_ETHEREUM_MAINNET:
+        case CHAIN_CONFIG_HIVE_NET:
+            MONAD_ABORT_PRINTF(
+                "statesync client requires a Monad chain config, got %d", cfg);
+        }
+        MONAD_ABORT_PRINTF("unknown chain config %d", cfg);
+    }
+} // namespace
+
 monad_statesync_client_context::monad_statesync_client_context(
+    monad_chain_config const chain_config,
     std::vector<std::filesystem::path> const dbname_paths,
     std::optional<unsigned> const sq_thread_cpu, unsigned const wr_buffers,
     monad_statesync_client *const sync,
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request))
-    : db{mpt::OnDiskDbConfig{
+    : chain{make_chain(chain_config)}
+    , db{mpt::OnDiskDbConfig{
           .append = true,
           .compaction = false,
           .rewind_to_latest_finalized = true,
@@ -44,6 +79,17 @@ monad_statesync_client_context::monad_statesync_client_context(
           .sq_thread_cpu = sq_thread_cpu,
           .dbname_paths = dbname_paths}}
     , tdb{db} // open with latest finalized if valid, otherwise init as block 0
+    , secondary_db{[this] {
+        if (db.timeline_active(timeline_id::secondary)) {
+            auto ret = db.open_secondary_timeline();
+            MONAD_ASSERT(ret.has_value());
+            MONAD_ASSERT(
+                ret->state_machine_type() == state_machine_kind::monad);
+            return std::make_unique<mpt::Db>(std::move(ret.value()));
+        }
+        return std::unique_ptr<mpt::Db>{};
+    }()}
+    , secondary_tdb{secondary_db ? std::make_unique<TrieDb>(*secondary_db) : nullptr}
     , progress(
           monad_statesync_client_prefixes(),
           {db.get_latest_version(), db.get_latest_version()})
@@ -55,59 +101,69 @@ monad_statesync_client_context::monad_statesync_client_context(
     , statesync_send_request{statesync_send_request}
 {
     MONAD_ASSERT(db.get_latest_version() == db.get_latest_finalized_version());
+    MONAD_ASSERT((secondary_db != nullptr) == (secondary_tdb != nullptr));
+    MONAD_ASSERT(secondary_tdb == nullptr || secondary_tdb->is_page_encoded());
 }
 
 void monad_statesync_client_context::prepare_current_state()
 {
-    auto const latest_version = db.get_latest_version();
-    // First commit an empty finalized state to the current one.
-    // This requires incarnation=true so the compaction process in latest root
-    // value (`src_root->value()`) is correctly preserved.
-    UpdateList finalized_empty;
-    Update finalized{
-        .key = finalized_nibbles,
-        .value = byte_string_view{},
-        .incarnation = true,
-        .next = UpdateList{},
-        .version = static_cast<int64_t>(current)};
-    finalized_empty.push_front(finalized);
-    auto const src_root = db.load_root_for_version(latest_version);
-    bool write_root = false;
-    auto dest_root = db.upsert(
-        src_root,
-        std::move(finalized_empty),
-        current,
-        false,
-        false,
-        write_root);
-    MONAD_ASSERT(db.find(dest_root, finalized_nibbles, current).has_value());
+    // Roll forward `target_db`: upsert an empty finalized marker for the
+    // `current` version and carry the state + code subtries over from
+    // `latest_version`.
+    auto const roll_forward = [&](mpt::Db &target_db, auto &target_tdb) {
+        auto const latest_version = target_db.get_latest_version();
+        UpdateList finalized_empty;
+        Update finalized{
+            .key = finalized_nibbles,
+            .value = byte_string_view{},
+            .incarnation = true,
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(current)};
+        finalized_empty.push_front(finalized);
+        auto const src_root = target_db.load_root_for_version(latest_version);
+        bool write_root = false;
+        auto dest_root = target_db.upsert(
+            src_root,
+            std::move(finalized_empty),
+            current,
+            false,
+            false,
+            write_root);
+        MONAD_ASSERT(
+            target_db.find(dest_root, finalized_nibbles, current).has_value());
 
-    // move state and code from latest finalized to current
-    auto const state_key = concat(FINALIZED_NIBBLE, STATE_NIBBLE);
-    auto const code_key = concat(FINALIZED_NIBBLE, CODE_NIBBLE);
-    dest_root = db.copy_trie(
-        src_root,
-        state_key,
-        std::move(dest_root),
-        state_key,
-        current,
-        write_root);
-    write_root = true;
-    dest_root = db.copy_trie(
-        src_root,
-        code_key,
-        std::move(dest_root),
-        code_key,
-        current,
-        write_root);
-    auto const finalized_res = db.find(dest_root, finalized_nibbles, current);
-    MONAD_ASSERT(finalized_res.has_value());
-    MONAD_ASSERT(finalized_res.value().node->number_of_children() == 2);
-    MONAD_ASSERT(db.find(dest_root, state_key, current).has_value());
-    MONAD_ASSERT(db.find(dest_root, code_key, current).has_value());
-    MONAD_ASSERT(dest_root->value() == src_root->value());
-    tdb.reset_root(dest_root, current);
-    MONAD_ASSERT(db.get_latest_version() == current);
+        auto const state_key = concat(FINALIZED_NIBBLE, STATE_NIBBLE);
+        auto const code_key = concat(FINALIZED_NIBBLE, CODE_NIBBLE);
+        dest_root = target_db.copy_trie(
+            src_root,
+            state_key,
+            std::move(dest_root),
+            state_key,
+            current,
+            write_root);
+        write_root = true;
+        dest_root = target_db.copy_trie(
+            src_root,
+            code_key,
+            std::move(dest_root),
+            code_key,
+            current,
+            write_root);
+        auto const finalized_res =
+            target_db.find(dest_root, finalized_nibbles, current);
+        MONAD_ASSERT(finalized_res.has_value());
+        MONAD_ASSERT(finalized_res.value().node->number_of_children() == 2);
+        MONAD_ASSERT(target_db.find(dest_root, state_key, current).has_value());
+        MONAD_ASSERT(target_db.find(dest_root, code_key, current).has_value());
+        MONAD_ASSERT(dest_root->value() == src_root->value());
+        target_tdb.reset_root(dest_root, current);
+        MONAD_ASSERT(target_db.get_latest_version() == current);
+    };
+
+    roll_forward(db, tdb);
+    if (secondary_tdb) {
+        roll_forward(*secondary_db, *secondary_tdb);
+    }
 }
 
 void monad_statesync_client_context::commit()
@@ -116,88 +172,212 @@ void monad_statesync_client_context::commit()
         db.get_latest_version() != current) {
         prepare_current_state();
     }
-    std::deque<mpt::Update> alloc;
-    std::deque<byte_string> bytes_alloc;
-    std::deque<hash256> hash_alloc;
-    UpdateList accounts;
-    for (auto const &[addr, delta] : deltas) {
+
+    // Build the encoded block header once; it's identical for both dbs.
+    auto const header_rlp = rlp::encode_block_header(tgrt);
+
+    // Build a slot-encoded storage UpdateList for an account's deltas.
+    auto build_slot_storage = [this](
+                                  TrieDb &,
+                                  StorageDeltas const &slot_deltas,
+                                  std::deque<mpt::Update> &alloc,
+                                  std::deque<byte_string> &bytes_alloc,
+                                  std::deque<hash256> &hash_alloc) {
         UpdateList storage;
-        std::optional<byte_string_view> value;
-        if (delta.has_value()) {
-            auto const &[acct, deltas] = delta.value();
-            value = bytes_alloc.emplace_back(encode_account_db(addr, acct));
-            for (auto const &[key, val] : deltas) {
-                storage.push_front(alloc.emplace_back(Update{
-                    .key = hash_alloc.emplace_back(keccak256(key.bytes)),
-                    .value = val == bytes32_t{}
-                                 ? std::nullopt
-                                 : std::make_optional<byte_string_view>(
-                                       bytes_alloc.emplace_back(
-                                           encode_storage_db(key, val))),
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(current)}));
-            }
+        for (auto const &[key, val] : slot_deltas) {
+            storage.push_front(alloc.emplace_back(Update{
+                .key = hash_alloc.emplace_back(keccak256(key.bytes)),
+                .value = val == bytes32_t{}
+                             ? std::nullopt
+                             : std::make_optional<byte_string_view>(
+                                   bytes_alloc.emplace_back(
+                                       encode_storage_db(key, val))),
+                .incarnation = false,
+                .next = UpdateList{},
+                .version = static_cast<int64_t>(current)}));
         }
-        accounts.push_front(alloc.emplace_back(Update{
-            .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
-            .value = value,
-            .incarnation = false,
-            .next = std::move(storage),
-            .version = static_cast<int64_t>(current)}));
-    }
-    UpdateList code_updates;
+        return storage;
+    };
 
-    for (auto const &[hash, bytes] : code) {
-        code_updates.push_front(alloc.emplace_back(Update{
-            .key = NibblesView{hash},
-            .value = bytes,
+    // Build a page-encoded storage UpdateList for Db2. Slots are grouped by
+    // page_key and merged onto any existing page contents read from the
+    // secondary trie. A page that ends up empty becomes a delete on the
+    // page entry.
+    auto build_page_storage = [this](
+                                  TrieDb &paged_db,
+                                  Address const &addr,
+                                  StorageDeltas const &slot_deltas,
+                                  std::deque<mpt::Update> &alloc,
+                                  std::deque<byte_string> &bytes_alloc,
+                                  std::deque<hash256> &hash_alloc) {
+        UpdateList storage;
+        // Per-account page granularity: keyed by page_key, value is the
+        // mutable storage_page_t being merged. Each first-touch of a page
+        // reads the current page from the secondary trie so subsequent slot
+        // writes at the same page_key compose into one update.
+        ankerl::unordered_dense::segmented_map<
+            bytes32_t,
+            storage_page_t,
+            BytesHashCompare<bytes32_t>>
+            pages;
+        for (auto const &[slot_key, slot_val] : slot_deltas) {
+            auto const pg_key = compute_page_key(slot_key);
+            auto const slot_off = compute_slot_offset(slot_key);
+            auto [it, inserted] = pages.try_emplace(pg_key);
+            if (inserted) {
+                // Incarnation isn't tracked in statesync deltas; TrieDb
+                // ignores it for storage reads, so a fixed value is fine.
+                it->second =
+                    paged_db.read_storage_page(addr, Incarnation{0, 0}, pg_key);
+            }
+            it->second.set(slot_off, slot_val);
+        }
+        for (auto const &[page_key, page] : pages) {
+            bool const is_empty = page.is_empty();
+            storage.push_front(alloc.emplace_back(Update{
+                .key = hash_alloc.emplace_back(
+                    keccak256({page_key.bytes, sizeof(page_key.bytes)})),
+                .value = is_empty
+                             ? std::nullopt
+                             : std::make_optional<byte_string_view>(
+                                   bytes_alloc.emplace_back(
+                                       encode_storage_page_db(page_key, page))),
+                .incarnation = false,
+                .next = UpdateList{},
+                .version = static_cast<int64_t>(current)}));
+        }
+        return storage;
+    };
+
+    auto build_and_upsert = [this, &header_rlp](
+                                mpt::Db &target_db,
+                                auto &target_tdb,
+                                auto build_storage) {
+        std::deque<mpt::Update> alloc;
+        std::deque<byte_string> bytes_alloc;
+        std::deque<hash256> hash_alloc;
+
+        UpdateList accounts;
+        for (auto const &[addr, delta] : deltas) {
+            UpdateList storage;
+            std::optional<byte_string_view> value;
+            if (delta.has_value()) {
+                auto const &[acct, slot_deltas] = delta.value();
+                value = bytes_alloc.emplace_back(encode_account_db(addr, acct));
+                storage = build_storage(
+                    addr, slot_deltas, alloc, bytes_alloc, hash_alloc);
+            }
+            accounts.push_front(alloc.emplace_back(Update{
+                .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
+                .value = value,
+                .incarnation = false,
+                .next = std::move(storage),
+                .version = static_cast<int64_t>(current)}));
+        }
+        UpdateList code_updates;
+        for (auto const &[hash, bytes] : code) {
+            code_updates.push_front(alloc.emplace_back(Update{
+                .key = NibblesView{hash},
+                .value = bytes,
+                .incarnation = false,
+                .next = UpdateList{},
+                .version = static_cast<int64_t>(current)}));
+        }
+
+        // Stamp the page-encoding marker on the state subtrie root for
+        // page-encoded dbs; slot-encoded dbs leave it empty.
+        auto state_update = Update{
+            .key = state_nibbles,
+            .value = byte_string_view{},
             .incarnation = false,
+            .next = std::move(accounts),
+            .version = static_cast<int64_t>(current)};
+        auto code_update = Update{
+            .key = code_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(code_updates),
+            .version = static_cast<int64_t>(current)};
+        auto block_header_update = Update{
+            .key = block_header_nibbles,
+            .value = header_rlp,
+            .incarnation = true,
             .next = UpdateList{},
-            .version = static_cast<int64_t>(current)}));
+            .version = static_cast<int64_t>(current)};
+        UpdateList updates;
+        updates.push_front(state_update);
+        updates.push_front(code_update);
+        updates.push_front(block_header_update);
+
+        UpdateList finalized_updates;
+        Update finalized{
+            .key = finalized_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(updates),
+            .version = static_cast<int64_t>(current)};
+        finalized_updates.push_front(finalized);
+
+        target_tdb.reset_root(
+            target_db.upsert(
+                target_tdb.get_root(),
+                std::move(finalized_updates),
+                current,
+                false,
+                false),
+            current);
+    };
+
+    // Primary Db
+    if (!tdb.is_page_encoded()) {
+        build_and_upsert(
+            db,
+            tdb,
+            [&](Address const &,
+                StorageDeltas const &slot_deltas,
+                std::deque<mpt::Update> &alloc,
+                std::deque<byte_string> &bytes_alloc,
+                std::deque<hash256> &hash_alloc) {
+                return build_slot_storage(
+                    tdb, slot_deltas, alloc, bytes_alloc, hash_alloc);
+            });
+    }
+    else {
+        build_and_upsert(
+            db,
+            tdb,
+            [&](Address const &addr,
+                StorageDeltas const &slot_deltas,
+                std::deque<mpt::Update> &alloc,
+                std::deque<byte_string> &bytes_alloc,
+                std::deque<hash256> &hash_alloc) {
+                return build_page_storage(
+                    tdb, addr, slot_deltas, alloc, bytes_alloc, hash_alloc);
+            });
     }
 
-    auto state_update = Update{
-        .key = state_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(accounts),
-        .version = static_cast<int64_t>(current)};
-    auto code_update = Update{
-        .key = code_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(code_updates),
-        .version = static_cast<int64_t>(current)};
-    auto const rlp = rlp::encode_block_header(tgrt);
-    auto block_header_update = Update{
-        .key = block_header_nibbles,
-        .value = rlp,
-        .incarnation = true,
-        .next = UpdateList{},
-        .version = static_cast<int64_t>(current)};
-    UpdateList updates;
-    updates.push_front(state_update);
-    updates.push_front(code_update);
-    updates.push_front(block_header_update);
+    // Secondary: page-encoded storage. Each per-account call builds its
+    // own page map; pages from one account never collide with another's,
+    // so no cross-account cache is needed.
+    if (secondary_tdb) {
+        build_and_upsert(
+            *secondary_db,
+            *secondary_tdb,
+            [&](Address const &addr,
+                StorageDeltas const &slot_deltas,
+                std::deque<mpt::Update> &alloc,
+                std::deque<byte_string> &bytes_alloc,
+                std::deque<hash256> &hash_alloc) {
+                return build_page_storage(
+                    *secondary_tdb,
+                    addr,
+                    slot_deltas,
+                    alloc,
+                    bytes_alloc,
+                    hash_alloc);
+            });
+    }
 
-    UpdateList finalized_updates;
-    Update finalized{
-        .key = finalized_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(updates),
-        .version = static_cast<int64_t>(current)};
-    finalized_updates.push_front(finalized);
-
-    tdb.reset_root(
-        db.upsert(
-            tdb.get_root(),
-            std::move(finalized_updates),
-            current,
-            false,
-            false),
-        current);
     code.clear();
     deltas.clear();
 }

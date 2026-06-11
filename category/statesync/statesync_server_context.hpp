@@ -98,12 +98,18 @@ struct monad_statesync_server_context final : public monad::Db
 
     explicit monad_statesync_server_context(monad::TrieDb &rw);
 
+    virtual bool is_page_encoded() const override;
+
     virtual std::optional<monad::Account>
     read_account(monad::Address const &addr) override;
 
     virtual monad::bytes32_t read_storage(
         monad::Address const &addr, monad::Incarnation,
         monad::bytes32_t const &key) override;
+
+    virtual monad::storage_page_t read_storage_page(
+        monad::Address const &addr, monad::Incarnation,
+        monad::bytes32_t const &page_key) override;
 
     virtual monad::vm::SharedIntercode
     read_code(monad::bytes32_t const &hash) override;
@@ -131,7 +137,7 @@ struct monad_statesync_server_context final : public monad::Db
 
     virtual void commit(
         monad::bytes32_t const &, monad::CommitBuilder &,
-        monad::BlockHeader const &, std::unique_ptr<monad::StateDeltas>,
+        monad::BlockHeader const &, monad::StateDeltas const &,
         std::function<void(monad::BlockHeader &)>) override;
 
     virtual uint64_t get_block_number() const override;

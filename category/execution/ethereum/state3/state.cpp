@@ -412,11 +412,26 @@ evmc_access_status State::access_account(Address const &address)
     return account_state.access();
 }
 
+template <Traits traits>
 evmc_access_status
 State::access_storage(Address const &address, bytes32_t const &key)
 {
     auto &account_state = current_account_state(address);
-    return account_state.access_storage(key);
+    auto const slot_status = account_state.access_storage(key);
+    if constexpr (traits::mip_8_active()) {
+        return account_state.page_tracker_.access_page(key);
+    }
+    return slot_status;
+}
+
+EXPLICIT_TRAITS_MEMBER(State::access_storage);
+
+vm::Host::PageStorageStatus State::update_page(
+    Address const &address, bytes32_t const &key,
+    evmc_storage_status const status)
+{
+    auto &account_state = current_account_state(address);
+    return account_state.page_tracker_.update_page(key, status);
 }
 
 template <Traits traits>

@@ -796,6 +796,7 @@ int main(int const argc, char *argv[])
     bool interactive = false;
     std::optional<std::filesystem::path> dump_binary_snapshot;
     std::optional<std::filesystem::path> load_binary_snapshot;
+    bool load_to_secondary = false;
     uint64_t version;
     unsigned dump_concurrency_limit = 2048;
     uint64_t total_shards = 1;
@@ -849,13 +850,25 @@ int main(int const argc, char *argv[])
             "Each "
             "shard writes its portion of data and headers.")
         ->needs(dump_binary_snapshot_option);
+    auto *const load_binary_snapshot_option =
+        cli_group
+            ->add_option(
+                "--load-binary-snapshot,--load_binary_snapshot",
+                load_binary_snapshot,
+                "Load a binary snapshot to db")
+            ->check(CLI::ExistingDirectory)
+            ->excludes(dump_binary_snapshot_option);
     cli_group
-        ->add_option(
-            "--load-binary-snapshot,--load_binary_snapshot",
-            load_binary_snapshot,
-            "Load a binary snapshot to db")
-        ->check(CLI::ExistingDirectory)
-        ->excludes(dump_binary_snapshot_option);
+        ->add_flag(
+            "--secondary",
+            load_to_secondary,
+            "When loading, load into the secondary timeline instead of the "
+            "primary. The target's storage encoding is derived from its "
+            "persisted state_machine_kind, which must already be stamped on "
+            "disk (e.g. via monad-mpt --activate-secondary --state-machine). "
+            "The snapshot itself must be slot-encoded (the standard format "
+            "produced by --dump-binary-snapshot from a slot db).")
+        ->needs(load_binary_snapshot_option);
     mode_group->require_option(0, 1);
     try {
         cli.parse(argc, argv);
@@ -937,11 +950,14 @@ int main(int const argc, char *argv[])
             c_dbname_paths.size(),
             sq_thread_cpu.value_or(std::numeric_limits<unsigned>::max()),
             load_binary_snapshot.value().c_str(),
-            version);
+            version,
+            load_to_secondary);
         LOG_INFO(
-            "snapshot version={} load_binary_snapshot={} elapsed={}",
+            "snapshot version={} load_binary_snapshot={} load_to_secondary={} "
+            "elapsed={}",
             version,
             load_binary_snapshot.value(),
+            load_to_secondary,
             std::chrono::steady_clock::now() - begin);
     }
     return 0;

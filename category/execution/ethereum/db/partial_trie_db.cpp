@@ -759,6 +759,12 @@ bytes32_t PartialTrieDb::read_storage(
     return !val_result ? bytes32_t{} : val_result->value;
 }
 
+storage_page_t PartialTrieDb::read_storage_page(
+    Address const &, Incarnation, bytes32_t const &)
+{
+    MONAD_ABORT("PartialTrieDb is slot-encoded; read_storage_page unsupported");
+}
+
 vm::SharedIntercode PartialTrieDb::read_code(bytes32_t const &code_hash)
 {
     auto it = codes_.find(code_hash);
@@ -814,15 +820,13 @@ void PartialTrieDb::set_block_and_prefix(
 
 void PartialTrieDb::commit(
     bytes32_t const &, CommitBuilder &, BlockHeader const &header,
-    std::unique_ptr<StateDeltas> deltas,
+    StateDeltas const &deltas,
     std::function<void(BlockHeader &)> populate_header_fn)
 {
-    MONAD_ASSERT(deltas);
-
     block_number_ = header.number;
 
     // Pass 1: inserts and updates (accounts that exist in post-state)
-    for (auto const &[addr, delta] : *deltas) {
+    for (auto const &[addr, delta] : deltas) {
         auto const &new_account = delta.account.second;
         if (!new_account) {
             continue;
@@ -864,7 +868,7 @@ void PartialTrieDb::commit(
     }
 
     // Pass 2: deletions (accounts removed in post-state)
-    for (auto const &[addr, delta] : *deltas) {
+    for (auto const &[addr, delta] : deltas) {
         if (delta.account.second) {
             continue;
         }

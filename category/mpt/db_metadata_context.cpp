@@ -395,6 +395,13 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
         MONAD_ASSERT(
             ring_total > 0 && (ring_total & (ring_total - 1)) == 0,
             "Number of cnv chunks for root offsets must be a power of two");
+        MONAD_ASSERT_PRINTF(
+            ring_total <=
+                detail::db_metadata::root_offsets_ring_t::CNV_CHUNKS_CAP,
+            "storage pool requires %u cnv chunks per ring, exceeds the "
+            "db_metadata cnv_chunks[] capacity %zu",
+            ring_total,
+            detail::db_metadata::root_offsets_ring_t::CNV_CHUNKS_CAP);
 
         auto &a_storage = copies_[0].main->root_offsets.storage_;
         auto &b_storage = copies_[0].main->secondary_timeline.storage_;
@@ -881,7 +888,21 @@ void DbMetadataContext::replay_pending_shrink_grow_()
                               : copies_[1].main->pending_shrink_grow;
     auto const op_kind = pending.op_kind;
     auto const op_param = pending.op_param;
+    // op_param is read straight off the (checksum-less) on-disk metadata.
+    // Bound it before the activate/deactivate bodies use it to index
+    // cnv_chunks[] and the ring spans, so a corrupt value aborts cleanly
+    // rather than going out of bounds. map_ring_storage_ already asserted
+    // max_chunks <= cnv_chunks[] capacity, and it runs before replay.
+    uint32_t const max_chunks = ring_max_chunks_();
     if (op_kind == detail::db_metadata::PENDING_OP_ACTIVATE) {
+        // activate splits the primary in half: the body indexes up to
+        // 2*op_param-1, so op_param must not exceed half the physical count.
+        MONAD_ASSERT_PRINTF(
+            op_param >= 1 && op_param <= max_chunks / 2,
+            "corrupt db_metadata: pending activate op_param=%u out of range "
+            "(max_chunks=%u)",
+            op_param,
+            max_chunks);
         LOG_INFO(
             "Replaying in-flight activate_secondary_header (target primary "
             "chunks = {}) after unclean shutdown",
@@ -889,6 +910,14 @@ void DbMetadataContext::replay_pending_shrink_grow_()
         do_activate_secondary_body_(op_param);
     }
     else if (op_kind == detail::db_metadata::PENDING_OP_DEACTIVATE) {
+        // deactivate grows the primary to the full ring: the body indexes up
+        // to op_param-1.
+        MONAD_ASSERT_PRINTF(
+            op_param >= 1 && op_param <= max_chunks,
+            "corrupt db_metadata: pending deactivate op_param=%u out of range "
+            "(max_chunks=%u)",
+            op_param,
+            max_chunks);
         LOG_INFO(
             "Replaying in-flight deactivate_secondary_header (target "
             "primary chunks = {}) after unclean shutdown",

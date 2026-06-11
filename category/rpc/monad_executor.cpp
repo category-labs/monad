@@ -191,7 +191,8 @@ namespace
                 update_state(state_delta.state);
             }
         }
-        MONAD_ASSERT(block_state.can_merge(state));
+        MONAD_ASSERT_THROW(
+            block_state.can_merge(state), "failed to apply state override");
         block_state.merge(state);
     }
 

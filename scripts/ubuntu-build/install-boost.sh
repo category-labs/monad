@@ -10,6 +10,8 @@ packages=(
   libboost-json1.83-dev
   libboost-stacktrace1.83.0
   libboost-stacktrace1.83-dev
+  libboost-test1.83.0
+  libboost-test1.83-dev
 )
 
 apt-get install -y --no-install-recommends "${packages[@]}"

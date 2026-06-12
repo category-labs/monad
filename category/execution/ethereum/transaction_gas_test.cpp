@@ -37,7 +37,7 @@ namespace
 
 TYPED_TEST(TraitsTest, intrinsic_gas)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_HOMESTEAD);
+    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_PETERSBURG);
 
     auto non_zero_since =
         []<monad_eth_revision r>(rev<r>, uint64_t val) consteval {
@@ -62,15 +62,8 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
     }
 
     static constexpr auto zero_token_cost = 4;
-    static constexpr auto non_zero_token_cost = [] {
-        if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_ISTANBUL) {
-            // EIP-2028
-            return 68;
-        }
-        else {
-            return 16;
-        }
-    }();
+    // EIP-2028
+    static constexpr auto non_zero_token_cost = 16;
 
     // EIP-3860
     // only charged when tx.to is not set

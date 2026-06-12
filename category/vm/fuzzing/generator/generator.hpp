@@ -635,13 +635,10 @@ namespace monad::vm::fuzzing
     Address
     generate_precompile_address(Engine &eng, monad_eth_revision const rev)
     {
-        MONAD_ASSERT(rev > MONAD_ETH_SPURIOUS_DRAGON);
+        MONAD_ASSERT(rev > MONAD_ETH_PETERSBURG);
 
         auto addr = [rev, &eng]() {
-            if (rev <= MONAD_ETH_PETERSBURG) {
-                return uniform_sample(eng, std::array{1, 2, 3, 4, 5, 6, 7, 8});
-            }
-            else if (rev <= MONAD_ETH_SHANGHAI) {
+            if (rev <= MONAD_ETH_SHANGHAI) {
                 return uniform_sample(
                     eng, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9});
             }

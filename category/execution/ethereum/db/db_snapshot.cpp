@@ -22,6 +22,7 @@
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
+#include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -51,18 +52,17 @@ struct monad_db_snapshot_loader
         uint64_t const block, char const *const *const dbname_paths,
         size_t const len, unsigned const sq_thread_cpu)
         : block{block}
-        , db{std::make_unique<monad::OnDiskMachine>(),
-             monad::mpt::OnDiskDbConfig{
-                 .append = true,
-                 .compaction = false,
-                 .rd_buffers = 8192,
-                 .wr_buffers = 32,
-                 .uring_entries = 128,
-                 .sq_thread_cpu =
-                     sq_thread_cpu == std::numeric_limits<unsigned>::max()
-                         ? std::nullopt
-                         : std::make_optional(sq_thread_cpu),
-                 .dbname_paths = {dbname_paths, dbname_paths + len}}}
+        , db{monad::mpt::OnDiskDbConfig{
+              .append = true,
+              .compaction = false,
+              .rd_buffers = 8192,
+              .wr_buffers = 32,
+              .uring_entries = 128,
+              .sq_thread_cpu =
+                  sq_thread_cpu == std::numeric_limits<unsigned>::max()
+                      ? std::nullopt
+                      : std::make_optional(sq_thread_cpu),
+              .dbname_paths = {dbname_paths, dbname_paths + len}}}
         , bytes_read{0}
     {
     }
@@ -442,6 +442,9 @@ monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     uint64_t const block, char const *const *const dbname_paths,
     size_t const len, unsigned const sq_thread_cpu)
 {
+    // C ABI entry — populate the kind registry before the metadata-driven
+    // Db ctor runs inside monad_db_snapshot_loader. Idempotent.
+    monad::register_ethereum_state_machines();
     auto *loader =
         new monad_db_snapshot_loader(block, dbname_paths, len, sq_thread_cpu);
     MONAD_ASSERT_PRINTF(

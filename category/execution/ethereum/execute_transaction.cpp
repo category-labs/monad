@@ -367,6 +367,11 @@ Receipt ExecuteTransaction<traits>::execute_final(
     MONAD_ASSERT(result.gas_left >= 0);
     MONAD_ASSERT(result.gas_refund >= 0);
     MONAD_ASSERT(tx_.gas_limit >= static_cast<uint64_t>(result.gas_left));
+    auto const tx_gas_used =
+        tx_.gas_limit - static_cast<uint64_t>(result.gas_left);
+    block_metrics_.gas_used += tx_gas_used;
+    MONAD_DEBUG_ASSERT(state.stats().growth_gas <= tx_gas_used);
+    block_metrics_.gas_exec += tx_gas_used - state.stats().growth_gas;
 
     // refund and priority, Eqn. 73-76
     // Monad specification §4.2: Storage Gas Cost and Refunds

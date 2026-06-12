@@ -103,6 +103,8 @@ public:
     virtual void set_transient_storage(
         evmc::address const &, evmc::bytes32 const &key,
         evmc::bytes32 const &value) noexcept override;
+
+    virtual uint64_t *growth_gas_ptr() noexcept override;
 };
 
 static_assert(sizeof(EvmcHostBase) == 72);

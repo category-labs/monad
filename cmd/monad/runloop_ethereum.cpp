@@ -89,12 +89,11 @@ Result<void> process_ethereum_block(
     Chain const &chain, Db &db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
-    bytes32_t const &parent_block_id, bool const enable_tracing)
+    bytes32_t const &parent_block_id, bool const enable_tracing,
+    std::chrono::steady_clock::time_point const block_begin,
+    std::chrono::microseconds const blr_time)
 {
     static_assert(traits::evm_rev() > MONAD_ETH_BYZANTIUM);
-
-    [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
-    auto const block_begin = std::chrono::steady_clock::now();
 
     record_block_start(
         block_id,
@@ -216,8 +215,12 @@ Result<void> process_ethereum_block(
 
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer
+    auto const fin_begin = std::chrono::steady_clock::now();
     db.finalize(block.header.number, block_id);
     db.update_verified_block(block.header.number);
+    [[maybe_unused]] auto const fin_time =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - fin_begin);
     exec_output.eth_block_hash =
         to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
     block_hash_buffer.set(
@@ -228,32 +231,40 @@ Result<void> process_ethereum_block(
     [[maybe_unused]] auto const block_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - block_begin);
+    uint64_t sum_tx_gas_limit = 0;
+    for (auto const &tx : block.transactions) {
+        sum_tx_gas_limit += tx.gas_limit;
+    }
     LOG_INFO(
-        "__exec_block,bl={:8},ts={}"
+        "__exec_block,bl={:8}"
         ",tx={:5},rt={:4},rtp={:5.2f}%"
-        ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
-        ",gas={:9},gpse={:4},gps={:3}{}{}{}",
+        ",blr={:>7},sr={:>7},txe={:>8},cmt={:>8},fin={:>7},tot={:>8}"
+        ",tpse={:5},tps={:5}"
+        ",gase={:9},gasu={:9},gasc={:9},gas={:9},gasl={:9},gpse={:4},gps={:4}{}"
+        "{}{}",
         block.header.number,
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            block_start.time_since_epoch())
-            .count(),
         block.transactions.size(),
         block_metrics.num_retries,
         100.0 * (double)block_metrics.num_retries /
             std::max(1.0, (double)block.transactions.size()),
+        blr_time,
         sender_recovery_time,
         block_metrics.tx_exec_time,
         commit_time,
+        fin_time,
         block_time,
         block.transactions.size() * 1'000'000 /
             (uint64_t)std::max(1L, block_metrics.tx_exec_time.count()),
         block.transactions.size() * 1'000'000 /
             (uint64_t)std::max(1L, block_time.count()),
+        block_metrics.gas_exec,
+        block_metrics.gas_used,
         exec_output.eth_header.gas_used,
-        exec_output.eth_header.gas_used /
+        exec_output.eth_header.gas_used,
+        sum_tx_gas_limit,
+        block_metrics.gas_exec /
             (uint64_t)std::max(1L, block_metrics.tx_exec_time.count()),
-        exec_output.eth_header.gas_used /
-            (uint64_t)std::max(1L, block_time.count()),
+        block_metrics.gas_exec / (uint64_t)std::max(1L, block_time.count()),
         db.print_stats(),
         vm.print_and_reset_block_counts(),
         vm.print_compiler_stats());
@@ -290,11 +301,15 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     bytes32_t parent_block_id{};
 
     while (block_num <= end_block_num && stop == 0) {
+        auto const block_begin = std::chrono::steady_clock::now();
         Block block;
         MONAD_ASSERT_PRINTF(
             block_db.get(block_num, block),
             "Could not query %lu from blockdb",
             block_num);
+        auto const blr_time =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - block_begin);
 
         bytes32_t const block_id = bytes32_t{block.header.number};
         monad_eth_revision const rev =
@@ -311,7 +326,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 block,
                 block_id,
                 parent_block_id,
-                enable_tracing);
+                enable_tracing,
+                block_begin,
+                blr_time);
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
 

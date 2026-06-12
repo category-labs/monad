@@ -162,10 +162,10 @@ TEST_F(InMemoryStateTest, access_account)
 
     State s{bs, Incarnation{1, 1}};
 
-    EXPECT_EQ(s.access_account(a), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_account(a), EVMC_ACCESS_WARM);
-    EXPECT_EQ(s.access_account(b), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_account(b), EVMC_ACCESS_WARM);
+    EXPECT_EQ(s.access_account(a), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(a), MONAD_ACCESS_WARM);
+    EXPECT_EQ(s.access_account(b), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(b), MONAD_ACCESS_WARM);
 }
 
 TEST_F(InMemoryStateTest, account_exists)
@@ -965,14 +965,14 @@ TEST_F(InMemoryStateTest, access_storage)
     BlockState bs{this->tdb, this->vm};
 
     State s{bs, Incarnation{1, 1}};
-    EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage(b, key1), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(b, key1), EVMC_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage(a, key2), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(a, key2), EVMC_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage(b, key2), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(b, key2), EVMC_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage(a, key1), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage(a, key1), MONAD_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage(b, key1), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage(b, key1), MONAD_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage(a, key2), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage(a, key2), MONAD_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage(b, key2), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage(b, key2), MONAD_ACCESS_WARM);
 }
 
 TEST_F(InMemoryStateTest, get_storage)
@@ -1019,7 +1019,7 @@ TEST_F(InMemoryStateTest, set_storage_modified)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(a));
-    EXPECT_EQ(s.set_storage(a, key2, value3), EVMC_STORAGE_MODIFIED);
+    EXPECT_EQ(s.set_storage(a, key2, value3), MONAD_STORAGE_MODIFIED);
     EXPECT_EQ(s.get_storage(a, key2), value3);
 }
 
@@ -1039,11 +1039,11 @@ TEST_F(InMemoryStateTest, set_storage_deleted)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
-    EXPECT_EQ(s.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
+    EXPECT_EQ(s.set_storage(b, key1, null), MONAD_STORAGE_DELETED);
     EXPECT_EQ(s.get_storage(b, key1), null);
-    EXPECT_EQ(s.set_storage(b, key1, null), EVMC_STORAGE_ASSIGNED);
+    EXPECT_EQ(s.set_storage(b, key1, null), MONAD_STORAGE_ASSIGNED);
     EXPECT_EQ(s.get_storage(b, key1), null);
-    EXPECT_EQ(s.set_storage(b, key1, value2), EVMC_STORAGE_DELETED_ADDED);
+    EXPECT_EQ(s.set_storage(b, key1, value2), MONAD_STORAGE_DELETED_ADDED);
     EXPECT_EQ(s.get_storage(b, key1), value2);
 }
 
@@ -1058,11 +1058,11 @@ TEST_F(InMemoryStateTest, set_storage_added)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
-    EXPECT_EQ(s.set_storage(b, key1, value1), EVMC_STORAGE_ADDED);
+    EXPECT_EQ(s.set_storage(b, key1, value1), MONAD_STORAGE_ADDED);
     EXPECT_EQ(s.get_storage(b, key1), value1);
-    EXPECT_EQ(s.set_storage(b, key1, value1), EVMC_STORAGE_ASSIGNED);
+    EXPECT_EQ(s.set_storage(b, key1, value1), MONAD_STORAGE_ASSIGNED);
     EXPECT_EQ(s.get_storage(b, key1), value1);
-    EXPECT_EQ(s.set_storage(b, key1, value2), EVMC_STORAGE_ASSIGNED);
+    EXPECT_EQ(s.set_storage(b, key1, value2), MONAD_STORAGE_ASSIGNED);
     EXPECT_EQ(s.get_storage(b, key1), value2);
 }
 
@@ -1081,9 +1081,9 @@ TEST_F(InMemoryStateTest, set_storage_different_assigned)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(a));
-    EXPECT_EQ(s.set_storage(a, key2, value3), EVMC_STORAGE_MODIFIED);
+    EXPECT_EQ(s.set_storage(a, key2, value3), MONAD_STORAGE_MODIFIED);
     EXPECT_EQ(s.get_storage(a, key2), value3);
-    EXPECT_EQ(s.set_storage(a, key2, value1), EVMC_STORAGE_ASSIGNED);
+    EXPECT_EQ(s.set_storage(a, key2, value1), MONAD_STORAGE_ASSIGNED);
     EXPECT_EQ(s.get_storage(a, key2), value1);
 }
 
@@ -1102,7 +1102,7 @@ TEST_F(InMemoryStateTest, set_storage_unchanged_assigned)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(a));
-    EXPECT_EQ(s.set_storage(a, key2, value2), EVMC_STORAGE_ASSIGNED);
+    EXPECT_EQ(s.set_storage(a, key2, value2), MONAD_STORAGE_ASSIGNED);
     EXPECT_EQ(s.get_storage(a, key2), value2);
 }
 
@@ -1117,9 +1117,9 @@ TEST_F(InMemoryStateTest, set_storage_added_deleted)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
-    EXPECT_EQ(s.set_storage(b, key1, value1), EVMC_STORAGE_ADDED);
+    EXPECT_EQ(s.set_storage(b, key1, value1), MONAD_STORAGE_ADDED);
     EXPECT_EQ(s.get_storage(b, key1), value1);
-    EXPECT_EQ(s.set_storage(b, key1, null), EVMC_STORAGE_ADDED_DELETED);
+    EXPECT_EQ(s.set_storage(b, key1, null), MONAD_STORAGE_ADDED_DELETED);
     EXPECT_EQ(s.get_storage(b, key1), null);
 }
 
@@ -1134,9 +1134,9 @@ TEST_F(InMemoryStateTest, set_storage_added_deleted_null)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
-    EXPECT_EQ(s.set_storage(b, key1, null), EVMC_STORAGE_ASSIGNED);
+    EXPECT_EQ(s.set_storage(b, key1, null), MONAD_STORAGE_ASSIGNED);
     EXPECT_EQ(s.get_storage(b, key1), null);
-    EXPECT_EQ(s.set_storage(b, key1, null), EVMC_STORAGE_ASSIGNED);
+    EXPECT_EQ(s.set_storage(b, key1, null), MONAD_STORAGE_ASSIGNED);
     EXPECT_EQ(s.get_storage(b, key1), null);
 }
 
@@ -1155,9 +1155,9 @@ TEST_F(InMemoryStateTest, set_storage_modify_delete)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
-    EXPECT_EQ(s.set_storage(b, key2, value1), EVMC_STORAGE_MODIFIED);
+    EXPECT_EQ(s.set_storage(b, key2, value1), MONAD_STORAGE_MODIFIED);
     EXPECT_EQ(s.get_storage(b, key2), value1);
-    EXPECT_EQ(s.set_storage(b, key2, null), EVMC_STORAGE_MODIFIED_DELETED);
+    EXPECT_EQ(s.set_storage(b, key2, null), MONAD_STORAGE_MODIFIED_DELETED);
     EXPECT_EQ(s.get_storage(b, key2), null);
 }
 
@@ -1176,9 +1176,9 @@ TEST_F(InMemoryStateTest, set_storage_delete_restored)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
-    EXPECT_EQ(s.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
+    EXPECT_EQ(s.set_storage(b, key2, null), MONAD_STORAGE_DELETED);
     EXPECT_EQ(s.get_storage(b, key2), null);
-    EXPECT_EQ(s.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
+    EXPECT_EQ(s.set_storage(b, key2, value2), MONAD_STORAGE_DELETED_RESTORED);
     EXPECT_EQ(s.get_storage(b, key2), value2);
 }
 
@@ -1197,9 +1197,9 @@ TEST_F(InMemoryStateTest, set_storage_modified_restored)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
-    EXPECT_EQ(s.set_storage(b, key2, value1), EVMC_STORAGE_MODIFIED);
+    EXPECT_EQ(s.set_storage(b, key2, value1), MONAD_STORAGE_MODIFIED);
     EXPECT_EQ(s.get_storage(b, key2), value1);
-    EXPECT_EQ(s.set_storage(b, key2, value2), EVMC_STORAGE_MODIFIED_RESTORED);
+    EXPECT_EQ(s.set_storage(b, key2, value2), MONAD_STORAGE_MODIFIED_RESTORED);
     EXPECT_EQ(s.get_storage(b, key2), value2);
 }
 
@@ -1338,13 +1338,13 @@ TEST_F(InMemoryStateTest, can_merge_same_account_different_storage)
 
     State as{bs, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(b));
-    EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
+    EXPECT_EQ(as.set_storage(b, key1, value2), MONAD_STORAGE_MODIFIED);
     EXPECT_TRUE(bs.can_merge(as));
     bs.merge(as);
 
     State cs{bs, Incarnation{1, 2}};
     EXPECT_TRUE(cs.account_exists(b));
-    EXPECT_EQ(cs.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
+    EXPECT_EQ(cs.set_storage(b, key2, null), MONAD_STORAGE_DELETED);
     EXPECT_TRUE(bs.can_merge(cs));
     bs.merge(cs);
 }
@@ -1365,11 +1365,11 @@ TEST_F(InMemoryStateTest, cant_merge_colliding_storage)
 
     State as{bs, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(b));
-    EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
+    EXPECT_EQ(as.set_storage(b, key1, value2), MONAD_STORAGE_MODIFIED);
 
     State cs{bs, Incarnation{1, 2}};
     EXPECT_TRUE(cs.account_exists(b));
-    EXPECT_EQ(cs.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
+    EXPECT_EQ(cs.set_storage(b, key1, null), MONAD_STORAGE_DELETED);
 
     EXPECT_TRUE(bs.can_merge(as));
     bs.merge(as);
@@ -1379,7 +1379,7 @@ TEST_F(InMemoryStateTest, cant_merge_colliding_storage)
     {
         State cs{bs, Incarnation{1, 2}};
         EXPECT_TRUE(cs.account_exists(b));
-        EXPECT_EQ(cs.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
+        EXPECT_EQ(cs.set_storage(b, key1, null), MONAD_STORAGE_DELETED);
         EXPECT_TRUE(bs.can_merge(cs));
         bs.merge(cs);
     }
@@ -1410,16 +1410,16 @@ TYPED_TEST(InMemoryStateTraitsTest, merge_txn0_and_txn1)
 
     State as{bs, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(b));
-    EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
-    EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
-    EXPECT_EQ(as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
+    EXPECT_EQ(as.set_storage(b, key1, value2), MONAD_STORAGE_MODIFIED);
+    EXPECT_EQ(as.set_storage(b, key2, null), MONAD_STORAGE_DELETED);
+    EXPECT_EQ(as.set_storage(b, key2, value2), MONAD_STORAGE_DELETED_RESTORED);
     EXPECT_TRUE(bs.can_merge(as));
     bs.merge(as);
 
     State cs{bs, Incarnation{1, 2}};
     EXPECT_TRUE(cs.account_exists(c));
-    EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
-    EXPECT_EQ(cs.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
+    EXPECT_EQ(cs.set_storage(c, key1, null), MONAD_STORAGE_DELETED);
+    EXPECT_EQ(cs.set_storage(c, key2, null), MONAD_STORAGE_DELETED);
     EXPECT_EQ(
         cs.selfdestruct<typename TestFixture::Trait>(c, a),
         std::make_pair(true, 50'000));
@@ -1465,8 +1465,8 @@ TEST_F(InMemoryStateTest, set_and_then_clear_storage_in_same_commit)
     State as{bs, Incarnation{1, 1}};
 
     as.create_contract(a);
-    EXPECT_EQ(as.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
-    EXPECT_EQ(as.set_storage(a, key1, null), EVMC_STORAGE_ADDED_DELETED);
+    EXPECT_EQ(as.set_storage(a, key1, value1), MONAD_STORAGE_ADDED);
+    EXPECT_EQ(as.set_storage(a, key1, null), MONAD_STORAGE_ADDED_DELETED);
     bs.merge(as);
     auto [released_state, released_code, _] = std::move(bs).release();
     commit_simple(
@@ -1521,10 +1521,10 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 42'000);
         as.set_nonce(b, 3);
-        EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
-        EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(b, key1, value2), MONAD_STORAGE_MODIFIED);
+        EXPECT_EQ(as.set_storage(b, key2, null), MONAD_STORAGE_DELETED);
         EXPECT_EQ(
-            as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
+            as.set_storage(b, key2, value2), MONAD_STORAGE_DELETED_RESTORED);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         auto [released_state, released_code, _] = std::move(bs).release();
@@ -1546,8 +1546,8 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         State cs{bs, Incarnation{2, 1}};
         EXPECT_TRUE(cs.account_exists(a));
         EXPECT_TRUE(cs.account_exists(c));
-        EXPECT_EQ(cs.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
-        EXPECT_EQ(cs.set_storage(c, key2, value1), EVMC_STORAGE_MODIFIED);
+        EXPECT_EQ(cs.set_storage(c, key1, null), MONAD_STORAGE_DELETED);
+        EXPECT_EQ(cs.set_storage(c, key2, value1), MONAD_STORAGE_MODIFIED);
         EXPECT_EQ(
             cs.selfdestruct<typename TestFixture::Trait>(c, a),
             std::make_pair(true, 50'000));
@@ -1629,8 +1629,8 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 42'000);
         as.set_nonce(b, 3);
-        EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
-        EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(b, key1, value2), MONAD_STORAGE_MODIFIED);
+        EXPECT_EQ(as.set_storage(b, key2, null), MONAD_STORAGE_DELETED);
 
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
@@ -1658,8 +1658,8 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 44'000);
         as.set_nonce(b, 3);
-        EXPECT_EQ(as.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
-        EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(b, key1, null), MONAD_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(b, key2, null), MONAD_STORAGE_DELETED);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 6 on top of block 10 round 5
@@ -1687,9 +1687,9 @@ TEST_F(OnDiskStateTest, commit_multiple_proposals)
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 32'000);
         as.set_nonce(b, 3);
-        EXPECT_EQ(as.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
-        EXPECT_EQ(as.set_storage(b, key2, value3), EVMC_STORAGE_MODIFIED);
-        EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_DELETED_ADDED);
+        EXPECT_EQ(as.set_storage(b, key1, null), MONAD_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(b, key2, value3), MONAD_STORAGE_MODIFIED);
+        EXPECT_EQ(as.set_storage(b, key1, value2), MONAD_STORAGE_DELETED_ADDED);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 7 on top of block 10 round 5
@@ -1833,8 +1833,8 @@ TEST_F(OnDiskStateTestCached, undecided_proposals)
     {
         State as{bs_111, Incarnation{11, 1}};
         as.add_to_balance(b, 40'000);
-        EXPECT_EQ(as.set_storage(b, key1, value2), EVMC_STORAGE_MODIFIED);
-        EXPECT_EQ(as.set_storage(b, key2, null), EVMC_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(b, key1, value2), MONAD_STORAGE_MODIFIED);
+        EXPECT_EQ(as.set_storage(b, key2, null), MONAD_STORAGE_DELETED);
         EXPECT_TRUE(bs_111.can_merge(as));
         bs_111.merge(as);
     }
@@ -1869,7 +1869,7 @@ TEST_F(OnDiskStateTestCached, undecided_proposals)
     {
         State as{bs_121, Incarnation{12, 1}};
         as.add_to_balance(c, 10'000);
-        EXPECT_EQ(as.set_storage(c, key2, value1), EVMC_STORAGE_MODIFIED);
+        EXPECT_EQ(as.set_storage(c, key2, value1), MONAD_STORAGE_MODIFIED);
         EXPECT_TRUE(bs_121.can_merge(as));
         bs_121.merge(as);
     }
@@ -1903,8 +1903,8 @@ TEST_F(OnDiskStateTestCached, undecided_proposals)
     {
         State as{bs_112, Incarnation{11, 1}};
         as.add_to_balance(a, 20'000);
-        EXPECT_EQ(as.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
-        EXPECT_EQ(as.set_storage(c, key1, null), EVMC_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(b, key1, null), MONAD_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(c, key1, null), MONAD_STORAGE_DELETED);
         EXPECT_TRUE(bs_112.can_merge(as));
         bs_112.merge(as);
     }
@@ -1927,7 +1927,7 @@ TEST_F(OnDiskStateTestCached, undecided_proposals)
     {
         State as{bs_122, Incarnation{12, 1}};
         as.add_to_balance(b, 20'000);
-        EXPECT_EQ(as.set_storage(b, key1, value3), EVMC_STORAGE_ADDED);
+        EXPECT_EQ(as.set_storage(b, key1, value3), MONAD_STORAGE_ADDED);
         EXPECT_TRUE(bs_122.can_merge(as));
         bs_122.merge(as);
     }
@@ -1951,9 +1951,9 @@ TEST_F(OnDiskStateTestCached, undecided_proposals)
         State as{bs_131, Incarnation{13, 1}};
         as.add_to_balance(a, 30'000);
         as.add_to_balance(b, 20'000);
-        EXPECT_EQ(as.set_storage(b, key2, value1), EVMC_STORAGE_ADDED);
-        EXPECT_EQ(as.set_storage(c, key1, value2), EVMC_STORAGE_MODIFIED);
-        EXPECT_EQ(as.set_storage(c, key2, null), EVMC_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(b, key2, value1), MONAD_STORAGE_ADDED);
+        EXPECT_EQ(as.set_storage(c, key1, value2), MONAD_STORAGE_MODIFIED);
+        EXPECT_EQ(as.set_storage(c, key2, null), MONAD_STORAGE_DELETED);
         EXPECT_TRUE(bs_131.can_merge(as));
         bs_131.merge(as);
     }
@@ -1976,8 +1976,8 @@ TEST_F(OnDiskStateTestCached, undecided_proposals)
     // b13 r132 r122                  --        v3
     {
         State as{bs_132, Incarnation{13, 1}};
-        EXPECT_EQ(as.set_storage(b, key1, null), EVMC_STORAGE_DELETED);
-        EXPECT_EQ(as.set_storage(c, key1, value3), EVMC_STORAGE_ADDED);
+        EXPECT_EQ(as.set_storage(b, key1, null), MONAD_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(c, key1, value3), MONAD_STORAGE_ADDED);
         EXPECT_TRUE(bs_132.can_merge(as));
         bs_132.merge(as);
     }

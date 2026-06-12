@@ -1170,7 +1170,7 @@ TEST(PrestateTracer, prestate_access_storage)
     // Touch some of the account's storage.
     // First access the account to bring it into the state object; this is a
     // prerequisite for accessing the storage.
-    EXPECT_EQ(s.access_account(ADDR_A), EVMC_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(ADDR_A), MONAD_ACCESS_COLD);
     EXPECT_TRUE(s.original().find(ADDR_A) != s.original().end());
     EXPECT_TRUE(s.current().find(ADDR_A) != s.current().end());
     EXPECT_EQ(s.get_storage(ADDR_A, key2), value2);
@@ -1591,7 +1591,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
     // Touch some of the account's storage.
     // First access the account to bring it into the state object; this is a
     // prerequisite for accessing the storage.
-    EXPECT_EQ(s.access_account(ADDR_A), EVMC_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(ADDR_A), MONAD_ACCESS_COLD);
     EXPECT_TRUE(s.original().find(ADDR_A) != s.original().end());
     EXPECT_TRUE(s.current().find(ADDR_A) != s.current().end());
     EXPECT_EQ(s.get_storage(ADDR_A, key2), value2);
@@ -1655,7 +1655,7 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
 
     // Touch the account, so it shows up in `state.original` and
     // `state.current`.
-    EXPECT_EQ(s.access_account(ADDR_A), EVMC_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(ADDR_A), MONAD_ACCESS_COLD);
     EXPECT_TRUE(s.original().find(ADDR_A) != s.original().end());
     EXPECT_TRUE(s.current().find(ADDR_A) != s.current().end());
 

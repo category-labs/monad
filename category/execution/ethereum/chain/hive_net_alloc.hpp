@@ -100,6 +100,10 @@ constexpr char const *HIVE_NET_ALLOC = R"(
         "nonce": "0x1",
         "wei_balance": "1"
     },
+    "8dcd17433742f4c0ca53122ab541d0ba67fc27ff": {
+        "code": "0x6202e6306000a0",
+        "wei_balance": "0"
+    },
     "c7b99a164efd027a93f147376cc7da7c67c6bbe0": {
         "wei_balance": "1000000000000000000000000000000000000"
     },

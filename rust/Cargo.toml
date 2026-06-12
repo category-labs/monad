@@ -38,6 +38,8 @@ chrono           = { version = "0.4.34",  default-features = false, features = [
 clap             = { version = "4.2",     default-features = false }
 cmake            = { version = "0.1",     default-features = false }
 criterion        = { version = "0.8",     default-features = false, features = ["html_reports"] }
+cxx              = { version = "1.0.194", default-features = false, features = ["std"] }
+cxx-build        = { version = "1.0.194", default-features = false }
 futures          = { version = "0.3.31",  default-features = false, features = ["std"] }
 hex              = { version = "0.4",     default-features = false, features = ["std"] }
 itertools        = { version = "0.10",    default-features = false, features = ["use_std"] }

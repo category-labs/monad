@@ -23,6 +23,7 @@
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/timeline.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/util.hpp>
 
 #include <atomic>
@@ -276,6 +277,21 @@ public:
     int64_t get_auto_expire_version_metadata(timeline_id tid) const noexcept;
     void
     set_auto_expire_version_metadata(timeline_id tid, int64_t version) noexcept;
+
+    // Read the persisted StateMachine kind for the given timeline. Stamped
+    // at pool create time by monad-mpt --state-machine and on
+    // activate-secondary for the non-primary ring; consumed by mpt::Db's
+    // production-open ctor to pick the right SM via the registry in
+    // state_machine_kind.hpp.
+    state_machine_kind get_state_machine_kind(timeline_id tid) const noexcept;
+    void
+    set_state_machine_kind(timeline_id tid, state_machine_kind kind) noexcept;
+    // Back-compat: a primary ring written before state_machine_kind_ was carved
+    // from the reserved bytes reads back as undefined. Those DBs only ran
+    // ethereum, so default to it and heal durably, returning the effective
+    // kind. Primary only — an undefined secondary means "not yet stamped", not
+    // legacy. Requires a writable mapping.
+    state_machine_kind heal_primary_state_machine_kind() noexcept;
     void update_history_length_metadata(uint64_t history_len) noexcept;
 
     // Root offsets operations. All wrap the two-copy mutation in

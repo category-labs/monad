@@ -25,6 +25,7 @@
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/timeline.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
 
@@ -259,18 +260,24 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
             // MONAD007 had no secondary, so the saved value belongs on
             // what is now the primary.
             m->root_offsets_state.auto_expire_version_ = saved_auto_expire;
-            // The bytes overlapping
-            // root_offsets_state.reserved_for_future_fields_ were inside
-            // MONAD007's huge cnv_chunks[] array (filled with 0xff for unused
-            // slots). Zero them so subsequent PRs adding fields to
-            // timeline_state_t start from a clean slate.
+            // Stamp the primary timeline's state_machine_kind. The byte
+            // sat inside MONAD007's huge cnv_chunks[] (0xff for unused
+            // slots), which would trip create_state_machine()'s range
+            // check on the next open. MONAD007 only supported ethereum.
+            m->root_offsets_state.state_machine_kind_ =
+                static_cast<uint8_t>(state_machine_kind::ethereum);
             memset(
-                m->root_offsets_state.reserved_for_future_fields_,
+                m->root_offsets_state.reserved_sm_,
                 0,
-                sizeof(m->root_offsets_state.reserved_for_future_fields_));
+                sizeof(m->root_offsets_state.reserved_sm_));
 
             // 5. Zero the region between secondary_timeline and the live
             //    block list (relocated in step 3).
+            //    secondary_timeline_state.state_machine_kind_ is left at
+            //    zero (state_machine_kind::undefined);
+            //    secondary_timeline_active_ is also zero, so the byte is
+            //    unreachable until a later monad-mpt --activate-secondary
+            //    stamps a real kind.
             auto *const new_fields_begin =
                 m_bytes + offsetof(detail::db_metadata, secondary_timeline);
             auto *const new_fields_end =
@@ -585,6 +592,49 @@ void DbMetadataContext::set_auto_expire_version_metadata(
     };
     do_(copies_[0].main);
     do_(copies_[1].main);
+}
+
+state_machine_kind
+DbMetadataContext::get_state_machine_kind(timeline_id const tid) const noexcept
+{
+    auto const *const m = copies_[0].main;
+    uint8_t const ring_idx = (tid == timeline_id::primary)
+                                 ? primary_ring_idx()
+                                 : (primary_ring_idx() ^ 1u);
+    auto const *const slot =
+        (ring_idx == 0) ? &m->root_offsets_state.state_machine_kind_
+                        : &m->secondary_timeline_state.state_machine_kind_;
+    auto const raw = start_lifetime_as<std::atomic_uint8_t const>(slot)->load(
+        std::memory_order_acquire);
+    return static_cast<state_machine_kind>(raw);
+}
+
+void DbMetadataContext::set_state_machine_kind(
+    timeline_id const tid, state_machine_kind const kind) noexcept
+{
+    uint8_t const ring_idx = (tid == timeline_id::primary)
+                                 ? primary_ring_idx()
+                                 : (primary_ring_idx() ^ 1u);
+    auto do_ = [&](detail::db_metadata *m) {
+        auto const g = m->hold_dirty();
+        auto *const slot =
+            (ring_idx == 0) ? &m->root_offsets_state.state_machine_kind_
+                            : &m->secondary_timeline_state.state_machine_kind_;
+        start_lifetime_as<std::atomic_uint8_t>(slot)->store(
+            static_cast<uint8_t>(kind), std::memory_order_release);
+    };
+    do_(copies_[0].main);
+    do_(copies_[1].main);
+}
+
+state_machine_kind DbMetadataContext::heal_primary_state_machine_kind() noexcept
+{
+    auto kind = get_state_machine_kind(timeline_id::primary);
+    if (kind == state_machine_kind::undefined) {
+        kind = state_machine_kind::ethereum;
+        set_state_machine_kind(timeline_id::primary, kind);
+    }
+    return kind;
 }
 
 void DbMetadataContext::update_history_length_metadata(

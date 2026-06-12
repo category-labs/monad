@@ -355,14 +355,19 @@ namespace
         BlockState &block_state, LazyBlockHash const &buffer,
         fiber::FiberGroup &tx_exec_pool, enum monad_tracer_config tracer_config)
     {
-        MONAD_ASSERT(transactions.size() == senders.size());
-        MONAD_ASSERT(transactions.size() == authorities.size());
+        MONAD_ASSERT_THROW(
+            transactions.size() == senders.size(),
+            "transactions and senders size mismatch");
+        MONAD_ASSERT_THROW(
+            transactions.size() == authorities.size(),
+            "transactions and authorities size mismatch");
 
         size_t const transactions_size = [&]() {
             if (trace_transaction) {
-                MONAD_ASSERT(
+                MONAD_ASSERT_THROW(
                     transaction_index <
-                    static_cast<uint64_t>(transactions.size()));
+                        static_cast<uint64_t>(transactions.size()),
+                    "transaction index out of bounds");
                 return transaction_index + 1;
             }
             return transactions.size();
@@ -579,7 +584,7 @@ namespace
         std::vector<std::vector<Transaction>> const &calls,
         struct monad_block_override_vec const &block_overrides,
         struct monad_state_override_vec const &state_overrides,
-        BlockHeader const &header, bool const instance_is_monad)
+        BlockHeader const &base_header, bool const instance_is_monad)
     {
         MONAD_ASSERT_THROW(calls.size() > 0, "empty input");
         MONAD_ASSERT_THROW(
@@ -597,7 +602,7 @@ namespace
                 "Withdrawals are not supported on Monad");
         }
 
-        BlockHeader previous_header = header;
+        BlockHeader header = base_header;
         for (size_t i = 0; i < block_overrides.size; ++i) {
             auto const &bo = block_overrides.overrides[i];
             // From the specification
@@ -605,15 +610,14 @@ namespace
             // > When overriding multiple blocks, block numbers must
             // > increment. Skipping numbers is allowed and skipped
             // > blocks are included in the response.
-            uint64_t const block_number =
-                bo.number.value_or(previous_header.number + 1);
+            uint64_t const block_number = bo.number.value_or(header.number + 1);
             MONAD_ASSERT_THROW(
-                block_number > previous_header.number,
+                block_number > header.number,
                 "block numbers must be strictly increasing");
-            uint64_t const gap = block_number - previous_header.number;
+            uint64_t const gap = block_number - header.number;
             // Possible block number override has been validated; we can
             // partially update our loop carried header.
-            previous_header.number = block_number;
+            header.number = block_number;
 
             if (bo.time.has_value()) {
                 // > Time must either increase or remain constant
@@ -625,23 +629,24 @@ namespace
                 // override.
                 if (gap > 1) {
                     // There are `(gap - 1)` synthetic blocks between
-                    // `block_number` and `previous_header.number`.
-                    previous_header.timestamp +=
-                        (gap - 1) * default_timestamp_increment;
+                    // `block_number` and `header.number`.
+                    header.timestamp += (gap - 1) * default_timestamp_increment;
                 }
 
                 MONAD_ASSERT_THROW(
-                    previous_header.timestamp <= *bo.time,
+                    header.timestamp <= *bo.time,
                     "block timestamps must be monotonically increasing");
-                previous_header.timestamp = *bo.time;
+                header.timestamp = *bo.time;
             }
             else {
-                previous_header.timestamp += gap * default_timestamp_increment;
+                header.timestamp += gap * default_timestamp_increment;
             }
         }
-        MONAD_ASSERT(previous_header.number > header.number);
-        size_t const num_blocks = previous_header.number - header.number;
-        MONAD_ASSERT(num_blocks > 0);
+        MONAD_ASSERT_THROW(
+            header.number > base_header.number,
+            "simulation header number must be greater than the base header "
+            "number");
+        size_t const num_blocks = header.number - base_header.number;
         MONAD_ASSERT_THROW(
             num_blocks <= max_simulate_blocks, "too many blocks");
     }
@@ -652,9 +657,15 @@ namespace
         bytes32_t const &block_hash, std::vector<bytes32_t> const &txn_hashes,
         nlohmann::json &result)
     {
-        MONAD_ASSERT(call_frames.size() == block.transactions.size());
-        MONAD_ASSERT(receipts.size() == block.transactions.size());
-        MONAD_ASSERT(txn_hashes.size() == block.transactions.size());
+        MONAD_ASSERT_THROW(
+            call_frames.size() == block.transactions.size(),
+            "call frames size mismatch with transactions");
+        MONAD_ASSERT_THROW(
+            receipts.size() == block.transactions.size(),
+            "receipts size mismatch with transactions");
+        MONAD_ASSERT_THROW(
+            txn_hashes.size() == block.transactions.size(),
+            "transaction hashes size mismatch with transactions");
 
         auto const format_hex = [](auto const &b) {
             return std::format("0x{}", evmc::hex(b));
@@ -666,7 +677,9 @@ namespace
         auto &txns = entry["calls"];
 
         for (size_t tx_idx = 0; tx_idx < block.transactions.size(); ++tx_idx) {
-            MONAD_ASSERT(call_frames[tx_idx].size() > 0);
+            MONAD_ASSERT_THROW(
+                call_frames[tx_idx].size() > 0,
+                "call frames size must be greater than 0");
             auto call_result = nlohmann::json::object();
 
             call_result["status"] = std::format(
@@ -731,14 +744,25 @@ namespace
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
 
-        MONAD_ASSERT(calls.size() == senders.size());
-        MONAD_ASSERT(calls.size() == authorities.size());
-        MONAD_ASSERT(calls.size() == state_overrides.size);
-        MONAD_ASSERT(calls.size() == block_overrides.size);
+        MONAD_ASSERT_THROW(
+            calls.size() == senders.size(), "calls and senders size mismatch");
+        MONAD_ASSERT_THROW(
+            calls.size() == authorities.size(),
+            "calls and authorities size mismatch");
+        MONAD_ASSERT_THROW(
+            calls.size() == state_overrides.size,
+            "calls and state_overrides size mismatch");
+        MONAD_ASSERT_THROW(
+            calls.size() == block_overrides.size,
+            "calls and block_overrides size mismatch");
 
         for (size_t i = 0; i < calls.size(); ++i) {
-            MONAD_ASSERT(calls[i].size() == senders[i].size());
-            MONAD_ASSERT(calls[i].size() == authorities[i].size());
+            MONAD_ASSERT_THROW(
+                calls[i].size() == senders[i].size(),
+                "transactions and senders size mismatch");
+            MONAD_ASSERT_THROW(
+                calls[i].size() == authorities[i].size(),
+                "transactions and authorities size mismatch");
         }
 
         // Validate the inputs before constructing the simulation objects. This
@@ -887,10 +911,12 @@ namespace
             // By this point it must be the case that the distance between the
             // previous block and the block we are about to construct is
             // exactly 1.
-            MONAD_ASSERT(
+            MONAD_ASSERT_THROW(
                 bo.number.value_or(previous_header.number + 1) -
-                    previous_header.number ==
-                1);
+                        previous_header.number ==
+                    1,
+                "the block gap must be exactly 1 after filling in synthetic "
+                "blocks");
 
             // Construct the block header.
             BlockHeader const current_header{

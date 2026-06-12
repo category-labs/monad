@@ -23,6 +23,7 @@
 #include <category/core/keccak.h>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/config.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/test/test_fixtures_base.hpp>
@@ -102,7 +103,8 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
     Node::SharedPtr root = read_node_blocking(
         state()->aux,
         state()->aux.metadata_ctx().get_root_offset_at_version(latest_version),
-        latest_version);
+        latest_version,
+        timeline_id::primary);
     ASSERT_TRUE(root);
     auto const &key = state()->keys.front().first;
     auto const &value = state()->keys.front().first;
@@ -128,8 +130,12 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
             for (unsigned idx = 0; idx < root->number_of_children(); ++idx) {
                 root->move_next(idx).reset();
             }
-            auto [node_cursor, res] =
-                find_blocking(ro_aux, NodeCursor{root}, key, latest_version);
+            auto [node_cursor, res] = find_blocking(
+                ro_aux,
+                NodeCursor{root},
+                key,
+                latest_version,
+                timeline_id::primary);
             if (res != find_result::success) {
                 ASSERT_EQ(res, find_result::version_no_longer_exist);
                 completion_promise.set_value(count);
@@ -155,7 +161,7 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
     // Erase the version being read should trigger a find failure and ends the
     // reader thread
     state()->aux.metadata_ctx().update_root_offset(
-        latest_version, INVALID_OFFSET);
+        latest_version, INVALID_OFFSET, timeline_id::primary);
     EXPECT_FALSE(
         state()->aux.metadata_ctx().version_is_valid_ondisk(latest_version));
 
@@ -185,7 +191,8 @@ TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
     Node::SharedPtr root = read_node_blocking(
         state()->aux,
         state()->aux.metadata_ctx().get_root_offset_at_version(latest_version),
-        latest_version);
+        latest_version,
+        timeline_id::primary);
     ASSERT_TRUE(root);
 
     // Create a promise/future pair to track completion
@@ -230,7 +237,7 @@ TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
     }
     // Erase the version being read should stop traverse in the reader thread
     state()->aux.metadata_ctx().update_root_offset(
-        latest_version, INVALID_OFFSET);
+        latest_version, INVALID_OFFSET, timeline_id::primary);
     EXPECT_FALSE(
         state()->aux.metadata_ctx().version_is_valid_ondisk(latest_version));
 

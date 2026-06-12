@@ -243,7 +243,14 @@ namespace monad::test
         for (auto &it : update_vec) {
             update_ls.push_front(it);
         }
-        return upsert(aux, version, sm, std::move(old), std::move(update_ls));
+        return upsert(
+            aux,
+            version,
+            sm,
+            std::move(old),
+            std::move(update_ls),
+            /*write_root=*/true,
+            timeline_id::primary);
     }
 
     template <class... Updates>
@@ -253,7 +260,14 @@ namespace monad::test
     {
         UpdateList update_ls;
         (update_ls.push_front(updates), ...);
-        return upsert(aux, version, sm, std::move(old), std::move(update_ls));
+        return upsert(
+            aux,
+            version,
+            sm,
+            std::move(old),
+            std::move(update_ls),
+            /*write_root=*/true,
+            timeline_id::primary);
     }
 
     template <class... Updates>
@@ -596,7 +610,10 @@ namespace monad::test
                         sm,
                         std::move(update_ls),
                         version++,
-                        true);
+                        /*compaction=*/true,
+                        /*can_write_to_fast=*/true,
+                        /*write_root=*/true,
+                        timeline_id::primary);
                     size_t count = 0;
                     for (auto const *ci =
                              aux.metadata_ctx().main()->fast_list_begin();

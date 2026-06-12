@@ -250,6 +250,8 @@ add_library(
   "monad/staking/config.hpp"
   "monad/staking/execute_block_prelude.cpp"
   "monad/staking/execute_block_prelude.hpp"
+  "monad/staking/priority_fee.cpp"
+  "monad/staking/priority_fee.hpp"
   "monad/staking/fuzzer/staking_contract_machine.cpp"
   "monad/staking/fuzzer/staking_contract_machine.hpp"
   "monad/staking/fuzzer/staking_contract_model.cpp"

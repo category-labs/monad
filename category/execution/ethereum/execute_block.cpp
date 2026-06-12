@@ -46,6 +46,7 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/staking/execute_block_prelude.hpp>
+#include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -183,7 +184,7 @@ void execute_block_header(BlockState &block_state, BlockHeader const &header)
         set_beacon_root(state, header);
     }
 
-    // TODO: move to execute_monad_block eventually
+    // TODO: move to execute_monad_block
     if constexpr (is_monad_trait_v<traits>) {
         staking::execute_block_prelude<traits>(state);
     }
@@ -364,6 +365,11 @@ Result<std::vector<Receipt>> execute_block(
     }
 
     apply_block_reward<traits>(state, block);
+
+    // TODO: move to execute_monad_block
+    if constexpr (traits::mip_11_active()) {
+        staking::distribute_priority_fees(state);
+    }
 
     state.destruct_touched_dead();
 

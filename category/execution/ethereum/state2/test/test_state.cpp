@@ -960,19 +960,21 @@ TYPED_TEST(InMemoryStateTraitsTest, destruct_touched_dead)
 }
 
 // Storage
-TEST_F(InMemoryStateTest, access_storage)
+TYPED_TEST(InMemoryStateTraitsTest, access_storage)
 {
+    using Trait = typename TestFixture::Trait;
+
     BlockState bs{this->tdb, this->vm};
 
     State s{bs, Incarnation{1, 1}};
-    EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(a, key1), EVMC_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage(b, key1), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(b, key1), EVMC_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage(a, key2), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(a, key2), EVMC_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage(b, key2), EVMC_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage(b, key2), EVMC_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage<Trait>(a, key1), EVMC_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage<Trait>(a, key1), EVMC_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage<Trait>(b, key1), EVMC_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage<Trait>(b, key1), EVMC_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage<Trait>(a, key2), EVMC_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage<Trait>(a, key2), EVMC_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage<Trait>(b, key2), EVMC_ACCESS_COLD);
+    EXPECT_EQ(s.access_storage<Trait>(b, key2), EVMC_ACCESS_WARM);
 }
 
 TEST_F(InMemoryStateTest, get_storage)

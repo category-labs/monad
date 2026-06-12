@@ -55,6 +55,7 @@ evmc_tx_context get_tx_context(
         .blob_hashes_count = tx.blob_versioned_hashes.size(),
         .initcodes = nullptr, // TODO
         .initcodes_count = 0, // TODO
+        .block_round = hdr.slot_number.value_or(0),
     };
 }
 

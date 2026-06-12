@@ -16,31 +16,34 @@
 #pragma once
 
 #include <category/core/config.hpp>
-#include <category/core/result.hpp>
-#include <category/execution/ethereum/db/block_db.hpp>
-#include <category/vm/vm.hpp>
 
-#include <cstdint>
 #include <filesystem>
-#include <utility>
-
-#include <signal.h>
+#include <memory>
+#include <optional>
+#include <string>
 
 MONAD_NAMESPACE_BEGIN
 
-struct Chain;
-struct Db;
-class BlockHashBufferFinalized;
-
-namespace fiber
+// Block store backed by plain .tar archives. Accepts either:
+//   * a single .tar file (entries keyed by decimal block number); or
+//   * a directory containing one <N>M.tar per million-block bucket.
+// In the directory form, only one bucket is held open at a time.
+class TarFileDb final
 {
-    class PriorityPool;
-}
+    class Impl;
 
-Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
-    Chain const &, std::filesystem::path const &, BlockDbFormat, Db &, vm::VM &,
-    BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
-    sig_atomic_t const volatile &, bool enable_tracing,
-    std::filesystem::path const &rlp_path = {});
+    std::unique_ptr<Impl> impl_;
+
+public:
+    TarFileDb() = delete;
+    TarFileDb(TarFileDb const &) = delete;
+    TarFileDb(TarFileDb &&) noexcept;
+    explicit TarFileDb(std::filesystem::path const &);
+    ~TarFileDb();
+
+    std::optional<std::string> get(char const *key) const;
+
+    static bool looks_like_tar_backed(std::filesystem::path const &);
+};
 
 MONAD_NAMESPACE_END

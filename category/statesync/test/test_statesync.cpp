@@ -23,10 +23,15 @@
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/mpt/db_metadata_context.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/state_machine_kind.hpp>
+#include <category/mpt/trie.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_server.h>
@@ -45,6 +50,20 @@
 using namespace monad;
 using namespace monad::mpt;
 using namespace monad::test;
+
+namespace monad::mpt::test
+{
+    // Friend-of-Db accessor: lets the temp-db helper stamp the persisted
+    // state_machine_kind on a fresh pool, simulating what monad-mpt --create
+    // --state-machine ethereum does in production.
+    struct DbAccessor
+    {
+        static UpdateAux &aux(Db &db)
+        {
+            return const_cast<UpdateAux &>(db.aux());
+        }
+    };
+}
 
 struct monad_statesync_client
 {
@@ -75,9 +94,15 @@ namespace
             ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
         ::close(fd);
         char const *const path = dbname.c_str();
-        mpt::Db const db{
+        // Stamp the kind so a later open via Db(OnDiskDbConfig const&) — which
+        // monad_statesync_client_context uses internally — finds a valid kind.
+        mpt::Db db{
             std::make_unique<OnDiskMachine>(),
             mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
+        monad::mpt::test::DbAccessor::aux(db)
+            .metadata_ctx()
+            .set_state_machine_kind(
+                timeline_id::primary, state_machine_kind::ethereum);
         return dbname;
     }
 
@@ -167,6 +192,10 @@ namespace
 
         void init()
         {
+            // Production C ABI (monad_statesync_client_context_create) does
+            // this; tests that bypass the C ABI and call the C++ ctor
+            // directly must populate the registry themselves.
+            monad::register_ethereum_state_machines();
             cctx = new monad_statesync_client_context{
                 {cdbname},
                 std::make_optional(static_cast<unsigned>(get_nprocs() - 1)),

@@ -220,7 +220,8 @@ namespace
             enriched_txn,
             header.base_fee_per_gas,
             header.excess_blob_gas,
-            chain.get_chain_id()));
+            chain.get_chain_id(),
+            chain.get_blob_schedule(header.timestamp)));
 
         tdb.set_block_and_prefix(block_number, block_id);
         BlockState block_state{tdb, vm};
@@ -277,7 +278,11 @@ namespace
         }();
 
         auto const tx_context = get_tx_context<traits>(
-            enriched_txn, sender, header, chain.get_chain_id());
+            enriched_txn,
+            sender,
+            header,
+            chain.get_chain_id(),
+            chain.get_blob_schedule(header.timestamp));
 
         EvmcHost<traits> host{
             call_tracer,

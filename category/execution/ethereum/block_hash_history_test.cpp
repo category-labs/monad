@@ -93,8 +93,12 @@ namespace
 
             Transaction const tx{};
             BlockHeader const header = {.number = current_block_number};
-            evmc_tx_context const tx_context =
-                get_tx_context<Trait>(tx, sender, header, chain.get_chain_id());
+            evmc_tx_context const tx_context = get_tx_context<Trait>(
+                tx,
+                sender,
+                header,
+                chain.get_chain_id(),
+                chain.get_blob_schedule(header.timestamp));
             NoopCallTracer call_tracer{};
 
             uint256_t base_fee{0};

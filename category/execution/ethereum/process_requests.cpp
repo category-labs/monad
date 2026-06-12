@@ -67,6 +67,7 @@ Result<byte_string> system_call(
     }
     auto const code = state.read_code(hash);
     trace::on_read_code(state_tracer, hash, code->intercode());
+    auto const blob_schedule = chain.get_blob_schedule(header.timestamp);
 
     evmc_tx_context const tx_context = {
         .tx_gas_price = {},
@@ -81,9 +82,8 @@ Result<byte_string> system_call(
         .chain_id = store_be_as<bytes32_t>(chain.get_chain_id()),
         .block_base_fee =
             store_be_as<bytes32_t>(header.base_fee_per_gas.value_or(0)),
-        .blob_base_fee =
-            store_be_as<bytes32_t>(get_base_fee_per_blob_gas<traits>(
-                header.excess_blob_gas.value_or(0))),
+        .blob_base_fee = store_be_as<bytes32_t>(get_base_fee_per_blob_gas(
+            header.excess_blob_gas.value_or(0), blob_schedule)),
         .blob_hashes = nullptr,
         .blob_hashes_count = 0,
         .initcodes = nullptr,

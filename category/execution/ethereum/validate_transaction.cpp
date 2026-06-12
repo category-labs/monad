@@ -46,7 +46,8 @@ using BOOST_OUTCOME_V2_NAMESPACE::success;
 template <Traits traits>
 Result<void> static_validate_transaction(
     Transaction const &tx, std::optional<uint256_t> const &base_fee_per_gas,
-    std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id)
+    std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id,
+    BlobSchedule const &blob_schedule)
 {
     static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
@@ -184,8 +185,8 @@ Result<void> static_validate_transaction(
 
             if (MONAD_UNLIKELY(
                     tx.max_fee_per_blob_gas <
-                    get_base_fee_per_blob_gas<traits>(
-                        excess_blob_gas.value_or(0)))) {
+                    get_base_fee_per_blob_gas(
+                        excess_blob_gas.value_or(0), blob_schedule))) {
                 return TransactionError::GasLimitOverflow;
             }
         }

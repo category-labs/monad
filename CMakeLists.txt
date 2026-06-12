@@ -180,6 +180,9 @@ target_compile_options(
   ff
   PRIVATE -Wno-unused-parameter -Wno-unused-const-variable -Wno-uninitialized)
 
+# silkpre_vendor (vendored sha256 + rmd160)
+add_subdirectory("third_party/silkpre_vendor")
+
 # tbb
 find_package(TBB REQUIRED)
 

@@ -17,6 +17,7 @@
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
+#include <category/execution/ethereum/chain/hive_net.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
@@ -57,6 +58,30 @@ TYPED_TEST(MonadTraitsTest, compute_gas_refund)
     else {
         EXPECT_EQ(refund, 20'200);
     }
+}
+
+TEST(HiveNet, ChainConfig)
+{
+    HiveNet const chain;
+
+    EXPECT_EQ(chain.get_chain_id(), uint256_t{3503995874084926ULL});
+    EXPECT_EQ(chain.get_revision(0, 0), MONAD_ETH_CONSTANTINOPLE);
+    EXPECT_EQ(chain.get_revision(14, 0), MONAD_ETH_CONSTANTINOPLE);
+    EXPECT_EQ(chain.get_revision(15, 0), MONAD_ETH_PETERSBURG);
+    EXPECT_EQ(chain.get_revision(18, 0), MONAD_ETH_ISTANBUL);
+    EXPECT_EQ(chain.get_revision(24, 0), MONAD_ETH_BERLIN);
+    EXPECT_EQ(chain.get_revision(27, 0), MONAD_ETH_LONDON);
+    EXPECT_EQ(chain.get_revision(36, 0), MONAD_ETH_PARIS);
+    EXPECT_EQ(chain.get_revision(36, 390), MONAD_ETH_SHANGHAI);
+    EXPECT_EQ(chain.get_revision(36, 420), MONAD_ETH_CANCUN);
+    EXPECT_EQ(chain.get_revision(36, 450), MONAD_ETH_PRAGUE);
+
+    GenesisState const genesis_state = chain.get_genesis_state();
+    EXPECT_EQ(genesis_state.header.difficulty, uint256_t{0x20000});
+    EXPECT_EQ(genesis_state.header.gas_limit, 0x5f5e100);
+    EXPECT_EQ(
+        genesis_state.header.extra_data,
+        from_hex("0x68697665636861696e").value());
 }
 
 TYPED_TEST(TraitsTest, Genesis)

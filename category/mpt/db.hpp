@@ -106,6 +106,13 @@ private:
 public:
     explicit Db(std::unique_ptr<StateMachine>); // in-memory
     Db(std::unique_ptr<StateMachine>, OnDiskDbConfig const &); // on-disk RW
+    // Production on-disk RW: reads the primary timeline's state_machine_kind
+    // from db_metadata (routed via primary_ring_idx, so it follows the role
+    // label across promote, not a fixed physical ring), constructs the
+    // StateMachine via the registry in category/mpt/state_machine_kind.hpp,
+    // and owns the SM internally. Caller must have registered the relevant
+    // kinds at process start (e.g. monad::register_ethereum_state_machines()).
+    explicit Db(OnDiskDbConfig const &);
     explicit Db(AsyncIOContext &); // on-disk RO blocking
 
     Db(Db const &) = delete;
@@ -207,6 +214,14 @@ public:
     // and persisted on disk. Returns nullopt if no secondary is active.
     [[nodiscard]] std::optional<Db>
     open_secondary_timeline(std::unique_ptr<StateMachine> secondary_machine);
+
+    // Production variant: read the secondary timeline's persisted
+    // state_machine_kind from db_metadata (routed via primary_ring_idx ^ 1,
+    // so it tracks the secondary role across promote, not a fixed physical
+    // ring) and construct the StateMachine via the registry. Returns nullopt
+    // if no secondary is active. Stamping the kind is the operator's job
+    // (monad-mpt --activate-secondary --state-machine <kind>).
+    [[nodiscard]] std::optional<Db> open_secondary_timeline();
 
     // Swap primary and secondary slots. Clears the primary Db's
     // StateMachine binding so a missed close+reopen (the expected next

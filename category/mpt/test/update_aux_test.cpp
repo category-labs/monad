@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/async/config.hpp>
+#include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/io.hpp>
 #include <category/async/storage_pool.hpp>
 #include <category/async/util.hpp>
@@ -23,6 +24,7 @@
 #include <category/core/io/ring.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/timeline.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/test/db_metadata_test_access.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
@@ -359,6 +361,115 @@ TEST(update_aux_test, secondary_inactive_by_default)
     });
 }
 
+// -------------------------------------------------------------------
+// State machine kind: per-timeline metadata round-trip
+// -------------------------------------------------------------------
+
+TEST(update_aux_test, state_machine_kind_default_ethereum)
+{
+    // A freshly-initialised pool is zeroed by init_new_pool; ethereum is the
+    // zero value, so both rings read back as ethereum until a real kind is
+    // stamped (e.g. via monad-mpt --state-machine).
+    with_rw_aux([](UpdateAux &aux) {
+        EXPECT_EQ(
+            aux.metadata_ctx().get_state_machine_kind(timeline_id::primary),
+            state_machine_kind::ethereum);
+        EXPECT_EQ(
+            aux.metadata_ctx().get_state_machine_kind(timeline_id::secondary),
+            state_machine_kind::ethereum);
+    });
+}
+
+TEST(update_aux_test, state_machine_kind_primary_round_trip)
+{
+    // A non-default value (no registered factory needed for a storage
+    // round-trip) proves the byte persists on the primary ring while the
+    // secondary keeps its ethereum-zero default.
+    auto const other = static_cast<state_machine_kind>(1);
+    with_rw_aux([other](UpdateAux &aux) {
+        aux.metadata_ctx().set_state_machine_kind(timeline_id::primary, other);
+        EXPECT_EQ(
+            aux.metadata_ctx().get_state_machine_kind(timeline_id::primary),
+            other);
+        // Secondary unaffected.
+        EXPECT_EQ(
+            aux.metadata_ctx().get_state_machine_kind(timeline_id::secondary),
+            state_machine_kind::ethereum);
+    });
+}
+
+TEST(update_aux_test, state_machine_kind_secondary_independent)
+{
+    // Distinct non-default values prove the two timelines route to
+    // independent bytes.
+    auto const a = static_cast<state_machine_kind>(1);
+    auto const b = static_cast<state_machine_kind>(2);
+    with_rw_aux([a, b](UpdateAux &aux) {
+        aux.metadata_ctx().set_state_machine_kind(timeline_id::primary, a);
+        aux.metadata_ctx().set_state_machine_kind(timeline_id::secondary, b);
+        EXPECT_EQ(
+            aux.metadata_ctx().get_state_machine_kind(timeline_id::primary), a);
+        EXPECT_EQ(
+            aux.metadata_ctx().get_state_machine_kind(timeline_id::secondary),
+            b);
+    });
+}
+
+TEST(update_aux_test, state_machine_kind_persists_across_reopen)
+{
+    // Verifies the kind written through DbMetadataContext lands in stable
+    // on-disk bytes (both metadata copies) and is observable after a full
+    // close+reopen of the storage pool. Use a non-default value so the
+    // assertion can't pass on a freshly-zeroed (ethereum) pool.
+    auto const kind = static_cast<state_machine_kind>(1);
+    monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 24;
+    flags.num_cnv_chunks = 2 + UpdateAux::cnv_chunks_for_db_metadata;
+
+    auto path_template = (MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+                          "state_machine_kind_persists_XXXXXX")
+                             .native();
+    {
+        int const fd = ::mkstemp(path_template.data());
+        ASSERT_GE(fd, 0);
+        ASSERT_EQ(::ftruncate(fd, 8LL << 30), 0);
+        ::close(fd);
+    }
+    auto const filename = std::filesystem::path(path_template);
+    auto const unfilename = monad::make_scope_exit(
+        [&]() noexcept { std::filesystem::remove(filename); });
+
+    monad::io::Ring ring1;
+    monad::io::Ring ring2;
+    auto testbuf = monad::io::make_buffers_for_segregated_read_write(
+        ring1,
+        ring2,
+        2,
+        4,
+        monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+        monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+    {
+        monad::async::storage_pool pool(
+            std::span{&filename, 1},
+            monad::async::storage_pool::mode::truncate,
+            flags);
+        monad::async::AsyncIO testio(pool, testbuf);
+        monad::mpt::UpdateAux aux(testio);
+        aux.metadata_ctx().set_state_machine_kind(timeline_id::primary, kind);
+    }
+    {
+        monad::async::storage_pool pool(
+            std::span{&filename, 1},
+            monad::async::storage_pool::mode::open_existing,
+            flags);
+        monad::async::AsyncIO testio(pool, testbuf);
+        monad::mpt::UpdateAux const aux(testio);
+        EXPECT_EQ(
+            aux.metadata_ctx().get_state_machine_kind(timeline_id::primary),
+            kind);
+    }
+}
+
 // Simulates opening a DB created by pre-dual-timeline code (MONAD007), whose
 // future_variables_unused region — now overlapping secondary_timeline — was
 // filled with 0xff. On reopen the constructor must rewrite the magic and zero
@@ -534,10 +645,21 @@ TEST(update_aux_test, migrates_monad007_layout_to_monad008)
                 m->root_offsets_state.auto_expire_version_,
                 test_auto_expire_version);
             EXPECT_EQ(m->secondary_timeline_state.auto_expire_version_, 0);
-            // The reserved bytes overlap MONAD007's cnv_chunks[] (0xff
-            // for unused slots); migration must zero them.
-            for (uint8_t const b :
-                 m->root_offsets_state.reserved_for_future_fields_) {
+            // state_machine_kind_ overlapped MONAD007's cnv_chunks[] (0xff
+            // for unused slots); migration must overwrite it with
+            // state_machine_kind::ethereum so the next Db open doesn't
+            // trip create_state_machine()'s range check.
+            EXPECT_EQ(
+                m->root_offsets_state.state_machine_kind_,
+                static_cast<uint8_t>(state_machine_kind::ethereum));
+            // Secondary's kind stays at zero (ethereum); it's gated by
+            // secondary_timeline_active_ = 0, so the byte is unreachable
+            // until a later --activate-secondary stamps the real kind.
+            EXPECT_EQ(
+                m->secondary_timeline_state.state_machine_kind_,
+                static_cast<uint8_t>(state_machine_kind::ethereum));
+            // reserved_sm_ must be zeroed (was 0xff in MONAD007 cnv_chunks[]).
+            for (uint8_t const b : m->root_offsets_state.reserved_sm_) {
                 EXPECT_EQ(b, 0u);
             }
             // List triple relocated from offset 528488 to 4456.

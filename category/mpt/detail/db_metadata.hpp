@@ -157,11 +157,14 @@ namespace detail
             // Last upsert's auto-expire version threshold for this timeline.
             // Accessed via start_lifetime_as<std::atomic_int64_t>.
             int64_t auto_expire_version_;
-            // Reserved for fields added in subsequent dual-timeline PRs
-            // (e.g. per-timeline state_machine_kind). Reserving the bytes
-            // here pins the db_metadata layout so future additions don't
-            // require another magic bump.
-            uint8_t reserved_for_future_fields_[8];
+            // mpt::state_machine_kind for the timeline currently bound to
+            // this physical ring. Stamped at pool create time by monad-mpt
+            // --state-machine, and on activate-secondary for whichever ring
+            // hosts the secondary at that moment. Read by mpt::Db ctor to
+            // pick the right StateMachine via the registry in
+            // state_machine_kind.hpp.
+            uint8_t state_machine_kind_;
+            uint8_t reserved_sm_[7]; // alignment + future per-ring scalars
         } root_offsets_state;
 
         struct db_offsets_info_t

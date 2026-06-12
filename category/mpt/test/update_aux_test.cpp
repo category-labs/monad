@@ -185,7 +185,8 @@ TEST(update_aux_test, root_offsets_fast_slow)
             .write_fd(50);
         auto const end_offset =
             aux_writer.node_writer_fast->sender().offset().add_to_offset(50);
-        aux_writer.metadata_ctx().append_root_offset(start_offset);
+        aux_writer.metadata_ctx().append_root_offset(
+            start_offset, timeline_id::primary);
         aux_writer.metadata_ctx().advance_db_offsets_to(
             end_offset, aux_writer.node_writer_slow->sender().offset());
     }
@@ -203,7 +204,8 @@ TEST(update_aux_test, root_offsets_fast_slow)
             .write_fd(100);
         auto const end_offset =
             aux_writer.node_writer_fast->sender().offset().add_to_offset(100);
-        aux_writer.metadata_ctx().append_root_offset(end_offset);
+        aux_writer.metadata_ctx().append_root_offset(
+            end_offset, timeline_id::primary);
     }
 
     { // Fail to reopen upon calling rewind_to_match_offsets()
@@ -1831,4 +1833,271 @@ TEST(update_aux_test, version_is_valid_ondisk_per_timeline)
 
         aux.deactivate_secondary_timeline();
     });
+}
+
+// -------------------------------------------------------------------
+// rewind_to_version + clear_ondisk_db dual-timeline behavior
+// -------------------------------------------------------------------
+
+namespace
+{
+    // Burn BYTES bytes on the current fast writer chunk and return the
+    // chunk_offset_t (with spare bits set to BYTES/DISK_PAGE_SIZE) that points
+    // at where the write started. Caller appends this to a ring and advances
+    // db_offsets so rewind_to_match_offsets's invariants hold.
+    constexpr size_t FAKE_ROOT_BYTES = 1024;
+
+    chunk_offset_t
+    fake_root_write(monad::async::storage_pool &pool, UpdateAux &aux)
+    {
+        chunk_offset_t const off_before =
+            aux.node_writer_fast->sender().offset();
+        (void)pool.chunk(monad::async::storage_pool::seq, off_before.id)
+            .write_fd(FAKE_ROOT_BYTES);
+        chunk_offset_t off_with_spare = off_before; // mutated by set_spare
+        off_with_spare.set_spare(FAKE_ROOT_BYTES / DISK_PAGE_SIZE);
+        auto const off_after = off_before.add_to_offset(FAKE_ROOT_BYTES);
+        aux.metadata_ctx().advance_db_offsets_to(
+            off_after, aux.metadata_ctx().get_start_of_wip_slow_offset());
+        return off_with_spare;
+    }
+
+    void primary_write(
+        monad::async::storage_pool &pool, UpdateAux &aux, uint64_t version)
+    {
+        auto const off = fake_root_write(pool, aux);
+        auto &mctx = aux.metadata_ctx();
+        auto const max_ver = mctx.db_history_max_version();
+        if (max_ver == INVALID_BLOCK_NUM) {
+            mctx.fast_forward_next_version(version, timeline_id::primary);
+            mctx.append_root_offset(off, timeline_id::primary);
+        }
+        else if (version <= max_ver) {
+            mctx.update_root_offset(version, off, timeline_id::primary);
+        }
+        else {
+            MONAD_ASSERT(version == max_ver + 1);
+            mctx.append_root_offset(off, timeline_id::primary);
+        }
+    }
+
+    void secondary_write(
+        monad::async::storage_pool &pool, UpdateAux &aux, uint64_t version)
+    {
+        auto const off = fake_root_write(pool, aux);
+        auto &mctx = aux.metadata_ctx();
+        auto const max_ver =
+            mctx.db_history_max_version(timeline_id::secondary);
+        if (max_ver == INVALID_BLOCK_NUM) {
+            mctx.fast_forward_next_version(version, timeline_id::secondary);
+            mctx.append_root_offset(off, timeline_id::secondary);
+        }
+        else if (version <= max_ver) {
+            mctx.update_root_offset(version, off, timeline_id::secondary);
+        }
+        else {
+            MONAD_ASSERT(version == max_ver + 1);
+            mctx.append_root_offset(off, timeline_id::secondary);
+        }
+    }
+}
+
+// Secondary lags primary (lower max_version); primary rewind must not
+// touch secondary's ring or destroy chunks holding secondary's nodes.
+TEST(update_aux_test, rewind_preserves_lagging_secondary)
+{
+    monad::async::storage_pool pool(monad::async::use_anonymous_inode_tag{});
+    monad::io::Ring ring1;
+    monad::io::Ring ring2;
+    monad::io::Buffers testbuf =
+        monad::io::make_buffers_for_segregated_read_write(
+            ring1,
+            ring2,
+            2,
+            4,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+    monad::async::AsyncIO testio(pool, testbuf);
+    UpdateAux aux{testio, AUX_TEST_HISTORY_LENGTH};
+    auto &mctx = aux.metadata_ctx();
+
+    // Primary versions 0..4.
+    for (uint64_t v = 0; v <= 4; ++v) {
+        primary_write(pool, aux, v);
+    }
+    // Activate secondary; secondary versions 0..1 (lagging).
+    aux.activate_secondary_timeline();
+    secondary_write(pool, aux, 0);
+    secondary_write(pool, aux, 1);
+    // More primary versions 5..9.
+    for (uint64_t v = 5; v <= 9; ++v) {
+        primary_write(pool, aux, v);
+    }
+    mctx.set_latest_finalized_version(7);
+
+    auto const secondary_v0_before =
+        mctx.root_offsets(timeline_id::secondary)[0];
+    auto const secondary_v1_before =
+        mctx.root_offsets(timeline_id::secondary)[1];
+
+    aux.rewind_to_version(7);
+
+    EXPECT_EQ(mctx.db_history_max_version(timeline_id::primary), 7u);
+    EXPECT_TRUE(mctx.timeline_active(timeline_id::secondary));
+    EXPECT_EQ(mctx.db_history_max_version(timeline_id::secondary), 1u);
+    EXPECT_EQ(
+        mctx.root_offsets(timeline_id::secondary)[0], secondary_v0_before);
+    EXPECT_EQ(
+        mctx.root_offsets(timeline_id::secondary)[1], secondary_v1_before);
+    EXPECT_TRUE(mctx.version_is_valid_ondisk(1, timeline_id::secondary));
+    EXPECT_FALSE(mctx.version_is_valid_ondisk(2, timeline_id::secondary));
+    EXPECT_FALSE(mctx.version_is_valid_ondisk(8, timeline_id::primary));
+
+    aux.deactivate_secondary_timeline();
+}
+
+// Secondary caught up past the rewind point; both rings must discard
+// speculative entries above the target.
+TEST(update_aux_test, rewind_discards_speculative_on_both_timelines)
+{
+    monad::async::storage_pool pool(monad::async::use_anonymous_inode_tag{});
+    monad::io::Ring ring1;
+    monad::io::Ring ring2;
+    monad::io::Buffers testbuf =
+        monad::io::make_buffers_for_segregated_read_write(
+            ring1,
+            ring2,
+            2,
+            4,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+    monad::async::AsyncIO testio(pool, testbuf);
+    UpdateAux aux{testio, AUX_TEST_HISTORY_LENGTH};
+    auto &mctx = aux.metadata_ctx();
+
+    // Primary versions 0..4.
+    for (uint64_t v = 0; v <= 4; ++v) {
+        primary_write(pool, aux, v);
+    }
+    aux.activate_secondary_timeline();
+    // Both timelines write versions 5..9. Interleaved real-time order.
+    for (uint64_t v = 5; v <= 9; ++v) {
+        primary_write(pool, aux, v);
+        secondary_write(pool, aux, v - 5); // secondary maps blocks 0..4
+    }
+    // Secondary now has versions 0..4 (corresponds to primary 5..9 blocks
+    // in the migration model — exact mapping doesn't matter here, just that
+    // secondary's max > rewind target).
+    mctx.set_latest_finalized_version(7);
+
+    aux.rewind_to_version(7);
+
+    EXPECT_EQ(mctx.db_history_max_version(timeline_id::primary), 7u);
+    // Secondary's max was 4, and 4 < 7, so secondary is unchanged.
+    EXPECT_EQ(mctx.db_history_max_version(timeline_id::secondary), 4u);
+
+    // Now write 3 more secondary versions to push it past the rewind target,
+    // then rewind primary again to 2 (lower than secondary's max).
+    secondary_write(pool, aux, 5);
+    secondary_write(pool, aux, 6);
+    secondary_write(pool, aux, 7);
+    EXPECT_EQ(mctx.db_history_max_version(timeline_id::secondary), 7u);
+
+    aux.rewind_to_version(2);
+    EXPECT_EQ(mctx.db_history_max_version(timeline_id::primary), 2u);
+    EXPECT_EQ(mctx.db_history_max_version(timeline_id::secondary), 2u);
+    EXPECT_FALSE(mctx.version_is_valid_ondisk(3, timeline_id::primary));
+    EXPECT_FALSE(mctx.version_is_valid_ondisk(3, timeline_id::secondary));
+
+    aux.deactivate_secondary_timeline();
+}
+
+// Both timelines must persist across an UpdateAux re-init (simulates a
+// node restart that triggers rewind_to_latest_finalized internally).
+TEST(update_aux_test, rewind_state_survives_reopen)
+{
+    monad::async::storage_pool pool(monad::async::use_anonymous_inode_tag{});
+    monad::io::Ring ring1;
+    monad::io::Ring ring2;
+    monad::io::Buffers testbuf =
+        monad::io::make_buffers_for_segregated_read_write(
+            ring1,
+            ring2,
+            2,
+            4,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+    monad::async::AsyncIO testio(pool, testbuf);
+
+    chunk_offset_t secondary_root_at_v1 = INVALID_OFFSET;
+    {
+        UpdateAux aux{testio, AUX_TEST_HISTORY_LENGTH};
+        auto &mctx = aux.metadata_ctx();
+        for (uint64_t v = 0; v <= 4; ++v) {
+            primary_write(pool, aux, v);
+        }
+        aux.activate_secondary_timeline();
+        secondary_write(pool, aux, 0);
+        secondary_write(pool, aux, 1);
+        for (uint64_t v = 5; v <= 9; ++v) {
+            primary_write(pool, aux, v);
+        }
+        mctx.set_latest_finalized_version(7);
+        secondary_root_at_v1 = mctx.root_offsets(timeline_id::secondary)[1];
+        aux.rewind_to_version(7);
+    }
+
+    // Reopen the pool with a fresh UpdateAux.
+    UpdateAux aux2{testio, AUX_TEST_HISTORY_LENGTH};
+    auto const &mctx2 = aux2.metadata_ctx();
+    EXPECT_EQ(mctx2.db_history_max_version(timeline_id::primary), 7u);
+    EXPECT_TRUE(mctx2.timeline_active(timeline_id::secondary));
+    EXPECT_EQ(mctx2.db_history_max_version(timeline_id::secondary), 1u);
+    EXPECT_EQ(
+        mctx2.root_offsets(timeline_id::secondary)[1], secondary_root_at_v1);
+    aux2.deactivate_secondary_timeline();
+}
+
+// clear_ondisk_db must keep the secondary active while resetting BOTH
+// timelines' rings, not just primary. A populated secondary that survives into
+// rewind_to_match_offsets() would leave a root offset ahead of the rewound
+// fast/slow offsets and abort.
+TEST(update_aux_test, clear_ondisk_db_clears_populated_secondary)
+{
+    monad::async::storage_pool pool(monad::async::use_anonymous_inode_tag{});
+    monad::io::Ring ring1;
+    monad::io::Ring ring2;
+    monad::io::Buffers testbuf =
+        monad::io::make_buffers_for_segregated_read_write(
+            ring1,
+            ring2,
+            2,
+            4,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+    monad::async::AsyncIO testio(pool, testbuf);
+
+    UpdateAux aux{testio, AUX_TEST_HISTORY_LENGTH};
+    auto const &mctx = aux.metadata_ctx();
+
+    for (uint64_t v = 0; v <= 4; ++v) {
+        primary_write(pool, aux, v);
+    }
+    aux.activate_secondary_timeline();
+    EXPECT_TRUE(mctx.timeline_active(timeline_id::secondary));
+    secondary_write(pool, aux, 0);
+    secondary_write(pool, aux, 1);
+    secondary_write(pool, aux, 2);
+    EXPECT_EQ(mctx.db_history_max_version(timeline_id::primary), 4u);
+    EXPECT_EQ(mctx.db_history_max_version(timeline_id::secondary), 2u);
+
+    aux.clear_ondisk_db();
+
+    EXPECT_TRUE(mctx.timeline_active(timeline_id::secondary));
+    EXPECT_EQ(
+        mctx.db_history_max_version(timeline_id::primary), INVALID_BLOCK_NUM);
+    EXPECT_EQ(
+        mctx.db_history_max_version(timeline_id::secondary), INVALID_BLOCK_NUM);
+
+    aux.deactivate_secondary_timeline();
 }

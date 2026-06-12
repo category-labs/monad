@@ -119,6 +119,11 @@ endforeach()
 add_subdirectory("third_party/fiber" SYSTEM)
 # Boost.Fiber triggers warnings under C++23 strict flags.
 target_compile_options(boost_fiber PRIVATE -Wno-deprecated-declarations -Wno-conversion)
+# Enables the thread-safety machinery required for algorithms that
+# implement algorithm::awakened_from_remote(): a spinlock on the
+# worker-queue, so ctx->detach() from a remote thread doesn't race
+# with the owning thread's attach of another fiber.
+target_compile_definitions(boost_fiber PUBLIC BOOST_FIBERS_AWAKENED_FROM_REMOTE)
 
 # immer
 option(immer_BUILD_TESTS OFF)

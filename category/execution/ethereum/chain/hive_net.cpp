@@ -26,9 +26,8 @@ uint256_t HiveNet::get_chain_id() const
     return 3503995874084926;
 }
 
-// Fork schedule from the hive tests:
-// see: https://github.com/ethereum/execution-apis/blob/main/tests/genesis.json
-// see: https://github.com/ethereum/execution-apis/blob/main/tests/forkenv.json
+// Fork schedule from the Hive runner tests. Monad execution currently supports
+// Istanbul and later, so the fixture activates earlier forks as Istanbul.
 monad_eth_revision HiveNet::get_revision(
     uint64_t const block_number, uint64_t const timestamp) const
 {
@@ -53,14 +52,14 @@ monad_eth_revision HiveNet::get_revision(
     if (block_number >= 18) {
         return MONAD_ETH_ISTANBUL;
     }
-    MONAD_ASSERT(false, "unsupported fork");
+    return MONAD_ETH_ISTANBUL;
 }
 
 GenesisState HiveNet::get_genesis_state() const
 {
     BlockHeader header;
     header.difficulty = 0x20000;
-    header.gas_limit = 0x23f3e20;
+    header.gas_limit = 0x5f5e100;
     store_be(header.nonce.data(), uint64_t{0x0});
     header.extra_data = from_hex("0x68697665636861696e").value();
     return {header, HIVE_NET_ALLOC};

@@ -35,6 +35,7 @@ add_trie_test(TARGET db_test SOURCES "db_test.cpp")
 add_trie_test(TARGET encode_branch_test SOURCES "encode_branch_test.cpp")
 add_trie_test(TARGET encode_two_pieces_test SOURCES
               "encode_two_pieces_test.cpp")
+add_trie_test(TARGET dual_timeline_test SOURCES "dual_timeline_test.cpp")
 add_trie_test(TARGET load_all_test SOURCES "load_all_test.cpp")
 add_trie_test(TARGET many_nested_updates SOURCES "many_nested_updates.cpp"
               LINK_LIBRARIES Boost::json)

@@ -20,6 +20,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/keccak.h>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/trie.hpp>
@@ -150,7 +151,14 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
             i++;
         }
         this->root = this->aux.do_update(
-            std::move(this->root), *this->sm, std::move(updates), block_id);
+            std::move(this->root),
+            *this->sm,
+            std::move(updates),
+            block_id,
+            /*compaction=*/false,
+            /*can_write_to_fast=*/true,
+            /*write_root=*/true,
+            timeline_id::primary);
     }
 
     {
@@ -193,7 +201,14 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
             i++;
         }
         this->root = this->aux.do_update(
-            std::move(this->root), *this->sm, std::move(updates), block_id);
+            std::move(this->root),
+            *this->sm,
+            std::move(updates),
+            block_id,
+            /*compaction=*/false,
+            /*can_write_to_fast=*/true,
+            /*write_root=*/true,
+            timeline_id::primary);
     }
 
     {

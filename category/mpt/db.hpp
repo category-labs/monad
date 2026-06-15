@@ -81,6 +81,9 @@ public:
 
     uint64_t get_latest_version() const;
     uint64_t get_earliest_version() const;
+    // Persisted state_machine_kind of the primary timeline (e.g. monad =
+    // page-encoded). Lets read-only callers pick the right storage decode.
+    state_machine_kind state_machine_type() const;
     bool traverse(
         NodeCursor const &, TraverseMachine &, uint64_t block_id,
         size_t concurrency_limit = 4096);

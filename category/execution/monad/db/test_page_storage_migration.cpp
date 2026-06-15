@@ -13,7 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/async/util.hpp>
 #include <category/core/address.hpp>
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -21,13 +23,17 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/db_snapshot.h>
+#include <category/execution/ethereum/db/db_snapshot_filesystem.h>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/db/commit_block_migration.hpp>
+#include <category/execution/monad/db/state_machine_init.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -38,8 +44,14 @@
 
 #include <test_resource_data.h>
 
+#include <unistd.h>
+
+#include <array>
 #include <cstdint>
+#include <filesystem>
+#include <limits>
 #include <optional>
+#include <string>
 #include <vector>
 
 // End to end test for the slot to page storage migration. Drives the
@@ -130,6 +142,105 @@ namespace
                 .account = {prev_acct, new_acct},
                 .storage = std::move(storage)});
         return deltas;
+    }
+
+    // On-disk temp file sized for a small test DB (mirrors the mpt test
+    // helper). Needed because promote/reopen requires a persistent backing
+    // file to close and reopen against.
+    std::filesystem::path make_temp_db_file(long const size_gb)
+    {
+        std::filesystem::path filename{
+            MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+            "monad_promote_repro_XXXXXX"};
+        int const fd = ::mkstemp(reinterpret_cast<char *>(
+            const_cast<char *>(filename.native().data())));
+        MONAD_ASSERT(fd != -1);
+        MONAD_ASSERT(-1 != ::ftruncate(fd, size_gb * 1024 * 1024 * 1024));
+        ::close(fd);
+        return filename;
+    }
+}
+
+// Helpers for the page-encoded TrieRODb read regression test below.
+namespace
+{
+    constexpr auto repro_val_a = bytes32_t{uint64_t{0xAA}};
+    constexpr auto repro_val_b = bytes32_t{uint64_t{0xBB}};
+
+    mpt::OnDiskDbConfig
+    repro_cfg(std::filesystem::path const &dbfile, bool const append)
+    {
+        return mpt::OnDiskDbConfig{
+            .append = append,
+            .compaction = true,
+            .sq_thread_cpu = std::nullopt,
+            .dbname_paths = {dbfile},
+            .fixed_history_length = 1000};
+    }
+
+    // Mirror the integration up to "page secondary populated by snapshot":
+    // a slot primary with genesis + ADDR_A storage on two pages, activate a
+    // page secondary, dump the slot primary, load the snapshot into the
+    // secondary (slot->page re-encode). Leaves all Dbs closed.
+    void seed_page_secondary_via_snapshot(
+        std::filesystem::path const &dbfile,
+        std::filesystem::path const &snapdir, uint64_t const version)
+    {
+        {
+            mpt::Db db1{
+                std::make_unique<OnDiskMachine>(), repro_cfg(dbfile, false)};
+            TrieDb tdb1{db1};
+            load_genesis_state(MonadTestnet{}.get_genesis_state(), tdb1);
+            tdb1.set_block_and_prefix(0, {});
+            BlockHeader const header{.number = version};
+            auto deltas = make_deltas(
+                std::nullopt,
+                Account{.nonce = 1},
+                {{slot_0, bytes32_t{}, repro_val_a},
+                 {slot_far, bytes32_t{}, repro_val_b}});
+            commit_block<MonadTraits<MONAD_ZERO>>(
+                tdb1,
+                nullptr,
+                bytes32_t{version},
+                header,
+                deltas,
+                make_empty_ancillaries());
+            tdb1.finalize(version, bytes32_t{version});
+        }
+        {
+            mpt::Db db1{
+                std::make_unique<OnDiskMachine>(), repro_cfg(dbfile, true)};
+            mpt::Db const db2 = db1.activate_secondary_timeline(
+                std::make_unique<MonadOnDiskMachine>());
+        }
+        {
+            std::array<char const *, 1> const paths{dbfile.c_str()};
+            auto *const ctx =
+                monad_db_snapshot_filesystem_write_user_context_create(
+                    snapdir.c_str(), version);
+            bool const ok = monad_db_dump_snapshot(
+                paths.data(),
+                paths.size(),
+                std::numeric_limits<unsigned>::max(),
+                version,
+                monad_db_snapshot_write_filesystem,
+                ctx,
+                2048,
+                1,
+                0);
+            MONAD_ASSERT(ok);
+            monad_db_snapshot_filesystem_write_user_context_destroy(ctx);
+        }
+        {
+            std::array<char const *, 1> const paths{dbfile.c_str()};
+            monad_db_snapshot_load_filesystem(
+                paths.data(),
+                paths.size(),
+                std::numeric_limits<unsigned>::max(),
+                snapdir.c_str(),
+                version,
+                true);
+        }
     }
 }
 
@@ -377,4 +488,49 @@ TEST(MigrationFork, reincarnation_does_not_resurrect_page_slots)
     check(slot_1, bytes32_t{}, "slot_1 from dead incarnation must be wiped");
     check(
         slot_far, bytes32_t{}, "slot_far from dead incarnation must be wiped");
+}
+
+// TrieRODb must read page-encoded contract storage. Seed a page-encoded
+// primary holding ADDR_A storage across two pages, open it read-only, and
+// verify read_storage (per slot) and read_storage_page return the values.
+TEST(MigrationFork, trie_rodb_reads_page_encoded_storage)
+{
+    namespace fs = std::filesystem;
+    register_monad_state_machines();
+
+    auto const dbfile = make_temp_db_file(4);
+    fs::path const snapdir =
+        fs::path{MONAD_ASYNC_NAMESPACE::working_temporary_directory()} /
+        ("monad_trierodb_" + std::to_string(::getpid()));
+    fs::create_directories(snapdir);
+
+    constexpr uint64_t VERSION = 1;
+    seed_page_secondary_via_snapshot(dbfile, snapdir, VERSION);
+    {
+        mpt::Db db1{repro_cfg(dbfile, true)};
+        db1.promote_secondary_to_primary();
+        db1.deactivate_secondary_timeline();
+    }
+
+    {
+        mpt::ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbfile}};
+        mpt::RODb rodb{ro_config};
+        TrieRODb trodb{rodb};
+        EXPECT_TRUE(trodb.is_page_encoded());
+        trodb.set_block_and_prefix(VERSION);
+        EXPECT_EQ(
+            trodb.read_storage(ADDR_A, Incarnation{0, 0}, slot_0), repro_val_a)
+            << "TrieRODb failed to read page-encoded storage slot_0";
+        EXPECT_EQ(
+            trodb.read_storage(ADDR_A, Incarnation{0, 0}, slot_far),
+            repro_val_b)
+            << "TrieRODb failed to read page-encoded storage slot_far";
+        auto const page = trodb.read_storage_page(
+            ADDR_A, Incarnation{0, 0}, compute_page_key(slot_0));
+        EXPECT_EQ(page[compute_slot_offset(slot_0)], repro_val_a)
+            << "TrieRODb::read_storage_page returned the wrong page";
+    }
+
+    fs::remove(dbfile);
+    fs::remove_all(snapdir);
 }

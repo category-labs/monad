@@ -147,16 +147,14 @@ bytes32_t TrieDb::read_storage(
     }
     stats_storage_value();
     auto encoded_storage = res.value().node->value();
-    auto const value = decode_storage_db_ignore_key(encoded_storage);
-    MONAD_ASSERT(!value.has_error());
     if (page_encoded_) {
-        auto const page = decode_storage_page(value.value());
+        auto const page = decode_storage_page_leaf(encoded_storage);
         MONAD_ASSERT(!page.has_error());
         return page.value()[compute_slot_offset(key)];
     }
-    else {
-        return to_bytes(value.value());
-    }
+    auto const value = decode_storage_db_ignore_key(encoded_storage);
+    MONAD_ASSERT(!value.has_error());
+    return to_bytes(value.value());
 }
 
 storage_page_t TrieDb::read_storage_page(
@@ -186,10 +184,8 @@ storage_page_t TrieDb::read_storage_page(
             return {};
         }
         stats_storage_value();
-        auto encoded_storage = res.value().node->value();
-        auto const value = decode_storage_db_ignore_key(encoded_storage);
-        MONAD_ASSERT(!value.has_error());
-        auto const page = decode_storage_page(value.value());
+        auto const encoded_storage = res.value().node->value();
+        auto const page = decode_storage_page_leaf(encoded_storage);
         MONAD_ASSERT(!page.has_error());
         return page.value();
     }

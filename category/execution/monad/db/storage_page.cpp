@@ -24,6 +24,7 @@ extern "C"
 #include <category/core/result.hpp>
 #include <category/core/rlp/decode_error.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
@@ -346,6 +347,13 @@ Result<storage_page_t> decode_storage_page(byte_string_view enc)
         return rlp::DecodeError::InputTooLong;
     }
     return page;
+}
+
+Result<storage_page_t> decode_storage_page_leaf(byte_string_view leaf)
+{
+    BOOST_OUTCOME_TRY(
+        auto const page_bytes, decode_storage_db_ignore_key(leaf));
+    return decode_storage_page(page_bytes);
 }
 
 MONAD_NAMESPACE_END

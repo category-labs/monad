@@ -174,4 +174,10 @@ bytes32_t page_commit(storage_page_t const &page);
 byte_string encode_storage_page(storage_page_t const &page);
 Result<storage_page_t> decode_storage_page(byte_string_view enc);
 
+// Decode a page-encoded storage leaf -- the raw value of a storage node on a
+// page-encoded db -- into its storage_page_t: strips the db-key wrapper
+// (decode_storage_db_ignore_key) then decodes the page. The single leaf->page
+// decode pipeline shared by the read paths (TrieDb/TrieRODb) and the Rust FFI.
+Result<storage_page_t> decode_storage_page_leaf(byte_string_view leaf);
+
 MONAD_NAMESPACE_END

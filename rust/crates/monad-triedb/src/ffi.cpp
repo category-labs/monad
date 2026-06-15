@@ -18,6 +18,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/log.hpp>
 #include <category/core/nibble.h>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/monad/staking/read_valset.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -142,6 +143,35 @@ int triedb_read(
         *value = buf;
     }
     return value_len;
+}
+
+bool triedb_is_page_encoded(TriedbRoInner *const db)
+{
+    if (db == nullptr) {
+        return false;
+    }
+    return db->db.state_machine_type() == monad::mpt::state_machine_kind::monad;
+}
+
+bool triedb_decode_storage_page_slot(
+    uint8_t const *const leaf, size_t const leaf_len, uint8_t const offset,
+    uint8_t *const out_value)
+{
+    if (leaf == nullptr || out_value == nullptr) {
+        return false;
+    }
+    auto const page = monad::decode_storage_page_leaf(
+        monad::byte_string_view{leaf, leaf_len});
+    if (page.has_error()) {
+        return false;
+    }
+    // offset is the slot key's low 7 bits; mask defensively so a caller that
+    // passes an unmasked byte can't index past the 128-slot page (an
+    // out-of-range shift inside storage_page_t would be UB).
+    uint8_t const masked = offset & monad::storage_page_t::SLOT_OFFSET_MASK;
+    auto const slot = page.value()[masked];
+    memcpy(out_value, slot.bytes, sizeof(slot.bytes));
+    return true;
 }
 
 namespace

@@ -38,6 +38,18 @@ int triedb_read(
     TriedbRoInner *, uint8_t const *key, uint8_t key_len_nibbles,
     uint8_t const **value, uint64_t block_id);
 
+// true if the primary timeline is page-encoded (Monad state machine), in which
+// case storage is keyed by keccak(page_key) (page_key = slot >> 7) and the leaf
+// is an encoded page; otherwise storage is slot-encoded.
+bool triedb_is_page_encoded(TriedbRoInner *);
+
+// Decode a page-encoded storage leaf (as returned by triedb_read for a
+// page-encoded db, looked up with the page key) and write the 32-byte value of
+// the slot at `offset` (the low 7 bits of the original slot key) to out_value.
+// Returns false on decode error.
+bool triedb_decode_storage_page_slot(
+    uint8_t const *leaf, size_t leaf_len, uint8_t offset, uint8_t *out_value);
+
 typedef void (*triedb_async_read_callback_fn)(
     uint8_t const *value, int length, void *user);
 // calls (*completed) when read is

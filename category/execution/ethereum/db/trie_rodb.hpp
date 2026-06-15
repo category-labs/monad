@@ -15,10 +15,13 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
 #include <category/vm/vm.hpp>
@@ -30,22 +33,32 @@
 
 MONAD_NAMESPACE_BEGIN
 
-// TODO: template by page_encoded as well. Will need it for release2
+// Read-only Db over an mpt::RODb. Storage reads are encoding-aware: the
+// encoding is taken from the bound timeline's persisted state_machine_kind
+// (monad == page-encoded), mirroring TrieDb.
 class TrieRODb final : public ::monad::Db
 {
     ::monad::mpt::RODb &db_;
     uint64_t block_number_;
     ::monad::mpt::NodeCursor prefix_cursor_;
+    bool page_encoded_;
 
 public:
     explicit TrieRODb(mpt::RODb &db)
         : db_(db)
         , block_number_(mpt::INVALID_BLOCK_NUM)
         , prefix_cursor_()
+        , page_encoded_(
+              db.state_machine_type() == mpt::state_machine_kind::monad)
     {
     }
 
     ~TrieRODb() = default;
+
+    virtual bool is_page_encoded() const override
+    {
+        return page_encoded_;
+    }
 
     virtual void set_block_and_prefix(
         uint64_t const block_number,
@@ -93,12 +106,18 @@ public:
     virtual bytes32_t read_storage(
         Address const &addr, Incarnation, bytes32_t const &key) override
     {
+        // Page-encoded storage is keyed by keccak(page_key) and the value is
+        // an encoded page; slot-encoded storage is keyed by keccak(slot). Look
+        // up the right node and decode it accordingly (mirrors TrieDb).
+        bytes32_t const lookup_key =
+            page_encoded_ ? compute_page_key(key) : key;
         auto storage_leaf_res = db_.find(
             prefix_cursor_,
             mpt::concat(
                 STATE_NIBBLE,
                 mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
+                mpt::NibblesView{
+                    keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
             block_number_);
         if (!storage_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(
@@ -108,15 +127,41 @@ public:
             return {};
         }
         auto encoded_storage = storage_leaf_res.value().node->value();
+        if (page_encoded_) {
+            auto const page = decode_storage_page_leaf(encoded_storage);
+            MONAD_ASSERT(!page.has_error());
+            return page.value()[compute_slot_offset(key)];
+        }
         auto const storage = decode_storage_db_ignore_key(encoded_storage);
         MONAD_ASSERT(!storage.has_error());
         return to_bytes(storage.value());
     }
 
-    virtual storage_page_t
-    read_storage_page(Address const &, Incarnation, bytes32_t const &) override
+    virtual storage_page_t read_storage_page(
+        Address const &addr, Incarnation, bytes32_t const &page_key) override
     {
-        MONAD_ABORT("TrieRODb is slot-encoded; read_storage_page unsupported");
+        MONAD_ASSERT(
+            page_encoded_,
+            "read_storage_page is only valid on a page-encoded TrieRODb");
+        auto storage_leaf_res = db_.find(
+            prefix_cursor_,
+            mpt::concat(
+                STATE_NIBBLE,
+                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+                mpt::NibblesView{
+                    keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
+            block_number_);
+        if (!storage_leaf_res.has_value()) {
+            MONAD_ASSERT_THROW(
+                storage_leaf_res.assume_error() !=
+                    ::monad::mpt::DbError::version_no_longer_exist,
+                "Block was invalidated in db while execution was in progress");
+            return {};
+        }
+        auto const encoded_storage = storage_leaf_res.value().node->value();
+        auto const page = decode_storage_page_leaf(encoded_storage);
+        MONAD_ASSERT(!page.has_error());
+        return page.value();
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override

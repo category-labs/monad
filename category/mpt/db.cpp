@@ -1022,6 +1022,13 @@ uint64_t RODb::get_earliest_version() const
     return impl_->aux().metadata_ctx().db_history_min_valid_version();
 }
 
+state_machine_kind RODb::state_machine_type() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->aux().metadata_ctx().get_state_machine_kind(
+        timeline_id::primary);
+}
+
 DbError find_result_to_db_error(find_result const result) noexcept
 {
     switch (result) {

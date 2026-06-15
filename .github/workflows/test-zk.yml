@@ -1,6 +1,11 @@
 name: ZK Tests
 
-on: workflow_dispatch
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    types: [ opened, synchronize, reopened, edited ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -38,6 +43,7 @@ jobs:
           file: docker/Dockerfile
           target: build_zk
           cache-from: |
+            type=gha,scope=riscv-toolchain
             type=gha,scope=zk
             type=gha,scope=base
           cache-to: type=gha,mode=max,scope=zk

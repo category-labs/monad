@@ -105,6 +105,7 @@ The usual C++ landmines, ordered roughly by how often they bite in this repo:
 - **Thread safety** — data races on shared state; missing synchronization on fields accessed from multiple fibers or threads; `std::atomic` used with non-default memory orders (often wrong). TSAN builds exist for a reason.
 - **VM interpreter `must-tail` discipline** — any change in `category/vm/` that converts a tail call into a non-tail call risks stack overflow on long bytecode chains. Flag changes that move work after a recursive/dispatched call.
 - **Sanitizer compatibility** — code that deliberately trips UBSAN/ASAN (e.g. overaligned placement new, `reinterpret_cast` through unrelated types) needs a comment explaining why.
+- **Throw on user input** — code that faces the user, e.g. `category/rpc/`, must use `MONAD_ASSERT_THROW` rather than `MONAD_ASSERT` for assertions.
 
 ### 4. Testing
 

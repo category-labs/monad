@@ -119,6 +119,18 @@ endforeach()
 add_subdirectory("third_party/fiber" SYSTEM)
 # Boost.Fiber triggers warnings under C++23 strict flags.
 target_compile_options(boost_fiber PRIVATE -Wno-deprecated-declarations -Wno-conversion)
+# Some upstream fiber tests include <boost/bind.hpp>, which emits a #pragma
+# message about global-namespace placeholders. It's a raw message (not a
+# deprecation warning), so -Wno-* can't suppress it; retain the legacy
+# behavior to silence it. The test subdirectory is only traversed under the
+# same condition fiber itself uses, so mirror it before querying the targets.
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fiber/test/CMakeLists.txt")
+  get_property(_fiber_test_targets DIRECTORY "third_party/fiber/test"
+    PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(_t ${_fiber_test_targets})
+    target_compile_definitions(${_t} PRIVATE BOOST_BIND_GLOBAL_PLACEHOLDERS)
+  endforeach()
+endif()
 
 # immer
 option(immer_BUILD_TESTS OFF)

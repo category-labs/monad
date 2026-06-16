@@ -18,12 +18,12 @@
 #include <category/core/address.hpp>
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/core/synchronization/promise.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <boost/fiber/future/promise.hpp>
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
@@ -79,7 +79,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     BlockHashBuffer const &block_hash_buffer_;
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
-    boost::fibers::promise<void> &prev_;
+    Promise prev_;
     CallTracerBase &call_tracer_;
     trace::StateTracer &state_tracer_;
     bool trace_transfers_;
@@ -91,10 +91,9 @@ public:
     ExecuteTransaction(
         Chain const &, uint64_t i, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &,
-        BlockHashBuffer const &, BlockState &, BlockMetrics &,
-        boost::fibers::promise<void> &prev, CallTracerBase &,
-        trace::StateTracer &, ChainContext<traits> const &chain_ctx,
-        bool trace_transfers = false);
+        BlockHashBuffer const &, BlockState &, BlockMetrics &, Promise prev,
+        CallTracerBase &, trace::StateTracer &,
+        ChainContext<traits> const &chain_ctx, bool trace_transfers = false);
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

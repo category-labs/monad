@@ -16,6 +16,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/core/synchronization/promise.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
@@ -114,7 +115,7 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         block_hash_buffer,
         bs,
         metrics,
-        prev,
+        Promise{prev},
         noop_call_tracer,
         noop_state_tracer,
         chain_ctx)();
@@ -223,7 +224,7 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
         block_hash_buffer,
         bs,
         metrics,
-        prev,
+        Promise{prev},
         noop_call_tracer,
         noop_state_tracer,
         chain_ctx)();
@@ -376,7 +377,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
             block_hash_buffer,
             bs,
             metrics,
-            prev,
+            Promise{prev},
             noop_call_tracer,
             noop_state_tracer,
             chain_ctx)();
@@ -434,7 +435,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
             block_hash_buffer,
             bs,
             metrics,
-            prev,
+            Promise{prev},
             noop_call_tracer,
             noop_state_tracer,
             chain_ctx)();
@@ -538,7 +539,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
             block_hash_buffer,
             bs,
             metrics,
-            prev,
+            Promise{prev},
             noop_call_tracer,
             noop_state_tracer,
             chain_ctx)();
@@ -642,7 +643,7 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
         block_hash_buffer,
         bs,
         metrics,
-        prev,
+        Promise{prev},
         noop_call_tracer,
         noop_state_tracer,
         chain_ctx)();

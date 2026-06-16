@@ -18,6 +18,8 @@
 //   - renamed silkpre_sha256 to monad_sha256
 //   - made internal helper `cpuid` static to avoid colliding with silkpre's
 //     copy at link time
+//   - guarded the chunk copy so a null input pointer with a zero length is
+//     well-defined (see monad_sha256 contract in the header)
 
 // Based on several bits of code released to public domain:
 // https://github.com/amosnier/sha-2 (Author: Alain Mosnier)
@@ -112,10 +114,12 @@ static bool calc_chunk(uint8_t chunk[CHUNK_SIZE], struct buffer_state* state) {
         return true;
     }
 
-    memcpy(chunk, state->p, state->len);
-    chunk += state->len;
     size_t space_in_chunk = CHUNK_SIZE - state->len;
-    if (state->len) {  // avoid adding 0 to nullptr
+    if (state->len) {  // Skip when the input pointer may be null: both
+                       // memcpy(dst, NULL, 0) and NULL + 0 are undefined
+                       // behaviour, even though they move/advance nothing.
+        memcpy(chunk, state->p, state->len);
+        chunk += state->len;
         state->p += state->len;
     }
     state->len = 0;

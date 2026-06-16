@@ -27,6 +27,9 @@
 extern "C" {
 #endif
 
+// Writes the SHA-256 digest of input[0..len) to hash. input may be null when
+// len is zero. When use_cpu_extensions is true, hardware acceleration is used
+// where available.
 void monad_sha256(uint8_t hash[32], const uint8_t* input, size_t len, bool use_cpu_extensions);
 
 #if defined(__cplusplus)

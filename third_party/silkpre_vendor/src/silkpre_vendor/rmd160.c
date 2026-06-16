@@ -365,6 +365,9 @@ static inline uint32_t load32(const void* src) {
 }
 
 void monad_rmd160(uint8_t out[20], const uint8_t* ptr, size_t len) {
+    // ptr may be null when len is zero: the block loop below and rmd160_finish
+    // only dereference ptr for byte counts derived from len, so a zero length
+    // performs no read.
     uint32_t buf[160 / 32];
 
     rmd160_init(buf);

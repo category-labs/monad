@@ -47,6 +47,8 @@
 extern "C" {
 #endif
 
+// Writes the RIPEMD-160 digest of input[0..len) to out. input may be null when
+// len is zero.
 void monad_rmd160(uint8_t out[20], const uint8_t* input, size_t len);
 
 #if defined(__cplusplus)

@@ -244,11 +244,9 @@ bytes32_t compute_requests_hash(std::span<BlockRequest const> const requests)
         inner_hashes.append_range(inner.bytes);
     }
 
-    static constexpr uint8_t EMPTY_SHA256_INPUT = 0;
     bytes32_t outer_hash;
-    uint8_t const *outer_input =
-        inner_hashes.empty() ? &EMPTY_SHA256_INPUT : inner_hashes.data();
-    monad_sha256(outer_hash.bytes, outer_input, inner_hashes.size(), true);
+    monad_sha256(
+        outer_hash.bytes, inner_hashes.data(), inner_hashes.size(), true);
     return outer_hash;
 }
 

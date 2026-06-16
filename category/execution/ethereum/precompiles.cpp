@@ -64,7 +64,7 @@ static std::optional<uint64_t> fmap_optional(byte_string_view const a)
 template <Traits traits>
 std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 {
-    static_assert(traits::evm_rev() > MONAD_ETH_PETERSBURG);
+    static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
 
 #define CASE(addr, gas_cost, execute)                                          \
     do {                                                                       \

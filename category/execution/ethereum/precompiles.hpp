@@ -72,7 +72,7 @@ template <monad_eth_revision Rev>
 [[gnu::always_inline]] inline uint64_t
 snarkv_gas_cost_ethereum(byte_string_view const input)
 {
-    static_assert(Rev > MONAD_ETH_PETERSBURG);
+    static_assert(Rev >= MONAD_ETH_ISTANBUL);
 
     uint64_t const k{input.size() / 192};
     return 34'000 * k + 45'000; // EIP-1108

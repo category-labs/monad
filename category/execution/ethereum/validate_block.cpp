@@ -76,7 +76,7 @@ bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &ommers)
 template <Traits traits>
 Result<void> static_validate_header(BlockHeader const &header)
 {
-    static_assert(traits::evm_rev() > MONAD_ETH_HOMESTEAD);
+    static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
 
     // YP eq. 56
     if (MONAD_UNLIKELY(header.gas_limit < 5000)) {

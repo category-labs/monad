@@ -37,7 +37,7 @@ namespace
 
 TYPED_TEST(TraitsTest, intrinsic_gas)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_PETERSBURG);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
 
     auto non_zero_since =
         []<monad_eth_revision r>(rev<r>, uint64_t val) consteval {

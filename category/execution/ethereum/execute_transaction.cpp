@@ -362,7 +362,7 @@ template <Traits traits>
 Receipt ExecuteTransaction<traits>::execute_final(
     State &state, evmc::Result const &result)
 {
-    static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
     MONAD_ASSERT(result.gas_left >= 0);
     MONAD_ASSERT(result.gas_refund >= 0);

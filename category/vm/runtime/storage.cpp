@@ -59,7 +59,7 @@ namespace monad::vm::runtime
         Context *ctx, uint256_t const *key_ptr, uint256_t const *value_ptr,
         int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() > MONAD_ETH_PETERSBURG);
+        static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
 
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & evmc_flags::EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);

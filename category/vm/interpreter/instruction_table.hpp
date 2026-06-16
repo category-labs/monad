@@ -93,7 +93,7 @@ namespace monad::vm::interpreter
     template <Traits traits>
     consteval InstrTable make_instruction_table()
     {
-        static_assert(traits::evm_rev() > MONAD_ETH_PETERSBURG);
+        static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
 
         constexpr auto since = [](monad_eth_revision first, InstrEval impl) {
             return (traits::evm_rev() >= first) ? impl : invalid;

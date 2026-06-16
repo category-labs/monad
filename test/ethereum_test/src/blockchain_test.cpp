@@ -228,7 +228,7 @@ Result<BlockExecOutput> execute(
     bool enable_tracing, std::vector<Receipt> &receipts,
     std::vector<std::vector<CallFrame>> &call_frames)
 {
-    static_assert(traits::evm_rev() > MONAD_ETH_BYZANTIUM);
+    static_assert(traits::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
 
     using namespace monad::test;
 
@@ -394,7 +394,7 @@ void process_test(
     std::string const &name, nlohmann::json const &j_contents,
     vm::VM::Mode const vm_mode, bool enable_tracing)
 {
-    static_assert(traits::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(traits::evm_rev() >= MONAD_ETH_BYZANTIUM);
 
     using namespace test;
 

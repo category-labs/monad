@@ -50,7 +50,7 @@ namespace monad::vm::runtime
         uint256_t const &size_word, uint256_t const &salt_word,
         evmc_call_kind const kind, int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() > MONAD_ETH_HOMESTEAD);
+        static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
 
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);

@@ -17,7 +17,7 @@ Linting requires a specific build configuration to match CI. All of these must b
 - Debug build type
 - `MONAD_COMPILER_TESTING=ON` and `MONAD_COMPILER_BENCHMARKS=ON`
 - `UTILS_CLANG_TIDY_AUTO_CONST=ON`
-- `third_party/evmone` must be present (see `/build` for evmone setup instructions)
+- submodules initialized, including `third_party/evmone` (`git submodule update --init --recursive`)
 
 ### Steps
 
@@ -53,7 +53,7 @@ The project's `.clang-tidy` config treats all warnings as errors and covers bugp
 ### Error handling
 
 - If `build/` doesn't exist or was configured with the wrong compiler/build type, reconfigure as shown above
-- If `third_party/evmone` is missing, tell the user to set it up (see `/build` for instructions)
+- If `third_party/evmone` is missing, run `git submodule update --init --recursive`
 - If `--fix` is used with uncommitted changes, the fix script will error — tell the user to commit or stash first
 
 ### Important

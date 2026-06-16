@@ -103,7 +103,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 header,
                 block_state,
                 block_metrics,
-                promise,
+                Promise{promise},
                 noop_call_tracer,
                 prestate_tracer}();
 
@@ -138,7 +138,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 header,
                 block_state,
                 block_metrics,
-                promise,
+                Promise{promise},
                 noop_call_tracer,
                 prestate_tracer}();
 
@@ -210,7 +210,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 header,
                 block_state,
                 block_metrics,
-                promise,
+                Promise{promise},
                 noop_call_tracer,
                 statediff_tracer}();
 
@@ -251,7 +251,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 header,
                 block_state,
                 block_metrics,
-                promise,
+                Promise{promise},
                 noop_call_tracer,
                 statediff_tracer}();
 
@@ -316,7 +316,7 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
             header,
             block_state,
             block_metrics,
-            promise,
+            Promise{promise},
             noop_call_tracer,
             noop_state_tracer}();
 
@@ -355,7 +355,7 @@ TEST(SystemTransaction, static_validate_transaction_failure)
             header,
             block_state,
             block_metrics,
-            promise,
+            Promise{promise},
             noop_call_tracer,
             noop_state_tracer}();
 

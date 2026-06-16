@@ -17,6 +17,7 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/synchronization/promise.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -34,16 +35,15 @@ class ExecuteSystemTransaction
     BlockHeader const &header_;
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
-    boost::fibers::promise<void> &prev_;
+    Promise prev_;
     CallTracerBase &call_tracer_;
     trace::StateTracer &state_tracer_;
 
 public:
     ExecuteSystemTransaction(
         Chain const &, uint64_t i, Transaction const &, Address const &,
-        BlockHeader const &, BlockState &, BlockMetrics &,
-        boost::fibers::promise<void> &prev, CallTracerBase &,
-        trace::StateTracer &);
+        BlockHeader const &, BlockState &, BlockMetrics &, Promise prev,
+        CallTracerBase &, trace::StateTracer &);
 
     Result<Receipt> operator()();
 

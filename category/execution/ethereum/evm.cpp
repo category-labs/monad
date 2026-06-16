@@ -71,7 +71,7 @@ template <Traits traits>
 evmc::Result deploy_contract_code(
     State &state, Address const &address, evmc::Result result) noexcept
 {
-    static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
     MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
 
@@ -177,7 +177,7 @@ template <Traits traits>
 evmc::Result execute_create_message(
     EvmcHost<traits> *const host, State &state, evmc_message const &msg)
 {
-    static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 

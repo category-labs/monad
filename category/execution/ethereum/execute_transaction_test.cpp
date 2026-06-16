@@ -55,7 +55,7 @@ using db_t = TrieDb;
 
 TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_FRONTIER);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_HOMESTEAD);
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -248,7 +248,7 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
 
 TYPED_TEST(TraitsTest, refunds_delete)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_PETERSBURG);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -461,7 +461,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
 
 TYPED_TEST(TraitsTest, refunds_delete_then_set)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_PETERSBURG);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -608,7 +608,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
 
 TYPED_TEST(TraitsTest, static_validate_transaction_failure)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
     vm::VM vm;

@@ -134,7 +134,7 @@ struct EvmcHost final : public EvmcHostBase
     virtual bool
     account_exists(evmc::address const &address) const noexcept override
     {
-        static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
+        static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
         try {
             return !state_.account_is_dead(address);

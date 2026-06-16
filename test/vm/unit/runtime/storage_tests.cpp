@@ -97,7 +97,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageLoadWarm)
 
 TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_PETERSBURG);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
 
     using traits = TestFixture::Trait;
     auto load = TestFixture::wrap(sload<traits>);
@@ -146,7 +146,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
 
 TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_PETERSBURG);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
 
     using traits = TestFixture::Trait;
     auto load = TestFixture::wrap(sload<traits>);

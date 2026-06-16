@@ -417,7 +417,7 @@ TYPED_TEST(TraitsTest, identity)
 
 TYPED_TEST(TraitsTest, modular_exponentiation)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BYZANTIUM);
 
     if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_BERLIN) {
         do_geth_tests<typename TestFixture::Trait>(
@@ -437,7 +437,7 @@ TYPED_TEST(TraitsTest, modular_exponentiation)
 
 TYPED_TEST(TraitsTest, bn_add)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_PETERSBURG);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
 
     auto tests =
         load_test_cases(test_resource::geth_vectors_dir / "bn256Add.json");
@@ -455,7 +455,7 @@ TYPED_TEST(TraitsTest, bn_add)
 
 TYPED_TEST(TraitsTest, bn_mul)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_PETERSBURG);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
 
     auto tests = load_test_cases(
         test_resource::geth_vectors_dir / "bn256ScalarMul.json");
@@ -473,7 +473,7 @@ TYPED_TEST(TraitsTest, bn_mul)
 
 TYPED_TEST(TraitsTest, bn_pairing)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_PETERSBURG);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
 
     auto tests =
         load_test_cases(test_resource::geth_vectors_dir / "bn256Pairing.json");
@@ -492,7 +492,7 @@ TYPED_TEST(TraitsTest, bn_pairing)
 
 TYPED_TEST(TraitsTest, blake2f)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_PETERSBURG);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
 
     auto blake2f_test = [&](char const *name, std::string_view json) {
         std::vector<test_case> tests =
@@ -655,7 +655,7 @@ TYPED_TEST(TraitsTest, p256_verify)
 
 TYPED_TEST(TraitsTest, modexp_truncated_input)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BYZANTIUM);
 
     // Before Osaka, inputs to modexp could be arbitrarily large, and
     // would just fail for gas reasons. After Osaka, the large padded

@@ -101,7 +101,7 @@ namespace monad::vm::runtime
     [[gnu::always_inline]]
     inline constexpr uint32_t exp_dynamic_gas_cost_multiplier() noexcept
     {
-        static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
+        static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
         return 50;
     }
 

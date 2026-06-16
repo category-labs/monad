@@ -34,7 +34,7 @@ constexpr Address result_addr = Address{uint8_t{0x42}};
 
 TYPED_TEST(RuntimeTraitsTest, Create)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_HOMESTEAD);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
 
     TestFixture::call(mstore<typename TestFixture::Trait>, 0, prog);
     ASSERT_EQ(this->ctx_.memory.data[31], 0xF3);
@@ -63,7 +63,7 @@ TYPED_TEST(RuntimeTraitsTest, Create)
 
 TYPED_TEST(RuntimeTraitsTest, CreateSizeIsZero)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_HOMESTEAD);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
 
     this->ctx_.gas_remaining = 1000000;
     this->host_.call_result = TestFixture::create_result(result_addr, 900000);
@@ -91,7 +91,7 @@ TYPED_TEST(RuntimeTraitsTest, CreateFailure)
 
 TYPED_TEST(RuntimeTraitsTest, Create2)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_BYZANTIUM);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
 
     TestFixture::call(mstore<typename TestFixture::Trait>, 0, prog);
     ASSERT_EQ(this->ctx_.memory.data[31], 0xF3);

@@ -172,7 +172,7 @@ std::vector<std::vector<std::optional<Address>>> recover_authorities(
 template <Traits traits>
 void execute_block_header(BlockState &block_state, BlockHeader const &header)
 {
-    static_assert(traits::evm_rev() > MONAD_ETH_HOMESTEAD);
+    static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
 
     State state{block_state, Incarnation{header.number, 0}};
 
@@ -311,7 +311,7 @@ Result<std::vector<Receipt>> execute_block(
     trace::StateTracer &system_call_state_tracer,
     ChainContext<traits> const &chain_ctx, bool const trace_transfers)
 {
-    static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
     TRACE_BLOCK_EVENT(StartBlock);
 

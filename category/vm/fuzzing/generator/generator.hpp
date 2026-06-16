@@ -635,7 +635,7 @@ namespace monad::vm::fuzzing
     Address
     generate_precompile_address(Engine &eng, monad_eth_revision const rev)
     {
-        MONAD_ASSERT(rev > MONAD_ETH_PETERSBURG);
+        MONAD_ASSERT(rev >= MONAD_ETH_ISTANBUL);
 
         auto addr = [rev, &eng]() {
             if (rev <= MONAD_ETH_SHANGHAI) {

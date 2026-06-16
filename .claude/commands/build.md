@@ -50,8 +50,8 @@ You are helping the user configure and build the monad C++ project located at $C
 | Option | Default | Description |
 |--------|---------|-------------|
 | `MONAD_COMPILER_COVERAGE` | OFF | Build with coverage instrumentation |
-| `MONAD_COMPILER_TESTING` | OFF | Build compiler tests (requires `third_party/evmone` — see evmone note below) |
-| `MONAD_COMPILER_BENCHMARKS` | OFF | Build compiler benchmarks (requires `third_party/evmone` — see evmone note below) |
+| `MONAD_COMPILER_TESTING` | OFF | Build compiler tests (requires the `third_party/evmone` submodule) |
+| `MONAD_COMPILER_BENCHMARKS` | OFF | Build compiler benchmarks (requires the `third_party/evmone` submodule) |
 | `MONAD_COMPILER_DUMP_ASM` | OFF | Dump assembly files into `build/asm` |
 | `MONAD_COMPILER_STATS` | OFF | Print JIT compiler statistics |
 | `MONAD_COMPILER_HOT_PATH_STATS` | OFF | Print VM hot-path statistics |
@@ -141,19 +141,6 @@ You are helping the user configure and build the monad C++ project located at $C
    - Remove the `build/` directory
    - Then run configure and build (i.e., proceed to steps 3–5)
 
-### evmone (custom fork — not a submodule)
-
-`third_party/evmone/` is gitignored and must be cloned manually from the Category Labs fork. It is required for `MONAD_COMPILER_TESTING=ON`, `MONAD_COMPILER_BENCHMARKS=ON`, `/lint`, and `/fuzz`. Not needed for standard builds.
-
-**To set up** (run from the project root):
-```bash
-git clone git@github.com:category-labs/evmone.git third_party/evmone
-git -C third_party/evmone checkout v0.18.0-category
-```
-**Do not `cd` into the evmone directory** — subsequent cmake commands use relative paths that break if the working directory has changed.
-
-The branch `v0.18.0-category` is the current stable fork used in CI. Check `.github/workflows/test-vm.yml` for the latest ref if in doubt. This requires SSH access to the `category-labs` GitHub organization.
-
 ### Example configure commands
 
 Default GCC build:
@@ -200,10 +187,8 @@ CC=clang-19 CXX=clang++-19 cmake -G Ninja -B build \
 
 - If cmake configure fails, check for missing dependencies and suggest install commands
 - If configure fails with "GCC version 15 or higher is required", ensure `CC=gcc-15 CXX=g++-15` is set (or use `CC=clang-19 CXX=clang++-19` for Clang)
-- If configure fails with missing `CMakeLists.txt` in `third_party/`, run `git submodule update --init --recursive`
+- If configure fails with missing `CMakeLists.txt` in `third_party/` (including `third_party/evmone`, which is required for `MONAD_COMPILER_TESTING`, `MONAD_COMPILER_BENCHMARKS`, lint, and fuzz builds), run `git submodule update --init --recursive`
 - If build fails with `#error avx2 or avx512 required`, ensure a toolchain file is being used
-- If configure fails with "third_party/evmone to be present", the custom evmone fork needs to be cloned — see the evmone section above
-- If the evmone clone fails with a permission error, the user needs SSH access to the `category-labs` GitHub organization
 - If build fails, show the relevant error lines and suggest fixes
 
 ### Important

@@ -13,14 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-if (NOT IS_DIRECTORY "${PROJECT_SOURCE_DIR}/third_party/evmone")
-    message(FATAL_ERROR "Building Category Labs internal VM differential      \
-                         testing and benchmarking requires third_party/evmone \
-                         to be present. Unset MONAD_COMPILER_TESTING and      \
-                         MONAD_COMPILER_BENCHMARKS to build without           \
-                         internal code.")
-endif()
-
 # evmone
 set(HUNTER_ENABLED OFF)
 

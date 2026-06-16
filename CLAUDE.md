@@ -224,6 +224,5 @@ Test data paths are available via generated header `test/test_resource_data.h`:
 ## Known Pitfalls
 
 - **GCC + ASAN breaks the VM interpreter** — GCC's ASAN implementation is incompatible with the must-tail calling convention used by the interpreter. Use Clang for ASAN builds when working on VM code.
-- **`third_party/evmone` is not a submodule** — it's gitignored and must be manually cloned from `category-labs/evmone` (branch `v0.18.0-category`). Only needed for `MONAD_COMPILER_TESTING`, `MONAD_COMPILER_BENCHMARKS`, lint, and fuzz builds.
-- **Submodules in worktrees** — Fresh clones and git worktrees need `git submodule update --init --recursive` before configuring.
+- **Submodules in worktrees** — Fresh clones and git worktrees need `git submodule update --init --recursive` before configuring. `third_party/evmone` (only needed for `MONAD_COMPILER_TESTING`, `MONAD_COMPILER_BENCHMARKS`, lint, and fuzz builds) is a normal submodule and comes along with that.
 - **Always use toolchain files** — Passing bare `-march=haswell` via `CFLAGS`/`CXXFLAGS` misses assembly sources (e.g., `keccak_impl.S`). Use `-DCMAKE_TOOLCHAIN_FILE=...` instead.

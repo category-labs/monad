@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
 #include <category/mpt/merkle/compact_encode.hpp>
 #include <category/mpt/nibbles_view.hpp>
+#include <category/vm/utils/evm-as.hpp>
 
 #include <gtest/gtest.h>
 
@@ -492,9 +493,12 @@ TEST(PartialTrieDb, Read_LeafWitness_FoundAndAbsent)
 
 TEST(PartialTrieDb, ReadCode_PresentAndMissing)
 {
-    byte_string const code1{
-        std::initializer_list<unsigned char>{0x60, 0x01, 0x60, 0x02, 0x01}};
-    byte_string const code2{std::initializer_list<unsigned char>{0x00}};
+    // PUSH1 0x01; PUSH1 0x02; ADD
+    byte_string const code1 = vm::utils::evm_as::assemble(
+        vm::utils::evm_as::latest().push(0x01).push(0x02).add());
+    // STOP
+    byte_string const code2 =
+        vm::utils::evm_as::assemble(vm::utils::evm_as::latest().stop());
     bytes32_t const hash1 = to_bytes(keccak256(code1));
     bytes32_t const hash2 = to_bytes(keccak256(code2));
 

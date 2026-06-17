@@ -32,6 +32,7 @@
 #include <category/statesync/statesync_server.h>
 #include <category/statesync/statesync_server_context.hpp>
 #include <category/statesync/statesync_version.h>
+#include <category/vm/utils/evm-as.hpp>
 #include <test_resource_data.h>
 
 #include <ethash/keccak.hpp>
@@ -374,11 +375,15 @@ TEST_F(StateSyncFixture, sync_from_some)
     {
         constexpr auto ADDR1 =
             0x5353535353535353535353535353535353535353_address;
-        auto const code =
-            from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                     "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
-                     "ffffffffffffffffffffff0160005500")
-                .value();
+        // PUSH32 0xFF..FF; PUSH32 0xFF..FF; ADD; PUSH1 0x00; SSTORE; STOP
+        auto const code = vm::utils::evm_as::assemble(
+            vm::utils::evm_as::latest()
+                .push(32, ~uint256_t{0})
+                .push(32, ~uint256_t{0})
+                .add()
+                .push(1, 0) // PUSH1 0x00 (kept 2-byte to match original)
+                .sstore()
+                .stop());
         auto const code_hash = to_bytes(keccak256(code));
         auto const icode = vm::make_shared_intercode(code);
         commit_sequential(
@@ -964,11 +969,15 @@ TEST_F(StateSyncFixture, update_contract_twice)
     hdr.parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
 
-    auto const code =
-        from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                 "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
-                 "ffffffffffffffffffffff0160005500")
-            .value();
+    // PUSH32 0xFF..FF; PUSH32 0xFF..FF; ADD; PUSH1 0x00; SSTORE; STOP
+    auto const code = vm::utils::evm_as::assemble(
+        vm::utils::evm_as::latest()
+            .push(32, ~uint256_t{0})
+            .push(32, ~uint256_t{0})
+            .add()
+            .push(1, 0) // PUSH1 0x00 (kept 2-byte to match original)
+            .sstore()
+            .stop());
     auto const code_hash = to_bytes(keccak256(code));
     auto const icode = vm::make_shared_intercode(code);
 

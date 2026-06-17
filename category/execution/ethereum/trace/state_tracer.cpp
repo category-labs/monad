@@ -145,7 +145,7 @@ namespace trace
             auto const *it = original.find(key);
             MONAD_ASSERT(it != nullptr);
             if (value != *it) {
-                deltas.emplace(key, std::make_pair(*it, value));
+                deltas.emplace(key, StorageDelta{*it, value});
             }
         }
         return deltas;

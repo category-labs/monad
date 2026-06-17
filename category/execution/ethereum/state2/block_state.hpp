@@ -72,7 +72,12 @@ public:
 
     bool can_merge(State &) const;
 
-    void merge(State const &);
+    /// Merge a transaction's accumulated writes into the block state.
+    /// `txn_index` is the block-relative index of the merging transaction; it
+    /// is recorded as `last_mutated` on every write-touched key (see
+    /// `StorageDelta::last_mutated`). Non-transaction merges (block
+    /// prologue/epilogue, RPC state overrides) use `LAST_MUTATED_NONE`.
+    void merge(State const &, uint64_t txn_index = LAST_MUTATED_NONE);
 
     struct ReleasedState
     {

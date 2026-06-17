@@ -113,7 +113,7 @@ bytes32_t BlockState::read_storage(
         auto &storage = it->second.storage;
         {
             StorageDeltas::const_accessor it2{};
-            storage.emplace(it2, key, std::make_pair(result, result));
+            storage.emplace(it2, key, StorageDelta{result, result});
             return it2->second.second;
         }
     }
@@ -184,7 +184,7 @@ bool BlockState::can_merge(State &state) const
     return true;
 }
 
-void BlockState::merge(State const &state)
+void BlockState::merge(State const &state, uint64_t const txn_index)
 {
     ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
 
@@ -216,15 +216,17 @@ void BlockState::merge(State const &state)
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
         it->second.account.second = account;
+        it->second.account_last_mutated = txn_index;
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {
                 StorageDeltas::accessor it2{};
                 if (it->second.storage.find(it2, key)) {
                     it2->second.second = value;
+                    it2->second.last_mutated = txn_index;
                 }
                 else {
                     it->second.storage.emplace(
-                        key, std::make_pair(bytes32_t{}, value));
+                        key, StorageDelta{bytes32_t{}, value, txn_index});
                 }
             }
         }

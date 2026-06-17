@@ -2427,3 +2427,137 @@ TEST_F(TwoOnDisk, random_proposals)
         "Random proposal generation: {} iterations with seed {}", iters, seed);
     gen->run(iters);
 }
+
+// ---------------------------------------------------------------------------
+// `last_mutated` parallel-gas metric
+//
+// These exercise Modifications 1 and 3 from the parallelization-aware fee
+// design: every BlockState cache entry carries a `last_mutated` index, and
+// `merge(state, txn_index)` stamps it on every write-touched key. The field is
+// not observable through normal reads, so we inspect the released StateDeltas
+// directly. They do NOT cover Modification 2 (computing `j` in `can_merge`),
+// which is not implemented yet.
+// ---------------------------------------------------------------------------
+
+// A write stamps `last_mutated` (account portion and storage slot) with the
+// merging transaction's index.
+TEST_F(InMemoryStateTest, last_mutated_stamps_writes)
+{
+    BlockState bs{this->tdb, this->vm};
+
+    State s{bs, Incarnation{1, 1}};
+    s.create_contract(a);
+    s.set_storage(a, key1, value1);
+
+    ASSERT_TRUE(bs.can_merge(s));
+    bs.merge(s, 7);
+
+    auto [released_state, released_code, _] = std::move(bs).release();
+    StateDeltas::const_accessor it{};
+    ASSERT_TRUE(released_state->find(it, a));
+    EXPECT_EQ(it->second.account_last_mutated, uint64_t{7});
+    StorageDeltas::const_accessor sit{};
+    ASSERT_TRUE(it->second.storage.find(sit, key1));
+    EXPECT_EQ(sit->second.last_mutated, uint64_t{7});
+}
+
+// A key that is only read (never written) keeps the `LAST_MUTATED_NONE`
+// sentinel, even though the read materializes a cache entry.
+TEST_F(InMemoryStateTest, last_mutated_none_for_read_only)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        sd({{a,
+             StateDelta{.account = {std::nullopt, Account{.balance = 10'000}}}}}),
+        Code{},
+        BlockHeader{});
+
+    State s{bs, Incarnation{1, 1}};
+    (void)s.get_balance(a); // read only, no merge
+
+    auto [released_state, released_code, _] = std::move(bs).release();
+    StateDeltas::const_accessor it{};
+    ASSERT_TRUE(released_state->find(it, a));
+    EXPECT_EQ(it->second.account_last_mutated, LAST_MUTATED_NONE);
+}
+
+// When the same slot is written by successive transactions, `last_mutated`
+// reflects the latest writer.
+TEST_F(InMemoryStateTest, last_mutated_latest_writer_wins)
+{
+    BlockState bs{this->tdb, this->vm};
+    {
+        State s{bs, Incarnation{1, 1}};
+        s.create_contract(a);
+        s.set_storage(a, key1, value1);
+        ASSERT_TRUE(bs.can_merge(s));
+        bs.merge(s, 3);
+    }
+    {
+        State s{bs, Incarnation{1, 2}};
+        s.set_storage(a, key1, value2);
+        ASSERT_TRUE(bs.can_merge(s));
+        bs.merge(s, 5);
+    }
+
+    auto [released_state, released_code, _] = std::move(bs).release();
+    StateDeltas::const_accessor it{};
+    ASSERT_TRUE(released_state->find(it, a));
+    StorageDeltas::const_accessor sit{};
+    ASSERT_TRUE(it->second.storage.find(sit, key1));
+    EXPECT_EQ(sit->second.last_mutated, uint64_t{5});
+}
+
+// `last_mutated` is tracked per storage slot: a transaction that rewrites one
+// slot does not disturb the index of an untouched sibling slot.
+TEST_F(InMemoryStateTest, last_mutated_per_slot_granularity)
+{
+    BlockState bs{this->tdb, this->vm};
+    {
+        State s{bs, Incarnation{1, 1}};
+        s.create_contract(a);
+        s.set_storage(a, key1, value1);
+        s.set_storage(a, key2, value2);
+        ASSERT_TRUE(bs.can_merge(s));
+        bs.merge(s, 2);
+    }
+    {
+        State s{bs, Incarnation{1, 2}};
+        s.set_storage(a, key1, value3); // only key1
+        ASSERT_TRUE(bs.can_merge(s));
+        bs.merge(s, 6);
+    }
+
+    auto [released_state, released_code, _] = std::move(bs).release();
+    StateDeltas::const_accessor it{};
+    ASSERT_TRUE(released_state->find(it, a));
+    StorageDeltas::const_accessor sit1{};
+    ASSERT_TRUE(it->second.storage.find(sit1, key1));
+    EXPECT_EQ(sit1->second.last_mutated, uint64_t{6}); // rewritten by tx 6
+    StorageDeltas::const_accessor sit2{};
+    ASSERT_TRUE(it->second.storage.find(sit2, key2));
+    EXPECT_EQ(sit2->second.last_mutated, uint64_t{2}); // only tx 2 touched it
+}
+
+// A merge with no transaction index (block prologue/epilogue, RPC overrides)
+// leaves writes marked `LAST_MUTATED_NONE`.
+TEST_F(InMemoryStateTest, last_mutated_default_is_none)
+{
+    BlockState bs{this->tdb, this->vm};
+
+    State s{bs, Incarnation{1, 1}};
+    s.create_contract(a);
+    s.set_storage(a, key1, value1);
+
+    ASSERT_TRUE(bs.can_merge(s));
+    bs.merge(s); // default txn_index == LAST_MUTATED_NONE
+
+    auto [released_state, released_code, _] = std::move(bs).release();
+    StateDeltas::const_accessor it{};
+    ASSERT_TRUE(released_state->find(it, a));
+    EXPECT_EQ(it->second.account_last_mutated, LAST_MUTATED_NONE);
+    StorageDeltas::const_accessor sit{};
+    ASSERT_TRUE(it->second.storage.find(sit, key1));
+    EXPECT_EQ(sit->second.last_mutated, LAST_MUTATED_NONE);
+}

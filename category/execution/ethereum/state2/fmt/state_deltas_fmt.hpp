@@ -28,11 +28,29 @@ struct quill::copy_loggable<monad::Delta<T>>
 {
 };
 
+MONAD_LOG_LOGGABLE(monad::StorageDelta);
+
 MONAD_LOG_LOGGABLE(monad::StateDelta);
 
 MONAD_LOG_LOGGABLE(monad::StateDeltas);
 
 MONAD_LOG_LOGGABLE(monad::Code);
+
+template <>
+struct fmt::formatter<monad::StorageDelta> : public monad::BasicFormatter
+{
+    template <typename FormatContext>
+    auto
+    format(monad::StorageDelta const &storage_delta, FormatContext &ctx) const
+    {
+        return fmt::format_to(
+            ctx.out(),
+            "({}, {}, last_mutated: {})",
+            storage_delta.first,
+            storage_delta.second,
+            storage_delta.last_mutated);
+    }
+};
 
 template <>
 struct fmt::formatter<monad::StateDelta> : public monad::BasicFormatter
@@ -41,7 +59,11 @@ struct fmt::formatter<monad::StateDelta> : public monad::BasicFormatter
     auto format(monad::StateDelta const &state_delta, FormatContext &ctx) const
     {
         fmt::format_to(ctx.out(), "{{");
-        fmt::format_to(ctx.out(), "Account Delta: {} ", state_delta.account);
+        fmt::format_to(
+            ctx.out(),
+            "Account Delta: {} (last_mutated: {}) ",
+            state_delta.account,
+            state_delta.account_last_mutated);
         fmt::format_to(ctx.out(), "Storage Deltas: {{");
         for (auto const &[key, storage_delta] : state_delta.storage) {
             fmt::format_to(

@@ -116,7 +116,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
                 return std::move(result.error());
             }
             auto const receipt = execute_final(state);
-            block_state_.merge(state);
+            block_state_.merge(state, i_);
             return receipt;
         }
     }
@@ -136,7 +136,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
             return std::move(result.error());
         }
         auto const receipt = execute_final(state);
-        block_state_.merge(state);
+        block_state_.merge(state, i_);
         return receipt;
     }
 }

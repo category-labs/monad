@@ -29,6 +29,8 @@
 #include <oneapi/tbb/concurrent_hash_map.h>
 #pragma GCC diagnostic pop
 
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -43,10 +45,28 @@ using AccountDelta = Delta<std::optional<Account>>;
 static_assert(sizeof(AccountDelta) == 176);
 static_assert(alignof(AccountDelta) == 8);
 
-using StorageDelta = Delta<bytes32_t>;
+/// Sentinel for `last_mutated`: the key has not been mutated by any
+/// transaction within the current block. Read-only keys, and keys written
+/// only by the block prologue/epilogue (which merge with no owning
+/// transaction index), keep this value.
+inline constexpr uint64_t LAST_MUTATED_NONE =
+    std::numeric_limits<uint64_t>::max();
 
-static_assert(sizeof(StorageDelta) == 64);
-static_assert(alignof(StorageDelta) == 1);
+/// A single storage slot's within-block delta. `first` is the pre-block value
+/// (read from `monadb` on first access) and `second` is the current
+/// within-block value (updated as transactions merge). `last_mutated` is the
+/// block-relative index of the last transaction that wrote `second`, or
+/// `LAST_MUTATED_NONE` if no in-block transaction has written this slot. It is
+/// purely an in-memory parallelism signal and is never flushed to `monadb`.
+struct StorageDelta
+{
+    bytes32_t const first;
+    bytes32_t second;
+    uint64_t last_mutated{LAST_MUTATED_NONE};
+};
+
+static_assert(sizeof(StorageDelta) == 72);
+static_assert(alignof(StorageDelta) == 8);
 
 using StorageDeltas = oneapi::tbb::concurrent_hash_map<
     bytes32_t, StorageDelta, BytesHashCompare<bytes32_t>>;
@@ -58,9 +78,13 @@ struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
+    /// Block-relative index of the last transaction that mutated the account
+    /// portion (balance/nonce/code/existence), or `LAST_MUTATED_NONE`. See
+    /// `StorageDelta::last_mutated`.
+    uint64_t account_last_mutated{LAST_MUTATED_NONE};
 };
 
-static_assert(sizeof(StateDelta) == 752);
+static_assert(sizeof(StateDelta) == 760);
 static_assert(alignof(StateDelta) == 8);
 
 using StateDeltas = oneapi::tbb::concurrent_hash_map<

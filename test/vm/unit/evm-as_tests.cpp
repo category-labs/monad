@@ -735,6 +735,22 @@ TEST(EvmAs, BytecodeCompile4)
     }
 }
 
+TEST(EvmAs, Assemble)
+{
+    // assemble() returns the same bytes as compile(), as a byte_string.
+    auto eb = evm_as::latest();
+    eb.push0().push0().add();
+    ASSERT_TRUE(evm_as::validate(eb));
+
+    byte_string const bytecode = evm_as::assemble(eb);
+    std::string const as_string = evm_as::compile(eb);
+
+    ASSERT_EQ(bytecode.size(), as_string.size());
+    for (size_t i = 0; i < bytecode.size(); i++) {
+        ASSERT_EQ(bytecode[i], static_cast<uint8_t>(as_string[i]));
+    }
+}
+
 TEST(EvmAs, Execution1)
 {
     auto eb = evm_as::latest();

@@ -17,6 +17,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
 #include <category/core/cases.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
@@ -290,6 +291,18 @@ namespace monad::vm::utils::evm_as
         std::stringstream ss{};
         compile<traits>(eb, ss);
         return ss.str();
+    }
+
+    // Assembles the provided builder object and returns the corresponding
+    // byte code as a byte_string.
+    template <Traits traits>
+    inline byte_string assemble(EvmBuilder<traits> const &eb)
+    {
+        byte_string bytecode{};
+        bytecode.reserve(eb.size());
+        compile<traits>(
+            eb, [&](uint8_t const byte) -> void { bytecode.push_back(byte); });
+        return bytecode;
     }
 
     // Mnemonic compiler config

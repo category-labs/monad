@@ -54,6 +54,10 @@
 
 MONAD_ASYNC_NAMESPACE_BEGIN
 
+// DBs created before the num_cnv_chunks footer field existed store 0 there;
+// such pools were always carved with this many conventional chunks.
+static constexpr uint32_t legacy_default_num_cnv_chunks = 3;
+
 std::filesystem::path storage_pool::device_t::current_path() const
 {
     std::filesystem::path::string_type ret;
@@ -84,7 +88,8 @@ size_t storage_pool::device_t::chunks() const
 size_t storage_pool::device_t::cnv_chunks() const
 {
     MONAD_ASSERT(!is_zoned_device(), "zonefs support isn't implemented yet");
-    return metadata_->num_cnv_chunks;
+    return metadata_->num_cnv_chunks == 0 ? legacy_default_num_cnv_chunks
+                                          : metadata_->num_cnv_chunks;
 }
 
 std::pair<file_offset_t, file_offset_t> storage_pool::device_t::capacity() const
@@ -474,16 +479,18 @@ storage_pool::device_t storage_pool::make_device_(
         }
         total_size =
             metadata_footer->total_size(static_cast<size_t>(stat.st_size));
-        if (flags.num_cnv_chunks > metadata_footer->num_cnv_chunks) {
+        uint32_t const stored_num_cnv_chunks =
+            metadata_footer->num_cnv_chunks == 0
+                ? legacy_default_num_cnv_chunks
+                : metadata_footer->num_cnv_chunks;
+        if (flags.num_cnv_chunks > stored_num_cnv_chunks) {
             LOG_WARNING(
                 "Flag-specified num_cnv_chunks ({}) is greater than the value "
                 "stored in metadata ({}). This setting will be ignored. "
                 "Existing databases cannot be reconfigured to use more chunks, "
                 "create a new database if you need a higher num_cnv_chunks.",
                 flags.num_cnv_chunks,
-                metadata_footer->num_cnv_chunks == 0
-                    ? 3
-                    : metadata_footer->num_cnv_chunks);
+                stored_num_cnv_chunks);
         }
     }
     size_t const offset = round_down_align<CPU_PAGE_BITS>(
@@ -524,13 +531,8 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
         fnv1a_hash<uint32_t>::add(
             hashshouldbe, uint32_t(device.unique_hash_ >> 32));
     }
-    // Backward compatibility: databases created before `num_cnv_chunks` was
-    // added have this field set to 0. Treat 0 as the legacy default of 3
-    // chunks.
     uint32_t const cnv_chunks_count =
-        devices_[0].metadata_->num_cnv_chunks == 0
-            ? 3
-            : devices_[0].metadata_->num_cnv_chunks;
+        static_cast<uint32_t>(devices_[0].cnv_chunks());
     std::vector<size_t> chunks;
     size_t total = 0;
     chunks.reserve(devices_.size());

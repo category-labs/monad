@@ -271,6 +271,65 @@ TEST(update_aux_test, configurable_root_offset_chunks)
     remove(filename);
 }
 
+// A DB created before the num_cnv_chunks footer field existed stores 0 there.
+// The pool must treat that as the legacy default of 3 conventional chunks
+// (1 for metadata + 2 for ring_a), not as a raw 0 that underflows
+// ring_max_chunks_() to UINT32_MAX and aborts the mmap on reopen/upgrade.
+// A footer of 0 is exactly what `flags.num_cnv_chunks = 0` writes, so it
+// reproduces the legacy layout without an on-disk fixture.
+TEST(update_aux_test, legacy_zero_num_cnv_chunks_footer)
+{
+    auto path_template = (MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+                          "monad_update_aux_test_XXXXXX")
+                             .native();
+    int const fd = ::mkstemp(path_template.data());
+    MONAD_ASSERT(fd != -1);
+    MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30)); // 8GB
+    ::close(fd);
+    std::filesystem::path const filename{path_template};
+
+    monad::io::Ring ring1;
+    monad::io::Ring ring2;
+    monad::io::Buffers testbuf =
+        monad::io::make_buffers_for_segregated_read_write(
+            ring1,
+            ring2,
+            2,
+            4,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+    monad::async::storage_pool::creation_flags flags;
+    flags.num_cnv_chunks = 0; // legacy footer
+    {
+        monad::async::storage_pool pool(
+            std::span{&filename, 1},
+            monad::async::storage_pool::mode::truncate,
+            flags);
+        EXPECT_EQ(pool.chunks(monad::async::storage_pool::cnv), 3);
+
+        monad::async::AsyncIO testio(pool, testbuf);
+        monad::mpt::UpdateAux const aux(testio);
+
+        EXPECT_EQ(aux.metadata_ctx().main()->root_offsets.cnv_chunks_len(), 2);
+        EXPECT_EQ(
+            aux.metadata_ctx().main()->secondary_timeline.cnv_chunks_len(), 0);
+    }
+    {
+        // Reopen exercises map_ring_a_storage — the path that underflowed.
+        monad::async::storage_pool pool(
+            std::span{&filename, 1},
+            monad::async::storage_pool::mode::open_existing,
+            flags);
+        EXPECT_EQ(pool.chunks(monad::async::storage_pool::cnv), 3);
+        monad::async::AsyncIO testio(pool, testbuf);
+        monad::mpt::UpdateAux const aux(testio);
+        EXPECT_EQ(aux.metadata_ctx().main()->root_offsets.cnv_chunks_len(), 2);
+        EXPECT_EQ(
+            aux.metadata_ctx().main()->secondary_timeline.cnv_chunks_len(), 0);
+    }
+    remove(filename);
+}
+
 // -------------------------------------------------------------------
 // Secondary timeline ring and lifecycle tests (UpdateAux-level)
 // -------------------------------------------------------------------

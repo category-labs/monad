@@ -365,7 +365,7 @@ void State::subtract_from_balance(
     rb_.on_debit(address);
 }
 
-evmc_storage_status State::set_storage(
+monad_storage_status State::set_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
     bytes32_t original_value;
@@ -406,13 +406,13 @@ void State::touch(Address const &address)
     account_state.touch();
 }
 
-evmc_access_status State::access_account(Address const &address)
+monad_access_status State::access_account(Address const &address)
 {
     auto &account_state = current_account_state(address);
     return account_state.access();
 }
 
-evmc_access_status
+monad_access_status
 State::access_storage(Address const &address, bytes32_t const &key)
 {
     auto &account_state = current_account_state(address);

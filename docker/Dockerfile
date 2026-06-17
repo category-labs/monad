@@ -126,17 +126,13 @@ COPY scripts/ubuntu-build/ /opt
 RUN apt-get update && \
     /opt/install-riscv-deps.sh && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Clone, build, install, strip, and remove the build tree in a single layer.
+# Only /root/riscv is consumed downstream; the build tree must be removed in
+# the same RUN it was created or it persists in the layer.
+RUN /opt/build-riscv-toolchain.sh && \
     rm -rf /opt
-
-RUN git clone --depth 1 --branch 2026.06.06 https://github.com/riscv-collab/riscv-gnu-toolchain /riscv-gnu-toolchain
-WORKDIR /riscv-gnu-toolchain
-
-RUN ./configure --prefix=/root/riscv \
-    --with-arch=rv64ima \
-    --with-abi=lp64
-    
-RUN make -j$(nproc)
 
 ENV PATH="/root/riscv/bin:${PATH}"
 

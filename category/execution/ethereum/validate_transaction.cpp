@@ -48,7 +48,7 @@ Result<void> static_validate_transaction(
     Transaction const &tx, std::optional<uint256_t> const &base_fee_per_gas,
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
     // EIP-155
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
@@ -65,14 +65,8 @@ Result<void> static_validate_transaction(
     }
 
     // TODO: remove the below logic once we fully migrate over to traits
-    // EIP-2930 & EIP-2718
-    if constexpr (traits::evm_rev() < MONAD_ETH_BERLIN) {
-        if (MONAD_UNLIKELY(tx.type != TransactionType::legacy)) {
-            return TransactionError::TypeNotSupported;
-        }
-    }
     // EIP-1559
-    else if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
+    if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
         if (MONAD_UNLIKELY(
                 tx.type != TransactionType::legacy &&
                 tx.type != TransactionType::eip2930)) {

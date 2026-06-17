@@ -37,7 +37,7 @@ namespace
 
 TYPED_TEST(TraitsTest, intrinsic_gas)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
 
     auto non_zero_since =
         []<monad_eth_revision r>(rev<r>, uint64_t val) consteval {
@@ -116,10 +116,8 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
     }
 
     // EIP-2930
-    static constexpr auto cost_per_access_list_address =
-        non_zero_since(rev<MONAD_ETH_BERLIN>{}, 2'400);
-    static constexpr auto cost_per_access_list_key =
-        non_zero_since(rev<MONAD_ETH_BERLIN>{}, 1'900);
+    static constexpr auto cost_per_access_list_address = 2'400;
+    static constexpr auto cost_per_access_list_key = 1'900;
 
     {
         Transaction t{};

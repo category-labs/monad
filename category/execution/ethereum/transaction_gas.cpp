@@ -109,14 +109,13 @@ EXPLICIT_TRAITS(g_data);
 template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &tx) noexcept
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
     uint64_t gas = 21'000 + g_data<traits>(tx) + g_txn_create(tx);
 
     // EIP-2930: access-list and storage-key cost (Berlin)
-    if constexpr (traits::evm_rev() >= MONAD_ETH_BERLIN) {
-        gas += g_access_and_storage(tx);
-    }
+    gas += g_access_and_storage(tx);
+
     // EIP-3860: per-word initcode cost (Shanghai)
     if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
         gas += g_extra_cost_init(tx);

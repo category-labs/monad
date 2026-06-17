@@ -65,6 +65,7 @@ namespace monad::vm
         auto const &icode = vcode->intercode();
         auto rt_ctx =
             runtime::Context::from(host_itf, host_ctx, msg, icode->code_span());
+        rt_ctx.growth_gas_ptr = host.growth_gas_ptr();
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
@@ -90,6 +91,7 @@ namespace monad::vm
         auto const *const host_itf = &host.get_interface();
         auto *const host_ctx = host.to_context();
         auto rt_ctx = runtime::Context::from(host_itf, host_ctx, msg, code);
+        rt_ctx.growth_gas_ptr = host.growth_gas_ptr();
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);

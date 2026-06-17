@@ -46,6 +46,15 @@ class BlockState;
 
 class State
 {
+public:
+    struct Stats
+    {
+        uint64_t growth_gas{0}; // Does not revert on call failure.
+
+        void add_growth_gas(uint64_t g) noexcept;
+    };
+
+private:
     template <typename K, typename V>
     using Map = ankerl::unordered_dense::segmented_map<K, V>;
 
@@ -70,6 +79,7 @@ class State
 
     bool const relaxed_validation_{false};
     ReserveBalance rb_;
+    Stats stats_{};
 
     template <Traits traits>
     friend bool revert_transaction_cached(State &);
@@ -244,6 +254,9 @@ public:
      */
     bool record_balance_constraint_for_debit(
         Address const &, uint256_t const &debit);
+
+    Stats &stats() noexcept;
+    Stats const &stats() const noexcept;
 };
 
 MONAD_NAMESPACE_END

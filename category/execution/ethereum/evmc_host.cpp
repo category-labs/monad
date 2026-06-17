@@ -233,4 +233,9 @@ EvmcHostBase::PageStorageStatus EvmcHostBase::update_page(
     stack_unwind();
 }
 
+uint64_t *EvmcHostBase::growth_gas_ptr() noexcept
+{
+    return &state_.stats().growth_gas;
+}
+
 MONAD_NAMESPACE_END

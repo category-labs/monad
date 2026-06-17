@@ -101,6 +101,9 @@ namespace monad::vm::runtime
 
             gas_used -= min_gas;
             ctx->deduct_gas(gas_used);
+            if (grew_state) {
+                ctx->add_growth_gas(traits::page_growth_cost());
+            }
         }
         else {
             auto access_status = EVMC_ACCESS_COLD;
@@ -121,6 +124,9 @@ namespace monad::vm::runtime
 
             ctx->gas_refund += gas_refund;
             ctx->deduct_gas(gas_used);
+            if (storage_status == EVMC_STORAGE_ADDED) {
+                ctx->add_growth_gas(traits::sstore_growth_gas());
+            }
         }
     }
 

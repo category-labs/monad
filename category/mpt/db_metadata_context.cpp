@@ -433,7 +433,9 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
 void DbMetadataContext::map_ring_a_storage()
 {
     map_ring_storage_(
-        copies_[0].main->root_offsets.storage_, &metadata_copy::ring_a_span);
+        copies_[0].main->root_offsets.storage_,
+        &metadata_copy::ring_a_span,
+        "ring_a");
     LOG_INFO(
         "Database ring_a is configured with {} chunks (of {} max)",
         copies_[0].main->root_offsets.storage_.cnv_chunks_len,
@@ -444,7 +446,8 @@ void DbMetadataContext::map_ring_b_storage()
 {
     map_ring_storage_(
         copies_[0].main->secondary_timeline.storage_,
-        &metadata_copy::ring_b_span);
+        &metadata_copy::ring_b_span,
+        "ring_b");
     LOG_INFO(
         "Database ring_b is configured with {} chunks (of {} max)",
         copies_[0].main->secondary_timeline.storage_.cnv_chunks_len,
@@ -453,8 +456,16 @@ void DbMetadataContext::map_ring_b_storage()
 
 uint32_t DbMetadataContext::ring_max_chunks_() const noexcept
 {
-    return static_cast<uint32_t>(
-               io_->storage_pool().devices()[0].cnv_chunks()) -
+    auto const cnv_chunks = io_->storage_pool().devices()[0].cnv_chunks();
+    if (cnv_chunks < 2) {
+        MONAD_ABORT_PRINTF(
+            "storage pool has %zu conventional chunk(s); at least 2 are "
+            "required (1 for db_metadata + at least 1 for the root offsets "
+            "ring). The pool metadata is corrupt or the pool was created with "
+            "too few conventional chunks.",
+            cnv_chunks);
+    }
+    return static_cast<uint32_t>(cnv_chunks) -
            1 /* chunk 0 holds db_metadata */;
 }
 

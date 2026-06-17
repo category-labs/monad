@@ -36,6 +36,7 @@
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/metrics/state_access_timer.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -100,6 +101,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 {
     std::optional<Account> result;
     if (cache_ && cache_->try_read_account(addr, result)) {
+        set_last_read_source(ReadSource::db_cache);
         return result;
     }
     auto const res = db_.find(
@@ -109,6 +111,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
             STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
         block_number_);
+    set_last_read_source(ReadSource::disk);
     if (res.has_error()) {
         stats_account_no_value();
         return std::nullopt;
@@ -123,6 +126,7 @@ bytes32_t TrieDb::read_storage(
 {
     bytes32_t result{};
     if (cache_ && cache_->try_read_storage(addr, incarnation, key, result)) {
+        set_last_read_source(ReadSource::db_cache);
         return result;
     }
     auto const res = db_.find(
@@ -133,6 +137,7 @@ bytes32_t TrieDb::read_storage(
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
             NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
         block_number_);
+    set_last_read_source(ReadSource::disk);
     if (res.has_error()) {
         stats_storage_no_value();
         return {};

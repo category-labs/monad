@@ -26,6 +26,7 @@
 #include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/metrics/state_access_timer.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
@@ -54,8 +55,11 @@ OriginalAccountState &State::original_account_state(Address const &address)
 {
     auto it = original_.find(address);
     if (it == original_.end()) {
-        // block state
+        // block state: cold account value materialization (the only place an
+        // account is loaded from the block state / db; memoized in original_).
+        auto const t0 = std::chrono::steady_clock::now();
         auto const account = block_state_.read_account(address);
+        record_account_load(std::chrono::steady_clock::now() - t0);
         it = original_.try_emplace(address, account).first;
     }
     return it->second;
@@ -262,6 +266,9 @@ bool State::is_current_incarnation(Address const &address)
 
 bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
 {
+    // Times the full value materialization; defaults to the warm bucket and is
+    // moved to the matching cold bucket on the two block_state_ read paths.
+    ScopedAccessTimer timer{ScopedAccessTimer::Op::sload};
     auto const it = current_.find(address);
     if (it == current_.end()) {
         auto const it2 = original_.find(address);
@@ -276,6 +283,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         else {
             bytes32_t const value = block_state_.read_storage(
                 address, account.value().incarnation, key);
+            timer.classify_cold(last_read_source());
             storage = storage.insert({key, value});
             return value;
         }
@@ -304,6 +312,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         else {
             bytes32_t const value = block_state_.read_storage(
                 address, account.value().incarnation, key);
+            timer.classify_cold(last_read_source());
             original_storage = original_storage.insert({key, value});
             return value;
         }
@@ -375,6 +384,9 @@ evmc_storage_status State::set_storage(
     {
         auto &orig_account_state = original_account_state(address);
         auto &storage = orig_account_state.storage_;
+        // Times only the original-value load (the account load above is timed
+        // separately into the account buckets).
+        ScopedAccessTimer timer{ScopedAccessTimer::Op::sstore};
         if (auto const *const it = storage.find(key); it) {
             original_value = *it;
         }
@@ -382,6 +394,7 @@ evmc_storage_status State::set_storage(
             Incarnation const incarnation = account_state.account_->incarnation;
             bytes32_t const value =
                 block_state_.read_storage(address, incarnation, key);
+            timer.classify_cold(last_read_source());
             storage = storage.insert({key, value});
             original_value = value;
         }

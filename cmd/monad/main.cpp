@@ -38,6 +38,7 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
+#include <category/execution/ethereum/metrics/state_access_timer.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -506,6 +507,7 @@ try {
                  std::max(1UL, static_cast<uint64_t>(elapsed.count()))),
             vm.print_compiler_stats(),
             vm.print_total_counts());
+        LOG_INFO("{}", report_state_access_timing());
     }
 
     sync_server.reset();

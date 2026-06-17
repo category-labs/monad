@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/metrics/state_access_timer.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/fmt/state_deltas_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -54,6 +55,8 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm)
 
 std::optional<Account> BlockState::read_account(Address const &address)
 {
+    // Default to block-local; TrieDb overrides to db_cache/disk on the db path.
+    set_last_read_source(ReadSource::block_local);
     // block state
     {
         StateDeltas::const_accessor it{};
@@ -78,6 +81,8 @@ bytes32_t BlockState::read_storage(
     Address const &address, Incarnation const incarnation, bytes32_t const &key)
 {
     bool read_storage = false;
+    // Default to block-local; TrieDb overrides to db_cache/disk on the db path.
+    set_last_read_source(ReadSource::block_local);
     // block state
     {
         StateDeltas::const_accessor it{};

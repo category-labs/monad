@@ -18,6 +18,7 @@
 #include <category/execution/ethereum/dispatch_transaction.hpp>
 #include <category/execution/monad/system_sender.hpp>
 
+#include <boost/fiber/future/promise.hpp>
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>

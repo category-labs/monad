@@ -20,11 +20,13 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/storage_costs.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
 
 #include <cstdint>
 
@@ -75,28 +77,51 @@ namespace monad::vm::runtime
         auto key = store_be_as<bytes32_t>(*key_ptr);
         auto value = store_be_as<bytes32_t>(*value_ptr);
 
-        auto access_status = EVMC_ACCESS_COLD;
-        if constexpr (traits::eip_2929_active()) {
-            access_status = ctx->host->access_storage(
+        if constexpr (traits::mip_8_active()) {
+            auto const access_status = ctx->host->access_storage(
                 ctx->context, &ctx->env.recipient, &key);
             if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
+                ctx->deduct_gas(traits::cold_storage_cost());
             }
+
+            auto const storage_status = ctx->host->set_storage(
+                ctx->context, &ctx->env.recipient, &key, &value);
+
+            auto *monad_host = evmc::Host::from_context<vm::Host>(ctx->context);
+            auto const [first_page_write, grew_state] = monad_host->update_page(
+                ctx->env.recipient, key, storage_status);
+
+            int64_t gas_used = traits::base_sstore_cost();
+            if (first_page_write) {
+                gas_used += traits::page_write_cost();
+            }
+            if (grew_state) {
+                gas_used += traits::page_growth_cost();
+            }
+
+            gas_used -= min_gas;
+            ctx->deduct_gas(gas_used);
         }
+        else {
+            auto access_status = EVMC_ACCESS_COLD;
+            if constexpr (traits::eip_2929_active()) {
+                access_status = ctx->host->access_storage(
+                    ctx->context, &ctx->env.recipient, &key);
+                if (access_status == EVMC_ACCESS_COLD) {
+                    ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
+                }
+            }
 
-        auto const storage_status = ctx->host->set_storage(
-            ctx->context, &ctx->env.recipient, &key, &value);
+            auto const storage_status = ctx->host->set_storage(
+                ctx->context, &ctx->env.recipient, &key, &value);
 
-        auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
+            auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
 
-        // The code generator has taken care of accounting for the minimum base
-        // gas cost of this SSTORE already, but to keep the table of costs
-        // readable it encodes the total gas usage of each combination, rather
-        // than the amount relative to the minimum gas.
-        gas_used -= min_gas;
+            gas_used -= min_gas;
 
-        ctx->gas_refund += gas_refund;
-        ctx->deduct_gas(gas_used);
+            ctx->gas_refund += gas_refund;
+            ctx->deduct_gas(gas_used);
+        }
     }
 
     EXPLICIT_TRAITS(sstore);

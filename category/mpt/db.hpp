@@ -168,6 +168,9 @@ public:
         uint64_t const block_id, ChildrenVisitRange children_of)
     {
         MONAD_ASSERT(cursor.is_valid());
+        // traverse validates versions against the primary timeline only;
+        // secondary-timeline traverse is not yet supported.
+        MONAD_ASSERT(tid() == timeline_id::primary);
         return preorder_traverse_blocking(
             aux(), *cursor.node, machine, block_id, std::move(children_of));
     }

@@ -1156,6 +1156,9 @@ bool Db::traverse(
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(cursor.is_valid());
+    // traverse validates versions against the primary timeline only;
+    // secondary-timeline traverse is not yet supported.
+    MONAD_ASSERT(impl_->tid() == timeline_id::primary);
     return impl_->traverse_fiber_blocking(
         cursor.node, machine, block_id, concurrency_limit);
 }
@@ -1165,6 +1168,7 @@ bool Db::traverse_blocking(
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(cursor.is_valid());
+    MONAD_ASSERT(impl_->tid() == timeline_id::primary);
     return preorder_traverse_blocking(
         impl_->aux(), *cursor.node, machine, block_id);
 }

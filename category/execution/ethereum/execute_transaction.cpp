@@ -20,7 +20,6 @@
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
-#include <category/core/synchronization/promise.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -47,6 +46,7 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
@@ -301,9 +301,10 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     Address const &sender,
     std::span<std::optional<Address> const> const authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
-    BlockState &block_state, BlockMetrics &block_metrics, Promise const prev,
-    CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
-    ChainContext<traits> const &chain_ctx, bool const trace_transfers)
+    BlockState &block_state, BlockMetrics &block_metrics,
+    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
+    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
+    bool const trace_transfers)
     : ExecuteTransactionNoValidation<
           traits>{chain, tx, sender, authorities, header}
     , i_{i}
@@ -429,7 +430,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             header_.excess_blob_gas,
             chain_.get_chain_id());
         if (validation_result.has_error()) {
-            prev_.wait();
+            prev_.get_future().wait();
             return std::move(validation_result).as_failure();
         }
     }
@@ -447,7 +448,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 
         {
             TRACE_TXN_EVENT(StartStall);
-            prev_.wait();
+            prev_.get_future().wait();
         }
 
         if (block_state_.can_merge(state)) {

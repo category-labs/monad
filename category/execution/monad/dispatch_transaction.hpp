@@ -15,7 +15,6 @@
 
 #pragma once
 
-#include <category/core/synchronization/promise.hpp>
 #include <category/execution/ethereum/dispatch_transaction.hpp>
 #include <category/execution/monad/system_sender.hpp>
 
@@ -27,8 +26,9 @@ Result<Receipt> dispatch_transaction(
     Address const &sender,
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
-    BlockState &block_state, BlockMetrics &block_metrics, Promise prev,
-    CallTracerBase &call_tracer, trace::StateTracer &,
-    ChainContext<traits> const &chain_ctx, bool trace_transfers);
+    BlockState &block_state, BlockMetrics &block_metrics,
+    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
+    trace::StateTracer &, ChainContext<traits> const &chain_ctx,
+    bool trace_transfers);
 
 MONAD_NAMESPACE_END

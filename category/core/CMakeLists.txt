@@ -120,7 +120,6 @@ add_library(
   "lru/lru_cache.hpp"
   "lru/static_lru_cache.hpp"
   "mem/batch_mem_pool.hpp"
-  "synchronization/promise.hpp"
   "synchronization/spin_lock.hpp"
   # cli
   "cli/help_formatter.cpp"

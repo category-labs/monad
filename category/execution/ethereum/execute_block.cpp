@@ -23,7 +23,6 @@
 #include <category/core/likely.h>
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
-#include <category/core/synchronization/promise.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/block_reward.hpp>
@@ -252,7 +251,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         block_hash_buffer,
                         block_state,
                         block_metrics,
-                        Promise{promises[i]},
+                        promises[i],
                         call_tracer,
                         state_tracer,
                         chain_ctx,

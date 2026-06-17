@@ -25,9 +25,10 @@ Result<Receipt> dispatch_transaction(
     Address const &sender,
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
-    BlockState &block_state, BlockMetrics &block_metrics, Promise const prev,
-    CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
-    ChainContext<traits> const &chain_ctx, bool const trace_transfers)
+    BlockState &block_state, BlockMetrics &block_metrics,
+    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
+    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
+    bool const trace_transfers)
 {
     return ExecuteTransaction<traits>{
         chain,

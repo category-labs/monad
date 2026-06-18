@@ -175,11 +175,13 @@ public:
         uint64_t const block_id, ChildrenVisitRange children_of)
     {
         MONAD_ASSERT(cursor.is_valid());
-        // traverse validates versions against the primary timeline only;
-        // secondary-timeline traverse is not yet supported.
-        MONAD_ASSERT(tid() == timeline_id::primary);
         return preorder_traverse_blocking(
-            aux(), *cursor.node, machine, block_id, std::move(children_of));
+            aux(),
+            *cursor.node,
+            machine,
+            block_id,
+            tid(),
+            std::move(children_of));
     }
 
     uint64_t get_latest_version() const;
@@ -331,7 +333,8 @@ namespace detail
 inline detail::TraverseSender make_traverse_sender(
     AsyncContext *const context, Node::SharedPtr traverse_root,
     std::unique_ptr<TraverseMachine> machine, uint64_t const block_id,
-    size_t const concurrency_limit = 4096)
+    size_t const concurrency_limit = 4096,
+    timeline_id const tid = timeline_id::primary)
 {
     MONAD_ASSERT(context);
     return {
@@ -339,6 +342,7 @@ inline detail::TraverseSender make_traverse_sender(
         std::move(traverse_root),
         std::move(machine),
         block_id,
+        tid,
         concurrency_limit};
 }
 

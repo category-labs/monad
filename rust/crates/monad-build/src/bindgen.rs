@@ -112,6 +112,11 @@ impl MonadBindgen {
         self
     }
 
+    pub fn rustified_enum(mut self, pattern: &str) -> Self {
+        self.builder = self.builder.rustified_enum(pattern);
+        self
+    }
+
     pub fn generate(self) {
         let Self {
             builder,

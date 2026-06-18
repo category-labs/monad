@@ -16,5 +16,7 @@
 fn main() {
     monad_build::bindgen::MonadBindgen::default()
         .header("wrapper.h")
+        .rustified_enum("monad_executor_status_code(_t)?")
+        .rustified_enum("monad_override_status_code(_t)?")
         .generate();
 }

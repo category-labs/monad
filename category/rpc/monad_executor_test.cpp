@@ -115,13 +115,53 @@ namespace
     {
         monad_executor_pool_config const conf = {1, 2, max_timeout, 1000};
         unsigned const tx_exec_num_fibers = 10;
-        return monad_executor_create(
+        monad_executor *executor = nullptr;
+        monad_executor_status_code_t const status = monad_executor_create(
             conf,
             conf,
             conf,
             tx_exec_num_fibers,
             node_lru_max_mem,
-            dbname.c_str());
+            dbname.c_str(),
+            &executor);
+        EXPECT_EQ(status, MONAD_EXECUTOR_OK);
+        return executor;
+    }
+
+    auto create_state_override()
+    {
+        monad_state_override *state_override = nullptr;
+        monad_override_status_code_t const status =
+            monad_state_override_create(&state_override);
+        EXPECT_EQ(status, MONAD_OVERRIDE_OK);
+        return state_override;
+    }
+
+    auto create_state_override_vec(size_t const size)
+    {
+        monad_state_override_vec *state_overrides = nullptr;
+        monad_override_status_code_t const status =
+            monad_state_override_vec_create(size, &state_overrides);
+        EXPECT_EQ(status, MONAD_OVERRIDE_OK);
+        return state_overrides;
+    }
+
+    auto create_block_override_vec(size_t const size)
+    {
+        monad_block_override_vec *block_overrides = nullptr;
+        monad_override_status_code_t const status =
+            monad_block_override_vec_create(size, &block_overrides);
+        EXPECT_EQ(status, MONAD_OVERRIDE_OK);
+        return block_overrides;
+    }
+
+    auto create_block_override()
+    {
+        monad_block_override *block_override = nullptr;
+        monad_override_status_code_t const status =
+            monad_block_override_create(&block_override);
+        EXPECT_EQ(status, MONAD_OVERRIDE_OK);
+        return block_override;
     }
 
     std::vector<uint8_t> to_vec(byte_string const &bs)
@@ -226,28 +266,33 @@ namespace
         auto const rlp_block_id = to_vec(rlp_finalized_id);
 
         auto *executor = create_executor(dbname.string());
-        auto *state_override = monad_state_override_create();
+        auto *state_override = create_state_override();
 
         struct callback_context ctx;
         boost::fibers::future<void> f = ctx.promise.get_future();
 
-        monad_executor_eth_call_submit(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_tx.data(),
-            rlp_tx.size(),
-            rlp_header.data(),
-            rlp_header.size(),
-            rlp_sender.data(),
-            rlp_sender.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            state_override,
-            complete_callback,
-            (void *)&ctx,
-            CALL_TRACER,
-            gas_specified);
+        {
+
+            auto const status = monad_executor_eth_call_submit(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_tx.data(),
+                rlp_tx.size(),
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_sender.data(),
+                rlp_sender.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                state_override,
+                complete_callback,
+                (void *)&ctx,
+                CALL_TRACER,
+                gas_specified);
+
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -313,27 +358,30 @@ TEST_F(EthCallFixture, simple_success_call)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        NOOP_TRACER,
-        true);
+    {
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -372,27 +420,30 @@ TEST_F(EthCallFixture, insufficient_balance)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        NOOP_TRACER,
-        true);
+    {
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_REJECTED);
@@ -430,27 +481,30 @@ TEST_F(EthCallFixture, on_proposed_block)
     auto const rlp_block_id = to_vec(rlp::encode_bytes32(bytes32_t{256}));
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        NOOP_TRACER,
-        true);
+    {
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -508,27 +562,30 @@ TEST_F(EthCallFixture, blockhash_before_fork)
     auto const rlp_block_id = to_vec(rlp::encode_bytes32(bytes32_t{256}));
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        NOOP_TRACER,
-        true);
+    {
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -585,27 +642,30 @@ TEST_F(EthCallFixture, failed_to_read)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        NOOP_TRACER,
-        true);
+    {
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
@@ -641,27 +701,30 @@ TEST_F(EthCallFixture, contract_deployment_success)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        NOOP_TRACER,
-        true);
+    {
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     byte_string const deployed_code_bytes =
@@ -723,27 +786,30 @@ TEST_F(EthCallFixture, assertion_exception_depth1)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        NOOP_TRACER,
-        true);
+    {
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
@@ -818,27 +884,30 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        NOOP_TRACER,
-        true);
+    {
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
@@ -881,27 +950,30 @@ TEST_F(EthCallFixture, loop_out_of_gas)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        NOOP_TRACER,
-        true);
+    {
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_OUT_OF_GAS);
@@ -1002,27 +1074,30 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        NOOP_TRACER,
-        true);
+    {
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_OUT_OF_GAS);
@@ -1066,27 +1141,30 @@ TEST_F(EthCallFixture, from_contract_account)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        NOOP_TRACER,
-        true);
+    {
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
@@ -1141,7 +1219,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
         auto &ctx = ctxs.emplace_back(std::make_unique<callback_context>());
         futures.emplace_back(ctx->promise.get_future());
         auto *const state_override =
-            state_overrides.emplace_back(monad_state_override_create());
+            state_overrides.emplace_back(create_state_override());
 
         BlockHeader const header{.number = b};
 
@@ -1151,23 +1229,28 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
             to_vec(rlp::encode_address(std::make_optional(ca)));
         auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-        monad_executor_eth_call_submit(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_tx.data(),
-            rlp_tx.size(),
-            rlp_header.data(),
-            rlp_header.size(),
-            rlp_sender.data(),
-            rlp_sender.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            state_override,
-            complete_callback,
-            (void *)ctx.get(),
-            NOOP_TRACER,
-            true);
+        {
+
+            auto const status = monad_executor_eth_call_submit(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_tx.data(),
+                rlp_tx.size(),
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_sender.data(),
+                rlp_sender.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                state_override,
+                complete_callback,
+                (void *)ctx.get(),
+                NOOP_TRACER,
+                true);
+
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
     }
 
     for (auto [ctx, f, state_override] :
@@ -1288,28 +1371,33 @@ TEST_F(EthCallFixture, call_trace_with_logs)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        CALL_TRACER,
-        true);
+    {
+
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            CALL_TRACER,
+            true);
+
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
@@ -1470,28 +1558,33 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        CALL_TRACER,
-        true);
+    {
+
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            CALL_TRACER,
+            true);
+
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_OUT_OF_GAS);
@@ -1570,7 +1663,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context prestate_ctx;
     struct callback_context statediff_ctx;
@@ -1579,23 +1672,28 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
     {
         boost::fibers::future<void> f = prestate_ctx.promise.get_future();
 
-        monad_executor_eth_call_submit(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_tx.data(),
-            rlp_tx.size(),
-            rlp_header.data(),
-            rlp_header.size(),
-            rlp_sender.data(),
-            rlp_sender.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            state_override,
-            complete_callback,
-            (void *)&prestate_ctx,
-            PRESTATE_TRACER,
-            true);
+        {
+
+            auto const status = monad_executor_eth_call_submit(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_tx.data(),
+                rlp_tx.size(),
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_sender.data(),
+                rlp_sender.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                state_override,
+                complete_callback,
+                (void *)&prestate_ctx,
+                PRESTATE_TRACER,
+                true);
+
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_EQ(prestate_ctx.result->status_code, EVMC_SUCCESS);
@@ -1625,23 +1723,28 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
     {
         boost::fibers::future<void> f = statediff_ctx.promise.get_future();
 
-        monad_executor_eth_call_submit(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_tx.data(),
-            rlp_tx.size(),
-            rlp_header.data(),
-            rlp_header.size(),
-            rlp_sender.data(),
-            rlp_sender.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            state_override,
-            complete_callback,
-            (void *)&statediff_ctx,
-            STATEDIFF_TRACER,
-            true);
+        {
+
+            auto const status = monad_executor_eth_call_submit(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_tx.data(),
+                rlp_tx.size(),
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_sender.data(),
+                rlp_sender.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                state_override,
+                complete_callback,
+                (void *)&statediff_ctx,
+                STATEDIFF_TRACER,
+                true);
+
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_EQ(statediff_ctx.result->status_code, EVMC_SUCCESS);
@@ -1701,7 +1804,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     byte_string deployed_code_bytes =
         0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3_bytes;
@@ -1716,23 +1819,26 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
     // PreState trace
     {
         boost::fibers::future<void> f = prestate_ctx.promise.get_future();
-        monad_executor_eth_call_submit(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_tx.data(),
-            rlp_tx.size(),
-            rlp_header.data(),
-            rlp_header.size(),
-            rlp_sender.data(),
-            rlp_sender.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            state_override,
-            complete_callback,
-            (void *)&prestate_ctx,
-            PRESTATE_TRACER,
-            true);
+        {
+            auto const status = monad_executor_eth_call_submit(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_tx.data(),
+                rlp_tx.size(),
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_sender.data(),
+                rlp_sender.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                state_override,
+                complete_callback,
+                (void *)&prestate_ctx,
+                PRESTATE_TRACER,
+                true);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_TRUE(prestate_ctx.result->status_code == EVMC_SUCCESS);
@@ -1758,23 +1864,26 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
     // StateDelta Trace
     {
         boost::fibers::future<void> f = statediff_ctx.promise.get_future();
-        monad_executor_eth_call_submit(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_tx.data(),
-            rlp_tx.size(),
-            rlp_header.data(),
-            rlp_header.size(),
-            rlp_sender.data(),
-            rlp_sender.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            state_override,
-            complete_callback,
-            (void *)&statediff_ctx,
-            STATEDIFF_TRACER,
-            true);
+        {
+            auto const status = monad_executor_eth_call_submit(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_tx.data(),
+                rlp_tx.size(),
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_sender.data(),
+                rlp_sender.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                state_override,
+                complete_callback,
+                (void *)&statediff_ctx,
+                STATEDIFF_TRACER,
+                true);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_TRUE(statediff_ctx.result->status_code == EVMC_SUCCESS);
@@ -1902,22 +2011,25 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
     // PreState trace
     {
         boost::fibers::future<void> f = prestate_ctx.promise.get_future();
-        monad_executor_run_transactions(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_header.data(),
-            rlp_header.size(),
-            256,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            rlp_parent_id.data(),
-            rlp_parent_id.size(),
-            rlp_grandparent_id.data(),
-            rlp_grandparent_id.size(),
-            -1,
-            complete_callback,
-            (void *)&prestate_ctx,
-            PRESTATE_TRACER);
+        {
+            auto const status = monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                256,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                -1,
+                complete_callback,
+                (void *)&prestate_ctx,
+                PRESTATE_TRACER);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_TRUE(prestate_ctx.result->status_code == EVMC_SUCCESS);
@@ -1963,22 +2075,25 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
     // StateDelta Trace
     {
         boost::fibers::future<void> f = statediff_ctx.promise.get_future();
-        monad_executor_run_transactions(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_header.data(),
-            rlp_header.size(),
-            256,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            rlp_parent_id.data(),
-            rlp_parent_id.size(),
-            rlp_grandparent_id.data(),
-            rlp_grandparent_id.size(),
-            -1,
-            complete_callback,
-            (void *)&statediff_ctx,
-            STATEDIFF_TRACER);
+        {
+            auto const status = monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                256,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                -1,
+                complete_callback,
+                (void *)&statediff_ctx,
+                STATEDIFF_TRACER);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_TRUE(statediff_ctx.result->status_code == EVMC_SUCCESS);
@@ -2142,22 +2257,25 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
     // PreState trace
     {
         boost::fibers::future<void> f_1 = prestate_ctx_1.promise.get_future();
-        monad_executor_run_transactions(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_header.data(),
-            rlp_header.size(),
-            256,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            rlp_parent_id.data(),
-            rlp_parent_id.size(),
-            rlp_grandparent_id.data(),
-            rlp_grandparent_id.size(),
-            0,
-            complete_callback,
-            (void *)&prestate_ctx_1,
-            PRESTATE_TRACER);
+        {
+            auto const status = monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                256,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                0,
+                complete_callback,
+                (void *)&prestate_ctx_1,
+                PRESTATE_TRACER);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f_1.get();
 
         ASSERT_TRUE(prestate_ctx_1.result->status_code == EVMC_SUCCESS);
@@ -2183,22 +2301,25 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             nlohmann::json::from_cbor(encoded_pre_state_trace_1));
 
         boost::fibers::future<void> f_2 = prestate_ctx_2.promise.get_future();
-        monad_executor_run_transactions(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_header.data(),
-            rlp_header.size(),
-            256,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            rlp_parent_id.data(),
-            rlp_parent_id.size(),
-            rlp_grandparent_id.data(),
-            rlp_grandparent_id.size(),
-            1,
-            complete_callback,
-            (void *)&prestate_ctx_2,
-            PRESTATE_TRACER);
+        {
+            auto const status = monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                256,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                1,
+                complete_callback,
+                (void *)&prestate_ctx_2,
+                PRESTATE_TRACER);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f_2.get();
 
         ASSERT_TRUE(prestate_ctx_2.result->status_code == EVMC_SUCCESS);
@@ -2227,22 +2348,25 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
     // StateDelta Trace
     {
         boost::fibers::future<void> f_1 = statediff_ctx_1.promise.get_future();
-        monad_executor_run_transactions(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_header.data(),
-            rlp_header.size(),
-            256,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            rlp_parent_id.data(),
-            rlp_parent_id.size(),
-            rlp_grandparent_id.data(),
-            rlp_grandparent_id.size(),
-            0,
-            complete_callback,
-            (void *)&statediff_ctx_1,
-            STATEDIFF_TRACER);
+        {
+            auto const status = monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                256,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                0,
+                complete_callback,
+                (void *)&statediff_ctx_1,
+                STATEDIFF_TRACER);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f_1.get();
 
         ASSERT_TRUE(statediff_ctx_1.result->status_code == EVMC_SUCCESS);
@@ -2281,22 +2405,25 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             nlohmann::json::from_cbor(encoded_state_diff_trace_1));
 
         boost::fibers::future<void> f_2 = statediff_ctx_2.promise.get_future();
-        monad_executor_run_transactions(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_header.data(),
-            rlp_header.size(),
-            256,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            rlp_parent_id.data(),
-            rlp_parent_id.size(),
-            rlp_grandparent_id.data(),
-            rlp_grandparent_id.size(),
-            1,
-            complete_callback,
-            (void *)&statediff_ctx_2,
-            STATEDIFF_TRACER);
+        {
+            auto const status = monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                256,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                1,
+                complete_callback,
+                (void *)&statediff_ctx_2,
+                STATEDIFF_TRACER);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f_2.get();
 
         ASSERT_TRUE(statediff_ctx_2.result->status_code == EVMC_SUCCESS);
@@ -2525,22 +2652,25 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
     // StateDiff trace
     {
         boost::fibers::future<void> f_1 = statediff_ctx_1.promise.get_future();
-        monad_executor_run_transactions(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_header.data(),
-            rlp_header.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            rlp_parent_id.data(),
-            rlp_parent_id.size(),
-            rlp_grandparent_id.data(),
-            rlp_grandparent_id.size(),
-            0,
-            complete_callback,
-            (void *)&statediff_ctx_1,
-            STATEDIFF_TRACER);
+        {
+            auto const status = monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                0,
+                complete_callback,
+                (void *)&statediff_ctx_1,
+                STATEDIFF_TRACER);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f_1.get();
 
         // TODO(dhil): this should really be EMVC_REVERT, but currently
@@ -2650,22 +2780,25 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
     {
         boost::fibers::future<void> f =
             genesis_prestate_ctx.promise.get_future();
-        monad_executor_run_transactions(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_header.data(),
-            rlp_header.size(),
-            0,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            rlp_parent_id.data(),
-            rlp_parent_id.size(),
-            rlp_grandparent_id.data(),
-            rlp_grandparent_id.size(),
-            -1,
-            complete_callback,
-            (void *)&genesis_prestate_ctx,
-            PRESTATE_TRACER);
+        {
+            auto const status = monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                0,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                -1,
+                complete_callback,
+                (void *)&genesis_prestate_ctx,
+                PRESTATE_TRACER);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_TRUE(genesis_prestate_ctx.result->status_code == EVMC_REJECTED);
@@ -2700,22 +2833,25 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
 
         boost::fibers::future<void> f =
             block1_prestate_ctx.promise.get_future();
-        monad_executor_run_transactions(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_header.data(),
-            rlp_header.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            rlp_parent_id.data(),
-            rlp_parent_id.size(),
-            rlp_grandparent_id.data(),
-            rlp_grandparent_id.size(),
-            0,
-            complete_callback,
-            (void *)&block1_prestate_ctx,
-            PRESTATE_TRACER);
+        {
+            auto const status = monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                0,
+                complete_callback,
+                (void *)&block1_prestate_ctx,
+                PRESTATE_TRACER);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_TRUE(block1_prestate_ctx.result->status_code == EVMC_SUCCESS);
@@ -2763,22 +2899,25 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
 
         boost::fibers::future<void> f =
             block2_prestate_ctx.promise.get_future();
-        monad_executor_run_transactions(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_header.data(),
-            rlp_header.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            rlp_parent_id.data(),
-            rlp_parent_id.size(),
-            rlp_grandparent_id.data(),
-            rlp_grandparent_id.size(),
-            0,
-            complete_callback,
-            (void *)&block2_prestate_ctx,
-            PRESTATE_TRACER);
+        {
+            auto const status = monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                0,
+                complete_callback,
+                (void *)&block2_prestate_ctx,
+                PRESTATE_TRACER);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_TRUE(block2_prestate_ctx.result->status_code == EVMC_SUCCESS);
@@ -2859,29 +2998,32 @@ TEST_F(EthCallFixture, access_list_trace)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
 
     {
         boost::fibers::future<void> f = ctx.promise.get_future();
-        monad_executor_eth_call_submit(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_tx.data(),
-            rlp_tx.size(),
-            rlp_header.data(),
-            rlp_header.size(),
-            rlp_sender.data(),
-            rlp_sender.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            state_override,
-            complete_callback,
-            (void *)&ctx,
-            ACCESS_LIST_TRACER,
-            true);
+        {
+            auto const status = monad_executor_eth_call_submit(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_tx.data(),
+                rlp_tx.size(),
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_sender.data(),
+                rlp_sender.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                state_override,
+                complete_callback,
+                (void *)&ctx,
+                ACCESS_LIST_TRACER,
+                true);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
@@ -2962,29 +3104,32 @@ TEST_F(EthCallFixture, access_list_trace_reverted_call)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
 
     {
         boost::fibers::future<void> f = ctx.promise.get_future();
-        monad_executor_eth_call_submit(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_tx.data(),
-            rlp_tx.size(),
-            rlp_header.data(),
-            rlp_header.size(),
-            rlp_sender.data(),
-            rlp_sender.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            state_override,
-            complete_callback,
-            (void *)&ctx,
-            ACCESS_LIST_TRACER,
-            true);
+        {
+            auto const status = monad_executor_eth_call_submit(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_tx.data(),
+                rlp_tx.size(),
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_sender.data(),
+                rlp_sender.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                state_override,
+                complete_callback,
+                (void *)&ctx,
+                ACCESS_LIST_TRACER,
+                true);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_TRUE(ctx.result->status_code == EVMC_REVERT);
@@ -3065,29 +3210,32 @@ TEST_F(EthCallFixture, access_list_trace_empty)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
 
     {
         boost::fibers::future<void> f = ctx.promise.get_future();
-        monad_executor_eth_call_submit(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_tx.data(),
-            rlp_tx.size(),
-            rlp_header.data(),
-            rlp_header.size(),
-            rlp_sender.data(),
-            rlp_sender.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            state_override,
-            complete_callback,
-            (void *)&ctx,
-            ACCESS_LIST_TRACER,
-            true);
+        {
+            auto const status = monad_executor_eth_call_submit(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_tx.data(),
+                rlp_tx.size(),
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_sender.data(),
+                rlp_sender.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                state_override,
+                complete_callback,
+                (void *)&ctx,
+                ACCESS_LIST_TRACER,
+                true);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
@@ -3160,28 +3308,33 @@ TEST_F(EthCallFixture, access_list_trace_nested)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        ACCESS_LIST_TRACER,
-        true);
+    {
+
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            ACCESS_LIST_TRACER,
+            true);
+
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
@@ -3274,28 +3427,33 @@ TEST_F(EthCallFixture, access_list_trace_nested_reverted_call)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        ACCESS_LIST_TRACER,
-        true);
+    {
+
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            ACCESS_LIST_TRACER,
+            true);
+
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
@@ -3355,18 +3513,26 @@ TEST_F(EthCallFixture, prestate_state_overrides)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
-    add_override_address(state_override, from.bytes, sizeof(Address));
-    set_override_balance(
-        state_override,
-        from.bytes,
-        sizeof(Address),
-        (0xFFFF_bytes32).bytes,
-        sizeof(bytes32_t));
-    set_override_nonce(state_override, from.bytes, sizeof(Address), 1024);
+    auto *state_override = create_state_override();
+    ASSERT_EQ(
+        add_override_address(state_override, from.bytes, sizeof(Address)),
+        MONAD_OVERRIDE_OK);
+    ASSERT_EQ(
+        set_override_balance(
+            state_override,
+            from.bytes,
+            sizeof(Address),
+            (0xFFFF_bytes32).bytes,
+            sizeof(bytes32_t)),
+        MONAD_OVERRIDE_OK);
+    ASSERT_EQ(
+        set_override_nonce(state_override, from.bytes, sizeof(Address), 1024),
+        MONAD_OVERRIDE_OK);
     uint8_t code[] = {0x00, 0x01, 0x02, 0x03, 0x04};
-    set_override_code(
-        state_override, from.bytes, sizeof(Address), code, sizeof(code));
+    ASSERT_EQ(
+        set_override_code(
+            state_override, from.bytes, sizeof(Address), code, sizeof(code)),
+        MONAD_OVERRIDE_OK);
 
     struct callback_context prestate_ctx;
     struct callback_context statediff_ctx;
@@ -3374,23 +3540,26 @@ TEST_F(EthCallFixture, prestate_state_overrides)
     // PreState trace
     {
         boost::fibers::future<void> f = prestate_ctx.promise.get_future();
-        monad_executor_eth_call_submit(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_tx.data(),
-            rlp_tx.size(),
-            rlp_header.data(),
-            rlp_header.size(),
-            rlp_sender.data(),
-            rlp_sender.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            state_override,
-            complete_callback,
-            (void *)&prestate_ctx,
-            PRESTATE_TRACER,
-            true);
+        {
+            auto const status = monad_executor_eth_call_submit(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_tx.data(),
+                rlp_tx.size(),
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_sender.data(),
+                rlp_sender.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                state_override,
+                complete_callback,
+                (void *)&prestate_ctx,
+                PRESTATE_TRACER,
+                true);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_TRUE(prestate_ctx.result->status_code == EVMC_SUCCESS);
@@ -3418,23 +3587,26 @@ TEST_F(EthCallFixture, prestate_state_overrides)
     // StateDelta Trace
     {
         boost::fibers::future<void> f = statediff_ctx.promise.get_future();
-        monad_executor_eth_call_submit(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_tx.data(),
-            rlp_tx.size(),
-            rlp_header.data(),
-            rlp_header.size(),
-            rlp_sender.data(),
-            rlp_sender.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            state_override,
-            complete_callback,
-            (void *)&statediff_ctx,
-            STATEDIFF_TRACER,
-            true);
+        {
+            auto const status = monad_executor_eth_call_submit(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_tx.data(),
+                rlp_tx.size(),
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_sender.data(),
+                rlp_sender.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                state_override,
+                complete_callback,
+                (void *)&statediff_ctx,
+                STATEDIFF_TRACER,
+                true);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_TRUE(statediff_ctx.result->status_code == EVMC_SUCCESS);
@@ -3557,44 +3729,53 @@ TEST_F(EthCallFixture, prestate_override_state)
     // given slots.
     struct callback_context ctx_state;
     {
-        auto *state_override = monad_state_override_create();
-        add_override_address(
-            state_override, CONTRACT_ADDR.bytes, sizeof(Address));
-        set_override_state(
-            state_override,
-            CONTRACT_ADDR.bytes,
-            sizeof(Address),
-            other_storage_key.bytes,
-            sizeof(bytes32_t),
-            other_storage_value.bytes,
-            sizeof(bytes32_t));
-        set_override_state(
-            state_override,
-            CONTRACT_ADDR.bytes,
-            sizeof(Address),
-            untouched_storage_key.bytes,
-            sizeof(bytes32_t),
-            untouched_storage_value.bytes,
-            sizeof(bytes32_t));
+        auto *state_override = create_state_override();
+        ASSERT_EQ(
+            add_override_address(
+                state_override, CONTRACT_ADDR.bytes, sizeof(Address)),
+            MONAD_OVERRIDE_OK);
+        ASSERT_EQ(
+            set_override_state(
+                state_override,
+                CONTRACT_ADDR.bytes,
+                sizeof(Address),
+                other_storage_key.bytes,
+                sizeof(bytes32_t),
+                other_storage_value.bytes,
+                sizeof(bytes32_t)),
+            MONAD_OVERRIDE_OK);
+        ASSERT_EQ(
+            set_override_state(
+                state_override,
+                CONTRACT_ADDR.bytes,
+                sizeof(Address),
+                untouched_storage_key.bytes,
+                sizeof(bytes32_t),
+                untouched_storage_value.bytes,
+                sizeof(bytes32_t)),
+            MONAD_OVERRIDE_OK);
 
         boost::fibers::future<void> f = ctx_state.promise.get_future();
-        monad_executor_eth_call_submit(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_tx.data(),
-            rlp_tx.size(),
-            rlp_header.data(),
-            rlp_header.size(),
-            rlp_sender.data(),
-            rlp_sender.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            state_override,
-            complete_callback,
-            (void *)&ctx_state,
-            PRESTATE_TRACER,
-            true);
+        {
+            auto const status = monad_executor_eth_call_submit(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_tx.data(),
+                rlp_tx.size(),
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_sender.data(),
+                rlp_sender.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                state_override,
+                complete_callback,
+                (void *)&ctx_state,
+                PRESTATE_TRACER,
+                true);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_TRUE(ctx_state.result->status_code == EVMC_SUCCESS);
@@ -3639,44 +3820,53 @@ TEST_F(EthCallFixture, prestate_override_state)
     // and update the given slots.
     struct callback_context ctx_statediff;
     {
-        auto *state_override = monad_state_override_create();
-        add_override_address(
-            state_override, CONTRACT_ADDR.bytes, sizeof(Address));
-        set_override_state_diff(
-            state_override,
-            CONTRACT_ADDR.bytes,
-            sizeof(Address),
-            other_storage_key.bytes,
-            sizeof(bytes32_t),
-            other_storage_value.bytes,
-            sizeof(bytes32_t));
-        set_override_state_diff(
-            state_override,
-            CONTRACT_ADDR.bytes,
-            sizeof(Address),
-            untouched_storage_key.bytes,
-            sizeof(bytes32_t),
-            untouched_storage_value.bytes,
-            sizeof(bytes32_t));
+        auto *state_override = create_state_override();
+        ASSERT_EQ(
+            add_override_address(
+                state_override, CONTRACT_ADDR.bytes, sizeof(Address)),
+            MONAD_OVERRIDE_OK);
+        ASSERT_EQ(
+            set_override_state_diff(
+                state_override,
+                CONTRACT_ADDR.bytes,
+                sizeof(Address),
+                other_storage_key.bytes,
+                sizeof(bytes32_t),
+                other_storage_value.bytes,
+                sizeof(bytes32_t)),
+            MONAD_OVERRIDE_OK);
+        ASSERT_EQ(
+            set_override_state_diff(
+                state_override,
+                CONTRACT_ADDR.bytes,
+                sizeof(Address),
+                untouched_storage_key.bytes,
+                sizeof(bytes32_t),
+                untouched_storage_value.bytes,
+                sizeof(bytes32_t)),
+            MONAD_OVERRIDE_OK);
 
         boost::fibers::future<void> f = ctx_statediff.promise.get_future();
-        monad_executor_eth_call_submit(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_tx.data(),
-            rlp_tx.size(),
-            rlp_header.data(),
-            rlp_header.size(),
-            rlp_sender.data(),
-            rlp_sender.size(),
-            header.number,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            state_override,
-            complete_callback,
-            (void *)&ctx_statediff,
-            PRESTATE_TRACER,
-            true);
+        {
+            auto const status = monad_executor_eth_call_submit(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_tx.data(),
+                rlp_tx.size(),
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_sender.data(),
+                rlp_sender.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                state_override,
+                complete_callback,
+                (void *)&ctx_statediff,
+                PRESTATE_TRACER,
+                true);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f.get();
 
         ASSERT_TRUE(ctx_statediff.result->status_code == EVMC_SUCCESS);
@@ -3826,28 +4016,33 @@ TEST_F(EthCallFixture, eth_call_reserve_balance)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        NOOP_TRACER,
-        true);
+    {
+
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_MONAD_RESERVE_BALANCE_VIOLATION);
@@ -3907,28 +4102,33 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_emptying)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        NOOP_TRACER,
-        true);
+    {
+
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -4018,28 +4218,33 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_assertion)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto *executor = create_executor(dbname.string());
-    auto *state_override = monad_state_override_create();
+    auto *state_override = create_state_override();
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_call_submit(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_tx.data(),
-        rlp_tx.size(),
-        rlp_header.data(),
-        rlp_header.size(),
-        rlp_sender.data(),
-        rlp_sender.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        state_override,
-        complete_callback,
-        (void *)&ctx,
-        NOOP_TRACER,
-        true);
+    {
+
+        auto const status = monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+    }
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, EVMC_MONAD_RESERVE_BALANCE_VIOLATION);
@@ -4152,22 +4357,25 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
     // PreState trace
     {
         boost::fibers::future<void> f_1 = prestate_ctx_1.promise.get_future();
-        monad_executor_run_transactions(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_header.data(),
-            rlp_header.size(),
-            256,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            rlp_parent_id.data(),
-            rlp_parent_id.size(),
-            rlp_grandparent_id.data(),
-            rlp_grandparent_id.size(),
-            0,
-            complete_callback,
-            (void *)&prestate_ctx_1,
-            PRESTATE_TRACER);
+        {
+            auto const status = monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                256,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                0,
+                complete_callback,
+                (void *)&prestate_ctx_1,
+                PRESTATE_TRACER);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f_1.get();
 
         ASSERT_TRUE(prestate_ctx_1.result->status_code == EVMC_SUCCESS);
@@ -4197,22 +4405,25 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
             nlohmann::json::from_cbor(encoded_pre_state_trace_1));
 
         boost::fibers::future<void> f_2 = prestate_ctx_2.promise.get_future();
-        monad_executor_run_transactions(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_header.data(),
-            rlp_header.size(),
-            256,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            rlp_parent_id.data(),
-            rlp_parent_id.size(),
-            rlp_grandparent_id.data(),
-            rlp_grandparent_id.size(),
-            1,
-            complete_callback,
-            (void *)&prestate_ctx_2,
-            PRESTATE_TRACER);
+        {
+            auto const status = monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                256,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                1,
+                complete_callback,
+                (void *)&prestate_ctx_2,
+                PRESTATE_TRACER);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f_2.get();
 
         ASSERT_TRUE(prestate_ctx_2.result->status_code == EVMC_SUCCESS);
@@ -4245,22 +4456,25 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
     // StateDelta Trace
     {
         boost::fibers::future<void> f_1 = statediff_ctx_1.promise.get_future();
-        monad_executor_run_transactions(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_header.data(),
-            rlp_header.size(),
-            256,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            rlp_parent_id.data(),
-            rlp_parent_id.size(),
-            rlp_grandparent_id.data(),
-            rlp_grandparent_id.size(),
-            0,
-            complete_callback,
-            (void *)&statediff_ctx_1,
-            STATEDIFF_TRACER);
+        {
+            auto const status = monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                256,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                0,
+                complete_callback,
+                (void *)&statediff_ctx_1,
+                STATEDIFF_TRACER);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f_1.get();
 
         ASSERT_TRUE(statediff_ctx_1.result->status_code == EVMC_SUCCESS);
@@ -4306,22 +4520,25 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
             nlohmann::json::from_cbor(encoded_state_diff_trace_1));
 
         boost::fibers::future<void> f_2 = statediff_ctx_2.promise.get_future();
-        monad_executor_run_transactions(
-            executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
-            rlp_header.data(),
-            rlp_header.size(),
-            256,
-            rlp_block_id.data(),
-            rlp_block_id.size(),
-            rlp_parent_id.data(),
-            rlp_parent_id.size(),
-            rlp_grandparent_id.data(),
-            rlp_grandparent_id.size(),
-            1,
-            complete_callback,
-            (void *)&statediff_ctx_2,
-            STATEDIFF_TRACER);
+        {
+            auto const status = monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                256,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                1,
+                complete_callback,
+                (void *)&statediff_ctx_2,
+                STATEDIFF_TRACER);
+            ASSERT_EQ(status, MONAD_EXECUTOR_OK);
+        }
         f_2.get();
 
         ASSERT_TRUE(statediff_ctx_2.result->status_code == EVMC_SUCCESS);
@@ -4372,35 +4589,47 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
 
 TEST(BlockOverride, create_destroy)
 {
-    auto *bo = monad_block_override_create();
+    auto *bo = create_block_override();
     ASSERT_NE(bo, nullptr);
     monad_block_override_destroy(bo);
 }
 
 TEST(BlockOverride, set_all_fields)
 {
-    auto *bo = monad_block_override_create();
+    auto *bo = create_block_override();
 
-    set_block_override_number(bo, 42);
-    set_block_override_time(bo, 1700000000);
-    set_block_override_gas_limit(bo, 30'000'000);
+    EXPECT_EQ(set_block_override_number(bo, 42), MONAD_OVERRIDE_OK);
+    EXPECT_EQ(set_block_override_time(bo, 1700000000), MONAD_OVERRIDE_OK);
+    EXPECT_EQ(set_block_override_gas_limit(bo, 30'000'000), MONAD_OVERRIDE_OK);
 
     uint8_t addr_bytes[20] = {};
     addr_bytes[19] = 0xAB;
-    set_block_override_fee_recipient(bo, addr_bytes, sizeof(addr_bytes));
+    EXPECT_EQ(
+        set_block_override_fee_recipient(bo, addr_bytes, sizeof(addr_bytes)),
+        MONAD_OVERRIDE_OK);
 
     uint8_t randao_bytes[32] = {};
     randao_bytes[0] = 0xFF;
     randao_bytes[31] = 0x01;
-    set_block_override_prev_randao(bo, randao_bytes, sizeof(randao_bytes));
+    EXPECT_EQ(
+        set_block_override_prev_randao(bo, randao_bytes, sizeof(randao_bytes)),
+        MONAD_OVERRIDE_OK);
 
     uint8_t fee_bytes[32] = {};
     fee_bytes[31] = 9;
-    set_block_override_base_fee_per_gas(bo, fee_bytes, sizeof(fee_bytes));
+    EXPECT_EQ(
+        set_block_override_base_fee_per_gas(bo, fee_bytes, sizeof(fee_bytes)),
+        MONAD_OVERRIDE_OK);
 
-    add_block_override_withdrawal(bo, 1, 2, 3, addr_bytes, sizeof(addr_bytes));
+    EXPECT_EQ(
+        add_block_override_withdrawal(
+            bo, 1, 2, 3, addr_bytes, sizeof(addr_bytes)),
+        MONAD_OVERRIDE_OK);
     addr_bytes[19] = 0xCD;
-    add_block_override_withdrawal(bo, 4, 5, 6, addr_bytes, sizeof(addr_bytes));
+    EXPECT_EQ(
+        add_block_override_withdrawal(
+            bo, 4, 5, 6, addr_bytes, sizeof(addr_bytes)),
+        MONAD_OVERRIDE_OK);
 
     EXPECT_EQ(bo->number, 42u);
     EXPECT_EQ(bo->time, 1700000000u);
@@ -4438,13 +4667,15 @@ TEST(BlockOverride, set_all_fields)
 
 TEST(BlockOverride, partial_fields)
 {
-    auto *bo = monad_block_override_create();
+    auto *bo = create_block_override();
 
-    set_block_override_number(bo, 100);
+    EXPECT_EQ(set_block_override_number(bo, 100), MONAD_OVERRIDE_OK);
 
     uint8_t fee_bytes[32] = {};
     fee_bytes[31] = 7;
-    set_block_override_base_fee_per_gas(bo, fee_bytes, sizeof(fee_bytes));
+    EXPECT_EQ(
+        set_block_override_base_fee_per_gas(bo, fee_bytes, sizeof(fee_bytes)),
+        MONAD_OVERRIDE_OK);
 
     EXPECT_EQ(bo->number, 100u);
     EXPECT_EQ(bo->base_fee_per_gas, uint256_t{7});
@@ -4460,12 +4691,14 @@ TEST(BlockOverride, partial_fields)
 
 TEST(BlockOverride, uint256_big_endian)
 {
-    auto *bo = monad_block_override_create();
+    auto *bo = create_block_override();
 
     // base_fee = 0x09 in big-endian 32-byte representation
     uint8_t base_fee[32] = {};
     base_fee[31] = 0x09;
-    set_block_override_base_fee_per_gas(bo, base_fee, sizeof(base_fee));
+    EXPECT_EQ(
+        set_block_override_base_fee_per_gas(bo, base_fee, sizeof(base_fee)),
+        MONAD_OVERRIDE_OK);
     ASSERT_TRUE(bo->base_fee_per_gas.has_value());
     EXPECT_EQ(*bo->base_fee_per_gas, uint256_t{9});
 
@@ -4474,13 +4707,15 @@ TEST(BlockOverride, uint256_big_endian)
 
 TEST(BlockOverride, address_20_bytes)
 {
-    auto *bo = monad_block_override_create();
+    auto *bo = create_block_override();
 
     uint8_t addr[20];
     for (int i = 0; i < 20; ++i) {
         addr[i] = static_cast<uint8_t>(i + 1);
     }
-    set_block_override_fee_recipient(bo, addr, sizeof(addr));
+    EXPECT_EQ(
+        set_block_override_fee_recipient(bo, addr, sizeof(addr)),
+        MONAD_OVERRIDE_OK);
 
     ASSERT_TRUE(bo->fee_recipient.has_value());
     EXPECT_EQ(
@@ -4491,13 +4726,15 @@ TEST(BlockOverride, address_20_bytes)
 
 TEST(BlockOverride, prev_randao_32_bytes)
 {
-    auto *bo = monad_block_override_create();
+    auto *bo = create_block_override();
 
     uint8_t randao[32];
     for (int i = 0; i < 32; ++i) {
         randao[i] = static_cast<uint8_t>(0xFF - i);
     }
-    set_block_override_prev_randao(bo, randao, sizeof(randao));
+    EXPECT_EQ(
+        set_block_override_prev_randao(bo, randao, sizeof(randao)),
+        MONAD_OVERRIDE_OK);
 
     ASSERT_TRUE(bo->prev_randao.has_value());
     EXPECT_EQ(
@@ -4509,7 +4746,7 @@ TEST(BlockOverride, prev_randao_32_bytes)
 
 TEST(StateOverrideVec, create_destroy)
 {
-    auto *vec = monad_state_override_vec_create(2);
+    auto *vec = create_state_override_vec(2);
     ASSERT_NE(vec, nullptr);
     EXPECT_EQ(vec->size, 2u);
     ASSERT_NE(vec->overrides, nullptr);
@@ -4518,7 +4755,7 @@ TEST(StateOverrideVec, create_destroy)
 
 TEST(StateOverrideVec, set_fields_at_index)
 {
-    auto *vec = monad_state_override_vec_create(2);
+    auto *vec = create_state_override_vec(2);
 
     Address addr{};
     addr.bytes[19] = 0xAB;
@@ -4538,35 +4775,52 @@ TEST(StateOverrideVec, set_fields_at_index)
     bytes32_t state_diff_value{};
     state_diff_value.bytes[31] = 0x04;
 
-    add_override_address_at(vec, 1, addr.bytes, sizeof(addr.bytes));
-    set_override_balance_at(
-        vec,
-        1,
-        addr.bytes,
-        sizeof(addr.bytes),
-        balance_bytes,
-        sizeof(balance_bytes));
-    set_override_nonce_at(vec, 1, addr.bytes, sizeof(addr.bytes), 42);
-    set_override_code_at(
-        vec, 1, addr.bytes, sizeof(addr.bytes), code_bytes, sizeof(code_bytes));
-    set_override_state_at(
-        vec,
-        1,
-        addr.bytes,
-        sizeof(addr.bytes),
-        state_key.bytes,
-        sizeof(state_key.bytes),
-        state_value.bytes,
-        sizeof(state_value.bytes));
-    set_override_state_diff_at(
-        vec,
-        1,
-        addr.bytes,
-        sizeof(addr.bytes),
-        state_diff_key.bytes,
-        sizeof(state_diff_key.bytes),
-        state_diff_value.bytes,
-        sizeof(state_diff_value.bytes));
+    EXPECT_EQ(
+        add_override_address_at(vec, 1, addr.bytes, sizeof(addr.bytes)),
+        MONAD_OVERRIDE_OK);
+    EXPECT_EQ(
+        set_override_balance_at(
+            vec,
+            1,
+            addr.bytes,
+            sizeof(addr.bytes),
+            balance_bytes,
+            sizeof(balance_bytes)),
+        MONAD_OVERRIDE_OK);
+    EXPECT_EQ(
+        set_override_nonce_at(vec, 1, addr.bytes, sizeof(addr.bytes), 42),
+        MONAD_OVERRIDE_OK);
+    EXPECT_EQ(
+        set_override_code_at(
+            vec,
+            1,
+            addr.bytes,
+            sizeof(addr.bytes),
+            code_bytes,
+            sizeof(code_bytes)),
+        MONAD_OVERRIDE_OK);
+    EXPECT_EQ(
+        set_override_state_at(
+            vec,
+            1,
+            addr.bytes,
+            sizeof(addr.bytes),
+            state_key.bytes,
+            sizeof(state_key.bytes),
+            state_value.bytes,
+            sizeof(state_value.bytes)),
+        MONAD_OVERRIDE_OK);
+    EXPECT_EQ(
+        set_override_state_diff_at(
+            vec,
+            1,
+            addr.bytes,
+            sizeof(addr.bytes),
+            state_diff_key.bytes,
+            sizeof(state_diff_key.bytes),
+            state_diff_value.bytes,
+            sizeof(state_diff_value.bytes)),
+        MONAD_OVERRIDE_OK);
 
     EXPECT_TRUE(vec->overrides[0].override_sets.empty());
 
@@ -4598,7 +4852,7 @@ TEST(StateOverrideVec, set_fields_at_index)
 
 TEST(BlockOverrideVec, create_destroy)
 {
-    auto *vec = monad_block_override_vec_create(2);
+    auto *vec = create_block_override_vec(2);
     ASSERT_NE(vec, nullptr);
     EXPECT_EQ(vec->size, 2u);
     ASSERT_NE(vec->overrides, nullptr);
@@ -4607,7 +4861,7 @@ TEST(BlockOverrideVec, create_destroy)
 
 TEST(BlockOverrideVec, set_fields_at_index)
 {
-    auto *vec = monad_block_override_vec_create(2);
+    auto *vec = create_block_override_vec(2);
 
     uint8_t addr_bytes[20] = {};
     addr_bytes[19] = 0xAB;
@@ -4619,19 +4873,32 @@ TEST(BlockOverrideVec, set_fields_at_index)
     uint8_t fee_bytes[32] = {};
     fee_bytes[31] = 9;
 
-    set_block_override_number_at(vec, 1, 42);
-    set_block_override_time_at(vec, 1, 1700000000);
-    set_block_override_gas_limit_at(vec, 1, 30'000'000);
-    set_block_override_fee_recipient_at(vec, 1, addr_bytes, sizeof(addr_bytes));
-    set_block_override_prev_randao_at(
-        vec, 1, randao_bytes, sizeof(randao_bytes));
-    set_block_override_base_fee_per_gas_at(
-        vec, 1, fee_bytes, sizeof(fee_bytes));
-    add_block_override_withdrawal_at(
-        vec, 1, 1, 2, 3, addr_bytes, sizeof(addr_bytes));
+    EXPECT_EQ(set_block_override_number_at(vec, 1, 42), MONAD_OVERRIDE_OK);
+    EXPECT_EQ(
+        set_block_override_time_at(vec, 1, 1700000000), MONAD_OVERRIDE_OK);
+    EXPECT_EQ(
+        set_block_override_gas_limit_at(vec, 1, 30'000'000), MONAD_OVERRIDE_OK);
+    EXPECT_EQ(
+        set_block_override_fee_recipient_at(
+            vec, 1, addr_bytes, sizeof(addr_bytes)),
+        MONAD_OVERRIDE_OK);
+    EXPECT_EQ(
+        set_block_override_prev_randao_at(
+            vec, 1, randao_bytes, sizeof(randao_bytes)),
+        MONAD_OVERRIDE_OK);
+    EXPECT_EQ(
+        set_block_override_base_fee_per_gas_at(
+            vec, 1, fee_bytes, sizeof(fee_bytes)),
+        MONAD_OVERRIDE_OK);
+    EXPECT_EQ(
+        add_block_override_withdrawal_at(
+            vec, 1, 1, 2, 3, addr_bytes, sizeof(addr_bytes)),
+        MONAD_OVERRIDE_OK);
     addr_bytes[19] = 0xCD;
-    add_block_override_withdrawal_at(
-        vec, 1, 4, 5, 6, addr_bytes, sizeof(addr_bytes));
+    EXPECT_EQ(
+        add_block_override_withdrawal_at(
+            vec, 1, 4, 5, 6, addr_bytes, sizeof(addr_bytes)),
+        MONAD_OVERRIDE_OK);
 
     auto const &empty = vec->overrides[0];
     EXPECT_EQ(empty.number, std::nullopt);
@@ -4704,8 +4971,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
 
     auto *executor = create_executor(dbname.string());
 
-    auto *const state_override = monad_state_override_vec_create(1);
-    auto *const block_override = monad_block_override_vec_create(1);
+    auto *const state_override = create_state_override_vec(1);
+    auto *const block_override = create_block_override_vec(1);
 
     auto const rlp_senders = to_vec(rlp::encode_list2(
         rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
@@ -4731,7 +4998,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -4752,6 +5019,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -4812,8 +5081,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
 
     auto *executor = create_executor(dbname.string());
 
-    auto *const state_overrides = monad_state_override_vec_create(2);
-    auto *const block_overrides = monad_block_override_vec_create(2);
+    auto *const state_overrides = create_state_override_vec(2);
+    auto *const block_overrides = create_block_override_vec(2);
 
     auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
     auto const rlp_senders = to_vec(rlp::encode_list2(
@@ -4841,7 +5110,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -4862,6 +5131,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -4936,13 +5207,13 @@ TEST_F(EthCallFixture, eth_simulate_v1_single_call_block_255)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     // No state overrides, no block overrides (one empty entry per block).
-    auto *const so_overrides = monad_state_override_vec_create(1);
-    auto *const bo_overrides = monad_block_override_vec_create(1);
+    auto *const so_overrides = create_state_override_vec(1);
+    auto *const bo_overrides = create_block_override_vec(1);
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -4963,6 +5234,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_single_call_block_255)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -4993,13 +5266,13 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_input)
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     // Empty overrides vectors.
-    auto *const so_overrides = monad_state_override_vec_create(0);
-    auto *const bo_overrides = monad_block_override_vec_create(0);
+    auto *const so_overrides = create_state_override_vec(0);
+    auto *const bo_overrides = create_block_override_vec(0);
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -5020,6 +5293,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_input)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
@@ -5064,16 +5339,20 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_synthetic_gap)
 
     // One state override (empty) and one block override with number = 511,
     // causing synthetic blocks 256..510 to be inserted.
-    auto *const so_overrides = monad_state_override_vec_create(1);
-    auto *const bo_overrides = monad_block_override_vec_create(1);
-    set_block_override_number_at(bo_overrides, 0, 511);
-    set_block_override_gas_limit_at(bo_overrides, 0, 200'000'000);
-    set_block_override_time_at(bo_overrides, 0, 512);
+    auto *const so_overrides = create_state_override_vec(1);
+    auto *const bo_overrides = create_block_override_vec(1);
+    ASSERT_EQ(
+        set_block_override_number_at(bo_overrides, 0, 511), MONAD_OVERRIDE_OK);
+    ASSERT_EQ(
+        set_block_override_gas_limit_at(bo_overrides, 0, 200'000'000),
+        MONAD_OVERRIDE_OK);
+    ASSERT_EQ(
+        set_block_override_time_at(bo_overrides, 0, 512), MONAD_OVERRIDE_OK);
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -5094,6 +5373,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_synthetic_gap)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -5142,8 +5423,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
     encoded_senders.reserve(256);
     std::vector<byte_string> encoded_calls{};
     encoded_calls.reserve(256);
-    auto *const bo_overrides = monad_block_override_vec_create(256);
-    auto *const so_overrides = monad_state_override_vec_create(256);
+    auto *const bo_overrides = create_block_override_vec(256);
+    auto *const so_overrides = create_state_override_vec(256);
     for (size_t i = 0; i < 256; i++) {
         bool const is_even = (i % 2 == 0);
         auto const encoded_tx = rlp::encode_transaction(Transaction{
@@ -5156,8 +5437,12 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
             rlp::encode_string2(byte_string_view(encoded_tx))));
         encoded_senders.push_back(rlp::encode_list2(rlp::encode_address(
             std::optional<Address>{is_even ? pong : ping})));
-        set_block_override_number_at(bo_overrides, i, 256 + i);
-        set_block_override_time_at(bo_overrides, i, 256 + i * 10);
+        ASSERT_EQ(
+            set_block_override_number_at(bo_overrides, i, 256 + i),
+            MONAD_OVERRIDE_OK);
+        ASSERT_EQ(
+            set_block_override_time_at(bo_overrides, i, 256 + i * 10),
+            MONAD_OVERRIDE_OK);
     }
 
     auto const rlp_senders = to_vec(encode_rlp_list(encoded_senders));
@@ -5174,7 +5459,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -5195,6 +5480,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -5229,13 +5516,16 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
     monad_executor_pool_config const block_conf = {1, 2, max_timeout, 2};
     monad_executor_pool_config const default_conf = {1, 2, max_timeout, 1000};
     unsigned const tx_exec_num_fibers = 10;
-    auto *executor = monad_executor_create(
+    monad_executor *executor = nullptr;
+    monad_executor_status_code_t const create_status = monad_executor_create(
         default_conf,
         default_conf,
         block_conf,
         tx_exec_num_fibers,
         node_lru_max_mem,
-        dbname.string().c_str());
+        dbname.string().c_str(),
+        &executor);
+    ASSERT_EQ(create_status, MONAD_EXECUTOR_OK);
 
     // Build a minimal valid simulation payload (one call, no overrides).
     Address const sender = ADDR_A;
@@ -5277,10 +5567,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
     for (size_t i = 0; i < N; ++i) {
         subs.emplace_back(std::make_unique<submission>());
         subs[i]->future = subs[i]->ctx.promise.get_future();
-        subs[i]->so = monad_state_override_vec_create(1);
-        subs[i]->bo = monad_block_override_vec_create(1);
+        subs[i]->so = create_state_override_vec(1);
+        subs[i]->bo = create_block_override_vec(1);
 
-        monad_executor_eth_simulate_submit(
+        auto const status = monad_executor_eth_simulate_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_senders.data(),
@@ -5301,6 +5591,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
             false,
             complete_callback,
             (void *)&subs[i]->ctx);
+
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     }
 
     // Wait for all to complete and tally results.
@@ -5443,13 +5735,13 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto *const so = monad_state_override_vec_create(1);
-    auto *const bo = monad_block_override_vec_create(1);
+    auto *const so = create_state_override_vec(1);
+    auto *const bo = create_block_override_vec(1);
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -5470,6 +5762,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -5601,15 +5895,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
         auto const rlp_header = to_vec(rlp::encode_block_header(header));
         auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-        auto *const so = monad_state_override_vec_create(4);
-        auto *const bo = monad_block_override_vec_create(4);
-        set_block_override_number_at(bo, 3, 7);
-        set_block_override_gas_limit_at(bo, 3, 200'000'000);
+        auto *const so = create_state_override_vec(4);
+        auto *const bo = create_block_override_vec(4);
+        ASSERT_EQ(set_block_override_number_at(bo, 3, 7), MONAD_OVERRIDE_OK);
+        ASSERT_EQ(
+            set_block_override_gas_limit_at(bo, 3, 200'000'000),
+            MONAD_OVERRIDE_OK);
 
         struct callback_context ctx;
         boost::fibers::future<void> f = ctx.promise.get_future();
 
-        monad_executor_eth_simulate_submit(
+        auto const status = monad_executor_eth_simulate_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_senders.data(),
@@ -5630,6 +5926,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             false,
             complete_callback,
             (void *)&ctx);
+
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
         f.get();
 
         ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -5737,15 +6035,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
         auto const rlp_header = to_vec(rlp::encode_block_header(header));
         auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-        auto *const so = monad_state_override_vec_create(4);
-        auto *const bo = monad_block_override_vec_create(4);
-        set_block_override_number_at(bo, 3, 7);
-        set_block_override_gas_limit_at(bo, 3, 200'000'000);
+        auto *const so = create_state_override_vec(4);
+        auto *const bo = create_block_override_vec(4);
+        ASSERT_EQ(set_block_override_number_at(bo, 3, 7), MONAD_OVERRIDE_OK);
+        ASSERT_EQ(
+            set_block_override_gas_limit_at(bo, 3, 200'000'000),
+            MONAD_OVERRIDE_OK);
 
         struct callback_context ctx;
         boost::fibers::future<void> f = ctx.promise.get_future();
 
-        monad_executor_eth_simulate_submit(
+        auto const status = monad_executor_eth_simulate_submit(
             executor,
             CHAIN_CONFIG_MONAD_DEVNET,
             rlp_senders.data(),
@@ -5766,6 +6066,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             false,
             complete_callback,
             (void *)&ctx);
+
+        ASSERT_EQ(status, MONAD_EXECUTOR_OK);
         f.get();
 
         ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -5969,13 +6271,13 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto *const so = monad_state_override_vec_create(1);
-    auto *const bo = monad_block_override_vec_create(1);
+    auto *const so = create_state_override_vec(1);
+    auto *const bo = create_block_override_vec(1);
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -5996,6 +6298,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -6121,13 +6425,13 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto *const so = monad_state_override_vec_create(4);
-    auto *const bo = monad_block_override_vec_create(4);
+    auto *const so = create_state_override_vec(4);
+    auto *const bo = create_block_override_vec(4);
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -6148,6 +6452,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -6336,23 +6642,27 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto *const so = monad_state_override_vec_create(3);
-    auto *const bo = monad_block_override_vec_create(3);
+    auto *const so = create_state_override_vec(3);
+    auto *const bo = create_block_override_vec(3);
 
     // Plant the balance-checker bytecode at the checker address for block 3.
-    add_override_address_at(so, 2, checker.bytes, sizeof(checker.bytes));
-    set_override_code_at(
-        so,
-        2,
-        checker.bytes,
-        sizeof(checker.bytes),
-        checker_bytecode.data(),
-        checker_bytecode.size());
+    ASSERT_EQ(
+        add_override_address_at(so, 2, checker.bytes, sizeof(checker.bytes)),
+        MONAD_OVERRIDE_OK);
+    ASSERT_EQ(
+        set_override_code_at(
+            so,
+            2,
+            checker.bytes,
+            sizeof(checker.bytes),
+            checker_bytecode.data(),
+            checker_bytecode.size()),
+        MONAD_OVERRIDE_OK);
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -6373,6 +6683,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -6535,13 +6847,13 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto *const so = monad_state_override_vec_create(1);
-    auto *const bo = monad_block_override_vec_create(1);
+    auto *const so = create_state_override_vec(1);
+    auto *const bo = create_block_override_vec(1);
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -6562,6 +6874,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
         true, // emit_native_transfer_logs
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -6685,14 +6999,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_time_travel)
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto *const so = monad_state_override_vec_create(2);
-    auto *const bo = monad_block_override_vec_create(2);
-    set_block_override_time_at(bo, 1, 513); // time travel to after unlock_time
+    auto *const so = create_state_override_vec(2);
+    auto *const bo = create_block_override_vec(2);
+    ASSERT_EQ(
+        set_block_override_time_at(
+            bo, 1, 513), // time travel to after unlock_time
+        MONAD_OVERRIDE_OK);
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -6713,6 +7030,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_time_travel)
         true, // emit_native_transfer_logs
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -6819,14 +7138,16 @@ TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto *const so = monad_state_override_vec_create(3);
-    auto *const bo = monad_block_override_vec_create(3);
-    set_block_override_number_at(bo, 2, 511); // forces synthetic blocks
+    auto *const so = create_state_override_vec(3);
+    auto *const bo = create_block_override_vec(3);
+    ASSERT_EQ(
+        set_block_override_number_at(bo, 2, 511), // forces synthetic blocks
+        MONAD_OVERRIDE_OK);
 
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -6847,6 +7168,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -6934,8 +7257,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
 
     auto *executor = create_executor(dbname.string());
 
-    auto *const state_overrides = monad_state_override_vec_create(1);
-    auto *const block_overrides = monad_block_override_vec_create(1);
+    auto *const state_overrides = create_state_override_vec(1);
+    auto *const block_overrides = create_block_override_vec(1);
 
     auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
     auto const rlp_senders = to_vec(
@@ -6973,7 +7296,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -6994,6 +7317,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
@@ -7055,8 +7380,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_gas_limit_enforcement)
 
     auto *executor = create_executor(dbname.string());
 
-    auto *const state_override = monad_state_override_vec_create(3);
-    auto *const block_override = monad_block_override_vec_create(3);
+    auto *const state_override = create_state_override_vec(3);
+    auto *const block_override = create_block_override_vec(3);
 
     // total_gas_limit = 2^64 - 1
     uint64_t const total_gas_limit = std::numeric_limits<uint64_t>::max() - 1;
@@ -7093,7 +7418,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_gas_limit_enforcement)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET,
         rlp_senders.data(),
@@ -7114,6 +7439,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_gas_limit_enforcement)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     // This simulation should exceed `total_gas_limit` after cumulative gas
@@ -7155,11 +7482,19 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
 
     auto *executor = create_executor(dbname.string());
 
-    auto *const state_override = monad_state_override_vec_create(1);
-    auto *const block_override = monad_block_override_vec_create(1);
+    auto *const state_override = create_state_override_vec(1);
+    auto *const block_override = create_block_override_vec(1);
     // Add a withdrawal.
-    add_block_override_withdrawal_at(
-        block_override, 0, 0, 0, 100, recipient.bytes, sizeof(recipient.bytes));
+    ASSERT_EQ(
+        add_block_override_withdrawal_at(
+            block_override,
+            0,
+            0,
+            0,
+            100,
+            recipient.bytes,
+            sizeof(recipient.bytes)),
+        MONAD_OVERRIDE_OK);
 
     auto const rlp_senders = to_vec(rlp::encode_list2(
         rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
@@ -7185,7 +7520,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET, // <- Must be configured for Monad.
         rlp_senders.data(),
@@ -7206,6 +7541,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
@@ -7275,25 +7612,29 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
 
     auto *executor = create_executor(dbname.string());
 
-    auto *const state_override = monad_state_override_vec_create(2);
-    auto *const block_override = monad_block_override_vec_create(2);
+    auto *const state_override = create_state_override_vec(2);
+    auto *const block_override = create_block_override_vec(2);
 
     // The state override for the second call.
     bytes32_t const override_key = 0x00_bytes32;
     bytes32_t const override_value =
         0x00000000000000000000000000000000000000000000000000000000000000FF_bytes32;
 
-    add_override_address_at(
-        state_override, 1, contract.bytes, sizeof(contract.bytes));
-    set_override_state_at(
-        state_override,
-        1,
-        contract.bytes,
-        sizeof(contract.bytes),
-        override_key.bytes,
-        sizeof(override_key.bytes),
-        override_value.bytes,
-        sizeof(override_value.bytes));
+    ASSERT_EQ(
+        add_override_address_at(
+            state_override, 1, contract.bytes, sizeof(contract.bytes)),
+        MONAD_OVERRIDE_OK);
+    ASSERT_EQ(
+        set_override_state_at(
+            state_override,
+            1,
+            contract.bytes,
+            sizeof(contract.bytes),
+            override_key.bytes,
+            sizeof(override_key.bytes),
+            override_value.bytes,
+            sizeof(override_value.bytes)),
+        MONAD_OVERRIDE_OK);
 
     auto const rlp_senders = to_vec(rlp::encode_list2(
         rlp::encode_list2(rlp::encode_address(std::make_optional(sender))),
@@ -7322,7 +7663,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
-    monad_executor_eth_simulate_submit(
+    auto const status = monad_executor_eth_simulate_submit(
         executor,
         CHAIN_CONFIG_MONAD_DEVNET, // <- Must be configured for Monad.
         rlp_senders.data(),
@@ -7343,6 +7684,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
         false,
         complete_callback,
         (void *)&ctx);
+
+    ASSERT_EQ(status, MONAD_EXECUTOR_OK);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);

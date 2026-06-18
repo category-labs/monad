@@ -23,121 +23,167 @@ extern "C"
 {
 #endif
 
+typedef enum monad_override_status_code
+{
+    MONAD_OVERRIDE_OK = 0,
+    MONAD_OVERRIDE_EINVAL = 1,
+    MONAD_OVERRIDE_ENOMEM = 2,
+    MONAD_OVERRIDE_EEXIST = 3,
+    MONAD_OVERRIDE_ENOENT = 4,
+    MONAD_OVERRIDE_EUNKNOWN = 5,
+} monad_override_status_code_t;
+
 struct monad_state_override;
 
-struct monad_state_override *monad_state_override_create();
+[[nodiscard]]
+monad_override_status_code_t
+monad_state_override_create(struct monad_state_override **);
 
 void monad_state_override_destroy(struct monad_state_override *);
 
-void add_override_address(
+[[nodiscard]]
+monad_override_status_code_t add_override_address(
     struct monad_state_override *, uint8_t const *addr, size_t addr_len);
 
-void set_override_balance(
+[[nodiscard]]
+monad_override_status_code_t set_override_balance(
     struct monad_state_override *, uint8_t const *addr, size_t addr_len,
     uint8_t const *balance, size_t balance_len);
 
-void set_override_nonce(
+[[nodiscard]]
+monad_override_status_code_t set_override_nonce(
     struct monad_state_override *, uint8_t const *addr, size_t addr_len,
     uint64_t nonce);
 
-void set_override_code(
+[[nodiscard]]
+monad_override_status_code_t set_override_code(
     struct monad_state_override *, uint8_t const *addr, size_t addr_len,
     uint8_t const *code, size_t code_len);
 
-void set_override_state_diff(
+[[nodiscard]]
+monad_override_status_code_t set_override_state_diff(
     struct monad_state_override *, uint8_t const *addr, size_t addr_len,
     uint8_t const *key, size_t key_len, uint8_t const *value, size_t value_len);
 
-void set_override_state(
+[[nodiscard]]
+monad_override_status_code_t set_override_state(
     struct monad_state_override *, uint8_t const *addr, size_t addr_len,
     uint8_t const *key, size_t key_len, uint8_t const *value, size_t value_len);
 
 struct monad_state_override_vec;
 
-struct monad_state_override_vec *monad_state_override_vec_create(size_t size);
+[[nodiscard]]
+monad_override_status_code_t monad_state_override_vec_create(
+    size_t size, struct monad_state_override_vec **);
 
 void monad_state_override_vec_destroy(struct monad_state_override_vec *);
 
-void add_override_address_at(
+[[nodiscard]]
+monad_override_status_code_t add_override_address_at(
     struct monad_state_override_vec *, size_t index, uint8_t const *addr,
     size_t addr_len);
 
-void set_override_balance_at(
+[[nodiscard]]
+monad_override_status_code_t set_override_balance_at(
     struct monad_state_override_vec *, size_t index, uint8_t const *addr,
     size_t addr_len, uint8_t const *balance, size_t balance_len);
 
-void set_override_nonce_at(
+[[nodiscard]]
+monad_override_status_code_t set_override_nonce_at(
     struct monad_state_override_vec *, size_t index, uint8_t const *addr,
     size_t addr_len, uint64_t nonce);
 
-void set_override_code_at(
+[[nodiscard]]
+monad_override_status_code_t set_override_code_at(
     struct monad_state_override_vec *, size_t index, uint8_t const *addr,
     size_t addr_len, uint8_t const *code, size_t code_len);
 
-void set_override_state_diff_at(
+[[nodiscard]]
+monad_override_status_code_t set_override_state_diff_at(
     struct monad_state_override_vec *, size_t index, uint8_t const *addr,
     size_t addr_len, uint8_t const *key, size_t key_len, uint8_t const *value,
     size_t value_len);
 
-void set_override_state_at(
+[[nodiscard]]
+monad_override_status_code_t set_override_state_at(
     struct monad_state_override_vec *, size_t index, uint8_t const *addr,
     size_t addr_len, uint8_t const *key, size_t key_len, uint8_t const *value,
     size_t value_len);
 
 struct monad_block_override;
 
-struct monad_block_override *monad_block_override_create();
+[[nodiscard]]
+monad_override_status_code_t
+monad_block_override_create(struct monad_block_override **);
 
 void monad_block_override_destroy(struct monad_block_override *);
 
-void set_block_override_number(struct monad_block_override *, uint64_t number);
+[[nodiscard]]
+monad_override_status_code_t
+set_block_override_number(struct monad_block_override *, uint64_t number);
 
-void set_block_override_time(struct monad_block_override *, uint64_t time);
+[[nodiscard]]
+monad_override_status_code_t
+set_block_override_time(struct monad_block_override *, uint64_t time);
 
-void set_block_override_gas_limit(
-    struct monad_block_override *, uint64_t gas_limit);
+[[nodiscard]]
+monad_override_status_code_t
+set_block_override_gas_limit(struct monad_block_override *, uint64_t gas_limit);
 
-void set_block_override_fee_recipient(
+[[nodiscard]]
+monad_override_status_code_t set_block_override_fee_recipient(
     struct monad_block_override *, uint8_t const *addr, size_t addr_len);
 
-void set_block_override_prev_randao(
+[[nodiscard]]
+monad_override_status_code_t set_block_override_prev_randao(
     struct monad_block_override *, uint8_t const *randao, size_t randao_len);
 
-void set_block_override_base_fee_per_gas(
+[[nodiscard]]
+monad_override_status_code_t set_block_override_base_fee_per_gas(
     struct monad_block_override *, uint8_t const *fee, size_t fee_len);
 
-void add_block_override_withdrawal(
+[[nodiscard]]
+monad_override_status_code_t add_block_override_withdrawal(
     struct monad_block_override *, uint64_t index, uint64_t validator_index,
     uint64_t amount, uint8_t const *recipient_addr, size_t recipient_addr_len);
 
 struct monad_block_override_vec;
 
-struct monad_block_override_vec *monad_block_override_vec_create(size_t size);
+[[nodiscard]]
+monad_override_status_code_t monad_block_override_vec_create(
+    size_t size, struct monad_block_override_vec **);
 
 void monad_block_override_vec_destroy(struct monad_block_override_vec *);
 
-void set_block_override_number_at(
+[[nodiscard]]
+monad_override_status_code_t set_block_override_number_at(
     struct monad_block_override_vec *, size_t index, uint64_t number);
 
-void set_block_override_time_at(
+[[nodiscard]]
+monad_override_status_code_t set_block_override_time_at(
     struct monad_block_override_vec *, size_t index, uint64_t time);
 
-void set_block_override_gas_limit_at(
+[[nodiscard]]
+monad_override_status_code_t set_block_override_gas_limit_at(
     struct monad_block_override_vec *, size_t index, uint64_t gas_limit);
 
-void set_block_override_fee_recipient_at(
+[[nodiscard]]
+monad_override_status_code_t set_block_override_fee_recipient_at(
     struct monad_block_override_vec *, size_t index, uint8_t const *addr,
     size_t addr_len);
 
-void set_block_override_prev_randao_at(
+[[nodiscard]]
+monad_override_status_code_t set_block_override_prev_randao_at(
     struct monad_block_override_vec *, size_t index, uint8_t const *randao,
     size_t randao_len);
 
-void set_block_override_base_fee_per_gas_at(
+[[nodiscard]]
+monad_override_status_code_t set_block_override_base_fee_per_gas_at(
     struct monad_block_override_vec *, size_t index, uint8_t const *fee,
     size_t fee_len);
 
-void add_block_override_withdrawal_at(
+[[nodiscard]]
+monad_override_status_code_t add_block_override_withdrawal_at(
     struct monad_block_override_vec *, size_t index, uint64_t withdrawal_index,
     uint64_t validator_index, uint64_t amount, uint8_t const *recipient_addr,
     size_t recipient_addr_len);

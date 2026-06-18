@@ -29,6 +29,19 @@ extern "C"
 
 static uint64_t const MONAD_ETH_CALL_LOW_GAS_LIMIT = 8'100'000;
 
+// Return codes for submission routines. Do not rely on the concrete values of
+// these codes, they may change in the future. Only rely on the symbolic names.
+typedef enum monad_executor_status_code
+{
+    MONAD_EXECUTOR_OK = 0,
+    MONAD_EXECUTOR_EINVAL = 1,
+    MONAD_EXECUTOR_ENOMEM = 2,
+    MONAD_EXECUTOR_ERLP_DECODE = 3,
+    MONAD_EXECUTOR_ERLP_TRAILING = 4,
+    MONAD_EXECUTOR_ESIZE_MISMATCH = 5,
+    MONAD_EXECUTOR_EUNKNOWN = 6,
+} monad_executor_status_code_t;
+
 struct monad_executor;
 
 typedef struct monad_executor_result
@@ -90,15 +103,18 @@ struct monad_executor_state
     struct monad_executor_pool_state trace_block_pool_state;
 };
 
-struct monad_executor *monad_executor_create(
+[[nodiscard]]
+monad_executor_status_code_t monad_executor_create(
     struct monad_executor_pool_config low_pool_conf,
     struct monad_executor_pool_config high_pool_conf,
     struct monad_executor_pool_config block_pool_conf,
-    unsigned tx_exec_num_fibers, uint64_t node_lru_max_mem, char const *dbpath);
+    unsigned tx_exec_num_fibers, uint64_t node_lru_max_mem, char const *dbpath,
+    struct monad_executor **);
 
 void monad_executor_destroy(struct monad_executor *);
 
-void monad_executor_eth_call_submit(
+[[nodiscard]]
+monad_executor_status_code_t monad_executor_eth_call_submit(
     struct monad_executor *, enum monad_chain_config, uint8_t const *rlp_txn,
     size_t rlp_txn_len, uint8_t const *rlp_header, size_t rlp_header_len,
     uint8_t const *rlp_sender, size_t rlp_sender_len, uint64_t block_number,
@@ -107,9 +123,12 @@ void monad_executor_eth_call_submit(
     void (*complete)(monad_executor_result *, void *user), void *user,
     enum monad_tracer_config, bool gas_specified);
 
-struct monad_executor_state monad_executor_get_state(struct monad_executor *);
+[[nodiscard]]
+monad_executor_status_code_t monad_executor_get_state(
+    struct monad_executor *, struct monad_executor_state *);
 
-void monad_executor_run_transactions(
+[[nodiscard]]
+monad_executor_status_code_t monad_executor_run_transactions(
     struct monad_executor *, enum monad_chain_config, uint8_t const *rlp_header,
     size_t rlp_header_len, uint64_t block_number, uint8_t const *rlp_block_id,
     size_t rlp_block_id_len, uint8_t const *rlp_parent_block_id,
@@ -120,7 +139,8 @@ void monad_executor_run_transactions(
     void (*complete)(monad_executor_result *, void *user), void *user,
     enum monad_tracer_config);
 
-void monad_executor_eth_simulate_submit(
+[[nodiscard]]
+monad_executor_status_code_t monad_executor_eth_simulate_submit(
     struct monad_executor *, enum monad_chain_config,
     uint8_t const *rlp_senders, size_t rlp_senders_len,
     uint8_t const *rlp_calls, size_t rlp_calls_len, uint64_t block_number,

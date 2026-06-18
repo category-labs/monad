@@ -6901,7 +6901,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
 }
 
 // Submits legacy transactions in an eth_simulateV1 call and checks that they
-// execute successfully.
+// execute successfully when encoded in mixed envelope formats.
 TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
 {
     static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
@@ -6958,6 +6958,124 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
         .max_priority_fee_per_gas = 0,
     };
 
+    auto const encoded_tx0 = rlp::encode_transaction(tx0);
+    auto const encoded_tx1 = rlp::encode_string2(rlp::encode_transaction(tx1));
+    auto const rlp_calls =
+        to_vec(rlp::encode_list2(rlp::encode_list2(encoded_tx0, encoded_tx1)));
+
+    BlockHeader const header{
+        .number = 1,
+        .gas_limit = 400'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        state_overrides,
+        block_overrides,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 1);
+    ASSERT_EQ(output[0]["calls"].size(), 2);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(output[0]["calls"][1]["status"], "0x1");
+
+    auto sender_account = tdb.read_account(sender);
+    ASSERT_TRUE(sender_account.has_value());
+    EXPECT_EQ(
+        sender_account->balance,
+        uint256_t{100} * uint256_t{1'000'000'000'000'000'000ULL});
+
+    monad_block_override_vec_destroy(block_overrides);
+    monad_state_override_vec_destroy(state_overrides);
+    monad_executor_destroy(executor);
+}
+
+// Submits mixed typed transactions in an eth_simulateV1 call and checks that
+// type-1 (EIP-2930) and type-2 (EIP-1559) both execute successfully.
+TEST_F(EthCallFixture, eth_simulate_v1_typed_transactions_2930_and_1559)
+{
+    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+
+    commit_sequential(
+        tdb,
+        sd(StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{100} * WEI_PER_MON,
+                          .nonce = 0}}}},
+            {recipient,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 0, .nonce = 0}}}}}),
+        {},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, sd({}), {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    auto *const state_overrides = monad_state_override_vec_create(1);
+    auto *const block_overrides = monad_block_override_vec_create(1);
+
+    auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(rlp::encode_list2(encoded_sender, encoded_sender)));
+
+    Transaction const tx0{
+        .max_fee_per_gas = 1,
+        .gas_limit = 200'000'000,
+        .value = uint256_t{1'000},
+        .to = recipient,
+        .type = TransactionType::eip2930,
+    };
+    Transaction const tx1{
+        .max_fee_per_gas = 1,
+        .gas_limit = 200'000'000,
+        .value = uint256_t{2'000},
+        .to = recipient,
+        .type = TransactionType::eip1559,
+        .max_priority_fee_per_gas = 0,
+    };
+
     auto const encoded_tx0 = rlp::encode_string2(rlp::encode_transaction(tx0));
     auto const encoded_tx1 = rlp::encode_string2(rlp::encode_transaction(tx1));
     auto const rlp_calls =
@@ -7007,6 +7125,412 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
     ASSERT_EQ(output[0]["calls"].size(), 2);
     EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
     EXPECT_EQ(output[0]["calls"][1]["status"], "0x1");
+
+    auto sender_account = tdb.read_account(sender);
+    ASSERT_TRUE(sender_account.has_value());
+    EXPECT_EQ(
+        sender_account->balance,
+        uint256_t{100} * uint256_t{1'000'000'000'000'000'000ULL});
+
+    monad_block_override_vec_destroy(block_overrides);
+    monad_state_override_vec_destroy(state_overrides);
+    monad_executor_destroy(executor);
+}
+
+// Submits an EIP-7702 encoded transaction in an eth_simulateV1 call and
+// checks that it executes successfully.
+TEST_F(EthCallFixture, eth_simulate_v1_typed_transaction_7702)
+{
+    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+
+    commit_sequential(
+        tdb,
+        sd(StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{100} * WEI_PER_MON,
+                          .nonce = 0}}}},
+            {recipient,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 0, .nonce = 0}}}}}),
+        {},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, sd({}), {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    auto *const state_overrides = monad_state_override_vec_create(1);
+    auto *const block_overrides = monad_block_override_vec_create(1);
+
+    auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders =
+        to_vec(rlp::encode_list2(rlp::encode_list2(encoded_sender)));
+
+    AuthorizationEntry const auth_for_sender{
+        .sc =
+            {
+                .r = from_string<uint256_t>(
+                    "200243422738954192737895577305537705175585899164895777"
+                    "58020700015851504969560"),
+                .s = from_string<uint256_t>(
+                    "530584326759386138899955455622746682303141934549216843"
+                    "63060655866328293077815"),
+                .chain_id = uint256_t{20143},
+                .y_parity = 0,
+            },
+        .address = 0xdeadbeef00000000000000000000000000000000_address,
+        .nonce = 0,
+    };
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 200'000'000,
+        .value = uint256_t{1'000},
+        .to = recipient,
+        .type = TransactionType::eip7702,
+        .max_priority_fee_per_gas = 0,
+        .authorization_list = {auth_for_sender},
+    };
+
+    auto const encoded_tx = rlp::encode_string2(rlp::encode_transaction(tx));
+    auto const rlp_calls =
+        to_vec(rlp::encode_list2(rlp::encode_list2(encoded_tx)));
+
+    BlockHeader const header{
+        .number = 1,
+        .gas_limit = 200'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        state_overrides,
+        block_overrides,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 1);
+    ASSERT_EQ(output[0]["calls"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+
+    auto sender_account = tdb.read_account(sender);
+    ASSERT_TRUE(sender_account.has_value());
+    EXPECT_EQ(
+        sender_account->balance,
+        uint256_t{100} * uint256_t{1'000'000'000'000'000'000ULL});
+
+    monad_block_override_vec_destroy(block_overrides);
+    monad_state_override_vec_destroy(state_overrides);
+    monad_executor_destroy(executor);
+}
+
+// Submits one simulated block containing one transaction in each currently
+// supported format: legacy, EIP-2930, EIP-1559, and EIP-7702.
+TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
+{
+    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+
+    commit_sequential(
+        tdb,
+        sd(StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{100} * WEI_PER_MON,
+                          .nonce = 0}}}},
+            {recipient,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 0, .nonce = 0}}}}}),
+        {},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, sd({}), {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    auto *const state_overrides = monad_state_override_vec_create(1);
+    auto *const block_overrides = monad_block_override_vec_create(1);
+
+    auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(rlp::encode_list2(
+        encoded_sender, encoded_sender, encoded_sender, encoded_sender)));
+
+    AuthorizationEntry const auth_for_sender{
+        .sc =
+            {
+                .r = from_string<uint256_t>(
+                    "200243422738954192737895577305537705175585899164895777"
+                    "58020700015851504969560"),
+                .s = from_string<uint256_t>(
+                    "530584326759386138899955455622746682303141934549216843"
+                    "63060655866328293077815"),
+                .chain_id = uint256_t{20143},
+                .y_parity = 0,
+            },
+        .address = 0xdeadbeef00000000000000000000000000000000_address,
+        .nonce = 0,
+    };
+
+    Transaction const tx_legacy{
+        .max_fee_per_gas = 1,
+        .gas_limit = 200'000'000,
+        .value = uint256_t{1'000},
+        .to = recipient,
+        .type = TransactionType::legacy,
+        .max_priority_fee_per_gas = 0,
+    };
+    Transaction const tx_2930{
+        .max_fee_per_gas = 1,
+        .gas_limit = 200'000'000,
+        .value = uint256_t{2'000},
+        .to = recipient,
+        .type = TransactionType::eip2930,
+    };
+    Transaction const tx_1559{
+        .max_fee_per_gas = 1,
+        .gas_limit = 200'000'000,
+        .value = uint256_t{3'000},
+        .to = recipient,
+        .type = TransactionType::eip1559,
+        .max_priority_fee_per_gas = 0,
+    };
+    Transaction const tx_7702{
+        .max_fee_per_gas = 1,
+        .gas_limit = 200'000'000,
+        .value = uint256_t{4'000},
+        .to = recipient,
+        .type = TransactionType::eip7702,
+        .max_priority_fee_per_gas = 0,
+        .authorization_list = {auth_for_sender},
+    };
+
+    auto const encoded_tx_legacy = rlp::encode_transaction(tx_legacy);
+    auto const encoded_tx_2930 =
+        rlp::encode_string2(rlp::encode_transaction(tx_2930));
+    auto const encoded_tx_1559 =
+        rlp::encode_string2(rlp::encode_transaction(tx_1559));
+    auto const encoded_tx_7702 =
+        rlp::encode_string2(rlp::encode_transaction(tx_7702));
+    auto const rlp_calls = to_vec(rlp::encode_list2(rlp::encode_list2(
+        encoded_tx_legacy, encoded_tx_2930, encoded_tx_1559, encoded_tx_7702)));
+
+    BlockHeader const header{
+        .number = 1,
+        .gas_limit = 800'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        state_overrides,
+        block_overrides,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 1);
+    ASSERT_EQ(output[0]["calls"].size(), 4);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(output[0]["calls"][1]["status"], "0x1");
+    EXPECT_EQ(output[0]["calls"][2]["status"], "0x1");
+    EXPECT_EQ(output[0]["calls"][3]["status"], "0x1");
+
+    auto sender_account = tdb.read_account(sender);
+    ASSERT_TRUE(sender_account.has_value());
+    EXPECT_EQ(
+        sender_account->balance,
+        uint256_t{100} * uint256_t{1'000'000'000'000'000'000ULL});
+
+    monad_block_override_vec_destroy(block_overrides);
+    monad_state_override_vec_destroy(state_overrides);
+    monad_executor_destroy(executor);
+}
+
+// Submits mixed typed transactions in an eth_simulateV1 call across two
+// simulated blocks and checks that type-1 and type-2 both execute
+// successfully.
+TEST_F(
+    EthCallFixture,
+    eth_simulate_v1_typed_transactions_2930_and_1559_across_blocks)
+{
+    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+
+    commit_sequential(
+        tdb,
+        sd(StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{100} * WEI_PER_MON,
+                          .nonce = 0}}}},
+            {recipient,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 0, .nonce = 0}}}}}),
+        {},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, sd({}), {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    auto *const state_overrides = monad_state_override_vec_create(2);
+    auto *const block_overrides = monad_block_override_vec_create(2);
+
+    auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(encoded_sender), rlp::encode_list2(encoded_sender)));
+
+    Transaction const tx0{
+        .max_fee_per_gas = 1,
+        .gas_limit = 200'000'000,
+        .value = uint256_t{1'000},
+        .to = recipient,
+        .type = TransactionType::eip2930,
+    };
+    Transaction const tx1{
+        .max_fee_per_gas = 1,
+        .gas_limit = 200'000'000,
+        .value = uint256_t{2'000},
+        .to = recipient,
+        .type = TransactionType::eip1559,
+        .max_priority_fee_per_gas = 0,
+    };
+
+    auto const encoded_tx0 = rlp::encode_string2(rlp::encode_transaction(tx0));
+    auto const encoded_tx1 = rlp::encode_string2(rlp::encode_transaction(tx1));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(encoded_tx0), rlp::encode_list2(encoded_tx1)));
+
+    BlockHeader const header{
+        .number = 1,
+        .gas_limit = 200'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        state_overrides,
+        block_overrides,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 2);
+    ASSERT_EQ(output[0]["calls"].size(), 1);
+    ASSERT_EQ(output[1]["calls"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(output[1]["calls"][0]["status"], "0x1");
 
     auto sender_account = tdb.read_account(sender);
     ASSERT_TRUE(sender_account.has_value());
@@ -7352,4 +7876,73 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
     monad_block_override_vec_destroy(block_override);
     monad_state_override_vec_destroy(state_override);
     monad_executor_destroy(executor);
+}
+
+// Regression test: a transaction whose RLP string wrapper contains trailing
+// bytes after the encoded transaction payload causes
+// decode_eth_simulate_transaction to return `InputTooLong`.
+// monad_executor_eth_simulate_submit asserts that decoding succeeds, so
+// passing such input must trigger that assertion.
+TEST_F(EthCallFixture, eth_simulate_v1_transaction_input_too_long_causes_death)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+
+    auto *const state_override = monad_state_override_vec_create(1);
+    auto *const block_override = monad_block_override_vec_create(1);
+
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+
+    // Encode a valid legacy transaction wrapped as an RLP string, then append
+    // one trailing byte inside the string payload. When
+    // decode_eth_simulate_transaction decodes the transaction, it consumes the
+    // transaction bytes but finds one byte still remaining in tx_payload,
+    // which causes it to return `InputTooLong`.
+    Transaction const tx{
+        .gas_limit = 21'000,
+        .to = sender,
+    };
+    auto encoded_tx_with_trailing = rlp::encode_transaction(tx);
+    encoded_tx_with_trailing.push_back(0x00);
+    auto const rlp_calls = to_vec(rlp::encode_list2(rlp::encode_list2(
+        rlp::encode_string2(byte_string_view(encoded_tx_with_trailing)))));
+
+    BlockHeader const header{.number = 1, .gas_limit = 21'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    // NOTE(dhil): This trick is a bit naughty. We expect to trigger a
+    // MONAD_ASSERT, which fires before the executor pointer is ever
+    // dereferenced, therefore it suffices to pass a non-null sentinel.
+    auto *const sentinel_executor =
+        reinterpret_cast<struct monad_executor *>(uintptr_t{1});
+
+    EXPECT_DEATH(
+        monad_executor_eth_simulate_submit(
+            sentinel_executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            1,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            simulate_gas_limit,
+            simulate_max_calls,
+            state_override,
+            block_override,
+            false,
+            nullptr,
+            nullptr),
+        "maybe_txns\\.has_value\\(\\)"); // Pattern match on the expected
+                                         // assertion failure message.
+
+    monad_block_override_vec_destroy(block_override);
+    monad_state_override_vec_destroy(state_override);
 }

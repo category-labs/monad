@@ -30,6 +30,7 @@
 #include <category/core/log.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
+#include <category/core/rlp/decode_error.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
@@ -2202,7 +2203,30 @@ namespace
     using decoder_value_t = typename decltype(Decoder(
         std::declval<byte_string_view &>()))::value_type;
 
-    template <auto Decoder, bool explicit_parse_string>
+    Result<Transaction> decode_eth_simulate_transaction(byte_string_view &input)
+    {
+        if (MONAD_UNLIKELY(input.empty())) {
+            return rlp::DecodeError::InputTooShort;
+        }
+
+        // Legacy transactions may be encoded directly as an RLP list item.
+        if (input[0] >= 0xc0) {
+            return rlp::decode_transaction(input);
+        }
+
+        // Typed transactions are RLP strings that wrap the raw envelope. We
+        // also accept legacy envelopes wrapped as RLP strings for compatibility
+        // with existing callers.
+        BOOST_OUTCOME_TRY(auto tx_payload, rlp::parse_string_metadata(input));
+        BOOST_OUTCOME_TRY(auto tx, rlp::decode_transaction(tx_payload));
+        if (MONAD_UNLIKELY(!tx_payload.empty())) {
+            return rlp::DecodeError::InputTooLong;
+        }
+
+        return tx;
+    }
+
+    template <auto Decoder>
     auto decode_nested_items(byte_string_view &input)
         -> Result<std::vector<std::vector<decoder_value_t<Decoder>>>>
     {
@@ -2216,20 +2240,9 @@ namespace
             BOOST_OUTCOME_TRY(
                 auto inner_payload, rlp::parse_list_metadata(outer_payload));
 
-            if constexpr (explicit_parse_string) {
-                while (!inner_payload.empty()) {
-                    BOOST_OUTCOME_TRY(
-                        auto item_payload,
-                        rlp::parse_string_metadata(inner_payload));
-                    BOOST_OUTCOME_TRY(Item const item, Decoder(item_payload));
-                    ret.back().emplace_back(std::move(item));
-                }
-            }
-            else {
-                while (!inner_payload.empty()) {
-                    BOOST_OUTCOME_TRY(Item const item, Decoder(inner_payload));
-                    ret.back().emplace_back(std::move(item));
-                }
+            while (!inner_payload.empty()) {
+                BOOST_OUTCOME_TRY(Item item, Decoder(inner_payload)); // NOLINT
+                ret.back().emplace_back(std::move(item));
             }
         }
 
@@ -2263,13 +2276,13 @@ void monad_executor_eth_simulate_submit(
 
     byte_string_view rlp_senders_view{rlp_senders, rlp_senders_len};
     auto const maybe_senders =
-        decode_nested_items<rlp::decode_address, false>(rlp_senders_view);
+        decode_nested_items<rlp::decode_address>(rlp_senders_view);
     MONAD_ASSERT(maybe_senders.has_value());
     auto const &senders = maybe_senders.assume_value();
 
     byte_string_view rlp_calls_view{rlp_calls, rlp_calls_len};
     auto const maybe_txns =
-        decode_nested_items<rlp::decode_transaction, true>(rlp_calls_view);
+        decode_nested_items<decode_eth_simulate_transaction>(rlp_calls_view);
     MONAD_ASSERT(maybe_txns.has_value());
     auto const &txns = maybe_txns.assume_value();
 

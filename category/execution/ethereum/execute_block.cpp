@@ -21,6 +21,7 @@
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/core/synchronization/promise.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
@@ -278,7 +279,8 @@ Result<std::vector<Receipt>> execute_block_transactions(
 
     std::vector<Receipt> retvals;
     for (unsigned i = 0; i < transactions.size(); ++i) {
-        MONAD_ASSERT(results[i].has_value());
+        MONAD_ASSERT_THROW(
+            results[i].has_value(), "missing transaction result");
         if (MONAD_UNLIKELY(results[i].value().has_error())) {
             LOG_ERROR(
                 "tx {} {} validation failed: {}",

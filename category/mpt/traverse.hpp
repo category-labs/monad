@@ -77,7 +77,7 @@ namespace detail
     inline bool preorder_traverse_blocking_impl(
         UpdateAux &aux, unsigned char const branch, Node const &node,
         TraverseMachine &traverse, uint64_t const version,
-        ChildrenVisitRange &children_of)
+        ChildrenVisitRange &children_of, timeline_id const tid)
     {
         ++traverse.level;
         if (!traverse.down(branch, node)) {
@@ -95,7 +95,8 @@ namespace detail
                             *next,
                             traverse,
                             version,
-                            children_of)) {
+                            children_of,
+                            tid)) {
                         --traverse.level;
                         traverse.up(branch, node);
                         return false;
@@ -103,15 +104,16 @@ namespace detail
                     continue;
                 }
                 MONAD_ASSERT(aux.is_on_disk());
-                auto const next_node_ondisk = read_node_blocking(
-                    aux, node.fnext(idx), version, timeline_id::primary);
+                auto const next_node_ondisk =
+                    read_node_blocking(aux, node.fnext(idx), version, tid);
                 if (!next_node_ondisk || !preorder_traverse_blocking_impl(
                                              aux,
                                              next_branch,
                                              *next_node_ondisk,
                                              traverse,
                                              version,
-                                             children_of)) {
+                                             children_of,
+                                             tid)) {
                     --traverse.level;
                     traverse.up(branch, node);
                     return false;
@@ -181,7 +183,7 @@ namespace detail
                 --sender->outstanding_reads;
                 if (sender->version_expired_before_complete ||
                     !sender->aux.metadata_ctx().version_is_valid_ondisk(
-                        sender->version)) {
+                        sender->version, sender->tid)) {
                     // async read failure or stopping initiated
                     sender->version_expired_before_complete = true;
                     sender->reads_to_initiate.clear();
@@ -223,6 +225,7 @@ namespace detail
         Node::SharedPtr traverse_root;
         std::unique_ptr<TraverseMachine> machine;
         uint64_t const version;
+        timeline_id const tid;
         size_t const max_outstanding_reads;
         size_t outstanding_reads{0};
         size_t within_recursion_count{0};
@@ -235,11 +238,12 @@ namespace detail
         TraverseSender(
             UpdateAux &aux, Node::SharedPtr traverse_root,
             std::unique_ptr<TraverseMachine> machine, uint64_t const version,
-            size_t const concurrency_limit)
+            timeline_id const tid, size_t const concurrency_limit)
             : aux(aux)
             , traverse_root(std::move(traverse_root))
             , machine(std::move(machine))
             , version(version)
+            , tid(tid)
             , max_outstanding_reads(concurrency_limit)
         {
         }
@@ -333,7 +337,7 @@ namespace detail
                     MONAD_ASSERT(sender.aux.is_on_disk());
                     // verify version before read
                     if (!sender.aux.metadata_ctx().version_is_valid_ondisk(
-                            sender.version)) {
+                            sender.version, sender.tid)) {
                         sender.version_expired_before_complete = true;
                         sender.reads_to_initiate.clear();
                         sender.reads_to_initiate_sidx = 0;
@@ -394,17 +398,19 @@ namespace detail
 template <class ChildrenVisitRange = detail::DefaultChildrenVisitRange>
 inline bool preorder_traverse_blocking(
     UpdateAux &aux, Node const &node, TraverseMachine &traverse,
-    uint64_t const version, ChildrenVisitRange children_of = {})
+    uint64_t const version, timeline_id const tid = timeline_id::primary,
+    ChildrenVisitRange children_of = {})
 {
     auto const ret = detail::preorder_traverse_blocking_impl(
-        aux, INVALID_BRANCH, node, traverse, version, children_of);
+        aux, INVALID_BRANCH, node, traverse, version, children_of, tid);
     MONAD_ASSERT(traverse.level == 0);
     return ret;
 }
 
 inline bool preorder_traverse_ondisk(
     UpdateAux &aux, Node::SharedPtr node, TraverseMachine &machine,
-    uint64_t const version, size_t const concurrency_limit = 4096)
+    uint64_t const version, timeline_id const tid = timeline_id::primary,
+    size_t const concurrency_limit = 4096)
 {
     MONAD_ASSERT(aux.is_on_disk());
 
@@ -434,7 +440,12 @@ inline bool preorder_traverse_ondisk(
 
     auto *const state = new auto(async::connect(
         detail::TraverseSender(
-            aux, std::move(node), machine.clone(), version, concurrency_limit),
+            aux,
+            std::move(node),
+            machine.clone(),
+            version,
+            tid,
+            concurrency_limit),
         TraverseReceiver{version_expired_before_traverse_complete}));
     state->initiate();
 

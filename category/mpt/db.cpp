@@ -239,7 +239,7 @@ public:
         size_t const concurrency_limit) override
     {
         return preorder_traverse_ondisk(
-            aux(), std::move(node), machine, version, concurrency_limit);
+            aux(), std::move(node), machine, version, tid_, concurrency_limit);
     }
 
     virtual Node::SharedPtr
@@ -382,6 +382,7 @@ public:
         std::reference_wrapper<TraverseMachine> machine;
         uint64_t version;
         size_t concurrency_limit;
+        timeline_id tid{timeline_id::primary};
     };
 
     struct MoveSubtrieRequest
@@ -487,12 +488,13 @@ private:
                              req != nullptr) {
                         // verify version is valid
                         if (aux.metadata_ctx().version_is_valid_ondisk(
-                                req->version)) {
+                                req->version, req->tid)) {
                             req->promise.set_value(preorder_traverse_ondisk(
                                 aux,
                                 std::move(req->root),
                                 req->machine,
                                 req->version,
+                                req->tid,
                                 req->concurrency_limit));
                         }
                         else {
@@ -562,12 +564,13 @@ private:
                              req != nullptr) {
                         // verify version is valid
                         if (aux.metadata_ctx().version_is_valid_ondisk(
-                                req->version)) {
+                                req->version, req->tid)) {
                             req->promise.set_value(preorder_traverse_ondisk(
                                 aux,
                                 std::move(req->root),
                                 req->machine,
                                 req->version,
+                                req->tid,
                                 req->concurrency_limit));
                         }
                         else {
@@ -863,7 +866,8 @@ public:
             .root = std::move(node),
             .machine = machine,
             .version = version,
-            .concurrency_limit = concurrency_limit});
+            .concurrency_limit = concurrency_limit,
+            .tid = tid_});
         return fut.get();
     }
 
@@ -1171,9 +1175,6 @@ bool Db::traverse(
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(cursor.is_valid());
-    // traverse validates versions against the primary timeline only;
-    // secondary-timeline traverse is not yet supported.
-    MONAD_ASSERT(impl_->tid() == timeline_id::primary);
     return impl_->traverse_fiber_blocking(
         cursor.node, machine, block_id, concurrency_limit);
 }
@@ -1183,9 +1184,8 @@ bool Db::traverse_blocking(
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(cursor.is_valid());
-    MONAD_ASSERT(impl_->tid() == timeline_id::primary);
     return preorder_traverse_blocking(
-        impl_->aux(), *cursor.node, machine, block_id);
+        impl_->aux(), *cursor.node, machine, block_id, impl_->tid());
 }
 
 void Db::update_finalized_version(uint64_t const version)

@@ -83,7 +83,7 @@ public:
 
     virtual void commit(
         bytes32_t const &block_id, CommitBuilder &builder,
-        BlockHeader const &header, std::unique_ptr<StateDeltas> state_deltas,
+        BlockHeader const &header, StateDeltas const &state_deltas,
         std::function<void(BlockHeader &)> populate_header_fn) override;
 
     virtual void

@@ -218,7 +218,7 @@ TEST(BlockHashBufferTest, init_from_db)
 
     BlockHashBufferFinalized expected;
     for (uint64_t i = 0; i < 256; ++i) {
-        commit_sequential(tdb, sd({}), {}, BlockHeader{.number = i});
+        commit_sequential(tdb, StateDeltas({}), {}, BlockHeader{.number = i});
         expected.set(
             i,
             to_bytes(

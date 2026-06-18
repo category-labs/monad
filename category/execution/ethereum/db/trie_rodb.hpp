@@ -141,8 +141,7 @@ public:
 
     virtual void commit(
         bytes32_t const &, CommitBuilder &, BlockHeader const &,
-        std::unique_ptr<StateDeltas>,
-        std::function<void(BlockHeader &)>) override
+        StateDeltas const &, std::function<void(BlockHeader &)>) override
     {
         MONAD_ABORT();
     }

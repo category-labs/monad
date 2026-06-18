@@ -68,22 +68,13 @@ void commit_block(
         h.ommers_hash = compute_ommers_hash(anc.ommers);
     };
 
-    // TODO: Db::commit currently takes std::unique_ptr<StateDeltas> by value,
-    // so each commit below wraps `state` in a fresh make_unique copy. Once the
-    // commit API is changed to take StateDeltas by reference, drop these copies
-    // and pass `state` directly.
     if (secondary_db == nullptr) {
         MONAD_ASSERT(primary_db.is_page_encoded() == traits::mip_8_active());
         auto builder = make_commit_builder(header.number, primary_db);
         builder->add_state_deltas(state);
         add_common_deltas(*builder);
         canonical_db = &primary_db;
-        primary_db.commit(
-            block_id,
-            *builder,
-            header,
-            std::make_unique<StateDeltas>(state),
-            populate_header);
+        primary_db.commit(block_id, *builder, header, state, populate_header);
         return;
     }
 
@@ -108,32 +99,14 @@ void commit_block(
     bool const primary_is_canonical = !traits::mip_8_active();
     canonical_db = primary_is_canonical ? &primary_db : secondary_db;
     if (primary_is_canonical) {
-        primary_db.commit(
-            block_id,
-            *builder,
-            header,
-            std::make_unique<StateDeltas>(state),
-            populate_header);
+        primary_db.commit(block_id, *builder, header, state, populate_header);
         secondary_db->commit(
-            block_id,
-            *builder2,
-            header,
-            std::make_unique<StateDeltas>(state),
-            populate_header);
+            block_id, *builder2, header, state, populate_header);
     }
     else {
         secondary_db->commit(
-            block_id,
-            *builder2,
-            header,
-            std::make_unique<StateDeltas>(state),
-            populate_header);
-        primary_db.commit(
-            block_id,
-            *builder,
-            header,
-            std::make_unique<StateDeltas>(state),
-            populate_header);
+            block_id, *builder2, header, state, populate_header);
+        primary_db.commit(block_id, *builder, header, state, populate_header);
     }
 }
 

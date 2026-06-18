@@ -821,15 +821,13 @@ void PartialTrieDb::set_block_and_prefix(
 
 void PartialTrieDb::commit(
     bytes32_t const &, CommitBuilder &, BlockHeader const &header,
-    std::unique_ptr<StateDeltas> deltas,
+    StateDeltas const &deltas,
     std::function<void(BlockHeader &)> populate_header_fn)
 {
-    MONAD_ASSERT(deltas);
-
     block_number_ = header.number;
 
     // Pass 1: inserts and updates (accounts that exist in post-state)
-    for (auto const &[addr, delta] : *deltas) {
+    for (auto const &[addr, delta] : deltas) {
         auto const &new_account = delta.account.second;
         if (!new_account) {
             continue;
@@ -871,7 +869,7 @@ void PartialTrieDb::commit(
     }
 
     // Pass 2: deletions (accounts removed in post-state)
-    for (auto const &[addr, delta] : *deltas) {
+    for (auto const &[addr, delta] : deltas) {
         if (delta.account.second) {
             continue;
         }

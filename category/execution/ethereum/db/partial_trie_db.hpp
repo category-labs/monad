@@ -187,8 +187,7 @@ public:
 
     void commit(
         bytes32_t const &block_id, CommitBuilder &, BlockHeader const &,
-        std::unique_ptr<StateDeltas>,
-        std::function<void(BlockHeader &)>) override;
+        StateDeltas const &, std::function<void(BlockHeader &)>) override;
 
     // No-op overrides for operations that are irrelevant in the witness
     // context.

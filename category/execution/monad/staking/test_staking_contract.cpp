@@ -121,7 +121,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     {
         commit_sequential(
             tdb,
-            sd(
+            StateDeltas(
                 {{STAKING_CA,
                   StateDelta{
                       .account =

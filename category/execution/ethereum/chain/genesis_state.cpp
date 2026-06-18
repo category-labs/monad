@@ -104,7 +104,7 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
         NULL_HASH_BLAKE3,
         *builder,
         genesis.header,
-        std::make_unique<StateDeltas>(std::move(deltas)),
+        deltas,
         [&](BlockHeader &h) {
             h.receipts_root = db.receipts_root();
             h.state_root = db.state_root();

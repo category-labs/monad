@@ -44,7 +44,7 @@ constexpr auto c{0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address};
 
 TYPED_TEST(TraitsTest, apply_block_reward)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_CONSTANTINOPLE);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_PETERSBURG);
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};

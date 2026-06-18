@@ -16,10 +16,19 @@
 #pragma once
 
 #include <category/core/assert.h>
-#include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 
 #include <atomic>
+
+// We forward declare `Nativecode` here to avoid including
+// <category/vm/compiler/ir/x86/types.hpp> (which transitively includes
+// <asmjit/x86.h>) since most of the reference and construction sites only need
+// this declaration. This enables the zkVM build (which has no JIT compiler) to
+// compile code.hpp on RISC-V.
+namespace monad::vm::compiler::native
+{
+    class Nativecode;
+}
 
 namespace monad::vm
 {

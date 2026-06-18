@@ -30,7 +30,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     void selfdestruct [[noreturn]] (Context *ctx, uint256_t const *address_ptr)
     {
-        static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
+        static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);

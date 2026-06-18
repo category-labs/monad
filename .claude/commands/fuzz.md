@@ -16,7 +16,7 @@ You are running fuzzers for the monad C++ project located at $CWD.
 
 ### Build requirements
 
-The compiler fuzzer requires `MONAD_COMPILER_TESTING=ON` at configure time and `third_party/evmone` (see `/build` for evmone setup instructions). The staking contract fuzzer is always built with no special options.
+The compiler fuzzer requires `MONAD_COMPILER_TESTING=ON` at configure time and initialized submodules, including `third_party/evmone` (`git submodule update --init --recursive`). The staking contract fuzzer is always built with no special options.
 
 If the fuzzer binaries don't exist, offer to reconfigure. The CI fuzzing configuration is:
 ```bash

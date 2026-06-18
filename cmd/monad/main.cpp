@@ -133,6 +133,7 @@ try {
     std::chrono::seconds block_db_timeout = std::chrono::seconds::zero();
     std::string exec_event_ring_config;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
+    bool disable_sq_thread_cpu = false;
     std::optional<unsigned> ro_sq_thread_cpu;
     std::vector<fs::path> dbname_paths;
     fs::path snapshot;
@@ -164,6 +165,11 @@ try {
         sq_thread_cpu,
         "sq_thread_cpu field in io_uring_params, to specify the cpu set "
         "kernel poll thread is bound to in SQPOLL mode");
+    cli.add_flag(
+        "--disable-sq-thread-cpu,--disable_sq_thread_cpu",
+        disable_sq_thread_cpu,
+        "disable SQPOLL for the rw db (skip the kernel io_uring poll "
+        "thread); --sq-thread-cpu is ignored when set");
     cli.add_option(
         "--ro-sq-thread-cpu,--ro_sq_thread_cpu",
         ro_sq_thread_cpu,
@@ -281,7 +287,10 @@ try {
                     .rd_buffers = 8192,
                     .wr_buffers = 32,
                     .uring_entries = 128,
-                    .sq_thread_cpu = sq_thread_cpu,
+                    .sq_thread_cpu =
+                        disable_sq_thread_cpu
+                            ? std::optional<unsigned>{}
+                            : std::optional<unsigned>{sq_thread_cpu},
                     .dbname_paths = dbname_paths}};
         }
         return mpt::Db{std::make_unique<InMemoryMachine>()};

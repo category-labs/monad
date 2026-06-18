@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
@@ -22,6 +21,7 @@
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
+#include <category/core/synchronization/promise.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
@@ -53,7 +53,7 @@ template <Traits traits>
 ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &header, BlockState &block_state,
-    BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
+    BlockMetrics &block_metrics, Promise const prev,
     CallTracerBase &call_tracer, trace::StateTracer &state_tracer)
     : chain_{chain}
     , i_{i}
@@ -78,7 +78,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
         auto system_validation_result =
             static_validate_system_transaction<traits>(tx_, sender_);
         if (system_validation_result.has_error()) {
-            prev_.get_future().wait();
+            prev_.wait();
             return std::move(system_validation_result).as_failure();
         }
         Transaction tx = tx_;
@@ -90,7 +90,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
             std::nullopt /* 0 blob fee to pass validation */,
             chain_.get_chain_id());
         if (tx_validation_result.has_error()) {
-            prev_.get_future().wait();
+            prev_.wait();
             return std::move(tx_validation_result).as_failure();
         }
     }
@@ -108,7 +108,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 
         {
             TRACE_TXN_EVENT(StartStall);
-            prev_.get_future().wait();
+            prev_.wait();
         }
 
         if (block_state_.can_merge(state)) {

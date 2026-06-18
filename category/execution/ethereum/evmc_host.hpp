@@ -93,9 +93,6 @@ public:
         evmc::address const &, uint8_t const *data, size_t data_size,
         evmc::bytes32 const topics[], size_t num_topics) noexcept override;
 
-    virtual evmc_access_status access_storage(
-        evmc::address const &, evmc::bytes32 const &key) noexcept override;
-
     virtual evmc::bytes32 get_transient_storage(
         evmc::address const &,
         evmc::bytes32 const &key) const noexcept override;
@@ -103,6 +100,10 @@ public:
     virtual void set_transient_storage(
         evmc::address const &, evmc::bytes32 const &key,
         evmc::bytes32 const &value) noexcept override;
+
+    virtual PageStorageStatus update_page(
+        evmc::address const &, evmc::bytes32 const &page_key,
+        evmc_storage_status) noexcept override;
 };
 
 static_assert(sizeof(EvmcHostBase) == 72);
@@ -134,7 +135,7 @@ struct EvmcHost final : public EvmcHostBase
     virtual bool
     account_exists(evmc::address const &address) const noexcept override
     {
-        static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
+        static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
         try {
             return !state_.account_is_dead(address);
@@ -202,6 +203,19 @@ struct EvmcHost final : public EvmcHostBase
                 return EVMC_ACCESS_WARM;
             }
             return state_.access_account(address);
+        }
+        catch (...) {
+            capture_current_exception();
+        }
+        stack_unwind();
+    }
+
+    virtual evmc_access_status access_storage(
+        evmc::address const &address,
+        evmc::bytes32 const &key) noexcept override
+    {
+        try {
+            return state_.access_storage<traits>(address, key);
         }
         catch (...) {
             capture_current_exception();

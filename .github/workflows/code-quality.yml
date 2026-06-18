@@ -23,7 +23,7 @@ concurrency:
 jobs:
   formatting-check:
     name: Check clang-format
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     env:
       LLVM_VERSION: '19'
     steps:
@@ -32,8 +32,6 @@ jobs:
             submodules: false
       - name: Install clang-format-${{ env.LLVM_VERSION }}
         run: |
-          wget https://apt.llvm.org/llvm.sh
-          sudo bash llvm.sh ${{ env.LLVM_VERSION }}
           sudo apt install -y clang-format-${{ env.LLVM_VERSION }}
       - name: Run clang-format check
         run: |
@@ -41,7 +39,7 @@ jobs:
 
   traits-check:
       name: Trait instantiation check
-      runs-on: ubuntu-24.04
+      runs-on: ubuntu-26.04
       steps:
           - uses: actions/checkout@v4
             with:
@@ -58,7 +56,7 @@ jobs:
 
   clang-tidy:
     name: Check clang-tidy
-    runs-on: ubuntu-24.04-32
+    runs-on: ubuntu-26.04-32
     steps:
         - name: Tell git to do submodules in parallel
           run: |

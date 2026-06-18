@@ -63,7 +63,7 @@ namespace monad::vm::runtime
         evmc_call_kind const call_kind, bool const static_call,
         int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
+        static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
         ctx->env.clear_return_data();
 
@@ -277,7 +277,7 @@ namespace monad::vm::runtime
         uint256_t const *args_size_ptr, uint256_t const *ret_offset_ptr,
         uint256_t const *ret_size_ptr, int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() > MONAD_ETH_BYZANTIUM);
+        static_assert(traits::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
 
         *result_ptr = call_impl<traits>(
             ctx,

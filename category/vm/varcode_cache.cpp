@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/varcode_cache.hpp>
 
 #include <cstdint>
@@ -52,8 +53,10 @@ namespace monad::vm
     {
         MONAD_ASSERT(icode != nullptr);
         MONAD_ASSERT(ncode != nullptr);
+        compiler::native::native_code_size_t const native_code_size_estimate =
+            ncode->code_size_estimate();
         auto const weight = code_size_to_cache_weight(
-            *(icode->code_size() + ncode->code_size_estimate()));
+            *(icode->code_size() + native_code_size_estimate));
         auto const vcode = std::make_shared<Varcode>(icode, ncode);
         weight_cache_.insert(code_hash, vcode, weight);
     }

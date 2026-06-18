@@ -1,0 +1,37 @@
+name: Cache RISC-V Toolchain
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - 'docker/Dockerfile'
+      - 'scripts/ubuntu-build/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cache-riscv:
+    runs-on: ubuntu-26.04-32
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and cache base_riscv_gnu_toolchain stage
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          ulimit: "memlock=-1:-1"
+          target: base_riscv_gnu_toolchain
+          cache-from: |
+            type=gha,scope=riscv-toolchain
+            type=gha,scope=base
+          cache-to: type=gha,scope=riscv-toolchain

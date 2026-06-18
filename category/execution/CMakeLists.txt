@@ -188,6 +188,7 @@ add_library(
   "ethereum/state3/account_state.cpp"
   "ethereum/state3/account_state.hpp"
   "ethereum/state3/account_substate.hpp"
+  "ethereum/state3/page_tracker.hpp"
   "ethereum/state3/state.cpp"
   "ethereum/state3/state.hpp"
   "ethereum/state3/version_stack.hpp"
@@ -199,6 +200,9 @@ add_library(
 
 add_library(
   monad_execution_native OBJECT
+  # monad/db
+  "monad/db/storage_page.cpp"
+  "monad/db/storage_page.hpp"
   # monad/chain
   "monad/chain/monad_chain.cpp"
   "monad/chain/monad_chain.hpp"
@@ -308,6 +312,7 @@ target_link_libraries(
   PRIVATE Boost::fiber
   PRIVATE Boost::json
   PUBLIC c-kzg-4844
+  PRIVATE monad_crypto
   PRIVATE PkgConfig::brotli
   PRIVATE PkgConfig::crypto++
   PUBLIC ethash::keccak

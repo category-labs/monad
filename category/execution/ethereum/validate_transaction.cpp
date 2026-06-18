@@ -48,7 +48,7 @@ Result<void> static_validate_transaction(
     Transaction const &tx, std::optional<uint256_t> const &base_fee_per_gas,
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id)
 {
-    static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
     // EIP-155
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {

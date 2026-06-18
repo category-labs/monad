@@ -91,7 +91,7 @@ Result<void> process_ethereum_block(
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing)
 {
-    static_assert(traits::evm_rev() > MONAD_ETH_BYZANTIUM);
+    static_assert(traits::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
 
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();

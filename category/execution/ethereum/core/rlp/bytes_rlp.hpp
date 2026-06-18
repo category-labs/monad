@@ -48,6 +48,12 @@ inline Result<bytes32_t> decode_bytes32_compact(byte_string_view &enc)
     if (MONAD_UNLIKELY(byte_array.size() > sizeof(bytes32_t))) {
         return DecodeError::InputTooLong;
     }
+    // encode_bytes32_compact strips all leading zeros, so a payload with a
+    // leading zero byte cannot round-trip and is non-canonical. The empty
+    // payload (value zero) is canonical.
+    if (MONAD_UNLIKELY(!byte_array.empty() && byte_array[0] == 0x00)) {
+        return DecodeError::NonCanonical;
+    }
     return to_bytes(byte_array);
 }
 

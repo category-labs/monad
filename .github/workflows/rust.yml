@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04-32
+    runs-on: ubuntu-26.04-32
 
     steps:
       - name: Tell git to do submodules in parallel

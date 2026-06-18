@@ -360,7 +360,7 @@ TYPED_TEST(VMTraitsTest, JumpiLiveDestDeferredComparisonBug)
 
 TYPED_TEST(VMTraitsTest, Cmov32BitBug)
 {
-    static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_BYZANTIUM);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
 
     TestFixture::execute(
         1000,

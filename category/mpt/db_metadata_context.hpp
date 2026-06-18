@@ -399,9 +399,18 @@ private:
     template <typename Storage>
     void map_ring_storage_(
         Storage const &storage,
-        std::span<chunk_offset_t> metadata_copy::*span_field)
+        std::span<chunk_offset_t> metadata_copy::*span_field,
+        char const *const ring_name)
     {
         auto const max_chunks = ring_max_chunks_();
+        MONAD_ASSERT_PRINTF(
+            storage.cnv_chunks_len <= max_chunks,
+            "%s requires %u conventional chunk(s) but the storage pool "
+            "provides only %u for ring data; the pool was created with fewer "
+            "conventional chunks than this DB needs",
+            ring_name,
+            storage.cnv_chunks_len,
+            max_chunks);
         auto const map_bytes = map_bytes_per_chunk_();
         auto const reservation_bytes = max_chunks * map_bytes;
         auto const entries_per_chunk = map_bytes / sizeof(chunk_offset_t);

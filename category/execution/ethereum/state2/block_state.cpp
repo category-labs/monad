@@ -208,7 +208,11 @@ uint64_t BlockState::last_conflict_index(
         auto const &storage = account_state.storage_;
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_->find(it, address));
-        consider(it->second.account_last_mutated);
+        // EXPERIMENT (storage-only j): skip account-level conflicts
+        // (balance / nonce / code). Native-balance diffs are reconcilable by
+        // relaxed merge, so storage-slot read-after-write conflicts are the
+        // non-parallelizable core. Re-enable this line to restore the full j.
+        // consider(it->second.account_last_mutated);
         for (auto const &entry : storage) {
             StorageDeltas::const_accessor it2{};
             if (it->second.storage.find(it2, entry.first)) {

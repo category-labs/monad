@@ -456,11 +456,13 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             if (result.has_error()) {
                 return std::move(result.error());
             }
-            // Prototype: log this transaction's last conflict index j (the
-            // most recent earlier tx it conflicts with), computed on the
-            // canonical read set before post-execution touches the
-            // beneficiary. -1 means no in-block conflict.
-            uint64_t const j = block_state_.last_conflict_index(state);
+            // Prototype: log this transaction's last conflict index j -- the
+            // most recent earlier tx it read-after-write conflicts with. The
+            // block beneficiary is excluded (EIP-3651 pre-warms it into every
+            // read set and the fee credit is commutative). -1 means no in-block
+            // conflict.
+            uint64_t const j =
+                block_state_.last_conflict_index(state, header_.beneficiary);
             auto const receipt = execute_final(state, result.value());
             LOG_INFO(
                 "__tx_conflict,bl={},i={},j={}",
@@ -486,7 +488,8 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         if (result.has_error()) {
             return std::move(result.error());
         }
-        uint64_t const j = block_state_.last_conflict_index(state);
+        uint64_t const j =
+            block_state_.last_conflict_index(state, header_.beneficiary);
         auto const receipt = execute_final(state, result.value());
         LOG_INFO(
             "__tx_conflict,bl={},i={},j={}",

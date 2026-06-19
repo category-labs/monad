@@ -85,10 +85,16 @@ public:
     /// transaction it conflicts with (read-after-write). Returns
     /// `LAST_MUTATED_NONE` if the read set intersects no in-block write.
     ///
+    /// `beneficiary` is excluded from the read set. EIP-3651 pre-warms the block
+    /// beneficiary into every transaction's read set, and the priority-fee
+    /// credit is a commutative balance add — neither is a real data dependency,
+    /// so counting it would collapse the block into a `j == i-1` chain.
+    ///
     /// Deliberately standalone (not folded into `can_merge`) for now. Intended
     /// to be called at the transaction's in-order merge point, so that every
     /// `last_mutated` it observes belongs to an earlier transaction.
-    uint64_t last_conflict_index(State const &) const;
+    uint64_t
+    last_conflict_index(State const &, Address const &beneficiary = {}) const;
 
     struct ReleasedState
     {

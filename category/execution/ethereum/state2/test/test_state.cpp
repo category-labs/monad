@@ -2664,3 +2664,23 @@ TEST_F(InMemoryStateTest, last_conflict_index_latest_writer)
     EXPECT_EQ(r.get_storage(a, key1), value2);
     EXPECT_EQ(bs.last_conflict_index(r), uint64_t{3});
 }
+
+// The beneficiary is excluded from the read set: EIP-3651 pre-warms it into
+// every transaction, so counting it would make every tx conflict with its
+// predecessor. Passing an address as `beneficiary` drops it from the scan.
+TEST_F(InMemoryStateTest, last_conflict_index_excludes_beneficiary)
+{
+    BlockState bs{this->tdb, this->vm};
+    {
+        State s{bs, Incarnation{1, 1}};
+        s.add_to_balance(a, 1);
+        ASSERT_TRUE(bs.can_merge(s));
+        bs.merge(s, 2);
+    }
+    State r{bs, Incarnation{1, 2}};
+    (void)r.get_balance(a);
+    // Without exclusion, a's writer (tx 2) is the conflict.
+    EXPECT_EQ(bs.last_conflict_index(r), uint64_t{2});
+    // Excluding a (as if it were the beneficiary) drops that conflict.
+    EXPECT_EQ(bs.last_conflict_index(r, a), LAST_MUTATED_NONE);
+}

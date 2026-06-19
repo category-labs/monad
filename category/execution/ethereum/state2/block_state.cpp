@@ -184,7 +184,8 @@ bool BlockState::can_merge(State &state) const
     return true;
 }
 
-uint64_t BlockState::last_conflict_index(State const &state) const
+uint64_t BlockState::last_conflict_index(
+    State const &state, Address const &beneficiary) const
 {
     MONAD_ASSERT(state_);
     uint64_t j = LAST_MUTATED_NONE;
@@ -197,6 +198,12 @@ uint64_t BlockState::last_conflict_index(State const &state) const
     auto const &original = state.original();
     for (auto const &kv : original) {
         Address const &address = kv.first;
+        // EIP-3651 pre-warms the beneficiary into every txn's read set and the
+        // fee credit is a commutative add; excluding it avoids a spurious
+        // `j == i-1` chain spanning the whole block.
+        if (address == beneficiary) {
+            continue;
+        }
         OriginalAccountState const &account_state = kv.second;
         auto const &storage = account_state.storage_;
         StateDeltas::const_accessor it{};

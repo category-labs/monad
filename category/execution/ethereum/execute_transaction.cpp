@@ -460,15 +460,16 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             // most recent earlier tx it read-after-write conflicts with. The
             // block beneficiary is excluded (EIP-3651 pre-warms it into every
             // read set and the fee credit is commutative). -1 means no in-block
-            // conflict.
+            // conflict. r=0: merged on the first speculative attempt (no retry).
             uint64_t const j =
                 block_state_.last_conflict_index(state, header_.beneficiary);
             auto const receipt = execute_final(state, result.value());
             LOG_INFO(
-                "__tx_conflict,bl={},i={},j={}",
+                "__tx_conflict,bl={},i={},j={},r={}",
                 header_.number,
                 i_,
-                j == LAST_MUTATED_NONE ? int64_t{-1} : static_cast<int64_t>(j));
+                j == LAST_MUTATED_NONE ? int64_t{-1} : static_cast<int64_t>(j),
+                0);
             block_state_.merge(state, i_);
             return receipt;
         }
@@ -488,14 +489,16 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         if (result.has_error()) {
             return std::move(result.error());
         }
+        // r=1: first speculative attempt failed can_merge; this is the re-run.
         uint64_t const j =
             block_state_.last_conflict_index(state, header_.beneficiary);
         auto const receipt = execute_final(state, result.value());
         LOG_INFO(
-            "__tx_conflict,bl={},i={},j={}",
+            "__tx_conflict,bl={},i={},j={},r={}",
             header_.number,
             i_,
-            j == LAST_MUTATED_NONE ? int64_t{-1} : static_cast<int64_t>(j));
+            j == LAST_MUTATED_NONE ? int64_t{-1} : static_cast<int64_t>(j),
+            1);
         block_state_.merge(state, i_);
         return receipt;
     }

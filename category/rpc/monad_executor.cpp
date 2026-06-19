@@ -89,6 +89,7 @@
 #include <format>
 #include <limits>
 #include <memory>
+#include <new>
 #include <optional>
 #include <span>
 #include <string>
@@ -1063,20 +1064,15 @@ namespace monad
 
 void monad_executor_result_release(monad_executor_result *const result)
 {
-    MONAD_ASSERT(result);
-    if (result->output_data) {
+    // NOTE(dhil): Guard on `result` being non-null here, because it is UB to
+    // access its members otherwise.
+    if (result) {
         delete[] result->output_data;
-    }
-
-    if (result->message) {
+        // NOTE(dhil): Calling `free` on nullptr is a no-op.
         free(result->message);
-    }
-
-    if (result->encoded_trace) {
         delete[] result->encoded_trace;
+        delete result;
     }
-
-    delete result;
 }
 
 namespace
@@ -2043,35 +2039,43 @@ struct monad_executor
     }
 };
 
-monad_executor *monad_executor_create(
+monad_executor_status_code_t monad_executor_create(
     monad_executor_pool_config const low_pool_conf,
     monad_executor_pool_config const high_pool_conf,
     monad_executor_pool_config const block_pool_conf,
     unsigned const tx_exec_num_fibers, uint64_t const node_lru_max_mem,
-    char const *const dbpath)
+    char const *const dbpath, monad_executor **const out)
 {
-    MONAD_ASSERT(dbpath);
+    if (!dbpath || !out) {
+        return MONAD_EXECUTOR_EINVAL;
+    }
     std::string const triedb_path{dbpath};
 
-    monad_executor *const e = new monad_executor(
-        low_pool_conf,
-        high_pool_conf,
-        block_pool_conf,
-        tx_exec_num_fibers,
-        node_lru_max_mem,
-        triedb_path);
-
-    return e;
+    try {
+        *out = new monad_executor(
+            low_pool_conf,
+            high_pool_conf,
+            block_pool_conf,
+            tx_exec_num_fibers,
+            node_lru_max_mem,
+            triedb_path);
+    }
+    catch (std::bad_alloc const &) {
+        return MONAD_EXECUTOR_ENOMEM;
+    }
+    catch (...) {
+        return MONAD_EXECUTOR_EUNKNOWN;
+    }
+    return MONAD_EXECUTOR_OK;
 }
 
 void monad_executor_destroy(monad_executor *const e)
 {
-    MONAD_ASSERT(e);
-
+    // NOTE(dhil): `delete nullptr` is safe in C++.
     delete e;
 }
 
-void monad_executor_eth_call_submit(
+monad_executor_status_code_t monad_executor_eth_call_submit(
     monad_executor *const executor, monad_chain_config const chain_config,
     uint8_t const *const rlp_txn, size_t const rlp_txn_len,
     uint8_t const *const rlp_header, size_t const rlp_header_len,
@@ -2082,7 +2086,10 @@ void monad_executor_eth_call_submit(
     void *const user, monad_tracer_config const tracer_config,
     bool const gas_specified)
 {
-    MONAD_ASSERT(executor);
+    if (!executor || !rlp_txn || !rlp_header || !rlp_sender || !rlp_block_id ||
+        !overrides || !complete) {
+        return MONAD_EXECUTOR_EINVAL;
+    }
 
     byte_string_view rlp_tx_view({rlp_txn, rlp_txn_len});
     byte_string_view rlp_header_view({rlp_header, rlp_header_len});
@@ -2090,26 +2097,40 @@ void monad_executor_eth_call_submit(
     byte_string_view block_id_view({rlp_block_id, rlp_block_id_len});
 
     auto const tx_result = rlp::decode_transaction(rlp_tx_view);
-    MONAD_ASSERT(!tx_result.has_error());
-    MONAD_ASSERT(rlp_tx_view.empty());
+    if (tx_result.has_error()) {
+        return MONAD_EXECUTOR_ERLP_DECODE;
+    }
+    if (!rlp_tx_view.empty()) {
+        return MONAD_EXECUTOR_ERLP_TRAILING;
+    }
     auto const &tx = tx_result.value();
 
     auto const block_header_result = rlp::decode_block_header(rlp_header_view);
-    MONAD_ASSERT(!block_header_result.has_error());
-    MONAD_ASSERT(rlp_header_view.empty());
+    if (block_header_result.has_error()) {
+        return MONAD_EXECUTOR_ERLP_DECODE;
+    }
+    if (!rlp_header_view.empty()) {
+        return MONAD_EXECUTOR_ERLP_TRAILING;
+    }
     auto const &block_header = block_header_result.value();
 
     auto const sender_result = rlp::decode_address(rlp_sender_view);
-    MONAD_ASSERT(!sender_result.has_error());
-    MONAD_ASSERT(rlp_sender_view.empty());
+    if (sender_result.has_error()) {
+        return MONAD_EXECUTOR_ERLP_DECODE;
+    }
+    if (!rlp_sender_view.empty()) {
+        return MONAD_EXECUTOR_ERLP_TRAILING;
+    }
     auto const sender = sender_result.value();
 
     auto const block_id_result = rlp::decode_bytes32(block_id_view);
-    MONAD_ASSERT(!block_id_result.has_error());
-    MONAD_ASSERT(block_id_view.empty());
+    if (block_id_result.has_error()) {
+        return MONAD_EXECUTOR_ERLP_DECODE;
+    }
+    if (!block_id_view.empty()) {
+        return MONAD_EXECUTOR_ERLP_TRAILING;
+    }
     auto const block_id = block_id_result.value();
-
-    MONAD_ASSERT(overrides);
 
     executor->execute_eth_call(
         chain_config,
@@ -2123,19 +2144,27 @@ void monad_executor_eth_call_submit(
         user,
         tracer_config,
         gas_specified);
+
+    return MONAD_EXECUTOR_OK;
 }
 
-struct monad_executor_state monad_executor_get_state(monad_executor *const e)
+monad_executor_status_code_t monad_executor_get_state(
+    monad_executor *const e, monad_executor_state *const out)
 {
-    MONAD_ASSERT(e);
-    return monad_executor_state{
+    if (!e || !out) {
+        return MONAD_EXECUTOR_EINVAL;
+    }
+
+    *out = monad_executor_state{
         .low_gas_pool_state = e->low_gas_pool_.get_state(),
         .high_gas_pool_state = e->high_gas_pool_.get_state(),
         .trace_block_pool_state = e->trace_block_group_.get_state(),
     };
+
+    return MONAD_EXECUTOR_OK;
 }
 
-void monad_executor_run_transactions(
+monad_executor_status_code_t monad_executor_run_transactions(
     struct monad_executor *const executor,
     enum monad_chain_config const chain_config, uint8_t const *const rlp_header,
     size_t const rlp_header_len, uint64_t const block_number,
@@ -2147,7 +2176,10 @@ void monad_executor_run_transactions(
     void (*complete)(monad_executor_result *, void *user), void *const user,
     enum monad_tracer_config const tracer_config)
 {
-    MONAD_ASSERT(executor);
+    if (!executor || !rlp_header || !rlp_block_id || !rlp_parent_block_id ||
+        !rlp_grandparent_block_id || !complete) {
+        return MONAD_EXECUTOR_EINVAL;
+    }
 
     byte_string_view rlp_header_view({rlp_header, rlp_header_len});
     byte_string_view block_id_view({rlp_block_id, rlp_block_id_len});
@@ -2157,30 +2189,44 @@ void monad_executor_run_transactions(
         {rlp_grandparent_block_id, rlp_grandparent_block_id_len});
 
     auto const block_header_result = rlp::decode_block_header(rlp_header_view);
-    MONAD_ASSERT(!block_header_result.has_error());
-    MONAD_ASSERT(rlp_header_view.empty());
+    if (block_header_result.has_error()) {
+        return MONAD_EXECUTOR_ERLP_DECODE;
+    }
+    if (!rlp_header_view.empty()) {
+        return MONAD_EXECUTOR_ERLP_TRAILING;
+    }
     auto const &block_header = block_header_result.value();
 
     auto const block_id_result = rlp::decode_bytes32(block_id_view);
-    MONAD_ASSERT(!block_id_result.has_error());
-    MONAD_ASSERT(block_id_view.empty());
+    if (block_id_result.has_error()) {
+        return MONAD_EXECUTOR_ERLP_DECODE;
+    }
+    if (!block_id_view.empty()) {
+        return MONAD_EXECUTOR_ERLP_TRAILING;
+    }
     auto const block_id = block_id_result.value();
 
     auto const parent_id_result = rlp::decode_bytes32(parent_id_view);
-    MONAD_ASSERT(!parent_id_result.has_error());
-    MONAD_ASSERT(parent_id_view.empty());
+    if (parent_id_result.has_error()) {
+        return MONAD_EXECUTOR_ERLP_DECODE;
+    }
+    if (!parent_id_view.empty()) {
+        return MONAD_EXECUTOR_ERLP_TRAILING;
+    }
     auto const parent_id = parent_id_result.value();
 
-    auto const grandparent_id = [&]() {
-        if (grandparent_id_view.size() == 0) {
-            return bytes32_t{};
-        }
+    bytes32_t grandparent_id{};
+    if (grandparent_id_view.size() != 0) {
         auto const grandparent_id_result =
             rlp::decode_bytes32(grandparent_id_view);
-        MONAD_ASSERT(!grandparent_id_result.has_error());
-        MONAD_ASSERT(grandparent_id_view.empty());
-        return grandparent_id_result.value();
-    }();
+        if (grandparent_id_result.has_error()) {
+            return MONAD_EXECUTOR_ERLP_DECODE;
+        }
+        if (!grandparent_id_view.empty()) {
+            return MONAD_EXECUTOR_ERLP_TRAILING;
+        }
+        grandparent_id = grandparent_id_result.value();
+    }
 
     executor->submit_eth_trace_block_or_transaction_to_pool(
         chain_config,
@@ -2194,6 +2240,8 @@ void monad_executor_run_transactions(
         complete,
         user,
         tracer_config);
+
+    return MONAD_EXECUTOR_OK;
 }
 
 namespace
@@ -2237,7 +2285,7 @@ namespace
     }
 }
 
-void monad_executor_eth_simulate_submit(
+monad_executor_status_code_t monad_executor_eth_simulate_submit(
     struct monad_executor *executor, enum monad_chain_config chain_config,
     uint8_t const *const rlp_senders, size_t rlp_senders_len,
     uint8_t const *const rlp_calls, size_t rlp_calls_len, uint64_t block_number,
@@ -2251,50 +2299,70 @@ void monad_executor_eth_simulate_submit(
     bool emit_native_transfer_logs,
     void (*complete)(monad_executor_result *, void *user), void *user)
 {
-
-    MONAD_ASSERT(executor);
-    MONAD_ASSERT(rlp_senders);
-    MONAD_ASSERT(rlp_calls);
-    MONAD_ASSERT(rlp_header);
-    MONAD_ASSERT(rlp_block_id);
-    MONAD_ASSERT(rlp_grandparent_block_id);
-    MONAD_ASSERT(state_overrides);
-    MONAD_ASSERT(block_overrides);
+    if (!executor || !rlp_senders || !rlp_calls || !rlp_header ||
+        !rlp_block_id || !rlp_grandparent_block_id || !state_overrides ||
+        !block_overrides || !complete) {
+        return MONAD_EXECUTOR_EINVAL;
+    }
 
     byte_string_view rlp_senders_view{rlp_senders, rlp_senders_len};
     auto const maybe_senders =
         decode_nested_items<rlp::decode_address, false>(rlp_senders_view);
-    MONAD_ASSERT(maybe_senders.has_value());
+    if (!maybe_senders.has_value()) {
+        return MONAD_EXECUTOR_ERLP_DECODE;
+    }
+    if (!rlp_senders_view.empty()) {
+        return MONAD_EXECUTOR_ERLP_TRAILING;
+    }
     auto const &senders = maybe_senders.assume_value();
 
     byte_string_view rlp_calls_view{rlp_calls, rlp_calls_len};
     auto const maybe_txns =
         decode_nested_items<rlp::decode_transaction, true>(rlp_calls_view);
-    MONAD_ASSERT(maybe_txns.has_value());
+    if (!maybe_txns.has_value()) {
+        return MONAD_EXECUTOR_ERLP_DECODE;
+    }
+    if (!rlp_calls_view.empty()) {
+        return MONAD_EXECUTOR_ERLP_TRAILING;
+    }
     auto const &txns = maybe_txns.assume_value();
 
-    MONAD_ASSERT(senders.size() == txns.size());
-    MONAD_ASSERT(state_overrides->size == txns.size());
-    MONAD_ASSERT(block_overrides->size == txns.size());
+    if (senders.size() != txns.size() || state_overrides->size != txns.size() ||
+        block_overrides->size != txns.size()) {
+        return MONAD_EXECUTOR_ESIZE_MISMATCH;
+    }
 
     byte_string_view rlp_header_view({rlp_header, rlp_header_len});
     auto const block_header_result = rlp::decode_block_header(rlp_header_view);
-    MONAD_ASSERT(!block_header_result.has_error());
-    MONAD_ASSERT(rlp_header_view.empty());
+    if (block_header_result.has_error()) {
+        return MONAD_EXECUTOR_ERLP_DECODE;
+    }
+
+    if (!rlp_header_view.empty()) {
+        return MONAD_EXECUTOR_ERLP_TRAILING;
+    }
     auto const &block_header = block_header_result.value();
 
     byte_string_view block_id_view({rlp_block_id, rlp_block_id_len});
     auto const block_id_result = rlp::decode_bytes32(block_id_view);
-    MONAD_ASSERT(!block_id_result.has_error());
-    MONAD_ASSERT(block_id_view.empty());
+    if (block_id_result.has_error()) {
+        return MONAD_EXECUTOR_ERLP_DECODE;
+    }
+    if (!block_id_view.empty()) {
+        return MONAD_EXECUTOR_ERLP_TRAILING;
+    }
     auto const block_id = block_id_result.value();
 
     byte_string_view grandparent_block_id_view(
         {rlp_grandparent_block_id, rlp_grandparent_block_id_len});
     auto const grandparent_block_id_result =
         rlp::decode_bytes32(grandparent_block_id_view);
-    MONAD_ASSERT(!grandparent_block_id_result.has_error());
-    MONAD_ASSERT(grandparent_block_id_view.empty());
+    if (grandparent_block_id_result.has_error()) {
+        return MONAD_EXECUTOR_ERLP_DECODE;
+    }
+    if (!grandparent_block_id_view.empty()) {
+        return MONAD_EXECUTOR_ERLP_TRAILING;
+    }
     auto const grandparent_block_id = grandparent_block_id_result.value();
 
     executor->submit_eth_simulate_to_pool(
@@ -2312,4 +2380,5 @@ void monad_executor_eth_simulate_submit(
         emit_native_transfer_logs,
         complete,
         user);
+    return MONAD_EXECUTOR_OK;
 }

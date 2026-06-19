@@ -305,7 +305,8 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
-    bool const trace_transfers)
+    bool const trace_transfers, int64_t const last_same_sender,
+    uint64_t const same_sender_before)
     : ExecuteTransactionNoValidation<
           traits>{chain, tx, sender, authorities, header}
     , i_{i}
@@ -317,6 +318,8 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     , call_tracer_{call_tracer}
     , state_tracer_{state_tracer}
     , trace_transfers_{trace_transfers}
+    , last_same_sender_{last_same_sender}
+    , same_sender_before_{same_sender_before}
 {
     record_txn_header_events(static_cast<uint32_t>(i), tx, sender, authorities);
 }
@@ -465,11 +468,13 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
                 block_state_.last_conflict_index(state, header_.beneficiary);
             auto const receipt = execute_final(state, result.value());
             LOG_INFO(
-                "__tx_conflict,bl={},i={},j={},r={}",
+                "__tx_conflict,bl={},i={},j={},r={},ps={},sc={}",
                 header_.number,
                 i_,
                 j == LAST_MUTATED_NONE ? int64_t{-1} : static_cast<int64_t>(j),
-                0);
+                0,
+                last_same_sender_,
+                same_sender_before_);
             block_state_.merge(state, i_);
             return receipt;
         }
@@ -494,11 +499,13 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             block_state_.last_conflict_index(state, header_.beneficiary);
         auto const receipt = execute_final(state, result.value());
         LOG_INFO(
-            "__tx_conflict,bl={},i={},j={},r={}",
+            "__tx_conflict,bl={},i={},j={},r={},ps={},sc={}",
             header_.number,
             i_,
             j == LAST_MUTATED_NONE ? int64_t{-1} : static_cast<int64_t>(j),
-            1);
+            1,
+            last_same_sender_,
+            same_sender_before_);
         block_state_.merge(state, i_);
         return receipt;
     }

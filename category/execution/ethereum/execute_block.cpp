@@ -54,6 +54,8 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <ankerl/unordered_dense.h>
+
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -219,8 +221,18 @@ Result<std::vector<Receipt>> execute_block_transactions(
         new std::optional<Result<Receipt>>[transactions.size()]};
     size_t const txn_count = transactions.size();
 
+    // Prototype (parallel-gas): per-sender history, built serially in txn order
+    // so each txn's previous same-sender index and same-sender-count-before can
+    // ride on its __tx_conflict log line. Serial here -> no synchronization.
+    ankerl::unordered_dense::map<Address, std::pair<int64_t, uint64_t>>
+        sender_history;
+
     auto const tx_exec_begin = std::chrono::steady_clock::now();
     for (unsigned i = 0; i < txn_count; ++i) {
+        auto &sh = sender_history[senders[i]];
+        int64_t const last_same_sender = sh.second ? sh.first : int64_t{-1};
+        uint64_t const same_sender_before = sh.second;
+        sh = {static_cast<int64_t>(i), sh.second + 1};
         priority_pool.submit(
             i,
             [&chain = chain,
@@ -237,7 +249,9 @@ Result<std::vector<Receipt>> execute_block_transactions(
              &call_tracer = *call_tracers[i],
              &state_tracer = *state_tracers[i],
              &chain_ctx = chain_ctx,
-             trace_transfers = trace_transfers] {
+             trace_transfers = trace_transfers,
+             last_same_sender = last_same_sender,
+             same_sender_before = same_sender_before] {
                 record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
                 try {
                     results[i] = dispatch_transaction<traits>(
@@ -254,7 +268,9 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         call_tracer,
                         state_tracer,
                         chain_ctx,
-                        trace_transfers);
+                        trace_transfers,
+                        last_same_sender,
+                        same_sender_before);
                     if (results[i]->has_error()) {
                         record_txn_error_event(i, results[i]->error());
                     }

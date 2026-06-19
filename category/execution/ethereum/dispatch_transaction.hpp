@@ -51,6 +51,7 @@ Result<Receipt> dispatch_transaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
-    bool trace_transfers = false);
+    bool trace_transfers = false, int64_t last_same_sender = -1,
+    uint64_t same_sender_before = 0);
 
 MONAD_NAMESPACE_END

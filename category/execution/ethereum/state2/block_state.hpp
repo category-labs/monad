@@ -79,6 +79,17 @@ public:
     /// prologue/epilogue, RPC state overrides) use `LAST_MUTATED_NONE`.
     void merge(State const &, uint64_t txn_index = LAST_MUTATED_NONE);
 
+    /// Prototype (parallel-gas experiment): compute the "last conflict index"
+    /// `j` for a transaction — the greatest `last_mutated` over the keys in the
+    /// transaction's read set, i.e. the block index of the most recent earlier
+    /// transaction it conflicts with (read-after-write). Returns
+    /// `LAST_MUTATED_NONE` if the read set intersects no in-block write.
+    ///
+    /// Deliberately standalone (not folded into `can_merge`) for now. Intended
+    /// to be called at the transaction's in-order merge point, so that every
+    /// `last_mutated` it observes belongs to an earlier transaction.
+    uint64_t last_conflict_index(State const &) const;
+
     struct ReleasedState
     {
         std::unique_ptr<StateDeltas> state;

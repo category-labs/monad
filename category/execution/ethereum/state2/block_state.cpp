@@ -184,6 +184,34 @@ bool BlockState::can_merge(State &state) const
     return true;
 }
 
+uint64_t BlockState::last_conflict_index(State const &state) const
+{
+    MONAD_ASSERT(state_);
+    uint64_t j = LAST_MUTATED_NONE;
+    auto const consider = [&j](uint64_t const last_mutated) {
+        if (last_mutated != LAST_MUTATED_NONE &&
+            (j == LAST_MUTATED_NONE || last_mutated > j)) {
+            j = last_mutated;
+        }
+    };
+    auto const &original = state.original();
+    for (auto const &kv : original) {
+        Address const &address = kv.first;
+        OriginalAccountState const &account_state = kv.second;
+        auto const &storage = account_state.storage_;
+        StateDeltas::const_accessor it{};
+        MONAD_ASSERT(state_->find(it, address));
+        consider(it->second.account_last_mutated);
+        for (auto const &entry : storage) {
+            StorageDeltas::const_accessor it2{};
+            if (it->second.storage.find(it2, entry.first)) {
+                consider(it2->second.last_mutated);
+            }
+        }
+    }
+    return j;
+}
+
 void BlockState::merge(State const &state, uint64_t const txn_index)
 {
     ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;

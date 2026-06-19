@@ -2561,3 +2561,106 @@ TEST_F(InMemoryStateTest, last_mutated_default_is_none)
     ASSERT_TRUE(it->second.storage.find(sit, key1));
     EXPECT_EQ(sit->second.last_mutated, LAST_MUTATED_NONE);
 }
+
+// ---------------------------------------------------------------------------
+// last_conflict_index — per-transaction conflict index j (parallel-gas)
+//
+// Standalone computation of j = max(last_mutated) over a transaction's read
+// set: the most recent earlier transaction it conflicts with, or
+// LAST_MUTATED_NONE if its reads hit no in-block write. NOT folded into
+// can_merge.
+// ---------------------------------------------------------------------------
+
+// Reads of keys never written within the block -> no conflict.
+TEST_F(InMemoryStateTest, last_conflict_index_none)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        sd({{a,
+             StateDelta{.account = {std::nullopt, Account{.balance = 10'000}}}}}),
+        Code{},
+        BlockHeader{});
+
+    State r{bs, Incarnation{1, 1}};
+    (void)r.get_balance(a); // read-only, no in-block writer
+    EXPECT_EQ(bs.last_conflict_index(r), LAST_MUTATED_NONE);
+}
+
+// A read of an account written by an earlier tx -> j is that tx's index.
+TEST_F(InMemoryStateTest, last_conflict_index_account)
+{
+    BlockState bs{this->tdb, this->vm};
+    {
+        State s{bs, Incarnation{1, 1}};
+        s.add_to_balance(a, 1000);
+        ASSERT_TRUE(bs.can_merge(s));
+        bs.merge(s, 2);
+    }
+    State r{bs, Incarnation{1, 2}};
+    (void)r.get_balance(a);
+    EXPECT_EQ(bs.last_conflict_index(r), uint64_t{2});
+}
+
+// A read of a storage slot written by an earlier tx -> j is that tx's index.
+TEST_F(InMemoryStateTest, last_conflict_index_storage)
+{
+    BlockState bs{this->tdb, this->vm};
+    {
+        State s{bs, Incarnation{1, 1}};
+        s.create_contract(a);
+        s.set_storage(a, key1, value1);
+        ASSERT_TRUE(bs.can_merge(s));
+        bs.merge(s, 4);
+    }
+    State r{bs, Incarnation{1, 2}};
+    (void)r.get_balance(a); // load the account before reading its storage
+    EXPECT_EQ(r.get_storage(a, key1), value1);
+    EXPECT_EQ(bs.last_conflict_index(r), uint64_t{4});
+}
+
+// j is the maximum over all conflicting reads (two accounts written by two
+// different earlier txs).
+TEST_F(InMemoryStateTest, last_conflict_index_takes_max)
+{
+    BlockState bs{this->tdb, this->vm};
+    {
+        State s{bs, Incarnation{1, 1}};
+        s.add_to_balance(a, 1);
+        ASSERT_TRUE(bs.can_merge(s));
+        bs.merge(s, 2);
+    }
+    {
+        State s{bs, Incarnation{1, 2}};
+        s.add_to_balance(b, 1);
+        ASSERT_TRUE(bs.can_merge(s));
+        bs.merge(s, 5);
+    }
+    State r{bs, Incarnation{1, 3}};
+    (void)r.get_balance(a);
+    (void)r.get_balance(b);
+    EXPECT_EQ(bs.last_conflict_index(r), uint64_t{5});
+}
+
+// When the same slot is rewritten, j reflects the latest writer.
+TEST_F(InMemoryStateTest, last_conflict_index_latest_writer)
+{
+    BlockState bs{this->tdb, this->vm};
+    {
+        State s{bs, Incarnation{1, 1}};
+        s.create_contract(a);
+        s.set_storage(a, key1, value1);
+        ASSERT_TRUE(bs.can_merge(s));
+        bs.merge(s, 1);
+    }
+    {
+        State s{bs, Incarnation{1, 2}};
+        s.set_storage(a, key1, value2);
+        ASSERT_TRUE(bs.can_merge(s));
+        bs.merge(s, 3);
+    }
+    State r{bs, Incarnation{1, 3}};
+    (void)r.get_balance(a); // load the account before reading its storage
+    EXPECT_EQ(r.get_storage(a, key1), value2);
+    EXPECT_EQ(bs.last_conflict_index(r), uint64_t{3});
+}

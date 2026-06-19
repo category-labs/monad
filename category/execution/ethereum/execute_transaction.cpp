@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
@@ -455,7 +456,17 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             if (result.has_error()) {
                 return std::move(result.error());
             }
+            // Prototype: log this transaction's last conflict index j (the
+            // most recent earlier tx it conflicts with), computed on the
+            // canonical read set before post-execution touches the
+            // beneficiary. -1 means no in-block conflict.
+            uint64_t const j = block_state_.last_conflict_index(state);
             auto const receipt = execute_final(state, result.value());
+            LOG_INFO(
+                "__tx_conflict,bl={},i={},j={}",
+                header_.number,
+                i_,
+                j == LAST_MUTATED_NONE ? int64_t{-1} : static_cast<int64_t>(j));
             block_state_.merge(state, i_);
             return receipt;
         }
@@ -475,7 +486,13 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         if (result.has_error()) {
             return std::move(result.error());
         }
+        uint64_t const j = block_state_.last_conflict_index(state);
         auto const receipt = execute_final(state, result.value());
+        LOG_INFO(
+            "__tx_conflict,bl={},i={},j={}",
+            header_.number,
+            i_,
+            j == LAST_MUTATED_NONE ? int64_t{-1} : static_cast<int64_t>(j));
         block_state_.merge(state, i_);
         return receipt;
     }

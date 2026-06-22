@@ -25,6 +25,7 @@
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cursor.hpp>
+#include <category/mpt/traverse.hpp>
 #include <category/mpt/update.hpp>
 
 #include <gtest/gtest.h>
@@ -34,6 +35,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <set>
 #include <utility>
 
 using namespace monad::mpt;
@@ -59,6 +61,34 @@ namespace
         }
         return monad::mpt::DbError(res.error().value());
     }
+
+    // Collects the value of every leaf visited during a traverse. Clones
+    // share the same `values` set so a parallel traverse aggregates into one
+    // place.
+    struct CollectLeavesMachine final : public TraverseMachine
+    {
+        std::set<monad::byte_string> &values;
+
+        explicit CollectLeavesMachine(std::set<monad::byte_string> &values)
+            : values(values)
+        {
+        }
+
+        virtual bool down(unsigned char, Node const &node) override
+        {
+            if (node.has_value()) {
+                values.emplace(node.value());
+            }
+            return true;
+        }
+
+        virtual void up(unsigned char, Node const &) override {}
+
+        virtual std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<CollectLeavesMachine>(*this);
+        }
+    };
 
     struct DualTimelineFixture : public ::testing::Test
     {
@@ -88,7 +118,7 @@ namespace
             return db;
         }
 
-        void activate_secondary(uint64_t /*fork_version*/)
+        void activate_secondary()
         {
             // The fork_version arg is preserved for test readability — it
             // tags the version that callers will subsequently upsert to.
@@ -133,6 +163,58 @@ namespace
             ul.push_front(u);
             return db_for(tid).upsert(std::move(root), std::move(ul), version);
         }
+
+        // Seeds primary-only keys, activates secondary, inserts distinct
+        // secondary keys, then traverses both roots via `traverse_fn` and
+        // asserts each traverse visits exactly its own timeline's leaves.
+        template <class TraverseFn>
+        void check_traverse_isolation(TraverseFn traverse_fn)
+        {
+            // Seed primary with versions 0-2 using primary-only keys.
+            auto const pk1 = 0x1111111111111111_bytes;
+            auto const pk2 = 0x2222222222222222_bytes;
+            primary_root = upsert_kv(primary_root, pk1, pk1, 0);
+            primary_root = upsert_kv(primary_root, pk2, pk2, 1);
+            primary_root = upsert_kv(primary_root, pk1, pk1, 2);
+
+            // Activate secondary, insert distinct secondary keys.
+            activate_secondary();
+            auto const sk1 = 0xAAAAAAAAAAAAAAAA_bytes;
+            auto const sk2 = 0xBBBBBBBBBBBBBBBB_bytes;
+            auto const sk3 = 0xCCCCCCCCCCCCCCCC_bytes;
+            secondary_root =
+                upsert_kv(secondary_root, sk1, sk1, 3, timeline_id::secondary);
+            secondary_root =
+                upsert_kv(secondary_root, sk2, sk2, 4, timeline_id::secondary);
+            secondary_root =
+                upsert_kv(secondary_root, sk3, sk3, 5, timeline_id::secondary);
+            ASSERT_NE(secondary_root, nullptr);
+
+            // Traverse the secondary root on the secondary Db. Version 5 is
+            // valid in the secondary ring; the traversal must validate against
+            // timeline_id::secondary, not the primary.
+            std::set<monad::byte_string> secondary_values;
+            CollectLeavesMachine secondary_machine{secondary_values};
+            ASSERT_TRUE(traverse_fn(
+                *secondary_db, secondary_root, secondary_machine, 5));
+
+            // The traverse visits every secondary leaf and none of the
+            // primary-only keys — the timelines are isolated.
+            EXPECT_TRUE(secondary_values.contains(monad::byte_string{sk1}));
+            EXPECT_TRUE(secondary_values.contains(monad::byte_string{sk2}));
+            EXPECT_TRUE(secondary_values.contains(monad::byte_string{sk3}));
+            EXPECT_FALSE(secondary_values.contains(monad::byte_string{pk1}));
+            EXPECT_FALSE(secondary_values.contains(monad::byte_string{pk2}));
+
+            // Traversing the primary root on the primary Db visits only
+            // primary keys.
+            std::set<monad::byte_string> primary_values;
+            CollectLeavesMachine primary_machine{primary_values};
+            ASSERT_TRUE(traverse_fn(db, primary_root, primary_machine, 2));
+            EXPECT_TRUE(primary_values.contains(monad::byte_string{pk1}));
+            EXPECT_TRUE(primary_values.contains(monad::byte_string{pk2}));
+            EXPECT_FALSE(primary_values.contains(monad::byte_string{sk1}));
+        }
     };
 
     // -------------------------------------------------------------------
@@ -147,9 +229,8 @@ namespace
         primary_root = upsert_kv(primary_root, k2, k2, 1);
         ASSERT_NE(primary_root, nullptr);
 
-        // Activate secondary at version 2 (after primary has 0,1)
         EXPECT_FALSE(db.timeline_active(timeline_id::secondary));
-        activate_secondary(2);
+        activate_secondary();
         EXPECT_TRUE(db.timeline_active(timeline_id::secondary));
 
         // Deactivate without doing anything on secondary
@@ -173,7 +254,7 @@ namespace
                            std::make_unique<StateMachineAlwaysMerkle>())
                          .has_value());
 
-        activate_secondary(0);
+        activate_secondary();
 
         // Drop the Db returned by activate_secondary_timeline — mimicking
         // a process restart where the secondary metadata persists on disk
@@ -225,8 +306,7 @@ namespace
             ASSERT_NE(primary_root, nullptr);
         }
 
-        // Activate secondary at version 0
-        activate_secondary(0);
+        activate_secondary();
 
         // Replay same updates on secondary timeline
         for (uint64_t v = 0; v < keys.size(); v++) {
@@ -264,8 +344,7 @@ namespace
         primary_root = upsert_kv(primary_root, seed_key, seed_key, 1);
         primary_root = upsert_kv(primary_root, seed_key, seed_key, 2);
 
-        // Activate secondary at version 3
-        activate_secondary(3);
+        activate_secondary();
         // Give secondary the same seed
         secondary_root = upsert_kv(
             secondary_root, seed_key, seed_key, 3, timeline_id::secondary);
@@ -320,6 +399,26 @@ namespace
         deactivate_secondary();
     }
 
+    TEST_F(DualTimelineFixture, traverse_blocking_on_secondary)
+    {
+        check_traverse_isolation([](Db &db,
+                                    NodeCursor const &root,
+                                    TraverseMachine &machine,
+                                    uint64_t const version) {
+            return db.traverse_blocking(root, machine, version);
+        });
+    }
+
+    TEST_F(DualTimelineFixture, traverse_on_secondary)
+    {
+        check_traverse_isolation([](Db &db,
+                                    NodeCursor const &root,
+                                    TraverseMachine &machine,
+                                    uint64_t const version) {
+            return db.traverse(root, machine, version);
+        });
+    }
+
     // -------------------------------------------------------------------
     // Test: Primary ahead of secondary by several versions
     // -------------------------------------------------------------------
@@ -332,8 +431,7 @@ namespace
             primary_root = upsert_kv(primary_root, k1, val, v);
         }
 
-        // Activate secondary at version 5 — primary is at version 9
-        activate_secondary(5);
+        activate_secondary();
 
         // Secondary catches up from version 5 to 7 (still behind primary at 9)
         for (uint64_t v = 5; v <= 7; v++) {
@@ -394,8 +492,8 @@ namespace
         primary_root = upsert_kv(primary_root, k1, v1, 2);
         primary_root = upsert_kv(primary_root, k2, v2, 3);
 
-        // Activate secondary at version 2, replay
-        activate_secondary(2);
+        // Activate secondary, replay
+        activate_secondary();
         secondary_root =
             upsert_kv(secondary_root, k1, v1, 2, timeline_id::secondary);
         secondary_root =
@@ -470,10 +568,9 @@ namespace
             ASSERT_NE(primary_root, nullptr);
         }
 
-        // Activate secondary at version N
-        uint64_t const fork_version = N_VERSIONS;
-        activate_secondary(fork_version);
+        activate_secondary();
 
+        uint64_t const fork_version = N_VERSIONS;
         // Advance both timelines from fork_version to N_VERSIONS + 5
         for (uint64_t v = fork_version; v < N_VERSIONS + 5; v++) {
             monad::byte_string pkey(4, 0);
@@ -532,11 +629,11 @@ namespace
     }
 
     // -------------------------------------------------------------------
-    // Test: Activate at version 0 (edge case for the active_ flag)
+    // Test: Activate secondary on an empty db (edge case for the active_ flag)
     // -------------------------------------------------------------------
     TEST_F(DualTimelineFixture, activate_at_version_zero)
     {
-        activate_secondary(0);
+        activate_secondary();
         EXPECT_TRUE(db.timeline_active(timeline_id::secondary));
 
         // Upsert on both
@@ -571,8 +668,8 @@ namespace
         primary_root = upsert_kv(primary_root, k1, 0xAA_bytes, 1);
         primary_root = upsert_kv(primary_root, k1, k1, 2);
 
-        // Phase 2: Activate secondary at version 3
-        activate_secondary(3);
+        // Phase 2: Activate secondary
+        activate_secondary();
         secondary_root =
             upsert_kv(secondary_root, k1, k1, 3, timeline_id::secondary);
 
@@ -622,8 +719,8 @@ namespace
             primary_root = upsert_kv(primary_root, k1, val, v);
         }
 
-        // Activate secondary at version 2, upsert versions 2-3
-        activate_secondary(2);
+        // Activate secondary, upsert versions 2-3
+        activate_secondary();
         auto const k2 = 0x22222222_bytes;
         for (uint64_t v = 2; v <= 3; v++) {
             auto const val =
@@ -671,8 +768,7 @@ namespace
             primary_root = upsert_kv(primary_root, shared_key, shared_key, v);
         }
 
-        // Activate secondary at version 5
-        activate_secondary(5);
+        activate_secondary();
 
         // Each "TrieDb" instance holds its own root and advances independently
         // Primary TrieDb: inserts primary-only data at versions 5-7
@@ -744,7 +840,7 @@ namespace
             return db;
         }
 
-        void activate_secondary(uint64_t /*fork_version*/)
+        void activate_secondary()
         {
             // The fork_version arg is preserved for test readability — it
             // tags the version that callers will subsequently upsert to.
@@ -789,9 +885,9 @@ namespace
 
         // Phase 2: Activate secondary. Both timelines advance together,
         // exercising the combined GC boundary from the first block onward.
-        uint64_t const fork_version = SHORT_HISTORY + 1;
-        activate_secondary(fork_version);
+        activate_secondary();
 
+        uint64_t const fork_version = SHORT_HISTORY + 1;
         auto const secondary_key = 0xBBBBBBBB_bytes;
 
         // Phase 3: Drive both timelines well past the history window.
@@ -849,7 +945,7 @@ namespace
         primary_root = upsert_kv(primary_root, k1, k1, 0);
         primary_root = upsert_kv(primary_root, k1, k1, 1);
 
-        activate_secondary(0);
+        activate_secondary();
         auto const round1_key = 0xAAAAAAAA_bytes;
         secondary_root = upsert_kv(
             secondary_root, round1_key, round1_key, 0, timeline_id::secondary);
@@ -871,7 +967,7 @@ namespace
         primary_root = upsert_kv(primary_root, k1, k1, 2);
         primary_root = upsert_kv(primary_root, k1, k1, 3);
 
-        activate_secondary(2);
+        activate_secondary();
         EXPECT_TRUE(db.timeline_active(timeline_id::secondary));
 
         auto const round2_key = 0xBBBBBBBB_bytes;
@@ -919,8 +1015,8 @@ namespace
             primary_root = upsert_kv(primary_root, k1, k1, v);
         }
 
-        // Activate secondary at version 3, upsert versions 3-5
-        activate_secondary(3);
+        // Activate secondary, upsert versions 3-5
+        activate_secondary();
         auto const k2 = 0x22222222_bytes;
         for (uint64_t v = 3; v <= 5; v++) {
             secondary_root =
@@ -963,8 +1059,9 @@ namespace
         }
 
         // Phase 2: Activate secondary and insert secondary-only data.
+        activate_secondary();
+
         uint64_t const fork_version = SHORT_HISTORY + 1;
-        activate_secondary(fork_version);
 
         auto const secondary_key = 0xBBBBBBBB_bytes;
         secondary_root = upsert_kv(
@@ -1025,9 +1122,9 @@ namespace
         for (uint64_t v = 0; v <= SHORT_HISTORY; v++) {
             primary_root = upsert_kv(primary_root, key, key, v);
         }
-        uint64_t const fork_version = SHORT_HISTORY + 1;
-        activate_secondary(fork_version);
+        activate_secondary();
 
+        uint64_t const fork_version = SHORT_HISTORY + 1;
         // Advance both timelines together well past SHORT_HISTORY.
         auto const skey = 0xBBBBBBBB_bytes;
         uint64_t const last = fork_version + 2 * SHORT_HISTORY;

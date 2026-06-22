@@ -29,6 +29,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -153,4 +154,42 @@ TEST(async_compile_test, disable)
         auto const entry = ncode->entrypoint();
         ASSERT_TRUE(entry == nullptr);
     }
+}
+
+// id() is the sole key distinguishing cached native code between revisions, so
+// the two trait families must never produce a colliding value across their
+// independent enums.
+TEST(async_compile_test, trait_ids_distinct)
+{
+    std::array<uint64_t, 19> const ids{
+        EvmTraits<MONAD_ETH_ISTANBUL>::id(),
+        EvmTraits<MONAD_ETH_BERLIN>::id(),
+        EvmTraits<MONAD_ETH_LONDON>::id(),
+        EvmTraits<MONAD_ETH_PARIS>::id(),
+        EvmTraits<MONAD_ETH_SHANGHAI>::id(),
+        EvmTraits<MONAD_ETH_CANCUN>::id(),
+        EvmTraits<MONAD_ETH_PRAGUE>::id(),
+        EvmTraits<MONAD_ETH_OSAKA>::id(),
+        MonadTraits<MONAD_ZERO>::id(),
+        MonadTraits<MONAD_ONE>::id(),
+        MonadTraits<MONAD_TWO>::id(),
+        MonadTraits<MONAD_THREE>::id(),
+        MonadTraits<MONAD_FOUR>::id(),
+        MonadTraits<MONAD_FIVE>::id(),
+        MonadTraits<MONAD_SIX>::id(),
+        MonadTraits<MONAD_SEVEN>::id(),
+        MonadTraits<MONAD_EIGHT>::id(),
+        MonadTraits<MONAD_NINE>::id(),
+        MonadTraits<MONAD_NEXT>::id()};
+
+    // Trip-wire: adding a revision to either family shifts these sentinels,
+    // forcing the id list above to be extended so coverage stays exhaustive.
+    static_assert(
+        MONAD_NEXT == 10, "a monad_revision was added; extend the list above");
+    static_assert(
+        MONAD_ETH_EXPERIMENTAL == 15,
+        "a monad_eth_revision was added; extend the list above");
+
+    std::unordered_set<uint64_t> const unique(ids.begin(), ids.end());
+    EXPECT_EQ(unique.size(), ids.size());
 }

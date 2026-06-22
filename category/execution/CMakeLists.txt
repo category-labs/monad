@@ -139,6 +139,8 @@ add_library(
   "ethereum/evmc_host.hpp"
   "ethereum/execute_block.cpp"
   "ethereum/execute_block.hpp"
+  "ethereum/execute_block_header.cpp"
+  "ethereum/execute_block_header.hpp"
   "ethereum/execute_message.cpp"
   "ethereum/execute_message.hpp"
   "ethereum/execute_transaction.cpp"

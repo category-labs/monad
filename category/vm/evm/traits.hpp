@@ -23,6 +23,7 @@
 #include <evmc/evmc.h>
 
 #include <concepts>
+#include <cstdint>
 #include <limits>
 #include <utility>
 
@@ -41,6 +42,16 @@ namespace monad
         inline constexpr size_t MAX_CODE_SIZE_MONAD_TWO = 128 * 1024;
         inline constexpr size_t MAX_INITCODE_SIZE_MONAD_FOUR =
             2 * MAX_CODE_SIZE_MONAD_TWO;
+    }
+
+    namespace detail
+    {
+        // Mirrors LLVM's AnalysisKey: a Traits specialization carries one
+        // static member of this type, and the address of that member is its
+        // opaque unique id (see the id() contract on the Traits concept).
+        struct alignas(8) TraitsKey
+        {
+        };
     }
 
     template <typename T>
@@ -172,11 +183,17 @@ namespace monad
             std::unreachable();
         }
 
-        static consteval uint64_t id() noexcept
+        static uint64_t id() noexcept
         {
-            return static_cast<uint64_t>(Rev);
+            static_assert(sizeof(uintptr_t) <= sizeof(uint64_t));
+            return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&key));
         }
+
+        static detail::TraitsKey key;
     };
+
+    template <monad_eth_revision Rev>
+    detail::TraitsKey EvmTraits<Rev>::key;
 
     template <monad_revision Rev>
     struct MonadTraits
@@ -336,16 +353,22 @@ namespace monad
             std::unreachable();
         }
 
-        static consteval uint64_t id() noexcept
+        static uint64_t id() noexcept
         {
-            return static_cast<uint64_t>(Rev);
+            static_assert(sizeof(uintptr_t) <= sizeof(uint64_t));
+            return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&key));
         }
+
+        static detail::TraitsKey key;
 
         // Temporary workaround that should be considered equivalent to calling
         // evm_rev(); remove when the refactoring to use feature flags is
         // complete.
         using evm_base = EvmTraits<MonadTraits::evm_rev()>;
     };
+
+    template <monad_revision Rev>
+    detail::TraitsKey MonadTraits<Rev>::key;
 
     template <typename T>
     inline constexpr bool is_evm_trait_v = is_specialization_of_v<EvmTraits, T>;

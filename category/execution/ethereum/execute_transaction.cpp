@@ -467,15 +467,20 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             uint64_t const j =
                 block_state_.last_conflict_index(state, header_.beneficiary);
             auto const receipt = execute_final(state, result.value());
+            auto const lm = block_state_.merge(state, i_);
             LOG_INFO(
-                "__tx_conflict,bl={},i={},j={},r={},ps={},sc={}",
+                "__tx_conflict,bl={},i={},j={},r={},ps={},sc={},ac={},au={},"
+                "kc={},ku={}",
                 header_.number,
                 i_,
                 j == LAST_MUTATED_NONE ? int64_t{-1} : static_cast<int64_t>(j),
                 0,
                 last_same_sender_,
-                same_sender_before_);
-            block_state_.merge(state, i_);
+                same_sender_before_,
+                lm.acct_candidates,
+                lm.acct_updates,
+                lm.slot_candidates,
+                lm.slot_updates);
             return receipt;
         }
     }
@@ -498,15 +503,20 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         uint64_t const j =
             block_state_.last_conflict_index(state, header_.beneficiary);
         auto const receipt = execute_final(state, result.value());
+        auto const lm = block_state_.merge(state, i_);
         LOG_INFO(
-            "__tx_conflict,bl={},i={},j={},r={},ps={},sc={}",
+            "__tx_conflict,bl={},i={},j={},r={},ps={},sc={},ac={},au={},"
+            "kc={},ku={}",
             header_.number,
             i_,
             j == LAST_MUTATED_NONE ? int64_t{-1} : static_cast<int64_t>(j),
             1,
             last_same_sender_,
-            same_sender_before_);
-        block_state_.merge(state, i_);
+            same_sender_before_,
+            lm.acct_candidates,
+            lm.acct_updates,
+            lm.slot_candidates,
+            lm.slot_updates);
         return receipt;
     }
 }

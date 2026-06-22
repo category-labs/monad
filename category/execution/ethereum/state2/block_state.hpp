@@ -72,12 +72,25 @@ public:
 
     bool can_merge(State &) const;
 
+    /// Prototype (parallel-gas experiment): per-merge tally of `last_mutated`
+    /// stamp *candidates* (every account/slot the merge processed) vs *actual
+    /// updates* (those whose value really changed). The gap measures how often
+    /// the old unconditional write-presence stamp was wrong.
+    struct MergeStamps
+    {
+        uint64_t acct_candidates = 0;
+        uint64_t acct_updates = 0;
+        uint64_t slot_candidates = 0;
+        uint64_t slot_updates = 0;
+    };
+
     /// Merge a transaction's accumulated writes into the block state.
     /// `txn_index` is the block-relative index of the merging transaction; it
     /// is recorded as `last_mutated` on every write-touched key (see
     /// `StorageDelta::last_mutated`). Non-transaction merges (block
     /// prologue/epilogue, RPC state overrides) use `LAST_MUTATED_NONE`.
-    void merge(State const &, uint64_t txn_index = LAST_MUTATED_NONE);
+    /// Returns the stamp candidate/update tally (prototype counters).
+    MergeStamps merge(State const &, uint64_t txn_index = LAST_MUTATED_NONE);
 
     /// Prototype (parallel-gas experiment): compute the "last conflict index"
     /// `j` for a transaction — the greatest `last_mutated` over the keys in the

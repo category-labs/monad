@@ -223,7 +223,8 @@ uint64_t BlockState::last_conflict_index(
     return j;
 }
 
-void BlockState::merge(State const &state, uint64_t const txn_index)
+BlockState::MergeStamps
+BlockState::merge(State const &state, uint64_t const txn_index)
 {
     ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
 
@@ -248,6 +249,13 @@ void BlockState::merge(State const &state, uint64_t const txn_index)
     }
 
     MONAD_ASSERT(state_);
+    // PROTOTYPE: count how often the value-aware check skips a last_mutated
+    // stamp the old write-presence logic would have made (candidates vs actual
+    // updates), to gauge how wrong that previous version was.
+    uint64_t lm_acct_cand = 0;
+    uint64_t lm_acct_upd = 0;
+    uint64_t lm_slot_cand = 0;
+    uint64_t lm_slot_upd = 0;
     for (auto const &[address, stack] : current) {
         auto const &account_state = stack.recent();
         auto const &account = account_state.account_;
@@ -258,22 +266,30 @@ void BlockState::merge(State const &state, uint64_t const txn_index)
         // re-writes / reverts to the same value (e.g. a reentrancy-guard slot
         // set then cleared) is not recorded as a conflict -- matching the
         // value-based check in can_merge.
+        ++lm_acct_cand;
         if (it->second.account.second != account) {
             it->second.account_last_mutated = txn_index;
+            ++lm_acct_upd;
         }
         it->second.account.second = account;
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {
                 StorageDeltas::accessor it2{};
                 if (it->second.storage.find(it2, key)) {
+                    ++lm_slot_cand;
                     if (it2->second.second != value) {
                         it2->second.last_mutated = txn_index;
+                        ++lm_slot_upd;
                     }
                     it2->second.second = value;
                 }
                 else {
                     // New slot for the block delta (e.g. freshly created
                     // contract, pre-state 0); stamp only if it became non-zero.
+                    ++lm_slot_cand;
+                    if (value != bytes32_t{}) {
+                        ++lm_slot_upd;
+                    }
                     it->second.storage.emplace(
                         key,
                         StorageDelta{
@@ -297,6 +313,8 @@ void BlockState::merge(State const &state, uint64_t const txn_index)
             it->second.storage.clear();
         }
     }
+    return MergeStamps{
+        lm_acct_cand, lm_acct_upd, lm_slot_cand, lm_slot_upd};
 }
 
 BlockState::ReleasedState BlockState::release() &&

@@ -34,6 +34,7 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/utils/evm-as.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
@@ -324,8 +325,21 @@ TYPED_TEST(TraitsTest, refunds_delete)
     BlockMetrics metrics;
 
     // Sets s[0] = 1 if passed any data, clears s[0] if data is empty.
-    auto const contract_code =
-        from_hex("0x3615600b576001600055005b6000600055").value();
+    // CALLDATASIZE; ISZERO; JUMPI clear; PUSH1 0x01; PUSH1 0x00; SSTORE; STOP;
+    // clear: PUSH1 0x00; PUSH1 0x00; SSTORE
+    auto eb = vm::utils::evm_as::latest();
+    eb.calldatasize()
+        .iszero()
+        .jumpi("clear")
+        .push(0x01)
+        .push(1, 0)
+        .sstore()
+        .stop()
+        .jumpdest("clear")
+        .push(1, 0)
+        .push(1, 0)
+        .sstore();
+    auto const contract_code = vm::utils::evm_as::assemble(eb);
 
     {
         State state{bs, Incarnation{0, 0}};
@@ -483,7 +497,10 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
     BlockMetrics metrics;
 
     // s[0] = 0; s[0] = 1
-    auto const contract_code = from_hex("0x60006000556001600055").value();
+    // PUSH1 0x00; PUSH1 0x00; SSTORE; PUSH1 0x01; PUSH1 0x00; SSTORE
+    auto eb = vm::utils::evm_as::latest();
+    eb.push(1, 0).push(1, 0).sstore().push(0x01).push(1, 0).sstore();
+    auto const contract_code = vm::utils::evm_as::assemble(eb);
 
     {
         State state{bs, Incarnation{0, 0}};

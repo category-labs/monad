@@ -39,6 +39,7 @@
 #include <category/mpt/db.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/utils/evm-as.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <bitset>
@@ -624,7 +625,9 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
             state, SENDER, tx, BASE_FEE_PER_GAS, 0, noop_state_tracer, context);
         state.subtract_from_balance(SENDER, gas_cost);
         state.subtract_from_balance(NEW_CONTRACT, to_wei(3));
-        byte_string const contract_code{0x60, 0x00};
+        // PUSH1 0x00
+        byte_string const contract_code =
+            vm::utils::evm_as::assemble(vm::utils::evm_as::latest().push(1, 0));
         state.set_code(NEW_CONTRACT, contract_code);
     };
 

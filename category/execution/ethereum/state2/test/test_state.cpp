@@ -35,6 +35,7 @@
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/util.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/utils/evm-as.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
@@ -1273,7 +1274,9 @@ TEST_F(InMemoryStateTest, copy_code)
 
 TEST_F(InMemoryStateTest, get_code)
 {
-    byte_string const contract{0x60, 0x34, 0x00};
+    // PUSH1 0x34; STOP
+    byte_string const contract = vm::utils::evm_as::assemble(
+        vm::utils::evm_as::latest().push(0x34).stop());
 
     BlockState bs{this->tdb, this->vm};
 

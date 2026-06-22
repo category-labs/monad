@@ -46,6 +46,7 @@
 #include <category/mpt/util.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/utils/evm-as.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
@@ -80,15 +81,35 @@ namespace
     auto const STRESS_TEST_CODE_HASH = to_bytes(keccak256(STRESS_TEST_CODE));
     auto const STRESS_TEST_ICODE = vm::make_shared_intercode(STRESS_TEST_CODE);
 
-    auto const REFUND_TEST_CODE =
-        0x6000600155600060025560006003556000600455600060055500_bytes;
+    // PUSH1 0x00; PUSH1 0xNN; SSTORE for NN = 1..5; then STOP
+    auto const REFUND_TEST_CODE = [] {
+        auto eb = vm::utils::evm_as::latest();
+        eb.push(1, 0)
+            .push(0x01)
+            .sstore()
+            .push(1, 0)
+            .push(0x02)
+            .sstore()
+            .push(1, 0)
+            .push(0x03)
+            .sstore()
+            .push(1, 0)
+            .push(0x04)
+            .sstore()
+            .push(1, 0)
+            .push(0x05)
+            .sstore()
+            .stop();
+        return vm::utils::evm_as::assemble(eb);
+    }();
     auto const REFUND_TEST_CODE_HASH = to_bytes(keccak256(REFUND_TEST_CODE));
     auto const REFUND_TEST_ICODE = vm::make_shared_intercode(REFUND_TEST_CODE);
 
     // EIP-7002/7251 system contract stub (just the STOP opcode).
     // Deployed at the two predeploy addresses so that execute_block's
     // process_requests path works for Prague+ traits.
-    auto const SYSTEM_STUB_CODE = 0x00_bytes;
+    auto const SYSTEM_STUB_CODE =
+        vm::utils::evm_as::assemble(vm::utils::evm_as::latest().stop());
     auto const SYSTEM_STUB_CODE_HASH = to_bytes(keccak256(SYSTEM_STUB_CODE));
     auto const SYSTEM_STUB_ICODE = vm::make_shared_intercode(SYSTEM_STUB_CODE);
 

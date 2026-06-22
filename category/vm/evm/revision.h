@@ -24,9 +24,9 @@ extern "C"
 
 // Monad's in-tree EVM fork revision enum. This is a drop-in replacement for
 // evmc's `evmc_revision`: the enumerators mirror `evmc_revision` 1:1 (same
-// underlying integer values), which keeps ordering comparisons, the arithmetic
-// in previous_evm_revision(), and Traits::id() numerically unchanged. The
-// 1:1 correspondence is enforced by static_assert in revision.cpp.
+// underlying integer values), which keeps ordering comparisons and the
+// arithmetic in previous_evm_revision() unchanged. The 1:1 correspondence is
+// enforced by static_assert in revision.cpp.
 //
 // The enum itself carries no evmc dependency. The only tie to evmc is the pair
 // of conversion functions below, which are needed solely at the remaining

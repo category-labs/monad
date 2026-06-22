@@ -28,9 +28,13 @@ dataset, or block range changes (note it in the row).
 
 | Item | Value |
 |------|-------|
-| Baseline commit | _TBD — capture pre-F1 MonadDB run_ |
+| Baseline commit | _TBD — capture pre-F1 MonadDB run at nb=10000 from block 22,830,000_ |
 | MonadDB median (blocks/s, gas/s) | _TBD_ |
 | MonadDB commit p99 (`cmt=`) | _TBD_ |
+
+> Informal same-blocks reference (not the formal baseline): a `cache-warmset-coverage`
+> MonadDB run over the identical blocks 22,830,001–22,840,000 gave cmt mean 12292µs,
+> median 11994µs, p99 22802µs. Useful as a sanity check until a pre-F1 `main` run lands.
 
 ## Per-PR runs
 
@@ -43,8 +47,31 @@ means a PR accidentally regressed the *default* backend. F1–F8 produce no Rock
 | F1 | `e210f5f4` | no | — | — | — | — | build scaffolding only; no replay run |
 | F2 | `9e41ae0d` | no | — | — | — | — | leaf lib (KvStore), zero callers; no replay run |
 | F3 | `516d7628` | no | — | — | — | — | test-only parity harness; no replay run |
-| F4 | _this commit_ | **yes** (`cmd/monad`, factory) | _pending replay_ | — | _pending_ | _pending_ | `make_db` factory + `--state-backend`; TrieDb stays sole impl, behavior unchanged → MonadDB track must stay flat |
+| F4 | `b5b110ed3` | **yes** (`cmd/monad`, factory) | 353s · tps 5794 · gps 514M · cmt med 12.5ms / p99 24.0ms | — | first MonadDB number | _baseline TBD_ | nb=10000 from block 22,830,000, 3 reps, **0 slow-commits**; behavior-preserving refactor (see run detail) |
 
 > Regression budget (fill in with the team's tolerance): throughput drop > **X%** or commit-p99
 > increase > **Y%** vs the previous PR blocks merge until explained. Planned dips (e.g. F9's
 > synchronous WAL, recovered by F10/F11/F12) are annotated with their expected recovery PR.
+
+## Run details
+
+### F4 — commit `b5b110ed3`, `--state-backend=triedb` (MonadDB track)
+
+Config: prep `monad-mpt --restore 22830000.archive`; run `--nblocks 10000 --db /dev/triedb
+--no-compaction`, 3 reps, cgexec/taskset pinned. `--state-backend` defaults to triedb, so this
+exercises the new `make_db` path on the unchanged MonadDB engine. Source logs (since overwritten
+by later runs): `/tmp/log_062226_rocksdb_22830000_10000_{1,2,3}`.
+
+| rep | wall | tps | gps | cmt median | cmt p99 | cmt max | slow >500ms |
+|-----|------|-----|-----|-----------|---------|---------|-------------|
+| 1 | 363s | 5634 | 500M | 12490µs | 24007µs | 104019µs | 0 |
+| 2 | 341s | 5997 | 532M | 12498µs | 23703µs | 69821µs | 0 |
+| 3 | 353s | 5794 | 514M | 12496µs | 24284µs | 132486µs | 0 |
+| **median** | **353s** | **5794** | **514M** | **12496µs** | **24007µs** | — | **0** |
+
+Reps are tight (cmt median within 8µs; tps within ~6%). Versus the same-blocks
+`cache-warmset-coverage` MonadDB reference (cmt median 11994µs / p99 22802µs), F4 is within ~4–5%
+— run-to-run noise, and that branch is not the formal baseline. **No regression evident.** F4 only
+relocates the identical `mpt::Db` + `TrieDb` construction into `make_db`, so the hot
+execute/commit path is unchanged. A formal Δ-vs-baseline still needs a pre-F1 `main` run at this
+exact config (nb=10000 from 22,830,000).

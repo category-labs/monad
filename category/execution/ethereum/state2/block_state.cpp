@@ -254,18 +254,33 @@ void BlockState::merge(State const &state, uint64_t const txn_index)
         auto const &storage = account_state.storage_;
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
+        // Stamp last_mutated only on an actual value change, so a write that
+        // re-writes / reverts to the same value (e.g. a reentrancy-guard slot
+        // set then cleared) is not recorded as a conflict -- matching the
+        // value-based check in can_merge.
+        if (it->second.account.second != account) {
+            it->second.account_last_mutated = txn_index;
+        }
         it->second.account.second = account;
-        it->second.account_last_mutated = txn_index;
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {
                 StorageDeltas::accessor it2{};
                 if (it->second.storage.find(it2, key)) {
+                    if (it2->second.second != value) {
+                        it2->second.last_mutated = txn_index;
+                    }
                     it2->second.second = value;
-                    it2->second.last_mutated = txn_index;
                 }
                 else {
+                    // New slot for the block delta (e.g. freshly created
+                    // contract, pre-state 0); stamp only if it became non-zero.
                     it->second.storage.emplace(
-                        key, StorageDelta{bytes32_t{}, value, txn_index});
+                        key,
+                        StorageDelta{
+                            bytes32_t{},
+                            value,
+                            value == bytes32_t{} ? LAST_MUTATED_NONE
+                                                 : txn_index});
                 }
             }
         }

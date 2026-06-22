@@ -19,10 +19,10 @@ cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
 
 project(monad_statedb)
 
-# F1: the RocksDB state backend's home. The target exists and compiles in both
-# configurations, but nothing consumes it yet — the KvStore, CF schema, and the
-# rest of the RocksDbDb land in later PRs (F2+). When MONAD_ENABLE_ROCKSDB=ON it
-# links the vendored RocksDB and defines MONAD_HAVE_ROCKSDB for conditional code.
+# The RocksDB state backend's home. The base target compiles in both
+# configurations; nothing consumes it yet. The RocksDB-only sources (CF schema +
+# KvStore, F2) and the rest of the RocksDbDb (F6+) build only when the backend is
+# enabled, defining MONAD_HAVE_ROCKSDB and linking the vendored RocksDB.
 add_library(monad_statedb OBJECT "statedb.cpp" "statedb.hpp")
 
 target_include_directories(monad_statedb PUBLIC ${CATEGORY_MAIN_DIR})
@@ -30,6 +30,14 @@ target_include_directories(monad_statedb PUBLIC ${CATEGORY_MAIN_DIR})
 monad_compile_options(monad_statedb)
 
 if(MONAD_ENABLE_ROCKSDB)
+  target_sources(
+    monad_statedb PRIVATE "kv_store.cpp" "kv_store.hpp" "schema.hpp")
   target_compile_definitions(monad_statedb PUBLIC MONAD_HAVE_ROCKSDB=1)
-  target_link_libraries(monad_statedb PUBLIC RocksDB::rocksdb)
+  target_link_libraries(monad_statedb PUBLIC RocksDB::rocksdb monad_core)
+
+  # Leaf-lib unit test: links monad_statedb + RocksDB only, not the full engine.
+  add_unit_test(
+    TARGET test_kv_store
+    SOURCES test_kv_store.cpp
+    LIBRARIES monad_statedb RocksDB::rocksdb)
 endif()

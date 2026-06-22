@@ -20,7 +20,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-class TrieDb;
+struct Db;
 
 struct GenesisState
 {
@@ -28,6 +28,8 @@ struct GenesisState
     char const *const alloc{nullptr};
 };
 
-void load_genesis_state(GenesisState const &, TrieDb &);
+// Backend-neutral: loads genesis through the monad::Db interface (commit +
+// finalize), so any backend (MonadDB today, RocksDbDb later) can be seeded.
+void load_genesis_state(GenesisState const &, Db &);
 
 MONAD_NAMESPACE_END

@@ -36,6 +36,7 @@
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
+#include <category/execution/ethereum/db/make_db.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
@@ -142,6 +143,7 @@ try {
     std::string statesync;
     fs::path chain_rlp_path;
     auto log_level = quill::LogLevel::Info;
+    StateBackend state_backend = StateBackend::TrieDb;
 
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
         {{"ethereum_mainnet", CHAIN_CONFIG_ETHEREUM_MAINNET},
@@ -149,6 +151,9 @@ try {
          {"monad_testnet", CHAIN_CONFIG_MONAD_TESTNET},
          {"monad_mainnet", CHAIN_CONFIG_MONAD_MAINNET},
          {"hive_net", CHAIN_CONFIG_HIVE_NET}};
+
+    std::unordered_map<std::string, StateBackend> const STATE_BACKEND_MAP = {
+        {"triedb", StateBackend::TrieDb}};
 
     cli.add_option("--chain", chain_config, "select which chain config to run")
         ->transform(CLI::CheckedTransformer(CHAIN_CONFIG_MAP, CLI::ignore_case))
@@ -161,6 +166,12 @@ try {
     cli.add_option("--nthreads", nthreads, "number of threads");
     cli.add_option("--nfibers", nfibers, "number of fibers");
     cli.add_flag("--no-compaction", no_compaction, "disable compaction");
+    cli.add_option(
+           "--state-backend,--state_backend",
+           state_backend,
+           "select the state storage backend")
+        ->transform(
+            CLI::CheckedTransformer(STATE_BACKEND_MAP, CLI::ignore_case));
     cli.add_option(
         "--sq-thread-cpu,--sq_thread_cpu",
         sq_thread_cpu,
@@ -277,27 +288,19 @@ try {
     if (!statesync.empty()) {
         net.emplace(statesync.c_str());
     }
-    // The on-disk Db ctor reads the persisted state_machine_kind from
-    // db_metadata and constructs the StateMachine via the registry. The
-    // in-memory path has no metadata to read from and constructs the SM
-    // inline.
-    register_ethereum_state_machines();
-    mpt::Db raw_db = [&] {
-        if (!db_in_memory) {
-            return mpt::Db{mpt::OnDiskDbConfig{
-                .append = true,
-                .compaction = !no_compaction,
-                .rewind_to_latest_finalized = true,
-                .rd_buffers = 8192,
-                .wr_buffers = 32,
-                .uring_entries = 128,
-                .sq_thread_cpu = disable_sq_thread_cpu
-                                     ? std::optional<unsigned>{}
-                                     : std::optional<unsigned>{sq_thread_cpu},
-                .dbname_paths = dbname_paths}};
-        }
-        return mpt::Db{std::make_unique<InMemoryMachine>()};
-    }();
+    // make_db registers the state machines and builds the MonadDB engine plus
+    // the monad::Db facade. --state-backend selects the backend (MonadDB only
+    // today). raw_db/triedb stay reachable for the mpt-level paths below
+    // (snapshot restore, statesync, the read-only block-hash RODb).
+    auto const db_handle = make_db(DbConfig{
+        .backend = state_backend,
+        .dbname_paths = dbname_paths,
+        .compaction = !no_compaction,
+        .enable_multiblock_cache = true,
+        .sq_thread_cpu = disable_sq_thread_cpu
+                             ? std::optional<unsigned>{}
+                             : std::optional<unsigned>{sq_thread_cpu}});
+    mpt::Db &raw_db = db_handle->raw_db();
 
     auto chain = [chain_config] -> std::unique_ptr<Chain> {
         switch (chain_config) {
@@ -315,10 +318,7 @@ try {
         MONAD_ASSERT(false);
     }();
 
-    TrieDb triedb{
-        raw_db,
-        /*enable_multiblock_cache=*/true}; // init block number to latest
-                                           // finalized block
+    TrieDb &triedb = db_handle->triedb();
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
         if (!snapshot.empty()) {

@@ -26,7 +26,8 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
-#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
@@ -39,7 +40,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-void load_genesis_state(GenesisState const &genesis, TrieDb &db)
+void load_genesis_state(GenesisState const &genesis, Db &db)
 {
     MONAD_ASSERT(genesis.alloc);
     MONAD_ASSERT(

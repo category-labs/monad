@@ -107,6 +107,17 @@ namespace limits
         return 50;
     };
 
+    template <Traits traits>
+    constexpr uint256_t maximum_block_reward()
+    {
+        if constexpr (traits::mip_12_active()) {
+            return 18 * MON;
+        }
+        else {
+            return 25 * MON;
+        }
+    }
+
     constexpr uint64_t withdrawal_delay()
     {
         return 1;

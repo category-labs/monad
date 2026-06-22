@@ -118,8 +118,6 @@ Result<void> static_validate_monad_body(
         return SyscallKind::Other;
     };
 
-    constexpr uint256_t MAXIMUM_BLOCK_REWARD = 25 * staking::MON;
-
     std::array<bool, 3> seen{};
     std::optional<SyscallKind> last_kind;
     for (auto it = txns.begin(); it != end_system_txn; ++it) {
@@ -139,7 +137,8 @@ Result<void> static_validate_monad_body(
         last_kind = kind;
 
         if (kind == SyscallKind::Reward &&
-            MONAD_UNLIKELY(it->value > MAXIMUM_BLOCK_REWARD)) {
+            MONAD_UNLIKELY(
+                it->value > staking::limits::maximum_block_reward<traits>())) {
             return MonadBlockError::InvalidRewardValue;
         }
     }

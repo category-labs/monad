@@ -170,6 +170,9 @@ add_library(
   "runtime/unaligned.hpp"
   # test
   "test_util/gtest_signal_stacktrace_printer.hpp"
+  # thread
+  "thread/thread_pool.cpp"
+  "thread/thread_pool.hpp"
   # util
   "util/stopwatch.hpp")
 
@@ -227,6 +230,7 @@ target_link_libraries(monad_core PUBLIC Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC CLI11::CLI11)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)
+target_link_libraries(monad_core PUBLIC concurrentqueue)
 target_link_libraries(monad_core PUBLIC ethash::keccak)
 target_link_libraries(monad_core PUBLIC evmc)
 target_link_libraries(monad_core PUBLIC quill)

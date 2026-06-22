@@ -17,7 +17,9 @@ add_library(monad-test-utils)
 
 target_sources(
   monad-test-utils
-  PRIVATE from_json.cpp
+  PRIVATE db_parity_harness.cpp
+          db_parity_harness.hpp
+          from_json.cpp
           from_json.hpp
           json_state.cpp
           json_state.hpp
@@ -31,3 +33,11 @@ target_link_libraries(monad-test-utils PUBLIC nlohmann_json::nlohmann_json
                                               monad_execution)
 
 monad_compile_options(monad-test-utils)
+
+# Self-proof: drive two MonadDB instances through the harness and confirm they
+# agree (and that the harness catches divergence). Becomes MonadDB-vs-RocksDB at
+# F9. Links only monad-test-utils (which pulls in monad_execution).
+add_unit_test(
+  TARGET test_db_parity_harness
+  SOURCES test_db_parity_harness.cpp
+  LIBRARIES monad-test-utils)

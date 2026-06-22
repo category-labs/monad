@@ -65,3 +65,6 @@
 [submodule "third_party/fiber"]
 	path = third_party/fiber
 	url = https://github.com/category-labs/fiber.git
+[submodule "third_party/rocksdb"]
+	path = third_party/rocksdb
+	url = https://github.com/facebook/rocksdb.git

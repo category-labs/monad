@@ -46,6 +46,12 @@ option(MONAD_COMPILER_DUMP_ASM "Dump assembly files into build/asm" OFF)
 option(MONAD_COMPILER_STATS "Print statistics about the compiler" OFF)
 option(MONAD_COMPILER_HOT_PATH_STATS "Print statistics about the vm" OFF)
 
+# Optional RocksDB-backed state store (category/statedb + the future RocksDbDb).
+# Default OFF: MonadDB stays the only backend until the migration flips it. When
+# ON, the vendored third_party/rocksdb submodule is built statically; see the
+# RocksDB dependency block below and category/statedb.
+option(MONAD_ENABLE_ROCKSDB "Build the optional RocksDB state backend" OFF)
+
 if(NOT DEFINED BUILD_SHARED_LIBS)
   # If this isn't defined, evmone has the audacity to define it itself (to ON)
   # whereas the ordinary default is for static libraries; if it's not specified,
@@ -211,6 +217,52 @@ find_package(TBB REQUIRED)
 # unordered_dense
 add_subdirectory("third_party/unordered_dense")
 
+# rocksdb (optional; vendored submodule, built statically). Only configured when
+# MONAD_ENABLE_ROCKSDB=ON, so the default build needs neither the submodule nor a
+# system package. liburing is already present on the box (category/core links
+# `uring`), so WITH_LIBURING=ON compiles in the io_uring async path with no new
+# dependency. If RocksDB's liburing probe fails on a given box, flip
+# WITH_LIBURING=OFF (async_io then degrades to synchronous reads).
+if(MONAD_ENABLE_ROCKSDB)
+  if(NOT EXISTS "${THIRD_PARTY_DIR}/rocksdb/CMakeLists.txt")
+    message(
+      FATAL_ERROR
+      "MONAD_ENABLE_ROCKSDB=ON but third_party/rocksdb is not checked out. "
+      "Run: git submodule update --init third_party/rocksdb")
+  endif()
+  # Set RocksDB's build knobs in the cache before add_subdirectory so they win.
+  set(ROCKSDB_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+  set(WITH_TESTS OFF CACHE BOOL "" FORCE)
+  set(WITH_TOOLS OFF CACHE BOOL "" FORCE)
+  set(WITH_CORE_TOOLS OFF CACHE BOOL "" FORCE)
+  set(WITH_BENCHMARK_TOOLS OFF CACHE BOOL "" FORCE)
+  set(WITH_TRACE_TOOLS OFF CACHE BOOL "" FORCE)
+  set(WITH_GFLAGS OFF CACHE BOOL "" FORCE)
+  set(WITH_JEMALLOC OFF CACHE BOOL "" FORCE)
+  # RocksDB's own warnings must not trip the repo's -Werror.
+  set(FAIL_ON_WARNINGS OFF CACHE BOOL "" FORCE)
+  # Match the repo: RTTI on (avoids undefined typeinfo) and -march=haswell
+  # (RocksDB's default -march=native risks SIGILL / ABI skew vs the toolchain).
+  set(USE_RTTI 1 CACHE STRING "" FORCE)
+  set(PORTABLE "haswell" CACHE STRING "" FORCE)
+  # io_uring async path on; reuse the repo's zstd; disable the other compressors.
+  set(WITH_LIBURING ON CACHE BOOL "" FORCE)
+  set(WITH_ZSTD ON CACHE BOOL "" FORCE)
+  set(WITH_SNAPPY OFF CACHE BOOL "" FORCE)
+  set(WITH_LZ4 OFF CACHE BOOL "" FORCE)
+  set(WITH_ZLIB OFF CACHE BOOL "" FORCE)
+  set(WITH_BZ2 OFF CACHE BOOL "" FORCE)
+  add_subdirectory("third_party/rocksdb" EXCLUDE_FROM_ALL SYSTEM)
+  # The RocksDB::rocksdb alias only exists after an install/export; the in-tree
+  # target is plain `rocksdb`. Provide the stable alias, and put the public
+  # headers on consumers' include path as SYSTEM so they don't trip -Werror.
+  if(NOT TARGET RocksDB::rocksdb)
+    add_library(RocksDB::rocksdb ALIAS rocksdb)
+  endif()
+  target_include_directories(
+    rocksdb SYSTEM INTERFACE "${THIRD_PARTY_DIR}/rocksdb/include")
+endif()
+
 # ##############################################################################
 # unit tests
 # ##############################################################################
@@ -312,6 +364,7 @@ add_subdirectory("category/event")
 add_subdirectory("category/execution")
 add_subdirectory("category/rpc")
 add_subdirectory("category/statesync")
+add_subdirectory("category/statedb")
 add_subdirectory("category/vm")
 
 # Assemble all the object libraries into complete monad runtime library,

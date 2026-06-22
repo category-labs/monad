@@ -234,8 +234,19 @@ pub struct RevertCallResult {
     pub trace: Vec<u8>,
 }
 
-pub struct SenderContext {
+pub struct EthCallSenderContext {
     sender: Sender<*mut monad_executor_result>,
+    state_override_ctx: *mut std::ffi::c_void,
+}
+
+pub struct EthTraceBlockSenderContext {
+    sender: Sender<*mut monad_executor_result>,
+}
+
+pub struct EthSimulateV1SenderContext {
+    sender: Sender<*mut monad_executor_result>,
+    state_override_vec_ctx: *mut std::ffi::c_void,
+    block_override_vec_ctx: *mut std::ffi::c_void,
 }
 
 #[derive(Clone, Debug)]
@@ -265,9 +276,61 @@ pub unsafe extern "C" fn eth_call_submit_callback(
     result: *mut monad_executor_result,
     user: *mut std::ffi::c_void,
 ) {
-    let user = unsafe { Box::from_raw(user as *mut SenderContext) };
+    let user = unsafe { Box::from_raw(user as *mut EthCallSenderContext) };
 
-    let _ = user.sender.send(result);
+    // If the receiver has been dropped, we need to release the result here to avoid a memory leak.
+    // Otherwise, the receiver will take ownership of the result and release it when done.
+    if user.sender.send(result).is_err() && !result.is_null() {
+        unsafe { ffi::monad_executor_result_release(result) };
+    }
+
+    // TODO(dhil): This check should be unnecessary as destroying `null` ought to be a no-op. It is currently not the case in the C++ code. Once it has been updated then this check would become redundant.
+    if !user.state_override_ctx.is_null() {
+        unsafe { ffi::monad_state_override_destroy(user.state_override_ctx as *mut _) };
+    }
+}
+
+/// # Safety
+/// This should be used only as a callback for monad_executor_run_transactions
+///
+/// This function is called when the executor is finished and the result is returned over the
+/// channel
+pub unsafe extern "C" fn eth_trace_block_or_transaction_submit_callback(
+    result: *mut monad_executor_result,
+    user: *mut std::ffi::c_void,
+) {
+    let user = unsafe { Box::from_raw(user as *mut EthTraceBlockSenderContext) };
+
+    // If the receiver has been dropped, we need to release the result here to avoid a memory leak.
+    // Otherwise, the receiver will take ownership of the result and release it when done.
+    if user.sender.send(result).is_err() && !result.is_null() {
+        unsafe { ffi::monad_executor_result_release(result) };
+    }
+}
+
+/// # Safety
+/// This should be used only as a callback for monad_executor_eth_simulate_submit
+///
+/// This function is called when the executor is finished and the result is returned over the
+/// channel
+pub unsafe extern "C" fn eth_simulate_v1_submit_callback(
+    result: *mut monad_executor_result,
+    user: *mut std::ffi::c_void,
+) {
+    let user = unsafe { Box::from_raw(user as *mut EthSimulateV1SenderContext) };
+
+    // If the receiver has been dropped, we need to release the result here to avoid a memory leak.
+    // Otherwise, the receiver will take ownership of the result and release it when done.
+    if user.sender.send(result).is_err() && !result.is_null() {
+        unsafe { ffi::monad_executor_result_release(result) };
+    }
+
+    if !user.state_override_vec_ctx.is_null() {
+        unsafe { ffi::monad_state_override_vec_destroy(user.state_override_vec_ctx as *mut _) };
+    }
+    if !user.block_override_vec_ctx.is_null() {
+        unsafe { ffi::monad_block_override_vec_destroy(user.block_override_vec_ctx as *mut _) };
+    }
 }
 
 pub type StateOverrideSet = HashMap<Address, StateOverrideObject>;
@@ -395,7 +458,10 @@ pub async fn eth_call(
     let rlp_encoded_block_id = alloy_rlp::encode(block_id);
 
     let (send, recv) = channel();
-    let sender_ctx = Box::new(SenderContext { sender: send });
+    let sender_ctx = Box::new(EthCallSenderContext {
+        sender: send,
+        state_override_ctx: override_ctx as *mut std::ffi::c_void,
+    });
 
     unsafe {
         let sender_ctx_ptr = Box::into_raw(sender_ctx);
@@ -423,8 +489,6 @@ pub async fn eth_call(
     let result = match recv.await {
         Ok(r) => r,
         Err(e) => {
-            unsafe { ffi::monad_state_override_destroy(override_ctx) };
-
             warn!("callback from eth_call_executor failed: {:?}", e);
 
             return CallResult::Failure(FailureCallResult {
@@ -552,7 +616,6 @@ pub async fn eth_call(
         };
 
         ffi::monad_executor_result_release(result);
-        ffi::monad_state_override_destroy(override_ctx);
 
         call_result
     }
@@ -597,7 +660,7 @@ pub async fn eth_trace_block_or_transaction(
     let rlp_encoded_grandparent_id = alloy_rlp::encode(grandparent_id.unwrap_or([0_u8; 32]));
 
     let (send, recv) = channel();
-    let sender_ctx = Box::new(SenderContext { sender: send });
+    let sender_ctx = Box::new(EthTraceBlockSenderContext { sender: send });
 
     unsafe {
         let sender_ctx_ptr = Box::into_raw(sender_ctx);
@@ -615,7 +678,7 @@ pub async fn eth_trace_block_or_transaction(
             rlp_encoded_grandparent_id.as_ptr(),
             rlp_encoded_grandparent_id.len(),
             transaction_index,
-            Some(eth_call_submit_callback),
+            Some(eth_trace_block_or_transaction_submit_callback),
             sender_ctx_ptr as *mut std::ffi::c_void,
             tracer.into(),
         )
@@ -819,6 +882,7 @@ impl Drop for CStateOverrideVec {
         }
     }
 }
+
 struct CBlockOverrideVec {
     c_handle: NonNull<ffi::monad_block_override_vec>,
 }
@@ -1013,7 +1077,7 @@ pub async fn eth_simulate_v1(
             fee_recipient,
             prev_randao,
             base_fee_per_gas,
-            withdrawals,
+            withdrawals: _,
         } = block_override;
 
         if let Some(number) = number {
@@ -1046,7 +1110,11 @@ pub async fn eth_simulate_v1(
     }
 
     let (send, recv) = channel();
-    let sender_ctx = Box::new(SenderContext { sender: send });
+    let sender_ctx = Box::new(EthSimulateV1SenderContext {
+        sender: send,
+        state_override_vec_ctx: state_overrides.as_mut_ptr() as *mut std::ffi::c_void,
+        block_override_vec_ctx: block_overrides.as_mut_ptr() as *mut std::ffi::c_void,
+    });
 
     unsafe {
         let sender_ctx_ptr = Box::into_raw(sender_ctx);
@@ -1070,10 +1138,12 @@ pub async fn eth_simulate_v1(
             state_overrides.as_mut_ptr(),
             block_overrides.as_mut_ptr(),
             emit_native_transfer_logs,
-            Some(eth_call_submit_callback),
+            Some(eth_simulate_v1_submit_callback),
             sender_ctx_ptr as *mut std::ffi::c_void,
         );
     }
+    std::mem::forget(state_overrides);
+    std::mem::forget(block_overrides);
 
     let result_raw = match recv.await {
         Ok(r) => r,

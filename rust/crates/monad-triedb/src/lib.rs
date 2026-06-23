@@ -14,62 +14,25 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::{
-    cmp::Ordering,
     ffi::CString,
     path::Path,
     ptr::{null, null_mut, NonNull},
-    sync::{
-        atomic::{AtomicUsize, Ordering::SeqCst},
-        Arc,
-    },
+    sync::{atomic::AtomicUsize, Arc},
 };
 
 use futures::channel::oneshot::Sender;
 use tracing::{debug, error};
 
-use self::{
-    ffi::{validator_data, validator_set},
-    traverse::TraverseCallbackKind,
+pub use self::ffi::TraverseEntry;
+use self::ffi::{
+    validator_data, validator_set, AsyncReadContext, AsyncTraverseContext, OpaqueCallbackContext,
 };
 
 pub mod ffi;
-mod traverse;
 
 #[derive(Debug)]
 pub struct TriedbHandle {
     db_ptr: *mut ffi::TriedbRoInner,
-}
-
-struct SenderContext {
-    sender: Sender<Option<Vec<u8>>>,
-    completed_counter: Arc<AtomicUsize>,
-
-    // The strong count of this dummy Arc<> reflects the total number of currently executing
-    // (concurrent) requests, and this number is used by upstream code to maintain request
-    // backpressure.  When this request completes, this Arc<> is implicitly dropped, which
-    // causes the concurrent request count to be decremented.
-    #[allow(dead_code)]
-    concurrency_tracker: Arc<()>,
-}
-
-#[derive(Debug)]
-struct TraverseContext {
-    // values in traversal order
-    data: std::sync::Mutex<Vec<TraverseEntry>>,
-    sender: Sender<Option<Vec<TraverseEntry>>>,
-
-    // The strong count of this dummy Arc<> reflects the total number of currently executing
-    // (concurrent) requests, and this number is used by upstream code to maintain request
-    // backpressure.  When this request completes, this Arc<> is implicitly dropped, which
-    // causes the concurrent request count to be decremented.
-    #[allow(dead_code)]
-    concurrency_tracker: Arc<()>,
-}
-
-#[derive(Debug)]
-pub struct TraverseEntry {
-    pub key: Vec<u8>,
-    pub value: Vec<u8>,
 }
 
 /// Returns `None` if nibble length validation fails (overflow or insufficient key bytes).
@@ -103,96 +66,6 @@ fn parse_triedb_block_id(value: ffi::monad_c_bytes32) -> Option<[u8; 32]> {
     }
     Some(value.bytes)
 }
-
-/// # Safety
-/// This should be used only as a callback for async TrieDB calls.
-///
-/// This function is called by TrieDB once it processes a single read async call.
-unsafe extern "C" fn read_async_callback(
-    value_ptr: *const u8,
-    value_len: i32,
-    sender_context: *mut std::ffi::c_void,
-) {
-    // Unwrap the sender context struct
-    let sender_context = unsafe { Box::from_raw(sender_context as *mut SenderContext) };
-    // Increment the completed counter
-    sender_context.completed_counter.fetch_add(1, SeqCst);
-
-    let result = match value_len.cmp(&0) {
-        Ordering::Less => None,
-        Ordering::Equal => Some(Vec::new()),
-        Ordering::Greater => {
-            let value =
-                unsafe { std::slice::from_raw_parts(value_ptr, value_len as usize).to_vec() };
-            unsafe { ffi::triedb_finalize(value_ptr) };
-            Some(value)
-        }
-    };
-
-    // Send the retrieved result through the channel
-    let _ = sender_context.sender.send(result);
-}
-
-// Compile-time assertion that read_async_callback signature matches triedb_async_read_callback_fn
-const _: () = {
-    #[allow(dead_code)]
-    const fn check_signature() {
-        let _: ffi::triedb_async_read_callback_fn = Some(read_async_callback);
-    }
-};
-
-/// # Safety
-/// This is used as a callback when traversing the transaction or receipt trie.
-unsafe extern "C" fn traverse_callback(
-    op_kind: ffi::triedb_async_traverse_callback,
-    context: *mut std::ffi::c_void,
-    key_ptr: *const u8,
-    key_len: usize,
-    value_ptr: *const u8,
-    value_len: usize,
-) {
-    let context = context as *mut TraverseContext;
-
-    let Some(op_kind) = TraverseCallbackKind::from_c(op_kind) else {
-        error!(
-            "traverse_callback: unexpected op_kind value: {}",
-            op_kind as i32
-        );
-        let _ctx = unsafe { Box::from_raw(context) };
-        return;
-    };
-
-    match op_kind {
-        TraverseCallbackKind::FinishedEarly => {
-            let ctx = unsafe { Box::from_raw(context) };
-            let _ = ctx.sender.send(None);
-        }
-        TraverseCallbackKind::FinishedNormally => {
-            let ctx = unsafe { Box::from_raw(context) };
-            let data = {
-                let mut lock = ctx.data.lock().expect("mutex poisoned");
-                std::mem::take(&mut *lock)
-            };
-            let _ = ctx.sender.send(Some(data));
-        }
-        TraverseCallbackKind::Value => {
-            let key = unsafe { std::slice::from_raw_parts(key_ptr, key_len).to_vec() };
-            let value = unsafe { std::slice::from_raw_parts(value_ptr, value_len).to_vec() };
-
-            let mut lock = unsafe { &*context }.data.lock().expect("mutex poisoned");
-
-            lock.push(TraverseEntry { key, value });
-        }
-    }
-}
-
-// Compile-time assertion that traverse_callback signature matches triedb_async_traverse_callback_fn
-const _: () = {
-    #[allow(dead_code)]
-    const fn check_signature() {
-        let _: ffi::triedb_async_traverse_callback_fn = Some(traverse_callback);
-    }
-};
 
 impl TriedbHandle {
     pub fn try_new(dbdir_path: &Path, node_lru_max_mem: u64) -> Option<Self> {
@@ -262,24 +135,19 @@ impl TriedbHandle {
             return;
         }
 
-        // Wrap the sender and completed_counter in a context struct
-        let sender_context = Box::new(SenderContext {
+        let ctx = Box::new(AsyncReadContext::new(
             sender,
             completed_counter,
             concurrency_tracker,
-        });
+        ));
 
         unsafe {
-            // Convert the struct into a raw pointer which will be sent to the callback function
-            let sender_context_ptr = Box::into_raw(sender_context);
-
             ffi::triedb_async_read(
                 self.db_ptr,
                 key.as_ptr(),
                 key_len_nibbles,
                 block_id,
-                Some(read_async_callback), // TrieDB read async callback
-                sender_context_ptr as *mut std::ffi::c_void,
+                Box::into_raw(ctx) as *mut OpaqueCallbackContext,
             );
         }
     }
@@ -307,21 +175,15 @@ impl TriedbHandle {
             return;
         }
 
-        let traverse_context = Box::new(TraverseContext {
-            data: std::sync::Mutex::new(Vec::default()),
-            sender,
-            concurrency_tracker,
-        });
+        let ctx = Box::new(AsyncTraverseContext::new(sender, concurrency_tracker));
 
         unsafe {
-            let context = Box::into_raw(traverse_context) as *mut std::ffi::c_void;
             ffi::triedb_async_traverse(
                 self.db_ptr,
                 key.as_ptr(),
                 key_len_nibbles,
                 block_id,
-                context,
-                Some(traverse_callback),
+                Box::into_raw(ctx) as *mut OpaqueCallbackContext,
             );
         };
     }
@@ -337,22 +199,15 @@ impl TriedbHandle {
             return;
         }
 
-        let traverse_context = Box::new(TraverseContext {
-            data: std::sync::Mutex::new(Default::default()),
-            sender,
-            concurrency_tracker: Arc::new(()),
-        });
+        let ctx = Box::new(AsyncTraverseContext::new(sender, Arc::new(())));
 
         unsafe {
-            let context = Box::into_raw(traverse_context) as *mut std::ffi::c_void;
-            // sync result is already handled by traverse_callback
             let _result = ffi::triedb_traverse(
                 self.db_ptr,
                 key.as_ptr(),
                 key_len_nibbles,
                 block_id,
-                context,
-                Some(traverse_callback),
+                Box::into_raw(ctx) as *mut OpaqueCallbackContext,
             );
         };
     }
@@ -376,14 +231,9 @@ impl TriedbHandle {
             return;
         }
 
-        let traverse_context = Box::new(TraverseContext {
-            data: std::sync::Mutex::new(Default::default()),
-            sender,
-            concurrency_tracker,
-        });
+        let ctx = Box::new(AsyncTraverseContext::new(sender, concurrency_tracker));
 
         unsafe {
-            let context = Box::into_raw(traverse_context) as *mut std::ffi::c_void;
             ffi::triedb_async_ranged_get(
                 self.db_ptr,
                 prefix_key.as_ptr(),
@@ -393,8 +243,7 @@ impl TriedbHandle {
                 max_key.as_ptr(),
                 max_key_len_nibbles,
                 block_id,
-                context,
-                Some(traverse_callback),
+                Box::into_raw(ctx) as *mut OpaqueCallbackContext,
             );
         };
     }

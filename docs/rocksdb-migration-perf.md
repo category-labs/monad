@@ -108,3 +108,6 @@ commit + a shadow read+assert per state read), so these are NOT a production num
 Overhead is the validation cost of a debug-only path, not a regression of the production path (the
 real RocksDbDb perf is F9+); the no-flag MonadDB track stays flat. Also verified on the dev box:
 the full ON build is clean and `test_kv_store` (6) + `test_db_parity_harness` (2) pass.
+
+A later re-run (commit `2dbce2d7c`, 3 reps) reproduced the shadow result identically — clean finish,
+no divergence, median 412s / tps 4964 / gps 440M.

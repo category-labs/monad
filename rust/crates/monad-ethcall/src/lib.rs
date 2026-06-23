@@ -102,20 +102,20 @@ impl Drop for EthCallExecutor {
 }
 
 struct MonadExecutorResult {
-    c_handle: NonNull<ffi::monad_executor_result>,
+    inner: NonNull<ffi::monad_executor_result>,
 }
 
 impl MonadExecutorResult {
     fn from_c_handle(c_handle: *mut ffi::monad_executor_result) -> Option<Self> {
-        NonNull::new(c_handle).map(|h| Self { c_handle: h })
+        NonNull::new(c_handle).map(|inner| Self { inner })
     }
 
     fn status_code(&self) -> i32 {
-        unsafe { (*self.c_handle.as_ptr()).status_code }
+        unsafe { self.inner.as_ref() }.status_code
     }
 
     fn encoded_trace(&self) -> Result<Box<[u8]>, ()> {
-        let this = unsafe { *self.c_handle.as_ref() };
+        let this = unsafe { self.inner.as_ref() };
 
         if this.encoded_trace_len == 0 {
             return Ok(Box::new([]));
@@ -131,7 +131,8 @@ impl MonadExecutorResult {
     }
 
     fn message(&self) -> String {
-        let cstr_msg = unsafe { CStr::from_ptr((*self.c_handle.as_ptr()).message.cast()) };
+        let cstr_msg = unsafe { CStr::from_ptr(self.inner.as_ref().message.cast()) };
+
         String::from(
             cstr_msg
                 .to_str()
@@ -143,7 +144,7 @@ impl MonadExecutorResult {
 impl Drop for MonadExecutorResult {
     fn drop(&mut self) {
         unsafe {
-            ffi::monad_executor_result_release(self.c_handle.as_ptr());
+            ffi::monad_executor_result_release(self.inner.as_ptr());
         }
     }
 }
@@ -382,26 +383,35 @@ pub async fn eth_call(
     sender.encode(&mut rlp_encoded_sender);
 
     let override_ctx = unsafe { ffi::monad_state_override_create() };
-    for (addr, obj) in state_override_set {
+
+    for (
+        addr,
+        StateOverrideObject {
+            balance,
+            nonce,
+            code,
+            storage_override,
+        },
+    ) in state_override_set
+    {
         let addr: &[u8] = addr.as_slice();
 
         unsafe {
             ffi::add_override_address(override_ctx, addr.as_ptr(), addr.len());
 
-            if let Some(balance) = obj.balance {
+            if let Some(balance) = balance {
                 // Big Endianness is to match with decode in eth_call.cpp (intx::be::load)
-                let balance_vec = balance.to_be_bytes_vec();
+                let balance = balance.to_be_bytes_vec();
 
                 ffi::set_override_balance(
                     override_ctx,
                     addr.as_ptr(),
                     addr.len(),
-                    balance_vec.as_ptr(),
-                    balance_vec.len(),
+                    balance.as_ptr(),
+                    balance.len(),
                 );
             }
-
-            if let Some(nonce) = obj.nonce {
+            if let Some(nonce) = nonce {
                 ffi::set_override_nonce(
                     override_ctx,
                     addr.as_ptr(),
@@ -410,7 +420,7 @@ pub async fn eth_call(
                 )
             }
 
-            if let Some(code) = &obj.code {
+            if let Some(code) = code {
                 ffi::set_override_code(
                     override_ctx,
                     addr.as_ptr(),
@@ -420,9 +430,9 @@ pub async fn eth_call(
                 )
             }
 
-            match &obj.storage_override {
-                Some(StorageOverride::State(storage_override)) => {
-                    for (k, v) in storage_override {
+            match storage_override {
+                Some(StorageOverride::State(override_state)) => {
+                    for (k, v) in override_state {
                         ffi::set_override_state(
                             override_ctx,
                             addr.as_ptr(),
@@ -464,8 +474,6 @@ pub async fn eth_call(
     });
 
     unsafe {
-        let sender_ctx_ptr = Box::into_raw(sender_ctx);
-
         ffi::monad_executor_eth_call_submit(
             eth_call_executor.eth_call_executor,
             chain_config,
@@ -480,7 +488,7 @@ pub async fn eth_call(
             rlp_encoded_block_id.len(),
             override_ctx,
             Some(eth_call_submit_callback),
-            sender_ctx_ptr as *mut std::ffi::c_void,
+            Box::into_raw(sender_ctx) as *mut std::ffi::c_void,
             tracer.into(),
             gas_specified,
         )
@@ -663,8 +671,6 @@ pub async fn eth_trace_block_or_transaction(
     let sender_ctx = Box::new(EthTraceBlockSenderContext { sender: send });
 
     unsafe {
-        let sender_ctx_ptr = Box::into_raw(sender_ctx);
-
         ffi::monad_executor_run_transactions(
             eth_call_executor.eth_call_executor,
             chain_config,
@@ -679,7 +685,7 @@ pub async fn eth_trace_block_or_transaction(
             rlp_encoded_grandparent_id.len(),
             transaction_index,
             Some(eth_trace_block_or_transaction_submit_callback),
-            sender_ctx_ptr as *mut std::ffi::c_void,
+            Box::into_raw(sender_ctx) as *mut std::ffi::c_void,
             tracer.into(),
         )
     };
@@ -1030,7 +1036,7 @@ pub async fn eth_simulate_v1(
             data: None,
         });
     };
-    for (i, (block_override, state_override)) in overrides.iter().enumerate() {
+    for (i, (block_override, state_override)) in overrides.into_iter().enumerate() {
         for (
             addr,
             StateOverrideObject {
@@ -1077,7 +1083,7 @@ pub async fn eth_simulate_v1(
             fee_recipient,
             prev_randao,
             base_fee_per_gas,
-            withdrawals: _,
+            withdrawals,
         } = block_override;
 
         if let Some(number) = number {
@@ -1104,7 +1110,7 @@ pub async fn eth_simulate_v1(
             block_overrides.set_base_fee_per_gas_at(i, base_fee_per_gas);
         }
 
-        for withdrawal in &block_override.withdrawals {
+        for withdrawal in withdrawals {
             block_overrides.add_withdrawal_at(i, withdrawal);
         }
     }
@@ -1117,8 +1123,6 @@ pub async fn eth_simulate_v1(
     });
 
     unsafe {
-        let sender_ctx_ptr = Box::into_raw(sender_ctx);
-
         ffi::monad_executor_eth_simulate_submit(
             eth_call_executor.eth_call_executor,
             chain_config,
@@ -1139,7 +1143,7 @@ pub async fn eth_simulate_v1(
             block_overrides.as_mut_ptr(),
             emit_native_transfer_logs,
             Some(eth_simulate_v1_submit_callback),
-            sender_ctx_ptr as *mut std::ffi::c_void,
+            Box::into_raw(sender_ctx) as *mut std::ffi::c_void,
         );
     }
     std::mem::forget(state_overrides);

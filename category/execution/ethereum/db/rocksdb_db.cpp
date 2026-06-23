@@ -366,18 +366,16 @@ uint64_t RocksDbDb::get_block_number() const
     return block_number_;
 }
 
-void RocksDbDb::commit(
-    bytes32_t const &block_id, CommitBuilder &builder,
-    BlockHeader const &header, std::unique_ptr<StateDeltas> state_deltas,
-    std::function<void(BlockHeader &)> const populate_header_fn)
+bytes32_t RocksDbDb::apply_state_chunk(
+    rocksdb::WriteBatch &batch, std::unique_ptr<StateDeltas> deltas)
 {
-    MONAD_ASSERT(state_deltas);
+    MONAD_ASSERT(deltas);
 
     // 1. Assemble a branch-complete witness for the touched keys.
     byte_string witness;
     HashSet seen;
     if (state_root_ != NULL_ROOT) {
-        for (auto const &[addr, delta] : *state_deltas) {
+        for (auto const &[addr, delta] : *deltas) {
             auto const acct_hash = keccak256(addr.bytes);
             bool const acct_delete = !delta.account.second.has_value() &&
                                      delta.account.first.has_value();
@@ -428,8 +426,7 @@ void RocksDbDb::commit(
     auto pt = PartialTrieDb::from_witness(state_root_, witness, {});
     MONAD_ASSERT(!pt.has_error());
 
-    rocksdb::WriteBatch batch;
-    for (auto const &[addr, delta] : *state_deltas) {
+    for (auto const &[addr, delta] : *deltas) {
         auto const &new_acct = delta.account.second;
         if (new_acct.has_value()) {
             kv_->batch_put(
@@ -460,6 +457,70 @@ void RocksDbDb::commit(
             }
         }
     }
+
+    // 3. Apply the deltas to the witness trie, recompute the root, and stage
+    // the
+    //    changed trie nodes. PartialTrieDb ignores block_id/builder/header.
+    CommitBuilder unused{0};
+    pt.value().commit(
+        bytes32_t{},
+        unused,
+        BlockHeader{},
+        std::move(deltas),
+        [](BlockHeader &) {});
+    bytes32_t const root = pt.value().state_root();
+    pt.value().for_each_node(
+        [&](bytes32_t const &node_hash, byte_string_view const rlp) {
+            nodes_.batch_put(batch, node_hash, rlp);
+        });
+    return root;
+}
+
+void RocksDbDb::seed_chunk(
+    std::unique_ptr<StateDeltas> deltas, Code const &code)
+{
+    MONAD_ASSERT(deltas);
+    rocksdb::WriteBatch batch;
+    for (auto const &[code_hash, icode] : code) {
+        if (icode) {
+            auto const span = icode->code_span();
+            kv_->batch_put(
+                batch,
+                Cf::code,
+                byte_string_view{code_hash.bytes, sizeof(code_hash.bytes)},
+                byte_string_view{span.data(), span.size()});
+        }
+    }
+    state_root_ = apply_state_chunk(batch, std::move(deltas));
+    // Per-chunk durability is not needed: a crashed seed is simply re-run.
+    kv_->write(batch, /*sync=*/false);
+}
+
+void RocksDbDb::seed_finalize(
+    uint64_t const block, bytes32_t const &expected_state_root)
+{
+    // The seed gate: the folded state must reproduce the snapshot's root.
+    MONAD_ASSERT(state_root_ == expected_state_root);
+    rocksdb::WriteBatch batch;
+    kv_->batch_put(
+        batch,
+        Cf::meta,
+        meta_bsv(statedb::meta_key::state_root),
+        byte_string_view{state_root_.bytes, sizeof(state_root_.bytes)});
+    kv_->batch_put(
+        batch, Cf::meta, meta_bsv(statedb::meta_key::finalized), be64(block));
+    kv_->write(batch, /*sync=*/true);
+    block_number_ = block;
+}
+
+void RocksDbDb::commit(
+    bytes32_t const &, CommitBuilder &builder, BlockHeader const &header,
+    std::unique_ptr<StateDeltas> state_deltas,
+    std::function<void(BlockHeader &)> const populate_header_fn)
+{
+    MONAD_ASSERT(state_deltas);
+
+    rocksdb::WriteBatch batch;
 
     // 3. Recompute the block-local roots (receipts/transactions/withdrawals)
     //    and recover any new contract code -- both live only in the
@@ -539,17 +600,9 @@ void RocksDbDb::commit(
         }
     }
 
-    // 4. Apply the state deltas to the witness trie, recompute the root, and
-    //    stage the changed trie nodes. PartialTrieDb ignores block_id/builder.
-    CommitBuilder unused{header.number};
-    pt.value().commit(
-        block_id, unused, header, std::move(state_deltas), [](BlockHeader &) {
-        });
-    state_root_ = pt.value().state_root();
-    pt.value().for_each_node(
-        [&](bytes32_t const &node_hash, byte_string_view const rlp) {
-            nodes_.batch_put(batch, node_hash, rlp);
-        });
+    // 4. Fold the state deltas into the on-disk trie + flat CFs, staging the
+    //    changed nodes/values into the same batch, and take the new root.
+    state_root_ = apply_state_chunk(batch, std::move(state_deltas));
 
     // 5. Fill the output header via the caller's callback (it reads the roots
     //    back through this object's getters, now holding the post-commit

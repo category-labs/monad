@@ -183,6 +183,19 @@ TEST(SnapshotLoader, SeedAndGate)
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
     }
 
+    // The dump shards by the leading bytes of the hashed key, so these accounts
+    // land in several shard directories -- the seed loader therefore folds the
+    // state into the on-disk trie across multiple seed_chunk() calls (the
+    // incremental, bounded-memory path), not a single in-memory build.
+    {
+        std::size_t shards = 0;
+        for (auto const &e :
+             std::filesystem::directory_iterator{snapshot_dir.path / "10"}) {
+            shards += e.is_directory() ? 1 : 0;
+        }
+        EXPECT_GT(shards, 1u);
+    }
+
     // F8: seed RocksDB from the snapshot. The internal gate asserts the
     // converted state_root equals block N's ETH_HEADER stateRoot.
     bytes32_t const seeded =

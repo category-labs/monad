@@ -30,6 +30,11 @@
     #include <memory>
     #include <optional>
 
+namespace rocksdb
+{
+    class WriteBatch;
+}
+
 MONAD_NAMESPACE_BEGIN
 
 class CommitBuilder;
@@ -102,6 +107,28 @@ public:
         bytes32_t const &block_id, CommitBuilder &, BlockHeader const &,
         std::unique_ptr<StateDeltas>,
         std::function<void(BlockHeader &)>) override;
+
+    // Offline seed path (the F8 loader). Fold a chunk of flat state + code into
+    // the on-disk trie incrementally -- the trie is built up on RocksDB like a
+    // MonadDB restore, so peak memory is one chunk, not the whole state.
+    // Folding is order-independent (it is just MPT insertion), so the caller
+    // can stream the snapshot shard by shard. Updates the running state root;
+    // CF_META is written only by seed_finalize. sync=false per chunk for
+    // throughput.
+    void seed_chunk(std::unique_ptr<StateDeltas> deltas, Code const &code);
+
+    // Finish seeding: gate the running state root against the snapshot's
+    // ETH_HEADER stateRoot, then persist CF_META (state_root + finalized).
+    void seed_finalize(uint64_t block, bytes32_t const &expected_state_root);
+
+private:
+    // Fold `deltas` into the on-disk trie + flat CFs, staged into `batch`, and
+    // return the new state root. The shared core of commit() and seed_chunk():
+    // assemble a branch-complete witness from CF_TRIE_NODES for the touched
+    // keys, replay through PartialTrieDb, and write back the changed nodes +
+    // flat values. Consumes `deltas`.
+    bytes32_t apply_state_chunk(
+        rocksdb::WriteBatch &batch, std::unique_ptr<StateDeltas> deltas);
 };
 
 MONAD_NAMESPACE_END

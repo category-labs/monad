@@ -24,72 +24,31 @@
     #include <category/execution/ethereum/core/account.hpp>
     #include <category/execution/ethereum/core/block.hpp>
     #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
-    #include <category/execution/ethereum/db/commit_builder.hpp>
-    #include <category/execution/ethereum/db/partial_trie_db.hpp>
+    #include <category/execution/ethereum/db/rocksdb_db.hpp>
     #include <category/execution/ethereum/db/snapshot_loader.hpp>
     #include <category/execution/ethereum/db/util.hpp>
     #include <category/execution/ethereum/state2/state_deltas.hpp>
     #include <category/execution/ethereum/types/incarnation.hpp>
-    #include <category/statedb/kv_store.hpp>
-    #include <category/statedb/schema.hpp>
-    #include <category/statedb/trie_node_store.hpp>
+    #include <category/vm/code.hpp>
 
     #include <fcntl.h>
     #include <sys/mman.h>
     #include <unistd.h>
 
     #include <cstring>
+    #include <filesystem>
     #include <fstream>
     #include <map>
     #include <memory>
     #include <optional>
+    #include <span>
     #include <sstream>
-    #include <string_view>
     #include <unordered_map>
 
 MONAD_NAMESPACE_BEGIN
 
 namespace
 {
-    using statedb::Cf;
-
-    byte_string meta_key_bytes(std::string_view const s)
-    {
-        return byte_string{
-            reinterpret_cast<unsigned char const *>(s.data()), s.size()};
-    }
-
-    byte_string be64(uint64_t const v)
-    {
-        byte_string b;
-        for (int shift = 56; shift >= 0; shift -= 8) {
-            b.push_back(static_cast<unsigned char>((v >> shift) & 0xff));
-        }
-        return b;
-    }
-
-    // Flat keys -- mirror FlatStateMirror so the seeded store is
-    // read-compatible with the F5 shadow / the future RocksDbDb read path.
-    byte_string account_key(Address const &addr)
-    {
-        return byte_string{addr.bytes, sizeof(addr.bytes)};
-    }
-
-    byte_string storage_key(
-        Address const &addr, Incarnation const incarnation,
-        bytes32_t const &slot)
-    {
-        byte_string k;
-        k.reserve(sizeof(addr.bytes) + sizeof(uint64_t) + sizeof(slot.bytes));
-        k.append(addr.bytes, sizeof(addr.bytes));
-        uint64_t const inc = incarnation.to_int();
-        for (int shift = 56; shift >= 0; shift -= 8) {
-            k.push_back(static_cast<unsigned char>((inc >> shift) & 0xff));
-        }
-        k.append(slot.bytes, sizeof(slot.bytes));
-        return k;
-    }
-
     struct Mapped
     {
         int fd{-1};
@@ -147,21 +106,26 @@ bytes32_t seed_rocksdb_from_snapshot(
     std::filesystem::path const root{snapshot_dir / std::to_string(block)};
     MONAD_ASSERT(std::filesystem::is_directory(root));
 
-    auto kv = statedb::KvStore::open(rocksdb_dir);
+    RocksDbDb db{rocksdb_dir};
 
-    // Decode all shards into an in-memory model, capturing block N's header.
-    std::map<Address, AccountState> state;
     bytes32_t header_state_root{};
     bool found_header = false;
 
+    // Stream shard by shard. Each shard's accounts + their storage (linked by
+    // the in-shard account_offset) + code are decoded into one chunk and folded
+    // into the on-disk trie via seed_chunk -- so peak memory is one shard's
+    // worth, not the whole state. MPT insertion is order-independent, so the
+    // shards can be processed in any order and still reproduce the same root.
     for (auto const &dir : std::filesystem::directory_iterator{root}) {
         Mapped eth = map_file(dir.path() / "eth_header");
         Mapped acct = map_file(dir.path() / "account");
         Mapped stor = map_file(dir.path() / "storage");
         Mapped code = map_file(dir.path() / "code");
 
-        // Accounts: offset (into this shard's account file) -> Address.
+        std::map<Address, AccountState> shard_state;
         std::unordered_map<uint64_t, Address> offset_to_addr;
+
+        // Accounts: offset (into this shard's account file) -> Address.
         if (acct.data) {
             byte_string_view av{acct.data, acct.size};
             while (!av.empty()) {
@@ -170,11 +134,12 @@ bytes32_t seed_rocksdb_from_snapshot(
                 MONAD_ASSERT(!dec.has_error());
                 auto const [addr, account] = dec.value();
                 offset_to_addr.emplace(offset, addr);
-                state[addr].account = account;
+                shard_state[addr].account = account;
             }
         }
 
-        // Storage: each record is [account_offset(8B)][encode_storage_db].
+        // Storage: each record is [account_offset(8B)][encode_storage_db]. The
+        // compact slot/value are left-padded to 32 bytes.
         if (stor.data) {
             byte_string_view sv{stor.data, stor.size};
             while (!sv.empty()) {
@@ -182,19 +147,17 @@ bytes32_t seed_rocksdb_from_snapshot(
                 uint64_t offset;
                 std::memcpy(&offset, sv.data(), sizeof(offset));
                 sv.remove_prefix(sizeof(offset));
-                // decode_storage_db_raw advances `sv` by one record (it does
-                // not require the view to end here, unlike decode_storage_db);
-                // the slot/value come back compact, so left-pad to 32 bytes.
                 auto const dec = decode_storage_db_raw(sv);
                 MONAD_ASSERT(!dec.has_error());
                 bytes32_t const slot = to_bytes(dec.value().first);
                 bytes32_t const value = to_bytes(dec.value().second);
                 Address const &addr = offset_to_addr.at(offset);
-                state[addr].storage[slot] = value;
+                shard_state[addr].storage[slot] = value;
             }
         }
 
-        // Code: each record is [size(8B)][bytes]; written straight to CF_CODE.
+        // Code: each record is [size(8B)][bytes].
+        Code shard_code;
         if (code.data) {
             byte_string_view cv{code.data, code.size};
             while (!cv.empty()) {
@@ -204,8 +167,10 @@ bytes32_t seed_rocksdb_from_snapshot(
                 cv.remove_prefix(sizeof(size));
                 MONAD_ASSERT(cv.size() >= size);
                 byte_string_view const bytecode = cv.substr(0, size);
-                bytes32_t const code_hash = to_bytes(keccak256(bytecode));
-                kv->put(Cf::code, code_hash, bytecode);
+                shard_code.emplace(
+                    to_bytes(keccak256(bytecode)),
+                    vm::make_shared_intercode(std::span<uint8_t const>{
+                        bytecode.data(), bytecode.size()}));
                 cv.remove_prefix(size);
             }
         }
@@ -225,65 +190,27 @@ bytes32_t seed_rocksdb_from_snapshot(
         unmap(acct);
         unmap(stor);
         unmap(code);
+
+        // Fold this shard's accounts + storage into the on-disk trie. Flat
+        // values come along (raw keys, no un-hashing); the trie is updated
+        // incrementally so nothing accumulates across shards.
+        auto deltas = std::make_unique<StateDeltas>();
+        for (auto const &[addr, st] : shard_state) {
+            MONAD_ASSERT(st.account.has_value());
+            StateDelta d{.account = {std::nullopt, st.account}};
+            for (auto const &[slot, value] : st.storage) {
+                d.storage.emplace(slot, StorageDelta{bytes32_t{}, value});
+            }
+            deltas->emplace(addr, std::move(d));
+        }
+        db.seed_chunk(std::move(deltas), shard_code);
     }
     MONAD_ASSERT(found_header);
 
-    // Build StateDeltas + write the flat CFs (raw keys, no un-hashing).
-    StateDeltas deltas;
-    for (auto const &[addr, st] : state) {
-        MONAD_ASSERT(st.account.has_value());
-        StateDelta d{.account = {std::nullopt, st.account}};
-        for (auto const &[slot, value] : st.storage) {
-            d.storage.emplace(slot, StorageDelta{bytes32_t{}, value});
-        }
-        deltas.emplace(addr, d);
-
-        kv->put(
-            Cf::flat_state,
-            account_key(addr),
-            encode_account_db(addr, *st.account));
-        for (auto const &[slot, value] : st.storage) {
-            kv->put(
-                Cf::flat_state,
-                storage_key(addr, st.account->incarnation, slot),
-                encode_storage_db(slot, value));
-        }
-    }
-
-    // Build the canonical-RLP trie and compute the state root via
-    // PartialTrieDb.
-    auto pt = PartialTrieDb::from_witness(NULL_ROOT, {}, {});
-    MONAD_ASSERT(!pt.has_error());
-    CommitBuilder builder{block};
-    pt.value().commit(
-        bytes32_t{},
-        builder,
-        BlockHeader{.number = block},
-        std::make_unique<StateDeltas>(std::move(deltas)),
-        [](BlockHeader &) {});
-    bytes32_t const state_root = pt.value().state_root();
-
-    // The seed gate: the converted state root must equal block N's stateRoot.
-    MONAD_ASSERT(state_root == header_state_root);
-
-    // Emit the trie nodes to CF_TRIE_NODES.
-    statedb::TrieNodeStore nodes{*kv, 1u << 16};
-    pt.value().for_each_node(
-        [&](bytes32_t const &node_hash, byte_string_view const rlp) {
-            nodes.put(node_hash, rlp);
-        });
-
-    // CF_META: schema version, finalized base height, and the state root.
-    kv->put(
-        Cf::meta,
-        meta_key_bytes(statedb::meta_key::schema_version),
-        be64(statedb::SCHEMA_VERSION));
-    kv->put(
-        Cf::meta, meta_key_bytes(statedb::meta_key::finalized), be64(block));
-    kv->put(
-        Cf::meta, meta_key_bytes(statedb::meta_key::state_root), state_root);
-
-    return state_root;
+    // The seed gate (inside seed_finalize): the folded state_root must equal
+    // block N's ETH_HEADER stateRoot. Then CF_META is persisted.
+    db.seed_finalize(block, header_state_root);
+    return header_state_root;
 }
 
 MONAD_NAMESPACE_END

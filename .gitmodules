@@ -68,3 +68,6 @@
 [submodule "third_party/zkevm-standards"]
 	path = third_party/zkevm-standards
 	url = https://github.com/eth-act/zkevm-standards.git
+[submodule "third_party/monad-execution-specs"]
+	path = third_party/monad-execution-specs
+	url = https://github.com/category-labs/monad-execution-specs.git

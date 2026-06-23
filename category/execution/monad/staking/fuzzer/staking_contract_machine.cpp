@@ -24,7 +24,7 @@
 #include <category/execution/monad/staking/util/secp256k1.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/fuzzing/generator/choice.hpp>
+#include <category/vm/fuzzing/choice.hpp>
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 

@@ -111,3 +111,31 @@ the full ON build is clean and `test_kv_store` (6) + `test_db_parity_harness` (2
 
 A later re-run (commit `2dbce2d7c`, 3 reps) reproduced the shadow result identically — clean finish,
 no divergence, median 412s / tps 4964 / gps 440M.
+
+### F9 — commit `31bd75d29`, MonadDB regression check (validating-flat shadow)
+
+F9 adds the `RocksDbDb` backend and reworks `cmd/monad/main.cpp` into a backend-aware driver
+(`raw_db`/`triedb` become TrieDb-only pointers; genesis load + block-hash seeding go through the
+neutral `Db`). Because that touches the shared replay driver, the gate here is **no regression to the
+MonadDB path**. Same config as F5 (nb=10000 from 22,830,000), `-DMONAD_ENABLE_ROCKSDB=ON`, run with
+`--validate-flat-state` (so it's comparable to the F5 *shadow* row, not the no-flag row). Backend is
+still `--state-backend=triedb` (default) — this run does **not** exercise RocksDbDb. 3 reps, clean
+tree (`git diff` cksum empty):
+
+| rep | wall | tps | gps | slow commits >500ms |
+|-----|------|-----|-----|---------------------|
+| 1 | 414s | 4940 | 438M | 0 |
+| 2 | 398s | 5138 | 456M | 0 |
+| 3 | 410s | 4988 | 443M | 0 |
+| **median** | **410s** | **4988** | **443M** | **0** |
+
+**No regression.** Median 410s vs the F5 shadow's 412s (<1%); `flat==trie` held for every write across
+all 3 reps (zero assert aborts). The main.cpp driver refactor preserves both correctness and
+performance on the MonadDB path; for `--state-backend=triedb` the new `is_triedb` branches resolve to
+the original path.
+
+**RocksDbDb perf (the real F9 number) — not yet run.** RocksDbDb is validated for *correctness* by
+`test_db_rocksdb_parity` (in-memory MonadDB vs RocksDbDb agree on all four roots + sampled reads
+across inserts/updates/storage-churn/deletion/incarnation-bump/code). A wall-clock number needs
+`replay_rocksdb.sh` (bounded genesis replay, `--state-backend=rocksdb`); expect higher commit latency
+than MonadDB (synchronous WAL per block), recovered by F10 (async write-back) + F11 (`async_io`).

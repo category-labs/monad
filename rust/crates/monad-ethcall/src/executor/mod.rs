@@ -22,8 +22,9 @@ use std::{
 use tracing::info;
 
 pub use self::{
-    call::EthCallRequest,
-    simulate::{FailureSimulateResult, SimulateResult, SuccessSimulateResult},
+    call::{EthCallError, EthCallRequest, EthCallSuccess},
+    simulate::{EthSimulateError, EthSimulateSuccess},
+    trace::{EthTraceError, EthTraceSuccess},
 };
 use crate::ffi;
 
@@ -34,6 +35,15 @@ mod trace;
 pub(super) const ETH_CALL_SUCCESS: i32 = 0;
 pub(super) const EVMC_OUT_OF_GAS: i32 = 3;
 pub(super) const EVMC_MONAD_RESERVE_BALANCE_VIOLATION: i32 = 18;
+
+#[derive(Clone, Debug)]
+pub struct NullPointerError;
+
+#[derive(Clone, Debug)]
+pub enum MessageError {
+    NullPointerError,
+    InvalidUtf8Error,
+}
 
 #[derive(Debug)]
 pub struct MonadExecutor {
@@ -95,30 +105,37 @@ impl MonadExecutorResult {
         unsafe { self.inner.as_ref() }.status_code
     }
 
-    pub fn encoded_trace(&self) -> Result<Box<[u8]>, ()> {
+    pub fn encoded_trace(&self) -> Result<Box<[u8]>, NullPointerError> {
         let this = unsafe { self.inner.as_ref() };
 
-        if this.encoded_trace_len == 0 {
-            return Ok(Box::new([]));
-        }
-
-        if this.encoded_trace.is_null() {
-            return Err(());
-        }
-
-        Ok(Box::from(unsafe {
-            std::slice::from_raw_parts(this.encoded_trace, this.encoded_trace_len)
-        }))
+        unsafe { byte_vec_from_raw_parts(this.encoded_trace, this.encoded_trace_len) }
     }
 
-    pub fn message(&self) -> String {
-        let cstr_msg = unsafe { CStr::from_ptr(self.inner.as_ref().message.cast()) };
+    pub fn output_data(&self) -> Result<Box<[u8]>, NullPointerError> {
+        let this = unsafe { self.inner.as_ref() };
 
-        String::from(
-            cstr_msg
-                .to_str()
-                .unwrap_or("execution error: message invalid utf-8"),
-        )
+        unsafe { byte_vec_from_raw_parts(this.output_data, this.output_data_len) }
+    }
+
+    pub fn message(&self) -> Result<String, MessageError> {
+        let this = unsafe { self.inner.as_ref() };
+        if this.message.is_null() {
+            return Err(MessageError::NullPointerError);
+        }
+
+        let cstr_msg = unsafe { CStr::from_ptr(this.message.cast()) }
+            .to_str()
+            .map_err(|_| MessageError::InvalidUtf8Error)?;
+
+        Ok(String::from(cstr_msg))
+    }
+
+    pub fn gas_used(&self) -> u64 {
+        unsafe { self.inner.as_ref() }.gas_used as u64
+    }
+
+    pub fn gas_refund(&self) -> u64 {
+        unsafe { self.inner.as_ref() }.gas_refund as u64
     }
 }
 
@@ -130,21 +147,6 @@ impl Drop for MonadExecutorResult {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum CallResult {
-    Success(SuccessCallResult),
-    Failure(FailureCallResult),
-    Revert(RevertCallResult), // only used for trace
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct SuccessCallResult {
-    pub gas_used: u64,
-    pub gas_refund: u64,
-    // We interpret this as rlp encoded CallFrames for debug_traceCall
-    pub output_data: Vec<u8>,
-}
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum EthCallResult {
     Success,
@@ -153,20 +155,6 @@ pub enum EthCallResult {
     ReserveBalanceViolation,
     #[default]
     OtherError,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct FailureCallResult {
-    pub error_code: EthCallResult,
-    pub gas_used: u64,
-    pub gas_refund: u64,
-    pub message: String,
-    pub data: Option<String>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct RevertCallResult {
-    pub trace: Vec<u8>,
 }
 
 pub fn decode_revert_message(output_data: &[u8]) -> Option<String> {
@@ -183,6 +171,21 @@ pub fn decode_revert_message(output_data: &[u8]) -> Option<String> {
             Some(parsed_message.to_string())
         }
     })
+}
+
+unsafe fn byte_vec_from_raw_parts(
+    data: *mut u8,
+    len: usize,
+) -> Result<Box<[u8]>, NullPointerError> {
+    if len == 0 {
+        return Ok(Box::new([]));
+    }
+
+    if data.is_null() {
+        return Err(NullPointerError);
+    }
+
+    Ok(Box::from(std::slice::from_raw_parts(data, len)))
 }
 
 #[cfg(test)]

@@ -103,7 +103,14 @@ bytes32_t seed_rocksdb_from_snapshot(
     std::filesystem::path const &snapshot_dir, uint64_t const block,
     std::filesystem::path const &rocksdb_dir)
 {
-    std::filesystem::path const root{snapshot_dir / std::to_string(block)};
+    // The canonical dump layout is <snapshot_dir>/<block>/<shard>/, but a
+    // transferred snapshot may have the shard directories sitting directly in
+    // snapshot_dir (the block level flattened away). Accept either: prefer the
+    // <block> subdirectory, else treat snapshot_dir itself as the shard parent.
+    std::filesystem::path root{snapshot_dir / std::to_string(block)};
+    if (!std::filesystem::is_directory(root)) {
+        root = snapshot_dir;
+    }
     MONAD_ASSERT(std::filesystem::is_directory(root));
 
     RocksDbDb db{rocksdb_dir};
@@ -117,6 +124,9 @@ bytes32_t seed_rocksdb_from_snapshot(
     // worth, not the whole state. MPT insertion is order-independent, so the
     // shards can be processed in any order and still reproduce the same root.
     for (auto const &dir : std::filesystem::directory_iterator{root}) {
+        if (!dir.is_directory()) {
+            continue; // skip stray files; shards are subdirectories
+        }
         Mapped eth = map_file(dir.path() / "eth_header");
         Mapped acct = map_file(dir.path() / "account");
         Mapped stor = map_file(dir.path() / "storage");

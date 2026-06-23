@@ -26,20 +26,23 @@
 
 MONAD_NAMESPACE_BEGIN
 
-// F8 offline seed loader. Reads the filesystem snapshot at `snapshot_dir/block`
-// (the 256-shard ACCOUNT/STORAGE/CODE/ETH_HEADER format produced by
-// monad_db_dump_snapshot) and writes a RocksDB store at `rocksdb_dir`:
-//   CF_FLAT_STATE  raw Address [+ incarnation + slot] -> account / storage
-//   value CF_CODE        code_hash -> bytecode CF_TRIE_NODES  node_hash ->
-//   canonical RLP (built via PartialTrieDb) CF_META        finalized = block,
-//   state_root, schema.version
-// No un-hashing: flat keys are re-derived from the raw Address/slot embedded in
-// each record. Asserts the converted state_root equals block N's ETH_HEADER
-// stateRoot (the seed gate) before writing CF_META. Returns the state_root.
+// F8 offline seed loader. Reads the 256-shard ACCOUNT/STORAGE/CODE/ETH_HEADER
+// filesystem snapshot produced by monad_db_dump_snapshot and writes the four
+// RocksDB column families: CF_FLAT_STATE (raw Address [+ incarnation + slot] ->
+// account/storage value), CF_CODE (code_hash -> bytecode), CF_TRIE_NODES
+// (node_hash -> canonical RLP, built via PartialTrieDb), and CF_META (finalized
+// = block, state_root, schema.version).
 //
-// Pure offline tool: no MonadDB runtime/device. Holds the converted state in
-// memory while building the trie (fine for the prototype/tests; streaming for
-// the full mainnet snapshot is a later concern).
+// The shard directories are looked up at `snapshot_dir/block` (the canonical
+// dump layout) or, if that is absent, directly under `snapshot_dir` (a snapshot
+// whose block level was flattened during transfer). No un-hashing: flat keys
+// are re-derived from the raw Address/slot embedded in each record. Asserts the
+// converted state_root equals block N's ETH_HEADER stateRoot (the seed gate)
+// before writing CF_META. Returns the state_root.
+//
+// Pure offline tool: no MonadDB runtime/device. Builds the trie incrementally
+// on disk, streaming one shard at a time, so peak memory is bounded to a single
+// shard rather than the whole state.
 bytes32_t seed_rocksdb_from_snapshot(
     std::filesystem::path const &snapshot_dir, uint64_t block,
     std::filesystem::path const &rocksdb_dir);

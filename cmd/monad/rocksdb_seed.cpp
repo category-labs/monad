@@ -61,9 +61,9 @@ int main(int const argc, char const *argv[])
 
     std::fprintf(
         stderr,
-        "Seeding RocksDB at %s from snapshot %s (block %lu)...\n",
+        "Seeding RocksDB at %s from snapshot under %s (block %lu)...\n",
         rocksdb_dir.c_str(),
-        (snapshot_dir / std::to_string(block)).c_str(),
+        snapshot_dir.c_str(),
         static_cast<unsigned long>(block));
 
     monad::bytes32_t const state_root =

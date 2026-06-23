@@ -22,11 +22,23 @@
 #include <memory>
 #include <utility>
 
+#ifdef MONAD_HAVE_ROCKSDB
+    #include <category/execution/ethereum/db/rocksdb_db.hpp>
+#endif
+
 MONAD_NAMESPACE_BEGIN
 
 std::unique_ptr<DbHandle> make_db(DbConfig const &config)
 {
-    // Only MonadDB exists today; --state-backend gates the future RocksDbDb.
+#ifdef MONAD_HAVE_ROCKSDB
+    if (config.backend == StateBackend::RocksDb) {
+        MONAD_ASSERT(!config.rocksdb_dir.empty());
+        return std::make_unique<DbHandle>(
+            std::make_unique<RocksDbDb>(config.rocksdb_dir));
+    }
+#endif
+
+    // The only other backend is MonadDB; --state-backend selects it.
     MONAD_ASSERT(config.backend == StateBackend::TrieDb);
 
     // The on-disk Db ctor reads the persisted state_machine_kind from

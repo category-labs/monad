@@ -41,3 +41,12 @@ add_unit_test(
   TARGET test_db_parity_harness
   SOURCES test_db_parity_harness.cpp
   LIBRARIES monad-test-utils)
+
+# F9 gate: drive an in-memory MonadDB (reference) and a RocksDbDb (candidate)
+# through the harness and confirm they agree block after block (all four roots +
+# sampled reads). The body is #ifdef MONAD_HAVE_ROCKSDB-guarded; without the
+# RocksDB build it compiles to a single skipped test.
+add_unit_test(
+  TARGET test_db_rocksdb_parity
+  SOURCES test_db_rocksdb_parity.cpp
+  LIBRARIES monad-test-utils)

@@ -109,6 +109,8 @@ add_library(
   "ethereum/db/make_db.hpp"
   "ethereum/db/partial_trie_db.hpp"
   "ethereum/db/partial_trie_db.cpp"
+  "ethereum/db/rocksdb_db.cpp"
+  "ethereum/db/rocksdb_db.hpp"
   "ethereum/db/snapshot_loader.cpp"
   "ethereum/db/snapshot_loader.hpp"
   "ethereum/db/state_machine_init.cpp"

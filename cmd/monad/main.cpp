@@ -143,6 +143,7 @@ try {
     std::string statesync;
     fs::path chain_rlp_path;
     fs::path validate_flat_state_dir;
+    fs::path rocksdb_dir;
     auto log_level = quill::LogLevel::Info;
     StateBackend state_backend = StateBackend::TrieDb;
 
@@ -154,7 +155,7 @@ try {
          {"hive_net", CHAIN_CONFIG_HIVE_NET}};
 
     std::unordered_map<std::string, StateBackend> const STATE_BACKEND_MAP = {
-        {"triedb", StateBackend::TrieDb}};
+        {"triedb", StateBackend::TrieDb}, {"rocksdb", StateBackend::RocksDb}};
 
     cli.add_option("--chain", chain_config, "select which chain config to run")
         ->transform(CLI::CheckedTransformer(CHAIN_CONFIG_MAP, CLI::ignore_case))
@@ -179,6 +180,12 @@ try {
         "directory for a flat-state RocksDB shadow; when set, MonadDB also "
         "mirrors state there and asserts flat==trie on reads (requires a build "
         "with -DMONAD_ENABLE_ROCKSDB=ON)");
+    cli.add_option(
+        "--rocksdb-dir,--rocksdb_dir",
+        rocksdb_dir,
+        "RocksDB store directory for --state-backend=rocksdb (a store produced "
+        "by the F8 seed loader); requires a build with "
+        "-DMONAD_ENABLE_ROCKSDB=ON");
     cli.add_option(
         "--sq-thread-cpu,--sq_thread_cpu",
         sq_thread_cpu,
@@ -295,10 +302,12 @@ try {
     if (!statesync.empty()) {
         net.emplace(statesync.c_str());
     }
-    // make_db registers the state machines and builds the MonadDB engine plus
-    // the monad::Db facade. --state-backend selects the backend (MonadDB only
-    // today). raw_db/triedb stay reachable for the mpt-level paths below
-    // (snapshot restore, statesync, the read-only block-hash RODb).
+    // make_db registers the state machines and builds the selected backend plus
+    // the monad::Db facade. --state-backend picks MonadDB (TrieDb) or RocksDb.
+    // raw_db/triedb are MonadDB-only handles for the mpt-level paths below
+    // (snapshot restore, statesync, the read-only block-hash RODb, the monad
+    // runloop); they are null for the RocksDb backend, which drives everything
+    // through the neutral db_handle->db() facade.
     auto const db_handle = make_db(DbConfig{
         .backend = state_backend,
         .dbname_paths = dbname_paths,
@@ -310,8 +319,10 @@ try {
         .validate_flat_state_dir =
             validate_flat_state_dir.empty()
                 ? std::optional<fs::path>{}
-                : std::optional<fs::path>{validate_flat_state_dir}});
-    mpt::Db &raw_db = db_handle->raw_db();
+                : std::optional<fs::path>{validate_flat_state_dir},
+        .rocksdb_dir = rocksdb_dir});
+    bool const is_triedb = state_backend == StateBackend::TrieDb;
+    mpt::Db *const raw_db = is_triedb ? &db_handle->raw_db() : nullptr;
 
     auto chain = [chain_config] -> std::unique_ptr<Chain> {
         switch (chain_config) {
@@ -329,11 +340,24 @@ try {
         MONAD_ASSERT(false);
     }();
 
-    TrieDb &triedb = db_handle->triedb();
+    TrieDb *const triedb = is_triedb ? &db_handle->triedb() : nullptr;
     // Note: in memory db block number is always zero
-    uint64_t const init_block_num = [&] {
+    uint64_t const init_block_num = [&] -> uint64_t {
+        if (!is_triedb) {
+            // RocksDb backend: open an already-seeded store (F8) or, for a
+            // fresh store, load genesis through the neutral facade. The initial
+            // block then comes straight from CF_META.
+            Db &db = db_handle->db();
+            if (db.state_root() == NULL_ROOT) {
+                MONAD_ASSERT(statesync.empty());
+                MONAD_ASSERT(snapshot.empty());
+                LOG_INFO("loading from genesis (rocksdb)");
+                load_genesis_state(chain->get_genesis_state(), db);
+            }
+            return db.get_block_number();
+        }
         if (!snapshot.empty()) {
-            if (triedb.get_root() != nullptr) {
+            if (triedb->get_root() != nullptr) {
                 throw std::runtime_error(
                     "can not load checkpoint into non-empty database");
             }
@@ -341,41 +365,39 @@ try {
             std::ifstream accounts(snapshot / "accounts");
             std::ifstream code(snapshot / "code");
             auto const n = std::stoul(snapshot.stem());
-            auto root = load_from_binary(raw_db, accounts, code, n);
+            auto root = load_from_binary(*raw_db, accounts, code, n);
             // load the eth header for snapshot
             BlockDb block_db{block_db_path};
             Block block;
             MONAD_ASSERT_PRINTF(
                 block_db.get(n, block), "FATAL: Could not load block %lu", n);
-            root = load_header(std::move(root), raw_db, block.header);
-            triedb.reset_root(std::move(root), n);
+            root = load_header(std::move(root), *raw_db, block.header);
+            triedb->reset_root(std::move(root), n);
         }
-        else if (triedb.get_root() == nullptr) {
+        else if (triedb->get_root() == nullptr) {
             MONAD_ASSERT(statesync.empty());
             LOG_INFO("loading from genesis");
             GenesisState const genesis_state = chain->get_genesis_state();
-            load_genesis_state(genesis_state, triedb);
+            load_genesis_state(genesis_state, *triedb);
         }
-        return triedb.get_block_number();
+        return triedb->get_block_number();
     }();
 
     std::unique_ptr<monad::StateSyncServer> sync_server;
     if (!statesync.empty()) {
+        MONAD_ASSERT(triedb); // statesync is a MonadDB-only path
         sync_server = monad::make_statesync_server(monad::StateSyncServerConfig{
-            .triedb = &triedb,
+            .triedb = triedb,
             .network = &net.value(),
             .ro_sq_thread_cpu = ro_sq_thread_cpu,
             .dbname_paths = dbname_paths});
     }
 
     LOG_INFO(
-        "Finished initializing db at block = {}, last finalized block = {}, "
-        "last verified block = {}, state root = {}, time elapsed "
+        "Finished initializing db at block = {}, state root = {}, time elapsed "
         "= {}",
         init_block_num,
-        raw_db.get_latest_finalized_version(),
-        raw_db.get_latest_verified_version(),
-        triedb.state_root(),
+        db_handle->db().state_root(),
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - load_start_time));
 
@@ -395,7 +417,7 @@ try {
     BlockHashBufferFinalized block_hash_buffer;
     bool initialized_headers_from_triedb = false;
 
-    if (!db_in_memory) {
+    if (!db_in_memory && is_triedb) {
         mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
             .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths = dbname_paths}};
         mpt::Db rodb{io_ctx};
@@ -429,8 +451,8 @@ try {
     // codes that are required to serve RPC responses that include call traces.
     vm::VM vm{trace_calls ? vm::VM::InterpreterOnly : vm::VM::Dual};
 
-    Db &db = sync_server ? static_cast<Db &>(*sync_server->ctx)
-                         : static_cast<Db &>(triedb);
+    Db &db =
+        sync_server ? static_cast<Db &>(*sync_server->ctx) : db_handle->db();
     auto const result = [&] {
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:
@@ -476,10 +498,11 @@ try {
                     block_db_timeout);
             }
             else {
+                MONAD_ASSERT(raw_db); // monad chains run on MonadDB only
                 return runloop_monad(
                     dynamic_cast<MonadChain const &>(*chain),
                     block_db_path,
-                    raw_db,
+                    *raw_db,
                     db,
                     vm,
                     block_hash_buffer,
@@ -524,7 +547,7 @@ try {
 
     sync_server.reset();
 
-    if (!dump_snapshot.empty()) {
+    if (!dump_snapshot.empty() && is_triedb) {
         LOG_INFO("Dump db of block: {}", block_num);
         mpt::AsyncIOContext io_ctx(mpt::ReadOnlyOnDiskDbConfig{
             .sq_thread_cpu = ro_sq_thread_cpu,

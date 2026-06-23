@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
@@ -30,7 +31,7 @@ MONAD_NAMESPACE_BEGIN
 enum class StateBackend
 {
     TrieDb,
-    // RocksDb -- added in F9.
+    RocksDb, // requires MONAD_ENABLE_ROCKSDB at build time
 };
 
 // Backend-neutral construction parameters for the replay/commit path. Mirrors
@@ -46,44 +47,58 @@ struct DbConfig
     // into a flat RocksDB store at this directory and asserts flat==trie on
     // reads (validating shadow, replay-only). Empty => disabled.
     std::optional<std::filesystem::path> validate_flat_state_dir{};
+    // F9 (StateBackend::RocksDb): the RocksDB store directory to open (a store
+    // produced by the F8 seed loader). Ignored for the TrieDb backend.
+    std::filesystem::path rocksdb_dir{};
 };
 
 // Owns the storage engine plus the monad::Db facade used by the replay/commit
 // path. Callers that still need the concrete MonadDB engine -- runloop_monad
 // (mpt::Db&), statesync (TrieDb*), and the snapshot/RODb paths -- reach
-// raw_db()/triedb() directly. Only the MonadDB (TrieDb) backend exists today;
-// --state-backend selects it and RocksDbDb later. A bare unique_ptr<monad::Db>
-// would hide raw_db()/triedb(), which those paths require, so the factory hands
-// back this owning bundle instead.
+// raw_db()/triedb() directly; those paths are MonadDB-only and assert if used
+// with a non-TrieDb backend. --state-backend selects MonadDB (TrieDb) or
+// RocksDb (RocksDbDb). A bare unique_ptr<monad::Db> would hide
+// raw_db()/triedb(), which the MonadDB paths require, so the factory hands back
+// this owning bundle instead.
 class DbHandle
 {
 public:
+    // MonadDB (TrieDb) backend.
     DbHandle(std::unique_ptr<mpt::Db> raw_db, std::unique_ptr<TrieDb> triedb)
         : raw_db_{std::move(raw_db)}
         , triedb_{std::move(triedb)}
     {
     }
 
+    // RocksDb (or any non-TrieDb) backend: only db() is available.
+    explicit DbHandle(std::unique_ptr<Db> db)
+        : generic_db_{std::move(db)}
+    {
+    }
+
     // The backend-neutral injection point.
     Db &db() noexcept
     {
-        return *triedb_;
+        return triedb_ ? static_cast<Db &>(*triedb_) : *generic_db_;
     }
 
-    // The concrete MonadDB engine (always set for the TrieDb backend).
+    // The concrete MonadDB engine (set only for the TrieDb backend).
     mpt::Db &raw_db() noexcept
     {
+        MONAD_ASSERT(raw_db_);
         return *raw_db_;
     }
 
     TrieDb &triedb() noexcept
     {
+        MONAD_ASSERT(triedb_);
         return *triedb_;
     }
 
 private:
     std::unique_ptr<mpt::Db> raw_db_;
     std::unique_ptr<TrieDb> triedb_;
+    std::unique_ptr<Db> generic_db_;
 };
 
 std::unique_ptr<DbHandle> make_db(DbConfig const &);

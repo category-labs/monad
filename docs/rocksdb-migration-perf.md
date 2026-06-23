@@ -48,6 +48,7 @@ means a PR accidentally regressed the *default* backend. F1–F8 produce no Rock
 | F2 | `9e41ae0d` | no | — | — | — | — | leaf lib (KvStore), zero callers; no replay run |
 | F3 | `516d7628` | no | — | — | — | — | test-only parity harness; no replay run |
 | F4 | `b5b110ed3` | **yes** (`cmd/monad`, factory) | 353s · tps 5794 · gps 514M · cmt med 12.5ms / p99 24.0ms | — | first MonadDB number | _baseline TBD_ | nb=10000 from block 22,830,000, 3 reps, **0 slow-commits**; behavior-preserving refactor (see run detail) |
+| F5 | `423b1f4a4` | **yes** (`trie_db` hot path, guarded) | 354s · tps 5777 · gps 513M · cmt med 12.5ms / p99 24.2ms | — | flat vs F4 (Δ<1%) | _baseline TBD_ | nb=10000, 3 reps, **0 slow-commits**, **no flag** (mirror dormant); within noise of F4 — no regression. Shadow path (`--validate-flat-state`) not yet exercised |
 
 > Regression budget (fill in with the team's tolerance): throughput drop > **X%** or commit-p99
 > increase > **Y%** vs the previous PR blocks merge until explained. Planned dips (e.g. F9's
@@ -75,3 +76,20 @@ Reps are tight (cmt median within 8µs; tps within ~6%). Versus the same-blocks
 relocates the identical `mpt::Db` + `TrieDb` construction into `make_db`, so the hot
 execute/commit path is unchanged. A formal Δ-vs-baseline still needs a pre-F1 `main` run at this
 exact config (nb=10000 from 22,830,000).
+
+### F5 — commit `423b1f4a4`, no flag (MonadDB track; mirror dormant)
+
+Same config as F4. `--validate-flat-state` NOT passed, so the flat-state mirror is dormant and the
+path is identical to F4 (the regression check for the guarded hot-path edits). 3 reps:
+
+| rep | wall | tps | gps | cmt median | cmt p99 | cmt max | slow >500ms |
+|-----|------|-----|-----|-----------|---------|---------|-------------|
+| 1 | 359s | 5697 | 505M | 12484µs | 24171µs | 90856µs | 0 |
+| 2 | 338s | 6051 | 537M | 12445µs | 23722µs | 366064µs | 0 |
+| 3 | 354s | 5777 | 513M | 12508µs | 24315µs | 43527µs | 0 |
+| **median** | **354s** | **5777** | **513M** | **12484µs** | **24171µs** | — | **0** |
+
+Within <1% of F4 on every metric — **no regression**. (These overwrote the F4 `/tmp` logs, hence F4's
+numbers above are the only surviving record.) **Still pending:** the actual F5 validation — an
+`-DMONAD_ENABLE_ROCKSDB=ON` build run with `--validate-flat-state <dir>`, which exercises the
+flat==trie shadow asserts (a clean run is the F5 correctness gate; the no-flag runs don't touch it).

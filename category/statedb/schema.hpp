@@ -70,6 +70,9 @@ namespace statedb
     {
         inline constexpr std::string_view schema_version = "schema.version";
         inline constexpr std::string_view finalized = "finalized";
+        // Per-retained-block state root (F8 seed writes block N's; the retained
+        // window grows in later PRs).
+        inline constexpr std::string_view state_root = "state_root";
         inline constexpr std::string_view verified = "verified";
         inline constexpr std::string_view voted = "voted";
         inline constexpr std::string_view proposed = "proposed";

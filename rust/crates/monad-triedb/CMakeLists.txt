@@ -38,6 +38,9 @@ add_library(triedb_driver SHARED "${PROJECT_SOURCE_DIR}/include/ffi.h"
                                  "${PROJECT_SOURCE_DIR}/src/ffi.cpp")
 
 target_include_directories(triedb_driver PUBLIC ${PROJECT_SOURCE_DIR}/include)
+if(COMMAND monad_target_include_boost_outcome_status_code_overlay)
+  monad_target_include_boost_outcome_status_code_overlay(triedb_driver)
+endif()
 
 # Interface link monad_execution so that we'll take any configuration we need,
 # but we won't build it

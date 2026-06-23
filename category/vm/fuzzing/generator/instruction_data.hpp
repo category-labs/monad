@@ -128,16 +128,25 @@ namespace monad::vm::fuzzing
         JUMPDEST,
     };
 
+    template <Traits traits>
     constexpr auto uncommon_non_terminators = make_opcode_array<
-        EvmTraits<MONAD_ETH_OSAKA>, uncommon_non_terminators_all>();
+        traits, uncommon_non_terminators_all>();
+
+    template <Traits traits>
     constexpr auto common_non_terminators = make_opcode_array<
-        EvmTraits<MONAD_ETH_OSAKA>, common_non_terminators_all>();
+        traits, common_non_terminators_all>();
+
+    template <Traits traits>
     constexpr auto terminators =
-        make_opcode_array<EvmTraits<MONAD_ETH_OSAKA>, terminators_all>();
+        make_opcode_array<traits, terminators_all>();
+
+    template <Traits traits>
     constexpr auto exit_terminators =
-        make_opcode_array<EvmTraits<MONAD_ETH_OSAKA>, exit_terminators_all>();
+        make_opcode_array<traits, exit_terminators_all>();
+
+    template <Traits traits>
     constexpr auto jump_terminators =
-        make_opcode_array<EvmTraits<MONAD_ETH_OSAKA>, jump_terminators_all>();
+        make_opcode_array<traits, jump_terminators_all>();
 
     constexpr bool is_exit_terminator(uint8_t const opcode) noexcept
     {

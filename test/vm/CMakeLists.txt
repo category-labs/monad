@@ -23,6 +23,8 @@ if(MONAD_COMPILER_BENCHMARKS)
     find_package(benchmark REQUIRED)
 endif()
 
+add_subdirectory(monadml_evm)
+
 if(MONAD_COMPILER_BENCHMARKS)
   add_subdirectory(compile_benchmarks)
   add_subdirectory(execution_benchmarks)

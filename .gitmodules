@@ -65,3 +65,6 @@
 [submodule "third_party/fiber"]
 	path = third_party/fiber
 	url = https://github.com/category-labs/fiber.git
+[submodule "third_party/monad-execution-specs"]
+	path = third_party/monad-execution-specs
+	url = git@github.com:category-labs/monad-execution-specs.git

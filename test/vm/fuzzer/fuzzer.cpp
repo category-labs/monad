@@ -37,14 +37,13 @@
 #include <category/vm/memory_pool.hpp>
 #include <category/vm/utils/debug.hpp>
 
-#include <evmone/constants.hpp>
-#include <evmone/evmone.h>
-
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <CLI/CLI.hpp>
 #include <category/core/int.hpp>
+
+#include <monadml_evm/monadml_evm.hpp>
 
 #include <algorithm>
 #include <array>
@@ -258,9 +257,10 @@ static evmc::Result message_call(
     return host.call(msg);
 }
 
+template <Traits traits>
 static evmc::Result transition(
     TransitionState &tstate, evmc_message const &msg,
-    monad_eth_revision const rev, BlockHashBuffer const &block_hash_buffer,
+    BlockHashBuffer const &block_hash_buffer,
     BlockHeader const &block_header)
 {
     auto tx = tx_from(tstate, msg);
@@ -273,8 +273,6 @@ static evmc::Result transition(
     tstate.state.add_to_balance(msg.sender, load_be<uint256_t>(msg.value));
     tstate.state.set_nonce(msg.sender, tstate.state.get_nonce(msg.sender) + 1);
 
-    MONAD_ASSERT(rev == MONAD_ETH_OSAKA); // TODO switch to monad revisions
-    using traits = EvmTraits<MONAD_ETH_OSAKA>;
     return message_call<traits>(
         tstate, block_hash_buffer, tx, msg, block_header);
 }
@@ -308,6 +306,7 @@ static Address deploy_contracts(
 {
     TransitionState evmone_tstate{evmone_state, evmone_vm};
     TransitionState monad_tstate{monad_state, monad_vm};
+    assert_equal(evmone_tstate.state, monad_tstate.state);
     auto const a = deploy_contract(evmone_tstate, code);
     auto const a1 = deploy_contract(monad_tstate, code);
     MONAD_ASSERT(a == a1);
@@ -377,7 +376,7 @@ namespace
         std::size_t runs = std::numeric_limits<std::size_t>::max();
         bool print_stats = false;
         FuzzerVmTag implementation = FuzzerVmTag::Compiler;
-        monad_eth_revision revision = MONAD_ETH_OSAKA;
+        monad_revision revision = MONAD_EIGHT;
         std::optional<std::string> focus_path = std::nullopt;
         std::optional<GeneratorFocus> focus = std::nullopt;
 
@@ -432,23 +431,14 @@ static arguments parse_args(int const argc, char **const argv)
         args.print_stats,
         "Print message result statistics when logging");
 
-    auto const rev_map = std::map<std::string, monad_eth_revision>{
-        {"ISTANBUL", MONAD_ETH_ISTANBUL},
-        {"BERLIN", MONAD_ETH_BERLIN},
-        {"LONDON", MONAD_ETH_LONDON},
-        {"PARIS", MONAD_ETH_PARIS},
-        {"SHANGHAI", MONAD_ETH_SHANGHAI},
-        {"CANCUN", MONAD_ETH_CANCUN},
-        {"PRAGUE", MONAD_ETH_PRAGUE},
-        {"OSAKA", MONAD_ETH_OSAKA},
-        {"AMSTERDAM", MONAD_ETH_AMSTERDAM},
-        {"LATEST", MONAD_ETH_LATEST_STABLE_REVISION}};
+    auto const rev_map = std::map<std::string, monad_revision>{
+        {"MONAD_EIGHT", MONAD_EIGHT}};
     app.add_option(
            "--revision",
            args.revision,
            std::format(
                "Set EVM revision (default: {})",
-               monad_eth_revision_to_string(args.revision)))
+               monad_revision_to_string(args.revision)))
         ->transform(CLI::CheckedTransformer(rev_map, CLI::ignore_case))
         ->option_text("TEXT");
 
@@ -463,8 +453,9 @@ static arguments parse_args(int const argc, char **const argv)
     return args;
 }
 
+template <Traits traits>
 static evmc_status_code fuzz_iteration(
-    evmc_message const &msg, monad_eth_revision const rev,
+    evmc_message const &msg,
     BlockHashBuffer const &block_hash_buffer, TestStateRef evmone_state,
     FuzzerVm &evmone_vm, TestStateRef monad_state, FuzzerVm &monad_vm,
     BlockHeader const &block_header)
@@ -475,16 +466,16 @@ static evmc_status_code fuzz_iteration(
 
     TransitionState evmone_tstate{evmone_state, evmone_vm};
     auto const evmone_result =
-        transition(evmone_tstate, msg, rev, block_hash_buffer, block_header);
+        transition<traits>(evmone_tstate, msg, block_hash_buffer, block_header);
 
     TransitionState monad_tstate{monad_state, monad_vm};
     auto const monad_result =
-        transition(monad_tstate, msg, rev, block_hash_buffer, block_header);
+        transition<traits>(monad_tstate, msg, block_hash_buffer, block_header);
 
-    assert_equal(
-        evmone_result,
-        monad_result,
-        std::holds_alternative<InterpreterFuzzerVmVariant>(monad_vm));
+    // Ideally we will verify out-of-gas error strictly when testing the
+    // interpreter. However the monad-ml evm does not agree on specific error
+    // codes at present.
+    assert_equal(evmone_result, monad_result, false);
 
     assert_equal(evmone_tstate.state, monad_tstate.state);
 
@@ -604,7 +595,10 @@ class TimeoutWaitThread
     bool done_;
     std::thread thread_;
 
-    static constexpr auto timeout_ = std::chrono::seconds{20};
+    // A long timeout is required because the execution engines are running
+    // in debug_tstore mode, which causes transient storage operations, not
+    // accounted for by gas.
+    static constexpr auto timeout_ = std::chrono::minutes{30};
 
 public:
     TimeoutWaitThread()
@@ -636,15 +630,14 @@ private:
     }
 };
 
+template <Traits traits>
 static void do_run(
     monad::vm::MemoryPool &memory_pool, std::size_t const run_index,
     arguments const &args)
 {
-    auto const rev = args.revision;
-
     auto engine = random_engine_t(args.seed);
 
-    auto evmone_vm = FuzzerVm(evmc::VM(evmc_create_evmone()));
+    auto evmone_vm = FuzzerVm(evmc::VM(evmc_create_monadml_evm_debug_tstore()));
     auto monad_vm = create_monad_vm(args, engine);
 
     auto evmone_state = std::make_shared<test::TestState>();
@@ -677,9 +670,9 @@ static void do_run(
                       Choice(0.60, [](auto &) { return pow2_focus; }),
                       Choice(0.05, [](auto &) { return dyn_jump_focus; }));
 
-        if (rev >= MONAD_ETH_PRAGUE && toss(engine, 0.001)) {
+        if (toss(engine, 0.001)) {
             auto precompile =
-                monad::vm::fuzzing::generate_precompile_address(engine, rev);
+                monad::vm::fuzzing::generate_precompile_address<traits>(engine);
             auto const a = deploy_delegated_contracts(
                 evmone_state,
                 evmone_vm,
@@ -691,17 +684,8 @@ static void do_run(
         }
 
         for (;;) {
-            auto const contract = monad::vm::fuzzing::generate_program(
-                focus, engine, rev, known_addresses);
-
-            if (contract.size() > evmone::MAX_CODE_SIZE) {
-                // The evmone host will fail when we attempt to deploy
-                // contracts of this size. It rarely happens that we
-                // generate contract this large.
-                std::cerr << "Skipping contract of size: " << contract.size()
-                          << " bytes" << std::endl;
-                continue;
-            }
+            auto const contract = monad::vm::fuzzing::generate_program<traits>(
+                focus, engine, known_addresses);
 
             auto const a = deploy_contracts(
                 evmone_state,
@@ -713,7 +697,7 @@ static void do_run(
             contract_addresses.push_back(a);
             known_addresses.push_back(a);
 
-            if (args.revision >= MONAD_ETH_PRAGUE && toss(engine, 0.2)) {
+            if (toss(engine, 0.2)) {
                 auto const b = deploy_delegated_contracts(
                     evmone_state,
                     evmone_vm,
@@ -744,9 +728,8 @@ static void do_run(
             auto const block_header =
                 generate_block_header(engine, block_counter.next());
             block_hash_buffer.set_block_number(block_header.number);
-            auto const ec = fuzz_iteration(
+            auto const ec = fuzz_iteration<traits>(
                 *msg,
-                rev,
                 block_hash_buffer,
                 evmone_state,
                 evmone_vm,
@@ -760,6 +743,14 @@ static void do_run(
     log(start_time, args, exit_code_stats, run_index, total_messages);
 }
 
+static void run_switch(
+    monad_revision rev, monad::vm::MemoryPool &memory_pool, std::size_t const run_index,
+    arguments const &args)
+{
+    MONAD_ASSERT(rev == MONAD_EIGHT);
+    do_run<MonadTraits<MONAD_EIGHT>>(memory_pool, run_index, args);
+}
+
 static void run_loop(int argc, char **argv)
 {
     monad::vm::MemoryPool memory_pool{512};
@@ -767,11 +758,11 @@ static void run_loop(int argc, char **argv)
     if (args.focus_path) {
         args.focus = parse_generator_focus(*args.focus_path);
     }
-    auto const *msg_rev = monad_eth_revision_to_string(args.revision);
-    for (auto i = 0u; i < args.runs; ++i) {
+    auto const *msg_rev = monad_revision_to_string(args.revision);
+    for (size_t i = 0u; i < args.runs; ++i) {
         std::cerr << std::format(
             "Fuzzing with seed @ {}: {}\n", msg_rev, args.seed);
-        do_run(memory_pool, i, args);
+        run_switch(args.revision, memory_pool, i, args);
         args.seed = random_engine_t(args.seed)();
     }
 }

@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -1426,4 +1427,68 @@ TEST(ProtocolValidation, storage_deletion_rejects_oversized_key)
 
     EXPECT_FALSE(proto.handle_upsert(
         nullptr, SYNC_TYPE_UPSERT_STORAGE_DELETE, buf.data(), buf.size()));
+}
+
+TEST(ProtocolValidation, upserts_reject_trailing_bytes)
+{
+    StatesyncProtocolV1 proto;
+
+    auto const dbname = tmp_dbname();
+    {
+        monad::register_ethereum_state_machines();
+        monad_statesync_client client;
+        monad_statesync_client_context ctx{
+            {dbname}, std::nullopt, 4, &client, &statesync_send_request};
+
+        Address a{0xdeadbeef};
+        Account acct{.balance = 1};
+        bytes32_t key{1};
+        bytes32_t val{2};
+
+        auto account_buf = encode_account_db(a, acct);
+        account_buf.push_back(0xff);
+        EXPECT_FALSE(proto.handle_upsert(
+            &ctx,
+            SYNC_TYPE_UPSERT_ACCOUNT,
+            account_buf.data(),
+            account_buf.size()));
+
+        byte_string storage_buf{};
+        storage_buf += to_byte_string_view(a.bytes);
+        storage_buf += encode_storage_db(key, val);
+        storage_buf.push_back(0xff);
+        EXPECT_FALSE(proto.handle_upsert(
+            &ctx,
+            SYNC_TYPE_UPSERT_STORAGE,
+            storage_buf.data(),
+            storage_buf.size()));
+
+        byte_string account_delete_buf{};
+        account_delete_buf += to_byte_string_view(a.bytes);
+        account_delete_buf.push_back(0xff);
+        EXPECT_FALSE(proto.handle_upsert(
+            &ctx,
+            SYNC_TYPE_UPSERT_ACCOUNT_DELETE,
+            account_delete_buf.data(),
+            account_delete_buf.size()));
+
+        byte_string storage_delete_buf{};
+        storage_delete_buf += to_byte_string_view(a.bytes);
+        storage_delete_buf += rlp::encode_bytes32_compact(key);
+        storage_delete_buf.push_back(0xff);
+        EXPECT_FALSE(proto.handle_upsert(
+            &ctx,
+            SYNC_TYPE_UPSERT_STORAGE_DELETE,
+            storage_delete_buf.data(),
+            storage_delete_buf.size()));
+
+        auto header_buf = rlp::encode_block_header(BlockHeader{.number = 1});
+        header_buf.push_back(0xff);
+        EXPECT_FALSE(proto.handle_upsert(
+            &ctx,
+            SYNC_TYPE_UPSERT_HEADER,
+            header_buf.data(),
+            header_buf.size()));
+    }
+    std::filesystem::remove(dbname);
 }

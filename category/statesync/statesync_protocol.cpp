@@ -191,7 +191,7 @@ bool StatesyncProtocolV1::handle_upsert(
     }
     else if (type == SYNC_TYPE_UPSERT_ACCOUNT) {
         auto const res = decode_account_db(raw);
-        if (res.has_error()) {
+        if (res.has_error() || !raw.empty()) {
             return false;
         }
         auto [addr, acct] = res.value();
@@ -222,7 +222,7 @@ bool StatesyncProtocolV1::handle_upsert(
         }
         raw.remove_prefix(sizeof(Address));
         auto const res = rlp::decode_bytes32_compact(raw);
-        if (res.has_error()) {
+        if (res.has_error() || !raw.empty()) {
             return false;
         }
         storage_update(*ctx, unaligned_load<Address>(val), res.value(), {});
@@ -230,7 +230,7 @@ bool StatesyncProtocolV1::handle_upsert(
     else {
         MONAD_ASSERT(type == SYNC_TYPE_UPSERT_HEADER);
         auto const res = rlp::decode_block_header(raw);
-        if (res.has_error()) {
+        if (res.has_error() || !raw.empty()) {
             return false;
         }
         ctx->hdrs[res.value().number % ctx->hdrs.size()] = res.value();

@@ -90,6 +90,21 @@ path is identical to F4 (the regression check for the guarded hot-path edits). 3
 | **median** | **354s** | **5777** | **513M** | **12484µs** | **24171µs** | — | **0** |
 
 Within <1% of F4 on every metric — **no regression**. (These overwrote the F4 `/tmp` logs, hence F4's
-numbers above are the only surviving record.) **Still pending:** the actual F5 validation — an
-`-DMONAD_ENABLE_ROCKSDB=ON` build run with `--validate-flat-state <dir>`, which exercises the
-flat==trie shadow asserts (a clean run is the F5 correctness gate; the no-flag runs don't touch it).
+numbers above are the only surviving record.)
+
+**Shadow validation (the F5 gate) — PASSED.** A `-DMONAD_ENABLE_ROCKSDB=ON` build run with
+`--validate-flat-state`, 3 reps over the same 10k blocks (commit `68b259338`), **finished cleanly
+with zero assert aborts** — flat==trie held for every mirrored write across the replay, validating
+the flat encoding/keying (account = `encode_account_db`; storage slot-keyed + incarnation;
+one-directional check). The shadow adds the expected validation overhead (an extra RocksDB write per
+commit + a shadow read+assert per state read), so these are NOT a production number:
+
+| | wall | tps | gps | cmt median | cmt p99 |
+|---|---|---|---|---|---|
+| no-flag (MonadDB) | 354s | 5777 | 513M | 12484µs | 24171µs |
+| shadow (median of 3) | 412s | 4964 | 440M | 16285µs | 32295µs |
+| Δ (validation overhead) | +16% | −14% | −14% | +30% | +34% |
+
+Overhead is the validation cost of a debug-only path, not a regression of the production path (the
+real RocksDbDb perf is F9+); the no-flag MonadDB track stays flat. Also verified on the dev box:
+the full ON build is clean and `test_kv_store` (6) + `test_db_parity_harness` (2) pass.

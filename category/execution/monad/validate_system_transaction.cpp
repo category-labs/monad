@@ -22,15 +22,8 @@
 #include <category/vm/evm/explicit_traits.hpp>
 
 #include <boost/outcome/config.hpp>
-
-// TODO unstable paths between versions
-#if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
-    #include <boost/outcome/experimental/status-code/status-code/config.hpp>
-    #include <boost/outcome/experimental/status-code/status-code/generic_code.hpp>
-#else
-    #include <boost/outcome/experimental/status-code/config.hpp>
-    #include <boost/outcome/experimental/status-code/generic_code.hpp>
-#endif
+#include <boost/outcome/experimental/status-code/config.hpp>
+#include <boost/outcome/experimental/status-code/generic_code.hpp>
 
 MONAD_NAMESPACE_BEGIN
 

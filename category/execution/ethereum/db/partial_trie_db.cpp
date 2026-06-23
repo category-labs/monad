@@ -268,6 +268,49 @@ namespace
         return rlp::encode_string2(byte_string_view{hash, 32});
     }
 
+    /// Emit every node_hash-addressable node (canonical RLP >= 32 bytes) under
+    /// `node`, recursing into branch/extension children and -- for account
+    /// leaves -- the embedded storage trie. Mirrors encode_child_ref's hashing.
+    template <typename T>
+    void for_each_node_rec(
+        ChildRef<T> const &node,
+        std::function<void(bytes32_t const &, byte_string_view)> const &cb)
+    {
+        if (!node || std::holds_alternative<HashStub>(node->v)) {
+            return;
+        }
+        byte_string const rlp = encode_partial_node(*node);
+        if (rlp.size() >= 32) {
+            cb(to_bytes(keccak256(byte_string_view{rlp.data(), rlp.size()})),
+               byte_string_view{rlp.data(), rlp.size()});
+        }
+        std::visit(
+            Cases{
+                [&](LeafData<T> const &leaf) {
+                    if constexpr (std::same_as<T, AccountLeafValue>) {
+                        for_each_node_rec<StorageLeafValue>(
+                            leaf.value.storage, cb);
+                    }
+                },
+                [&](ExtensionData<T> const &ext) {
+                    for_each_node_rec<T>(ext.child, cb);
+                },
+                [&](BranchData<T> const &branch) {
+                    for (auto const &child : branch.children) {
+                        for_each_node_rec<T>(child, cb);
+                    }
+                    if constexpr (std::same_as<T, AccountLeafValue>) {
+                        if (branch.value) {
+                            for_each_node_rec<StorageLeafValue>(
+                                branch.value->storage, cb);
+                        }
+                    }
+                },
+                [](HashStub const &) {},
+            },
+            node->v);
+    }
+
     /// Walk the trie rooted at `root` following the given nibble key.
     /// Aborts if the lookup hits an unresolved HashStub, and returns
     /// a pointer to the leaf value on success, or nullptr if the key is absent.
@@ -785,6 +828,12 @@ bytes32_t PartialTrieDb::state_root()
     byte_string rlp_bytes = encode_partial_node(*root_);
     return to_bytes(
         keccak256(byte_string_view{rlp_bytes.data(), rlp_bytes.size()}));
+}
+
+void PartialTrieDb::for_each_node(
+    std::function<void(bytes32_t const &, byte_string_view)> const &cb) const
+{
+    for_each_node_rec<AccountLeafValue>(root_, cb);
 }
 
 bytes32_t PartialTrieDb::receipts_root()

@@ -784,3 +784,41 @@ TEST(PartialTrieDb, Commit_StateRootMatchesIndependentlyEncodedTrie)
     ASSERT_FALSE(reference_result.has_error());
     EXPECT_EQ(live.state_root(), reference_result.value().state_root());
 }
+
+TEST(PartialTrieDb, ForEachNodeRoundtrip)
+{
+    // Build a non-trivial trie (several accounts, each with a storage slot),
+    // enumerate its CF_TRIE_NODES nodes via for_each_node, rebuild a
+    // PartialTrieDb from exactly those nodes, and confirm the state root and a
+    // sampled read round-trip -- i.e. the enumeration is complete and emits
+    // canonical RLP. This is the primitive F8's seed loader uses to populate
+    // CF_TRIE_NODES.
+    auto db = make_empty_db();
+    StateDeltas deltas;
+    for (unsigned i = 0; i < 8; ++i) {
+        Address const a{static_cast<uint64_t>(0x3000 + i)};
+        Account const acct{.balance = 1000 + i, .nonce = i + 1};
+        StateDelta d{.account = {std::nullopt, acct}};
+        d.storage.emplace(
+            bytes32_t{i + 1}, StorageDelta{bytes32_t{}, bytes32_t{0x100 + i}});
+        deltas.emplace(a, d);
+    }
+    commit_with(db, BlockHeader{.number = 1}, deltas);
+    bytes32_t const root = db.state_root();
+
+    // Concatenated node RLPs = the witness from_witness consumes.
+    byte_string witness;
+    db.for_each_node(
+        [&](bytes32_t const &, byte_string_view const rlp) { witness += rlp; });
+    ASSERT_FALSE(witness.empty());
+
+    auto rebuilt = PartialTrieDb::from_witness(root, witness, {});
+    ASSERT_FALSE(rebuilt.has_error());
+    EXPECT_EQ(rebuilt.value().state_root(), root);
+
+    Address const a7{0x3007};
+    EXPECT_TRUE(rebuilt.value().read_account(a7).has_value());
+    EXPECT_EQ(
+        rebuilt.value().read_storage(a7, Incarnation{0, 0}, bytes32_t{8}),
+        bytes32_t{0x107});
+}

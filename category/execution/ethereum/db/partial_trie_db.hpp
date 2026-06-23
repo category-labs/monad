@@ -176,6 +176,16 @@ public:
     bytes32_t transactions_root() override;
     std::optional<bytes32_t> withdrawals_root() override;
 
+    /// Visit every trie node addressable by node_hash, across the account trie
+    /// and each account's embedded storage trie, in the CF_TRIE_NODES form:
+    /// node_hash = keccak256(canonical RLP), emitted only for nodes whose
+    /// canonical RLP is >= 32 bytes (smaller nodes are inlined into their
+    /// parent and never get their own row). Used by the F8 seed loader to
+    /// populate CF_TRIE_NODES; the byte_string_view is valid only for the call.
+    void for_each_node(
+        std::function<void(
+            bytes32_t const &node_hash, byte_string_view rlp)> const &) const;
+
     uint64_t get_block_number() const override;
 
     void set_block_and_prefix(

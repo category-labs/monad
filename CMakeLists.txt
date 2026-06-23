@@ -259,8 +259,12 @@ if(MONAD_ENABLE_ROCKSDB)
   if(NOT TARGET RocksDB::rocksdb)
     add_library(RocksDB::rocksdb ALIAS rocksdb)
   endif()
+  # Wrap in BUILD_INTERFACE: the path is inside the rocksdb target's own source
+  # dir, which CMake rejects as a bare INTERFACE include (it would be ambiguous
+  # for an install/export of the in-tree target). We only ever build it in-tree.
   target_include_directories(
-    rocksdb SYSTEM INTERFACE "${THIRD_PARTY_DIR}/rocksdb/include")
+    rocksdb SYSTEM
+    INTERFACE "$<BUILD_INTERFACE:${THIRD_PARTY_DIR}/rocksdb/include>")
 endif()
 
 # ##############################################################################

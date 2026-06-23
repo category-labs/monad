@@ -31,17 +31,26 @@ monad_compile_options(monad_statedb)
 
 if(MONAD_ENABLE_ROCKSDB)
   target_sources(
-    monad_statedb PRIVATE "kv_store.cpp" "kv_store.hpp" "schema.hpp")
+    monad_statedb
+    PRIVATE "kv_store.cpp"
+            "kv_store.hpp"
+            "schema.hpp"
+            "trie_node_store.cpp"
+            "trie_node_store.hpp")
   target_compile_definitions(monad_statedb PUBLIC MONAD_HAVE_ROCKSDB=1)
   target_link_libraries(monad_statedb PUBLIC RocksDB::rocksdb monad_core)
 
-  # Leaf-lib unit test: links monad_statedb + RocksDB only, not the full engine.
+  # Leaf-lib unit tests: link monad_statedb + RocksDB only, not the full engine.
   # monad_core provides MONAD_ASSERT's handler (monad_assertion_failed); name it
-  # explicitly since this leaf test links monad_statedb directly rather than the
+  # explicitly since these leaf tests link monad_statedb directly rather than the
   # monad_execution aggregate, and OBJECT-library objects don't propagate
   # transitively to the final executable.
   add_unit_test(
     TARGET test_kv_store
     SOURCES test_kv_store.cpp
+    LIBRARIES monad_statedb monad_core RocksDB::rocksdb)
+  add_unit_test(
+    TARGET test_trie_node_store
+    SOURCES test_trie_node_store.cpp
     LIBRARIES monad_statedb monad_core RocksDB::rocksdb)
 endif()

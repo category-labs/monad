@@ -265,6 +265,15 @@ if(MONAD_ENABLE_ROCKSDB)
   target_include_directories(
     rocksdb SYSTEM
     INTERFACE "$<BUILD_INTERFACE:${THIRD_PARTY_DIR}/rocksdb/include>")
+  # The pinned RocksDB release predates GCC 15's stricter transitive includes;
+  # several of its sources use uint64_t/size_t without including <cstdint>/
+  # <cstddef> (e.g. db/blob/blob_file_meta.h). Force-include them. These are
+  # hard compile errors, so FAIL_ON_WARNINGS=OFF does not help.
+  # SHELL: keeps each "-include <hdr>" pair intact -- without it CMake
+  # de-duplicates the repeated -include flag into "-include cstdint cstddef",
+  # leaving cstddef as a stray input file.
+  target_compile_options(
+    rocksdb PRIVATE "SHELL:-include cstdint" "SHELL:-include cstddef")
 endif()
 
 # ##############################################################################

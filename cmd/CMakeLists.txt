@@ -43,6 +43,14 @@ target_compile_definitions(monad PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
 target_compile_definitions(monad-cli
                            PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
 
+# F8 offline seed tool (snapshot dir -> RocksDB). Only meaningful with the
+# RocksDB backend compiled in; the loader is empty otherwise.
+if(MONAD_ENABLE_ROCKSDB)
+  add_executable(monad-rocksdb-seed monad/rocksdb_seed.cpp)
+  monad_compile_options(monad-rocksdb-seed)
+  target_link_libraries(monad-rocksdb-seed PRIVATE monad_execution CLI11::CLI11)
+endif()
+
 add_subdirectory(vm/parser)
 
 if(MONAD_COMPILER_BENCHMARKS)

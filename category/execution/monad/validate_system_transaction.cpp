@@ -27,16 +27,10 @@
 
 #include <boost/outcome/config.hpp>
 
-#include <initializer_list>
+#include <boost/outcome/experimental/status-code/config.hpp>
+#include <boost/outcome/experimental/status-code/generic_code.hpp>
 
-// TODO unstable paths between versions
-#if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
-    #include <boost/outcome/experimental/status-code/status-code/config.hpp>
-    #include <boost/outcome/experimental/status-code/status-code/generic_code.hpp>
-#else
-    #include <boost/outcome/experimental/status-code/config.hpp>
-    #include <boost/outcome/experimental/status-code/generic_code.hpp>
-#endif
+#include <initializer_list>
 
 MONAD_NAMESPACE_BEGIN
 

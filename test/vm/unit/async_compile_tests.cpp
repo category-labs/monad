@@ -161,7 +161,9 @@ TEST(async_compile_test, disable)
 // independent enums.
 TEST(async_compile_test, trait_ids_distinct)
 {
-    std::array<uint64_t, 19> const ids{
+    // One revision per line so the roster stays readable and diffs cleanly.
+    // clang-format off
+    std::array<uint64_t, 20> const ids{
         EvmTraits<MONAD_ETH_ISTANBUL>::id(),
         EvmTraits<MONAD_ETH_BERLIN>::id(),
         EvmTraits<MONAD_ETH_LONDON>::id(),
@@ -170,6 +172,7 @@ TEST(async_compile_test, trait_ids_distinct)
         EvmTraits<MONAD_ETH_CANCUN>::id(),
         EvmTraits<MONAD_ETH_PRAGUE>::id(),
         EvmTraits<MONAD_ETH_OSAKA>::id(),
+        EvmTraits<MONAD_ETH_AMSTERDAM>::id(),
         MonadTraits<MONAD_ZERO>::id(),
         MonadTraits<MONAD_ONE>::id(),
         MonadTraits<MONAD_TWO>::id(),
@@ -181,13 +184,14 @@ TEST(async_compile_test, trait_ids_distinct)
         MonadTraits<MONAD_EIGHT>::id(),
         MonadTraits<MONAD_NINE>::id(),
         MonadTraits<MONAD_NEXT>::id()};
+    // clang-format on
 
     // Trip-wire: adding a revision to either family shifts these sentinels,
     // forcing the id list above to be extended so coverage stays exhaustive.
     static_assert(
         MONAD_NEXT == 10, "a monad_revision was added; extend the list above");
     static_assert(
-        MONAD_ETH_EXPERIMENTAL == 15,
+        MONAD_ETH_EXPERIMENTAL == 16,
         "a monad_eth_revision was added; extend the list above");
 
     std::unordered_set<uint64_t> const unique(ids.begin(), ids.end());

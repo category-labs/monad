@@ -750,7 +750,12 @@ namespace
     monad_evm_revisions()
     {
         std::vector<std::variant<monad_eth_revision, monad_revision>> result;
-        for (auto evm_rev = 0; evm_rev < MONAD_ETH_MAX_REVISION; ++evm_rev) {
+        // Only run regression tests for forks whose behavior is implemented;
+        // later forks (e.g. AMSTERDAM) exist in the enum but are not yet wired
+        // up. TODO(amsterdam): bump LATEST_SUPPORTED_EVM_FORK to include it.
+        for (auto evm_rev = 0;
+             evm_rev <= monad::constants::LATEST_SUPPORTED_EVM_FORK;
+             ++evm_rev) {
             result.push_back(static_cast<monad_eth_revision>(evm_rev));
         }
         for (auto monad_rev = 0; monad_rev <= MONAD_NEXT; ++monad_rev) {

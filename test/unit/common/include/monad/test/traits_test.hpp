@@ -172,18 +172,21 @@ namespace detail
         decltype(make_monad_revision_types_before<Before>(
             std::make_index_sequence<MONAD_NEXT + 1>{}));
 
-    // Skip the unsupported early forks and the MONAD_ETH_MAX_REVISION sentinel
-    // (which aliases MONAD_ETH_EXPERIMENTAL). Generate revisions in the
-    // half-open range [EARLIEST_SUPPORTED_EVM_FORK, MONAD_ETH_MAX_REVISION),
-    // i.e. up to but not including MONAD_ETH_MAX_REVISION.
+    // Skip the unsupported early forks, any fork past LATEST_SUPPORTED_EVM_FORK
+    // whose behavior is not yet implemented (e.g. AMSTERDAM), and the
+    // MONAD_ETH_MAX_REVISION / EXPERIMENTAL sentinel. Generate revisions in the
+    // closed range [EARLIEST_SUPPORTED_EVM_FORK, LATEST_SUPPORTED_EVM_FORK].
+    // TODO(amsterdam): AMSTERDAM rejoins this matrix automatically once
+    // LATEST_SUPPORTED_EVM_FORK is bumped to include it.
     using EvmRevisionTypes = decltype(make_evm_revision_types(
         std::make_index_sequence<
-            MONAD_ETH_MAX_REVISION -
+            monad::constants::LATEST_SUPPORTED_EVM_FORK + 1 -
             monad::constants::EARLIEST_SUPPORTED_EVM_FORK>{}));
 
     template <monad_eth_revision Since>
     using EvmRevisionTypesSince = decltype(make_evm_revision_types_since<Since>(
-        std::make_index_sequence<MONAD_ETH_MAX_REVISION>{}));
+        std::make_index_sequence<
+            monad::constants::LATEST_SUPPORTED_EVM_FORK + 1>{}));
 
     // Helper to concatenate two ::testing::Types
     template <typename... Ts>

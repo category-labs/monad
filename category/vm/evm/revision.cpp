@@ -41,26 +41,42 @@ MONAD_ASSERT_REVISION_EQ(SHANGHAI);
 MONAD_ASSERT_REVISION_EQ(CANCUN);
 MONAD_ASSERT_REVISION_EQ(PRAGUE);
 MONAD_ASSERT_REVISION_EQ(OSAKA);
-MONAD_ASSERT_REVISION_EQ(EXPERIMENTAL);
-MONAD_ASSERT_REVISION_EQ(MAX_REVISION);
 
 #undef MONAD_ASSERT_REVISION_EQ
 
-// MONAD_ETH_LATEST_STABLE_REVISION intentionally diverges from
-// EVMC_LATEST_STABLE_REVISION (still Cancun in the bundled evmc), so it is not
-// asserted equal above. The per-revision asserts already guarantee the
-// conversions below are value-preserving.
+// MONAD_ETH_AMSTERDAM and the MONAD_ETH_EXPERIMENTAL / MONAD_ETH_MAX_REVISION
+// sentinel above it have no evmc_revision counterpart in the bundled evmc
+// (whose enum stops at EVMC_OSAKA followed by EVMC_EXPERIMENTAL == 15), so they
+// are not asserted equal above. The per-revision asserts through OSAKA keep the
+// bare casts below value-preserving across the evmc-backed range
+// (FRONTIER..OSAKA).
+//
+// MONAD_ETH_LATEST_STABLE_REVISION likewise intentionally diverges from
+// EVMC_LATEST_STABLE_REVISION (still Cancun in the bundled evmc).
 
-// These are value-preserving casts: monad_eth_revision mirrors evmc_revision
-// 1:1, enforced by the static_asserts above. C linkage matches the declarations
-// in revision.h.
+// Map a monad_eth_revision to evmc_revision at the remaining evmc/evmone
+// boundaries (test and benchmark paths). Only FRONTIER..OSAKA are convertible;
+// they mirror evmc_revision 1:1 (asserted above).
+//
+// AMSTERDAM (and the EXPERIMENTAL sentinel above it) have no evmc counterpart.
+// Amsterdam support is in progress and its behavior will diverge from OSAKA, so
+// it must NOT be silently substituted with another revision here: handing
+// evmone OSAKA — or, via a bare cast, EVMC_EXPERIMENTAL — would compare Monad's
+// Amsterdam against the wrong reference semantics. Abort instead until evmc
+// gains a real Amsterdam value.
+// TODO(amsterdam): convert AMSTERDAM to its evmc revision once one exists.
 evmc_revision to_evmc_revision(monad_eth_revision const rev)
 {
+    MONAD_ASSERT(rev <= MONAD_ETH_OSAKA);
     return static_cast<evmc_revision>(std::to_underlying(rev));
 }
 
+// The inverse only ever receives real evmc revisions. EVMC_EXPERIMENTAL — which
+// a bare cast would turn into AMSTERDAM, since they share the value 15 — is a
+// sentinel and is rejected rather than silently misinterpreted.
 monad_eth_revision from_evmc_revision(evmc_revision const rev)
 {
+    MONAD_ASSERT(rev <= EVMC_OSAKA);
     return static_cast<monad_eth_revision>(std::to_underlying(rev));
 }
 
@@ -97,6 +113,8 @@ char const *monad_eth_revision_to_string(monad_eth_revision const rev)
         return "MONAD_ETH_PRAGUE";
     case MONAD_ETH_OSAKA:
         return "MONAD_ETH_OSAKA";
+    case MONAD_ETH_AMSTERDAM:
+        return "MONAD_ETH_AMSTERDAM";
     case MONAD_ETH_EXPERIMENTAL:
         return "MONAD_ETH_EXPERIMENTAL";
     }

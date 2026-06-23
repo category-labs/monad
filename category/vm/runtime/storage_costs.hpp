@@ -186,6 +186,12 @@ namespace monad::vm::runtime
     };
 
     template <>
+    struct StorageCostTable<EvmTraits<MONAD_ETH_AMSTERDAM>>
+        : StorageCostTable<EvmTraits<MONAD_ETH_OSAKA>>
+    {
+    };
+
+    template <>
     struct StorageCostTable<MonadTraits<MONAD_ZERO>>
         : StorageCostTable<MonadTraits<MONAD_ZERO>::evm_base>
     {

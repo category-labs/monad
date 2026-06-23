@@ -385,6 +385,7 @@ static arguments parse_args(int const argc, char **const argv)
         {"CANCUN", MONAD_ETH_CANCUN},
         {"PRAGUE", MONAD_ETH_PRAGUE},
         {"OSAKA", MONAD_ETH_OSAKA},
+        {"AMSTERDAM", MONAD_ETH_AMSTERDAM},
         {"LATEST", MONAD_ETH_LATEST_STABLE_REVISION}};
     app.add_option(
            "--revision",

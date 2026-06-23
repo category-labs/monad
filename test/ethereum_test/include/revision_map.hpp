@@ -34,11 +34,12 @@ inline std::unordered_map<
         {"London", MONAD_ETH_LONDON},     {"Merge", MONAD_ETH_PARIS},
         {"Paris", MONAD_ETH_PARIS},       {"Shanghai", MONAD_ETH_SHANGHAI},
         {"Cancun", MONAD_ETH_CANCUN},     {"Prague", MONAD_ETH_PRAGUE},
-        {"Osaka", MONAD_ETH_OSAKA},       {"MONAD_ZERO", MONAD_ZERO},
-        {"MONAD_ONE", MONAD_ONE},         {"MONAD_TWO", MONAD_TWO},
-        {"MONAD_THREE", MONAD_THREE},     {"MONAD_FOUR", MONAD_FOUR},
-        {"MONAD_FIVE", MONAD_FIVE},       {"MONAD_SIX", MONAD_SIX},
-        {"MONAD_SEVEN", MONAD_SEVEN},     {"MONAD_EIGHT", MONAD_EIGHT},
-        {"MONAD_NINE", MONAD_NINE},       {"MONAD_NEXT", MONAD_NEXT}};
+        {"Osaka", MONAD_ETH_OSAKA},       {"Amsterdam", MONAD_ETH_AMSTERDAM},
+        {"MONAD_ZERO", MONAD_ZERO},       {"MONAD_ONE", MONAD_ONE},
+        {"MONAD_TWO", MONAD_TWO},         {"MONAD_THREE", MONAD_THREE},
+        {"MONAD_FOUR", MONAD_FOUR},       {"MONAD_FIVE", MONAD_FIVE},
+        {"MONAD_SIX", MONAD_SIX},         {"MONAD_SEVEN", MONAD_SEVEN},
+        {"MONAD_EIGHT", MONAD_EIGHT},     {"MONAD_NINE", MONAD_NINE},
+        {"MONAD_NEXT", MONAD_NEXT}};
 
 MONAD_TEST_NAMESPACE_END

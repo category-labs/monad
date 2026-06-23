@@ -668,7 +668,7 @@ namespace monad::vm::fuzzing
                         16,
                         17});
             }
-            else if (rev == MONAD_ETH_OSAKA) {
+            else if (rev >= MONAD_ETH_OSAKA) {
                 // New precompile at address 0x100 (256): P256VERIFY
                 return uniform_sample(
                     eng,

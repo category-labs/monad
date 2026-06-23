@@ -23,6 +23,8 @@
 
 #define SWITCH_EVM_TRAITS(f, ...)                                              \
     switch (rev) {                                                             \
+    case MONAD_ETH_AMSTERDAM:                                                  \
+        return f<::monad::EvmTraits<MONAD_ETH_AMSTERDAM>>(__VA_ARGS__);        \
     case MONAD_ETH_OSAKA:                                                      \
         return f<::monad::EvmTraits<MONAD_ETH_OSAKA>>(__VA_ARGS__);            \
     case MONAD_ETH_PRAGUE:                                                     \

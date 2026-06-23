@@ -665,6 +665,14 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<EvmTraits<MONAD_ETH_AMSTERDAM>>()
+    {
+        return make_opcode_table<
+            EvmTraits<previous_evm_revision(MONAD_ETH_AMSTERDAM)>>();
+    }
+
+    template <>
+    consteval std::array<OpCodeInfo, 256>
     make_opcode_table<MonadTraits<MONAD_ZERO>>()
     {
         return make_opcode_table<MonadTraits<MONAD_ZERO>::evm_base>();

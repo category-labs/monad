@@ -76,4 +76,9 @@ namespace monad::vm::utils::evm_as
     {
         return EvmBuilder<EvmTraits<MONAD_ETH_OSAKA>>{};
     }
+
+    inline EvmBuilder<EvmTraits<MONAD_ETH_AMSTERDAM>> amsterdam()
+    {
+        return EvmBuilder<EvmTraits<MONAD_ETH_AMSTERDAM>>{};
+    }
 }

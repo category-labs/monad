@@ -33,6 +33,18 @@ namespace monad
     {
         inline constexpr monad_eth_revision EARLIEST_SUPPORTED_EVM_FORK =
             MONAD_ETH_ISTANBUL;
+
+        // The latest EVM fork whose execution semantics are implemented. Later
+        // forks may exist in the monad_eth_revision enum (so the dispatch
+        // infrastructure — explicit instantiations, switch cases, opcode and
+        // storage tables — is in place) but are not yet wired up behaviorally.
+        // Such forks are excluded from the typed-revision test matrices and
+        // must not be run through evmone (see to_evmc_revision()).
+        // TODO(amsterdam): bump to MONAD_ETH_AMSTERDAM once Amsterdam support
+        // lands.
+        inline constexpr monad_eth_revision LATEST_SUPPORTED_EVM_FORK =
+            MONAD_ETH_OSAKA;
+
         inline constexpr uint64_t EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER = 9069000;
 
         inline constexpr size_t MAX_CODE_SIZE_EIP170 = 24 * 1024; // 0x6000

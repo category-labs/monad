@@ -36,8 +36,12 @@ if(MONAD_ENABLE_ROCKSDB)
   target_link_libraries(monad_statedb PUBLIC RocksDB::rocksdb monad_core)
 
   # Leaf-lib unit test: links monad_statedb + RocksDB only, not the full engine.
+  # monad_core provides MONAD_ASSERT's handler (monad_assertion_failed); name it
+  # explicitly since this leaf test links monad_statedb directly rather than the
+  # monad_execution aggregate, and OBJECT-library objects don't propagate
+  # transitively to the final executable.
   add_unit_test(
     TARGET test_kv_store
     SOURCES test_kv_store.cpp
-    LIBRARIES monad_statedb RocksDB::rocksdb)
+    LIBRARIES monad_statedb monad_core RocksDB::rocksdb)
 endif()

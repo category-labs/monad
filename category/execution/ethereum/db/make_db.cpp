@@ -47,8 +47,17 @@ std::unique_ptr<DbHandle> make_db(DbConfig const &config)
                   .sq_thread_cpu = config.sq_thread_cpu,
                   .dbname_paths = config.dbname_paths});
 
+#ifdef MONAD_HAVE_ROCKSDB
+    std::unique_ptr<FlatStateMirror> flat_mirror;
+    if (config.validate_flat_state_dir.has_value()) {
+        flat_mirror = FlatStateMirror::open(*config.validate_flat_state_dir);
+    }
+    auto triedb = std::make_unique<TrieDb>(
+        *raw_db, config.enable_multiblock_cache, std::move(flat_mirror));
+#else
     auto triedb =
         std::make_unique<TrieDb>(*raw_db, config.enable_multiblock_cache);
+#endif
 
     return std::make_unique<DbHandle>(std::move(raw_db), std::move(triedb));
 }

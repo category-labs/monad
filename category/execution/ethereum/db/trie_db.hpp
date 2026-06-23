@@ -41,6 +41,11 @@
 #include <utility>
 #include <vector>
 
+// Self-guarded: empty unless MONAD_ENABLE_ROCKSDB, so TrieDb is unchanged in
+// the default build. Provides the F5 flat-state mirror (dual-write + shadow
+// read).
+#include <category/execution/ethereum/db/flat_state_mirror.hpp>
+
 MONAD_NAMESPACE_BEGIN
 
 class TrieDb final : public ::monad::Db
@@ -55,9 +60,21 @@ class TrieDb final : public ::monad::Db
     // We only want to pay that price when the cache is enabled, hence
     // the need for unique_ptr.
     std::unique_ptr<DbCache> cache_;
+#ifdef MONAD_HAVE_ROCKSDB
+    // F5: when set, MonadDB also writes each block's deltas to a flat RocksDB
+    // store and asserts flat==trie on reads (validating shadow). Null/disabled
+    // by default. Compiled out entirely when RocksDB is off.
+    std::unique_ptr<FlatStateMirror> flat_mirror_;
+#endif
 
 public:
-    explicit TrieDb(mpt::Db &, bool enable_multiblock_cache = false);
+    explicit TrieDb(
+        mpt::Db &, bool enable_multiblock_cache = false
+#ifdef MONAD_HAVE_ROCKSDB
+        ,
+        std::unique_ptr<FlatStateMirror> flat_mirror = nullptr
+#endif
+    );
     ~TrieDb();
 
     void reset_root(::monad::mpt::Node::SharedPtr root, uint64_t block_number);

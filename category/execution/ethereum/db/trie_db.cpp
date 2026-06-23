@@ -73,13 +73,22 @@ MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
 
-TrieDb::TrieDb(mpt::Db &db, bool const enable_multiblock_cache)
+TrieDb::TrieDb(
+    mpt::Db &db, bool const enable_multiblock_cache
+#ifdef MONAD_HAVE_ROCKSDB
+    ,
+    std::unique_ptr<FlatStateMirror> flat_mirror
+#endif
+    )
     : db_{db}
     , block_number_{db.get_latest_finalized_version()}
     , proposal_block_id_{bytes32_t{}}
     , prefix_{finalized_nibbles}
     , curr_root_{db.load_root_for_version(block_number_)}
     , cache_{enable_multiblock_cache ? std::make_unique<DbCache>() : nullptr}
+#ifdef MONAD_HAVE_ROCKSDB
+    , flat_mirror_{std::move(flat_mirror)}
+#endif
 {
 }
 
@@ -100,22 +109,38 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 {
     std::optional<Account> result;
     if (cache_ && cache_->try_read_account(addr, result)) {
-        return result;
+        // result populated from the cache
     }
-    auto const res = db_.find(
-        curr_root_,
-        concat(
-            prefix_,
-            STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
-        block_number_);
-    if (res.has_error()) {
-        stats_account_no_value();
-        return std::nullopt;
+    else {
+        auto const res = db_.find(
+            curr_root_,
+            concat(
+                prefix_,
+                STATE_NIBBLE,
+                NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
+            block_number_);
+        if (res.has_error()) {
+            stats_account_no_value();
+            result = std::nullopt;
+        }
+        else {
+            stats_account_value();
+            auto encoded_account = res.value().node->value();
+            result = decode_account_db_ignore_address(encoded_account).value();
+        }
     }
-    stats_account_value();
-    auto encoded_account = res.value().node->value();
-    return decode_account_db_ignore_address(encoded_account).value();
+#ifdef MONAD_HAVE_ROCKSDB
+    // The flat store is populated only from replayed blocks (it starts empty,
+    // with no pre-window state), so validate one-directionally: whatever the
+    // flat store holds must match the trie.
+    if (flat_mirror_) {
+        auto const flat = flat_mirror_->read_account(addr);
+        if (flat.has_value()) {
+            MONAD_ASSERT(flat == result);
+        }
+    }
+#endif
+    return result;
 }
 
 bytes32_t TrieDb::read_storage(
@@ -123,25 +148,41 @@ bytes32_t TrieDb::read_storage(
 {
     bytes32_t result{};
     if (cache_ && cache_->try_read_storage(addr, incarnation, key, result)) {
-        return result;
+        // result populated from the cache
     }
-    auto const res = db_.find(
-        curr_root_,
-        concat(
-            prefix_,
-            STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
-        block_number_);
-    if (res.has_error()) {
-        stats_storage_no_value();
-        return {};
+    else {
+        auto const res = db_.find(
+            curr_root_,
+            concat(
+                prefix_,
+                STATE_NIBBLE,
+                NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+                NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
+            block_number_);
+        if (res.has_error()) {
+            stats_storage_no_value();
+            result = {};
+        }
+        else {
+            stats_storage_value();
+            auto encoded_storage = res.value().node->value();
+            auto const storage = decode_storage_db_ignore_key(encoded_storage);
+            MONAD_ASSERT(!storage.has_error());
+            result = to_bytes(storage.value());
+        }
     }
-    stats_storage_value();
-    auto encoded_storage = res.value().node->value();
-    auto const storage = decode_storage_db_ignore_key(encoded_storage);
-    MONAD_ASSERT(!storage.has_error());
-    return to_bytes(storage.value());
+#ifdef MONAD_HAVE_ROCKSDB
+    // One-directional like read_account: a non-empty flat value must match the
+    // trie. A zero/absent flat slot is skipped (could be pre-window state or a
+    // correctly-cleared slot; both read back as the trie's value anyway).
+    if (flat_mirror_) {
+        auto const flat = flat_mirror_->read_storage(addr, incarnation, key);
+        if (flat != bytes32_t{}) {
+            MONAD_ASSERT(flat == result);
+        }
+    }
+#endif
+    return result;
 }
 
 vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
@@ -202,6 +243,14 @@ void TrieDb::commit(
     builder.add_block_header(complete_header);
     curr_root_ = db_.upsert(
         std::move(curr_root_), builder.build(prefix_), block_number_, false);
+
+#ifdef MONAD_HAVE_ROCKSDB
+    // F5 dual-write: mirror the block's deltas into the flat store before the
+    // cache consumes (moves) them. The trie remains the source of truth.
+    if (flat_mirror_) {
+        flat_mirror_->write(*state_deltas);
+    }
+#endif
 
     if (cache_) {
         cache_->update_proposal_state(

@@ -386,6 +386,11 @@ target_link_libraries(
          monad-vm-runtime
          monad-vm-utils)
 
+# F5: the optional RocksDB state backend (category/statedb), only when enabled.
+if(MONAD_ENABLE_ROCKSDB)
+  target_link_libraries(monad_execution PUBLIC monad_statedb)
+endif()
+
 # ##############################################################################
 # cmds
 # ##############################################################################

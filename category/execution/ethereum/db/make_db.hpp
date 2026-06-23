@@ -42,6 +42,10 @@ struct DbConfig
     bool compaction{true};
     bool enable_multiblock_cache{true};
     std::optional<unsigned> sq_thread_cpu{};
+    // F5 (requires MONAD_ENABLE_ROCKSDB): when set, MonadDB also mirrors state
+    // into a flat RocksDB store at this directory and asserts flat==trie on
+    // reads (validating shadow, replay-only). Empty => disabled.
+    std::optional<std::filesystem::path> validate_flat_state_dir{};
 };
 
 // Owns the storage engine plus the monad::Db facade used by the replay/commit

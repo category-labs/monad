@@ -142,6 +142,7 @@ try {
     fs::path dump_snapshot;
     std::string statesync;
     fs::path chain_rlp_path;
+    fs::path validate_flat_state_dir;
     auto log_level = quill::LogLevel::Info;
     StateBackend state_backend = StateBackend::TrieDb;
 
@@ -172,6 +173,12 @@ try {
            "select the state storage backend")
         ->transform(
             CLI::CheckedTransformer(STATE_BACKEND_MAP, CLI::ignore_case));
+    cli.add_option(
+        "--validate-flat-state,--validate_flat_state",
+        validate_flat_state_dir,
+        "directory for a flat-state RocksDB shadow; when set, MonadDB also "
+        "mirrors state there and asserts flat==trie on reads (requires a build "
+        "with -DMONAD_ENABLE_ROCKSDB=ON)");
     cli.add_option(
         "--sq-thread-cpu,--sq_thread_cpu",
         sq_thread_cpu,
@@ -299,7 +306,11 @@ try {
         .enable_multiblock_cache = true,
         .sq_thread_cpu = disable_sq_thread_cpu
                              ? std::optional<unsigned>{}
-                             : std::optional<unsigned>{sq_thread_cpu}});
+                             : std::optional<unsigned>{sq_thread_cpu},
+        .validate_flat_state_dir =
+            validate_flat_state_dir.empty()
+                ? std::optional<fs::path>{}
+                : std::optional<fs::path>{validate_flat_state_dir}});
     mpt::Db &raw_db = db_handle->raw_db();
 
     auto chain = [chain_config] -> std::unique_ptr<Chain> {

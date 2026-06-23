@@ -103,6 +103,8 @@ add_library(
   "ethereum/db/db_snapshot_filesystem.h"
   "ethereum/db/file_db.cpp"
   "ethereum/db/file_db.hpp"
+  "ethereum/db/flat_state_mirror.cpp"
+  "ethereum/db/flat_state_mirror.hpp"
   "ethereum/db/make_db.cpp"
   "ethereum/db/make_db.hpp"
   "ethereum/db/partial_trie_db.hpp"
@@ -330,6 +332,12 @@ target_link_libraries(
   PUBLIC silkpre
   PUBLIC unordered_dense
   PUBLIC TBB::tbb)
+# F5: TrieDb's flat-state mirror calls into category/statedb (RocksDB) only when
+# the backend is enabled. Linking it here also propagates MONAD_HAVE_ROCKSDB for
+# the #ifdef guards in trie_db / flat_state_mirror.
+if(MONAD_ENABLE_ROCKSDB)
+  target_link_libraries(monad_execution_ethereum PUBLIC monad_statedb)
+endif()
 monad_compile_options(monad_execution_ethereum)
 
 target_link_options(monad_execution_ethereum PRIVATE LINKER:-z,defs)

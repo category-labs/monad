@@ -47,7 +47,7 @@ void distribute_priority_fees(State &state)
     StakingContract contract(state, call_tracer);
     auto const res = contract.distribute_priority_fees(fees);
     if (res.has_error()) {
-        LOG_ERROR(
+        LOG_WARNING(
             "staking: distribute priority fee reverted: {}",
             res.error().message());
         // At the start of block execution, the proposer id is always cleared to

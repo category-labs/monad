@@ -18,12 +18,7 @@
 #include <category/async/concepts.hpp>
 #include <category/async/erased_connected_operation.hpp>
 
-// TODO unstable paths between versions
-#if __has_include(<boost/outcome/experimental/status-code/nested_status_code.hpp>)
-    #include <boost/outcome/experimental/status-code/nested_status_code.hpp>
-#else
-    #include <boost/outcome/experimental/status-code/status-code/nested_status_code.hpp>
-#endif
+#include <boost/outcome/experimental/status-code/nested_status_code.hpp>
 
 #include <variant>
 #include <vector>

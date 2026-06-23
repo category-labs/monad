@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/fuzzing/generator/instruction_data.hpp>
+#include <category/vm/fuzzing/instruction_data.hpp>
 
 #include <cstdint>
 #include <unordered_map>

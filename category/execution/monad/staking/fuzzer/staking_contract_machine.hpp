@@ -15,7 +15,7 @@
 
 #include <category/execution/monad/staking/fuzzer/staking_contract_model.hpp>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/fuzzing/generator/choice.hpp>
+#include <category/vm/fuzzing/choice.hpp>
 
 #include <magic_enum/magic_enum.hpp>
 

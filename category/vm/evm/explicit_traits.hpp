@@ -40,7 +40,9 @@
     template decltype(f<::monad::EvmTraits<MONAD_ETH_PRAGUE>>)                 \
         f<::monad::EvmTraits<MONAD_ETH_PRAGUE>>;                               \
     template decltype(f<::monad::EvmTraits<MONAD_ETH_OSAKA>>)                  \
-        f<::monad::EvmTraits<MONAD_ETH_OSAKA>>;
+        f<::monad::EvmTraits<MONAD_ETH_OSAKA>>;                                \
+    template decltype(f<::monad::EvmTraits<MONAD_ETH_AMSTERDAM>>)              \
+        f<::monad::EvmTraits<MONAD_ETH_AMSTERDAM>>;
 
 #define EXPLICIT_MONAD_TRAITS(f)                                               \
     template decltype(f<::monad::MonadTraits<MONAD_ZERO>>)                     \
@@ -80,7 +82,8 @@
     template class c<::monad::EvmTraits<MONAD_ETH_SHANGHAI>>;                  \
     template class c<::monad::EvmTraits<MONAD_ETH_CANCUN>>;                    \
     template class c<::monad::EvmTraits<MONAD_ETH_PRAGUE>>;                    \
-    template class c<::monad::EvmTraits<MONAD_ETH_OSAKA>>;
+    template class c<::monad::EvmTraits<MONAD_ETH_OSAKA>>;                     \
+    template class c<::monad::EvmTraits<MONAD_ETH_AMSTERDAM>>;
 
 #define EXPLICIT_MONAD_TRAITS_CLASS(c)                                         \
     template class c<::monad::MonadTraits<MONAD_ZERO>>;                        \
@@ -141,7 +144,8 @@
     template void id<&f<::monad::EvmTraits<MONAD_ETH_SHANGHAI>>>();            \
     template void id<&f<::monad::EvmTraits<MONAD_ETH_CANCUN>>>();              \
     template void id<&f<::monad::EvmTraits<MONAD_ETH_PRAGUE>>>();              \
-    template void id<&f<::monad::EvmTraits<MONAD_ETH_OSAKA>>>();
+    template void id<&f<::monad::EvmTraits<MONAD_ETH_OSAKA>>>();               \
+    template void id<&f<::monad::EvmTraits<MONAD_ETH_AMSTERDAM>>>();
 
 #define EXPLICIT_EVM_TRAITS_MEMBER_HELPER(f, id)                               \
     EXPLICIT_TRAITS_MEMBER_FN(id)                                              \

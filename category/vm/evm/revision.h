@@ -23,10 +23,14 @@ extern "C"
 #endif
 
 // Monad's in-tree EVM fork revision enum. This is a drop-in replacement for
-// evmc's `evmc_revision`: the enumerators mirror `evmc_revision` 1:1 (same
-// underlying integer values), which keeps ordering comparisons and the
-// arithmetic in previous_evm_revision() unchanged. The 1:1 correspondence is
-// enforced by static_assert in revision.cpp.
+// evmc's `evmc_revision`: the enumerators through MONAD_ETH_OSAKA mirror
+// `evmc_revision` 1:1 (same underlying integer values), which keeps ordering
+// comparisons and the arithmetic in previous_evm_revision() unchanged. That
+// 1:1 correspondence is enforced by static_assert in revision.cpp.
+//
+// MONAD_ETH_AMSTERDAM and above have no `evmc_revision` counterpart in the
+// bundled evmc — they are the first future forks grown on this side of the
+// boundary, so they are not (and cannot be) asserted equal to any EVMC_* value.
 //
 // The enum itself carries no evmc dependency. The only tie to evmc is the pair
 // of conversion functions below, which are needed solely at the remaining
@@ -50,7 +54,8 @@ enum monad_eth_revision
     MONAD_ETH_CANCUN = 12,
     MONAD_ETH_PRAGUE = 13,
     MONAD_ETH_OSAKA = 14,
-    MONAD_ETH_EXPERIMENTAL = 15,
+    MONAD_ETH_AMSTERDAM = 15,
+    MONAD_ETH_EXPERIMENTAL = 16,
 
     // The maximum EVM revision supported.
     MONAD_ETH_MAX_REVISION = MONAD_ETH_EXPERIMENTAL,

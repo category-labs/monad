@@ -284,6 +284,9 @@ int main(int argc, char **argv)
     else if (rev == "OSAKA") {
         return mce_main<EvmTraits<MONAD_ETH_OSAKA>>(args);
     }
+    else if (rev == "AMSTERDAM") {
+        return mce_main<EvmTraits<MONAD_ETH_AMSTERDAM>>(args);
+    }
     else if (rev == "LATEST") {
         return mce_main<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(args);
     }

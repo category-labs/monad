@@ -42,9 +42,6 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
-          build-args: |-
-            CC=gcc-15
-            CXX=g++-15
           target: build_and_test_rust
           cache-from: type=gha,scope=base_rust
 
@@ -53,6 +50,9 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
+          build-args: |-
+            CC=gcc-15
+            CXX=g++-15
           target: code_quality_rust
           cache-from: type=gha,scope=base_rust
 

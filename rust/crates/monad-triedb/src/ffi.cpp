@@ -13,207 +13,163 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "ffi.h"
+#include "monad-triedb/include/ffi.h"
+#include "monad-triedb/src/ffi.rs.h"
 
+#include <category/async/connected_operation.hpp>
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/log.hpp>
 #include <category/core/nibble.h>
-#include <category/execution/monad/staking/read_valset.hpp>
+#include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
+#include <category/mpt/nibbles_view.hpp>
+#include <category/mpt/node.hpp>
+#include <category/mpt/node_cursor.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
 
 #include <cassert>
 #include <filesystem>
-#include <iostream>
-#include <limits>
 #include <memory>
-#include <optional>
+#include <system_error>
 #include <utility>
 #include <vector>
 
-struct TriedbRoInner
+namespace monad::rust
 {
-    monad::mpt::AsyncIOContext io_ctx;
-    monad::mpt::Db db;
-    monad::mpt::AsyncContext async_ctx;
 
-    explicit TriedbRoInner(
+    TriedbRoInner::TriedbRoInner(
         std::vector<std::filesystem::path> dbname_paths,
-        uint64_t const node_lru_max_mem)
-        : io_ctx{monad::mpt::ReadOnlyOnDiskDbConfig{
-              .disable_mismatching_storage_pool_check = true,
-              .dbname_paths = std::move(dbname_paths)}}
-        , db{io_ctx}
-        , async_ctx{db, node_lru_max_mem}
+        uint64_t const node_lru_max_mem,
+        bool const disable_mismatching_storage_pool_check)
+        : io_ctx(monad::mpt::ReadOnlyOnDiskDbConfig{
+              .disable_mismatching_storage_pool_check =
+                  disable_mismatching_storage_pool_check,
+              .dbname_paths = std::move(dbname_paths)})
+        , db(io_ctx)
+        , async_ctx(db, node_lru_max_mem)
     {
     }
-};
 
-namespace
-{
-    // Convert a nibble path into a packed byte array.
     void nibbles_to_bytes(
         uint8_t *dest, monad::mpt::NibblesView const nibbles,
-
         size_t const nibble_count)
-
     {
         for (unsigned n = 0; n < static_cast<unsigned>(nibble_count); ++n) {
             set_nibble(dest, n, nibbles.get(n));
         }
     }
 
-    monad::mpt::NibblesView
-    key_to_nibbles_view(uint8_t const *const key, uint8_t const key_len_nibbles)
+    monad::mpt::NibblesView key_to_nibbles_view(
+        ::rust::Slice<uint8_t const> key, uint8_t const key_len_nibbles)
     {
-        return monad::mpt::NibblesView{0, key_len_nibbles, key};
-    }
-}
-
-int triedb_open(
-    char const *dbdirpath, TriedbRoInner **db, uint64_t const node_lru_max_mem)
-{
-    if (dbdirpath == nullptr || db == nullptr || *db != nullptr) {
-        return -1;
+        return monad::mpt::NibblesView{0, key_len_nibbles, key.data()};
     }
 
-    std::vector<std::filesystem::path> paths;
-    std::error_code ec;
+    std::unique_ptr<TriedbRoInner> triedb_open(
+        ::rust::Str dbdirpath, uint64_t const node_lru_max_mem,
+        bool const disable_mismatching_storage_pool_check)
+    {
+        std::string const path{dbdirpath.data(), dbdirpath.size()};
 
-    if (std::filesystem::is_block_file(dbdirpath, ec)) {
-        paths.emplace_back(dbdirpath);
-    }
-    else if (!ec) {
-        for (auto const &file :
-             std::filesystem::directory_iterator(dbdirpath, ec)) {
-            paths.emplace_back(file.path());
+        std::vector<std::filesystem::path> paths;
+        std::error_code ec;
+
+        if (std::filesystem::is_block_file(path, ec)) {
+            paths.emplace_back(path);
+        }
+        else if (!ec) {
+            for (auto const &file :
+                 std::filesystem::directory_iterator(path, ec)) {
+                paths.emplace_back(file.path());
+            }
+        }
+
+        if (ec) {
+            LOG_ERROR("Failed to inspect database path: {} ({})", path, ec);
+            return nullptr;
+        }
+
+        try {
+            return std::make_unique<TriedbRoInner>(
+                std::move(paths),
+                node_lru_max_mem,
+                disable_mismatching_storage_pool_check);
+        }
+        catch (std::exception const &e) {
+            LOG_ERROR("Failed to open triedb: {}", e.what());
+            return nullptr;
         }
     }
 
-    if (ec) {
-        LOG_ERROR("Failed to inspect database path: {} ({})", dbdirpath, ec);
-        return -2;
+    std::unique_ptr<monad::mpt::NodeCursor> triedb_read(
+        TriedbRoInner const &db, ::rust::Slice<uint8_t const> const key,
+        uint8_t const key_len_nibbles, uint64_t const block_id)
+    {
+        auto result =
+            db.db.find(key_to_nibbles_view(key, key_len_nibbles), block_id);
+        if (!result.has_value()) {
+            return nullptr;
+        }
+        return std::make_unique<monad::mpt::NodeCursor>(
+            std::move(result.value()));
     }
 
-    try {
-        *db = new TriedbRoInner{std::move(paths), node_lru_max_mem};
-    }
-    catch (std::exception const &e) {
-        std::cerr << e.what();
-        return -3;
-    }
-    return 0;
-}
-
-int triedb_close(TriedbRoInner *db)
-{
-    delete db;
-    return 0;
-}
-
-int triedb_read(
-    TriedbRoInner *db, uint8_t const *const key, uint8_t const key_len_nibbles,
-    uint8_t const **value, uint64_t const block_id)
-{
-    if (db == nullptr || value == nullptr) {
-        return -3;
-    }
-
-    *value = nullptr;
-
-    auto result =
-        db->db.find(key_to_nibbles_view(key, key_len_nibbles), block_id);
-    if (!result.has_value()) {
-        return -1;
-    }
-
-    auto const &value_view = result.value().node->value();
-    if (value_view.size() >
-        static_cast<size_t>(std::numeric_limits<int>::max())) {
-        // value length doesn't fit in return type
-        return -2;
-    }
-    int const value_len = static_cast<int>(value_view.size());
-    if (value_len > 0) {
-        uint8_t *buf = new uint8_t[value_len];
-        memcpy(buf, value_view.data(), value_len);
-        *value = buf;
-    }
-    return value_len;
-}
-
-namespace
-{
     struct AsyncReadReceiver
     {
-        triedb_async_read_callback_fn callback_;
-        void *user_;
+    private:
+        ffi::CallbackContext *const ctx_;
+
+    public:
+        explicit AsyncReadReceiver(ffi::CallbackContext *const ctx)
+            : ctx_(ctx)
+        {
+        }
 
         void set_value(
             monad::async::erased_connected_operation *state,
             monad::async::result<monad::byte_string> result)
         {
-            uint8_t const *value = nullptr;
-            int length = 0;
-            triedb_async_read_callback_fn const callback = callback_;
-            void *const user = user_;
             if (!result) {
-                length = -1;
+                ::rust::Slice<uint8_t const> empty{};
+                ffi::callback_async_read(ctx_, empty, false);
             }
             else {
-                auto const &value_view = result.value();
-                if (value_view.size() >
-                    static_cast<size_t>(std::numeric_limits<int>::max())) {
-                    // value length doesn't fit in return type
-                    length = -2;
-                }
-                else {
-                    length = static_cast<int>(value_view.size());
-                    if (length > 0) {
-                        uint8_t *buf = new uint8_t[length];
-                        memcpy(
-                            buf,
-                            value_view.data(),
-                            static_cast<size_t>(length));
-                        value = buf;
-                    }
-                }
+                monad::byte_string const &value = result.value();
+                ::rust::Slice<uint8_t const> view{value.data(), value.size()};
+                ffi::callback_async_read(ctx_, view, true);
             }
             delete state;
-            callback(value, length, user);
         }
     };
-}
 
-void triedb_async_read(
-    TriedbRoInner *db, uint8_t const *const key, uint8_t const key_len_nibbles,
-    uint64_t const block_id, triedb_async_read_callback_fn callback, void *user)
-{
-    auto *state = new auto(monad::async::connect(
-        monad::mpt::make_get_sender(
-            &db->async_ctx,
-            key_to_nibbles_view(key, key_len_nibbles),
-            block_id),
-        AsyncReadReceiver{callback, user}));
-    state->initiate();
-}
+    void triedb_async_read(
+        TriedbRoInner &db, ::rust::Slice<uint8_t const> const key,
+        uint8_t const key_len_nibbles, uint64_t const block_id,
+        ffi::CallbackContext *const ctx)
+    {
+        auto *state = new auto(monad::async::connect(
+            monad::mpt::make_get_sender(
+                &db.async_ctx,
+                key_to_nibbles_view(key, key_len_nibbles),
+                block_id),
+            AsyncReadReceiver{ctx}));
+        state->initiate();
+    }
 
-namespace
-{
     class TraverseMachineWithCallback final : public monad::mpt::TraverseMachine
     {
-        void *context_;
-        triedb_async_traverse_callback_fn callback_;
+    private:
+        ffi::CallbackContext *ctx_;
         monad::mpt::Nibbles path_;
 
     public:
         TraverseMachineWithCallback(
-            void *context, triedb_async_traverse_callback_fn callback,
+            ffi::CallbackContext *const ctx,
             monad::mpt::NibblesView const initial_path)
-            : context_(context)
-            , callback_(callback)
+            : ctx_(ctx)
             , path_(initial_path)
         {
         }
@@ -234,21 +190,17 @@ namespace
                     (path_.nibble_size() & 1) == 0); // assert even nibble size
                 size_t const path_bytes = path_.nibble_size() / 2;
                 auto path_data = std::make_unique<uint8_t[]>(path_bytes);
-
                 nibbles_to_bytes(path_data.get(), path_, path_.nibble_size());
 
                 // path_data is key, node.value().data() is rlp(value)
-                callback_(
-                    triedb_async_traverse_callback_value,
-                    context_,
-                    path_data.get(),
-                    path_bytes,
-                    node.value().data(),
-                    node.value().size());
-
+                auto const &value = node.value();
+                ::rust::Slice<uint8_t const> key_slice{
+                    path_data.get(), path_bytes};
+                ::rust::Slice<uint8_t const> value_slice{
+                    value.data(), value.size()};
+                ffi::callback_traverse_value(ctx_, key_slice, value_slice);
                 return false;
             }
-
             return true;
         }
 
@@ -274,8 +226,14 @@ namespace
 
     struct TraverseReceiver
     {
-        void *context;
-        triedb_async_traverse_callback_fn callback;
+    private:
+        ffi::CallbackContext *const ctx_;
+
+    public:
+        explicit TraverseReceiver(ffi::CallbackContext *const ctx)
+            : ctx_(ctx)
+        {
+        }
 
         void set_value(
             monad::async::erased_connected_operation *state,
@@ -285,238 +243,150 @@ namespace
                 res,
                 "triedb_async_traverse: Traversing failed with %s",
                 res.assume_error().message().c_str());
-            callback(
-                res.assume_value()
-                    ? triedb_async_traverse_callback_finished_normally
-                    : triedb_async_traverse_callback_finished_early,
-                context,
-                nullptr,
-                0,
-                nullptr,
-                0);
-            delete state; // deletes this
+            ffi::callback_traverse_finished(ctx_, res.assume_value());
+            delete state;
         }
     };
 
     struct GetRootForTraverseReceiver
     {
-        using ResultType =
-            monad::async::result<std::shared_ptr<monad::mpt::Node>>;
+    private:
+        ffi::CallbackContext *const ctx_;
+        monad::mpt::detail::TraverseSender traverse_sender_;
 
-        monad::mpt::detail::TraverseSender traverse_sender;
-        TraverseReceiver traverse_receiver;
-
-        GetRootForTraverseReceiver(
-            void *context, triedb_async_traverse_callback_fn callback,
-            monad::mpt::detail::TraverseSender traverse_sender_)
-            : traverse_sender(std::move(traverse_sender_))
-            , traverse_receiver(context, callback)
+    public:
+        explicit GetRootForTraverseReceiver(
+            ffi::CallbackContext *const ctx,
+            monad::mpt::detail::TraverseSender traverse_sender)
+            : ctx_(ctx)
+            , traverse_sender_(std::move(traverse_sender))
         {
         }
 
         void set_value(
-            monad::async::erased_connected_operation *state, ResultType res)
+            monad::async::erased_connected_operation *state,
+            monad::async::result<std::shared_ptr<monad::mpt::Node>> res)
         {
             if (!res) {
-                traverse_receiver.callback(
-                    triedb_async_traverse_callback_finished_early,
-                    traverse_receiver.context,
-                    nullptr,
-                    0,
-                    nullptr,
-                    0);
+                ffi::callback_traverse_finished(ctx_, false);
             }
             else {
-                traverse_sender.traverse_root = res.assume_value();
+                traverse_sender_.traverse_root = res.assume_value();
                 (new auto(monad::async::connect(
-                     std::move(traverse_sender), std::move(traverse_receiver))))
+                     std::move(traverse_sender_), TraverseReceiver{ctx_})))
                     ->initiate();
             }
-            delete state; // deletes this
+            delete state;
         }
     };
-}
 
-bool triedb_traverse(
-    TriedbRoInner *db, uint8_t const *const key, uint8_t const key_len_nibbles,
-    uint64_t const block_id, void *context,
-    triedb_async_traverse_callback_fn callback)
-{
-    monad::mpt::NibblesView const prefix{0, key_len_nibbles, key};
-    auto cursor = db->db.find(prefix, block_id);
-    if (!cursor.has_value()) {
-        callback(
-            triedb_async_traverse_callback_finished_early,
-            context,
-            nullptr,
-            0,
-            nullptr,
-            0);
-        return false;
-    }
-
-    TraverseMachineWithCallback machine(
-        context, callback, monad::mpt::NibblesView{});
-
-    bool const completed = db->db.traverse(cursor.value(), machine, block_id);
-
-    callback(
-        completed ? triedb_async_traverse_callback_finished_normally
-                  : triedb_async_traverse_callback_finished_early,
-        context,
-        nullptr,
-        0,
-        nullptr,
-        0);
-    return completed;
-}
-
-void triedb_async_ranged_get(
-    TriedbRoInner *db, uint8_t const *const prefix_key,
-    uint8_t const prefix_len_nibbles, uint8_t const *const min_key,
-    uint8_t const min_len_nibbles, uint8_t const *const max_key,
-    uint8_t const max_len_nibbles, uint64_t const block_id, void *context,
-    triedb_async_traverse_callback_fn callback)
-{
-    monad::mpt::NibblesView const prefix{0, prefix_len_nibbles, prefix_key};
-    monad::mpt::NibblesView const min{0, min_len_nibbles, min_key};
-    monad::mpt::NibblesView const max{0, max_len_nibbles, max_key};
-    auto machine = std::make_unique<monad::mpt::RangedGetMachine>(
-        min,
-        max,
-        [callback, context](
-            monad::mpt::NibblesView const key,
-            monad::byte_string_view const value) {
-            size_t const key_len_nibbles = key.nibble_size();
-            MONAD_ASSERT_PRINTF(
-                (key_len_nibbles & 1) == 0,
-                "Only supported for even length paths but got %lu nibbles",
-                key_len_nibbles);
-            size_t const key_len_bytes = key_len_nibbles / 2;
-            auto key_data = std::make_unique<uint8_t[]>(key_len_bytes);
-
-            nibbles_to_bytes(key_data.get(), key, key_len_nibbles);
-
-            callback(
-                triedb_async_traverse_callback_value,
-                context,
-                key_data.get(),
-                key_len_bytes,
-                value.data(),
-                value.size());
-        });
-    (new auto(monad::async::connect(
-         monad::mpt::make_get_node_sender(&db->async_ctx, prefix, block_id),
-         GetRootForTraverseReceiver(
-             context,
-             callback,
-             monad::mpt::make_traverse_sender(
-                 &db->async_ctx, {}, std::move(machine), block_id)))))
-        ->initiate();
-}
-
-void triedb_async_traverse(
-    TriedbRoInner *db, uint8_t const *const key, uint8_t const key_len_nibbles,
-    uint64_t const block_id, void *context,
-    triedb_async_traverse_callback_fn callback)
-{
-    monad::mpt::NibblesView const prefix{0, key_len_nibbles, key};
-    auto machine = std::make_unique<TraverseMachineWithCallback>(
-        context, callback, monad::mpt::NibblesView{});
-    (new auto(monad::async::connect(
-         monad::mpt::make_get_node_sender(&db->async_ctx, prefix, block_id),
-         GetRootForTraverseReceiver(
-             context,
-             callback,
-             monad::mpt::make_traverse_sender(
-                 &db->async_ctx, {}, std::move(machine), block_id)))))
-        ->initiate();
-}
-
-size_t triedb_poll(TriedbRoInner *db, bool const blocking, size_t const count)
-{
-    return db->db.poll(blocking, count);
-}
-
-int triedb_finalize(uint8_t const *const value)
-{
-    delete[] value;
-    return 0;
-}
-
-uint64_t triedb_latest_proposed_version(TriedbRoInner *db)
-{
-    return db->db.get_latest_proposed_version();
-}
-
-monad_c_bytes32 triedb_latest_proposed_block_id(TriedbRoInner *db)
-{
-    return db->db.get_latest_proposed_block_id();
-}
-
-uint64_t triedb_latest_voted_version(TriedbRoInner *db)
-{
-    return db->db.get_latest_voted_version();
-}
-
-monad_c_bytes32 triedb_latest_voted_block_id(TriedbRoInner *db)
-{
-    return db->db.get_latest_voted_block_id();
-}
-
-uint64_t triedb_latest_finalized_version(TriedbRoInner *db)
-{
-    return db->db.get_latest_finalized_version();
-}
-
-uint64_t triedb_latest_verified_version(TriedbRoInner *db)
-{
-    return db->db.get_latest_verified_version();
-}
-
-uint64_t triedb_earliest_version(TriedbRoInner *db)
-{
-    return db->db.get_earliest_version();
-}
-
-uint64_t triedb_latest_version(TriedbRoInner *db)
-{
-    return db->db.get_latest_version();
-}
-
-namespace
-{
-    validator_set *alloc_valset(uint64_t const length)
+    void triedb_traverse(
+        TriedbRoInner &db, ::rust::Slice<uint8_t const> const key,
+        uint8_t const key_len_nibbles, uint64_t const block_id,
+        ffi::CallbackContext *const ctx)
     {
-        validator_data *validators = new validator_data[length];
-        return new validator_set{.validators = validators, .length = length};
-    }
-}
+        monad::mpt::NibblesView const prefix =
+            key_to_nibbles_view(key, key_len_nibbles);
 
-void triedb_free_valset(validator_set *valset)
-{
-    delete[] valset->validators;
-    delete valset;
-}
+        auto cursor = db.db.find(prefix, block_id);
 
-validator_set *triedb_read_valset(
-    TriedbRoInner *db, size_t const block_num, uint64_t const requested_epoch)
-{
-    auto ret = monad::staking::read_valset(db->db, block_num, requested_epoch);
-    if (!ret.has_value()) {
-        return nullptr;
-    }
+        if (!cursor.has_value()) {
+            ffi::callback_traverse_finished(ctx, false);
+            return;
+        }
 
-    uint64_t const length = ret.value().size();
-    validator_set *valset = alloc_valset(length);
-    for (uint64_t i = 0; i < length; ++i) {
-        std::memcpy(
-            valset->validators[i].secp_pubkey, ret.value()[i].secp_pubkey, 33);
-        std::memcpy(
-            valset->validators[i].bls_pubkey, ret.value()[i].bls_pubkey, 48);
-        std::memcpy(
-            valset->validators[i].stake, ret.value()[i].stake.bytes, 32);
+        TraverseMachineWithCallback machine(ctx, monad::mpt::NibblesView{});
+
+        bool const completed =
+            db.db.traverse(cursor.value(), machine, block_id);
+
+        ffi::callback_traverse_finished(ctx, completed);
     }
 
-    return valset;
-}
+    void triedb_async_traverse(
+        TriedbRoInner &db, ::rust::Slice<uint8_t const> const key,
+        uint8_t const key_len_nibbles, uint64_t const block_id,
+        ffi::CallbackContext *const ctx)
+    {
+        monad::mpt::NibblesView const prefix =
+            key_to_nibbles_view(key, key_len_nibbles);
+
+        auto machine = std::make_unique<TraverseMachineWithCallback>(
+            ctx, monad::mpt::NibblesView{});
+
+        (new auto(monad::async::connect(
+             monad::mpt::make_get_node_sender(&db.async_ctx, prefix, block_id),
+             GetRootForTraverseReceiver{
+                 ctx,
+                 monad::mpt::make_traverse_sender(
+                     &db.async_ctx, {}, std::move(machine), block_id),
+             })))
+            ->initiate();
+    }
+
+    void triedb_async_traverse_range(
+        TriedbRoInner &db, ::rust::Slice<uint8_t const> const prefix_key,
+        uint8_t const prefix_key_len_nibbles,
+        ::rust::Slice<uint8_t const> const min_key,
+        uint8_t const min_key_len_nibbles,
+        ::rust::Slice<uint8_t const> const max_key,
+        uint8_t const max_key_len_nibbles, uint64_t const block_id,
+        ffi::CallbackContext *const ctx)
+    {
+        monad::mpt::NibblesView const prefix =
+            key_to_nibbles_view(prefix_key, prefix_key_len_nibbles);
+
+        monad::mpt::NibblesView const min =
+            key_to_nibbles_view(min_key, min_key_len_nibbles);
+
+        monad::mpt::NibblesView const max =
+            key_to_nibbles_view(max_key, max_key_len_nibbles);
+
+        auto machine = std::make_unique<monad::mpt::RangedGetMachine>(
+            min,
+            max,
+            [ctx](
+                monad::mpt::NibblesView const key,
+                monad::byte_string_view const value) {
+                size_t const key_len_nibbles = key.nibble_size();
+                MONAD_ASSERT_PRINTF(
+                    (key_len_nibbles & 1) == 0,
+                    "Only supported for even length paths but got %lu nibbles",
+                    key_len_nibbles);
+                size_t const key_len_bytes = key_len_nibbles / 2;
+                auto key_data = std::make_unique<uint8_t[]>(key_len_bytes);
+
+                nibbles_to_bytes(key_data.get(), key, key_len_nibbles);
+
+                ::rust::Slice<uint8_t const> key_slice{
+                    key_data.get(), key_len_bytes};
+                ::rust::Slice<uint8_t const> value_slice{
+                    value.data(), value.size()};
+
+                ffi::callback_traverse_value(ctx, key_slice, value_slice);
+            });
+
+        (new auto(monad::async::connect(
+             monad::mpt::make_get_node_sender(&db.async_ctx, prefix, block_id),
+             GetRootForTraverseReceiver{
+                 ctx,
+                 monad::mpt::make_traverse_sender(
+                     &db.async_ctx, {}, std::move(machine), block_id),
+             })))
+            ->initiate();
+    }
+
+    std::unique_ptr<std::vector<monad::staking::Validator>> triedb_read_valset(
+        TriedbRoInner &db, size_t const block_num,
+        uint64_t const requested_epoch)
+    {
+        auto ret =
+            monad::staking::read_valset(db.db, block_num, requested_epoch);
+        if (!ret.has_value()) {
+            return nullptr;
+        }
+        return std::make_unique<std::vector<monad::staking::Validator>>(
+            std::move(ret).value());
+    }
+
+} // namespace monad::rust

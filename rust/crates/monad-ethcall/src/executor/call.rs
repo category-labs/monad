@@ -13,8 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::ffi::CStr;
-
 use alloy_consensus::{Header, Transaction as _, TxEnvelope};
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::Address;
@@ -23,15 +21,46 @@ use futures::channel::oneshot::channel;
 use tracing::warn;
 
 use super::{
-    decode_revert_message, eth_call_submit_callback, CallResult, EthCallResult, FailureCallResult,
-    MonadExecutor, RevertCallResult, SenderContext, SuccessCallResult, ETH_CALL_SUCCESS,
-    EVMC_MONAD_RESERVE_BALANCE_VIOLATION, EVMC_OUT_OF_GAS,
+    decode_revert_message, eth_call_submit_callback, EthCallResult, MessageError, MonadExecutor,
+    MonadExecutorResult, SenderContext, ETH_CALL_SUCCESS, EVMC_MONAD_RESERVE_BALANCE_VIOLATION,
+    EVMC_OUT_OF_GAS,
 };
 use crate::{
     ffi,
     overrides::{StateOverrideObject, StateOverrideSet, StorageOverride},
     ChainId, MonadTracer,
 };
+
+#[derive(Clone, Debug)]
+pub struct EthCallSuccess {
+    pub gas_used: u64,
+    pub gas_refund: u64,
+    // We interpret this as rlp encoded CallFrames for debug_traceCall
+    pub output_data: Box<[u8]>,
+}
+
+#[derive(Clone, Debug)]
+pub enum EthCallError {
+    Failure {
+        error_code: EthCallResult,
+        gas_used: u64,
+        gas_refund: u64,
+        message: String,
+        data: Option<String>,
+    },
+    GasLimitTooHigh,
+    InternalError,
+    Other {
+        message: String,
+    },
+    ReserveBalanceViolation {
+        gas_used: u64,
+        gas_refund: u64,
+    },
+    Trace {
+        trace: Box<[u8]>,
+    },
+}
 
 pub struct EthCallRequest<'a> {
     pub chain_id: ChainId,
@@ -46,7 +75,10 @@ pub struct EthCallRequest<'a> {
 }
 
 impl MonadExecutor {
-    pub async fn eth_call(&self, request: EthCallRequest<'_>) -> CallResult {
+    pub async fn eth_call(
+        &self,
+        request: EthCallRequest<'_>,
+    ) -> Result<EthCallSuccess, EthCallError> {
         let EthCallRequest {
             chain_id,
             transaction,
@@ -60,12 +92,7 @@ impl MonadExecutor {
         } = request;
 
         if transaction.gas_limit() > block_header.gas_limit {
-            return CallResult::Failure(FailureCallResult {
-                error_code: EthCallResult::OtherError,
-                message: "gas limit too high".into(),
-                data: None,
-                ..Default::default()
-            });
+            return Err(EthCallError::GasLimitTooHigh);
         }
 
         let mut rlp_encoded_tx = vec![];
@@ -186,144 +213,129 @@ impl MonadExecutor {
             )
         };
 
-        let result = match recv.await {
-            Ok(r) => r,
-            Err(e) => {
-                unsafe { ffi::monad_state_override_destroy(override_ctx) };
+        let result_raw = recv.await.map_err(|e| {
+            unsafe { ffi::monad_state_override_destroy(override_ctx) };
 
-                warn!("callback from eth_call_executor failed: {:?}", e);
+            warn!("callback from `eth_call` failed: {:?}", e);
 
-                return CallResult::Failure(FailureCallResult {
-                    error_code: EthCallResult::OtherError,
-                    message: "internal eth_call error".to_string(),
-                    data: None,
-                    ..Default::default()
-                });
+            EthCallError::InternalError
+        })?;
+
+        let result = MonadExecutorResult::from_c_handle(result_raw).ok_or_else(|| {
+            unsafe { ffi::monad_state_override_destroy(override_ctx) };
+
+            warn!("execution error `eth_call` failed: returned null result");
+
+            EthCallError::InternalError
+        })?;
+
+        let tracer_cval: u32 = tracer.into();
+
+        let call_result = match result.status_code() {
+            ETH_CALL_SUCCESS => {
+                let output_data = if tracer_cval == ffi::monad_tracer_config_NOOP_TRACER {
+                    result.output_data().map_err(|_| {
+                        unsafe { ffi::monad_state_override_destroy(override_ctx) };
+
+                        warn!("execution error `eth_call` failed: output data pointer is null");
+
+                        EthCallError::InternalError
+                    })?
+                } else {
+                    result.encoded_trace().map_err(|_| {
+                        unsafe { ffi::monad_state_override_destroy(override_ctx) };
+
+                        warn!("execution error `eth_call` failed: encoded trace pointer is null");
+
+                        EthCallError::InternalError
+                    })?
+                };
+
+                Ok(EthCallSuccess {
+                    gas_used: result.gas_used(),
+                    gas_refund: result.gas_refund(),
+                    output_data,
+                })
+            }
+            EVMC_MONAD_RESERVE_BALANCE_VIOLATION => {
+                if tracer_cval == ffi::monad_tracer_config_NOOP_TRACER {
+                    Err(EthCallError::ReserveBalanceViolation {
+                        gas_used: result.gas_used(),
+                        gas_refund: result.gas_refund(),
+                    })
+                } else {
+                    let trace = result.encoded_trace().map_err(|_| {
+                        unsafe { ffi::monad_state_override_destroy(override_ctx) };
+
+                        warn!("execution error `eth_call` failed: encoded trace pointer is null");
+
+                        EthCallError::InternalError
+                    })?;
+                    Err(EthCallError::Trace { trace })
+                }
+            }
+            _ => {
+                if result.is_message_null() {
+                    // This means execution reverted, not a validation error
+                    if tracer_cval == ffi::monad_tracer_config_NOOP_TRACER {
+                        let output_data = result.output_data().map_err(|_| {
+                            unsafe { ffi::monad_state_override_destroy(override_ctx) };
+
+                            warn!("execution error `eth_call` failed: output data pointer is null");
+
+                            EthCallError::InternalError
+                        })?;
+                        let message = String::from("execution reverted");
+                        let formatted_message = match decode_revert_message(&output_data) {
+                            Some(error_message) => format!("{}: {}", message, error_message),
+                            None => message,
+                        };
+                        Err(EthCallError::Failure {
+                            error_code: if result.status_code() == EVMC_OUT_OF_GAS {
+                                EthCallResult::OutOfGas
+                            } else {
+                                EthCallResult::ExecutionError
+                            },
+                            gas_used: result.gas_used(),
+                            gas_refund: result.gas_refund(),
+                            message: formatted_message,
+                            data: Some(format!("0x{}", hex::encode(&output_data))),
+                        })
+                    } else {
+                        let trace = result.encoded_trace().map_err(|_| {
+                            unsafe { ffi::monad_state_override_destroy(override_ctx) };
+
+                            warn!(
+                                "execution error `eth_call` failed: encoded trace pointer is null"
+                            );
+
+                            EthCallError::InternalError
+                        })?;
+                        Err(EthCallError::Trace { trace })
+                    }
+                } else {
+                    // This means we hit a validation error (execution not started)
+                    let message = result.message().map_err(|e| {
+                        unsafe { ffi::monad_state_override_destroy(override_ctx) };
+                        match e {
+                            MessageError::NullPointerError => {
+                                warn!("execution error `eth_call` failed: message pointer is null");
+                            }
+                            MessageError::InvalidUtf8Error => {
+                                warn!("execution error `eth_call` failed: message pointer is invalid utf-8");
+                            }
+                        }
+                        EthCallError::InternalError
+                    })?;
+                    Err(EthCallError::Other { message })
+                }
             }
         };
 
         unsafe {
-            let status_code = (*result).status_code;
-            let tracer_cval: u32 = tracer.into();
-
-            let call_result = match status_code {
-                ETH_CALL_SUCCESS => {
-                    let gas_used = (*result).gas_used as u64;
-                    let gas_refund = (*result).gas_refund as u64;
-
-                    if tracer_cval == ffi::monad_tracer_config_NOOP_TRACER {
-                        let output_data_len = (*result).output_data_len;
-                        let output_data = if output_data_len != 0 {
-                            std::slice::from_raw_parts((*result).output_data, output_data_len)
-                                .to_vec()
-                        } else {
-                            vec![]
-                        };
-
-                        CallResult::Success(SuccessCallResult {
-                            gas_used,
-                            gas_refund,
-                            output_data,
-                        })
-                    } else {
-                        let output_data_len = (*result).encoded_trace_len;
-                        let output_data = if output_data_len != 0 {
-                            std::slice::from_raw_parts((*result).encoded_trace, output_data_len)
-                                .to_vec()
-                        } else {
-                            vec![]
-                        };
-
-                        CallResult::Success(SuccessCallResult {
-                            gas_used,
-                            gas_refund,
-                            output_data,
-                        })
-                    }
-                }
-                EVMC_MONAD_RESERVE_BALANCE_VIOLATION => {
-                    if tracer_cval == ffi::monad_tracer_config_NOOP_TRACER {
-                        CallResult::Failure(FailureCallResult {
-                            error_code: EthCallResult::ReserveBalanceViolation,
-                            gas_used: (*result).gas_used as u64,
-                            gas_refund: (*result).gas_refund as u64,
-                            message: "reserve balance violation".to_string(),
-                            data: None,
-                        })
-                    } else {
-                        let output_data_len = (*result).encoded_trace_len;
-                        let output_data = if output_data_len != 0 {
-                            std::slice::from_raw_parts((*result).encoded_trace, output_data_len)
-                                .to_vec()
-                        } else {
-                            vec![]
-                        };
-                        CallResult::Revert(RevertCallResult { trace: output_data })
-                    }
-                }
-                _ => {
-                    if (*result).message.is_null() {
-                        // This means execution reverted, not a validation error
-                        if tracer_cval == ffi::monad_tracer_config_NOOP_TRACER {
-                            let output_data_len = (*result).output_data_len;
-                            let output_data = if output_data_len != 0 {
-                                std::slice::from_raw_parts((*result).output_data, output_data_len)
-                                    .to_vec()
-                            } else {
-                                vec![]
-                            };
-
-                            let message = String::from("execution reverted");
-                            let formatted_message = match decode_revert_message(&output_data) {
-                                Some(error_message) => format!("{}: {}", message, error_message),
-                                None => message,
-                            };
-
-                            CallResult::Failure(FailureCallResult {
-                                error_code: if status_code == EVMC_OUT_OF_GAS {
-                                    EthCallResult::OutOfGas
-                                } else {
-                                    EthCallResult::ExecutionError
-                                },
-                                gas_used: (*result).gas_used as u64,
-                                gas_refund: (*result).gas_refund as u64,
-                                message: formatted_message,
-                                data: Some(format!("0x{}", hex::encode(&output_data))),
-                            })
-                        } else {
-                            let output_data_len = (*result).encoded_trace_len;
-                            let output_data = if output_data_len != 0 {
-                                std::slice::from_raw_parts((*result).encoded_trace, output_data_len)
-                                    .to_vec()
-                            } else {
-                                vec![]
-                            };
-                            CallResult::Revert(RevertCallResult { trace: output_data })
-                        }
-                    } else {
-                        // This means we hit a validation error (execution not started)
-                        let cstr_msg = CStr::from_ptr((*result).message.cast());
-                        let message = match cstr_msg.to_str() {
-                            Ok(str) => String::from(str),
-                            Err(_) => {
-                                String::from("execution error eth_call message invalid utf-8")
-                            }
-                        };
-
-                        CallResult::Failure(FailureCallResult {
-                            error_code: EthCallResult::OtherError,
-                            message,
-                            data: None,
-                            ..Default::default()
-                        })
-                    }
-                }
-            };
-
-            ffi::monad_executor_result_release(result);
             ffi::monad_state_override_destroy(override_ctx);
-
-            call_result
         }
+
+        call_result
     }
 }

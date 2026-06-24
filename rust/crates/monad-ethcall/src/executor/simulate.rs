@@ -239,7 +239,7 @@ impl MonadExecutor {
         match result.status_code() {
             ETH_CALL_SUCCESS => match result.encoded_trace() {
                 Ok(output_data) => SimulateResult::Success(SuccessSimulateResult { output_data }),
-                Err(()) => SimulateResult::Failure(FailureSimulateResult {
+                Err(_) => SimulateResult::Failure(FailureSimulateResult {
                     error_code: EthCallResult::OtherError,
                     message: "internal eth_simulate_v1 error: encoded trace pointer is null"
                         .to_string(),
@@ -247,7 +247,9 @@ impl MonadExecutor {
                 }),
             },
             _ => {
-                let message = result.message();
+                let message = result.message().unwrap_or_else(|_| {
+                    "internal eth_simulate_v1 error: message pointer is null".to_string()
+                });
                 SimulateResult::Failure(FailureSimulateResult {
                     error_code: EthCallResult::OtherError,
                     message,

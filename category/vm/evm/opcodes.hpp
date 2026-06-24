@@ -292,7 +292,7 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<MONAD_ETH_ISTANBUL>>()
+    make_opcode_table<EvmTraits<MONAD_ETH_BERLIN>>()
     {
         return {
             OpCodeInfo{"STOP", 0, 0, 0, false, 0, 0}, // 0x00
@@ -347,7 +347,7 @@ namespace monad::vm::compiler
             unknown_opcode_info,
 
             OpCodeInfo{"ADDRESS", 0, 0, 1, false, 2, 0}, // 0x30,
-            OpCodeInfo{"BALANCE", 0, 1, 1, true, 700, 0}, // 0x31,
+            OpCodeInfo{"BALANCE", 0, 1, 1, true, 100, 0}, // 0x31,
             OpCodeInfo{"ORIGIN", 0, 0, 1, false, 2, 0}, // 0x32,
             OpCodeInfo{"CALLER", 0, 0, 1, false, 2, 0}, // 0x33,
             OpCodeInfo{"CALLVALUE", 0, 0, 1, false, 2, 0}, // 0x34,
@@ -357,11 +357,11 @@ namespace monad::vm::compiler
             OpCodeInfo{"CODESIZE", 0, 0, 1, false, 2, 0}, // 0x38,
             OpCodeInfo{"CODECOPY", 0, 3, 0, true, 3, 0}, // 0x39,
             OpCodeInfo{"GASPRICE", 0, 0, 1, false, 2, 0}, // 0x3A,
-            OpCodeInfo{"EXTCODESIZE", 0, 1, 1, true, 700, 0}, // 0x3B,
-            OpCodeInfo{"EXTCODECOPY", 0, 4, 0, true, 700, 0}, // 0x3C,
+            OpCodeInfo{"EXTCODESIZE", 0, 1, 1, true, 100, 0}, // 0x3B,
+            OpCodeInfo{"EXTCODECOPY", 0, 4, 0, true, 100, 0}, // 0x3C,
             OpCodeInfo{"RETURNDATASIZE", 0, 0, 1, false, 2, 0}, // 0x3D,
             OpCodeInfo{"RETURNDATACOPY", 0, 3, 0, true, 3, 0}, // 0x3E,
-            OpCodeInfo{"EXTCODEHASH", 0, 1, 1, true, 700, 0}, // 0x3F,
+            OpCodeInfo{"EXTCODEHASH", 0, 1, 1, true, 100, 0}, // 0x3F,
 
             OpCodeInfo{"BLOCKHASH", 0, 1, 1, false, 20, 0}, // 0x40,
             OpCodeInfo{"COINBASE", 0, 0, 1, false, 2, 0}, // 0x41,
@@ -384,8 +384,8 @@ namespace monad::vm::compiler
             OpCodeInfo{"MLOAD", 0, 1, 1, true, 3, 0}, // 0x51,
             OpCodeInfo{"MSTORE", 0, 2, 0, true, 3, 0}, // 0x52,
             OpCodeInfo{"MSTORE8", 0, 2, 0, true, 3, 0}, // 0x53,
-            OpCodeInfo{"SLOAD", 0, 1, 1, true, 800, 0}, // 0x54,
-            OpCodeInfo{"SSTORE", 0, 2, 0, true, 800, 0}, // 0x55,
+            OpCodeInfo{"SLOAD", 0, 1, 1, true, 100, 0}, // 0x54,
+            OpCodeInfo{"SSTORE", 0, 2, 0, true, 100, 0}, // 0x55,
             OpCodeInfo{"JUMP", 0, 1, 0, false, 8, 0}, // 0x56,
             OpCodeInfo{"JUMPI", 0, 2, 0, false, 10, 0}, // 0x57,
             OpCodeInfo{"PC", 0, 0, 1, false, 2, 0}, // 0x58,
@@ -551,44 +551,22 @@ namespace monad::vm::compiler
             unknown_opcode_info,
 
             OpCodeInfo{"CREATE", 0, 3, 1, true, 32000, 0}, // 0xF0,
-            OpCodeInfo{"CALL", 0, 7, 1, true, 700, 0}, // 0xF1,
-            OpCodeInfo{"CALLCODE", 0, 7, 1, true, 700, 0}, // 0xF2,
+            OpCodeInfo{"CALL", 0, 7, 1, true, 100, 0}, // 0xF1,
+            OpCodeInfo{"CALLCODE", 0, 7, 1, true, 100, 0}, // 0xF2,
             OpCodeInfo{"RETURN", 0, 2, 0, true, 0, 0}, // 0xF3,
-            OpCodeInfo{"DELEGATECALL", 0, 6, 1, true, 700, 0}, // 0xF4,
+            OpCodeInfo{"DELEGATECALL", 0, 6, 1, true, 100, 0}, // 0xF4,
             OpCodeInfo{"CREATE2", 0, 4, 1, true, 32000, 0}, // 0xF5,
             unknown_opcode_info,
             unknown_opcode_info,
             unknown_opcode_info,
             unknown_opcode_info,
-            OpCodeInfo{"STATICCALL", 0, 6, 1, true, 700, 0}, // 0xFA,
+            OpCodeInfo{"STATICCALL", 0, 6, 1, true, 100, 0}, // 0xFA,
             unknown_opcode_info,
             unknown_opcode_info,
             OpCodeInfo{"REVERT", 0, 2, 0, true, 0, 0}, // 0xFD,
             unknown_opcode_info,
             OpCodeInfo{"SELFDESTRUCT", 0, 1, 0, true, 5000, 0} // 0xFF,
         };
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<MONAD_ETH_BERLIN>>()
-    {
-        auto table = make_opcode_table<
-            EvmTraits<previous_evm_revision(MONAD_ETH_BERLIN)>>();
-
-        // EIP-2929
-        table[SLOAD].min_gas = 100;
-        table[SSTORE].min_gas = 100;
-        table[BALANCE].min_gas = 100;
-        table[EXTCODECOPY].min_gas = 100;
-        table[EXTCODEHASH].min_gas = 100;
-        table[EXTCODESIZE].min_gas = 100;
-        table[CALL].min_gas = 100;
-        table[CALLCODE].min_gas = 100;
-        table[DELEGATECALL].min_gas = 100;
-        table[STATICCALL].min_gas = 100;
-
-        return table;
     }
 
     template <>

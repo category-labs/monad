@@ -171,9 +171,10 @@ compute_slot_key(bytes32_t const &page_key, uint8_t const slot_offset)
 
 bytes32_t page_commit(storage_page_t const &page);
 
-// Storage page run-length encoding (RLE)
-// TODO: review the implementation, it can be changed without affecting the
-// interface.
+// Storage page encoding: a flat sequence of (slot_index, value) pairs in
+// strictly ascending slot_index order. Each pair is one index byte followed
+// by the value encoded via encode_bytes32_compact. An empty page encodes as
+// the empty byte string.
 byte_string encode_storage_page(storage_page_t const &page);
 Result<storage_page_t> decode_storage_page(byte_string_view enc);
 

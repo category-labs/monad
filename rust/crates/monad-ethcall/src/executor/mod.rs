@@ -24,6 +24,7 @@ use tracing::info;
 pub use self::{
     call::{EthCallError, EthCallRequest, EthCallSuccess},
     simulate::{FailureSimulateResult, SimulateResult, SuccessSimulateResult},
+    trace::{EthTraceError, EthTraceSuccess},
 };
 use crate::ffi;
 
@@ -151,21 +152,6 @@ impl Drop for MonadExecutorResult {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum CallResult {
-    Success(SuccessCallResult),
-    Failure(FailureCallResult),
-    Revert(RevertCallResult), // only used for trace
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct SuccessCallResult {
-    pub gas_used: u64,
-    pub gas_refund: u64,
-    // We interpret this as rlp encoded CallFrames for debug_traceCall
-    pub output_data: Vec<u8>,
-}
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum EthCallResult {
     Success,
@@ -174,20 +160,6 @@ pub enum EthCallResult {
     ReserveBalanceViolation,
     #[default]
     OtherError,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct FailureCallResult {
-    pub error_code: EthCallResult,
-    pub gas_used: u64,
-    pub gas_refund: u64,
-    pub message: String,
-    pub data: Option<String>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct RevertCallResult {
-    pub trace: Vec<u8>,
 }
 
 pub(super) struct SenderContext {

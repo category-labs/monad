@@ -13,20 +13,29 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::ffi::CStr;
-
 use alloy_consensus::Header;
 use alloy_rlp::Encodable;
 use futures::channel::oneshot::channel;
-use tracing::{error, warn};
+use tracing::warn;
 
 use super::{
-    eth_call_submit_callback, CallResult, EthCallResult, FailureCallResult, MonadExecutor,
-    SenderContext, SuccessCallResult, ETH_CALL_SUCCESS,
+    eth_call_submit_callback, MessageError, MonadExecutor, SenderContext, ETH_CALL_SUCCESS,
 };
-use crate::{ffi, ChainId, MonadTracer};
+use crate::{ffi, ChainId, MonadExecutorResult, MonadTracer};
+
+#[derive(Clone, Debug)]
+pub struct EthTraceSuccess {
+    pub output_data: Box<[u8]>,
+}
+
+#[derive(Clone, Debug)]
+pub enum EthTraceError {
+    InternalError,
+    Other(String),
+}
 
 impl MonadExecutor {
+    #[allow(clippy::too_many_arguments)]
     pub async fn eth_trace_block_or_transaction(
         &self,
         chain_id: ChainId,
@@ -37,7 +46,7 @@ impl MonadExecutor {
         grandparent_id: Option<[u8; 32]>,
         transaction_index: i64,
         tracer: MonadTracer,
-    ) -> CallResult {
+    ) -> Result<EthTraceSuccess, EthTraceError> {
         let chain_config = chain_id.to_ffi_chain_config();
 
         let mut rlp_encoded_block_header = vec![];
@@ -72,73 +81,47 @@ impl MonadExecutor {
             )
         };
 
-        let result = match recv.await {
-            Ok(r) => r,
-            Err(e) => {
-                warn!(
-                    "callback from eth_trace_block_or_transaction_executor failed: {:?}",
-                    e
-                );
+        let result_raw = recv.await.map_err(|e| {
+            warn!(
+                "callback from `eth_trace_block_or_transaction` failed: {:?}",
+                e
+            );
 
-                return CallResult::Failure(FailureCallResult {
-                    error_code: EthCallResult::OtherError,
-                    message: "internal eth_trace_block_or_transaction error".to_string(),
-                    data: None,
-                    ..Default::default()
-                });
+            EthTraceError::InternalError
+        })?;
+
+        let result = MonadExecutorResult::from_c_handle(result_raw).ok_or_else(|| {
+            warn!("execution error `eth_trace_block_or_transaction` returned null result");
+
+            EthTraceError::InternalError
+        })?;
+
+        let call_result = match result.status_code() {
+            ETH_CALL_SUCCESS => {
+                let output_data = result.encoded_trace().map_err(|_| {
+                    warn!("execution error `eth_trace_block_or_transaction` failed: encoded trace pointer is null");
+
+                    EthTraceError::InternalError
+                })?;
+
+                Ok(EthTraceSuccess { output_data })
+            }
+            _ => {
+                let message = result.message().map_err(|e| {
+                    match e {
+                        MessageError::NullPointerError => {
+                            warn!("execution error `eth_trace_block_or_transaction` failed: message pointer is null");
+                        }
+                        MessageError::InvalidUtf8Error => {
+                            warn!("execution error `eth_trace_block_or_transaction` failed: message pointer is invalid utf-8");
+                        }
+                    }
+                    EthTraceError::InternalError
+                })?;
+                Err(EthTraceError::Other(message))
             }
         };
 
-        unsafe {
-            let status_code = (*result).status_code;
-
-            let call_result = match status_code {
-                ETH_CALL_SUCCESS => {
-                    // TODO(dhil): I don't think these matter for the output of prestate tracing. Other providers don't seem to return them in prestate mode.
-                    let gas_used = (*result).gas_used as u64;
-                    let gas_refund = (*result).gas_refund as u64;
-
-                    let output_data_len = (*result).encoded_trace_len;
-                    let output_data = if output_data_len != 0 {
-                        std::slice::from_raw_parts((*result).encoded_trace, output_data_len)
-                            .to_vec()
-                    } else {
-                        vec![]
-                    };
-
-                    CallResult::Success(SuccessCallResult {
-                        gas_used,
-                        gas_refund,
-                        output_data,
-                    })
-                }
-                _ => {
-                    let cstr_msg = (!(*result).message.is_null())
-                        .then(|| CStr::from_ptr((*result).message.cast()));
-
-                    let message = match cstr_msg.map(CStr::to_str) {
-                        Some(Ok(str)) => String::from(str),
-                        Some(Err(_)) => String::from(
-                            "execution error eth_trace_block_or_transaction message invalid utf-8",
-                        ),
-                        None => {
-                            error!("callback from eth_trace_block_or_transaction_executor failed: message pointer is null");
-                            String::from("callback from eth_trace_block_or_transaction_executor failed: message pointer is null")
-                        }
-                    };
-
-                    CallResult::Failure(FailureCallResult {
-                        error_code: EthCallResult::OtherError,
-                        message,
-                        data: None,
-                        ..Default::default()
-                    })
-                }
-            };
-
-            ffi::monad_executor_result_release(result);
-
-            call_result
-        }
+        call_result
     }
 }

@@ -33,7 +33,7 @@ MONAD_NAMESPACE_BEGIN
 template <Traits traits>
 evmc_tx_context get_tx_context(
     Transaction const &tx, Address const &sender, BlockHeader const &hdr,
-    uint256_t const &chain_id)
+    uint256_t const &chain_id, BlobSchedule const &blob_schedule)
 {
     return {
         .tx_gas_price = store_be_as<bytes32_t>(
@@ -49,8 +49,8 @@ evmc_tx_context get_tx_context(
         .chain_id = store_be_as<bytes32_t>(chain_id),
         .block_base_fee =
             store_be_as<bytes32_t>(hdr.base_fee_per_gas.value_or(0)),
-        .blob_base_fee = store_be_as<bytes32_t>(
-            get_base_fee_per_blob_gas<traits>(hdr.excess_blob_gas.value_or(0))),
+        .blob_base_fee = store_be_as<bytes32_t>(get_base_fee_per_blob_gas(
+            hdr.excess_blob_gas.value_or(0), blob_schedule)),
         .blob_hashes = tx.blob_versioned_hashes.data(),
         .blob_hashes_count = tx.blob_versioned_hashes.size(),
         .initcodes = nullptr, // TODO

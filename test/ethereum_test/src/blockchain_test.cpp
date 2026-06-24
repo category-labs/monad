@@ -98,6 +98,8 @@
 #include <set>
 #include <span>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -105,10 +107,85 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
+using BlobScheduleConfig = std::vector<std::pair<std::string, BlobSchedule>>;
+
+BlobSchedule parse_blob_schedule(nlohmann::json const &json)
+{
+    return BlobSchedule{
+        .target_blobs_per_block =
+            integer_from_json<uint64_t>(json.at("target")),
+        .max_blobs_per_block = integer_from_json<uint64_t>(json.at("max")),
+        .blob_base_fee_update_fraction =
+            integer_from_json<uint64_t>(json.at("baseFeeUpdateFraction"))};
+}
+
+BlobScheduleConfig parse_blob_schedule_config(nlohmann::json const &j_contents)
+{
+    BlobScheduleConfig blob_schedule_config;
+
+    if (!j_contents.contains("config")) {
+        return blob_schedule_config;
+    }
+    auto const &config = j_contents.at("config");
+    if (!config.contains("blobSchedule")) {
+        return blob_schedule_config;
+    }
+
+    for (auto const &[name, blob_schedule] :
+         config.at("blobSchedule").items()) {
+        blob_schedule_config.emplace_back(
+            name, parse_blob_schedule(blob_schedule));
+    }
+    return blob_schedule_config;
+}
+
+BlobSchedule const *find_blob_schedule(
+    BlobScheduleConfig const &blob_schedule_config, std::string_view const name)
+{
+    for (auto const &[entry_name, blob_schedule] : blob_schedule_config) {
+        if (entry_name == name) {
+            return &blob_schedule;
+        }
+    }
+    return nullptr;
+}
+
+std::string_view blob_schedule_name(monad_eth_revision const rev)
+{
+    if (rev >= MONAD_ETH_OSAKA) {
+        return "Osaka";
+    }
+    if (rev >= MONAD_ETH_PRAGUE) {
+        return "Prague";
+    }
+    return "Cancun";
+}
+
+std::string_view
+blob_schedule_name(std::string_view const network, uint64_t const timestamp)
+{
+    constexpr uint64_t TRANSITION_TIMESTAMP = 15'000;
+
+    if (network == "OsakaToBPO1AtTime15k") {
+        return timestamp >= TRANSITION_TIMESTAMP ? "BPO1" : "Osaka";
+    }
+    if (network == "BPO1ToBPO2AtTime15k") {
+        return timestamp >= TRANSITION_TIMESTAMP ? "BPO2" : "BPO1";
+    }
+
+    return network;
+}
+
 template <Traits traits>
 struct TraitsMainnet : MonadChain
 {
     TraitsMainnet() = default;
+
+    TraitsMainnet(std::string network, BlobScheduleConfig blob_schedule_config)
+        : network_{std::move(network)}
+        , blob_schedule_config_{std::move(blob_schedule_config)}
+    {
+    }
 
     virtual uint256_t get_chain_id() const override
     {
@@ -135,6 +212,26 @@ struct TraitsMainnet : MonadChain
         MONAD_ASSERT(false);
     }
 
+    virtual BlobSchedule get_blob_schedule(uint64_t timestamp) const override
+    {
+        if constexpr (is_evm_trait_v<traits>) {
+            if (auto const *const blob_schedule = find_blob_schedule(
+                    blob_schedule_config_,
+                    blob_schedule_name(network_, timestamp))) {
+                return *blob_schedule;
+            }
+            if (auto const *const blob_schedule = find_blob_schedule(
+                    blob_schedule_config_,
+                    blob_schedule_name(traits::evm_rev()))) {
+                return *blob_schedule;
+            }
+            return default_blob_schedule<traits>();
+        }
+        else {
+            return MonadChain::get_blob_schedule(timestamp);
+        }
+    }
+
     virtual GenesisState get_genesis_state() const override
     {
         if constexpr (is_evm_trait_v<traits>) {
@@ -144,6 +241,10 @@ struct TraitsMainnet : MonadChain
             return MonadMainnet{}.get_genesis_state();
         }
     }
+
+private:
+    std::string network_;
+    BlobScheduleConfig blob_schedule_config_;
 };
 
 static fiber::PriorityPool *pool_ = nullptr;
@@ -221,7 +322,7 @@ void validate_post_state(nlohmann::json const &json, nlohmann::json const &db)
 
 template <Traits traits>
 Result<BlockExecOutput> execute(
-    Block &block, monad::TrieDb &db, vm::VM &vm,
+    Chain const &chain, Block &block, monad::TrieDb &db, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer,
     std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
         &senders_and_authorities_map,
@@ -232,7 +333,6 @@ Result<BlockExecOutput> execute(
 
     using namespace monad::test;
 
-    TraitsMainnet<traits> const chain{};
     BOOST_OUTCOME_TRY(static_validate_block<traits>(chain, block));
 
     BlockState block_state(db, vm);
@@ -350,7 +450,7 @@ Result<BlockExecOutput> execute(
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_and_record(
-    Block &block, monad::TrieDb &db, vm::VM &vm,
+    Chain const &chain, Block &block, monad::TrieDb &db, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer,
     std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
         &senders_and_authorities_map,
@@ -372,6 +472,7 @@ Result<std::vector<Receipt>> execute_and_record(
     std::vector<std::vector<CallFrame>> call_frames;
 
     auto result = record_block_result(execute<traits>(
+        chain,
         block,
         db,
         vm,
@@ -399,6 +500,9 @@ void process_test(
     using namespace test;
 
     auto const json_state = load_blockchain_json_state<traits>(j_contents);
+    auto const network = j_contents.at("network").get<std::string>();
+    TraitsMainnet<traits> const chain{
+        network, parse_blob_schedule_config(j_contents)};
     auto const test_state = json_state.make_test_state();
     vm::VM vm{vm_mode};
     mpt::Db &db = test_state->db;
@@ -440,6 +544,7 @@ void process_test(
 
         uint64_t const curr_block_number = block.value().header.number;
         auto const result = execute_and_record<traits>(
+            chain,
             block.value(),
             tdb,
             vm,

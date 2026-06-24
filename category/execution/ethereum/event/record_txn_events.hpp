@@ -25,6 +25,8 @@
 
 enum monad_exec_account_access_context : uint8_t;
 
+struct monad_c_eth_intrinsic_gas;
+
 MONAD_NAMESPACE_BEGIN
 
 struct CallFrame;
@@ -42,7 +44,8 @@ void record_txn_header_events(
 /// Record TXN_EVM_OUTPUT, and all subsequent execution output events
 /// (TXN_LOG, TXN_CALL_FRAME, etc.)
 void record_txn_output_events(
-    uint32_t txn_num, Receipt const &, std::span<CallFrame const>,
+    uint32_t txn_num, Transaction const &, Receipt const &, uint64_t gas_left,
+    monad_c_eth_intrinsic_gas const &, std::span<CallFrame const>,
     State const &);
 
 /// Record TXN_REJECT or EVM_ERROR events depending on what happened during

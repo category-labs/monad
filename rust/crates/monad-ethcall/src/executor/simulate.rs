@@ -20,7 +20,7 @@ use futures::channel::oneshot::channel;
 use tracing::warn;
 
 use super::{
-    eth_call_submit_callback, EthCallResult, MonadExecutor, MonadExecutorResult, SenderContext,
+    eth_call_submit_callback, MessageError, MonadExecutor, MonadExecutorResult, SenderContext,
     ETH_CALL_SUCCESS,
 };
 use crate::{
@@ -33,24 +33,21 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
-pub enum SimulateResult {
-    Success(SuccessSimulateResult),
-    Failure(FailureSimulateResult),
-}
-
-#[derive(Clone, Debug)]
-pub struct SuccessSimulateResult {
+pub struct EthSimulateSuccess {
     pub output_data: Box<[u8]>,
 }
 
 #[derive(Clone, Debug)]
-pub struct FailureSimulateResult {
-    pub error_code: EthCallResult,
-    pub message: String,
-    pub data: Option<String>,
+pub enum EthSimulateError {
+    BlockOverrideFailure,
+    InternalError,
+    StateOverrideFailure,
+    InputSizeMismatch,
+    Other(String),
 }
 
 impl MonadExecutor {
+    #[allow(clippy::too_many_arguments)]
     pub async fn eth_simulate_v1(
         &self,
         chain_id: ChainId,
@@ -64,12 +61,15 @@ impl MonadExecutor {
         max_calls: usize,
         emit_native_transfer_logs: bool,
         overrides: &[(&BlockOverride, &StateOverrideSet)],
-    ) -> SimulateResult {
-        assert_eq!(calls.len(), overrides.len());
-        assert_eq!(calls.len(), senders.len());
+    ) -> Result<EthSimulateSuccess, EthSimulateError> {
+        if (calls.len() != overrides.len()) || (calls.len() != senders.len()) {
+            return Err(EthSimulateError::InputSizeMismatch);
+        }
 
         for (txs, senders) in calls.iter().zip(senders.iter()) {
-            assert_eq!(txs.len(), senders.len());
+            if txs.len() != senders.len() {
+                return Err(EthSimulateError::InputSizeMismatch);
+            }
         }
 
         let mut rlp_encoded_senders = vec![];
@@ -89,22 +89,12 @@ impl MonadExecutor {
         let Some(mut state_overrides) = CStateOverrideVec::with_capacity(calls.len()) else {
             warn!("failed to create state override vector");
 
-            return SimulateResult::Failure(FailureSimulateResult {
-                error_code: EthCallResult::OtherError,
-                message: "internal eth_simulate_v1 error: failed to create state override vector"
-                    .to_string(),
-                data: None,
-            });
+            return Err(EthSimulateError::StateOverrideFailure);
         };
         let Some(mut block_overrides) = CBlockOverrideVec::with_capacity(calls.len()) else {
             warn!("failed to create block override vector");
 
-            return SimulateResult::Failure(FailureSimulateResult {
-                error_code: EthCallResult::OtherError,
-                message: "internal eth_simulate_v1 error: failed to create block override vector"
-                    .to_string(),
-                data: None,
-            });
+            return Err(EthSimulateError::BlockOverrideFailure);
         };
         for (i, (block_override, state_override)) in overrides.iter().enumerate() {
             for (
@@ -213,48 +203,39 @@ impl MonadExecutor {
             );
         }
 
-        let result_raw = match recv.await {
-            Ok(r) => r,
-            Err(e) => {
-                warn!("callback from eth_simulate_v1 failed: {:?}", e);
-
-                return SimulateResult::Failure(FailureSimulateResult {
-                    error_code: EthCallResult::OtherError,
-                    message: "internal eth_simulate_v1 error".to_string(),
-                    data: None,
-                });
-            }
-        };
+        let result_raw = recv.await.map_err(|e| {
+            warn!("callback from `eth_simulate_v1` failed: {:?}", e);
+            EthSimulateError::InternalError
+        })?;
 
         let Some(result) = MonadExecutorResult::from_c_handle(result_raw) else {
-            warn!("callback from eth_simulate_v1 failed: result pointer is null");
-
-            return SimulateResult::Failure(FailureSimulateResult {
-                error_code: EthCallResult::OtherError,
-                message: "internal eth_simulate_v1 error: result pointer is null".to_string(),
-                data: None,
-            });
+            warn!("execution error `eth_simulate_v1` failed: result pointer is null");
+            return Err(EthSimulateError::InternalError);
         };
 
         match result.status_code() {
-            ETH_CALL_SUCCESS => match result.encoded_trace() {
-                Ok(output_data) => SimulateResult::Success(SuccessSimulateResult { output_data }),
-                Err(_) => SimulateResult::Failure(FailureSimulateResult {
-                    error_code: EthCallResult::OtherError,
-                    message: "internal eth_simulate_v1 error: encoded trace pointer is null"
-                        .to_string(),
-                    data: None,
-                }),
-            },
+            ETH_CALL_SUCCESS => {
+                let output_data = result.encoded_trace().map_err(|_| {
+                    warn!(
+                        "execution error `eth_simulate_v1` failed: encoded trace pointer is null"
+                    );
+                    EthSimulateError::InternalError
+                })?;
+                Ok(EthSimulateSuccess { output_data })
+            }
             _ => {
-                let message = result.message().unwrap_or_else(|_| {
-                    "internal eth_simulate_v1 error: message pointer is null".to_string()
-                });
-                SimulateResult::Failure(FailureSimulateResult {
-                    error_code: EthCallResult::OtherError,
-                    message,
-                    data: None,
-                })
+                let message = result.message().map_err(|e| {
+                    match e {
+                        MessageError::NullPointerError => {
+                            warn!("execution error `eth_simulate_v1` failed: message pointer is null");
+                        }
+                        MessageError::InvalidUtf8Error => {
+                            warn!("execution error `eth_simulate_v1` failed: message pointer is invalid utf-8");
+                        }
+                    }
+                    EthSimulateError::InternalError
+                })?;
+                Err(EthSimulateError::Other(message))
             }
         }
     }

@@ -23,7 +23,7 @@ use tracing::info;
 
 pub use self::{
     call::{EthCallError, EthCallRequest, EthCallSuccess},
-    simulate::{FailureSimulateResult, SimulateResult, SuccessSimulateResult},
+    simulate::{EthSimulateError, EthSimulateSuccess},
     trace::{EthTraceError, EthTraceSuccess},
 };
 use crate::ffi;

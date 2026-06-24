@@ -256,7 +256,10 @@ namespace
 
 RocksDbDb::RocksDbDb(std::filesystem::path const &dir)
     : kv_{statedb::KvStore::open(dir)}
-    , nodes_{*kv_, std::size_t{1} << 16}
+    // ~1M decoded nodes: the witness walk re-reads the trie's hot upper levels
+    // every block, so keeping them in the LRU avoids repeated CF_TRIE_NODES
+    // gets.
+    , nodes_{*kv_, std::size_t{1} << 20}
 {
     auto const sr = kv_->get(Cf::meta, meta_bsv(statedb::meta_key::state_root));
     state_root_ = sr.has_value() ? to_bytes32(*sr) : NULL_ROOT;
@@ -624,9 +627,11 @@ void RocksDbDb::commit(
         meta_bsv(statedb::meta_key::finalized),
         be64(header.number));
 
-    // 6. Single synchronous WriteBatch: flat + code + trie nodes + meta, atomic
-    //    across CFs with a WAL fsync.
-    kv_->write(batch, /*sync=*/true);
+    // 6. Single WriteBatch: flat + code + trie nodes + meta, atomic across CFs.
+    //    Async WAL (no per-block fsync) -- a crashed replay is simply re-run
+    //    from the seed, and the in-memory roots/validation are unaffected. The
+    //    bounded async write-back queue is the fuller F10 treatment.
+    kv_->write(batch, /*sync=*/false);
 }
 
 MONAD_NAMESPACE_END

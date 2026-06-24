@@ -18,14 +18,20 @@
 #include <category/statedb/kv_store.hpp>
 #include <category/statedb/schema.hpp>
 
+#include <rocksdb/cache.h>
 #include <rocksdb/db.h>
+#include <rocksdb/filter_policy.h>
 #include <rocksdb/iterator.h>
 #include <rocksdb/options.h>
 #include <rocksdb/slice.h>
 #include <rocksdb/snapshot.h>
 #include <rocksdb/status.h>
+#include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
 
+#include <cstdint>
+#include <cstdlib>
+#include <memory>
 #include <string>
 
 MONAD_NAMESPACE_BEGIN
@@ -47,19 +53,66 @@ namespace statedb
         }
     }
 
+    namespace
+    {
+        // CF_TRIE_NODES is keyed by node hash, so root computation does many
+        // random point reads with no locality -- a large block cache + bloom
+        // filters keep most of the working set (and the trie's hot upper
+        // levels) resident instead of hitting the SST. The cache size in MiB is
+        // read from the env var below (default 4096); bump it on a big-RAM box.
+        std::size_t block_cache_bytes()
+        {
+            std::size_t mb = 4096; // MONAD_ROCKSDB_BLOCK_CACHE_MB overrides
+            if (char const *const env =
+                    std::getenv("MONAD_ROCKSDB_BLOCK_CACHE_MB")) {
+                char *end = nullptr;
+                unsigned long const v = std::strtoul(env, &end, 10);
+                if (end != env && v > 0) {
+                    mb = static_cast<std::size_t>(v);
+                }
+            }
+            return mb << 20;
+        }
+    }
+
     std::unique_ptr<KvStore> KvStore::open(std::filesystem::path const &dir)
     {
         rocksdb::DBOptions db_options;
         db_options.create_if_missing = true;
         db_options.create_missing_column_families = true;
+        db_options.max_background_jobs = 6;
+        db_options.bytes_per_sync = 1u << 20;
+
+        // One shared block cache + a bloom-filtered, index/filter-pinned table
+        // format across all CFs (see block_cache_bytes above).
+        rocksdb::BlockBasedTableOptions table_options;
+        table_options.block_cache = rocksdb::NewLRUCache(block_cache_bytes());
+        table_options.block_size = 16 * 1024;
+        table_options.cache_index_and_filter_blocks = true;
+        table_options.pin_l0_filter_and_index_blocks_in_cache = true;
+        table_options.filter_policy.reset(
+            rocksdb::NewBloomFilterPolicy(10, false));
+        table_options.format_version = 5;
+        auto const table_factory = std::shared_ptr<rocksdb::TableFactory>(
+            rocksdb::NewBlockBasedTableFactory(table_options));
+
+        // Compression is left at the RocksDB default: the vendored build may
+        // not link LZ4/ZSTD, and an unsupported type fails DB::Open. The speed
+        // win here is the block cache + bloom filters, not compression.
+        auto cf_options = [&] {
+            rocksdb::ColumnFamilyOptions o;
+            o.table_factory = table_factory;
+            o.level_compaction_dynamic_level_bytes = true;
+            o.write_buffer_size = std::size_t{128} << 20;
+            return o;
+        };
 
         // RocksDB requires the default column family to be listed explicitly.
         std::vector<rocksdb::ColumnFamilyDescriptor> descriptors;
         descriptors.emplace_back(
-            rocksdb::kDefaultColumnFamilyName, rocksdb::ColumnFamilyOptions{});
+            rocksdb::kDefaultColumnFamilyName, cf_options());
         for (std::size_t i = 0; i < NUM_CF; ++i) {
-            descriptors.emplace_back(
-                std::string{CF_NAMES[i]}, rocksdb::ColumnFamilyOptions{});
+            descriptors.emplace_back(std::string{CF_NAMES[i]}, cf_options());
         }
 
         std::vector<rocksdb::ColumnFamilyHandle *> handles;

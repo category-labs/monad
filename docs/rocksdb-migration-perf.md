@@ -139,3 +139,37 @@ the original path.
 across inserts/updates/storage-churn/deletion/incarnation-bump/code). A wall-clock number needs
 `replay_rocksdb.sh` (bounded genesis replay, `--state-backend=rocksdb`); expect higher commit latency
 than MonadDB (synchronous WAL per block), recovered by F10 (async write-back) + F11 (`async_io`).
+
+### F9 — first real RocksDbDb replay (commit `482bb6c6c`, UNTUNED baseline)
+
+Seeded the full mainnet state at block 22,830,000 from the filesystem snapshot
+(`monad-rocksdb-seed`, streaming on-disk build), then replayed 10,000 blocks
+(22,830,001 → 22,840,000) with `--state-backend=rocksdb`. Same block range as the
+MonadDB track.
+
+- **Seed:** 8h09m wall, store = **382 GB**, peak RSS 76 GB. Gate **passed** — the
+  folded `state_root` (`0xe192ee2e…99869`) matched the snapshot's ETH_HEADER, so
+  the conversion is correct.
+- **Replay:** 7235 s, **282 tps**, 25 M gps, 2,045,301 tx.
+
+| metric | RocksDbDb (untuned F9) | MonadDB |
+|---|---|---|
+| wall (10k blocks) | 7235 s | ~410 s |
+| tps | 282 | ~5000 |
+| commit median | 568 ms | ~12 ms |
+| commit mean / p90 / max | 682 ms / 1.15 s / 8.8 s | — |
+| slow commits >500ms | 6221 / 9913 | 0 |
+
+**~18× slower, and it's all commit.** `txe` (execution) is ~20–50 ms/block; `cmt`
+dominates. Root cause (confirmed against reth, which keys trie nodes by **path**
+and range-scans changed subtrees): our `CF_TRIE_NODES` is keyed by **node hash**,
+so each block's root walk does thousands of random point reads with no locality,
+against a 382 GB store opened with **default RocksDB options** (~8 MB block cache,
+no bloom filters) + a synchronous WAL fsync per block. reth's flat-state reads
+match ours; the divergence is entirely the hash-keyed witness-walk root path.
+
+**Tier-1 tuning (commit `8384ce1ee`)** lands on top of this: shared block cache
+(`MONAD_ROCKSDB_BLOCK_CACHE_MB`, 32 GB in the replay script) + bloom filters +
+pinned index/filter, a ~1M-node LRU, and async WAL. These are runtime options, so
+the existing 382 GB store benefits on reopen with no re-seed. Tuned number pending
+a re-run; the deep fix (path-based node keying, the reth approach) is Tier-2.

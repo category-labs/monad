@@ -27,7 +27,7 @@ option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # deps
 # ##############################################################################
 
-find_package(Boost 1.83 # 1.83 really is the minimum
+find_package(Boost 1.90 # standardized Boost version (Ubuntu 26.04 default)
              CONFIG REQUIRED COMPONENTS context json thread)
 find_package(GTest)
 

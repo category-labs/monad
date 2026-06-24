@@ -325,11 +325,6 @@ namespace monad
             return 0;
         }
 
-        static consteval int64_t base_sload_cost() noexcept
-        {
-            return 100;
-        }
-
         static consteval int64_t base_sstore_cost() noexcept
         {
             return 100;

@@ -20,13 +20,9 @@
 #include <category/execution/ethereum/core/fmt/address_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 
-#include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <quill/std/Pair.h>
 
-template <typename T>
-struct quill::copy_loggable<monad::Delta<T>>
-    : std::integral_constant<bool, detail::is_registered_copyable_v<T>>
-{
-};
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 
 MONAD_LOG_LOGGABLE(monad::StateDelta);
 

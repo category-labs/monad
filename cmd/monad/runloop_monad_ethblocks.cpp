@@ -51,6 +51,8 @@
 
 #include <boost/outcome/try.hpp>
 
+#include <quill/std/Chrono.h>
+
 #include <algorithm>
 #include <chrono>
 #include <memory>

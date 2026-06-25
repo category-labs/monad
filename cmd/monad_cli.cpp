@@ -46,6 +46,10 @@
 #include <CLI/CLI.hpp>
 #include <evmc/evmc.hpp>
 
+#include <quill/std/Chrono.h>
+#include <quill/std/FilesystemPath.h>
+#include <quill/std/Vector.h>
+
 #include <algorithm>
 #include <cctype>
 #include <cerrno>

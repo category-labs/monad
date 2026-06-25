@@ -30,8 +30,6 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <quill/Quill.h>
-
 #include <algorithm>
 #include <array>
 #include <cstdint>

@@ -224,10 +224,10 @@ Result<std::vector<Receipt>> execute_block_transactions(
     // Prototype (parallel-gas): per-sender history, built serially in txn order
     // so each txn's previous same-sender index and same-sender-count-before can
     // ride on its __tx_conflict log line. Serial here -> no synchronization.
-    // Retained as a sanity check on the per-axis metric: `ps` (last same-sender
-    // index) should equal the nonce-axis conflict `jnon`, since a txn reads its
-    // sender's nonce and the prior same-sender txn last bumped it. An
-    // independent cross-check that the nonce instrumentation is wired correctly.
+    // `ps` records the same-sender nonce chain, which the per-axis metric now
+    // deliberately excludes from `jnon` (the sender's nonce is preloaded to
+    // tx.nonce, not a real dependency). So `ps` is precisely the dependency we
+    // do NOT count -- kept to quantify how much same-sender ordering is dropped.
     ankerl::unordered_dense::map<Address, std::pair<int64_t, uint64_t>>
         sender_history;
 

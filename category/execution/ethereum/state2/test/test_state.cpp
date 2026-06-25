@@ -2668,22 +2668,24 @@ TEST_F(InMemoryStateTest, last_conflict_index_latest_writer)
     EXPECT_EQ(bs.last_conflict_index(r).overall(), uint64_t{3});
 }
 
-// The beneficiary is excluded from the read set: EIP-3651 pre-warms it into
-// every transaction, so counting it would make every tx conflict with its
-// predecessor. Passing an address as `beneficiary` drops it from the scan.
-TEST_F(InMemoryStateTest, last_conflict_index_excludes_beneficiary)
+// The transaction's own sender nonce is excluded from the scan: it is preloaded
+// to tx.nonce (set_original_nonce), a consensus-known value, so a same-sender
+// nonce ordering is not a real read-after-write dependency. Passing an address
+// as `sender` drops its nonce conflict; other accounts' nonce reads still count.
+TEST_F(InMemoryStateTest, last_conflict_index_excludes_sender_nonce)
 {
     BlockState bs{this->tdb, this->vm};
     {
         State s{bs, Incarnation{1, 1}};
-        s.add_to_balance(a, 1);
+        s.create_contract(a);
+        s.set_nonce(a, 1); // bump a's nonce -> nonce_last_mutated = 2
         ASSERT_TRUE(bs.can_merge(s));
         bs.merge(s, 2);
     }
     State r{bs, Incarnation{1, 2}};
-    (void)r.get_balance(a);
-    // Without exclusion, a's writer (tx 2) is the conflict.
+    (void)r.get_nonce(a); // reads a's nonce
+    // Counted when a is just some account the transaction read...
     EXPECT_EQ(bs.last_conflict_index(r).overall(), uint64_t{2});
-    // Excluding a (as if it were the beneficiary) drops that conflict.
+    // ...but dropped when a is the transaction's own (preloaded) sender.
     EXPECT_EQ(bs.last_conflict_index(r, a).overall(), LAST_MUTATED_NONE);
 }

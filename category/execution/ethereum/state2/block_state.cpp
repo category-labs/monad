@@ -185,7 +185,7 @@ bool BlockState::can_merge(State &state) const
 }
 
 BlockState::ConflictIndex BlockState::last_conflict_index(
-    State const &state, Address const &beneficiary) const
+    State const &state, Address const &sender) const
 {
     MONAD_ASSERT(state_);
     ConflictIndex ci{};
@@ -198,12 +198,6 @@ BlockState::ConflictIndex BlockState::last_conflict_index(
     auto const &original = state.original();
     for (auto const &kv : original) {
         Address const &address = kv.first;
-        // EIP-3651 pre-warms the beneficiary into every txn's read set and the
-        // fee credit is a commutative add; excluding it avoids a spurious
-        // `j == i-1` chain spanning the whole block.
-        if (address == beneficiary) {
-            continue;
-        }
         OriginalAccountState const &account_state = kv.second;
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_->find(it, address));
@@ -220,7 +214,12 @@ BlockState::ConflictIndex BlockState::last_conflict_index(
         if (account_state.validate_exact_balance()) {
             consider(ci.balance, it->second.balance_last_mutated);
         }
-        if (account_state.nonce_read()) {
+        // The transaction's own sender nonce is preloaded to tx.nonce
+        // (set_original_nonce) -- a consensus-known value, never read from a
+        // predecessor -- so it is not a real dependency and is excluded. Any
+        // other nonce read (a CREATE collision check, a 7702 authority) is
+        // genuine and still counts.
+        if (account_state.nonce_read() && address != sender) {
             consider(ci.nonce, it->second.nonce_last_mutated);
         }
         if (account_state.code_read()) {

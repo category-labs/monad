@@ -463,11 +463,10 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             // the most recent earlier tx it read-after-write conflicts with on
             // each axis (j = overall max; jbal/jnon/jcod/jali/jsto per facet),
             // plus dc = whether the merge destroyed a storage-bearing contract.
-            // The block beneficiary is excluded (EIP-3651 pre-warms it into
-            // every read set and the fee credit is commutative). -1 means no
-            // in-block conflict. r=0: merged on the first speculative attempt.
-            auto const ci =
-                block_state_.last_conflict_index(state, header_.beneficiary);
+            // The sender's own nonce is excluded (preloaded to tx.nonce, not a
+            // real read-after-write dependency). -1 means no in-block conflict.
+            // r=0: merged on the first speculative attempt.
+            auto const ci = block_state_.last_conflict_index(state, sender_);
             auto const receipt = execute_final(state, result.value());
             bool const destroyed = block_state_.merge(state, i_);
             auto const cj = [](uint64_t const v) {
@@ -508,8 +507,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             return std::move(result.error());
         }
         // r=1: first speculative attempt failed can_merge; this is the re-run.
-        auto const ci =
-            block_state_.last_conflict_index(state, header_.beneficiary);
+        auto const ci = block_state_.last_conflict_index(state, sender_);
         auto const receipt = execute_final(state, result.value());
         bool const destroyed = block_state_.merge(state, i_);
         auto const cj = [](uint64_t const v) {

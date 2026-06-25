@@ -98,10 +98,13 @@ public:
     /// `validate_exact_balance`); storage reads are the slots present in its
     /// `storage_`. `overall()` is the max across all axes.
     ///
-    /// `beneficiary` is excluded from the read set. EIP-3651 pre-warms the block
-    /// beneficiary into every transaction's read set, and the priority-fee
-    /// credit is a commutative balance add — neither is a real data dependency,
-    /// so counting it would collapse the block into a `j == i-1` chain.
+    /// The transaction's own `sender` nonce is excluded: it is preloaded to
+    /// `tx.nonce` (`set_original_nonce`), a consensus-known value the executor
+    /// never has to read from a predecessor, so a same-sender nonce ordering is
+    /// not a real parallelization dependency. The beneficiary is *not* excluded:
+    /// its priority-fee credit is applied in `execute_final` (after the read set
+    /// is taken) via a commutative `add_to_balance`, so it never enters the read
+    /// set; only genuine reads of the beneficiary count.
     ///
     /// Intended to be called at the transaction's in-order merge point, so that
     /// every `last_mutated` it observes belongs to an earlier transaction.
@@ -128,7 +131,7 @@ public:
     };
 
     ConflictIndex
-    last_conflict_index(State const &, Address const &beneficiary = {}) const;
+    last_conflict_index(State const &, Address const &sender = {}) const;
 
     struct ReleasedState
     {

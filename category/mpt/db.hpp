@@ -61,6 +61,8 @@ struct AsyncIOContext
     explicit AsyncIOContext(OnDiskDbConfig const &options);
 };
 
+// Hardcode it to open the primary timeline. All timelines are always in sync
+// and store the canonical state.
 class RODb
 {
     struct Impl;
@@ -84,6 +86,8 @@ public:
     bool traverse(
         NodeCursor const &, TraverseMachine &, uint64_t block_id,
         size_t concurrency_limit = 4096);
+
+    state_machine_kind state_machine_type() const;
 };
 
 // A Db is bound to one timeline. The constructors below produce a primary

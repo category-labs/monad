@@ -126,7 +126,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 bytes32_t TrieDb::read_storage(
     Address const &addr, Incarnation const incarnation, bytes32_t const &key)
 {
-    bytes32_t const lookup_key = page_encoded_ ? compute_page_key(key) : key;
+    bytes32_t const lookup_key = storage_lookup_key(key);
     uint8_t const lookup_offset = page_encoded_ ? compute_slot_offset(key) : 0;
     bytes32_t result{};
     if (cache_ && cache_->try_read_storage(

@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/vm.hpp>
 
 #include <cstdint>
@@ -36,15 +37,10 @@
 MONAD_NAMESPACE_BEGIN
 
 class CommitBuilder;
-struct storage_page_t;
 
 struct Db
 {
-    virtual bool is_page_encoded() const
-    {
-        return false;
-    }
-
+    virtual bool is_page_encoded() const = 0;
     virtual std::optional<Account> read_account(Address const &) = 0;
 
     virtual bytes32_t
@@ -82,6 +78,12 @@ struct Db
     virtual std::string print_stats()
     {
         return {};
+    }
+
+protected:
+    bytes32_t storage_lookup_key(bytes32_t const &key) const
+    {
+        return is_page_encoded() ? compute_page_key(key) : key;
     }
 };
 

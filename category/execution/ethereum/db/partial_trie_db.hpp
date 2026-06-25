@@ -158,6 +158,12 @@ class PartialTrieDb final : public Db
 public:
     PartialTrieDb() = delete;
 
+    // TODO: update impl to make it work with page-encoded storage
+    bool is_page_encoded() const override
+    {
+        return false;
+    }
+
     static Result<PartialTrieDb> from_witness(
         bytes32_t const &pre_state_root, byte_string_view encoded_nodes,
         byte_string_view encoded_codes);

@@ -220,7 +220,7 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
     case staking::selector::REWARD:
         return contract.syscall_reward<traits>(calldata, value);
     case staking::selector::SNAPSHOT:
-        return contract.syscall_snapshot<traits>(calldata, value);
+        return contract.syscall_snapshot(calldata, value);
     case staking::selector::ON_EPOCH_CHANGE:
         return contract.syscall_on_epoch_change(calldata, value);
     }

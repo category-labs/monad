@@ -78,13 +78,26 @@ struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
-    /// Block-relative index of the last transaction that mutated the account
-    /// portion (balance/nonce/code/existence), or `LAST_MUTATED_NONE`. See
-    /// `StorageDelta::last_mutated`.
-    uint64_t account_last_mutated{LAST_MUTATED_NONE};
+    /// Per-field last_mutated (parallel-gas experiment): the block-relative
+    /// index of the last transaction that changed each facet of the account,
+    /// or `LAST_MUTATED_NONE`. The merge diffs the merging transaction's value
+    /// against the committed value, treating a nonexistent account as the zero
+    /// account (balance 0, nonce 0, code NULL_HASH). `is_alive` tracks the
+    /// `is_dead` toggle (the EVM observes existence as `is_dead` -- an empty
+    /// account is indistinguishable from a nonexistent one to opcodes), which
+    /// is what existence reads (CALL new-account gas, EXTCODEHASH) depend on.
+    /// Incarnation is intentionally not tracked: it is not a behavioral read
+    /// axis -- a storage read's creation dependency rides on the code axis
+    /// (a SLOAD only runs inside the contract's own execution, which read its
+    /// code) -- so it is irrelevant to conflicts. See also
+    /// `StorageDelta::last_mutated` for the per-slot stamp.
+    uint64_t is_alive_last_mutated{LAST_MUTATED_NONE};
+    uint64_t code_last_mutated{LAST_MUTATED_NONE};
+    uint64_t nonce_last_mutated{LAST_MUTATED_NONE};
+    uint64_t balance_last_mutated{LAST_MUTATED_NONE};
 };
 
-static_assert(sizeof(StateDelta) == 760);
+static_assert(sizeof(StateDelta) == 784);
 static_assert(alignof(StateDelta) == 8);
 
 using StateDeltas = oneapi::tbb::concurrent_hash_map<

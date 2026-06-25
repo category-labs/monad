@@ -72,41 +72,62 @@ public:
 
     bool can_merge(State &) const;
 
-    /// Prototype (parallel-gas experiment): per-merge tally of `last_mutated`
-    /// stamp *candidates* (every account/slot the merge processed) vs *actual
-    /// updates* (those whose value really changed). The gap measures how often
-    /// the old unconditional write-presence stamp was wrong.
-    struct MergeStamps
-    {
-        uint64_t acct_candidates = 0;
-        uint64_t acct_updates = 0;
-        uint64_t slot_candidates = 0;
-        uint64_t slot_updates = 0;
-    };
-
     /// Merge a transaction's accumulated writes into the block state.
     /// `txn_index` is the block-relative index of the merging transaction; it
-    /// is recorded as `last_mutated` on every write-touched key (see
-    /// `StorageDelta::last_mutated`). Non-transaction merges (block
-    /// prologue/epilogue, RPC state overrides) use `LAST_MUTATED_NONE`.
-    /// Returns the stamp candidate/update tally (prototype counters).
-    MergeStamps merge(State const &, uint64_t txn_index = LAST_MUTATED_NONE);
+    /// is recorded as `last_mutated` on every facet/slot whose value actually
+    /// changed (see `StorageDelta::last_mutated` and the per-field stamps on
+    /// `StateDelta`). Non-transaction merges (block prologue/epilogue, RPC
+    /// state overrides) use `LAST_MUTATED_NONE`.
+    ///
+    /// Returns whether this merge destroyed a storage-bearing contract — a
+    /// committed account with non-NULL code going to nullopt. That is the one
+    /// event that wipes a storage namespace out from under the per-slot stamps,
+    /// so it is the case the simplified conflict model cannot see; it is
+    /// surfaced purely as an observation signal to gauge the noise. It is ~zero
+    /// on Monad (EIP-6780 restricts SELFDESTRUCT to same-transaction creates).
+    bool merge(State const &, uint64_t txn_index = LAST_MUTATED_NONE);
 
-    /// Prototype (parallel-gas experiment): compute the "last conflict index"
-    /// `j` for a transaction — the greatest `last_mutated` over the keys in the
-    /// transaction's read set, i.e. the block index of the most recent earlier
-    /// transaction it conflicts with (read-after-write). Returns
-    /// `LAST_MUTATED_NONE` if the read set intersects no in-block write.
+    /// Per-axis "last conflict index" for a transaction (parallel-gas
+    /// experiment): for each facet the transaction *read* — is_alive
+    /// (existence/empty, as observed by CALL new-account gas and EXTCODEHASH),
+    /// balance, nonce, code, and storage slots — the greatest `last_mutated`
+    /// over the keys it read on that axis. That is the block index of the most
+    /// recent earlier transaction it read-after-write conflicts with on that
+    /// axis; `LAST_MUTATED_NONE` means no in-block conflict there. The read set
+    /// is the per-facet read mask on each `OriginalAccountState` (balance reuses
+    /// `validate_exact_balance`); storage reads are the slots present in its
+    /// `storage_`. `overall()` is the max across all axes.
     ///
     /// `beneficiary` is excluded from the read set. EIP-3651 pre-warms the block
     /// beneficiary into every transaction's read set, and the priority-fee
     /// credit is a commutative balance add — neither is a real data dependency,
     /// so counting it would collapse the block into a `j == i-1` chain.
     ///
-    /// Deliberately standalone (not folded into `can_merge`) for now. Intended
-    /// to be called at the transaction's in-order merge point, so that every
-    /// `last_mutated` it observes belongs to an earlier transaction.
-    uint64_t
+    /// Intended to be called at the transaction's in-order merge point, so that
+    /// every `last_mutated` it observes belongs to an earlier transaction.
+    struct ConflictIndex
+    {
+        uint64_t is_alive = LAST_MUTATED_NONE;
+        uint64_t balance = LAST_MUTATED_NONE;
+        uint64_t nonce = LAST_MUTATED_NONE;
+        uint64_t code = LAST_MUTATED_NONE;
+        uint64_t storage = LAST_MUTATED_NONE;
+
+        [[nodiscard]] uint64_t overall() const
+        {
+            uint64_t j = LAST_MUTATED_NONE;
+            for (uint64_t const v :
+                 {is_alive, balance, nonce, code, storage}) {
+                if (v != LAST_MUTATED_NONE &&
+                    (j == LAST_MUTATED_NONE || v > j)) {
+                    j = v;
+                }
+            }
+            return j;
+        }
+    };
+
+    ConflictIndex
     last_conflict_index(State const &, Address const &beneficiary = {}) const;
 
     struct ReleasedState

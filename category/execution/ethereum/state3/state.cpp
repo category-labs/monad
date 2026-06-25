@@ -209,11 +209,13 @@ bool State::account_exists(Address const &address)
 
 bool State::account_is_dead(Address const &address)
 {
+    original_account_state(address).mark_is_alive_read();
     return is_dead(recent_account(address));
 }
 
 uint64_t State::get_nonce(Address const &address)
 {
+    original_account_state(address).mark_nonce_read();
     auto const &account = recent_account(address);
     if (MONAD_LIKELY(account.has_value())) {
         return account.value().nonce;
@@ -238,6 +240,7 @@ uint256_t State::get_original_balance(Address const &address)
 
 bytes32_t State::get_code_hash(Address const &address)
 {
+    original_account_state(address).mark_code_read();
     auto const &account = recent_account(address);
     if (MONAD_LIKELY(account.has_value())) {
         return account.value().code_hash;
@@ -509,6 +512,7 @@ vm::SharedVarcode State::read_code(bytes32_t const &code_hash)
 
 vm::SharedVarcode State::get_code(Address const &address)
 {
+    original_account_state(address).mark_code_read();
     auto const &account = recent_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
         return block_state_.read_code(NULL_HASH);
@@ -518,6 +522,7 @@ vm::SharedVarcode State::get_code(Address const &address)
 
 size_t State::get_code_size(Address const &address)
 {
+    original_account_state(address).mark_code_read();
     auto const &account = recent_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
@@ -540,6 +545,7 @@ size_t State::copy_code(
     Address const &address, size_t const offset, uint8_t *const buffer,
     size_t const buffer_size)
 {
+    original_account_state(address).mark_code_read();
     auto const &account = recent_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;

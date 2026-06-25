@@ -459,28 +459,36 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             if (result.has_error()) {
                 return std::move(result.error());
             }
-            // Prototype: log this transaction's last conflict index j -- the
-            // most recent earlier tx it read-after-write conflicts with. The
-            // block beneficiary is excluded (EIP-3651 pre-warms it into every
-            // read set and the fee credit is commutative). -1 means no in-block
-            // conflict. r=0: merged on the first speculative attempt (no retry).
-            uint64_t const j =
+            // Prototype: log this transaction's per-axis last conflict index --
+            // the most recent earlier tx it read-after-write conflicts with on
+            // each axis (j = overall max; jbal/jnon/jcod/jali/jsto per facet),
+            // plus dc = whether the merge destroyed a storage-bearing contract.
+            // The block beneficiary is excluded (EIP-3651 pre-warms it into
+            // every read set and the fee credit is commutative). -1 means no
+            // in-block conflict. r=0: merged on the first speculative attempt.
+            auto const ci =
                 block_state_.last_conflict_index(state, header_.beneficiary);
             auto const receipt = execute_final(state, result.value());
-            auto const lm = block_state_.merge(state, i_);
+            bool const destroyed = block_state_.merge(state, i_);
+            auto const cj = [](uint64_t const v) {
+                return v == LAST_MUTATED_NONE ? int64_t{-1}
+                                              : static_cast<int64_t>(v);
+            };
             LOG_INFO(
-                "__tx_conflict,bl={},i={},j={},r={},ps={},sc={},ac={},au={},"
-                "kc={},ku={}",
+                "__tx_conflict,bl={},i={},r={},j={},jbal={},jnon={},jcod={},"
+                "jali={},jsto={},dc={},ps={},sc={}",
                 header_.number,
                 i_,
-                j == LAST_MUTATED_NONE ? int64_t{-1} : static_cast<int64_t>(j),
                 0,
+                cj(ci.overall()),
+                cj(ci.balance),
+                cj(ci.nonce),
+                cj(ci.code),
+                cj(ci.is_alive),
+                cj(ci.storage),
+                destroyed ? 1 : 0,
                 last_same_sender_,
-                same_sender_before_,
-                lm.acct_candidates,
-                lm.acct_updates,
-                lm.slot_candidates,
-                lm.slot_updates);
+                same_sender_before_);
             return receipt;
         }
     }
@@ -500,23 +508,29 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             return std::move(result.error());
         }
         // r=1: first speculative attempt failed can_merge; this is the re-run.
-        uint64_t const j =
+        auto const ci =
             block_state_.last_conflict_index(state, header_.beneficiary);
         auto const receipt = execute_final(state, result.value());
-        auto const lm = block_state_.merge(state, i_);
+        bool const destroyed = block_state_.merge(state, i_);
+        auto const cj = [](uint64_t const v) {
+            return v == LAST_MUTATED_NONE ? int64_t{-1}
+                                          : static_cast<int64_t>(v);
+        };
         LOG_INFO(
-            "__tx_conflict,bl={},i={},j={},r={},ps={},sc={},ac={},au={},"
-            "kc={},ku={}",
+            "__tx_conflict,bl={},i={},r={},j={},jbal={},jnon={},jcod={},"
+            "jali={},jsto={},dc={},ps={},sc={}",
             header_.number,
             i_,
-            j == LAST_MUTATED_NONE ? int64_t{-1} : static_cast<int64_t>(j),
             1,
+            cj(ci.overall()),
+            cj(ci.balance),
+            cj(ci.nonce),
+            cj(ci.code),
+            cj(ci.is_alive),
+            cj(ci.storage),
+            destroyed ? 1 : 0,
             last_same_sender_,
-            same_sender_before_,
-            lm.acct_candidates,
-            lm.acct_updates,
-            lm.slot_candidates,
-            lm.slot_updates);
+            same_sender_before_);
         return receipt;
     }
 }

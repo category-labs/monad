@@ -2440,13 +2440,16 @@ TEST_F(TwoOnDisk, random_proposals)
 // ---------------------------------------------------------------------------
 
 // A write stamps `last_mutated` (account portion and storage slot) with the
-// merging transaction's index.
+// merging transaction's index. The account is given a nonce so it becomes live
+// (non-empty): is_alive tracks the is_dead toggle, which an empty account --
+// indistinguishable from a nonexistent one to the EVM -- would not trip.
 TEST_F(InMemoryStateTest, last_mutated_stamps_writes)
 {
     BlockState bs{this->tdb, this->vm};
 
     State s{bs, Incarnation{1, 1}};
     s.create_contract(a);
+    s.set_nonce(a, 1);
     s.set_storage(a, key1, value1);
 
     ASSERT_TRUE(bs.can_merge(s));
@@ -2455,7 +2458,7 @@ TEST_F(InMemoryStateTest, last_mutated_stamps_writes)
     auto [released_state, released_code, _] = std::move(bs).release();
     StateDeltas::const_accessor it{};
     ASSERT_TRUE(released_state->find(it, a));
-    EXPECT_EQ(it->second.account_last_mutated, uint64_t{7});
+    EXPECT_EQ(it->second.is_alive_last_mutated, uint64_t{7});
     StorageDeltas::const_accessor sit{};
     ASSERT_TRUE(it->second.storage.find(sit, key1));
     EXPECT_EQ(sit->second.last_mutated, uint64_t{7});
@@ -2479,7 +2482,7 @@ TEST_F(InMemoryStateTest, last_mutated_none_for_read_only)
     auto [released_state, released_code, _] = std::move(bs).release();
     StateDeltas::const_accessor it{};
     ASSERT_TRUE(released_state->find(it, a));
-    EXPECT_EQ(it->second.account_last_mutated, LAST_MUTATED_NONE);
+    EXPECT_EQ(it->second.is_alive_last_mutated, LAST_MUTATED_NONE);
 }
 
 // When the same slot is written by successive transactions, `last_mutated`
@@ -2556,7 +2559,7 @@ TEST_F(InMemoryStateTest, last_mutated_default_is_none)
     auto [released_state, released_code, _] = std::move(bs).release();
     StateDeltas::const_accessor it{};
     ASSERT_TRUE(released_state->find(it, a));
-    EXPECT_EQ(it->second.account_last_mutated, LAST_MUTATED_NONE);
+    EXPECT_EQ(it->second.is_alive_last_mutated, LAST_MUTATED_NONE);
     StorageDeltas::const_accessor sit{};
     ASSERT_TRUE(it->second.storage.find(sit, key1));
     EXPECT_EQ(sit->second.last_mutated, LAST_MUTATED_NONE);
@@ -2584,7 +2587,7 @@ TEST_F(InMemoryStateTest, last_conflict_index_none)
 
     State r{bs, Incarnation{1, 1}};
     (void)r.get_balance(a); // read-only, no in-block writer
-    EXPECT_EQ(bs.last_conflict_index(r), LAST_MUTATED_NONE);
+    EXPECT_EQ(bs.last_conflict_index(r).overall(), LAST_MUTATED_NONE);
 }
 
 // A read of an account written by an earlier tx -> j is that tx's index.
@@ -2599,7 +2602,7 @@ TEST_F(InMemoryStateTest, last_conflict_index_account)
     }
     State r{bs, Incarnation{1, 2}};
     (void)r.get_balance(a);
-    EXPECT_EQ(bs.last_conflict_index(r), uint64_t{2});
+    EXPECT_EQ(bs.last_conflict_index(r).overall(), uint64_t{2});
 }
 
 // A read of a storage slot written by an earlier tx -> j is that tx's index.
@@ -2616,7 +2619,7 @@ TEST_F(InMemoryStateTest, last_conflict_index_storage)
     State r{bs, Incarnation{1, 2}};
     (void)r.get_balance(a); // load the account before reading its storage
     EXPECT_EQ(r.get_storage(a, key1), value1);
-    EXPECT_EQ(bs.last_conflict_index(r), uint64_t{4});
+    EXPECT_EQ(bs.last_conflict_index(r).overall(), uint64_t{4});
 }
 
 // j is the maximum over all conflicting reads (two accounts written by two
@@ -2639,7 +2642,7 @@ TEST_F(InMemoryStateTest, last_conflict_index_takes_max)
     State r{bs, Incarnation{1, 3}};
     (void)r.get_balance(a);
     (void)r.get_balance(b);
-    EXPECT_EQ(bs.last_conflict_index(r), uint64_t{5});
+    EXPECT_EQ(bs.last_conflict_index(r).overall(), uint64_t{5});
 }
 
 // When the same slot is rewritten, j reflects the latest writer.
@@ -2662,7 +2665,7 @@ TEST_F(InMemoryStateTest, last_conflict_index_latest_writer)
     State r{bs, Incarnation{1, 3}};
     (void)r.get_balance(a); // load the account before reading its storage
     EXPECT_EQ(r.get_storage(a, key1), value2);
-    EXPECT_EQ(bs.last_conflict_index(r), uint64_t{3});
+    EXPECT_EQ(bs.last_conflict_index(r).overall(), uint64_t{3});
 }
 
 // The beneficiary is excluded from the read set: EIP-3651 pre-warms it into
@@ -2680,7 +2683,7 @@ TEST_F(InMemoryStateTest, last_conflict_index_excludes_beneficiary)
     State r{bs, Incarnation{1, 2}};
     (void)r.get_balance(a);
     // Without exclusion, a's writer (tx 2) is the conflict.
-    EXPECT_EQ(bs.last_conflict_index(r), uint64_t{2});
+    EXPECT_EQ(bs.last_conflict_index(r).overall(), uint64_t{2});
     // Excluding a (as if it were the beneficiary) drops that conflict.
-    EXPECT_EQ(bs.last_conflict_index(r, a), LAST_MUTATED_NONE);
+    EXPECT_EQ(bs.last_conflict_index(r, a).overall(), LAST_MUTATED_NONE);
 }

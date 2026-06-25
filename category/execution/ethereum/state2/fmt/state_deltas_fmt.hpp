@@ -61,9 +61,13 @@ struct fmt::formatter<monad::StateDelta> : public monad::BasicFormatter
         fmt::format_to(ctx.out(), "{{");
         fmt::format_to(
             ctx.out(),
-            "Account Delta: {} (last_mutated: {}) ",
+            "Account Delta: {} (last_mutated alive:{} code:{} nonce:{} "
+            "bal:{}) ",
             state_delta.account,
-            state_delta.account_last_mutated);
+            state_delta.is_alive_last_mutated,
+            state_delta.code_last_mutated,
+            state_delta.nonce_last_mutated,
+            state_delta.balance_last_mutated);
         fmt::format_to(ctx.out(), "Storage Deltas: {{");
         for (auto const &[key, storage_delta] : state_delta.storage) {
             fmt::format_to(

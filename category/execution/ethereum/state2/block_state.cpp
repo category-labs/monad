@@ -184,15 +184,15 @@ bool BlockState::can_merge(State &state) const
     return true;
 }
 
-uint64_t BlockState::last_conflict_index(
+BlockState::ConflictIndex BlockState::last_conflict_index(
     State const &state, Address const &beneficiary) const
 {
     MONAD_ASSERT(state_);
-    uint64_t j = LAST_MUTATED_NONE;
-    auto const consider = [&j](uint64_t const last_mutated) {
+    ConflictIndex ci{};
+    auto const consider = [](uint64_t &axis, uint64_t const last_mutated) {
         if (last_mutated != LAST_MUTATED_NONE &&
-            (j == LAST_MUTATED_NONE || last_mutated > j)) {
-            j = last_mutated;
+            (axis == LAST_MUTATED_NONE || last_mutated > axis)) {
+            axis = last_mutated;
         }
     };
     auto const &original = state.original();
@@ -205,26 +205,40 @@ uint64_t BlockState::last_conflict_index(
             continue;
         }
         OriginalAccountState const &account_state = kv.second;
-        auto const &storage = account_state.storage_;
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_->find(it, address));
-        // EXPERIMENT (storage-only j): skip account-level conflicts
-        // (balance / nonce / code). Native-balance diffs are reconcilable by
-        // relaxed merge, so storage-slot read-after-write conflicts are the
-        // non-parallelizable core. Re-enable this line to restore the full j.
-        // consider(it->second.account_last_mutated);
-        for (auto const &entry : storage) {
+        // Per axis, only the facets this transaction actually read conflict.
+        // The read mask lives on the OriginalAccountState: is_alive reads
+        // (CALL new-account gas, EXTCODEHASH) observe the existence/empty bit;
+        // balance reuses validate_exact_balance (set on a hard balance read).
+        // Incarnation is not a read axis -- a storage read's creation
+        // dependency rides on the code axis (SLOAD runs only inside the
+        // contract's own execution, which read its code).
+        if (account_state.is_alive_read()) {
+            consider(ci.is_alive, it->second.is_alive_last_mutated);
+        }
+        if (account_state.validate_exact_balance()) {
+            consider(ci.balance, it->second.balance_last_mutated);
+        }
+        if (account_state.nonce_read()) {
+            consider(ci.nonce, it->second.nonce_last_mutated);
+        }
+        if (account_state.code_read()) {
+            consider(ci.code, it->second.code_last_mutated);
+        }
+        // Storage reads = the pre-state slots loaded into this account's read
+        // set; conflict against the per-slot stamp on the block delta.
+        for (auto const &entry : account_state.storage_) {
             StorageDeltas::const_accessor it2{};
             if (it->second.storage.find(it2, entry.first)) {
-                consider(it2->second.last_mutated);
+                consider(ci.storage, it2->second.last_mutated);
             }
         }
     }
-    return j;
+    return ci;
 }
 
-BlockState::MergeStamps
-BlockState::merge(State const &state, uint64_t const txn_index)
+bool BlockState::merge(State const &state, uint64_t const txn_index)
 {
     ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
 
@@ -249,47 +263,67 @@ BlockState::merge(State const &state, uint64_t const txn_index)
     }
 
     MONAD_ASSERT(state_);
-    // PROTOTYPE: count how often the value-aware check skips a last_mutated
-    // stamp the old write-presence logic would have made (candidates vs actual
-    // updates), to gauge how wrong that previous version was.
-    uint64_t lm_acct_cand = 0;
-    uint64_t lm_acct_upd = 0;
-    uint64_t lm_slot_cand = 0;
-    uint64_t lm_slot_upd = 0;
+    bool destroyed_contract = false;
     for (auto const &[address, stack] : current) {
         auto const &account_state = stack.recent();
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
-        // Stamp last_mutated only on an actual value change, so a write that
-        // re-writes / reverts to the same value (e.g. a reentrancy-guard slot
+        // Stamp each facet's last_mutated only on an actual value change, so a
+        // write that reverts to the same value (e.g. a reentrancy-guard slot
         // set then cleared) is not recorded as a conflict -- matching the
         // value-based check in can_merge.
-        ++lm_acct_cand;
         if (it->second.account.second != account) {
-            it->second.account_last_mutated = txn_index;
-            ++lm_acct_upd;
+            // Per-field diff vs the committed value, treating a nonexistent
+            // account as the zero account (balance 0, nonce 0, code NULL_HASH)
+            // so create/destroy fall out as ordinary field changes.
+            // `committed` is read before the overwrite below.
+            auto const &committed = it->second.account.second;
+            bool const eb = committed.has_value();
+            bool const ea = account.has_value();
+            // is_alive tracks the is_dead toggle (existence/empty), which is
+            // what EVM existence reads observe -- not the raw optional toggle.
+            if (is_dead(committed) != is_dead(account)) {
+                it->second.is_alive_last_mutated = txn_index;
+            }
+            bytes32_t const code_b = eb ? committed->code_hash : NULL_HASH;
+            bytes32_t const code_a = ea ? account->code_hash : NULL_HASH;
+            if (code_b != code_a) {
+                it->second.code_last_mutated = txn_index;
+            }
+            uint64_t const nonce_b = eb ? committed->nonce : 0;
+            uint64_t const nonce_a = ea ? account->nonce : 0;
+            if (nonce_b != nonce_a) {
+                it->second.nonce_last_mutated = txn_index;
+            }
+            uint256_t const bal_b = eb ? committed->balance : uint256_t{0};
+            uint256_t const bal_a = ea ? account->balance : uint256_t{0};
+            if (bal_b != bal_a) {
+                it->second.balance_last_mutated = txn_index;
+            }
+            // Destroyed-contract signal (observation only): a storage-bearing
+            // account (non-NULL code) that existed before this transaction is
+            // now gone. This is the one event that wipes a storage namespace,
+            // leaving the per-slot stamps blind to any later re-creation; we
+            // surface it to gauge the noise. ~zero on Monad (EIP-6780).
+            if (eb && committed->code_hash != NULL_HASH && !ea) {
+                destroyed_contract = true;
+            }
         }
         it->second.account.second = account;
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {
                 StorageDeltas::accessor it2{};
                 if (it->second.storage.find(it2, key)) {
-                    ++lm_slot_cand;
                     if (it2->second.second != value) {
                         it2->second.last_mutated = txn_index;
-                        ++lm_slot_upd;
                     }
                     it2->second.second = value;
                 }
                 else {
                     // New slot for the block delta (e.g. freshly created
                     // contract, pre-state 0); stamp only if it became non-zero.
-                    ++lm_slot_cand;
-                    if (value != bytes32_t{}) {
-                        ++lm_slot_upd;
-                    }
                     it->second.storage.emplace(
                         key,
                         StorageDelta{
@@ -313,8 +347,7 @@ BlockState::merge(State const &state, uint64_t const txn_index)
             it->second.storage.clear();
         }
     }
-    return MergeStamps{
-        lm_acct_cand, lm_acct_upd, lm_slot_cand, lm_slot_upd};
+    return destroyed_contract;
 }
 
 BlockState::ReleasedState BlockState::release() &&

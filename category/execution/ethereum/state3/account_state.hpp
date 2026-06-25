@@ -162,6 +162,13 @@ class OriginalAccountState final : public AccountState
 {
     bool validate_exact_balance_{false};
     uint256_t min_balance_{0};
+    // Read mask (parallel-gas experiment): which facets this transaction
+    // actually read, so the conflict helper attributes only genuine reads.
+    // Balance reuses `validate_exact_balance_` (which is set on a hard balance
+    // read); storage reads are tracked by slot presence in `storage_`.
+    bool nonce_read_{false};
+    bool code_read_{false};
+    bool is_alive_read_{false};
 
 public:
     explicit OriginalAccountState(std::optional<Account> &&account)
@@ -196,6 +203,36 @@ public:
             return account_->balance;
         }
         return 0;
+    }
+
+    void mark_nonce_read()
+    {
+        nonce_read_ = true;
+    }
+
+    void mark_code_read()
+    {
+        code_read_ = true;
+    }
+
+    void mark_is_alive_read()
+    {
+        is_alive_read_ = true;
+    }
+
+    [[nodiscard]] bool nonce_read() const
+    {
+        return nonce_read_;
+    }
+
+    [[nodiscard]] bool code_read() const
+    {
+        return code_read_;
+    }
+
+    [[nodiscard]] bool is_alive_read() const
+    {
+        return is_alive_read_;
     }
 
 private:

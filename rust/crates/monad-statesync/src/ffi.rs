@@ -14,10 +14,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 pub use self::bindings::{
-    monad_chain_config, monad_statesync_client, monad_statesync_client_context,
-    monad_statesync_client_handle_done, monad_statesync_client_handle_target,
-    monad_statesync_client_handle_upsert, monad_sync_done, monad_sync_request,
-    monad_sync_type_SYNC_TYPE_DONE, monad_sync_type_SYNC_TYPE_REQUEST,
+    monad_chain_config, monad_chain_config_CHAIN_CONFIG_ETHEREUM_MAINNET,
+    monad_chain_config_CHAIN_CONFIG_HIVE_NET, monad_chain_config_CHAIN_CONFIG_MONAD_DEVNET,
+    monad_chain_config_CHAIN_CONFIG_MONAD_MAINNET, monad_chain_config_CHAIN_CONFIG_MONAD_TESTNET,
+    monad_statesync_client, monad_statesync_client_context, monad_statesync_client_handle_done,
+    monad_statesync_client_handle_target, monad_statesync_client_handle_upsert, monad_sync_done,
+    monad_sync_request, monad_sync_type_SYNC_TYPE_DONE, monad_sync_type_SYNC_TYPE_REQUEST,
     monad_sync_type_SYNC_TYPE_TARGET, monad_sync_type_SYNC_TYPE_UPSERT_ACCOUNT,
     monad_sync_type_SYNC_TYPE_UPSERT_ACCOUNT_DELETE, monad_sync_type_SYNC_TYPE_UPSERT_CODE,
     monad_sync_type_SYNC_TYPE_UPSERT_HEADER, monad_sync_type_SYNC_TYPE_UPSERT_STORAGE,

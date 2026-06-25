@@ -22,7 +22,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
-#include <category/mpt/db.hpp>
+#include <category/mpt/node.hpp>
 #include <category/mpt/state_machine.hpp>
 
 #include <nlohmann/json_fwd.hpp>
@@ -30,6 +30,14 @@
 #include <filesystem>
 #include <functional>
 #include <istream>
+
+MONAD_MPT_NAMESPACE_BEGIN
+
+struct Compute;
+class Db;
+class RODb;
+
+MONAD_MPT_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 

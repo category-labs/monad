@@ -1682,16 +1682,15 @@ void DbMetadataContext::init_new_pool(
 
 #if MONAD_MPT_INITIALIZE_POOL_WITH_REVERSE_ORDER_CHUNKS
     std::reverse(chunks.begin(), chunks.end());
-    LOG_INFO_CFORMAT(
-        "Initialize db pool with %zu chunks in reverse order.", chunk_count);
+    LOG_INFO(
+        "Initialize db pool with {} chunks in reverse order.", chunk_count);
 #elif MONAD_MPT_INITIALIZE_POOL_WITH_RANDOM_SHUFFLED_CHUNKS
-    LOG_INFO_CFORMAT(
-        "Initialize db pool with %zu chunks in random order.", chunk_count);
+    LOG_INFO("Initialize db pool with {} chunks in random order.", chunk_count);
     small_prng rand;
     random_shuffle(chunks.begin(), chunks.end(), rand);
 #else
-    LOG_INFO_CFORMAT(
-        "Initialize db pool with %zu chunks in increasing order.", chunk_count);
+    LOG_INFO(
+        "Initialize db pool with {} chunks in increasing order.", chunk_count);
 #endif
     auto append_with_insertion_count_override = [&](chunk_list list,
                                                     uint32_t id) {
@@ -1714,11 +1713,11 @@ void DbMetadataContext::init_new_pool(
     // root offset is the front of fast list
     chunk_offset_t const fast_offset(chunks.front(), 0);
     append_with_insertion_count_override(chunk_list::fast, fast_offset.id);
-    LOG_DEBUG_CFORMAT("Append one chunk to fast list, id: %d", fast_offset.id);
+    LOG_DEBUG("Append one chunk to fast list, id: {}", fast_offset.id);
     // init the first slow chunk and slow_offset
     chunk_offset_t const slow_offset(chunks[1], 0);
     append_with_insertion_count_override(chunk_list::slow, slow_offset.id);
-    LOG_DEBUG_CFORMAT("Append one chunk to slow list, id: %d", slow_offset.id);
+    LOG_DEBUG("Append one chunk to slow list, id: {}", slow_offset.id);
     std::span const chunks_after_second(chunks.data() + 2, chunks.size() - 2);
     // insert the rest of the chunks to free list
     for (uint32_t const i : chunks_after_second) {
@@ -1799,9 +1798,9 @@ void DbMetadataContext::append(chunk_list const list, uint32_t const idx)
         auto const insertion_count =
             static_cast<uint32_t>(main(0)->at(idx)->insertion_count());
         if (insertion_count >= virtual_chunk_offset_t::MAX_COUNT * 9 / 10) {
-            LOG_WARNING_CFORMAT(
+            LOG_WARNING(
                 "Virtual offset space is running out "
-                "(insertion count: %u / %u). "
+                "(insertion count: {} / {}). "
                 "Please perform a database reset.",
                 insertion_count,
                 (uint32_t)virtual_chunk_offset_t::MAX_COUNT);

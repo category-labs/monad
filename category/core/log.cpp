@@ -16,47 +16,56 @@
 #include <category/core/config.hpp>
 #include <category/core/log.hpp>
 
+#include <quill/Backend.h>
+#include <quill/Frontend.h>
+#include <quill/sinks/ConsoleSink.h>
+#include <quill/sinks/FileSink.h>
+#include <quill/sinks/NullSink.h>
+
 #include <filesystem>
+#include <utility>
 
-MONAD_ANONYMOUS_NAMESPACE_BEGIN
-
-constexpr char default_pattern[] =
-    "%(time) [%(thread_id)] %(file_name):%(line_number) "
-    "LOG_%(log_level)\t%(message)";
-constexpr char default_time_format[] = "%Y-%m-%d %H:%M:%S.%Qns";
-
-MONAD_ANONYMOUS_NAMESPACE_END
+quill::Logger *monad_root_logger;
 
 MONAD_NAMESPACE_BEGIN
 
 void init_root_logger(quill::LogLevel const level)
 {
-    auto const stdout_handler = quill::stdout_handler();
-    stdout_handler->set_pattern(
-        default_pattern, default_time_format, quill::Timezone::GmtTime);
-    quill::Config cfg;
-    cfg.default_handlers.emplace_back(stdout_handler);
-    quill::configure(cfg);
-    quill::start(true);
-    quill::get_root_logger()->set_log_level(level);
+    monad_root_logger = quill::Frontend::create_or_get_logger(
+        "root",
+        quill::Frontend::create_or_get_sink<quill::ConsoleSink>("root_sink"),
+        quill::PatternFormatterOptions{
+            quill_default_pattern,
+            quill_default_time_format,
+            quill::Timezone::GmtTime});
+    monad_root_logger->set_log_level(level);
+    quill::Backend::start();
 }
 
 void start_logger_minimal()
 {
-    quill::start(true);
+    monad_root_logger = quill::Frontend::create_or_get_logger(
+        "root",
+        quill::Frontend::create_or_get_sink<quill::NullSink>("null_sink"));
+    quill::Backend::start();
 }
 
 void flush_logger()
 {
-    quill::flush();
+    if (monad_root_logger) {
+        monad_root_logger->flush_log();
+    }
 }
 
 quill::Logger *create_event_tracer(std::filesystem::path const &trace_log)
 {
-    quill::FileHandlerConfig handler_cfg;
-    handler_cfg.set_pattern("%(message)", "");
-    return quill::create_logger(
-        "event_trace", quill::file_handler(trace_log, handler_cfg));
+    auto file_sink =
+        quill::Frontend::create_or_get_sink<quill::FileSink>(trace_log);
+
+    return quill::Frontend::create_or_get_logger(
+        "event_trace",
+        std::move(file_sink),
+        quill::PatternFormatterOptions{"%(message)", ""});
 }
 
 MONAD_NAMESPACE_END

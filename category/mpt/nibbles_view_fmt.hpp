@@ -20,7 +20,8 @@
 #include <category/mpt/nibbles_view.hpp>
 
 template <>
-struct quill::copy_loggable<monad::mpt::NibblesView> : std::false_type
+struct quill::Codec<monad::mpt::NibblesView>
+    : quill::DirectFormatCodec<monad::mpt::NibblesView>
 {
 };
 

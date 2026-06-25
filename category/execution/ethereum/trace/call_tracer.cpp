@@ -31,6 +31,8 @@
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
+#include <quill/bundled/fmt/ranges.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>

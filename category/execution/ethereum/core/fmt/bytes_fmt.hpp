@@ -19,6 +19,8 @@
 #include <category/core/bytes.hpp>
 #include <category/core/log.hpp>
 
+#include <quill/bundled/fmt/ranges.h>
+
 MONAD_LOG_LOGGABLE(monad::bytes32_t);
 
 template <>

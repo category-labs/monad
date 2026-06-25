@@ -410,14 +410,14 @@ void UpdateAux::init(AsyncIO &io_, std::optional<uint64_t> const history_len)
             "This storage has %u granularity.",
             logical_block_size);
         if (physical_block_size != 0 && physical_block_size != 512) {
-            LOG_INFO_CFORMAT(
-                "MPT storage has physical block size %u which is not 512 "
+            LOG_INFO(
+                "MPT storage has physical block size {} which is not 512 "
                 "bytes.",
                 physical_block_size);
         }
         if (minimum_io_size != 0 && minimum_io_size != 512) {
-            LOG_INFO_CFORMAT(
-                "MPT storage has minimum i/o size %u which is not 512 bytes.",
+            LOG_INFO(
+                "MPT storage has minimum i/o size {} which is not 512 bytes.",
                 minimum_io_size);
         }
     }
@@ -581,11 +581,11 @@ Node::SharedPtr UpdateAux::do_update(
         physical_to_virtual(node_writer_fast->sender().offset());
     [[maybe_unused]] auto const curr_slow_writer_offset =
         physical_to_virtual(node_writer_slow->sender().offset());
-    LOG_INFO_CFORMAT(
-        "Finish upserting version %lu (timeline %u). Min valid version %lu. "
-        "Time elapsed: %ld us. Disk usage: %.4f. Chunks: %u fast, %u slow, %u "
-        "free. Writer offsets: fast={%u,%u}, slow={%u,%u}. Compaction head "
-        "offset fast=%u, slow=%u",
+    LOG_INFO(
+        "Finish upserting version {} (timeline {}). Min valid version {}. "
+        "Time elapsed: {} us. Disk usage: {:.4f}. Chunks: {} fast, {} slow, {} "
+        "free. Writer offsets: fast={{{},{}}}, slow={{{},{}}}. Compaction head "
+        "offset fast={}, slow={}",
         version,
         static_cast<unsigned>(tid),
         metadata_ctx_->db_history_min_valid_version(tid),
@@ -648,9 +648,9 @@ void UpdateAux::release_unreferenced_chunks()
         combined_min.slow != INVALID_COMPACT_VIRTUAL_OFFSET);
     chunks_to_remove_before_count_fast_ = combined_min.fast.get_count();
     chunks_to_remove_before_count_slow_ = combined_min.slow.get_count();
-    LOG_INFO_CFORMAT(
-        "Combined GC boundary: compaction offset fast=%u, slow=%u. Remove "
-        "chunks before count fast=%u, slow=%u",
+    LOG_INFO(
+        "Combined GC boundary: compaction offset fast={}, slow={}. Remove "
+        "chunks before count fast={}, slow={}",
         (uint32_t)combined_min.fast,
         (uint32_t)combined_min.slow,
         chunks_to_remove_before_count_fast_,
@@ -661,8 +661,8 @@ void UpdateAux::release_unreferenced_chunks()
 void UpdateAux::erase_versions_up_to_and_including(
     uint64_t const version, timeline_id const tid)
 {
-    LOG_INFO_CFORMAT(
-        "Erase versions up to and including %lu (timeline %u)",
+    LOG_INFO(
+        "Erase versions up to and including {} (timeline {})",
         version,
         static_cast<unsigned>(tid));
     clear_root_offsets_up_to_and_including(version, tid);
@@ -789,9 +789,9 @@ void UpdateAux::adjust_history_length_based_on_disk_usage()
         MONAD_ASSERT(
             disk_usage() <= upper_bound ||
             metadata_ctx_->version_history_length() == MIN_HISTORY_LENGTH);
-        LOG_INFO_CFORMAT(
-            "Adjust db history length down from %lu to %lu. Current disk "
-            "usage: %.4f, Time elapsed: %ld us",
+        LOG_INFO(
+            "Adjust db history length down from {} to {}. Current disk "
+            "usage: {:.4f}, Time elapsed: {} us",
             history_length_before,
             metadata_ctx_->version_history_length(),
             disk_usage(),
@@ -802,8 +802,8 @@ void UpdateAux::adjust_history_length_based_on_disk_usage()
              current_disk_usage < lower_bound &&
              metadata_ctx_->version_history_length() < offsets.capacity()) {
         metadata_ctx_->update_history_length_metadata(offsets.capacity());
-        LOG_INFO_CFORMAT(
-            "Adjust db history length up from %lu to %lu. Time elapsed: %ld us",
+        LOG_INFO(
+            "Adjust db history length up from {} to {}. Time elapsed: {} us",
             history_length_before,
             metadata_ctx_->version_history_length(),
             timer.elapsed().count());
@@ -1030,8 +1030,8 @@ void UpdateAux::free_compacted_chunks()
                     UpdateAux::chunk_list::free,
                     idx); // append not prepend
                 // NOLINTNEXTLINE(bugprone-lambda-function-name)
-                LOG_INFO_CFORMAT(
-                    "Free compacted chunk id %u, time elapsed: %ld us",
+                LOG_INFO(
+                    "Free compacted chunk id {}, time elapsed: {} us",
                     idx,
                     timer.elapsed().count());
             }
@@ -1098,8 +1098,8 @@ void UpdateAux::print_update_stats(
 {
 #if MONAD_MPT_COLLECT_STATS
     if (stats.nodes_updated_expire > 50'000) {
-        LOG_WARNING_CFORMAT(
-            "The number of nodes updated for expire (%u) is excessively large",
+        LOG_WARNING(
+            "The number of nodes updated for expire ({}) is excessively large",
             stats.nodes_updated_expire);
     }
 

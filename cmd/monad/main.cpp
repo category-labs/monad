@@ -58,6 +58,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <quill/std/FilesystemPath.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdint>

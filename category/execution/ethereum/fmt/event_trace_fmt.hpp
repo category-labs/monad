@@ -19,9 +19,4 @@
 
 #include <category/core/log.hpp>
 
-MONAD_LOG_LOGGABLE(monad::TraceEvent);
-
-template <>
-struct fmt::formatter<monad::TraceEvent> : public fmt::ostream_formatter
-{
-};
+QUILL_LOGGABLE_DEFERRED_FORMAT(monad::TraceEvent);

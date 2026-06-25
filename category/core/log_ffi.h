@@ -58,7 +58,7 @@ typedef void(monad_log_flush_callback)(uintptr_t user);
 
 /// Create a callback-based handler for logs; when a log message is generated,
 /// it will be packaged in a `struct monad_log` object and passed to the write
-/// callback
+/// callback.
 int monad_log_handler_create(
     struct monad_log_handler **, char const *name, monad_log_write_callback *,
     monad_log_flush_callback *, uintptr_t user);

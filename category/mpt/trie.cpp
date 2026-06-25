@@ -1483,10 +1483,10 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
     }
     else if (my_reentrancy_count > reentrancy_detection.max_count) {
         // We are reentering
-        LOG_INFO_CFORMAT(
+        LOG_INFO(
             "replace_node_writer_to_start_at_new_chunk reenter "
             "my_reentrancy_count = "
-            "%d max_count = %d",
+            "{} max_count = {}",
             my_reentrancy_count,
             reentrancy_detection.max_count);
         reentrancy_detection.max_count = my_reentrancy_count;
@@ -1501,10 +1501,10 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
     // must retry
     if (my_reentrancy_count != reentrancy_detection.max_count) {
         // We reentered, please retry
-        LOG_INFO_CFORMAT(
+        LOG_INFO(
             "replace_node_writer_to_start_at_new_chunk retry "
             "my_reentrancy_count = "
-            "%d max_count = %d",
+            "{} max_count = {}",
             my_reentrancy_count,
             reentrancy_detection.max_count);
         return {};
@@ -1631,8 +1631,8 @@ retry:
         // initiate current node writer
         if (node_writer->sender().written_buffer_bytes() !=
             node_writer->sender().buffer().size()) {
-            LOG_INFO_CFORMAT(
-                "async_write_node %zu != %zu",
+            LOG_INFO(
+                "async_write_node {} != {}",
                 node_writer->sender().written_buffer_bytes(),
                 node_writer->sender().buffer().size());
         }

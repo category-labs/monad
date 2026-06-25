@@ -23,6 +23,10 @@
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <monad/test/config.hpp>
 
+#include <quill/Backend.h>
+#include <quill/Frontend.h>
+#include <quill/sinks/NullSink.h>
+
 MONAD_NAMESPACE_BEGIN
 
 quill::Logger *event_tracer = nullptr;
@@ -36,11 +40,12 @@ class Environment : public ::testing::Environment
 public:
     void SetUp() override
     {
-        quill::start();
 #ifdef ENABLE_EVENT_TRACING
-        event_tracer =
-            quill::create_logger("event_trace", quill::null_handler());
+        event_tracer = quill::Frontend::create_or_get_logger(
+            "event_trace",
+            quill::Frontend::create_or_get_sink<quill::NullSink>("null_sink"));
 #endif
+        start_logger_minimal();
     }
 };
 

@@ -15,28 +15,20 @@
 
 #pragma once
 
-// Project-internal logging header — the single chokepoint for everything
-// the codebase pulls from quill. Files that emit log messages, hold a
-// `quill::Logger *`, specialize `quill::copy_loggable`, or use the `fmt::`
-// formatter should include this instead of reaching directly into
-// `<quill/...>` headers.
-//
-// Today this re-exports `<quill/Quill.h>`, which transitively provides
-// every quill name our code uses (LogLevel, Logger, Handler, FileHandler,
-// the bundled `fmtquill` formatter, etc.). The `fmt` alias points at
-// `fmtquill` rather than `fmtquill::v10` so it survives the inline-namespace
-// tag bump (v10 → v12) in the upcoming quill v11 upgrade — call sites that
-// say `fmt::format(...)` keep working without source changes.
-//
-// The upcoming quill v11 upgrade splits the umbrella across
-// Backend/Frontend/LogMacros and removes the QUILL_ROOT_LOGGER_ONLY mode;
-// at that point this file becomes where the wrapper macros and
-// `quill::get_root_logger()` shim live, so call sites don't need to change
-// again.
+// Project-internal logging header.  Files that emit log messages, hold a
+// `quill::Logger *`, specialize `quill::DeferredFormatCodec` or
+// `quill::DirectFormatCodec`, or use the `fmt::` formatter should include this
+// instead of reaching directly into `<quill/...>` headers. The exception is for
+// logging standard library types where the `<quill/std/...>` headers should be
+// included directly.
 
 #include <category/core/config.hpp>
 
-#include <quill/Quill.h>
+#define QUILL_DISABLE_NON_PREFIXED_MACROS
+
+#include <quill/HelperMacros.h>
+#include <quill/LogMacros.h>
+#include <quill/Logger.h>
 
 #include <filesystem>
 #include <type_traits>
@@ -44,21 +36,34 @@
 namespace fmt = fmtquill;
 
 // Registers `T` with quill's logging-by-copy machinery. The current
-// implementation specializes `quill::copy_loggable<T>`; the upcoming v11
-// upgrade replaces that with `quill::Codec<T> : DirectFormatCodec<T>`, so
-// every site that uses this macro picks up the new shape with no edit.
 //
 // Use the manual specialization form for templated types (e.g.
 // `intx::uint<N>`, `monad::Delta<T>`) and for the rare non-true_type case
-// (`NibblesView`) — the macro only handles the common
-// `template <> struct quill::copy_loggable<T> : std::true_type {};` shape.
+// (`NibblesView`) — the macro only handles the common `template <> struct
+// quill::Codec<T> : quill::DeferredFormatCodec<T> {};` shape.
 #define MONAD_LOG_LOGGABLE(T)                                                  \
     template <>                                                                \
-    struct quill::copy_loggable<T> : std::true_type                            \
+    struct quill::Codec<T> : quill::DeferredFormatCodec<T>                     \
     {                                                                          \
-    }
+    };
+
+// Global root logger
+extern quill::Logger *monad_root_logger;
+
+#define LOG_DEBUG(fmt, ...)                                                    \
+    QUILL_LOG_DEBUG(monad_root_logger, fmt, ##__VA_ARGS__)
+#define LOG_INFO(fmt, ...) QUILL_LOG_INFO(monad_root_logger, fmt, ##__VA_ARGS__)
+#define LOG_WARNING(fmt, ...)                                                  \
+    QUILL_LOG_WARNING(monad_root_logger, fmt, ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...)                                                    \
+    QUILL_LOG_ERROR(monad_root_logger, fmt, ##__VA_ARGS__)
 
 MONAD_NAMESPACE_BEGIN
+
+constexpr char quill_default_pattern[] =
+    "%(time) [%(thread_id)] %(file_name):%(line_number) "
+    "LOG_%(log_level)\t%(message)";
+constexpr char quill_default_time_format[] = "%Y-%m-%d %H:%M:%S.%Qns";
 
 // Configures the root quill logger with the project's default pattern
 // (timestamp, thread id, source location, level, message), starts the

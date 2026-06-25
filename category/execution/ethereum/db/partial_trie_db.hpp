@@ -176,15 +176,18 @@ public:
     bytes32_t transactions_root() override;
     std::optional<bytes32_t> withdrawals_root() override;
 
-    /// Visit every trie node addressable by node_hash, across the account trie
-    /// and each account's embedded storage trie, in the CF_TRIE_NODES form:
-    /// node_hash = keccak256(canonical RLP), emitted only for nodes whose
-    /// canonical RLP is >= 32 bytes (smaller nodes are inlined into their
-    /// parent and never get their own row). Used by the F8 seed loader to
-    /// populate CF_TRIE_NODES; the byte_string_view is valid only for the call.
-    void for_each_node(
-        std::function<void(
-            bytes32_t const &node_hash, byte_string_view rlp)> const &) const;
+    /// Visit every trie node addressable by its trie path, across the account
+    /// trie and each account's embedded storage trie. `path` is the node's
+    /// nibble path within its trie; `storage_account`, when set, is the owning
+    /// account's 64-nibble path (i.e. the node is a storage-trie node). Only
+    /// nodes whose canonical RLP is >= 32 bytes are emitted (smaller nodes are
+    /// inlined into their parent and never get their own row). The caller
+    /// builds the CF_TRIE_NODES key from (path, storage_account); the views are
+    /// valid only for the duration of the call.
+    void for_each_node(std::function<void(
+                           mpt::NibblesView path,
+                           std::optional<mpt::NibblesView> storage_account,
+                           byte_string_view rlp)> const &) const;
 
     uint64_t get_block_number() const override;
 

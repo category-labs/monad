@@ -32,10 +32,14 @@ namespace statedb
     //                storage value (decode_account_db_raw / storage_page_t),
     //                serving read_account/read_storage without trie traversal.
     //   code       : code_hash (32B) -> raw bytecode.
-    //   trie_nodes : node_hash (32B) -> serialized trie node. Child refs are
-    //                child node_hash, with <32B children kept inlined; a 1-byte
-    //                prune-epoch tag is appended. Used only for the state root,
-    //                proofs, and statesync.
+    //   trie_nodes : trie path -> serialized trie node, keyed by the node's
+    //                position (account nodes: 0x00 ++ nibble-path; storage
+    //                nodes: 0x01 ++ account-path ++ nibble-path), so a changed
+    //                node overwrites its own key and the CF stays in trie
+    //                order. The node's RLP still carries child hashes (with
+    //                <32B children inlined); a 1-byte prune-epoch tag is
+    //                appended. Used only for the state root, proofs, and
+    //                statesync.
     //   meta       : fixed string keys -> finalized/verified/voted/proposed
     //                pointers, per-retained-block state_root + root node_hash,
     //                the retained_roots window, prune.epoch, and

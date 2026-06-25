@@ -38,8 +38,6 @@
     #include <category/statedb/schema.hpp>
     #include <category/vm/code.hpp>
 
-    #include <ankerl/unordered_dense.h>
-
     #include <rocksdb/write_batch.h>
 
     #include <array>
@@ -47,6 +45,7 @@
     #include <cstring>
     #include <memory>
     #include <optional>
+    #include <set>
     #include <utility>
 
 MONAD_NAMESPACE_BEGIN
@@ -110,78 +109,124 @@ namespace
     }
 
     // -----------------------------------------------------------------------
-    // Witness collection: walk CF_TRIE_NODES along the path to a key, adding
-    // every node on the path to the witness so PartialTrieDb can re-materialize
-    // it. Absent subtrees become HashStubs in from_witness (their hash is
-    // preserved by the parent's child-ref), which is all the root recompute
-    // needs. `may_delete` additionally pulls every immediate hash-ref child of
-    // each branch on the path into the witness, so trie_delete's branch
-    // compression can reach the sole surviving sibling (which must not be a
-    // stub).
+    // Witness collection (path-keyed). Walk CF_TRIE_NODES by trie PATH to each
+    // touched key, appending the nodes on the path to the witness so
+    // PartialTrieDb can re-materialize it. from_witness stays hash-indexed
+    // internally; we just feed it the path-collected node RLPs. Child lookups
+    // follow computed paths, not child-ref hashes. `may_delete` also pulls each
+    // branch's hash-ref siblings into the witness for trie_delete's branch
+    // compression. `key_prefix` is the bytes before the node-path nibbles:
+    // {0x00} for the account trie, {0x01, account-path nibbles...} for a
+    // storage trie (see node_key/account_node_key/storage_node_key below).
     // -----------------------------------------------------------------------
 
-    using HashSet = ankerl::unordered_dense::set<bytes32_t>;
+    using KeySet = std::set<byte_string>;
 
-    std::optional<byte_string> descend_payload(
-        byte_string_view payload, mpt::NibblesView remaining,
-        statedb::TrieNodeStore &nodes, bool may_delete, HashSet &seen,
-        byte_string &witness);
-
-    void prefetch_node(
-        bytes32_t const &h, statedb::TrieNodeStore &nodes, HashSet &seen,
-        byte_string &witness)
+    void append_nibbles(byte_string &k, mpt::NibblesView const nv)
     {
-        if (h == NULL_ROOT || !seen.insert(h).second) {
-            return;
+        for (unsigned i = 0; i < nv.nibble_size(); ++i) {
+            k.push_back(nv.get(i));
         }
-        auto const node = nodes.get(h);
-        MONAD_ASSERT(node.has_value());
-        witness.append(*node);
     }
 
-    std::optional<byte_string> descend_hash(
-        bytes32_t const &h, mpt::NibblesView remaining,
-        statedb::TrieNodeStore &nodes, bool may_delete, HashSet &seen,
-        byte_string &witness)
+    byte_string
+    node_key(byte_string_view const key_prefix, mpt::NibblesView const path)
     {
-        if (h == NULL_ROOT) {
-            return std::nullopt;
+        byte_string k{key_prefix};
+        append_nibbles(k, path);
+        return k;
+    }
+
+    std::optional<byte_string> descend_payload(
+        byte_string_view key_prefix, mpt::NibblesView node_path,
+        byte_string_view payload, mpt::NibblesView remaining,
+        statedb::TrieNodeStore &nodes, bool may_delete, KeySet &seen,
+        byte_string &witness);
+
+    // Read the node at `node_path` (under key_prefix), append it to the witness
+    // once, and descend toward `remaining`.
+    std::optional<byte_string> descend(
+        byte_string_view const key_prefix, mpt::NibblesView const node_path,
+        mpt::NibblesView const remaining, statedb::TrieNodeStore &nodes,
+        bool const may_delete, KeySet &seen, byte_string &witness)
+    {
+        byte_string const key = node_key(key_prefix, node_path);
+        auto const node = nodes.get(key);
+        if (!node.has_value()) {
+            return std::nullopt; // path ends here (key is new/absent)
         }
-        auto const node = nodes.get(h);
-        MONAD_ASSERT(node.has_value()); // any node on a real path must exist
-        if (seen.insert(h).second) {
+        if (seen.insert(key).second) {
             witness.append(*node);
         }
         byte_string_view body{*node};
         auto const lm = rlp::parse_list_metadata(body);
         MONAD_ASSERT(!lm.has_error());
         return descend_payload(
-            lm.value(), remaining, nodes, may_delete, seen, witness);
+            key_prefix,
+            node_path,
+            lm.value(),
+            remaining,
+            nodes,
+            may_delete,
+            seen,
+            witness);
+    }
+
+    void prefetch_node(
+        byte_string_view const key_prefix, mpt::NibblesView const child_path,
+        statedb::TrieNodeStore &nodes, KeySet &seen, byte_string &witness)
+    {
+        byte_string const key = node_key(key_prefix, child_path);
+        if (!seen.insert(key).second) {
+            return;
+        }
+        auto const node = nodes.get(key);
+        if (node.has_value()) {
+            witness.append(*node);
+        }
     }
 
     std::optional<byte_string> descend_child(
-        rlp::RlpType const ty, byte_string_view enc, mpt::NibblesView remaining,
-        statedb::TrieNodeStore &nodes, bool may_delete, HashSet &seen,
-        byte_string &witness)
+        byte_string_view const key_prefix, mpt::NibblesView const child_path,
+        rlp::RlpType const ty, byte_string_view const enc,
+        mpt::NibblesView const remaining, statedb::TrieNodeStore &nodes,
+        bool const may_delete, KeySet &seen, byte_string &witness)
     {
         if (ty == rlp::RlpType::List) {
-            // Inline (embedded) node: `enc` is its list payload already.
+            // Inline node: it lives in the parent's bytes (already in the
+            // witness), so parse it in place -- no separate read/key.
             return descend_payload(
-                enc, remaining, nodes, may_delete, seen, witness);
+                key_prefix,
+                child_path,
+                enc,
+                remaining,
+                nodes,
+                may_delete,
+                seen,
+                witness);
         }
         if (enc.empty()) {
             return std::nullopt; // null child slot
         }
+        // 32-byte hash ref: the child is stored at child_path; navigate by path
+        // and ignore the ref hash.
         MONAD_ASSERT(enc.size() == 32);
-        return descend_hash(
-            to_bytes32(enc), remaining, nodes, may_delete, seen, witness);
+        return descend(
+            key_prefix,
+            child_path,
+            remaining,
+            nodes,
+            may_delete,
+            seen,
+            witness);
     }
 
     // Mirrors decode_partial_node's structure detection. Returns the leaf /
     // branch value bytes if `remaining` resolves to one, else nullopt.
     std::optional<byte_string> descend_payload(
-        byte_string_view const payload, mpt::NibblesView remaining,
-        statedb::TrieNodeStore &nodes, bool const may_delete, HashSet &seen,
+        byte_string_view const key_prefix, mpt::NibblesView const node_path,
+        byte_string_view const payload, mpt::NibblesView const remaining,
+        statedb::TrieNodeStore &nodes, bool const may_delete, KeySet &seen,
         byte_string &witness)
     {
         {
@@ -195,8 +240,8 @@ namespace
                 MONAD_ASSERT(key_md.value().first == rlp::RlpType::String);
                 auto const dec = mpt::compact_decode(key_md.value().second);
                 MONAD_ASSERT(!dec.has_error());
-                auto const &[path, is_leaf] = dec.value();
-                mpt::NibblesView const pv{path};
+                auto const &[decoded_path, is_leaf] = dec.value();
+                mpt::NibblesView const pv{decoded_path};
                 if (is_leaf) {
                     return (pv == remaining)
                                ? std::optional<byte_string>{byte_string{
@@ -206,7 +251,10 @@ namespace
                 if (!remaining.starts_with(pv)) {
                     return std::nullopt;
                 }
+                mpt::Nibbles const child_path = mpt::concat(node_path, pv);
                 return descend_child(
+                    key_prefix,
+                    mpt::NibblesView{child_path},
                     val_md.value().first,
                     val_md.value().second,
                     remaining.substr(pv.nibble_size()),
@@ -227,9 +275,17 @@ namespace
         }
 
         if (may_delete) {
-            for (auto const &[ty, child_enc] : children) {
-                if (ty == rlp::RlpType::String && child_enc.size() == 32) {
-                    prefetch_node(to_bytes32(child_enc), nodes, seen, witness);
+            for (unsigned i = 0; i < 16; ++i) {
+                if (children[i].first == rlp::RlpType::String &&
+                    children[i].second.size() == 32) {
+                    mpt::Nibbles const child_path =
+                        mpt::concat(node_path, static_cast<unsigned char>(i));
+                    prefetch_node(
+                        key_prefix,
+                        mpt::NibblesView{child_path},
+                        nodes,
+                        seen,
+                        witness);
                 }
             }
         }
@@ -243,7 +299,11 @@ namespace
         }
 
         unsigned const nibble = remaining.get(0);
+        mpt::Nibbles const child_path =
+            mpt::concat(node_path, static_cast<unsigned char>(nibble));
         return descend_child(
+            key_prefix,
+            mpt::NibblesView{child_path},
             children[nibble].first,
             children[nibble].second,
             remaining.substr(1),
@@ -251,6 +311,22 @@ namespace
             may_delete,
             seen,
             witness);
+    }
+
+    // CF_TRIE_NODES key prefixes (the bytes before the node-path nibbles).
+    inline constexpr unsigned char ACCOUNT_TAG = 0x00;
+    inline constexpr unsigned char STORAGE_TAG = 0x01;
+
+    byte_string account_key_prefix()
+    {
+        return byte_string(1, ACCOUNT_TAG);
+    }
+
+    byte_string storage_key_prefix(mpt::NibblesView const account_path)
+    {
+        byte_string p(1, STORAGE_TAG);
+        append_nibbles(p, account_path);
+        return p;
     }
 }
 
@@ -374,16 +450,21 @@ bytes32_t RocksDbDb::apply_state_chunk(
 {
     MONAD_ASSERT(deltas);
 
-    // 1. Assemble a branch-complete witness for the touched keys.
+    // 1. Assemble a branch-complete witness for the touched keys by walking
+    //    CF_TRIE_NODES by path. The account trie's root node sits at path key
+    //    {ACCOUNT_TAG}; a storage trie's nodes at {STORAGE_TAG, account-path}.
     byte_string witness;
-    HashSet seen;
+    KeySet seen;
+    mpt::Nibbles const root_path{}; // empty -> the trie root node
     if (state_root_ != NULL_ROOT) {
+        byte_string const acct_prefix = account_key_prefix();
         for (auto const &[addr, delta] : *deltas) {
             auto const acct_hash = keccak256(addr.bytes);
             bool const acct_delete = !delta.account.second.has_value() &&
                                      delta.account.first.has_value();
-            auto const leaf = descend_hash(
-                state_root_,
+            auto const leaf = descend(
+                acct_prefix,
+                mpt::NibblesView{root_path},
                 mpt::NibblesView{acct_hash},
                 nodes_,
                 acct_delete,
@@ -410,12 +491,15 @@ bytes32_t RocksDbDb::apply_state_chunk(
             if (storage_root == NULL_ROOT) {
                 continue;
             }
+            byte_string const stor_prefix =
+                storage_key_prefix(mpt::NibblesView{acct_hash});
             for (auto const &[slot, sdelta] : delta.storage) {
                 bool const slot_delete =
                     sdelta.second == bytes32_t{} && sdelta.first != bytes32_t{};
                 auto const slot_hash = keccak256(slot.bytes);
-                descend_hash(
-                    storage_root,
+                descend(
+                    stor_prefix,
+                    mpt::NibblesView{root_path},
                     mpt::NibblesView{slot_hash},
                     nodes_,
                     slot_delete,
@@ -473,8 +557,14 @@ bytes32_t RocksDbDb::apply_state_chunk(
         [](BlockHeader &) {});
     bytes32_t const root = pt.value().state_root();
     pt.value().for_each_node(
-        [&](bytes32_t const &node_hash, byte_string_view const rlp) {
-            nodes_.batch_put(batch, node_hash, rlp);
+        [&](mpt::NibblesView const path,
+            std::optional<mpt::NibblesView> const storage_account,
+            byte_string_view const rlp) {
+            byte_string key = storage_account.has_value()
+                                  ? storage_key_prefix(*storage_account)
+                                  : account_key_prefix();
+            append_nibbles(key, path);
+            nodes_.batch_put(batch, key, rlp);
         });
     return root;
 }

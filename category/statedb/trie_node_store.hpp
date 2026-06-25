@@ -17,10 +17,11 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
-#include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
 #include <category/core/lru/lru_cache.hpp>
 #include <category/statedb/kv_store.hpp>
+
+#include <komihash.h>
 
 #include <cstddef>
 #include <optional>
@@ -38,10 +39,12 @@ namespace statedb
     inline constexpr unsigned char TRIE_NODE_PRUNE_EPOCH_KEEP_ALL = 0;
     inline constexpr std::size_t TRIE_NODE_HEADER_SIZE = 2;
 
-    // A node_hash-keyed store for trie nodes, backed by CF_TRIE_NODES and
-    // fronted by an in-memory hash-keyed LRU. Nodes are opaque bytes here:
-    // their RLP codec lives in the ethereum-side caller (PartialTrieDb's codec,
-    // applied in F7), and node_hash is keccak256 of those bytes.
+    // A trie-path-keyed store for trie nodes, backed by CF_TRIE_NODES and
+    // fronted by an in-memory LRU. Nodes are opaque bytes here: both the RLP
+    // codec and the path-key construction live in the ethereum-side caller
+    // (RocksDbDb). Keying by path (rather than keccak of the node) means a
+    // changed node overwrites its own key instead of inserting a new one --
+    // no orphaned versions, and writes/reads stay in trie order.
     //
     // The cache reuses DbCache's LruCache (concurrent tbb map + a
     // time-throttled LRU list that re-orders at most ~once/sec/node), rather
@@ -51,28 +54,42 @@ namespace statedb
     // offset-keyed NodeCache is untouched). Bound is entry-count for now;
     // byte-bounding can be layered on later. Borrows the KvStore (the RocksDbDb
     // owns one KvStore across all CFs).
+    // Hash/compare for variable-length byte_string LRU keys (BytesHashCompare
+    // only handles fixed `.bytes` types like bytes32_t).
+    struct ByteStringHashCompare
+    {
+        std::size_t hash(byte_string const &a) const
+        {
+            return komihash(a.data(), a.size(), 0);
+        }
+
+        bool equal(byte_string const &a, byte_string const &b) const
+        {
+            return a == b;
+        }
+    };
+
     class TrieNodeStore
     {
     public:
         TrieNodeStore(KvStore &, std::size_t lru_capacity);
 
-        // The opaque node bytes for `node_hash`, or nullopt if absent. Serves
-        // from the LRU, else reads CF_TRIE_NODES and warms the LRU.
-        std::optional<byte_string> get(bytes32_t const &node_hash);
+        // The opaque node bytes for the trie-path `key`, or nullopt if absent.
+        // Serves from the LRU, else reads CF_TRIE_NODES and warms the LRU.
+        std::optional<byte_string> get(byte_string_view key);
 
-        // Persist a node's opaque bytes under its node_hash (its own WAL
-        // write).
-        void put(bytes32_t const &node_hash, byte_string_view node_bytes);
+        // Persist a node's opaque bytes under its trie-path `key` (its own WAL
+        // write). A changed node keeps the same key, so it overwrites in place.
+        void put(byte_string_view key, byte_string_view node_bytes);
 
         // Stage a node into a cross-CF WriteBatch (for the atomic per-block
-        // commit in F9/F10); also warms the LRU.
+        // commit); also warms the LRU.
         void batch_put(
-            rocksdb::WriteBatch &, bytes32_t const &node_hash,
+            rocksdb::WriteBatch &, byte_string_view key,
             byte_string_view node_bytes);
 
     private:
-        using Cache =
-            LruCache<bytes32_t, byte_string, BytesHashCompare<bytes32_t>>;
+        using Cache = LruCache<byte_string, byte_string, ByteStringHashCompare>;
 
         KvStore &kv_;
         Cache cache_;

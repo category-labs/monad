@@ -236,8 +236,10 @@ TEST(SnapshotLoader, SeedAndGate)
     ASSERT_TRUE(stored_code.has_value());
     EXPECT_EQ(byte_string_view{*stored_code}, code);
 
-    // CF_TRIE_NODES: the state-root node is present (non-trivial trie).
-    auto const root_node = kv->get(statedb::Cf::trie_nodes, root_hash);
+    // CF_TRIE_NODES is path-keyed: the account-trie root node sits at the
+    // empty-path key (ACCOUNT_TAG == 0x00), not at its hash.
+    byte_string const account_root_key(1, 0x00);
+    auto const root_node = kv->get(statedb::Cf::trie_nodes, account_root_key);
     EXPECT_TRUE(root_node.has_value());
 }
 

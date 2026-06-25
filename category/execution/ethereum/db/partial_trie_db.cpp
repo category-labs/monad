@@ -32,7 +32,9 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <utility>
 
@@ -268,41 +270,71 @@ namespace
         return rlp::encode_string2(byte_string_view{hash, 32});
     }
 
-    /// Emit every node_hash-addressable node (canonical RLP >= 32 bytes) under
-    /// `node`, recursing into branch/extension children and -- for account
-    /// leaves -- the embedded storage trie. Mirrors encode_child_ref's hashing.
+    using ForEachNodeFn = std::function<void(
+        mpt::NibblesView, std::optional<mpt::NibblesView>, byte_string_view)>;
+
+    /// Emit every node (canonical RLP >= 32 bytes) under `node`, keyed by its
+    /// trie path rather than its hash, recursing into branch/extension children
+    /// and -- for account leaves -- the embedded storage trie. `path` is the
+    /// node's nibble path within its trie; `storage_account` is the owning
+    /// account's 64-nibble path when recursing inside a storage trie.
     template <typename T>
     void for_each_node_rec(
-        ChildRef<T> const &node,
-        std::function<void(bytes32_t const &, byte_string_view)> const &cb)
+        ChildRef<T> const &node, mpt::Nibbles const &path,
+        std::optional<mpt::NibblesView> const storage_account,
+        ForEachNodeFn const &cb)
     {
         if (!node || std::holds_alternative<HashStub>(node->v)) {
             return;
         }
         byte_string const rlp = encode_partial_node(*node);
         if (rlp.size() >= 32) {
-            cb(to_bytes(keccak256(byte_string_view{rlp.data(), rlp.size()})),
+            cb(mpt::NibblesView{path},
+               storage_account,
                byte_string_view{rlp.data(), rlp.size()});
         }
         std::visit(
             Cases{
                 [&](LeafData<T> const &leaf) {
                     if constexpr (std::same_as<T, AccountLeafValue>) {
+                        // Account's full path == its storage trie's owner key.
+                        mpt::Nibbles const acct = mpt::concat(
+                            mpt::NibblesView{path},
+                            mpt::NibblesView{leaf.path});
                         for_each_node_rec<StorageLeafValue>(
-                            leaf.value.storage, cb);
+                            leaf.value.storage,
+                            mpt::Nibbles{},
+                            mpt::NibblesView{acct},
+                            cb);
                     }
                 },
                 [&](ExtensionData<T> const &ext) {
-                    for_each_node_rec<T>(ext.child, cb);
+                    for_each_node_rec<T>(
+                        ext.child,
+                        mpt::concat(
+                            mpt::NibblesView{path}, mpt::NibblesView{ext.path}),
+                        storage_account,
+                        cb);
                 },
                 [&](BranchData<T> const &branch) {
-                    for (auto const &child : branch.children) {
-                        for_each_node_rec<T>(child, cb);
+                    for (unsigned i = 0; i < 16; ++i) {
+                        if (branch.children[i]) {
+                            for_each_node_rec<T>(
+                                branch.children[i],
+                                mpt::concat(
+                                    mpt::NibblesView{path},
+                                    static_cast<unsigned char>(i)),
+                                storage_account,
+                                cb);
+                        }
                     }
                     if constexpr (std::same_as<T, AccountLeafValue>) {
                         if (branch.value) {
                             for_each_node_rec<StorageLeafValue>(
-                                branch.value->storage, cb);
+                                branch.value->storage,
+                                mpt::Nibbles{},
+                                mpt::NibblesView{path},
+                                cb);
                         }
                     }
                 },
@@ -831,9 +863,12 @@ bytes32_t PartialTrieDb::state_root()
 }
 
 void PartialTrieDb::for_each_node(
-    std::function<void(bytes32_t const &, byte_string_view)> const &cb) const
+    std::function<void(
+        mpt::NibblesView, std::optional<mpt::NibblesView>,
+        byte_string_view)> const &cb) const
 {
-    for_each_node_rec<AccountLeafValue>(root_, cb);
+    for_each_node_rec<AccountLeafValue>(
+        root_, mpt::Nibbles{}, std::nullopt, cb);
 }
 
 bytes32_t PartialTrieDb::receipts_root()

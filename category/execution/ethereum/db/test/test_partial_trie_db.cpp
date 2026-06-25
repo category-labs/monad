@@ -806,10 +806,12 @@ TEST(PartialTrieDb, ForEachNodeRoundtrip)
     commit_with(db, BlockHeader{.number = 1}, deltas);
     bytes32_t const root = db.state_root();
 
-    // Concatenated node RLPs = the witness from_witness consumes.
+    // Concatenated node RLPs = the witness from_witness consumes (the path /
+    // storage-account key args aren't needed for this round-trip).
     byte_string witness;
-    db.for_each_node(
-        [&](bytes32_t const &, byte_string_view const rlp) { witness += rlp; });
+    db.for_each_node([&](mpt::NibblesView,
+                         std::optional<mpt::NibblesView>,
+                         byte_string_view const rlp) { witness += rlp; });
     ASSERT_FALSE(witness.empty());
 
     auto rebuilt = PartialTrieDb::from_witness(root, witness, {});

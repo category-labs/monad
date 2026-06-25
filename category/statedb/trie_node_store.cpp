@@ -40,15 +40,16 @@ namespace statedb
     {
     }
 
-    std::optional<byte_string> TrieNodeStore::get(bytes32_t const &node_hash)
+    std::optional<byte_string> TrieNodeStore::get(byte_string_view const key)
     {
+        byte_string const k{key};
         {
             Cache::ConstAccessor acc;
-            if (cache_.find(acc, node_hash)) {
+            if (cache_.find(acc, k)) {
                 return byte_string{acc->second.value_};
             }
         }
-        auto const framed = kv_.get(Cf::trie_nodes, node_hash);
+        auto const framed = kv_.get(Cf::trie_nodes, key);
         if (!framed.has_value()) {
             return std::nullopt;
         }
@@ -57,23 +58,23 @@ namespace statedb
         byte_string body{
             framed->data() + TRIE_NODE_HEADER_SIZE,
             framed->size() - TRIE_NODE_HEADER_SIZE};
-        cache_.insert(node_hash, body);
+        cache_.insert(k, body);
         return body;
     }
 
     void TrieNodeStore::put(
-        bytes32_t const &node_hash, byte_string_view const node_bytes)
+        byte_string_view const key, byte_string_view const node_bytes)
     {
-        kv_.put(Cf::trie_nodes, node_hash, frame(node_bytes));
-        cache_.insert(node_hash, byte_string{node_bytes});
+        kv_.put(Cf::trie_nodes, key, frame(node_bytes));
+        cache_.insert(byte_string{key}, byte_string{node_bytes});
     }
 
     void TrieNodeStore::batch_put(
-        rocksdb::WriteBatch &batch, bytes32_t const &node_hash,
+        rocksdb::WriteBatch &batch, byte_string_view const key,
         byte_string_view const node_bytes)
     {
-        kv_.batch_put(batch, Cf::trie_nodes, node_hash, frame(node_bytes));
-        cache_.insert(node_hash, byte_string{node_bytes});
+        kv_.batch_put(batch, Cf::trie_nodes, key, frame(node_bytes));
+        cache_.insert(byte_string{key}, byte_string{node_bytes});
     }
 }
 

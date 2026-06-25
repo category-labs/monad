@@ -27,7 +27,7 @@ option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # deps
 # ##############################################################################
 
-find_package(Boost 1.83 # 1.83 really is the minimum
+find_package(Boost 1.90 # standardized Boost version (Ubuntu 26.04 default)
              CONFIG REQUIRED COMPONENTS context json thread)
 find_package(GTest)
 
@@ -74,7 +74,7 @@ add_library(
 target_include_directories(monad_trie PUBLIC ${CATEGORY_MAIN_DIR})
 target_include_directories(monad_trie PRIVATE "third_party")
 monad_compile_options(monad_trie)
-target_link_libraries(monad_trie PRIVATE Boost::boost)
+target_link_libraries(monad_trie PRIVATE Boost::headers)
 target_link_libraries(monad_trie PUBLIC concurrentqueue)
 target_link_libraries(monad_trie PUBLIC monad_async)
 target_link_libraries(monad_trie PUBLIC quill::quill) # TODO: remove

@@ -301,15 +301,13 @@ target_include_directories(
   monad_execution_ethereum
   PUBLIC ${CATEGORY_MAIN_DIR}
   PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test
-  PRIVATE ${Boost_INCLUDE_DIRS}
   PUBLIC ${cthash_SOURCE_DIR}/include
   PUBLIC ${silkpre_SOURCE_DIR}/lib)
 
 target_include_directories(
   monad_execution_native
   PUBLIC ${CATEGORY_MAIN_DIR}
-  PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test
-  PRIVATE ${Boost_INCLUDE_DIRS})
+  PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test)
 
 target_compile_definitions(
   monad_execution_ethereum PUBLIC MONAD_CXX_CTYPES_USE_EVMC_HPP

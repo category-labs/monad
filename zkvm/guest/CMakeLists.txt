@@ -311,6 +311,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "${MONAD_ROOT}/zkvm/category/execution/ethereum/core/ecrecover.cpp"
     )
 
+    # db/util.cpp is dropped (pulls in category/mpt + nlohmann/json); provide
+    # just the two RLP encoders commit_builder.cpp needs from it.
+    target_sources(monad_execution_ethereum PRIVATE
+        "${MONAD_ROOT}/zkvm/category/execution/ethereum/db/util.cpp"
+    )
+
     # Reduced guest deps not present in the inherited host link list.
     target_link_libraries(monad_execution_ethereum
         PUBLIC komihash

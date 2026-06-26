@@ -33,12 +33,14 @@
 
 #include <atomic>
 #include <csignal>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <memory>
 #include <span>
 #include <stop_token>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -845,6 +847,203 @@ TEST(update_aux_death_test, aborts_on_monad007_without_allow_migration)
 
     ASSERT_DEATH(
         { DbMetadataContext const ctx{testio}; }, "monad-mpt --upgrade");
+}
+
+// Regression for the MONAD007 -> MONAD008 migration on a pool large enough
+// that step 2's chunk_info[] memmove destination overruns the MONAD007
+// db_offsets + consensus block at offset 524328. The destination grows up
+// from sizeof(db_metadata) = 4480, so it reaches 524328 once
+// 4480 + 8*chunk_count > 524328, i.e. chunk_count > 64981. The constructor
+// cannot reach this regime in a unit test (it would need a >64981-seq-chunk
+// pool with >= 2 MiB cnv chunks), so drive the relocation directly on a
+// synthetic buffer. Before the fix that stashes the block, the memmove
+// zeroed db_offsets/finalized/voted/proposed before step 4 read them.
+TEST(
+    update_aux_test, migrate_monad007_preserves_db_offsets_at_large_chunk_count)
+{
+    using monad::mpt::detail::db_metadata;
+    static constexpr size_t MONAD007_DB_METADATA_SIZE = 528512;
+    static constexpr size_t MONAD007_DB_OFFSETS_OFFSET = 524328;
+    static constexpr size_t MONAD007_LIST_TRIPLE_OFFSET = 528488;
+
+    constexpr uint32_t chunk_count = 70000;
+    static_assert(
+        4480 + 8 * size_t(chunk_count) > MONAD007_DB_OFFSETS_OFFSET,
+        "chunk_count must be large enough for the memmove to overrun "
+        "db_offsets, otherwise this test does not exercise the bug");
+
+    size_t const buf_bytes =
+        MONAD007_DB_METADATA_SIZE +
+        size_t(chunk_count) * sizeof(db_metadata::chunk_info_t);
+    // uint64_t backing gives the 8-byte alignment db_metadata requires.
+    std::vector<uint64_t> storage((buf_bytes + 7) / 8, 0);
+    auto *const buf = reinterpret_cast<uint8_t *>(storage.data());
+
+    memcpy(buf, db_metadata::PREVIOUS_MAGIC, db_metadata::MAGIC_STRING_LEN);
+    uint64_t const bitfield = static_cast<uint64_t>(chunk_count) & 0xfffffULL;
+    memcpy(buf + 8, &bitfield, 8);
+    uint64_t const test_capacity_in_free_list = 1'000'000;
+    memcpy(buf + 16, &test_capacity_in_free_list, 8);
+    // root_offsets header (offset 24) is byte-identical across layouts and
+    // is not relocated: high_bits_all_set, cnv_chunks_len, and three ids.
+    uint32_t const high_bits_all_set = uint32_t(-1);
+    uint32_t const test_cnv_chunks_len = 3;
+    uint32_t const test_ids[3] = {1, 2, 7};
+    memcpy(buf + 40, &high_bits_all_set, 4);
+    memcpy(buf + 44, &test_cnv_chunks_len, 4);
+    for (uint32_t k = 0; k < test_cnv_chunks_len; k++) {
+        memcpy(buf + 48 + k * 8, &high_bits_all_set, 4);
+        memcpy(buf + 52 + k * 8, &test_ids[k], 4);
+    }
+    memset(
+        buf + 48 + size_t(test_cnv_chunks_len) * 8,
+        0xff,
+        MONAD007_DB_OFFSETS_OFFSET - (48 + size_t(test_cnv_chunks_len) * 8));
+
+    // The 128-byte db_offsets..block_ids block. Byte indices are relative to
+    // MONAD007_DB_OFFSETS_OFFSET; a per-byte pattern makes any clobber
+    // detectable, with typed scalars overlaid at their known slots.
+    uint8_t db_block[128];
+    for (size_t i = 0; i < sizeof(db_block); i++) {
+        db_block[i] = static_cast<uint8_t>(0x80 + (i & 0x3f));
+    }
+    uint64_t const test_history_length = 12345;
+    uint64_t const test_latest_finalized = 42;
+    uint64_t const test_latest_verified = 41;
+    uint64_t const test_latest_voted = 40;
+    uint64_t const test_latest_proposed = 43;
+    int64_t const test_auto_expire = 999;
+    memcpy(db_block + 16, &test_history_length, 8); // 524344
+    memcpy(db_block + 24, &test_latest_finalized, 8); // 524352
+    memcpy(db_block + 32, &test_latest_verified, 8); // 524360
+    memcpy(db_block + 40, &test_latest_voted, 8); // 524368
+    memcpy(db_block + 48, &test_latest_proposed, 8); // 524376
+    memcpy(db_block + 56, &test_auto_expire, 8); // 524384 (dropped global)
+    memcpy(buf + MONAD007_DB_OFFSETS_OFFSET, db_block, sizeof(db_block));
+
+    memset(buf + 524456, 0xff, MONAD007_LIST_TRIPLE_OFFSET - 524456);
+    uint32_t const fl_begin = 5;
+    uint32_t const fl_end = 7;
+    uint32_t const invalid = db_metadata::NULL_CHUNK;
+    memcpy(buf + MONAD007_LIST_TRIPLE_OFFSET, &fl_begin, 4);
+    memcpy(buf + MONAD007_LIST_TRIPLE_OFFSET + 4, &fl_end, 4);
+    memcpy(buf + MONAD007_LIST_TRIPLE_OFFSET + 8, &invalid, 4);
+    memcpy(buf + MONAD007_LIST_TRIPLE_OFFSET + 12, &invalid, 4);
+    memcpy(buf + MONAD007_LIST_TRIPLE_OFFSET + 16, &invalid, 4);
+    memcpy(buf + MONAD007_LIST_TRIPLE_OFFSET + 20, &invalid, 4);
+
+    // Stamp recognizable chunk_info[] entries at the source so the relocation
+    // itself is checked, not just the adjacent stashed blocks. Slot 0's source
+    // (528512) is overwritten by a later destination write during the memmove,
+    // so verifying it survives at the destination exercises the forward-copy
+    // overlap handling; 35000 and the last slot cover mid/end.
+    uint32_t const ci_slots[3] = {0, 35000, chunk_count - 1};
+    uint64_t const ci_patterns[3] = {
+        0x1111222233334444ULL, 0x5555666677778888ULL, 0x9999aaaabbbbccccULL};
+    for (size_t s = 0; s < 3; s++) {
+        memcpy(
+            buf + MONAD007_DB_METADATA_SIZE +
+                size_t(ci_slots[s]) * sizeof(db_metadata::chunk_info_t),
+            &ci_patterns[s],
+            sizeof(uint64_t));
+    }
+
+    auto *const m = monad::start_lifetime_as<db_metadata>(buf);
+    monad::mpt::detail::migrate_monad007_to_monad008(m, chunk_count);
+
+    EXPECT_EQ(
+        0, memcmp(m->magic, db_metadata::MAGIC, db_metadata::MAGIC_STRING_LEN));
+    // db_offsets (16 raw bytes) relocated from 524328 to 312.
+    EXPECT_EQ(
+        0,
+        memcmp(
+            reinterpret_cast<std::byte const *>(&m->db_offsets), db_block, 16));
+    EXPECT_EQ(m->history_length, test_history_length);
+    EXPECT_EQ(m->latest_finalized_version, test_latest_finalized);
+    EXPECT_EQ(m->latest_verified_version, test_latest_verified);
+    EXPECT_EQ(m->latest_voted_version, test_latest_voted);
+    EXPECT_EQ(m->latest_proposed_version, test_latest_proposed);
+    EXPECT_EQ(m->root_offsets_state.auto_expire_version_, test_auto_expire);
+    // latest_voted_block_id + latest_proposed_block_id (64 contiguous bytes)
+    // relocated from 524392 (db_block + 64) to 368.
+    EXPECT_EQ(
+        0,
+        memcmp(
+            reinterpret_cast<std::byte const *>(&m->latest_voted_block_id),
+            db_block + 64,
+            64));
+    // root_offsets cnv list survives unrelocated.
+    EXPECT_EQ(m->root_offsets.cnv_chunks_len(), test_cnv_chunks_len);
+    for (uint32_t k = 0; k < test_cnv_chunks_len; k++) {
+        EXPECT_EQ(
+            test::DbMetadataTestAccess::storage(m->root_offsets)
+                .cnv_chunks[k]
+                .cnv_chunk_id,
+            test_ids[k]);
+    }
+    // chunk_info[] payload relocated from 528512 to sizeof(db_metadata).
+    for (size_t s = 0; s < 3; s++) {
+        uint64_t got = 0;
+        memcpy(
+            &got,
+            buf + sizeof(db_metadata) +
+                size_t(ci_slots[s]) * sizeof(db_metadata::chunk_info_t),
+            sizeof(uint64_t));
+        EXPECT_EQ(got, ci_patterns[s])
+            << "chunk_info[] slot " << ci_slots[s] << " not relocated";
+    }
+    // list triple relocated from 528488 to 4456.
+    EXPECT_EQ(m->free_list.begin, fl_begin);
+    EXPECT_EQ(m->free_list.end, fl_end);
+    EXPECT_EQ(m->fast_list.begin, db_metadata::NULL_CHUNK);
+    EXPECT_EQ(m->slow_list.begin, db_metadata::NULL_CHUNK);
+    // new-in-MONAD008 fields at idle defaults.
+    EXPECT_EQ(m->secondary_timeline.cnv_chunks_len(), 0u);
+    EXPECT_EQ(m->primary_ring_idx, 0u);
+    EXPECT_EQ(m->secondary_timeline_active_, 0u);
+    EXPECT_EQ(
+        m->root_offsets_state.state_machine_kind_,
+        static_cast<uint8_t>(state_machine_kind::ethereum));
+}
+
+// SIZE_ - 1 = 31 cnv chunks is the per-ring cnv_chunks[] cap. num_cnv_chunks
+// = SIZE_ + 1 makes ring_total = SIZE_ = 32, one past the array. New-pool
+// init must abort rather than write out of bounds into root_offsets_state.
+TEST(update_aux_death_test, aborts_when_root_offsets_ring_exceeds_capacity)
+{
+    std::string templ = (MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+                         "monad_update_aux_ring_cap_test_XXXXXX")
+                            .string();
+    int const fd = ::mkstemp(templ.data());
+    MONAD_ASSERT(fd != -1);
+    std::filesystem::path const filename{templ};
+    auto const unfilename = monad::make_scope_exit(
+        [&]() noexcept { (void)::unlink(filename.c_str()); });
+    MONAD_ASSERT(-1 != ::ftruncate(fd, 2UL << 30)); // 2GB
+
+    monad::io::Ring ring1;
+    monad::io::Ring ring2;
+    monad::io::Buffers testbuf =
+        monad::io::make_buffers_for_segregated_read_write(
+            ring1,
+            ring2,
+            2,
+            4,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+    monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 24; // 16 MiB chunks keep the temp file small
+    flags.num_cnv_chunks =
+        static_cast<uint32_t>(detail::db_metadata::root_offsets_ring_t::SIZE_) +
+        1; // 33 -> ring_total 32
+    monad::async::storage_pool pool(
+        std::span{&filename, 1},
+        monad::async::storage_pool::mode::truncate,
+        flags);
+    monad::async::AsyncIO testio(pool, testbuf);
+
+    ASSERT_DEATH(
+        { DbMetadataContext const ctx{testio}; }, "exceeds the per-ring");
 }
 
 TEST(update_aux_test, activate_deactivate_secondary)

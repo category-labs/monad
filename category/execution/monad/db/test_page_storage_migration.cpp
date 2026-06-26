@@ -102,6 +102,7 @@ namespace
         uint64_t const block_number, bytes32_t const &block_id,
         StateDeltas const &deltas)
     {
+        MONAD_ASSERT(!tdb1.is_page_encoded() && tdb2.is_page_encoded());
         BlockHeader const header{.number = block_number};
         BlockCommitAncillaries const anc = make_empty_ancillaries();
 

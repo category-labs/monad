@@ -215,9 +215,13 @@ add_library(
   "monad/db/commit_block_migration.hpp"
   "monad/db/page_commit_builder.hpp"
   "monad/db/page_commit_builder.cpp"
+  "monad/db/state_machine_init.cpp"
+  "monad/db/state_machine_init.hpp"
   "monad/db/storage_page.cpp"
   "monad/db/storage_page.hpp"
   # monad/chain
+  "monad/chain/chain_factory.cpp"
+  "monad/chain/chain_factory.hpp"
   "monad/chain/monad_chain.cpp"
   "monad/chain/monad_chain.hpp"
   "monad/chain/monad_devnet.cpp"

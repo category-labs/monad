@@ -64,6 +64,113 @@ static constexpr size_t MONAD007_DB_OFFSETS_THROUGH_BLOCK_IDS_BYTES = 128;
 static constexpr size_t MONAD007_LIST_TRIPLE_OFFSET = 528488;
 static constexpr size_t DB_METADATA_LIST_TRIPLE_BYTES = 24;
 
+namespace detail
+{
+    void migrate_monad007_to_monad008(
+        db_metadata *const m, uint32_t const chunk_count)
+    {
+        auto *const m_bytes = reinterpret_cast<std::byte *>(m);
+
+        MONAD_ASSERT(
+            m->root_offsets.cnv_chunks_len() <
+                db_metadata::root_offsets_ring_t::SIZE_,
+            "MONAD007 pool has more primary cnv chunks than MONAD008's "
+            "SIZE_ cap allows — cannot migrate");
+
+        // 1. Stash the tail-of-header regions that step 2's chunk_info[]
+        //    memmove will overrun. Its destination grows up from
+        //    sizeof(db_metadata) and, for large chunk_count, runs over the
+        //    db_offsets..latest_proposed_block_id block (chunk_count > 64981)
+        //    and then the free/fast/slow list triple (chunk_count > 65501).
+        //    Both sources sit below the memmove source, so neither survives
+        //    the relocation in place — stash both before step 2.
+        std::array<std::byte, DB_METADATA_LIST_TRIPLE_BYTES> list_triple_buf{};
+        (void)memcpy(
+            list_triple_buf.data(),
+            m_bytes + MONAD007_LIST_TRIPLE_OFFSET,
+            DB_METADATA_LIST_TRIPLE_BYTES);
+        std::array<std::byte, MONAD007_DB_OFFSETS_THROUGH_BLOCK_IDS_BYTES>
+            db_offsets_buf{};
+        (void)memcpy(
+            db_offsets_buf.data(),
+            m_bytes + MONAD007_DB_OFFSETS_OFFSET,
+            MONAD007_DB_OFFSETS_THROUGH_BLOCK_IDS_BYTES);
+
+        // 2. Relocate chunk_info[]. memmove because src/dst may overlap for
+        //    pathologically large chunk_count.
+        (void)memmove(
+            m_bytes + sizeof(db_metadata),
+            m_bytes + MONAD007_DB_METADATA_SIZE,
+            size_t(chunk_count) * sizeof(db_metadata::chunk_info_t));
+
+        // 3. Install the stashed list triple at its new location.
+        (void)memcpy(
+            m_bytes + offsetof(db_metadata, free_list),
+            list_triple_buf.data(),
+            DB_METADATA_LIST_TRIPLE_BYTES);
+
+        // 4. Relocate db_offsets..latest_proposed_block_id from the stash,
+        //    dropping MONAD007's global auto_expire_version (sandwiched
+        //    between latest_proposed_version and latest_voted_block_id) since
+        //    MONAD008 promotes it to a per-timeline field in
+        //    timeline_state_t. Save the value, then copy the two halves
+        //    either side of the gap into the new gap-less layout. Offsets
+        //    into db_offsets_buf are relative to MONAD007_DB_OFFSETS_OFFSET.
+        static_assert(offsetof(db_metadata, db_offsets) == 312);
+        static_assert(offsetof(db_metadata, secondary_timeline) == 432);
+        constexpr size_t MONAD007_AUTO_EXPIRE_OFFSET =
+            MONAD007_DB_OFFSETS_OFFSET + 16 + 5 * 8; // 524384
+        constexpr size_t MONAD007_PRE_AUTO_EXPIRE_BYTES =
+            MONAD007_AUTO_EXPIRE_OFFSET - MONAD007_DB_OFFSETS_OFFSET; // 56
+        constexpr size_t MONAD007_POST_AUTO_EXPIRE_BYTES =
+            MONAD007_DB_OFFSETS_THROUGH_BLOCK_IDS_BYTES -
+            MONAD007_PRE_AUTO_EXPIRE_BYTES - 8; // 64
+        int64_t saved_auto_expire = 0;
+        (void)memcpy(
+            &saved_auto_expire,
+            db_offsets_buf.data() + MONAD007_PRE_AUTO_EXPIRE_BYTES,
+            sizeof(saved_auto_expire));
+        (void)memcpy(
+            m_bytes + offsetof(db_metadata, db_offsets),
+            db_offsets_buf.data(),
+            MONAD007_PRE_AUTO_EXPIRE_BYTES);
+        (void)memcpy(
+            m_bytes + offsetof(db_metadata, latest_voted_block_id),
+            db_offsets_buf.data() + MONAD007_PRE_AUTO_EXPIRE_BYTES + 8,
+            MONAD007_POST_AUTO_EXPIRE_BYTES);
+        // MONAD007 had no secondary, so the saved value belongs on what is now
+        // the primary.
+        m->root_offsets_state.auto_expire_version_ = saved_auto_expire;
+        // Stamp the primary timeline's state_machine_kind. The byte sat inside
+        // MONAD007's huge cnv_chunks[] (0xff for unused slots), which would
+        // trip create_state_machine()'s range check on the next open. MONAD007
+        // only supported ethereum.
+        m->root_offsets_state.state_machine_kind_ =
+            static_cast<uint8_t>(state_machine_kind::ethereum);
+        memset(
+            m->root_offsets_state.reserved_sm_,
+            0,
+            sizeof(m->root_offsets_state.reserved_sm_));
+
+        // 5. Zero the region between secondary_timeline and the live block
+        //    list (relocated in step 3). secondary_timeline_state
+        //    .state_machine_kind_ is left at zero (state_machine_kind
+        //    ::ethereum); secondary_timeline_active_ is also zero, so the byte
+        //    is unreachable until a later monad-mpt --activate-secondary
+        //    stamps the real kind.
+        auto *const new_fields_begin =
+            m_bytes + offsetof(db_metadata, secondary_timeline);
+        auto *const new_fields_end = m_bytes + offsetof(db_metadata, free_list);
+        memset(new_fields_begin, 0, size_t(new_fields_end - new_fields_begin));
+
+        // 6. Bump magic. The signal_fence keeps the preceding stores from
+        //    sinking past it under -O3 reordering; durability is enforced by
+        //    the caller's flush.
+        std::atomic_signal_fence(std::memory_order_seq_cst);
+        memcpy(m->magic, db_metadata::MAGIC, db_metadata::MAGIC_STRING_LEN);
+    }
+}
+
 DbMetadataContext::DbMetadataContext(AsyncIO &io)
     : io_(&io)
 {
@@ -144,12 +251,14 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
     //   db_offsets..latest_proposed_block_id (128B)  524328 -> 312
     //
     // root_offsets and its cnv_chunks[0..30] are byte-identical between
-    // layouts. The block now holding root_offsets_state, secondary_timeline,
-    // secondary_timeline_state, identity bytes and pending_shrink_grow
-    // (offsets 296..4456) was MONAD007 padding and is
-    // zeroed so new fields start at idle defaults. Each copy migrates
-    // under hold_dirty; the memmove/memcpy/memset operations preserve
-    // their sources, so a crash-replay is idempotent.
+    // layouts and are not moved. root_offsets_state (296..312) is seeded in
+    // step 4 (auto_expire from MONAD007's global, state_machine_kind stamped
+    // ethereum). The block at [432, 4456) — secondary_timeline,
+    // secondary_timeline_state, the role/identity bytes and
+    // pending_shrink_grow — was MONAD007 padding and is zeroed so new fields
+    // start at idle defaults. Each copy migrates under hold_dirty; the
+    // memmove/memcpy/memset operations preserve their sources, so a
+    // crash-replay is idempotent.
     auto const is_previous_magic = [](detail::db_metadata const *m) {
         return 0 == memcmp(
                         m->magic,
@@ -195,104 +304,8 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
                 continue;
             }
             auto const g = m->hold_dirty();
-            auto *const m_bytes = reinterpret_cast<std::byte *>(m);
-
-            MONAD_ASSERT(
-                m->root_offsets.storage_.cnv_chunks_len <
-                    detail::db_metadata::root_offsets_ring_t::SIZE_,
-                "MONAD007 pool has more primary cnv chunks than MONAD008's "
-                "SIZE_ cap allows — cannot migrate");
-
-            // 1. Stash the list triple (at the tail of the MONAD007
-            //    header) before step 2's memmove, whose destination can
-            //    overlap the triple's source for chunk_count > 65501.
-            std::array<std::byte, DB_METADATA_LIST_TRIPLE_BYTES>
-                list_triple_buf{};
-            (void)memcpy(
-                list_triple_buf.data(),
-                m_bytes + MONAD007_LIST_TRIPLE_OFFSET,
-                DB_METADATA_LIST_TRIPLE_BYTES);
-
-            // 2. Relocate chunk_info[]. memmove because src/dst may
-            //    overlap for pathologically large chunk_count.
-            (void)memmove(
-                m_bytes + sizeof(detail::db_metadata),
-                m_bytes + MONAD007_DB_METADATA_SIZE,
-                size_t(chunk_count) *
-                    sizeof(detail::db_metadata::chunk_info_t));
-
-            // 3. Install the stashed list triple at its new location.
-            (void)memcpy(
-                m_bytes + offsetof(detail::db_metadata, free_list),
-                list_triple_buf.data(),
-                DB_METADATA_LIST_TRIPLE_BYTES);
-
-            // 4. Relocate db_offsets..latest_proposed_block_id, dropping
-            //    MONAD007's global auto_expire_version (sandwiched between
-            //    latest_proposed_version and latest_voted_block_id) since
-            //    MONAD008 promotes it to a per-timeline field in
-            //    timeline_state_t. Save the value, then copy the two
-            //    halves either side of the gap into the new gap-less
-            //    layout.
-            static_assert(offsetof(detail::db_metadata, db_offsets) == 312);
-            static_assert(
-                offsetof(detail::db_metadata, secondary_timeline) == 432);
-            constexpr size_t MONAD007_AUTO_EXPIRE_OFFSET =
-                MONAD007_DB_OFFSETS_OFFSET + 16 + 5 * 8; // 524384
-            constexpr size_t MONAD007_PRE_AUTO_EXPIRE_BYTES =
-                MONAD007_AUTO_EXPIRE_OFFSET - MONAD007_DB_OFFSETS_OFFSET; // 56
-            constexpr size_t MONAD007_POST_AUTO_EXPIRE_BYTES =
-                MONAD007_DB_OFFSETS_THROUGH_BLOCK_IDS_BYTES -
-                MONAD007_PRE_AUTO_EXPIRE_BYTES - 8; // 64
-            int64_t saved_auto_expire = 0;
-            (void)memcpy(
-                &saved_auto_expire,
-                m_bytes + MONAD007_AUTO_EXPIRE_OFFSET,
-                sizeof(saved_auto_expire));
-            (void)memcpy(
-                m_bytes + offsetof(detail::db_metadata, db_offsets),
-                m_bytes + MONAD007_DB_OFFSETS_OFFSET,
-                MONAD007_PRE_AUTO_EXPIRE_BYTES);
-            (void)memcpy(
-                m_bytes + offsetof(detail::db_metadata, latest_voted_block_id),
-                m_bytes + MONAD007_AUTO_EXPIRE_OFFSET + 8,
-                MONAD007_POST_AUTO_EXPIRE_BYTES);
-            // MONAD007 had no secondary, so the saved value belongs on
-            // what is now the primary.
-            m->root_offsets_state.auto_expire_version_ = saved_auto_expire;
-            // Stamp the primary timeline's state_machine_kind. The byte
-            // sat inside MONAD007's huge cnv_chunks[] (0xff for unused
-            // slots), which would trip create_state_machine()'s range
-            // check on the next open. MONAD007 only supported ethereum.
-            m->root_offsets_state.state_machine_kind_ =
-                static_cast<uint8_t>(state_machine_kind::ethereum);
-            memset(
-                m->root_offsets_state.reserved_sm_,
-                0,
-                sizeof(m->root_offsets_state.reserved_sm_));
-
-            // 5. Zero the region between secondary_timeline and the live
-            //    block list (relocated in step 3).
-            //    secondary_timeline_state.state_machine_kind_ is left at
-            //    zero (state_machine_kind::ethereum);
-            //    secondary_timeline_active_ is also zero, so the byte is
-            //    unreachable until a later monad-mpt --activate-secondary
-            //    stamps the real kind.
-            auto *const new_fields_begin =
-                m_bytes + offsetof(detail::db_metadata, secondary_timeline);
-            auto *const new_fields_end =
-                m_bytes + offsetof(detail::db_metadata, free_list);
-            memset(
-                new_fields_begin, 0, size_t(new_fields_end - new_fields_begin));
-
-            // 6. Bump magic. The signal_fence keeps the preceding stores
-            //    from sinking past it under -O3 reordering; durability is
-            //    enforced by the msync after the loop.
-            std::atomic_signal_fence(std::memory_order_seq_cst);
-            memcpy(
-                m->magic,
-                detail::db_metadata::MAGIC,
-                detail::db_metadata::MAGIC_STRING_LEN);
+            detail::migrate_monad007_to_monad008(
+                m, static_cast<uint32_t>(chunk_count));
         }
         // Flush the new layout before downstream code reads at the new
         // offsets.
@@ -395,6 +408,10 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
         MONAD_ASSERT(
             ring_total > 0 && (ring_total & (ring_total - 1)) == 0,
             "Number of cnv chunks for root offsets must be a power of two");
+        MONAD_ASSERT(
+            ring_total <= detail::db_metadata::root_offsets_ring_t::SIZE_ - 1,
+            "Number of cnv chunks for root offsets exceeds the per-ring "
+            "cnv_chunks[] capacity (SIZE_ - 1)");
 
         auto &a_storage = copies_[0].main->root_offsets.storage_;
         auto &b_storage = copies_[0].main->secondary_timeline.storage_;

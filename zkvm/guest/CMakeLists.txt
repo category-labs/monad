@@ -336,6 +336,20 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "${MONAD_ROOT}/zkvm/category/execution/ethereum/core/ecrecover.cpp"
     )
 
+    # db/util.cpp is dropped (pulls in category/mpt + nlohmann/json); provide
+    # just the two RLP encoders commit_builder.cpp needs from it.
+    target_sources(monad_execution_ethereum PRIVATE
+        "${MONAD_ROOT}/zkvm/category/execution/ethereum/db/util.cpp"
+    )
+
+    # validate_block.cpp is dropped (fiber dispatch, live-DB validation), but
+    # the guest still references the BlockError status-code domain
+    # (execute_block_zkvm / ffi.cpp return BlockError values). Provide just the
+    # value_mappings() definition that backs it.
+    target_sources(monad_execution_ethereum PRIVATE
+        "${MONAD_ROOT}/zkvm/category/execution/ethereum/validate_block.cpp"
+    )
+
     # Reduced guest deps not present in the inherited host link list.
     target_link_libraries(monad_execution_ethereum
         PUBLIC komihash
@@ -361,6 +375,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # needed at link).
     monad_zkvm_drop_sources(monad_precompiles
         "precompiles_bls12.cpp")
+    # ...but keep the MSM gas-cost tables from it: precompiles_gas_cost_impl.cpp
+    # (retained) calls bls12::msm_discount<G1/G2> for Prague+, and those are
+    # pure lookups with no blst dependency. The shadow provides just them; the
+    # blst-backed execute paths stay dropped.
+    target_sources(monad_precompiles PRIVATE
+        "${MONAD_ROOT}/zkvm/category/execution/ethereum/precompiles_bls12.cpp")
     monad_zkvm_drop_libraries(monad_precompiles
         monad-vm
         monad_core

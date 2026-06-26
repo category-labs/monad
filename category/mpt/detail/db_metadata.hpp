@@ -65,6 +65,15 @@ namespace detail
     inline void
     db_copy(db_metadata *dest, db_metadata const *src, size_t bytes);
 
+    // In-place relocation of one metadata copy's fixed-header fields from the
+    // MONAD007 layout to MONAD008, rewriting the magic on success. chunk_count
+    // is the seq-chunk count (== chunk_info[] length). The caller is
+    // responsible for holding the copy's hold_dirty, healing dirty copies from
+    // a clean sibling beforehand, and flushing afterward. Exposed for unit
+    // tests that exercise large chunk_count layouts the constructor cannot
+    // reach without an impractically large pool.
+    void migrate_monad007_to_monad008(db_metadata *m, uint32_t chunk_count);
+
     // For the memory map of the first conventional chunk
     struct db_metadata
     {

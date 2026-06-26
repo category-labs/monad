@@ -17,7 +17,7 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/host.hpp>
 
 #include <evmc/evmc.h>
@@ -28,17 +28,6 @@
 #pragma GCC diagnostic pop
 
 MONAD_NAMESPACE_BEGIN
-
-// This is temp. Will be removed after the storage_page PR is merged.
-namespace detail
-{
-    inline bytes32_t compute_page_key(bytes32_t const &storage_key)
-    {
-        constexpr size_t PAGE_KEY_SHIFT = 7;
-        return store_be_as<bytes32_t>(
-            load_be<uint256_t>(storage_key) >> PAGE_KEY_SHIFT);
-    }
-}
 
 class PageTracker
 {
@@ -64,7 +53,7 @@ class PageTracker
 public:
     evmc_access_status access_page(bytes32_t const &key)
     {
-        auto const pkey = detail::compute_page_key(key);
+        auto const pkey = compute_page_key(key);
         PageState s = lookup_page_state(pkey);
         if (s.accessed) {
             return EVMC_ACCESS_WARM;
@@ -77,7 +66,7 @@ public:
     vm::Host::PageStorageStatus
     update_page(bytes32_t const &key, evmc_storage_status status)
     {
-        auto const pkey = detail::compute_page_key(key);
+        auto const pkey = compute_page_key(key);
         PageState ps = lookup_page_state(pkey);
 
         bool const value_changed = (status != EVMC_STORAGE_ASSIGNED);

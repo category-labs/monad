@@ -20,6 +20,14 @@
 
 using namespace monad;
 
+TEST(PageEncoding, empty_page)
+{
+    storage_page_t page{};
+    auto const enc = encode_storage_page(page);
+    EXPECT_TRUE(enc.empty());
+    EXPECT_EQ(decode_storage_page(enc).value(), page);
+}
+
 TEST(PageEncoding, single_slot)
 {
     storage_page_t page{};
@@ -59,38 +67,11 @@ TEST(PageEncoding, full_page)
     EXPECT_EQ(decode_storage_page(enc).value(), page);
 }
 
-TEST(PageEncoding, decode_rejects_split_zero_runs)
+TEST(PageEncoding, decode_rejects_zero_value)
 {
-    // 0x01 0x01 (two adjacent zero-runs) must be 0x02.
-    byte_string enc = {0x01, 0x01, 0x80, 0x05, 0x00};
-    auto const result = decode_storage_page(enc);
-    ASSERT_TRUE(result.has_error());
-    EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
-}
-
-TEST(PageEncoding, decode_rejects_split_data_runs)
-{
-    // Two adjacent data-runs of 1 slot must be one data-run of 2 slots.
-    byte_string enc = {0x80, 0x05, 0x80, 0x06, 0x00};
-    auto const result = decode_storage_page(enc);
-    ASSERT_TRUE(result.has_error());
-    EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
-}
-
-TEST(PageEncoding, decode_rejects_zero_run_before_terminator)
-{
-    // 0x05 0x00 (zero-run then terminator) must be just 0x00.
-    byte_string enc = {0x05, 0x00};
-    auto const result = decode_storage_page(enc);
-    ASSERT_TRUE(result.has_error());
-    EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
-}
-
-TEST(PageEncoding, decode_rejects_zero_value_in_data_run)
-{
-    // RLP empty string (0x80) decodes to the zero value, which cannot
-    // appear inside a data run.
-    byte_string enc = {0x80, 0x80, 0x00};
+    // RLP empty string (0x80) decodes to the zero bytes32, which must not
+    // appear as a pair value.
+    byte_string enc = {0x00, 0x80};
     auto const result = decode_storage_page(enc);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
@@ -100,7 +81,34 @@ TEST(PageEncoding, decode_rejects_leading_zero_in_value)
 {
     // 0x82 0x00 0x05 encodes value 5 with a leading zero byte; the
     // canonical compact form is the single byte 0x05.
-    byte_string enc = {0x80, 0x82, 0x00, 0x05, 0x00};
+    byte_string enc = {0x00, 0x82, 0x00, 0x05};
+    auto const result = decode_storage_page(enc);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
+}
+
+TEST(PageEncoding, decode_rejects_out_of_order_indices)
+{
+    // Index 5 followed by index 3 violates strictly ascending order.
+    byte_string enc = {0x05, 0x01, 0x03, 0x02};
+    auto const result = decode_storage_page(enc);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
+}
+
+TEST(PageEncoding, decode_rejects_duplicate_index)
+{
+    // The same index appearing twice is not strictly ascending.
+    byte_string enc = {0x05, 0x01, 0x05, 0x02};
+    auto const result = decode_storage_page(enc);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
+}
+
+TEST(PageEncoding, decode_rejects_out_of_range_index)
+{
+    // Index 128 (0x80) equals SLOTS and is out of range.
+    byte_string enc = {0x80, 0x01};
     auto const result = decode_storage_page(enc);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
@@ -108,13 +116,21 @@ TEST(PageEncoding, decode_rejects_leading_zero_in_value)
 
 TEST(PageEncoding, decode_rejects_oversized_slot)
 {
-    // Malformed encoding: data-run of 1 slot whose RLP string is 33 bytes
-    // long, exceeding sizeof(bytes32_t). Must error, not crash in to_bytes.
+    // RLP string of 33 bytes exceeds sizeof(bytes32_t).
     byte_string enc;
-    enc.push_back(0x80); // data-run, count = 1
+    enc.push_back(0x00); // slot index 0
     enc.push_back(0x80 + 33); // RLP short-string prefix for 33 bytes
     enc.append(33, 0xAB);
     auto const result = decode_storage_page(enc);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.assume_error(), rlp::DecodeError::InputTooLong);
+}
+
+TEST(PageEncoding, decode_rejects_truncated_pair)
+{
+    // Index byte with no following value bytes.
+    byte_string enc = {0x00};
+    auto const result = decode_storage_page(enc);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.assume_error(), rlp::DecodeError::InputTooShort);
 }

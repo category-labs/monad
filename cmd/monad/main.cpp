@@ -30,9 +30,7 @@
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_hash_buffer/util.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
-#include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
-#include <category/execution/ethereum/chain/hive_net.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -44,9 +42,9 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
-#include <category/execution/monad/chain/monad_devnet.hpp>
-#include <category/execution/monad/chain/monad_mainnet.hpp>
-#include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/execution/monad/chain/chain_factory.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/db/state_machine_init.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/statesync/statesync_server_network.hpp>
 #include <category/statesync/statesync_thread.hpp>
@@ -283,6 +281,8 @@ try {
     // in-memory path has no metadata to read from and constructs the SM
     // inline.
     register_ethereum_state_machines();
+    register_monad_state_machines();
+
     mpt::Db raw_db = [&] {
         if (!db_in_memory) {
             return mpt::Db{mpt::OnDiskDbConfig{
@@ -300,21 +300,7 @@ try {
         return mpt::Db{std::make_unique<InMemoryMachine>()};
     }();
 
-    auto chain = [chain_config] -> std::unique_ptr<Chain> {
-        switch (chain_config) {
-        case CHAIN_CONFIG_ETHEREUM_MAINNET:
-            return std::make_unique<EthereumMainnet>();
-        case CHAIN_CONFIG_MONAD_DEVNET:
-            return std::make_unique<MonadDevnet>();
-        case CHAIN_CONFIG_MONAD_TESTNET:
-            return std::make_unique<MonadTestnet>();
-        case CHAIN_CONFIG_MONAD_MAINNET:
-            return std::make_unique<MonadMainnet>();
-        case CHAIN_CONFIG_HIVE_NET:
-            return std::make_unique<HiveNet>();
-        }
-        MONAD_ASSERT(false);
-    }();
+    auto chain = make_chain(chain_config);
 
     TrieDb triedb{
         raw_db,
@@ -351,6 +337,9 @@ try {
 
     std::unique_ptr<monad::StateSyncServer> sync_server;
     if (!statesync.empty()) {
+        // Works for either encoding: a page-encoded primary expands each
+        // page leaf into slot-format upserts in the server traversal, so no
+        // protocol changes are needed.
         sync_server = monad::make_statesync_server(monad::StateSyncServerConfig{
             .triedb = &triedb,
             .network = &net.value(),

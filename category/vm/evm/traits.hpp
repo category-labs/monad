@@ -83,6 +83,7 @@ namespace monad
         { T::mip_3_active() } -> std::same_as<bool>;
         { T::mip_8_active() } -> std::same_as<bool>;
         { T::mip_11_active() } -> std::same_as<bool>;
+        { T::mip_12_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
 
         // Constants
@@ -149,12 +150,17 @@ namespace monad
             return Rev >= MONAD_ETH_OSAKA;
         }
 
+        static consteval bool mip_3_active() noexcept
+        {
+            return false;
+        }
+
         static consteval bool mip_8_active() noexcept
         {
             return false;
         }
 
-        static consteval bool mip_3_active() noexcept
+        static consteval bool mip_12_active() noexcept
         {
             return false;
         }
@@ -212,6 +218,14 @@ namespace monad
 
     template <monad_eth_revision Rev>
     detail::TraitsKey EvmTraits<Rev>::key;
+
+    // Runtime sibling to MonadTraits::mip_8_active(), for code holding a
+    // monad_revision value rather than a trait type. Single source of the
+    // mip-8 (page-encoding) activation cutoff.
+    constexpr bool mip_8_active(monad_revision const rev) noexcept
+    {
+        return rev >= MONAD_NEXT;
+    }
 
     template <monad_revision Rev>
     struct MonadTraits
@@ -300,6 +314,11 @@ namespace monad
 
         static consteval bool mip_8_active() noexcept
         {
+            return ::monad::mip_8_active(Rev);
+        }
+
+        static consteval bool mip_12_active() noexcept
+        {
             return Rev >= MONAD_NEXT;
         }
 
@@ -312,11 +331,6 @@ namespace monad
             }
 
             return 0;
-        }
-
-        static consteval int64_t base_sload_cost() noexcept
-        {
-            return 100;
         }
 
         static consteval int64_t base_sstore_cost() noexcept

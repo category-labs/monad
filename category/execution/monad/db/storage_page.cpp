@@ -264,141 +264,58 @@ bytes32_t page_commit(storage_page_t const &page)
     return blake3_seal(slot_bitmap, root.bytes);
 }
 
-// Storage page run-length encoding (RLE).
+// Storage page encoding: a flat sequence of (slot_index, value) pairs.
 //
-// Encodes a storage_page_t (SLOTS x 32-byte slot values) optimizing for
-// minimum encoding size for both empty and non-empty slots, and fast
-// encoding speed. Zero slots are collapsed into compact run headers;
-// non-zero slots are compact-encoded (leading zeros stripped).
+// Each pair:
+//   - 1 byte: slot index in [0, SLOTS)
+//   - N bytes: slot value encoded via encode_bytes32_compact (leading zeros
+//              stripped, RLP string framing), 1..33 bytes
 //
-//   Header byte  | Meaning
-//   -------------|----------------------------------------------------------
-//   0x00..0x7F   | Zero-run of 0..127 slots (0x00 terminates encoding
-//                | since it advances by 0).
-//   0x80..0xFF   | Data-run of `(header & 0x7F) + 1` non-zero slots,
-//                | each encoded via encode_bytes32_compact (leading-zero
-//                | stripped, RLP string framing).
+// Pairs appear in strictly ascending index order. The empty page encodes as
+// the empty byte string.
 //
-// Decoding is strict: only the canonical encoding produced by
-// encode_storage_page is accepted (see decode_storage_page below).
-//
-// Examples:
-//   All-zero page     → 0x00                             (1 byte)
-//   Slot 0 = 1, rest  → 0x80 0x01 0x00                   (1 + 1 + 1 = 3 bytes)
-//   Slots 0-2 zero, slot 3 = 0xAB → 0x03 0x80 0x81 0xAB 0x00
+// Rejected non-canonical forms:
+//   - index >= SLOTS (128)
+//   - indices not strictly ascending
+//   - zero value in a pair
+//   - leading zero bytes in a value (non-minimal compact form)
 
 byte_string encode_storage_page(storage_page_t const &page)
 {
     byte_string encoded;
-    // Worst case: 33 bytes per compact-framed value plus one header byte
-    // per run (at most SLOTS headers) and the terminator. This deliberately
-    // overallocates (up to ~4KB transient for a full page of small values);
-    // the buffer is short-lived since the caller copies it into the final
-    // DB encoding, so the unused capacity never outlives this call.
+    encoded.reserve(page.size() * 34);
     constexpr uint8_t SLOTS = static_cast<uint8_t>(storage_page_t::SLOTS);
-    encoded.reserve(page.size() * 33 + SLOTS + 1);
-    constexpr bytes32_t ZERO{};
-    uint8_t i = 0;
-    while (i < SLOTS) {
-        if (page[i] == ZERO) {
-            // Count zero run
-            uint8_t zeros = 1;
-            while (i + zeros < SLOTS && page[i + zeros] == ZERO) {
-                ++zeros;
-            }
-            if (i + zeros == SLOTS) {
-                // Rest of page is zeros — emit terminator
-                encoded.push_back(0x00);
-                break;
-            }
-            // Emit zero-run count (0x01–0x7F)
-            encoded.push_back(zeros);
-            i += zeros;
-        }
-        else {
-            // Count data run (max SLOTS)
-            uint8_t run = 1;
-            while (i + run < SLOTS && run < SLOTS && page[i + run] != ZERO) {
-                ++run;
-            }
-            // Emit data-run header: SLOTS | (count - 1), then compact-encoded
-            // values
-            encoded.push_back(static_cast<uint8_t>(SLOTS | (run - 1)));
-            for (uint8_t j = 0; j < run; ++j) {
-                encoded += rlp::encode_bytes32_compact(page[i + j]);
-            }
-            i += run;
+    for (uint8_t i = 0; i < SLOTS; ++i) {
+        bytes32_t const &value = page[i];
+        if (value != bytes32_t{}) {
+            encoded.push_back(i);
+            encoded += rlp::encode_bytes32_compact(value);
         }
     }
     return encoded;
 }
 
-// Strict decoder: accepts exactly the encodings encode_storage_page
-// produces, so encode(decode(x)) == x for every accepted input. This keeps
-// the encoding usable as a canonical identity (hashing, byte comparison).
-// Rejected non-canonical forms:
-//   - adjacent runs of the same type (split zero-runs or data-runs)
-//   - a zero-run reaching the end of the page (must be the 0x00 terminator)
-//   - a zero-run directly before the terminator (must fold into it)
-//   - zero values inside a data run
-//   - slot values with leading zero bytes (non-minimal compact form)
 Result<storage_page_t> decode_storage_page(byte_string_view enc)
 {
     storage_page_t page{};
-    size_t i = 0;
-    bool at_start = true;
-    bool prev_is_data_run = false;
-    while (i < storage_page_t::SLOTS) {
-        if (MONAD_UNLIKELY(enc.empty())) {
-            return rlp::DecodeError::InputTooShort;
-        }
-        uint8_t const header = enc[0];
+    uint8_t prev_index = 0;
+    bool first = true;
+    while (!enc.empty()) {
+        uint8_t const index = enc[0];
         enc.remove_prefix(1);
-        if (header == 0x00) {
-            // Terminator: rest of page is zeros (already zero-initialized).
-            // Canonical only for an empty page or directly after a data run.
-            if (MONAD_UNLIKELY(!at_start && !prev_is_data_run)) {
-                return rlp::DecodeError::NonCanonical;
-            }
-            break;
+        if (MONAD_UNLIKELY(index >= storage_page_t::SLOTS)) {
+            return rlp::DecodeError::NonCanonical;
         }
-        if (header < storage_page_t::SLOTS) {
-            // Zero-run of `header` words. Canonically appears only between
-            // data runs (or before the first one).
-            if (MONAD_UNLIKELY(!at_start && !prev_is_data_run)) {
-                return rlp::DecodeError::NonCanonical;
-            }
-            i += header;
-            if (MONAD_UNLIKELY(i >= storage_page_t::SLOTS)) {
-                return rlp::DecodeError::NonCanonical;
-            }
-            prev_is_data_run = false;
+        if (MONAD_UNLIKELY(!first && index <= prev_index)) {
+            return rlp::DecodeError::NonCanonical;
         }
-        else {
-            // Data-run: compact-encoded slot values
-            if (MONAD_UNLIKELY(prev_is_data_run)) {
-                return rlp::DecodeError::NonCanonical;
-            }
-            size_t const count = (header & 0x7F) + 1;
-            if (MONAD_UNLIKELY(i + count > storage_page_t::SLOTS)) {
-                return rlp::DecodeError::InputTooLong;
-            }
-            for (size_t j = 0; j < count; ++j) {
-                BOOST_OUTCOME_TRY(
-                    auto const value, rlp::decode_bytes32_compact(enc));
-                // A zero value belongs to a zero-run, never a data run.
-                if (MONAD_UNLIKELY(value == bytes32_t{})) {
-                    return rlp::DecodeError::NonCanonical;
-                }
-                page.set(static_cast<uint8_t>(i + j), value);
-            }
-            i += count;
-            prev_is_data_run = true;
+        BOOST_OUTCOME_TRY(auto const value, rlp::decode_bytes32_compact(enc));
+        if (MONAD_UNLIKELY(value == bytes32_t{})) {
+            return rlp::DecodeError::NonCanonical;
         }
-        at_start = false;
-    }
-    if (MONAD_UNLIKELY(!enc.empty())) {
-        return rlp::DecodeError::InputTooLong;
+        page.set(index, value);
+        prev_index = index;
+        first = false;
     }
     return page;
 }

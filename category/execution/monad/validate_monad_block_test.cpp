@@ -22,6 +22,7 @@
 #include <category/execution/monad/validate_monad_block.hpp>
 #include <monad/test/traits_test.hpp>
 
+#include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -65,8 +66,7 @@ TYPED_TEST(MonadTraitsTest, system_txn_comes_after_user_txn)
         0xcccc_address,
     };
     std::vector<Transaction> txns(senders.size());
-    auto const res =
-        static_validate_monad_body<typename TestFixture::Trait>(senders, txns);
+    auto const res = static_validate_monad_body<Trait>(senders, txns);
     if constexpr (Trait::monad_rev() < MONAD_FOUR) {
         EXPECT_FALSE(res.has_error());
     }
@@ -210,13 +210,86 @@ TYPED_TEST(MonadTraitsTest, reward_txn_exceeds_maximum)
     std::vector<Transaction> txns(senders.size());
     txns[0].data = syscall_calldata(REWARD);
     txns[0].value = 26 * staking::MON;
-    auto const res =
-        static_validate_monad_body<typename TestFixture::Trait>(senders, txns);
+    auto const res = static_validate_monad_body<Trait>(senders, txns);
     if constexpr (Trait::monad_rev() < MONAD_FOUR) {
         EXPECT_FALSE(res.has_error());
     }
     else {
         ASSERT_TRUE(res.has_error());
         EXPECT_EQ(res.error(), MonadBlockError::InvalidRewardValue);
+    }
+}
+
+TYPED_TEST(MonadTraitsTest, mip12_migration)
+{
+    using Trait = typename TestFixture::Trait;
+
+    std::vector<Address> senders{
+        SYSTEM_SENDER,
+    };
+    std::vector<Transaction> txns(senders.size());
+    // 25 MON is staking reward before MIP-12
+    txns[0].data = syscall_calldata(REWARD);
+    txns[0].value = 25 * staking::MON;
+    auto const res = static_validate_monad_body<Trait>(senders, txns);
+    if constexpr (Trait::mip_12_active()) {
+        ASSERT_TRUE(res.has_error());
+        EXPECT_EQ(res.error(), MonadBlockError::InvalidRewardValue);
+    }
+    else {
+        EXPECT_FALSE(res.has_error());
+    }
+}
+
+// Fork-independent tests pinned to the latest revision.
+using ValidateMonadBlockLatest =
+    MonadTraitsTest<::detail::MonadRevisionConstant<MONAD_NEXT>>;
+
+struct RewardCase
+{
+    uint256_t value;
+    bool expect_error;
+    std::string_view name;
+};
+
+class BlockRewardLatest
+    : public ValidateMonadBlockLatest
+    , public ::testing::WithParamInterface<RewardCase>
+{
+};
+
+// maximum_block_reward is 18 MON once MIP-12 is active (latest revision).
+INSTANTIATE_TEST_SUITE_P(
+    Mip12, BlockRewardLatest,
+    ::testing::Values(
+        RewardCase{0, false, "zero"},
+        RewardCase{1 * staking::MON, false, "one_mon"},
+        RewardCase{18 * staking::MON, false, "at_maximum"},
+        RewardCase{18 * staking::MON + 1, true, "one_wei_over"},
+        RewardCase{25 * staking::MON, true, "pre_mip_12_maximum"},
+        RewardCase{26 * staking::MON, true, "exceeds_one"},
+        RewardCase{100 * staking::MON, true, "well_over"}),
+    [](::testing::TestParamInfo<RewardCase> const &info) {
+        return std::string{info.param.name};
+    });
+
+TEST_P(BlockRewardLatest, reward_against_maximum)
+{
+    auto const &param = GetParam();
+
+    std::vector<Address> senders{
+        SYSTEM_SENDER,
+    };
+    std::vector<Transaction> txns(senders.size());
+    txns[0].data = syscall_calldata(REWARD);
+    txns[0].value = param.value;
+
+    auto const res = static_validate_monad_body<Trait>(senders, txns);
+    if (param.expect_error) {
+        ASSERT_TRUE(res.has_error());
+        EXPECT_EQ(res.error(), MonadBlockError::InvalidRewardValue);
+    }
+    else {
+        EXPECT_FALSE(res.has_error());
     }
 }

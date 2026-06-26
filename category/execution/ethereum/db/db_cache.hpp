@@ -26,8 +26,10 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
+#include <category/vm/utils/lru_weight_cache.hpp>
 
 #include <cstdint>
+#include <format>
 #include <memory>
 #include <optional>
 #include <string>
@@ -48,11 +50,13 @@ class DbCache final
     // The cache is slot-granular: keyed by slot_key, the value is a
     // storage_page_t used as a single-slot container holding the value at
     // index 0 only. This will be compatible for future page-granular reads.
-    using StorageCache =
-        LruCache<StorageKey, storage_page_t, StorageKeyHashCompare>;
+    using StorageCache = vm::utils::LruWeightCache<
+        StorageKey, storage_page_t, StorageKeyHashCompare>;
+
+    static constexpr uint32_t STORAGE_CACHE_MAX_BYTES = 256u * 1024 * 1024;
 
     AccountsCache accounts_{10'000'000};
-    StorageCache storage_{10'000'000};
+    StorageCache storage_{STORAGE_CACHE_MAX_BYTES};
     Proposals proposals_;
 
 public:
@@ -139,7 +143,9 @@ public:
             insert_in_lru_caches(ps->post_state());
         }
         else {
-            // Finalizing a truncated proposal. Clear LRU caches.
+            // Finalizing a truncated proposal. Clear LRU caches.  This is an
+            // expensive operation. However, with 100 unfinalized proposals,
+            // cache speed is the least of our problems.
             accounts_.clear();
             storage_.clear();
         }
@@ -152,7 +158,8 @@ public:
 
     std::string storage_stats()
     {
-        return storage_.print_stats();
+        return std::format(
+            "{:8} / {:10}", storage_.size(), storage_.approx_weight());
     }
 
 private:
@@ -162,7 +169,7 @@ private:
             accounts_.insert(addr, acct);
         }
         for (auto const &[sk, leaf] : post_state.storage) {
-            storage_.insert(sk, leaf);
+            storage_.insert(sk, leaf, static_cast<uint32_t>(leaf.byte_size()));
         }
     }
 };

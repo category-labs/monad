@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -261,11 +262,21 @@ namespace trace
         for (auto const &[address, storage_keys] : accesses_) {
             auto &entry = entries.emplace_back();
             entry.address = address;
-            entry.storage_keys.assign(storage_keys.begin(), storage_keys.end());
             // Match go-ethereum's access-list tracer output order: storage
             // keys are sorted within each address, then entries are sorted by
             // address below.
+            entry.storage_keys.assign(storage_keys.begin(), storage_keys.end());
             std::ranges::sort(entry.storage_keys);
+            if constexpr (traits::mip_8_active()) {
+                // Under page-gas (MIP-8), warming one slot warms all 128 slots
+                // on its page, so keep only one representative per page. The
+                // keys are already sorted ascending, so each page's slots are
+                // contiguous and unique() retains the first (= minimum) of
+                // each run -- avoiding charging users for redundant entries.
+                auto const dups = std::ranges::unique(
+                    entry.storage_keys, {}, compute_page_key);
+                entry.storage_keys.erase(dups.begin(), dups.end());
+            }
         }
         std::ranges::sort(entries, {}, &AccessListEntry::address);
 

@@ -110,6 +110,7 @@ namespace
     auto const rlp_finalized_id = rlp::encode_bytes32(bytes32_t{});
     auto const simulate_gas_limit = std::numeric_limits<uint64_t>::max();
     constexpr size_t simulate_max_calls = 256;
+    constexpr size_t simulate_max_output_size = 1024 * 1024; // 1 MB
 
     auto create_executor(std::string const &dbname)
     {
@@ -4986,6 +4987,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         state_override,
         block_override,
         false,
@@ -5096,6 +5098,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         state_overrides,
         block_overrides,
         false,
@@ -5197,6 +5200,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_single_call_block_255)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         so_overrides,
         bo_overrides,
         false,
@@ -5254,6 +5258,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_input)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         so_overrides,
         bo_overrides,
         false,
@@ -5328,6 +5333,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_synthetic_gap)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         so_overrides,
         bo_overrides,
         false,
@@ -5429,6 +5435,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         so_overrides,
         bo_overrides,
         false,
@@ -5436,7 +5443,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS) << std::format(
+        "trace length {}: {}",
+        ctx.result->encoded_trace_len,
+        ctx.result->message);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -5535,6 +5545,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
             rlp_finalized_id.size(),
             simulate_gas_limit,
             simulate_max_calls,
+            simulate_max_output_size,
             subs[i]->so,
             subs[i]->bo,
             false,
@@ -5704,6 +5715,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         so,
         bo,
         false,
@@ -5864,6 +5876,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             rlp_finalized_id.size(),
             simulate_gas_limit,
             simulate_max_calls,
+            simulate_max_output_size,
             so,
             bo,
             false,
@@ -6005,6 +6018,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             rlp_finalized_id.size(),
             simulate_gas_limit,
             simulate_max_calls,
+            simulate_max_output_size,
             so,
             bo,
             false,
@@ -6235,6 +6249,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         so,
         bo,
         false,
@@ -6387,6 +6402,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         so,
         bo,
         false,
@@ -6612,6 +6628,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         so,
         bo,
         false,
@@ -6801,6 +6818,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         so,
         bo,
         true, // emit_native_transfer_logs
@@ -6952,6 +6970,7 @@ TYPED_TEST(EthCallEncodingFixture, eth_simulate_v1_time_travel)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         so,
         bo,
         true, // emit_native_transfer_logs
@@ -7084,6 +7103,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         so,
         bo,
         false,
@@ -7231,6 +7251,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         state_overrides,
         block_overrides,
         false,
@@ -7349,6 +7370,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transactions_2930_and_1559)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         state_overrides,
         block_overrides,
         false,
@@ -7481,6 +7503,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transaction_7702)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         state_overrides,
         block_overrides,
         false,
@@ -7641,6 +7664,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         state_overrides,
         block_overrides,
         false,
@@ -7764,6 +7788,7 @@ TEST_F(
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         state_overrides,
         block_overrides,
         false,
@@ -7887,6 +7912,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_gas_limit_enforcement)
         rlp_finalized_id.size(),
         total_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         state_override,
         block_override,
         false,
@@ -7980,6 +8006,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         state_override,
         block_override,
         false,
@@ -8118,6 +8145,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
         rlp_finalized_id.size(),
         simulate_gas_limit,
         simulate_max_calls,
+        simulate_max_output_size,
         state_override,
         block_override,
         false,
@@ -8191,6 +8219,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_transaction_input_too_long_causes_death)
             rlp_finalized_id.size(),
             simulate_gas_limit,
             simulate_max_calls,
+            simulate_max_output_size,
             state_override,
             block_override,
             false,
@@ -8201,4 +8230,211 @@ TEST_F(EthCallFixture, eth_simulate_v1_transaction_input_too_long_causes_death)
 
     monad_block_override_vec_destroy(block_override);
     monad_state_override_vec_destroy(state_override);
+}
+
+// This tests check that the response size limit is enforced. It does this by
+// submitting a request that spins up multiple parallel calls to the same
+// contract that returns a large amount of data.
+TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address contract =
+        0x00000000000000000000000000000000feedface_address;
+    static constexpr size_t parallel_calls = 10;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {{sender,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = std::numeric_limits<uint256_t>::max(),
+                           .nonce = 0}}}}}},
+        {},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    using namespace monad::vm::utils;
+    auto const return_bytecode =
+        // Returns 8MiB worth of zeroes, which becomes part of the trace
+        // output.
+        evm_as::latest().push(8000000).push0().return_();
+    ASSERT_TRUE(evm_as::validate(return_bytecode));
+    std::vector<uint8_t> code{};
+    evm_as::compile(return_bytecode, code);
+
+    auto *executor = create_executor(dbname.string());
+
+    auto *const state_override = monad_state_override_vec_create(1);
+    auto *const block_override = monad_block_override_vec_create(1);
+
+    add_override_address_at(
+        state_override, 0, contract.bytes, sizeof(contract.bytes));
+    set_override_code_at(
+        state_override,
+        0,
+        contract.bytes,
+        sizeof(contract.bytes),
+        code.data(),
+        code.size());
+    add_override_address_at(
+        state_override, 0, sender.bytes, sizeof(sender.bytes));
+
+    auto const encode_rlp_list =
+        [](std::vector<byte_string> const &items) -> byte_string {
+        byte_string payload;
+        for (auto const &item : items) {
+            payload += item;
+        }
+        return rlp::encode_list2(payload);
+    };
+
+    auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
+    std::vector<byte_string> encoded_senders{};
+    encoded_senders.reserve(parallel_calls);
+    for (size_t i = 0; i < parallel_calls; ++i) {
+        encoded_senders.push_back(encoded_sender);
+    }
+    auto const rlp_senders = to_vec(encode_rlp_list(
+        std::vector<byte_string>{encode_rlp_list(encoded_senders)}));
+
+    Transaction const tx{
+        .gas_limit = 200'000'000,
+        .to = contract,
+    };
+    auto const encoded_call =
+        rlp::encode_string2(byte_string_view(rlp::encode_transaction(tx)));
+    std::vector<byte_string> encoded_calls{};
+    encoded_calls.reserve(parallel_calls);
+    for (size_t i = 0; i < parallel_calls; ++i) {
+        encoded_calls.push_back(encoded_call);
+    }
+    auto const rlp_calls = to_vec(encode_rlp_list(
+        std::vector<byte_string>{encode_rlp_list(encoded_calls)}));
+
+    BlockHeader const header{
+        .number = 255,
+        .gas_limit = 200'000'000ULL * parallel_calls,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    // First submit the request with virtually unbounded resources.
+    struct callback_context no_limit_ctx;
+    {
+        boost::fibers::future<void> f = no_limit_ctx.promise.get_future();
+
+        monad_executor_eth_simulate_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            255,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            simulate_gas_limit,
+            simulate_max_calls,
+            std::numeric_limits<size_t>::max(), // Max output size, virtually
+                                                // unlimited.
+            state_override,
+            block_override,
+            false,
+            complete_callback,
+            (void *)&no_limit_ctx);
+        f.get();
+    }
+
+    ASSERT_EQ(no_limit_ctx.result->status_code, EVMC_SUCCESS);
+    size_t const actual_cbor_output_size =
+        no_limit_ctx.result->encoded_trace_len;
+
+    // Now submit the same request with the actual cbor output size. It should
+    // now succeed.
+    struct callback_context actual_ctx;
+    {
+        boost::fibers::future<void> f = actual_ctx.promise.get_future();
+
+        monad_executor_eth_simulate_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            255,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            simulate_gas_limit,
+            simulate_max_calls,
+            actual_cbor_output_size,
+            state_override,
+            block_override,
+            false,
+            complete_callback,
+            (void *)&actual_ctx);
+        f.get();
+    }
+
+    ASSERT_EQ(actual_ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(actual_ctx.result->encoded_trace_len, actual_cbor_output_size);
+
+    // Now submit the same request with a max output size smaller than the
+    // actual cbor output size. It should now fail.
+    struct callback_context limited_ctx;
+    {
+        size_t const max_output_size = 1024; // 1 KiB
+        EXPECT_LT(max_output_size, actual_cbor_output_size);
+
+        boost::fibers::future<void> f = limited_ctx.promise.get_future();
+
+        monad_executor_eth_simulate_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            255,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            simulate_gas_limit,
+            simulate_max_calls,
+            max_output_size,
+            state_override,
+            block_override,
+            false,
+            complete_callback,
+            (void *)&limited_ctx);
+        f.get();
+    }
+
+    ASSERT_EQ(limited_ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_STREQ(
+        limited_ctx.result->message,
+        "output size exceeds maximum allowed size");
+    ASSERT_EQ(limited_ctx.result->encoded_trace_len, 0);
+
+    monad_block_override_vec_destroy(block_override);
+    monad_state_override_vec_destroy(state_override);
+    monad_executor_destroy(executor);
 }

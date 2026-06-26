@@ -169,6 +169,35 @@ TEST(cli_tool, state_machine_unknown_kind_rejected)
     EXPECT_NE(retcode, 0);
 }
 
+// 32 is a power of two but exceeds the per-ring cnv_chunks[] capacity
+// (SIZE_ - 1 = 31), so the --root-offsets-chunk-count check must reject it
+// before any pool is created.
+TEST(cli_tool, root_offsets_chunk_count_over_capacity_rejected)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    auto const fd = mkstemp(temppath);
+    if (-1 == fd) {
+        abort();
+    }
+    ::close(fd);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    if (-1 == truncate(temppath, 6ULL * 1024 * 1024 * 1024)) {
+        abort();
+    }
+    std::stringstream cout;
+    std::stringstream cerr;
+    std::string_view args[] = {
+        "monad-mpt",
+        "--storage",
+        temppath,
+        "--create",
+        "--root-offsets-chunk-count",
+        "32"};
+    int const retcode = main_impl(cout, cerr, args);
+    EXPECT_NE(retcode, 0);
+}
+
 namespace
 {
     // Helper: open the pool RO and read back the persisted kind via

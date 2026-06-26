@@ -1579,13 +1579,24 @@ opened.
                    "Number of chunks to allocate for storing root offsets. "
                    "Must be a positive number that is a power of 2. Default is "
                    "16. Each chunk holds approx 16.5M history entries.")
-                ->check([](std::string const &s) {
+                ->check([](std::string const &s) -> std::string {
                     auto const v = std::stoll(s);
                     if (v <= 0) {
                         return "Value must be positive";
                     }
                     if ((v & (v - 1)) != 0) {
                         return "Value must be a power of 2";
+                    }
+                    // The per-ring cnv_chunks[] list holds SIZE_ - 1 entries;
+                    // a larger count overflows the array during new-pool init.
+                    constexpr auto max_ring_chunks =
+                        monad::mpt::detail::db_metadata::root_offsets_ring_t::
+                            SIZE_ -
+                        1;
+                    if (static_cast<unsigned long long>(v) > max_ring_chunks) {
+                        return "Value must be <= " +
+                               std::to_string(max_ring_chunks) +
+                               " (root offsets ring capacity)";
                     }
                     return "";
                 });

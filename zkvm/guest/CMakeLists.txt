@@ -293,6 +293,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "file_db.cpp"
         "trie_db.cpp"
         "db/util.cpp"
+        "db/commit_builder.cpp"
         "ecrecover.cpp"
         "exec_event_ctypes_metadata.c"
         "exec_event_recorder.cpp"
@@ -331,6 +332,14 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # zkVM replacement for ecrecover.cpp — routes through zkvm_secp256k1_ecrecover.
     target_sources(monad_execution_ethereum PRIVATE
         "${MONAD_ROOT}/zkvm/category/execution/ethereum/core/ecrecover.cpp"
+    )
+
+    # validate_block.cpp is dropped (fiber dispatch, live-DB validation), but
+    # the guest still references the BlockError status-code domain
+    # (execute_block_zkvm / ffi.cpp return BlockError values). Provide just the
+    # value_mappings() definition that backs it.
+    target_sources(monad_execution_ethereum PRIVATE
+        "${MONAD_ROOT}/zkvm/category/execution/ethereum/validate_block.cpp"
     )
 
     # Reduced guest deps not present in the inherited host link list.
@@ -389,9 +398,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         PUBLIC "-idirafter${_boost_inc}")
 
     # Host-only sources in monad_execution_native: fuzzer/test harnesses,
-    # libsecp256k1, fiber dispatch, event-ring recorder, disk-page storage.
+    # libsecp256k1, fiber dispatch, event-ring recorder, disk-page storage,
+    # live-database commit.
     monad_zkvm_drop_sources(monad_execution_native
         "db/storage_page.cpp"
+        "db/page_commit_builder.cpp"
+        "db/commit_block_migration.cpp"
         "staking/fuzzer/staking_contract_machine.cpp"
         "staking/fuzzer/staking_contract_model.cpp"
         "staking/test/input_generation.cpp"

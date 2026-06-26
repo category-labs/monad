@@ -34,6 +34,10 @@ function(monad_compile_options target)
     target_compile_definitions(${target} PUBLIC "MONAD_CORE_FORCE_DEBUG_ASSERT=1")
   endif()
 
+  if(MONAD_COMPILER_BENCHMARKS)
+      target_compile_definitions(${target} PUBLIC "MONAD_COMPILER_BENCHMARKS=1")
+  endif()
+
   if(MONAD_COMPILER_STATS)
       target_compile_definitions(${target} PUBLIC "MONAD_COMPILER_STATS=1")
   endif()

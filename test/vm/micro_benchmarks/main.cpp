@@ -17,10 +17,19 @@
 
 #include <category/core/address.hpp>
 #include <category/core/int.hpp>
+#include <category/core/keccak.hpp>
+#include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#include <category/execution/ethereum/db/test/commit_simple.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/utils/evm-as/kernel-builder.hpp>
 
+#include <test/utils/json_state.hpp>
+
 #include <test/vm/utils/evm-as_utils.hpp>
+#include <test/vm/utils/test_block_hash_buffer.hpp>
+#include <test/vm/utils/test_host.hpp>
 #include <test/vm/vm/test_vm.hpp>
 
 #include <evmone/test/state/host.hpp>
@@ -103,7 +112,7 @@ using Assembler =
     std::function<KernelBuilder<traits>(EvmBuilder<traits> const &)>;
 
 using CalldataGenerator =
-    std::function<test::KernelCalldata(EvmBuilder<traits> const &)>;
+    std::function<vm::test::KernelCalldata(EvmBuilder<traits> const &)>;
 
 struct Benchmark
 {
@@ -320,40 +329,82 @@ print_results(std::vector<BenchmarkResult> const &results, OutputFormat format)
     }
 }
 
+static void init_execute_state(
+    Address const &code_address, Address const &sender_address,
+    std::vector<uint8_t> const &bytecode, monad::test::TestStateRef test_state)
+{
+    byte_string_view const raw_code{bytecode.data(), bytecode.size()};
+    auto const code_hash = to_bytes(keccak256(raw_code));
+    auto icode = make_shared_intercode(raw_code);
+    Code code{{code_hash, std::move(icode)}};
+
+    static constexpr uint256_t BALANCE = exp(uint256_t{10}, uint256_t{18});
+    Account code_account{
+        .balance = BALANCE,
+        .code_hash = code_hash,
+        .nonce = 1,
+    };
+    Account sender_account{
+        .balance = BALANCE,
+        .nonce = 1,
+    };
+
+    StateDelta code_delta{{std::nullopt, code_account}};
+    StateDelta sender_delta{{std::nullopt, sender_account}};
+    StateDeltas deltas{
+        {code_address, code_delta}, {sender_address, sender_delta}};
+
+    monad::test::commit_simple(
+        test_state->trie_db,
+        deltas,
+        code,
+        NULL_HASH_BLAKE3,
+        BlockHeader{.number = 1});
+}
+
 static double execute_iteration(
     evmc::VM &vm, MemoryPool &memory_pool, Address const &code_address,
-    std::vector<uint8_t> const &bytecode, test::KernelCalldata const &calldata)
+    std::vector<uint8_t> const &bytecode,
+    vm::test::KernelCalldata const &calldata)
 {
-    Address sender_address{200};
+    auto const json_state = monad::test::JsonState{};
+    auto const test_state = json_state.make_test_state();
 
-    evmone::test::TestState test_state{};
-    test_state.apply(evmone::state::StateDiff{
-        .modified_accounts =
-            {evmone::state::StateDiff::Entry{
-                 .addr = code_address,
-                 .nonce = 1,
-                 .balance = 10 * 30,
-                 .code = std::optional<evmc::bytes>{evmc::bytes(
-                     bytecode.data(), bytecode.size())},
-                 .modified_storage = {}},
-             evmone::state::StateDiff::Entry{
-                 .addr = sender_address,
-                 .nonce = 1,
-                 .balance = 10 * 30,
-                 .code = {},
-                 .modified_storage = {}}},
-        .deleted_accounts = {}});
-    evmone::state::State host_state{test_state};
-    evmone::state::BlockInfo block_info{};
-    evmone::test::TestBlockHashes block_hashes{};
-    evmone::state::Transaction transaction{};
-    auto host = evmone::state::Host(
-        to_evmc_revision(traits::evm_rev()),
-        vm,
-        host_state,
-        block_info,
-        block_hashes,
-        transaction);
+    vm::VM monad_vm;
+    monad_vm.debug_set_execute_override(
+        [](auto const *const,
+           auto *const,
+           auto const,
+           auto const *,
+           auto const *,
+           auto const) -> evmc::Result { return evmc::Result{}; });
+
+    Address const sender_address{200};
+
+    init_execute_state(code_address, sender_address, bytecode, test_state);
+
+    BlockState block_state{test_state->trie_db, monad_vm};
+    monad::State state{block_state, Incarnation{json_state.header.number, 1}};
+
+    monad::test::TestBlockHashBuffer block_hash_buffer{};
+    Transaction tx{};
+    Address const tx_sender{};
+    std::optional<uint256_t> base_fee_per_gas{};
+    std::vector<std::optional<Address>> authorities{};
+    BlockHeader const header{};
+    EthereumMainnet const chain{};
+
+    auto test_host = monad::test::TestHost<traits>{
+        block_hash_buffer,
+        state,
+        tx,
+        tx_sender,
+        base_fee_per_gas,
+        authorities,
+        header,
+        chain};
+    auto &host = test_host.get_evmc_host();
+
     auto *bvm = reinterpret_cast<BlockchainTestVM *>(vm.get_raw_pointer());
     auto const *interface = &host.get_interface();
     auto *ctx = host.to_context();
@@ -396,9 +447,9 @@ static double execute_iteration(
 static std::pair<double, double> execute_against_base(
     evmc::VM &vm, MemoryPool &memory_pool, Address const &base_code_address,
     std::vector<uint8_t> const &base_bytecode,
-    test::KernelCalldata const &base_calldata, Address const &code_address,
-    std::vector<uint8_t> const &bytecode, test::KernelCalldata const &calldata,
-    size_t iteration_count)
+    vm::test::KernelCalldata const &base_calldata, Address const &code_address,
+    std::vector<uint8_t> const &bytecode,
+    vm::test::KernelCalldata const &calldata, size_t iteration_count)
 {
     for (uint32_t i = 0; i < (iteration_count >> 4) + 1; ++i) {
         // warmup
@@ -568,6 +619,17 @@ static std::vector<EvmBuilder<traits>> const any_shift_math_builders = {
     EvmBuilder<traits>{}.shr(),
     EvmBuilder<traits>{}.sar()};
 
+static std::vector<EvmBuilder<traits>> const any_load_math_builders = {
+    EvmBuilder<traits>{}.mload(),
+    EvmBuilder<traits>{}.tload(),
+    EvmBuilder<traits>{}.sload()};
+
+static std::vector<EvmBuilder<traits>> const
+    effect_free_any_load_math_builders = {
+        EvmBuilder<traits>{}.pop().push(0),
+        EvmBuilder<traits>{}.pop().push(0),
+        EvmBuilder<traits>{}.pop().push(0)};
+
 static std::vector<EvmBuilder<traits>> operator*(
     std::vector<EvmBuilder<traits>> const &post, EvmBuilder<traits> const &pre)
 {
@@ -693,7 +755,7 @@ BenchmarkBuilder &BenchmarkBuilder::run_throughput_benchmark()
                 },
             .calldata_generate =
                 [this](auto const &) {
-                    return test::to_throughput_calldata<traits>(
+                    return vm::test::to_throughput_calldata<traits>(
                         num_inputs_, calldata_);
                 }});
 
@@ -739,10 +801,10 @@ BenchmarkBuilder &BenchmarkBuilder::run_latency_benchmark()
                 },
             .calldata_generate =
                 [this](auto const &seq) {
-                    return test::to_latency_calldata(
+                    return vm::test::to_latency_calldata(
                         seq,
                         num_inputs_,
-                        test::to_throughput_calldata<traits>(
+                        vm::test::to_throughput_calldata<traits>(
                             num_inputs_, calldata_));
                 }});
 
@@ -803,6 +865,26 @@ int main(int argc, char **argv)
             for (size_t i = 0; i < cd.size(); i += 64) {
                 store_be(&cd[i], uint256_t{off + i * 2});
                 store_be(&cd[i + 32], uint256_t{off + i * 2});
+            }
+            return cd;
+        })
+        .run_throughput_benchmark()
+        .run_latency_benchmark();
+
+    BenchmarkBuilder(
+        args,
+        results,
+        {.title = "LOAD, constant input",
+         .num_inputs = 1,
+         .has_output = true,
+         .iteration_count = 100,
+         .subject_seqs = any_load_math_builders,
+         .effect_free_subject_seqs = effect_free_any_load_math_builders})
+        .make_calldata([](size_t num_inputs) {
+            auto const off = KernelBuilder<traits>::free_memory_start;
+            std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
+            for (size_t i = 0; i < cd.size(); i += 32) {
+                store_be(&cd[i], uint256_t{off});
             }
             return cd;
         })

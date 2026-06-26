@@ -216,7 +216,7 @@ private:
             std::move(block_state).release();
         test::commit_simple(
             test_state->trie_db,
-            std::move(released_state),
+            std::move(*released_state),
             released_code,
             NULL_HASH_BLAKE3,
             BlockHeader{.number = block_number});

@@ -19,10 +19,12 @@ pub(crate) use self::bindings::{
     triedb_async_traverse_callback_triedb_async_traverse_callback_finished_early,
     triedb_async_traverse_callback_triedb_async_traverse_callback_finished_normally,
     triedb_async_traverse_callback_triedb_async_traverse_callback_value, triedb_close,
-    triedb_earliest_version, triedb_finalize, triedb_free_valset, triedb_latest_finalized_version,
-    triedb_latest_proposed_block_id, triedb_latest_proposed_version,
-    triedb_latest_verified_version, triedb_latest_voted_block_id, triedb_latest_voted_version,
-    triedb_open, triedb_poll, triedb_read, triedb_read_valset, triedb_traverse, TriedbRoInner,
+    triedb_compute_page_key, triedb_compute_slot_offset, triedb_decode_storage_page_slot,
+    triedb_earliest_version, triedb_finalize, triedb_free_valset, triedb_is_page_encoded,
+    triedb_latest_finalized_version, triedb_latest_proposed_block_id,
+    triedb_latest_proposed_version, triedb_latest_verified_version, triedb_latest_voted_block_id,
+    triedb_latest_voted_version, triedb_open, triedb_poll, triedb_read, triedb_read_valset,
+    triedb_traverse, TriedbRoInner,
 };
 pub use self::bindings::{validator_data, validator_set};
 

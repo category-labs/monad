@@ -18,6 +18,8 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/log.hpp>
 #include <category/core/nibble.h>
+#include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/monad/staking/read_valset.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -142,6 +144,58 @@ int triedb_read(
         *value = buf;
     }
     return value_len;
+}
+
+bool triedb_is_page_encoded(TriedbRoInner *const db)
+{
+    if (db == nullptr) {
+        return false;
+    }
+    return db->db.state_machine_type() == monad::mpt::state_machine_kind::monad;
+}
+
+void triedb_compute_page_key(
+    uint8_t const *const slot_key, uint8_t *const out_page_key)
+{
+    monad::bytes32_t key;
+    memcpy(key.bytes, slot_key, sizeof(key.bytes));
+    auto const page_key = monad::compute_page_key(key);
+    memcpy(out_page_key, page_key.bytes, sizeof(page_key.bytes));
+}
+
+uint8_t triedb_compute_slot_offset(uint8_t const *const slot_key)
+{
+    monad::bytes32_t key;
+    memcpy(key.bytes, slot_key, sizeof(key.bytes));
+    return monad::compute_slot_offset(key);
+}
+
+bool triedb_decode_storage_page_slot(
+    uint8_t const *const leaf, size_t const leaf_len, uint8_t const offset,
+    uint8_t *const out_value)
+{
+    if (leaf == nullptr || out_value == nullptr) {
+        return false;
+    }
+    monad::byte_string_view enc{leaf, leaf_len};
+    auto const page_bytes = monad::decode_storage_db_ignore_key(enc);
+    if (page_bytes.has_error()) {
+        return false;
+    }
+    auto const page = monad::decode_storage_page(page_bytes.value());
+    if (page.has_error()) {
+        return false;
+    }
+    // offset is the slot key's low 7 bits (0..SLOT_OFFSET_MASK). Reject an
+    // out-of-range value rather than masking it: masking would silently read
+    // the wrong slot (e.g. 0x80 -> slot 0) and hide a caller bug, and indexing
+    // past the 128-slot page would be UB.
+    if (offset > monad::storage_page_t::SLOT_OFFSET_MASK) {
+        return false;
+    }
+    auto const slot = page.value()[offset];
+    memcpy(out_value, slot.bytes, sizeof(slot.bytes));
+    return true;
 }
 
 namespace

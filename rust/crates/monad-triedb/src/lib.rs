@@ -85,6 +85,36 @@ fn validate_nibble_key(key: &[u8], key_len_nibbles: u8, label: &str) -> Option<(
     Some(())
 }
 
+/// Compute the storage page key for a 32-byte slot `key` on a page-encoded db
+/// (`page_key = slot >> 7`). This is the key the storage trie is looked up by;
+/// the returned page leaf is then decoded with `decode_storage_page_slot` at
+/// the offset from `compute_slot_offset`. Delegates to C++ so the page geometry
+/// lives in one place.
+pub fn compute_page_key(key: [u8; 32]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    unsafe { ffi::triedb_compute_page_key(key.as_ptr(), out.as_mut_ptr()) };
+    out
+}
+
+/// Compute the slot's offset within its page for a 32-byte slot `key` (the low
+/// 7 bits). This is the `offset` argument to `decode_storage_page_slot`.
+pub fn compute_slot_offset(key: [u8; 32]) -> u8 {
+    unsafe { ffi::triedb_compute_slot_offset(key.as_ptr()) }
+}
+
+/// Decode a page-encoded storage `leaf` (the value of a storage node on a
+/// page-encoded db, looked up with the page key) and return the 32-byte value
+/// of the slot at `offset` (the low 7 bits of the original slot key). Returns
+/// `None` on decode error. Reuses the C++ page decode via FFI so the page
+/// format lives in one place.
+pub fn decode_storage_page_slot(leaf: &[u8], offset: u8) -> Option<[u8; 32]> {
+    let mut out = [0u8; 32];
+    let ok = unsafe {
+        ffi::triedb_decode_storage_page_slot(leaf.as_ptr(), leaf.len(), offset, out.as_mut_ptr())
+    };
+    ok.then_some(out)
+}
+
 /// Converts a C `u64` sentinel value (`u64::MAX` = not found) to `Option<u64>`.
 fn parse_triedb_block_num(value: u64) -> Option<u64> {
     if value == u64::MAX {
@@ -212,6 +242,13 @@ impl TriedbHandle {
         }
 
         Some(Self { db_ptr })
+    }
+
+    /// True if the primary timeline is page-encoded (Monad state machine), in
+    /// which case storage is keyed by keccak(page_key) and leaves are encoded
+    /// pages (see `decode_storage_page_slot`).
+    pub fn is_page_encoded(&self) -> bool {
+        unsafe { ffi::triedb_is_page_encoded(self.db_ptr) }
     }
 
     pub fn read(&self, key: &[u8], key_len_nibbles: u8, block_id: u64) -> Option<Vec<u8>> {

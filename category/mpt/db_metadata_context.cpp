@@ -77,14 +77,24 @@ namespace detail
             "MONAD007 pool has more primary cnv chunks than MONAD008's "
             "SIZE_ cap allows — cannot migrate");
 
-        // 1. Stash the list triple (at the tail of the MONAD007 header)
-        //    before step 2's memmove, whose destination can overlap the
-        //    triple's source for chunk_count > 65501.
+        // 1. Stash the tail-of-header regions that step 2's chunk_info[]
+        //    memmove will overrun. Its destination grows up from
+        //    sizeof(db_metadata) and, for large chunk_count, runs over the
+        //    db_offsets..latest_proposed_block_id block (chunk_count > 64981)
+        //    and then the free/fast/slow list triple (chunk_count > 65501).
+        //    Both sources sit below the memmove source, so neither survives
+        //    the relocation in place — stash both before step 2.
         std::array<std::byte, DB_METADATA_LIST_TRIPLE_BYTES> list_triple_buf{};
         (void)memcpy(
             list_triple_buf.data(),
             m_bytes + MONAD007_LIST_TRIPLE_OFFSET,
             DB_METADATA_LIST_TRIPLE_BYTES);
+        std::array<std::byte, MONAD007_DB_OFFSETS_THROUGH_BLOCK_IDS_BYTES>
+            db_offsets_buf{};
+        (void)memcpy(
+            db_offsets_buf.data(),
+            m_bytes + MONAD007_DB_OFFSETS_OFFSET,
+            MONAD007_DB_OFFSETS_THROUGH_BLOCK_IDS_BYTES);
 
         // 2. Relocate chunk_info[]. memmove because src/dst may overlap for
         //    pathologically large chunk_count.
@@ -99,12 +109,13 @@ namespace detail
             list_triple_buf.data(),
             DB_METADATA_LIST_TRIPLE_BYTES);
 
-        // 4. Relocate db_offsets..latest_proposed_block_id, dropping
-        //    MONAD007's global auto_expire_version (sandwiched between
-        //    latest_proposed_version and latest_voted_block_id) since
+        // 4. Relocate db_offsets..latest_proposed_block_id from the stash,
+        //    dropping MONAD007's global auto_expire_version (sandwiched
+        //    between latest_proposed_version and latest_voted_block_id) since
         //    MONAD008 promotes it to a per-timeline field in
         //    timeline_state_t. Save the value, then copy the two halves
-        //    either side of the gap into the new gap-less layout.
+        //    either side of the gap into the new gap-less layout. Offsets
+        //    into db_offsets_buf are relative to MONAD007_DB_OFFSETS_OFFSET.
         static_assert(offsetof(db_metadata, db_offsets) == 312);
         static_assert(offsetof(db_metadata, secondary_timeline) == 432);
         constexpr size_t MONAD007_AUTO_EXPIRE_OFFSET =
@@ -117,15 +128,15 @@ namespace detail
         int64_t saved_auto_expire = 0;
         (void)memcpy(
             &saved_auto_expire,
-            m_bytes + MONAD007_AUTO_EXPIRE_OFFSET,
+            db_offsets_buf.data() + MONAD007_PRE_AUTO_EXPIRE_BYTES,
             sizeof(saved_auto_expire));
         (void)memcpy(
             m_bytes + offsetof(db_metadata, db_offsets),
-            m_bytes + MONAD007_DB_OFFSETS_OFFSET,
+            db_offsets_buf.data(),
             MONAD007_PRE_AUTO_EXPIRE_BYTES);
         (void)memcpy(
             m_bytes + offsetof(db_metadata, latest_voted_block_id),
-            m_bytes + MONAD007_AUTO_EXPIRE_OFFSET + 8,
+            db_offsets_buf.data() + MONAD007_PRE_AUTO_EXPIRE_BYTES + 8,
             MONAD007_POST_AUTO_EXPIRE_BYTES);
         // MONAD007 had no secondary, so the saved value belongs on what is now
         // the primary.
@@ -240,12 +251,14 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
     //   db_offsets..latest_proposed_block_id (128B)  524328 -> 312
     //
     // root_offsets and its cnv_chunks[0..30] are byte-identical between
-    // layouts. The block now holding root_offsets_state, secondary_timeline,
-    // secondary_timeline_state, identity bytes and pending_shrink_grow
-    // (offsets 296..4456) was MONAD007 padding and is
-    // zeroed so new fields start at idle defaults. Each copy migrates
-    // under hold_dirty; the memmove/memcpy/memset operations preserve
-    // their sources, so a crash-replay is idempotent.
+    // layouts and are not moved. root_offsets_state (296..312) is seeded in
+    // step 4 (auto_expire from MONAD007's global, state_machine_kind stamped
+    // ethereum). The block at [432, 4456) — secondary_timeline,
+    // secondary_timeline_state, the role/identity bytes and
+    // pending_shrink_grow — was MONAD007 padding and is zeroed so new fields
+    // start at idle defaults. Each copy migrates under hold_dirty; the
+    // memmove/memcpy/memset operations preserve their sources, so a
+    // crash-replay is idempotent.
     auto const is_previous_magic = [](detail::db_metadata const *m) {
         return 0 == memcmp(
                         m->magic,
@@ -395,6 +408,10 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
         MONAD_ASSERT(
             ring_total > 0 && (ring_total & (ring_total - 1)) == 0,
             "Number of cnv chunks for root offsets must be a power of two");
+        MONAD_ASSERT(
+            ring_total <= detail::db_metadata::root_offsets_ring_t::SIZE_ - 1,
+            "Number of cnv chunks for root offsets exceeds the per-ring "
+            "cnv_chunks[] capacity (SIZE_ - 1)");
 
         auto &a_storage = copies_[0].main->root_offsets.storage_;
         auto &b_storage = copies_[0].main->secondary_timeline.storage_;

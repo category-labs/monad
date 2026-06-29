@@ -86,6 +86,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
             2'000'000; // required to pass intrinsic gas validation check
         auto tx_validation_result = static_validate_transaction<traits>(
             tx,
+            sender_,
             std::nullopt /* 0 base fee to pass validation */,
             std::nullopt /* 0 blob fee to pass validation */,
             chain_.get_chain_id());

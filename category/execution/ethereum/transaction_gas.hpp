@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
@@ -30,12 +31,38 @@ MONAD_NAMESPACE_BEGIN
 struct Transaction;
 struct BlockHeader;
 
+struct Gas
+{
+    uint64_t regular;
+    uint64_t state;
+
+    constexpr Gas operator+(Gas const &rhs) const noexcept
+    {
+        return {regular + rhs.regular, state + rhs.state};
+    }
+
+    constexpr Gas &operator+=(Gas const &rhs) noexcept
+    {
+        regular += rhs.regular;
+        state += rhs.state;
+        return *this;
+    }
+};
+
 template <Traits traits>
 uint64_t g_data(Transaction const &) noexcept;
 
+// `sender` is needed only for EIP-2780's self-transfer exemption. When it is
+// nullopt (e.g. sender-independent static validation) the transaction is
+// assumed not to be a self-transfer, which is a conservative upper bound.
 template <Traits traits>
-uint64_t intrinsic_gas(Transaction const &) noexcept;
+uint64_t intrinsic_gas(Transaction const &, Address const &sender) noexcept;
 
+template <Traits traits>
+Gas intrinsic_regular_and_state_gas(
+    Transaction const &, Address const &sender) noexcept;
+
+template <Traits traits>
 uint64_t floor_data_gas(Transaction const &) noexcept;
 
 template <Traits traits>

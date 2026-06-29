@@ -49,12 +49,14 @@ namespace
 }
 
 // Intrinsic gas related functions
-inline constexpr auto g_txn_create(Transaction const &tx) noexcept
+template <Traits traits>
+inline constexpr Gas g_txn_create(Transaction const &tx) noexcept
 {
     if (!tx.to.has_value()) {
-        return 32'000u;
+        // TODO EIP-8038: increase regular gas to 11,000
+        return {.regular = 7'000u, .state = 25'000u};
     }
-    return 0u;
+    return {.regular = 0u, .state = 0u};
 }
 
 // EIP-2930
@@ -68,10 +70,12 @@ inline constexpr auto g_access_and_storage(Transaction const &tx) noexcept
 }
 
 // EIP-7702
-inline constexpr auto g_authorization(Transaction const &tx) noexcept
+inline constexpr Gas g_authorization(Transaction const &tx) noexcept
 {
     constexpr uint64_t per_empty_account_cost = 25'000u;
-    return per_empty_account_cost * tx.authorization_list.size();
+    return {
+        .regular = per_empty_account_cost * tx.authorization_list.size(),
+        .state = 0u};
 }
 
 inline constexpr uint64_t g_extra_cost_init(Transaction const &tx) noexcept
@@ -106,20 +110,44 @@ uint64_t g_data(Transaction const &tx) noexcept
 
 EXPLICIT_TRAITS(g_data);
 
+constexpr uint64_t TX_BASE_COST = 12'000;
+
 template <Traits traits>
-uint64_t intrinsic_gas(Transaction const &tx) noexcept
+inline Gas intrinsic_regular_and_state_gas(
+    Transaction const &tx, Address const &sender) noexcept
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
 
-    uint64_t gas = 21'000 + g_data<traits>(tx) + g_txn_create(tx);
+    Gas gas{};
+
+    gas.regular += g_data<traits>(tx);
+    gas += g_txn_create<traits>(tx);
+
+    if constexpr (traits::eip_2780_active()) {
+        constexpr uint64_t COLD_ACCOUNT_ACCESS = 2'600u;
+        constexpr uint64_t TX_VALUE_COST = 4'244u;
+
+        gas.regular += TX_BASE_COST;
+
+        if (tx.to.has_value() && tx.to.value() != sender) {
+            gas.regular += COLD_ACCOUNT_ACCESS;
+            if (tx.value > 0) {
+                gas.regular += TX_VALUE_COST;
+            }
+        }
+        // TODO EIP-7708 log cost charge
+    }
+    else {
+        gas.regular += 21'000u;
+    }
 
     // EIP-2930: access-list and storage-key cost (Berlin)
     if constexpr (traits::evm_rev() >= MONAD_ETH_BERLIN) {
-        gas += g_access_and_storage(tx);
+        gas.regular += g_access_and_storage(tx);
     }
     // EIP-3860: per-word initcode cost (Shanghai)
     if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
-        gas += g_extra_cost_init(tx);
+        gas.regular += g_extra_cost_init(tx);
     }
     // EIP-7702: authorization-list cost (Prague)
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
@@ -129,13 +157,28 @@ uint64_t intrinsic_gas(Transaction const &tx) noexcept
     return gas;
 }
 
+EXPLICIT_TRAITS(intrinsic_regular_and_state_gas);
+
+template <Traits traits>
+uint64_t intrinsic_gas(Transaction const &tx, Address const &sender) noexcept
+{
+    Gas const gas = intrinsic_regular_and_state_gas<traits>(tx, sender);
+    return gas.regular + gas.state;
+}
+
 EXPLICIT_TRAITS(intrinsic_gas);
 
+template <Traits traits>
 uint64_t floor_data_gas(Transaction const &tx) noexcept
 {
     auto const [zeros, nonzeros] = tokens_in_calldata(tx);
-    return 21'000 + (zeros * 10u + nonzeros * 40u);
+    constexpr uint64_t base =
+        traits::eip_2780_active() ? TX_BASE_COST : 21'000u;
+    // TODO: EIP-7976 Increase Calldata Floor Cost
+    return base + (zeros * 10u + nonzeros * 40u);
 }
+
+EXPLICIT_TRAITS(floor_data_gas);
 
 inline constexpr uint256_t priority_fee_per_gas(
     Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept

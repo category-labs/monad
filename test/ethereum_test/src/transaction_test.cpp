@@ -54,14 +54,14 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 template <Traits traits>
 void process_transaction(Transaction const &txn, nlohmann::json const &expected)
 {
-    if (auto const result = static_validate_transaction<traits>(
-            txn, std::nullopt, std::nullopt, 1);
-        result.has_error()) {
+    auto const sender = recover_sender(txn);
+    if (!sender.has_value()) {
         EXPECT_TRUE(expected.contains("exception"));
     }
     else {
-        auto const sender = recover_sender(txn);
-        if (!sender.has_value()) {
+        if (auto const result = static_validate_transaction<traits>(
+                txn, sender.value(), std::nullopt, std::nullopt, 1);
+            result.has_error()) {
             EXPECT_TRUE(expected.contains("exception"));
         }
         else {
@@ -72,7 +72,7 @@ void process_transaction(Transaction const &txn, nlohmann::json const &expected)
 
             // check gas
             EXPECT_EQ(
-                intrinsic_gas<traits>(txn),
+                intrinsic_gas<traits>(txn, sender.value()),
                 integer_from_json<uint64_t>(expected.at("intrinsicGas")));
         }
     }

@@ -23,6 +23,7 @@
 #include <chrono>
 #include <mutex>
 #include <string>
+#include <utility>
 
 #include <unordered_set>
 
@@ -84,7 +85,9 @@ namespace monad::vm::utils
             if (!hmap_.insert(acc, {key, HashMapValue{value, weight}})) {
                 ListNode *const node = &*acc;
                 delta_weight -= node->second.cache_weight_;
-                node->second.value_ = value;
+                using std::swap;
+                Value tmp = value;
+                swap(node->second.value_, tmp);
                 node->second.cache_weight_ = weight;
                 try_update_lru(node);
                 acc.release();

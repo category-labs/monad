@@ -270,6 +270,38 @@ TEST_F(LruWeightCacheTest, clear)
     }
 }
 
+TEST(LruWeightCacheOverwrite, overwrite_with_smaller_value_does_not_undercount)
+{
+    // A value whose footprint tracks its buffer capacity, mirroring
+    // storage_page_t::byte_size().
+    struct HeapBuffer
+    {
+        std::vector<uint8_t> buf;
+
+        uint32_t footprint() const
+        {
+            return static_cast<uint32_t>(sizeof(HeapBuffer) + buf.capacity());
+        }
+    };
+
+    LruWeightCache<uint32_t, HeapBuffer> cache{uint32_t{1} << 20};
+    uint32_t const key = 7;
+
+    HeapBuffer big;
+    big.buf.resize(4096);
+    cache.insert(key, big, big.footprint());
+
+    // Overwrite with a smaller value. Plain copy-assignment would keep the
+    // large buffer while charging only the small weight, so the cache's
+    // accounted weight would undercount the memory the entry actually holds.
+    HeapBuffer const small;
+    cache.insert(key, small, small.footprint());
+
+    LruWeightCache<uint32_t, HeapBuffer>::ConstAccessor acc;
+    ASSERT_TRUE(cache.find(acc, key));
+    EXPECT_EQ(cache.approx_weight(), acc->second.value_.footprint());
+}
+
 TEST_F(LruWeightCacheTest, is_consistent)
 {
     for (uint32_t i = 0; i < 20; ++i) {

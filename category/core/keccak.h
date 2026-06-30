@@ -15,16 +15,17 @@
 
 #pragma once
 
+#include <stddef.h>
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-#define KECCAK256_SIZE 32
+constexpr size_t KECCAK256_SIZE = 32;
 
-void keccak256(
-    unsigned char const *in, unsigned long len,
-    unsigned char out[KECCAK256_SIZE]);
+void keccak256(void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
 
 #ifdef __cplusplus
 }

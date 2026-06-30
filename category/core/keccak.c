@@ -27,8 +27,7 @@ extern void
 SHA3_squeeze(uint64_t A[5][5], unsigned char *out, size_t len, size_t r);
 
 void keccak256(
-    unsigned char const *const in, unsigned long const len,
-    unsigned char out[KECCAK256_SIZE])
+    void const *const in, size_t const len, uint8_t out[KECCAK256_SIZE])
 {
     uint64_t A[5][5];
     unsigned char blk[BLOCK_SIZE];
@@ -37,7 +36,7 @@ void keccak256(
 
     size_t const rem = SHA3_absorb(A, in, len, BLOCK_SIZE);
     if (rem > 0) {
-        __builtin_memcpy(blk, &in[len - rem], rem);
+        __builtin_memcpy(blk, (uint8_t const *)in + len - rem, rem);
     }
     __builtin_memset(&blk[rem], 0, BLOCK_SIZE - rem);
     blk[rem] = 0x01;

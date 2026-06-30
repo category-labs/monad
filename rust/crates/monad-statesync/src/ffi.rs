@@ -16,6 +16,7 @@
 pub use self::bindings::{
     monad_chain_config, monad_chain_config_CHAIN_CONFIG_ETHEREUM_MAINNET,
     monad_chain_config_CHAIN_CONFIG_HIVE_NET, monad_chain_config_CHAIN_CONFIG_MONAD_DEVNET,
+    monad_chain_config_CHAIN_CONFIG_MONAD_DEVNET_FORK,
     monad_chain_config_CHAIN_CONFIG_MONAD_MAINNET, monad_chain_config_CHAIN_CONFIG_MONAD_TESTNET,
     monad_statesync_client, monad_statesync_client_context, monad_statesync_client_handle_done,
     monad_statesync_client_handle_target, monad_statesync_client_handle_upsert, monad_sync_done,

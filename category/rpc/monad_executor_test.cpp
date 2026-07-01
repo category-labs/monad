@@ -7911,22 +7911,19 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
     monad_executor_destroy(executor);
 }
 
-// Tests that failure to apply state overrides fails gracefully.
-TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
+// Tests that state overrides can be applied after prior simulated mutations
+// in the same eth_simulate request.
+TEST_F(EthCallFixture, eth_simulate_v1_state_override)
 {
     static constexpr Address contract =
         0x00000000000000000000000000000000deadbeef_address;
     static constexpr Address sender =
         0x00000000000000000000000000000000feedface_address;
 
-    // Idea: We deploy a simple contract that does an SSTORE, then we call it
-    // such that it mutates the `BlockState` object held by the eth_simulate_v1
-    // context. Subsequently, we call the same contract again with a state
-    // override for the mutated field, which causes `block_state.can_merge` to
-    // fail because the override is incompatible with the mutated state.
-    // NOTE(dhil): This simulation pattern should probably be allowed, but for
-    // now we just want to check that it fails gracefully with a clear error
-    // message.
+    // Idea: We deploy a simple contract that does an SSTORE, then simulate two
+    // calls in consecutive blocks. The first call mutates storage in the
+    // shared simulation state, and the second call applies a full `state`
+    // override for that same slot. This should succeed.
 
     // The SSTORE contract.
     using namespace monad::vm::utils;
@@ -7972,6 +7969,12 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
     bytes32_t const override_value =
         0x00000000000000000000000000000000000000000000000000000000000000FF_bytes32;
 
+    auto const sload_log_eb =
+        evm_as::latest().sload(0).push0().mstore().log0(0, 32).stop();
+    ASSERT_TRUE(evm_as::validate(sload_log_eb));
+    std::vector<uint8_t> sload_log_code{};
+    evm_as::compile(sload_log_eb, sload_log_code);
+
     add_override_address_at(
         state_override, 1, contract.bytes, sizeof(contract.bytes));
     set_override_state_at(
@@ -7983,6 +7986,13 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
         sizeof(override_key.bytes),
         override_value.bytes,
         sizeof(override_value.bytes));
+    set_override_code_at(
+        state_override,
+        1,
+        contract.bytes,
+        sizeof(contract.bytes),
+        sload_log_code.data(),
+        sload_log_code.size());
 
     auto const rlp_senders = to_vec(rlp::encode_list2(
         rlp::encode_list2(rlp::encode_address(std::make_optional(sender))),
@@ -8034,9 +8044,516 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
-    ASSERT_NE(ctx.result->message, nullptr);
-    EXPECT_STREQ(ctx.result->message, "failed to apply state override");
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->message, nullptr);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 2);
+    ASSERT_EQ(output[0]["calls"].size(), 1);
+    ASSERT_EQ(output[1]["calls"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(output[1]["calls"][0]["status"], "0x1");
+
+    auto const expected_override_data =
+        std::format("0x{}", to_hex(override_value));
+    ASSERT_EQ(output[1]["calls"][0]["logs"].size(), 1);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["data"], expected_override_data);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["topics"].size(), 0);
+
+    // Simulation should not affect persisted chain state.
+    auto const persisted_value =
+        tdb.read_storage(contract, Incarnation{0, 0}, override_key);
+    EXPECT_EQ(persisted_value, bytes32_t{});
+
+    monad_block_override_vec_destroy(block_override);
+    monad_state_override_vec_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+// Similar to `eth_simulate_v1_state_override`, but use state_diff on the second
+// simulated block.
+TEST_F(EthCallFixture, eth_simulate_v1_state_diff_override)
+{
+    static constexpr Address contract =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address sender =
+        0x00000000000000000000000000000000feedface_address;
+
+    using namespace monad::vm::utils;
+    auto const store_eb = evm_as::latest().sstore(0, 1).stop();
+    ASSERT_TRUE(evm_as::validate(store_eb));
+    std::vector<uint8_t> code{};
+    evm_as::compile(store_eb, code);
+    byte_string const store_contract{code.data(), code.size()};
+    bytes32_t const store_contract_hash = to_bytes(keccak256(store_contract));
+    vm::SharedIntercode const store_icode =
+        vm::make_shared_intercode(store_contract);
+
+    commit_sequential(
+        tdb,
+        sd({{contract,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{1'000'000},
+                          .code_hash = store_contract_hash,
+                          .nonce = 0}}}},
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 1'000'000, .nonce = 0}}}}}),
+        Code{{store_contract_hash, store_icode}},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, sd({}), {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    auto *const state_override = monad_state_override_vec_create(2);
+    auto *const block_override = monad_block_override_vec_create(2);
+
+    bytes32_t const override_key = 0x00_bytes32;
+    bytes32_t const override_value =
+        0x00000000000000000000000000000000000000000000000000000000000000FF_bytes32;
+
+    auto const sload_log_eb =
+        evm_as::latest().sload(0).push0().mstore().log0(0, 32).stop();
+    ASSERT_TRUE(evm_as::validate(sload_log_eb));
+    std::vector<uint8_t> sload_log_code{};
+    evm_as::compile(sload_log_eb, sload_log_code);
+
+    add_override_address_at(
+        state_override, 1, contract.bytes, sizeof(contract.bytes));
+    set_override_state_diff_at(
+        state_override,
+        1,
+        contract.bytes,
+        sizeof(contract.bytes),
+        override_key.bytes,
+        sizeof(override_key.bytes),
+        override_value.bytes,
+        sizeof(override_value.bytes));
+    set_override_code_at(
+        state_override,
+        1,
+        contract.bytes,
+        sizeof(contract.bytes),
+        sload_log_code.data(),
+        sload_log_code.size());
+
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender))),
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+
+    Transaction const call_tx{
+        .gas_limit = 200'000'000,
+        .to = contract,
+    };
+    auto const encoded_call_tx = rlp::encode_transaction(call_tx);
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(
+            rlp::encode_string2(byte_string_view(encoded_call_tx))),
+        rlp::encode_list2(
+            rlp::encode_string2(byte_string_view(encoded_call_tx)))));
+
+    BlockHeader const header{
+        .number = 255,
+        .gas_limit = 200'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        255,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        state_override,
+        block_override,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->message, nullptr);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 2);
+    ASSERT_EQ(output[0]["calls"].size(), 1);
+    ASSERT_EQ(output[1]["calls"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(output[1]["calls"][0]["status"], "0x1");
+
+    auto const expected_override_data =
+        std::format("0x{}", to_hex(override_value));
+    ASSERT_EQ(output[1]["calls"][0]["logs"].size(), 1);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["data"], expected_override_data);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["topics"].size(), 0);
+
+    // Simulation should not affect persisted chain state.
+    auto const persisted_value =
+        tdb.read_storage(contract, Incarnation{0, 0}, override_key);
+    EXPECT_EQ(persisted_value, bytes32_t{});
+
+    monad_block_override_vec_destroy(block_override);
+    monad_state_override_vec_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+// Similar two-block mutation pattern, but with a balance override on sender
+// in the second simulated block.
+TEST_F(EthCallFixture, eth_simulate_v1_balance_override)
+{
+    static constexpr Address contract =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address sender =
+        0x00000000000000000000000000000000feedface_address;
+
+    using namespace monad::vm::utils;
+    auto const store_eb = evm_as::latest().sstore(0, 1).stop();
+    ASSERT_TRUE(evm_as::validate(store_eb));
+    std::vector<uint8_t> code{};
+    evm_as::compile(store_eb, code);
+    byte_string const store_contract{code.data(), code.size()};
+    bytes32_t const store_contract_hash = to_bytes(keccak256(store_contract));
+    vm::SharedIntercode const store_icode =
+        vm::make_shared_intercode(store_contract);
+
+    auto const balance_log_eb =
+        evm_as::latest().caller().balance().push0().mstore().log0(0, 32).stop();
+    ASSERT_TRUE(evm_as::validate(balance_log_eb));
+    std::vector<uint8_t> balance_log_code{};
+    evm_as::compile(balance_log_eb, balance_log_code);
+
+    commit_sequential(
+        tdb,
+        sd({{contract,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{1'000'000},
+                          .code_hash = store_contract_hash,
+                          .nonce = 0}}}},
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 1'000'000, .nonce = 0}}}}}),
+        Code{{store_contract_hash, store_icode}},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, sd({}), {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    auto *const state_override = monad_state_override_vec_create(2);
+    auto *const block_override = monad_block_override_vec_create(2);
+
+    uint256_t const sender_balance_override_wei =
+        uint256_t{100} * uint256_t{1'000'000'000'000'000'000ULL};
+    bytes32_t const sender_balance_override =
+        store_be_as<bytes32_t>(sender_balance_override_wei);
+    add_override_address_at(
+        state_override, 1, sender.bytes, sizeof(sender.bytes));
+    set_override_balance_at(
+        state_override,
+        1,
+        sender.bytes,
+        sizeof(sender.bytes),
+        sender_balance_override.bytes,
+        sizeof(sender_balance_override.bytes));
+
+    add_override_address_at(
+        state_override, 1, contract.bytes, sizeof(contract.bytes));
+    set_override_code_at(
+        state_override,
+        1,
+        contract.bytes,
+        sizeof(contract.bytes),
+        balance_log_code.data(),
+        balance_log_code.size());
+
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender))),
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+
+    Transaction const call_tx{
+        .gas_limit = 200'000'000,
+        .to = contract,
+    };
+    uint256_t const second_block_call_value = uint256_t{2'000'000};
+    Transaction const balance_log_tx{
+        .gas_limit = 200'000'000,
+        .value = second_block_call_value,
+        .to = contract,
+    };
+    auto const encoded_call_tx = rlp::encode_transaction(call_tx);
+    auto const encoded_balance_log_tx = rlp::encode_transaction(balance_log_tx);
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(
+            rlp::encode_string2(byte_string_view(encoded_call_tx))),
+        rlp::encode_list2(
+            rlp::encode_string2(byte_string_view(encoded_balance_log_tx)))));
+
+    BlockHeader const header{
+        .number = 255,
+        .gas_limit = 200'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        255,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        state_override,
+        block_override,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->message, nullptr);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 2);
+    ASSERT_EQ(output[0]["calls"].size(), 1);
+    ASSERT_EQ(output[1]["calls"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(output[1]["calls"][0]["status"], "0x1");
+
+    uint256_t const expected_logged_balance =
+        sender_balance_override_wei - second_block_call_value;
+    auto const expected_logged_balance_data = std::format(
+        "0x{}", to_hex(store_be_as<bytes32_t>(expected_logged_balance)));
+    ASSERT_EQ(output[1]["calls"][0]["logs"].size(), 1);
+    EXPECT_EQ(
+        output[1]["calls"][0]["logs"][0]["data"], expected_logged_balance_data);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["topics"].size(), 0);
+
+    // Simulation should not affect persisted chain state.
+    auto const sender_account = tdb.read_account(sender);
+    ASSERT_TRUE(sender_account.has_value());
+    EXPECT_EQ(sender_account->balance, uint256_t{1'000'000});
+
+    monad_block_override_vec_destroy(block_override);
+    monad_state_override_vec_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+// Similar two-block mutation pattern, but with a nonce override on sender in
+// the second simulated block.
+TEST_F(EthCallFixture, eth_simulate_v1_nonce_override)
+{
+    static constexpr Address contract =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address sender =
+        0x00000000000000000000000000000000feedface_address;
+
+    using namespace monad::vm::utils;
+    auto const store_eb = evm_as::latest().sstore(0, 1).stop();
+    ASSERT_TRUE(evm_as::validate(store_eb));
+    std::vector<uint8_t> code{};
+    evm_as::compile(store_eb, code);
+    byte_string const store_contract{code.data(), code.size()};
+    bytes32_t const store_contract_hash = to_bytes(keccak256(store_contract));
+    vm::SharedIntercode const store_icode =
+        vm::make_shared_intercode(store_contract);
+
+    // CREATE tx init code logs the created contract address and deploys empty
+    // runtime code. We use this to test that the nonce override is applied to
+    // the CREATE tx sender.
+    auto const create_log_init_eb =
+        evm_as::latest().address().push0().mstore().log0(0, 32).return_(0, 0);
+    ASSERT_TRUE(evm_as::validate(create_log_init_eb));
+    std::vector<uint8_t> create_log_init_code{};
+    evm_as::compile(create_log_init_eb, create_log_init_code);
+    byte_string const create_log_init_tx_data{
+        create_log_init_code.data(), create_log_init_code.size()};
+
+    commit_sequential(
+        tdb,
+        sd({{contract,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{1'000'000},
+                          .code_hash = store_contract_hash,
+                          .nonce = 0}}}},
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = uint256_t{100} *
+                                     uint256_t{1'000'000'000'000'000'000ULL},
+                          .nonce = 100}}}}}),
+        Code{{store_contract_hash, store_icode}},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, sd({}), {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    auto *const state_override = monad_state_override_vec_create(2);
+    auto *const block_override = monad_block_override_vec_create(2);
+
+    add_override_address_at(
+        state_override, 1, sender.bytes, sizeof(sender.bytes));
+    set_override_nonce_at(
+        state_override, 1, sender.bytes, sizeof(sender.bytes), 99);
+
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender))),
+        rlp::encode_list2(
+            rlp::encode_address(std::make_optional(sender)),
+            rlp::encode_address(std::make_optional(sender)))));
+
+    Transaction const call_tx{
+        .gas_limit = 200'000'000,
+        .to = contract,
+    };
+    Transaction const create_tx{
+        .gas_limit = 200'000'000,
+        .data = create_log_init_tx_data,
+    };
+
+    auto const encoded_call_tx = rlp::encode_transaction(call_tx);
+    auto const encoded_create_tx = rlp::encode_transaction(create_tx);
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(
+            rlp::encode_string2(byte_string_view(encoded_call_tx))),
+        rlp::encode_list2(
+            rlp::encode_string2(byte_string_view(encoded_create_tx)),
+            rlp::encode_string2(byte_string_view(encoded_create_tx)))));
+
+    BlockHeader const header{
+        .number = 255,
+        .gas_limit = 200'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        255,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        state_override,
+        block_override,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->message, nullptr);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 2);
+    ASSERT_EQ(output[0]["calls"].size(), 1);
+    ASSERT_EQ(output[1]["calls"].size(), 2);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(output[1]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(output[1]["calls"][1]["status"], "0x1");
+
+    auto const format_log_data_for_address = [](Address const &addr) {
+        bytes32_t data{};
+        std::memcpy(&data.bytes[12], addr.bytes, sizeof(addr.bytes));
+        return std::format("0x{}", to_hex(data));
+    };
+
+    // Check that the CREATE txs created the expected contract addresses, which
+    // should be derived from the overridden nonce of 99.
+    auto const created_0 = create_contract_address(sender, 99);
+    auto const created_1 = create_contract_address(sender, 100);
+
+    ASSERT_EQ(output[1]["calls"][0]["logs"].size(), 1);
+    ASSERT_EQ(output[1]["calls"][1]["logs"].size(), 1);
+    EXPECT_EQ(
+        output[1]["calls"][0]["logs"][0]["data"],
+        format_log_data_for_address(created_0));
+    EXPECT_EQ(
+        output[1]["calls"][1]["logs"][0]["data"],
+        format_log_data_for_address(created_1));
+    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["topics"].size(), 0);
+    EXPECT_EQ(output[1]["calls"][1]["logs"][0]["topics"].size(), 0);
+
+    // Simulation should not affect persisted chain state.
+    auto const sender_account = tdb.read_account(sender);
+    ASSERT_TRUE(sender_account.has_value());
+    EXPECT_EQ(sender_account->nonce, 100);
 
     monad_block_override_vec_destroy(block_override);
     monad_state_override_vec_destroy(state_override);

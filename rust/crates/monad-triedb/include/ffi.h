@@ -38,42 +38,30 @@ int triedb_read(
     TriedbRoInner *, uint8_t const *key, uint8_t key_len_nibbles,
     uint8_t const **value, uint64_t block_id);
 
-typedef void (*triedb_async_read_callback_fn)(
-    uint8_t const *value, int length, void *user);
-// calls (*completed) when read is
-// complete. length is -1 if key not
-// found. If >=0, returns length of
-// value. Call triedb_finalize when
-// done with the value.
+typedef struct CallbackContext CallbackContext;
+
+void monad_rust_triedb_callback_async_read(
+    CallbackContext *ctx, uint8_t const *value, size_t value_len);
+void monad_rust_triedb_callback_traverse_value(
+    CallbackContext const *ctx, uint8_t const *key, size_t key_len,
+    uint8_t const *value, size_t value_len);
+void monad_rust_triedb_callback_traverse_finished(
+    CallbackContext *ctx, bool completed);
+
 void triedb_async_read(
     TriedbRoInner *, uint8_t const *key, uint8_t key_len_nibbles,
-    uint64_t block_id, triedb_async_read_callback_fn callback, void *user);
+    uint64_t block_id, CallbackContext *ctx);
 
-// traverse the trie.
-enum triedb_async_traverse_callback
-{
-    triedb_async_traverse_callback_value,
-    triedb_async_traverse_callback_finished_normally,
-    triedb_async_traverse_callback_finished_early
-};
-
-typedef void (*triedb_async_traverse_callback_fn)(
-    enum triedb_async_traverse_callback kind, void *context,
-    uint8_t const *path, size_t path_len, uint8_t const *value,
-    size_t value_len);
 bool triedb_traverse(
     TriedbRoInner *, uint8_t const *key, uint8_t key_len_nibbles,
-    uint64_t block_id, void *context,
-    triedb_async_traverse_callback_fn callback);
+    uint64_t block_id, CallbackContext *ctx);
 void triedb_async_traverse(
     TriedbRoInner *, uint8_t const *key, uint8_t key_len_nibbles,
-    uint64_t block_id, void *context,
-    triedb_async_traverse_callback_fn callback);
+    uint64_t block_id, CallbackContext *ctx);
 void triedb_async_ranged_get(
     TriedbRoInner *, uint8_t const *prefix_key, uint8_t prefix_len_nibbles,
     uint8_t const *min_key, uint8_t min_len_nibbles, uint8_t const *max_key,
-    uint8_t max_len_nibbles, uint64_t block_id, void *context,
-    triedb_async_traverse_callback_fn callback);
+    uint8_t max_len_nibbles, uint64_t block_id, CallbackContext *ctx);
 // pumps async reads, processing no
 // more than count maximum, returning
 // how many were processed.

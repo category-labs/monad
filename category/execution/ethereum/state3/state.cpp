@@ -732,4 +732,20 @@ bool State::record_balance_constraint_for_debit(
     return false;
 }
 
+State::Stats &State::stats() noexcept
+{
+    return stats_;
+}
+
+State::Stats const &State::stats() const noexcept
+{
+    return stats_;
+}
+
+void State::Stats::add_growth_gas(uint64_t const g) noexcept
+{
+    MONAD_DEBUG_ASSERT(g <= std::numeric_limits<uint64_t>::max() - growth_gas);
+    growth_gas += g;
+}
+
 MONAD_NAMESPACE_END

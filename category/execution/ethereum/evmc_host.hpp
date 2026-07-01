@@ -104,6 +104,8 @@ public:
     virtual PageStorageStatus update_page(
         evmc::address const &, evmc::bytes32 const &page_key,
         evmc_storage_status) noexcept override;
+
+    virtual uint64_t *growth_gas_ptr() noexcept override;
 };
 
 static_assert(sizeof(EvmcHostBase) == 72);

@@ -126,11 +126,10 @@ Result<void> process_monad_block(
     ankerl::unordered_dense::segmented_set<Address> const
         &parent_senders_and_authorities,
     ankerl::unordered_dense::segmented_set<Address>
-        &senders_and_authorities_out)
+        &senders_and_authorities_out,
+    std::chrono::steady_clock::time_point const block_begin,
+    std::chrono::microseconds const blr_time)
 {
-    [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
-    auto const block_begin = std::chrono::steady_clock::now();
-
     // This is exactly the same as the recording call in runloop_ethereum.cpp;
     // even though these are historical Monad block inputs, we don't have the
     // additional information from the consensus header here (the consensus
@@ -261,8 +260,12 @@ Result<void> process_monad_block(
 
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer
+    auto const fin_begin = std::chrono::steady_clock::now();
     db.finalize(block.header.number, block_id);
     db.update_verified_block(block.header.number);
+    [[maybe_unused]] auto const fin_time =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - fin_begin);
     exec_output.eth_block_hash =
         to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
     block_hash_buffer.set(
@@ -273,32 +276,40 @@ Result<void> process_monad_block(
     [[maybe_unused]] auto const block_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - block_begin);
+    uint64_t sum_tx_gas_limit = 0;
+    for (auto const &tx : block.transactions) {
+        sum_tx_gas_limit += tx.gas_limit;
+    }
     LOG_INFO(
-        "__exec_block,bl={:8},ts={}"
+        "__exec_block,bl={:8}"
         ",tx={:5},rt={:4},rtp={:5.2f}%"
-        ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
-        ",gas={:9},gpse={:4},gps={:3}{}{}{}",
+        ",blr={:>7},sr={:>7},txe={:>8},cmt={:>8},fin={:>7},tot={:>8}"
+        ",tpse={:5},tps={:5}"
+        ",gase={:9},gasu={:9},gasc={:9},gas={:9},gasl={:9},gpse={:4},gps={:4}{}"
+        "{}{}",
         block.header.number,
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            block_start.time_since_epoch())
-            .count(),
         block.transactions.size(),
         block_metrics.num_retries,
         100.0 * (double)block_metrics.num_retries /
             std::max(1.0, (double)block.transactions.size()),
+        blr_time,
         sender_recovery_time,
         block_metrics.tx_exec_time,
         commit_time,
+        fin_time,
         block_time,
         block.transactions.size() * 1'000'000 /
             (uint64_t)std::max(1L, block_metrics.tx_exec_time.count()),
         block.transactions.size() * 1'000'000 /
             (uint64_t)std::max(1L, block_time.count()),
+        block_metrics.gas_exec,
+        block_metrics.gas_used,
         exec_output.eth_header.gas_used,
-        exec_output.eth_header.gas_used /
+        exec_output.eth_header.gas_used,
+        sum_tx_gas_limit,
+        block_metrics.gas_exec /
             (uint64_t)std::max(1L, block_metrics.tx_exec_time.count()),
-        exec_output.eth_header.gas_used /
-            (uint64_t)std::max(1L, block_time.count()),
+        block_metrics.gas_exec / (uint64_t)std::max(1L, block_time.count()),
         db.print_stats(),
         vm.print_and_reset_block_counts(),
         vm.print_compiler_stats());
@@ -397,8 +408,12 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     }
 
     while (block_num <= end_block_num && stop == 0) {
+        auto const block_begin = std::chrono::steady_clock::now();
         Block block;
         get_block_with_retry(block_db, block_num, block, block_db_timeout);
+        auto const blr_time =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - block_begin);
 
         bytes32_t const block_id = bytes32_t{block.header.number};
         monad_revision const rev =
@@ -432,7 +447,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
                 enable_tracing,
                 grandparent_senders_and_authorities,
                 parent_senders_and_authorities,
-                senders_and_authorities);
+                senders_and_authorities,
+                block_begin,
+                blr_time);
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
 

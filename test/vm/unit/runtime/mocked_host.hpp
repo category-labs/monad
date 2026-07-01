@@ -207,5 +207,10 @@ namespace monad::vm::test
         {
             return last_write_page_status_;
         }
+
+        uint64_t *growth_gas_ptr() noexcept override
+        {
+            return nullptr;
+        }
     };
 }

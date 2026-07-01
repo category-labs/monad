@@ -208,6 +208,11 @@ namespace
         {
             return {};
         }
+
+        uint64_t *growth_gas_ptr() noexcept override
+        {
+            return nullptr;
+        }
     };
 }
 

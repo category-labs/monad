@@ -296,6 +296,10 @@ endif()
 # libs
 # ##############################################################################
 
+include(cmake/boost_outcome_status_code_overlay.cmake)
+monad_configure_boost_outcome_status_code_overlay(
+  MONAD_BOOST_OUTCOME_STATUS_CODE_OVERLAY_DIR)
+
 add_subdirectory("category/async")
 add_subdirectory("category/core")
 add_subdirectory("category/mpt")

@@ -211,7 +211,8 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message(
         .kind = to_address.first,
         .flags = 0,
         .depth = 0,
-        .gas = static_cast<int64_t>(tx_.gas_limit - intrinsic_gas<traits>(tx_)),
+        .gas = static_cast<int64_t>(
+            tx_.gas_limit - intrinsic_gas<traits>(tx_, sender_)),
         .recipient = to_address.second,
         .sender = sender_,
         .input_data = tx_.data.data(),
@@ -383,7 +384,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
 
     // EIP-7623
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
-        auto const floor_gas = floor_data_gas(tx_);
+        auto const floor_gas = floor_data_gas<traits>(tx_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;
             state.subtract_from_balance(sender_, gas_cost * delta);
@@ -432,6 +433,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
     {
         auto validation_result = static_validate_transaction<traits>(
             tx_,
+            sender_,
             header_.base_fee_per_gas,
             header_.excess_blob_gas,
             chain_.get_chain_id());

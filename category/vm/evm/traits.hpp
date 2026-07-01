@@ -43,7 +43,7 @@ namespace monad
         // TODO(amsterdam): bump to MONAD_ETH_AMSTERDAM once Amsterdam support
         // lands.
         inline constexpr monad_eth_revision LATEST_SUPPORTED_EVM_FORK =
-            MONAD_ETH_OSAKA;
+            MONAD_ETH_AMSTERDAM;
 
         inline constexpr uint64_t EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER = 9069000;
 
@@ -73,6 +73,7 @@ namespace monad
 
         // Feature flags
         { T::eip_2565_active() } -> std::same_as<bool>;
+        { T::eip_2780_active() } -> std::same_as<bool>;
         { T::eip_2929_active() } -> std::same_as<bool>;
         { T::eip_4844_active() } -> std::same_as<bool>;
         { T::eip_7685_active() } -> std::same_as<bool>;
@@ -113,6 +114,11 @@ namespace monad
         static consteval bool eip_2565_active() noexcept
         {
             return Rev >= MONAD_ETH_BERLIN;
+        }
+
+        static consteval bool eip_2780_active() noexcept
+        {
+            return Rev >= MONAD_ETH_AMSTERDAM;
         }
 
         static consteval bool eip_2929_active() noexcept
@@ -250,6 +256,13 @@ namespace monad
         static consteval bool eip_2565_active() noexcept
         {
             return evm_rev() >= MONAD_ETH_BERLIN;
+        }
+
+        static consteval bool eip_2780_active() noexcept
+        {
+            // No Monad revision maps to Amsterdam yet, so this is currently
+            // always false; it activates once one does.
+            return evm_rev() >= MONAD_ETH_AMSTERDAM;
         }
 
         static consteval bool eip_2929_active() noexcept

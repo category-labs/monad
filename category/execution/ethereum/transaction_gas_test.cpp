@@ -33,58 +33,103 @@ namespace
 {
     template <monad_eth_revision r>
     using rev = std::integral_constant<monad_eth_revision, r>;
+
+    constexpr auto sender = 0x000000000000000000000000000000000000000a_address;
+    constexpr auto recipient =
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
 }
 
+// Intrinsic gas across every revision. Each assertion branches on
+// EIP-2780 (eip_2780_active(), i.e. Amsterdam+): the flat 21000/32000 model for
+// pre-Amsterdam, the decomposed base + recipient/value charges for Amsterdam.
+//
+// monad charges the transfer-log cost (TRANSFER_LOG_COST = 1756) at the point
+// of logging (EIP-7708's emit_native_transfer_event), gated on the log EIP,
+// rather than bundling it into intrinsic as the EIP-2780 table does. So
+// intrinsic_gas here EXCLUDES it: value-to-other is 19244 (EIP table 21000) and
+// create-with-value is 23000 (EIP table 24756); the missing 1756 is charged
+// when the Transfer log is emitted, so the total still matches the fixtures.
+//
+// Also out of scope here: the delegation rows (18000/24000) — the
+// delegation-target COLD_ACCOUNT_ACCESS is charged at top-frame call
+// resolution — and the new-account 183600 (EIP-8037 state gas).
 TYPED_TEST(TraitsTest, intrinsic_gas)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
+    using Trait = typename TestFixture::Trait;
+    static_assert(Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
 
-    auto non_zero_since =
-        []<monad_eth_revision r>(rev<r>, uint64_t val) consteval {
-            if constexpr (TestFixture::Trait::evm_rev() >= r) {
-                return val;
-            }
-            else {
-                return 0;
-            }
-        };
+    // Components unchanged by EIP-2780, gated on their introducing fork.
+    constexpr uint64_t zero_token = 4; // EIP-2028
+    constexpr uint64_t non_zero_token = 16; // EIP-2028
+    constexpr uint64_t init_word = // EIP-3860, creation only
+        Trait::evm_rev() >= MONAD_ETH_SHANGHAI ? 2u : 0u;
+    constexpr uint64_t al_addr = // EIP-2930
+        Trait::evm_rev() >= MONAD_ETH_BERLIN ? 2'400u : 0u;
+    constexpr uint64_t al_key =
+        Trait::evm_rev() >= MONAD_ETH_BERLIN ? 1'900u : 0u;
 
+    // EIP-2780 decomposes the flat base into explicit per-case charges.
+    constexpr bool eip_2780 = Trait::eip_2780_active();
+    constexpr uint64_t create_base =
+        eip_2780 ? (12'000u + 11'000u) : (21'000u + 32'000u);
+    constexpr uint64_t call_base = eip_2780 ? 12'000u : 21'000u;
+    constexpr uint64_t cold = eip_2780 ? 3'000u : 0u; // recipient cold access
+    // TX_VALUE_COST only; the transfer-log cost is charged at log emission
+    // (EIP-7708), not in intrinsic.
+    constexpr uint64_t value_xfer = eip_2780 ? 4'244u : 0u;
+
+    auto const ig = [](Transaction const &t) {
+        return intrinsic_gas<Trait>(t, sender);
+    };
+
+    // Self-transfer, value > 0 (EIP-2780 waives recipient + value charges).
     {
-        Transaction t{};
-        EXPECT_EQ(
-            intrinsic_gas<typename TestFixture::Trait>(t), 21'000 + 32'000);
+        Transaction t{.value = 1};
+        t.to = sender;
+        EXPECT_EQ(ig(t), call_base);
     }
 
+    // Zero-value transaction to any address
     {
         Transaction t{};
-        t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
-        EXPECT_EQ(intrinsic_gas<typename TestFixture::Trait>(t), 21'000);
+        t.to = recipient;
+        EXPECT_EQ(ig(t), call_base + cold);
     }
 
-    static constexpr auto zero_token_cost = 4;
-    // EIP-2028
-    static constexpr auto non_zero_token_cost = 16;
+    // Value transfer
+    // TODO: EIP-7708 should add transfer log cost of 1756
+    {
+        Transaction t{.value = 1};
+        t.to = recipient;
+        EXPECT_EQ(ig(t), call_base + cold + value_xfer);
+    }
 
-    // EIP-3860
-    // only charged when tx.to is not set
-    static constexpr auto extra_cost_per_evm_word =
-        non_zero_since(rev<MONAD_ETH_SHANGHAI>{}, 2);
+    // Contract creation, value 0.
+    {
+        Transaction const t{};
+        EXPECT_EQ(ig(t), create_base);
+    }
 
+    // Contract creation, value > 0.
+    // TODO: EIP-7708 should add transfer log cost of 1756
+    {
+        Transaction const t{.value = 1};
+        EXPECT_EQ(ig(t), create_base);
+    }
+
+    // Creation calldata token cost + per-word initcode cost.
+    // TODO: EIP-7708 should add transfer log cost of 1756
     {
         Transaction t{};
-
         t.data.push_back(0x00);
-        EXPECT_EQ(
-            intrinsic_gas<typename TestFixture::Trait>(t),
-            21'000 + 32'000 + zero_token_cost + extra_cost_per_evm_word);
+        EXPECT_EQ(ig(t), create_base + zero_token + init_word);
 
         t.data.push_back(0xff);
-        EXPECT_EQ(
-            intrinsic_gas<typename TestFixture::Trait>(t),
-            21'000 + 32'000 + zero_token_cost + non_zero_token_cost +
-                extra_cost_per_evm_word);
+        EXPECT_EQ(ig(t), create_base + zero_token + non_zero_token + init_word);
     }
 
+    // Creation with larger calldata (128 bytes => 4 init words).
+    // TODO: EIP-7708 should add transfer log cost of 1756
     {
         byte_string data;
         for (auto i = 0; i < 127; ++i) {
@@ -93,55 +138,63 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
         data.push_back(0x00);
 
         Transaction const t{.data = data};
-
         EXPECT_EQ(
-            intrinsic_gas<typename TestFixture::Trait>(t),
-            21'000 + 32'000 + non_zero_token_cost * 127 + zero_token_cost +
-                4 * extra_cost_per_evm_word);
+            ig(t),
+            create_base + non_zero_token * 127 + zero_token + 4 * init_word);
     }
 
+    // Call calldata token cost (no initcode cost when `to` is set).
     {
         Transaction t{};
-        t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
-
+        t.to = recipient;
         t.data.push_back(0x00);
-        EXPECT_EQ(
-            intrinsic_gas<typename TestFixture::Trait>(t),
-            21'000 + zero_token_cost);
+        EXPECT_EQ(ig(t), call_base + cold + zero_token);
 
         t.data.push_back(0xff);
-        EXPECT_EQ(
-            intrinsic_gas<typename TestFixture::Trait>(t),
-            21'000 + zero_token_cost + non_zero_token_cost);
+        EXPECT_EQ(ig(t), call_base + cold + zero_token + non_zero_token);
     }
 
-    // EIP-2930
-    static constexpr auto cost_per_access_list_address =
-        non_zero_since(rev<MONAD_ETH_BERLIN>{}, 2'400);
-    static constexpr auto cost_per_access_list_key =
-        non_zero_since(rev<MONAD_ETH_BERLIN>{}, 1'900);
-
+    // Access list (EIP-2930). The recipient cold-access charge is still applied
+    // on top: access lists do not warm tx-level accounts under EIP-2780.
     {
         Transaction t{};
-        t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
+        t.to = recipient;
 
         static constexpr auto key1{
             0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
         static constexpr auto key2{
             0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
         t.access_list.push_back({*t.to, {key1, key2}});
-        EXPECT_EQ(
-            intrinsic_gas<typename TestFixture::Trait>(t),
-            21'000 + cost_per_access_list_address +
-                2 * cost_per_access_list_key);
+        EXPECT_EQ(ig(t), call_base + cold + al_addr + 2 * al_key);
 
         t.data.push_back(0x00);
         t.data.push_back(0xff);
         EXPECT_EQ(
-            intrinsic_gas<typename TestFixture::Trait>(t),
-            21'000 + cost_per_access_list_address +
-                2 * cost_per_access_list_key + zero_token_cost +
-                non_zero_token_cost);
+            ig(t),
+            call_base + cold + al_addr + 2 * al_key + zero_token +
+                non_zero_token);
+    }
+}
+
+// EIP-7623 calldata floor. Its base follows the EIP-2780 reduced base.
+TYPED_TEST(TraitsTest, floor_data_gas)
+{
+    using Trait = typename TestFixture::Trait;
+
+    constexpr uint64_t base = Trait::eip_2780_active() ? 12'000u : 21'000u;
+
+    {
+        Transaction t{};
+        t.to = recipient; // no calldata
+        EXPECT_EQ(floor_data_gas<Trait>(t), base);
+    }
+
+    {
+        Transaction t{};
+        t.to = recipient;
+        t.data.push_back(0x00); // 1 zero token
+        t.data.push_back(0xff); // 1 non-zero token
+        EXPECT_EQ(floor_data_gas<Trait>(t), base + 10 + 40);
     }
 }
 

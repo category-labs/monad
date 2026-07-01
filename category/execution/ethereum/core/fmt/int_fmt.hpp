@@ -21,10 +21,7 @@
 
 #include <type_traits>
 
-template <>
-struct quill::copy_loggable<monad::uint256_t> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::uint256_t);
 
 template <>
 struct fmt::formatter<monad::uint256_t> : public monad::BasicFormatter
@@ -37,10 +34,7 @@ struct fmt::formatter<monad::uint256_t> : public monad::BasicFormatter
     }
 };
 
-template <>
-struct quill::copy_loggable<monad::uint128_t> : std::true_type
-{
-};
+MONAD_LOG_LOGGABLE(monad::uint128_t);
 
 template <>
 struct fmt::formatter<monad::uint128_t> : public monad::BasicFormatter

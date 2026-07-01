@@ -55,6 +55,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <quill/std/Chrono.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cstddef>

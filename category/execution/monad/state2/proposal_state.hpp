@@ -23,6 +23,8 @@
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/vm/vm.hpp>
 
+#include <quill/std/Pair.h>
+
 #include <map>
 #include <memory>
 #include <utility>

@@ -57,6 +57,8 @@
 #include <ankerl/unordered_dense.h>
 #include <boost/outcome/try.hpp>
 
+#include <quill/std/Chrono.h>
+
 #include <chrono>
 #include <deque>
 #include <filesystem>

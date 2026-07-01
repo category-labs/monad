@@ -24,6 +24,8 @@
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
 
+#include <quill/std/SystemError.h>
+
 #include <cassert>
 #include <filesystem>
 #include <iostream>

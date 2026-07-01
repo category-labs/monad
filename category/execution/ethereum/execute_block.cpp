@@ -55,6 +55,8 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <quill/std/Optional.h>
+
 #include <chrono>
 #include <cstddef>
 #include <cstdint>

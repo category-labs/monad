@@ -287,8 +287,7 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
         return -1;
     }
 
-    quill::start(false);
-    quill::get_root_logger()->set_log_level(quill::LogLevel::Error);
+    init_root_logger(quill::LogLevel::Error);
     std::filesystem::path const cdbname{tmp_dbname()};
     char const *const cdbname_str = cdbname.c_str();
     monad_statesync_client client;

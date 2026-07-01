@@ -20,7 +20,6 @@
 #include <chrono>
 #include <cstdint>
 #include <print>
-#include <string_view>
 #include <thread>
 
 #include <stdlib.h>

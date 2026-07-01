@@ -816,6 +816,7 @@ int main(int const argc, char *argv[])
     std::optional<std::filesystem::path> load_binary_snapshot;
     std::string version;
     unsigned dump_concurrency_limit = 2048;
+    bool use_secondary = false;
     uint64_t total_shards = 1;
     uint64_t shard_number = 0;
 
@@ -881,6 +882,14 @@ int main(int const argc, char *argv[])
             "Load a binary snapshot to db")
         ->check(CLI::ExistingDirectory)
         ->excludes(dump_binary_snapshot_option);
+    cli.add_flag(
+        "--secondary",
+        use_secondary,
+        "Operate on the secondary timeline instead of the primary: --it opens "
+        "it read-only, --dump-binary-snapshot dumps from it, and "
+        "--load-binary-snapshot loads into it. The secondary must already be "
+        "active with its state_machine_kind stamped (via monad-mpt "
+        "--activate-secondary --state-machine).");
     mode_group->require_option(0, 1);
     try {
         cli.parse(argc, argv);
@@ -902,7 +911,9 @@ int main(int const argc, char *argv[])
         ReadOnlyOnDiskDbConfig const ro_config{
             .sq_thread_cpu = sq_thread_cpu, .dbname_paths = dbname_paths};
         AsyncIOContext io_ctx{ro_config};
-        Db ro_db{io_ctx};
+        Db ro_db{
+            io_ctx,
+            use_secondary ? timeline_id::secondary : timeline_id::primary};
         fmt::println(
             "db summary: earliest_block_id={} latest_block_id={} "
             "latest_finalized_block_id={} last_verified_block_id={} "
@@ -961,12 +972,15 @@ int main(int const argc, char *argv[])
             context,
             dump_concurrency_limit,
             total_shards,
-            shard_number);
+            shard_number,
+            use_secondary);
         LOG_INFO(
-            "snapshot dump success={} version={} directory={} elapsed={}",
+            "snapshot dump success={} version={} directory={} "
+            "dump_from_secondary={} elapsed={}",
             success,
             resolved_version,
             dump_binary_snapshot.value(),
+            use_secondary,
             std::chrono::steady_clock::now() - begin);
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
         return success == false;
@@ -982,11 +996,14 @@ int main(int const argc, char *argv[])
             c_dbname_paths.size(),
             sq_thread_cpu.value_or(std::numeric_limits<unsigned>::max()),
             load_binary_snapshot.value().c_str(),
-            resolved_version);
+            resolved_version,
+            use_secondary);
         LOG_INFO(
-            "snapshot version={} load_binary_snapshot={} elapsed={}",
+            "snapshot version={} load_binary_snapshot={} load_to_secondary={} "
+            "elapsed={}",
             resolved_version,
             load_binary_snapshot.value(),
+            use_secondary,
             std::chrono::steady_clock::now() - begin);
     }
     return 0;

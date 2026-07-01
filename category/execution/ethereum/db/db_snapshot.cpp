@@ -24,6 +24,8 @@
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/db/state_machine_init.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 
@@ -31,6 +33,8 @@
 
 #include <deque>
 #include <limits>
+#include <memory>
+#include <optional>
 
 struct monad_db_snapshot_loader
 {
@@ -40,31 +44,65 @@ struct monad_db_snapshot_loader
     std::array<monad::byte_string, 256> eth_headers;
     std::deque<monad::hash256> hash_alloc;
     std::deque<monad::mpt::Update> update_alloc;
+    std::deque<monad::byte_string> bytes_alloc;
     std::array<
         ankerl::unordered_dense::segmented_map<uint64_t, monad::mpt::Update>,
         MONAD_SNAPSHOT_SHARDS>
         account_offset_to_update;
+    // Per-shard page accumulator used only when page_encoded. Maps
+    // account_offset -> (page_key -> assembled storage_page_t).
+    std::array<
+        ankerl::unordered_dense::segmented_map<
+            uint64_t, ankerl::unordered_dense::map<
+                          monad::bytes32_t, monad::storage_page_t>>,
+        MONAD_SNAPSHOT_SHARDS>
+        page_accumulator;
     monad::mpt::UpdateList state_updates;
     monad::mpt::UpdateList code_updates;
     uint64_t bytes_read;
 
     monad_db_snapshot_loader(
         uint64_t const block, char const *const *const dbname_paths,
-        size_t const len, unsigned const sq_thread_cpu)
+        size_t const len, unsigned const sq_thread_cpu,
+        bool const load_to_secondary)
         : block{block}
-        , db{monad::mpt::OnDiskDbConfig{
-              .append = true,
-              .compaction = false,
-              .rd_buffers = 8192,
-              .wr_buffers = 32,
-              .uring_entries = 128,
-              .sq_thread_cpu =
-                  sq_thread_cpu == std::numeric_limits<unsigned>::max()
-                      ? std::nullopt
-                      : std::make_optional(sq_thread_cpu),
-              .dbname_paths = {dbname_paths, dbname_paths + len}}}
+        , db{open_target_db(
+              dbname_paths, len, sq_thread_cpu, load_to_secondary)}
         , bytes_read{0}
     {
+    }
+
+    bool page_encoded() const
+    {
+        return db.state_machine_type() == monad::mpt::state_machine_kind::monad;
+    }
+
+private:
+    static monad::mpt::Db open_target_db(
+        char const *const *const dbname_paths, size_t const len,
+        unsigned const sq_thread_cpu, bool const load_to_secondary)
+    {
+        monad::mpt::Db primary{monad::mpt::OnDiskDbConfig{
+            .append = true,
+            .compaction = false,
+            .rd_buffers = 8192,
+            .wr_buffers = 32,
+            .uring_entries = 128,
+            .sq_thread_cpu =
+                sq_thread_cpu == std::numeric_limits<unsigned>::max()
+                    ? std::nullopt
+                    : std::make_optional(sq_thread_cpu),
+            .dbname_paths = {dbname_paths, dbname_paths + len}}};
+        if (!load_to_secondary) {
+            return primary;
+        }
+        auto secondary = primary.open_secondary_timeline();
+        MONAD_ASSERT_PRINTF(
+            secondary.has_value(),
+            "secondary timeline is not active; activate it and stamp its "
+            "state_machine_kind using monad-mpt tool before loading a snapshot "
+            "into it");
+        return std::move(*secondary);
     }
 };
 
@@ -81,10 +119,55 @@ uint64_t get_shard(monad::mpt::NibblesView const path)
     return ret;
 }
 
+// When the target is page-encoded, drain the accumulator into per-account
+// `next` lists. Each page becomes one Update keyed by keccak256(page_key)
+// with value encode_storage_page_db(page_key, page) (or std::nullopt if the
+// page is empty so the entry is a deletion). The encoded byte_strings are
+// kept alive in loader->bytes_alloc until the upsert completes; the Update
+// nodes are kept in loader->update_alloc for the same reason.
+void monad_db_snapshot_loader_finalize_pages(
+    monad_db_snapshot_loader *const loader)
+{
+    using namespace monad;
+    using namespace monad::mpt;
+    if (!loader->page_encoded()) {
+        return;
+    }
+    for (size_t shard = 0; shard < MONAD_SNAPSHOT_SHARDS; ++shard) {
+        auto &shard_pages = loader->page_accumulator.at(shard);
+        if (shard_pages.empty()) {
+            continue;
+        }
+        auto &shard_accounts = loader->account_offset_to_update.at(shard);
+        for (auto &[account_offset, pages] : shard_pages) {
+            auto &account_update = shard_accounts.at(account_offset);
+            for (auto const &[page_key, page] : pages) {
+                bool const is_empty = page.is_empty();
+                std::optional<byte_string_view> value;
+                if (!is_empty) {
+                    value = byte_string_view{loader->bytes_alloc.emplace_back(
+                        encode_storage_page_db(page_key, page))};
+                }
+                account_update.next.push_front(
+                    loader->update_alloc.emplace_back(Update{
+                        .key = loader->hash_alloc.emplace_back(keccak256(
+                            {page_key.bytes, sizeof(page_key.bytes)})),
+                        .value = value,
+                        .incarnation = false,
+                        .next = UpdateList{},
+                        .version = static_cast<int64_t>(loader->block)}));
+            }
+        }
+        shard_pages.clear();
+    }
+}
+
 void monad_db_snapshot_loader_flush(monad_db_snapshot_loader *const loader)
 {
     using namespace monad;
     using namespace monad::mpt;
+
+    monad_db_snapshot_loader_finalize_pages(loader);
 
     Update state_update{
         .key = state_nibbles,
@@ -120,7 +203,11 @@ void monad_db_snapshot_loader_flush(monad_db_snapshot_loader *const loader)
         false);
     loader->hash_alloc.clear();
     loader->update_alloc.clear();
+    loader->bytes_alloc.clear();
     for (auto &map : loader->account_offset_to_update) {
+        map.clear();
+    }
+    for (auto &map : loader->page_accumulator) {
         map.clear();
     }
     loader->state_updates.clear();
@@ -216,6 +303,9 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
     void *user;
     uint64_t total_shards;
     uint64_t shard_number;
+    // Source db is page-encoded: storage leaves hold encoded pages rather than
+    // single slots, so they are expanded to slot-format entries on dump.
+    bool page_encoded;
 
     MonadSnapshotTraverseMachine(
         std::array<uint64_t, MONAD_SNAPSHOT_SHARDS> &account_bytes_written,
@@ -223,7 +313,7 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
             uint64_t shard, monad_snapshot_type, unsigned char const *bytes,
             size_t len, void *user),
         void *const user, uint64_t const total_shards,
-        uint64_t const shard_number)
+        uint64_t const shard_number, bool const page_encoded)
         : nibble{monad::mpt::INVALID_BRANCH}
         , path{}
         , account_bytes_written{account_bytes_written}
@@ -232,6 +322,7 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
         , user{user}
         , total_shards{total_shards}
         , shard_number{shard_number}
+        , page_encoded{page_encoded}
     {
     }
 
@@ -289,27 +380,62 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
         }
         else {
             MONAD_ASSERT(nibble == STATE_NIBBLE);
-            monad_snapshot_type type;
             if (path.length() == HASH_SIZE) {
-                type = MONAD_SNAPSHOT_ACCOUNT;
                 account_offset = account_bytes_written.at(shard);
                 account_bytes_written.at(shard) += val.size();
-            }
-            else {
-                MONAD_ASSERT(path.length() == (HASH_SIZE * 2));
-                type = MONAD_SNAPSHOT_STORAGE;
                 MONAD_ASSERT(
                     write(
                         shard,
-                        MONAD_SNAPSHOT_STORAGE,
-                        reinterpret_cast<unsigned char const *>(
-                            &account_offset),
-                        sizeof(account_offset),
-                        user) == sizeof(account_offset));
+                        MONAD_SNAPSHOT_ACCOUNT,
+                        val.data(),
+                        val.size(),
+                        user) == val.size());
             }
-
-            MONAD_ASSERT(
-                write(shard, type, val.data(), val.size(), user) == val.size());
+            else {
+                MONAD_ASSERT(path.length() == (HASH_SIZE * 2));
+                // Emit one slot-format storage entry, prefixed with the owning
+                // account's offset so the loader can re-link it.
+                auto const emit_slot = [&](byte_string_view const entry) {
+                    MONAD_ASSERT(
+                        write(
+                            shard,
+                            MONAD_SNAPSHOT_STORAGE,
+                            reinterpret_cast<unsigned char const *>(
+                                &account_offset),
+                            sizeof(account_offset),
+                            user) == sizeof(account_offset));
+                    MONAD_ASSERT(
+                        write(
+                            shard,
+                            MONAD_SNAPSHOT_STORAGE,
+                            entry.data(),
+                            entry.size(),
+                            user) == entry.size());
+                };
+                if (page_encoded) {
+                    // Source db is page-encoded: the storage leaf is
+                    // encode_storage_page_db(page_key, page). Expand it into
+                    // one slot-encoded entry per non-zero slot so the dumped
+                    // snapshot stays slot-granular and loads unchanged.
+                    byte_string_view enc{val};
+                    auto const raw = decode_storage_db_raw(enc);
+                    MONAD_ASSERT(raw.has_value());
+                    bytes32_t const page_key = to_bytes(raw.value().first);
+                    auto const page = decode_storage_page(raw.value().second);
+                    MONAD_ASSERT(page.has_value());
+                    for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
+                        bytes32_t const slot_val = page.value()[i];
+                        if (slot_val == bytes32_t{}) {
+                            continue;
+                        }
+                        emit_slot(encode_storage_db(
+                            compute_slot_key(page_key, i), slot_val));
+                    }
+                }
+                else {
+                    emit_slot(val);
+                }
+            }
         }
 
         return true;
@@ -359,7 +485,8 @@ bool monad_db_dump_snapshot(
         uint64_t shard, monad_snapshot_type, unsigned char const *bytes,
         size_t len, void *user),
     void *const user, unsigned const dump_concurrency_limit,
-    uint64_t const total_shards, uint64_t const shard_number)
+    uint64_t const total_shards, uint64_t const shard_number,
+    bool const dump_from_secondary)
 {
     using namespace monad;
     using namespace monad::mpt;
@@ -382,7 +509,9 @@ bool monad_db_dump_snapshot(
         .dbname_paths = {dbname_paths, dbname_paths + len},
         .concurrent_read_io_limit = dump_concurrency_limit};
     AsyncIOContext io_context{config};
-    Db db{io_context};
+    Db db{
+        io_context,
+        dump_from_secondary ? timeline_id::secondary : timeline_id::primary};
 
     for (uint64_t b = block < 256 ? 0 : block - 255; b <= block; ++b) {
         uint64_t const header_shard = block - b;
@@ -429,7 +558,12 @@ bool monad_db_dump_snapshot(
 
     std::array<uint64_t, MONAD_SNAPSHOT_SHARDS> account_bytes_written{};
     MonadSnapshotTraverseMachine machine{
-        account_bytes_written, write, user, total_shards, shard_number};
+        account_bytes_written,
+        write,
+        user,
+        total_shards,
+        shard_number,
+        db.state_machine_type() == state_machine_kind::monad};
     bool const success =
         db.traverse(finalized_root, machine, block, dump_concurrency_limit);
     if (!success) {
@@ -438,18 +572,27 @@ bool monad_db_dump_snapshot(
     return success;
 }
 
+// Loads the standard slot-encoded snapshot (the format produced by
+// monad_db_dump_snapshot against a slot db) into one timeline:
+//   * load_to_secondary == false: the primary timeline.
+//   * load_to_secondary == true:  an already-activated secondary timeline.
+// The target's storage encoding is derived from its persisted
+// state_machine_kind; a page-encoded target converts slot leaves to page
+// leaves on the fly. The target's kind must already be stamped on disk.
 monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     uint64_t const block, char const *const *const dbname_paths,
-    size_t const len, unsigned const sq_thread_cpu)
+    size_t const len, unsigned const sq_thread_cpu,
+    bool const load_to_secondary)
 {
-    // C ABI entry — populate the kind registry before the metadata-driven
-    // Db ctor runs inside monad_db_snapshot_loader. Idempotent.
+    // The metadata-driven Db ctor and open_secondary_timeline() resolve the
+    // persisted kind through the registry, so both factories must be present.
     monad::register_ethereum_state_machines();
-    auto *loader =
-        new monad_db_snapshot_loader(block, dbname_paths, len, sq_thread_cpu);
-    MONAD_ASSERT_PRINTF(
+    monad::register_monad_state_machines();
+    auto *loader = new monad_db_snapshot_loader(
+        block, dbname_paths, len, sq_thread_cpu, load_to_secondary);
+    MONAD_ASSERT(
         loader->db.get_latest_version() == monad::mpt::INVALID_BLOCK_NUM,
-        "database must be hard reset when loading snapshot");
+        "database must be empty when loading snapshot");
     return loader;
 }
 
@@ -489,18 +632,50 @@ void monad_db_snapshot_loader_load(
             }
             storage_view.remove_prefix(sizeof(account_offset));
             byte_string_view const before{storage_view};
-            auto const res = decode_storage_db_raw(storage_view);
-            MONAD_ASSERT(res.has_value());
-            auto &update = account_offset_to_update.at(account_offset);
-            uint64_t const consumed = before.size() - storage_view.size();
-            update.next.push_front(loader->update_alloc.emplace_back(Update{
-                .key = loader->hash_alloc.emplace_back(
-                    keccak256(to_bytes(res.value().first))),
-                .value = before.substr(0, consumed),
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(loader->block)}));
+            uint64_t consumed;
+            if (loader->page_encoded()) {
+                // The storage byte stream concatenates multiple
+                // [account_offset, leaf.value()] entries, so we use
+                // decode_storage_db_raw which advances the view in place
+                // and tolerates trailing bytes. Convert the raw views to
+                // bytes32_t (right-aligned) for the page accumulator.
+                auto const res = decode_storage_db_raw(storage_view);
+                MONAD_ASSERT(res.has_value());
+                bytes32_t const slot_key = to_bytes(res.value().first);
+                bytes32_t const slot_val = to_bytes(res.value().second);
+                consumed = before.size() - storage_view.size();
+                bytes32_t const pg_key = compute_page_key(slot_key);
+                uint8_t const slot_off = compute_slot_offset(slot_key);
+                auto &shard_pages = loader->page_accumulator.at(shard);
+                shard_pages[account_offset][pg_key].set(slot_off, slot_val);
+            }
+            else {
+                auto const res = decode_storage_db_raw(storage_view);
+                MONAD_ASSERT(res.has_value());
+                auto &update = account_offset_to_update.at(account_offset);
+                consumed = before.size() - storage_view.size();
+                update.next.push_front(loader->update_alloc.emplace_back(Update{
+                    .key = loader->hash_alloc.emplace_back(
+                        keccak256(to_bytes(res.value().first))),
+                    .value = before.substr(0, consumed),
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(loader->block)}));
+            }
             loader->bytes_read += consumed;
-            if (loader->bytes_read >= BYTES_READ_BEFORE_FLUSH) {
+            // When page-encoded, all slots that share a page_key must be in
+            // the same flush. A mid-loop flush would emit a page Update for
+            // the slots seen so far; later slots in the same page would start
+            // a fresh accumulator entry and the next flush would emit another
+            // Update for the same keccak256(page_key), causing the mpt
+            // upsert to overwrite the earlier page (set-not-merge). Defer
+            // flushing until the unconditional final flush at end of load().
+            //
+            // Consequence: the page accumulator holds a whole shard's storage
+            // in RAM before that final flush. With the current state size this
+            // is not a problem. There will be a follow up to bound the memory
+            // usage.
+            if (!loader->page_encoded() &&
+                loader->bytes_read >= BYTES_READ_BEFORE_FLUSH) {
                 monad_db_snapshot_loader_flush(loader);
             }
         }

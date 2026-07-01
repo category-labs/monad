@@ -35,7 +35,6 @@
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
-#include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/fmt/address_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
@@ -63,6 +62,7 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
+#include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -221,7 +221,7 @@ void validate_post_state(nlohmann::json const &json, nlohmann::json const &db)
 
 template <Traits traits>
 Result<BlockExecOutput> execute(
-    Block &block, monad::TrieDb &db, vm::VM &vm,
+    Block &block, monad::Db &db, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer,
     std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
         &senders_and_authorities_map,
@@ -309,8 +309,9 @@ Result<BlockExecOutput> execute(
     block_state.log_debug();
     auto [state, code, _] = std::move(block_state).release();
 
-    CommitBuilder builder(block.header.number);
-    builder.add_state_deltas(*state)
+    MONAD_ASSERT(db.is_page_encoded() == traits::mip_8_active());
+    auto builder = make_commit_builder(block.header.number, db);
+    builder->add_state_deltas(*state)
         .add_code(code)
         .add_receipts(receipts)
         .add_transactions(block.transactions, senders)
@@ -318,11 +319,11 @@ Result<BlockExecOutput> execute(
             std::vector<std::vector<CallFrame>>(block.transactions.size()))
         .add_ommers(block.ommers);
     if (block.withdrawals.has_value()) {
-        builder.add_withdrawals(block.withdrawals.value());
+        builder->add_withdrawals(block.withdrawals.value());
     }
     db.commit(
         bytes32_t{block.header.number},
-        builder,
+        *builder,
         block.header,
         *state,
         [&](BlockHeader &h) {
@@ -350,7 +351,7 @@ Result<BlockExecOutput> execute(
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_and_record(
-    Block &block, monad::TrieDb &db, vm::VM &vm,
+    Block &block, monad::Db &db, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer,
     std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
         &senders_and_authorities_map,
@@ -399,10 +400,11 @@ void process_test(
     using namespace test;
 
     auto const json_state = load_blockchain_json_state<traits>(j_contents);
-    auto const test_state = json_state.make_test_state();
+    auto const test_state =
+        json_state.template make_test_state<traits::mip_8_active()>();
     vm::VM vm{vm_mode};
     mpt::Db &db = test_state->db;
-    monad::TrieDb &tdb = test_state->trie_db;
+    auto &tdb = test_state->trie_db;
 
     auto db_post_state = tdb.to_json();
 

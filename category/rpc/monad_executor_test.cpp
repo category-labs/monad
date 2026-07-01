@@ -129,40 +129,48 @@ namespace
         return v;
     }
 
-    struct EthCallFixture : public ::testing::Test
+    // Machine selects the db state machine: OnDiskMachine = slot-encoded,
+    // MonadOnDiskMachine = page-encoded. The executor opens its own RODb on
+    // dbname, so the on-disk encoding drives TrieRODb's read path.
+    template <class Machine>
+    struct EthCallEncodingFixture : public ::testing::Test
     {
         std::filesystem::path dbname;
         mpt::Db db;
         TrieDb tdb;
         vm::VM vm;
 
-        EthCallFixture()
+        EthCallEncodingFixture()
             : dbname{[] {
-                std::filesystem::path dbname(
-                    MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-                    "monad_eth_call_test1_XXXXXX");
-                int const fd = ::mkstemp((char *)dbname.native().data());
+                std::string dbpath =
+                    (MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+                     "monad_eth_call_test1_XXXXXX")
+                        .string();
+                int const fd = ::mkstemp(dbpath.data());
                 MONAD_ASSERT(fd != -1);
                 MONAD_ASSERT(
                     -1 !=
                     ::ftruncate(
                         fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
                 ::close(fd);
-                return dbname;
+                return std::filesystem::path{dbpath};
             }()}
-            , db{std::make_unique<OnDiskMachine>(),
+            , db{std::make_unique<Machine>(),
                  mpt::OnDiskDbConfig{.append = false, .dbname_paths = {dbname}}}
             , tdb{db}
         {
         }
 
-        ~EthCallFixture()
+        ~EthCallEncodingFixture()
         {
             std::filesystem::remove(dbname);
         }
 
         void test_transfer_call_with_trace(bool gas_specified);
     };
+
+    // Slot-encoded db (the common case) for the bulk of TEST_F tests.
+    using EthCallFixture = EthCallEncodingFixture<OnDiskMachine>;
 
     struct callback_context
     {
@@ -184,7 +192,9 @@ namespace
         c->promise.set_value();
     }
 
-    void EthCallFixture::test_transfer_call_with_trace(bool const gas_specified)
+    template <class Machine>
+    void EthCallEncodingFixture<Machine>::test_transfer_call_with_trace(
+        bool const gas_specified)
     {
         for (uint64_t i = 0; i < 256; ++i) {
             commit_sequential(
@@ -289,6 +299,11 @@ namespace
         monad_executor_destroy(executor);
     }
 }
+
+// Storage-reading tests run on both encodings: slot (pre-mip8) and page
+// (post-mip8).
+using EthCallMachines = ::testing::Types<OnDiskMachine, MonadOnDiskMachine>;
+TYPED_TEST_SUITE(EthCallEncodingFixture, EthCallMachines);
 
 TEST_F(EthCallFixture, simple_success_call)
 {
@@ -3616,7 +3631,7 @@ TEST_F(EthCallFixture, prestate_state_overrides)
     monad_executor_destroy(executor);
 }
 
-TEST_F(EthCallFixture, prestate_override_state)
+TYPED_TEST(EthCallEncodingFixture, prestate_override_state)
 {
     static constexpr Address CONTRACT_ADDR =
         0xcccccccccccccccccccccccccccccccccccccccc_address;
@@ -3668,17 +3683,18 @@ TEST_F(EthCallFixture, prestate_override_state)
                  StorageDeltas{{storage_key, {bytes32_t{}, storage_value}}}}}};
 
     commit_sequential(
-        tdb,
+        this->tdb,
         StateDeltas(std::move(deltas)),
         {{code_hash, compiled_code}},
         BlockHeader{.number = 0});
 
-    auto const storage = tdb.read_storage(
+    auto const storage = this->tdb.read_storage(
         CONTRACT_ADDR, Incarnation{0, 0}, store_be_as<bytes32_t>(uint256_t{0}));
     ASSERT_EQ(storage, store_be_as<bytes32_t>(uint256_t{uint64_t{64}}));
 
     for (uint64_t i = 1; i < 256; ++i) {
-        commit_sequential(tdb, StateDeltas({}), {}, BlockHeader{.number = i});
+        commit_sequential(
+            this->tdb, StateDeltas({}), {}, BlockHeader{.number = i});
     }
 
     static constexpr auto from = Address{};
@@ -3686,7 +3702,7 @@ TEST_F(EthCallFixture, prestate_override_state)
     Transaction const tx{.gas_limit = 200000u, .to = CONTRACT_ADDR};
     BlockHeader const header{.number = 256};
 
-    commit_sequential(tdb, StateDeltas({}), {}, header);
+    commit_sequential(this->tdb, StateDeltas({}), {}, header);
 
     auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
@@ -3694,7 +3710,7 @@ TEST_F(EthCallFixture, prestate_override_state)
         to_vec(rlp::encode_address(std::make_optional(from)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto *executor = create_executor(dbname.string());
+    auto *executor = create_executor(this->dbname.string());
 
     // Test 'state' override option. It should wipe the existing and update the
     // given slots.
@@ -6763,7 +6779,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
 }
 
 // Test time travelling
-TEST_F(EthCallFixture, eth_simulate_v1_time_travel)
+TYPED_TEST(EthCallEncodingFixture, eth_simulate_v1_time_travel)
 {
     using namespace monad::vm::utils;
 
@@ -6787,7 +6803,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_time_travel)
     bytes32_t const unlock_time = store_be_as<bytes32_t>(uint256_t{512});
 
     commit_sequential(
-        tdb,
+        this->tdb,
         StateDeltas{
             {sender,
              StateDelta{
@@ -6810,10 +6826,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_time_travel)
 
     for (uint64_t i = 1; i < 256; ++i) {
         commit_sequential(
-            tdb, {}, {}, BlockHeader{.number = i, .timestamp = i});
+            this->tdb, {}, {}, BlockHeader{.number = i, .timestamp = i});
     }
 
-    auto *executor = create_executor(dbname.string());
+    auto *executor = create_executor(this->dbname.string());
 
     Transaction const tx{
         .gas_limit = 200'000'000,

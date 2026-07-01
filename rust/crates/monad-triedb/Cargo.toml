@@ -11,8 +11,9 @@ bench = false
 [dependencies]
 monad-cxx = { workspace = true }
 
+cxx = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
 
 [build-dependencies]
-monad-build = { workspace = true, features = ["bindgen", "cmake", "metadata"] }
+monad-build = { workspace = true, features = ["cmake", "cxx", "metadata"] }

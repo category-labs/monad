@@ -33,7 +33,7 @@
 
 #include <ankerl/unordered_dense.h>
 
-#include <immer/vector.hpp>
+#include <category/core/immutable/vector.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -60,7 +60,7 @@ class State
 
     Map<Address, VersionStack<AccountState>> current_{};
 
-    VersionStack<immer::vector<Receipt::Log>> logs_{{}};
+    VersionStack<immutable::vector<Receipt::Log>> logs_{{}};
 
     Map<bytes32_t, vm::SharedVarcode> code_{};
 
@@ -219,7 +219,7 @@ public:
 
     ////////////////////////////////////////
 
-    immer::vector<Receipt::Log> const &logs();
+    immutable::vector<Receipt::Log> const &logs();
 
     void store_log(Receipt::Log const &);
 

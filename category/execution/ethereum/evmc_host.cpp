@@ -19,12 +19,14 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/throw.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -51,10 +53,12 @@ EvmcHostBase::EvmcHostBase(
 evmc::bytes32 EvmcHostBase::get_storage(
     evmc::address const &address, evmc::bytes32 const &key) const noexcept
 {
-    try {
+    MONAD_TRY
+    {
         return state_.get_storage(address, key);
     }
-    catch (...) {
+    MONAD_CATCH_ALL
+    {
         capture_current_exception();
     }
     stack_unwind();
@@ -64,10 +68,12 @@ evmc_storage_status EvmcHostBase::set_storage(
     evmc::address const &address, evmc::bytes32 const &key,
     evmc::bytes32 const &value) noexcept
 {
-    try {
+    MONAD_TRY
+    {
         return state_.set_storage(address, key, value);
     }
-    catch (...) {
+    MONAD_CATCH_ALL
+    {
         capture_current_exception();
     }
     stack_unwind();
@@ -76,10 +82,12 @@ evmc_storage_status EvmcHostBase::set_storage(
 evmc::uint256be
 EvmcHostBase::get_balance(evmc::address const &address) const noexcept
 {
-    try {
+    MONAD_TRY
+    {
         return store_be_as<evmc::uint256be>(state_.get_balance(address));
     }
-    catch (...) {
+    MONAD_CATCH_ALL
+    {
         capture_current_exception();
     }
     stack_unwind();
@@ -87,9 +95,9 @@ EvmcHostBase::get_balance(evmc::address const &address) const noexcept
 
 size_t EvmcHostBase::get_code_size(evmc::address const &address) const noexcept
 {
-    try {
-        if (MONAD_UNLIKELY(
-                std::holds_alternative<trace::CodeTracer>(state_tracer_))) {
+    MONAD_TRY
+    {
+        if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
             bytes32_t const hash = state_.get_code_hash(address);
             if (hash == NULL_HASH) {
                 return 0;
@@ -101,7 +109,8 @@ size_t EvmcHostBase::get_code_size(evmc::address const &address) const noexcept
         }
         return state_.get_code_size(address);
     }
-    catch (...) {
+    MONAD_CATCH_ALL
+    {
         capture_current_exception();
     }
     stack_unwind();
@@ -110,13 +119,15 @@ size_t EvmcHostBase::get_code_size(evmc::address const &address) const noexcept
 evmc::bytes32
 EvmcHostBase::get_code_hash(evmc::address const &address) const noexcept
 {
-    try {
+    MONAD_TRY
+    {
         if (state_.account_is_dead(address)) {
             return bytes32_t{};
         }
         return state_.get_code_hash(address);
     }
-    catch (...) {
+    MONAD_CATCH_ALL
+    {
         capture_current_exception();
     }
     stack_unwind();
@@ -126,9 +137,9 @@ size_t EvmcHostBase::copy_code(
     evmc::address const &address, size_t const offset, uint8_t *const data,
     size_t const size) const noexcept
 {
-    try {
-        if (MONAD_UNLIKELY(
-                std::holds_alternative<trace::CodeTracer>(state_tracer_))) {
+    MONAD_TRY
+    {
+        if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
             bytes32_t const hash = state_.get_code_hash(address);
             if (hash != NULL_HASH) {
                 auto const vcode = state_.read_code(hash);
@@ -140,7 +151,8 @@ size_t EvmcHostBase::copy_code(
         }
         return state_.copy_code(address, offset, data, size);
     }
-    catch (...) {
+    MONAD_CATCH_ALL
+    {
         capture_current_exception();
     }
     stack_unwind();
@@ -157,7 +169,8 @@ evmc_tx_context const *EvmcHostBase::get_tx_context() const noexcept
 evmc::bytes32
 EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
 {
-    try {
+    MONAD_TRY
+    {
         MONAD_ASSERT(block_number >= 0);
         if (bytes32_t const block_hash = get_block_hash_history(
                 state_, static_cast<uint64_t>(block_number));
@@ -169,7 +182,8 @@ EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
         MONAD_ASSERT(block_hash != bytes32_t{});
         return block_hash;
     }
-    catch (...) {
+    MONAD_CATCH_ALL
+    {
         capture_current_exception();
     }
     stack_unwind();
@@ -180,7 +194,8 @@ void EvmcHostBase::emit_log(
     size_t const data_size, evmc::bytes32 const topics[],
     size_t const num_topics) noexcept
 {
-    try {
+    MONAD_TRY
+    {
         Receipt::Log log{.data = {data, data_size}, .address = address};
         for (auto i = 0u; i < num_topics; ++i) {
             log.topics.push_back({topics[i]});
@@ -189,7 +204,8 @@ void EvmcHostBase::emit_log(
         call_tracer_.on_log(std::move(log));
         return;
     }
-    catch (...) {
+    MONAD_CATCH_ALL
+    {
         capture_current_exception();
     }
     stack_unwind();
@@ -198,10 +214,12 @@ void EvmcHostBase::emit_log(
 evmc::bytes32 EvmcHostBase::get_transient_storage(
     evmc::address const &address, evmc::bytes32 const &key) const noexcept
 {
-    try {
+    MONAD_TRY
+    {
         return state_.get_transient_storage(address, key);
     }
-    catch (...) {
+    MONAD_CATCH_ALL
+    {
         capture_current_exception();
     }
     stack_unwind();
@@ -211,10 +229,12 @@ void EvmcHostBase::set_transient_storage(
     evmc::address const &address, evmc::bytes32 const &key,
     evmc::bytes32 const &value) noexcept
 {
-    try {
+    MONAD_TRY
+    {
         return state_.set_transient_storage(address, key, value);
     }
-    catch (...) {
+    MONAD_CATCH_ALL
+    {
         capture_current_exception();
     }
     stack_unwind();
@@ -224,10 +244,12 @@ EvmcHostBase::PageStorageStatus EvmcHostBase::update_page(
     evmc::address const &address, evmc::bytes32 const &page_key,
     evmc_storage_status const status) noexcept
 {
-    try {
+    MONAD_TRY
+    {
         return state_.update_page(address, page_key, status);
     }
-    catch (...) {
+    MONAD_CATCH_ALL
+    {
         capture_current_exception();
     }
     stack_unwind();

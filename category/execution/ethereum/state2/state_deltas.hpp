@@ -22,7 +22,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/execution/ethereum/core/account.hpp>
-#include <category/vm/vm.hpp>
+#include <category/vm/code.hpp>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"

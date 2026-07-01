@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-set(BLST_SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/blst")
+set(BLST_SOURCE_DIR "${THIRD_PARTY_DIR}/blst")
 
 enable_language(ASM)
 

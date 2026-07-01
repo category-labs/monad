@@ -17,15 +17,11 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/immutable/map.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/host.hpp>
 
 #include <evmc/evmc.h>
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#include <immer/map.hpp>
-#pragma GCC diagnostic pop
 
 MONAD_NAMESPACE_BEGIN
 
@@ -39,7 +35,7 @@ class PageTracker
         int16_t current_growth{0};
     };
 
-    using PageMap = immer::map<
+    using PageMap = immutable::map<
         bytes32_t, PageState, ankerl::unordered_dense::hash<monad::bytes32_t>>;
 
     PageMap pages_{};

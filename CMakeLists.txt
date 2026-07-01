@@ -67,27 +67,20 @@ include(cmake/compile_options.cmake)
 find_package(Boost REQUIRED COMPONENTS context filesystem json CONFIG)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
-pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
 pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
 
 # ankerl
 add_library(ankerl_hash INTERFACE)
 target_include_directories(ankerl_hash INTERFACE "third_party/ankerl")
 
-# asmjit
-set(ASMJIT_STATIC ON)
-add_subdirectory(third_party/asmjit)
-
 # BLAKE3
 add_subdirectory(third_party/BLAKE3/c)
 set_target_properties(blake3 PROPERTIES C_VISIBILITY_PRESET default)
 
-# blst
+# Precompile deps: blst, silkpre, c-kzg-4844, cryptopp, immer,
+# nlohmann_json, unordered_dense, asmjit
 set(DOWNLOAD_BLST OFF)
-include(cmake/blst.cmake)
-
-# c-kzg-4844
-add_subdirectory("third_party/c-kzg-4844-builder")
+include(cmake/precompile_deps.cmake)
 
 # cli11
 find_package(CLI11 REQUIRED)
@@ -133,12 +126,6 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fiber/test/
   endforeach()
 endif()
 
-# immer
-option(immer_BUILD_TESTS OFF)
-option(immer_BUILD_EXAMPLES OFF)
-option(immer_BUILD_EXTRAS OFF)
-add_subdirectory("third_party/immer" SYSTEM)
-
 # intx
 add_subdirectory("third_party/intx")
 
@@ -161,9 +148,6 @@ add_subdirectory("third_party/magic_enum")
 # nanobench
 add_subdirectory("third_party/nanobench")
 
-# nlohmann_json
-add_subdirectory("third_party/nlohmann_json" SYSTEM)
-
 # quill
 add_subdirectory("third_party/quill")
 # TODO
@@ -177,30 +161,8 @@ target_compile_options(
 # does not disable warnings in our code that includes quill headers.
 target_compile_options(quill PRIVATE -Wno-deprecated-declarations)
 
-# silkpre
-set(OPTIONAL_BUILD_TESTS OFF)
-set(OLD_CMAKE_POLICY_VERSION_MINIMUM "${CMAKE_POLICY_VERSION_MINIMUM}")
-set(CMAKE_POLICY_VERSION_MINIMUM "3.5")
-add_subdirectory(third_party/silkpre)
-set(CMAKE_POLICY_VERSION_MINIMUM "${OLD_CMAKE_POLICY_VERSION_MINIMUM}")
-# undo the injection of ccache silkpre/ff does
-set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE)
-set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK)
-# libff (pulled in by silkpre) trips several warnings under our flags: unused
-# parameters/constants in stubbed-out code, and an uninitialized timespec in its
-# profiling clock helper (only flagged once the optimizer runs).
-target_compile_options(
-  ff
-  PRIVATE -Wno-unused-parameter -Wno-unused-const-variable -Wno-uninitialized)
-
-# silkpre_vendor (vendored sha256 + rmd160)
-add_subdirectory("third_party/silkpre_vendor")
-
 # tbb
 find_package(TBB REQUIRED)
-
-# unordered_dense
-add_subdirectory("third_party/unordered_dense")
 
 # ##############################################################################
 # unit tests
@@ -315,6 +277,7 @@ target_link_libraries(
          monad_trie
          monad_execution_ethereum
          monad_execution_native
+         monad_precompiles
          monad_rpc
          monad_statesync
          monad-vm

@@ -306,6 +306,15 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
             auto const g = m->hold_dirty();
             detail::migrate_monad007_to_monad008(
                 m, static_cast<uint32_t>(chunk_count));
+            // The migration zero-fills the new secondary_timeline region, but
+            // the empty-ring sentinel is NULL_CHUNK (0xffffffff), not 0. A
+            // zeroed cnv_chunks[] slot decodes as cnv chunk id 0 — a *valid*
+            // chunk id, the one that holds db_metadata.
+            // activate_secondary_header would then MAP_FIXED the secondary ring
+            // onto cnv chunk 0 and 0xff-fill it, destroying both metadata
+            // copies. Re-initialise the secondary ring to the empty sentinel,
+            // as new-pool init does.
+            reset_secondary_ring_storage_(m);
         }
         // Flush the new layout before downstream code reads at the new
         // offsets.
@@ -783,6 +792,52 @@ bool DbMetadataContext::timeline_active(timeline_id const tid) const noexcept
                ->load(std::memory_order_acquire) != 0;
 }
 
+void DbMetadataContext::reset_secondary_ring_storage_(
+    detail::db_metadata *const m) noexcept
+{
+    auto &s = m->secondary_timeline.storage_;
+    memset(&s, 0xff, sizeof(s));
+    s.cnv_chunks_len = 0;
+}
+
+bool DbMetadataContext::secondary_ring_needs_repair() const noexcept
+{
+    // Only an inactive secondary can be normalised safely; an active one
+    // carries real ring data.
+    if (timeline_active(timeline_id::secondary)) {
+        return false;
+    }
+    // cnv chunk 0 (id 0) is never a valid ring chunk, so any slot == 0 is the
+    // pre-fix migration artifact. Scan every slot, not just slot 0, so a
+    // partially-zeroed ring can't pass here and then trip the map-time guard on
+    // a later activate.
+    auto const buggy = [](detail::db_metadata const *m) {
+        auto const &s = m->secondary_timeline.storage_;
+        for (auto const &slot : s.cnv_chunks) {
+            if (slot.cnv_chunk_id == 0) {
+                return true;
+            }
+        }
+        return false;
+    };
+    return buggy(copies_[0].main) || buggy(copies_[1].main);
+}
+
+bool DbMetadataContext::repair_inactive_secondary_ring()
+{
+    MONAD_ASSERT(can_write_to_map_);
+    if (!secondary_ring_needs_repair()) {
+        return false;
+    }
+    for (auto const &copy : copies_) {
+        auto *const m = copy.main;
+        auto const g = m->hold_dirty();
+        reset_secondary_ring_storage_(m);
+    }
+    sync_metadata_to_disk_();
+    return true;
+}
+
 chunk_offset_t DbMetadataContext::get_root_offset_at_version(
     uint64_t const version, timeline_id const tid) const noexcept
 {
@@ -843,6 +898,16 @@ namespace
         size_t slot_index, uint32_t cnv_chunk_id, size_t map_bytes, int prot,
         int mapflags, bool can_write, bool second_copy)
     {
+        // cnv chunk 0 holds db_metadata; it must never back a root-offsets
+        // ring. A 0 here is corrupt/zeroed cnv_chunks[] (the pre-fix migration
+        // artifact); mapping then 0xff-filling it would wipe both metadata
+        // copies. Abort cleanly instead.
+        MONAD_ASSERT_PRINTF(
+            cnv_chunk_id != 0,
+            "ring slot %zu resolved to cnv chunk 0 (db_metadata chunk); "
+            "corrupt or zeroed cnv_chunks[]. If this pool was migrated by a "
+            "pre-fix binary, run 'monad-mpt --repair'.",
+            slot_index);
         auto &chunk = io.storage_pool().chunk(
             MONAD_ASYNC_NAMESPACE::storage_pool::cnv, cnv_chunk_id);
         auto const fdr = chunk.read_fd();

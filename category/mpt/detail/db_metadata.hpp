@@ -294,9 +294,13 @@ namespace detail
             uint32_t begin, end;
         } free_list, fast_list, slow_list;
 
-        // Empty-list sentinel for id_pair begin/end: a full-width uint32
-        // array index, unlike the 20-bit chunk_info_t::INVALID_CHUNK_ID node
-        // id used in the prev/next links.
+        // Sentinel for a "no chunk" slot: a full-width uint32, distinct from
+        // the 20-bit chunk_info_t::INVALID_CHUNK_ID node id used in the
+        // prev/next links. Used both for id_pair begin/end (empty
+        // free/fast/slow lists) and for empty slots in
+        // root_offsets_ring_t::storage_.cnv_chunks[] (an empty ring slot is
+        // NULL_CHUNK, never 0 — cnv chunk 0 holds db_metadata, so 0 would alias
+        // it).
         static constexpr uint32_t NULL_CHUNK = UINT32_MAX;
 
         struct chunk_info_t

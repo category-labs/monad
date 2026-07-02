@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include "db_metadata_test_access.hpp"
 #include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp"
 
@@ -243,6 +244,92 @@ namespace
         ASSERT_NE(fd, -1);
         ::close(fd);
         ASSERT_EQ(0, ::truncate(temppath, 6ULL * 1024 * 1024 * 1024));
+    }
+
+    // Provision `temppath` (an empty temp file) as a MONAD008 pool via
+    // --create, then overwrite cnv chunk 0 (both metadata copies) with a
+    // MONAD007 (pre-dual-timeline) layout whose primary root_offsets ring
+    // lists `primary_chunk_ids`. Mirrors a pool created before dual-timeline
+    // support and left ready for a --upgrade. cnv chunk 0 is the metadata
+    // chunk; ring data chunks are ids >= 1.
+    void provision_monad007_pool(
+        char const *const temppath,
+        std::vector<uint32_t> const &primary_chunk_ids,
+        uint64_t const history_length)
+    {
+        using monad::mpt::detail::db_metadata;
+        static constexpr size_t MONAD007_DB_METADATA_SIZE = 528512;
+        static constexpr size_t MONAD007_LIST_TRIPLE_OFFSET = 528488;
+        static constexpr size_t MONAD007_HISTORY_LENGTH_OFFSET = 524344;
+        // root_offsets.storage_ header lives at byte 40; cnv_chunks_len at 44;
+        // cnv_chunks[k] = {high_bits_all_set@(48+8k), cnv_chunk_id@(52+8k)}.
+        static constexpr size_t STORAGE_HIGH_BITS_OFFSET = 40;
+        static constexpr size_t STORAGE_CNV_LEN_OFFSET = 44;
+        static constexpr size_t STORAGE_CNV_CHUNKS_OFFSET = 48;
+
+        {
+            std::stringstream cout;
+            std::stringstream cerr;
+            std::string_view create_args[] = {
+                "monad-mpt", "--storage", temppath, "--create"};
+            ASSERT_EQ(0, main_impl(cout, cerr, create_args)) << cerr.str();
+        }
+
+        std::vector<std::filesystem::path> paths{temppath};
+        MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags const flags;
+        MONAD_ASYNC_NAMESPACE::storage_pool pool{
+            std::span{paths},
+            MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing,
+            flags};
+        auto const chunk_count = static_cast<uint32_t>(
+            pool.chunks(MONAD_ASYNC_NAMESPACE::storage_pool::seq));
+        auto &cnv_chunk =
+            pool.chunk(MONAD_ASYNC_NAMESPACE::storage_pool::cnv, 0);
+        auto const [write_fd, base_offset] = cnv_chunk.write_fd(0);
+        off_t const half_capacity = // NOLINT(misc-include-cleaner)
+            static_cast<off_t>(cnv_chunk.capacity() / 2);
+
+        std::vector<uint8_t> buf(
+            MONAD007_DB_METADATA_SIZE +
+                size_t(chunk_count) * sizeof(db_metadata::chunk_info_t),
+            0);
+        memcpy(
+            buf.data(),
+            db_metadata::PREVIOUS_MAGIC,
+            db_metadata::MAGIC_STRING_LEN);
+        uint64_t const bitfield =
+            static_cast<uint64_t>(chunk_count) & 0xfffffULL;
+        memcpy(buf.data() + 8, &bitfield, 8);
+        uint32_t const high_bits_all_set = uint32_t(-1);
+        auto const cnv_len = static_cast<uint32_t>(primary_chunk_ids.size());
+        memcpy(buf.data() + STORAGE_HIGH_BITS_OFFSET, &high_bits_all_set, 4);
+        memcpy(buf.data() + STORAGE_CNV_LEN_OFFSET, &cnv_len, 4);
+        for (size_t k = 0; k < primary_chunk_ids.size(); k++) {
+            memcpy(
+                buf.data() + STORAGE_CNV_CHUNKS_OFFSET + k * 8,
+                &high_bits_all_set,
+                4);
+            memcpy(
+                buf.data() + STORAGE_CNV_CHUNKS_OFFSET + k * 8 + 4,
+                &primary_chunk_ids[k],
+                4);
+        }
+        memcpy(buf.data() + MONAD007_HISTORY_LENGTH_OFFSET, &history_length, 8);
+        uint32_t const invalid = db_metadata::NULL_CHUNK;
+        for (int i = 0; i < 6; i++) {
+            memcpy(
+                buf.data() + MONAD007_LIST_TRIPLE_OFFSET + i * 4, &invalid, 4);
+        }
+
+        for (off_t copy_idx = 0; copy_idx < 2; copy_idx++) {
+            ssize_t const written = ::pwrite( // NOLINT(misc-include-cleaner)
+                write_fd,
+                buf.data(),
+                buf.size(),
+                off_t(base_offset) + copy_idx * half_capacity);
+            ASSERT_EQ(ssize_t(buf.size()), written);
+        }
+        ASSERT_EQ(0, ::fsync(write_fd));
     }
 
     monad::mpt::Node::SharedPtr upsert_one(
@@ -1293,6 +1380,451 @@ TEST(cli_tool, upgrade_migrates_monad007_pool)
                 m->magic, db_metadata::MAGIC, db_metadata::MAGIC_STRING_LEN));
         EXPECT_EQ(m->history_length, test_history_length);
     }
+}
+
+// A pool migrated MONAD007 -> MONAD008 must have its (empty) secondary ring
+// initialised with the NULL_CHUNK sentinel, not zero. A zeroed cnv_chunks[]
+// slot decodes as cnv chunk id 0 — the db_metadata chunk — which a later
+// activate_secondary would map and then 0xff-fill, destroying the metadata.
+TEST(cli_tool, upgrade_monad007_secondary_ring_uses_null_chunk_sentinel)
+{
+    using monad::mpt::detail::db_metadata;
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+
+    provision_monad007_pool(temppath, {1, 2}, /*history_length=*/9999);
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--upgrade"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+
+    monad::mpt::AsyncIOContext io_ctx{monad::mpt::ReadOnlyOnDiskDbConfig{
+        .dbname_paths = {std::filesystem::path{temppath}}}};
+    monad::mpt::DbMetadataContext const ctx{io_ctx.io};
+    auto const *const m = ctx.main();
+    ASSERT_EQ(
+        0, memcmp(m->magic, db_metadata::MAGIC, db_metadata::MAGIC_STRING_LEN));
+
+    auto const &sstore =
+        monad::mpt::test::DbMetadataTestAccess::storage(m->secondary_timeline);
+    EXPECT_EQ(sstore.cnv_chunks_len, 0u);
+    for (size_t k = 0; k < db_metadata::root_offsets_ring_t::SIZE_ - 1; k++) {
+        EXPECT_EQ(sstore.cnv_chunks[k].cnv_chunk_id, db_metadata::NULL_CHUNK)
+            << "secondary cnv_chunks[" << k
+            << "] must be the NULL_CHUNK sentinel, not a valid chunk id "
+               "(0 == the db_metadata chunk)";
+    }
+}
+
+// End-to-end regression for the metadata-wipe incident: a MONAD007 pool that
+// is --upgrade'd and then has its secondary timeline activated must keep its
+// metadata intact (magic valid) and bind the secondary to a real ring chunk.
+// Before the fix, activate mapped the secondary ring onto cnv chunk 0 and
+// 0xff-filled it, corrupting the magic so every subsequent open aborted.
+//
+// Activate is driven at the metadata level (activate_secondary_header) rather
+// than via the CLI: the full UpdateAux::init that `monad-mpt
+// --activate-secondary` runs requires a populated fast/slow chunk list that
+// this synthetic MONAD007 pool doesn't have, whereas the wipe bug lives
+// entirely in the metadata-level activate body.
+TEST(cli_tool, activate_secondary_on_migrated_pool_preserves_metadata)
+{
+    using monad::mpt::detail::db_metadata;
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+
+    provision_monad007_pool(temppath, {1, 2}, /*history_length=*/9999);
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--upgrade"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+
+    {
+        std::vector<std::filesystem::path> paths{temppath};
+        MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags const flags;
+        MONAD_ASYNC_NAMESPACE::storage_pool pool{
+            std::span{paths},
+            MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing,
+            flags};
+        monad::io::Ring ring1;
+        monad::io::Ring ring2;
+        monad::io::Buffers buffers =
+            monad::io::make_buffers_for_segregated_read_write(
+                ring1,
+                ring2,
+                2,
+                4,
+                MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+                MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+        MONAD_ASYNC_NAMESPACE::AsyncIO io{pool, buffers};
+        monad::mpt::DbMetadataContext ctx{io};
+
+        ASSERT_FALSE(ctx.timeline_active(monad::mpt::timeline_id::secondary));
+        ctx.activate_secondary_header();
+
+        auto const *const m = ctx.main();
+        ASSERT_EQ(
+            0,
+            memcmp(m->magic, db_metadata::MAGIC, db_metadata::MAGIC_STRING_LEN))
+            << "activate destroyed the metadata magic (the wipe bug)";
+        EXPECT_TRUE(ctx.timeline_active(monad::mpt::timeline_id::secondary));
+
+        auto const &sstore = monad::mpt::test::DbMetadataTestAccess::storage(
+            m->secondary_timeline);
+        EXPECT_EQ(sstore.cnv_chunks_len, 1u);
+        EXPECT_NE(sstore.cnv_chunks[0].cnv_chunk_id, 0u);
+        EXPECT_NE(sstore.cnv_chunks[0].cnv_chunk_id, db_metadata::NULL_CHUNK);
+    }
+
+    monad::mpt::AsyncIOContext io_ctx{monad::mpt::ReadOnlyOnDiskDbConfig{
+        .dbname_paths = {std::filesystem::path{temppath}}}};
+    monad::mpt::DbMetadataContext const ctx{io_ctx.io};
+    EXPECT_EQ(
+        0,
+        memcmp(
+            ctx.main()->magic,
+            db_metadata::MAGIC,
+            db_metadata::MAGIC_STRING_LEN));
+    EXPECT_TRUE(ctx.timeline_active(monad::mpt::timeline_id::secondary));
+}
+
+// Guard: a root-offsets ring must never reference cnv chunk 0 (it holds
+// db_metadata). Corrupt a fresh pool's primary ring to point slot 0 at chunk
+// 0 and confirm the next open aborts, instead of mapping (and a later op
+// 0xff-wiping) the metadata chunk.
+TEST(cli_tool, ring_referencing_db_metadata_chunk_aborts)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+
+    // Point primary root_offsets ring slot 0 at cnv chunk 0 on both metadata
+    // copies. cnv_chunks[0].cnv_chunk_id sits at byte 52 of db_metadata.
+    {
+        std::vector<std::filesystem::path> paths{temppath};
+        MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags const flags;
+        MONAD_ASYNC_NAMESPACE::storage_pool pool{
+            std::span{paths},
+            MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing,
+            flags};
+        auto &cnv_chunk =
+            pool.chunk(MONAD_ASYNC_NAMESPACE::storage_pool::cnv, 0);
+        auto const [write_fd, base_offset] = cnv_chunk.write_fd(0);
+        auto const half_capacity = static_cast<off_t>(cnv_chunk.capacity() / 2);
+        uint32_t const chunk0_id = 0;
+        for (off_t copy_idx = 0; copy_idx < 2; copy_idx++) {
+            ASSERT_EQ(
+                4,
+                ::pwrite(
+                    write_fd,
+                    &chunk0_id,
+                    4,
+                    off_t(base_offset) + copy_idx * half_capacity + 52));
+        }
+        ASSERT_EQ(0, ::fsync(write_fd));
+    }
+
+    monad::mpt::AsyncIOContext io_ctx{monad::mpt::ReadOnlyOnDiskDbConfig{
+        .dbname_paths = {std::filesystem::path{temppath}}}};
+    ASSERT_DEATH(
+        { monad::mpt::DbMetadataContext const ctx{io_ctx.io}; },
+        "db_metadata chunk");
+}
+
+// monad-mpt --repair path: a pool whose inactive secondary ring was left with
+// a zeroed cnv_chunks[] (the pre-fix migration artifact) is normalised back to
+// the NULL_CHUNK sentinel, and repair is idempotent.
+TEST(cli_tool, repair_normalizes_zeroed_secondary_ring)
+{
+    using monad::mpt::detail::db_metadata;
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+
+    // Simulate the buggy migration artifact: zero the inactive secondary
+    // ring's cnv_chunks[0].cnv_chunk_id (byte 460 = secondary_timeline@432 +
+    // storage_ cnv_chunks[0].cnv_chunk_id@28) on both metadata copies.
+    static constexpr off_t SECONDARY_CNV_CHUNK0_ID_OFFSET = 432 + 28;
+    {
+        std::vector<std::filesystem::path> paths{temppath};
+        MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags const flags;
+        MONAD_ASYNC_NAMESPACE::storage_pool pool{
+            std::span{paths},
+            MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing,
+            flags};
+        auto &cnv_chunk =
+            pool.chunk(MONAD_ASYNC_NAMESPACE::storage_pool::cnv, 0);
+        auto const [write_fd, base_offset] = cnv_chunk.write_fd(0);
+        auto const half_capacity = static_cast<off_t>(cnv_chunk.capacity() / 2);
+        uint32_t const zero_id = 0;
+        for (off_t copy_idx = 0; copy_idx < 2; copy_idx++) {
+            ASSERT_EQ(
+                4,
+                ::pwrite(
+                    write_fd,
+                    &zero_id,
+                    4,
+                    off_t(base_offset) + copy_idx * half_capacity +
+                        SECONDARY_CNV_CHUNK0_ID_OFFSET));
+        }
+        ASSERT_EQ(0, ::fsync(write_fd));
+    }
+
+    std::vector<std::filesystem::path> paths{temppath};
+    MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags const flags;
+    MONAD_ASYNC_NAMESPACE::storage_pool pool{
+        std::span{paths},
+        MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing,
+        flags};
+    monad::io::Ring ring1;
+    monad::io::Ring ring2;
+    monad::io::Buffers buffers =
+        monad::io::make_buffers_for_segregated_read_write(
+            ring1,
+            ring2,
+            2,
+            4,
+            MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+            MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+    MONAD_ASYNC_NAMESPACE::AsyncIO io{pool, buffers};
+    monad::mpt::DbMetadataContext ctx{io};
+
+    // Sanity: the artifact is present.
+    ASSERT_EQ(
+        monad::mpt::test::DbMetadataTestAccess::storage(
+            ctx.main()->secondary_timeline)
+            .cnv_chunks[0]
+            .cnv_chunk_id,
+        0u);
+
+    EXPECT_TRUE(ctx.repair_inactive_secondary_ring());
+
+    auto const &sstore = monad::mpt::test::DbMetadataTestAccess::storage(
+        ctx.main()->secondary_timeline);
+    EXPECT_EQ(sstore.cnv_chunks_len, 0u);
+    for (auto const &slot : sstore.cnv_chunks) {
+        EXPECT_EQ(slot.cnv_chunk_id, db_metadata::NULL_CHUNK);
+    }
+    // Idempotent: nothing left to repair.
+    EXPECT_FALSE(ctx.repair_inactive_secondary_ring());
+}
+
+// End-to-end CLI wiring for --repair: on a healthy (fresh) pool it parses,
+// opens writable, and reports nothing to do.
+TEST(cli_tool, repair_cli_noop_on_healthy_pool)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--repair"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+        EXPECT_NE(std::string::npos, cout.str().find("No repair needed"));
+    }
+}
+
+// --repair must refuse to touch an ACTIVE secondary (whose ring holds real
+// data) — the guard against repair itself destroying live mappings.
+TEST(cli_tool, repair_refuses_active_secondary)
+{
+    using monad::mpt::detail::db_metadata;
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+
+    std::vector<std::filesystem::path> paths{temppath};
+    MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags const flags;
+    MONAD_ASYNC_NAMESPACE::storage_pool pool{
+        std::span{paths},
+        MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing,
+        flags};
+    monad::io::Ring ring1;
+    monad::io::Ring ring2;
+    monad::io::Buffers buffers =
+        monad::io::make_buffers_for_segregated_read_write(
+            ring1,
+            ring2,
+            2,
+            4,
+            MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+            MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+    MONAD_ASYNC_NAMESPACE::AsyncIO io{pool, buffers};
+    monad::mpt::DbMetadataContext ctx{io};
+
+    // Activate the secondary so its ring holds real chunk ids.
+    ctx.activate_secondary_header();
+    ASSERT_TRUE(ctx.timeline_active(monad::mpt::timeline_id::secondary));
+    auto const real_chunk = monad::mpt::test::DbMetadataTestAccess::storage(
+                                ctx.main()->secondary_timeline)
+                                .cnv_chunks[0]
+                                .cnv_chunk_id;
+    ASSERT_NE(real_chunk, 0u);
+    ASSERT_NE(real_chunk, db_metadata::NULL_CHUNK);
+
+    // Repair must be a no-op on an active secondary and must not disturb it.
+    EXPECT_FALSE(ctx.secondary_ring_needs_repair());
+    EXPECT_FALSE(ctx.repair_inactive_secondary_ring());
+    EXPECT_EQ(
+        monad::mpt::test::DbMetadataTestAccess::storage(
+            ctx.main()->secondary_timeline)
+            .cnv_chunks[0]
+            .cnv_chunk_id,
+        real_chunk);
+}
+
+// CLI --repair on a pool with an ACTIVE secondary is a precondition violation:
+// it must report the refusal on stderr and exit non-zero (like the other
+// secondary-lifecycle ops), so scripts can tell repair was refused.
+TEST(cli_tool, repair_cli_refuses_active_secondary)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--activate-secondary"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--repair"};
+        EXPECT_EQ(1, main_impl(cout, cerr, args));
+        EXPECT_NE(std::string::npos, cerr.str().find("active"));
+    }
+}
+
+// End-to-end guard against the "wrong order" brick: running
+// --activate-secondary on a still-buggy migrated pool must refuse (pointing at
+// --repair) WITHOUT stamping the activate intent log, so the pool stays
+// openable; --repair then fixes it and activation succeeds. Also covers the
+// CLI --repair success path on an actually-broken pool.
+TEST(cli_tool, activate_refuses_unrepaired_pool_then_repair_enables_activation)
+{
+    static constexpr off_t SECONDARY_CNV_CHUNK0_ID_OFFSET = 432 + 28;
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+
+    // Simulate the pre-fix migration artifact on the inactive secondary ring.
+    {
+        std::vector<std::filesystem::path> paths{temppath};
+        MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags const flags;
+        MONAD_ASYNC_NAMESPACE::storage_pool pool{
+            std::span{paths},
+            MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing,
+            flags};
+        auto &cnv_chunk =
+            pool.chunk(MONAD_ASYNC_NAMESPACE::storage_pool::cnv, 0);
+        auto const [write_fd, base_offset] = cnv_chunk.write_fd(0);
+        auto const half_capacity = static_cast<off_t>(cnv_chunk.capacity() / 2);
+        uint32_t const zero_id = 0;
+        for (off_t copy_idx = 0; copy_idx < 2; copy_idx++) {
+            ASSERT_EQ(
+                4,
+                ::pwrite(
+                    write_fd,
+                    &zero_id,
+                    4,
+                    off_t(base_offset) + copy_idx * half_capacity +
+                        SECONDARY_CNV_CHUNK0_ID_OFFSET));
+        }
+        ASSERT_EQ(0, ::fsync(write_fd));
+    }
+
+    // 1. Activate refuses and points at --repair (no intent stamped).
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--activate-secondary"};
+        EXPECT_EQ(1, main_impl(cout, cerr, args));
+        EXPECT_NE(std::string::npos, cerr.str().find("--repair"));
+    }
+    // 2. Repair fixes the pool (CLI success path).
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--repair"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+        EXPECT_NE(
+            std::string::npos, cout.str().find("Repaired secondary ring"));
+    }
+    // 3. Activation now succeeds — the refusal did not brick the pool.
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--activate-secondary"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+        EXPECT_NE(std::string::npos, cout.str().find("Activated secondary"));
+    }
+    EXPECT_TRUE(read_secondary_active(temppath));
 }
 
 // Same shape as upgrade_migrates_monad007_pool, but the first cnv-chunk-0

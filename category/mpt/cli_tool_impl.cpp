@@ -422,6 +422,7 @@ struct impl_t
     bool activate_secondary = false;
     bool deactivate_secondary = false;
     bool promote_secondary = false;
+    bool repair_database = false;
     MONAD_MPT_NAMESPACE::state_machine_kind state_machine =
         MONAD_MPT_NAMESPACE::state_machine_kind::ethereum;
     std::optional<uint64_t> rewind_database_to;
@@ -1567,6 +1568,15 @@ opened.
                 "the new primary. Per-ring metadata (kind, auto_expire) "
                 "travels with the physical data; the daemon picks up the new "
                 "primary kind on next open.");
+            cli_ops_group->add_flag(
+                "--repair",
+                impl.repair_database,
+                "repair a database migrated by a buggy earlier build: the "
+                "MONAD007->MONAD008 migration zero-filled the inactive "
+                "secondary ring's cnv_chunks[] instead of using the empty "
+                "sentinel, which would make a later --activate-secondary wipe "
+                "the metadata. Normalises it so activation is safe. Run with "
+                "the daemon stopped.");
             cli_ops_group->add_option(
                 "--reset-history-length",
                 impl.reset_history_length,
@@ -1734,7 +1744,7 @@ opened.
             }
             else if (
                 impl.activate_secondary || impl.deactivate_secondary ||
-                impl.promote_secondary) {
+                impl.promote_secondary || impl.repair_database) {
                 impl.flags.open_read_only = false;
                 impl.flags.open_read_only_allow_dirty = false;
             }
@@ -1756,7 +1766,7 @@ opened.
         bool const needs_write_ring =
             impl.rewind_database_to || impl.reset_history_length ||
             impl.activate_secondary || impl.deactivate_secondary ||
-            impl.promote_secondary;
+            impl.promote_secondary || impl.repair_database;
         auto wr_ring(
             needs_write_ring
                 ? std::optional<monad::io::Ring>(monad::io::RingConfig{4})
@@ -1801,6 +1811,22 @@ opened.
                 cerr << "Secondary timeline already active; nothing to do.\n";
                 return 1;
             }
+            // Refuse to activate a pool whose secondary ring is still in the
+            // pre-fix MONAD007->MONAD008 migration artifact state (zero-filled
+            // cnv_chunks[] aliasing cnv chunk 0). Bail out BEFORE
+            // activate_secondary_timeline stamps its pending-op intent log:
+            // otherwise the activate body would trip the cnv-chunk-0 guard and
+            // that abort would replay on every subsequent open, bricking the
+            // pool (unopenable even by --repair). Direct the operator to
+            // --repair, which is safe and idempotent.
+            if (aux.metadata_ctx().secondary_ring_needs_repair()) {
+                cerr << "Secondary ring is corrupt: cnv_chunks[] were "
+                        "zero-filled by a pre-fix MONAD007->MONAD008 migration "
+                        "and would alias cnv chunk 0 (the db_metadata chunk). "
+                        "Run 'monad-mpt --repair' before "
+                        "--activate-secondary.\n";
+                return 1;
+            }
             // Order matters: stamp the kind first, then flip the active bit.
             // open_secondary_timeline gates on the active bit, so flipping it
             // first and crashing before the stamp would expose a secondary
@@ -1835,6 +1861,30 @@ opened.
             aux.promote_secondary_to_primary();
             cout << "Promoted secondary timeline to primary "
                     "(primary_ring_idx flipped).\n";
+        }
+        else if (impl.repair_database) {
+            // --repair only applies to an inactive secondary. An active one is
+            // a precondition violation, not an idempotent no-op, so signal it
+            // like the other secondary-lifecycle ops (stderr + non-zero) so
+            // scripts can detect the refusal. "Nothing to do on a well-formed
+            // inactive ring" below stays a success (exit 0).
+            if (aux.metadata_ctx().timeline_active(
+                    MONAD_MPT_NAMESPACE::timeline_id::secondary)) {
+                cerr
+                    << "Secondary timeline is active; --repair only applies to "
+                       "an inactive secondary. Nothing to repair.\n";
+                return 1;
+            }
+            if (aux.metadata_ctx().repair_inactive_secondary_ring()) {
+                cout << "Repaired secondary ring: reset a zero-filled "
+                        "cnv_chunks[] (left by a buggy MONAD007->MONAD008 "
+                        "migration, which would alias cnv chunk 0 and wipe the "
+                        "metadata on --activate-secondary) to the empty "
+                        "sentinel. Activation is now safe.\n";
+            }
+            else {
+                cout << "No repair needed; secondary ring is well-formed.\n";
+            }
         }
 
         {

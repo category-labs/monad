@@ -130,7 +130,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacy)
         0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
 
     monad::Transaction const t{
-        .sc = {.r = r, .s = s}, // no chain_id in legacy transactions
+        .sc = {.signature = {.r = r, .s = s}}, // no chain_id in legacy txs
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
@@ -162,8 +162,8 @@ TEST(Rlp_Transaction, DecodeEncodeLegacy)
     EXPECT_EQ(decoded_transaction.value().value, t.value);
     EXPECT_EQ(*decoded_transaction.value().to, *t.to);
     EXPECT_EQ(decoded_transaction.value().to.value(), t.to.value());
-    EXPECT_EQ(decoded_transaction.value().sc.r, t.sc.r);
-    EXPECT_EQ(decoded_transaction.value().sc.s, t.sc.s);
+    EXPECT_EQ(decoded_transaction.value().sc.signature.r, t.sc.signature.r);
+    EXPECT_EQ(decoded_transaction.value().sc.signature.s, t.sc.signature.s);
 }
 
 TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
@@ -177,7 +177,7 @@ TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
         0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
 
     monad::Transaction const t{
-        .sc = {.r = r, .s = s}, // no chain_id in legacy transactions
+        .sc = {.signature = {.r = r, .s = s}}, // no chain_id in legacy txs
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
@@ -196,8 +196,8 @@ TEST(Rlp_Transaction, DecodeEncodeLegacyNoTo)
     EXPECT_EQ(decoded_transaction.value().gas_limit, t.gas_limit);
     EXPECT_EQ(decoded_transaction.value().value, t.value);
     EXPECT_EQ(decoded_transaction.value().to.has_value(), false);
-    EXPECT_EQ(decoded_transaction.value().sc.r, t.sc.r);
-    EXPECT_EQ(decoded_transaction.value().sc.s, t.sc.s);
+    EXPECT_EQ(decoded_transaction.value().sc.signature.r, t.sc.signature.r);
+    EXPECT_EQ(decoded_transaction.value().sc.signature.s, t.sc.signature.s);
 }
 
 TEST(Rlp_Transaction, EncodeEip155)
@@ -213,7 +213,7 @@ TEST(Rlp_Transaction, EncodeEip155)
         0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83_u256};
 
     monad::Transaction const t{
-        .sc = {.r = r, .s = s, .chain_id = 5}, // Goerli
+        .sc = {.signature = {.r = r, .s = s}, .chain_id = 5}, // Goerli
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
@@ -245,8 +245,8 @@ TEST(Rlp_Transaction, EncodeEip155)
     EXPECT_EQ(decoded_transaction.value().value, t.value);
     EXPECT_EQ(*decoded_transaction.value().to, *t.to);
     EXPECT_EQ(decoded_transaction.value().to.value(), t.to.value());
-    EXPECT_EQ(decoded_transaction.value().sc.r, t.sc.r);
-    EXPECT_EQ(decoded_transaction.value().sc.s, t.sc.s);
+    EXPECT_EQ(decoded_transaction.value().sc.signature.r, t.sc.signature.r);
+    EXPECT_EQ(decoded_transaction.value().sc.signature.s, t.sc.signature.s);
     EXPECT_EQ(*decoded_transaction.value().sc.chain_id, *t.sc.chain_id);
     EXPECT_EQ(
         decoded_transaction.value().sc.chain_id.value(), t.sc.chain_id.value());
@@ -272,7 +272,7 @@ TEST(Rlp_Transaction, EncodeEip2930)
     static monad::AccessList const a{AccessEntry{access_addr, {key1, key2}}};
 
     monad::Transaction const t{
-        .sc = {.r = r, .s = s, .chain_id = 3}, // Ropsten
+        .sc = {.signature = {.r = r, .s = s}, .chain_id = 3}, // Ropsten
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
@@ -316,8 +316,8 @@ TEST(Rlp_Transaction, EncodeEip2930)
     EXPECT_EQ(decoded_transaction.value().value, t.value);
     EXPECT_EQ(*decoded_transaction.value().to, *t.to);
     EXPECT_EQ(decoded_transaction.value().to.value(), t.to.value());
-    EXPECT_EQ(decoded_transaction.value().sc.r, t.sc.r);
-    EXPECT_EQ(decoded_transaction.value().sc.s, t.sc.s);
+    EXPECT_EQ(decoded_transaction.value().sc.signature.r, t.sc.signature.r);
+    EXPECT_EQ(decoded_transaction.value().sc.signature.s, t.sc.signature.s);
     EXPECT_EQ(*decoded_transaction.value().sc.chain_id, *t.sc.chain_id);
     EXPECT_EQ(
         decoded_transaction.value().sc.chain_id.value(), t.sc.chain_id.value());
@@ -353,7 +353,11 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
     static monad::AccessList const a{};
 
     monad::Transaction const t{
-        .sc = {.r = r, .s = s, .chain_id = 137, .y_parity = true}, // Polygon
+        .sc =
+            {
+                .signature = {.r = r, .s = s, .y_parity = true},
+                .chain_id = 137,
+            }, // Polygon
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
@@ -390,8 +394,8 @@ TEST(Rlp_Transaction, EncodeEip1559TrueParity)
     EXPECT_EQ(decoded_transaction.value().value, t.value);
     EXPECT_EQ(*decoded_transaction.value().to, *t.to);
     EXPECT_EQ(decoded_transaction.value().to.value(), t.to.value());
-    EXPECT_EQ(decoded_transaction.value().sc.r, t.sc.r);
-    EXPECT_EQ(decoded_transaction.value().sc.s, t.sc.s);
+    EXPECT_EQ(decoded_transaction.value().sc.signature.r, t.sc.signature.r);
+    EXPECT_EQ(decoded_transaction.value().sc.signature.s, t.sc.signature.s);
     EXPECT_EQ(*decoded_transaction.value().sc.chain_id, *t.sc.chain_id);
     EXPECT_EQ(
         decoded_transaction.value().sc.chain_id.value(), t.sc.chain_id.value());
@@ -429,7 +433,11 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
     static monad::AccessList const a{};
 
     monad::Transaction const t{
-        .sc = {.r = r, .s = s, .chain_id = 137, .y_parity = false}, // Polygon
+        .sc =
+            {
+                .signature = {.r = r, .s = s, .y_parity = false},
+                .chain_id = 137,
+            }, // Polygon
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
@@ -466,8 +474,8 @@ TEST(Rlp_Transaction, EncodeEip1559FalseParity)
     EXPECT_EQ(decoded_transaction.value().value, t.value);
     EXPECT_EQ(*decoded_transaction.value().to, *t.to);
     EXPECT_EQ(decoded_transaction.value().to.value(), t.to.value());
-    EXPECT_EQ(decoded_transaction.value().sc.r, t.sc.r);
-    EXPECT_EQ(decoded_transaction.value().sc.s, t.sc.s);
+    EXPECT_EQ(decoded_transaction.value().sc.signature.r, t.sc.signature.r);
+    EXPECT_EQ(decoded_transaction.value().sc.signature.s, t.sc.signature.s);
     EXPECT_EQ(*decoded_transaction.value().sc.chain_id, *t.sc.chain_id);
     EXPECT_EQ(
         decoded_transaction.value().sc.chain_id.value(), t.sc.chain_id.value());
@@ -504,7 +512,7 @@ TEST(Rlp_Transaction, IntTypeMismatchRegression)
     auto const bad_chain_id =
         std::make_optional<uint256_t>(0xFFFFFFFFFFFFFFFFFF_u256);
     Transaction const legacy_tx{
-        .sc = {.r = r, .s = s, .chain_id = bad_chain_id},
+        .sc = {.signature = {.r = r, .s = s}, .chain_id = bad_chain_id},
         .nonce = 9,
         .max_fee_per_gas = 20'000'000'000,
         .gas_limit = 21'000,

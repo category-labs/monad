@@ -165,7 +165,7 @@ Result<void> static_validate_transaction(
     }
 
     // EIP-2
-    if (MONAD_UNLIKELY(!tx.sc.is_valid())) {
+    if (MONAD_UNLIKELY(!tx.sc.signature.is_valid())) {
         return TransactionError::InvalidSignature;
     }
 

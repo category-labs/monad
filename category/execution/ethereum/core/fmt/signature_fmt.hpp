@@ -36,10 +36,10 @@ struct fmt::formatter<monad::SignatureAndChain> : public monad::BasicFormatter
             "chain_id={} "
             "y_parity={}"
             "}}",
-            sc.r,
-            sc.s,
+            sc.signature.r,
+            sc.signature.s,
             sc.chain_id,
-            sc.y_parity);
+            sc.signature.y_parity);
         return ctx.out();
     }
 };

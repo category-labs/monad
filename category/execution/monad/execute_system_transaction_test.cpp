@@ -71,9 +71,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
             // validation.
             .sc =
                 SignatureAndChain{
-                    .r = 1,
-                    .s = 2,
-                    .y_parity = 0,
+                    .signature = {.r = 1, .s = 2, .y_parity = 0},
                 },
             .nonce = tx_nonce,
             .to = staking::STAKING_CA,
@@ -181,9 +179,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
         return Transaction{
             .sc =
                 SignatureAndChain{
-                    .r = 1,
-                    .s = 2,
-                    .y_parity = 0,
+                    .signature = {.r = 1, .s = 2, .y_parity = 0},
                 },
             .nonce = tx_nonce,
             .to = staking::STAKING_CA,

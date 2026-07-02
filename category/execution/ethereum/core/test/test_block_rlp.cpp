@@ -108,10 +108,10 @@ TEST(Rlp_Block, DecodeEncodeBlock46402)
     EXPECT_EQ(block.transactions[0].value, 0);
     EXPECT_EQ(block.transactions[0].sc.chain_id, std::nullopt);
     EXPECT_EQ(
-        block.transactions[0].sc.r,
+        block.transactions[0].sc.signature.r,
         0x589b4531c6d66f6850277af29e06e60b28a280916ccbb38595bf3347aca65c2c_u256);
     EXPECT_EQ(
-        block.transactions[0].sc.s,
+        block.transactions[0].sc.signature.s,
         0x40b1a3d6e47a04c0cd78506aa7d3aa0aeef734d7942424abdb64c88c2ba5f536_u256);
 
     EXPECT_EQ(block.ommers.size(), 0);
@@ -216,10 +216,10 @@ TEST(Rlp_Block, DecodeEncodeBlock2730000)
     EXPECT_EQ(block.transactions[0].value, 0x3dd59a7fca63400_u256);
     EXPECT_EQ(block.transactions[0].sc.chain_id, 0x01);
     EXPECT_EQ(
-        block.transactions[0].sc.r,
+        block.transactions[0].sc.signature.r,
         0xb813e0d752532446aa766198ec73cd0d975052cfe09d3ffb375aa92ae53c6f13_u256);
     EXPECT_EQ(
-        block.transactions[0].sc.s,
+        block.transactions[0].sc.signature.s,
         0x6a9c9bedc2c9ca2fc96dff90911540457716182822b8f28125040866b420492f_u256);
 
     EXPECT_EQ(block.transactions[1].type, TransactionType::legacy);
@@ -232,10 +232,10 @@ TEST(Rlp_Block, DecodeEncodeBlock2730000)
     EXPECT_EQ(block.transactions[1].value, 0x6ef6dd445b94970_u256);
     EXPECT_EQ(block.transactions[1].sc.chain_id, 0x1);
     EXPECT_EQ(
-        block.transactions[1].sc.r,
+        block.transactions[1].sc.signature.r,
         0x928ab5ed683df54e59ef2a849bf83b4ee2f49e232e4a2a3d411594ce6377287c_u256);
     EXPECT_EQ(
-        block.transactions[1].sc.s,
+        block.transactions[1].sc.signature.s,
         0x6b332e891a4f5b051f49016a79cfbac771061153af9660697d900325bcebef51_u256);
 
     EXPECT_EQ(block.transactions[2].type, TransactionType::legacy);
@@ -248,10 +248,10 @@ TEST(Rlp_Block, DecodeEncodeBlock2730000)
     EXPECT_EQ(block.transactions[2].value, 0x3d3c2fc0caddc00_u256);
     EXPECT_EQ(block.transactions[2].sc.chain_id, 0x01);
     EXPECT_EQ(
-        block.transactions[2].sc.r,
+        block.transactions[2].sc.signature.r,
         0x7b86ce1ec9f35571228f085bd4f9ef4a5f69b52bb3dbf3c5fdf20d3a636deba_u256);
     EXPECT_EQ(
-        block.transactions[2].sc.s,
+        block.transactions[2].sc.signature.s,
         0x2ef365b24554adad7514ae5337c669c59a9c2affdb5663aa96850cc2efd0df89_u256);
 
     EXPECT_EQ(block.transactions[3].type, TransactionType::legacy);
@@ -264,10 +264,10 @@ TEST(Rlp_Block, DecodeEncodeBlock2730000)
     EXPECT_EQ(block.transactions[3].value, 0xdee6c72f83b7184_u256);
     EXPECT_EQ(block.transactions[3].sc.chain_id, 0x01);
     EXPECT_EQ(
-        block.transactions[3].sc.r,
+        block.transactions[3].sc.signature.r,
         0xab34ebfd6c27049f4cd3246c75adb7d6798a085153cdb917388e76c61ba599ab_u256);
     EXPECT_EQ(
-        block.transactions[3].sc.s,
+        block.transactions[3].sc.signature.s,
         0x20197a6f1c95fb5a228e83f1605075d007ff1ac35509edb5683cbff30ecf4f2d_u256);
 
     EXPECT_EQ(block.ommers.size(), 0);
@@ -348,10 +348,10 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
     EXPECT_EQ(block.transactions[0].value, 0x3b7e74a7f3af400_u256);
     EXPECT_EQ(block.transactions[0].sc.chain_id, 0x01);
     EXPECT_EQ(
-        block.transactions[0].sc.r,
+        block.transactions[0].sc.signature.r,
         0xfda8c8573a5ef9828d1d68d76be177b52070e9fb95578a4038cf059b53755325_u256);
     EXPECT_EQ(
-        block.transactions[0].sc.s,
+        block.transactions[0].sc.signature.s,
         0x32ad76b637d1d947936ed806b499c1b5df8d6d18fe598ba776523a2cce73dee5_u256);
 
     EXPECT_EQ(block.transactions[1].type, TransactionType::legacy);
@@ -367,10 +367,10 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
         std::optional<uint64_t>{}); // This transaction doesn't have a chain_id
                                     // associated
     EXPECT_EQ(
-        block.transactions[1].sc.r,
+        block.transactions[1].sc.signature.r,
         0xb821bab9f7e78c13d73beaf9cf6e9d2b33bbf2923ae25da58d7efb7a72fd607b_u256);
     EXPECT_EQ(
-        block.transactions[1].sc.s,
+        block.transactions[1].sc.signature.s,
         0x3b6699532ca1a2115e2b516695d80f400568619e9301b55ace126558f2126d2_u256);
 
     EXPECT_EQ(block.transactions[2].type, TransactionType::legacy);
@@ -383,10 +383,10 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
     EXPECT_EQ(block.transactions[2].value, 0xe7f24b03527b860_u256);
     EXPECT_EQ(block.transactions[2].sc.chain_id, 0x01);
     EXPECT_EQ(
-        block.transactions[2].sc.r,
+        block.transactions[2].sc.signature.r,
         0x1c850d46aa7976049de360c0d85fac4355a44f2c7e3533bef8edc372989d37_u256);
     EXPECT_EQ(
-        block.transactions[2].sc.s,
+        block.transactions[2].sc.signature.s,
         0x8b6142aeaab3391881c9ebd7697285a690c9a1e328f7e4869b83da2e4690f55_u256);
 
     EXPECT_EQ(block.transactions[3].type, TransactionType::legacy);
@@ -399,10 +399,10 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
     EXPECT_EQ(block.transactions[3].value, 0xe282b737fa1986c_u256);
     EXPECT_EQ(block.transactions[3].sc.chain_id, 0x01);
     EXPECT_EQ(
-        block.transactions[3].sc.r,
+        block.transactions[3].sc.signature.r,
         0xa52ba8691cb3857e56f7e382d108d3283ed1d40c271a7870bb3247992d4e50b0_u256);
     EXPECT_EQ(
-        block.transactions[3].sc.s,
+        block.transactions[3].sc.signature.s,
         0x5cfc68a3d0a5ec17b19515b84e1de5576d5f8ffdc5eebeb4671b864c50d34ed7_u256);
 
     EXPECT_EQ(block.transactions[4].type, TransactionType::legacy);
@@ -415,10 +415,10 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
     EXPECT_EQ(block.transactions[4].value, 0x39473f637aa0800_u256);
     EXPECT_EQ(block.transactions[4].sc.chain_id, 0x01);
     EXPECT_EQ(
-        block.transactions[4].sc.r,
+        block.transactions[4].sc.signature.r,
         0x98753c57dc147ca4fba5eb4038d03fb7751dd5c940e22e1774e8d22db5b22169_u256);
     EXPECT_EQ(
-        block.transactions[4].sc.s,
+        block.transactions[4].sc.signature.s,
         0x7317951a0f0b2cd45647407b2b9c87fc89d311ff03913d2c2f42041c15d634a5_u256);
 
     EXPECT_EQ(block.transactions[5].type, TransactionType::legacy);
@@ -431,10 +431,10 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
     EXPECT_EQ(block.transactions[5].value, 0x3907052df885000_u256);
     EXPECT_EQ(block.transactions[5].sc.chain_id, 0x01);
     EXPECT_EQ(
-        block.transactions[5].sc.r,
+        block.transactions[5].sc.signature.r,
         0xf4d94f88f029f3b64b280dbd034fdfce92f048166b85d95d21ea82913c4b428b_u256);
     EXPECT_EQ(
-        block.transactions[5].sc.s,
+        block.transactions[5].sc.signature.s,
         0x46c6acae965e6c8fe44785a8461b430b34c0983542aaf11a8d22de5add2f6bb2_u256);
 
     EXPECT_EQ(block.transactions[6].type, TransactionType::legacy);
@@ -447,10 +447,10 @@ TEST(Rlp_Block, DecodeEncodeBlock2730001)
     EXPECT_EQ(block.transactions[6].value, 0x38ebe0341834c00_u256);
     EXPECT_EQ(block.transactions[6].sc.chain_id, 0x01);
     EXPECT_EQ(
-        block.transactions[6].sc.r,
+        block.transactions[6].sc.signature.r,
         0x93fd750d39fbab2ad14865d77438556f4a7c17225cfdb423c9ec07db6790253c_u256);
     EXPECT_EQ(
-        block.transactions[6].sc.s,
+        block.transactions[6].sc.signature.s,
         0x3a712aead4cd85c472b6f7996b4adab96e63ac9e7a7d408944e385c39e870c4e_u256);
 
     EXPECT_EQ(block.ommers.size(), 0);
@@ -660,10 +660,10 @@ TEST(Rlp_Block, DecodeEncodeBlock14000000)
 
     EXPECT_EQ(*block.transactions[0].sc.chain_id, 0x01);
     EXPECT_EQ(
-        block.transactions[0].sc.r,
+        block.transactions[0].sc.signature.r,
         0xd2fed4e113738c74b4df1ccc9b0aab7a8dcd5dd1f30b9dcca5259a16f6b7c865_u256);
     EXPECT_EQ(
-        block.transactions[0].sc.s,
+        block.transactions[0].sc.signature.s,
         0x1dc7444f10bbd53b1f6f8d3a18916222a28539d76f8859ce3671f85eeb781d04_u256);
 
     EXPECT_EQ(block.transactions[1].type, TransactionType::legacy);
@@ -677,10 +677,10 @@ TEST(Rlp_Block, DecodeEncodeBlock14000000)
 
     EXPECT_EQ(*block.transactions[1].sc.chain_id, 0x01);
     EXPECT_EQ(
-        block.transactions[1].sc.r,
+        block.transactions[1].sc.signature.r,
         0x02ea61dac7a25c05d09b36b9a8221974c109e0a8cbb656c3dfe849cdc09054b0_u256);
     EXPECT_EQ(
-        block.transactions[1].sc.s,
+        block.transactions[1].sc.signature.s,
         0x09c059fae0f809e1405656d1f42efaa3e3a30b278e4d63602bbc680b33992a5c_u256);
 
     EXPECT_EQ(block.ommers.size(), 0);

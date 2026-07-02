@@ -32,21 +32,21 @@
 MONAD_NAMESPACE_BEGIN
 
 std::optional<Address>
-ecrecover(SignatureAndChain const &sc, byte_string_view const encoding)
+recover_address(EcdsaSignature const &sig, byte_string_view const encoding)
 {
-    if (sc.y_parity > 1) {
+    if (sig.y_parity > 1) {
         return std::nullopt;
     }
 
-    if (sc.has_upper_s()) {
+    if (sig.has_upper_s()) {
         return std::nullopt;
     }
 
     auto const encoding_hash = keccak256(encoding);
 
-    uint8_t signature[sizeof(sc.r) * 2];
-    store_be(signature, sc.r);
-    store_be(signature + sizeof(sc.r), sc.s);
+    uint8_t signature[sizeof(sig.r) * 2];
+    store_be(signature, sig.r);
+    store_be(signature + sizeof(sig.r), sig.s);
 
     thread_local std::unique_ptr<
         secp256k1_context,
@@ -62,7 +62,7 @@ ecrecover(SignatureAndChain const &sc, byte_string_view const encoding)
             result.bytes,
             encoding_hash.bytes,
             signature,
-            sc.y_parity,
+            sig.y_parity,
             context.get())) {
         return std::nullopt;
     }

@@ -211,8 +211,8 @@ namespace
         // any account). Solving this issue by setting chain_id and signature to
         // complied values
         enriched_txn.sc.chain_id = chain.get_chain_id();
-        enriched_txn.sc.r = 1;
-        enriched_txn.sc.s = 1;
+        enriched_txn.sc.signature.r = 1;
+        enriched_txn.sc.signature.s = 1;
 
         BOOST_OUTCOME_TRY(static_validate_transaction<traits>(
             enriched_txn,
@@ -961,8 +961,8 @@ namespace
                     Transaction &tx = calls[block_idx][tx_idx];
 
                     tx.sc.chain_id = chain.get_chain_id();
-                    tx.sc.r = 1;
-                    tx.sc.s = 1;
+                    tx.sc.signature.r = 1;
+                    tx.sc.signature.s = 1;
 
                     // Update tx.nonce to match the expected nonce in the
                     // current block state.

@@ -23,16 +23,16 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct SignatureAndChain;
+struct EcdsaSignature;
 
-/// Recovers the Ethereum address that signed `encoding` with the given
-/// (r, s, y_parity) signature. Rejects malformed signatures up-front
-/// (y_parity > 1, malleable s); returns nullopt if ECDSA recovery fails.
+/// Recovers the Ethereum address that signed `encoding` with the given ECDSA
+/// signature. Rejects malformed signatures up-front (y_parity > 1, malleable
+/// s); returns nullopt if ECDSA recovery fails.
 ///
-/// Split out of transaction.cpp into its own TU so the silkpre / secp256k1
-/// dependency is confined to a single source file (this one's impl), and
-/// can be substituted on platforms that supply ecrecover via syscall.
+/// Kept in its own TU so the silkpre / secp256k1 dependency is confined to a
+/// single source file, and can be substituted on platforms that supply
+/// ecrecover via syscall.
 std::optional<Address>
-ecrecover(SignatureAndChain const &, byte_string_view encoding);
+recover_address(EcdsaSignature const &, byte_string_view encoding);
 
 MONAD_NAMESPACE_END

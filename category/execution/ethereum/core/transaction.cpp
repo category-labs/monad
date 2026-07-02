@@ -29,14 +29,14 @@ std::optional<Address> recover_authority(AuthorizationEntry const &auth_entry)
 {
     byte_string const auth_encoding =
         rlp::encode_authorization_entry_for_signing(auth_entry);
-    return ecrecover(auth_entry.sc, auth_encoding);
+    return recover_address(auth_entry.sc.signature, auth_encoding);
 }
 
 std::optional<Address> recover_sender(Transaction const &tx)
 {
     TRACE_TXN_EVENT(StartSenderRecovery);
     byte_string const tx_encoding = rlp::encode_transaction_for_signing(tx);
-    return ecrecover(tx.sc, tx_encoding);
+    return recover_address(tx.sc.signature, tx_encoding);
 }
 
 MONAD_NAMESPACE_END

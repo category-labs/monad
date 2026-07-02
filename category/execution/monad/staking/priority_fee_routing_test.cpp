@@ -63,7 +63,7 @@ TYPED_TEST(MonadTraitsTest, mip11_fork)
     static constexpr uint256_t expected_priority_fee =
         gas_limit * max_fee_per_gas;
     Transaction const tx{
-        .sc = {.r = 1, .s = 2, .y_parity = 0},
+        .sc = {.signature = {.r = 1, .s = 2, .y_parity = 0}},
         .nonce = 0,
         .max_fee_per_gas = max_fee_per_gas,
         .gas_limit = gas_limit,

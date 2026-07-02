@@ -65,7 +65,7 @@ TYPED_TEST(TraitsTest, validate_enough_gas)
     static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_HOMESTEAD);
 
     static Transaction const t{
-        .sc = {.r = r, .s = s},
+        .sc = {.signature = {.r = r, .s = s}},
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500, // no .to, under the creation amount
         .value = 1};
@@ -84,7 +84,7 @@ TYPED_TEST(TraitsTest, validate_floor_gas)
 
     static constexpr auto gas_limit = 300'000;
     Transaction const t{
-        .sc = {.r = r, .s = s},
+        .sc = {.signature = {.r = r, .s = s}},
         .gas_limit = gas_limit,
         .data = evmc::bytes(10000, 0x01),
     };
@@ -200,7 +200,7 @@ TYPED_TEST(InMemoryStateTraitsTest, successful_validation)
     this->state.add_to_balance(sender, 56'939'568'773'815'811);
     this->state.set_nonce(sender, 25);
     Transaction const tx{
-        .sc = {.r = r, .s = s},
+        .sc = {.signature = {.r = r, .s = s}},
         .nonce = 25,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
@@ -224,7 +224,7 @@ TYPED_TEST(TraitsTest, invalid_signature)
     // A transaction that passes every earlier static check but carries a bad
     // r/s must be rejected with InvalidSignature (EIP-2).
     static Transaction const t{
-        .sc = {.r = 0, .s = s},
+        .sc = {.signature = {.r = 0, .s = s}},
         .nonce = 25,
         .max_fee_per_gas = 29'443'849'433,
         .gas_limit = 27'500,
@@ -301,7 +301,7 @@ TYPED_TEST(TraitsTest, init_code_exceed_limit)
     // exceed EIP-3860 limit
 
     static Transaction const t{
-        .sc = {.r = r, .s = s},
+        .sc = {.signature = {.r = r, .s = s}},
         .max_fee_per_gas = 0,
         .gas_limit = 20'000'000,
         .value = 0,

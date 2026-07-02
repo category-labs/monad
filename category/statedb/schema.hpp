@@ -28,7 +28,7 @@ namespace statedb
 {
     // The four RocksDB column families backing the state store.
     //
-    //   flat_state : raw Address [+ incarnation + slot/page key] -> account /
+    //   flat_state : raw Address [+ slot/page key] -> account /
     //                storage value (decode_account_db_raw / storage_page_t),
     //                serving read_account/read_storage without trie traversal.
     //   code       : code_hash (32B) -> raw bytecode.

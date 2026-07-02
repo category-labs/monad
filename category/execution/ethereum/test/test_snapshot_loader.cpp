@@ -226,6 +226,20 @@ TEST(SnapshotLoader, SeedAndGate)
     EXPECT_EQ(decoded.value().nonce, 8u);
     EXPECT_EQ(decoded.value().balance, 8u);
 
+    // CF_FLAT_STATE storage: raw Address + raw slot, with no incarnation bytes
+    // in the key.
+    Address const a0{0};
+    bytes32_t const slot1{1};
+    byte_string a0_slot1_key{a0.bytes, sizeof(a0.bytes)};
+    a0_slot1_key.append(slot1.bytes, sizeof(slot1.bytes));
+    auto const flat_storage = kv->get(statedb::Cf::flat_state, a0_slot1_key);
+    ASSERT_TRUE(flat_storage.has_value());
+    byte_string_view flat_storage_view{*flat_storage};
+    auto const decoded_storage = decode_storage_db(flat_storage_view);
+    ASSERT_FALSE(decoded_storage.has_error());
+    EXPECT_EQ(decoded_storage.value().first, slot1);
+    EXPECT_EQ(decoded_storage.value().second, bytes32_t{0x10});
+
     // CF_CODE: a sampled code is present.
     std::vector<uint64_t> const bytes(40, 1);
     byte_string_view const code{

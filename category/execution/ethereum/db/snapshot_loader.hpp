@@ -28,7 +28,7 @@ MONAD_NAMESPACE_BEGIN
 
 // F8 offline seed loader. Reads the 256-shard ACCOUNT/STORAGE/CODE/ETH_HEADER
 // filesystem snapshot produced by monad_db_dump_snapshot and writes the four
-// RocksDB column families: CF_FLAT_STATE (raw Address [+ incarnation + slot] ->
+// RocksDB column families: CF_FLAT_STATE (raw Address [+ slot] ->
 // account/storage value), CF_CODE (code_hash -> bytecode), CF_TRIE_NODES
 // (node_hash -> canonical RLP, built via PartialTrieDb), and CF_META (finalized
 // = block, state_root, schema.version).

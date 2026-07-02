@@ -38,6 +38,7 @@ namespace rocksdb
 MONAD_NAMESPACE_BEGIN
 
 class CommitBuilder;
+struct RocksDbCommitTrace;
 
 namespace statedb
 {
@@ -128,7 +129,8 @@ private:
     // keys, replay through PartialTrieDb, and write back the changed nodes +
     // flat values. Consumes `deltas`.
     bytes32_t apply_state_chunk(
-        rocksdb::WriteBatch &batch, std::unique_ptr<StateDeltas> deltas);
+        rocksdb::WriteBatch &batch, std::unique_ptr<StateDeltas> deltas,
+        RocksDbCommitTrace *trace = nullptr);
 };
 
 MONAD_NAMESPACE_END

@@ -38,12 +38,12 @@ MONAD_NAMESPACE_BEGIN
 // TrieDb asserts that a *present* flat value equals the trie's (the trie stays
 // the source of truth, and the flat store may be incomplete since it starts
 // empty -- only replayed blocks populate it). The flat value reuses the trie
-// leaf encodings (encode_account_db /
-// encode_storage_db), so it is byte-identical to the trie leaf -- only the key
-// differs: a raw Address [+ incarnation + raw slot] instead of keccak paths.
-// Storage is slot-granular (no pages, matching the current MonadDB layout); the
-// incarnation in the storage key keeps reads correct across selfdestruct +
-// recreate. Replay-only; not wired for proposals/pruning.
+// leaf encodings (encode_account_db / encode_storage_db), so it is
+// byte-identical to the trie leaf -- only the key differs: a raw Address
+// [+ raw slot] instead of keccak paths. Storage is slot-granular (no pages,
+// matching the current MonadDB layout); selfdestruct/recreate clears the
+// address's flat storage prefix explicitly. Replay-only; not wired for
+// proposals/pruning.
 class FlatStateMirror
 {
 public:

@@ -82,9 +82,9 @@ byte_string encode_authorization_list(AuthorizationList const &auth_list)
             encode_unsigned(*auth_entry.sc.chain_id),
             encode_address(auth_entry.address),
             encode_unsigned(auth_entry.nonce),
-            encode_unsigned(auth_entry.sc.y_parity),
-            encode_unsigned(auth_entry.sc.r),
-            encode_unsigned(auth_entry.sc.s));
+            encode_unsigned(auth_entry.sc.signature.y_parity),
+            encode_unsigned(auth_entry.sc.signature.r),
+            encode_unsigned(auth_entry.sc.signature.s));
     }
 
     return encode_list2(result);
@@ -146,8 +146,8 @@ byte_string encode_transaction(Transaction const &txn)
         return encode_list2(
             encode_legacy_base(txn),
             encode_unsigned(get_v(txn.sc)),
-            encode_unsigned(txn.sc.r),
-            encode_unsigned(txn.sc.s));
+            encode_unsigned(txn.sc.signature.r),
+            encode_unsigned(txn.sc.signature.s));
     }
     else {
         auto const prefix =
@@ -155,9 +155,9 @@ byte_string encode_transaction(Transaction const &txn)
 
         return prefix + encode_list2(
                             encode_eip2718_base(txn),
-                            encode_unsigned(txn.sc.y_parity),
-                            encode_unsigned(txn.sc.r),
-                            encode_unsigned(txn.sc.s));
+                            encode_unsigned(txn.sc.signature.y_parity),
+                            encode_unsigned(txn.sc.signature.r),
+                            encode_unsigned(txn.sc.signature.s));
     }
 }
 
@@ -251,9 +251,11 @@ Result<AuthorizationEntry> decode_authorization_entry(byte_string_view &enc)
     BOOST_OUTCOME_TRY(auth_entry.nonce, decode_unsigned<uint64_t>(payload));
 
     BOOST_OUTCOME_TRY(
-        auth_entry.sc.y_parity, decode_unsigned<uint8_t>(payload));
-    BOOST_OUTCOME_TRY(auth_entry.sc.r, decode_unsigned<uint256_t>(payload));
-    BOOST_OUTCOME_TRY(auth_entry.sc.s, decode_unsigned<uint256_t>(payload));
+        auth_entry.sc.signature.y_parity, decode_unsigned<uint8_t>(payload));
+    BOOST_OUTCOME_TRY(
+        auth_entry.sc.signature.r, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(
+        auth_entry.sc.signature.s, decode_unsigned<uint256_t>(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
@@ -292,8 +294,8 @@ Result<Transaction> decode_transaction_legacy(byte_string_view &enc)
     BOOST_OUTCOME_TRY(txn.value, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(txn.data, decode_string(payload));
     BOOST_OUTCOME_TRY(txn.sc, decode_sc(payload));
-    BOOST_OUTCOME_TRY(txn.sc.r, decode_unsigned<uint256_t>(payload));
-    BOOST_OUTCOME_TRY(txn.sc.s, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(txn.sc.signature.r, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(txn.sc.signature.s, decode_unsigned<uint256_t>(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
@@ -354,9 +356,10 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
             txn.authorization_list, decode_authorization_list(payload));
     }
 
-    BOOST_OUTCOME_TRY(txn.sc.y_parity, decode_unsigned<uint8_t>(payload));
-    BOOST_OUTCOME_TRY(txn.sc.r, decode_unsigned<uint256_t>(payload));
-    BOOST_OUTCOME_TRY(txn.sc.s, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(
+        txn.sc.signature.y_parity, decode_unsigned<uint8_t>(payload));
+    BOOST_OUTCOME_TRY(txn.sc.signature.r, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(txn.sc.signature.s, decode_unsigned<uint256_t>(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;

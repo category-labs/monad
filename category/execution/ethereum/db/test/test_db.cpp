@@ -507,13 +507,13 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
         0x3535353535353535353535353535353535353535_address};
 
     Transaction t1{
-        .sc = {.r = r, .s = s}, // no chain_id in legacy transactions
+        .sc = {.signature = {.r = r, .s = s}}, // no chain_id in legacy txs
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
         .value = value};
     Transaction t2{
-        .sc = {.r = r, .s = s, .chain_id = 5}, // Goerli
+        .sc = {.signature = {.r = r, .s = s}, .chain_id = 5}, // Goerli
         .nonce = 10,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,
@@ -667,7 +667,7 @@ TEST_F(OnDiskTrieDbWithFileFixture, get_transactions)
     std::vector<Transaction> transactions;
     transactions.reserve(total_txs);
     Transaction tx{
-        .sc = {.r = r, .s = s}, // no chain_id in legacy transactions
+        .sc = {.signature = {.r = r, .s = s}}, // no chain_id in legacy txs
         .nonce = 9,
         .max_fee_per_gas = price,
         .gas_limit = 21'000,

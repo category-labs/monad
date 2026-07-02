@@ -1859,7 +1859,7 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
     auto const next_sig = [&]() -> SignatureAndChain {
         static uint64_t r = 1;
         MonadDevnet const devnet;
-        return SignatureAndChain{r++, 1, devnet.get_chain_id(), 1};
+        return SignatureAndChain{{r++, 1, 1}, devnet.get_chain_id()};
     };
 
     auto const make_tx = [&]() -> Transaction {
@@ -2106,7 +2106,7 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
     auto const next_sig = [&]() -> SignatureAndChain {
         static uint64_t r = 1;
         MonadDevnet const devnet;
-        return SignatureAndChain{r++, 1, devnet.get_chain_id(), 1};
+        return SignatureAndChain{{r++, 1, 1}, devnet.get_chain_id()};
     };
 
     auto const make_tx = [&]() -> Transaction {
@@ -2402,7 +2402,7 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
     // it.
     auto const sig = [&]() -> SignatureAndChain {
         MonadDevnet const devnet;
-        return SignatureAndChain{1, 1, devnet.get_chain_id(), 1};
+        return SignatureAndChain{{1, 1, 1}, devnet.get_chain_id()};
     }();
 
     Transaction const tx{
@@ -2626,7 +2626,7 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
     auto const next_sig = [&]() -> SignatureAndChain {
         static uint64_t r = 1;
         MonadDevnet const devnet;
-        return SignatureAndChain{r++, 1, devnet.get_chain_id(), 1};
+        return SignatureAndChain{{r++, 1, 1}, devnet.get_chain_id()};
     };
 
     Transaction const block1_tx{
@@ -4249,7 +4249,7 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
     auto const next_sig = [&]() -> SignatureAndChain {
         static uint64_t r = 1;
         MonadDevnet const devnet;
-        return SignatureAndChain{r++, 1, devnet.get_chain_id(), 1};
+        return SignatureAndChain{{r++, 1, 1}, devnet.get_chain_id()};
     };
 
     auto const make_tx = [&]() -> Transaction {
@@ -5842,14 +5842,19 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
         AuthorizationEntry const auth_for_sender_x{
             .sc =
                 {
-                    .r = from_string<uint256_t>(
-                        "200243422738954192737895577305537705175585899164895777"
-                        "58020700015851504969560"),
-                    .s = from_string<uint256_t>(
-                        "530584326759386138899955455622746682303141934549216843"
-                        "63060655866328293077815"),
+                    .signature =
+                        {
+                            .r = from_string<uint256_t>(
+                                "2002434227389541927378955773055377051755858991"
+                                "64895777"
+                                "58020700015851504969560"),
+                            .s = from_string<uint256_t>(
+                                "5305843267593861388999554556227466823031419345"
+                                "49216843"
+                                "63060655866328293077815"),
+                            .y_parity = 0,
+                        },
                     .chain_id = uint256_t{20143},
-                    .y_parity = 0,
                 },
             .address = 0xdeadbeef00000000000000000000000000000000_address,
             .nonce = 0,
@@ -7342,14 +7347,19 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transaction_7702)
     AuthorizationEntry const auth_for_sender{
         .sc =
             {
-                .r = from_string<uint256_t>(
-                    "200243422738954192737895577305537705175585899164895777"
-                    "58020700015851504969560"),
-                .s = from_string<uint256_t>(
-                    "530584326759386138899955455622746682303141934549216843"
-                    "63060655866328293077815"),
+                .signature =
+                    {
+                        .r =
+                            from_string<uint256_t>("200243422738954192737895577"
+                                                   "305537705175585899164895777"
+                                                   "58020700015851504969560"),
+                        .s =
+                            from_string<uint256_t>("530584326759386138899955455"
+                                                   "622746682303141934549216843"
+                                                   "63060655866328293077815"),
+                        .y_parity = 0,
+                    },
                 .chain_id = uint256_t{20143},
-                .y_parity = 0,
             },
         .address = 0xdeadbeef00000000000000000000000000000000_address,
         .nonce = 0,
@@ -7468,14 +7478,19 @@ TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
     AuthorizationEntry const auth_for_sender{
         .sc =
             {
-                .r = from_string<uint256_t>(
-                    "200243422738954192737895577305537705175585899164895777"
-                    "58020700015851504969560"),
-                .s = from_string<uint256_t>(
-                    "530584326759386138899955455622746682303141934549216843"
-                    "63060655866328293077815"),
+                .signature =
+                    {
+                        .r =
+                            from_string<uint256_t>("200243422738954192737895577"
+                                                   "305537705175585899164895777"
+                                                   "58020700015851504969560"),
+                        .s =
+                            from_string<uint256_t>("530584326759386138899955455"
+                                                   "622746682303141934549216843"
+                                                   "63060655866328293077815"),
+                        .y_parity = 0,
+                    },
                 .chain_id = uint256_t{20143},
-                .y_parity = 0,
             },
         .address = 0xdeadbeef00000000000000000000000000000000_address,
         .nonce = 0,

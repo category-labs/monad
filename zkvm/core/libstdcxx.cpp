@@ -83,6 +83,26 @@ int __cxa_atexit(void (*)(void *), void *, void *)
 {
     return 0;
 }
+
+// Thread-local dtor registration — no threads, nothing to run at exit.
+int __cxa_thread_atexit(void (*)(void *), void *, void *)
+{
+    return 0;
+}
+
+// Function-local static init guards. Single-threaded: acquire iff the low
+// byte is still zero; release sets it.
+int __cxa_guard_acquire(long long *g)
+{
+    return !*reinterpret_cast<char *>(g);
+}
+
+void __cxa_guard_release(long long *g)
+{
+    *reinterpret_cast<char *>(g) = 1;
+}
+
+void __cxa_guard_abort(long long *) {}
 }
 
 namespace std

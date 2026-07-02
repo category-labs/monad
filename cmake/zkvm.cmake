@@ -51,8 +51,16 @@ function(monad_riscv_compile_options target)
     # _GLIBCXX_HAVE_ALIGNED_ALLOC: tells libstdc++ that our libc shim
     # (zkvm/core/libc.cpp) provides aligned_alloc; without it,
     # <cstdlib> does not expose std::aligned_alloc under newlib.
+    #
+    # IMMER_NO_FREE_LIST / IMMER_NO_THREAD_SAFETY: immer's persistent
+    # containers (state3 subsystem) otherwise pull machinery that can't link
+    # on bare metal. IMMER_NO_FREE_LIST drops the thread_local free list (no
+    # __tls_get_addr / __cxa_thread_atexit); IMMER_NO_THREAD_SAFETY swaps the
+    # atomic refcount/spinlock for the unsafe single-threaded variants. Both
+    # are sound because the guest is single-threaded.
     target_compile_definitions(${target} PUBLIC
-        NDEBUG _GLIBCXX_HAVE_ALIGNED_ALLOC)
+        NDEBUG _GLIBCXX_HAVE_ALIGNED_ALLOC
+        IMMER_NO_FREE_LIST=1 IMMER_NO_THREAD_SAFETY=1)
 endfunction()
 
 # Remove entries from a target's SOURCES whose path ends with one of the

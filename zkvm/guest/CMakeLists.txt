@@ -219,6 +219,30 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "libc.a not found via compiler query")
     endif()
 
+    # ---- Extract __popcountdi2 from the compiler's libgcc.a ----
+    # immer's HAMT bit math needs __popcountdi2
+    execute_process(
+        COMMAND ${CMAKE_C_COMPILER} -print-libgcc-file-name
+        OUTPUT_VARIABLE _libgcc_a
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    set(_libgcc_dir "${CMAKE_CURRENT_BINARY_DIR}/_libgcc_objs")
+    file(MAKE_DIRECTORY "${_libgcc_dir}")
+    if(EXISTS "${_libgcc_a}")
+        execute_process(
+            COMMAND ${CMAKE_AR} x "${_libgcc_a}" "_popcountsi2.o"
+            WORKING_DIRECTORY "${_libgcc_dir}"
+        )
+        file(GLOB _libgcc_objs "${_libgcc_dir}/*.o")
+        if(NOT _libgcc_objs)
+            message(FATAL_ERROR
+                "Failed to extract __popcountdi2 from ${_libgcc_a}")
+        endif()
+    else()
+        message(FATAL_ERROR
+            "libgcc.a not found via compiler query")
+    endif()
+
     # ---- Bare-metal libc / libstdc++ stubs ----
 
     add_library(monad-zkvm-core OBJECT
@@ -407,6 +431,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         $<TARGET_OBJECTS:monad-vm-runtime>
         $<TARGET_OBJECTS:monad-vm-interpreter>
         ${_libc_objs}
+        ${_libgcc_objs}
     )
     monad_compile_options(${_guest_target})
     monad_riscv_compile_options(${_guest_target})

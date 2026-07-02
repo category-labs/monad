@@ -166,7 +166,9 @@ public:
             return version_lower_bound_.load(std::memory_order_acquire);
         }
 
-        void reset_all(uint64_t const version)
+        // Reset to the empty state: no valid slot, max_version() returns
+        // INVALID_BLOCK_NUM, and the next push() lands at version 0.
+        void reset_all()
         {
             MONAD_ASSERT(capacity_ != 0);
             version_lower_bound_.store(0, std::memory_order_release);
@@ -175,23 +177,49 @@ public:
                 (void *)root_offsets_chunks_.data(),
                 0xff,
                 capacity_ * sizeof(chunk_offset_t));
-            version_lower_bound_.store(version, std::memory_order_release);
-            next_version_.store(version, std::memory_order_release);
+        }
+
+        // Position the write cursor so the next push() lands at `version`,
+        // invalidating any slots skipped over. The ring must be empty or
+        // strictly behind `version`.
+        void advance_next_version(uint64_t const version)
+        {
+            auto const curr_max = max_version();
+            MONAD_ASSERT(curr_max == INVALID_BLOCK_NUM || curr_max < version);
+            if (curr_max == INVALID_BLOCK_NUM ||
+                version - curr_max >= capacity_) {
+                reset_all();
+                version_lower_bound_.store(version, std::memory_order_release);
+                next_version_.store(version, std::memory_order_release);
+            }
+            else {
+                for (uint64_t v = curr_max + 1; v < version; ++v) {
+                    push(async::INVALID_OFFSET);
+                }
+            }
         }
 
         void rewind_to_version(uint64_t const version)
         {
             MONAD_ASSERT(version < max_version());
+            // A target below the ring's entire valid range empties it
+            auto const lower_bound =
+                version_lower_bound_.load(std::memory_order_acquire);
+            if (version < lower_bound) {
+                reset_all();
+                return;
+            }
+            // Otherwise the target must hold a root (rewinding into a
+            // gap between valid roots is refused), so a non-empty ring
+            // always has a valid root at max_version().
+            MONAD_ASSERT(
+                (*this)[version] != INVALID_OFFSET,
+                "rewind_to_version target has no root");
             MONAD_ASSERT(max_version() - version <= capacity_);
             for (uint64_t i = version + 1; i <= max_version(); i++) {
                 assign(i, async::INVALID_OFFSET);
             }
-            if (version <
-                version_lower_bound_.load(std::memory_order_acquire)) {
-                version_lower_bound_.store(version, std::memory_order_release);
-            }
             next_version_.store(version + 1, std::memory_order_release);
-            update_version_lower_bound_();
         }
     };
 

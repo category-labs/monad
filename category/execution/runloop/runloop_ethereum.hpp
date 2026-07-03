@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/mpt/config.hpp>
 #include <category/vm/vm.hpp>
 
 #include <cstdint>
@@ -25,10 +26,15 @@
 
 #include <signal.h>
 
+MONAD_MPT_NAMESPACE_BEGIN
+class Db;
+MONAD_MPT_NAMESPACE_END
+
 MONAD_NAMESPACE_BEGIN
 
 struct Chain;
 struct Db;
+class TrieDb;
 class BlockHashBufferFinalized;
 
 namespace fiber
@@ -36,10 +42,23 @@ namespace fiber
     class PriorityPool;
 }
 
+/// When set, every executed block also emits a zkVM execution witness to
+/// `dir/<block>.witness` and the post-state root to
+/// `dir/<block>.post_state_root`. Witness generation walks the live mpt
+/// pre-commit, so it needs the raw db and the TrieDb wrapper, not just the
+/// abstract Db interface the runloop executes against.
+struct WitnessDumpConfig
+{
+    mpt::Db &raw_db;
+    TrieDb &triedb;
+    std::filesystem::path dir;
+};
+
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     Chain const &, std::filesystem::path const &, Db &, vm::VM &,
     BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
     sig_atomic_t const volatile &, bool enable_tracing,
-    std::filesystem::path const &rlp_path = {});
+    std::filesystem::path const &rlp_path = {},
+    WitnessDumpConfig const *witness_dump = nullptr);
 
 MONAD_NAMESPACE_END

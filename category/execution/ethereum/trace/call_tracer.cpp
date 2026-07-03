@@ -35,6 +35,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <stack>
@@ -45,6 +46,23 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
+    nlohmann::json make_truncated_call_frame(uint64_t const depth)
+    {
+        nlohmann::json frame;
+        frame["type"] = "TRUNCATED";
+        frame["from"] = "0x0000000000000000000000000000000000000000";
+        frame["to"] = "0x0000000000000000000000000000000000000000";
+        frame["value"] = "0x0";
+        frame["gas"] = "0x0";
+        frame["gasUsed"] = "0x0";
+        frame["input"] = "0x";
+        frame["output"] = "0x";
+        frame["error"] = "trace truncated";
+        frame["depth"] = depth;
+        frame["calls"] = nlohmann::json::array();
+        return frame;
+    }
+
     void to_json_helper(
         std::span<CallFrame const> const frames, nlohmann::json &json,
         size_t &pos)
@@ -92,14 +110,61 @@ std::span<CallFrame const> NoopCallTracer::get_call_frames() const
 CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
     : frames_(frames)
     , tx_(tx)
+    , max_size_(std::numeric_limits<size_t>::max())
+    , size_(0)
 {
     frames_.reserve(128);
     positions_.push(0);
 }
 
+CallTracer::CallTracer(
+    Transaction const &tx, std::vector<CallFrame> &frames,
+    size_t const max_size)
+    : frames_(frames)
+    , tx_(tx)
+    , max_size_(max_size)
+    , size_(0)
+{
+    frames_.reserve(128);
+    positions_.push(0);
+}
+
+bool CallTracer::fits(size_t const additional_size) const
+{
+    if (size_ >= max_size_) {
+        return false;
+    }
+
+    return additional_size <= (max_size_ - size_);
+}
+
+size_t CallTracer::log_size(Receipt::Log const &log) const
+{
+    size_t entry_size = sizeof(CallFrame::Log) + log.data.size();
+    for (auto const &topic : log.topics) {
+        entry_size += sizeof(topic);
+    }
+    return entry_size;
+}
+
 void CallTracer::on_enter(evmc_message const &msg)
 {
     MONAD_ASSERT(!positions_.empty());
+
+    byte_string const input = msg.input_data == nullptr
+                                  ? byte_string{}
+                                  : byte_string{msg.input_data, msg.input_size};
+    auto const frame_size = sizeof(CallFrame) + input.size();
+
+    recorded_.push(fits(frame_size));
+
+    if (!recorded_.top()) {
+        truncated_ = true;
+        if (!last_.empty()) {
+            positions_.top()++;
+        }
+        return;
+    }
 
     positions_.top()++;
     positions_.push(0);
@@ -155,10 +220,20 @@ void CallTracer::on_enter(evmc_message const &msg)
     });
 
     last_.push(frames_.size() - 1);
+    size_ += frame_size;
 }
 
 void CallTracer::on_exit(evmc::Result const &res)
 {
+    MONAD_ASSERT(!recorded_.empty());
+
+    bool const recorded = recorded_.top();
+    recorded_.pop();
+
+    if (!recorded) {
+        return;
+    }
+
     MONAD_ASSERT(!frames_.empty());
     MONAD_ASSERT(!last_.empty());
     MONAD_ASSERT(!positions_.empty());
@@ -169,9 +244,17 @@ void CallTracer::on_exit(evmc::Result const &res)
     frame.gas_used = frame.gas - static_cast<uint64_t>(res.gas_left);
 
     if (res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT) {
-        frame.output = res.output_size == 0
-                           ? byte_string{}
-                           : byte_string{res.output_data, res.output_size};
+        if (res.output_size == 0) {
+            frame.output = byte_string{};
+        }
+        else if (fits(res.output_size)) {
+            frame.output = byte_string{res.output_data, res.output_size};
+            size_ += res.output_size;
+        }
+        else {
+            frame.output = byte_string{};
+            truncated_ = true;
+        }
     }
     frame.status = res.status_code;
 
@@ -187,22 +270,50 @@ void CallTracer::on_exit(evmc::Result const &res)
 
 void CallTracer::on_log(Receipt::Log log)
 {
+    MONAD_ASSERT(!recorded_.empty());
+
+    if (!recorded_.top()) {
+        truncated_ = true;
+        return;
+    }
+
     MONAD_ASSERT(!frames_.empty());
     MONAD_ASSERT(!last_.empty());
     MONAD_ASSERT(!positions_.empty());
+
+    auto const entry_size = log_size(log);
+    if (!fits(entry_size)) {
+        truncated_ = true;
+        return;
+    }
 
     auto &frame = frames_.at(last_.top());
     MONAD_ASSERT(frame.logs.has_value());
 
     frame.logs->emplace_back(std::move(log), positions_.top());
+    size_ += entry_size;
 }
 
 void CallTracer::on_self_destruct(
     Address const &from, Address const &to,
     uint256_t const &transferred_balance)
 {
+    MONAD_ASSERT(!recorded_.empty());
+
+    if (!recorded_.top()) {
+        truncated_ = true;
+        return;
+    }
+
     MONAD_ASSERT(!last_.empty());
     MONAD_ASSERT(!positions_.empty());
+
+    if (!fits(sizeof(CallFrame))) {
+        truncated_ = true;
+        positions_.top()++;
+        return;
+    }
+
     positions_.top()++;
 
     auto const &parent = frames_.at(last_.top());
@@ -221,12 +332,19 @@ void CallTracer::on_self_destruct(
         .depth = parent.depth + 1,
         .logs = std::vector<CallFrame::Log>{},
     });
+
+    size_ += sizeof(CallFrame);
 }
 
 void CallTracer::on_finish(uint64_t const gas_used)
 {
-    MONAD_ASSERT(!frames_.empty());
+    MONAD_ASSERT(recorded_.empty());
     MONAD_ASSERT(last_.empty());
+
+    if (frames_.empty()) {
+        return;
+    }
+
     frames_.front().gas_used = gas_used;
 }
 
@@ -237,6 +355,10 @@ void CallTracer::reset()
 
     positions_ = std::stack<size_t>{};
     positions_.push(0);
+
+    recorded_ = std::stack<bool>{};
+    size_ = 0;
+    truncated_ = false;
 }
 
 std::span<CallFrame const> CallTracer::get_call_frames() const
@@ -246,17 +368,26 @@ std::span<CallFrame const> CallTracer::get_call_frames() const
 
 nlohmann::json CallTracer::to_json() const
 {
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(frames_[0].depth == 0);
-
-    size_t pos = 0;
-
     nlohmann::json res{};
     auto const hash = keccak256(rlp::encode_transaction(tx_));
     auto const key = fmt::format(
         "0x{:02x}", fmt::join(std::as_bytes(std::span(hash.bytes)), ""));
     nlohmann::json value{};
-    to_json_helper(frames_, value, pos);
+
+    if (!frames_.empty()) {
+        MONAD_ASSERT(frames_[0].depth == 0);
+        size_t pos = 0;
+        to_json_helper(frames_, value, pos);
+        if (truncated_) {
+            value["calls"].push_back(
+                make_truncated_call_frame(frames_[0].depth + 1));
+        }
+    }
+    else {
+        MONAD_ASSERT(truncated_);
+        value = make_truncated_call_frame(0);
+    }
+
     res[key] = value;
 
     return res;

@@ -64,13 +64,22 @@ class CallTracer final : public CallTracerBase
     std::vector<CallFrame> &frames_;
     std::stack<size_t> last_{};
     std::stack<size_t> positions_{};
+    std::stack<bool> recorded_{};
     Transaction const &tx_;
+    size_t const max_size_;
+    size_t size_{0};
+    bool truncated_{false};
+
+    bool fits(size_t additional_size) const;
+    size_t log_size(Receipt::Log const &) const;
 
 public:
     CallTracer() = delete;
     CallTracer(CallTracer const &) = delete;
     CallTracer(CallTracer &&) = delete;
     CallTracer(Transaction const &, std::vector<CallFrame> &);
+    CallTracer(
+        Transaction const &, std::vector<CallFrame> &, size_t const max_size);
 
     virtual void on_enter(evmc_message const &) override;
     virtual void on_exit(evmc::Result const &) override;

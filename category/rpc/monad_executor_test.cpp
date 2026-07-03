@@ -110,6 +110,7 @@ namespace
     auto const rlp_finalized_id = rlp::encode_bytes32(bytes32_t{});
     auto const simulate_gas_limit = std::numeric_limits<uint64_t>::max();
     constexpr size_t simulate_max_calls = 256;
+    constexpr size_t call_tracer_max_size = 1024 * 1024; // 1 MB
 
     auto create_executor(std::string const &dbname)
     {
@@ -259,6 +260,7 @@ namespace
             complete_callback,
             (void *)&ctx,
             CALL_TRACER,
+            call_tracer_max_size,
             gas_specified);
         f.get();
 
@@ -350,6 +352,7 @@ TEST_F(EthCallFixture, simple_success_call)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -409,6 +412,7 @@ TEST_F(EthCallFixture, insufficient_balance)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -467,6 +471,7 @@ TEST_F(EthCallFixture, on_proposed_block)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -545,6 +550,7 @@ TEST_F(EthCallFixture, blockhash_before_fork)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -622,6 +628,7 @@ TEST_F(EthCallFixture, failed_to_read)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -678,6 +685,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -761,6 +769,7 @@ TEST_F(EthCallFixture, assertion_exception_depth1)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -857,6 +866,7 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -1006,6 +1016,7 @@ TEST_F(EthCallFixture, loop_out_of_gas)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -1127,6 +1138,7 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -1191,6 +1203,7 @@ TEST_F(EthCallFixture, from_contract_account)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -1273,6 +1286,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
             complete_callback,
             (void *)ctx.get(),
             NOOP_TRACER,
+            call_tracer_max_size,
             true);
     }
 
@@ -1416,6 +1430,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         complete_callback,
         (void *)&ctx,
         CALL_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -1599,6 +1614,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
         complete_callback,
         (void *)&ctx,
         CALL_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -1704,6 +1720,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
             complete_callback,
             (void *)&prestate_ctx,
             PRESTATE_TRACER,
+            call_tracer_max_size,
             true);
         f.get();
 
@@ -1750,6 +1767,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
             complete_callback,
             (void *)&statediff_ctx,
             STATEDIFF_TRACER,
+            call_tracer_max_size,
             true);
         f.get();
 
@@ -1841,6 +1859,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
             complete_callback,
             (void *)&prestate_ctx,
             PRESTATE_TRACER,
+            call_tracer_max_size,
             true);
         f.get();
 
@@ -1883,6 +1902,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
             complete_callback,
             (void *)&statediff_ctx,
             STATEDIFF_TRACER,
+            call_tracer_max_size,
             true);
         f.get();
 
@@ -2997,6 +3017,7 @@ TEST_F(EthCallFixture, access_list_trace)
             complete_callback,
             (void *)&ctx,
             ACCESS_LIST_TRACER,
+            call_tracer_max_size,
             true);
         f.get();
 
@@ -3101,6 +3122,7 @@ TEST_F(EthCallFixture, access_list_trace_reverted_call)
             complete_callback,
             (void *)&ctx,
             ACCESS_LIST_TRACER,
+            call_tracer_max_size,
             true);
         f.get();
 
@@ -3208,6 +3230,7 @@ TEST_F(EthCallFixture, access_list_trace_page_dedup)
             complete_callback,
             (void *)&ctx,
             ACCESS_LIST_TRACER,
+            call_tracer_max_size,
             true);
         f.get();
 
@@ -3312,6 +3335,7 @@ TEST_F(EthCallFixture, access_list_trace_empty)
             complete_callback,
             (void *)&ctx,
             ACCESS_LIST_TRACER,
+            call_tracer_max_size,
             true);
         f.get();
 
@@ -3407,6 +3431,7 @@ TEST_F(EthCallFixture, access_list_trace_nested)
         complete_callback,
         (void *)&ctx,
         ACCESS_LIST_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -3522,6 +3547,7 @@ TEST_F(EthCallFixture, access_list_trace_nested_reverted_call)
         complete_callback,
         (void *)&ctx,
         ACCESS_LIST_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -3617,6 +3643,7 @@ TEST_F(EthCallFixture, prestate_state_overrides)
             complete_callback,
             (void *)&prestate_ctx,
             PRESTATE_TRACER,
+            call_tracer_max_size,
             true);
         f.get();
 
@@ -3661,6 +3688,7 @@ TEST_F(EthCallFixture, prestate_state_overrides)
             complete_callback,
             (void *)&statediff_ctx,
             STATEDIFF_TRACER,
+            call_tracer_max_size,
             true);
         f.get();
 
@@ -3822,6 +3850,7 @@ TYPED_TEST(EthCallEncodingFixture, prestate_override_state)
             complete_callback,
             (void *)&ctx_state,
             PRESTATE_TRACER,
+            call_tracer_max_size,
             true);
         f.get();
 
@@ -3904,6 +3933,7 @@ TYPED_TEST(EthCallEncodingFixture, prestate_override_state)
             complete_callback,
             (void *)&ctx_statediff,
             PRESTATE_TRACER,
+            call_tracer_max_size,
             true);
         f.get();
 
@@ -4075,6 +4105,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -4156,6 +4187,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_emptying)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 
@@ -4267,6 +4299,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_assertion)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
+        call_tracer_max_size,
         true);
     f.get();
 

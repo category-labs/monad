@@ -19,6 +19,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
@@ -124,6 +125,307 @@ TEST(CallTrace, enter_and_exit)
     EXPECT_EQ(call_frames.size(), 2);
     EXPECT_EQ(call_frames[0].depth, 0);
     EXPECT_EQ(call_frames[1].depth, 1);
+}
+
+TEST(CallTrace, initial_capacity_is_bounded_by_size_limit)
+{
+    constexpr size_t max_size = 2 * sizeof(CallFrame);
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, max_size};
+
+    EXPECT_GE(call_frames.capacity(), 2);
+    EXPECT_LT(call_frames.capacity(), 128);
+}
+
+TEST(CallTrace, unlimited_size_uses_target_initial_capacity)
+{
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+
+    EXPECT_LE(call_frames.capacity(), 128);
+}
+
+TEST(CallTrace, size_limit_is_checked_explicitly)
+{
+    Transaction const tx{};
+    std::vector<CallFrame> frames;
+    CallTracer tracer{tx, frames, 0};
+    evmc_message const msg{};
+
+    EXPECT_NO_THROW(tracer.on_enter(msg));
+    EXPECT_NO_THROW(tracer.on_exit(evmc::Result{EVMC_SUCCESS, 0, 0}));
+    EXPECT_NO_THROW(tracer.on_finish(0));
+    EXPECT_THROW(tracer.check_size_limit(), MonadException);
+    EXPECT_THROW(tracer.to_json(), MonadException);
+
+    tracer.reset();
+    EXPECT_NO_THROW(tracer.check_size_limit());
+}
+
+TEST(CallTrace, frame_size_limit_throws_on_check)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
+
+    msg.depth = 0;
+    call_tracer.on_enter(msg);
+
+    msg.depth = 1;
+    EXPECT_NO_THROW(call_tracer.on_enter(msg));
+    EXPECT_EQ(call_frames.size(), 1);
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, zero_size_limit_throws_on_check)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, 0};
+
+    msg.depth = 0;
+    EXPECT_NO_THROW(call_tracer.on_enter(msg));
+    EXPECT_TRUE(call_frames.empty());
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, output_size_limit_throws_on_check)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+    res.output_data = output;
+    res.output_size = sizeof(output);
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
+
+    msg.depth = 0;
+    call_tracer.on_enter(msg);
+    EXPECT_NO_THROW(call_tracer.on_exit(res));
+    ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_TRUE(call_frames.front().output.empty());
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, log_size_limit_throws_on_check)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
+
+    call_tracer.on_enter(msg);
+    EXPECT_NO_THROW(call_tracer.on_log(Receipt::Log{}));
+    ASSERT_EQ(call_frames.size(), 1);
+    ASSERT_TRUE(call_frames.front().logs.has_value());
+    EXPECT_TRUE(call_frames.front().logs->empty());
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, self_destruct_size_limit_throws_on_check)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
+
+    call_tracer.on_enter(msg);
+    EXPECT_NO_THROW(call_tracer.on_self_destruct(a, b, 0));
+    EXPECT_EQ(call_frames.size(), 1);
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, callbacks_after_size_limit_exceeded_are_ignored)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
+
+    call_tracer.on_enter(msg);
+    msg.depth = 1;
+    EXPECT_NO_THROW(call_tracer.on_enter(msg));
+    EXPECT_NO_THROW(call_tracer.on_exit(res));
+    EXPECT_NO_THROW(call_tracer.on_log(Receipt::Log{}));
+    EXPECT_NO_THROW(call_tracer.on_self_destruct(a, b, 0));
+    msg.depth = 0;
+    EXPECT_NO_THROW(call_tracer.on_exit(res));
+
+    ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_EQ(call_frames.front().status, MONAD_STATUS_FAILURE);
+    ASSERT_TRUE(call_frames.front().logs.has_value());
+    EXPECT_TRUE(call_frames.front().logs->empty());
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, reset_clears_size_limit_exceeded)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
+
+    call_tracer.on_enter(msg);
+    EXPECT_NO_THROW(call_tracer.on_log(Receipt::Log{}));
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+
+    call_tracer.reset();
+    EXPECT_TRUE(call_frames.empty());
+    call_tracer.on_enter(msg);
+    call_tracer.on_exit(res);
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_NO_THROW(call_tracer.check_size_limit());
+
+    ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_EQ(call_frames.front().status, MONAD_STATUS_SUCCESS);
+    EXPECT_EQ(call_frames.front().gas_used, 1'000);
+
+    call_tracer.on_enter(msg);
+    EXPECT_EQ(call_frames.size(), 1);
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, exact_size_limit_succeeds)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+    res.output_data = output;
+    res.output_size = sizeof(output);
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{
+        tx, call_frames, sizeof(CallFrame) + sizeof(input) + sizeof(output)};
+
+    call_tracer.on_enter(msg);
+    call_tracer.on_exit(res);
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_NO_THROW(call_tracer.check_size_limit());
+
+    ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_EQ(call_frames.front().output.size(), sizeof(output));
+}
+
+TEST(CallTrace, one_byte_over_size_limit_is_rejected)
+{
+    evmc_message const msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+    res.output_data = output;
+    res.output_size = sizeof(output);
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{
+        tx,
+        call_frames,
+        sizeof(CallFrame) + sizeof(input) + sizeof(output) - 1};
+
+    call_tracer.on_enter(msg);
+    EXPECT_NO_THROW(call_tracer.on_exit(res));
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+    ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_TRUE(call_frames.front().output.empty());
+}
+
+TEST(CallTrace, input_size_overflow_is_rejected)
+{
+    evmc_message const msg{.input_size = std::numeric_limits<size_t>::max()};
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+
+    EXPECT_NO_THROW(call_tracer.on_enter(msg));
+    EXPECT_TRUE(call_frames.empty());
+    EXPECT_NO_THROW(call_tracer.on_exit(evmc::Result{EVMC_SUCCESS, 0, 0}));
+    EXPECT_NO_THROW(call_tracer.on_finish(0));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, output_size_overflow_is_rejected)
+{
+    evmc_message const msg{};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.output_size = std::numeric_limits<size_t>::max();
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+    call_tracer.on_enter(msg);
+
+    EXPECT_NO_THROW(call_tracer.on_exit(res));
+    EXPECT_NO_THROW(call_tracer.on_finish(0));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+    ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_TRUE(call_frames.front().output.empty());
+}
+
+TEST(CallTrace, exact_log_size_limit_succeeds)
+{
+    evmc_message const msg{};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+    Receipt::Log const log{
+        .data = byte_string{output, sizeof(output)},
+        .topics = {bytes32_t{}, bytes32_t{}},
+    };
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{
+        tx,
+        call_frames,
+        sizeof(CallFrame) + sizeof(CallFrame::Log) + log.data.size() +
+            log.topics.size() * sizeof(bytes32_t)};
+
+    call_tracer.on_enter(msg);
+    call_tracer.on_log(log);
+    call_tracer.on_exit(res);
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_NO_THROW(call_tracer.check_size_limit());
+    ASSERT_EQ(call_frames.size(), 1);
+    ASSERT_TRUE(call_frames.front().logs.has_value());
+    ASSERT_EQ(call_frames.front().logs->size(), 1);
+    EXPECT_EQ(call_frames.front().logs->front().log, log);
+}
+
+TEST(CallTrace, json_output_has_empty_calls_without_nested_frames)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+
+    msg.depth = 0;
+    call_tracer.on_enter(msg);
+    call_tracer.on_exit(res);
+    call_tracer.on_finish(1'000);
+
+    ASSERT_EQ(call_frames.size(), 1);
+
+    nlohmann::json const trace = call_tracer.to_json().begin().value();
+    ASSERT_TRUE(trace.contains("calls"));
+    EXPECT_TRUE(trace["calls"].empty());
 }
 
 TYPED_TEST(TraitsTest, execute_success)

@@ -61,16 +61,51 @@ struct NoopCallTracer final : public CallTracerBase
 
 class CallTracer final : public CallTracerBase
 {
+    struct CallFramesStack
+    {
+        std::vector<CallFrame> &frames_;
+        std::stack<size_t> last_{};
+        std::stack<size_t> positions_{};
+
+        explicit CallFramesStack(std::vector<CallFrame> &);
+
+        void advance_position();
+
+        CallFrame &top_frame();
+        CallFrame &pop_frame();
+        CallFrame &push_frame(CallFrame &&);
+        CallFrame &push_selfdestruct_frame(CallFrame &&);
+
+        bool has_active_frame() const;
+        size_t position() const;
+
+        void reset();
+    };
+
+    class BoundedSize
+    {
+        size_t const max_;
+        size_t current_{0};
+        bool exceeded_{false};
+
+    public:
+        explicit BoundedSize(size_t max);
+        explicit operator bool() const noexcept;
+        BoundedSize &operator+=(size_t additional_size) noexcept;
+        void reset() noexcept;
+    };
+
     std::vector<CallFrame> &frames_;
-    std::stack<size_t> last_{};
-    std::stack<size_t> positions_{};
+    CallFramesStack frames_stack_;
     Transaction const &tx_;
+    BoundedSize size_;
 
 public:
     CallTracer() = delete;
     CallTracer(CallTracer const &) = delete;
     CallTracer(CallTracer &&) = delete;
     CallTracer(Transaction const &, std::vector<CallFrame> &);
+    CallTracer(Transaction const &, std::vector<CallFrame> &, size_t max_size);
 
     virtual void on_enter(evmc_message const &) override;
     virtual void on_exit(evmc::Result const &) override;
@@ -82,6 +117,12 @@ public:
     virtual void reset() override;
     virtual std::span<CallFrame const> get_call_frames() const override;
 
+    /// Checks if the accumulated call trace size exceeds the maximum allowed
+    /// size. Throws a MonadException if the size limit is exceeded.
+    ///
+    /// This function MUST be called by RPC methods before attempting to access
+    /// the call trace.
+    void check_size_limit() const;
     nlohmann::json to_json() const;
 };
 

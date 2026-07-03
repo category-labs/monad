@@ -82,6 +82,7 @@
 #include <boost/outcome/try.hpp>
 #include <boost/scope_exit.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -1038,10 +1039,17 @@ namespace
             state_tracers.reserve(calls[block_idx].size());
             trace::StateTracer system_call_state_tracer{std::monostate{}};
 
+            size_t const remaining_size =
+                max_size > carried_size ? max_size - carried_size : 0;
+            size_t const call_tracer_max_size = std::max<size_t>(
+                1UL, // 1 byte minimum.
+                remaining_size /
+                    std::max<size_t>(1UL, calls[block_idx].size()));
+
             for (Transaction const &tx : calls[block_idx]) {
                 call_frames.emplace_back();
-                call_tracers.emplace_back(
-                    std::make_unique<CallTracer>(tx, call_frames.back()));
+                call_tracers.emplace_back(std::make_unique<CallTracer>(
+                    tx, call_frames.back(), call_tracer_max_size));
                 state_tracers.emplace_back(
                     std::make_unique<trace::StateTracer>());
             }
@@ -1073,6 +1081,11 @@ namespace
                     chain_context,
                     /*exec_recorder=*/nullptr,
                     emit_native_transfer_logs));
+
+            for (auto const &call_tracer : call_tracers) {
+                static_cast<CallTracer const &>(*call_tracer)
+                    .check_size_limit();
+            }
 
             // Receipts have cumulative gas_used (YP eq. 22), so
             // the last receipt's value is the total for the block.
@@ -1369,7 +1382,8 @@ struct monad_executor
         uint64_t const block_number, bytes32_t const &block_id,
         monad_state_override const *const overrides,
         void (*complete)(monad_executor_result *, void *user), void *const user,
-        monad_tracer_config const tracer_config, bool const gas_specified)
+        monad_tracer_config const tracer_config,
+        size_t const call_tracer_max_size, bool const gas_specified)
     {
         monad_executor_result *const result = new monad_executor_result();
 
@@ -1389,6 +1403,7 @@ struct monad_executor
             complete,
             user,
             tracer_config,
+            call_tracer_max_size,
             gas_specified,
             std::chrono::steady_clock::now(),
             call_seq_no_.fetch_add(1, std::memory_order_relaxed),
@@ -1402,7 +1417,8 @@ struct monad_executor
         uint64_t const block_number, bytes32_t const &block_id,
         monad_state_override const *const overrides,
         void (*complete)(monad_executor_result *, void *user), void *const user,
-        monad_tracer_config const tracer_config, bool const gas_specified,
+        monad_tracer_config const tracer_config,
+        size_t const call_tracer_max_size, bool const gas_specified,
         std::chrono::steady_clock::time_point const call_begin,
         uint64_t const eth_call_seq_no, monad_executor_result *const result,
         Pool &active_pool)
@@ -1431,6 +1447,7 @@ struct monad_executor
              complete = complete,
              user = user,
              state_overrides = overrides,
+             call_tracer_max_size = call_tracer_max_size,
              tracer_config = tracer_config,
              gas_specified = gas_specified,
              active_pool = &active_pool] {
@@ -1482,8 +1499,11 @@ struct monad_executor
                     nlohmann::json state_trace;
                     std::unique_ptr<CallTracerBase> call_tracer =
                         tracer_config == CALL_TRACER
-                            ? std::unique_ptr<CallTracerBase>{std::make_unique<
-                                  CallTracer>(transaction, call_frames)}
+                            ? std::unique_ptr<
+                                  CallTracerBase>{std::make_unique<CallTracer>(
+                                  transaction,
+                                  call_frames,
+                                  call_tracer_max_size)}
                             : std::unique_ptr<CallTracerBase>{
                                   std::make_unique<NoopCallTracer>()};
                     auto state_tracer = [&]() -> trace::StateTracer {
@@ -1571,6 +1591,7 @@ struct monad_executor
                             complete,
                             user,
                             tracer_config,
+                            call_tracer_max_size,
                             call_begin,
                             eth_call_seq_no,
                             result);
@@ -1582,6 +1603,10 @@ struct monad_executor
                         MONAD_ASSERT(result->message);
                         complete(result, user);
                         return;
+                    }
+                    if (tracer_config == CALL_TRACER) {
+                        static_cast<CallTracer const &>(*call_tracer)
+                            .check_size_limit();
                     }
                     call_complete(
                         transaction,
@@ -1665,6 +1690,7 @@ struct monad_executor
         monad_state_override const *const overrides,
         void (*complete)(monad_executor_result *, void *user), void *const user,
         monad_tracer_config const tracer_config,
+        size_t const call_tracer_max_size,
         std::chrono::steady_clock::time_point const call_begin,
         auto const eth_call_seq_no, monad_executor_result *const result)
     {
@@ -1684,6 +1710,7 @@ struct monad_executor
             complete,
             user,
             tracer_config,
+            call_tracer_max_size,
             false /* gas_specified */,
             call_begin,
             eth_call_seq_no,
@@ -2140,7 +2167,7 @@ void monad_executor_eth_call_submit(
     size_t const rlp_block_id_len, monad_state_override const *const overrides,
     void (*complete)(monad_executor_result *result, void *user),
     void *const user, monad_tracer_config const tracer_config,
-    bool const gas_specified)
+    size_t const call_tracer_max_size, bool const gas_specified)
 {
     MONAD_ASSERT(executor);
 
@@ -2182,6 +2209,7 @@ void monad_executor_eth_call_submit(
         complete,
         user,
         tracer_config,
+        call_tracer_max_size,
         gas_specified);
 }
 

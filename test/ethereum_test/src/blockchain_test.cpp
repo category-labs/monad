@@ -17,7 +17,8 @@
 #include <category/core/log.hpp>
 #include <event.hpp>
 #include <revision_map.hpp>
-#include <tracking_block_hash_buffer.hpp>
+
+#include <category/execution/ethereum/tracking_block_hash_buffer.hpp>
 
 #include <test/utils/from_json.hpp>
 
@@ -906,6 +907,7 @@ void process_test(
                                 .encoded_grandparent_senders_and_authorities);
                 }
                 auto const result_witness = execute<traits>(
+                    chain,
                     // assume block was encoded correctly in the witness to
                     // avoid rlp round-trip
                     block.value(),

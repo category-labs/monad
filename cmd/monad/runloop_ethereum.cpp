@@ -30,6 +30,9 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/db/witness_generator.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/record_block_events.hpp>
@@ -37,18 +40,26 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/rlp/execution_witness.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/tracking_block_hash_buffer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
+#include <ankerl/unordered_dense.h>
+
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
 #include <chrono>
+#include <fstream>
+#include <map>
 #include <memory>
+#include <optional>
 #include <vector>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -83,13 +94,25 @@ void log_tps(
 
 #pragma GCC diagnostic pop
 
+// Per-block witness state captured during execution; the caller encodes it
+// into the witness wire format together with the ancestor headers, which
+// only the runloop (with block_db access) can assemble.
+struct WitnessCapture
+{
+    WitnessData data;
+    std::optional<uint64_t> min_block_hash_queried;
+    bytes32_t post_state_root;
+};
+
 // Process a single historical Ethereum block
 template <Traits traits>
 Result<void> process_ethereum_block(
     Chain const &chain, Db &db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
-    bytes32_t const &parent_block_id, bool const enable_tracing)
+    bytes32_t const &parent_block_id, bool const enable_tracing,
+    WitnessDumpConfig const *const witness_dump,
+    WitnessCapture *const witness_out)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
 
@@ -136,7 +159,13 @@ Result<void> process_ethereum_block(
         block.transactions.size()};
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(
         block.transactions.size());
-    trace::StateTracer system_call_state_tracer{std::monostate{}};
+    // Witness generation needs every bytecode the EVM reads during the
+    // block; record them via CodeTracer, otherwise stay on the zero-cost
+    // std::monostate path.
+    bool const collect_read_codes = witness_dump != nullptr;
+    trace::StateTracer system_call_state_tracer =
+        collect_read_codes ? trace::StateTracer{trace::CodeTracer{}}
+                           : trace::StateTracer{std::monostate{}};
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         call_tracers[i] =
             enable_tracing
@@ -145,7 +174,9 @@ Result<void> process_ethereum_block(
                 : std::unique_ptr<CallTracerBase>{
                       std::make_unique<NoopCallTracer>()};
         state_tracers[i] =
-            std::make_unique<trace::StateTracer>(std::monostate{});
+            collect_read_codes
+                ? std::make_unique<trace::StateTracer>(trace::CodeTracer{})
+                : std::make_unique<trace::StateTracer>(std::monostate{});
     }
 
     // Core execution: transaction-level EVM execution that tracks state
@@ -155,6 +186,13 @@ Result<void> process_ethereum_block(
     BlockState block_state(db, vm);
 
     ChainContext<traits> const chain_ctx{};
+    // Track BLOCKHASH queries when generating a witness, to know which
+    // ancestor headers belong in it.
+    TrackingBlockHashBuffer const tracking_buf{block_hash_buffer};
+    BlockHashBuffer const &exec_buf =
+        witness_dump != nullptr
+            ? static_cast<BlockHashBuffer const &>(tracking_buf)
+            : static_cast<BlockHashBuffer const &>(block_hash_buffer);
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const receipts,
@@ -164,7 +202,7 @@ Result<void> process_ethereum_block(
             senders,
             recovered_authorities,
             block_state,
-            block_hash_buffer,
+            exec_buf,
             priority_pool.fiber_group(),
             block_metrics,
             call_tracers,
@@ -176,7 +214,45 @@ Result<void> process_ethereum_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
-    auto [state, code, _] = std::move(block_state).release();
+    auto [state, code, self_destruct_storage_reads] =
+        std::move(block_state).release();
+
+    // Build the witness from the pre-commit trie: walk the live mpt
+    // filtered by this block's deltas and read-code/self-destruct sets.
+    if (witness_dump != nullptr) {
+        ankerl::unordered_dense::segmented_map<bytes32_t, vm::SharedIntercode>
+            read_codes;
+        auto const merge_read_codes = [&](trace::StateTracer const &tracer) {
+            auto const *const ct = std::get_if<trace::CodeTracer>(&tracer);
+            if (ct == nullptr) {
+                return;
+            }
+            for (auto const &kv : ct->codes) {
+                read_codes.emplace(kv.first, kv.second);
+            }
+        };
+        merge_read_codes(system_call_state_tracer);
+        for (auto const &tracer : state_tracers) {
+            merge_read_codes(*tracer);
+        }
+        // Pre-commit, the newest version in the db is the parent block; the
+        // root cursor points at the parent state we're about to walk.
+        auto const cursor_res = witness_dump->raw_db.find(
+            witness_dump->triedb.get_root(),
+            mpt::concat(FINALIZED_NIBBLE, STATE_NIBBLE),
+            block.header.number - 1);
+        MONAD_ASSERT_PRINTF(
+            cursor_res.has_value(),
+            "state-trie lookup failed while generating witness for block %lu",
+            block.header.number);
+        witness_out->data = generate_witness(
+            witness_dump->raw_db,
+            cursor_res.value(),
+            block.header.number - 1,
+            *state,
+            read_codes,
+            self_destruct_storage_reads);
+    }
 
     CommitBuilder builder(block.header.number);
     builder.add_state_deltas(*state)
@@ -223,6 +299,11 @@ Result<void> process_ethereum_block(
         exec_output.eth_header.number, exec_output.eth_block_hash);
     (void)record_block_result(exec_output);
 
+    if (witness_out != nullptr) {
+        witness_out->min_block_hash_queried = tracking_buf.min_queried();
+        witness_out->post_state_root = exec_output.eth_header.state_root;
+    }
+
     // Emit the block metrics log line
     [[maybe_unused]] auto const block_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -260,6 +341,64 @@ Result<void> process_ethereum_block(
     return outcome_e::success();
 }
 
+// Encode the captured witness together with the block and the ancestor
+// headers reachable via BLOCKHASH, and write it (plus the post-state root)
+// to the dump directory.
+void dump_witness(
+    WitnessDumpConfig const &config, Block const &block,
+    WitnessCapture const &capture, BlockDb &block_db,
+    std::map<uint64_t, byte_string> &encoded_headers)
+{
+    uint64_t const n = block.header.number;
+    encoded_headers[n] = rlp::encode_block_header(block.header);
+    uint64_t const lowest = capture.min_block_hash_queried.value_or(n - 1);
+    MONAD_ASSERT(lowest < n);
+    std::vector<byte_string> headers;
+    headers.reserve(n - lowest);
+    for (uint64_t i = lowest; i < n; ++i) {
+        auto it = encoded_headers.find(i);
+        if (it == encoded_headers.end()) {
+            // Cache miss: an ancestor from before this run started (or the
+            // parent, for the first block). It must exist in the block_db.
+            Block ancestor;
+            MONAD_ASSERT_PRINTF(
+                block_db.get(i, ancestor),
+                "Could not query ancestor header %lu from blockdb for the "
+                "witness of block %lu",
+                i,
+                n);
+            it = encoded_headers
+                     .emplace(i, rlp::encode_block_header(ancestor.header))
+                     .first;
+        }
+        headers.push_back(it->second);
+    }
+    // BLOCKHASH reaches at most 256 blocks back; older headers can never be
+    // needed again.
+    encoded_headers.erase(
+        encoded_headers.begin(),
+        encoded_headers.lower_bound(n >= 256 ? n - 256 : 0));
+
+    byte_string const block_rlp = rlp::encode_block(block);
+    byte_string const witness_bytes = encode_execution_witness(
+        block_rlp, capture.data.nodes, capture.data.codes, headers);
+
+    auto const witness_path = config.dir / (std::to_string(n) + ".witness");
+    std::ofstream out{witness_path, std::ios::binary};
+    out.write(
+        reinterpret_cast<char const *>(witness_bytes.data()),
+        static_cast<std::streamsize>(witness_bytes.size()));
+    MONAD_ASSERT_PRINTF(
+        out.good(), "failed to write witness %s", witness_path.c_str());
+
+    auto const root_path =
+        config.dir / (std::to_string(n) + ".post_state_root");
+    std::ofstream root_out{root_path};
+    root_out << fmt::format("{}\n", capture.post_state_root);
+    MONAD_ASSERT_PRINTF(
+        root_out.good(), "failed to write state root %s", root_path.c_str());
+}
+
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
@@ -269,7 +408,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
-    bool const enable_tracing, std::filesystem::path const &rlp_path)
+    bool const enable_tracing, std::filesystem::path const &rlp_path,
+    WitnessDumpConfig const *const witness_dump)
 {
     uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
@@ -287,6 +427,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     }();
     BlockDb &block_db = *block_db_base;
     bytes32_t parent_block_id{};
+    WitnessCapture witness_capture;
+    WitnessCapture *const witness_out =
+        witness_dump != nullptr ? &witness_capture : nullptr;
+    std::map<uint64_t, byte_string> encoded_headers;
 
     while (block_num <= end_block_num && stop == 0) {
         Block block;
@@ -310,9 +454,17 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 block,
                 block_id,
                 parent_block_id,
-                enable_tracing);
+                enable_tracing,
+                witness_dump,
+                witness_out);
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
+
+        if (witness_dump != nullptr) {
+            dump_witness(
+                *witness_dump, block, witness_capture, block_db,
+                encoded_headers);
+        }
 
         record_mock_consensus_events(block_id, block_num);
         ntxs += block.transactions.size();

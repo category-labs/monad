@@ -42,7 +42,6 @@ target_sources(
   PRIVATE include/blockchain_test.hpp
           include/event.hpp
           include/revision_map.hpp
-          include/tracking_block_hash_buffer.hpp
           include/transaction_test.hpp
           src/blockchain_test.cpp
           src/event.cpp

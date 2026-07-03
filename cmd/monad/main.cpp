@@ -140,6 +140,7 @@ try {
     std::vector<fs::path> dbname_paths;
     fs::path snapshot;
     fs::path dump_snapshot;
+    fs::path zkvm_witness;
     std::string statesync;
     fs::path chain_rlp_path;
     auto log_level = quill::LogLevel::Info;
@@ -189,6 +190,11 @@ try {
         "directory to dump state to at the end of run");
     cli.add_flag(
         "--trace-calls,--trace_calls", trace_calls, "enable call tracing");
+    cli.add_option(
+        "--zkvm-witness,--zkvm_witness",
+        zkvm_witness,
+        "directory to write a zkVM execution witness and post-state root to "
+        "for every executed block (ethereum chains only)");
     auto *const as_eth_blocks_flag = cli.add_flag(
         "--as-eth-blocks,--as_eth_blocks",
         as_eth_blocks,
@@ -419,7 +425,26 @@ try {
     // If call tracing is enabled, we need to correspondingly disable native
     // compilation: the compiler does not expose the full fidelity of error exit
     // codes that are required to serve RPC responses that include call traces.
-    vm::VM vm{trace_calls ? vm::VM::InterpreterOnly : vm::VM::Dual};
+    // Witness generation also requires the interpreter, so that CodeTracer
+    // observes every bytecode the EVM reads.
+    vm::VM vm{
+        trace_calls || !zkvm_witness.empty() ? vm::VM::InterpreterOnly
+                                             : vm::VM::Dual};
+
+    std::optional<WitnessDumpConfig> witness_dump;
+    if (!zkvm_witness.empty()) {
+        if (chain_config != CHAIN_CONFIG_ETHEREUM_MAINNET &&
+            chain_config != CHAIN_CONFIG_HIVE_NET) {
+            LOG_ERROR("--zkvm-witness requires an ethereum chain config");
+            return 1;
+        }
+        if (!statesync.empty()) {
+            LOG_ERROR("--zkvm-witness cannot be combined with --statesync");
+            return 1;
+        }
+        std::filesystem::create_directories(zkvm_witness);
+        witness_dump.emplace(raw_db, triedb, zkvm_witness);
+    }
 
     Db &db = sync_server ? static_cast<Db &>(*sync_server->ctx)
                          : static_cast<Db &>(triedb);
@@ -436,7 +461,9 @@ try {
                 block_num,
                 end_block_num,
                 stop,
-                trace_calls);
+                trace_calls,
+                {},
+                witness_dump.has_value() ? &*witness_dump : nullptr);
         case CHAIN_CONFIG_HIVE_NET:
             return runloop_ethereum(
                 *chain,
@@ -449,7 +476,8 @@ try {
                 end_block_num,
                 stop,
                 trace_calls,
-                chain_rlp_path);
+                chain_rlp_path,
+                witness_dump.has_value() ? &*witness_dump : nullptr);
         case CHAIN_CONFIG_MONAD_DEVNET:
         case CHAIN_CONFIG_MONAD_TESTNET:
         case CHAIN_CONFIG_MONAD_MAINNET:

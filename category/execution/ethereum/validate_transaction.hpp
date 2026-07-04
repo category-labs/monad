@@ -45,7 +45,8 @@ MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
 Result<void> static_validate_transaction(
-    Transaction const &, std::optional<uint256_t> const &base_fee_per_gas,
+    Transaction const &, Address const &sender,
+    std::optional<uint256_t> const &base_fee_per_gas,
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id);
 
 template <Traits traits>

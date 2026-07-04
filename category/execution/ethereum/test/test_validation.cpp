@@ -72,7 +72,7 @@ TYPED_TEST(TraitsTest, validate_enough_gas)
 
     auto const result =
         static_validate_transaction<typename TestFixture::Trait>(
-            t, 0, std::nullopt, 1);
+            t, sender, 0, std::nullopt, 1);
 
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::IntrinsicGasGreaterThanLimit);
@@ -91,7 +91,7 @@ TYPED_TEST(TraitsTest, validate_floor_gas)
 
     auto const result =
         static_validate_transaction<typename TestFixture::Trait>(
-            t, 0, std::nullopt, 1);
+            t, sender, 0, std::nullopt, 1);
 
     if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
         // Floor gas only introduced since Prague
@@ -209,7 +209,7 @@ TYPED_TEST(InMemoryStateTraitsTest, successful_validation)
 
     auto const result1 =
         static_validate_transaction<typename TestFixture::Trait>(
-            tx, 0, std::nullopt, 1);
+            tx, sender, 0, std::nullopt, 1);
     EXPECT_TRUE(result1.has_value());
 
     trace::StateTracer noop_state_tracer = std::monostate{};
@@ -233,7 +233,7 @@ TYPED_TEST(TraitsTest, invalid_signature)
 
     auto const result =
         static_validate_transaction<typename TestFixture::Trait>(
-            t, 0, std::nullopt, 1);
+            t, sender, 0, std::nullopt, 1);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InvalidSignature);
 }
@@ -250,7 +250,7 @@ TYPED_TEST(TraitsTest, max_fee_less_than_base)
 
     auto const result =
         static_validate_transaction<typename TestFixture::Trait>(
-            t, 37'000'000'000, std::nullopt, 1);
+            t, sender, 37'000'000'000, std::nullopt, 1);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::MaxFeeLessThanBase);
 }
@@ -267,7 +267,7 @@ TYPED_TEST(TraitsTest, priority_fee_greater_than_max)
 
     auto const result =
         static_validate_transaction<typename TestFixture::Trait>(
-            t, 29'000'000'000, std::nullopt, 1);
+            t, sender, 29'000'000'000, std::nullopt, 1);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::PriorityFeeGreaterThanMax);
 }
@@ -309,7 +309,7 @@ TYPED_TEST(TraitsTest, init_code_exceed_limit)
 
     auto const result =
         static_validate_transaction<typename TestFixture::Trait>(
-            t, 0, std::nullopt, 1);
+            t, sender, 0, std::nullopt, 1);
     // init codesize validation since EIP-3860
     if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
         ASSERT_TRUE(result.has_error());

@@ -18,9 +18,11 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/signature_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
+#include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 
 #include <vector>
@@ -79,6 +81,34 @@ Result<std::vector<BlockHeader>> decode_execution_results(byte_string_view &enc)
     }
 
     return headers;
+}
+
+Result<MonadTransactionBatch> decode_transaction_batch(byte_string_view &enc)
+{
+    MonadTransactionBatch batch;
+
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(batch.transactions, decode_transaction_list(payload));
+    BOOST_OUTCOME_TRY(batch.signature, decode_ecdsa_signature_fields(payload));
+    if (MONAD_UNLIKELY(!payload.empty())) {
+        return DecodeError::InputTooLong;
+    }
+
+    return batch;
+}
+
+Result<std::vector<MonadTransactionBatch>>
+decode_transaction_batches(byte_string_view &enc)
+{
+    std::vector<MonadTransactionBatch> batches;
+
+    BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+    while (!payload.empty()) {
+        BOOST_OUTCOME_TRY(auto batch, decode_transaction_batch(payload));
+        batches.emplace_back(std::move(batch));
+    }
+
+    return batches;
 }
 
 template <class MonadQuorumCertificate>
@@ -167,6 +197,11 @@ decode_consensus_block_body(byte_string_view &enc)
         body.ommers, decode_block_header_vector(execution_payload));
     BOOST_OUTCOME_TRY(
         body.withdrawals, decode_withdrawal_list(execution_payload));
+    if (!execution_payload.empty()) {
+        BOOST_OUTCOME_TRY(
+            body.transaction_batches,
+            decode_transaction_batches(execution_payload));
+    }
     if (MONAD_UNLIKELY(!execution_payload.empty())) {
         return DecodeError::InputTooLong;
     }

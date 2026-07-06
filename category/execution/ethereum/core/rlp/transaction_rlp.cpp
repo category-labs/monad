@@ -249,13 +249,8 @@ Result<AuthorizationEntry> decode_authorization_entry(byte_string_view &enc)
 
     BOOST_OUTCOME_TRY(auth_entry.address, decode_address(payload));
     BOOST_OUTCOME_TRY(auth_entry.nonce, decode_unsigned<uint64_t>(payload));
-
     BOOST_OUTCOME_TRY(
-        auth_entry.sc.signature.y_parity, decode_unsigned<uint8_t>(payload));
-    BOOST_OUTCOME_TRY(
-        auth_entry.sc.signature.r, decode_unsigned<uint256_t>(payload));
-    BOOST_OUTCOME_TRY(
-        auth_entry.sc.signature.s, decode_unsigned<uint256_t>(payload));
+        auth_entry.sc.signature, decode_ecdsa_signature_fields(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
@@ -356,10 +351,7 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
             txn.authorization_list, decode_authorization_list(payload));
     }
 
-    BOOST_OUTCOME_TRY(
-        txn.sc.signature.y_parity, decode_unsigned<uint8_t>(payload));
-    BOOST_OUTCOME_TRY(txn.sc.signature.r, decode_unsigned<uint256_t>(payload));
-    BOOST_OUTCOME_TRY(txn.sc.signature.s, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(txn.sc.signature, decode_ecdsa_signature_fields(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;

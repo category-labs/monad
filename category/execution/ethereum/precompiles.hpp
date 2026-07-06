@@ -18,6 +18,7 @@
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -44,7 +45,8 @@ bool is_precompile(Address const &);
 template <Traits traits>
 std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &);
 
-template <Traits traits>
+template <Traits traits, bool gasless = false>
+    requires(!gasless || is_monad_trait_v<traits>)
 std::optional<evmc::Result>
 check_call_precompile(State &, CallTracerBase &, evmc_message const &);
 

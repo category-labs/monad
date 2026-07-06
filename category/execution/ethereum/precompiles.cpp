@@ -179,7 +179,8 @@ std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
 
 EXPLICIT_TRAITS(check_call_eth_precompile);
 
-template <Traits traits>
+template <Traits traits, bool gasless>
+    requires(!gasless || is_monad_trait_v<traits>)
 std::optional<evmc::Result>
 check_call_precompile(State &, CallTracerBase &, evmc_message const &msg)
 {

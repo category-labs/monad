@@ -21,8 +21,6 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <ankerl/unordered_dense.h>
-
 #include <cstddef>
 #include <optional>
 #include <vector>
@@ -33,13 +31,15 @@ template <Traits traits>
     requires(is_monad_trait_v<traits>)
 ChainContext<traits> ChainContextBuffer<traits>::advance(
     std::vector<Address> const &senders,
-    std::vector<std::vector<std::optional<Address>>> const &authorities)
+    std::vector<std::vector<std::optional<Address>>> const &authorities,
+    std::vector<std::optional<uint64_t>> const &domains)
 {
     current_index_ = current_index_ == 0 ? K - 1 : current_index_ - 1;
     current_senders_ = &senders;
     current_authorities_ = &authorities;
+    current_domains_ = &domains;
     senders_and_authorities_buffer_[current_index_] =
-        combine_senders_and_authorities(senders, authorities);
+        combine_senders_and_authorities(senders, authorities, domains);
 
     return ChainContext<traits>{
         .grandparent_senders_and_authorities = get<2>(),
@@ -47,6 +47,7 @@ ChainContext<traits> ChainContextBuffer<traits>::advance(
         .senders_and_authorities = get<0>(),
         .senders = *current_senders_,
         .authorities = *current_authorities_,
+        .domains = *current_domains_,
     };
 }
 
@@ -54,8 +55,7 @@ template <Traits traits>
     requires(is_monad_trait_v<traits>)
 template <size_t age>
     requires(valid_chain_context_buffer_age<age, 3>)
-ankerl::unordered_dense::segmented_set<Address> const &
-ChainContextBuffer<traits>::get() const
+AddressesByDomain const &ChainContextBuffer<traits>::get() const
 {
     return senders_and_authorities_buffer_[(current_index_ + age) % K];
 }
@@ -64,7 +64,8 @@ template <Traits traits>
     requires(is_evm_trait_v<traits>)
 ChainContext<traits> ChainContextBuffer<traits>::advance(
     std::vector<Address> const &,
-    std::vector<std::vector<std::optional<Address>>> const &)
+    std::vector<std::vector<std::optional<Address>>> const &,
+    std::vector<std::optional<uint64_t>> const &)
 {
     return {};
 }

@@ -62,6 +62,7 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/execution/monad/chain/chain_factory.hpp>
+#include <category/execution/monad/chain/domain_chain_id.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/mpt/db.hpp>
@@ -110,6 +111,8 @@ namespace
     char const *const UNEXPECTED_EXCEPTION_ERR_MSG = "unexpected error";
     char const *const EXCEED_QUEUE_SIZE_ERR_MSG =
         "failure to submit eth_call to thread pool: queue size exceeded";
+    char const *const PRIVATE_DOMAIN_NOT_CONFIGURED_ERR_MSG =
+        "private domain is not configured";
     char const *const ETH_SIMULATE_EXCEED_QUEUE_SIZE_ERR_MSG =
         "failure to submit eth_simulateV1 to thread pool: queue size exceeded";
     char const *const TIMEOUT_ERR_MSG =
@@ -128,14 +131,24 @@ namespace
         "failed to recover the grandparent transactions context";
     char const *const TRANSACTION_OUT_OF_BOUNDS_ERR_MSG =
         "transaction out of bounds";
-    static ankerl::unordered_dense::segmented_set<Address>
-        empty_senders_and_authorities{};
+    static AddressesByDomain empty_senders_and_authorities{};
+
+    std::vector<std::optional<Address>>
+    make_optional_senders(std::span<Address const> const senders)
+    {
+        return {senders.begin(), senders.end()};
+    }
 
     void apply_state_overrides(
         BlockState &block_state, Incarnation const incarnation,
-        monad_state_override const &state_overrides)
+        monad_state_override const &state_overrides,
+        std::optional<uint64_t> const &domain_id = std::nullopt)
     {
-        State state{block_state, incarnation};
+        if (state_overrides.override_sets.empty()) {
+            return;
+        }
+
+        State state{block_state, incarnation, false, domain_id};
 
         for (auto const &[address, state_delta] :
              state_overrides.override_sets) {
@@ -194,40 +207,47 @@ namespace
         block_state.merge(state);
     }
 
-    template <Traits traits>
-    Result<evmc::Result> eth_call_impl(
+    template <Traits traits, bool gasless>
+    Result<evmc::Result> eth_call_impl_with_gas_mode(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, bytes32_t const &block_id,
         Address const &sender,
         std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
         vm::VM &vm, BlockHashBuffer const &buffer,
         monad_state_override const &state_overrides,
-        CallTracerBase &call_tracer, trace::StateTracer &state_tracer)
+        CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
+        std::optional<uint64_t> const &domain_id,
+        std::optional<Address> const domain_spoke)
     {
+        static_assert(!gasless || is_monad_trait_v<traits>);
+
         Transaction enriched_txn{txn};
 
         // static_validate_transaction checks sender's signature and chain_id.
         // However, eth_call doesn't have signature (it can be simulated from
-        // any account). Solving this issue by setting chain_id and signature to
-        // complied values
-        enriched_txn.sc.chain_id = chain.get_chain_id();
+        // any account). Use compliant placeholder signature values while
+        // preserving the caller's already-normalized chain ID.
         enriched_txn.sc.signature.r = 1;
         enriched_txn.sc.signature.s = 1;
 
-        BOOST_OUTCOME_TRY(static_validate_transaction<traits>(
-            enriched_txn,
-            header.base_fee_per_gas,
-            header.excess_blob_gas,
-            chain.get_chain_id(),
-            chain.get_blob_schedule(header.timestamp)));
+        auto static_validation_result =
+            static_validate_transaction<traits, gasless>(
+                enriched_txn,
+                header.base_fee_per_gas,
+                header.excess_blob_gas,
+                chain.get_chain_id(),
+                chain.get_blob_schedule(header.timestamp));
+        BOOST_OUTCOME_TRY(std::move(static_validation_result));
 
         tdb.set_block_and_prefix(block_number, block_id);
         BlockState block_state{tdb, vm};
         // avoid conflict with block reward txn
         Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
-        apply_state_overrides(block_state, incarnation, state_overrides);
 
-        State state{block_state, incarnation};
+        apply_state_overrides(
+            block_state, incarnation, state_overrides, domain_id);
+
+        State state{block_state, incarnation, false, domain_id};
 
         // validate_transaction expects nonce to match.
         // However, eth_call doesn't take a nonce parameter.
@@ -238,21 +258,34 @@ namespace
         // Safe to pass empty code to validation here because the above override
         // will always mark this transaction as coming from an EOA.
         {
-            State state{block_state, incarnation};
+            State state{block_state, incarnation, false, domain_id};
             // validate_transaction expects the sender of a transaction is EOA,
             // not CA. However, eth_call allows the sender to be CA to simulate
             // a subroutine. Solving this issue by manually setting account to
             // be EOA for validation
             state.set_code(sender, {});
-            BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
-                enriched_txn, sender, state, state_tracer));
+            if constexpr (gasless) {
+                auto validation_result = validate_transaction<traits, true>(
+                    enriched_txn,
+                    sender,
+                    state,
+                    header.base_fee_per_gas.value_or(0),
+                    authorities,
+                    state_tracer);
+                BOOST_OUTCOME_TRY(std::move(validation_result));
+            }
+            else {
+                BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
+                    enriched_txn, sender, state, state_tracer));
+            }
         }
 
         auto const senders = std::vector{sender};
         auto const authorities_vec =
             std::vector<std::vector<std::optional<Address>>>{{authorities}};
+        auto const domains = std::vector<std::optional<uint64_t>>{domain_id};
         auto const senders_and_authorities =
-            combine_senders_and_authorities(senders, authorities_vec);
+            combine_senders_and_authorities(senders, authorities_vec, domains);
 
         // Note that the chain context constructed for a simulated transaction
         // does not consider the parent and grandparent blocks. This means that
@@ -268,6 +301,7 @@ namespace
                     .senders_and_authorities = senders_and_authorities,
                     .senders = senders,
                     .authorities = authorities_vec,
+                    .domains = domains,
                 };
             }
             else {
@@ -279,10 +313,10 @@ namespace
             enriched_txn,
             sender,
             header,
-            chain.get_chain_id(),
+            enriched_txn.sc.chain_id.value_or(chain.get_chain_id()),
             chain.get_blob_schedule(header.timestamp));
 
-        EvmcHost<traits> host{
+        EvmcHost<traits, gasless> host{
             call_tracer,
             state_tracer,
             tx_context,
@@ -291,8 +325,10 @@ namespace
             enriched_txn,
             header.base_fee_per_gas,
             0,
-            chain_context};
-        auto execution_result = ExecuteTransactionNoValidation<traits>{
+            chain_context,
+            false,
+            domain_spoke};
+        auto execution_result = ExecuteTransactionNoValidation<traits, gasless>{
             chain,
             enriched_txn,
             sender,
@@ -313,6 +349,67 @@ namespace
         trace::run_tracer<traits>(state_tracer, state);
 
         return execution_result;
+    }
+
+    template <Traits traits>
+    Result<evmc::Result> eth_call_impl(
+        Chain const &chain, Transaction const &txn, BlockHeader const &header,
+        uint64_t const block_number, bytes32_t const &block_id,
+        Address const &sender,
+        std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
+        vm::VM &vm, BlockHashBuffer const &buffer,
+        monad_state_override const &state_overrides,
+        CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
+        std::optional<Address> const domain_spoke)
+    {
+        Transaction normalized_txn{txn};
+        if (!normalized_txn.sc.chain_id.has_value() ||
+            *normalized_txn.sc.chain_id == uint256_t{}) {
+            normalized_txn.sc.chain_id = chain.get_chain_id();
+        }
+
+        std::optional<uint64_t> domain_id;
+        if constexpr (is_monad_trait_v<traits>) {
+            BOOST_OUTCOME_TRY(
+                domain_id,
+                domain_from_chain_id(
+                    *normalized_txn.sc.chain_id, chain.get_chain_id()));
+            if (domain_id.has_value()) {
+                return eth_call_impl_with_gas_mode<traits, true>(
+                    chain,
+                    normalized_txn,
+                    header,
+                    block_number,
+                    block_id,
+                    sender,
+                    authorities,
+                    tdb,
+                    vm,
+                    buffer,
+                    state_overrides,
+                    call_tracer,
+                    state_tracer,
+                    domain_id,
+                    domain_spoke);
+            }
+        }
+
+        return eth_call_impl_with_gas_mode<traits, false>(
+            chain,
+            normalized_txn,
+            header,
+            block_number,
+            block_id,
+            sender,
+            authorities,
+            tdb,
+            vm,
+            buffer,
+            state_overrides,
+            call_tracer,
+            state_tracer,
+            domain_id,
+            domain_spoke);
     }
 
     std::pair<
@@ -345,14 +442,12 @@ namespace
     template <Traits traits>
     Result<nlohmann::json> eth_trace_block_or_transaction_impl(
         Chain const &chain,
-        ankerl::unordered_dense::segmented_set<Address> const
-            &grandparent_senders_and_authorities,
-        ankerl::unordered_dense::segmented_set<Address> const
-            &parent_senders_and_authorities,
-        ankerl::unordered_dense::segmented_set<Address> const
-            &senders_and_authorities,
+        AddressesByDomain const &grandparent_senders_and_authorities,
+        AddressesByDomain const &parent_senders_and_authorities,
+        AddressesByDomain const &senders_and_authorities,
         std::vector<Address> const &senders,
         std::vector<std::vector<std::optional<Address>>> const &authorities,
+        std::vector<std::optional<uint64_t>> const &domains,
         BlockHeader const &header, std::vector<Transaction> const &transactions,
         bool const trace_transaction, uint64_t const transaction_index,
         BlockState &block_state, LazyBlockHash const &buffer,
@@ -364,6 +459,9 @@ namespace
         MONAD_ASSERT_THROW(
             transactions.size() == authorities.size(),
             "transactions and authorities size mismatch");
+        MONAD_ASSERT_THROW(
+            transactions.size() == domains.size(),
+            "transactions and domains size mismatch");
 
         size_t const transactions_size = [&]() {
             if (trace_transaction) {
@@ -378,8 +476,9 @@ namespace
 
         std::span<Transaction const> const transactions_view{
             transactions.data(), transactions_size};
-        std::span<Address const> const senders_view{
-            senders.data(), transactions_size};
+        auto const optional_senders = make_optional_senders(senders);
+        std::span<std::optional<Address> const> const senders_view{
+            optional_senders.data(), transactions_size};
         std::span<std::vector<std::optional<Address>> const> const
             authorities_view{authorities.data(), transactions_size};
 
@@ -419,6 +518,7 @@ namespace
                     .senders_and_authorities = senders_and_authorities,
                     .senders = senders,
                     .authorities = authorities,
+                    .domains = domains,
                 };
             }
             else {
@@ -794,6 +894,11 @@ namespace
 
         // Initialize the chain context buffer.
         auto context_buffer = ChainContextBuffer<traits>{};
+        auto const transaction_scope_domains =
+            [](std::vector<Transaction> const &txs) {
+                return std::vector<std::optional<uint64_t>>(
+                    txs.size(), std::nullopt);
+            };
         // Load grandparent context if available.
         if (MONAD_LIKELY(base_block_number > 0)) {
             auto const grandparent_transactions = monad::get_transactions(
@@ -804,8 +909,12 @@ namespace
             auto const &[grandparent_senders, grandparent_authorities] =
                 recover_senders_and_authorities(
                     grandparent_transactions.assume_value());
+            auto const grandparent_domains = transaction_scope_domains(
+                grandparent_transactions.assume_value());
             context_buffer.advance(
-                grandparent_senders, grandparent_authorities);
+                grandparent_senders,
+                grandparent_authorities,
+                grandparent_domains);
         }
         // Load parent context.
         std::optional<bytes32_t> base_block_hash = std::nullopt;
@@ -818,7 +927,10 @@ namespace
             auto const &[parent_senders, parent_authorities] =
                 recover_senders_and_authorities(
                     parent_transactions.assume_value());
-            context_buffer.advance(parent_senders, parent_authorities);
+            auto const parent_domains =
+                transaction_scope_domains(parent_transactions.assume_value());
+            context_buffer.advance(
+                parent_senders, parent_authorities, parent_domains);
 
             // If the base block is in-flight then we compute a mock block hash
             // using the header and the loaded transactions.
@@ -879,18 +991,21 @@ namespace
                 trace::StateTracer system_call_state_tracer{std::monostate{}};
 
                 static std::vector<Address> empty_senders{};
+                static std::vector<std::optional<Address>>
+                    empty_optional_senders{};
                 static std::vector<std::vector<std::optional<Address>>>
                     empty_authorities{};
+                static std::vector<std::optional<uint64_t>> empty_domains{};
 
-                auto const chain_context =
-                    context_buffer.advance(empty_senders, empty_authorities);
+                auto const chain_context = context_buffer.advance(
+                    empty_senders, empty_authorities, empty_domains);
 
                 BOOST_OUTCOME_TRY(
                     auto const receipts,
                     execute_block<traits>(
                         chain,
                         synthetic_block,
-                        empty_senders,
+                        empty_optional_senders,
                         empty_authorities,
                         block_state,
                         block_hash_buffer,
@@ -951,28 +1066,45 @@ namespace
             // block, rather than with the current header's block number.
             auto const override_incarnation = Incarnation{
                 base_block_number + block_idx, Incarnation::LAST_TX - 1u};
-            apply_state_overrides(
-                block_state,
-                override_incarnation,
-                state_overrides.overrides[block_idx]);
 
             // Patch up transactions with valid chain_id, signature, and nonce
             // so that they can pass validation in execute_block.
+            std::vector<std::optional<uint64_t>> domains;
             {
-                State state{block_state, override_incarnation};
-
                 for (size_t tx_idx = 0; tx_idx < calls[block_idx].size();
                      ++tx_idx) {
                     Transaction &tx = calls[block_idx][tx_idx];
 
-                    tx.sc.chain_id = chain.get_chain_id();
+                    if (!tx.sc.chain_id.has_value() ||
+                        *tx.sc.chain_id == uint256_t{}) {
+                        tx.sc.chain_id = chain.get_chain_id();
+                    }
                     tx.sc.signature.r = 1;
                     tx.sc.signature.s = 1;
+                }
 
+                domains = transaction_scope_domains(calls[block_idx]);
+
+                auto const &block_state_overrides =
+                    state_overrides.overrides[block_idx];
+                apply_state_overrides(
+                    block_state, override_incarnation, block_state_overrides);
+                for (size_t tx_idx = 0; tx_idx < calls[block_idx].size();
+                     ++tx_idx) {
+                    Transaction &tx = calls[block_idx][tx_idx];
+                    State state{block_state, override_incarnation};
+
+                    uint64_t nonce =
+                        state.get_nonce(senders[block_idx][tx_idx]);
+                    for (size_t prev_idx = 0; prev_idx < tx_idx; ++prev_idx) {
+                        if (senders[block_idx][prev_idx] ==
+                            senders[block_idx][tx_idx]) {
+                            ++nonce;
+                        }
+                    }
                     // Update tx.nonce to match the expected nonce in the
                     // current block state.
-                    tx.nonce = state.get_nonce(senders[block_idx][tx_idx]);
-                    state.set_nonce(senders[block_idx][tx_idx], tx.nonce + 1);
+                    tx.nonce = nonce;
                 }
             }
 
@@ -995,7 +1127,7 @@ namespace
             }
 
             auto const chain_context = context_buffer.advance(
-                senders[block_idx], authorities[block_idx]);
+                senders[block_idx], authorities[block_idx], domains);
 
             auto block = Block{
                 .header = current_header,
@@ -1003,13 +1135,15 @@ namespace
                 .withdrawals =
                     is_monad_trait_v<traits> ? std::nullopt : bo.withdrawals,
             };
+            auto const optional_senders =
+                make_optional_senders(senders[block_idx]);
 
             BOOST_OUTCOME_TRY(
                 auto const receipts,
                 execute_block<traits>(
                     chain,
                     block,
-                    senders[block_idx],
+                    optional_senders,
                     authorities[block_idx],
                     block_state,
                     block_hash_buffer,
@@ -1229,6 +1363,8 @@ struct monad_executor
     // requests started earlier have higher priority.
     std::atomic<uint64_t> call_seq_no_{0};
 
+    ankerl::unordered_dense::map<uint64_t, Address> domain_spokes_;
+
     mpt::RODb db_;
 
     // The VM for executing eth calls needs to unconditionally use the
@@ -1241,7 +1377,8 @@ struct monad_executor
         monad_executor_pool_config const &high_pool_config,
         monad_executor_pool_config const &block_pool_config,
         unsigned const tx_exec_num_fibers,
-        uint64_t const node_lru_max_mem, std::string const &triedb_path)
+        uint64_t const node_lru_max_mem, std::string const &triedb_path,
+        ankerl::unordered_dense::map<uint64_t, Address> domain_spokes)
         : low_gas_pool_{Pool::Type::low, low_pool_config}
         , high_gas_pool_{Pool::Type::high, high_pool_config}
         , trace_thread_pool_{block_pool_config.num_threads, true}
@@ -1253,6 +1390,7 @@ struct monad_executor
               block_pool_config.queue_limit,
               std::chrono::seconds(block_pool_config.timeout_sec),
               trace_thread_pool_.create_fiber_group(tx_exec_num_fibers)}
+        , domain_spokes_{std::move(domain_spokes)}
         , db_{[&] {
             std::vector<std::filesystem::path> paths;
             if (std::filesystem::is_directory(triedb_path)) {
@@ -1391,6 +1529,32 @@ struct monad_executor
 
                     auto const chain = make_chain(chain_config);
 
+                    std::optional<Address> domain_spoke;
+                    if (chain_config != CHAIN_CONFIG_ETHEREUM_MAINNET &&
+                        chain_config != CHAIN_CONFIG_HIVE_NET) {
+                        uint256_t const call_chain_id =
+                            !transaction.sc.chain_id.has_value() ||
+                                    *transaction.sc.chain_id == uint256_t{}
+                                ? chain->get_chain_id()
+                                : *transaction.sc.chain_id;
+                        auto const domain_result = domain_from_chain_id(
+                            call_chain_id, chain->get_chain_id());
+                        if (domain_result.has_value() &&
+                            domain_result.value().has_value()) {
+                            auto const spoke =
+                                domain_spokes_.find(*domain_result.value());
+                            if (spoke == domain_spokes_.end()) {
+                                result->status_code = EVMC_REJECTED;
+                                result->message = strdup(
+                                    PRIVATE_DOMAIN_NOT_CONFIGURED_ERR_MSG);
+                                MONAD_ASSERT(result->message);
+                                complete(result, user);
+                                return;
+                            }
+                            domain_spoke = spoke->second;
+                        }
+                    }
+
                     LazyBlockHash block_hash_buffer{db, block_number};
                     TrieRODb tdb{db};
                     std::vector<CallFrame> call_frames;
@@ -1441,7 +1605,8 @@ struct monad_executor
                                 block_hash_buffer,
                                 *state_overrides,
                                 *call_tracer,
-                                state_tracer);
+                                state_tracer,
+                                domain_spoke);
                             MONAD_ASSERT(false);
                         }
                         else {
@@ -1463,7 +1628,8 @@ struct monad_executor
                                 block_hash_buffer,
                                 *state_overrides,
                                 *call_tracer,
-                                state_tracer);
+                                state_tracer,
+                                domain_spoke);
                             MONAD_ASSERT(false);
                         }
                     }();
@@ -1692,15 +1858,23 @@ struct monad_executor
                     auto const &[senders, authorities] =
                         recover_senders_and_authorities(transactions);
 
+                    auto const transaction_scope_domains =
+                        [](std::vector<Transaction> const &txs) {
+                            return std::vector<std::optional<uint64_t>>(
+                                txs.size(), std::nullopt);
+                        };
+
+                    auto const domains =
+                        transaction_scope_domains(transactions);
+
                     auto const senders_and_authorities =
-                        combine_senders_and_authorities(senders, authorities);
+                        combine_senders_and_authorities(
+                            senders, authorities, domains);
 
                     // Load parent and grandparent senders and authorities
-                    std::optional<
-                        ankerl::unordered_dense::segmented_set<Address>>
+                    std::optional<AddressesByDomain>
                         parent_senders_and_authorities;
-                    std::optional<
-                        ankerl::unordered_dense::segmented_set<Address>>
+                    std::optional<AddressesByDomain>
                         grandparent_senders_and_authorities;
 
                     if (MONAD_LIKELY(block_number > 1)) {
@@ -1713,9 +1887,13 @@ struct monad_executor
                         auto const &[parent_senders, parent_authorities] =
                             recover_senders_and_authorities(
                                 parent_transactions.assume_value());
+                        auto const parent_domains = transaction_scope_domains(
+                            parent_transactions.assume_value());
                         parent_senders_and_authorities =
                             combine_senders_and_authorities(
-                                parent_senders, parent_authorities);
+                                parent_senders,
+                                parent_authorities,
+                                parent_domains);
                     }
                     if (MONAD_LIKELY(block_number > 2)) {
                         auto const grandparent_transactions =
@@ -1728,9 +1906,14 @@ struct monad_executor
                             &[grandparent_senders, grandparent_authorities] =
                                 recover_senders_and_authorities(
                                     grandparent_transactions.assume_value());
+                        auto const grandparent_domains =
+                            transaction_scope_domains(
+                                grandparent_transactions.assume_value());
                         grandparent_senders_and_authorities =
                             combine_senders_and_authorities(
-                                grandparent_senders, grandparent_authorities);
+                                grandparent_senders,
+                                grandparent_authorities,
+                                grandparent_domains);
                     }
 
                     // Set db to parent block state
@@ -1756,6 +1939,7 @@ struct monad_executor
                                 senders_and_authorities,
                                 senders,
                                 authorities,
+                                domains,
                                 block_header,
                                 transactions,
                                 trace_transaction,
@@ -1784,6 +1968,7 @@ struct monad_executor
                                 senders_and_authorities,
                                 senders,
                                 authorities,
+                                domains,
                                 block_header,
                                 transactions,
                                 trace_transaction,
@@ -2018,16 +2203,52 @@ monad_executor *monad_executor_create(
     unsigned const tx_exec_num_fibers, uint64_t const node_lru_max_mem,
     char const *const dbpath)
 {
-    MONAD_ASSERT(dbpath);
-    std::string const triedb_path{dbpath};
+    return monad_executor_create_with_domain_spokes(
+        low_pool_conf,
+        high_pool_conf,
+        block_pool_conf,
+        tx_exec_num_fibers,
+        node_lru_max_mem,
+        dbpath,
+        nullptr,
+        0);
+}
 
+monad_executor *monad_executor_create_with_domain_spokes(
+    monad_executor_pool_config const low_pool_conf,
+    monad_executor_pool_config const high_pool_conf,
+    monad_executor_pool_config const block_pool_conf,
+    unsigned const tx_exec_num_fibers, uint64_t const node_lru_max_mem,
+    char const *const dbpath, monad_domain_spoke const *const domain_spokes,
+    size_t const domain_spokes_len)
+{
+    if (!dbpath || (domain_spokes_len != 0 && !domain_spokes)) {
+        return nullptr;
+    }
+
+    ankerl::unordered_dense::map<uint64_t, Address> spokes;
+    spokes.reserve(domain_spokes_len);
+    for (size_t i = 0; i < domain_spokes_len; ++i) {
+        Address address;
+        std::memcpy(
+            address.bytes,
+            domain_spokes[i].spoke_address,
+            sizeof(address.bytes));
+        if (address == Address{} ||
+            !spokes.emplace(domain_spokes[i].domain_chain_id, address).second) {
+            return nullptr;
+        }
+    }
+
+    std::string const triedb_path{dbpath};
     monad_executor *const e = new monad_executor(
         low_pool_conf,
         high_pool_conf,
         block_pool_conf,
         tx_exec_num_fibers,
         node_lru_max_mem,
-        triedb_path);
+        triedb_path,
+        std::move(spokes));
 
     return e;
 }

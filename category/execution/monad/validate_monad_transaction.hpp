@@ -48,9 +48,10 @@ enum class MonadTransactionError
     InsufficientBalanceForFee, ///< Account doesn't have enough balance to pay
                                ///< transaction fees
     SystemTransactionSenderIsAuthority,
+    GaslessTransactionHasNonzeroValue,
 };
 
-template <Traits traits>
+template <Traits traits, bool gasless>
 Result<void> validate_transaction(
     Transaction const &, Address const &sender, State &,
     uint256_t const &base_fee_per_gas,

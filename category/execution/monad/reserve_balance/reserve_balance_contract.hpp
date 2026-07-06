@@ -44,11 +44,11 @@ public:
     //
     // Precompile methods
     //
-    template <Traits traits>
+    template <Traits traits, bool gasless = false>
     static std::pair<PrecompileFunc, uint64_t>
     precompile_dispatch(byte_string_view &);
 
-    template <Traits traits>
+    template <Traits traits, bool gasless = false>
     Result<byte_string> precompile_dipped_into_reserve(
         byte_string_view, Address const &, uint256_be_t const &);
 

@@ -13,8 +13,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/bytes_hash_compare.hpp>
+#include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
+#include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
+#include <category/execution/ethereum/db/account_key.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -23,13 +30,101 @@
 #include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/update.hpp>
-#include <category/mpt/util.hpp>
 
 #include <ankerl/unordered_dense.h>
+#include <intx/intx.hpp>
+
+#include <cstdint>
+#include <deque>
+#include <memory>
+#include <optional>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
+
+namespace
+{
+    void build_page_account_updates(
+        monad::Db &db, StateDeltas const &state_deltas,
+        ProposalPostState &post_state, std::optional<uint64_t> const domain,
+        UpdateList &account_updates, std::deque<Update> &update_alloc,
+        std::deque<byte_string> &bytes_alloc, std::deque<hash256> &hash_alloc,
+        uint64_t const block_number, bool const gasless)
+    {
+        for (auto const &[addr, delta] : state_deltas) {
+            if (gasless) {
+                MONAD_ASSERT(
+                    (!delta.account.first.has_value() ||
+                     delta.account.first->balance == 0) &&
+                    (!delta.account.second.has_value() ||
+                     delta.account.second->balance == 0));
+            }
+            UpdateList storage_updates;
+            std::optional<byte_string_view> value;
+            auto const &account = delta.account.second;
+            post_state.accounts[AccountKey{addr, domain}] = account;
+            bool const reincarnated =
+                account.has_value() && delta.account.first.has_value() &&
+                delta.account.first->incarnation != account->incarnation;
+            if (account.has_value()) {
+                Incarnation const inc = account->incarnation;
+                ankerl::unordered_dense::segmented_map<
+                    bytes32_t,
+                    storage_page_t,
+                    BytesHashCompare<bytes32_t>>
+                    pages;
+
+                for (auto const &[key, slot_delta] : delta.storage) {
+                    if (slot_delta.first != slot_delta.second) {
+                        auto const pg_key = compute_page_key(key);
+                        auto const slot_off = compute_slot_offset(key);
+                        auto [it, inserted] = pages.try_emplace(pg_key);
+                        if (inserted) {
+                            it->second = reincarnated
+                                             ? storage_page_t{}
+                                             : db.read_storage_page(
+                                                   addr, inc, pg_key, domain);
+                        }
+                        it->second.set(slot_off, slot_delta.second);
+                    }
+                }
+
+                for (auto const &[page_key, page] : pages) {
+                    bool const is_empty = page.is_empty();
+                    post_state
+                        .storage[StorageKey{addr, inc, page_key, domain}] =
+                        page;
+                    storage_updates.push_front(update_alloc.emplace_back(Update{
+                        .key = hash_alloc.emplace_back(keccak256(
+                            {page_key.bytes, sizeof(page_key.bytes)})),
+                        .value = is_empty
+                                     ? std::nullopt
+                                     : std::make_optional<byte_string_view>(
+                                           bytes_alloc.emplace_back(
+                                               encode_storage_page_db(
+                                                   page_key, page))),
+                        .incarnation = false,
+                        .next = UpdateList{},
+                        .version = static_cast<int64_t>(block_number)}));
+                }
+                value =
+                    bytes_alloc.emplace_back(encode_account_db(addr, *account));
+            }
+
+            if (!storage_updates.empty() || delta.account.first != account) {
+                account_updates.push_front(update_alloc.emplace_back(Update{
+                    .key = hash_alloc.emplace_back(
+                        keccak256({addr.bytes, sizeof(addr.bytes)})),
+                    .value = value,
+                    .incarnation = reincarnated,
+                    .next = std::move(storage_updates),
+                    .version = static_cast<int64_t>(block_number)}));
+            }
+        }
+    }
+}
 
 PageCommitBuilder::PageCommitBuilder(uint64_t const block_number, monad::Db &db)
     : CommitBuilder{block_number}
@@ -50,78 +145,17 @@ CommitBuilder &
 PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 {
     UpdateList account_updates;
-    for (auto const &[addr, delta] : state_deltas) {
-        UpdateList storage_updates;
-        std::optional<byte_string_view> value;
-        auto const &account = delta.account.second;
-        proposal_post_state_.accounts[addr] = account;
-        // reincarnated account starts with empty storage.
-        bool const reincarnated =
-            account.has_value() && delta.account.first.has_value() &&
-            delta.account.first->incarnation != account->incarnation;
-        if (account.has_value()) {
-            Incarnation const inc = account->incarnation;
-            // Storage changes in page granularity per account: keyed by
-            // page_key, value is the mutable storage_page_t being merged. Each
-            // first-touch of a page reads the current page from the db so
-            // subsequent slot writes at the same page_key compose into one
-            // update.
-            ankerl::unordered_dense::segmented_map<
-                bytes32_t,
-                storage_page_t,
-                BytesHashCompare<bytes32_t>>
-                pages;
-
-            for (auto const &[key, slot_delta] : delta.storage) {
-                if (slot_delta.first != slot_delta.second) {
-                    auto const pg_key = compute_page_key(key);
-                    auto const slot_off = compute_slot_offset(key);
-                    auto [it, inserted] = pages.try_emplace(pg_key);
-                    if (inserted) {
-                        // On reincarnation, start from an empty page rather
-                        // than read_storage_page
-                        it->second =
-                            reincarnated
-                                ? storage_page_t{}
-                                : db_.read_storage_page(addr, inc, pg_key);
-                    }
-                    it->second.set(slot_off, slot_delta.second);
-                }
-            }
-
-            for (auto const &[page_key, page] : pages) {
-                bool const is_empty = page.is_empty();
-                // Record the post-commit page for the proposal cache. An empty
-                // page is still stored (entry present, all slots zero); the
-                // trie gets a deletion (nullopt) since it holds no empty leaf.
-                StorageKey const sk{addr, inc, page_key};
-                proposal_post_state_.storage[sk] = page;
-                storage_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = hash_alloc_.emplace_back(
-                        keccak256({page_key.bytes, sizeof(page_key.bytes)})),
-                    .value = is_empty ? std::nullopt
-                                      : std::make_optional<byte_string_view>(
-                                            bytes_alloc_.emplace_back(
-                                                encode_storage_page_db(
-                                                    page_key, page))),
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(block_number_)}));
-            }
-            value = bytes_alloc_.emplace_back(
-                encode_account_db(addr, account.value()));
-        }
-
-        if (!storage_updates.empty() || delta.account.first != account) {
-            account_updates.push_front(update_alloc_.emplace_back(Update{
-                .key = hash_alloc_.emplace_back(
-                    keccak256({addr.bytes, sizeof(addr.bytes)})),
-                .value = value,
-                .incarnation = reincarnated,
-                .next = std::move(storage_updates),
-                .version = static_cast<int64_t>(block_number_)}));
-        }
-    }
+    build_page_account_updates(
+        db_,
+        state_deltas,
+        proposal_post_state_,
+        std::nullopt,
+        account_updates,
+        update_alloc_,
+        bytes_alloc_,
+        hash_alloc_,
+        block_number_,
+        false);
 
     updates_.push_front(update_alloc_.emplace_back(Update{
         .key = state_nibbles,
@@ -129,6 +163,55 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         .incarnation = false,
         .next = std::move(account_updates),
         .version = static_cast<int64_t>(block_number_)}));
+
+    return *this;
+}
+
+CommitBuilder &PageCommitBuilder::add_domain_state_deltas(
+    std::span<DomainStateDeltas const *const> const delta_sets,
+    bool const gasless)
+{
+    UpdateList domain_updates;
+    for (auto const *const domain_deltas : delta_sets) {
+        MONAD_ASSERT(domain_deltas != nullptr);
+        for (auto const &[domain, inner] : *domain_deltas) {
+            MONAD_ASSERT(inner);
+            UpdateList account_updates;
+            build_page_account_updates(
+                db_,
+                *inner,
+                domain_proposal_post_state_[domain],
+                std::optional<uint64_t>{domain},
+                account_updates,
+                update_alloc_,
+                bytes_alloc_,
+                hash_alloc_,
+                block_number_,
+                gasless);
+
+            if (!account_updates.empty()) {
+                uint8_t domain_bytes[sizeof(uint64_t)];
+                intx::be::store(domain_bytes, domain);
+                domain_updates.push_front(update_alloc_.emplace_back(Update{
+                    .key = bytes_alloc_.emplace_back(
+                        domain_bytes, sizeof(domain_bytes)),
+                    .value =
+                        bytes_alloc_.emplace_back(rlp::encode_unsigned(domain)),
+                    .incarnation = false,
+                    .next = std::move(account_updates),
+                    .version = static_cast<int64_t>(block_number_)}));
+            }
+        }
+    }
+
+    if (!domain_updates.empty()) {
+        updates_.push_front(update_alloc_.emplace_back(Update{
+            .key = domain_state_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(domain_updates),
+            .version = static_cast<int64_t>(block_number_)}));
+    }
 
     return *this;
 }

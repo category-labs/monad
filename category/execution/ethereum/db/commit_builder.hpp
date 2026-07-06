@@ -18,23 +18,37 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/mpt/update.hpp>
 
 #include <deque>
+#include <optional>
+#include <span>
+#include <utility>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 struct CallFrame;
 struct Transaction;
-struct BlockHeader;
 struct Receipt;
 struct Withdrawal;
 
+struct DomainBlockAncillaries
+{
+    uint64_t domain_id;
+    std::span<Transaction const> transactions;
+    std::span<Address const> senders;
+    std::span<Receipt const> receipts;
+};
+
 class CommitBuilder
 {
+private:
+    void add_table_updates(mpt::NibblesView, mpt::UpdateList &&, bool);
+
 protected:
     std::deque<mpt::Update> update_alloc_;
     std::deque<byte_string> bytes_alloc_;
@@ -46,6 +60,7 @@ protected:
     // storage slot key, Paged based storage fills it with the actual storage
     // page keyed by storage page key.
     ProposalPostState proposal_post_state_;
+    DomainProposalPostState domain_proposal_post_state_;
 
 public:
     explicit CommitBuilder(uint64_t block_number);
@@ -53,12 +68,24 @@ public:
 
     virtual CommitBuilder &add_state_deltas(StateDeltas const &);
 
+    CommitBuilder &
+    add_domain_state_deltas(DomainStateDeltas const &, bool gasless = false);
+
+    virtual CommitBuilder &add_domain_state_deltas(
+        std::span<DomainStateDeltas const *const>, bool gasless);
+
     CommitBuilder &add_code(Code const &);
 
     CommitBuilder &add_receipts(std::vector<Receipt> const &);
 
     CommitBuilder &add_transactions(
         std::vector<Transaction> const &, std::vector<Address> const &);
+
+    CommitBuilder &
+        add_domain_block_ancillaries(std::span<DomainBlockAncillaries const>);
+
+    CommitBuilder &add_domain_block_headers(
+        std::span<std::pair<uint64_t, BlockHeader> const>);
 
     CommitBuilder &add_call_frames(std::vector<std::vector<CallFrame>> const &);
 
@@ -79,6 +106,11 @@ public:
     ProposalPostState take_proposal_post_state()
     {
         return std::move(proposal_post_state_);
+    }
+
+    DomainProposalPostState take_domain_proposal_post_state()
+    {
+        return std::move(domain_proposal_post_state_);
     }
 };
 

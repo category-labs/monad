@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/state_machine_kind.hpp>
@@ -135,6 +136,83 @@ namespace
         ankerl::unordered_dense::segmented_map<uint64_t, Range> storage;
     };
 
+    using DomainStates =
+        ankerl::unordered_dense::segmented_map<uint64_t, FuzzState>;
+
+    struct SelectedDomain
+    {
+        uint64_t domain;
+        FuzzState *state;
+    };
+
+    uint64_t live_accounts(FuzzState const &state)
+    {
+        if (state.begin == state.end) {
+            return 0;
+        }
+        return state.end - state.begin;
+    }
+
+    uint64_t select_live_account(FuzzState const &state, uint64_t const n)
+    {
+        uint64_t const live = live_accounts(state);
+        MONAD_ASSERT(live != 0);
+        return state.begin + (n % live);
+    }
+
+    uint64_t next_live_account(FuzzState &state)
+    {
+        return state.begin;
+    }
+
+    uint64_t mix_domain_id(uint64_t x)
+    {
+        x ^= x >> 30;
+        x *= 0xbf58476d1ce4e5b9ULL;
+        x ^= x >> 27;
+        x *= 0x94d049bb133111ebULL;
+        x ^= x >> 31;
+        return x;
+    }
+
+    uint64_t
+    make_new_domain_id(uint64_t const n, DomainStates const &domain_states)
+    {
+        for (uint64_t salt = 0;; ++salt) {
+            uint64_t domain = mix_domain_id(n + salt);
+            if (domain == 0) {
+                domain = 1;
+            }
+            if (!domain_states.contains(domain)) {
+                return domain;
+            }
+        }
+    }
+
+    SelectedDomain create_domain(DomainStates &domain_states, uint64_t const n)
+    {
+        uint64_t const domain = make_new_domain_id(n, domain_states);
+        auto [it, success] = domain_states.emplace(domain, FuzzState{});
+        MONAD_ASSERT(success);
+        return SelectedDomain{.domain = it->first, .state = &it->second};
+    }
+
+    std::optional<SelectedDomain>
+    select_existing_domain(DomainStates &domain_states, uint64_t const n)
+    {
+        if (domain_states.empty()) {
+            return std::nullopt;
+        }
+        size_t selected = (n >> 24) % domain_states.size();
+        for (auto &[domain, state] : domain_states) {
+            if (selected == 0) {
+                return SelectedDomain{.domain = domain, .state = &state};
+            }
+            --selected;
+        }
+        MONAD_ASSERT(false);
+    }
+
     void new_account(
         StateDeltas &deltas, FuzzState &state, Incarnation const incarnation,
         uint64_t const n)
@@ -151,13 +229,16 @@ namespace
 
     void update_account(
         StateDeltas &deltas, FuzzState &state, TrieDb &db, uint64_t const n,
-        Incarnation const incarnation)
+        Incarnation const incarnation, std::optional<uint64_t> const domain)
     {
         if (state.begin == state.end) {
             return;
         }
-        uint64_t const addr = (n % (state.end - state.begin)) + state.begin;
-        auto const orig = db.read_account(Address{addr});
+        if (live_accounts(state) == 0) {
+            return;
+        }
+        uint64_t const addr = select_live_account(state, n);
+        auto const orig = db.read_account(Address{addr}, domain);
         MONAD_ASSERT(orig.has_value());
         bool const reincarnate = (n % 10) == 1;
         bool const success = deltas.emplace(
@@ -176,30 +257,40 @@ namespace
         }
     }
 
-    void remove_account(StateDeltas &deltas, FuzzState &state, TrieDb &db)
+    void remove_account(
+        StateDeltas &deltas, FuzzState &state, TrieDb &db,
+        std::optional<uint64_t> const domain)
     {
         if (state.begin == state.end) {
             return;
         }
-        Address const addr{state.begin};
+        uint64_t const raw_addr = next_live_account(state);
+        if (raw_addr == state.end) {
+            return;
+        }
+        Address const addr{raw_addr};
         bool const success = deltas.emplace(
             addr,
             StateDelta{
-                .account = AccountDelta{
-                    db.read_account(Address{state.begin}), std::nullopt}});
+                .account =
+                    AccountDelta{db.read_account(addr, domain), std::nullopt}});
         MONAD_ASSERT(success);
-        state.storage.erase(state.begin);
+        state.storage.erase(raw_addr);
         ++state.begin;
     }
 
     void new_storage(
-        StateDeltas &deltas, FuzzState &state, TrieDb &db, uint64_t const n)
+        StateDeltas &deltas, FuzzState &state, TrieDb &db, uint64_t const n,
+        std::optional<uint64_t> const domain)
     {
         if (state.begin == state.end) {
             return;
         }
-        uint64_t const addr = n % (state.end - state.begin) + state.begin;
-        auto const orig = db.read_account(Address{addr});
+        if (live_accounts(state) == 0) {
+            return;
+        }
+        uint64_t const addr = select_live_account(state, n);
+        auto const orig = db.read_account(Address{addr}, domain);
         MONAD_ASSERT(orig.has_value());
         StateDeltas::accessor it;
         bytes32_t const end{state.storage[addr].end++};
@@ -214,7 +305,7 @@ namespace
 
     void update_storage(
         StateDeltas &deltas, FuzzState &state, TrieDb &db, uint64_t const n,
-        bool const erase)
+        bool const erase, std::optional<uint64_t> const domain)
     {
         if (state.storage.empty()) {
             return;
@@ -222,13 +313,14 @@ namespace
         auto const sit = state.storage.begin() +
                          static_cast<unsigned>(n % state.storage.size());
         Address const addr{sit->first};
-        auto const orig = db.read_account(addr);
+        auto const orig = db.read_account(addr, domain);
         MONAD_ASSERT(orig.has_value());
         auto &[begin, end] = sit->second;
         MONAD_ASSERT(begin != end);
         bytes32_t const key{erase ? begin : n % (end - begin) + begin};
         bytes32_t const value{erase ? 0 : n};
-        auto const sorig = db.read_storage(addr, orig->incarnation, key);
+        auto const sorig =
+            db.read_storage(addr, orig->incarnation, key, domain);
         bool const success = deltas.emplace(
             addr,
             StateDelta{
@@ -244,15 +336,43 @@ namespace
     }
 
     void update_storage(
-        StateDeltas &deltas, FuzzState &state, TrieDb &db, uint64_t const n)
+        StateDeltas &deltas, FuzzState &state, TrieDb &db, uint64_t const n,
+        std::optional<uint64_t> const domain)
     {
-        update_storage(deltas, state, db, n, false);
+        update_storage(deltas, state, db, n, false, domain);
     }
 
     void remove_storage(
-        StateDeltas &deltas, FuzzState &state, TrieDb &db, uint64_t const n)
+        StateDeltas &deltas, FuzzState &state, TrieDb &db, uint64_t const n,
+        std::optional<uint64_t> const domain)
     {
-        update_storage(deltas, state, db, n, true);
+        update_storage(deltas, state, db, n, true, domain);
+    }
+
+    void apply_operation(
+        StateDeltas &deltas, FuzzState &state, TrieDb &db, uint64_t const n,
+        Incarnation const incarnation, std::optional<uint64_t> const domain)
+    {
+        switch (n % 6) {
+        case 0:
+            new_account(deltas, state, incarnation, n);
+            break;
+        case 1:
+            update_account(deltas, state, db, n, incarnation, domain);
+            break;
+        case 2:
+            remove_account(deltas, state, db, domain);
+            break;
+        case 3:
+            new_storage(deltas, state, db, n, domain);
+            break;
+        case 4:
+            update_storage(deltas, state, db, n, domain);
+            break;
+        case 5:
+            remove_storage(deltas, state, db, n, domain);
+            break;
+        }
     }
 
     std::unique_ptr<OnDiskMachine> make_on_disk_machine(bool const page_encoded)
@@ -327,6 +447,7 @@ namespace
             &statesync_server_send_done);
 
         FuzzState state{};
+        DomainStates domain_states;
 
         bytes32_t parent_hash{};
         BlockHeader hdr{.number = 0};
@@ -343,28 +464,44 @@ namespace
         while (raw.size() >= sizeof(uint64_t)) {
             // generate state deltas for the new block
             StateDeltas deltas;
+            DomainStateDeltas domain_deltas;
             uint64_t const n = unaligned_load<uint64_t>(raw.data());
             raw = raw.subspan(sizeof(uint64_t));
             Incarnation const incarnation{stdb.get_block_number(), 0};
-            switch (n % 6) {
-            case 0:
-                new_account(deltas, state, incarnation, n);
-                break;
-            case 1:
-                update_account(deltas, state, stdb, n, incarnation);
-                break;
-            case 2:
-                remove_account(deltas, state, stdb);
-                break;
-            case 3:
-                new_storage(deltas, state, stdb, n);
-                break;
-            case 4:
-                update_storage(deltas, state, stdb, n);
-                break;
-            case 5:
-                remove_storage(deltas, state, stdb, n);
-                break;
+            bool const use_domain = ((n >> 8) & 1) != 0;
+            if (!use_domain) {
+                apply_operation(
+                    deltas, state, stdb, n, incarnation, std::nullopt);
+            }
+            else {
+                bool const create_new_domain = ((n >> 9) % 5) < 4;
+                auto selected =
+                    create_new_domain
+                        ? std::optional<SelectedDomain>{create_domain(
+                              domain_states, n)}
+                        : select_existing_domain(domain_states, n);
+                if (!selected.has_value()) {
+                    selected = create_domain(domain_states, n);
+                }
+                bool empty_domain_delta = false;
+                {
+                    DomainStateDeltas::accessor domain_it{};
+                    domain_deltas.emplace(
+                        domain_it,
+                        selected->domain,
+                        std::make_unique<StateDeltas>());
+                    apply_operation(
+                        *domain_it->second,
+                        *selected->state,
+                        stdb,
+                        n,
+                        incarnation,
+                        selected->domain);
+                    empty_domain_delta = domain_it->second->empty();
+                }
+                if (empty_domain_delta) {
+                    domain_deltas.erase(selected->domain);
+                }
             }
             client.mask = raw.size() < sizeof(uint64_t)
                               ? std::numeric_limits<uint64_t>::max()
@@ -376,6 +513,11 @@ namespace
             hdr.parent_hash = parent_hash;
             bytes32_t const curr_block_id = bytes32_t{hdr.number};
             sctx->set_block_and_prefix(hdr.number - 1);
+            auto builder = make_commit_builder(hdr.number, *sctx);
+            builder->add_domain_state_deltas(domain_deltas);
+            DomainStateDeltas const *const delta_sets[] = {&domain_deltas};
+            sctx->commit_domain_state_deltas(
+                curr_block_id, *builder, delta_sets, hdr.number, {});
             monad::test::commit_simple(
                 *sctx, StateDeltas(std::move(deltas)), {}, curr_block_id, hdr);
             sctx->finalize(hdr.number, curr_block_id);

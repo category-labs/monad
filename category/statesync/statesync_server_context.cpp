@@ -34,17 +34,31 @@ using namespace monad::mpt;
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-void on_commit(
-    monad_statesync_server_context &ctx, StateDeltas const &state_deltas,
-    uint64_t const n, bytes32_t const &block_id)
+std::vector<Deletion> &get_or_create_proposal_deletions(
+    monad_statesync_server_context &ctx, uint64_t const block_number,
+    bytes32_t const &block_id)
 {
     auto &proposals = ctx.proposals;
 
-    auto &deletions =
-        proposals
-            .emplace_back(ProposedDeletions{
-                .block_number = n, .block_id = block_id, .deletions = {}})
-            .deletions;
+    auto const it =
+        std::ranges::find(proposals, block_id, &ProposedDeletions::block_id);
+    if (it != proposals.end()) {
+        MONAD_ASSERT(it->block_number == block_number);
+        return it->deletions;
+    }
+    return proposals
+        .emplace_back(ProposedDeletions{
+            .block_number = block_number,
+            .block_id = block_id,
+            .deletions = {}})
+        .deletions;
+}
+
+void collect_deletions(
+    std::vector<Deletion> &deletions, StateDeltas const &state_deltas,
+    uint64_t const n, std::optional<uint64_t> const domain)
+{
+    MONAD_ASSERT(!domain.has_value() || *domain != 0);
 
     for (auto const &[addr, delta] : state_deltas) {
         auto const &account = delta.account.second;
@@ -53,11 +67,12 @@ void on_commit(
                 if (delta.first != delta.second &&
                     delta.second == bytes32_t{}) {
                     LOG_INFO(
-                        "Deleting Storage n={} addr={} storage={} ",
+                        "Deleting Storage n={} domain={} addr={} storage={} ",
                         n,
+                        domain.value_or(0),
                         addr,
                         key);
-                    deletions.emplace_back(addr, key);
+                    deletions.emplace_back(addr, key, domain);
                 }
             }
         }
@@ -67,10 +82,21 @@ void on_commit(
                 account.has_value() && delta.account.first.has_value() &&
                 delta.account.first->incarnation != account->incarnation;
             if (incarnation || !account.has_value()) {
-                deletions.emplace_back(addr, std::nullopt);
+                deletions.emplace_back(addr, std::nullopt, domain);
             }
         }
     }
+}
+
+void on_commit(
+    monad_statesync_server_context &ctx, StateDeltas const &state_deltas,
+    uint64_t const n, bytes32_t const &block_id)
+{
+    collect_deletions(
+        get_or_create_proposal_deletions(ctx, n, block_id),
+        state_deltas,
+        n,
+        std::nullopt);
 }
 
 void on_finalize(
@@ -224,23 +250,24 @@ bool monad_statesync_server_context::is_page_encoded() const
     return rw.is_page_encoded();
 }
 
-std::optional<Account>
-monad_statesync_server_context::read_account(Address const &addr)
+std::optional<Account> monad_statesync_server_context::read_account(
+    Address const &addr, std::optional<uint64_t> const &domain)
 {
-    return rw.read_account(addr);
+    return rw.read_account(addr, domain);
 }
 
 bytes32_t monad_statesync_server_context::read_storage(
-    Address const &addr, Incarnation const incarnation, bytes32_t const &key)
+    Address const &addr, Incarnation const incarnation, bytes32_t const &key,
+    std::optional<uint64_t> const &domain)
 {
-    return rw.read_storage(addr, incarnation, key);
+    return rw.read_storage(addr, incarnation, key, domain);
 }
 
 storage_page_t monad_statesync_server_context::read_storage_page(
     Address const &addr, Incarnation const incarnation,
-    bytes32_t const &page_key)
+    bytes32_t const &page_key, std::optional<uint64_t> const &domain)
 {
-    return rw.read_storage_page(addr, incarnation, page_key);
+    return rw.read_storage_page(addr, incarnation, page_key, domain);
 }
 
 monad::vm::SharedIntercode
@@ -313,6 +340,25 @@ void monad_statesync_server_context::commit(
     on_commit(*this, state_deltas, header.number, block_id);
     rw.commit(
         block_id, builder, header, state_deltas, std::move(populate_header_fn));
+}
+
+DomainStateRoots monad_statesync_server_context::commit_domain_state_deltas(
+    bytes32_t const &block_id, CommitBuilder &builder,
+    std::span<DomainStateDeltas const *const> const delta_sets,
+    uint64_t const block_number,
+    PopulateDomainHeadersFn const &populate_headers)
+{
+    auto &deletions =
+        get_or_create_proposal_deletions(*this, block_number, block_id);
+    for (auto const *const domain_state_deltas : delta_sets) {
+        MONAD_ASSERT(domain_state_deltas != nullptr);
+        for (auto const &[domain, state_deltas] : *domain_state_deltas) {
+            MONAD_ASSERT(state_deltas);
+            collect_deletions(deletions, *state_deltas, block_number, domain);
+        }
+    }
+    return rw.commit_domain_state_deltas(
+        block_id, builder, delta_sets, block_number, populate_headers);
 }
 
 uint64_t monad_statesync_server_context::get_block_number() const

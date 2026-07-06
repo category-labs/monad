@@ -20,8 +20,10 @@
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/dispatch_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -46,19 +48,23 @@ namespace fiber
     class PriorityPool;
 } // namespace fiber
 
-template <Traits traits>
+template <Traits traits, bool gasless = false>
+    requires(!gasless || is_monad_trait_v<traits>)
 Result<std::vector<Receipt>> execute_block_transactions(
     Chain const &, BlockHeader const &, std::span<Transaction const>,
-    std::span<Address const> senders,
+    std::span<std::optional<Address> const> senders,
     std::span<std::vector<std::optional<Address>> const> authorities,
     BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
     std::span<std::unique_ptr<CallTracerBase>>,
     std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
-    ChainContext<traits> const &chain_ctx, bool trace_transfers = false);
+    ChainContext<traits> const &chain_ctx, bool trace_transfers = false,
+    std::span<uint8_t> skipped_transactions = {},
+    std::optional<Address> domain_spoke = std::nullopt);
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
-    Chain const &, Block const &, std::span<Address const> senders,
+    Chain const &, Block const &,
+    std::span<std::optional<Address> const> senders,
     std::span<std::vector<std::optional<Address>> const> authorities,
     BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
     std::span<std::unique_ptr<CallTracerBase>>,

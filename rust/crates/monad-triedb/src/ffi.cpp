@@ -29,6 +29,7 @@
 #include <quill/std/SystemError.h>
 
 #include <cassert>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <limits>

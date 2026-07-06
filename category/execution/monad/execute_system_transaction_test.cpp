@@ -320,6 +320,58 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
     EXPECT_EQ(result.error(), SystemTransactionError::TypeNotLegacy);
 }
 
+TEST(SystemTransaction, gasless_static_validation_is_not_supported)
+{
+    MonadDevnet const chain;
+    Transaction const tx{.to = staking::STAKING_CA};
+
+    auto const result =
+        static_validate_system_transaction<MonadTraits<MONAD_NEXT>, true>(
+            tx, SYSTEM_SENDER, chain.get_chain_id());
+
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(
+        result.error(), SystemTransactionError::SystemTxnInGaslessMode);
+}
+
+TEST(SystemTransaction, gasless_execution_returns_skipped_receipt)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    BlockMetrics block_metrics;
+    MonadDevnet const chain;
+    BlockHeader const header{.number = 1};
+    Transaction const tx{.to = staking::STAKING_CA};
+    NoopCallTracer noop_call_tracer;
+    trace::StateTracer noop_state_tracer = std::monostate{};
+    boost::fibers::promise<void> promise;
+    promise.set_value();
+
+    auto const result =
+        ExecuteSystemTransaction<MonadTraits<MONAD_NEXT>, true>{
+            chain,
+            0,
+            tx,
+            SYSTEM_SENDER,
+            header,
+            block_state,
+            block_metrics,
+            promise,
+            noop_call_tracer,
+            noop_state_tracer}();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().status, 0);
+    EXPECT_EQ(result.value().gas_used, 0);
+    EXPECT_TRUE(result.value().logs.empty());
+
+    State state{block_state, Incarnation{0, 0}};
+    EXPECT_FALSE(state.account_exists(SYSTEM_SENDER));
+    EXPECT_FALSE(state.account_exists(staking::STAKING_CA));
+}
+
 TEST(SystemTransaction, static_validate_transaction_failure)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -338,6 +390,48 @@ TEST(SystemTransaction, static_validate_transaction_failure)
 
     auto const tx = Transaction{
         .sc = SignatureAndChain{.chain_id = 1}, .to = staking::STAKING_CA};
+
+    boost::fibers::promise<void> promise;
+    promise.set_value();
+
+    Result<Receipt> const result =
+        ExecuteSystemTransaction<MonadTraits<MONAD_NEXT>>{
+            chain,
+            0,
+            tx,
+            SYSTEM_SENDER,
+            header,
+            block_state,
+            block_metrics,
+            promise,
+            noop_call_tracer,
+            noop_state_tracer}();
+
+    EXPECT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), TransactionError::WrongChainId);
+}
+
+TEST(SystemTransaction, domain_chain_id_rejected)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    MonadDevnet chain;
+
+    BlockState block_state{tdb, vm};
+    BlockMetrics block_metrics;
+
+    BlockHeader const header{.number = 0};
+
+    NoopCallTracer noop_call_tracer;
+    trace::StateTracer noop_state_tracer = std::monostate{};
+
+    auto const tx = Transaction{
+        .sc =
+            SignatureAndChain{
+                .chain_id = (uint256_t{0x11} << 16) | chain.get_chain_id()},
+        .to = staking::STAKING_CA};
 
     boost::fibers::promise<void> promise;
     promise.set_value();

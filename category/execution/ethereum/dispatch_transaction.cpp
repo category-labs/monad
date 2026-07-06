@@ -19,7 +19,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <Traits traits>
+template <Traits traits, bool gasless>
+    requires(!gasless || is_monad_trait_v<traits>)
 Result<Receipt> dispatch_transaction(
     Chain const &chain, uint64_t const i, Transaction const &transaction,
     Address const &sender,
@@ -28,9 +29,11 @@ Result<Receipt> dispatch_transaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
-    bool const trace_transfers)
+    bool const trace_transfers, std::optional<Address> const domain_spoke)
 {
-    return ExecuteTransaction<traits>{
+    static_assert(!gasless);
+    MONAD_ASSERT(!domain_spoke.has_value());
+    return ExecuteTransaction<traits, gasless>{
         chain,
         i,
         transaction,
@@ -44,7 +47,8 @@ Result<Receipt> dispatch_transaction(
         call_tracer,
         state_tracer,
         chain_ctx,
-        trace_transfers}();
+        trace_transfers,
+        domain_spoke}();
 }
 
 EXPLICIT_EVM_TRAITS(dispatch_transaction)

@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
@@ -38,7 +39,10 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/chain/domain_chain_id.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
+#include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -61,7 +65,7 @@
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 // YP Sec 6.2 "irrevocable_change"
-template <Traits traits>
+template <Traits traits, bool gasless>
 constexpr void irrevocable_change(
     State &state, Transaction const &tx, Address const &sender,
     uint256_t const &base_fee_per_gas, uint64_t const excess_blob_gas,
@@ -72,23 +76,37 @@ constexpr void irrevocable_change(
         state.set_nonce(sender, nonce + 1);
     }
 
-    uint256_t blob_gas = 0;
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
-        blob_gas = (tx.type == TransactionType::eip4844)
-                       ? calc_blob_fee(tx, excess_blob_gas, blob_schedule)
-                       : 0;
+    if constexpr (!gasless) {
+        uint256_t blob_gas = 0;
+        if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+            blob_gas = (tx.type == TransactionType::eip4844)
+                           ? calc_blob_fee(tx, excess_blob_gas, blob_schedule)
+                           : 0;
+        }
+        auto const upfront_cost =
+            tx.gas_limit * gas_price<traits>(tx, base_fee_per_gas);
+        state.subtract_from_balance(sender, upfront_cost + blob_gas);
     }
-    auto const upfront_cost =
-        tx.gas_limit * gas_price<traits>(tx, base_fee_per_gas);
-    state.subtract_from_balance(sender, upfront_cost + blob_gas);
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-template <Traits traits>
-ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
+Receipt skipped_receipt(
+    uint64_t const transaction_index, uint64_t const block_number,
+    TransactionType const transaction_type, std::string_view const reason)
+{
+    LOG_WARNING(
+        "Skipped gasless transaction {} in block {}: {}",
+        transaction_index,
+        block_number,
+        reason);
+    return Receipt{.status = 0, .gas_used = 0, .type = transaction_type};
+}
+
+template <Traits traits, bool gasless>
+ExecuteTransactionNoValidation<traits, gasless>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
     std::span<std::optional<Address> const> const authorities,
     BlockHeader const &header)
@@ -101,9 +119,10 @@ ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
 }
 
 // EIP-7702
-template <Traits traits>
-uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
-    State &state, EvmcHost<traits> &host)
+template <Traits traits, bool gasless>
+uint64_t
+ExecuteTransactionNoValidation<traits, gasless>::process_authorizations(
+    State &state, EvmcHost<traits, gasless> &host)
 {
 
     MONAD_ASSERT(authorities_.size() == tx_.authorization_list.size());
@@ -197,8 +216,8 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
     return refund;
 }
 
-template <Traits traits>
-evmc_message ExecuteTransactionNoValidation<traits>::to_message(
+template <Traits traits, bool gasless>
+evmc_message ExecuteTransactionNoValidation<traits, gasless>::to_message(
     vm::MemoryPool::Ref &msg_memory, uint32_t const msg_memory_capacity) const
 {
     auto const to_address = [this] {
@@ -227,9 +246,9 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message(
     return msg;
 }
 
-template <Traits traits>
-evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
-    State &state, EvmcHost<traits> &host)
+template <Traits traits, bool gasless>
+evmc::Result ExecuteTransactionNoValidation<traits, gasless>::operator()(
+    State &state, EvmcHost<traits, gasless> &host)
 {
     if constexpr (::monad::is_monad_trait_v<traits>) {
         init_reserve_balance_context<traits>(
@@ -242,7 +261,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
             host.chain_ctx_);
     }
 
-    irrevocable_change<traits>(
+    irrevocable_change<traits, gasless>(
         state,
         tx_,
         sender_,
@@ -297,9 +316,10 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
 }
 
 EXPLICIT_TRAITS_CLASS(ExecuteTransactionNoValidation);
+EXPLICIT_MONAD_TRAITS_CLASS_TRUE(ExecuteTransactionNoValidation);
 
-template <Traits traits>
-ExecuteTransaction<traits>::ExecuteTransaction(
+template <Traits traits, bool gasless>
+ExecuteTransaction<traits, gasless>::ExecuteTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender,
     std::span<std::optional<Address> const> const authorities,
@@ -307,9 +327,9 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
-    bool const trace_transfers)
+    bool const trace_transfers, std::optional<Address> const domain_spoke)
     : ExecuteTransactionNoValidation<
-          traits>{chain, tx, sender, authorities, header}
+          traits, gasless>{chain, tx, sender, authorities, header}
     , i_{i}
     , chain_ctx_{chain_ctx}
     , block_hash_buffer_{block_hash_buffer}
@@ -319,15 +339,17 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     , call_tracer_{call_tracer}
     , state_tracer_{state_tracer}
     , trace_transfers_{trace_transfers}
+    , domain_spoke_{domain_spoke}
 {
     record_txn_header_events(static_cast<uint32_t>(i), tx, sender, authorities);
 }
 
-template <Traits traits>
-Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
+template <Traits traits, bool gasless>
+Result<evmc::Result>
+ExecuteTransaction<traits, gasless>::execute_impl2(State &state)
 {
     auto const validate_lambda = [this, &state] {
-        auto result = validate_transaction<traits>(
+        auto result = validate_transaction<traits, gasless>(
             tx_,
             sender_,
             state,
@@ -344,13 +366,16 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
     };
     BOOST_OUTCOME_TRY(validate_lambda());
 
+    // For private gasless transactions, tx_context.chain_id reflects the
+    // domain-qualified chain ID so CHAINID and EIP-712 domain separators
+    // isolate each domain. Ordinary transactions use the network chain ID.
     auto const tx_context = get_tx_context<traits>(
         tx_,
         sender_,
         header_,
-        chain_.get_chain_id(),
+        tx_.sc.chain_id.value_or(chain_.get_chain_id()),
         chain_.get_blob_schedule(header_.timestamp));
-    EvmcHost<traits> host{
+    EvmcHost<traits, gasless> host{
         call_tracer_,
         state_tracer_,
         tx_context,
@@ -360,13 +385,15 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         header_.base_fee_per_gas,
         i_,
         chain_ctx_,
-        trace_transfers_};
+        trace_transfers_,
+        domain_spoke_};
 
-    return ExecuteTransactionNoValidation<traits>::operator()(state, host);
+    return ExecuteTransactionNoValidation<traits, gasless>::operator()(
+        state, host);
 }
 
-template <Traits traits>
-Receipt ExecuteTransaction<traits>::execute_final(
+template <Traits traits, bool gasless>
+Receipt ExecuteTransaction<traits, gasless>::execute_final(
     State &state, evmc::Result const &result)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
@@ -381,9 +408,11 @@ Receipt ExecuteTransaction<traits>::execute_final(
         tx_,
         static_cast<uint64_t>(result.gas_left),
         static_cast<uint64_t>(result.gas_refund));
-    auto const gas_cost =
-        gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
-    state.add_to_balance(sender_, gas_cost * gas_refund);
+    if constexpr (!gasless) {
+        auto const gas_cost =
+            gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
+        state.add_to_balance(sender_, gas_cost * gas_refund);
+    }
 
     auto gas_used = tx_.gas_limit - gas_refund;
 
@@ -391,20 +420,26 @@ Receipt ExecuteTransaction<traits>::execute_final(
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         auto const floor_gas = floor_data_gas(tx_);
         if (gas_used < floor_gas) {
-            auto const delta = floor_gas - gas_used;
-            state.subtract_from_balance(sender_, gas_cost * delta);
+            if constexpr (!gasless) {
+                auto const gas_cost = gas_price<traits>(
+                    tx_, header_.base_fee_per_gas.value_or(0));
+                auto const delta = floor_gas - gas_used;
+                state.subtract_from_balance(sender_, gas_cost * delta);
+            }
 
             gas_used = floor_gas;
         }
     }
 
-    uint256_t const reward = calculate_txn_award<traits>(
-        tx_, header_.base_fee_per_gas.value_or(0), gas_used);
-    if constexpr (traits::mip_11_active()) {
-        staking::collect_priority_fee(state, reward);
-    }
-    else {
-        state.add_to_balance(header_.beneficiary, reward);
+    if constexpr (!gasless) {
+        uint256_t const reward = calculate_txn_award<traits>(
+            tx_, header_.base_fee_per_gas.value_or(0), gas_used);
+        if constexpr (traits::mip_11_active()) {
+            staking::collect_priority_fee(state, reward);
+        }
+        else {
+            state.add_to_balance(header_.beneficiary, reward);
+        }
     }
 
     // finalize state, Eqn. 77-79
@@ -430,13 +465,13 @@ Receipt ExecuteTransaction<traits>::execute_final(
     return receipt;
 }
 
-template <Traits traits>
-Result<Receipt> ExecuteTransaction<traits>::operator()()
+template <Traits traits, bool gasless>
+Result<Receipt> ExecuteTransaction<traits, gasless>::operator()()
 {
     TRACE_TXN_EVENT(StartTxn);
 
     {
-        auto validation_result = static_validate_transaction<traits>(
+        auto validation_result = static_validate_transaction<traits, gasless>(
             tx_,
             header_.base_fee_per_gas,
             header_.excess_blob_gas,
@@ -444,14 +479,38 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             chain_.get_blob_schedule(header_.timestamp));
         if (validation_result.has_error()) {
             prev_.get_future().wait();
+            if constexpr (gasless) {
+                return skipped_receipt(
+                    i_,
+                    header_.number,
+                    tx_.type,
+                    validation_result.error().message().c_str());
+            }
             return std::move(validation_result).as_failure();
         }
     }
 
+    // Only private gasless transactions may derive a domain sub-trie.
+    // Computed once and reused by both the initial attempt and any retry.
+    auto const domain_addr = [&]() -> std::optional<uint64_t> {
+        if constexpr (gasless) {
+            MONAD_ASSERT(tx_.sc.chain_id.has_value());
+            auto res =
+                domain_from_chain_id(*tx_.sc.chain_id, chain_.get_chain_id());
+            MONAD_ASSERT(res.has_value() && res.value().has_value());
+            return res.value();
+        }
+        return std::nullopt;
+    }();
+
     {
         TRACE_TXN_EVENT(StartExecution);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        State state{
+            block_state_,
+            Incarnation{header_.number, i_ + 1},
+            false,
+            domain_addr};
         state.set_original_nonce(sender_, tx_.nonce);
 
         call_tracer_.reset();
@@ -466,6 +525,13 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 
         if (block_state_.can_merge(state)) {
             if (result.has_error()) {
+                if constexpr (gasless) {
+                    return skipped_receipt(
+                        i_,
+                        header_.number,
+                        tx_.type,
+                        result.error().message().c_str());
+                }
                 return std::move(result.error());
             }
             auto const receipt = execute_final(state, result.value());
@@ -477,7 +543,11 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
     {
         TRACE_TXN_EVENT(StartRetry);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        State state{
+            block_state_,
+            Incarnation{header_.number, i_ + 1},
+            false,
+            domain_addr};
 
         call_tracer_.reset();
         trace::reset(state_tracer_);
@@ -486,6 +556,13 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 
         MONAD_ASSERT(block_state_.can_merge(state));
         if (result.has_error()) {
+            if constexpr (gasless) {
+                return skipped_receipt(
+                    i_,
+                    header_.number,
+                    tx_.type,
+                    result.error().message().c_str());
+            }
             return std::move(result.error());
         }
         auto const receipt = execute_final(state, result.value());
@@ -495,5 +572,6 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 }
 
 EXPLICIT_TRAITS_CLASS(ExecuteTransaction);
+EXPLICIT_MONAD_TRAITS_CLASS_TRUE(ExecuteTransaction);
 
 MONAD_NAMESPACE_END

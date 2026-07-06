@@ -168,13 +168,17 @@ public:
         bytes32_t const &pre_state_root, byte_string_view encoded_nodes,
         byte_string_view encoded_codes);
 
-    std::optional<Account> read_account(Address const &) override;
+    std::optional<Account> read_account(
+        Address const &,
+        std::optional<uint64_t> const &domain = std::nullopt) override;
 
-    bytes32_t
-    read_storage(Address const &, Incarnation, bytes32_t const &key) override;
+    bytes32_t read_storage(
+        Address const &, Incarnation, bytes32_t const &key,
+        std::optional<uint64_t> const &domain = std::nullopt) override;
 
     storage_page_t read_storage_page(
-        Address const &, Incarnation, bytes32_t const &page_key) override;
+        Address const &, Incarnation, bytes32_t const &page_key,
+        std::optional<uint64_t> const &domain = std::nullopt) override;
 
     vm::SharedIntercode read_code(bytes32_t const &code_hash) override;
 
@@ -194,6 +198,11 @@ public:
     void commit(
         bytes32_t const &block_id, CommitBuilder &, BlockHeader const &,
         StateDeltas const &, std::function<void(BlockHeader &)>) override;
+
+    DomainStateRoots commit_domain_state_deltas(
+        bytes32_t const &block_id, CommitBuilder &,
+        std::span<DomainStateDeltas const *const>, uint64_t block_number,
+        PopulateDomainHeadersFn const &) override;
 
     // No-op overrides for operations that are irrelevant in the witness
     // context.

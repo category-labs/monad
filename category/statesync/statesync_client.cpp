@@ -39,6 +39,20 @@ using namespace monad::mpt;
 
 unsigned const MONAD_SQPOLL_DISABLED = unsigned(-1);
 
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+bool domain_buffers_empty(monad_statesync_client_context const &ctx)
+{
+    for (auto const &entry : ctx.domain_buffered) {
+        if (!entry.second.empty()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
 monad_statesync_client_context *monad_statesync_client_context_create(
     monad_chain_config const chain_config,
     char const *const *const dbname_paths, size_t const len,
@@ -171,8 +185,13 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
     auto const &tgrt = ctx->tgrt;
     MONAD_ASSERT(tgrt.number != INVALID_BLOCK_NUM);
     MONAD_ASSERT(ctx->deltas.empty());
+    MONAD_ASSERT(ctx->domain_deltas.empty());
     if (!ctx->buffered.empty()) {
         // sent storage with no account
+        return false;
+    }
+    if (!domain_buffers_empty(*ctx)) {
+        // sent domain storage with no domain account
         return false;
     }
 
@@ -252,19 +271,30 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
     // revision.
     auto const monad_rev = ctx->chain->get_monad_revision(tgrt.timestamp);
     bool const page_encoded = mip_8_active(monad_rev);
-    TrieDb *db = &ctx->tdb;
-    if (page_encoded != db->is_page_encoded()) {
+    TrieDb *tdb = &ctx->tdb;
+    mpt::Db *raw_db = &ctx->db;
+    if (page_encoded != tdb->is_page_encoded()) {
         MONAD_ASSERT_PRINTF(
             ctx->secondary_tdb &&
                 ctx->secondary_tdb->is_page_encoded() == page_encoded,
             "No client db timeline is %s-encoded as the target revision "
             "requires",
             page_encoded ? "page" : "slot");
-        db = ctx->secondary_tdb.get();
+        tdb = ctx->secondary_tdb.get();
+        raw_db = ctx->secondary_db.get();
     }
-    db->set_block_and_prefix(ctx->db.get_latest_finalized_version());
-    MONAD_ASSERT(db->get_block_number() == tgrt.number);
-    return db->state_root() == tgrt.state_root;
+    tdb->set_block_and_prefix(raw_db->get_latest_finalized_version());
+    MONAD_ASSERT(tdb->get_block_number() == tgrt.number);
+
+    if (tdb->state_root() != tgrt.state_root) {
+        return false;
+    }
+
+    // Domain state is intentionally synced in trusted-server mode. Its
+    // internal trie structure is reconstructed by the normal commit path, but
+    // it is not compared with the removed native bridge commitment. External
+    // DomainHub commitments may lag this target snapshot.
+    return true;
 }
 
 void monad_statesync_client_context_destroy(

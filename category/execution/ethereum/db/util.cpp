@@ -356,6 +356,25 @@ namespace
         }
     };
 
+    // Domain-id nodes are value-bearing separators above account tries. If
+    // we reused the account compute at this boundary, AccountLeafProcessor
+    // would try to decode the domain marker as an account; if we hashed the
+    // marker as generic leaf data, the domain commitment would exclude the
+    // child account trie. The domain computes use node.data(), the child
+    // trie root, as the payload instead.
+    struct DomainLeafProcessor
+    {
+        static byte_string_view process(mpt::Node const &node)
+        {
+            MONAD_ASSERT(node.has_value());
+            if (node.number_of_children()) {
+                MONAD_ASSERT(node.data().size() == sizeof(bytes32_t));
+                return node.data();
+            }
+            return {};
+        }
+    };
+
     Result<byte_string_view>
     parse_encoded_receipt_ignore_log_index(byte_string_view &enc)
     {
@@ -395,6 +414,7 @@ namespace
     };
 
     using AccountMerkleCompute = MerkleComputeBase<AccountLeafProcessor>;
+    using DomainPrefixMerkleCompute = MerkleComputeBase<DomainLeafProcessor>;
     using StorageMerkleCompute = MerkleComputeBase<StorageLeafProcessor>;
     using PagedStorageMerkleCompute =
         MerkleComputeBase<PagedStorageLeafProcessor>;
@@ -418,6 +438,49 @@ namespace
         StorageRootMerkleComputeImpl<StorageMerkleCompute>;
     using PagedStorageRootMerkleCompute =
         StorageRootMerkleComputeImpl<PagedStorageMerkleCompute>;
+
+    struct DomainRootMerkleCompute : public AccountMerkleCompute
+    {
+        virtual unsigned
+        compute(unsigned char *const buffer, Node const &node) override
+        {
+            MONAD_ASSERT(node.has_value());
+            return encode_two_pieces_reference(
+                buffer,
+                node.path_nibble_view(),
+                DomainLeafProcessor::process(node),
+                true);
+        }
+    };
+
+    template <typename LeafProcessor>
+    struct DomainVarLenRootMerkleCompute
+        : public RootVarLenMerkleCompute<LeafProcessor>
+    {
+        using Base = RootVarLenMerkleCompute<LeafProcessor>;
+
+        virtual unsigned compute_node_data_len(
+            std::span<ChildData> const children, uint16_t const mask,
+            NibblesView const path,
+            std::optional<byte_string_view> const) override
+        {
+            // The domain-id value is a database separator, not part of the
+            // local transaction or receipt trie commitment.
+            return Base::compute_node_data_len(
+                children, mask, path, std::nullopt);
+        }
+
+        virtual unsigned
+        compute(unsigned char *const buffer, Node const &node) override
+        {
+            MONAD_ASSERT(node.has_value());
+            return encode_two_pieces_reference(
+                buffer,
+                node.path_nibble_view(),
+                DomainLeafProcessor::process(node),
+                true);
+        }
+    };
 
     struct AccountRootMerkleCompute : public AccountMerkleCompute
     {
@@ -458,6 +521,8 @@ mpt::Compute &MachineBase::get_compute() const
 
     static AccountMerkleCompute account_compute;
     static AccountRootMerkleCompute account_root_compute;
+    static DomainPrefixMerkleCompute domain_prefix_compute;
+    static DomainRootMerkleCompute domain_root_compute;
 
     static VarLenMerkleCompute generic_merkle_compute;
     static RootVarLenMerkleCompute generic_root_merkle_compute;
@@ -467,22 +532,66 @@ mpt::Compute &MachineBase::get_compute() const
     static VarLenMerkleCompute<TransactionLeafProcessor> transaction_compute;
     static RootVarLenMerkleCompute<TransactionLeafProcessor>
         transaction_root_compute;
+    static DomainVarLenRootMerkleCompute<ReceiptLeafProcessor>
+        domain_receipt_root_compute;
+    static DomainVarLenRootMerkleCompute<TransactionLeafProcessor>
+        domain_transaction_root_compute;
 
     auto const prefix_length = prefix_len();
+    constexpr uint8_t account_hash_nibbles = sizeof(bytes32_t) * 2;
     if (MONAD_LIKELY(table == TableType::State)) {
         MONAD_ASSERT(depth >= prefix_length);
         if (MONAD_UNLIKELY(depth == prefix_length)) {
             return account_root_compute;
         }
-        else if (depth < prefix_length + 2 * sizeof(bytes32_t)) {
+        else if (depth < prefix_length + account_hash_nibbles) {
             return account_compute;
         }
-        else if (depth == prefix_length + 2 * sizeof(bytes32_t)) {
+        else if (depth == prefix_length + account_hash_nibbles) {
             return storage_root_compute();
         }
         else {
             return storage_compute();
         }
+    }
+    else if (table == TableType::DomainState) {
+        constexpr uint8_t domain_id_nibbles = sizeof(uint64_t) * 2;
+        auto const domain_depth = prefix_length + domain_id_nibbles;
+        auto const account_depth = domain_depth + account_hash_nibbles;
+        if (depth < domain_depth) {
+            return domain_prefix_compute;
+        }
+        else if (depth == domain_depth) {
+            return domain_root_compute;
+        }
+        else if (depth < account_depth) {
+            return account_compute;
+        }
+        else if (depth == account_depth) {
+            return storage_root_compute();
+        }
+        else {
+            return storage_compute();
+        }
+    }
+    else if (
+        table == TableType::DomainReceipt ||
+        table == TableType::DomainTransaction) {
+        constexpr uint8_t domain_id_nibbles = sizeof(uint64_t) * 2;
+        auto const domain_depth = prefix_length + domain_id_nibbles;
+        if (depth < domain_depth) {
+            return domain_prefix_compute;
+        }
+        if (depth == domain_depth) {
+            if (table == TableType::DomainReceipt) {
+                return domain_receipt_root_compute;
+            }
+            return domain_transaction_root_compute;
+        }
+        if (table == TableType::DomainReceipt) {
+            return receipt_compute;
+        }
+        return transaction_compute;
     }
     else if (table == TableType::Receipt) {
         return depth == prefix_length ? receipt_root_compute : receipt_compute;
@@ -502,6 +611,10 @@ mpt::Compute &MachineBase::get_compute() const
 
 bool MachineBase::is_variable_length() const
 {
+    if (table == TableType::DomainTransaction ||
+        table == TableType::DomainReceipt) {
+        return depth > prefix_len() + sizeof(uint64_t) * 2;
+    }
     return depth > prefix_len() &&
            (table == TableType::Transaction || table == TableType::Receipt ||
             table == TableType::Withdrawal || table == TableType::CallFrame);
@@ -528,7 +641,7 @@ void MachineBase::down(unsigned char const nibble)
     if (MONAD_UNLIKELY(depth == prefix_length)) {
         MONAD_ASSERT(table == TableType::Prefix);
         MONAD_ASSERT_PRINTF(
-            nibble <= CALL_FRAME_NIBBLE,
+            nibble <= DOMAIN_BLOCK_HEADER_NIBBLE,
             "Invalid nibble %u",
             static_cast<unsigned>(nibble));
         table = static_cast<TableType>(nibble + 1);
@@ -612,7 +725,9 @@ bool OnDiskMachine::cache() const
     return table == TableType::Prefix ||
            ((depth <= prefix_len() + CACHE_DEPTH_IN_TABLE) &&
             (table == TableType::State || table == TableType::Code ||
-             table == TableType::TxHash || table == TableType::BlockHash));
+             table == TableType::DomainState || table == TableType::TxHash ||
+             table == TableType::DomainTxHash ||
+             table == TableType::BlockHash));
 }
 
 bool OnDiskMachine::compact() const
@@ -622,7 +737,8 @@ bool OnDiskMachine::compact() const
 
 bool OnDiskMachine::auto_expire() const
 {
-    return table == TableType::TxHash || table == TableType::BlockHash;
+    return table == TableType::TxHash || table == TableType::DomainTxHash ||
+           table == TableType::BlockHash;
 }
 
 std::unique_ptr<StateMachine> OnDiskMachine::clone() const
@@ -677,6 +793,20 @@ decode_transaction_db(byte_string_view &enc)
         return rlp::DecodeError::InputTooLong;
     }
     return {transaction, sender};
+}
+
+Result<std::pair<uint64_t, uint32_t>>
+decode_transaction_location_db(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
+    BOOST_OUTCOME_TRY(
+        auto const block_number, rlp::decode_unsigned<uint64_t>(payload));
+    BOOST_OUTCOME_TRY(
+        auto const transaction_index, rlp::decode_unsigned<uint32_t>(payload));
+    if (MONAD_UNLIKELY(!payload.empty() || !enc.empty())) {
+        return rlp::DecodeError::InputTooLong;
+    }
+    return std::pair{block_number, transaction_index};
 }
 
 byte_string encode_account_db(Address const &address, Account const &account)

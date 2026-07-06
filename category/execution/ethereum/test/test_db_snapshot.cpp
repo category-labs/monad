@@ -18,6 +18,8 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/keccak.h>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/db_snapshot_filesystem.h>
 #include <category/execution/ethereum/db/trie_db.hpp>
@@ -38,6 +40,7 @@
 
 #include <ankerl/unordered_dense.h>
 #include <gtest/gtest.h>
+#include <intx/intx.hpp>
 
 #include <filesystem>
 
@@ -117,7 +120,10 @@ TEST(DbBinarySnapshot, Basic)
 
     bytes32_t root_hash;
     Code code_delta;
+    BlockHeader block_100_header;
     BlockHeader last_header;
+    constexpr uint64_t domain_id = 0x1234;
+    BlockHeader domain_header;
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
@@ -160,7 +166,40 @@ TEST(DbBinarySnapshot, Basic)
             code_delta,
             bytes32_t{100},
             BlockHeader{.number = 100});
+        auto domain_builder = make_commit_builder(100, tdb);
+        DomainStateDeltas domain_deltas;
+        {
+            DomainStateDeltas::accessor domain_it;
+            domain_deltas.emplace(
+                domain_it, domain_id, std::make_unique<StateDeltas>());
+        }
+        domain_builder->add_domain_state_deltas(domain_deltas);
+        DomainStateDeltas const *const delta_sets[] = {&domain_deltas};
+        tdb.commit_domain_state_deltas(
+            bytes32_t{100},
+            *domain_builder,
+            delta_sets,
+            100,
+            [&](CommitBuilder &header_builder, DomainStateRoots const &roots) {
+                ASSERT_EQ(roots.size(), 1);
+                ASSERT_EQ(roots.front().first, domain_id);
+                domain_header = BlockHeader{
+                    .state_root = roots.front().second,
+                    .number = 100,
+                    .gas_limit = 123};
+                std::pair<uint64_t, BlockHeader> const headers[] = {
+                    {domain_id, domain_header}};
+                header_builder.add_domain_block_headers(headers);
+            });
         tdb.finalize(100, bytes32_t{100});
+        block_100_header = tdb.read_eth_header();
+        monad::test::commit_simple(
+            tdb,
+            StateDeltas{},
+            Code{},
+            bytes32_t{101},
+            BlockHeader{.number = 101});
+        tdb.finalize(101, bytes32_t{101});
         last_header = tdb.read_eth_header();
         root_hash = tdb.state_root();
     }
@@ -168,13 +207,13 @@ TEST(DbBinarySnapshot, Basic)
     {
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
-                snapshot_dir.path.c_str(), 100);
+                snapshot_dir.path.c_str(), 101);
         char const *dbname_paths[] = {src_db.path.c_str()};
         EXPECT_TRUE(monad_db_dump_snapshot(
             dbname_paths,
             1,
             static_cast<unsigned>(-1),
-            100,
+            101,
             monad_db_snapshot_write_filesystem,
             context,
             2048, // dump_concurrency_limit
@@ -202,7 +241,7 @@ TEST(DbBinarySnapshot, Basic)
             1,
             static_cast<unsigned>(-1),
             snapshot_dir.path.c_str(),
-            100,
+            101,
             /*load_to_secondary=*/false);
     }
 
@@ -216,8 +255,33 @@ TEST(DbBinarySnapshot, Basic)
             EXPECT_EQ(tdb.read_eth_header(), BlockHeader{.number = i});
         }
         tdb.set_block_and_prefix(100);
+        EXPECT_EQ(tdb.read_eth_header(), block_100_header);
+        uint8_t domain_bytes[sizeof(domain_id)];
+        intx::be::store(domain_bytes, domain_id);
+        auto const domain_header_result = db.find(
+            tdb.get_root(),
+            concat(
+                finalized_nibbles,
+                domain_block_header_nibbles,
+                NibblesView{to_byte_string_view(domain_bytes)}),
+            100);
+        ASSERT_TRUE(domain_header_result.has_value());
+        auto encoded_domain_header = domain_header_result.value().node->value();
+        auto const decoded_domain_header =
+            rlp::decode_block_header(encoded_domain_header);
+        ASSERT_TRUE(decoded_domain_header.has_value());
+        EXPECT_EQ(decoded_domain_header.value(), domain_header);
+        tdb.set_block_and_prefix(101);
         EXPECT_EQ(tdb.read_eth_header(), last_header);
         EXPECT_EQ(tdb.state_root(), root_hash);
+        auto const inherited_domain_header = db.find(
+            tdb.get_root(),
+            concat(
+                finalized_nibbles,
+                domain_block_header_nibbles,
+                NibblesView{to_byte_string_view(domain_bytes)}),
+            101);
+        EXPECT_FALSE(inherited_domain_header.has_value());
         for (auto const &[hash, icode] : code_delta) {
             auto const from_db = tdb.read_code(hash);
             ASSERT_TRUE(from_db);

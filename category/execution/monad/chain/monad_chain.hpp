@@ -18,6 +18,8 @@
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
+#include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/revision.h>
@@ -39,18 +41,19 @@ struct BlockHeader;
 struct Transaction;
 class AccountState;
 
+using AddressesByDomain = ankerl::unordered_dense::segmented_map<
+    std::optional<uint64_t>, ankerl::unordered_dense::segmented_set<Address>>;
+
 template <typename T>
     requires is_monad_trait_v<T>
 struct ChainContext<T>
 {
-    ankerl::unordered_dense::segmented_set<Address> const
-        &grandparent_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address> const
-        &parent_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address> const
-        &senders_and_authorities;
+    AddressesByDomain const &grandparent_senders_and_authorities;
+    AddressesByDomain const &parent_senders_and_authorities;
+    AddressesByDomain const &senders_and_authorities;
     std::vector<Address> const &senders;
     std::vector<std::vector<std::optional<Address>>> const &authorities;
+    std::vector<std::optional<uint64_t>> const &domains;
 
     // Returns an empty ChainContext for unit testing purposes.
     // Not intended for production use.
@@ -67,8 +70,8 @@ struct MonadChain : Chain
     virtual monad_revision get_monad_revision(uint64_t timestamp) const = 0;
 };
 
-ankerl::unordered_dense::segmented_set<Address> combine_senders_and_authorities(
+AddressesByDomain combine_senders_and_authorities(
     std::span<Address const> const,
-    std::span<std::vector<std::optional<Address>> const> const);
-
+    std::span<std::vector<std::optional<Address>> const> const,
+    std::span<std::optional<uint64_t> const> const);
 MONAD_NAMESPACE_END

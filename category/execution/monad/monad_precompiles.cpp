@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -24,7 +25,22 @@
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-template <Traits traits, typename Contract, Address contract_address>
+template <Traits traits, bool gasless, typename Contract>
+auto dispatch_monad_precompile(byte_string_view &input)
+{
+    if constexpr (requires {
+                      Contract::template precompile_dispatch<traits, gasless>(
+                          input);
+                  }) {
+        return Contract::template precompile_dispatch<traits, gasless>(input);
+    }
+    else {
+        return Contract::template precompile_dispatch<traits>(input);
+    }
+}
+
+template <
+    Traits traits, bool gasless, typename Contract, Address contract_address>
 std::optional<evmc::Result> check_call_monad_precompile(
     State &state, CallTracerBase &call_tracer, evmc_message const &msg)
 {
@@ -39,12 +55,12 @@ std::optional<evmc::Result> check_call_monad_precompile(
 
     byte_string_view input{msg.input_data, msg.input_size};
     auto const [method, cost] =
-        Contract::template precompile_dispatch<traits>(input);
+        dispatch_monad_precompile<traits, gasless, Contract>(input);
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost))) {
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
     }
 
-    Contract contract = Contract{state, call_tracer};
+    Contract contract{state, call_tracer};
     auto const res = (contract.*method)(input, msg.sender, msg.value);
     if (MONAD_LIKELY(res.has_value())) {
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);
@@ -81,7 +97,8 @@ bool is_precompile(Address const &address)
 
 EXPLICIT_MONAD_TRAITS(is_precompile);
 
-template <Traits traits>
+template <Traits traits, bool gasless>
+    requires(!gasless || is_monad_trait_v<traits>)
 std::optional<evmc::Result> check_call_precompile(
     State &state, CallTracerBase &call_tracer, evmc_message const &msg)
 {
@@ -92,9 +109,11 @@ std::optional<evmc::Result> check_call_precompile(
 #define CASE(cond, contract, addr)                                             \
     do {                                                                       \
         if constexpr ((cond)) {                                                \
-            if (auto maybe_result =                                            \
-                    check_call_monad_precompile<traits, contract, addr>(       \
-                        state, call_tracer, msg)) {                            \
+            if (auto maybe_result = check_call_monad_precompile<               \
+                    traits,                                                    \
+                    gasless,                                                   \
+                    contract,                                                  \
+                    addr>(state, call_tracer, msg)) {                          \
                 return maybe_result;                                           \
             }                                                                  \
         }                                                                      \
@@ -117,5 +136,6 @@ std::optional<evmc::Result> check_call_precompile(
 }
 
 EXPLICIT_MONAD_TRAITS(check_call_precompile);
+EXPLICIT_MONAD_TRAITS_TRUE(check_call_precompile);
 
 MONAD_NAMESPACE_END

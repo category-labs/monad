@@ -249,8 +249,7 @@ private:
 
 static fiber::PriorityPool *pool_ = nullptr;
 
-static ankerl::unordered_dense::segmented_set<Address> const
-    empty_senders_and_authorities{};
+static AddressesByDomain const empty_senders_and_authorities{};
 
 void validate_post_state(nlohmann::json const &json, nlohmann::json const &db)
 {
@@ -324,8 +323,7 @@ template <Traits traits>
 Result<BlockExecOutput> execute(
     Chain const &chain, Block &block, monad::Db &db, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer,
-    std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
-        &senders_and_authorities_map,
+    std::map<uint64_t, AddressesByDomain> &senders_and_authorities_map,
     bool enable_tracing, std::vector<Receipt> &receipts,
     std::vector<std::vector<CallFrame>> &call_frames)
 {
@@ -349,6 +347,8 @@ Result<BlockExecOutput> execute(
             return TransactionError::MissingSender;
         }
     }
+    std::vector<std::optional<uint64_t>> const domains(
+        block.transactions.size(), std::nullopt);
 
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
         block.transactions.size()};
@@ -368,7 +368,8 @@ Result<BlockExecOutput> execute(
     }
 
     senders_and_authorities_map[block.header.number] =
-        combine_senders_and_authorities(senders, recovered_authorities);
+        combine_senders_and_authorities(
+            senders, recovered_authorities, domains);
     auto &senders_and_authorities =
         senders_and_authorities_map[block.header.number];
 
@@ -383,7 +384,8 @@ Result<BlockExecOutput> execute(
                     senders_and_authorities_map[block.header.number - 1],
                 .senders_and_authorities = senders_and_authorities,
                 .senders = senders,
-                .authorities = recovered_authorities};
+                .authorities = recovered_authorities,
+                .domains = domains};
         }
         else {
             return ChainContext<traits>{};
@@ -395,7 +397,7 @@ Result<BlockExecOutput> execute(
         execute_block<traits>(
             chain,
             block,
-            senders,
+            recovered_senders,
             recovered_authorities,
             block_state,
             block_hash_buffer,
@@ -407,6 +409,9 @@ Result<BlockExecOutput> execute(
             chain_context));
 
     block_state.log_debug();
+    bytes32_t const block_id{block.header.number};
+    auto domain_state = block_state.release_domain_state_deltas();
+    MONAD_ASSERT(domain_state.empty());
     auto [state, code, _] = std::move(block_state).release();
 
     MONAD_ASSERT(db.is_page_encoded() == traits::mip_8_active());
@@ -453,8 +458,7 @@ template <Traits traits>
 Result<std::vector<Receipt>> execute_and_record(
     Chain const &chain, Block &block, monad::Db &db, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer,
-    std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
-        &senders_and_authorities_map,
+    std::map<uint64_t, AddressesByDomain> &senders_and_authorities_map,
     bool enable_tracing)
 {
     record_block_start(
@@ -515,11 +519,9 @@ void process_test(
 
     BlockHashBufferFinalized block_hash_buffer;
 
-    std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
-        senders_and_authorities_map{};
+    std::map<uint64_t, AddressesByDomain> senders_and_authorities_map{};
     // genesis block has no senders or authorities
-    senders_and_authorities_map[0] =
-        ankerl::unordered_dense::segmented_set<Address>{};
+    senders_and_authorities_map[0] = AddressesByDomain{};
 
     for (auto const &j_block : j_contents.at("blocks")) {
 

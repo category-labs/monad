@@ -163,7 +163,7 @@ Result<void> process_ethereum_block(
         execute_block<traits>(
             chain,
             block,
-            senders,
+            recovered_senders,
             recovered_authorities,
             block_state,
             block_hash_buffer,
@@ -178,6 +178,9 @@ Result<void> process_ethereum_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
+    [[maybe_unused]] auto domain_state =
+        block_state.release_domain_state_deltas();
+    MONAD_ASSERT(domain_state.empty());
     auto [state, code, _] = std::move(block_state).release();
 
     CommitBuilder builder(block.header.number);

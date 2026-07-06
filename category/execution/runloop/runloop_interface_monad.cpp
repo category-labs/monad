@@ -27,6 +27,7 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/execution/monad/private_domain_hpke.hpp>
 #include <category/execution/runloop/runloop_interface_monad.h>
 #include <category/execution/runloop/runloop_monad.hpp>
 #include <category/mpt/db.hpp>
@@ -95,9 +96,14 @@ public:
         return triedb_.is_page_encoded();
     }
 
-    virtual std::optional<Account> read_account(Address const &address) override
+    virtual std::optional<Account> read_account(
+        Address const &address,
+        std::optional<uint64_t> const &domain = std::nullopt) override
     {
-        auto acct = triedb_.read_account(address);
+        auto acct = triedb_.read_account(address, domain);
+        if (domain.has_value()) {
+            return acct;
+        }
         auto const over_it = account_override_.find(address);
         if (over_it == account_override_.end()) {
             return acct;
@@ -113,16 +119,19 @@ public:
 
     virtual bytes32_t read_storage(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key) override
+        bytes32_t const &key,
+        std::optional<uint64_t> const &domain = std::nullopt) override
     {
-        return triedb_.read_storage(address, incarnation, key);
+        return triedb_.read_storage(address, incarnation, key, domain);
     }
 
     virtual storage_page_t read_storage_page(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &page_key) override
+        bytes32_t const &page_key,
+        std::optional<uint64_t> const &domain = std::nullopt) override
     {
-        return triedb_.read_storage_page(address, incarnation, page_key);
+        return triedb_.read_storage_page(
+            address, incarnation, page_key, domain);
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override
@@ -167,6 +176,16 @@ public:
     {
         triedb_.commit(
             block_id, builder, header, state_deltas, populate_header_fn);
+    }
+
+    virtual DomainStateRoots commit_domain_state_deltas(
+        bytes32_t const &block_id, CommitBuilder &builder,
+        std::span<DomainStateDeltas const *const> deltas,
+        uint64_t const block_number,
+        PopulateDomainHeadersFn const &populate_headers) override
+    {
+        return triedb_.commit_domain_state_deltas(
+            block_id, builder, deltas, block_number, populate_headers);
     }
 
     virtual BlockHeader read_eth_header() override
@@ -397,6 +416,7 @@ try {
     RunloopOverrideMethods override_methods{
         runloop->is_first_run, runloop->account_override, runloop->runloop_db};
     RunloopMonadOverride runloop_override{&override_methods};
+    PrivateDomainKeyring const private_domain_keyring;
 
     sig_atomic_t const stop = 0;
     auto const result = runloop_monad(
@@ -412,6 +432,9 @@ try {
         stop,
         /* enable_tracing = */ false,
         &runloop->secondary_runloop_db,
+        nullptr,
+        private_domain_keyring,
+        Address{},
         runloop_override);
 
     runloop->is_first_run = false;

@@ -30,8 +30,10 @@
 #include <category/execution/ethereum/core/fmt/receipt_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/db_snapshot_filesystem.h>
 #include <category/execution/ethereum/db/util.hpp>
@@ -45,6 +47,9 @@
 
 #include <CLI/CLI.hpp>
 #include <evmc/evmc.hpp>
+#include <intx/intx.hpp>
+#include <nlohmann/json.hpp>
+#include <quill/bundled/fmt/format.h>
 
 #include <quill/std/Chrono.h>
 #include <quill/std/FilesystemPath.h>
@@ -62,9 +67,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <spanstream>
@@ -123,6 +131,14 @@ std::string_view table_as_string(unsigned char const table_id)
         return "code";
     case RECEIPT_NIBBLE:
         return "receipt";
+    case TRANSACTION_NIBBLE:
+        return "transaction";
+    case DOMAIN_RECEIPT_NIBBLE:
+        return "domain_receipt";
+    case DOMAIN_TRANSACTION_NIBBLE:
+        return "domain_transaction";
+    case DOMAIN_TX_HASH_NIBBLE:
+        return "domain_transaction_hash";
     default:
         return "invalid";
     }
@@ -146,6 +162,16 @@ void print_account(Account const &acct)
 void print_receipt(Receipt const &receipt)
 {
     fmt::print("{}\n\n", receipt);
+}
+
+void print_transaction(Transaction const &tx, Address const sender)
+{
+    auto const encoded = rlp::encode_transaction(tx);
+    fmt::print("{}\n", tx);
+    fmt::print("Sender={}\n", sender);
+    fmt::print(
+        "Encoded=0x{:02x}\n\n",
+        fmt::join(std::as_bytes(std::span(encoded)), ""));
 }
 
 void print_storage(bytes32_t const key, bytes32_t const val)
@@ -300,7 +326,10 @@ struct DbStateMachine
         MONAD_ASSERT(curr_section_prefix.nibble_size() > 0);
 
         if (table_id == STATE_NIBBLE || table_id == CODE_NIBBLE ||
-            table_id == RECEIPT_NIBBLE) {
+            table_id == RECEIPT_NIBBLE || table_id == TRANSACTION_NIBBLE ||
+            table_id == DOMAIN_RECEIPT_NIBBLE ||
+            table_id == DOMAIN_TRANSACTION_NIBBLE ||
+            table_id == DOMAIN_TX_HASH_NIBBLE) {
             fmt::println(
                 "Setting cursor to version {}, table {} ...",
                 curr_version,
@@ -327,12 +356,46 @@ struct DbStateMachine
                     "Couldn't find root node for {} -- {}",
                     table_as_string(table_id),
                     res.error().message().c_str());
+                if (table_id == DOMAIN_RECEIPT_NIBBLE ||
+                    table_id == DOMAIN_TRANSACTION_NIBBLE ||
+                    table_id == DOMAIN_TX_HASH_NIBBLE) {
+                    // Domain tables can legitimately have no root at the
+                    // selected version. Keep the table selected so `get` can
+                    // report an ordinary miss instead of a cursor error.
+                    state = DbState::table;
+                    curr_table_id = table_id;
+                }
             }
         }
         else {
-            fmt::println("Invalid table id: choose table id from 0: state, "
-                         "1: code, 2: receipt.");
+            fmt::println("Invalid table id");
         }
+    }
+
+    void print_domain_root(uint64_t const domain_id) const
+    {
+        if (state != DbState::table ||
+            (curr_table_id != DOMAIN_RECEIPT_NIBBLE &&
+             curr_table_id != DOMAIN_TRANSACTION_NIBBLE)) {
+            fmt::println("Select a domain receipt or transaction table first.");
+            return;
+        }
+        uint8_t bytes[sizeof(domain_id)];
+        intx::be::store(bytes, domain_id);
+        auto const result = db.find(
+            concat(
+                curr_section_prefix,
+                curr_table_id,
+                NibblesView{to_byte_string_view(bytes)}),
+            curr_version);
+        if (!result) {
+            fmt::println("Could not find domain {}", domain_id);
+            return;
+        }
+        auto const &node = result.assume_value().node;
+        bytes32_t const root =
+            node->data().empty() ? NULL_ROOT : to_bytes(node->data());
+        fmt::println("Domain {} Merkle root is {}", domain_id, root);
     }
 
     Result<NodeCursor> lookup(NibblesView const key) const
@@ -350,6 +413,24 @@ struct DbStateMachine
             table_as_string(curr_table_id));
         return db.find(
             concat(curr_section_prefix, curr_table_id, key), curr_version);
+    }
+
+    bool has_domain_block(uint64_t const domain_id) const
+    {
+        uint8_t domain_bytes[sizeof(domain_id)];
+        intx::be::store(domain_bytes, domain_id);
+        auto const result = db.find(
+            concat(
+                curr_section_prefix,
+                DOMAIN_BLOCK_HEADER_NIBBLE,
+                NibblesView{to_byte_string_view(domain_bytes)}),
+            curr_version);
+        if (!result.has_value()) {
+            return false;
+        }
+        auto encoded = result.value().node->value();
+        auto const header = rlp::decode_block_header(encoded);
+        return header.has_value() && header.value().number == curr_version;
     }
 
     void back()
@@ -390,6 +471,356 @@ struct DbStateMachine
 };
 
 ////////////////////////////////////////
+// Full-state dump — TraverseMachines that walk the root state table and the
+// domain state table. Domain state lives under
+// DOMAIN_STATE_NIBBLE + be64(domain_id), not in synthetic root accounts.
+//
+// Root state trie layout, relative to STATE_NIBBLE:
+//   64  nibbles — account leaf (key = keccak(address))
+//   128 nibbles — account storage slot (key = keccak(slot))
+//
+// Domain state trie layout, relative to DOMAIN_STATE_NIBBLE:
+//   16  nibbles — domain id (be64)
+//   80  nibbles — domain-local account leaf
+//   144 nibbles — domain-local account storage slot
+////////////////////////////////////////
+
+struct AccountInfo
+{
+    Account account;
+    std::map<bytes32_t, bytes32_t> storage;
+};
+
+using AccountDump = std::map<Address, AccountInfo>;
+
+void add_storage_leaf_to_dump(
+    AccountInfo &account_info, byte_string_view enc, bool const page_encoded)
+{
+    if (!page_encoded) {
+        auto res = decode_storage_db(enc);
+        if (res.has_value()) {
+            auto const &[slot, value] = res.value();
+            account_info.storage[slot] = value;
+        }
+        return;
+    }
+
+    auto raw_res = decode_storage_db_raw(enc);
+    if (!raw_res.has_value() || !enc.empty()) {
+        return;
+    }
+    bytes32_t const page_key = to_bytes(raw_res.value().first);
+    auto const page = decode_storage_page(raw_res.value().second);
+    if (!page.has_value()) {
+        return;
+    }
+    for (uint8_t off = 0; off < storage_page_t::SLOTS; ++off) {
+        auto const &slot_value = page.value()[off];
+        if (slot_value == bytes32_t{}) {
+            continue;
+        }
+        account_info.storage[compute_slot_key(page_key, off)] = slot_value;
+    }
+}
+
+class AccountTrieDumpMachine final : public TraverseMachine
+{
+public:
+    AccountDump accounts;
+
+private:
+    Nibbles path_;
+    uint16_t const account_depth_;
+    uint16_t const storage_depth_;
+    bool const page_encoded_;
+    std::optional<Address> current_addr_;
+
+public:
+    AccountTrieDumpMachine(
+        uint16_t const account_depth = sizeof(bytes32_t) * 2,
+        uint16_t const storage_depth = sizeof(bytes32_t) * 4,
+        bool const page_encoded = false)
+        : account_depth_{account_depth}
+        , storage_depth_{storage_depth}
+        , page_encoded_{page_encoded}
+    {
+    }
+
+    virtual bool down(unsigned char const branch, Node const &node) override
+    {
+        if (branch != INVALID_BRANCH) {
+            path_ = concat(NibblesView{path_}, branch, node.path_nibble_view());
+        }
+
+        if (node.has_value()) {
+            auto const nibble_size = path_.nibble_size();
+            byte_string_view enc = node.value();
+
+            if (nibble_size == account_depth_) {
+                auto res = decode_account_db(enc);
+                if (res.has_value()) {
+                    auto const &[addr, acct] = res.value();
+                    accounts[addr].account = acct;
+                    current_addr_ = addr;
+                }
+            }
+            else if (
+                nibble_size == storage_depth_ && current_addr_.has_value()) {
+                add_storage_leaf_to_dump(
+                    accounts[*current_addr_], enc, page_encoded_);
+            }
+        }
+        return true;
+    }
+
+    virtual void up(unsigned char const branch, Node const &node) override
+    {
+        if (branch == INVALID_BRANCH) {
+            path_ = Nibbles{};
+            return;
+        }
+        auto const path_view = NibblesView{path_};
+        auto const nibbles_above =
+            path_view.nibble_size() - node.path_nibbles_len() - 1;
+        path_ = Nibbles{path_view.substr(0, nibbles_above)};
+
+        if (path_.nibble_size() < account_depth_) {
+            current_addr_ = std::nullopt;
+        }
+    }
+
+    virtual std::unique_ptr<TraverseMachine> clone() const override
+    {
+        return std::make_unique<AccountTrieDumpMachine>(*this);
+    }
+};
+
+struct DomainInfo
+{
+    bytes32_t state_root{NULL_ROOT};
+    AccountDump accounts;
+};
+
+class DomainStateDumpMachine final : public TraverseMachine
+{
+public:
+    std::map<uint64_t, DomainInfo> domains;
+
+private:
+    static constexpr uint16_t domain_depth_ = sizeof(uint64_t) * 2;
+    static constexpr uint16_t account_depth_ =
+        domain_depth_ + sizeof(bytes32_t) * 2;
+    static constexpr uint16_t storage_depth_ =
+        domain_depth_ + sizeof(bytes32_t) * 4;
+
+    Nibbles path_;
+    bool const page_encoded_;
+    std::optional<uint64_t> current_domain_;
+    std::optional<Address> current_addr_;
+
+    static uint64_t domain_from_path(NibblesView const path)
+    {
+        MONAD_ASSERT(path.nibble_size() >= domain_depth_);
+        return deserialize_from_big_endian<uint64_t>(
+            path.substr(0, domain_depth_));
+    }
+
+public:
+    explicit DomainStateDumpMachine(bool const page_encoded = false)
+        : page_encoded_{page_encoded}
+    {
+    }
+
+    virtual bool down(unsigned char const branch, Node const &node) override
+    {
+        if (branch != INVALID_BRANCH) {
+            path_ = concat(NibblesView{path_}, branch, node.path_nibble_view());
+        }
+
+        if (node.has_value()) {
+            auto const path_view = NibblesView{path_};
+            auto const nibble_size = path_view.nibble_size();
+            byte_string_view enc = node.value();
+
+            if (nibble_size == account_depth_) {
+                auto res = decode_account_db(enc);
+                if (res.has_value()) {
+                    uint64_t const domain = domain_from_path(path_view);
+                    auto const &[addr, acct] = res.value();
+                    domains[domain].accounts[addr].account = acct;
+                    current_domain_ = domain;
+                    current_addr_ = addr;
+                }
+            }
+            else if (
+                nibble_size == storage_depth_ && current_domain_.has_value() &&
+                current_addr_.has_value()) {
+                add_storage_leaf_to_dump(
+                    domains[*current_domain_].accounts[*current_addr_],
+                    enc,
+                    page_encoded_);
+            }
+        }
+        return true;
+    }
+
+    virtual void up(unsigned char const branch, Node const &node) override
+    {
+        if (branch == INVALID_BRANCH) {
+            path_ = Nibbles{};
+            return;
+        }
+        auto const path_view = NibblesView{path_};
+        auto const nibbles_above =
+            path_view.nibble_size() - node.path_nibbles_len() - 1;
+        path_ = Nibbles{path_view.substr(0, nibbles_above)};
+
+        auto const size = path_.nibble_size();
+        if (size < account_depth_) {
+            current_addr_ = std::nullopt;
+        }
+        if (size < domain_depth_) {
+            current_domain_ = std::nullopt;
+        }
+    }
+
+    virtual std::unique_ptr<TraverseMachine> clone() const override
+    {
+        return std::make_unique<DomainStateDumpMachine>(*this);
+    }
+};
+
+nlohmann::json account_to_json(Account const &acct)
+{
+    nlohmann::json j;
+    j["balance"] = acct.balance.to_string(10);
+    j["nonce"] = acct.nonce;
+    j["code_hash"] = "0x" + to_hex(acct.code_hash);
+    return j;
+}
+
+nlohmann::json accounts_to_json(AccountDump const &accounts)
+{
+    auto accounts_json = nlohmann::json::object();
+    for (auto const &[addr, info] : accounts) {
+        auto a = account_to_json(info.account);
+        if (!info.storage.empty()) {
+            auto s = nlohmann::json::object();
+            for (auto const &[slot, value] : info.storage) {
+                s["0x" + to_hex(slot)] = "0x" + to_hex(value);
+            }
+            a["storage"] = s;
+        }
+        accounts_json["0x" + to_hex(addr)] = a;
+    }
+    return accounts_json;
+}
+
+std::string domain_key(uint64_t const domain)
+{
+    return "0x" + to_hex(serialize_as_big_endian<sizeof(domain)>(domain));
+}
+
+Nibbles finalized_domain_state_path(uint64_t const domain)
+{
+    auto const domain_bytes = serialize_as_big_endian<sizeof(domain)>(domain);
+    return concat(
+        FINALIZED_NIBBLE,
+        DOMAIN_STATE_NIBBLE,
+        NibblesView{byte_string_view{domain_bytes}});
+}
+
+bytes32_t
+domain_state_root(Db &db, uint64_t const version, uint64_t const domain)
+{
+    auto res = db.find(finalized_domain_state_path(domain), version);
+    if (!res.has_value() || res.value().node->data().empty()) {
+        return NULL_ROOT;
+    }
+    auto const data = res.value().node->data();
+    MONAD_ASSERT(data.size() == sizeof(bytes32_t));
+    return to_bytes(data);
+}
+
+nlohmann::json build_state_dump_json(
+    bytes32_t const &state_root, AccountTrieDumpMachine const &root_dump,
+    DomainStateDumpMachine const &domain_dump, bool const page_encoded)
+{
+    nlohmann::json j;
+    j["state_root"] = "0x" + to_hex(state_root);
+    j["storage_encoding"] = page_encoded ? "page" : "slot";
+    j["accounts"] = accounts_to_json(root_dump.accounts);
+
+    auto &domains_json = j["domains"] = nlohmann::json::object();
+    for (auto const &[domain, info] : domain_dump.domains) {
+        nlohmann::json domain_json;
+        domain_json["state_root"] = "0x" + to_hex(info.state_root);
+        domain_json["accounts"] = accounts_to_json(info.accounts);
+        domains_json[domain_key(domain)] = domain_json;
+    }
+    return j;
+}
+
+int dump_state_to_file(
+    Db &db, uint64_t const version, std::filesystem::path const &out_path)
+{
+    bool const page_encoded =
+        db.state_machine_type() == state_machine_kind::monad;
+    auto const prefix = concat(FINALIZED_NIBBLE, STATE_NIBBLE);
+    auto cursor_res = db.find(prefix, version);
+    if (!cursor_res.has_value()) {
+        LOG_ERROR(
+            "could not find state table at version {} / finalized: {}",
+            version,
+            cursor_res.error().message().c_str());
+        return 1;
+    }
+    NodeCursor const cursor = cursor_res.assume_value();
+    bytes32_t const state_root =
+        cursor.node->data().empty() ? NULL_ROOT : to_bytes(cursor.node->data());
+
+    AccountTrieDumpMachine state_machine{
+        sizeof(bytes32_t) * 2, sizeof(bytes32_t) * 4, page_encoded};
+    bool const ok = db.traverse_blocking(cursor, state_machine, version);
+    if (!ok) {
+        LOG_ERROR("state traversal did not complete");
+        return 1;
+    }
+
+    DomainStateDumpMachine domain_machine{page_encoded};
+    auto const domain_prefix = concat(FINALIZED_NIBBLE, DOMAIN_STATE_NIBBLE);
+    auto domain_cursor_res = db.find(domain_prefix, version);
+    if (domain_cursor_res.has_value()) {
+        bool const domain_ok = db.traverse_blocking(
+            domain_cursor_res.assume_value(), domain_machine, version);
+        if (!domain_ok) {
+            LOG_ERROR("domain state traversal did not complete");
+            return 1;
+        }
+        for (auto &[domain, info] : domain_machine.domains) {
+            info.state_root = domain_state_root(db, version, domain);
+        }
+    }
+
+    nlohmann::json const j = build_state_dump_json(
+        state_root, state_machine, domain_machine, page_encoded);
+    std::ofstream out(out_path);
+    if (!out) {
+        LOG_ERROR("could not open {} for writing", out_path.string());
+        return 1;
+    }
+    out << j.dump(2) << '\n';
+    out.close();
+    LOG_INFO(
+        "dumped {} root accounts and {} domains at version {} to {}",
+        state_machine.accounts.size(),
+        domain_machine.domains.size(),
+        version,
+        out_path.string());
+    return 0;
+}
+
+////////////////////////////////////////
 // Command actions
 ////////////////////////////////////////
 
@@ -401,7 +832,10 @@ void print_help()
         "proposal [block_id] or finalized -- Set the section to query\n"
         "list sections                -- List any proposal or finalized "
         "section in current version\n"
-        "table [state/receipt/code]   -- Set the table to query\n"
+        "table [state/receipt/transaction/code/domain_receipt/"
+        "domain_transaction/domain_transaction_hash] -- Set the table "
+        "to query\n"
+        "domain_root [id]         -- Print selected domain table root\n"
         "get [key [extradata]]        -- Get the value for the given key\n"
         "node_stats                   -- Print node statistics for the given "
         "table\n"
@@ -446,6 +880,18 @@ void do_table(DbStateMachine &sm, std::string_view const table_name)
     }
     else if (table_name == "receipt") {
         table_nibble = RECEIPT_NIBBLE;
+    }
+    else if (table_name == "transaction") {
+        table_nibble = TRANSACTION_NIBBLE;
+    }
+    else if (table_name == "domain_receipt") {
+        table_nibble = DOMAIN_RECEIPT_NIBBLE;
+    }
+    else if (table_name == "domain_transaction") {
+        table_nibble = DOMAIN_TRANSACTION_NIBBLE;
+    }
+    else if (table_name == "domain_transaction_hash") {
+        table_nibble = DOMAIN_TX_HASH_NIBBLE;
     }
     else if (table_name == "code") {
         table_nibble = CODE_NIBBLE;
@@ -586,6 +1032,156 @@ void do_get_receipt(DbStateMachine &sm, std::string_view const receipt)
     }
     auto const decoded = receipt_res.value().first;
     print_receipt(decoded);
+}
+
+std::optional<Nibbles>
+domain_index_key(std::string_view const input, uint64_t &domain_id)
+{
+    auto const separator = input.find(':');
+    if (separator == std::string_view::npos) {
+        return std::nullopt;
+    }
+    domain_id = 0;
+    size_t index{};
+    auto const domain = input.substr(0, separator);
+    auto const ix = input.substr(separator + 1);
+    auto const domain_result = std::from_chars(
+        domain.data(), domain.data() + domain.size(), domain_id);
+    auto const ix_result =
+        std::from_chars(ix.data(), ix.data() + ix.size(), index);
+    if (domain_result.ec != std::errc{} ||
+        domain_result.ptr != domain.data() + domain.size() ||
+        ix_result.ec != std::errc{} || ix_result.ptr != ix.data() + ix.size()) {
+        return std::nullopt;
+    }
+    uint8_t bytes[sizeof(domain_id)];
+    intx::be::store(bytes, domain_id);
+    return concat(
+        NibblesView{to_byte_string_view(bytes)},
+        NibblesView{rlp::encode_unsigned(index)});
+}
+
+void do_get_domain_receipt(DbStateMachine &sm, std::string_view const input)
+{
+    uint64_t domain_id;
+    auto key = domain_index_key(input, domain_id);
+    if (!key) {
+        fmt::println("Use domain_id:index");
+        return;
+    }
+    if (!sm.has_domain_block(domain_id)) {
+        fmt::println("Could not find domain receipt {}", input);
+        return;
+    }
+    auto result = sm.lookup(*key);
+    if (!result) {
+        fmt::println("Could not find domain receipt {}", input);
+        return;
+    }
+    auto encoded = result.value().node->value();
+    auto decoded = decode_receipt_db(encoded);
+    if (!decoded || !encoded.empty()) {
+        fmt::println("Could not decode domain receipt");
+        return;
+    }
+    print_receipt(decoded.value().first);
+}
+
+void do_get_domain_transaction(DbStateMachine &sm, std::string_view const input)
+{
+    uint64_t domain_id;
+    auto key = domain_index_key(input, domain_id);
+    if (!key) {
+        fmt::println("Use domain_id:index");
+        return;
+    }
+    if (!sm.has_domain_block(domain_id)) {
+        fmt::println("Could not find domain transaction {}", input);
+        return;
+    }
+    auto result = sm.lookup(*key);
+    if (!result) {
+        fmt::println("Could not find domain transaction {}", input);
+        return;
+    }
+    auto encoded = result.value().node->value();
+    auto decoded = decode_transaction_db(encoded);
+    if (!decoded || !encoded.empty()) {
+        fmt::println("Could not decode domain transaction");
+        return;
+    }
+    print_transaction(decoded.value().first, decoded.value().second);
+}
+
+std::optional<Nibbles> domain_hash_key(std::string_view const input)
+{
+    auto const separator = input.find(':');
+    if (separator == std::string_view::npos) {
+        return std::nullopt;
+    }
+    uint64_t domain_id{};
+    auto const domain = input.substr(0, separator);
+    auto const hash_text = input.substr(separator + 1);
+    auto const domain_result = std::from_chars(
+        domain.data(), domain.data() + domain.size(), domain_id);
+    auto hash = from_hex(hash_text);
+    if (domain_result.ec != std::errc{} ||
+        domain_result.ptr != domain.data() + domain.size() ||
+        !hash.has_value() || hash->size() != sizeof(hash256)) {
+        return std::nullopt;
+    }
+    uint8_t domain_bytes[sizeof(domain_id)];
+    intx::be::store(domain_bytes, domain_id);
+    return concat(
+        NibblesView{to_byte_string_view(domain_bytes)}, NibblesView{*hash});
+}
+
+void do_get_domain_transaction_hash(
+    DbStateMachine &sm, std::string_view const input)
+{
+    auto key = domain_hash_key(input);
+    if (!key) {
+        fmt::println("Use domain_id:0x<32-byte transaction hash>");
+        return;
+    }
+    auto result = sm.lookup(*key);
+    if (!result) {
+        fmt::println("Could not find domain transaction hash {}", input);
+        return;
+    }
+    auto encoded = result.value().node->value();
+    auto location = decode_transaction_location_db(encoded);
+    if (!location || !encoded.empty()) {
+        fmt::println("Could not decode domain transaction hash location");
+        return;
+    }
+    fmt::println(
+        "Block={} Index={}", location.value().first, location.value().second);
+}
+
+void do_get_transaction(DbStateMachine &sm, std::string_view const input)
+{
+    size_t transaction_id{};
+    auto const parse = std::from_chars(
+        input.data(), input.data() + input.size(), transaction_id);
+    if (input.starts_with("0x") || parse.ec != std::errc{} ||
+        parse.ptr != input.data() + input.size()) {
+        fmt::println("Transaction must be an unsigned base-10 integer!");
+        return;
+    }
+    auto const key = rlp::encode_unsigned(transaction_id);
+    auto result = sm.lookup(NibblesView{key});
+    if (!result) {
+        fmt::println("Could not find transaction {}", input);
+        return;
+    }
+    auto encoded = result.value().node->value();
+    auto decoded = decode_transaction_db(encoded);
+    if (!decoded || !encoded.empty()) {
+        fmt::println("Could not decode transaction");
+        return;
+    }
+    print_transaction(decoded.value().first, decoded.value().second);
 }
 
 void do_node_stats(DbStateMachine &sm)
@@ -743,8 +1339,24 @@ int interactive_impl(Db &db)
                 do_table(state_machine, tokens[1]);
             }
             else {
-                fmt::println("Wrong format to set table, type 'table "
-                             "[state/code/receipt]'");
+                fmt::println(
+                    "Wrong format to set table; see `help` for table names.");
+            }
+        }
+        else if (tokens[0] == "domain_root") {
+            uint64_t domain_id{};
+            auto const parse = tokens.size() == 2
+                                   ? std::from_chars(
+                                         tokens[1].data(),
+                                         tokens[1].data() + tokens[1].size(),
+                                         domain_id)
+                                   : std::from_chars_result{};
+            if (tokens.size() != 2 || parse.ec != std::errc{} ||
+                parse.ptr != tokens[1].data() + tokens[1].size()) {
+                fmt::println("Use domain_root [decimal domain id]");
+            }
+            else {
+                state_machine.print_domain_root(domain_id);
             }
         }
         else if (tokens[0] == "get") {
@@ -767,6 +1379,18 @@ int interactive_impl(Db &db)
             }
             else if (state_machine.curr_table_id == RECEIPT_NIBBLE) {
                 do_get_receipt(state_machine, tokens[1]);
+            }
+            else if (state_machine.curr_table_id == TRANSACTION_NIBBLE) {
+                do_get_transaction(state_machine, tokens[1]);
+            }
+            else if (state_machine.curr_table_id == DOMAIN_RECEIPT_NIBBLE) {
+                do_get_domain_receipt(state_machine, tokens[1]);
+            }
+            else if (state_machine.curr_table_id == DOMAIN_TRANSACTION_NIBBLE) {
+                do_get_domain_transaction(state_machine, tokens[1]);
+            }
+            else if (state_machine.curr_table_id == DOMAIN_TX_HASH_NIBBLE) {
+                do_get_domain_transaction_hash(state_machine, tokens[1]);
             }
         }
         else if (tokens[0] == "node_stats") {
@@ -821,6 +1445,7 @@ int main(int const argc, char *argv[])
     bool interactive = false;
     std::optional<std::filesystem::path> dump_binary_snapshot;
     std::optional<std::filesystem::path> load_binary_snapshot;
+    std::optional<std::filesystem::path> dump_state_path;
     std::string version;
     unsigned dump_concurrency_limit = 2048;
     bool use_secondary = false;
@@ -882,13 +1507,21 @@ int main(int const argc, char *argv[])
             "Each "
             "shard writes its portion of data and headers.")
         ->needs(dump_binary_snapshot_option);
+    auto *const load_binary_snapshot_option =
+        cli_group
+            ->add_option(
+                "--load-binary-snapshot,--load_binary_snapshot",
+                load_binary_snapshot,
+                "Load a binary snapshot to db")
+            ->check(CLI::ExistingDirectory)
+            ->excludes(dump_binary_snapshot_option);
     cli_group
         ->add_option(
-            "--load-binary-snapshot,--load_binary_snapshot",
-            load_binary_snapshot,
-            "Load a binary snapshot to db")
-        ->check(CLI::ExistingDirectory)
-        ->excludes(dump_binary_snapshot_option);
+            "--dump-state,--dump_state",
+            dump_state_path,
+            "Dump the full state at --version as JSON to this path")
+        ->excludes(dump_binary_snapshot_option)
+        ->excludes(load_binary_snapshot_option);
     cli.add_flag(
         "--secondary",
         use_secondary,
@@ -905,6 +1538,9 @@ int main(int const argc, char *argv[])
         return cli.exit(e);
     }
     catch (CLI::RequiredError const &e) {
+        return cli.exit(e);
+    }
+    catch (CLI::ParseError const &e) {
         return cli.exit(e);
     }
 
@@ -998,7 +1634,7 @@ int main(int const argc, char *argv[])
             return interactive_impl(ro_db);
         }
         if (dump_binary_snapshot.has_value() ||
-            load_binary_snapshot.has_value()) {
+            load_binary_snapshot.has_value() || dump_state_path.has_value()) {
             auto const v = resolve_snapshot_version(
                 version, ro_db.get_latest_finalized_version());
             if (!v.has_value()) {
@@ -1015,6 +1651,10 @@ int main(int const argc, char *argv[])
                 return 1;
             }
             resolved_version = *v;
+        }
+        if (dump_state_path.has_value()) {
+            return dump_state_to_file(
+                ro_db, resolved_version, dump_state_path.value());
         }
     }
     if (dump_binary_snapshot.has_value()) {

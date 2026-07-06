@@ -75,6 +75,11 @@ struct MachineBase : public mpt::StateMachine
         TxHash,
         BlockHash,
         CallFrame,
+        DomainState,
+        DomainReceipt,
+        DomainTransaction,
+        DomainTxHash,
+        DomainBlockHeader,
     };
 
     uint8_t depth{0};
@@ -89,7 +94,16 @@ struct MachineBase : public mpt::StateMachine
 
     constexpr uint8_t max_depth(uint8_t const prefix_length) const
     {
-        return prefix_length + sizeof(bytes32_t) * 2 + sizeof(bytes32_t) * 2;
+        auto const domain_id_nibbles = (table == TableType::DomainState ||
+                                        table == TableType::DomainReceipt ||
+                                        table == TableType::DomainTransaction ||
+                                        table == TableType::DomainTxHash ||
+                                        table == TableType::DomainBlockHeader)
+                                           ? sizeof(uint64_t) * 2
+                                           : 0;
+        return static_cast<uint8_t>(
+            prefix_length + domain_id_nibbles + sizeof(bytes32_t) * 2 +
+            sizeof(bytes32_t) * 2);
     }
 
 protected:
@@ -156,11 +170,26 @@ inline constexpr unsigned char OMMER_NIBBLE = 6;
 inline constexpr unsigned char TX_HASH_NIBBLE = 7;
 inline constexpr unsigned char BLOCK_HASH_NIBBLE = 8;
 inline constexpr unsigned char CALL_FRAME_NIBBLE = 9;
+inline constexpr unsigned char DOMAIN_STATE_NIBBLE = 10;
+inline constexpr unsigned char DOMAIN_RECEIPT_NIBBLE = 11;
+inline constexpr unsigned char DOMAIN_TRANSACTION_NIBBLE = 12;
+inline constexpr unsigned char DOMAIN_TX_HASH_NIBBLE = 13;
+inline constexpr unsigned char DOMAIN_BLOCK_HEADER_NIBBLE = 14;
 inline constexpr unsigned char INVALID_NIBBLE = 255;
 inline mpt::Nibbles const state_nibbles = mpt::concat(STATE_NIBBLE);
 inline mpt::Nibbles const code_nibbles = mpt::concat(CODE_NIBBLE);
 inline mpt::Nibbles const receipt_nibbles = mpt::concat(RECEIPT_NIBBLE);
 inline mpt::Nibbles const call_frame_nibbles = mpt::concat(CALL_FRAME_NIBBLE);
+inline mpt::Nibbles const domain_state_nibbles =
+    mpt::concat(DOMAIN_STATE_NIBBLE);
+inline mpt::Nibbles const domain_receipt_nibbles =
+    mpt::concat(DOMAIN_RECEIPT_NIBBLE);
+inline mpt::Nibbles const domain_transaction_nibbles =
+    mpt::concat(DOMAIN_TRANSACTION_NIBBLE);
+inline mpt::Nibbles const domain_tx_hash_nibbles =
+    mpt::concat(DOMAIN_TX_HASH_NIBBLE);
+inline mpt::Nibbles const domain_block_header_nibbles =
+    mpt::concat(DOMAIN_BLOCK_HEADER_NIBBLE);
 inline mpt::Nibbles const transaction_nibbles = mpt::concat(TRANSACTION_NIBBLE);
 inline mpt::Nibbles const block_header_nibbles =
     mpt::concat(BLOCKHEADER_NIBBLE);
@@ -222,6 +251,8 @@ struct StorageLeafProcessor
 Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &);
 Result<std::pair<Transaction, Address>>
 decode_transaction_db(byte_string_view &);
+Result<std::pair<uint64_t, uint32_t>>
+decode_transaction_location_db(byte_string_view &);
 
 void write_to_file(
     nlohmann::json const &, std::filesystem::path const &,

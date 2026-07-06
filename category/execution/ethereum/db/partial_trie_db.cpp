@@ -623,7 +623,7 @@ namespace
             root->v);
     }
 
-} // anonymous namespace
+} // anonymous domain
 
 // ensures enc.empty() if successful
 Result<AccountLeafValue>
@@ -736,8 +736,10 @@ Result<PartialTrieDb> PartialTrieDb::from_witness(
     return PartialTrieDb{std::move(root_node), std::move(code_index)};
 }
 
-std::optional<Account> PartialTrieDb::read_account(Address const &addr)
+std::optional<Account> PartialTrieDb::read_account(
+    Address const &addr, std::optional<uint64_t> const &domain)
 {
+    MONAD_ASSERT(!domain.has_value());
     auto const key_hash = keccak256(addr.bytes);
     auto const result = trie_lookup(root_, mpt::NibblesView{key_hash});
     if (!result) {
@@ -747,8 +749,10 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
 }
 
 bytes32_t PartialTrieDb::read_storage(
-    Address const &addr, Incarnation, bytes32_t const &slot)
+    Address const &addr, Incarnation, bytes32_t const &slot,
+    std::optional<uint64_t> const &domain)
 {
+    MONAD_ASSERT(!domain.has_value());
     auto const acct_hash = keccak256(addr.bytes);
     auto const acct_result = trie_lookup(root_, mpt::NibblesView{acct_hash});
     if (!acct_result || !acct_result->storage) {
@@ -761,7 +765,8 @@ bytes32_t PartialTrieDb::read_storage(
 }
 
 storage_page_t PartialTrieDb::read_storage_page(
-    Address const &, Incarnation, bytes32_t const &)
+    Address const &, Incarnation, bytes32_t const &,
+    std::optional<uint64_t> const &)
 {
     MONAD_ABORT("PartialTrieDb read_storage_page is currently not supported");
 }
@@ -883,6 +888,18 @@ void PartialTrieDb::commit(
     last_committed_header_ = header;
     MONAD_ASSERT(populate_header_fn);
     populate_header_fn(last_committed_header_);
+}
+
+DomainStateRoots PartialTrieDb::commit_domain_state_deltas(
+    bytes32_t const &, CommitBuilder &,
+    std::span<DomainStateDeltas const *const> const delta_sets, uint64_t,
+    PopulateDomainHeadersFn const &populate_headers)
+{
+    for (auto const *const domain_deltas : delta_sets) {
+        MONAD_ASSERT(domain_deltas != nullptr && domain_deltas->empty());
+    }
+    MONAD_ASSERT(!populate_headers);
+    return {};
 }
 
 MONAD_NAMESPACE_END

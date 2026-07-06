@@ -27,6 +27,12 @@ key: <receipt nibble (2): 1 nibble><rlp(transaction index)>
 value: rlp([rlp_encode_string(encoded_receipt), rlp(log_index_start)])
 ```
 
+Private domain gasless receipts use:
+```
+key: <domain receipt nibble (11): 1 nibble><domain id: 8 bytes><rlp(transaction index)>
+value: rlp([rlp_encode_string(encoded_receipt), rlp(log_index_start)])
+```
+
 ## Block Data
 
 Each db version has block data corresponding to that block number
@@ -42,6 +48,15 @@ value: rlp(block_header)
 key: <transaction nibble (3): 1 nibble><rlp(transaction index)>
 value: rlp([rlp_encode_string(encoded_transaction), rlp(sender_addr)])
 ```
+
+Private domain gasless transactions use:
+```
+key: <domain transaction nibble (12): 1 nibble><domain id: 8 bytes><rlp(transaction index)>
+value: rlp([rlp_encode_string(encoded_transaction), rlp(sender_addr)])
+```
+
+Only domain transactions that pass validation are stored, so each leaf has
+a recovered `sender_addr` and an aligned receipt at the same index.
 
 **Withdrawal**
 ```
@@ -59,6 +74,12 @@ value: rlp(ommers_list)
 ```
 key: <tx hash nibble (7): 1 nibble><keccak(rlp(tx))>
 value: rlp([block_number, transaction_index])
+```
+
+Private domain transaction hashes use:
+```
+key: <domain tx hash nibble (13): 1 nibble><domain id: 8 bytes><keccak(rlp(tx))>
+value: rlp([block_number, domain_transaction_index])
 ```
 
 ## Block Hash

@@ -28,18 +28,23 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
+#include <category/execution/monad/staking/util/constants.hpp>
+#include <category/execution/monad/system_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/traverse_util.hpp>
@@ -51,6 +56,7 @@
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
+#include <nlohmann/json.hpp>
 
 #include <test_resource_data.h>
 
@@ -259,8 +265,10 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
-    auto const senders_and_authorities =
-        combine_senders_and_authorities(senders, recovered_authorities);
+    std::vector<std::optional<uint64_t>> const domains(
+        senders.size(), std::nullopt);
+    auto const senders_and_authorities = combine_senders_and_authorities(
+        senders, recovered_authorities, domains);
 
     ChainContext<typename TestFixture::Trait> chain_ctx = [&] {
         auto const empty =
@@ -274,7 +282,8 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
                     empty.parent_senders_and_authorities,
                 .senders_and_authorities = senders_and_authorities,
                 .senders = senders,
-                .authorities = recovered_authorities};
+                .authorities = recovered_authorities,
+                .domains = domains};
         }
         else {
             return empty;
@@ -285,7 +294,7 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
         return execute_block<typename TestFixture::Trait>(
             chain,
             block.value(),
-            senders,
+            recovered_senders,
             recovered_authorities,
             bs,
             block_hash_buffer,
@@ -312,6 +321,8 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
     auto const &transactions = block.value().transactions;
     BlockHeader const header{.number = 1};
     bytes32_t const block_id{header.number};
+    auto domain_state = bs.release_domain_state_deltas();
+    EXPECT_TRUE(domain_state.empty());
     auto [state, code, _] = std::move(bs).release();
     commit_simple(
         tdb,
@@ -426,8 +437,10 @@ TYPED_TEST(TraitsTest, assertion_exception)
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
-    auto const senders_and_authorities =
-        combine_senders_and_authorities(senders, recovered_authorities);
+    std::vector<std::optional<uint64_t>> const domains(
+        senders.size(), std::nullopt);
+    auto const senders_and_authorities = combine_senders_and_authorities(
+        senders, recovered_authorities, domains);
 
     ChainContext<typename TestFixture::Trait> chain_ctx = [&] {
         auto const empty =
@@ -441,7 +454,8 @@ TYPED_TEST(TraitsTest, assertion_exception)
                     empty.parent_senders_and_authorities,
                 .senders_and_authorities = senders_and_authorities,
                 .senders = senders,
-                .authorities = recovered_authorities};
+                .authorities = recovered_authorities,
+                .domains = domains};
         }
         else {
             return empty;
@@ -452,7 +466,7 @@ TYPED_TEST(TraitsTest, assertion_exception)
         (void)execute_block<typename TestFixture::Trait>(
             chain,
             block.value(),
-            senders,
+            recovered_senders,
             recovered_authorities,
             bs,
             block_hash_buffer,
@@ -583,8 +597,10 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
-    auto const senders_and_authorities =
-        combine_senders_and_authorities(senders, recovered_authorities);
+    std::vector<std::optional<uint64_t>> const domains(
+        senders.size(), std::nullopt);
+    auto const senders_and_authorities = combine_senders_and_authorities(
+        senders, recovered_authorities, domains);
 
     ChainContext<typename TestFixture::Trait> chain_ctx = [&] {
         auto const empty =
@@ -598,7 +614,8 @@ TYPED_TEST(TraitsTest, call_frames_refund)
                     empty.parent_senders_and_authorities,
                 .senders_and_authorities = senders_and_authorities,
                 .senders = senders,
-                .authorities = recovered_authorities};
+                .authorities = recovered_authorities,
+                .domains = domains};
         }
         else {
             return empty;
@@ -609,7 +626,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
         return execute_block<typename TestFixture::Trait>(
             chain,
             block.value(),
-            senders,
+            recovered_senders,
             recovered_authorities,
             bs,
             block_hash_buffer,
@@ -636,6 +653,8 @@ TYPED_TEST(TraitsTest, call_frames_refund)
     auto const &transactions = block.value().transactions;
     BlockHeader const header = block.value().header;
     bytes32_t const block_id{header.number};
+    auto domain_state = bs.release_domain_state_deltas();
+    EXPECT_TRUE(domain_state.empty());
     auto [state, code, _] = std::move(bs).release();
     commit_simple(
         tdb,
@@ -700,4 +719,248 @@ TYPED_TEST(TraitsTest, call_frames_refund)
     };
 
     EXPECT_EQ(actual_call_frames[0], expected);
+}
+
+TEST(ExecuteGaslessBlock, HandlesMixedTransactionsWithoutMintingMon)
+{
+    using Trait = MonadTraits<MONAD_NEXT>;
+    constexpr uint64_t domain_id{0x114eaf};
+    constexpr uint256_t domain_chain_id =
+        (uint256_t{0x11} << 16) | uint256_t{20143};
+    constexpr Address sender{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    constexpr Address beneficiary{
+        0x5353535353535353535353535353535353535353_address};
+    constexpr Address traced_account{
+        0x2222222222222222222222222222222222222222_address};
+    Address const contract = create_contract_address(sender, 0);
+    auto const runtime_code = 0x600160005500_bytes;
+
+    mpt::Db db{std::make_unique<MonadInMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    BlockMetrics metrics;
+
+    // Deploys runtime code `PUSH1 1; PUSH1 0; SSTORE; STOP`.
+    Transaction const deployment_tx{
+        .sc =
+            {
+                .signature =
+                    {
+                        .r =
+                            0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256,
+                        .s =
+                            0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256,
+                    },
+                .chain_id = domain_chain_id,
+            },
+        .max_fee_per_gas = 10,
+        .gas_limit = 100'000,
+        .to = std::nullopt,
+        .data = 0x6006600c60003960066000f3600160005500_bytes,
+    };
+    Transaction const system_tx{.to = staking::STAKING_CA};
+    Transaction missing_sender_tx = deployment_tx;
+    missing_sender_tx.nonce = 1;
+    missing_sender_tx.type = TransactionType::eip1559;
+    Transaction wrong_chain_tx = deployment_tx;
+    wrong_chain_tx.nonce = 1;
+    wrong_chain_tx.sc.chain_id = 1;
+    Transaction nonzero_value_tx = deployment_tx;
+    nonzero_value_tx.nonce = 1;
+    nonzero_value_tx.value = 1;
+    Transaction bad_nonce_tx = deployment_tx;
+    bad_nonce_tx.nonce = 99;
+    Transaction out_of_gas_tx = deployment_tx;
+    out_of_gas_tx.nonce = 1;
+    out_of_gas_tx.gas_limit = 22'000;
+    out_of_gas_tx.to = contract;
+    out_of_gas_tx.data.clear();
+    Transaction successful_call_tx = out_of_gas_tx;
+    successful_call_tx.nonce = 2;
+    successful_call_tx.gas_limit = 100'000;
+
+    Block const block{
+        .header =
+            {
+                .number = 1,
+                .gas_limit = 700'000,
+                .beneficiary = beneficiary,
+                .requests_hash = EMPTY_REQUESTS_HASH,
+            },
+        .transactions =
+            {system_tx,
+             deployment_tx,
+             missing_sender_tx,
+             wrong_chain_tx,
+             nonzero_value_tx,
+             bad_nonce_tx,
+             out_of_gas_tx,
+             successful_call_tx},
+        .withdrawals = std::vector<Withdrawal>{},
+    };
+
+    std::vector<std::optional<Address>> const senders{
+        SYSTEM_SENDER,
+        sender,
+        std::nullopt,
+        sender,
+        sender,
+        sender,
+        sender,
+        sender};
+    std::vector<std::vector<std::optional<Address>>> const authorities(8);
+    std::vector<std::optional<uint64_t>> const domains{
+        std::nullopt,
+        domain_id,
+        domain_id,
+        std::nullopt,
+        domain_id,
+        domain_id,
+        domain_id,
+        domain_id};
+    std::vector<Address> const concrete_senders{
+        SYSTEM_SENDER, sender, sender, sender, sender, sender, sender, sender};
+    auto const senders_and_authorities =
+        combine_senders_and_authorities(concrete_senders, authorities, domains);
+    auto const empty_ctx = ChainContext<Trait>::debug_empty();
+    ChainContext<Trait> const chain_ctx{
+        .grandparent_senders_and_authorities =
+            empty_ctx.grandparent_senders_and_authorities,
+        .parent_senders_and_authorities =
+            empty_ctx.parent_senders_and_authorities,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = concrete_senders,
+        .authorities = authorities,
+        .domains = domains,
+    };
+
+    std::vector<std::vector<CallFrame>> call_frames(block.transactions.size());
+    call_frames[2].push_back(CallFrame{});
+    nlohmann::json missing_sender_access_list;
+    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
+    for (size_t i = 0; i < block.transactions.size(); ++i) {
+        if (i == 2) {
+            call_tracers.emplace_back(std::make_unique<CallTracer>(
+                block.transactions[i], call_frames[i]));
+            state_tracers.emplace_back(
+                std::make_unique<trace::StateTracer>(trace::AccessListTracer{
+                    missing_sender_access_list,
+                    sender,
+                    beneficiary,
+                    block.transactions[i].to,
+                    authorities[i]}));
+        }
+        else {
+            call_tracers.emplace_back(std::make_unique<NoopCallTracer>());
+            state_tracers.emplace_back(
+                std::make_unique<trace::StateTracer>(std::monostate{}));
+        }
+    }
+    {
+        State trace_seed{block_state, Incarnation{0, 0}};
+        trace_seed.push();
+        trace_seed.access_storage<Trait>(traced_account, bytes32_t{1});
+        trace::on_frame_reject(*state_tracers[2], trace_seed);
+        trace_seed.pop_reject();
+    }
+    BlockHashBufferFinalized block_hash_buffer;
+    fiber::PriorityPool pool{2, 8};
+    std::vector<uint8_t> skipped_transactions(block.transactions.size());
+
+    auto const receipts = execute_block_transactions<Trait, true>(
+        MonadDevnet{},
+        block.header,
+        block.transactions,
+        senders,
+        authorities,
+        block_state,
+        block_hash_buffer,
+        pool.fiber_group(),
+        metrics,
+        call_tracers,
+        state_tracers,
+        chain_ctx,
+        false,
+        skipped_transactions);
+
+    ASSERT_TRUE(receipts.has_value());
+    ASSERT_EQ(receipts.value().size(), block.transactions.size());
+    std::vector<uint8_t> const expected_statuses{0, 1, 0, 0, 0, 0, 0, 1};
+    std::vector<uint64_t> const expected_cumulative_gas{
+        0, 100'000, 100'000, 100'000, 100'000, 100'000, 122'000, 222'000};
+    for (size_t i = 0; i < receipts.value().size(); ++i) {
+        EXPECT_EQ(receipts.value()[i].status, expected_statuses[i]) << i;
+        EXPECT_EQ(receipts.value()[i].gas_used, expected_cumulative_gas[i])
+            << i;
+    }
+    EXPECT_EQ(
+        skipped_transactions, (std::vector<uint8_t>{1, 0, 1, 1, 1, 1, 0, 0}));
+    for (size_t const i : {0u, 2u, 3u, 4u, 5u}) {
+        EXPECT_TRUE(receipts.value()[i].logs.empty()) << i;
+    }
+    EXPECT_TRUE(receipts.value()[6].logs.empty());
+    EXPECT_EQ(receipts.value()[2].type, missing_sender_tx.type);
+
+    EXPECT_TRUE(call_frames[2].empty());
+    {
+        State trace_state{block_state, Incarnation{1, Incarnation::LAST_TX}};
+        trace::run_tracer<Trait>(*state_tracers[2], trace_state);
+    }
+    EXPECT_EQ(missing_sender_access_list, nlohmann::json::array());
+
+    {
+        State root_state{block_state, Incarnation{1, Incarnation::LAST_TX}};
+        EXPECT_EQ(root_state.get_balance(beneficiary), 0);
+        EXPECT_EQ(root_state.get_nonce(SYSTEM_SENDER), 0);
+        EXPECT_FALSE(root_state.account_exists(staking::STAKING_CA));
+        EXPECT_FALSE(root_state.account_exists(sender));
+        EXPECT_FALSE(root_state.account_exists(contract));
+
+        State domain_state{
+            block_state,
+            Incarnation{1, Incarnation::LAST_TX},
+            false,
+            domain_id};
+        EXPECT_EQ(domain_state.get_balance(sender), 0);
+        EXPECT_EQ(domain_state.get_balance(contract), 0);
+        EXPECT_EQ(domain_state.get_balance(beneficiary), 0);
+        EXPECT_EQ(domain_state.get_nonce(sender), 3);
+        EXPECT_TRUE(domain_state.account_exists(contract));
+        auto const deployed_code = domain_state.get_code(contract);
+        ASSERT_NE(deployed_code, nullptr);
+        auto const &intercode = deployed_code->intercode();
+        EXPECT_EQ(
+            byte_string_view(intercode->code(), intercode->size()),
+            byte_string_view(runtime_code.data(), runtime_code.size()));
+        EXPECT_EQ(
+            domain_state.get_code_hash(contract),
+            to_bytes(keccak256(runtime_code)));
+        EXPECT_EQ(
+            domain_state.get_storage(contract, bytes32_t{}),
+            bytes32_t{uint64_t{1}});
+    }
+
+    auto domain_deltas = block_state.release_domain_state_deltas();
+    auto [root_deltas, _, __] = std::move(block_state).release();
+    ASSERT_NE(root_deltas, nullptr);
+    auto const expect_zero_balances = [](StateDeltas const &deltas) {
+        for (auto const &[_, delta] : deltas) {
+            auto const expect_zero = [](std::optional<Account> const &account) {
+                if (account.has_value()) {
+                    EXPECT_EQ(account->balance, 0);
+                }
+            };
+            expect_zero(delta.account.first);
+            expect_zero(delta.account.second);
+        }
+    };
+    expect_zero_balances(*root_deltas);
+    ASSERT_EQ(domain_deltas.size(), 1);
+    DomainStateDeltas::const_accessor domain_it;
+    ASSERT_TRUE(domain_deltas.find(domain_it, domain_id));
+    ASSERT_NE(domain_it->second, nullptr);
+    expect_zero_balances(*domain_it->second);
 }

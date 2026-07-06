@@ -20,6 +20,7 @@
 #include <category/core/cli/help_formatter.hpp>
 #include <category/core/config.hpp>
 #include <category/core/fiber/priority_pool.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
 #include <category/core/monad_exception.hpp>
@@ -34,6 +35,7 @@
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/precompiles.hpp>
@@ -41,11 +43,14 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/monad/chain/chain_factory.hpp>
+#include <category/execution/monad/chain/domain_chain_id.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
+#include <category/execution/monad/private_domain_hpke.hpp>
 #include <category/execution/runloop/runloop_ethereum.hpp>
 #include <category/execution/runloop/runloop_monad.hpp>
 #include <category/execution/runloop/runloop_monad_ethblocks.hpp>
+#include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/statesync/statesync_server_network.hpp>
 #include <category/statesync/statesync_thread.hpp>
@@ -59,6 +64,7 @@
 #include <nlohmann/json.hpp>
 
 #include <quill/std/FilesystemPath.h>
+#include <quill/std/Vector.h>
 
 #include <algorithm>
 #include <chrono>
@@ -72,6 +78,7 @@
 #include <stdexcept>
 #include <string>
 #include <sys/sysinfo.h>
+#include <tuple>
 #include <unistd.h>
 #include <vector>
 
@@ -111,6 +118,21 @@ void backtrace_terminate_handler()
     cxx_runtime_terminate_handler();
 }
 
+std::string
+validate_address(std::string const &value, bool const require_nonzero)
+{
+    std::string_view hex{value};
+    monad::skip_optional_hex_prefix(hex);
+    auto const address = monad::from_hex<monad::Address>(value);
+    if (hex.size() != sizeof(monad::Address) * 2 || !address.has_value()) {
+        return "address must contain exactly 20 bytes of hexadecimal";
+    }
+    if (require_nonzero && *address == monad::Address{}) {
+        return "address must be nonzero";
+    }
+    return {};
+}
+
 MONAD_ANONYMOUS_NAMESPACE_END
 
 using namespace monad;
@@ -144,6 +166,9 @@ try {
     fs::path dump_snapshot;
     std::string statesync;
     fs::path chain_rlp_path;
+    using PrivateDomainArgument = std::tuple<uint64_t, std::string, fs::path>;
+    std::vector<PrivateDomainArgument> private_domain_arguments;
+    std::string private_domain_sequencer_hex(40, '0');
     auto log_level = quill::LogLevel::Info;
 
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
@@ -201,6 +226,28 @@ try {
            "timeout in seconds for reading blocks from blockdb (0 = no retry)")
         ->needs(as_eth_blocks_flag);
     cli.add_option("--chain-rlp", chain_rlp_path, "path to chain rlp file");
+    auto *const private_domain_option =
+        cli.add_option(
+               "--private-domain",
+               private_domain_arguments,
+               "Private domain spoke and HPKE receiver key mapping; "
+               "repeat with three arguments")
+            ->type_name("<CHAIN_ID> <SPOKE_ADDRESS> <PRIVATE_KEY_PEM_PATH>");
+    CLI::Validator spoke_address_validator{
+        [](std::string &value) { return validate_address(value, true); }, ""};
+    auto key_file_validator = CLI::ExistingFile;
+    key_file_validator.description("").application_index(2);
+    private_domain_option->check(spoke_address_validator.application_index(1))
+        ->check(key_file_validator);
+    cli.add_option(
+           "--private-domain-sequencer",
+           private_domain_sequencer_hex,
+           "L1 DomainHub address for private domain payloads and state "
+           "commitments")
+        ->type_name("ADDRESS")
+        ->check([](std::string const &value) {
+            return validate_address(value, false);
+        });
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
     group
@@ -245,6 +292,20 @@ try {
         return cli.exit(e);
     }
 
+    Address const private_domain_sequencer =
+        *from_hex<Address>(private_domain_sequencer_hex);
+    std::vector<PrivateDomainConfig> private_domain_configs;
+    private_domain_configs.reserve(private_domain_arguments.size());
+    for (auto const &[chain_id, spoke_text, key_path] :
+         private_domain_arguments) {
+        auto const spoke = from_hex<Address>(spoke_text);
+        MONAD_ASSERT(spoke.has_value(), "not validated by CLI11?");
+        private_domain_configs.push_back(PrivateDomainConfig{
+            .domain_chain_id = chain_id,
+            .spoke_address = *spoke,
+            .private_key_path = key_path});
+    }
+
     init_root_logger(log_level);
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
 
@@ -282,6 +343,48 @@ try {
     }
 
     auto chain = make_chain(chain_config);
+    auto private_domain_keyring_result =
+        PrivateDomainKeyring::load(private_domain_configs);
+    if (private_domain_keyring_result.has_error()) {
+        LOG_ERROR(
+            "invalid private domain key configuration: {}",
+            private_domain_keyring_result.assume_error().message().c_str());
+        return 1;
+    }
+    auto private_domain_keyring =
+        std::move(private_domain_keyring_result).assume_value();
+    auto const private_domain_ids = private_domain_keyring.domain_ids();
+    if (!private_domain_ids.empty()) {
+        if (private_domain_sequencer == Address{}) {
+            LOG_ERROR("--private-domain-sequencer must be nonzero when private "
+                      "domains are configured");
+            return 1;
+        }
+        if (chain->get_chain_id() > uint256_t{0xffff}) {
+            LOG_ERROR(
+                "network chain ID {} does not fit the private domain "
+                "chain-ID suffix",
+                to_string(chain->get_chain_id(), 10));
+            return 1;
+        }
+        for (auto const domain_id : private_domain_ids) {
+            auto const result = domain_from_chain_id(
+                uint256_t{domain_id}, chain->get_chain_id());
+            if (result.has_error() || !result.value().has_value()) {
+                LOG_ERROR(
+                    "private domain chain ID {} must be non-global and "
+                    "end with network chain ID {}",
+                    domain_id,
+                    to_string(chain->get_chain_id(), 10));
+                return 1;
+            }
+        }
+    }
+    LOG_INFO(
+        "private domain execution allowlist: {}; DomainHub address: {}",
+        std::vector<uint64_t>{
+            private_domain_ids.begin(), private_domain_ids.end()},
+        private_domain_sequencer_hex);
 
     // The on-disk Db ctor reads the persisted state_machine_kind from
     // db_metadata and constructs the StateMachine via the registry. The
@@ -425,6 +528,24 @@ try {
 
     Db &db = sync_server ? static_cast<Db &>(*sync_server->ctx)
                          : static_cast<Db &>(triedb);
+
+    MONAD_ASSERT(
+        private_domain_keyring.domain_ids().empty() || !db_in_memory,
+        "private domain state update validation requires an on-disk "
+        "database");
+    std::optional<mpt::RODb> domain_raw_rodb;
+    std::optional<TrieRODb> domain_triedb;
+    if (!db_in_memory && !private_domain_keyring.domain_ids().empty() &&
+        (chain_config == CHAIN_CONFIG_MONAD_DEVNET ||
+         chain_config == CHAIN_CONFIG_MONAD_TESTNET ||
+         chain_config == CHAIN_CONFIG_MONAD_MAINNET)) {
+        domain_raw_rodb.emplace(
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = dbname_paths});
+        domain_triedb.emplace(*domain_raw_rodb);
+    }
+    TrieRODb *const domain_state_db =
+        domain_triedb.has_value() ? &*domain_triedb : nullptr;
+
     auto const result = [&] {
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:
@@ -482,8 +603,10 @@ try {
                     stop,
                     trace_calls,
                     block_db_timeout,
-                    secondary_triedb.has_value() ? &*secondary_triedb
-                                                 : nullptr);
+                    secondary_triedb.has_value() ? &*secondary_triedb : nullptr,
+                    domain_state_db,
+                    private_domain_keyring,
+                    private_domain_sequencer);
             }
             else {
                 // TODO: Remove this check once dual-db is deprecated.
@@ -517,8 +640,11 @@ try {
                     end_block_num,
                     stop,
                     trace_calls,
-                    secondary_triedb.has_value() ? &*secondary_triedb
-                                                 : nullptr);
+                    secondary_triedb.has_value() ? &*secondary_triedb : nullptr,
+                    domain_state_db,
+                    private_domain_keyring,
+                    private_domain_sequencer,
+                    {});
             }
         }
         }

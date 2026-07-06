@@ -49,6 +49,14 @@ unsigned monad_default_max_reserve_balance_mon(enum monad_revision)
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
+bool address_seen_in_domain(
+    AddressesByDomain const &history, std::optional<uint64_t> const &domain_id,
+    Address const &address)
+{
+    auto const it = history.find(domain_id);
+    return it != history.end() && it->second.contains(address);
+}
+
 template <Traits traits>
 bool dipped_into_reserve(
     Address const &sender, Transaction const &tx,
@@ -59,6 +67,8 @@ bool dipped_into_reserve(
     MONAD_ASSERT(i < ctx.senders.size());
     MONAD_ASSERT(i < ctx.authorities.size());
     MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
+    MONAD_ASSERT(i < ctx.domains.size());
+    MONAD_ASSERT(ctx.senders.size() == ctx.domains.size());
 
     static constexpr bool allow_init_selfdestruct_exemption =
         traits::monad_rev() >= MONAD_NINE;
@@ -351,6 +361,8 @@ void ReserveBalance::init_from_tx(
     MONAD_ASSERT(i < ctx.senders.size());
     MONAD_ASSERT(i < ctx.authorities.size());
     MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
+    MONAD_ASSERT(i < ctx.domains.size());
+    MONAD_ASSERT(ctx.senders.size() == ctx.domains.size());
     use_recent_code_hash_ = traits::monad_rev() >= MONAD_EIGHT;
     allow_init_selfdestruct_exemption_ = traits::monad_rev() >= MONAD_NINE;
     bytes32_t const sender_code_hash =
@@ -425,21 +437,33 @@ bool can_sender_dip_into_reserve(
     if (sender_is_delegated) { // delegated accounts cannot dip
         return false;
     }
+    MONAD_ASSERT(i < ctx.domains.size());
+    MONAD_ASSERT(ctx.senders.size() == ctx.domains.size());
+
+    std::optional<uint64_t> const &domain_id = ctx.domains[i];
 
     // check pending blocks
-    if (ctx.grandparent_senders_and_authorities.contains(sender) ||
-        ctx.parent_senders_and_authorities.contains(sender)) {
+    if (address_seen_in_domain(
+            ctx.grandparent_senders_and_authorities, domain_id, sender) ||
+        address_seen_in_domain(
+            ctx.parent_senders_and_authorities, domain_id, sender)) {
         return false;
     }
 
     // check current block
-    if (ctx.senders_and_authorities.contains(sender)) {
+    if (address_seen_in_domain(
+            ctx.senders_and_authorities, domain_id, sender)) {
         for (size_t j = 0; j <= i; ++j) {
-            if (j < i && sender == ctx.senders.at(j)) {
+            if (j < i && domain_id == ctx.domains.at(j) &&
+                sender == ctx.senders.at(j)) {
                 return false;
             }
-            if (std::ranges::contains(ctx.authorities.at(j), sender)) {
-                return false;
+            for (std::optional<Address> const &authority :
+                 ctx.authorities.at(j)) {
+                if (domain_id == ctx.domains.at(j) && authority.has_value() &&
+                    sender == *authority) {
+                    return false;
+                }
             }
         }
     }

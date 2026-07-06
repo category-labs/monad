@@ -18,10 +18,12 @@
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <optional>
+#include <span>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -34,9 +36,8 @@ struct Withdrawal;
 struct Db;
 
 // Per-block ancillary inputs that the dual commit path forwards to the
-// shared CommitBuilder helpers. State deltas are passed separately because
-// each builder (slot for Db1, page for Db2) has its own add_state_deltas
-// override that needs the same StateDeltas instance.
+// shared CommitBuilder helpers. Root state deltas are passed directly to
+// commit_block so each builder can encode the same logical writes.
 struct BlockCommitAncillaries
 {
     Code const &code;
@@ -46,6 +47,16 @@ struct BlockCommitAncillaries
     std::vector<std::vector<CallFrame>> const &call_frames;
     std::vector<BlockHeader> const &ommers;
     std::optional<std::vector<Withdrawal>> const &withdrawals;
+};
+
+struct PrivateDomainBlockCommitInput
+{
+    uint64_t domain_id;
+    DomainStateDeltas const &state_deltas;
+    Code const &code;
+    std::span<Transaction const> transactions;
+    std::span<std::optional<Address> const> senders;
+    std::span<Receipt const> receipts;
 };
 
 template <Traits traits>
@@ -64,5 +75,12 @@ void for_each_db(Db &db, Db *const secondary_db, F &&f)
         f(*secondary_db);
     }
 }
+
+template <Traits traits>
+    requires is_monad_trait_v<traits>
+DomainStateRoots commit_private_domain_batch(
+    Db &primary_db, Db *secondary_db, bytes32_t const &block_id,
+    BlockHeader const &header,
+    std::span<PrivateDomainBlockCommitInput const> blocks);
 
 MONAD_NAMESPACE_END

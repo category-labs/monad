@@ -56,6 +56,8 @@
 
 #include <evmc/evmc.hpp>
 
+#include <intx/intx.hpp>
+
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
@@ -101,21 +103,34 @@ Node::SharedPtr const &TrieDb::get_root() const
     return curr_root_;
 }
 
-std::optional<Account> TrieDb::read_account(Address const &addr)
+std::optional<Account>
+TrieDb::read_account(Address const &addr, std::optional<uint64_t> const &domain)
 {
     std::optional<Account> result;
-    auto const status = cache_ ? cache_->try_read_account(addr, result)
+    auto const status = cache_ ? cache_->try_read_account(addr, result, domain)
                                : CacheReadStatus::MissTruncated;
     if (status == CacheReadStatus::Hit) {
         return result;
     }
-    auto const res = db_.find(
-        curr_root_,
-        concat(
-            prefix_,
-            STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
-        block_number_);
+    auto const addr_hash = keccak256({addr.bytes, sizeof(addr.bytes)});
+    auto const res = [&] {
+        if (domain.has_value()) {
+            uint8_t domain_bytes[sizeof(uint64_t)];
+            intx::be::store(domain_bytes, *domain);
+            return db_.find(
+                curr_root_,
+                concat(
+                    prefix_,
+                    DOMAIN_STATE_NIBBLE,
+                    NibblesView{to_byte_string_view(domain_bytes)},
+                    NibblesView{addr_hash}),
+                block_number_);
+        }
+        return db_.find(
+            curr_root_,
+            concat(prefix_, STATE_NIBBLE, NibblesView{addr_hash}),
+            block_number_);
+    }();
     // result stays nullopt if absent at the finalized baseline.
     if (res.has_error()) {
         stats_account_no_value();
@@ -126,59 +141,76 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
         result = decode_account_db_ignore_address(encoded_account).value();
     }
     if (cache_ && status == CacheReadStatus::MissResolved) {
-        cache_->insert_account(addr, result);
+        cache_->insert_account(addr, result, domain);
     }
     return result;
 }
 
 bytes32_t TrieDb::read_storage(
-    Address const &addr, Incarnation const incarnation, bytes32_t const &key)
+    Address const &addr, Incarnation const incarnation, bytes32_t const &key,
+    std::optional<uint64_t> const &domain)
 {
     bytes32_t const lookup_key = storage_lookup_key(key);
     uint8_t const lookup_offset = page_encoded_ ? compute_slot_offset(key) : 0;
     bytes32_t result{};
     auto const status =
-        cache_ ? cache_->try_read_storage(
-                     addr, incarnation, lookup_key, lookup_offset, result)
-               : CacheReadStatus::MissTruncated;
+        cache_
+            ? cache_->try_read_storage(
+                  addr, incarnation, lookup_key, lookup_offset, result, domain)
+            : CacheReadStatus::MissTruncated;
     if (status == CacheReadStatus::Hit) {
         return result;
     }
     return load_storage_page(
-        addr, incarnation, lookup_key, status)[lookup_offset];
+        addr, incarnation, lookup_key, status, domain)[lookup_offset];
 }
 
 storage_page_t TrieDb::read_storage_page(
     Address const &addr, Incarnation const incarnation,
-    bytes32_t const &page_key)
+    bytes32_t const &page_key, std::optional<uint64_t> const &domain)
 {
     if (!page_encoded_) {
         MONAD_ABORT("read_storage_page is only valid on a page-encoded TrieDb");
     }
     storage_page_t result;
-    auto const status =
-        cache_
-            ? cache_->try_read_storage_page(addr, incarnation, page_key, result)
-            : CacheReadStatus::MissTruncated;
+    auto const status = cache_
+                            ? cache_->try_read_storage_page(
+                                  addr, incarnation, page_key, result, domain)
+                            : CacheReadStatus::MissTruncated;
     if (status == CacheReadStatus::Hit) {
         return result;
     }
-    return load_storage_page(addr, incarnation, page_key, status);
+    return load_storage_page(addr, incarnation, page_key, status, domain);
 }
 
 storage_page_t TrieDb::load_storage_page(
     Address const &addr, Incarnation const incarnation,
-    bytes32_t const &lookup_key, CacheReadStatus const status)
+    bytes32_t const &lookup_key, CacheReadStatus const status,
+    std::optional<uint64_t> const &domain)
 {
-    auto const res = db_.find(
-        curr_root_,
-        concat(
-            prefix_,
-            STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{
-                keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
-        block_number_);
+    auto const addr_hash = keccak256({addr.bytes, sizeof(addr.bytes)});
+    auto const key_hash = keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)});
+    auto const res = [&] {
+        if (domain.has_value()) {
+            uint8_t domain_bytes[sizeof(uint64_t)];
+            intx::be::store(domain_bytes, *domain);
+            return db_.find(
+                curr_root_,
+                concat(
+                    prefix_,
+                    DOMAIN_STATE_NIBBLE,
+                    NibblesView{to_byte_string_view(domain_bytes)},
+                    NibblesView{addr_hash},
+                    NibblesView{key_hash}),
+                block_number_);
+        }
+        return db_.find(
+            curr_root_,
+            concat(
+                prefix_, STATE_NIBBLE, NibblesView{addr_hash},
+                NibblesView{key_hash}),
+            block_number_);
+    }();
     storage_page_t page;
     if (res.has_error()) {
         stats_storage_no_value();
@@ -189,7 +221,8 @@ storage_page_t TrieDb::load_storage_page(
             res.value().node->value(), page_encoded_);
     }
     if (cache_ && status == CacheReadStatus::MissResolved) {
-        cache_->insert_storage_page(addr, incarnation, lookup_key, page);
+        cache_->insert_storage_page(
+            addr, incarnation, lookup_key, page, domain);
     }
     return page;
 }
@@ -210,11 +243,12 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
     return vm::make_shared_intercode(res.value().node->value());
 }
 
-void TrieDb::commit(
-    bytes32_t const &block_id, CommitBuilder &builder,
-    BlockHeader const &header, StateDeltas const & /*state_deltas*/,
-    std::function<void(BlockHeader &)> const populate_header_fn)
+void TrieDb::prepare_commit(
+    CommitBuilder const &builder, uint64_t const block_number,
+    bytes32_t const &block_id)
 {
+    MONAD_ASSERT(block_number <= std::numeric_limits<int64_t>::max());
+    MONAD_ASSERT(block_id != bytes32_t{});
     // The builder must be a PageCommitBuilder iff this db is page-encoded;
     // PageCommitBuilder is the only builder that produces page-keyed updates.
     MONAD_ASSERT_PRINTF(
@@ -222,13 +256,9 @@ void TrieDb::commit(
             is_page_encoded(),
         "encoding mismatch at block %lu: TrieDb::is_page_encoded=%d but commit "
         "builder is of wrong type",
-        header.number,
+        block_number,
         is_page_encoded());
 
-    auto const block_number = header.number;
-    MONAD_ASSERT(block_number <= std::numeric_limits<int64_t>::max());
-
-    MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk() && block_id != proposal_block_id_) {
         auto const dest_prefix = proposal_prefix(block_id);
         if (db_.get_latest_version() != INVALID_BLOCK_NUM) {
@@ -245,7 +275,14 @@ void TrieDb::commit(
         prefix_ = dest_prefix;
     }
     block_number_ = block_number;
+}
 
+void TrieDb::commit(
+    bytes32_t const &block_id, CommitBuilder &builder,
+    BlockHeader const &header, StateDeltas const & /*state_deltas*/,
+    std::function<void(BlockHeader &)> const populate_header_fn)
+{
+    prepare_commit(builder, header.number, block_id);
     curr_root_ = db_.upsert(
         std::move(curr_root_),
         builder.build(prefix_),
@@ -263,9 +300,68 @@ void TrieDb::commit(
         std::move(curr_root_), builder.build(prefix_), block_number_, false);
 
     if (cache_) {
-        cache_->update_proposal_state(
-            builder.take_proposal_post_state(), header.number, block_id);
+        cache_->update_proposal_post_state(
+            builder.take_proposal_post_state(),
+            std::nullopt,
+            header.number,
+            block_id);
     }
+}
+
+DomainStateRoots TrieDb::commit_domain_state_deltas(
+    bytes32_t const &block_id, CommitBuilder &builder,
+    std::span<DomainStateDeltas const *const> const delta_sets,
+    uint64_t const block_number,
+    PopulateDomainHeadersFn const &populate_headers)
+{
+    prepare_commit(builder, block_number, block_id);
+    curr_root_ = db_.upsert(
+        std::move(curr_root_),
+        builder.build(prefix_),
+        block_number_,
+        /*enable_compaction=*/true,
+        /*can_write_to_fast=*/true,
+        /*write_root=*/false);
+
+    DomainStateRoots roots;
+    for (auto const *const delta_set : delta_sets) {
+        MONAD_ASSERT(delta_set != nullptr);
+        roots.reserve(roots.size() + delta_set->size());
+        for (auto const &[domain, _] : *delta_set) {
+            uint8_t domain_bytes[sizeof(uint64_t)];
+            intx::be::store(domain_bytes, domain);
+            roots.emplace_back(
+                domain,
+                merkle_root(concat(
+                    domain_state_nibbles,
+                    NibblesView{to_byte_string_view(domain_bytes)})));
+        }
+    }
+
+    if (populate_headers) {
+        populate_headers(builder, roots);
+        // As in commit(), the header stage completes and publishes the
+        // proposal root; finalize() will later publish the finalized copy.
+        curr_root_ = db_.upsert(
+            std::move(curr_root_),
+            builder.build(prefix_),
+            block_number_,
+            /*enable_compaction=*/false,
+            /*can_write_to_fast=*/true,
+            /*write_root=*/true);
+    }
+
+    if (cache_) {
+        auto domain_post_state = builder.take_domain_proposal_post_state();
+        for (auto &[domain, post_state] : domain_post_state) {
+            cache_->update_proposal_post_state(
+                std::move(post_state),
+                std::optional<uint64_t>{domain},
+                block_number,
+                block_id);
+        }
+    }
+    return roots;
 }
 
 void TrieDb::set_block_and_prefix(
@@ -351,6 +447,14 @@ void TrieDb::update_proposed_metadata(
 bytes32_t TrieDb::state_root()
 {
     return merkle_root(state_nibbles);
+}
+
+bytes32_t TrieDb::domain_state_root(uint64_t const domain_id)
+{
+    uint8_t domain_bytes[sizeof(domain_id)];
+    intx::be::store(domain_bytes, domain_id);
+    return merkle_root(concat(
+        domain_state_nibbles, NibblesView{to_byte_string_view(domain_bytes)}));
 }
 
 bytes32_t TrieDb::receipts_root()

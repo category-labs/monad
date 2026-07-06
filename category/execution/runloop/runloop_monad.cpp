@@ -15,6 +15,7 @@
 
 #include "runloop_monad.hpp"
 #include "file_io.hpp"
+#include "private_domain_execution.hpp"
 
 #include <category/core/assert.h>
 #include <category/core/blake3.hpp>
@@ -39,6 +40,7 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
@@ -48,6 +50,7 @@
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 #include <category/execution/monad/db/commit_block_migration.hpp>
 #include <category/execution/monad/event/record_consensus_events.hpp>
+#include <category/execution/monad/private_domain_scanner.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
 #include <category/mpt/db.hpp>
@@ -62,7 +65,9 @@
 #include <chrono>
 #include <deque>
 #include <filesystem>
+#include <memory>
 #include <optional>
+#include <span>
 #include <thread>
 #include <variant>
 #include <vector>
@@ -73,7 +78,7 @@ struct BlockCacheEntry
 {
     uint64_t block_number;
     bytes32_t parent_id;
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    AddressesByDomain senders_and_authorities;
 };
 
 using BlockCache =
@@ -83,8 +88,7 @@ using BlockCache =
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
-static ankerl::unordered_dense::segmented_set<Address>
-    empty_senders_and_authorities{};
+static AddressesByDomain empty_senders_and_authorities{};
 
 void log_tps(
     uint64_t const block_num, bytes32_t const &block_id, uint64_t const ntxs,
@@ -183,6 +187,9 @@ Result<BlockExecOutput> propose_block(
     BlockHashChain &block_hash_chain, MonadChain const &chain, Db &db,
     vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
     bool const enable_tracing, BlockCache &block_cache, Db *secondary_db,
+    TrieRODb *const domain_state_db,
+    PrivateDomainKeyring const &private_domain_keyring,
+    Address const &private_domain_sequencer,
     RunloopMonadOverride const runloop_override)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
@@ -213,8 +220,26 @@ Result<BlockExecOutput> propose_block(
         }
     }
 
-    auto senders_and_authorities =
-        combine_senders_and_authorities(senders, recovered_authorities);
+    std::vector<std::optional<uint64_t>> const domains(
+        block.transactions.size(), std::nullopt);
+    auto senders_and_authorities = combine_senders_and_authorities(
+        senders, recovered_authorities, domains);
+
+    BOOST_OUTCOME_TRY(
+        static_validate_monad_body<traits>(senders, block.transactions));
+
+    db.set_block_and_prefix(
+        block.header.number - 1,
+        is_first_block ? bytes32_t{} : consensus_header.parent_id());
+    if (secondary_db != nullptr) {
+        secondary_db->set_block_and_prefix(
+            block.header.number - 1,
+            is_first_block ? bytes32_t{} : consensus_header.parent_id());
+    }
+    block.header.parent_hash =
+        to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
+
+    BlockState block_state(db, vm, secondary_db);
 
     MONAD_ASSERT(block_cache
                      .emplace(
@@ -225,8 +250,6 @@ Result<BlockExecOutput> propose_block(
                              .senders_and_authorities =
                                  std::move(senders_and_authorities)})
                      .second);
-    BOOST_OUTCOME_TRY(
-        static_validate_monad_body<traits>(senders, block.transactions));
 
     // Create call frames vectors for tracers
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};
@@ -277,7 +300,8 @@ Result<BlockExecOutput> propose_block(
         .senders_and_authorities =
             block_cache.at(block_id).senders_and_authorities,
         .senders = senders,
-        .authorities = recovered_authorities};
+        .authorities = recovered_authorities,
+        .domains = domains};
 
     // Core execution: transaction-level EVM execution that tracks state
     // changes but does not commit them
@@ -296,17 +320,29 @@ Result<BlockExecOutput> propose_block(
     // not (see EXE-60).
     block.header.slot_number = consensus_header.block_round;
 
+    BOOST_OUTCOME_TRY(
+        auto const private_domain_outputs,
+        execute_private_domain_blocks<traits>(
+            chain,
+            db,
+            secondary_db,
+            vm,
+            priority_pool,
+            block_hash_buffer,
+            block.header,
+            block.transactions,
+            private_domain_keyring,
+            private_domain_sequencer));
+
     BlockExecOutput exec_output;
     BlockMetrics block_metrics;
-
-    BlockState block_state(db, vm, secondary_db);
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const results,
         execute_block<traits>(
             chain,
             block,
-            senders,
+            recovered_senders,
             recovered_authorities,
             block_state,
             block_hash_buffer,
@@ -318,9 +354,21 @@ Result<BlockExecOutput> propose_block(
             chain_context));
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
+    auto domain_state_updates = scan_domain_state_updates(
+        results, private_domain_sequencer, private_domain_keyring.domain_ids());
+    MONAD_ASSERT_PRINTF(
+        domain_state_updates.has_value(),
+        "malformed DomainStateUpdated event from domain hub: %s",
+        domain_state_updates.assume_error().message().c_str());
+
+    auto domain_state = block_state.release_domain_state_deltas();
+    MONAD_ASSERT(domain_state.empty());
+
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
+    commit_private_domain_blocks<traits>(
+        db, secondary_db, block_id, block.header, private_domain_outputs);
     auto [state, code, _] = std::move(block_state).release();
     MONAD_ASSERT(state);
 
@@ -350,6 +398,11 @@ Result<BlockExecOutput> propose_block(
     exec_output.eth_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
         validate_live_execution_outputs(block.header, exec_output.eth_header));
+    if (!domain_state_updates.value().empty()) {
+        MONAD_ASSERT(domain_state_db != nullptr);
+        validate_domain_state_updates(
+            *domain_state_db, domain_state_updates.value());
+    }
 
     // Commit prologue: computation of the Ethereum block hash to append to
     // the circular hash buffer
@@ -496,6 +549,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
     bool const enable_tracing, Db *secondary_db,
+    TrieRODb *const domain_state_db,
+    PrivateDomainKeyring const &private_domain_keyring,
+    Address const &private_domain_sequencer,
     RunloopMonadOverride const runloop_override)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
@@ -524,8 +580,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             bytes32_t const &id, auto const &header) {
             MonadConsensusBlockBody const body =
                 read_body(header.block_body_id, body_dir);
+            auto const &transactions = body.transactions;
             std::vector<std::optional<Address>> const recovered =
-                recover_senders(body.transactions, priority_pool);
+                recover_senders(transactions, priority_pool);
             std::vector<Address> senders;
             senders.reserve(recovered.size());
             for (std::optional<Address> const &addr : recovered) {
@@ -534,10 +591,12 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             }
             std::vector<std::vector<std::optional<Address>>> const
                 recovered_authorities =
-                    recover_authorities(body.transactions, priority_pool);
+                    recover_authorities(transactions, priority_pool);
+            std::vector<std::optional<uint64_t>> const domains(
+                transactions.size(), std::nullopt);
 
-            auto senders_and_authorities =
-                combine_senders_and_authorities(senders, recovered_authorities);
+            auto senders_and_authorities = combine_senders_and_authorities(
+                senders, recovered_authorities, domains);
 
             MONAD_ASSERT(block_cache
                              .emplace(
@@ -649,6 +708,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              enable_tracing,
              &block_cache,
              secondary_db,
+             domain_state_db,
+             &private_domain_keyring,
+             &private_domain_sequencer,
              runloop_override](
                 bytes32_t const &block_id,
                 auto const &header) -> Result<std::pair<uint64_t, uint64_t>> {
@@ -661,7 +723,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
 
             uint64_t const block_number = header.execution_inputs.number;
             auto body = read_body(header.block_body_id, body_dir);
-            auto const ntxns = body.transactions.size();
+            auto transactions = std::move(body.transactions);
+            auto const ntxns = transactions.size();
 
             auto const &block_hash_buffer =
                 block_hash_chain.find_chain(header.parent_id());
@@ -696,7 +759,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     header,
                     Block{
                         .header = header.execution_inputs,
-                        .transactions = std::move(body.transactions),
+                        .transactions = std::move(transactions),
                         .ommers = std::move(body.ommers),
                         .withdrawals = std::move(body.withdrawals)},
                     block_hash_chain,
@@ -708,6 +771,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     enable_tracing,
                     block_cache,
                     secondary_db,
+                    domain_state_db,
+                    private_domain_keyring,
+                    private_domain_sequencer,
                     runloop_override);
                 MONAD_ABORT_PRINTF("handled rev value %d", rev);
             };

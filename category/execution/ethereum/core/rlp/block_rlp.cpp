@@ -104,18 +104,8 @@ byte_string encode_ommers(std::vector<BlockHeader> const &ommers)
 byte_string encode_block(Block const &block)
 {
     byte_string const encoded_block_header = encode_block_header(block.header);
-    byte_string encoded_block_transactions;
-
-    for (auto const &tx : block.transactions) {
-        if (tx.type == TransactionType::legacy) {
-            encoded_block_transactions += encode_transaction(tx);
-        }
-        else {
-            encoded_block_transactions +=
-                encode_string2(encode_transaction(tx));
-        }
-    }
-    encoded_block_transactions = encode_list2(encoded_block_transactions);
+    byte_string const encoded_block_transactions =
+        encode_transaction_list(block.transactions);
 
     byte_string encoded_block;
     encoded_block += encoded_block_header;

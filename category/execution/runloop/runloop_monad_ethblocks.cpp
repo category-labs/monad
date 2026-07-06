@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "runloop_monad_ethblocks.hpp"
+#include "private_domain_execution.hpp"
 
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
@@ -42,6 +43,7 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/db/commit_block_migration.hpp>
+#include <category/execution/monad/private_domain_scanner.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -123,12 +125,12 @@ Result<void> process_monad_block(
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing,
-    ankerl::unordered_dense::segmented_set<Address> const
-        &grandparent_senders_and_authorities,
-    ankerl::unordered_dense::segmented_set<Address> const
-        &parent_senders_and_authorities,
-    ankerl::unordered_dense::segmented_set<Address>
-        &senders_and_authorities_out)
+    AddressesByDomain const &grandparent_senders_and_authorities,
+    AddressesByDomain const &parent_senders_and_authorities,
+    AddressesByDomain &senders_and_authorities_out,
+    TrieRODb *const domain_state_db,
+    PrivateDomainKeyring const &private_domain_keyring,
+    Address const &private_domain_sequencer)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -171,8 +173,10 @@ Result<void> process_monad_block(
             return TransactionError::MissingSender;
         }
     }
-    auto const senders_and_authorities =
-        combine_senders_and_authorities(senders, recovered_authorities);
+    std::vector<std::optional<uint64_t>> const domains(
+        block.transactions.size(), std::nullopt);
+    auto const senders_and_authorities = combine_senders_and_authorities(
+        senders, recovered_authorities, domains);
 
     BOOST_OUTCOME_TRY(
         static_validate_monad_body<traits>(senders, block.transactions));
@@ -203,7 +207,8 @@ Result<void> process_monad_block(
         .parent_senders_and_authorities = parent_senders_and_authorities,
         .senders_and_authorities = senders_and_authorities,
         .senders = senders,
-        .authorities = recovered_authorities};
+        .authorities = recovered_authorities,
+        .domains = domains};
 
     // Core execution: transaction-level EVM execution that tracks state
     // changes but does not commit them
@@ -213,6 +218,20 @@ Result<void> process_monad_block(
     block.header.parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
+    BOOST_OUTCOME_TRY(
+        auto const private_domain_outputs,
+        execute_private_domain_blocks<traits>(
+            chain,
+            db,
+            secondary_db,
+            vm,
+            priority_pool,
+            block_hash_buffer,
+            block.header,
+            block.transactions,
+            private_domain_keyring,
+            private_domain_sequencer));
+
     BlockMetrics block_metrics;
     BlockState block_state(db, vm, secondary_db);
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
@@ -221,7 +240,7 @@ Result<void> process_monad_block(
         execute_block<traits>(
             chain,
             block,
-            senders,
+            recovered_senders,
             recovered_authorities,
             block_state,
             block_hash_buffer,
@@ -233,9 +252,23 @@ Result<void> process_monad_block(
             chain_context));
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
+    auto domain_state_updates = scan_domain_state_updates(
+        receipts,
+        private_domain_sequencer,
+        private_domain_keyring.domain_ids());
+    MONAD_ASSERT_PRINTF(
+        domain_state_updates.has_value(),
+        "malformed DomainStateUpdated event from domain hub: %s",
+        domain_state_updates.assume_error().message().c_str());
+
+    auto domain_state = block_state.release_domain_state_deltas();
+    MONAD_ASSERT(domain_state.empty());
+
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
+    commit_private_domain_blocks<traits>(
+        db, secondary_db, block_id, block.header, private_domain_outputs);
     auto [state, code, _] = std::move(block_state).release();
 
     BlockCommitAncillaries const anc{
@@ -262,6 +295,11 @@ Result<void> process_monad_block(
     exec_output.eth_header = db.read_eth_header();
     BOOST_OUTCOME_TRY(
         validate_output_header(block.header, exec_output.eth_header));
+    if (!domain_state_updates.value().empty()) {
+        MONAD_ASSERT(domain_state_db != nullptr);
+        validate_domain_state_updates(
+            *domain_state_db, domain_state_updates.value());
+    }
 
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer
@@ -331,7 +369,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
     bool const enable_tracing, std::chrono::seconds const block_db_timeout,
-    Db *const secondary_db)
+    Db *const secondary_db, TrieRODb *const domain_state_db,
+    PrivateDomainKeyring const &private_domain_keyring,
+    Address const &private_domain_sequencer)
 {
     uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
@@ -346,10 +386,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     bytes32_t parent_block_id{};
     uint64_t block_num = finalized_block_num;
 
-    ankerl::unordered_dense::segmented_set<Address>
-        grandparent_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address>
-        parent_senders_and_authorities;
+    AddressesByDomain grandparent_senders_and_authorities;
+    AddressesByDomain parent_senders_and_authorities;
 
     if (block_num > 1) {
         Block parent_block;
@@ -365,19 +403,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
                 senders[j] = recovered_senders[j].value();
             }
         }
-        ankerl::unordered_dense::segmented_set<Address> parent_set;
-        for (Address const &sender : senders) {
-            parent_set.insert(sender);
-        }
-        for (std::vector<std::optional<Address>> const &authorities :
-             recovered_authorities) {
-            for (std::optional<Address> const &authority : authorities) {
-                if (authority.has_value()) {
-                    parent_set.insert(authority.value());
-                }
-            }
-        }
-        parent_senders_and_authorities = std::move(parent_set);
+        std::vector<std::optional<uint64_t>> const parent_domains(
+            parent_block.transactions.size(), std::nullopt);
+        parent_senders_and_authorities = combine_senders_and_authorities(
+            senders, recovered_authorities, parent_domains);
 
         if (block_num > 2) {
             Block grandparent_block;
@@ -396,19 +425,13 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
                         grandparent_recovered_senders[j].value();
                 }
             }
-            ankerl::unordered_dense::segmented_set<Address> grandparent_set;
-            for (Address const &sender : grandparent_senders) {
-                grandparent_set.insert(sender);
-            }
-            for (std::vector<std::optional<Address>> const &authorities :
-                 grandparent_recovered_authorities) {
-                for (std::optional<Address> const &authority : authorities) {
-                    if (authority.has_value()) {
-                        grandparent_set.insert(authority.value());
-                    }
-                }
-            }
-            grandparent_senders_and_authorities = std::move(grandparent_set);
+            std::vector<std::optional<uint64_t>> const grandparent_domains(
+                grandparent_block.transactions.size(), std::nullopt);
+            grandparent_senders_and_authorities =
+                combine_senders_and_authorities(
+                    grandparent_senders,
+                    grandparent_recovered_authorities,
+                    grandparent_domains);
         }
     }
 
@@ -437,7 +460,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
                 db.is_page_encoded());
         }
 
-        ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+        AddressesByDomain senders_and_authorities;
         BOOST_OUTCOME_TRY([&] {
             SWITCH_MONAD_TRAITS(
                 process_monad_block,
@@ -453,7 +476,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
                 enable_tracing,
                 grandparent_senders_and_authorities,
                 parent_senders_and_authorities,
-                senders_and_authorities);
+                senders_and_authorities,
+                domain_state_db,
+                private_domain_keyring,
+                private_domain_sequencer);
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
 

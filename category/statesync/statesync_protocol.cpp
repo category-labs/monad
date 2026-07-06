@@ -19,6 +19,7 @@
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
@@ -31,16 +32,33 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 bytes32_t read_storage(
     monad_statesync_client_context &ctx, Address const &addr,
-    bytes32_t const &key)
+    bytes32_t const &key, std::optional<uint64_t> const domain)
 {
-    return ctx.tdb.read_storage(addr, Incarnation{0, 0}, key);
+    return ctx.tdb.read_storage(addr, Incarnation{0, 0}, key, domain);
+}
+
+bool decode_optional_domain(
+    byte_string_view &raw, std::optional<uint64_t> &domain)
+{
+    if (raw.empty()) {
+        return true;
+    }
+    auto const res = rlp::decode_unsigned<uint64_t>(raw);
+    if (res.has_error() || res.value() == 0 || !raw.empty()) {
+        return false;
+    }
+    domain = res.value();
+    return true;
 }
 
 void account_update(
     monad_statesync_client_context &ctx, Address const &addr,
-    std::optional<Account> const &acct)
+    std::optional<Account> const &acct, std::optional<uint64_t> const domain)
 {
     using StorageDeltas = monad_statesync_client_context::StorageDeltas;
+    auto &deltas = domain.has_value() ? ctx.domain_deltas[*domain] : ctx.deltas;
+    auto &buffered =
+        domain.has_value() ? ctx.domain_buffered[*domain] : ctx.buffered;
 
     if (acct.has_value()) {
         auto const &hash = acct.value().code_hash;
@@ -49,79 +67,86 @@ void account_update(
         }
     }
 
-    auto const it = ctx.deltas.find(addr);
-    auto const updated = it != ctx.deltas.end();
+    auto const it = deltas.find(addr);
+    auto const updated = it != deltas.end();
 
-    if (ctx.buffered.contains(addr)) {
-        MONAD_ASSERT(!ctx.tdb.read_account(addr).has_value() && !updated);
+    if (buffered.contains(addr)) {
+        MONAD_ASSERT(
+            !ctx.tdb.read_account(addr, domain).has_value() && !updated);
         if (acct.has_value()) {
             MONAD_ASSERT(
-                ctx.deltas
+                deltas
                     .emplace(
                         addr,
                         std::make_pair(
-                            acct.value(), std::move(ctx.buffered.at(addr))))
+                            acct.value(), std::move(buffered.at(addr))))
                     .second);
         }
-        ctx.buffered.erase(addr);
+        buffered.erase(addr);
     }
     else if (!updated) {
         if (acct.has_value()) {
             MONAD_ASSERT(
-                ctx.deltas
+                deltas
                     .emplace(
                         addr, std::make_pair(acct.value(), StorageDeltas{}))
                     .second);
         }
-        else if (ctx.tdb.read_account(addr).has_value()) {
-            MONAD_ASSERT(ctx.deltas.emplace(addr, std::nullopt).second);
+        else if (ctx.tdb.read_account(addr, domain).has_value()) {
+            MONAD_ASSERT(deltas.emplace(addr, std::nullopt).second);
         }
     }
     // incarnation
     else if (acct.has_value() && !it->second.has_value()) {
         ctx.commit();
-        account_update(ctx, addr, acct);
+        account_update(ctx, addr, acct, domain);
     }
     else if (acct.has_value()) {
         std::get<Account>(it->second.value()) = acct.value();
     }
-    else if (ctx.tdb.read_account(addr).has_value()) {
+    else if (ctx.tdb.read_account(addr, domain).has_value()) {
         it->second = std::nullopt;
     }
     else {
-        ctx.deltas.erase(it);
+        deltas.erase(it);
     }
 }
 
 void storage_update(
     monad_statesync_client_context &ctx, Address const &addr,
-    bytes32_t const &key, bytes32_t const &val)
+    bytes32_t const &key, bytes32_t const &val,
+    std::optional<uint64_t> const domain)
 {
     using StorageDeltas = monad_statesync_client_context::StorageDeltas;
+    auto &deltas = domain.has_value() ? ctx.domain_deltas[*domain] : ctx.deltas;
+    auto &buffered =
+        domain.has_value() ? ctx.domain_buffered[*domain] : ctx.buffered;
 
-    auto const it = ctx.deltas.find(addr);
-    auto const updated = it != ctx.deltas.end();
+    auto const it = deltas.find(addr);
+    auto const updated = it != deltas.end();
 
-    if (ctx.buffered.contains(addr)) {
-        MONAD_ASSERT(!ctx.tdb.read_account(addr).has_value() && !updated);
+    if (buffered.contains(addr)) {
+        MONAD_ASSERT(
+            !ctx.tdb.read_account(addr, domain).has_value() && !updated);
         if (val == bytes32_t{}) {
-            ctx.buffered[addr].erase(key);
-            if (ctx.buffered[addr].empty()) {
-                ctx.buffered.erase(addr);
+            buffered[addr].erase(key);
+            if (buffered[addr].empty()) {
+                buffered.erase(addr);
             }
         }
         else {
-            auto const sit = ctx.buffered[addr].find(key);
-            if (sit != ctx.buffered[addr].end()) {
+            auto const sit = buffered[addr].find(key);
+            if (sit != buffered[addr].end()) {
                 sit->second = val;
             }
             else {
-                MONAD_ASSERT(ctx.buffered[addr].emplace(key, val).second);
+                MONAD_ASSERT(buffered[addr].emplace(key, val).second);
             }
         }
     }
     else if (
-        val != bytes32_t{} || read_storage(ctx, addr, key) != bytes32_t{}) {
+        val != bytes32_t{} ||
+        read_storage(ctx, addr, key, domain) != bytes32_t{}) {
         if (updated) {
             if (it->second.has_value()) {
                 std::get<StorageDeltas>(it->second.value())[key] = val;
@@ -129,14 +154,14 @@ void storage_update(
             // incarnation
             else if (val != bytes32_t{}) {
                 ctx.commit();
-                storage_update(ctx, addr, key, val);
+                storage_update(ctx, addr, key, val, domain);
             }
         }
         else {
-            auto const orig = ctx.tdb.read_account(addr);
+            auto const orig = ctx.tdb.read_account(addr, domain);
             if (orig.has_value()) {
                 MONAD_ASSERT(
-                    ctx.deltas
+                    deltas
                         .emplace(
                             addr,
                             std::make_pair(
@@ -146,8 +171,7 @@ void storage_update(
             else {
                 MONAD_ASSERT(val != bytes32_t{});
                 MONAD_ASSERT(
-                    ctx.buffered.emplace(addr, StorageDeltas{{key, val}})
-                        .second);
+                    buffered.emplace(addr, StorageDeltas{{key, val}}).second);
             }
         }
     }
@@ -191,30 +215,48 @@ bool StatesyncProtocolV1::handle_upsert(
     }
     else if (type == SYNC_TYPE_UPSERT_ACCOUNT) {
         auto const res = decode_account_db(raw);
-        if (res.has_error() || !raw.empty()) {
+        std::optional<uint64_t> domain;
+        if (res.has_error() || !decode_optional_domain(raw, domain)) {
             return false;
         }
         auto [addr, acct] = res.value();
         acct.incarnation = Incarnation{0, 0};
-        account_update(*ctx, addr, acct);
+        account_update(*ctx, addr, acct, domain);
     }
     else if (type == SYNC_TYPE_UPSERT_STORAGE) {
         if (size < sizeof(Address)) {
             return false;
         }
         raw.remove_prefix(sizeof(Address));
-        auto const res = decode_storage_db(raw);
-        if (res.has_error()) {
+        // Use the raw decoder so any trailing bytes remain available for the
+        // optional domain suffix.
+        auto const res = decode_storage_db_raw(raw);
+        std::optional<uint64_t> domain;
+        // The compact key/value must fit before to_bytes(), and any remaining
+        // payload must decode as a valid optional domain.
+        if (res.has_error() || res.value().first.size() > sizeof(bytes32_t) ||
+            res.value().second.size() > sizeof(bytes32_t) ||
+            !decode_optional_domain(raw, domain)) {
             return false;
         }
-        auto const &[k, v] = res.value();
-        storage_update(*ctx, unaligned_load<Address>(val), k, v);
+        storage_update(
+            *ctx,
+            unaligned_load<Address>(val),
+            to_bytes(res.value().first),
+            to_bytes(res.value().second),
+            domain);
     }
     else if (type == SYNC_TYPE_UPSERT_ACCOUNT_DELETE) {
-        if (size != sizeof(Address)) {
+        if (size < sizeof(Address)) {
             return false;
         }
-        account_update(*ctx, unaligned_load<Address>(val), std::nullopt);
+        raw.remove_prefix(sizeof(Address));
+        std::optional<uint64_t> domain;
+        if (!decode_optional_domain(raw, domain)) {
+            return false;
+        }
+        account_update(
+            *ctx, unaligned_load<Address>(val), std::nullopt, domain);
     }
     else if (type == SYNC_TYPE_UPSERT_STORAGE_DELETE) {
         if (size < sizeof(Address)) {
@@ -222,10 +264,12 @@ bool StatesyncProtocolV1::handle_upsert(
         }
         raw.remove_prefix(sizeof(Address));
         auto const res = rlp::decode_bytes32_compact(raw);
-        if (res.has_error() || !raw.empty()) {
+        std::optional<uint64_t> domain;
+        if (res.has_error() || !decode_optional_domain(raw, domain)) {
             return false;
         }
-        storage_update(*ctx, unaligned_load<Address>(val), res.value(), {});
+        storage_update(
+            *ctx, unaligned_load<Address>(val), res.value(), {}, domain);
     }
     else {
         MONAD_ASSERT(type == SYNC_TYPE_UPSERT_HEADER);

@@ -14,25 +14,39 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
+#include <category/execution/monad/db/page_commit_builder.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/test/test_fixtures_gtest.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
+#include <category/mpt/update.hpp>
 
 #include <ethash/keccak.hpp>
+#include <intx/intx.hpp>
 #include <nlohmann/json.hpp>
 
 #include <gmock/gmock.h>
@@ -43,12 +57,14 @@
 #include <algorithm>
 #include <bit>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <optional>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -181,6 +197,790 @@ struct DBTest : public TDB
 
 using DBTypes = ::testing::Types<InMemoryTrieDbFixture, OnDiskTrieDbFixture>;
 TYPED_TEST_SUITE(DBTest, DBTypes);
+
+namespace
+{
+    void seed_finalized_block_zero(mpt::Db &db, TrieDb &tdb)
+    {
+        tdb.reset_root(load_header({}, db, BlockHeader{.number = 0}), 0);
+    }
+
+    mpt::Nibbles
+    domain_path(mpt::NibblesView const prefix, uint64_t const domain)
+    {
+        uint8_t domain_bytes[sizeof(uint64_t)];
+        intx::be::store(domain_bytes, domain);
+        return mpt::concat(
+            prefix,
+            domain_state_nibbles,
+            mpt::NibblesView{to_byte_string_view(domain_bytes)});
+    }
+
+    mpt::Nibbles domain_path(uint64_t const domain)
+    {
+        return domain_path(finalized_nibbles, domain);
+    }
+
+    mpt::Nibbles domain_account_path(uint64_t const domain, Address const &addr)
+    {
+        return mpt::concat(
+            domain_path(domain),
+            mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})});
+    }
+
+    mpt::Nibbles domain_storage_path(
+        uint64_t const domain, Address const &addr, bytes32_t const &key)
+    {
+        return mpt::concat(
+            domain_account_path(domain, addr),
+            mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})});
+    }
+
+    void add_state_delta(
+        StateDeltas &state_deltas, Address const &addr, StateDelta delta)
+    {
+        StateDeltas::accessor it{};
+        state_deltas.emplace(it, addr, std::move(delta));
+    }
+
+    void add_domain_state_delta(
+        DomainStateDeltas &domain_deltas, uint64_t const domain,
+        Address const &addr, StateDelta delta)
+    {
+        DomainStateDeltas::accessor domain_it{};
+        domain_deltas.emplace(
+            domain_it, domain, std::make_unique<StateDeltas>());
+        add_state_delta(*domain_it->second, addr, std::move(delta));
+    }
+
+    bytes32_t commit_plain_state_root(
+        TrieDb &tdb, StateDeltas const &state_deltas,
+        uint64_t const block_number, bytes32_t const &block_id)
+    {
+        auto builder = make_commit_builder(block_number, tdb);
+        builder->add_state_deltas(state_deltas);
+        BlockHeader header{.number = block_number};
+        tdb.commit(
+            block_id, *builder, header, state_deltas, [&](BlockHeader &h) {
+                h.state_root = tdb.state_root();
+            });
+        return tdb.state_root();
+    }
+
+    DomainStateRoots commit_domain_state(
+        TrieDb &tdb, DomainStateDeltas const &domain_deltas,
+        uint64_t const block_number, bytes32_t const &block_id)
+    {
+        auto builder = make_commit_builder(block_number, tdb);
+        builder->add_domain_state_deltas(domain_deltas);
+        DomainStateDeltas const *const delta_sets[] = {&domain_deltas};
+        return tdb.commit_domain_state_deltas(
+            block_id, *builder, delta_sets, block_number, {});
+    }
+
+    std::unique_ptr<mpt::StateMachine>
+    make_expected_machine(bool const page_encoded)
+    {
+        if (page_encoded) {
+            return std::make_unique<MonadInMemoryMachine>();
+        }
+        return std::make_unique<InMemoryMachine>();
+    }
+
+    void expect_domain_root_node(
+        mpt::Db &db, TrieDb &tdb, mpt::NibblesView const prefix,
+        uint64_t const domain, bytes32_t const &expected_root,
+        uint64_t const block_number)
+    {
+        auto const res =
+            db.find(tdb.get_root(), domain_path(prefix, domain), block_number);
+        ASSERT_TRUE(res.has_value());
+        auto const data = res.value().node->data();
+        ASSERT_EQ(data.size(), sizeof(bytes32_t));
+        EXPECT_EQ(to_bytes(data), expected_root);
+    }
+
+    void expect_domain_root_node(
+        mpt::Db &db, TrieDb &tdb, uint64_t const domain,
+        bytes32_t const &expected_root, uint64_t const block_number)
+    {
+        expect_domain_root_node(
+            db, tdb, finalized_nibbles, domain, expected_root, block_number);
+    }
+
+    bytes32_t
+    root_for_domain(DomainStateRoots const &roots, uint64_t const domain)
+    {
+        auto const it = std::find_if(
+            roots.begin(), roots.end(), [domain](auto const &entry) {
+                return entry.first == domain;
+            });
+        MONAD_ASSERT(it != roots.end());
+        return it->second;
+    }
+
+    template <typename Machine>
+    mpt::Db make_domain_db()
+    {
+        if constexpr (std::is_base_of_v<OnDiskMachine, Machine>) {
+            return mpt::Db{std::make_unique<Machine>(), mpt::OnDiskDbConfig{}};
+        }
+        else {
+            return mpt::Db{std::make_unique<Machine>()};
+        }
+    }
+}
+
+template <typename Machine>
+struct DomainWritePathTest : public ::testing::Test
+{
+    mpt::Db db{make_domain_db<Machine>()};
+    TrieDb tdb;
+
+    DomainWritePathTest()
+        : tdb{db}
+    {
+        seed_finalized_block_zero(db, tdb);
+    }
+};
+
+using DomainMachineTypes = ::testing::Types<
+    InMemoryMachine, OnDiskMachine, MonadInMemoryMachine, MonadOnDiskMachine>;
+TYPED_TEST_SUITE(DomainWritePathTest, DomainMachineTypes);
+
+TYPED_TEST(DomainWritePathTest, domain_raw_trie_insert)
+{
+    using namespace mpt;
+
+    constexpr uint64_t domain{0x1111111111111111ULL};
+    uint8_t domain_bytes[sizeof(uint64_t)];
+    intx::be::store(domain_bytes, domain);
+    auto const inner_hash = keccak256({ADDR_B.bytes, sizeof(ADDR_B.bytes)});
+    auto const inner_value = encode_account_db(ADDR_B, Account{.balance = 42});
+
+    std::deque<Update> alloc;
+    std::deque<byte_string> bytes_alloc;
+
+    UpdateList inner_list;
+    inner_list.push_front(alloc.emplace_back(Update{
+        .key = NibblesView{inner_hash},
+        .value = bytes_alloc.emplace_back(inner_value),
+        .next = UpdateList{},
+        .version = 1}));
+
+    UpdateList domain_list;
+    domain_list.push_front(alloc.emplace_back(Update{
+        .key = bytes_alloc.emplace_back(domain_bytes, sizeof(domain_bytes)),
+        .value = byte_string_view{},
+        .next = std::move(inner_list),
+        .version = 1}));
+
+    UpdateList state_list;
+    state_list.push_front(alloc.emplace_back(Update{
+        .key = domain_state_nibbles,
+        .value = byte_string_view{},
+        .next = std::move(domain_list),
+        .version = 1}));
+
+    UpdateList root_list;
+    root_list.push_front(alloc.emplace_back(Update{
+        .key = finalized_nibbles,
+        .value = byte_string_view{},
+        .next = std::move(state_list),
+        .version = 1}));
+
+    auto root = this->db.upsert({}, std::move(root_list), 1, true);
+
+    auto const inner_key = concat(
+        finalized_nibbles,
+        DOMAIN_STATE_NIBBLE,
+        NibblesView{to_byte_string_view(domain_bytes)},
+        NibblesView{inner_hash});
+    auto inner_res = this->db.find(root, inner_key, 1);
+    EXPECT_TRUE(inner_res.has_value()) << "inner account not found";
+}
+
+TYPED_TEST(DomainWritePathTest, domain_commit_empty_inner_deltas)
+{
+    constexpr uint64_t domain{0x1212121212121212ULL};
+    DomainStateDeltas domain_deltas;
+    DomainStateDeltas::accessor domain_it{};
+    domain_deltas.emplace(domain_it, domain, std::make_unique<StateDeltas>());
+    domain_it.release();
+
+    auto const roots =
+        commit_domain_state(this->tdb, domain_deltas, 1, bytes32_t{1});
+
+    ASSERT_EQ(roots.size(), 1);
+    EXPECT_EQ(roots[0].first, domain);
+    EXPECT_EQ(roots[0].second, NULL_ROOT);
+}
+
+TYPED_TEST(DomainWritePathTest, domain_transaction_and_receipt_tries)
+{
+    constexpr uint64_t domain{0x1313131313131313ULL};
+    constexpr uint64_t domain2{0x2424242424242424ULL};
+    constexpr Address sender{0x1234};
+    std::vector<Transaction> const transactions{
+        Transaction{.nonce = 7, .gas_limit = 21'000, .to = Address{0x55}},
+        Transaction{.nonce = 8, .gas_limit = 22'000, .to = Address{0x66}}};
+    std::vector<Address> const senders{sender, Address{0x5678}};
+    std::vector<Address> const domain_senders{sender, Address{}};
+    std::vector<Receipt> const receipts{
+        Receipt{.status = 1, .gas_used = 21'000},
+        Receipt{.status = 0, .gas_used = 43'000}};
+    DomainStateDeltas empty_state;
+    DomainStateDeltas const *const empty_delta_sets[] = {&empty_state};
+    std::vector<DomainBlockAncillaries> const domain_blocks{
+        DomainBlockAncillaries{
+            .domain_id = domain,
+            .transactions = transactions,
+            .senders = domain_senders,
+            .receipts = receipts},
+        DomainBlockAncillaries{
+            .domain_id = domain2,
+            .transactions = transactions,
+            .senders = domain_senders,
+            .receipts = receipts}};
+
+    this->tdb.set_block_and_prefix(0, {});
+    auto builder = make_commit_builder(1, this->tdb);
+    builder->add_transactions(transactions, senders)
+        .add_receipts(receipts)
+        .add_domain_block_ancillaries(domain_blocks);
+    auto const roots = this->tdb.commit_domain_state_deltas(
+        bytes32_t{1}, *builder, empty_delta_sets, 1, {});
+    EXPECT_TRUE(roots.empty());
+    this->tdb.finalize(1, bytes32_t{1});
+
+    uint8_t domain_bytes[sizeof(uint64_t)];
+    intx::be::store(domain_bytes, domain);
+    uint8_t domain2_bytes[sizeof(uint64_t)];
+    intx::be::store(domain2_bytes, domain2);
+
+    auto const table_root = [&](unsigned char const table) {
+        auto result = this->db.find(
+            this->tdb.get_root(), concat(FINALIZED_NIBBLE, table), 1);
+        MONAD_ASSERT(result.has_value());
+        return byte_string{result.value().node->data()};
+    };
+    auto const domain_root = [&](unsigned char const table,
+                                 uint8_t const *const domain_bytes) {
+        auto result = this->db.find(
+            this->tdb.get_root(),
+            concat(
+                FINALIZED_NIBBLE,
+                table,
+                NibblesView{byte_string_view{domain_bytes, sizeof(uint64_t)}}),
+            1);
+        MONAD_ASSERT(result.has_value());
+        return byte_string{result.value().node->data()};
+    };
+    EXPECT_EQ(
+        domain_root(DOMAIN_TRANSACTION_NIBBLE, domain_bytes),
+        table_root(TRANSACTION_NIBBLE));
+    EXPECT_EQ(
+        domain_root(DOMAIN_TRANSACTION_NIBBLE, domain2_bytes),
+        table_root(TRANSACTION_NIBBLE));
+    EXPECT_EQ(
+        domain_root(DOMAIN_RECEIPT_NIBBLE, domain_bytes),
+        table_root(RECEIPT_NIBBLE));
+    EXPECT_EQ(
+        domain_root(DOMAIN_RECEIPT_NIBBLE, domain2_bytes),
+        table_root(RECEIPT_NIBBLE));
+
+    auto const index = rlp::encode_unsigned(0u);
+    auto transaction_result = this->db.find(
+        this->tdb.get_root(),
+        concat(
+            FINALIZED_NIBBLE,
+            DOMAIN_TRANSACTION_NIBBLE,
+            NibblesView{to_byte_string_view(domain_bytes)},
+            NibblesView{index}),
+        1);
+    ASSERT_TRUE(transaction_result.has_value());
+    auto transaction_value = transaction_result.value().node->value();
+    auto decoded_transaction = decode_transaction_db(transaction_value);
+    ASSERT_TRUE(decoded_transaction.has_value());
+    EXPECT_EQ(decoded_transaction.value().first, transactions[0]);
+    EXPECT_EQ(decoded_transaction.value().second, sender);
+
+    auto const second_index = rlp::encode_unsigned(1u);
+    auto second_transaction_result = this->db.find(
+        this->tdb.get_root(),
+        concat(
+            FINALIZED_NIBBLE,
+            DOMAIN_TRANSACTION_NIBBLE,
+            NibblesView{to_byte_string_view(domain_bytes)},
+            NibblesView{second_index}),
+        1);
+    ASSERT_TRUE(second_transaction_result.has_value());
+    auto second_transaction_value =
+        second_transaction_result.value().node->value();
+    auto second_decoded_transaction =
+        decode_transaction_db(second_transaction_value);
+    ASSERT_TRUE(second_decoded_transaction.has_value());
+    EXPECT_EQ(second_decoded_transaction.value().first, transactions[1]);
+    EXPECT_EQ(second_decoded_transaction.value().second, Address{});
+
+    auto const transaction_hash =
+        keccak256(rlp::encode_transaction(transactions[0]));
+    auto hash_result = this->db.find(
+        this->tdb.get_root(),
+        concat(
+            FINALIZED_NIBBLE,
+            DOMAIN_TX_HASH_NIBBLE,
+            NibblesView{to_byte_string_view(domain_bytes)},
+            NibblesView{transaction_hash}),
+        1);
+    ASSERT_TRUE(hash_result.has_value());
+    auto hash_value = hash_result.value().node->value();
+    auto location = decode_transaction_location_db(hash_value);
+    ASSERT_TRUE(location.has_value());
+    EXPECT_EQ(location.value(), (std::pair<uint64_t, uint32_t>{1, 0}));
+    auto domain2_hash_result = this->db.find(
+        this->tdb.get_root(),
+        concat(
+            FINALIZED_NIBBLE,
+            DOMAIN_TX_HASH_NIBBLE,
+            NibblesView{to_byte_string_view(domain2_bytes)},
+            NibblesView{transaction_hash}),
+        1);
+    ASSERT_TRUE(domain2_hash_result.has_value());
+    auto domain2_hash_value = domain2_hash_result.value().node->value();
+    auto domain2_location = decode_transaction_location_db(domain2_hash_value);
+    ASSERT_TRUE(domain2_location.has_value());
+    EXPECT_EQ(domain2_location.value(), (std::pair<uint64_t, uint32_t>{1, 0}));
+
+    auto receipt_result = this->db.find(
+        this->tdb.get_root(),
+        concat(
+            FINALIZED_NIBBLE,
+            DOMAIN_RECEIPT_NIBBLE,
+            NibblesView{to_byte_string_view(domain_bytes)},
+            NibblesView{index}),
+        1);
+    ASSERT_TRUE(receipt_result.has_value());
+    auto receipt_value = receipt_result.value().node->value();
+    auto decoded_receipt = decode_receipt_db(receipt_value);
+    ASSERT_TRUE(decoded_receipt.has_value());
+    EXPECT_EQ(decoded_receipt.value().first, receipts[0]);
+
+    this->tdb.set_block_and_prefix(1, {});
+    auto second_builder = make_commit_builder(2, this->tdb);
+    std::vector<DomainBlockAncillaries> const second_blocks{
+        DomainBlockAncillaries{
+            .domain_id = domain2,
+            .transactions = transactions,
+            .senders = domain_senders,
+            .receipts = receipts}};
+    second_builder->add_domain_block_ancillaries(second_blocks);
+    this->tdb.commit_domain_state_deltas(
+        bytes32_t{2}, *second_builder, empty_delta_sets, 2, {});
+    this->tdb.finalize(2, bytes32_t{2});
+    EXPECT_TRUE(this->db
+                    .find(
+                        this->tdb.get_root(),
+                        concat(
+                            FINALIZED_NIBBLE,
+                            DOMAIN_TRANSACTION_NIBBLE,
+                            NibblesView{to_byte_string_view(domain_bytes)},
+                            NibblesView{index}),
+                        2)
+                    .has_error());
+    EXPECT_TRUE(this->db
+                    .find(
+                        this->tdb.get_root(),
+                        concat(
+                            FINALIZED_NIBBLE,
+                            DOMAIN_TRANSACTION_NIBBLE,
+                            NibblesView{to_byte_string_view(domain2_bytes)},
+                            NibblesView{index}),
+                        2)
+                    .has_value());
+
+    this->tdb.set_block_and_prefix(2, {});
+    auto empty_builder = make_commit_builder(3, this->tdb);
+    empty_builder->add_domain_block_ancillaries(
+        std::span<DomainBlockAncillaries const>{});
+    this->tdb.commit_domain_state_deltas(
+        bytes32_t{3}, *empty_builder, empty_delta_sets, 3, {});
+    this->tdb.finalize(3, bytes32_t{3});
+    EXPECT_TRUE(this->db
+                    .find(
+                        this->tdb.get_root(),
+                        concat(
+                            FINALIZED_NIBBLE,
+                            DOMAIN_RECEIPT_NIBBLE,
+                            NibblesView{to_byte_string_view(domain2_bytes)},
+                            NibblesView{index}),
+                        3)
+                    .has_error());
+    EXPECT_TRUE(this->db
+                    .find(
+                        this->tdb.get_root(),
+                        concat(
+                            FINALIZED_NIBBLE,
+                            DOMAIN_RECEIPT_NIBBLE,
+                            NibblesView{to_byte_string_view(domain_bytes)},
+                            NibblesView{index}),
+                        3)
+                    .has_error());
+    auto persistent_hash_result = this->db.find(
+        this->tdb.get_root(),
+        concat(
+            FINALIZED_NIBBLE,
+            DOMAIN_TX_HASH_NIBBLE,
+            NibblesView{to_byte_string_view(domain_bytes)},
+            NibblesView{transaction_hash}),
+        3);
+    ASSERT_TRUE(persistent_hash_result.has_value());
+    auto persistent_hash_value = persistent_hash_result.value().node->value();
+    auto persistent_location =
+        decode_transaction_location_db(persistent_hash_value);
+    ASSERT_TRUE(persistent_location.has_value());
+    EXPECT_EQ(
+        persistent_location.value(), (std::pair<uint64_t, uint32_t>{1, 0}));
+}
+
+TYPED_TEST(DomainWritePathTest, domain_commit_account_root_matches_plain_state)
+{
+    constexpr uint64_t domain{0x2222222222222222ULL};
+    StateDeltas inner;
+    StateDelta const delta{
+        .account = {std::nullopt, Account{.balance = 42}}, .storage = {}};
+    add_state_delta(inner, ADDR_A, delta);
+
+    mpt::Db expected_db{make_expected_machine(this->tdb.is_page_encoded())};
+    TrieDb expected_tdb{expected_db};
+    auto const expected_root =
+        commit_plain_state_root(expected_tdb, inner, 1, bytes32_t{1});
+
+    DomainStateDeltas domain_deltas;
+    add_domain_state_delta(domain_deltas, domain, ADDR_A, delta);
+    auto const roots =
+        commit_domain_state(this->tdb, domain_deltas, 1, bytes32_t{1});
+    this->tdb.finalize(1, bytes32_t{1});
+    this->tdb.set_block_and_prefix(1);
+
+    ASSERT_EQ(roots.size(), 1);
+    EXPECT_EQ(roots[0].first, domain);
+    EXPECT_EQ(roots[0].second, expected_root);
+    expect_domain_root_node(this->db, this->tdb, domain, expected_root, 1);
+
+    auto const account_res = this->db.find(
+        this->tdb.get_root(), domain_account_path(domain, ADDR_A), 1);
+    ASSERT_TRUE(account_res.has_value());
+    auto encoded_account = account_res.value().node->value();
+    auto const decoded = decode_account_db_ignore_address(encoded_account);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded.value().balance, 42);
+}
+
+TYPED_TEST(DomainWritePathTest, domain_commit_storage_root_matches_plain_state)
+{
+    constexpr uint64_t domain{0x3333333333333333ULL};
+    Account const account{.balance = 100};
+    StateDeltas inner;
+    StateDelta const delta{
+        .account = {std::nullopt, account},
+        .storage = {{key1, {bytes32_t{}, value1}}}};
+    add_state_delta(inner, ADDR_A, delta);
+
+    mpt::Db expected_db{make_expected_machine(this->tdb.is_page_encoded())};
+    TrieDb expected_tdb{expected_db};
+    auto const expected_root =
+        commit_plain_state_root(expected_tdb, inner, 1, bytes32_t{1});
+
+    DomainStateDeltas domain_deltas;
+    add_domain_state_delta(domain_deltas, domain, ADDR_A, delta);
+    auto const roots =
+        commit_domain_state(this->tdb, domain_deltas, 1, bytes32_t{1});
+    this->tdb.finalize(1, bytes32_t{1});
+    this->tdb.set_block_and_prefix(1);
+
+    ASSERT_EQ(roots.size(), 1);
+    EXPECT_EQ(roots[0].first, domain);
+    EXPECT_EQ(roots[0].second, expected_root);
+    expect_domain_root_node(this->db, this->tdb, domain, expected_root, 1);
+
+    auto const storage_key =
+        this->tdb.is_page_encoded() ? compute_page_key(key1) : key1;
+    auto const storage_res = this->db.find(
+        this->tdb.get_root(),
+        domain_storage_path(domain, ADDR_A, storage_key),
+        1);
+    ASSERT_TRUE(storage_res.has_value());
+    auto encoded_storage = storage_res.value().node->value();
+    auto const decoded = decode_storage_db_raw(encoded_storage);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(to_bytes(decoded.value().first), storage_key);
+    if (this->tdb.is_page_encoded()) {
+        auto const page = decode_storage_page(decoded.value().second);
+        ASSERT_TRUE(page.has_value());
+        EXPECT_EQ(page.value()[compute_slot_offset(key1)], value1);
+    }
+    else {
+        EXPECT_EQ(to_bytes(decoded.value().second), value1);
+    }
+}
+
+TYPED_TEST(DomainWritePathTest, domain_commit_multiple_domains)
+{
+    constexpr uint64_t domain_1{0x5151515151515151ULL};
+    constexpr uint64_t domain_2{0x5252525252525252ULL};
+    StateDelta const delta1{
+        .account = {std::nullopt, Account{.balance = 111}}, .storage = {}};
+    StateDelta const delta2{
+        .account = {std::nullopt, Account{.balance = 222}}, .storage = {}};
+
+    StateDeltas inner1;
+    add_state_delta(inner1, ADDR_A, delta1);
+    mpt::Db expected_db1{make_expected_machine(this->tdb.is_page_encoded())};
+    TrieDb expected_tdb1{expected_db1};
+    auto const expected_root1 =
+        commit_plain_state_root(expected_tdb1, inner1, 1, bytes32_t{1});
+
+    StateDeltas inner2;
+    add_state_delta(inner2, ADDR_B, delta2);
+    mpt::Db expected_db2{make_expected_machine(this->tdb.is_page_encoded())};
+    TrieDb expected_tdb2{expected_db2};
+    auto const expected_root2 =
+        commit_plain_state_root(expected_tdb2, inner2, 1, bytes32_t{1});
+
+    DomainStateDeltas domain_deltas;
+    add_domain_state_delta(domain_deltas, domain_1, ADDR_A, delta1);
+    add_domain_state_delta(domain_deltas, domain_2, ADDR_B, delta2);
+    auto const roots =
+        commit_domain_state(this->tdb, domain_deltas, 1, bytes32_t{1});
+    this->tdb.finalize(1, bytes32_t{1});
+    this->tdb.set_block_and_prefix(1);
+
+    ASSERT_EQ(roots.size(), 2);
+    EXPECT_EQ(root_for_domain(roots, domain_1), expected_root1);
+    EXPECT_EQ(root_for_domain(roots, domain_2), expected_root2);
+    expect_domain_root_node(this->db, this->tdb, domain_1, expected_root1, 1);
+    expect_domain_root_node(this->db, this->tdb, domain_2, expected_root2, 1);
+}
+
+TYPED_TEST(DomainWritePathTest, domain_commit_root_changes_across_writes)
+{
+    constexpr uint64_t domain{0x4444444444444444ULL};
+    mpt::Db expected_db{make_expected_machine(this->tdb.is_page_encoded())};
+    TrieDb expected_tdb{expected_db};
+
+    StateDeltas inner_1;
+    StateDelta const delta_1{
+        .account = {std::nullopt, Account{.balance = 10}}, .storage = {}};
+    add_state_delta(inner_1, ADDR_A, delta_1);
+    auto const expected_root_1 =
+        commit_plain_state_root(expected_tdb, inner_1, 1, bytes32_t{1});
+
+    DomainStateDeltas domain_deltas_1;
+    add_domain_state_delta(domain_deltas_1, domain, ADDR_A, delta_1);
+    auto const roots_1 =
+        commit_domain_state(this->tdb, domain_deltas_1, 1, bytes32_t{1});
+    this->tdb.finalize(1, bytes32_t{1});
+    this->tdb.set_block_and_prefix(1);
+    ASSERT_EQ(roots_1.size(), 1);
+    EXPECT_EQ(roots_1[0].second, expected_root_1);
+
+    StateDeltas inner_2;
+    StateDelta const delta_2{
+        .account = {Account{.balance = 10}, Account{.balance = 20}},
+        .storage = {}};
+    add_state_delta(inner_2, ADDR_A, delta_2);
+    auto const expected_root_2 =
+        commit_plain_state_root(expected_tdb, inner_2, 2, bytes32_t{2});
+
+    DomainStateDeltas domain_deltas_2;
+    add_domain_state_delta(domain_deltas_2, domain, ADDR_A, delta_2);
+    auto const roots_2 =
+        commit_domain_state(this->tdb, domain_deltas_2, 2, bytes32_t{2});
+    this->tdb.finalize(2, bytes32_t{2});
+    this->tdb.set_block_and_prefix(2);
+    ASSERT_EQ(roots_2.size(), 1);
+    EXPECT_EQ(roots_2[0].second, expected_root_2);
+    EXPECT_NE(roots_1[0].second, roots_2[0].second);
+    expect_domain_root_node(this->db, this->tdb, domain, expected_root_2, 2);
+}
+
+TYPED_TEST(
+    DomainWritePathTest,
+    domain_commit_preserves_unchanged_slots_in_existing_page)
+{
+    if (!this->tdb.is_page_encoded()) {
+        GTEST_SKIP() << "test requires page-encoded storage";
+    }
+
+    // A second write to a domain page must load the existing page from the
+    // domain trie. Seed two slots on one page, update one, and verify the
+    // untouched slot is preserved.
+    constexpr uint64_t domain{0x5454545454545454ULL};
+    auto const adjacent_key = compute_slot_key(
+        compute_page_key(key1),
+        static_cast<uint8_t>(compute_slot_offset(key1) + 1));
+    bytes32_t const updated_value{9};
+    Account const account{.balance = 100};
+
+    mpt::Db expected_db{std::make_unique<MonadInMemoryMachine>()};
+    TrieDb expected_tdb{expected_db};
+
+    StateDelta const initial_delta{
+        .account = {std::nullopt, account},
+        .storage = {
+            {key1, {bytes32_t{}, value1}},
+            {adjacent_key, {bytes32_t{}, value2}}}};
+    StateDeltas initial_state;
+    add_state_delta(initial_state, ADDR_A, initial_delta);
+    commit_plain_state_root(expected_tdb, initial_state, 1, bytes32_t{1});
+
+    DomainStateDeltas initial_domain_state;
+    add_domain_state_delta(initial_domain_state, domain, ADDR_A, initial_delta);
+    commit_domain_state(this->tdb, initial_domain_state, 1, bytes32_t{1});
+    this->tdb.finalize(1, bytes32_t{1});
+    this->tdb.set_block_and_prefix(1);
+
+    StateDelta const update_delta{
+        .account = {account, account},
+        .storage = {{key1, {value1, updated_value}}}};
+    StateDeltas update_state;
+    add_state_delta(update_state, ADDR_A, update_delta);
+    auto const expected_root =
+        commit_plain_state_root(expected_tdb, update_state, 2, bytes32_t{2});
+
+    DomainStateDeltas update_domain_state;
+    add_domain_state_delta(update_domain_state, domain, ADDR_A, update_delta);
+    auto const roots =
+        commit_domain_state(this->tdb, update_domain_state, 2, bytes32_t{2});
+    this->tdb.finalize(2, bytes32_t{2});
+    this->tdb.set_block_and_prefix(2);
+
+    ASSERT_EQ(roots.size(), 1);
+    EXPECT_EQ(roots[0].second, expected_root);
+
+    auto const page_key = compute_page_key(key1);
+    auto const storage_res = this->db.find(
+        this->tdb.get_root(), domain_storage_path(domain, ADDR_A, page_key), 2);
+    ASSERT_TRUE(storage_res.has_value());
+    auto encoded_storage = storage_res.value().node->value();
+    auto const decoded = decode_storage_db_raw(encoded_storage);
+    ASSERT_TRUE(decoded.has_value());
+    ASSERT_EQ(to_bytes(decoded.value().first), page_key);
+    auto const page = decode_storage_page(decoded.value().second);
+    ASSERT_TRUE(page.has_value());
+    EXPECT_EQ(page.value()[compute_slot_offset(key1)], updated_value);
+    EXPECT_EQ(page.value()[compute_slot_offset(adjacent_key)], value2);
+}
+
+TEST_F(OnDiskTrieDbWithFileFixture, domain_reads_and_merge)
+{
+    constexpr uint64_t domain_1{0x1111111111111111ULL};
+    constexpr uint64_t domain_2{0x2222222222222222ULL};
+    Account const account_1{.balance = 111};
+    Account const account_2{.balance = 222};
+
+    TrieDb tdb{this->db};
+    seed_finalized_block_zero(this->db, tdb);
+    DomainStateDeltas domain_deltas;
+    add_domain_state_delta(
+        domain_deltas,
+        domain_1,
+        ADDR_A,
+        StateDelta{
+            .account = {std::nullopt, account_1},
+            .storage = {{key1, {bytes32_t{}, value1}}}});
+    add_domain_state_delta(
+        domain_deltas,
+        domain_2,
+        ADDR_A,
+        StateDelta{
+            .account = {std::nullopt, account_2},
+            .storage = {{key1, {bytes32_t{}, value2}}}});
+    commit_domain_state(tdb, domain_deltas, 1, bytes32_t{1});
+    tdb.finalize(1, bytes32_t{1});
+    tdb.set_block_and_prefix(1);
+
+    EXPECT_EQ(tdb.read_account(ADDR_A), std::nullopt);
+    EXPECT_EQ(tdb.read_account(ADDR_A, domain_1), account_1);
+    EXPECT_EQ(
+        tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1, domain_1), value1);
+    EXPECT_EQ(tdb.read_account(ADDR_A, domain_2), account_2);
+    EXPECT_EQ(
+        tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1, domain_2), value2);
+
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    EXPECT_EQ(block_state.read_account(ADDR_A, domain_1), account_1);
+    EXPECT_EQ(
+        block_state.read_storage(ADDR_A, Incarnation{0, 0}, key1, domain_1),
+        value1);
+    EXPECT_EQ(block_state.read_account(ADDR_A, domain_2), account_2);
+    EXPECT_EQ(
+        block_state.read_storage(ADDR_A, Incarnation{0, 0}, key1, domain_2),
+        value2);
+
+    State state_1{block_state, Incarnation{1, 1}, false, domain_1};
+    State state_2{block_state, Incarnation{1, 2}, false, domain_2};
+    State stale_state_1{block_state, Incarnation{1, 3}, false, domain_1};
+    EXPECT_EQ(state_1.get_balance(ADDR_A), account_1.balance);
+    EXPECT_EQ(state_1.get_storage(ADDR_A, key1), value1);
+    EXPECT_EQ(state_2.get_balance(ADDR_A), account_2.balance);
+    EXPECT_EQ(state_2.get_storage(ADDR_A, key1), value2);
+    EXPECT_EQ(stale_state_1.get_balance(ADDR_A), account_1.balance);
+    EXPECT_EQ(stale_state_1.get_storage(ADDR_A, key1), value1);
+
+    mpt::RODb rodb{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {this->dbname}}};
+    TrieRODb trie_ro{rodb};
+    trie_ro.set_block_and_prefix(1);
+    EXPECT_EQ(
+        trie_ro.domain_state_root(domain_1), tdb.domain_state_root(domain_1));
+    EXPECT_EQ(
+        trie_ro.domain_state_root(domain_2), tdb.domain_state_root(domain_2));
+    EXPECT_EQ(trie_ro.domain_state_root(0), NULL_ROOT);
+    EXPECT_EQ(trie_ro.read_account(ADDR_A, domain_1), account_1);
+    EXPECT_EQ(
+        trie_ro.read_storage(ADDR_A, Incarnation{0, 0}, key1, domain_1),
+        value1);
+    EXPECT_EQ(trie_ro.read_account(ADDR_A, domain_2), account_2);
+    EXPECT_EQ(
+        trie_ro.read_storage(ADDR_A, Incarnation{0, 0}, key1, domain_2),
+        value2);
+
+    state_1.add_to_balance(ADDR_A, 10);
+    EXPECT_EQ(state_1.set_storage(ADDR_A, key1, value2), EVMC_STORAGE_MODIFIED);
+    EXPECT_TRUE(block_state.can_merge(state_1));
+    block_state.merge(state_1);
+    EXPECT_EQ(
+        block_state.read_account(ADDR_A, domain_1)->balance,
+        account_1.balance + 10);
+    EXPECT_EQ(
+        block_state.read_storage(ADDR_A, Incarnation{0, 0}, key1, domain_1),
+        value2);
+    EXPECT_EQ(block_state.read_account(ADDR_A, domain_2), account_2);
+    EXPECT_EQ(
+        block_state.read_storage(ADDR_A, Incarnation{0, 0}, key1, domain_2),
+        value2);
+    EXPECT_EQ(block_state.read_account(ADDR_A), std::nullopt);
+    EXPECT_FALSE(block_state.can_merge(stale_state_1));
+
+    state_2.add_to_balance(ADDR_A, 20);
+    EXPECT_EQ(state_2.set_storage(ADDR_A, key1, value1), EVMC_STORAGE_MODIFIED);
+    EXPECT_TRUE(block_state.can_merge(state_2));
+    block_state.merge(state_2);
+    EXPECT_EQ(
+        block_state.read_account(ADDR_A, domain_2)->balance,
+        account_2.balance + 20);
+    EXPECT_EQ(
+        block_state.read_storage(ADDR_A, Incarnation{0, 0}, key1, domain_2),
+        value1);
+    EXPECT_EQ(
+        block_state.read_account(ADDR_A, domain_1)->balance,
+        account_1.balance + 10);
+    EXPECT_EQ(
+        block_state.read_storage(ADDR_A, Incarnation{0, 0}, key1, domain_1),
+        value2);
+}
 
 TEST(DBTest, read_only)
 {

@@ -61,15 +61,15 @@ struct AsyncIOContext
     explicit AsyncIOContext(OnDiskDbConfig const &options);
 };
 
-// Hardcode it to open the primary timeline. All timelines are always in sync
-// and store the canonical state.
 class RODb
 {
     struct Impl;
     std::unique_ptr<Impl> impl_;
 
 public:
-    explicit RODb(ReadOnlyOnDiskDbConfig const &);
+    explicit RODb(
+        ReadOnlyOnDiskDbConfig const &,
+        timeline_id = timeline_id::primary);
     ~RODb();
 
     RODb(RODb const &) = delete;

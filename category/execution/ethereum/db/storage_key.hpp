@@ -20,17 +20,22 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 
+#include <cstdint>
 #include <cstring>
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
-// Composite cache key combining account address, account incarnation, and
-// the storage trie key. The trie key is slot_key for slot-encoded storage
-// or page_key for page-encoded storage; the cache layer is encoding-agnostic.
+// Composite cache key combining domain scope, account address, account
+// incarnation, and the storage trie key. The trie key is slot_key for
+// slot-encoded storage or page_key for page-encoded storage; the cache layer
+// is encoding-agnostic.
 struct StorageKey
 {
-    static constexpr size_t k_bytes =
+    static constexpr size_t k_domain_prefix_bytes = 1 + sizeof(uint64_t);
+    static constexpr size_t k_payload_bytes =
         sizeof(Address) + sizeof(Incarnation) + sizeof(bytes32_t);
+    static constexpr size_t k_bytes = k_domain_prefix_bytes + k_payload_bytes;
 
     uint8_t bytes[k_bytes];
 
@@ -38,14 +43,19 @@ struct StorageKey
 
     StorageKey(
         Address const &addr, Incarnation const incarnation,
-        bytes32_t const &key)
+        bytes32_t const &key,
+        std::optional<uint64_t> const &domain = std::nullopt)
     {
-        memcpy(bytes, addr.bytes, sizeof(Address));
-        memcpy(&bytes[sizeof(Address)], &incarnation, sizeof(Incarnation));
-        memcpy(
-            &bytes[sizeof(Address) + sizeof(Incarnation)],
-            key.bytes,
-            sizeof(bytes32_t));
+        bytes[0] = domain.has_value() ? uint8_t{1} : uint8_t{0};
+        uint64_t const domain_value = domain.value_or(uint64_t{});
+        memcpy(&bytes[1], &domain_value, sizeof(domain_value));
+
+        constexpr size_t address_offset = k_domain_prefix_bytes;
+        memcpy(&bytes[address_offset], addr.bytes, sizeof(Address));
+        constexpr size_t incarnation_offset = address_offset + sizeof(Address);
+        memcpy(&bytes[incarnation_offset], &incarnation, sizeof(Incarnation));
+        constexpr size_t key_offset = incarnation_offset + sizeof(Incarnation);
+        memcpy(&bytes[key_offset], key.bytes, sizeof(bytes32_t));
     }
 
     bool operator==(StorageKey const &other) const

@@ -24,7 +24,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <Traits traits>
+template <Traits traits, bool gasless = false>
 class ExecuteSystemTransaction
 {
     Chain const &chain_;

@@ -49,8 +49,8 @@ MONAD_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
-template <Traits traits>
-ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
+template <Traits traits, bool gasless>
+ExecuteSystemTransaction<traits, gasless>::ExecuteSystemTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &header, BlockState &block_state,
     BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
@@ -69,29 +69,45 @@ ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     record_txn_header_events(static_cast<uint32_t>(i), tx, sender, {});
 }
 
-template <Traits traits>
-Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
+template <Traits traits, bool gasless>
+Result<Receipt> ExecuteSystemTransaction<traits, gasless>::operator()()
 {
     TRACE_TXN_EVENT(StartTxn);
 
     {
         auto system_validation_result =
-            static_validate_system_transaction<traits>(tx_, sender_);
+            static_validate_system_transaction<traits, gasless>(
+                tx_, sender_, chain_.get_chain_id());
         if (system_validation_result.has_error()) {
             prev_.get_future().wait();
+            if constexpr (gasless) {
+                return skipped_receipt(
+                    i_,
+                    header_.number,
+                    tx_.type,
+                    system_validation_result.error().message().c_str());
+            }
             return std::move(system_validation_result).as_failure();
         }
         Transaction tx = tx_;
         tx.gas_limit =
             2'000'000; // required to pass intrinsic gas validation check
-        auto tx_validation_result = static_validate_transaction<traits>(
-            tx,
-            std::nullopt /* 0 base fee to pass validation */,
-            std::nullopt /* 0 blob fee to pass validation */,
-            chain_.get_chain_id(),
-            chain_.get_blob_schedule(header_.timestamp));
+        auto tx_validation_result =
+            static_validate_transaction<traits, gasless>(
+                tx,
+                std::nullopt /* 0 base fee to pass validation */,
+                std::nullopt /* 0 blob fee to pass validation */,
+                chain_.get_chain_id(),
+                chain_.get_blob_schedule(header_.timestamp));
         if (tx_validation_result.has_error()) {
             prev_.get_future().wait();
+            if constexpr (gasless) {
+                return skipped_receipt(
+                    i_,
+                    header_.number,
+                    tx_.type,
+                    tx_validation_result.error().message().c_str());
+            }
             return std::move(tx_validation_result).as_failure();
         }
     }
@@ -114,6 +130,13 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 
         if (block_state_.can_merge(state)) {
             if (result.has_error()) {
+                if constexpr (gasless) {
+                    return skipped_receipt(
+                        i_,
+                        header_.number,
+                        tx_.type,
+                        result.error().message().c_str());
+                }
                 return std::move(result.error());
             }
             auto const receipt = execute_final(state);
@@ -134,6 +157,13 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 
         MONAD_ASSERT(block_state_.can_merge(state));
         if (result.has_error()) {
+            if constexpr (gasless) {
+                return skipped_receipt(
+                    i_,
+                    header_.number,
+                    tx_.type,
+                    result.error().message().c_str());
+            }
             return std::move(result.error());
         }
         auto const receipt = execute_final(state);
@@ -142,8 +172,8 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
     }
 }
 
-template <Traits traits>
-evmc_message ExecuteSystemTransaction<traits>::to_message() const
+template <Traits traits, bool gasless>
+evmc_message ExecuteSystemTransaction<traits, gasless>::to_message() const
 {
     // System transactions currently do not need a pointer to vm memory,
     // so the `memory*` fields are zero initialized:
@@ -166,8 +196,8 @@ evmc_message ExecuteSystemTransaction<traits>::to_message() const
     return msg;
 }
 
-template <Traits traits>
-Result<void> ExecuteSystemTransaction<traits>::execute(State &state)
+template <Traits traits, bool gasless>
+Result<void> ExecuteSystemTransaction<traits, gasless>::execute(State &state)
 {
     BOOST_OUTCOME_TRY(validate_system_transaction(tx_, sender_, state));
 
@@ -183,8 +213,8 @@ Result<void> ExecuteSystemTransaction<traits>::execute(State &state)
     return success();
 }
 
-template <Traits traits>
-Receipt ExecuteSystemTransaction<traits>::execute_final(State &state)
+template <Traits traits, bool gasless>
+Receipt ExecuteSystemTransaction<traits, gasless>::execute_final(State &state)
 {
     // always return success because these transactions can't revert.
     Receipt receipt{.status = 1u, .gas_used = 0, .type = tx_.type};
@@ -201,8 +231,8 @@ Receipt ExecuteSystemTransaction<traits>::execute_final(State &state)
     return receipt;
 }
 
-template <Traits traits>
-Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
+template <Traits traits, bool gasless>
+Result<void> ExecuteSystemTransaction<traits, gasless>::execute_staking_syscall(
     State &state, byte_string_view calldata, uint256_t const &value)
 {
     // creates staking account in state if it doesn't exist
@@ -229,5 +259,6 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
 }
 
 EXPLICIT_MONAD_TRAITS_CLASS(ExecuteSystemTransaction);
+EXPLICIT_MONAD_TRAITS_CLASS_TRUE(ExecuteSystemTransaction);
 
 MONAD_NAMESPACE_END

@@ -18,6 +18,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -33,15 +34,18 @@
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
+#include <boost/outcome/try.hpp>
+
 namespace
 {
     using namespace monad;
 
-    static ankerl::unordered_dense::segmented_set<Address> const
-        empty_senders_and_authorities{};
+    static AddressesByDomain const empty_senders_and_authorities{};
     static std::vector<Address> const empty_senders{Address{0}};
     static std::vector<std::vector<std::optional<Address>>> const
         empty_authorities{{}};
+    static std::vector<std::optional<uint64_t>> const empty_domains{
+        std::nullopt};
 }
 
 MONAD_NAMESPACE_BEGIN
@@ -74,25 +78,30 @@ ChainContext<T> ChainContext<T>::debug_empty()
         .parent_senders_and_authorities = empty_senders_and_authorities,
         .senders_and_authorities = empty_senders_and_authorities,
         .senders = empty_senders,
-        .authorities = empty_authorities};
+        .authorities = empty_authorities,
+        .domains = empty_domains};
 }
 
 EXPLICIT_MONAD_TRAITS_STRUCT(ChainContext);
 
-ankerl::unordered_dense::segmented_set<Address> combine_senders_and_authorities(
+AddressesByDomain combine_senders_and_authorities(
     std::span<Address const> const senders,
-    std::span<std::vector<std::optional<Address>> const> const authorities)
+    std::span<std::vector<std::optional<Address>> const> const authorities,
+    std::span<std::optional<uint64_t> const> const domains)
 {
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    MONAD_ASSERT(senders.size() == authorities.size());
+    MONAD_ASSERT(senders.size() == domains.size());
 
-    for (Address const &sender : senders) {
-        senders_and_authorities.insert(sender);
+    AddressesByDomain senders_and_authorities;
+
+    for (size_t i = 0; i < senders.size(); ++i) {
+        senders_and_authorities[domains[i]].insert(senders[i]);
     }
 
-    for (auto const &authorities_inner : authorities) {
-        for (std::optional<Address> const &authority : authorities_inner) {
+    for (size_t i = 0; i < authorities.size(); ++i) {
+        for (std::optional<Address> const &authority : authorities[i]) {
             if (authority) {
-                senders_and_authorities.insert(*authority);
+                senders_and_authorities[domains[i]].insert(*authority);
             }
         }
     }

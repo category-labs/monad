@@ -43,47 +43,52 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <Traits traits>
+template <Traits traits, bool gasless = false>
 Result<void> static_validate_transaction(
     Transaction const &, std::optional<uint256_t> const &base_fee_per_gas,
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id,
     BlobSchedule const &blob_schedule);
 
-template <Traits traits>
+template <Traits traits, bool gasless = false>
 Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
     trace::StateTracer &state_tracer);
 
-template <Traits traits>
+template <Traits traits, bool gasless = false>
 [[gnu::always_inline]] inline Result<void> validate_ethereum_transaction(
     Transaction const &tx, Address const &sender, State &state,
     trace::StateTracer &state_tracer)
 {
     using BOOST_OUTCOME_V2_NAMESPACE::success;
 
-    // YP (70): total cost = value + gas_cost (+ blob_fee).
-    Result<uint256_t> const v0_r = [&]() -> Result<uint256_t> {
-        BOOST_OUTCOME_TRY(
-            uint256_t const gas_fee,
-            max_gas_cost(tx.gas_limit, tx.max_fee_per_gas));
-        BOOST_OUTCOME_TRY(
-            uint256_t const base_cost, checked_add(tx.value, gas_fee));
-        if (tx.type == TransactionType::eip4844) {
+    static_assert(!gasless || is_monad_trait_v<traits>);
+
+    uint256_t v0 = 0;
+    if constexpr (!gasless) {
+        // YP (70): total cost = value + gas_cost (+ blob_fee).
+        Result<uint256_t> const v0_r = [&]() -> Result<uint256_t> {
             BOOST_OUTCOME_TRY(
-                uint256_t const blob_cost,
-                checked_mul(
-                    uint256_t{get_total_blob_gas(tx)},
-                    tx.max_fee_per_blob_gas));
-            return checked_add(base_cost, blob_cost);
+                uint256_t const gas_fee,
+                max_gas_cost(tx.gas_limit, tx.max_fee_per_gas));
+            BOOST_OUTCOME_TRY(
+                uint256_t const base_cost, checked_add(tx.value, gas_fee));
+            if (tx.type == TransactionType::eip4844) {
+                BOOST_OUTCOME_TRY(
+                    uint256_t const blob_cost,
+                    checked_mul(
+                        uint256_t{get_total_blob_gas(tx)},
+                        tx.max_fee_per_blob_gas));
+                return checked_add(base_cost, blob_cost);
+            }
+            return base_cost;
+        }();
+        if (MONAD_UNLIKELY(!v0_r)) {
+            return TransactionError::InsufficientBalance;
         }
-        return base_cost;
-    }();
-    if (MONAD_UNLIKELY(!v0_r)) {
-        return TransactionError::InsufficientBalance;
+        v0 = v0_r.assume_value();
     }
-    auto const &v0 = v0_r.assume_value();
 
     if (MONAD_UNLIKELY(!state.account_exists(sender))) {
         // YP (71)
@@ -91,8 +96,10 @@ template <Traits traits>
             return TransactionError::BadNonce;
         }
         // YP (71)
-        if (v0) {
-            return TransactionError::InsufficientBalance;
+        if constexpr (!gasless) {
+            if (v0) {
+                return TransactionError::InsufficientBalance;
+            }
         }
         return success();
     }
@@ -122,8 +129,10 @@ template <Traits traits>
     // note this passes because `v0` includes gas which is later deducted in
     // `irrevocable_change` before relaxed merge logic in `sender_has_balance`
     // this is fragile as it depends on values in two locations matching
-    if (MONAD_UNLIKELY(state.get_balance(sender) < v0)) {
-        return TransactionError::InsufficientBalance;
+    if constexpr (!gasless) {
+        if (MONAD_UNLIKELY(state.get_balance(sender) < v0)) {
+            return TransactionError::InsufficientBalance;
+        }
     }
 
     // Note: Tg <= B_Hl - l(B_R)u can only be checked before retirement

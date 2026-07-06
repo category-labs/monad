@@ -13,15 +13,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/async/util.hpp>
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
@@ -29,6 +33,7 @@
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/db/commit_block_migration.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
+#include <category/execution/runloop/private_domain_execution.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/vm/evm/monad/revision.h>
@@ -36,11 +41,17 @@
 
 #include <gtest/gtest.h>
 
+#include <intx/intx.hpp>
+
 #include <test_resource_data.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <vector>
+
+#include <unistd.h>
 
 // End to end test for the slot to page storage migration via the shared
 // monad::commit_block helper. Both Dbs get the same header; pre fork it
@@ -51,6 +62,24 @@ using namespace monad::test;
 
 namespace
 {
+    struct TempDbFile
+    {
+        int fd{MONAD_ASYNC_NAMESPACE::make_temporary_inode()};
+        std::string path{"/proc/self/fd/" + std::to_string(fd)};
+
+        TempDbFile()
+        {
+            MONAD_ASSERT(
+                -1 !=
+                ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
+        }
+
+        ~TempDbFile()
+        {
+            ::close(fd);
+        }
+    };
+
     // Slots 0x00 and 0x01 share one page; slot 0x80 is on a different page.
     // This forces MonadCommitBuilder to merge two slot deltas onto the same
     // page within a single block, exercising the page grouping path.
@@ -134,6 +163,70 @@ namespace
                 .storage = std::move(storage)});
         return deltas;
     }
+
+    DomainStateDeltas make_domain_deltas(
+        uint64_t const domain, std::optional<Account> const &prev_acct,
+        std::optional<Account> const &new_acct,
+        std::vector<std::tuple<bytes32_t, bytes32_t, bytes32_t>> const &slots)
+    {
+        StorageDeltas storage;
+        for (auto const &[k, prev, next] : slots) {
+            storage.emplace(k, StorageDelta{prev, next});
+        }
+        DomainStateDeltas deltas;
+        DomainStateDeltas::accessor domain_it{};
+        deltas.emplace(domain_it, domain, std::make_unique<StateDeltas>());
+        domain_it->second->emplace(
+            ADDR_A,
+            StateDelta{
+                .account = {prev_acct, new_acct},
+                .storage = std::move(storage)});
+        return deltas;
+    }
+
+    bytes32_t domain_root(
+        mpt::Db &db, TrieDb &tdb, uint64_t const domain,
+        uint64_t const block_number)
+    {
+        uint8_t domain_bytes[sizeof(uint64_t)];
+        intx::be::store(domain_bytes, domain);
+        auto const res = db.find(
+            tdb.get_root(),
+            mpt::concat(
+                finalized_nibbles,
+                domain_state_nibbles,
+                mpt::NibblesView{to_byte_string_view(domain_bytes)}),
+            block_number);
+        if (!res.has_value() || res.value().node->data().empty()) {
+            return NULL_ROOT;
+        }
+        return to_bytes(res.value().node->data());
+    }
+
+    std::optional<BlockHeader> domain_header(
+        mpt::Db &db, TrieDb &tdb, uint64_t const domain,
+        uint64_t const block_number)
+    {
+        uint8_t domain_bytes[sizeof(uint64_t)];
+        intx::be::store(domain_bytes, domain);
+        auto const res = db.find(
+            tdb.get_root(),
+            mpt::concat(
+                finalized_nibbles,
+                domain_block_header_nibbles,
+                mpt::NibblesView{to_byte_string_view(domain_bytes)}),
+            block_number);
+        if (!res.has_value()) {
+            return std::nullopt;
+        }
+        auto encoded = res.value().node->value();
+        auto decoded = rlp::decode_block_header(encoded);
+        EXPECT_TRUE(decoded.has_value());
+        return decoded.has_value()
+                   ? std::optional<BlockHeader>{std::move(decoded).value()}
+                   : std::nullopt;
+    }
+
 }
 
 TEST(MigrationFork, dual_write_state_root_handoff)
@@ -299,6 +392,275 @@ TEST(MigrationFork, dual_write_state_root_handoff)
             tdb2.read_storage(ADDR_A, Incarnation{0, 0}, slot_0),
             bytes32_t{uint64_t{0xa2}});
     }
+}
+
+template <Traits traits>
+    requires is_monad_trait_v<traits>
+void check_private_domain_batch_headers(bool const canonical_is_secondary)
+{
+    mpt::Db db1{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{}};
+    mpt::Db db2 =
+        db1.activate_secondary_timeline(std::make_unique<MonadOnDiskMachine>());
+    TrieDb tdb1{db1, true /* enable_multi_block_cache */};
+    TrieDb tdb2{db2};
+    GenesisState const genesis_state = MonadTestnet{}.get_genesis_state();
+    load_genesis_state(genesis_state, tdb1);
+    load_genesis_state(genesis_state, tdb2);
+    tdb1.set_block_and_prefix(0, {});
+    tdb2.set_block_and_prefix(0, {});
+
+    constexpr uint64_t domain1 = 0x1111;
+    constexpr uint64_t domain2 = 0x2222;
+    constexpr uint64_t domain3 = 0x3333;
+    auto domain1_deltas = make_domain_deltas(
+        domain1,
+        std::nullopt,
+        Account{.nonce = 1},
+        {{slot_0, bytes32_t{}, bytes32_t{uint64_t{0xa1}}}});
+    auto domain2_deltas = make_domain_deltas(
+        domain2,
+        std::nullopt,
+        Account{.nonce = 2},
+        {{slot_1, bytes32_t{}, bytes32_t{uint64_t{0xb2}}}});
+    DomainStateDeltas const domain3_deltas;
+    Code const code{};
+    std::vector<Transaction> const transactions{
+        Transaction{.nonce = 0, .gas_limit = 21'000, .to = ADDR_B}};
+    std::vector<std::optional<Address>> const senders{ADDR_A};
+    std::vector<Receipt> const receipts{
+        Receipt{.status = 1, .gas_used = 21'000}};
+    std::vector<PrivateDomainBlockCommitInput> const blocks{
+        PrivateDomainBlockCommitInput{
+            .domain_id = domain1,
+            .state_deltas = domain1_deltas,
+            .code = code,
+            .transactions = transactions,
+            .senders = senders,
+            .receipts = receipts},
+        PrivateDomainBlockCommitInput{
+            .domain_id = domain2,
+            .state_deltas = domain2_deltas,
+            .code = code,
+            .transactions = transactions,
+            .senders = senders,
+            .receipts = receipts},
+        PrivateDomainBlockCommitInput{
+            .domain_id = domain3,
+            .state_deltas = domain3_deltas,
+            .code = code,
+            .transactions = transactions,
+            .senders = senders,
+            .receipts = receipts}};
+
+    BlockHeader const header{.number = 1};
+    bytes32_t const block_id{1};
+    auto const roots = commit_private_domain_batch<traits>(
+        tdb1, &tdb2, block_id, header, blocks);
+    tdb1.finalize(1, block_id);
+    tdb2.finalize(1, block_id);
+
+    ASSERT_EQ(roots.size(), 2);
+    for (uint64_t const domain : {domain1, domain2}) {
+        auto const root = std::ranges::find(
+            roots, domain, &std::pair<uint64_t, bytes32_t>::first);
+        ASSERT_NE(root, roots.end());
+        auto const primary_root = domain_root(db1, tdb1, domain, 1);
+        auto const secondary_root = domain_root(db2, tdb2, domain, 1);
+        EXPECT_NE(primary_root, secondary_root);
+        EXPECT_EQ(
+            root->second,
+            canonical_is_secondary ? secondary_root : primary_root);
+        auto const primary_header = domain_header(db1, tdb1, domain, 1);
+        auto const secondary_header = domain_header(db2, tdb2, domain, 1);
+        ASSERT_TRUE(primary_header.has_value());
+        ASSERT_TRUE(secondary_header.has_value());
+        EXPECT_EQ(*primary_header, *secondary_header);
+        EXPECT_EQ(primary_header->number, 1);
+        EXPECT_EQ(primary_header->state_root, root->second);
+
+        uint8_t domain_bytes[sizeof(uint64_t)];
+        intx::be::store(domain_bytes, domain);
+        auto const key = mpt::concat(
+            finalized_nibbles,
+            domain_transaction_nibbles,
+            mpt::NibblesView{to_byte_string_view(domain_bytes)},
+            mpt::NibblesView{rlp::encode_unsigned(0u)});
+        EXPECT_TRUE(db1.find(tdb1.get_root(), key, 1).has_value());
+        EXPECT_TRUE(db2.find(tdb2.get_root(), key, 1).has_value());
+    }
+
+    EXPECT_FALSE(domain_header(db1, tdb1, domain3, 1).has_value());
+    EXPECT_FALSE(domain_header(db2, tdb2, domain3, 1).has_value());
+    uint8_t domain3_bytes[sizeof(uint64_t)];
+    intx::be::store(domain3_bytes, domain3);
+    auto const domain3_transaction_key = mpt::concat(
+        finalized_nibbles,
+        domain_transaction_nibbles,
+        mpt::NibblesView{to_byte_string_view(domain3_bytes)},
+        mpt::NibblesView{rlp::encode_unsigned(0u)});
+    EXPECT_TRUE(
+        db1.find(tdb1.get_root(), domain3_transaction_key, 1).has_value());
+    EXPECT_TRUE(
+        db2.find(tdb2.get_root(), domain3_transaction_key, 1).has_value());
+}
+
+TEST(MigrationFork, private_domain_headers_use_pre_mip8_primary_root)
+{
+    check_private_domain_batch_headers<PreMip8Fork>(false);
+}
+
+TEST(MigrationFork, private_domain_headers_use_post_mip8_secondary_root)
+{
+    check_private_domain_batch_headers<PostMip8Fork>(true);
+}
+
+TEST(MigrationFork, promoted_primary_rodb_reads_domain_header)
+{
+    TempDbFile const db_file;
+    mpt::OnDiskDbConfig const config{.dbname_paths = {db_file.path}};
+    mpt::Db primary{std::make_unique<OnDiskMachine>(), config};
+    std::optional<mpt::Db> secondary{primary.activate_secondary_timeline(
+        std::make_unique<MonadOnDiskMachine>())};
+    TrieDb primary_tdb{primary, true /* enable_multi_block_cache */};
+    std::optional<TrieDb> secondary_tdb;
+    secondary_tdb.emplace(*secondary);
+
+    GenesisState const genesis_state = MonadTestnet{}.get_genesis_state();
+    load_genesis_state(genesis_state, primary_tdb);
+    load_genesis_state(genesis_state, *secondary_tdb);
+    primary_tdb.set_block_and_prefix(0, {});
+    secondary_tdb->set_block_and_prefix(0, {});
+
+    constexpr uint64_t domain_id = 0x1234;
+    auto const deltas = make_domain_deltas(
+        domain_id,
+        std::nullopt,
+        Account{.nonce = 1},
+        {{slot_0, bytes32_t{}, bytes32_t{uint64_t{0xab}}}});
+    Code const code;
+    std::vector<Transaction> const transactions{
+        Transaction{.nonce = 0, .gas_limit = 21'000, .to = ADDR_B}};
+    std::vector<std::optional<Address>> const senders{ADDR_A};
+    std::vector<Receipt> const receipts{
+        Receipt{.status = 1, .gas_used = 21'000}};
+    std::vector<PrivateDomainBlockCommitInput> const blocks{
+        PrivateDomainBlockCommitInput{
+            .domain_id = domain_id,
+            .state_deltas = deltas,
+            .code = code,
+            .transactions = transactions,
+            .senders = senders,
+            .receipts = receipts}};
+
+    BlockHeader const header{.number = 1};
+    bytes32_t const block_id{1};
+    auto const roots = commit_private_domain_batch<PostMip8Fork>(
+        primary_tdb, &*secondary_tdb, block_id, header, blocks);
+    ASSERT_EQ(roots.size(), 1);
+    primary_tdb.finalize(1, block_id);
+    secondary_tdb->finalize(1, block_id);
+
+    secondary_tdb.reset();
+    secondary.reset();
+    primary.promote_secondary_to_primary();
+    primary.deactivate_secondary_timeline();
+
+    mpt::RODb rodb{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {db_file.path}}};
+    TrieRODb triedb{rodb};
+    triedb.set_block_and_prefix(1);
+    auto const stored_header = triedb.read_domain_eth_header(domain_id);
+    ASSERT_TRUE(stored_header.has_value());
+    EXPECT_EQ(stored_header->number, 1);
+    EXPECT_EQ(stored_header->state_root, roots.front().second);
+}
+
+TEST(MigrationFork, expired_domain_update_validation_is_skipped)
+{
+    TempDbFile const db_file;
+    mpt::OnDiskDbConfig const config{
+        .dbname_paths = {db_file.path}, .fixed_history_length = 5};
+    mpt::Db db{std::make_unique<OnDiskMachine>(), config};
+    TrieDb tdb{db};
+    load_genesis_state(MonadTestnet{}.get_genesis_state(), tdb);
+    tdb.set_block_and_prefix(0, {});
+
+    constexpr uint64_t domain_id = 0x1234;
+    Code const code;
+    std::vector<Transaction> const transactions{
+        Transaction{.nonce = 0, .gas_limit = 21'000, .to = ADDR_B}};
+    std::vector<std::optional<Address>> const senders{ADDR_A};
+    std::vector<Receipt> const receipts{
+        Receipt{.status = 1, .gas_used = 21'000}};
+
+    auto commit_domain_block = [&](uint64_t const block_number,
+                                   std::optional<Account> const &previous,
+                                   Account const &next,
+                                   bytes32_t const &previous_slot,
+                                   bytes32_t const &next_slot) {
+        auto const deltas = make_domain_deltas(
+            domain_id, previous, next, {{slot_0, previous_slot, next_slot}});
+        std::vector<PrivateDomainBlockCommitInput> const blocks{
+            PrivateDomainBlockCommitInput{
+                .domain_id = domain_id,
+                .state_deltas = deltas,
+                .code = code,
+                .transactions = transactions,
+                .senders = senders,
+                .receipts = receipts}};
+        bytes32_t const block_id{block_number};
+        auto const roots = commit_private_domain_batch<PreMip8Fork>(
+            tdb,
+            nullptr,
+            block_id,
+            BlockHeader{.number = block_number},
+            blocks);
+        tdb.finalize(block_number, block_id);
+        EXPECT_EQ(roots.size(), 1);
+        return roots.front().second;
+    };
+
+    Account const first_account{.nonce = 1};
+    bytes32_t const first_slot{uint64_t{0xa1}};
+    bytes32_t const first_root = commit_domain_block(
+        1, std::nullopt, first_account, bytes32_t{}, first_slot);
+
+    StateDeltas const empty_deltas;
+    BlockCommitAncillaries const anc = make_empty_ancillaries();
+    for (uint64_t block_number = 2; block_number < 8; ++block_number) {
+        bytes32_t const block_id{block_number};
+        commit_block<PreMip8Fork>(
+            tdb,
+            nullptr,
+            block_id,
+            BlockHeader{.number = block_number},
+            empty_deltas,
+            anc);
+        tdb.finalize(block_number, block_id);
+    }
+
+    Account const latest_account{.nonce = 2};
+    bytes32_t const latest_slot{uint64_t{0xa2}};
+    bytes32_t const latest_root = commit_domain_block(
+        8, first_account, latest_account, first_slot, latest_slot);
+
+    mpt::RODb rodb{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {db_file.path}}};
+    ASSERT_GT(rodb.get_earliest_version(), 1);
+    TrieRODb domain_state_db{rodb};
+    std::vector<DomainStateUpdate> const updates{
+        {.domain_chain_id = domain_id,
+         .domain_block_number = 8,
+         .new_state_root = latest_root},
+        {.domain_chain_id = domain_id,
+         .domain_block_number = 1,
+         .new_state_root = first_root},
+        {.domain_chain_id = domain_id,
+         .domain_block_number = 1,
+         .new_state_root = first_root},
+        {.domain_chain_id = domain_id,
+         .domain_block_number = 8,
+         .new_state_root = latest_root}};
+
+    EXPECT_NO_THROW(validate_domain_state_updates(domain_state_db, updates));
 }
 
 // The page builder must honor the storage wipe on an incarnation change:

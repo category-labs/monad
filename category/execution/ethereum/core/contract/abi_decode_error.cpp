@@ -26,6 +26,8 @@ quick_status_code_from_enum<monad::AbiDecodeError>::value_mappings()
     static std::initializer_list<mapping> const v = {
         {AbiDecodeError::Success, "success", {errc::success}},
         {AbiDecodeError::InputTooShort, "input too short", {}},
+        {AbiDecodeError::InputTooLong, "input too long", {}},
+        {AbiDecodeError::InvalidEncoding, "invalid encoding", {}},
         {AbiDecodeError::LengthMismatch, "length mismatch", {}},
     };
 

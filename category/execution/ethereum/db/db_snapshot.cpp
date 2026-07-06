@@ -28,6 +28,7 @@
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/traverse_util.hpp>
 
 #include <ankerl/unordered_dense.h>
 
@@ -42,6 +43,9 @@ struct monad_db_snapshot_loader
     monad::mpt::Db db;
     monad::mpt::Node::SharedPtr root;
     std::array<monad::byte_string, 256> eth_headers;
+    std::array<
+        std::vector<std::pair<monad::byte_string, monad::byte_string>>, 256>
+        domain_headers;
     std::deque<monad::hash256> hash_alloc;
     std::deque<monad::mpt::Update> update_alloc;
     std::deque<monad::byte_string> bytes_alloc;
@@ -528,6 +532,43 @@ bool monad_db_dump_snapshot(
                 header_view.data(),
                 header_view.size(),
                 user) == header_view.size());
+
+        // The eth-header stream begins with the ordinary header RLP and then
+        // appends zero or more [8-byte domain id][domain header RLP]
+        // records. An old stream with no trailing records remains readable.
+        auto const finalized_cursor = db.find(
+            NodeCursor{db.load_root_for_version(b)}, finalized_nibbles, b);
+        MONAD_ASSERT(finalized_cursor.has_value());
+        auto const domain_headers_cursor =
+            db.find(finalized_cursor.value(), domain_block_header_nibbles, b);
+        if (domain_headers_cursor.has_value()) {
+            GetAllMachine machine{[&](NibblesView const domain_key,
+                                      byte_string_view const value) {
+                MONAD_ASSERT(domain_key.nibble_size() == 16);
+                auto encoded_header = value;
+                auto const header = rlp::decode_block_header(encoded_header);
+                MONAD_ASSERT(header.has_value() && encoded_header.empty());
+                if (header.value().number != b) {
+                    return;
+                }
+                MONAD_ASSERT(
+                    write(
+                        header_shard,
+                        MONAD_SNAPSHOT_ETH_HEADER,
+                        domain_key.data(),
+                        sizeof(uint64_t),
+                        user) == sizeof(uint64_t));
+                MONAD_ASSERT(
+                    write(
+                        header_shard,
+                        MONAD_SNAPSHOT_ETH_HEADER,
+                        value.data(),
+                        value.size(),
+                        user) == value.size());
+            }};
+            MONAD_ASSERT(
+                db.traverse(domain_headers_cursor.value(), machine, b, 1));
+        }
     }
 
     auto const root = db.load_root_for_version(block);
@@ -697,12 +738,32 @@ void monad_db_snapshot_loader_load(
     }
 
     if (eth_header) {
+        // Decode the ordinary header first, then consume any trailing
+        // domain-header records described by the dumper above.
         byte_string_view enc{eth_header, eth_header_len};
+        byte_string_view const header_start = enc;
         auto const header = rlp::decode_block_header(enc);
         MONAD_ASSERT(header.has_value());
         MONAD_ASSERT(header.value().number == (loader->block - shard));
         // stash to upsert versions last
-        loader->eth_headers.at(shard).assign(eth_header, eth_header_len);
+        loader->eth_headers.at(shard).assign(
+            header_start.data(), header_start.size() - enc.size());
+        while (!enc.empty()) {
+            MONAD_ASSERT(enc.size() >= sizeof(uint64_t));
+            byte_string domain_key{enc.data(), enc.data() + sizeof(uint64_t)};
+            enc.remove_prefix(sizeof(uint64_t));
+            byte_string_view const domain_header_start = enc;
+            auto const domain_header = rlp::decode_block_header(enc);
+            MONAD_ASSERT(domain_header.has_value());
+            MONAD_ASSERT(
+                domain_header.value().number == (loader->block - shard));
+            loader->domain_headers.at(shard).emplace_back(
+                std::move(domain_key),
+                byte_string{
+                    domain_header_start.data(),
+                    domain_header_start.data() +
+                        (domain_header_start.size() - enc.size())});
+        }
     }
     monad_db_snapshot_loader_flush(loader);
 }
@@ -717,6 +778,18 @@ void monad_db_snapshot_loader_destroy(monad_db_snapshot_loader *const loader)
             continue;
         }
         uint64_t const block = loader->block - i;
+        UpdateList domain_header_updates;
+        std::deque<Update> domain_update_alloc;
+        for (auto const &[domain_key, domain_header] :
+             loader->domain_headers.at(i)) {
+            domain_header_updates.push_front(
+                domain_update_alloc.emplace_back(Update{
+                    .key = domain_key,
+                    .value = domain_header,
+                    .incarnation = true,
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(block)}));
+        }
         Update block_header_update{
             .key = block_header_nibbles,
             .value = enc,
@@ -725,6 +798,14 @@ void monad_db_snapshot_loader_destroy(monad_db_snapshot_loader *const loader)
             .version = static_cast<int64_t>(block)};
         UpdateList updates;
         updates.push_front(block_header_update);
+        if (!domain_header_updates.empty()) {
+            updates.push_front(domain_update_alloc.emplace_back(Update{
+                .key = domain_block_header_nibbles,
+                .value = byte_string_view{},
+                .incarnation = false,
+                .next = std::move(domain_header_updates),
+                .version = static_cast<int64_t>(block)}));
+        }
         UpdateList finalized_updates;
         Update finalized{
             .key = finalized_nibbles,

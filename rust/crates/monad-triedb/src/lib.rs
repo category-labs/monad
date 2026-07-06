@@ -436,6 +436,9 @@ impl TriedbHandle {
         sender: Sender<Option<Vec<TraverseEntry>>>,
         concurrency_tracker: Arc<()>,
     ) {
+        if validate_nibble_key(prefix_key, prefix_key_len_nibbles, "Prefix key").is_none() {
+            return;
+        }
         if validate_nibble_key(min_key, min_key_len_nibbles, "Min key").is_none() {
             return;
         }

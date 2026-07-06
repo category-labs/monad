@@ -248,19 +248,18 @@ void run_revert_transaction_test(
         authorities.push_back({});
     }
 
-    // Create sets for the new ChainContext structure
-    ankerl::unordered_dense::segmented_set<Address>
-        grandparent_senders_and_authorities;
+    std::vector<std::optional<uint64_t>> const domains(
+        senders.size(), std::nullopt);
+    auto senders_and_authorities =
+        combine_senders_and_authorities(senders, authorities, domains);
+    decltype(senders_and_authorities) grandparent_senders_and_authorities;
     if (prevent_dip_bitset & (1 << SenderOrAuthorityInGrandparent)) {
-        grandparent_senders_and_authorities.insert(SENDER);
+        grandparent_senders_and_authorities[std::nullopt].insert(SENDER);
     }
-    ankerl::unordered_dense::segmented_set<Address>
-        parent_senders_and_authorities;
+    decltype(senders_and_authorities) parent_senders_and_authorities;
     if (prevent_dip_bitset & (1 << SenderOrAuthorityInParent)) {
-        parent_senders_and_authorities.insert(SENDER);
+        parent_senders_and_authorities[std::nullopt].insert(SENDER);
     }
-    ankerl::unordered_dense::segmented_set<Address> const
-        senders_and_authorities = {SENDER};
 
     ChainContext<traits> chain_context{
         .grandparent_senders_and_authorities =
@@ -268,7 +267,8 @@ void run_revert_transaction_test(
         .parent_senders_and_authorities = parent_senders_and_authorities,
         .senders_and_authorities = senders_and_authorities,
         .senders = senders,
-        .authorities = authorities};
+        .authorities = authorities,
+        .domains = domains};
 
     {
         State state{bs, Incarnation{1, 1}};
@@ -424,15 +424,15 @@ TYPED_TEST(
         .max_priority_fee_per_gas = 0,
     };
 
-    ankerl::unordered_dense::segmented_set<Address> const
-        empty_grandparent_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address>
-        parent_senders_and_authorities;
-    parent_senders_and_authorities.insert(SENDER); // sender cannot dip
     std::vector<Address> const senders = {SENDER};
     std::vector<std::vector<std::optional<Address>>> const authorities = {{}};
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
-    senders_and_authorities.insert(SENDER);
+    std::vector<std::optional<uint64_t>> const domains{std::nullopt};
+    auto senders_and_authorities =
+        combine_senders_and_authorities(senders, authorities, domains);
+    decltype(senders_and_authorities)
+        const empty_grandparent_senders_and_authorities;
+    decltype(senders_and_authorities) parent_senders_and_authorities;
+    parent_senders_and_authorities[std::nullopt].insert(SENDER);
     ChainContext<traits> const context{
         .grandparent_senders_and_authorities =
             empty_grandparent_senders_and_authorities,
@@ -440,6 +440,7 @@ TYPED_TEST(
         .senders_and_authorities = senders_and_authorities,
         .senders = senders,
         .authorities = authorities,
+        .domains = domains,
     };
 
     State state{bs, Incarnation{1, 1}};
@@ -501,12 +502,19 @@ TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
         .max_priority_fee_per_gas = 0,
     };
 
+    std::vector<Address> const senders{sender};
+    std::vector<std::vector<std::optional<Address>>> const authorities{{}};
+    std::vector<std::optional<uint64_t>> const domains{std::nullopt};
+    auto senders_and_authorities =
+        combine_senders_and_authorities(senders, authorities, domains);
+    decltype(senders_and_authorities) const empty_senders_and_authorities;
     ChainContext<traits> const chain_context{
-        .grandparent_senders_and_authorities = {},
-        .parent_senders_and_authorities = {},
-        .senders_and_authorities = {sender},
-        .senders = {sender},
-        .authorities = {{}},
+        .grandparent_senders_and_authorities = empty_senders_and_authorities,
+        .parent_senders_and_authorities = empty_senders_and_authorities,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = senders,
+        .authorities = authorities,
+        .domains = domains,
     };
 
     State state{bs, Incarnation{1, 1}};
@@ -556,15 +564,17 @@ TYPED_TEST(MonadTraitsTest, can_sender_dip_into_reserve)
 {
     // False because of pending txns
     {
-        ankerl::unordered_dense::segmented_set<Address> const
-            empty_grandparent_senders_and_authorities;
-        ankerl::unordered_dense::segmented_set<Address> const
-            empty_parent_senders_and_authorities;
         std::vector<Address> const senders = {{Address{1}, Address{1}}};
         std::vector<std::vector<std::optional<Address>>> const authorities = {
             {}, {}};
-        ankerl::unordered_dense::segmented_set<Address> const
-            senders_and_authorities{{Address{1}}};
+        std::vector<std::optional<uint64_t>> const domains{
+            std::nullopt, std::nullopt};
+        auto senders_and_authorities =
+            combine_senders_and_authorities(senders, authorities, domains);
+        decltype(senders_and_authorities)
+            const empty_grandparent_senders_and_authorities;
+        decltype(senders_and_authorities)
+            const empty_parent_senders_and_authorities;
         ChainContext<typename TestFixture::Trait> const context{
             .grandparent_senders_and_authorities =
                 empty_grandparent_senders_and_authorities,
@@ -573,6 +583,7 @@ TYPED_TEST(MonadTraitsTest, can_sender_dip_into_reserve)
             .senders_and_authorities = senders_and_authorities,
             .senders = senders,
             .authorities = authorities,
+            .domains = domains,
         };
         EXPECT_FALSE(
             can_sender_dip_into_reserve(Address{1}, 1, false, context));
@@ -580,15 +591,17 @@ TYPED_TEST(MonadTraitsTest, can_sender_dip_into_reserve)
 
     // False because of authority
     {
-        ankerl::unordered_dense::segmented_set<Address> const
-            empty_grandparent_senders_and_authorities;
-        ankerl::unordered_dense::segmented_set<Address> const
-            empty_parent_senders_and_authorities;
         std::vector<Address> const senders = {{Address{2}, Address{1}}};
         std::vector<std::vector<std::optional<Address>>> const authorities = {
             {}, {Address{1}}};
-        ankerl::unordered_dense::segmented_set<Address> const
-            senders_and_authorities{{Address{1}}};
+        std::vector<std::optional<uint64_t>> const domains{
+            std::nullopt, std::nullopt};
+        auto senders_and_authorities =
+            combine_senders_and_authorities(senders, authorities, domains);
+        decltype(senders_and_authorities)
+            const empty_grandparent_senders_and_authorities;
+        decltype(senders_and_authorities)
+            const empty_parent_senders_and_authorities;
         ChainContext<typename TestFixture::Trait> const context{
             .grandparent_senders_and_authorities =
                 empty_grandparent_senders_and_authorities,
@@ -597,6 +610,7 @@ TYPED_TEST(MonadTraitsTest, can_sender_dip_into_reserve)
             .senders_and_authorities = senders_and_authorities,
             .senders = senders,
             .authorities = authorities,
+            .domains = domains,
         };
         EXPECT_FALSE(can_sender_dip_into_reserve<typename TestFixture::Trait>(
             Address{1}, 1, false, context));
@@ -635,21 +649,24 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
     uint256_t const gas_cost =
         uint256_t{BASE_FEE_PER_GAS} * uint256_t{tx.gas_limit};
 
-    ankerl::unordered_dense::segmented_set<Address> const
-        empty_grandparent_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address> const
-        empty_parent_senders_and_authorities;
     std::vector<Address> const senders = {SENDER};
     std::vector<std::vector<std::optional<Address>>> const authorities = {{}};
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
-    senders_and_authorities.insert(SENDER);
+    std::vector<std::optional<uint64_t>> const domains(
+        senders.size(), std::nullopt);
+    auto senders_and_authorities =
+        combine_senders_and_authorities(senders, authorities, domains);
+    decltype(senders_and_authorities)
+        const empty_grandparent_senders_and_authorities;
+    decltype(senders_and_authorities)
+        const empty_parent_senders_and_authorities;
     ChainContext<traits> const context{
         .grandparent_senders_and_authorities =
             empty_grandparent_senders_and_authorities,
         .parent_senders_and_authorities = empty_parent_senders_and_authorities,
         .senders_and_authorities = senders_and_authorities,
         .senders = senders,
-        .authorities = authorities};
+        .authorities = authorities,
+        .domains = domains};
 
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const prepare_state = [&](State &state) {
@@ -714,21 +731,24 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_empty_code_hash)
     uint256_t const gas_cost =
         uint256_t{BASE_FEE_PER_GAS} * uint256_t{tx.gas_limit};
 
-    ankerl::unordered_dense::segmented_set<Address> const
-        empty_grandparent_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address> const
-        empty_parent_senders_and_authorities;
     std::vector<Address> const senders = {SENDER};
     std::vector<std::vector<std::optional<Address>>> const authorities = {{}};
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
-    senders_and_authorities.insert(SENDER);
+    std::vector<std::optional<uint64_t>> const domains(
+        senders.size(), std::nullopt);
+    auto senders_and_authorities =
+        combine_senders_and_authorities(senders, authorities, domains);
+    decltype(senders_and_authorities)
+        const empty_grandparent_senders_and_authorities;
+    decltype(senders_and_authorities)
+        const empty_parent_senders_and_authorities;
     ChainContext<traits> const context{
         .grandparent_senders_and_authorities =
             empty_grandparent_senders_and_authorities,
         .parent_senders_and_authorities = empty_parent_senders_and_authorities,
         .senders_and_authorities = senders_and_authorities,
         .senders = senders,
-        .authorities = authorities};
+        .authorities = authorities,
+        .domains = domains};
 
     State state{bs, Incarnation{1, 1}};
     trace::StateTracer noop_state_tracer = std::monostate{};
@@ -785,21 +805,24 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
     uint256_t const gas_cost =
         uint256_t{BASE_FEE_PER_GAS} * uint256_t{tx.gas_limit};
 
-    ankerl::unordered_dense::segmented_set<Address> const
-        empty_grandparent_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address> const
-        empty_parent_senders_and_authorities;
     std::vector<Address> const senders = {SENDER};
     std::vector<std::vector<std::optional<Address>>> const authorities = {{}};
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
-    senders_and_authorities.insert(SENDER);
+    std::vector<std::optional<uint64_t>> const domains(
+        senders.size(), std::nullopt);
+    auto senders_and_authorities =
+        combine_senders_and_authorities(senders, authorities, domains);
+    decltype(senders_and_authorities)
+        const empty_grandparent_senders_and_authorities;
+    decltype(senders_and_authorities)
+        const empty_parent_senders_and_authorities;
     ChainContext<traits> const context{
         .grandparent_senders_and_authorities =
             empty_grandparent_senders_and_authorities,
         .parent_senders_and_authorities = empty_parent_senders_and_authorities,
         .senders_and_authorities = senders_and_authorities,
         .senders = senders,
-        .authorities = authorities};
+        .authorities = authorities,
+        .domains = domains};
 
     State state{bs, Incarnation{1, 1}};
     trace::StateTracer noop_state_tracer = std::monostate{};

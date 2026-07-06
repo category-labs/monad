@@ -17,6 +17,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
@@ -53,6 +54,7 @@ namespace
         }
         return txns;
     }
+
 }
 
 TYPED_TEST(MonadTraitsTest, system_txn_comes_after_user_txn)

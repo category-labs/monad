@@ -99,22 +99,22 @@ struct ReserveBalanceEvm : public ReserveBalanceTest
     BlockHashBufferFinalized const block_hash_buffer;
     Transaction const empty_tx{};
 
-    ankerl::unordered_dense::segmented_set<Address> const
-        grandparent_senders_and_authorities{};
-    ankerl::unordered_dense::segmented_set<Address> const
-        parent_senders_and_authorities{};
-    ankerl::unordered_dense::segmented_set<Address> const
-        senders_and_authorities{};
+    AddressesByDomain const grandparent_senders_and_authorities{};
+    AddressesByDomain const parent_senders_and_authorities{};
+    AddressesByDomain const senders_and_authorities{};
     // The {}s are needed here to pass the 0 < senders.size() assertion checks
     // in `dipped_into_reserve`.
     std::vector<Address> const senders{{}};
     std::vector<std::vector<std::optional<Address>>> const authorities{{}};
+    std::vector<std::optional<uint64_t>> const domains{std::nullopt};
     ChainContext<MonadTraits<MONAD_NEXT>> const chain_ctx{
-        grandparent_senders_and_authorities,
-        parent_senders_and_authorities,
-        senders_and_authorities,
-        senders,
-        authorities};
+        .grandparent_senders_and_authorities =
+            grandparent_senders_and_authorities,
+        .parent_senders_and_authorities = parent_senders_and_authorities,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = senders,
+        .authorities = authorities,
+        .domains = domains};
 
     trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<MonadTraits<MONAD_NEXT>> h{
@@ -308,20 +308,22 @@ void run_dipped_into_reserve_test(
     authorities.push_back({});
     authorities.push_back({});
 
-    // Create sets for the new MonadChainContext structure
-    ankerl::unordered_dense::segmented_set<Address>
-        grandparent_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address>
-        parent_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address> const
-        senders_and_authorities = {EOA};
+    std::vector<std::optional<uint64_t>> const domains(
+        senders.size(), std::nullopt);
+    auto senders_and_authorities =
+        combine_senders_and_authorities(senders, authorities, domains);
+    senders_and_authorities.clear();
+    decltype(senders_and_authorities) grandparent_senders_and_authorities;
+    decltype(senders_and_authorities) parent_senders_and_authorities;
+    senders_and_authorities[std::nullopt].insert(EOA);
     ChainContext<traits> chain_context{
         .grandparent_senders_and_authorities =
             grandparent_senders_and_authorities,
         .parent_senders_and_authorities = parent_senders_and_authorities,
         .senders_and_authorities = senders_and_authorities,
         .senders = senders,
-        .authorities = authorities};
+        .authorities = authorities,
+        .domains = domains};
 
     {
         State state{bs, Incarnation{1, 1}};
@@ -602,22 +604,22 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
     BlockHashBufferFinalized const block_hash_buffer;
     Transaction const empty_tx{};
 
-    ankerl::unordered_dense::segmented_set<Address> const
-        grandparent_senders_and_authorities{};
-    ankerl::unordered_dense::segmented_set<Address> const
-        parent_senders_and_authorities{};
-    ankerl::unordered_dense::segmented_set<Address> const
-        senders_and_authorities{};
+    AddressesByDomain const grandparent_senders_and_authorities{};
+    AddressesByDomain const parent_senders_and_authorities{};
+    AddressesByDomain const senders_and_authorities{};
     // The {}s are needed here to pass the 0 < senders.size() assertion checks
     // in `dipped_into_reserve`.
     std::vector<Address> const senders{{}};
     std::vector<std::vector<std::optional<Address>>> const authorities{{}};
+    std::vector<std::optional<uint64_t>> const domains{std::nullopt};
     ChainContext<MonadTraits<MONAD_NEXT>> const chain_ctx{
-        grandparent_senders_and_authorities,
-        parent_senders_and_authorities,
-        senders_and_authorities,
-        senders,
-        authorities};
+        .grandparent_senders_and_authorities =
+            grandparent_senders_and_authorities,
+        .parent_senders_and_authorities = parent_senders_and_authorities,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = senders,
+        .authorities = authorities,
+        .domains = domains};
 
     trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<MonadTraits<MONAD_NEXT>> h{
@@ -633,6 +635,35 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
 };
 
 DEFINE_MONAD_TRAITS_FIXTURE(MonadPrecompileTest);
+
+TYPED_TEST(MonadPrecompileTest, gasless_dipped_into_reserve_is_false)
+{
+    if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
+        u32_be const selector = abi_encode_selector("dippedIntoReserve()");
+        byte_string const calldata = {selector.bytes, 4};
+        evmc_message const msg{
+            .kind = EVMC_CALL,
+            .gas = 100,
+            .recipient = RESERVE_BALANCE_CA,
+            .sender = this->account_a,
+            .input_data = calldata.data(),
+            .input_size = calldata.size(),
+            .code_address = RESERVE_BALANCE_CA,
+        };
+
+        auto const result =
+            check_call_precompile<typename TestFixture::Trait, true>(
+                this->state, this->call_tracer, msg);
+
+        ASSERT_TRUE(result.has_value());
+        ASSERT_EQ(result->status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result->output_size, 32);
+        EXPECT_TRUE(std::all_of(
+            result->output_data,
+            result->output_data + result->output_size,
+            [](uint8_t const byte) { return byte == 0; }));
+    }
+}
 
 TYPED_TEST(
     MonadPrecompileTest, precompile_dipped_into_reserve_wellformedness_checks)

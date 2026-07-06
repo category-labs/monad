@@ -82,6 +82,11 @@ namespace monad::mpt::test
 {
     struct DbAccessor
     {
+        static UpdateAux &aux(Db &db)
+        {
+            return db.aux();
+        }
+
         static UpdateAux const &aux(Db const &db)
         {
             return db.aux();
@@ -3203,4 +3208,52 @@ TEST_F(OnDiskDbWithFileFixture, timeline_lifecycle_dual_upsert)
         (void)moved_out;
     }
     db.deactivate_secondary_timeline();
+}
+
+TEST_F(OnDiskDbWithFileFixture, read_only_db_selects_secondary_timeline)
+{
+    auto const primary_key = 0x1234_bytes;
+    auto primary_update = make_update(primary_key, primary_key);
+    UpdateList primary_updates;
+    primary_updates.push_front(primary_update);
+    root = db.upsert(std::move(root), std::move(primary_updates), 0);
+
+    auto const secondary_key = 0x5678_bytes;
+    {
+        auto secondary_db = db.activate_secondary_timeline(
+            std::make_unique<StateMachineAlwaysEmpty>());
+        auto secondary_update = make_update(secondary_key, secondary_key);
+        UpdateList secondary_updates;
+        secondary_updates.push_front(secondary_update);
+        secondary_db.upsert(nullptr, std::move(secondary_updates), 0);
+        test::DbAccessor::aux(secondary_db)
+            .metadata_ctx()
+            .set_state_machine_kind(
+                timeline_id::secondary, state_machine_kind::monad);
+
+        RODb ro_db(
+            ReadOnlyOnDiskDbConfig{.dbname_paths = config.dbname_paths},
+            timeline_id::secondary);
+        auto const secondary_result =
+            ro_db.find(NibblesView{secondary_key}, 0);
+        ASSERT_TRUE(secondary_result.has_value());
+        EXPECT_EQ(secondary_result.value().node->value(), secondary_key);
+        EXPECT_EQ(ro_db.state_machine_type(), state_machine_kind::monad);
+        EXPECT_EQ(ro_db.get_latest_version(), 0);
+        EXPECT_EQ(ro_db.get_earliest_version(), 0);
+        EXPECT_EQ(
+            ro_db.find(NibblesView{primary_key}, 0).error(),
+            DbError::key_not_found);
+    }
+
+    db.promote_secondary_to_primary();
+    EXPECT_TRUE(db.timeline_active(timeline_id::secondary));
+    RODb promoted_ro_db(
+        ReadOnlyOnDiskDbConfig{.dbname_paths = config.dbname_paths});
+    auto const promoted_result =
+        promoted_ro_db.find(NibblesView{secondary_key}, 0);
+    ASSERT_TRUE(promoted_result.has_value());
+    EXPECT_EQ(promoted_result.value().node->value(), secondary_key);
+    EXPECT_EQ(
+        promoted_ro_db.state_machine_type(), state_machine_kind::monad);
 }

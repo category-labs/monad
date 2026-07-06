@@ -37,6 +37,7 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <cstdint>
 #include <functional>
 #include <utility>
 
@@ -110,13 +111,17 @@ public:
 static_assert(sizeof(EvmcHostBase) == 72);
 static_assert(alignof(EvmcHostBase) == 8);
 
-template <Traits traits>
+template <Traits traits, bool gasless = false>
 struct EvmcHost final : public EvmcHostBase
 {
     Transaction const &tx_;
     std::optional<uint256_t> base_fee_per_gas_;
     uint64_t i_;
     ChainContext<traits> const &chain_ctx_;
+    std::optional<Address> domain_spoke_;
+    bool domain_access_denied_{false};
+    // The synthetic canCall frame depth, or -1 outside an access check.
+    int16_t domain_access_check_depth_{-1};
 
     EvmcHost(
         CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
@@ -124,12 +129,14 @@ struct EvmcHost final : public EvmcHostBase
         BlockHashBuffer const &block_hash_buffer, State &state,
         Transaction const &tx, std::optional<uint256_t> const base_fee_per_gas,
         uint64_t const i, ChainContext<traits> const &chain_ctx,
-        bool const log_native_transfers = false) noexcept
+        bool const log_native_transfers = false,
+        std::optional<Address> const domain_spoke = std::nullopt) noexcept
         : EvmcHostBase{call_tracer, state_tracer, tx_context, block_hash_buffer, state, log_native_transfers}
         , tx_{tx}
         , base_fee_per_gas_{base_fee_per_gas}
         , i_{i}
         , chain_ctx_{chain_ctx}
+        , domain_spoke_{domain_spoke}
     {
     }
 
@@ -178,8 +185,8 @@ struct EvmcHost final : public EvmcHostBase
         MONAD_TRY
         {
             if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
-                auto result =
-                    ::monad::execute_create_message<traits>(this, state_, msg);
+                auto result = ::monad::execute_create_message<traits, gasless>(
+                    this, state_, msg);
 
                 // EIP-211
                 if (result.status_code != EVMC_REVERT) {
@@ -192,7 +199,8 @@ struct EvmcHost final : public EvmcHostBase
                 return result;
             }
             else {
-                return ::monad::execute_call_message<traits>(this, state_, msg);
+                return ::monad::execute_call_message<traits, gasless>(
+                    this, state_, msg);
             }
         }
         MONAD_CATCH(...)
@@ -267,10 +275,10 @@ struct EvmcHost final : public EvmcHostBase
 };
 
 static_assert(
-    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 136);
+    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 160);
 static_assert(
     alignof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 8);
-static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
+static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 160);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

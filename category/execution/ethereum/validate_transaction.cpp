@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/chain/domain_chain_id.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -33,6 +34,7 @@
 
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
+#include <boost/outcome/try.hpp>
 
 #include <cstdint>
 #include <initializer_list>
@@ -43,7 +45,7 @@ MONAD_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
-template <Traits traits>
+template <Traits traits, bool gasless>
 Result<void> static_validate_transaction(
     Transaction const &tx, std::optional<uint256_t> const &base_fee_per_gas,
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id,
@@ -51,11 +53,24 @@ Result<void> static_validate_transaction(
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
-    // EIP-155
-    if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
-        if (MONAD_UNLIKELY(tx.sc.chain_id.value() != chain_id)) {
+    static_assert(!gasless || is_monad_trait_v<traits>);
+
+    // EIP-155. Domain-qualified chain IDs are reserved for private gasless
+    // execution. Ordinary transactions always target the root state.
+    if constexpr (gasless) {
+        if (MONAD_UNLIKELY(!tx.sc.chain_id.has_value())) {
             return TransactionError::WrongChainId;
         }
+        BOOST_OUTCOME_TRY(
+            auto const domain, domain_from_chain_id(*tx.sc.chain_id, chain_id));
+        if (MONAD_UNLIKELY(!domain.has_value())) {
+            return TransactionError::WrongChainId;
+        }
+    }
+    else if (
+        MONAD_LIKELY(tx.sc.chain_id.has_value()) &&
+        MONAD_UNLIKELY(tx.sc.chain_id.value() != chain_id)) {
+        return TransactionError::WrongChainId;
     }
 
     // EIP-4844
@@ -189,8 +204,9 @@ Result<void> static_validate_transaction(
 }
 
 EXPLICIT_TRAITS(static_validate_transaction);
+EXPLICIT_MONAD_TRAITS_TRUE(static_validate_transaction);
 
-template <Traits traits>
+template <Traits traits, bool gasless>
 Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const & /*base_fee_per_gas*/,
@@ -198,7 +214,8 @@ Result<void> validate_transaction(
     trace::StateTracer &state_tracer)
 {
     static_assert(is_evm_trait_v<traits>);
-    return validate_ethereum_transaction<traits>(
+    static_assert(!gasless);
+    return validate_ethereum_transaction<traits, gasless>(
         tx, sender, state, state_tracer);
 }
 

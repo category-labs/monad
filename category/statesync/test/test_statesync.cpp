@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
@@ -35,6 +36,7 @@
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/chain/chain_factory.hpp>
 #include <category/execution/monad/db/commit_block_migration.hpp>
+#include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db_metadata_context.hpp>
@@ -50,14 +52,18 @@
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
 #include <test_resource_data.h>
 
 #include <ethash/keccak.hpp>
 #include <gtest/gtest.h>
+#include <intx/intx.hpp>
 
+#include <array>
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <sys/sysinfo.h>
 
 using namespace monad;
@@ -89,6 +95,12 @@ struct monad_statesync_server_network
     monad_statesync_client *client;
     monad_statesync_client_context *cctx;
     byte_string buf;
+    byte_string deferred_account;
+    bool defer_first_account_until_storage{};
+    bool drop_first_account{};
+    bool corrupt_first_account_domain_suffix{};
+    bool account_was_dropped{};
+    bool upsert_was_rejected{};
 };
 
 namespace
@@ -97,6 +109,8 @@ namespace
 
     std::filesystem::path tmp_dbname()
     {
+        monad::register_ethereum_state_machines();
+        monad::register_monad_state_machines();
         std::filesystem::path dbname(
             MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
             "monad_statesync_test_XXXXXX");
@@ -132,6 +146,125 @@ namespace
         monad_statesync_client_handle_target(ctx, rlp.data(), rlp.size());
     }
 
+    bytes32_t header_hash(BlockHeader const &hdr)
+    {
+        return to_bytes(keccak256(rlp::encode_block_header(hdr)));
+    }
+
+    void add_domain_delta(
+        DomainStateDeltas &domain_deltas, uint64_t const domain,
+        Address const &addr, std::optional<Account> const &old_account,
+        std::optional<Account> const &new_account, StorageDeltas storage = {})
+    {
+        DomainStateDeltas::accessor domain_it{};
+        domain_deltas.emplace(
+            domain_it, domain, std::make_unique<StateDeltas>());
+        StateDeltas::accessor it{};
+        domain_it->second->emplace(
+            it,
+            addr,
+            StateDelta{
+                .account = {old_account, new_account},
+                .storage = std::move(storage)});
+    }
+
+    DomainStateDeltas one_domain_delta(
+        uint64_t const domain, Address const &addr,
+        std::optional<Account> const &old_account,
+        std::optional<Account> const &new_account, StorageDeltas storage = {})
+    {
+        DomainStateDeltas domain_deltas;
+        add_domain_delta(
+            domain_deltas,
+            domain,
+            addr,
+            old_account,
+            new_account,
+            std::move(storage));
+        return domain_deltas;
+    }
+
+    bytes32_t domain_root_with_metadata(
+        uint64_t const domain, bool const encoded_metadata, Account const &acct)
+    {
+        mpt::Db db{std::make_unique<InMemoryMachine>()};
+        std::deque<mpt::Update> alloc;
+        std::deque<byte_string> bytes_alloc;
+        std::deque<hash256> hash_alloc;
+
+        Address const addr{0x1234};
+        UpdateList account_list;
+        account_list.push_front(alloc.emplace_back(Update{
+            .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
+            .value = bytes_alloc.emplace_back(encode_account_db(addr, acct)),
+            .incarnation = false,
+            .next = UpdateList{},
+            .version = 1}));
+
+        uint8_t domain_bytes[sizeof(uint64_t)];
+        intx::be::store(domain_bytes, domain);
+        byte_string const domain_metadata =
+            encoded_metadata ? rlp::encode_unsigned(domain) : byte_string{};
+        UpdateList domain_list;
+        domain_list.push_front(alloc.emplace_back(Update{
+            .key = bytes_alloc.emplace_back(domain_bytes, sizeof(domain_bytes)),
+            .value = byte_string_view{domain_metadata},
+            .incarnation = false,
+            .next = std::move(account_list),
+            .version = 1}));
+
+        UpdateList table_list;
+        table_list.push_front(alloc.emplace_back(Update{
+            .key = domain_state_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(domain_list),
+            .version = 1}));
+
+        UpdateList root_list;
+        root_list.push_front(alloc.emplace_back(Update{
+            .key = finalized_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(table_list),
+            .version = 1}));
+
+        auto root = db.upsert({}, std::move(root_list), 1, true);
+        auto const res = db.find(
+            root,
+            concat(
+                finalized_nibbles,
+                domain_state_nibbles,
+                NibblesView{to_byte_string_view(domain_bytes)}),
+            1);
+        MONAD_ASSERT(res.has_value());
+        auto const data = res.value().node->data();
+        MONAD_ASSERT(data.size() == sizeof(bytes32_t));
+        return to_bytes(data);
+    }
+
+    void expect_domain_id_metadata(
+        mpt::Db &db, uint64_t const version, uint64_t const domain)
+    {
+        uint8_t domain_bytes[sizeof(uint64_t)];
+        intx::be::store(domain_bytes, domain);
+        auto const res = db.find(
+            db.load_root_for_version(version),
+            concat(
+                finalized_nibbles,
+                domain_state_nibbles,
+                NibblesView{to_byte_string_view(domain_bytes)}),
+            version);
+        ASSERT_TRUE(res.has_value());
+        ASSERT_TRUE(res.value().node->has_value());
+
+        auto raw = res.value().node->value();
+        auto const decoded = rlp::decode_unsigned<uint64_t>(raw);
+        ASSERT_TRUE(decoded.has_value());
+        EXPECT_EQ(decoded.value(), domain);
+        EXPECT_TRUE(raw.empty());
+    }
+
     ssize_t statesync_server_recv(
         monad_statesync_server_network *const net, unsigned char *const buf,
         size_t const len)
@@ -161,16 +294,52 @@ namespace
         if (v2 != nullptr) {
             net->buf.append(v2, size2);
         }
-        // TODO: prefixes have different protocols
-        MONAD_ASSERT(monad_statesync_client_handle_upsert(
-            net->cctx, 0, type, net->buf.data(), net->buf.size()));
+
+        auto const deliver = [net](
+                                 monad_sync_type const deliver_type,
+                                 byte_string const &payload) {
+            // TODO: prefixes have different protocols
+            MONAD_ASSERT(monad_statesync_client_handle_upsert(
+                net->cctx, 0, deliver_type, payload.data(), payload.size()));
+        };
+
+        if (type == SYNC_TYPE_UPSERT_ACCOUNT && net->drop_first_account) {
+            net->drop_first_account = false;
+            net->account_was_dropped = true;
+            return;
+        }
+
+        if (type == SYNC_TYPE_UPSERT_ACCOUNT &&
+            net->corrupt_first_account_domain_suffix) {
+            net->corrupt_first_account_domain_suffix = false;
+            net->buf += rlp::encode_unsigned(uint64_t{1});
+            net->upsert_was_rejected = !monad_statesync_client_handle_upsert(
+                net->cctx, 0, type, net->buf.data(), net->buf.size());
+            net->client->success &= !net->upsert_was_rejected;
+            return;
+        }
+
+        if (type == SYNC_TYPE_UPSERT_ACCOUNT &&
+            net->defer_first_account_until_storage &&
+            net->deferred_account.empty()) {
+            net->defer_first_account_until_storage = false;
+            net->deferred_account = net->buf;
+            return;
+        }
+
+        deliver(type, net->buf);
+        if (type == SYNC_TYPE_UPSERT_STORAGE &&
+            !net->deferred_account.empty()) {
+            deliver(SYNC_TYPE_UPSERT_ACCOUNT, net->deferred_account);
+            net->deferred_account.clear();
+        }
     }
 
     void statesync_server_send_done(
         monad_statesync_server_network *const net, monad_sync_done const done)
     {
         net->client->success &= done.success;
-        if (done.success) {
+        if (done.success && net->client->success) {
             monad_statesync_client_handle_done(net->cctx, done);
         }
     }
@@ -283,6 +452,35 @@ namespace
                 ->get_monad_revision(revision_config.timestamp);
         }
 
+        TrieDb &canonical_client_tdb()
+        {
+            if constexpr (MIP_8_ACTIVE) {
+                MONAD_ASSERT(cctx->secondary_tdb);
+                return *cctx->secondary_tdb;
+            }
+            else {
+                return cctx->tdb;
+            }
+        }
+
+        void set_client_block(uint64_t const block_number)
+        {
+            cctx->tdb.set_block_and_prefix(block_number);
+            MONAD_ASSERT(cctx->secondary_tdb);
+            cctx->secondary_tdb->set_block_and_prefix(block_number);
+        }
+
+        void restart_client()
+        {
+            monad_statesync_client_context_destroy(cctx);
+            monad_statesync_server_destroy(server);
+            cctx = nullptr;
+            server = nullptr;
+            client = {};
+            net = {};
+            init();
+        }
+
         ~StateSyncFixtureT()
         {
             monad_statesync_client_context_destroy(cctx);
@@ -379,6 +577,26 @@ namespace
             secondary->finalize(header.number, block_id);
             secondary->set_block_and_prefix(header.number);
         }
+    }
+
+    BlockHeader commit_domain_sequential_revision_aware(
+        monad::Db &db, monad_revision const rev,
+        DomainStateDeltas const &domain_deltas, StateDeltas const &root_deltas,
+        Code const &code, BlockHeader const &header)
+    {
+        bytes32_t const block_id =
+            header.number ? bytes32_t{header.number} : NULL_HASH_BLAKE3;
+        auto builder = make_commit_builder(header.number, db);
+        builder->add_domain_state_deltas(domain_deltas);
+        DomainStateDeltas const *const delta_sets[] = {&domain_deltas};
+        db.commit_domain_state_deltas(
+            block_id, *builder, delta_sets, header.number, {});
+
+        commit_simple_revision_aware(
+            db, nullptr, rev, root_deltas, code, header);
+        db.finalize(header.number, block_id);
+        db.set_block_and_prefix(header.number);
+        return db.read_eth_header();
     }
 }
 
@@ -522,6 +740,513 @@ TEST_F(StateSyncFixture, sync_from_empty)
     auto const hdr = rlp::decode_block_header(raw);
     ASSERT_TRUE(hdr.has_value());
     EXPECT_EQ(hdr.value(), tgrt);
+}
+
+TEST(DomainStateRoot, domain_id_metadata_is_root_neutral)
+{
+    constexpr uint64_t domain = 0x123456789abcdef0ULL;
+    Account const acct{.nonce = 1};
+
+    auto const empty_metadata_root =
+        domain_root_with_metadata(domain, false, acct);
+    auto const encoded_metadata_root =
+        domain_root_with_metadata(domain, true, acct);
+
+    EXPECT_NE(empty_metadata_root, NULL_ROOT);
+    EXPECT_EQ(empty_metadata_root, encoded_metadata_root);
+}
+
+TEST(DomainStateRoot, domain_id_metadata_preserves_account_root)
+{
+    constexpr uint64_t domain = 0x123456789abcdef0ULL;
+
+    auto const original_root =
+        domain_root_with_metadata(domain, true, Account{.balance = 1});
+    auto const updated_root =
+        domain_root_with_metadata(domain, true, Account{.balance = 2});
+
+    EXPECT_NE(original_root, updated_root);
+}
+
+TYPED_TEST(StateSyncTestBothForks, sync_domain_from_empty)
+{
+    auto const rev = this->get_monad_revision();
+    this->init();
+    commit_sequential_revision_aware(
+        this->sctx,
+        nullptr,
+        rev,
+        StateDeltas{},
+        Code{},
+        BlockHeader{.number = 0, .timestamp = this->revision_config.timestamp});
+    auto const parent_hash = header_hash(this->stdb.read_eth_header());
+
+    constexpr uint64_t domain{0x0102030405060708ULL};
+    Address const addr{0x42};
+    bytes32_t const key1{0x00};
+    bytes32_t const key2{0x01};
+    bytes32_t const key3{0x80};
+    bytes32_t const value1{0x5678};
+    bytes32_t const value2{0x6789};
+    bytes32_t const value3{0x789a};
+    Account const account{.balance = 100};
+    ASSERT_EQ(compute_page_key(key1), compute_page_key(key2));
+    ASSERT_NE(compute_page_key(key1), compute_page_key(key3));
+
+    auto hdr = commit_domain_sequential_revision_aware(
+        this->sctx,
+        rev,
+        one_domain_delta(
+            domain,
+            addr,
+            std::nullopt,
+            account,
+            StorageDeltas{
+                {key1, StorageDelta{bytes32_t{}, value1}},
+                {key2, StorageDelta{bytes32_t{}, value2}},
+                {key3, StorageDelta{bytes32_t{}, value3}}}),
+        StateDeltas{},
+        Code{},
+        BlockHeader{
+            .parent_hash = parent_hash,
+            .number = 1,
+            .timestamp = this->revision_config.timestamp});
+
+    handle_target(this->cctx, hdr);
+    this->run();
+    EXPECT_TRUE(monad_statesync_client_finalize(this->cctx));
+    this->set_client_block(1);
+
+    for (TrieDb *const tdb :
+         {&this->cctx->tdb, this->cctx->secondary_tdb.get()}) {
+        auto const synced_account = tdb->read_account(addr, domain);
+        ASSERT_TRUE(synced_account.has_value());
+        EXPECT_EQ(synced_account->balance, account.balance);
+        EXPECT_EQ(
+            tdb->read_storage(addr, synced_account->incarnation, key1, domain),
+            value1);
+        EXPECT_EQ(
+            tdb->read_storage(addr, synced_account->incarnation, key2, domain),
+            value2);
+        EXPECT_EQ(
+            tdb->read_storage(addr, synced_account->incarnation, key3, domain),
+            value3);
+    }
+    expect_domain_id_metadata(this->cctx->db, 1, domain);
+    expect_domain_id_metadata(*this->cctx->secondary_db, 1, domain);
+    EXPECT_EQ(
+        this->stdb.domain_state_root(domain),
+        this->canonical_client_tdb().domain_state_root(domain));
+}
+
+TYPED_TEST(StateSyncTestBothForks, sync_domain_incremental_update_and_delete)
+{
+    auto const rev = this->get_monad_revision();
+    this->init();
+    commit_sequential_revision_aware(
+        this->sctx,
+        nullptr,
+        rev,
+        StateDeltas{},
+        Code{},
+        BlockHeader{.number = 0, .timestamp = this->revision_config.timestamp});
+    auto parent_hash = header_hash(this->stdb.read_eth_header());
+
+    constexpr uint64_t domain{0x1111222233334444ULL};
+    Address const addr{0x43};
+    bytes32_t const key1{0x00};
+    bytes32_t const key2{0x01};
+    bytes32_t const key3{0x80};
+    bytes32_t const value1{0xaaaa};
+    bytes32_t const value2{0xbbbb};
+    bytes32_t const value3{0xcccc};
+    Account const account{.balance = 100};
+    ASSERT_EQ(compute_page_key(key1), compute_page_key(key2));
+    ASSERT_NE(compute_page_key(key1), compute_page_key(key3));
+
+    auto hdr1 = commit_domain_sequential_revision_aware(
+        this->sctx,
+        rev,
+        one_domain_delta(
+            domain,
+            addr,
+            std::nullopt,
+            account,
+            StorageDeltas{
+                {key1, StorageDelta{bytes32_t{}, value1}},
+                {key2, StorageDelta{bytes32_t{}, value2}},
+                {key3, StorageDelta{bytes32_t{}, value3}}}),
+        StateDeltas{},
+        Code{},
+        BlockHeader{
+            .parent_hash = parent_hash,
+            .number = 1,
+            .timestamp = this->revision_config.timestamp});
+
+    handle_target(this->cctx, hdr1);
+    this->run();
+    ASSERT_TRUE(monad_statesync_client_finalize(this->cctx));
+    this->restart_client();
+
+    parent_hash = header_hash(hdr1);
+    auto updated_account = account;
+    updated_account.balance = 200;
+    auto hdr2 = commit_domain_sequential_revision_aware(
+        this->sctx,
+        rev,
+        one_domain_delta(
+            domain,
+            addr,
+            account,
+            updated_account,
+            StorageDeltas{{key1, StorageDelta{value1, bytes32_t{}}}}),
+        StateDeltas{},
+        Code{},
+        BlockHeader{
+            .parent_hash = parent_hash,
+            .number = 2,
+            .timestamp = this->revision_config.timestamp});
+
+    handle_target(this->cctx, hdr2);
+    this->run();
+    EXPECT_TRUE(monad_statesync_client_finalize(this->cctx));
+    this->set_client_block(2);
+
+    for (TrieDb *const tdb :
+         {&this->cctx->tdb, this->cctx->secondary_tdb.get()}) {
+        auto const synced_account = tdb->read_account(addr, domain);
+        ASSERT_TRUE(synced_account.has_value());
+        EXPECT_EQ(synced_account->balance, updated_account.balance);
+        EXPECT_EQ(
+            tdb->read_storage(addr, synced_account->incarnation, key1, domain),
+            bytes32_t{});
+        EXPECT_EQ(
+            tdb->read_storage(addr, synced_account->incarnation, key2, domain),
+            value2);
+        EXPECT_EQ(
+            tdb->read_storage(addr, synced_account->incarnation, key3, domain),
+            value3);
+    }
+    expect_domain_id_metadata(this->cctx->db, 2, domain);
+    expect_domain_id_metadata(*this->cctx->secondary_db, 2, domain);
+    EXPECT_EQ(
+        this->stdb.domain_state_root(domain),
+        this->canonical_client_tdb().domain_state_root(domain));
+}
+
+TYPED_TEST(
+    StateSyncTestBothForks, sync_multiple_domains_root_isolation_and_code)
+{
+    auto const rev = this->get_monad_revision();
+    this->init();
+    commit_sequential_revision_aware(
+        this->sctx,
+        nullptr,
+        rev,
+        StateDeltas{},
+        Code{},
+        BlockHeader{.number = 0, .timestamp = this->revision_config.timestamp});
+    auto const parent_hash = header_hash(this->stdb.read_eth_header());
+
+    constexpr uint64_t domain1{0x0102030405060708ULL};
+    constexpr uint64_t domain2{0xfedcba9876543210ULL};
+    Address const addr{0x44};
+    bytes32_t const key{0x01};
+    bytes32_t const root_value{0x1111};
+    bytes32_t const domain1_value{0x2222};
+    bytes32_t const domain2_value{0x3333};
+    auto const code_bytes = from_hex("600160005500").value();
+    auto const code_hash = to_bytes(keccak256(code_bytes));
+
+    Account const root_account{.balance = 11};
+    Account const domain1_account{
+        .balance = 22, .code_hash = code_hash, .nonce = 1};
+    Account const domain2_account{.balance = 33};
+
+    DomainStateDeltas domain_deltas;
+    add_domain_delta(
+        domain_deltas,
+        domain1,
+        addr,
+        std::nullopt,
+        domain1_account,
+        StorageDeltas{{key, StorageDelta{bytes32_t{}, domain1_value}}});
+    add_domain_delta(
+        domain_deltas,
+        domain2,
+        addr,
+        std::nullopt,
+        domain2_account,
+        StorageDeltas{{key, StorageDelta{bytes32_t{}, domain2_value}}});
+
+    StateDeltas root_deltas{
+        {addr,
+         StateDelta{
+             .account = {std::nullopt, root_account},
+             .storage = {{key, StorageDelta{bytes32_t{}, root_value}}}}}};
+    Code code;
+    code.emplace(code_hash, vm::make_shared_intercode(code_bytes));
+
+    auto const hdr = commit_domain_sequential_revision_aware(
+        this->sctx,
+        rev,
+        domain_deltas,
+        root_deltas,
+        code,
+        BlockHeader{
+            .parent_hash = parent_hash,
+            .number = 1,
+            .timestamp = this->revision_config.timestamp});
+
+    handle_target(this->cctx, hdr);
+    this->run();
+    ASSERT_TRUE(monad_statesync_client_finalize(this->cctx));
+    this->set_client_block(1);
+
+    for (TrieDb *const tdb :
+         {&this->cctx->tdb, this->cctx->secondary_tdb.get()}) {
+        auto const actual_root = tdb->read_account(addr);
+        auto const actual_domain1 = tdb->read_account(addr, domain1);
+        auto const actual_domain2 = tdb->read_account(addr, domain2);
+        ASSERT_TRUE(actual_root.has_value());
+        ASSERT_TRUE(actual_domain1.has_value());
+        ASSERT_TRUE(actual_domain2.has_value());
+        EXPECT_EQ(actual_root->balance, root_account.balance);
+        EXPECT_EQ(actual_domain1->balance, domain1_account.balance);
+        EXPECT_EQ(actual_domain2->balance, domain2_account.balance);
+        EXPECT_EQ(
+            tdb->read_storage(addr, actual_root->incarnation, key), root_value);
+        EXPECT_EQ(
+            tdb->read_storage(addr, actual_domain1->incarnation, key, domain1),
+            domain1_value);
+        EXPECT_EQ(
+            tdb->read_storage(addr, actual_domain2->incarnation, key, domain2),
+            domain2_value);
+        auto const actual_code = tdb->read_code(code_hash);
+        ASSERT_TRUE(actual_code);
+        EXPECT_EQ(
+            byte_string_view(actual_code->code(), actual_code->size()),
+            code_bytes);
+    }
+    EXPECT_EQ(
+        this->stdb.domain_state_root(domain1),
+        this->canonical_client_tdb().domain_state_root(domain1));
+    EXPECT_EQ(
+        this->stdb.domain_state_root(domain2),
+        this->canonical_client_tdb().domain_state_root(domain2));
+}
+
+TYPED_TEST(
+    StateSyncTestBothForks, sync_domain_account_delete_preserves_other_domain)
+{
+    auto const rev = this->get_monad_revision();
+    this->init();
+    commit_sequential_revision_aware(
+        this->sctx,
+        nullptr,
+        rev,
+        StateDeltas{},
+        Code{},
+        BlockHeader{.number = 0, .timestamp = this->revision_config.timestamp});
+    auto parent_hash = header_hash(this->stdb.read_eth_header());
+
+    constexpr uint64_t deleted_domain{0x1111222233334444ULL};
+    constexpr uint64_t preserved_domain{0xaaaabbbbccccddddULL};
+    Address const addr{0x45};
+    bytes32_t const key{0x01};
+    bytes32_t const deleted_value{0xaaaa};
+    bytes32_t const preserved_value{0xbbbb};
+    Account const deleted_account{.balance = 100};
+    Account const preserved_account{.balance = 200};
+
+    DomainStateDeltas initial_deltas;
+    add_domain_delta(
+        initial_deltas,
+        deleted_domain,
+        addr,
+        std::nullopt,
+        deleted_account,
+        StorageDeltas{{key, StorageDelta{bytes32_t{}, deleted_value}}});
+    add_domain_delta(
+        initial_deltas,
+        preserved_domain,
+        addr,
+        std::nullopt,
+        preserved_account,
+        StorageDeltas{{key, StorageDelta{bytes32_t{}, preserved_value}}});
+    auto const hdr1 = commit_domain_sequential_revision_aware(
+        this->sctx,
+        rev,
+        initial_deltas,
+        StateDeltas{},
+        Code{},
+        BlockHeader{
+            .parent_hash = parent_hash,
+            .number = 1,
+            .timestamp = this->revision_config.timestamp});
+
+    handle_target(this->cctx, hdr1);
+    this->run();
+    ASSERT_TRUE(monad_statesync_client_finalize(this->cctx));
+    this->restart_client();
+
+    parent_hash = header_hash(hdr1);
+    auto const hdr2 = commit_domain_sequential_revision_aware(
+        this->sctx,
+        rev,
+        one_domain_delta(deleted_domain, addr, deleted_account, std::nullopt),
+        StateDeltas{},
+        Code{},
+        BlockHeader{
+            .parent_hash = parent_hash,
+            .number = 2,
+            .timestamp = this->revision_config.timestamp});
+
+    handle_target(this->cctx, hdr2);
+    this->run();
+    ASSERT_TRUE(monad_statesync_client_finalize(this->cctx));
+    this->set_client_block(2);
+
+    for (TrieDb *const tdb :
+         {&this->cctx->tdb, this->cctx->secondary_tdb.get()}) {
+        EXPECT_FALSE(tdb->read_account(addr, deleted_domain).has_value());
+        auto const preserved = tdb->read_account(addr, preserved_domain);
+        ASSERT_TRUE(preserved.has_value());
+        EXPECT_EQ(preserved->balance, preserved_account.balance);
+        EXPECT_EQ(
+            tdb->read_storage(
+                addr, preserved->incarnation, key, preserved_domain),
+            preserved_value);
+    }
+    EXPECT_EQ(
+        this->stdb.domain_state_root(deleted_domain),
+        this->canonical_client_tdb().domain_state_root(deleted_domain));
+    EXPECT_EQ(
+        this->stdb.domain_state_root(preserved_domain),
+        this->canonical_client_tdb().domain_state_root(preserved_domain));
+}
+
+TYPED_TEST(StateSyncTestBothForks, domain_storage_before_account_is_buffered)
+{
+    auto const rev = this->get_monad_revision();
+    this->init();
+    this->net.defer_first_account_until_storage = true;
+    commit_sequential_revision_aware(
+        this->sctx,
+        nullptr,
+        rev,
+        StateDeltas{},
+        Code{},
+        BlockHeader{.number = 0, .timestamp = this->revision_config.timestamp});
+    auto const parent_hash = header_hash(this->stdb.read_eth_header());
+
+    constexpr uint64_t domain{0x123456789abcdef0ULL};
+    Address const addr{0x46};
+    bytes32_t const key{0x01};
+    bytes32_t const value{0x9999};
+    Account const account{.balance = 100};
+    auto const hdr = commit_domain_sequential_revision_aware(
+        this->sctx,
+        rev,
+        one_domain_delta(
+            domain,
+            addr,
+            std::nullopt,
+            account,
+            StorageDeltas{{key, StorageDelta{bytes32_t{}, value}}}),
+        StateDeltas{},
+        Code{},
+        BlockHeader{
+            .parent_hash = parent_hash,
+            .number = 1,
+            .timestamp = this->revision_config.timestamp});
+
+    handle_target(this->cctx, hdr);
+    this->run();
+    ASSERT_TRUE(this->net.deferred_account.empty());
+    ASSERT_TRUE(monad_statesync_client_finalize(this->cctx));
+    this->set_client_block(1);
+    for (TrieDb *const tdb :
+         {&this->cctx->tdb, this->cctx->secondary_tdb.get()}) {
+        auto const actual = tdb->read_account(addr, domain);
+        ASSERT_TRUE(actual.has_value());
+        EXPECT_EQ(
+            tdb->read_storage(addr, actual->incarnation, key, domain), value);
+    }
+}
+
+TEST_F(StateSyncFixture, domain_storage_without_account_fails_finalize)
+{
+    auto const rev = get_monad_revision();
+    init();
+    net.drop_first_account = true;
+    commit_sequential_revision_aware(
+        sctx,
+        nullptr,
+        rev,
+        StateDeltas{},
+        Code{},
+        BlockHeader{.number = 0, .timestamp = revision_config.timestamp});
+    auto const parent_hash = header_hash(stdb.read_eth_header());
+
+    constexpr uint64_t domain{0x123456789abcdef0ULL};
+    Address const addr{0x47};
+    bytes32_t const key{0x01};
+    auto const hdr = commit_domain_sequential_revision_aware(
+        sctx,
+        rev,
+        one_domain_delta(
+            domain,
+            addr,
+            std::nullopt,
+            Account{.balance = 100},
+            StorageDeltas{{key, StorageDelta{bytes32_t{}, bytes32_t{1}}}}),
+        StateDeltas{},
+        Code{},
+        BlockHeader{
+            .parent_hash = parent_hash,
+            .number = 1,
+            .timestamp = revision_config.timestamp});
+
+    handle_target(cctx, hdr);
+    run();
+    EXPECT_TRUE(net.account_was_dropped);
+    EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
+    EXPECT_FALSE(monad_statesync_client_finalize(cctx));
+}
+
+TEST_F(StateSyncFixture, malformed_domain_upsert_aborts_sync_session)
+{
+    auto const rev = get_monad_revision();
+    init();
+    net.corrupt_first_account_domain_suffix = true;
+    commit_sequential_revision_aware(
+        sctx,
+        nullptr,
+        rev,
+        StateDeltas{},
+        Code{},
+        BlockHeader{.number = 0, .timestamp = revision_config.timestamp});
+    auto const parent_hash = header_hash(stdb.read_eth_header());
+
+    constexpr uint64_t domain{0x123456789abcdef0ULL};
+    auto const hdr = commit_domain_sequential_revision_aware(
+        sctx,
+        rev,
+        one_domain_delta(
+            domain, Address{0x48}, std::nullopt, Account{.balance = 100}),
+        StateDeltas{},
+        Code{},
+        BlockHeader{
+            .parent_hash = parent_hash,
+            .number = 1,
+            .timestamp = revision_config.timestamp});
+
+    handle_target(cctx, hdr);
+    run();
+    EXPECT_TRUE(net.upsert_was_rejected);
+    EXPECT_FALSE(client.success);
+    EXPECT_FALSE(monad_statesync_client_has_reached_target(cctx));
 }
 
 // single timeline server -> slot and page-encoded dual db client
@@ -1495,6 +2220,67 @@ TEST_F(StateSyncFixture, benchmark)
     flush_logger();
 }
 
+TEST(StatesyncServerContext, forwards_domain_state_commits)
+{
+    mpt::Db db{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{}};
+    TrieDb tdb{db};
+    tdb.reset_root(load_header({}, db, BlockHeader{.number = 0}), 0);
+    auto ctx = std::make_unique<monad_statesync_server_context>(tdb);
+
+    constexpr uint64_t domain{0x0102030405060708ULL};
+    Address const addr{0x42};
+    Account const account{.balance = 123};
+
+    DomainStateDeltas domain_state;
+    DomainStateDeltas::accessor domain_it{};
+    domain_state.emplace(domain_it, domain, std::make_unique<StateDeltas>());
+    StateDeltas::accessor it{};
+    domain_it->second->emplace(
+        it,
+        addr,
+        StateDelta{.account = {std::nullopt, account}, .storage = {}});
+
+    auto builder = make_commit_builder(1, *ctx);
+    builder->add_domain_state_deltas(domain_state);
+    DomainStateDeltas const *const delta_sets[] = {&domain_state};
+    auto const roots = ctx->commit_domain_state_deltas(
+        bytes32_t{1}, *builder, delta_sets, 1, {});
+
+    ASSERT_EQ(roots.size(), 1);
+    EXPECT_EQ(roots[0].first, domain);
+    EXPECT_NE(roots[0].second, bytes32_t{});
+
+    auto const actual = ctx->read_account(addr, domain);
+    ASSERT_TRUE(actual.has_value());
+    EXPECT_EQ(actual->balance, account.balance);
+}
+
+TEST(StatesyncServerContext, forwards_empty_domain_state_commit)
+{
+    mpt::Db db{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{}};
+    TrieDb tdb{db};
+    tdb.reset_root(load_header({}, db, BlockHeader{.number = 0}), 0);
+    auto ctx = std::make_unique<monad_statesync_server_context>(tdb);
+
+    constexpr uint64_t domain{0x0102030405060708ULL};
+    Address const addr{0x42};
+
+    DomainStateDeltas domain_state;
+    DomainStateDeltas::accessor domain_it{};
+    domain_state.emplace(domain_it, domain, std::make_unique<StateDeltas>());
+
+    auto builder = make_commit_builder(1, *ctx);
+    builder->add_domain_state_deltas(domain_state);
+    DomainStateDeltas const *const delta_sets[] = {&domain_state};
+    auto const roots = ctx->commit_domain_state_deltas(
+        bytes32_t{1}, *builder, delta_sets, 1, {});
+
+    ASSERT_EQ(roots.size(), 1);
+    EXPECT_EQ(roots[0].first, domain);
+    EXPECT_EQ(roots[0].second, NULL_ROOT);
+    EXPECT_FALSE(ctx->read_account(addr, domain).has_value());
+}
+
 TEST(Deletions, history_length)
 {
     auto const deletions = std::make_unique<FinalizedDeletions>();
@@ -1823,7 +2609,6 @@ TEST(ProtocolValidation, upserts_reject_trailing_bytes)
 
     auto const dbname = tmp_dbname();
     {
-        monad::register_ethereum_state_machines();
         monad_statesync_client client;
         monad_statesync_client_context ctx{
             CHAIN_CONFIG_MONAD_TESTNET,
@@ -1882,6 +2667,242 @@ TEST(ProtocolValidation, upserts_reject_trailing_bytes)
             SYNC_TYPE_UPSERT_HEADER,
             header_buf.data(),
             header_buf.size()));
+    }
+    std::filesystem::remove(dbname);
+}
+
+TEST(ProtocolValidation, account_upsert_accepts_domain_suffix)
+{
+    StatesyncProtocolV1 proto;
+
+    auto const dbname = tmp_dbname();
+    {
+        monad_statesync_client client;
+        monad_statesync_client_context ctx{
+            CHAIN_CONFIG_MONAD_TESTNET,
+            {dbname},
+            std::nullopt,
+            4,
+            &client,
+            &statesync_send_request};
+
+        Address a{0xdeadbeef};
+        Account acct{.balance = 1};
+
+        byte_string buf = encode_account_db(a, acct);
+        buf += rlp::encode_unsigned(uint64_t{1});
+
+        EXPECT_TRUE(proto.handle_upsert(
+            &ctx, SYNC_TYPE_UPSERT_ACCOUNT, buf.data(), buf.size()));
+    }
+    std::filesystem::remove(dbname);
+}
+
+TEST(ProtocolValidation, account_upsert_rejects_zero_domain_suffix)
+{
+    StatesyncProtocolV1 proto;
+
+    auto const dbname = tmp_dbname();
+    {
+        monad_statesync_client client;
+        monad_statesync_client_context ctx{
+            CHAIN_CONFIG_MONAD_TESTNET,
+            {dbname},
+            std::nullopt,
+            4,
+            &client,
+            &statesync_send_request};
+
+        Address a{0xdeadbeef};
+        Account acct{.balance = 1};
+
+        byte_string buf = encode_account_db(a, acct);
+        buf += rlp::encode_unsigned(uint64_t{0});
+
+        EXPECT_FALSE(proto.handle_upsert(
+            &ctx, SYNC_TYPE_UPSERT_ACCOUNT, buf.data(), buf.size()));
+    }
+    std::filesystem::remove(dbname);
+}
+
+TEST(ProtocolValidation, storage_upsert_accepts_domain_suffix)
+{
+    StatesyncProtocolV1 proto;
+
+    auto const dbname = tmp_dbname();
+    {
+        monad_statesync_client client;
+        monad_statesync_client_context ctx{
+            CHAIN_CONFIG_MONAD_TESTNET,
+            {dbname},
+            std::nullopt,
+            4,
+            &client,
+            &statesync_send_request};
+
+        Address a{0xdeadbeef};
+        bytes32_t key{1};
+        bytes32_t val{2};
+
+        byte_string buf{};
+        buf += to_byte_string_view(a.bytes);
+        buf += encode_storage_db(key, val);
+        buf += rlp::encode_unsigned(uint64_t{1});
+
+        EXPECT_TRUE(proto.handle_upsert(
+            &ctx, SYNC_TYPE_UPSERT_STORAGE, buf.data(), buf.size()));
+    }
+    std::filesystem::remove(dbname);
+}
+
+TEST(ProtocolValidation, storage_upsert_rejects_malformed_domain_suffix)
+{
+    StatesyncProtocolV1 proto;
+
+    Address a{0xdeadbeef};
+    bytes32_t key{1};
+    bytes32_t val{2};
+
+    byte_string buf{};
+    buf += to_byte_string_view(a.bytes);
+    buf += encode_storage_db(key, val);
+    buf += rlp::encode_unsigned(uint64_t{1});
+    buf += rlp::encode_unsigned(uint64_t{2});
+
+    EXPECT_FALSE(proto.handle_upsert(
+        nullptr, SYNC_TYPE_UPSERT_STORAGE, buf.data(), buf.size()));
+}
+
+TEST(ProtocolValidation, account_deletion_accepts_domain_suffix)
+{
+    StatesyncProtocolV1 proto;
+
+    auto const dbname = tmp_dbname();
+    {
+        monad_statesync_client client;
+        monad_statesync_client_context ctx{
+            CHAIN_CONFIG_MONAD_TESTNET,
+            {dbname},
+            std::nullopt,
+            4,
+            &client,
+            &statesync_send_request};
+
+        Address a{0xdeadbeef};
+
+        byte_string buf{};
+        buf += to_byte_string_view(a.bytes);
+        buf += rlp::encode_unsigned(uint64_t{1});
+
+        EXPECT_TRUE(proto.handle_upsert(
+            &ctx, SYNC_TYPE_UPSERT_ACCOUNT_DELETE, buf.data(), buf.size()));
+    }
+    std::filesystem::remove(dbname);
+}
+
+TEST(ProtocolValidation, storage_deletion_accepts_domain_suffix)
+{
+    StatesyncProtocolV1 proto;
+
+    auto const dbname = tmp_dbname();
+    {
+        monad_statesync_client client;
+        monad_statesync_client_context ctx{
+            CHAIN_CONFIG_MONAD_TESTNET,
+            {dbname},
+            std::nullopt,
+            4,
+            &client,
+            &statesync_send_request};
+
+        Address a{0xdeadbeef};
+        bytes32_t key{1};
+
+        byte_string buf{};
+        buf += to_byte_string_view(a.bytes);
+        buf += rlp::encode_bytes32_compact(key);
+        buf += rlp::encode_unsigned(uint64_t{1});
+
+        EXPECT_TRUE(proto.handle_upsert(
+            &ctx, SYNC_TYPE_UPSERT_STORAGE_DELETE, buf.data(), buf.size()));
+    }
+    std::filesystem::remove(dbname);
+}
+
+TEST(ProtocolValidation, domain_suffix_rejects_zero_and_multiple_items)
+{
+    StatesyncProtocolV1 proto;
+
+    auto const dbname = tmp_dbname();
+    {
+        monad_statesync_client client;
+        monad_statesync_client_context ctx{
+            CHAIN_CONFIG_MONAD_TESTNET,
+            {dbname},
+            std::nullopt,
+            4,
+            &client,
+            &statesync_send_request};
+
+        Address const addr{0xdeadbeef};
+        Account const account{.balance = 1};
+        bytes32_t const key{1};
+        bytes32_t const value{2};
+
+        byte_string account_upsert = encode_account_db(addr, account);
+        byte_string storage_upsert{};
+        storage_upsert += to_byte_string_view(addr.bytes);
+        storage_upsert += encode_storage_db(key, value);
+        byte_string account_delete{};
+        account_delete += to_byte_string_view(addr.bytes);
+        byte_string storage_delete{};
+        storage_delete += to_byte_string_view(addr.bytes);
+        storage_delete += rlp::encode_bytes32_compact(key);
+
+        std::array const messages{
+            std::pair{SYNC_TYPE_UPSERT_ACCOUNT, std::move(account_upsert)},
+            std::pair{SYNC_TYPE_UPSERT_STORAGE, std::move(storage_upsert)},
+            std::pair{
+                SYNC_TYPE_UPSERT_ACCOUNT_DELETE, std::move(account_delete)},
+            std::pair{
+                SYNC_TYPE_UPSERT_STORAGE_DELETE, std::move(storage_delete)}};
+
+        for (auto const &[type, payload] : messages) {
+            auto zero_domain = payload;
+            zero_domain += rlp::encode_unsigned(uint64_t{0});
+            EXPECT_FALSE(proto.handle_upsert(
+                &ctx, type, zero_domain.data(), zero_domain.size()));
+
+            auto multiple_domains = payload;
+            multiple_domains += rlp::encode_unsigned(uint64_t{1});
+            multiple_domains += rlp::encode_unsigned(uint64_t{2});
+            EXPECT_FALSE(proto.handle_upsert(
+                &ctx, type, multiple_domains.data(), multiple_domains.size()));
+        }
+    }
+    std::filesystem::remove(dbname);
+}
+
+TEST(ProtocolValidation, header_upsert_rejects_trailing_bytes)
+{
+    StatesyncProtocolV1 proto;
+
+    auto const dbname = tmp_dbname();
+    {
+        monad_statesync_client client;
+        monad_statesync_client_context ctx{
+            CHAIN_CONFIG_MONAD_TESTNET,
+            {dbname},
+            std::nullopt,
+            4,
+            &client,
+            &statesync_send_request};
+
+        byte_string buf = rlp::encode_block_header(BlockHeader{.number = 1});
+        buf += rlp::encode_unsigned(uint64_t{1});
+
+        EXPECT_FALSE(proto.handle_upsert(
+            &ctx, SYNC_TYPE_UPSERT_HEADER, buf.data(), buf.size()));
     }
     std::filesystem::remove(dbname);
 }

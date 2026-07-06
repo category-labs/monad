@@ -87,7 +87,7 @@ Result<void> function_not_payable(uint256_be_t const &value)
     return outcome::success();
 }
 
-template <Traits traits>
+template <Traits traits, bool gasless>
 std::pair<ReserveBalanceContract::PrecompileFunc, uint64_t>
 ReserveBalanceContract::precompile_dispatch(byte_string_view &input)
 {
@@ -101,7 +101,8 @@ ReserveBalanceContract::precompile_dispatch(byte_string_view &input)
     switch (signature) {
     case PrecompileSelector::DIPPED_INTO_RESERVE:
         return {
-            &ReserveBalanceContract::precompile_dipped_into_reserve<traits>,
+            &ReserveBalanceContract::
+                precompile_dipped_into_reserve<traits, gasless>,
             DIPPED_INTO_RESERVE_OP_COST};
     default:
         return {&ReserveBalanceContract::precompile_fallback, FALLBACK_COST};
@@ -109,8 +110,9 @@ ReserveBalanceContract::precompile_dispatch(byte_string_view &input)
 }
 
 EXPLICIT_MONAD_TRAITS(ReserveBalanceContract::precompile_dispatch);
+EXPLICIT_MONAD_TRAITS_TRUE(ReserveBalanceContract::precompile_dispatch);
 
-template <Traits traits>
+template <Traits traits, bool gasless>
 Result<byte_string> ReserveBalanceContract::precompile_dipped_into_reserve(
     byte_string_view input, Address const &, uint256_be_t const &msg_value)
 {
@@ -120,8 +122,13 @@ Result<byte_string> ReserveBalanceContract::precompile_dipped_into_reserve(
         return ReserveBalanceError::InvalidInput;
     }
 
-    return byte_string{
-        abi_encode_bool(revert_transaction_cached<traits>(state_))};
+    if constexpr (gasless) {
+        return byte_string{abi_encode_bool(false)};
+    }
+    else {
+        return byte_string{
+            abi_encode_bool(revert_transaction_cached<traits>(state_))};
+    }
 }
 
 EXPLICIT_MONAD_TRAITS_MEMBER(

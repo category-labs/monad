@@ -15,7 +15,9 @@
 
 use std::{
     collections::HashMap,
+    error::Error,
     ffi::{CStr, CString},
+    fmt,
     path::Path,
     ptr::NonNull,
 };
@@ -59,6 +61,25 @@ pub struct EthCallExecutor {
     eth_call_executor: *mut ffi::monad_executor,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DomainSpokeConfigError {
+    ZeroAddress,
+    NativeConstructionFailed,
+}
+
+impl fmt::Display for DomainSpokeConfigError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ZeroAddress => formatter.write_str("domain spoke address must be nonzero"),
+            Self::NativeConstructionFailed => {
+                formatter.write_str("failed to construct domain-aware eth_call executor")
+            }
+        }
+    }
+}
+
+impl Error for DomainSpokeConfigError {}
+
 unsafe impl Send for EthCallExecutor {}
 unsafe impl Sync for EthCallExecutor {}
 
@@ -88,6 +109,51 @@ impl EthCallExecutor {
         };
 
         Self { eth_call_executor }
+    }
+
+    pub fn new_with_domain_spokes(
+        low_pool_config: PoolConfig,
+        high_pool_config: PoolConfig,
+        block_pool_config: PoolConfig,
+        tx_exec_num_fibers: u32,
+        node_lru_max_mem: u64,
+        triedb_path: &Path,
+        domain_spokes: &HashMap<u64, Address>,
+    ) -> Result<Self, DomainSpokeConfigError> {
+        monad_cxx::init_cxx_logging(tracing::Level::WARN);
+
+        let dbpath = CString::new(triedb_path.to_str().expect("invalid path"))
+            .expect("failed to create CString");
+        let mut ffi_spokes = Vec::with_capacity(domain_spokes.len());
+        for (&domain_chain_id, address) in domain_spokes {
+            if address.is_zero() {
+                return Err(DomainSpokeConfigError::ZeroAddress);
+            }
+            let mut spoke_address = [0u8; 20];
+            spoke_address.copy_from_slice(address.as_slice());
+            ffi_spokes.push(ffi::monad_domain_spoke {
+                domain_chain_id,
+                spoke_address,
+            });
+        }
+
+        let eth_call_executor = unsafe {
+            ffi::monad_executor_create_with_domain_spokes(
+                low_pool_config,
+                high_pool_config,
+                block_pool_config,
+                tx_exec_num_fibers,
+                node_lru_max_mem,
+                dbpath.as_c_str().as_ptr(),
+                ffi_spokes.as_ptr(),
+                ffi_spokes.len(),
+            )
+        };
+        if eth_call_executor.is_null() {
+            return Err(DomainSpokeConfigError::NativeConstructionFailed);
+        }
+
+        Ok(Self { eth_call_executor })
     }
 }
 

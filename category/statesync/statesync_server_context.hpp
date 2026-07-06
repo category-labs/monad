@@ -24,6 +24,8 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <optional>
+#include <span>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -35,12 +37,13 @@ struct Deletion
 {
     Address address;
     std::optional<bytes32_t> key;
+    std::optional<uint64_t> domain_id;
 
     friend bool operator==(Deletion const &, Deletion const &) = default;
 };
 
-static_assert(sizeof(Deletion) == 53);
-static_assert(alignof(Deletion) == 1);
+static_assert(sizeof(Deletion) == 72);
+static_assert(alignof(Deletion) == 8);
 
 struct FinalizedDeletionsEntry
 {
@@ -71,7 +74,7 @@ public:
     void write(uint64_t block_number, std::vector<Deletion> const &);
 };
 
-static_assert(sizeof(FinalizedDeletions) == 108764832);
+static_assert(sizeof(FinalizedDeletions) == 146764832);
 static_assert(alignof(FinalizedDeletions) == 8);
 
 struct ProposedDeletions
@@ -100,16 +103,19 @@ struct monad_statesync_server_context final : public monad::Db
 
     virtual bool is_page_encoded() const override;
 
-    virtual std::optional<monad::Account>
-    read_account(monad::Address const &addr) override;
+    virtual std::optional<monad::Account> read_account(
+        monad::Address const &addr,
+        std::optional<uint64_t> const &domain = std::nullopt) override;
 
     virtual monad::bytes32_t read_storage(
         monad::Address const &addr, monad::Incarnation,
-        monad::bytes32_t const &key) override;
+        monad::bytes32_t const &key,
+        std::optional<uint64_t> const &domain = std::nullopt) override;
 
     virtual monad::storage_page_t read_storage_page(
         monad::Address const &addr, monad::Incarnation,
-        monad::bytes32_t const &page_key) override;
+        monad::bytes32_t const &page_key,
+        std::optional<uint64_t> const &domain = std::nullopt) override;
 
     virtual monad::vm::SharedIntercode
     read_code(monad::bytes32_t const &hash) override;
@@ -139,6 +145,11 @@ struct monad_statesync_server_context final : public monad::Db
         monad::bytes32_t const &, monad::CommitBuilder &,
         monad::BlockHeader const &, monad::StateDeltas const &,
         std::function<void(monad::BlockHeader &)>) override;
+
+    virtual monad::DomainStateRoots commit_domain_state_deltas(
+        monad::bytes32_t const &, monad::CommitBuilder &,
+        std::span<monad::DomainStateDeltas const *const>, uint64_t,
+        monad::PopulateDomainHeadersFn const &) override;
 
     virtual uint64_t get_block_number() const override;
 };

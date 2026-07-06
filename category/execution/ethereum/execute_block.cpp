@@ -21,6 +21,7 @@
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
@@ -46,6 +47,7 @@
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/staking/execute_block_prelude.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -153,21 +155,28 @@ std::vector<std::vector<std::optional<Address>>> recover_authorities(
     return authorities;
 }
 
-template <Traits traits>
+template <Traits traits, bool gasless>
+    requires(!gasless || is_monad_trait_v<traits>)
 Result<std::vector<Receipt>> execute_block_transactions(
     Chain const &chain, BlockHeader const &header,
     std::span<Transaction const> const transactions,
-    std::span<Address const> const senders,
+    std::span<std::optional<Address> const> const senders,
     std::span<std::vector<std::optional<Address>> const> const authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::FiberGroup &priority_pool, BlockMetrics &block_metrics,
     std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
-    ChainContext<traits> const &chain_ctx, bool const trace_transfers)
+    ChainContext<traits> const &chain_ctx, bool const trace_transfers,
+    std::span<uint8_t> const skipped_transactions,
+    std::optional<Address> const domain_spoke)
 {
     MONAD_ASSERT(senders.size() == transactions.size());
+    MONAD_ASSERT(senders.size() == authorities.size());
     MONAD_ASSERT(senders.size() == call_tracers.size());
     MONAD_ASSERT(senders.size() == state_tracers.size());
+    MONAD_ASSERT(
+        skipped_transactions.empty() ||
+        skipped_transactions.size() == transactions.size());
 
     std::shared_ptr<boost::fibers::promise<void>[]> promises{
         new boost::fibers::promise<void>[transactions.size() + 1]};
@@ -195,24 +204,63 @@ Result<std::vector<Receipt>> execute_block_transactions(
              &call_tracer = *call_tracers[i],
              &state_tracer = *state_tracers[i],
              &chain_ctx = chain_ctx,
+             domain_spoke = domain_spoke,
              trace_transfers = trace_transfers] {
                 record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
                 try {
-                    results[i] = dispatch_transaction<traits>(
-                        chain,
-                        i,
-                        transaction,
-                        sender,
-                        authorities,
-                        header,
-                        block_hash_buffer,
-                        block_state,
-                        block_metrics,
-                        promises[i],
-                        call_tracer,
-                        state_tracer,
-                        chain_ctx,
-                        trace_transfers);
+                    if constexpr (gasless) {
+                        if (!sender.has_value()) {
+                            promises[i].get_future().wait();
+                            LOG_WARNING(
+                                "Skipped gasless transaction {} in block {}: "
+                                "missing sender",
+                                i,
+                                header.number);
+                            call_tracer.reset();
+                            trace::reset(state_tracer);
+                            results[i] = Receipt{
+                                .status = 0,
+                                .gas_used = 0,
+                                .type = transaction.type};
+                        }
+                        else {
+                            results[i] = dispatch_transaction<traits, true>(
+                                chain,
+                                i,
+                                transaction,
+                                *sender,
+                                authorities,
+                                header,
+                                block_hash_buffer,
+                                block_state,
+                                block_metrics,
+                                promises[i],
+                                call_tracer,
+                                state_tracer,
+                                chain_ctx,
+                                trace_transfers,
+                                domain_spoke);
+                        }
+                    }
+                    else {
+                        MONAD_ASSERT(sender.has_value());
+                        results[i] = dispatch_transaction<traits, false>(
+                            chain,
+                            i,
+                            transaction,
+                            *sender,
+                            authorities,
+                            header,
+                            block_hash_buffer,
+                            block_state,
+                            block_metrics,
+                            promises[i],
+                            call_tracer,
+                            state_tracer,
+                            chain_ctx,
+                            trace_transfers,
+                            domain_spoke);
+                    }
                     if (results[i]->has_error()) {
                         record_txn_error_event(i, results[i]->error());
                     }
@@ -245,6 +293,14 @@ Result<std::vector<Receipt>> execute_block_transactions(
                 results[i].value().assume_error().message().c_str());
         }
         BOOST_OUTCOME_TRY(auto retval, std::move(results[i].value()));
+        if constexpr (gasless) {
+            if (!skipped_transactions.empty()) {
+                // Gasless validation skips use a synthetic zero-gas receipt.
+                // Executed EVM transactions consume at least intrinsic gas,
+                // and system transactions are rejected in gasless mode.
+                skipped_transactions[i] = retval.gas_used == 0;
+            }
+        }
         retvals.push_back(std::move(retval));
     }
 
@@ -261,7 +317,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
     Chain const &chain, Block const &block,
-    std::span<Address const> const senders,
+    std::span<std::optional<Address> const> const senders,
     std::span<std::vector<std::optional<Address>> const> const authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::FiberGroup &priority_pool, BlockMetrics &block_metrics,
@@ -341,5 +397,6 @@ Result<std::vector<Receipt>> execute_block(
 // Explicit instantiations using EXPLICIT_TRAITS macro
 EXPLICIT_TRAITS(execute_block_transactions);
 EXPLICIT_TRAITS(execute_block);
+EXPLICIT_MONAD_TRAITS_TRUE(execute_block_transactions);
 
 MONAD_NAMESPACE_END

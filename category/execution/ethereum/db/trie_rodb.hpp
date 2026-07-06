@@ -17,6 +17,9 @@
 
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/monad_exception.hpp>
+#include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
@@ -26,6 +29,8 @@
 #include <category/vm/vm.hpp>
 
 #include <category/core/hex.hpp>
+
+#include <intx/intx.hpp>
 
 #include <memory>
 #include <optional>
@@ -79,14 +84,28 @@ public:
         block_number_ = block_number;
     }
 
-    virtual std::optional<Account> read_account(Address const &addr) override
+    virtual std::optional<Account> read_account(
+        Address const &addr,
+        std::optional<uint64_t> const &domain = std::nullopt) override
     {
-        auto acc_leaf_res = db_.find(
-            prefix_cursor_,
-            mpt::concat(
-                STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
-            block_number_);
+        auto const addr_hash = keccak256({addr.bytes, sizeof(addr.bytes)});
+        auto acc_leaf_res = [&] {
+            if (domain.has_value()) {
+                uint8_t domain_bytes[sizeof(uint64_t)];
+                intx::be::store(domain_bytes, *domain);
+                return db_.find(
+                    prefix_cursor_,
+                    mpt::concat(
+                        DOMAIN_STATE_NIBBLE,
+                        mpt::NibblesView{to_byte_string_view(domain_bytes)},
+                        mpt::NibblesView{addr_hash}),
+                    block_number_);
+            }
+            return db_.find(
+                prefix_cursor_,
+                mpt::concat(STATE_NIBBLE, mpt::NibblesView{addr_hash}),
+                block_number_);
+        }();
         if (!acc_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(
                 acc_leaf_res.assume_error() !=
@@ -100,19 +119,36 @@ public:
     }
 
     virtual bytes32_t read_storage(
-        Address const &addr, Incarnation, bytes32_t const &key) override
+        Address const &addr, Incarnation, bytes32_t const &key,
+        std::optional<uint64_t> const &domain = std::nullopt) override
     {
         // On a page-encoded db the storage leaf is the page that contains the
         // slot, keyed by page_key; the slot value lives at its offset within.
         bytes32_t const lookup_key = storage_lookup_key(key);
-        auto storage_leaf_res = db_.find(
-            prefix_cursor_,
-            mpt::concat(
-                STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{
-                    keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
-            block_number_);
+        auto const addr_hash = keccak256({addr.bytes, sizeof(addr.bytes)});
+        auto const key_hash =
+            keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)});
+        auto storage_leaf_res = [&] {
+            if (domain.has_value()) {
+                uint8_t domain_bytes[sizeof(uint64_t)];
+                intx::be::store(domain_bytes, *domain);
+                return db_.find(
+                    prefix_cursor_,
+                    mpt::concat(
+                        DOMAIN_STATE_NIBBLE,
+                        mpt::NibblesView{to_byte_string_view(domain_bytes)},
+                        mpt::NibblesView{addr_hash},
+                        mpt::NibblesView{key_hash}),
+                    block_number_);
+            }
+            return db_.find(
+                prefix_cursor_,
+                mpt::concat(
+                    STATE_NIBBLE,
+                    mpt::NibblesView{addr_hash},
+                    mpt::NibblesView{key_hash}),
+                block_number_);
+        }();
         if (!storage_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(
                 storage_leaf_res.assume_error() !=
@@ -125,8 +161,9 @@ public:
         return page[page_encoded_ ? compute_slot_offset(key) : 0];
     }
 
-    virtual storage_page_t
-    read_storage_page(Address const &, Incarnation, bytes32_t const &) override
+    virtual storage_page_t read_storage_page(
+        Address const &, Incarnation, bytes32_t const &,
+        std::optional<uint64_t> const & = std::nullopt) override
     {
         MONAD_ABORT("TrieRODb read_storage_page is currently not supported");
     }
@@ -153,6 +190,14 @@ public:
     virtual void commit(
         bytes32_t const &, CommitBuilder &, BlockHeader const &,
         StateDeltas const &, std::function<void(BlockHeader &)>) override
+    {
+        MONAD_ABORT();
+    }
+
+    virtual DomainStateRoots commit_domain_state_deltas(
+        bytes32_t const &, CommitBuilder &,
+        std::span<DomainStateDeltas const *const>, uint64_t,
+        PopulateDomainHeadersFn const &) override
     {
         MONAD_ABORT();
     }
@@ -185,6 +230,66 @@ public:
     virtual bytes32_t state_root() override
     {
         MONAD_ABORT();
+    }
+
+    bytes32_t domain_state_root(uint64_t const domain_id)
+    {
+        uint8_t domain_bytes[sizeof(domain_id)];
+        intx::be::store(domain_bytes, domain_id);
+        auto const res = db_.find(
+            prefix_cursor_,
+            mpt::concat(
+                domain_state_nibbles,
+                mpt::NibblesView{to_byte_string_view(domain_bytes)}),
+            block_number_);
+        if (!res.has_value() || res.value().node->data().empty()) {
+            return NULL_ROOT;
+        }
+        auto const data = res.value().node->data();
+        MONAD_ASSERT(data.size() == sizeof(bytes32_t));
+        return to_bytes(data);
+    }
+
+    std::optional<BlockHeader> read_domain_eth_header(uint64_t const domain_id)
+    {
+        uint8_t domain_bytes[sizeof(domain_id)];
+        intx::be::store(domain_bytes, domain_id);
+        auto const res = db_.find(
+            prefix_cursor_,
+            mpt::concat(
+                domain_block_header_nibbles,
+                mpt::NibblesView{to_byte_string_view(domain_bytes)}),
+            block_number_);
+        if (!res.has_value()) {
+            auto const &error = res.assume_error();
+            MONAD_ASSERT_THROW(
+                error != ::monad::mpt::DbError::version_no_longer_exist,
+                "Block was invalidated in db while execution was in progress");
+            MONAD_ASSERT_PRINTF(
+                error == ::monad::mpt::DbError::key_not_found,
+                "FATAL: failed to read domain header for domain %lu at "
+                "block %lu: %s",
+                domain_id,
+                block_number_,
+                error.message().c_str());
+            return std::nullopt;
+        }
+        auto encoded_header = res.value().node->value();
+        auto decoded = rlp::decode_block_header(encoded_header);
+        MONAD_ASSERT_PRINTF(
+            decoded.has_value(),
+            "FATAL: malformed domain header for domain %lu at block "
+            "%lu: %s",
+            domain_id,
+            block_number_,
+            decoded.error().message().c_str());
+        MONAD_ASSERT_PRINTF(
+            encoded_header.empty(),
+            "FATAL: trailing data in domain header for domain %lu at "
+            "block %lu",
+            domain_id,
+            block_number_);
+        return std::move(decoded).value();
     }
 
     virtual bytes32_t receipts_root() override

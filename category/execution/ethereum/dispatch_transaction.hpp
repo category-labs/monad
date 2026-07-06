@@ -42,7 +42,8 @@ struct CallTracerBase;
 struct Chain;
 struct Transaction;
 
-template <Traits traits>
+template <Traits traits, bool gasless = false>
+    requires(!gasless || is_monad_trait_v<traits>)
 Result<Receipt> dispatch_transaction(
     Chain const &chain, uint64_t const i, Transaction const &transaction,
     Address const &sender,
@@ -51,6 +52,7 @@ Result<Receipt> dispatch_transaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
-    bool trace_transfers = false);
+    bool trace_transfers = false,
+    std::optional<Address> domain_spoke = std::nullopt);
 
 MONAD_NAMESPACE_END

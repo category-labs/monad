@@ -178,6 +178,9 @@ add_library(
   "ethereum/validate_transaction.hpp"
   "ethereum/validate_transaction_error.cpp"
   "ethereum/validate_transaction_error.hpp"
+  # monad/chain helpers used by ethereum static validation
+  "monad/chain/domain_chain_id.cpp"
+  "monad/chain/domain_chain_id.hpp"
   # ethereum/metrics
   "ethereum/metrics/block_metrics.hpp"
   # ethereum/rlp
@@ -251,6 +254,10 @@ add_library(
   "monad/monad_precompiles_gas_cost_impl.cpp"
   "monad/monad_transaction_gas.cpp"
   "monad/monad_transaction_gas.hpp"
+  "monad/private_domain_hpke.cpp"
+  "monad/private_domain_hpke.hpp"
+  "monad/private_domain_scanner.cpp"
+  "monad/private_domain_scanner.hpp"
   "monad/reserve_balance.cpp"
   "monad/reserve_balance.h"
   "monad/reserve_balance.hpp"
@@ -303,6 +310,8 @@ add_library(
   monad_execution_runloop OBJECT
   runloop/file_io.hpp
   runloop/file_io.cpp
+  runloop/private_domain_execution.cpp
+  runloop/private_domain_execution.hpp
   runloop/runloop_ethereum.cpp
   runloop/runloop_ethereum.hpp
   runloop/runloop_interface_monad.cpp
@@ -370,6 +379,7 @@ target_link_libraries(
   PUBLIC monad_trie
   PUBLIC evmc
   PUBLIC magic_enum::magic_enum
+  PUBLIC OpenSSL::Crypto
   PUBLIC quill::quill)
 monad_compile_options(monad_execution_native)
 

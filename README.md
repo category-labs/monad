@@ -43,6 +43,7 @@ Execution has two kinds of dependencies on third-party libraries:
 
 - gcc-15 or clang-19
 - CMake 3.27
+- OpenSSL 3.5
 - Even when using clang, the only standard library supported is libstdc++;
   libc++ may work but it is not a tested platform
 
@@ -115,6 +116,50 @@ You can also run the full test suite in parallel with:
 ```
 CTEST_PARALLEL_LEVEL=$(nproc) ctest
 ```
+
+### Private domain HPKE keys
+
+Private domain payload execution is encrypted-only. Configure each domain
+together with its domain-local DomainSpoke address and RFC 9180 receiver key,
+and point the scanner at the L1 DomainHub (see
+[README_DOMAINS.md](README_DOMAINS.md)):
+
+```shell
+monad ... \
+  --private-domain 85679 0x5FbDB2315678afecb367f032d93F642f64180aa3 /secure/domain-85679-private.pem \
+  --private-domain-sequencer 0x5FbDB2315678afecb367f032d93F642f64180aa3
+```
+
+Generate the unencrypted P-256 PKCS#8 PEM private key and matching public key
+with OpenSSL:
+
+```shell
+openssl genpkey -algorithm EC \
+  -pkeyopt ec_paramgen_curve:P-256 \
+  -out domain-private.pem \
+  -outpubkey domain-public.pem
+chmod 600 domain-private.pem
+```
+
+Encrypted private-key PEM files are not supported. Back up the private key and
+retain it for historical replay. Distribute the public key to transaction
+producers over an authenticated external channel. Every replica executing the
+same domain must share this receiver private key; the profile does not
+support distinct per-replica keys.
+
+The fixed profile is RFC 9180 Base mode with DHKEM(P-256, HKDF-SHA256),
+HKDF-SHA256, AES-128-GCM, empty AAD, and info
+`private-domain-hpke-rfc9180-v1`. The outer bytes payload is the 65-byte
+uncompressed encapsulated P-256 point followed by ciphertext and tag. The
+encrypted plaintext is `0x01 || signed_transaction_bytes`.
+
+Base mode does not authenticate the sender and does not provide forward
+secrecy after receiver-key compromise. Empty AAD permits a valid ciphertext to
+be moved to another matching outer envelope; inner transaction nonce and chain
+validation remain the replay boundary. Decrypted domain transactions are
+persisted in the local database. Reverted outer calls are still scanned, so
+the DomainHub call is not a producer-authentication boundary and operators
+must account for unauthenticated gasless work in their denial-of-service model.
 
 ## Compiling zkVM binary
 

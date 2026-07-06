@@ -22,6 +22,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
@@ -55,6 +56,8 @@ class State
     BlockState &block_state_;
 
     Incarnation const incarnation_;
+
+    std::optional<uint64_t> domain_{};
 
     Map<Address, OriginalAccountState> original_{};
 
@@ -93,12 +96,19 @@ private:
     std::optional<Account> &current_account(Address const &);
 
 public:
-    State(BlockState &, Incarnation, bool relaxed_validation = false);
+    State(
+        BlockState &, Incarnation, bool relaxed_validation = false,
+        std::optional<uint64_t> domain = std::nullopt);
 
     State(State &&) = delete;
     State(State const &) = delete;
     State &operator=(State &&) = delete;
     State &operator=(State const &) = delete;
+
+    std::optional<uint64_t> const &get_domain() const
+    {
+        return domain_;
+    }
 
     Map<Address, OriginalAccountState> const &original() const;
 

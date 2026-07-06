@@ -2213,17 +2213,19 @@ TYPED_TEST(MonadTraitsTest, code_tracer_records_reserve_balance_code)
     // neither of which inserts into current_.
     state.access_account(ADDR_B);
 
-    ankerl::unordered_dense::segmented_set<Address> const empty_neighbours;
     std::vector<Address> const senders = {SENDER};
     std::vector<std::vector<std::optional<Address>>> const authorities = {{}};
-    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
-    senders_and_authorities.insert(SENDER);
+    std::vector<std::optional<uint64_t>> const domains = {std::nullopt};
+    auto const senders_and_authorities =
+        combine_senders_and_authorities(senders, authorities, domains);
+    AddressesByDomain const empty_neighbours;
     ChainContext<Trait> const ctx{
         .grandparent_senders_and_authorities = empty_neighbours,
         .parent_senders_and_authorities = empty_neighbours,
         .senders_and_authorities = senders_and_authorities,
         .senders = senders,
-        .authorities = authorities};
+        .authorities = authorities,
+        .domains = domains};
 
     Transaction const tx{.max_fee_per_gas = 1, .gas_limit = 21'000};
     trace::StateTracer state_tracer = trace::CodeTracer{};

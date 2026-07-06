@@ -47,6 +47,7 @@
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/tracer_config.h>
+#include <category/execution/monad/chain/domain_chain_id.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/mpt/db.hpp>
@@ -111,6 +112,38 @@ namespace
     auto const simulate_gas_limit = std::numeric_limits<uint64_t>::max();
     constexpr size_t simulate_max_calls = 256;
 
+    TEST(MonadExecutorConfiguration, rejects_invalid_domain_spoke_mappings)
+    {
+        monad_executor_pool_config const conf = {1, 1, max_timeout, 1};
+        monad_domain_spoke zero_spoke{.domain_chain_id = 1};
+        EXPECT_EQ(
+            monad_executor_create_with_domain_spokes(
+                conf,
+                conf,
+                conf,
+                1,
+                node_lru_max_mem,
+                "unused",
+                &zero_spoke,
+                1),
+            nullptr);
+
+        monad_domain_spoke duplicate_spokes[2] = {
+            {.domain_chain_id = 1, .spoke_address = {1}},
+            {.domain_chain_id = 1, .spoke_address = {2}}};
+        EXPECT_EQ(
+            monad_executor_create_with_domain_spokes(
+                conf,
+                conf,
+                conf,
+                1,
+                node_lru_max_mem,
+                "unused",
+                duplicate_spokes,
+                2),
+            nullptr);
+    }
+
     auto create_executor(std::string const &dbname)
     {
         monad_executor_pool_config const conf = {1, 2, max_timeout, 1000};
@@ -124,10 +157,50 @@ namespace
             dbname.c_str());
     }
 
+    auto create_executor(
+        std::string const &dbname, uint64_t const domain_chain_id,
+        Address const &spoke_address)
+    {
+        monad_executor_pool_config const conf = {1, 2, max_timeout, 1000};
+        unsigned const tx_exec_num_fibers = 10;
+        monad_domain_spoke spoke{.domain_chain_id = domain_chain_id};
+        std::memcpy(
+            spoke.spoke_address,
+            spoke_address.bytes,
+            sizeof(spoke.spoke_address));
+        return monad_executor_create_with_domain_spokes(
+            conf,
+            conf,
+            conf,
+            tx_exec_num_fibers,
+            node_lru_max_mem,
+            dbname.c_str(),
+            &spoke,
+            1);
+    }
+
     std::vector<uint8_t> to_vec(byte_string const &bs)
     {
         std::vector<uint8_t> v{bs.begin(), bs.end()};
         return v;
+    }
+
+    bytes32_t commit_domain(
+        TrieDb &tdb, StateDeltas &state, DomainStateDeltas const &domain_state,
+        Code const &code, BlockHeader const &header)
+    {
+        bytes32_t const block_id =
+            header.number ? bytes32_t{header.number} : NULL_HASH_BLAKE3;
+        auto builder = make_commit_builder(header.number, tdb);
+        builder->add_state_deltas(state)
+            .add_domain_state_deltas(domain_state, true)
+            .add_code(code);
+        tdb.commit(block_id, *builder, header, state, [&](BlockHeader &h) {
+            h.state_root = tdb.state_root();
+        });
+        tdb.finalize(header.number, block_id);
+        tdb.set_block_and_prefix(header.number);
+        return block_id;
     }
 
     // Machine selects the db state machine: OnDiskMachine = slot-encoded,
@@ -318,6 +391,65 @@ TEST_F(EthCallFixture, simple_success_call)
         0x5353535353535353535353535353535353535353_address};
 
     Transaction const tx{
+        .sc = {.chain_id = MonadDevnet{}.get_chain_id()},
+        .gas_limit = 100000u,
+        .to = to,
+        .type = TransactionType::eip1559};
+    BlockHeader const header{.number = 256};
+
+    commit_sequential(tdb, StateDeltas({}), {}, header);
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        NOOP_TRACER,
+        true);
+    f.get();
+
+    EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->encoded_trace_len, 0);
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 21000);
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, typed_eth_call_defaults_zero_chain_id)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, StateDeltas({}), {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto from{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto to{
+        0x5353535353535353535353535353535353535353_address};
+
+    Transaction const tx{
         .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
     BlockHeader const header{.number = 256};
 
@@ -374,6 +506,7 @@ TEST_F(EthCallFixture, insufficient_balance)
         0x5353535353535353535353535353535353535353_address};
 
     Transaction const tx{
+        .sc = {.chain_id = MonadDevnet{}.get_chain_id()},
         .gas_limit = 100000u,
         .value = 1000000000000,
         .to = to,
@@ -434,7 +567,10 @@ TEST_F(EthCallFixture, on_proposed_block)
         0x5353535353535353535353535353535353535353_address};
 
     Transaction const tx{
-        .gas_limit = 100000u, .to = to, .type = TransactionType::eip1559};
+        .sc = {.chain_id = MonadDevnet{}.get_chain_id()},
+        .gas_limit = 100000u,
+        .to = to,
+        .type = TransactionType::eip1559};
     BlockHeader const header{.number = 256};
 
     commit_simple(tdb, StateDeltas({}), {}, bytes32_t{256}, header);
@@ -509,6 +645,7 @@ TEST_F(EthCallFixture, blockhash_before_fork)
     evm_as::compile(eb, bytecode);
 
     Transaction const tx{
+        .sc = {.chain_id = MonadDevnet{}.get_chain_id()},
         .gas_limit = 100000u,
         .to = std::nullopt,
         .type = TransactionType::eip1559,
@@ -587,6 +724,7 @@ TEST_F(EthCallFixture, failed_to_read)
     ASSERT_TRUE(evm_as::validate(eb));
     evm_as::compile(eb, bytecode);
     Transaction const tx{
+        .sc = {.chain_id = MonadDevnet{}.get_chain_id()},
         .gas_limit = 100000u,
         .to = std::nullopt,
         .type = TransactionType::eip1559,
@@ -822,6 +960,7 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
         BlockHeader{.number = 0});
 
     Transaction const tx{
+        .sc = {.chain_id = MonadDevnet{}.get_chain_id()},
         .gas_limit = 1'000'000u,
         .value = 1,
         .to = addr2,
@@ -2592,19 +2731,22 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
 
     {
         // Simulate the transaction to verify that it indeed should revert.
-        ankerl::unordered_dense::segmented_set<Address> const
-            grandparent_senders_and_authorities;
-        ankerl::unordered_dense::segmented_set<Address> const
-            parent_senders_and_authorities = {sender};
-        ankerl::unordered_dense::segmented_set<Address> const
-            senders_and_authorities = {sender};
+        std::vector<std::optional<uint64_t>> const domains(
+            senders.size(), std::nullopt);
+        auto senders_and_authorities =
+            combine_senders_and_authorities(senders, authorities, domains);
+        decltype(senders_and_authorities)
+            const grandparent_senders_and_authorities;
+        decltype(senders_and_authorities) parent_senders_and_authorities;
+        parent_senders_and_authorities[std::nullopt].insert(sender);
         ChainContext<monad::MonadTraits<MONAD_NEXT>> const chain_context{
             .grandparent_senders_and_authorities =
                 grandparent_senders_and_authorities,
             .parent_senders_and_authorities = parent_senders_and_authorities,
             .senders_and_authorities = senders_and_authorities,
             .senders = senders,
-            .authorities = authorities};
+            .authorities = authorities,
+            .domains = domains};
 
         BlockState block_state{tdb, vm};
         State state{
@@ -3697,6 +3839,469 @@ TEST_F(EthCallFixture, prestate_state_overrides)
     }
 
     monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, unconfigured_domain_is_rejected)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto from = Address{};
+    static constexpr auto to = ADDR_B;
+    uint256_t const domain_chain_id =
+        (uint256_t{1} << 16) | MonadDevnet{}.get_chain_id();
+
+    using namespace monad::vm::utils;
+    auto const eb =
+        evm_as::latest().chainid().push0().mstore().push(32).push0().return_();
+    std::vector<uint8_t> bytecode;
+    ASSERT_TRUE(evm_as::validate(eb));
+    evm_as::compile(eb, bytecode);
+
+    Transaction const tx{
+        .sc = {.chain_id = domain_chain_id},
+        .gas_limit = 100000u,
+        .to = to,
+        .type = TransactionType::eip1559};
+    BlockHeader const header{.number = 256};
+
+    commit_sequential(tdb, {}, {}, header);
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+    add_override_address(state_override, to.bytes, sizeof(Address));
+    set_override_code(
+        state_override,
+        to.bytes,
+        sizeof(Address),
+        bytecode.data(),
+        bytecode.size());
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        NOOP_TRACER,
+        true);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_REJECTED);
+    ASSERT_NE(ctx.result->message, nullptr);
+    EXPECT_STREQ(ctx.result->message, "private domain is not configured");
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, domain_call_validation)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto from = Address{};
+    BlockHeader const header{.number = 256};
+    commit_sequential(tdb, {}, {}, header);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+    auto const submit = [&](Transaction const &tx) {
+        auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+        auto const rlp_header = to_vec(rlp::encode_block_header(header));
+        auto const rlp_sender =
+            to_vec(rlp::encode_address(std::make_optional(from)));
+        auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+        struct callback_context ctx;
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        f.get();
+
+        return std::pair{
+            ctx.result->status_code,
+            ctx.result->message != nullptr ? std::string{ctx.result->message}
+                                           : std::string{}};
+    };
+
+    uint256_t const domain_chain_id =
+        (uint256_t{1} << 16) | MonadDevnet{}.get_chain_id();
+    static constexpr Address SPOKE_ADDR =
+        0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address;
+    monad_executor_destroy(executor);
+    executor = create_executor(
+        dbname.string(), static_cast<uint64_t>(domain_chain_id), SPOKE_ADDR);
+    auto const [value_status, value_message] = submit(Transaction{
+        .sc = {.chain_id = domain_chain_id},
+        .gas_limit = 100000u,
+        .value = 1,
+        .to = ADDR_B,
+        .type = TransactionType::eip1559});
+    EXPECT_EQ(value_status, EVMC_REJECTED);
+    EXPECT_EQ(value_message, "gasless transaction has nonzero value");
+
+    uint256_t const wrong_suffix_chain_id =
+        (uint256_t{1} << 16) | (MonadDevnet{}.get_chain_id() + 1);
+    auto const [suffix_status, suffix_message] = submit(Transaction{
+        .sc = {.chain_id = wrong_suffix_chain_id},
+        .gas_limit = 100000u,
+        .to = ADDR_B,
+        .type = TransactionType::eip1559});
+    EXPECT_EQ(suffix_status, EVMC_REJECTED);
+    EXPECT_EQ(suffix_message, "wrong chain id");
+
+    uint256_t const oversized_chain_id =
+        (uint256_t{1} << 64) | MonadDevnet{}.get_chain_id();
+    auto const [oversized_status, oversized_message] = submit(Transaction{
+        .sc = {.chain_id = oversized_chain_id},
+        .gas_limit = 100000u,
+        .to = ADDR_B,
+        .type = TransactionType::eip1559});
+    EXPECT_EQ(oversized_status, EVMC_REJECTED);
+    EXPECT_EQ(oversized_message, "wrong chain id");
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TYPED_TEST(EthCallEncodingFixture, domain_storage_override)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(this->tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    uint256_t const domain_chain_id =
+        (uint256_t{1} << 16) | MonadDevnet{}.get_chain_id();
+    auto const domain_addr_res =
+        domain_from_chain_id(domain_chain_id, MonadDevnet{}.get_chain_id());
+    ASSERT_TRUE(domain_addr_res.has_value());
+    ASSERT_TRUE(domain_addr_res.value().has_value());
+    uint64_t const domain_addr = *domain_addr_res.value();
+
+    static constexpr auto from = Address{};
+    static constexpr Address CONTRACT_ADDR =
+        0xcccccccccccccccccccccccccccccccccccccccc_address;
+    static constexpr Address SPOKE_ADDR =
+        0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address;
+
+    using namespace monad::vm::utils;
+    auto const eb = evm_as::latest()
+                        .push0()
+                        .sload()
+                        .push0()
+                        .mstore()
+                        .push(32)
+                        .push0()
+                        .return_();
+    std::vector<uint8_t> bytecode_container{};
+    ASSERT_TRUE(evm_as::validate(eb));
+    evm_as::compile(eb, bytecode_container);
+    byte_string_view const bytecode_view{
+        bytecode_container.data(), bytecode_container.size()};
+    auto const code_hash = to_bytes(keccak256(bytecode_view));
+    auto const compiled_code = vm::make_shared_intercode(bytecode_view);
+    byte_string const allow_code{
+        0x60, 0x01, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3};
+    auto const allow_code_hash = to_bytes(keccak256(allow_code));
+    auto const compiled_allow_code = vm::make_shared_intercode(allow_code);
+
+    bytes32_t const storage_key = store_be_as<bytes32_t>(uint256_t{0});
+    bytes32_t const original_storage_value =
+        store_be_as<bytes32_t>(uint256_t{7});
+    bytes32_t const root_storage_value = store_be_as<bytes32_t>(uint256_t{13});
+    bytes32_t const override_storage_value =
+        store_be_as<bytes32_t>(uint256_t{64});
+
+    Transaction const tx{
+        .sc = {.chain_id = domain_chain_id},
+        .gas_limit = 100000u,
+        .to = CONTRACT_ADDR,
+        .type = TransactionType::eip1559};
+    BlockHeader const header{.number = 256};
+
+    DomainStateDeltas domain_deltas;
+    {
+        DomainStateDeltas::accessor domain_it{};
+        domain_deltas.emplace(
+            domain_it, domain_addr, std::make_unique<StateDeltas>());
+        StateDeltas::accessor it{};
+        domain_it->second->emplace(
+            it,
+            CONTRACT_ADDR,
+            StateDelta{
+                .account =
+                    {std::nullopt, Account{.code_hash = code_hash, .nonce = 1}},
+                .storage = StorageDeltas{
+                    {storage_key, {bytes32_t{}, original_storage_value}}}});
+        StateDeltas::accessor spoke_it{};
+        domain_it->second->emplace(
+            spoke_it,
+            SPOKE_ADDR,
+            StateDelta{
+                .account = {
+                    std::nullopt,
+                    Account{.code_hash = allow_code_hash, .nonce = 1}}});
+    }
+    StateDeltas root_deltas{
+        {CONTRACT_ADDR,
+         StateDelta{
+             .account =
+                 {std::nullopt, Account{.code_hash = code_hash, .nonce = 1}},
+             .storage = StorageDeltas{
+                 {storage_key, {bytes32_t{}, root_storage_value}}}}}};
+    commit_domain(
+        this->tdb,
+        root_deltas,
+        domain_deltas,
+        Code{
+            {code_hash, compiled_code}, {allow_code_hash, compiled_allow_code}},
+        header);
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor =
+        create_executor(this->dbname.string(), domain_addr, SPOKE_ADDR);
+    auto const submit = [&](monad_state_override *const state_override) {
+        struct callback_context ctx;
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            true);
+        f.get();
+
+        EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+        EXPECT_EQ(ctx.result->output_data_len, sizeof(bytes32_t));
+        bytes32_t result{};
+        if (ctx.result->output_data_len == sizeof(bytes32_t)) {
+            std::memcpy(
+                result.bytes, ctx.result->output_data, sizeof(bytes32_t));
+        }
+        return result;
+    };
+
+    auto *state_override = monad_state_override_create();
+    EXPECT_EQ(submit(state_override), original_storage_value);
+    monad_state_override_destroy(state_override);
+
+    state_override = monad_state_override_create();
+    add_override_address(state_override, CONTRACT_ADDR.bytes, sizeof(Address));
+    set_override_state_diff(
+        state_override,
+        CONTRACT_ADDR.bytes,
+        sizeof(Address),
+        storage_key.bytes,
+        sizeof(bytes32_t),
+        override_storage_value.bytes,
+        sizeof(bytes32_t));
+    EXPECT_EQ(submit(state_override), override_storage_value);
+    monad_state_override_destroy(state_override);
+
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, state_override_root_address_mutation_allowed)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    static constexpr Address domain_addr =
+        0x0000000000000000000000000000000000014eaf_address;
+
+    static constexpr auto from = Address{};
+    static constexpr auto to = ADDR_B;
+
+    Transaction const tx{.gas_limit = 100000u, .to = to};
+    BlockHeader const header{.number = 256};
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {domain_addr,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 5, .nonce = 0}}}}},
+        {},
+        header);
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto const submit_override =
+        [&](monad_state_override *const state_override) {
+            struct callback_context ctx;
+            boost::fibers::future<void> f = ctx.promise.get_future();
+            monad_executor_eth_call_submit(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_tx.data(),
+                rlp_tx.size(),
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_sender.data(),
+                rlp_sender.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                state_override,
+                complete_callback,
+                (void *)&ctx,
+                NOOP_TRACER,
+                true);
+            f.get();
+
+            EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+        };
+
+    {
+        auto *state_override = monad_state_override_create();
+        add_override_address(
+            state_override, domain_addr.bytes, sizeof(Address));
+        bytes32_t const balance = store_be_as<bytes32_t>(uint256_t{6});
+        set_override_balance(
+            state_override,
+            domain_addr.bytes,
+            sizeof(Address),
+            balance.bytes,
+            sizeof(bytes32_t));
+        submit_override(state_override);
+        monad_state_override_destroy(state_override);
+    }
+
+    {
+        auto *state_override = monad_state_override_create();
+        add_override_address(
+            state_override, domain_addr.bytes, sizeof(Address));
+        set_override_nonce(
+            state_override, domain_addr.bytes, sizeof(Address), 1);
+        submit_override(state_override);
+        monad_state_override_destroy(state_override);
+    }
+
+    {
+        auto *state_override = monad_state_override_create();
+        add_override_address(
+            state_override, domain_addr.bytes, sizeof(Address));
+        bytes32_t const balance = store_be_as<bytes32_t>(uint256_t{4});
+        set_override_balance(
+            state_override,
+            domain_addr.bytes,
+            sizeof(Address),
+            balance.bytes,
+            sizeof(bytes32_t));
+        submit_override(state_override);
+        monad_state_override_destroy(state_override);
+    }
+
+    {
+        auto *state_override = monad_state_override_create();
+        add_override_address(
+            state_override, domain_addr.bytes, sizeof(Address));
+        uint8_t const code[] = {0x00};
+        set_override_code(
+            state_override,
+            domain_addr.bytes,
+            sizeof(Address),
+            code,
+            sizeof(code));
+        submit_override(state_override);
+        monad_state_override_destroy(state_override);
+    }
+
+    {
+        auto *state_override = monad_state_override_create();
+        add_override_address(
+            state_override, domain_addr.bytes, sizeof(Address));
+        bytes32_t const key = store_be_as<bytes32_t>(uint256_t{1});
+        bytes32_t const value = store_be_as<bytes32_t>(uint256_t{2});
+        set_override_state_diff(
+            state_override,
+            domain_addr.bytes,
+            sizeof(Address),
+            key.bytes,
+            sizeof(bytes32_t),
+            value.bytes,
+            sizeof(bytes32_t));
+        submit_override(state_override);
+        monad_state_override_destroy(state_override);
+    }
+
+    {
+        auto *state_override = monad_state_override_create();
+        add_override_address(
+            state_override, domain_addr.bytes, sizeof(Address));
+        bytes32_t const key = store_be_as<bytes32_t>(uint256_t{3});
+        bytes32_t const value = store_be_as<bytes32_t>(uint256_t{4});
+        set_override_state(
+            state_override,
+            domain_addr.bytes,
+            sizeof(Address),
+            key.bytes,
+            sizeof(bytes32_t),
+            value.bytes,
+            sizeof(bytes32_t));
+        submit_override(state_override);
+        monad_state_override_destroy(state_override);
+    }
+
     monad_executor_destroy(executor);
 }
 

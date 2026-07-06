@@ -33,6 +33,7 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
@@ -659,4 +660,243 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
     ASSERT_TRUE(receipt.has_error());
 
     ASSERT_EQ(receipt.error(), TransactionError::WrongChainId);
+}
+
+namespace
+{
+    using GaslessTraits = MonadTraits<MONAD_NEXT>;
+
+    constexpr Address gasless_sender{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    constexpr Address gasless_contract{
+        0x1111111111111111111111111111111111111111_address};
+    constexpr Address gasless_beneficiary{
+        0x5353535353535353535353535353535353535353_address};
+    constexpr uint64_t gasless_domain_id{0x114eaf};
+
+    Transaction gasless_transaction(uint64_t const gas_limit = 100'000)
+    {
+        return Transaction{
+            .sc =
+                {
+                    .signature =
+                        {
+                            .r =
+                                0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256,
+                            .s =
+                                0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256,
+                        },
+                    .chain_id = gasless_domain_id,
+                },
+            .max_fee_per_gas = 10,
+            .gas_limit = gas_limit,
+            .to = gasless_contract,
+        };
+    }
+
+    Result<Receipt> execute_gasless_transaction(
+        Transaction const &tx, BlockState &block_state, BlockMetrics &metrics)
+    {
+        BlockHeader const header{.beneficiary = gasless_beneficiary};
+        BlockHashBufferFinalized const block_hash_buffer;
+        boost::fibers::promise<void> prev{};
+        prev.set_value();
+        NoopCallTracer noop_call_tracer;
+        trace::StateTracer noop_state_tracer = std::monostate{};
+        auto const chain_ctx = ChainContext<GaslessTraits>::debug_empty();
+
+        return ExecuteTransaction<GaslessTraits, true>(
+            MonadDevnet{},
+            0,
+            tx,
+            gasless_sender,
+            {},
+            header,
+            block_hash_buffer,
+            block_state,
+            metrics,
+            prev,
+            noop_call_tracer,
+            noop_state_tracer,
+            chain_ctx)();
+    }
+}
+
+TEST(ExecuteGaslessTransaction, ExecutesWithoutMintingOrMovingMon)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    BlockMetrics metrics;
+
+    {
+        State state{block_state, Incarnation{0, 0}, false, gasless_domain_id};
+        state.create_contract(gasless_contract);
+        state.set_code(gasless_contract, from_hex("0x600160005500").value());
+        block_state.merge(state);
+    }
+
+    auto const receipt = execute_gasless_transaction(
+        gasless_transaction(), block_state, metrics);
+
+    ASSERT_TRUE(receipt.has_value());
+    EXPECT_EQ(receipt.value().status, 1);
+    EXPECT_EQ(receipt.value().gas_used, 100'000);
+
+    State state{block_state, Incarnation{0, 0}, false, gasless_domain_id};
+    EXPECT_EQ(state.get_balance(gasless_sender), 0);
+    EXPECT_EQ(state.get_balance(gasless_contract), 0);
+    EXPECT_EQ(state.get_balance(gasless_beneficiary), 0);
+    EXPECT_EQ(state.get_nonce(gasless_sender), 1);
+    EXPECT_EQ(
+        state.get_storage(gasless_contract, bytes32_t{}),
+        bytes32_t{uint64_t{1}});
+}
+
+TEST(ExecuteGaslessTransaction, SelfdestructCannotMintMon)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    BlockMetrics metrics;
+
+    {
+        State state{block_state, Incarnation{0, 0}, false, gasless_domain_id};
+        state.create_contract(gasless_contract);
+        state.set_code(
+            gasless_contract,
+            from_hex("0x735353535353535353535353535353535353535353ff").value());
+        block_state.merge(state);
+    }
+
+    auto const receipt = execute_gasless_transaction(
+        gasless_transaction(), block_state, metrics);
+
+    ASSERT_TRUE(receipt.has_value());
+    EXPECT_EQ(receipt.value().status, 1);
+
+    State state{block_state, Incarnation{0, 0}, false, gasless_domain_id};
+    EXPECT_EQ(state.get_balance(gasless_sender), 0);
+    EXPECT_EQ(state.get_balance(gasless_contract), 0);
+    EXPECT_EQ(state.get_balance(gasless_beneficiary), 0);
+}
+
+TEST(ExecuteGaslessTransaction, SkipsInvalidTransactionWithoutStateChanges)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    BlockMetrics metrics;
+
+    auto tx = gasless_transaction();
+    tx.sc.chain_id = 1;
+
+    auto const receipt = execute_gasless_transaction(tx, block_state, metrics);
+
+    ASSERT_TRUE(receipt.has_value());
+    EXPECT_EQ(receipt.value().status, 0);
+    EXPECT_EQ(receipt.value().gas_used, 0);
+    EXPECT_TRUE(receipt.value().logs.empty());
+
+    State state{block_state, Incarnation{0, 0}, false, gasless_domain_id};
+    EXPECT_EQ(state.get_balance(gasless_sender), 0);
+    EXPECT_EQ(state.get_nonce(gasless_sender), 0);
+}
+
+TEST(ExecuteGaslessTransaction, SkipsDynamicValidationFailure)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    BlockMetrics metrics;
+
+    auto tx = gasless_transaction();
+    tx.nonce = 1;
+
+    auto const receipt = execute_gasless_transaction(tx, block_state, metrics);
+
+    ASSERT_TRUE(receipt.has_value());
+    EXPECT_EQ(receipt.value().status, 0);
+    EXPECT_EQ(receipt.value().gas_used, 0);
+    EXPECT_TRUE(receipt.value().logs.empty());
+
+    State state{block_state, Incarnation{0, 0}, false, gasless_domain_id};
+    EXPECT_EQ(state.get_balance(gasless_sender), 0);
+    EXPECT_EQ(state.get_nonce(gasless_sender), 0);
+}
+
+TEST(ExecuteGaslessTransaction, SkipsNonzeroValue)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    BlockMetrics metrics;
+
+    auto tx = gasless_transaction();
+    tx.value = 1;
+
+    auto const receipt = execute_gasless_transaction(tx, block_state, metrics);
+
+    ASSERT_TRUE(receipt.has_value());
+    EXPECT_EQ(receipt.value().status, 0);
+    EXPECT_EQ(receipt.value().gas_used, 0);
+    EXPECT_TRUE(receipt.value().logs.empty());
+
+    State state{block_state, Incarnation{0, 0}, false, gasless_domain_id};
+    EXPECT_EQ(state.get_balance(gasless_sender), 0);
+    EXPECT_EQ(state.get_nonce(gasless_sender), 0);
+}
+
+TEST(ExecuteGaslessTransaction, ValidatorRejectsNonzeroValue)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    State state{block_state, Incarnation{0, 0}, false, gasless_domain_id};
+    trace::StateTracer noop_state_tracer = std::monostate{};
+
+    auto tx = gasless_transaction();
+    tx.value = 1;
+
+    auto const result = validate_transaction<GaslessTraits, true>(
+        tx, gasless_sender, state, 0, {}, noop_state_tracer);
+
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(
+        result.error(),
+        MonadTransactionError::GaslessTransactionHasNonzeroValue);
+}
+
+TEST(ExecuteGaslessTransaction, OutOfGasIsAnExecutedFailureNotASkip)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    BlockMetrics metrics;
+
+    {
+        State state{block_state, Incarnation{0, 0}, false, gasless_domain_id};
+        state.create_contract(gasless_contract);
+        state.set_code(gasless_contract, from_hex("0x600160005500").value());
+        block_state.merge(state);
+    }
+
+    constexpr uint64_t gas_limit = 22'000;
+    auto const receipt = execute_gasless_transaction(
+        gasless_transaction(gas_limit), block_state, metrics);
+
+    ASSERT_TRUE(receipt.has_value());
+    EXPECT_EQ(receipt.value().status, 0);
+    EXPECT_EQ(receipt.value().gas_used, gas_limit);
+
+    State state{block_state, Incarnation{0, 0}, false, gasless_domain_id};
+    EXPECT_EQ(state.get_balance(gasless_sender), 0);
+    EXPECT_EQ(state.get_nonce(gasless_sender), 1);
 }

@@ -22,6 +22,8 @@
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
+#include <category/execution/ethereum/core/contract/abi_encode.hpp>
+#include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
@@ -36,6 +38,7 @@
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <optional>
 #include <utility>
@@ -44,6 +47,45 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
+
+    constexpr int64_t DOMAIN_ACCESS_GAS_STIPEND = 30'000;
+    constexpr uint32_t CAN_CALL_SELECTOR =
+        abi_encode_selector("canCall(address,address,bytes)");
+
+    byte_string domain_access_calldata(evmc_message const &msg)
+    {
+        byte_string calldata{
+            static_cast<uint8_t>(CAN_CALL_SELECTOR >> 24),
+            static_cast<uint8_t>(CAN_CALL_SELECTOR >> 16),
+            static_cast<uint8_t>(CAN_CALL_SELECTOR >> 8),
+            static_cast<uint8_t>(CAN_CALL_SELECTOR)};
+        AbiEncoder encoder;
+        encoder.add_address(Address{msg.sender});
+        encoder.add_address(Address{msg.recipient});
+        encoder.add_bytes({msg.input_data, msg.input_size});
+        calldata += encoder.encode_final();
+        return calldata;
+    }
+
+    bool is_canonical_true(evmc::Result const &result) noexcept
+    {
+        if (result.status_code != EVMC_SUCCESS || result.output_size != 32) {
+            return false;
+        }
+        auto const expected = abi_encode_bool(true);
+        return std::memcmp(result.output_data, expected.bytes, 32) == 0;
+    }
+
+    void finalize_domain_access(
+        evmc_message const &msg, bool const domain_access_denied,
+        evmc::Result &result)
+    {
+        if (msg.depth == 0 && domain_access_denied &&
+            result.status_code == EVMC_SUCCESS) {
+            auto const gas_left = result.gas_left;
+            result = evmc::Result{EVMC_REVERT, gas_left};
+        }
+    }
 
     bool sender_has_balance(State &state, evmc_message const &msg) noexcept
     {
@@ -54,9 +96,9 @@ namespace
         return state.record_balance_constraint_for_debit(msg.sender, value);
     }
 
-    template <Traits traits>
+    template <Traits traits, bool gasless>
     void transfer_balances(
-        State &state, EvmcHost<traits> &host, evmc_message const &msg,
+        State &state, EvmcHost<traits, gasless> &host, evmc_message const &msg,
         Address const &to)
     {
         uint256_t const value = load_be<uint256_t>(msg.value);
@@ -65,7 +107,7 @@ namespace
         host.emit_native_transfer_event(msg.sender, to, value);
     }
 
-} // anonymous namespace
+} // anonymous domain
 
 template <Traits traits>
 evmc::Result deploy_contract_code(
@@ -105,20 +147,97 @@ evmc::Result deploy_contract_code(
 
 EXPLICIT_TRAITS(deploy_contract_code);
 
-template <Traits traits>
+template <Traits traits, bool gasless>
+void reject_frame(EvmcHost<traits, gasless> &host, State &state)
+{
+    // Successful frames remain in State and are captured when the state tracer
+    // is encoded. Failed frames are about to be rolled back, so the state
+    // tracer lifecycle hook runs before pop_reject().
+    trace::on_frame_reject(host.state_tracer_, state);
+
+    bool const ripemd_touched = state.is_touched(ripemd_address);
+    state.pop_reject();
+    if (MONAD_UNLIKELY(ripemd_touched)) {
+        // YP K.1. Deletion of an Account Despite Out-of-gas.
+        state.touch(ripemd_address);
+    }
+}
+
+template <Traits traits, bool gasless>
 std::optional<evmc::Result>
-pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
+pre_call(EvmcHost<traits, gasless> &host, evmc_message &msg, State &state)
 {
     state.push();
+
+    if (host.domain_access_check_depth_ >= 0 &&
+        msg.depth > host.domain_access_check_depth_ + 1) {
+        // canCall and its direct callees may execute, but those callees must be
+        // leaves. Make a deeper attempt transaction-sticky so it cannot be
+        // hidden by catching this revert.
+        host.domain_access_denied_ = true;
+        state.pop_reject();
+        return evmc::Result{EVMC_REVERT, msg.gas};
+    }
+
+    if (host.domain_spoke_.has_value() &&
+        host.domain_access_check_depth_ == -1) {
+        if (msg.gas < DOMAIN_ACCESS_GAS_STIPEND) {
+            host.domain_access_denied_ = true;
+            evmc::Result result{EVMC_REVERT, msg.gas};
+            state.pop_reject();
+            return result;
+        }
+
+        auto calldata = domain_access_calldata(msg);
+        constexpr int64_t stipend = DOMAIN_ACCESS_GAS_STIPEND;
+        evmc_message const access_msg{
+            .kind = EVMC_CALL,
+            .flags = EVMC_STATIC,
+            .depth = msg.depth + 1,
+            .gas = stipend,
+            .recipient = *host.domain_spoke_,
+            .sender = msg.sender,
+            .input_data = calldata.data(),
+            .input_size = calldata.size(),
+            .value = {},
+            .create2_salt = {},
+            .code_address = *host.domain_spoke_,
+            .memory_handle = msg.memory_handle,
+            .memory = msg.memory,
+            .memory_capacity = msg.memory_capacity,
+        };
+
+        MONAD_ASSERT(host.domain_access_check_depth_ == -1);
+        MONAD_ASSERT(
+            access_msg.depth >= 0 &&
+            access_msg.depth <= std::numeric_limits<int16_t>::max());
+        host.domain_access_check_depth_ =
+            static_cast<int16_t>(access_msg.depth);
+        auto access_result =
+            execute_call_message<traits, gasless>(&host, state, access_msg);
+        host.domain_access_check_depth_ = -1;
+
+        bool const valid_gas =
+            access_result.gas_left >= 0 && access_result.gas_left <= stipend;
+        int64_t const gas_left = valid_gas ? access_result.gas_left : 0;
+        msg.gas -= stipend - gas_left;
+
+        if (host.domain_access_denied_ || !valid_gas ||
+            !is_canonical_true(access_result)) {
+            host.domain_access_denied_ = true;
+            evmc::Result result{EVMC_REVERT, msg.gas};
+            state.pop_reject();
+            return result;
+        }
+    }
 
     bool const static_call = msg.flags & EVMC_STATIC;
 
     if (msg.kind != EVMC_DELEGATECALL) {
         if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
-            // The pushed frame exits before bytecode, account access, or
-            // storage access, so there is no access-list metadata to capture.
+            evmc::Result result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
             state.pop_reject();
-            return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
+            return result;
         }
         else if (!static_call) {
             transfer_balances<traits>(state, host, msg, msg.recipient);
@@ -139,24 +258,9 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
     return std::nullopt;
 }
 
-template <Traits traits>
-void reject_frame(EvmcHost<traits> &host, State &state)
-{
-    // Successful frames remain in State and are captured when the state tracer
-    // is encoded. Failed frames are about to be rolled back, so the state
-    // tracer lifecycle hook runs before pop_reject().
-    trace::on_frame_reject(host.state_tracer_, state);
-
-    bool const ripemd_touched = state.is_touched(ripemd_address);
-    state.pop_reject();
-    if (MONAD_UNLIKELY(ripemd_touched)) {
-        // YP K.1. Deletion of an Account Despite Out-of-gas.
-        state.touch(ripemd_address);
-    }
-}
-
-template <Traits traits>
-void post_call(EvmcHost<traits> &host, State &state, evmc::Result const &result)
+template <Traits traits, bool gasless>
+void post_call(
+    EvmcHost<traits, gasless> &host, State &state, evmc::Result const &result)
 {
     MONAD_ASSERT(result.status_code == EVMC_SUCCESS || result.gas_refund == 0);
     MONAD_ASSERT(
@@ -173,9 +277,10 @@ void post_call(EvmcHost<traits> &host, State &state, evmc::Result const &result)
     }
 }
 
-template <Traits traits>
+template <Traits traits, bool gasless>
 evmc::Result execute_create_message(
-    EvmcHost<traits> *const host, State &state, evmc_message const &msg)
+    EvmcHost<traits, gasless> *const host, State &state,
+    evmc_message const &msg)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
@@ -271,17 +376,23 @@ evmc::Result execute_create_message(
             state, contract_address, std::move(result));
     }
 
-    if (msg.depth == 0) {
-        if (revert_transaction<traits>(
-                msg.sender,
-                host->tx_,
-                host->base_fee_per_gas_.value_or(0),
-                host->i_,
-                state,
-                host->state_tracer_,
-                host->chain_ctx_)) {
-            result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
+    if constexpr (!gasless) {
+        if (msg.depth == 0) {
+            if (revert_transaction<traits>(
+                    msg.sender,
+                    host->tx_,
+                    host->base_fee_per_gas_.value_or(0),
+                    host->i_,
+                    state,
+                    host->state_tracer_,
+                    host->chain_ctx_)) {
+                result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
+            }
         }
+    }
+
+    if constexpr (gasless) {
+        finalize_domain_access(msg, host->domain_access_denied_, result);
     }
 
     if (result.status_code == EVMC_SUCCESS) {
@@ -301,10 +412,12 @@ evmc::Result execute_create_message(
 }
 
 EXPLICIT_TRAITS(execute_create_message);
+EXPLICIT_MONAD_TRAITS_TRUE(execute_create_message);
 
-template <Traits traits>
+template <Traits traits, bool gasless>
 evmc::Result execute_call_message(
-    EvmcHost<traits> *const host, State &state, evmc_message const &msg)
+    EvmcHost<traits, gasless> *const host, State &state,
+    evmc_message const &msg)
 {
     MONAD_ASSERT(
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
@@ -313,36 +426,44 @@ evmc::Result execute_call_message(
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
 
-    if (auto result = pre_call<traits>(*host, msg, state); result.has_value()) {
+    evmc_message adjusted_msg = msg;
+    if (auto result = pre_call<traits>(*host, adjusted_msg, state);
+        result.has_value()) {
         call_tracer.on_exit(result.value());
         return std::move(result.value());
     }
 
     evmc::Result result;
-    if (auto maybe_result =
-            check_call_precompile<traits>(state, call_tracer, msg);
-        maybe_result.has_value()) {
+    auto maybe_result = check_call_precompile<traits, gasless>(
+        state, call_tracer, adjusted_msg);
+    if (maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }
     else {
-        auto const hash = state.get_code_hash(msg.code_address);
+        auto const hash = state.get_code_hash(adjusted_msg.code_address);
         auto const code = state.read_code(hash);
         trace::on_read_code(host->state_tracer_, hash, code->intercode());
-        result = state.vm().execute<traits>(*host, &msg, hash, code);
+        result = state.vm().execute<traits>(*host, &adjusted_msg, hash, code);
     }
 
-    if (msg.depth == 0) {
-        if (revert_transaction<traits>(
-                msg.sender,
-                host->tx_,
-                host->base_fee_per_gas_.value_or(0),
-                host->i_,
-                state,
-                host->state_tracer_,
-                host->chain_ctx_)) {
-            result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
-            result.gas_refund = 0;
+    if constexpr (!gasless) {
+        if (msg.depth == 0) {
+            if (revert_transaction<traits>(
+                    msg.sender,
+                    host->tx_,
+                    host->base_fee_per_gas_.value_or(0),
+                    host->i_,
+                    state,
+                    host->state_tracer_,
+                    host->chain_ctx_)) {
+                result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
+                result.gas_refund = 0;
+            }
         }
+    }
+
+    if constexpr (gasless) {
+        finalize_domain_access(msg, host->domain_access_denied_, result);
     }
 
     post_call(*host, state, result);
@@ -351,4 +472,5 @@ evmc::Result execute_call_message(
 }
 
 EXPLICIT_TRAITS(execute_call_message);
+EXPLICIT_MONAD_TRAITS_TRUE(execute_call_message);
 MONAD_NAMESPACE_END

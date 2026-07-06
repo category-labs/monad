@@ -420,6 +420,7 @@ public:
         NodeCursor start;
         NibblesView key;
         uint64_t version;
+        timeline_id tid;
     };
 
     using Comms = std::variant<
@@ -486,7 +487,8 @@ private:
                                 std::move(req->promise),
                                 req->start,
                                 req->key,
-                                req->version);
+                                req->version,
+                                req->tid);
                         }
                         else {
                             MONAD_ASSERT(req->key.empty());
@@ -495,7 +497,8 @@ private:
                                 node_cache,
                                 inflight,
                                 std::move(req->promise),
-                                req->version);
+                                req->version,
+                                req->tid);
                         }
                     }
                     else if (auto *req = std::get_if<4>(&request);
@@ -946,9 +949,13 @@ public:
 struct RODb::Impl final
 {
     std::shared_ptr<OnDiskDbServiceThread> worker_thread_;
+    timeline_id tid_;
 
-    explicit Impl(std::shared_ptr<OnDiskDbServiceThread> worker_thread)
+    explicit Impl(
+        std::shared_ptr<OnDiskDbServiceThread> worker_thread,
+        timeline_id const tid)
         : worker_thread_(std::move(worker_thread))
+        , tid_(tid)
     {
         MONAD_ASSERT(worker_thread_ != nullptr);
     }
@@ -968,14 +975,15 @@ struct RODb::Impl final
                 .promise = std::move(promise),
                 .start = start,
                 .key = key,
-                .version = version});
+                .version = version,
+                .tid = tid_});
         return fut.get();
     }
 
     NodeCursor load_root_fiber_blocking(uint64_t const version)
     {
         auto const root_offset =
-            aux().metadata_ctx().get_root_offset_at_version(version);
+            aux().metadata_ctx().get_root_offset_at_version(version, tid_);
         if (root_offset == INVALID_OFFSET) {
             return {};
         }
@@ -998,14 +1006,15 @@ struct RODb::Impl final
             .root = std::move(node),
             .machine = machine,
             .version = version,
-            .concurrency_limit = concurrency_limit});
+            .concurrency_limit = concurrency_limit,
+            .tid = tid_});
         return fut.get();
     }
 };
 
-RODb::RODb(ReadOnlyOnDiskDbConfig const &options)
+RODb::RODb(ReadOnlyOnDiskDbConfig const &options, timeline_id const tid)
     : impl_(std::make_unique<Impl>(
-          std::make_shared<OnDiskDbServiceThread>(options)))
+          std::make_shared<OnDiskDbServiceThread>(options), tid))
 {
 }
 
@@ -1014,20 +1023,20 @@ RODb::~RODb() = default;
 uint64_t RODb::get_latest_version() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->aux().metadata_ctx().db_history_max_version();
+    return impl_->aux().metadata_ctx().db_history_max_version(impl_->tid_);
 }
 
 uint64_t RODb::get_earliest_version() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->aux().metadata_ctx().db_history_min_valid_version();
+    return impl_->aux().metadata_ctx().db_history_min_valid_version(
+        impl_->tid_);
 }
 
 state_machine_kind RODb::state_machine_type() const
 {
     MONAD_ASSERT(impl_);
-    return impl_->aux().metadata_ctx().get_state_machine_kind(
-        timeline_id::primary);
+    return impl_->aux().metadata_ctx().get_state_machine_kind(impl_->tid_);
 }
 
 DbError find_result_to_db_error(find_result const result) noexcept

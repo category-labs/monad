@@ -17,6 +17,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
@@ -53,6 +54,88 @@ namespace
         }
         return txns;
     }
+
+    Transaction test_transaction(uint64_t const nonce = 0)
+    {
+        return Transaction{
+            .sc =
+                {.signature = {.r = 1, .s = 2, .y_parity = 0},
+                 .chain_id = uint256_t{20143}},
+            .nonce = nonce,
+            .max_fee_per_gas = 1,
+            .gas_limit = 21'000,
+            .to = 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address,
+            .type = TransactionType::eip1559,
+        };
+    }
+
+    EcdsaSignature test_batch_signature()
+    {
+        return EcdsaSignature{
+            .r =
+                uint256_t{
+                    13412762219960347641ULL,
+                    7851910773769752887ULL,
+                    1332449381586294104ULL,
+                    16271797403931385361ULL},
+            .s =
+                uint256_t{
+                    16668120864998175528ULL,
+                    9568637039015437407ULL,
+                    17121689180775472887ULL,
+                    6145313611713087949ULL},
+            .y_parity = 0};
+    }
+}
+
+TEST(ValidateMonadBodyBatch, RejectsBatchesBeforeMonadNext)
+{
+    using Trait = MonadTraits<MONAD_NINE>;
+
+    std::vector<MonadTransactionBatch> transaction_batches{
+        MonadTransactionBatch{.transactions = {test_transaction()}}};
+
+    auto const res = validate_monad_body<Trait>({}, transaction_batches);
+    ASSERT_TRUE(res.has_error());
+    EXPECT_EQ(res.error(), MonadBlockError::UnexpectedTransactionBatch);
+}
+
+TEST(ValidateMonadBodyBatch, AllowsUnbatchedTransactionsBeforeMonadNext)
+{
+    using Trait = MonadTraits<MONAD_NINE>;
+
+    std::vector<Transaction> unbatched_transactions{test_transaction()};
+
+    auto const res = validate_monad_body<Trait>(unbatched_transactions, {});
+    EXPECT_FALSE(res.has_error());
+}
+
+TEST(ValidateMonadBodyBatch, AcceptsRecoverableBatchSignatureAtMonadNext)
+{
+    using Trait = MonadTraits<MONAD_NEXT>;
+
+    MonadTransactionBatch batch{
+        .transactions = {test_transaction(0), test_transaction(1)}};
+    batch.signature = test_batch_signature();
+
+    std::vector<MonadTransactionBatch> transaction_batches{batch};
+
+    auto const res = validate_monad_body<Trait>({}, transaction_batches);
+    EXPECT_FALSE(res.has_error());
+}
+
+TEST(ValidateMonadBodyBatch, RejectsInvalidBatchSignatureAtMonadNext)
+{
+    using Trait = MonadTraits<MONAD_NEXT>;
+
+    std::vector<MonadTransactionBatch> transaction_batches{
+        MonadTransactionBatch{
+            .transactions = {test_transaction()},
+            .signature = {.r = 1, .s = 2, .y_parity = 2}}};
+
+    auto const res = validate_monad_body<Trait>({}, transaction_batches);
+    ASSERT_TRUE(res.has_error());
+    EXPECT_EQ(res.error(), MonadBlockError::InvalidTransactionBatchSignature);
 }
 
 TYPED_TEST(MonadTraitsTest, system_txn_comes_after_user_txn)

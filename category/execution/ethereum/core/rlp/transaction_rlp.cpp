@@ -37,6 +37,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -159,6 +160,22 @@ byte_string encode_transaction(Transaction const &txn)
                             encode_unsigned(txn.sc.signature.r),
                             encode_unsigned(txn.sc.signature.s));
     }
+}
+
+byte_string encode_transaction_list(std::span<Transaction const> const txns)
+{
+    byte_string encoded_transactions;
+
+    for (auto const &tx : txns) {
+        if (tx.type == TransactionType::legacy) {
+            encoded_transactions += encode_transaction(tx);
+        }
+        else {
+            encoded_transactions += encode_string2(encode_transaction(tx));
+        }
+    }
+
+    return encode_list2(encoded_transactions);
 }
 
 byte_string encode_transaction_for_signing(Transaction const &txn)

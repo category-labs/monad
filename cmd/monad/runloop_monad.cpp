@@ -178,6 +178,7 @@ template <Traits traits, class MonadConsensusBlockHeader>
 Result<BlockExecOutput> propose_block(
     bytes32_t const &block_id,
     MonadConsensusBlockHeader const &consensus_header, Block block,
+    std::span<MonadTransactionBatch const> const transaction_batches,
     BlockHashChain &block_hash_chain, MonadChain const &chain, Db &db,
     vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
     bool const enable_tracing, BlockCache &block_cache, Db *secondary_db)
@@ -189,6 +190,8 @@ Result<BlockExecOutput> propose_block(
 
     // Block input validation
     BOOST_OUTCOME_TRY(static_validate_consensus_header(consensus_header));
+    BOOST_OUTCOME_TRY(
+        validate_monad_body<traits>(block.transactions, transaction_batches));
     BOOST_OUTCOME_TRY(static_validate_block<traits>(chain, block));
 
     // Sender and EIP-7702 authorities recovery
@@ -703,6 +706,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                         .transactions = std::move(body.transactions),
                         .ommers = std::move(body.ommers),
                         .withdrawals = std::move(body.withdrawals)},
+                    body.transaction_batches,
                     block_hash_chain,
                     chain,
                     db,

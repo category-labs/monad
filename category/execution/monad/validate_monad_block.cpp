@@ -16,6 +16,8 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/core/ecrecover.hpp>
+#include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
@@ -51,6 +53,34 @@ enum class SyscallKind : uint8_t
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
+
+template <Traits traits>
+Result<void> validate_monad_body(
+    std::span<Transaction const> const,
+    std::span<MonadTransactionBatch const> const transaction_batches)
+{
+    if constexpr (traits::monad_rev() < MONAD_NEXT) {
+        if (MONAD_UNLIKELY(!transaction_batches.empty())) {
+            return MonadBlockError::UnexpectedTransactionBatch;
+        }
+        return outcome::success();
+    }
+
+    // TODO: validate namespace ownership, owner signer authorization, and
+    // unbatched namespace transaction senders.
+    for (auto const &batch : transaction_batches) {
+        byte_string const signing_payload =
+            rlp::encode_transaction_list(batch.transactions);
+        if (MONAD_UNLIKELY(!recover_address(batch.signature, signing_payload)
+                                .has_value())) {
+            return MonadBlockError::InvalidTransactionBatchSignature;
+        }
+    }
+
+    return outcome::success();
+}
+
+EXPLICIT_MONAD_TRAITS(validate_monad_body);
 
 template <class MonadConsensusBlockHeader>
 Result<void>
@@ -175,6 +205,12 @@ quick_status_code_from_enum<monad::MonadBlockError>::value_mappings()
          "unknown system transaction",
          {}},
         {MonadBlockError::InvalidRewardValue, "invalid reward value", {}},
+        {MonadBlockError::UnexpectedTransactionBatch,
+         "unexpected transaction batch",
+         {}},
+        {MonadBlockError::InvalidTransactionBatchSignature,
+         "invalid transaction batch signature",
+         {}},
     };
 
     return v;

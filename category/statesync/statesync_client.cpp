@@ -44,6 +44,20 @@ using namespace monad::mpt;
 
 unsigned const MONAD_SQPOLL_DISABLED = unsigned(-1);
 
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+bool domain_buffers_empty(monad_statesync_client_context const &ctx)
+{
+    for (auto const &entry : ctx.domain_buffered) {
+        if (!entry.second.empty()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
 monad_statesync_client_context *monad_statesync_client_context_create(
     char const *const dbname_path, unsigned const sq_thread_cpu,
     monad_statesync_client *const sync,
@@ -180,8 +194,13 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
     auto const &tgrt = ctx->tgrt;
     MONAD_ASSERT(tgrt.number != INVALID_BLOCK_NUM);
     MONAD_ASSERT(ctx->deltas.empty());
+    MONAD_ASSERT(ctx->domain_deltas.empty());
     if (!ctx->buffered.empty()) {
         // sent storage with no account
+        return false;
+    }
+    if (!domain_buffers_empty(*ctx)) {
+        // sent domain storage with no domain account
         return false;
     }
 

@@ -1,0 +1,1 @@
+"""Domain integration test harness."""

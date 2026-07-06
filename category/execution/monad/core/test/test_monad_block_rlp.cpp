@@ -16,6 +16,7 @@
 #include <category/core/blake3.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/rlp/decode_error.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
@@ -299,4 +300,17 @@ TEST(Rlp_Block, MonadConsensusBlockAmsterdamExecutionInputs)
     ASSERT_TRUE(inputs.slot_number.has_value());
     EXPECT_EQ(inputs.slot_number.value(), 10);
     EXPECT_EQ(inputs.slot_number.value(), res.value().block_round);
+}
+
+TEST(Rlp_Block, MonadConsensusBlockBodyHasExactlyThreeExecutionFields)
+{
+    byte_string const canonical{0xc4, 0xc3, 0xc0, 0xc0, 0xc0};
+    auto canonical_view = byte_string_view{canonical};
+    auto canonical_result = rlp::decode_consensus_block_body(canonical_view);
+    ASSERT_FALSE(canonical_result.has_error());
+
+    byte_string const fourth_field{0xc5, 0xc4, 0xc0, 0xc0, 0xc0, 0xc0};
+    auto fourth_field_view = byte_string_view{fourth_field};
+    EXPECT_TRUE(
+        rlp::decode_consensus_block_body(fourth_field_view).has_error());
 }

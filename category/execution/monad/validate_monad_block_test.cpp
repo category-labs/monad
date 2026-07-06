@@ -54,6 +54,7 @@ namespace
         }
         return txns;
     }
+
 }
 
 TEST(MonadConsensusHeader, slot_number_matches_block_round)

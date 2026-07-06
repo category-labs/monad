@@ -29,6 +29,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string_view>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -38,19 +39,24 @@ struct BlockMetrics;
 class BlockState;
 struct CallTracerBase;
 struct Chain;
-template <Traits traits>
+template <Traits traits, bool gasless>
 struct EvmcHost;
 class ExecutionEventRecorder;
 class State;
 struct Transaction;
 
-template <Traits traits>
+Receipt skipped_receipt(
+    uint64_t transaction_index, uint64_t block_number,
+    TransactionType transaction_type, std::string_view reason);
+
+template <Traits traits, bool gasless = false>
 class ExecuteTransactionNoValidation
 {
+    static_assert(!gasless || is_monad_trait_v<traits>);
     evmc_message to_message(
         vm::MemoryPool::Ref &msg_memory, uint32_t msg_memory_capacity) const;
 
-    uint64_t process_authorizations(State &, EvmcHost<traits> &);
+    uint64_t process_authorizations(State &, EvmcHost<traits, gasless> &);
 
 protected:
     Chain const &chain_;
@@ -64,17 +70,19 @@ public:
         Chain const &, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &);
 
-    evmc::Result operator()(State &, EvmcHost<traits> &);
+    evmc::Result operator()(State &, EvmcHost<traits, gasless> &);
 };
 
-template <Traits traits>
-class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
+template <Traits traits, bool gasless = false>
+class ExecuteTransaction
+    : public ExecuteTransactionNoValidation<traits, gasless>
 {
-    using ExecuteTransactionNoValidation<traits>::chain_;
-    using ExecuteTransactionNoValidation<traits>::tx_;
-    using ExecuteTransactionNoValidation<traits>::sender_;
-    using ExecuteTransactionNoValidation<traits>::authorities_;
-    using ExecuteTransactionNoValidation<traits>::header_;
+    static_assert(!gasless || is_monad_trait_v<traits>);
+    using ExecuteTransactionNoValidation<traits, gasless>::chain_;
+    using ExecuteTransactionNoValidation<traits, gasless>::tx_;
+    using ExecuteTransactionNoValidation<traits, gasless>::sender_;
+    using ExecuteTransactionNoValidation<traits, gasless>::authorities_;
+    using ExecuteTransactionNoValidation<traits, gasless>::header_;
 
     uint64_t i_;
     ChainContext<traits> const &chain_ctx_;
@@ -86,6 +94,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     trace::StateTracer &state_tracer_;
     ExecutionEventRecorder *exec_recorder_;
     bool trace_transfers_;
+    std::optional<Address> domain_spoke_;
 
     Result<evmc::Result> execute_impl2(State &);
     Receipt execute_final(State &, evmc::Result const &);
@@ -97,14 +106,15 @@ public:
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
         boost::fibers::future<void> &prev, CallTracerBase &,
         trace::StateTracer &, ChainContext<traits> const &chain_ctx,
-        ExecutionEventRecorder *exec_recorder, bool trace_transfers = false);
+        ExecutionEventRecorder *exec_recorder, bool trace_transfers = false,
+        std::optional<Address> domain_spoke = std::nullopt);
     ExecuteTransaction(
         Chain const &, uint64_t, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
         boost::fibers::future<void> &, CallTracerBase &, trace::StateTracer &,
-        ChainContext<traits> const &&, ExecutionEventRecorder *,
-        bool = false) = delete;
+        ChainContext<traits> const &&, ExecutionEventRecorder *, bool = false,
+        std::optional<Address> = std::nullopt) = delete;
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

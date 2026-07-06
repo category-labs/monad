@@ -23,6 +23,7 @@
 #include <category/core/runtime/unaligned.hpp>
 #include <category/crypto/keccak.h>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
@@ -136,35 +137,31 @@ bool send_deletion(
                      prefix = from_prefix(rq.prefix, rq.prefix_bytes),
                      num_upserts,
                      upsert_bytes](Deletion const &deletion) {
-        auto const &[addr, key] = deletion;
+        auto const &[addr, key, domain] = deletion;
         auto const hash = keccak256(addr.bytes);
         byte_string_view const view{hash.bytes, sizeof(hash.bytes)};
         if (!view.starts_with(prefix)) {
             return;
         }
-        if (!key.has_value()) {
-            sync->statesync_server_send_upsert(
-                sync->net,
-                SYNC_TYPE_UPSERT_ACCOUNT_DELETE,
-                reinterpret_cast<unsigned char const *>(&addr),
-                sizeof(addr),
-                nullptr,
-                0);
-            ++(*num_upserts);
-            *upsert_bytes += sizeof(addr);
+
+        byte_string payload{};
+        payload += to_byte_string_view(addr.bytes);
+        if (key.has_value()) {
+            payload += rlp::encode_bytes32_compact(key.value());
         }
-        else {
-            auto const skey = rlp::encode_bytes32_compact(key.value());
-            sync->statesync_server_send_upsert(
-                sync->net,
-                SYNC_TYPE_UPSERT_STORAGE_DELETE,
-                reinterpret_cast<unsigned char const *>(&addr),
-                sizeof(addr),
-                skey.data(),
-                skey.size());
-            ++(*num_upserts);
-            *upsert_bytes += sizeof(addr) + skey.size();
+        if (domain.has_value()) {
+            payload += rlp::encode_unsigned(*domain);
         }
+        sync->statesync_server_send_upsert(
+            sync->net,
+            key.has_value() ? SYNC_TYPE_UPSERT_STORAGE_DELETE
+                            : SYNC_TYPE_UPSERT_ACCOUNT_DELETE,
+            payload.data(),
+            payload.size(),
+            nullptr,
+            0);
+        ++(*num_upserts);
+        *upsert_bytes += payload.size();
     };
 
     for (uint64_t i = rq.old_target + 1; i <= rq.target; ++i) {
@@ -201,13 +198,16 @@ bool statesync_server_handle_request(
         unsigned char nibble;
         unsigned depth;
         Address addr;
+        std::optional<uint64_t> domain_id;
         monad_statesync_server *sync;
         NibblesView prefix;
         uint64_t from;
         uint64_t until;
         uint64_t *num_upserts;
         uint64_t *upsert_bytes;
-        // peer speaks 1.3 or newer, so storage pages go out verbatim
+        // peer speaks 1.3 or newer, so root storage pages go out verbatim.
+        // Domain storage is always expanded into slot records carrying the
+        // domain suffix, which the page record format has no room for.
         bool emit_page_records;
 
         Traverse(
@@ -227,6 +227,20 @@ bool statesync_server_handle_request(
         {
         }
 
+        bool
+        matches_prefix(unsigned trie_depth, unsigned char const branch) const
+        {
+            constexpr unsigned DOMAIN_ID_SIZE = sizeof(uint64_t) * 2;
+            if (nibble == DOMAIN_STATE_NIBBLE) {
+                if (trie_depth < DOMAIN_ID_SIZE) {
+                    return true;
+                }
+                trie_depth -= DOMAIN_ID_SIZE;
+            }
+            return trie_depth >= prefix.nibble_size() ||
+                   prefix.get(trie_depth) == branch;
+        }
+
         virtual bool down(unsigned char const branch, Node const &node) override
         {
             if (branch == INVALID_BRANCH) {
@@ -238,16 +252,21 @@ bool statesync_server_handle_request(
                 return true;
             }
 
-            MONAD_ASSERT(nibble == STATE_NIBBLE || nibble == CODE_NIBBLE);
             MONAD_ASSERT(
-                depth >= prefix.nibble_size() || prefix.get(depth) == branch);
+                nibble == STATE_NIBBLE || nibble == CODE_NIBBLE ||
+                nibble == DOMAIN_STATE_NIBBLE);
+            constexpr unsigned DOMAIN_ID_SIZE = sizeof(uint64_t) * 2;
+            MONAD_ASSERT(matches_prefix(depth, branch));
             auto const ext = node.path_nibble_view();
-            for (auto i = depth + 1; i < prefix.nibble_size(); ++i) {
+            auto const prefix_limit =
+                (nibble == DOMAIN_STATE_NIBBLE ? DOMAIN_ID_SIZE : 0) +
+                prefix.nibble_size();
+            for (auto i = depth + 1; i < prefix_limit; ++i) {
                 auto const j = i - (depth + 1);
                 if (j >= ext.nibble_size()) {
                     break;
                 }
-                if (ext.get(j) != prefix.get(i)) {
+                if (!matches_prefix(i, ext.get(j))) {
                     return false;
                 }
             }
@@ -260,8 +279,26 @@ bool statesync_server_handle_request(
 
             depth += 1 + ext.nibble_size();
 
+            if (nibble == DOMAIN_STATE_NIBBLE && depth == DOMAIN_ID_SIZE) {
+                // Decode the domain-id node each time one is entered.
+                MONAD_ASSERT(node.has_value());
+                auto raw = node.value();
+                auto const res = rlp::decode_unsigned<uint64_t>(raw);
+                MONAD_ASSERT(!res.has_error());
+                MONAD_ASSERT(res.value() != 0);
+                MONAD_ASSERT(raw.empty());
+                domain_id = res.value();
+            }
+
             constexpr unsigned HASH_SIZE = KECCAK256_SIZE * 2;
-            bool const account = depth == HASH_SIZE && nibble == STATE_NIBBLE;
+            // Offset account depth by the domain-id nibbles for domain
+            // state; root state account depth stays at one hash.
+            auto const account_depth = nibble == DOMAIN_STATE_NIBBLE
+                                           ? DOMAIN_ID_SIZE + HASH_SIZE
+                                           : HASH_SIZE;
+            bool const account =
+                depth == account_depth &&
+                (nibble == STATE_NIBBLE || nibble == DOMAIN_STATE_NIBBLE);
             if (account && node.number_of_children() > 0) {
                 MONAD_ASSERT(node.has_value());
                 auto raw = node.value();
@@ -275,25 +312,99 @@ bool statesync_server_handle_request(
                                              unsigned char const *const v1 =
                                                  nullptr,
                                              uint64_t const size1 = 0) {
-                    auto const value = node.value();
+                    uint64_t const size2 = node.value().size();
                     sync->statesync_server_send_upsert(
-                        sync->net, type, v1, size1, value.data(), value.size());
+                        sync->net, type, v1, size1, node.value().data(), size2);
                     ++(*num_upserts);
-                    *upsert_bytes += size1 + value.size();
+                    *upsert_bytes += size1 + size2;
                 };
+                auto const send_domain_upsert =
+                    [&](monad_sync_type const type, byte_string_view payload) {
+                        sync->statesync_server_send_upsert(
+                            sync->net,
+                            type,
+                            payload.data(),
+                            payload.size(),
+                            nullptr,
+                            0);
+                        ++(*num_upserts);
+                        *upsert_bytes += payload.size();
+                    };
+
+                // Expand a page-encoded storage leaf into one slot-format
+                // upsert per non-zero slot, preserving the domain suffix
+                // when traversing domain state.
+                auto const send_storage_page =
+                    [&](byte_string_view enc,
+                        std::optional<uint64_t> const &domain = std::nullopt) {
+                        auto const decoded = decode_storage_page_leaf(enc);
+                        MONAD_ASSERT(decoded.has_value());
+                        for (auto const [slot_key, slot_val] :
+                             decoded.value().slots()) {
+                            auto const entry =
+                                encode_storage_db(slot_key, slot_val);
+                            if (domain.has_value()) {
+                                byte_string payload{};
+                                payload += to_byte_string_view(addr.bytes);
+                                payload += entry;
+                                payload += rlp::encode_unsigned(*domain);
+                                sync->statesync_server_send_upsert(
+                                    sync->net,
+                                    SYNC_TYPE_UPSERT_STORAGE,
+                                    payload.data(),
+                                    payload.size(),
+                                    nullptr,
+                                    0);
+                                *upsert_bytes += payload.size();
+                            }
+                            else {
+                                sync->statesync_server_send_upsert(
+                                    sync->net,
+                                    SYNC_TYPE_UPSERT_STORAGE,
+                                    reinterpret_cast<unsigned char const *>(
+                                        &addr),
+                                    sizeof(addr),
+                                    entry.data(),
+                                    entry.size());
+                                *upsert_bytes += sizeof(addr) + entry.size();
+                            }
+                            ++(*num_upserts);
+                        }
+                    };
 
                 if (nibble == CODE_NIBBLE) {
                     MONAD_ASSERT(depth == HASH_SIZE);
                     send_upsert(SYNC_TYPE_UPSERT_CODE);
                 }
                 else {
-                    MONAD_ASSERT(nibble == STATE_NIBBLE);
-                    if (depth == HASH_SIZE) {
-                        send_upsert(SYNC_TYPE_UPSERT_ACCOUNT);
+                    MONAD_ASSERT(
+                        nibble == STATE_NIBBLE ||
+                        nibble == DOMAIN_STATE_NIBBLE);
+                    // Do not emit the domain-id metadata node as an update.
+                    if (nibble == DOMAIN_STATE_NIBBLE &&
+                        depth == DOMAIN_ID_SIZE) {
+                        return true;
+                    }
+                    if (depth == account_depth) {
+                        if (nibble == STATE_NIBBLE) {
+                            send_upsert(SYNC_TYPE_UPSERT_ACCOUNT);
+                        }
+                        else {
+                            MONAD_ASSERT(domain_id.has_value());
+                            byte_string payload{};
+                            payload += node.value();
+                            payload += rlp::encode_unsigned(*domain_id);
+                            send_domain_upsert(
+                                SYNC_TYPE_UPSERT_ACCOUNT, payload);
+                        }
                     }
                     else {
-                        MONAD_ASSERT(depth == (HASH_SIZE * 2));
-                        if (emit_page_records) {
+                        MONAD_ASSERT(depth == account_depth + HASH_SIZE);
+                        if (nibble == DOMAIN_STATE_NIBBLE) {
+                            MONAD_ASSERT(domain_id.has_value());
+                            send_storage_page(node.value(), domain_id);
+                        }
+                        else if (emit_page_records) {
                             send_upsert(
                                 SYNC_TYPE_UPSERT_STORAGE_PAGE,
                                 reinterpret_cast<unsigned char const *>(&addr),
@@ -303,24 +414,7 @@ bool statesync_server_handle_request(
                             // A peer below 1.3 cannot decode page records:
                             // expand the page into one slot-format upsert per
                             // non-zero slot.
-                            auto const decoded =
-                                decode_storage_page_leaf(node.value());
-                            MONAD_ASSERT(decoded.has_value());
-                            for (auto const [slot_key, slot_val] :
-                                 decoded.value().slots()) {
-                                auto const entry =
-                                    encode_storage_db(slot_key, slot_val);
-                                sync->statesync_server_send_upsert(
-                                    sync->net,
-                                    SYNC_TYPE_UPSERT_STORAGE,
-                                    reinterpret_cast<unsigned char const *>(
-                                        &addr),
-                                    sizeof(addr),
-                                    entry.data(),
-                                    entry.size());
-                                ++(*num_upserts);
-                                *upsert_bytes += sizeof(addr) + entry.size();
-                            }
+                            send_storage_page(node.value());
                         }
                     }
                 }
@@ -350,7 +444,8 @@ bool statesync_server_handle_request(
         {
             if (depth == 0 && nibble == INVALID_BRANCH) {
                 MONAD_ASSERT(branch != INVALID_BRANCH);
-                return branch == STATE_NIBBLE || branch == CODE_NIBBLE;
+                return branch == STATE_NIBBLE || branch == CODE_NIBBLE ||
+                       branch == DOMAIN_STATE_NIBBLE;
             }
             auto const v =
                 node.subtrie_min_version(node.to_child_index(branch));
@@ -358,7 +453,7 @@ bool statesync_server_handle_request(
             if (static_cast<uint64_t>(v) > until) {
                 return false;
             }
-            return depth >= prefix.nibble_size() || prefix.get(depth) == branch;
+            return matches_prefix(depth, branch);
         }
     };
 

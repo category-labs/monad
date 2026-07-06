@@ -23,6 +23,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <span>
 #include <utility>
 
 #include <signal.h>
@@ -31,8 +32,11 @@ MONAD_NAMESPACE_BEGIN
 
 struct MonadChain;
 struct Db;
+struct Address;
 class BlockHashBufferFinalized;
 class ExecutionEventRecorder;
+class TrieRODb;
+class PrivateDomainKeyring;
 
 namespace fiber
 {
@@ -48,6 +52,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     MonadChain const &, std::filesystem::path const &, Db &, Db *secondary_db,
     vm::VM &, BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &,
     uint64_t, sig_atomic_t const volatile &, bool enable_tracing,
-    std::chrono::seconds block_db_timeout, ExecutionEventRecorder *);
+    std::chrono::seconds block_db_timeout, ExecutionEventRecorder *,
+    TrieRODb *domain_state_db,
+    PrivateDomainKeyring const &private_domain_keyring,
+    Address const &private_domain_sequencer);
 
 MONAD_NAMESPACE_END

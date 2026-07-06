@@ -89,6 +89,11 @@ namespace monad::mpt::test
 {
     struct DbAccessor
     {
+        static UpdateAux &aux(Db &db)
+        {
+            return db.aux();
+        }
+
         static UpdateAux const &aux(Db const &db)
         {
             return db.aux();

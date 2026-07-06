@@ -21,6 +21,7 @@
 #include <category/core/keccak.hpp>
 #include <category/crypto/hash256.h>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
@@ -33,6 +34,7 @@
 #include <category/statesync/statesync_protocol.hpp>
 
 #include <ankerl/unordered_dense.h>
+#include <intx/intx.hpp>
 
 #include <cstdint>
 #include <deque>
@@ -103,6 +105,7 @@ void monad_statesync_client_context::prepare_current_state()
 
     auto const state_key = concat(FINALIZED_NIBBLE, STATE_NIBBLE);
     auto const code_key = concat(FINALIZED_NIBBLE, CODE_NIBBLE);
+    auto const domain_state_key = concat(FINALIZED_NIBBLE, DOMAIN_STATE_NIBBLE);
     dest_root = db.copy_trie(
         src_root,
         state_key,
@@ -111,6 +114,15 @@ void monad_statesync_client_context::prepare_current_state()
         current,
         write_root);
     write_root = true;
+    if (db.find(src_root, domain_state_key, latest_version).has_value()) {
+        dest_root = db.copy_trie(
+            src_root,
+            domain_state_key,
+            std::move(dest_root),
+            domain_state_key,
+            current,
+            write_root);
+    }
     dest_root = db.copy_trie(
         src_root,
         code_key,
@@ -120,7 +132,7 @@ void monad_statesync_client_context::prepare_current_state()
         write_root);
     auto const finalized_res = db.find(dest_root, finalized_nibbles, current);
     MONAD_ASSERT(finalized_res.has_value());
-    MONAD_ASSERT(finalized_res.value().node->number_of_children() == 2);
+    MONAD_ASSERT(finalized_res.value().node->number_of_children() >= 2);
     MONAD_ASSERT(db.find(dest_root, state_key, current).has_value());
     MONAD_ASSERT(db.find(dest_root, code_key, current).has_value());
     MONAD_ASSERT(dest_root->value() == src_root->value());
@@ -147,16 +159,19 @@ void monad_statesync_client_context::commit()
     // contents, read from the trie on first touch, unless the whole page
     // arrived on the wire, in which case it starts empty. A page that ends up
     // empty becomes a delete on the page entry. Pages from one account never
-    // collide with another's, so no cross-account cache is needed.
+    // collide with another's, so no cross-account cache is needed. Domain
+    // storage arrives as slot records only, so it is never covered.
     auto const build_page_storage = [&](Address const &addr,
-                                        StorageDeltas const &slot_deltas) {
+                                        StorageDeltas const &slot_deltas,
+                                        std::optional<uint64_t> const domain) {
         UpdateList storage;
         ankerl::unordered_dense::segmented_map<
             bytes32_t,
             storage_page_t,
             BytesHashCompare<bytes32_t>>
             pages;
-        auto const cov = covered_pages.find(addr);
+        auto const cov = domain.has_value() ? covered_pages.end()
+                                            : covered_pages.find(addr);
         auto const *const covered =
             cov == covered_pages.end() ? nullptr : &cov->second;
         for (auto const &[slot_key, slot_val] : slot_deltas) {
@@ -169,7 +184,7 @@ void monad_statesync_client_context::commit()
                 it->second = covered != nullptr && covered->contains(pg_key)
                                  ? storage_page_t{}
                                  : tdb.read_storage_page(
-                                       addr, Incarnation{0, 0}, pg_key);
+                                       addr, Incarnation{0, 0}, pg_key, domain);
             }
             it->second.set(slot_off, slot_val);
         }
@@ -197,7 +212,7 @@ void monad_statesync_client_context::commit()
         if (delta.has_value()) {
             auto const &[acct, slot_deltas] = delta.value();
             value = bytes_alloc.emplace_back(encode_account_db(addr, acct));
-            storage = build_page_storage(addr, slot_deltas);
+            storage = build_page_storage(addr, slot_deltas, std::nullopt);
         }
         accounts.push_front(alloc.emplace_back(Update{
             .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
@@ -205,6 +220,36 @@ void monad_statesync_client_context::commit()
             .incarnation = false,
             .next = std::move(storage),
             .version = static_cast<int64_t>(current)}));
+    }
+    UpdateList domain_updates;
+    for (auto const &[domain, account_deltas] : domain_deltas) {
+        UpdateList domain_accounts;
+        for (auto const &[addr, delta] : account_deltas) {
+            UpdateList storage;
+            std::optional<byte_string_view> value;
+            if (delta.has_value()) {
+                auto const &[acct, slot_deltas] = delta.value();
+                value = bytes_alloc.emplace_back(encode_account_db(addr, acct));
+                storage = build_page_storage(addr, slot_deltas, domain);
+            }
+            domain_accounts.push_front(alloc.emplace_back(Update{
+                .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
+                .value = value,
+                .incarnation = false,
+                .next = std::move(storage),
+                .version = static_cast<int64_t>(current)}));
+        }
+        if (!domain_accounts.empty()) {
+            uint8_t domain_bytes[sizeof(uint64_t)];
+            intx::be::store(domain_bytes, domain);
+            domain_updates.push_front(alloc.emplace_back(Update{
+                .key = bytes_alloc.emplace_back(
+                    domain_bytes, sizeof(domain_bytes)),
+                .value = bytes_alloc.emplace_back(rlp::encode_unsigned(domain)),
+                .incarnation = false,
+                .next = std::move(domain_accounts),
+                .version = static_cast<int64_t>(current)}));
+        }
     }
     UpdateList code_updates;
     for (auto const &[hash, bytes] : code) {
@@ -229,6 +274,12 @@ void monad_statesync_client_context::commit()
         .incarnation = false,
         .next = std::move(code_updates),
         .version = static_cast<int64_t>(current)};
+    auto domain_update = Update{
+        .key = domain_state_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(domain_updates),
+        .version = static_cast<int64_t>(current)};
     auto block_header_update = Update{
         .key = block_header_nibbles,
         .value = header_rlp,
@@ -237,6 +288,9 @@ void monad_statesync_client_context::commit()
         .version = static_cast<int64_t>(current)};
     UpdateList updates;
     updates.push_front(state_update);
+    if (!domain_update.next.empty()) {
+        updates.push_front(domain_update);
+    }
     updates.push_front(code_update);
     updates.push_front(block_header_update);
 
@@ -260,6 +314,7 @@ void monad_statesync_client_context::commit()
 
     code.clear();
     deltas.clear();
+    domain_deltas.clear();
     covered_pages.clear();
     n_upserts = 0;
 }

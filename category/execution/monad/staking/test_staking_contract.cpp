@@ -5159,15 +5159,18 @@ TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
     // Reserve-balance tracking indexes the block's senders by tx position.
     std::vector<Address> const senders{auth, auth};
     std::vector<std::vector<std::optional<Address>>> const authorities{{}, {}};
-    ankerl::unordered_dense::segmented_set<Address> const no_addresses;
-    ankerl::unordered_dense::segmented_set<Address> const
-        senders_and_authorities{auth};
+    std::vector<std::optional<uint64_t>> const domains(
+        senders.size(), std::nullopt);
+    AddressesByDomain const no_addresses;
+    AddressesByDomain const senders_and_authorities =
+        combine_senders_and_authorities(senders, authorities, domains);
     ChainContext<Trait> const chain_ctx{
         .grandparent_senders_and_authorities = no_addresses,
         .parent_senders_and_authorities = no_addresses,
         .senders_and_authorities = senders_and_authorities,
         .senders = senders,
-        .authorities = authorities};
+        .authorities = authorities,
+        .domains = domains};
 
     auto const run = [&](uint64_t const nonce,
                          u8_be const withdrawal_id,
@@ -5316,15 +5319,18 @@ TYPED_TEST(StakeAllRevisions, delegate_value_is_logged_once)
     // Reserve-balance tracking indexes the block's senders by tx position.
     std::vector<Address> const senders{auth};
     std::vector<std::vector<std::optional<Address>>> const authorities{{}};
-    ankerl::unordered_dense::segmented_set<Address> const no_addresses;
-    ankerl::unordered_dense::segmented_set<Address> const
-        senders_and_authorities{auth};
+    std::vector<std::optional<uint64_t>> const domains(
+        senders.size(), std::nullopt);
+    AddressesByDomain const no_addresses;
+    AddressesByDomain const senders_and_authorities =
+        combine_senders_and_authorities(senders, authorities, domains);
     ChainContext<Trait> const chain_ctx{
         .grandparent_senders_and_authorities = no_addresses,
         .parent_senders_and_authorities = no_addresses,
         .senders_and_authorities = senders_and_authorities,
         .senders = senders,
-        .authorities = authorities};
+        .authorities = authorities,
+        .domains = domains};
 
     auto const receipt = ExecuteTransaction<Trait>(
         MonadDevnet{},

@@ -15,6 +15,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -36,6 +37,7 @@ MONAD_NAMESPACE_BEGIN
 enum class SystemTransactionError
 {
     Success = 0,
+    SystemTxnInGaslessMode,
     SystemTxnBeforeFork,
     GasNonZero,
     TypeNotLegacy,
@@ -48,9 +50,9 @@ enum class SystemTransactionError
 class State;
 struct Transaction;
 
-template <Traits traits>
+template <Traits traits, bool gasless = false>
 Result<void> static_validate_system_transaction(
-    Transaction const &tx, Address const &sender);
+    Transaction const &tx, Address const &sender, uint256_t const &chain_id);
 
 Result<void> validate_system_transaction(
     Transaction const &, Address const &sender, State &);

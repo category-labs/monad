@@ -69,6 +69,10 @@ using StateDeltas = oneapi::tbb::concurrent_hash_map<
 static_assert(sizeof(StateDeltas) == 576);
 static_assert(alignof(StateDeltas) == 8);
 
+// Domain -> per-account state deltas for domain-scoped state.
+using DomainStateDeltas =
+    oneapi::tbb::concurrent_hash_map<uint64_t, std::unique_ptr<StateDeltas>>;
+
 using Code = oneapi::tbb::concurrent_hash_map<
     bytes32_t, vm::SharedIntercode, BytesHashCompare<bytes32_t>>;
 

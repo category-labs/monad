@@ -23,7 +23,8 @@ MONAD_NAMESPACE_BEGIN
 
 class ExecutionEventRecorder;
 
-template <Traits traits>
+template <Traits traits, bool gasless>
+    requires(!gasless || is_monad_trait_v<traits>)
 Result<Receipt> dispatch_transaction(
     Chain const &chain, uint64_t const i, Transaction const &transaction,
     Address const &sender,
@@ -32,6 +33,7 @@ Result<Receipt> dispatch_transaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::future<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &, ChainContext<traits> const &chain_ctx,
-    ExecutionEventRecorder *exec_recorder, bool trace_transfers);
+    ExecutionEventRecorder *exec_recorder, bool trace_transfers,
+    std::optional<Address> domain_spoke);
 
 MONAD_NAMESPACE_END

@@ -18,6 +18,7 @@
 #include <category/core/address.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <ankerl/unordered_dense.h>
@@ -34,8 +35,8 @@ concept valid_chain_context_buffer_age = (age < K);
 
 /**
  * Circular buffer of combined senders and EIP-7702 authorities for the last
- * K blocks. Use advance(senders, authorities) to obtain the context needed
- * for each block's reserve balance checks in eth_simulatev1.
+ * K blocks. Use advance(senders, authorities, domains) to obtain the
+ * context needed for each block's reserve balance checks in eth_simulatev1.
  *
  * Each call to advance selects the traits of the block being simulated,
  * for simulations that cross a fork boundary.
@@ -52,19 +53,20 @@ public:
     template <Traits traits>
     ChainContext<traits> advance(
         std::vector<Address> const &senders,
-        std::vector<std::vector<std::optional<Address>>> const &authorities);
+        std::vector<std::vector<std::optional<Address>>> const &authorities,
+        std::vector<std::optional<uint64_t>> const &domains);
 
 private:
     template <size_t age>
         requires(valid_chain_context_buffer_age<age, K>)
-    ankerl::unordered_dense::segmented_set<Address> const &get() const;
+    AddressesByDomain const &get() const;
 
     size_t current_index_{0};
-    std::array<ankerl::unordered_dense::segmented_set<Address>, K>
-        senders_and_authorities_buffer_{};
+    std::array<AddressesByDomain, K> senders_and_authorities_buffer_{};
     std::vector<Address> const *current_senders_{};
     std::vector<std::vector<std::optional<Address>>> const
         *current_authorities_{};
+    std::vector<std::optional<uint64_t>> const *current_domains_{};
 };
 
 MONAD_NAMESPACE_END

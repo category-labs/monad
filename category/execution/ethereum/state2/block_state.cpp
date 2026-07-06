@@ -55,21 +55,40 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
 {
 }
 
-std::optional<Account> BlockState::read_account(Address const &address)
+StateDeltas &
+BlockState::get_or_create_state_deltas(std::optional<uint64_t> const &domain)
 {
+    if (!domain) {
+        MONAD_ASSERT(state_);
+        return *state_;
+    }
+
+    DomainStateDeltas::accessor domain_it{};
+    if (!domain_state_.find(domain_it, *domain)) {
+        auto deltas = std::make_unique<StateDeltas>();
+        domain_state_.emplace(domain_it, *domain, std::move(deltas));
+    }
+    MONAD_ASSERT(domain_it->second);
+    return *domain_it->second;
+}
+
+std::optional<Account> BlockState::read_account(
+    Address const &address, std::optional<uint64_t> const &domain)
+{
+    auto &deltas = get_or_create_state_deltas(domain);
+
     // block state
     {
         StateDeltas::const_accessor it{};
-        MONAD_ASSERT(state_);
-        if (MONAD_LIKELY(state_->find(it, address))) {
+        if (MONAD_LIKELY(deltas.find(it, address))) {
             return it->second.account.second;
         }
     }
     // database
     {
-        auto const result = db_.read_account(address);
+        auto const result = db_.read_account(address, domain);
         StateDeltas::const_accessor it{};
-        state_->emplace(
+        deltas.emplace(
             it,
             address,
             StateDelta{.account = {result, result}, .storage = {}});
@@ -78,14 +97,15 @@ std::optional<Account> BlockState::read_account(Address const &address)
 }
 
 bytes32_t BlockState::read_storage(
-    Address const &address, Incarnation const incarnation, bytes32_t const &key)
+    Address const &address, Incarnation const incarnation, bytes32_t const &key,
+    std::optional<uint64_t> const &domain)
 {
+    auto &deltas = get_or_create_state_deltas(domain);
     bool read_storage = false;
     // block state
     {
         StateDeltas::const_accessor it{};
-        MONAD_ASSERT(state_);
-        MONAD_ASSERT(state_->find(it, address));
+        MONAD_ASSERT(deltas.find(it, address));
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return {};
@@ -106,13 +126,14 @@ bytes32_t BlockState::read_storage(
     {
         bytes32_t result{};
         if (read_storage) {
-            result = db_.read_storage(address, incarnation, key);
+            result = db_.read_storage(address, incarnation, key, domain);
             MONAD_ASSERT(
-                !secondary_db_ || secondary_db_->read_storage(
-                                      address, incarnation, key) == result);
+                !secondary_db_ ||
+                secondary_db_->read_storage(
+                    address, incarnation, key, domain) == result);
         }
         StateDeltas::accessor it{};
-        MONAD_ASSERT(state_->find(it, address));
+        MONAD_ASSERT(deltas.find(it, address));
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return result;
@@ -156,14 +177,26 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
 bool BlockState::can_merge(State &state) const
 {
     MONAD_ASSERT(state_);
-    auto const &original = state.original();
-    for (auto &kv : original) {
+    auto const &domain = state.get_domain();
+    StateDeltas const *deltas = nullptr;
+    if (domain.has_value()) {
+        DomainStateDeltas::const_accessor domain_it{};
+        MONAD_ASSERT(domain_state_.find(domain_it, *domain));
+        MONAD_ASSERT(domain_it->second);
+        deltas = domain_it->second.get();
+    }
+    else {
+        deltas = state_.get();
+    }
+
+    for (auto &kv : state.original()) {
         Address const &address = kv.first;
         OriginalAccountState const &account_state = kv.second;
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
+        MONAD_ASSERT(deltas);
         StateDeltas::const_accessor it{};
-        MONAD_ASSERT(state_->find(it, address));
+        MONAD_ASSERT(deltas->find(it, address));
         if (account != it->second.account.second) {
             // RELAXED MERGE
             // try to fix original and current in `state` to match the block
@@ -215,13 +248,25 @@ void BlockState::merge(State const &state)
         code_.emplace(code_hash, it->second->intercode()); // TODO try_emplace
     }
 
-    MONAD_ASSERT(state_);
+    auto const &domain = state.get_domain();
+    StateDeltas *deltas = nullptr;
+    if (domain.has_value()) {
+        DomainStateDeltas::accessor domain_it{};
+        MONAD_ASSERT(domain_state_.find(domain_it, *domain));
+        MONAD_ASSERT(domain_it->second);
+        deltas = domain_it->second.get();
+    }
+    else {
+        MONAD_ASSERT(state_);
+        deltas = state_.get();
+    }
+
     for (auto const &[address, stack] : current) {
         auto const &account_state = stack.recent();
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
         StateDeltas::accessor it{};
-        MONAD_ASSERT(state_->find(it, address));
+        MONAD_ASSERT(deltas->find(it, address));
         it->second.account.second = account;
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {
@@ -248,6 +293,11 @@ void BlockState::merge(State const &state)
             it->second.storage.clear();
         }
     }
+}
+
+DomainStateDeltas BlockState::release_domain_state_deltas()
+{
+    return std::move(domain_state_);
 }
 
 BlockState::ReleasedState BlockState::release() &&

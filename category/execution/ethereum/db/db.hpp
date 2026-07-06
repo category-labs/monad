@@ -33,21 +33,32 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
+#include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 class CommitBuilder;
 
+using DomainStateRoots = std::vector<std::pair<uint64_t, bytes32_t>>;
+using PopulateDomainHeadersFn =
+    std::function<void(CommitBuilder &, DomainStateRoots const &)>;
+
 struct Db
 {
     virtual bool is_page_encoded() const = 0;
-    virtual std::optional<Account> read_account(Address const &) = 0;
+    virtual std::optional<Account> read_account(
+        Address const &,
+        std::optional<uint64_t> const &domain = std::nullopt) = 0;
 
-    virtual bytes32_t
-    read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
+    virtual bytes32_t read_storage(
+        Address const &, Incarnation, bytes32_t const &key,
+        std::optional<uint64_t> const &domain = std::nullopt) = 0;
 
     virtual storage_page_t read_storage_page(
-        Address const &, Incarnation, bytes32_t const &page_key) = 0;
+        Address const &, Incarnation, bytes32_t const &page_key,
+        std::optional<uint64_t> const &domain = std::nullopt) = 0;
 
     virtual vm::SharedIntercode read_code(bytes32_t const &) = 0;
 
@@ -74,6 +85,12 @@ struct Db
         bytes32_t const &block_id, CommitBuilder &builder,
         BlockHeader const &header, StateDeltas const &state_deltas,
         std::function<void(BlockHeader &)> populate_header_fn) = 0;
+
+    virtual DomainStateRoots commit_domain_state_deltas(
+        bytes32_t const &block_id, CommitBuilder &builder,
+        std::span<DomainStateDeltas const *const> delta_sets,
+        uint64_t block_number,
+        PopulateDomainHeadersFn const &populate_headers) = 0;
 
     virtual std::string print_stats()
     {

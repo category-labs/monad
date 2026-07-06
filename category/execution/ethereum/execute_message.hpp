@@ -26,7 +26,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <Traits traits>
+template <Traits traits, bool gasless>
 struct EvmcHost;
 
 class State;
@@ -35,12 +35,12 @@ template <Traits traits>
 evmc::Result
 deploy_contract_code(State &, Address const &, evmc::Result) noexcept;
 
-template <Traits traits>
-evmc::Result
-execute_create_message(EvmcHost<traits> *, State &, evmc_message const &);
+template <Traits traits, bool gasless = false>
+evmc::Result execute_create_message(
+    EvmcHost<traits, gasless> *, State &, evmc_message const &);
 
-template <Traits traits>
-evmc::Result
-execute_call_message(EvmcHost<traits> *, State &, evmc_message const &);
+template <Traits traits, bool gasless = false>
+evmc::Result execute_call_message(
+    EvmcHost<traits, gasless> *, State &, evmc_message const &);
 
 MONAD_NAMESPACE_END

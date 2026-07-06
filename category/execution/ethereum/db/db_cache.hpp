@@ -21,6 +21,7 @@
 #include <category/core/config.hpp>
 #include <category/core/lru/lru_cache.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/db/account_key.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -53,10 +54,10 @@ enum class CacheReadStatus
 // key and offset based on its encoding; the cache does not.
 class DbCache final
 {
-    using AddressHashCompare = BytesHashCompare<Address>;
+    using AccountKeyHashCompare = BytesHashCompare<AccountKey>;
     using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
     using AccountsCache =
-        LruCache<Address, std::optional<Account>, AddressHashCompare>;
+        LruCache<AccountKey, std::optional<Account>, AccountKeyHashCompare>;
     // The cache is slot-granular: keyed by slot_key, the value is a
     // storage_page_t used as a single-slot container holding the value at
     // index 0 only. This will be compatible for future page-granular reads.
@@ -72,10 +73,11 @@ class DbCache final
 public:
     DbCache() = default;
 
-    CacheReadStatus
-    try_read_account(Address const &address, std::optional<Account> &result)
+    CacheReadStatus try_read_account(
+        Address const &address, std::optional<Account> &result,
+        std::optional<uint64_t> const &domain = std::nullopt)
     {
-        auto const res = proposals_.try_read_account(address, result);
+        auto const res = proposals_.try_read_account(address, result, domain);
         if (res.found) {
             return CacheReadStatus::Hit;
         }
@@ -83,7 +85,7 @@ public:
             return CacheReadStatus::MissTruncated;
         }
         AccountsCache::ConstAccessor acc{};
-        if (accounts_.find(acc, address)) {
+        if (accounts_.find(acc, AccountKey{address, domain})) {
             result = acc->second.value_;
             return CacheReadStatus::Hit;
         }
@@ -94,24 +96,26 @@ public:
     // after a `MissResolved` read. A nullopt is a valid (negative) entry: it
     // records that the account is absent at the finalized baseline.
     void insert_account(
-        Address const &address, std::optional<Account> const &account)
+        Address const &address, std::optional<Account> const &account,
+        std::optional<uint64_t> const &domain = std::nullopt)
     {
-        accounts_.insert(address, account);
+        accounts_.insert(AccountKey{address, domain}, account);
     }
 
     CacheReadStatus try_read_storage_page(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, storage_page_t &result)
+        bytes32_t const &key, storage_page_t &result,
+        std::optional<uint64_t> const &domain = std::nullopt)
     {
-        auto const res =
-            proposals_.try_read_storage(address, incarnation, key, result);
+        auto const res = proposals_.try_read_storage(
+            address, incarnation, key, result, domain);
         if (res.found) {
             return CacheReadStatus::Hit;
         }
         if (res.truncated) {
             return CacheReadStatus::MissTruncated;
         }
-        StorageKey const skey{address, incarnation, key};
+        StorageKey const skey{address, incarnation, key, domain};
         StorageCache::ConstAccessor acc{};
         if (storage_.find(acc, skey)) {
             result = acc->second.value_;
@@ -122,11 +126,12 @@ public:
 
     CacheReadStatus try_read_storage(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, uint8_t const slot_offset, bytes32_t &result)
+        bytes32_t const &key, uint8_t const slot_offset, bytes32_t &result,
+        std::optional<uint64_t> const &domain = std::nullopt)
     {
         storage_page_t page;
-        auto const res =
-            proposals_.try_read_storage(address, incarnation, key, page);
+        auto const res = proposals_.try_read_storage(
+            address, incarnation, key, page, domain);
         if (res.found) {
             // slot_offset is 0 for slot encoding, the in-page offset for page.
             result = page[slot_offset];
@@ -135,7 +140,7 @@ public:
         if (res.truncated) {
             return CacheReadStatus::MissTruncated;
         }
-        StorageKey const skey{address, incarnation, key};
+        StorageKey const skey{address, incarnation, key, domain};
         StorageCache::ConstAccessor acc{};
         if (storage_.find(acc, skey)) {
             result = acc->second.value_[slot_offset];
@@ -151,9 +156,10 @@ public:
     // entry holds the same page anyway).
     void insert_storage_page(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, storage_page_t const &page)
+        bytes32_t const &key, storage_page_t const &page,
+        std::optional<uint64_t> const &domain = std::nullopt)
     {
-        StorageKey const skey{address, incarnation, key};
+        StorageKey const skey{address, incarnation, key, domain};
         storage_.try_insert_no_overwrite(
             skey, page, static_cast<uint32_t>(page.byte_size()));
     }
@@ -164,11 +170,12 @@ public:
         proposals_.set_block_and_prefix(block_number, block_id);
     }
 
-    void update_proposal_state(
-        ProposalPostState post_state, uint64_t const block_number,
-        bytes32_t const &block_id)
+    void update_proposal_post_state(
+        ProposalPostState post_state, std::optional<uint64_t> const &domain,
+        uint64_t const block_number, bytes32_t const &block_id)
     {
-        proposals_.commit(std::move(post_state), block_number, block_id);
+        proposals_.commit(
+            std::move(post_state), domain, block_number, block_id);
     }
 
     void on_finalize(uint64_t const block_number, bytes32_t const &block_id)
@@ -177,6 +184,7 @@ public:
             proposals_.finalize(block_number, block_id);
         if (ps) {
             insert_in_lru_caches(ps->post_state());
+            insert_in_lru_caches(ps->domain_post_state());
         }
         else {
             // Finalizing a truncated proposal. Clear LRU caches.  This is an
@@ -201,11 +209,18 @@ public:
 private:
     void insert_in_lru_caches(ProposalPostState const &post_state)
     {
-        for (auto const &[addr, acct] : post_state.accounts) {
-            accounts_.insert(addr, acct);
+        for (auto const &[key, acct] : post_state.accounts) {
+            accounts_.insert(key, acct);
         }
         for (auto const &[sk, leaf] : post_state.storage) {
             storage_.insert(sk, leaf, static_cast<uint32_t>(leaf.byte_size()));
+        }
+    }
+
+    void insert_in_lru_caches(DomainProposalPostState const &domain_post_state)
+    {
+        for (auto const &entry : domain_post_state) {
+            insert_in_lru_caches(entry.second);
         }
     }
 };

@@ -65,6 +65,7 @@ set(THIRD_PARTY_DIR "${PROJECT_SOURCE_DIR}/third_party")
 include(cmake/compile_options.cmake)
 
 find_package(Boost REQUIRED COMPONENTS context filesystem json CONFIG)
+find_package(OpenSSL 3.5 REQUIRED COMPONENTS Crypto)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)

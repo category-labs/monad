@@ -17,7 +17,9 @@
 
 #include <category/core/address.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/monad/core/monad_block.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 

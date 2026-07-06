@@ -16,17 +16,24 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/core/assert.h>
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/log.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
+#include <category/execution/ethereum/db/account_key.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/vm.hpp>
 
 #include <quill/std/Pair.h>
 
+#include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
@@ -34,15 +41,14 @@ MONAD_NAMESPACE_BEGIN
 class ProposalState
 {
     ProposalPostState post_state_;
+    DomainProposalPostState domain_post_state_;
     uint64_t parent_block_;
     bytes32_t parent_id_;
 
 public:
     ProposalState(
-        ProposalPostState post_state, uint64_t const parent_block_number,
-        bytes32_t const &parent_id)
-        : post_state_(std::move(post_state))
-        , parent_block_(parent_block_number)
+        uint64_t const parent_block_number, bytes32_t const &parent_id)
+        : parent_block_(parent_block_number)
         , parent_id_(parent_id)
     {
     }
@@ -57,11 +63,36 @@ public:
         return post_state_;
     }
 
-    bool try_read_account(
-        Address const &address, std::optional<Account> &result) const
+    DomainProposalPostState const &domain_post_state() const
     {
-        auto const it = post_state_.accounts.find(address);
-        if (it != post_state_.accounts.end()) {
+        return domain_post_state_;
+    }
+
+    void set_post_state(
+        ProposalPostState post_state, std::optional<uint64_t> const &domain)
+    {
+        if (!domain.has_value()) {
+            post_state_ = std::move(post_state);
+        }
+        else {
+            auto const inserted =
+                domain_post_state_.try_emplace(*domain, std::move(post_state))
+                    .second;
+            MONAD_ASSERT(inserted);
+        }
+    }
+
+    bool try_read_account(
+        Address const &address, std::optional<Account> &result,
+        std::optional<uint64_t> const &domain = std::nullopt) const
+    {
+        ProposalPostState const *state = post_state_for(domain);
+        if (!state) {
+            return false;
+        }
+        AccountKey const account_key{address, domain};
+        auto const it = state->accounts.find(account_key);
+        if (it != state->accounts.end()) {
             result = it->second;
             return true;
         }
@@ -70,10 +101,16 @@ public:
 
     bool try_read_storage(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, storage_page_t &result) const
+        bytes32_t const &key, storage_page_t &result,
+        std::optional<uint64_t> const &domain = std::nullopt) const
     {
-        auto const acct_it = post_state_.accounts.find(address);
-        if (acct_it != post_state_.accounts.end()) {
+        ProposalPostState const *state = post_state_for(domain);
+        if (!state) {
+            return false;
+        }
+        AccountKey const account_key{address, domain};
+        auto const acct_it = state->accounts.find(account_key);
+        if (acct_it != state->accounts.end()) {
             auto const &acct = acct_it->second;
             if (!acct.has_value() || acct->incarnation != incarnation) {
                 // Account deleted or incarnation cleared in this proposal:
@@ -82,13 +119,27 @@ public:
                 return true;
             }
         }
-        StorageKey const sk{address, incarnation, key};
-        auto const it = post_state_.storage.find(sk);
-        if (it != post_state_.storage.end()) {
+        StorageKey const sk{address, incarnation, key, domain};
+        auto const it = state->storage.find(sk);
+        if (it != state->storage.end()) {
             result = it->second;
             return true;
         }
         return false;
+    }
+
+private:
+    ProposalPostState const *
+    post_state_for(std::optional<uint64_t> const &domain) const
+    {
+        if (!domain.has_value()) {
+            return &post_state_;
+        }
+        auto const it = domain_post_state_.find(*domain);
+        if (it == domain_post_state_.end()) {
+            return nullptr;
+        }
+        return &it->second;
     }
 };
 
@@ -127,22 +178,25 @@ public:
     };
 
     TryReadResult try_read_account(
-        Address const &address, std::optional<Account> &result) const
+        Address const &address, std::optional<Account> &result,
+        std::optional<uint64_t> const &domain = std::nullopt) const
     {
-        auto const fn = [&address, &result](ProposalState const &ps) {
-            return ps.try_read_account(address, result);
+        auto const fn = [&address, &result, &domain](ProposalState const &ps) {
+            return ps.try_read_account(address, result, domain);
         };
         return try_read(fn);
     }
 
     TryReadResult try_read_storage(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, storage_page_t &result) const
+        bytes32_t const &key, storage_page_t &result,
+        std::optional<uint64_t> const &domain = std::nullopt) const
     {
-        auto const fn =
-            [&address, incarnation, &key, &result](ProposalState const &ps) {
-                return ps.try_read_storage(address, incarnation, key, result);
-            };
+        auto const fn = [&address, incarnation, &key, &result, &domain](
+                            ProposalState const &ps) {
+            return ps.try_read_storage(
+                address, incarnation, key, result, domain);
+        };
         return try_read(fn);
     }
 
@@ -154,20 +208,24 @@ public:
     }
 
     void commit(
-        ProposalPostState post_state, uint64_t const block_number,
-        bytes32_t const &block_id)
+        ProposalPostState post_state, std::optional<uint64_t> const &domain,
+        uint64_t const block_number, bytes32_t const &block_id)
     {
-        if (proposal_map_.size() >= MAX_PROPOSAL_MAP_SIZE) {
-            truncate_proposal_map();
-        }
         auto const key = std::make_pair(block_number, block_id);
-        MONAD_ASSERT(
-            proposal_map_
-                .insert(
-                    {key,
-                     std::unique_ptr<ProposalState>(new ProposalState(
-                         std::move(post_state), block_, block_id_))})
-                .second == true);
+        auto it = proposal_map_.find(key);
+        if (it == proposal_map_.end()) {
+            if (proposal_map_.size() >= MAX_PROPOSAL_MAP_SIZE) {
+                truncate_proposal_map();
+            }
+            it = proposal_map_
+                     .insert(
+                         {key,
+                          std::make_unique<ProposalState>(block_, block_id_)})
+                     .first;
+        }
+
+        MONAD_ASSERT(it->second);
+        it->second->set_post_state(std::move(post_state), domain);
         block_ = block_number;
         block_id_ = block_id;
     }

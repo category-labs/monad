@@ -31,6 +31,12 @@ static uint64_t const MONAD_ETH_CALL_LOW_GAS_LIMIT = 8'100'000;
 
 struct monad_executor;
 
+struct monad_domain_spoke
+{
+    uint64_t domain_chain_id;
+    uint8_t spoke_address[20];
+};
+
 typedef struct monad_executor_result
 {
     int status_code;
@@ -95,6 +101,13 @@ struct monad_executor *monad_executor_create(
     struct monad_executor_pool_config high_pool_conf,
     struct monad_executor_pool_config block_pool_conf,
     unsigned tx_exec_num_fibers, uint64_t node_lru_max_mem, char const *dbpath);
+
+struct monad_executor *monad_executor_create_with_domain_spokes(
+    struct monad_executor_pool_config low_pool_conf,
+    struct monad_executor_pool_config high_pool_conf,
+    struct monad_executor_pool_config block_pool_conf,
+    unsigned tx_exec_num_fibers, uint64_t node_lru_max_mem, char const *dbpath,
+    struct monad_domain_spoke const *domain_spokes, size_t domain_spokes_len);
 
 void monad_executor_destroy(struct monad_executor *);
 

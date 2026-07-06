@@ -83,6 +83,17 @@ namespace
                 host.chain_ctx_);
         }
     }
+
+    void append_zero_data_subcall(
+        byte_string &code, Address const &address, uint8_t const opcode)
+    {
+        MONAD_ASSERT(opcode == 0xf4 || opcode == 0xfa);
+        code +=
+            byte_string{0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x73};
+        code.insert(
+            code.end(), std::begin(address.bytes), std::end(address.bytes));
+        code += byte_string{0x61, 0x27, 0x10, opcode};
+    }
 }
 
 TYPED_TEST(TraitsTest, create_with_insufficient)
@@ -1486,6 +1497,573 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
         &h.get_interface(), h.to_context(), correctly_delegated);
     EXPECT_TRUE(d4.has_value());
     EXPECT_EQ(d4.value(), falsely_delegated_3);
+}
+
+TEST(ExecuteMessage, domain_denial_is_sticky_at_transaction_root)
+{
+    using traits = MonadTraits<MONAD_NEXT>;
+    static constexpr Address sender =
+        0x1111111111111111111111111111111111111111_address;
+    static constexpr Address target =
+        0x2222222222222222222222222222222222222222_address;
+    static constexpr Address child =
+        0x3333333333333333333333333333333333333333_address;
+    static constexpr Address spoke =
+        0x4444444444444444444444444444444444444444_address;
+
+    // Return true only when canCall's context argument names the root target.
+    byte_string controller_code{0x60, 0x24, 0x35, 0x73};
+    controller_code.insert(
+        controller_code.end(),
+        std::begin(target.bytes),
+        std::end(target.bytes));
+    controller_code +=
+        byte_string{0x14, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3};
+
+    // Write storage, call the denied child, catch its failure, then succeed.
+    byte_string target_code{
+        0x60,
+        0x01,
+        0x60,
+        0x00,
+        0x55,
+        0x60,
+        0x00,
+        0x60,
+        0x00,
+        0x60,
+        0x00,
+        0x60,
+        0x00,
+        0x60,
+        0x00,
+        0x73};
+    target_code.insert(
+        target_code.end(), std::begin(child.bytes), std::end(child.bytes));
+    target_code += byte_string{0x61, 0x27, 0x10, 0xf1, 0x50, 0x00};
+
+    auto const controller_hash = to_bytes(keccak256(controller_code));
+    auto const target_hash = to_bytes(keccak256(target_code));
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 1'000'000'000}}}},
+            {target,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.code_hash = target_hash, .nonce = 1}}}},
+            {spoke,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.code_hash = controller_hash, .nonce = 1}}}}},
+        Code{
+            {controller_hash, vm::make_shared_intercode(controller_code)},
+            {target_hash, vm::make_shared_intercode(target_code)}},
+        BlockHeader{});
+
+    BlockState block_state{tdb, vm};
+    State state{block_state, Incarnation{0, 0}};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    trace::StateTracer state_tracer = std::monostate{};
+    Transaction tx{};
+    auto const chain_ctx = ChainContext<traits>::debug_empty();
+    EvmcHost<traits, true> host{
+        call_tracer,
+        state_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        state,
+        tx,
+        uint256_t{0},
+        0,
+        chain_ctx,
+        false,
+        spoke};
+
+    auto msg_memory = vm.message_memory_ref();
+    evmc_message const msg{
+        .kind = EVMC_CALL,
+        .gas = 200'000,
+        .recipient = target,
+        .sender = sender,
+        .code_address = target,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity()};
+
+    auto const result = execute_call_message<traits, true>(&host, state, msg);
+
+    EXPECT_EQ(result.status_code, EVMC_REVERT);
+    EXPECT_TRUE(host.domain_access_denied_);
+    EXPECT_EQ(state.get_storage(target, bytes32_t{}), bytes32_t{});
+    EXPECT_FALSE(state.is_touched(spoke));
+}
+
+TEST(ExecuteMessage, domain_denial_prevents_root_contract_deployment)
+{
+    using traits = MonadTraits<MONAD_NEXT>;
+    static constexpr Address sender =
+        0x1111111111111111111111111111111111111111_address;
+    static constexpr Address child =
+        0x3333333333333333333333333333333333333333_address;
+    static constexpr Address spoke =
+        0x4444444444444444444444444444444444444444_address;
+
+    byte_string const controller_code{
+        0x60, 0x00, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3};
+    byte_string initcode{
+        0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x73};
+    initcode.insert(
+        initcode.end(), std::begin(child.bytes), std::end(child.bytes));
+    initcode +=
+        byte_string{0x61, 0x27, 0x10, 0xf1, 0x50, 0x60, 0x00, 0x60, 0x00, 0xf3};
+    auto const controller_hash = to_bytes(keccak256(controller_code));
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 1'000'000'000}}}},
+            {spoke,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.code_hash = controller_hash, .nonce = 1}}}}},
+        Code{{controller_hash, vm::make_shared_intercode(controller_code)}},
+        BlockHeader{});
+
+    BlockState block_state{tdb, vm};
+    State state{block_state, Incarnation{0, 0}};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    trace::StateTracer state_tracer = std::monostate{};
+    Transaction tx{};
+    auto const chain_ctx = ChainContext<traits>::debug_empty();
+    EvmcHost<traits, true> host{
+        call_tracer,
+        state_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        state,
+        tx,
+        uint256_t{0},
+        0,
+        chain_ctx,
+        false,
+        spoke};
+
+    auto msg_memory = vm.message_memory_ref();
+    evmc_message const msg{
+        .kind = EVMC_CREATE,
+        .depth = 0,
+        .gas = 200'000,
+        .sender = sender,
+        .input_data = initcode.data(),
+        .input_size = initcode.size(),
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity()};
+    auto const contract_address = create_contract_address(sender, 0);
+
+    auto const result = execute_create_message<traits, true>(&host, state, msg);
+
+    EXPECT_EQ(result.status_code, EVMC_REVERT);
+    EXPECT_TRUE(host.domain_access_denied_);
+    EXPECT_FALSE(state.account_exists(contract_address));
+}
+
+TEST(ExecuteMessage, domain_access_check_allows_direct_subcalls)
+{
+    using traits = MonadTraits<MONAD_NEXT>;
+    static constexpr Address sender =
+        0x1111111111111111111111111111111111111111_address;
+    static constexpr Address target =
+        0x2222222222222222222222222222222222222222_address;
+    static constexpr Address spoke =
+        0x3333333333333333333333333333333333333333_address;
+    static constexpr Address leaf_1 =
+        0x4444444444444444444444444444444444444444_address;
+    static constexpr Address leaf_2 =
+        0x5555555555555555555555555555555555555555_address;
+    static constexpr Address identity_precompile =
+        0x0000000000000000000000000000000000000004_address;
+
+    // Make direct STATICCALLs to two contracts and a precompile, and return
+    // true only if all three succeed.
+    byte_string controller_code;
+    append_zero_data_subcall(controller_code, leaf_1, 0xfa);
+    append_zero_data_subcall(controller_code, leaf_2, 0xfa);
+    controller_code += byte_string{0x16};
+    append_zero_data_subcall(controller_code, identity_precompile, 0xfa);
+    controller_code +=
+        byte_string{0x16, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3};
+
+    byte_string const stop_code{0x00};
+    auto const controller_hash = to_bytes(keccak256(controller_code));
+    auto const stop_hash = to_bytes(keccak256(stop_code));
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 1'000'000'000}}}},
+            {target,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.code_hash = stop_hash, .nonce = 1}}}},
+            {spoke,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.code_hash = controller_hash, .nonce = 1}}}},
+            {leaf_1,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.code_hash = stop_hash, .nonce = 1}}}},
+            {leaf_2,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.code_hash = stop_hash, .nonce = 1}}}}},
+        Code{
+            {controller_hash, vm::make_shared_intercode(controller_code)},
+            {stop_hash, vm::make_shared_intercode(stop_code)}},
+        BlockHeader{});
+
+    BlockState block_state{tdb, vm};
+    State state{block_state, Incarnation{0, 0}};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    trace::StateTracer state_tracer = std::monostate{};
+    Transaction tx{};
+    auto const chain_ctx = ChainContext<traits>::debug_empty();
+    EvmcHost<traits, true> host{
+        call_tracer,
+        state_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        state,
+        tx,
+        uint256_t{0},
+        0,
+        chain_ctx,
+        false,
+        spoke};
+
+    auto msg_memory = vm.message_memory_ref();
+    evmc_message const msg{
+        .kind = EVMC_CALL,
+        .gas = 200'000,
+        .recipient = target,
+        .sender = sender,
+        .code_address = target,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity()};
+
+    auto const result = execute_call_message<traits, true>(&host, state, msg);
+
+    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    EXPECT_FALSE(host.domain_access_denied_);
+}
+
+TEST(ExecuteMessage, domain_access_check_rejects_static_creation)
+{
+    using traits = MonadTraits<MONAD_NEXT>;
+    static constexpr Address sender =
+        0x1111111111111111111111111111111111111111_address;
+    static constexpr Address target =
+        0x2222222222222222222222222222222222222222_address;
+    static constexpr Address spoke =
+        0x3333333333333333333333333333333333333333_address;
+
+    for (auto const create_opcode : {uint8_t{0xf0}, uint8_t{0xf5}}) {
+        SCOPED_TRACE(create_opcode == 0xf0 ? "CREATE" : "CREATE2");
+
+        // Attempt CREATE or CREATE2, then return true if static execution did
+        // not halt at the creation opcode.
+        byte_string controller_code{0x5f, 0x5f, 0x5f};
+        if (create_opcode == 0xf5) {
+            controller_code.push_back(0x5f);
+        }
+        controller_code.push_back(create_opcode);
+        controller_code += byte_string{
+            0x50, 0x60, 0x01, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3};
+
+        byte_string const target_code{0x00};
+        auto const controller_hash = to_bytes(keccak256(controller_code));
+        auto const target_hash = to_bytes(keccak256(target_code));
+
+        mpt::Db db{std::make_unique<InMemoryMachine>()};
+        db_t tdb{db};
+        vm::VM vm;
+        commit_sequential(
+            tdb,
+            StateDeltas{
+                {sender,
+                 StateDelta{
+                     .account =
+                         {std::nullopt, Account{.balance = 1'000'000'000}}}},
+                {target,
+                 StateDelta{
+                     .account =
+                         {std::nullopt,
+                          Account{.code_hash = target_hash, .nonce = 1}}}},
+                {spoke,
+                 StateDelta{
+                     .account =
+                         {std::nullopt,
+                          Account{.code_hash = controller_hash, .nonce = 1}}}}},
+            Code{
+                {controller_hash, vm::make_shared_intercode(controller_code)},
+                {target_hash, vm::make_shared_intercode(target_code)}},
+            BlockHeader{});
+
+        BlockState block_state{tdb, vm};
+        State state{block_state, Incarnation{0, 0}};
+        BlockHashBufferFinalized const block_hash_buffer;
+        NoopCallTracer call_tracer;
+        trace::StateTracer state_tracer = std::monostate{};
+        Transaction tx{};
+        auto const chain_ctx = ChainContext<traits>::debug_empty();
+        EvmcHost<traits, true> host{
+            call_tracer,
+            state_tracer,
+            EMPTY_TX_CONTEXT,
+            block_hash_buffer,
+            state,
+            tx,
+            uint256_t{0},
+            0,
+            chain_ctx,
+            false,
+            spoke};
+
+        auto msg_memory = vm.message_memory_ref();
+        evmc_message const msg{
+            .kind = EVMC_CALL,
+            .gas = 200'000,
+            .recipient = target,
+            .sender = sender,
+            .code_address = target,
+            .memory_handle = msg_memory.get(),
+            .memory = msg_memory.get(),
+            .memory_capacity = vm.message_memory_capacity()};
+
+        auto const result =
+            execute_call_message<traits, true>(&host, state, msg);
+
+        EXPECT_EQ(result.status_code, EVMC_REVERT);
+        EXPECT_TRUE(host.domain_access_denied_);
+        EXPECT_FALSE(state.is_touched(target));
+    }
+}
+
+TEST(ExecuteMessage, domain_access_check_rejects_less_than_stipend)
+{
+    using traits = MonadTraits<MONAD_NEXT>;
+    static constexpr Address spoke =
+        0x3333333333333333333333333333333333333333_address;
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    State state{block_state, Incarnation{0, 0}};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    trace::StateTracer state_tracer = std::monostate{};
+    Transaction tx{};
+    auto const chain_ctx = ChainContext<traits>::debug_empty();
+    EvmcHost<traits, true> host{
+        call_tracer,
+        state_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        state,
+        tx,
+        uint256_t{0},
+        0,
+        chain_ctx,
+        false,
+        spoke};
+
+    evmc_message const msg{
+        .kind = EVMC_CALL,
+        .gas = 29'999,
+    };
+
+    auto const result = execute_call_message<traits, true>(&host, state, msg);
+
+    EXPECT_EQ(result.status_code, EVMC_REVERT);
+    EXPECT_EQ(result.gas_left, msg.gas);
+    EXPECT_TRUE(host.domain_access_denied_);
+    EXPECT_FALSE(state.is_touched(spoke));
+}
+
+TEST(ExecuteMessage, domain_access_depth_limit_covers_call_kinds)
+{
+    using traits = MonadTraits<MONAD_NEXT>;
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    State state{block_state, Incarnation{0, 0}};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    trace::StateTracer state_tracer = std::monostate{};
+    Transaction tx{};
+    auto const chain_ctx = ChainContext<traits>::debug_empty();
+    EvmcHost<traits, true> host{
+        call_tracer,
+        state_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        state,
+        tx,
+        uint256_t{0},
+        0,
+        chain_ctx};
+
+    host.domain_access_check_depth_ = 1;
+    for (auto const kind : {EVMC_CALL, EVMC_CALLCODE, EVMC_DELEGATECALL}) {
+        host.domain_access_denied_ = false;
+        evmc_message const msg{.kind = kind, .depth = 3, .gas = 123};
+
+        auto const result =
+            execute_call_message<traits, true>(&host, state, msg);
+
+        EXPECT_EQ(result.status_code, EVMC_REVERT);
+        EXPECT_EQ(result.gas_left, msg.gas);
+        EXPECT_TRUE(host.domain_access_denied_);
+    }
+}
+
+TEST(ExecuteMessage, domain_access_check_denies_second_hop_delegatecall)
+{
+    using traits = MonadTraits<MONAD_NEXT>;
+    static constexpr Address sender =
+        0x1111111111111111111111111111111111111111_address;
+    static constexpr Address target =
+        0x2222222222222222222222222222222222222222_address;
+    static constexpr Address spoke =
+        0x3333333333333333333333333333333333333333_address;
+    static constexpr Address leaf =
+        0x4444444444444444444444444444444444444444_address;
+    static constexpr Address grandchild =
+        0x5555555555555555555555555555555555555555_address;
+
+    // The spoke returns whether its direct STATICCALL completed successfully.
+    byte_string controller_code;
+    append_zero_data_subcall(controller_code, leaf, 0xfa);
+    controller_code +=
+        byte_string{0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3};
+
+    // The direct callee catches a prohibited second-hop DELEGATECALL and
+    // returns its failed status as data while still succeeding. The sticky
+    // domain denial must still reject the target.
+    byte_string leaf_code;
+    append_zero_data_subcall(leaf_code, grandchild, 0xf4);
+    leaf_code += byte_string{0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3};
+
+    byte_string const target_code{0x60, 0x01, 0x60, 0x00, 0x55, 0x00};
+    byte_string const stop_code{0x00};
+    auto const controller_hash = to_bytes(keccak256(controller_code));
+    auto const leaf_hash = to_bytes(keccak256(leaf_code));
+    auto const target_hash = to_bytes(keccak256(target_code));
+    auto const stop_hash = to_bytes(keccak256(stop_code));
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 1'000'000'000}}}},
+            {target,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.code_hash = target_hash, .nonce = 1}}}},
+            {spoke,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.code_hash = controller_hash, .nonce = 1}}}},
+            {leaf,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.code_hash = leaf_hash, .nonce = 1}}}},
+            {grandchild,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.code_hash = stop_hash, .nonce = 1}}}}},
+        Code{
+            {controller_hash, vm::make_shared_intercode(controller_code)},
+            {leaf_hash, vm::make_shared_intercode(leaf_code)},
+            {target_hash, vm::make_shared_intercode(target_code)},
+            {stop_hash, vm::make_shared_intercode(stop_code)}},
+        BlockHeader{});
+
+    BlockState block_state{tdb, vm};
+    State state{block_state, Incarnation{0, 0}};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    trace::StateTracer state_tracer = std::monostate{};
+    Transaction tx{};
+    auto const chain_ctx = ChainContext<traits>::debug_empty();
+    EvmcHost<traits, true> host{
+        call_tracer,
+        state_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        state,
+        tx,
+        uint256_t{0},
+        0,
+        chain_ctx,
+        false,
+        spoke};
+
+    auto msg_memory = vm.message_memory_ref();
+    evmc_message const msg{
+        .kind = EVMC_CALL,
+        .gas = 200'000,
+        .recipient = target,
+        .sender = sender,
+        .code_address = target,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity()};
+
+    auto const result = execute_call_message<traits, true>(&host, state, msg);
+
+    EXPECT_EQ(result.status_code, EVMC_REVERT);
+    EXPECT_TRUE(host.domain_access_denied_);
+    EXPECT_FALSE(state.is_touched(target));
 }
 
 #undef PUSH3

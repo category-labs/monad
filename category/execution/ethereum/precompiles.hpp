@@ -47,7 +47,8 @@ bool is_precompile(Address const &);
 template <Traits traits>
 std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &);
 
-template <Traits traits>
+template <Traits traits, bool gasless = false>
+    requires(!gasless || is_monad_trait_v<traits>)
 std::optional<evmc::Result>
 check_call_precompile(State &, CallTracerBase &, evmc_message const &);
 

@@ -15,8 +15,11 @@
 
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/likely.h>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
+#include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
@@ -26,6 +29,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -35,6 +39,8 @@
     #include <boost/outcome/experimental/status-code/config.hpp>
     #include <boost/outcome/experimental/status-code/generic_code.hpp>
 #endif
+
+#include <boost/outcome/try.hpp>
 
 #include <concepts>
 

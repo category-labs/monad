@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
+#include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 
 #include <vector>

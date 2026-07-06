@@ -23,31 +23,38 @@
 #include <category/vm/evm/explicit_traits.hpp>
 
 #include <boost/outcome/success_failure.hpp>
-
 #include <ranges>
 #include <system_error>
 
 MONAD_NAMESPACE_BEGIN
 
-template <Traits traits>
+template <Traits traits, bool gasless>
 Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
     trace::StateTracer &state_tracer)
 {
-    auto res =
-        validate_ethereum_transaction<traits>(tx, sender, state, state_tracer);
+    if constexpr (gasless) {
+        if (MONAD_UNLIKELY(tx.value != 0)) {
+            return MonadTransactionError::GaslessTransactionHasNonzeroValue;
+        }
+    }
+
+    auto res = validate_ethereum_transaction<traits, gasless>(
+        tx, sender, state, state_tracer);
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {
         if (res.has_error() &&
             res.error() != TransactionError::InsufficientBalance) {
             return res;
         }
 
-        uint256_t const gas_fee =
-            uint256_t{tx.gas_limit} * gas_price<traits>(tx, base_fee_per_gas);
-        if (MONAD_UNLIKELY(state.get_balance(sender) < gas_fee)) {
-            return MonadTransactionError::InsufficientBalanceForFee;
+        if constexpr (!gasless) {
+            uint256_t const gas_fee = uint256_t{tx.gas_limit} *
+                                      gas_price<traits>(tx, base_fee_per_gas);
+            if (MONAD_UNLIKELY(state.get_balance(sender) < gas_fee)) {
+                return MonadTransactionError::InsufficientBalanceForFee;
+            }
         }
 
         if (MONAD_UNLIKELY(std::ranges::contains(authorities, SYSTEM_SENDER))) {
@@ -61,6 +68,7 @@ Result<void> validate_transaction(
 }
 
 EXPLICIT_MONAD_TRAITS(validate_transaction);
+EXPLICIT_MONAD_TRAITS_TRUE(validate_transaction);
 
 MONAD_NAMESPACE_END
 
@@ -79,6 +87,9 @@ quick_status_code_from_enum<monad::MonadTransactionError>::value_mappings()
          {}},
         {MonadTransactionError::SystemTransactionSenderIsAuthority,
          "system transaction sender is authority",
+         {}},
+        {MonadTransactionError::GaslessTransactionHasNonzeroValue,
+         "gasless transaction has nonzero value",
          {}},
     };
 

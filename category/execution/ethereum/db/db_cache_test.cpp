@@ -49,7 +49,7 @@ namespace
         Address const &addr, bytes32_t const &key, bytes32_t const &value)
     {
         ProposalPostState post;
-        post.accounts[addr] = Account{.nonce = 1};
+        post.accounts[AccountKey{addr, std::nullopt}] = Account{.nonce = 1};
         post.storage[StorageKey{addr, INC, key}] = storage_page_t{value};
         return post;
     }
@@ -71,16 +71,19 @@ TEST(DbCacheTest, write_beyond_depth_limit_is_miss_truncated)
 {
 
     DbCache cache;
-    cache.update_proposal_state(
-        make_post_state(ADDR, KEY, VALUE2), 1, bytes32_t{1});
+    cache.update_proposal_post_state(
+        make_post_state(ADDR, KEY, VALUE2), std::nullopt, 1, bytes32_t{1});
 
     // proposals 2..6 are padding that only touch OTHER_ADDR/OTHER_KEY. the
     // walk in Proposals::try_read checks at most DEPTH_LIMIT = 5 entries, so
     // from the tip it visits 6, 5, 4, 3, 2 and gives up before reaching
     // proposal 1's write.
     for (uint64_t n = 2; n <= 6; ++n) {
-        cache.update_proposal_state(
-            make_post_state(OTHER_ADDR, OTHER_KEY, VALUE1), n, bytes32_t{n});
+        cache.update_proposal_post_state(
+            make_post_state(OTHER_ADDR, OTHER_KEY, VALUE1),
+            std::nullopt,
+            n,
+            bytes32_t{n});
     }
 
     // point reads at the branch tip.
@@ -101,8 +104,11 @@ TEST(DbCacheTest, write_beyond_depth_limit_is_miss_truncated)
 TEST(DbCacheTest, proposal_write_shadows_readthrough_entry)
 {
     DbCache cache;
-    cache.update_proposal_state(
-        make_post_state(OTHER_ADDR, OTHER_KEY, VALUE2), 1, bytes32_t{1});
+    cache.update_proposal_post_state(
+        make_post_state(OTHER_ADDR, OTHER_KEY, VALUE2),
+        std::nullopt,
+        1,
+        bytes32_t{1});
     cache.set_block_and_prefix(1, bytes32_t{1});
 
     // populate the read-through entry. the walk from proposal 1 reaches the
@@ -121,8 +127,8 @@ TEST(DbCacheTest, proposal_write_shadows_readthrough_entry)
 
     // proposal 2 writes KEY = VALUE2: the LRU entry is now stale relative
     // to this branch.
-    cache.update_proposal_state(
-        make_post_state(ADDR, KEY, VALUE2), 2, bytes32_t{2});
+    cache.update_proposal_post_state(
+        make_post_state(ADDR, KEY, VALUE2), std::nullopt, 2, bytes32_t{2});
     cache.set_block_and_prefix(2, bytes32_t{2});
 
     // The overlay walk must serve proposal 2's write
@@ -134,8 +140,11 @@ TEST(DbCacheTest, proposal_write_shadows_readthrough_entry)
 TEST(DbCacheTest, finalization_write_overwrites_readthrough_entry)
 {
     DbCache cache;
-    cache.update_proposal_state(
-        make_post_state(OTHER_ADDR, OTHER_KEY, VALUE2), 1, bytes32_t{1});
+    cache.update_proposal_post_state(
+        make_post_state(OTHER_ADDR, OTHER_KEY, VALUE2),
+        std::nullopt,
+        1,
+        bytes32_t{1});
     cache.set_block_and_prefix(1, bytes32_t{1});
 
     // populate the read-through entry. the walk from proposal 1 reaches the
@@ -154,10 +163,13 @@ TEST(DbCacheTest, finalization_write_overwrites_readthrough_entry)
 
     // proposal 2 writes KEY = VALUE2; proposal 3 builds on top of it without
     // touching KEY, so its reads must come from the LRU.
-    cache.update_proposal_state(
-        make_post_state(ADDR, KEY, VALUE2), 2, bytes32_t{2});
-    cache.update_proposal_state(
-        make_post_state(OTHER_ADDR, OTHER_KEY, VALUE1), 3, bytes32_t{3});
+    cache.update_proposal_post_state(
+        make_post_state(ADDR, KEY, VALUE2), std::nullopt, 2, bytes32_t{2});
+    cache.update_proposal_post_state(
+        make_post_state(OTHER_ADDR, OTHER_KEY, VALUE1),
+        std::nullopt,
+        3,
+        bytes32_t{3});
 
     // readthrough VALUE1 is replaced by VALUE2.
     cache.on_finalize(1, bytes32_t{1});

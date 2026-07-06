@@ -34,6 +34,8 @@ enum class AbiDecodeError
 {
     Success = 0,
     InputTooShort,
+    InputTooLong,
+    InvalidEncoding,
     LengthMismatch,
 };
 

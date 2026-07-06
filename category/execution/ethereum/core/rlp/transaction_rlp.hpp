@@ -21,6 +21,7 @@
 #include <category/core/rlp/config.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 
+#include <span>
 #include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN
@@ -28,6 +29,7 @@ MONAD_RLP_NAMESPACE_BEGIN
 byte_string encode_access_list(AccessList const &);
 byte_string encode_authorization_entry_for_signing(AuthorizationEntry const &);
 byte_string encode_transaction(Transaction const &);
+byte_string encode_transaction_list(std::span<Transaction const>);
 byte_string encode_transaction_for_signing(Transaction const &);
 
 Result<std::vector<bytes32_t>> decode_access_entry_keys(byte_string_view &);

@@ -72,6 +72,35 @@
     EXPLICIT_EVM_TRAITS(f)                                                     \
     EXPLICIT_MONAD_TRAITS(f)
 
+// Template free functions with a second `bool` template argument set to true.
+// These are intentionally Monad-only: gasless execution is not available for
+// Ethereum trait instantiations.
+#define EXPLICIT_MONAD_TRAITS_TRUE(f)                                          \
+    template decltype(f<::monad::MonadTraits<MONAD_ZERO>, true>)               \
+        f<::monad::MonadTraits<MONAD_ZERO>, true>;                             \
+    template decltype(f<::monad::MonadTraits<MONAD_ONE>, true>)                \
+        f<::monad::MonadTraits<MONAD_ONE>, true>;                              \
+    template decltype(f<::monad::MonadTraits<MONAD_TWO>, true>)                \
+        f<::monad::MonadTraits<MONAD_TWO>, true>;                              \
+    template decltype(f<::monad::MonadTraits<MONAD_THREE>, true>)              \
+        f<::monad::MonadTraits<MONAD_THREE>, true>;                            \
+    template decltype(f<::monad::MonadTraits<MONAD_FOUR>, true>)               \
+        f<::monad::MonadTraits<MONAD_FOUR>, true>;                             \
+    template decltype(f<::monad::MonadTraits<MONAD_FIVE>, true>)               \
+        f<::monad::MonadTraits<MONAD_FIVE>, true>;                             \
+    template decltype(f<::monad::MonadTraits<MONAD_SIX>, true>)                \
+        f<::monad::MonadTraits<MONAD_SIX>, true>;                              \
+    template decltype(f<::monad::MonadTraits<MONAD_SEVEN>, true>)              \
+        f<::monad::MonadTraits<MONAD_SEVEN>, true>;                            \
+    template decltype(f<::monad::MonadTraits<MONAD_EIGHT>, true>)              \
+        f<::monad::MonadTraits<MONAD_EIGHT>, true>;                            \
+    template decltype(f<::monad::MonadTraits<MONAD_NINE>, true>)               \
+        f<::monad::MonadTraits<MONAD_NINE>, true>;                             \
+    template decltype(f<::monad::MonadTraits<MONAD_TEN>, true>)                \
+        f<::monad::MonadTraits<MONAD_TEN>, true>;                              \
+    template decltype(f<::monad::MonadTraits<MONAD_NEXT>, true>)               \
+        f<::monad::MonadTraits<MONAD_NEXT>, true>;
+
 // Template classes
 
 #define EXPLICIT_EVM_TRAITS_CLASS(c)                                           \
@@ -101,6 +130,20 @@
 #define EXPLICIT_TRAITS_CLASS(c)                                               \
     EXPLICIT_EVM_TRAITS_CLASS(c)                                               \
     EXPLICIT_MONAD_TRAITS_CLASS(c)
+
+#define EXPLICIT_MONAD_TRAITS_CLASS_TRUE(c)                                    \
+    template class c<::monad::MonadTraits<MONAD_ZERO>, true>;                  \
+    template class c<::monad::MonadTraits<MONAD_ONE>, true>;                   \
+    template class c<::monad::MonadTraits<MONAD_TWO>, true>;                   \
+    template class c<::monad::MonadTraits<MONAD_THREE>, true>;                 \
+    template class c<::monad::MonadTraits<MONAD_FOUR>, true>;                  \
+    template class c<::monad::MonadTraits<MONAD_FIVE>, true>;                  \
+    template class c<::monad::MonadTraits<MONAD_SIX>, true>;                   \
+    template class c<::monad::MonadTraits<MONAD_SEVEN>, true>;                 \
+    template class c<::monad::MonadTraits<MONAD_EIGHT>, true>;                 \
+    template class c<::monad::MonadTraits<MONAD_NINE>, true>;                  \
+    template class c<::monad::MonadTraits<MONAD_TEN>, true>;                   \
+    template class c<::monad::MonadTraits<MONAD_NEXT>, true>;
 
 #define EXPLICIT_MONAD_TRAITS_STRUCT(c)                                        \
     template struct c<::monad::MonadTraits<MONAD_ZERO>>;                       \

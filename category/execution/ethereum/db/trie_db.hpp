@@ -71,11 +71,15 @@ public:
     void reset_root(::monad::mpt::Node::SharedPtr root, uint64_t block_number);
     ::monad::mpt::Node::SharedPtr const &get_root() const;
 
-    virtual std::optional<Account> read_account(Address const &) override;
-    virtual bytes32_t
-    read_storage(Address const &, Incarnation, bytes32_t const &key) override;
+    virtual std::optional<Account> read_account(
+        Address const &,
+        std::optional<uint64_t> const &domain = std::nullopt) override;
+    virtual bytes32_t read_storage(
+        Address const &, Incarnation, bytes32_t const &key,
+        std::optional<uint64_t> const &domain = std::nullopt) override;
     virtual storage_page_t read_storage_page(
-        Address const &, Incarnation, bytes32_t const &page_key) override;
+        Address const &, Incarnation, bytes32_t const &page_key,
+        std::optional<uint64_t> const &domain = std::nullopt) override;
     virtual vm::SharedIntercode read_code(bytes32_t const &) override;
     virtual void set_block_and_prefix(
         uint64_t block_number,
@@ -85,6 +89,10 @@ public:
         bytes32_t const &block_id, CommitBuilder &builder,
         BlockHeader const &header, StateDeltas const &state_deltas,
         std::function<void(BlockHeader &)> populate_header_fn) override;
+    DomainStateRoots commit_domain_state_deltas(
+        bytes32_t const &block_id, CommitBuilder &builder,
+        std::span<DomainStateDeltas const *const>, uint64_t block_number,
+        PopulateDomainHeadersFn const &) override;
 
     virtual void
     finalize(uint64_t block_number, bytes32_t const &block_id) override;
@@ -96,6 +104,7 @@ public:
 
     virtual BlockHeader read_eth_header() override;
     virtual bytes32_t state_root() override;
+    bytes32_t domain_state_root(uint64_t domain_id);
     virtual bytes32_t receipts_root() override;
     virtual bytes32_t transactions_root() override;
     virtual std::optional<bytes32_t> withdrawals_root() override;
@@ -106,6 +115,10 @@ public:
     uint64_t get_history_length() const;
 
 private:
+    void prepare_commit(
+        CommitBuilder const &builder, uint64_t block_number,
+        bytes32_t const &block_id);
+
     /// STATS
     std::atomic<uint64_t> n_account_no_value_{0};
     std::atomic<uint64_t> n_account_value_{0};
@@ -138,7 +151,7 @@ private:
     // miss
     storage_page_t load_storage_page(
         Address const &, Incarnation, bytes32_t const &lookup_key,
-        CacheReadStatus);
+        CacheReadStatus, std::optional<uint64_t> const &domain = std::nullopt);
 };
 
 MONAD_NAMESPACE_END

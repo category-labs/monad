@@ -1,0 +1,11 @@
+eth-account>=0.13.0
+eth-utils>=4.0.0
+hpke==0.3.2
+blake3>=0.4.0
+rlp>=4.0.0
+trie>=3.0.0
+pexpect>=4.9.0
+brotli>=1.1.0
+pyyaml>=6.0
+pytest>=8.0
+pytest-xdist>=3.6

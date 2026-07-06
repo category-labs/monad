@@ -62,8 +62,10 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-std::optional<Account> PartialTrieDb::read_account(Address const &addr)
+std::optional<Account> PartialTrieDb::read_account(
+    Address const &addr, std::optional<uint64_t> const &domain)
 {
+    MONAD_ASSERT(!domain.has_value());
     auto const key = keccak256(addr.bytes);
     return match(
         trie_.find_original(trie_.root, mpt::NibblesView{key}),
@@ -80,8 +82,10 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
 }
 
 bytes32_t PartialTrieDb::read_storage(
-    Address const &addr, Incarnation, bytes32_t const &slot)
+    Address const &addr, Incarnation, bytes32_t const &slot,
+    std::optional<uint64_t> const &domain)
 {
+    MONAD_ASSERT(!domain.has_value());
     auto const akey = keccak256(addr.bytes);
     auto const sroot = match(
         trie_.find_original(trie_.root, mpt::NibblesView{akey}),
@@ -195,6 +199,18 @@ void PartialTrieDb::commit(
     last_committed_header_ = header;
     MONAD_ASSERT(populate_header_fn);
     populate_header_fn(last_committed_header_);
+}
+
+DomainStateRoots PartialTrieDb::commit_domain_state_deltas(
+    bytes32_t const &, CommitBuilder &,
+    std::span<DomainStateDeltas const *const> const delta_sets, uint64_t,
+    PopulateDomainHeadersFn const &populate_headers)
+{
+    for (auto const *const domain_deltas : delta_sets) {
+        MONAD_ASSERT(domain_deltas != nullptr && domain_deltas->empty());
+    }
+    MONAD_ASSERT(!populate_headers);
+    return {};
 }
 
 MONAD_NAMESPACE_END

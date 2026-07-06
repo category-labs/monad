@@ -37,6 +37,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -161,6 +162,22 @@ byte_string encode_transaction(Transaction const &txn)
     }
 }
 
+byte_string encode_transaction_list(std::span<Transaction const> const txns)
+{
+    byte_string encoded_transactions;
+
+    for (auto const &tx : txns) {
+        if (tx.type == TransactionType::legacy) {
+            encoded_transactions += encode_transaction(tx);
+        }
+        else {
+            encoded_transactions += encode_string2(encode_transaction(tx));
+        }
+    }
+
+    return encode_list2(encoded_transactions);
+}
+
 byte_string encode_transaction_for_signing(Transaction const &txn)
 {
     if (txn.type == TransactionType::legacy) {
@@ -249,13 +266,8 @@ Result<AuthorizationEntry> decode_authorization_entry(byte_string_view &enc)
 
     BOOST_OUTCOME_TRY(auth_entry.address, decode_address(payload));
     BOOST_OUTCOME_TRY(auth_entry.nonce, decode_unsigned<uint64_t>(payload));
-
     BOOST_OUTCOME_TRY(
-        auth_entry.sc.signature.y_parity, decode_unsigned<uint8_t>(payload));
-    BOOST_OUTCOME_TRY(
-        auth_entry.sc.signature.r, decode_unsigned<uint256_t>(payload));
-    BOOST_OUTCOME_TRY(
-        auth_entry.sc.signature.s, decode_unsigned<uint256_t>(payload));
+        auth_entry.sc.signature, decode_ecdsa_signature_fields(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
@@ -356,10 +368,7 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
             txn.authorization_list, decode_authorization_list(payload));
     }
 
-    BOOST_OUTCOME_TRY(
-        txn.sc.signature.y_parity, decode_unsigned<uint8_t>(payload));
-    BOOST_OUTCOME_TRY(txn.sc.signature.r, decode_unsigned<uint256_t>(payload));
-    BOOST_OUTCOME_TRY(txn.sc.signature.s, decode_unsigned<uint256_t>(payload));
+    BOOST_OUTCOME_TRY(txn.sc.signature, decode_ecdsa_signature_fields(payload));
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;

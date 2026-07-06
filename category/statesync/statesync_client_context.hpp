@@ -46,6 +46,8 @@ struct monad_statesync_client_context
     using StorageDeltas = Map<monad::bytes32_t, monad::bytes32_t>;
 
     using StateDelta = std::pair<monad::Account, StorageDeltas>;
+    using StateDeltas = Map<monad::Address, std::optional<StateDelta>>;
+    using BufferedStorageDeltas = Map<monad::Address, StorageDeltas>;
 
     // Chain instance for revision lookups and determine whether the slot or
     // page encoded db are canonical.
@@ -62,10 +64,12 @@ struct monad_statesync_client_context
     std::array<monad::BlockHeader, 256> hdrs;
     monad::BlockHeader tgrt;
     uint64_t current;
-    Map<monad::Address, StorageDeltas> buffered;
+    BufferedStorageDeltas buffered;
+    Map<uint64_t, BufferedStorageDeltas> domain_buffered;
     ankerl::unordered_dense::segmented_set<monad::bytes32_t> seen_code;
     Map<monad::bytes32_t, monad::byte_string> code;
-    Map<monad::Address, std::optional<StateDelta>> deltas;
+    StateDeltas deltas;
+    Map<uint64_t, StateDeltas> domain_deltas;
     uint64_t n_upserts;
     monad_statesync_client *sync;
     void (*statesync_send_request)(

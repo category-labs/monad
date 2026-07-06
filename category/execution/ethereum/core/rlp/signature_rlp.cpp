@@ -26,6 +26,18 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
+Result<Secp256k1Signature>
+decode_ecdsa_signature_fields(byte_string_view &enc)
+{
+    Secp256k1Signature sig;
+
+    BOOST_OUTCOME_TRY(sig.y_parity, decode_unsigned<uint8_t>(enc));
+    BOOST_OUTCOME_TRY(sig.r, decode_unsigned<uint256_t>(enc));
+    BOOST_OUTCOME_TRY(sig.s, decode_unsigned<uint256_t>(enc));
+
+    return sig;
+}
+
 Result<SignatureAndChain> decode_sc(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(auto const v, decode_unsigned<uint256_t>(enc));

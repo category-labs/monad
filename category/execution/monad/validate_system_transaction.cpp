@@ -36,10 +36,16 @@ MONAD_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
-template <Traits traits>
-Result<void>
-static_validate_system_transaction(Transaction const &tx, Address const &sender)
+template <Traits traits, bool gasless>
+Result<void> static_validate_system_transaction(
+    Transaction const &tx, Address const &sender, uint256_t const &chain_id)
 {
+    if constexpr (gasless) {
+        // System transactions may mint MON, violating gasless execution's
+        // zero-balance invariant.
+        return SystemTransactionError::SystemTxnInGaslessMode;
+    }
+
     if constexpr (traits::monad_rev() < MONAD_FOUR) {
         return SystemTransactionError::SystemTxnBeforeFork;
     }
@@ -76,10 +82,18 @@ static_validate_system_transaction(Transaction const &tx, Address const &sender)
         return SystemTransactionError::NonEmptyAuthorizationList;
     }
 
+    if constexpr (traits::monad_rev() >= MONAD_NEXT) {
+        if (MONAD_UNLIKELY(
+                tx.sc.chain_id.has_value() && *tx.sc.chain_id != chain_id)) {
+            return TransactionError::WrongChainId;
+        }
+    }
+
     return success();
 }
 
 EXPLICIT_MONAD_TRAITS(static_validate_system_transaction)
+EXPLICIT_MONAD_TRAITS_TRUE(static_validate_system_transaction)
 
 Result<void> validate_system_transaction(
     Transaction const &tx, Address const &sender, State &state)
@@ -111,6 +125,9 @@ quick_status_code_from_enum<monad::SystemTransactionError>::value_mappings()
 
     static std::initializer_list<mapping> const v = {
         {SystemTransactionError::Success, "success", {errc::success}},
+        {SystemTransactionError::SystemTxnInGaslessMode,
+         "system transaction not supported in gasless execution",
+         {}},
         {SystemTransactionError::SystemTxnBeforeFork,
          "system transaction before fork",
          {}},

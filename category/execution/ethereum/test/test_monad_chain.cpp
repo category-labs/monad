@@ -65,16 +65,13 @@ TEST(HiveNet, ChainConfig)
     HiveNet const chain;
 
     EXPECT_EQ(chain.get_chain_id(), uint256_t{3503995874084926ULL});
-    EXPECT_EQ(chain.get_revision(0, 0), MONAD_ETH_ISTANBUL);
-    EXPECT_EQ(chain.get_revision(17, 0), MONAD_ETH_ISTANBUL);
-    EXPECT_EQ(chain.get_revision(18, 0), MONAD_ETH_ISTANBUL);
-    EXPECT_EQ(chain.get_revision(23, 0), MONAD_ETH_ISTANBUL);
-    EXPECT_EQ(chain.get_revision(24, 0), MONAD_ETH_BERLIN);
-    EXPECT_EQ(chain.get_revision(27, 0), MONAD_ETH_LONDON);
-    EXPECT_EQ(chain.get_revision(36, 0), MONAD_ETH_PARIS);
-    EXPECT_EQ(chain.get_revision(36, 390), MONAD_ETH_SHANGHAI);
-    EXPECT_EQ(chain.get_revision(36, 420), MONAD_ETH_CANCUN);
-    EXPECT_EQ(chain.get_revision(36, 450), MONAD_ETH_PRAGUE);
+    // Merged from genesis (PoS): Berlin/London/Paris/Shanghai active at
+    // genesis, Cancun at timestamp 30, Prague at timestamp 60. Dispatch is
+    // purely by timestamp.
+    EXPECT_EQ(chain.get_revision(0, 0), MONAD_ETH_SHANGHAI);
+    EXPECT_EQ(chain.get_revision(3, 30), MONAD_ETH_CANCUN);
+    EXPECT_EQ(chain.get_revision(5, 59), MONAD_ETH_CANCUN);
+    EXPECT_EQ(chain.get_revision(6, 60), MONAD_ETH_PRAGUE);
 
     GenesisState const genesis_state = chain.get_genesis_state();
     EXPECT_EQ(genesis_state.header.difficulty, uint256_t{0x20000});
@@ -82,6 +79,17 @@ TEST(HiveNet, ChainConfig)
     EXPECT_EQ(
         genesis_state.header.extra_data,
         from_hex("0x68697665636861696e").value());
+    EXPECT_EQ(genesis_state.header.base_fee_per_gas, uint256_t{0x3b9aca00});
+    EXPECT_EQ(genesis_state.header.withdrawals_root, NULL_ROOT);
+
+    // Genesis hash as recorded in the Hive runner fixtures (chain.rlp).
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    load_genesis_state(genesis_state, tdb);
+    BlockHeader const header = tdb.read_eth_header();
+    EXPECT_EQ(
+        to_bytes(keccak256(rlp::encode_block_header(header))),
+        0x17456e286687a308b6525a6a73852ff4c89836bfef24338cc46cdf44d28055b0_bytes32);
 }
 
 TYPED_TEST(TraitsTest, Genesis)

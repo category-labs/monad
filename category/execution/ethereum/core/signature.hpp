@@ -58,8 +58,8 @@ struct Secp256k1Signature
         return true;
     }
 
-    friend bool
-    operator==(Secp256k1Signature const &, Secp256k1Signature const &) = default;
+    friend bool operator==(
+        Secp256k1Signature const &, Secp256k1Signature const &) = default;
 };
 
 static_assert(sizeof(Secp256k1Signature) == 72);

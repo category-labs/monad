@@ -176,9 +176,27 @@ namespace
         auto const json_state = JsonState{};
         auto const test_state = json_state.make_test_state();
         vm::VM monad_vm;
+        monad_vm.debug_set_execute_override(
+            [&vm](
+                auto const *const host,
+                auto *const context,
+                auto const rev,
+                auto const *const msg,
+                auto const *const code,
+                auto const code_size) -> evmc::Result {
+                return vm.execute(
+                    *host,
+                    context,
+                    to_evmc_revision(rev),
+                    *msg,
+                    code,
+                    code_size);
+            });
         BlockState block_state{test_state->trie_db, monad_vm};
         monad::State state{
             block_state, Incarnation{json_state.header.number, 1}};
+
+        state.set_code(msg.code_address, {code.data(), code.size()});
 
         TestBlockHashBuffer block_hash_buffer{};
         Transaction tx{};
@@ -260,6 +278,22 @@ namespace
             bench_state.PauseTiming();
 
             vm::VM monad_vm;
+            monad_vm.debug_set_execute_override(
+                [&vm](
+                    auto const *const host,
+                    auto *const context,
+                    auto const rev,
+                    auto const *const msg,
+                    auto const *const code,
+                    auto const code_size) -> evmc::Result {
+                    return vm.execute(
+                        *host,
+                        context,
+                        to_evmc_revision(rev),
+                        *msg,
+                        code,
+                        code_size);
+                });
             BlockState block_state{test_state->trie_db, monad_vm};
             monad::State state{
                 block_state, Incarnation{json_state.header.number, 1}};

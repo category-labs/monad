@@ -23,7 +23,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct EcdsaSignature
+struct Secp256k1Signature
 {
     static constexpr uint256_t secp256k1_order = [] {
         using namespace monad::literals;
@@ -59,15 +59,15 @@ struct EcdsaSignature
     }
 
     friend bool
-    operator==(EcdsaSignature const &, EcdsaSignature const &) = default;
+    operator==(Secp256k1Signature const &, Secp256k1Signature const &) = default;
 };
 
-static_assert(sizeof(EcdsaSignature) == 72);
-static_assert(alignof(EcdsaSignature) == 8);
+static_assert(sizeof(Secp256k1Signature) == 72);
+static_assert(alignof(Secp256k1Signature) == 8);
 
 struct SignatureAndChain
 {
-    EcdsaSignature signature{};
+    Secp256k1Signature signature{};
     std::optional<uint256_t> chain_id{};
 
     void from_v(uint256_t const &);

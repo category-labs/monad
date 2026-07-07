@@ -23,7 +23,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct EcdsaSignature;
+struct Secp256k1Signature;
 
 /// Recovers the Ethereum address that signed `encoding` with the given ECDSA
 /// signature. Rejects malformed signatures up-front (y_parity > 1, malleable
@@ -33,6 +33,6 @@ struct EcdsaSignature;
 /// single source file, and can be substituted on platforms that supply
 /// ecrecover via syscall.
 std::optional<Address>
-recover_address(EcdsaSignature const &, byte_string_view encoding);
+recover_address(Secp256k1Signature const &, byte_string_view encoding);
 
 MONAD_NAMESPACE_END

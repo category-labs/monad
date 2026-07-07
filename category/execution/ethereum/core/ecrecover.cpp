@@ -32,7 +32,7 @@
 MONAD_NAMESPACE_BEGIN
 
 std::optional<Address>
-recover_address(EcdsaSignature const &sig, byte_string_view const encoding)
+recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
 {
     if (sig.y_parity > 1) {
         return std::nullopt;

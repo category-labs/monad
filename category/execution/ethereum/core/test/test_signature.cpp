@@ -65,36 +65,36 @@ TEST(Signature, from_v)
 
 TEST(Signature, is_valid_boundaries)
 {
-    constexpr auto n = EcdsaSignature::secp256k1_order;
-    constexpr auto half_n = EcdsaSignature::secp256k1_order_half;
+    constexpr auto n = Secp256k1Signature::secp256k1_order;
+    constexpr auto half_n = Secp256k1Signature::secp256k1_order_half;
 
     // Sanity: minimal valid signature (r = 1, s = 1).
-    EXPECT_TRUE((EcdsaSignature{.r = 1, .s = 1}).is_valid());
+    EXPECT_TRUE((Secp256k1Signature{.r = 1, .s = 1}).is_valid());
 
     // r = 0 or s = 0 is rejected.
-    EXPECT_FALSE((EcdsaSignature{.r = 0, .s = 1}).is_valid());
-    EXPECT_FALSE((EcdsaSignature{.r = 1, .s = 0}).is_valid());
-    EXPECT_FALSE((EcdsaSignature{.r = 0, .s = 0}).is_valid());
+    EXPECT_FALSE((Secp256k1Signature{.r = 0, .s = 1}).is_valid());
+    EXPECT_FALSE((Secp256k1Signature{.r = 1, .s = 0}).is_valid());
+    EXPECT_FALSE((Secp256k1Signature{.r = 0, .s = 0}).is_valid());
 
     // r or s == n is rejected (must be strictly less than the group order).
-    EXPECT_FALSE((EcdsaSignature{.r = n, .s = 1}).is_valid());
-    EXPECT_FALSE((EcdsaSignature{.r = 1, .s = n}).is_valid());
+    EXPECT_FALSE((Secp256k1Signature{.r = n, .s = 1}).is_valid());
+    EXPECT_FALSE((Secp256k1Signature{.r = 1, .s = n}).is_valid());
 
     // r or s == n - 1 is rejected via the low-s rule for s, but r = n - 1 is
     // accepted (only s is constrained by EIP-2).
-    EXPECT_TRUE((EcdsaSignature{.r = n - 1, .s = 1}).is_valid());
-    EXPECT_FALSE((EcdsaSignature{.r = 1, .s = n - 1}).is_valid());
+    EXPECT_TRUE((Secp256k1Signature{.r = n - 1, .s = 1}).is_valid());
+    EXPECT_FALSE((Secp256k1Signature{.r = 1, .s = n - 1}).is_valid());
 
     // EIP-2 low-s boundary: s == n/2 is valid, s == n/2 + 1 is not.
-    EXPECT_TRUE((EcdsaSignature{.r = 1, .s = half_n}).is_valid());
-    EXPECT_FALSE((EcdsaSignature{.r = 1, .s = half_n + 1}).is_valid());
+    EXPECT_TRUE((Secp256k1Signature{.r = 1, .s = half_n}).is_valid());
+    EXPECT_FALSE((Secp256k1Signature{.r = 1, .s = half_n + 1}).is_valid());
 }
 
 TEST(Signature, has_upper_s_boundary)
 {
-    constexpr auto half_n = EcdsaSignature::secp256k1_order_half;
+    constexpr auto half_n = Secp256k1Signature::secp256k1_order_half;
 
-    EXPECT_FALSE((EcdsaSignature{.r = 1, .s = 1}).has_upper_s());
-    EXPECT_FALSE((EcdsaSignature{.r = 1, .s = half_n}).has_upper_s());
-    EXPECT_TRUE((EcdsaSignature{.r = 1, .s = half_n + 1}).has_upper_s());
+    EXPECT_FALSE((Secp256k1Signature{.r = 1, .s = 1}).has_upper_s());
+    EXPECT_FALSE((Secp256k1Signature{.r = 1, .s = half_n}).has_upper_s());
+    EXPECT_TRUE((Secp256k1Signature{.r = 1, .s = half_n + 1}).has_upper_s());
 }

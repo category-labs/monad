@@ -129,6 +129,7 @@ void monad_executor_eth_simulate_submit(
     uint8_t const *rlp_block_id, size_t rlp_block_id_len,
     uint8_t const *rlp_grandparent_block_id,
     size_t rlp_grandparent_block_id_len, uint64_t gas_limit, size_t max_calls,
+    size_t call_tracers_max_size,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
     bool emit_native_transfer_logs,

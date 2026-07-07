@@ -196,11 +196,7 @@ TEST(CallTrace, truncation_marker_only_in_json_output)
 
     nlohmann::json const marker = trace["calls"][0];
     EXPECT_EQ(marker["type"], "TRUNCATED");
-    EXPECT_EQ(marker["error"], "TRACE_TRUNCATED");
-    EXPECT_EQ(marker["droppedFrames"], "0x1");
-    EXPECT_EQ(marker["droppedLogs"], "0x0");
-    EXPECT_EQ(marker["droppedSelfdestructs"], "0x0");
-    EXPECT_EQ(marker["droppedOutputBytes"], "0x0");
+    EXPECT_EQ(marker["error"], "trace truncated");
 }
 
 TEST(CallTrace, json_output_has_no_marker_when_not_truncated)

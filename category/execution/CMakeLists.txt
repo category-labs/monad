@@ -180,6 +180,9 @@ add_library(
   "ethereum/validate_transaction.hpp"
   "ethereum/validate_transaction_error.cpp"
   "ethereum/validate_transaction_error.hpp"
+  # monad/chain helpers used by ethereum static validation
+  "monad/chain/namespace_chain_id.cpp"
+  "monad/chain/namespace_chain_id.hpp"
   # ethereum/metrics
   "ethereum/metrics/block_metrics.hpp"
   # ethereum/rlp

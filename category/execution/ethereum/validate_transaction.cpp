@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/chain/namespace_chain_id.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -33,6 +34,7 @@
 
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
+#include <boost/outcome/try.hpp>
 
 #include <cstdint>
 #include <initializer_list>
@@ -53,7 +55,16 @@ Result<void> static_validate_transaction(
 
     // EIP-155
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
-        if (MONAD_UNLIKELY(tx.sc.chain_id.value() != chain_id)) {
+        if constexpr (is_monad_trait_v<traits>) {
+            if constexpr (traits::monad_rev() >= MONAD_NEXT) {
+                BOOST_OUTCOME_TRY(
+                    namespace_from_chain_id(*tx.sc.chain_id, chain_id));
+            }
+            else if (MONAD_UNLIKELY(tx.sc.chain_id.value() != chain_id)) {
+                return TransactionError::WrongChainId;
+            }
+        }
+        else if (MONAD_UNLIKELY(tx.sc.chain_id.value() != chain_id)) {
             return TransactionError::WrongChainId;
         }
     }

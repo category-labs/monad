@@ -60,6 +60,60 @@ namespace
         return rlp::encode_list2(
             rlp::encode_string2(encoded_tx), rlp::encode_address(sender));
     }
+
+    void build_slot_account_updates(
+        StateDeltas const &state_deltas, ProposalPostState &post_state,
+        UpdateList &account_updates, std::deque<Update> &update_alloc,
+        std::deque<byte_string> &bytes_alloc, std::deque<hash256> &hash_alloc,
+        uint64_t const block_number)
+    {
+        for (auto const &[addr, delta] : state_deltas) {
+            UpdateList storage_updates;
+            std::optional<byte_string_view> value;
+            auto const &account = delta.account.second;
+            post_state.accounts[addr] = account;
+            if (account.has_value()) {
+                auto const inc = account->incarnation;
+                for (auto const &[key, storage_delta] : delta.storage) {
+                    if (storage_delta.first != storage_delta.second) {
+                        storage_updates.push_front(
+                            update_alloc.emplace_back(Update{
+                                .key = hash_alloc.emplace_back(
+                                    keccak256({key.bytes, sizeof(key.bytes)})),
+                                .value =
+                                    storage_delta.second == bytes32_t{}
+                                        ? std::nullopt
+                                        : std::make_optional<byte_string_view>(
+                                              bytes_alloc.emplace_back(
+                                                  encode_storage_db(
+                                                      key,
+                                                      storage_delta.second))),
+                                .incarnation = false,
+                                .next = UpdateList{},
+                                .version =
+                                    static_cast<int64_t>(block_number)}));
+                        post_state.storage[StorageKey{addr, inc, key}] =
+                            storage_page_t{storage_delta.second};
+                    }
+                }
+                value =
+                    bytes_alloc.emplace_back(encode_account_db(addr, *account));
+            }
+
+            if (!storage_updates.empty() || delta.account.first != account) {
+                bool const incarnation =
+                    account.has_value() && delta.account.first.has_value() &&
+                    delta.account.first->incarnation != account->incarnation;
+                account_updates.push_front(update_alloc.emplace_back(Update{
+                    .key = hash_alloc.emplace_back(
+                        keccak256({addr.bytes, sizeof(addr.bytes)})),
+                    .value = value,
+                    .incarnation = incarnation,
+                    .next = std::move(storage_updates),
+                    .version = static_cast<int64_t>(block_number)}));
+            }
+        }
+    }
 }
 
 CommitBuilder::CommitBuilder(uint64_t const block_number)
@@ -70,49 +124,14 @@ CommitBuilder::CommitBuilder(uint64_t const block_number)
 CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 {
     UpdateList account_updates;
-    for (auto const &[addr, delta] : state_deltas) {
-        UpdateList storage_updates;
-        std::optional<byte_string_view> value;
-        auto const &account = delta.account.second;
-        proposal_post_state_.accounts[addr] = account;
-        if (account.has_value()) {
-            auto const inc = account->incarnation;
-            for (auto const &[key, delta] : delta.storage) {
-                if (delta.first != delta.second) {
-                    storage_updates.push_front(
-                        update_alloc_.emplace_back(Update{
-                            .key = hash_alloc_.emplace_back(
-                                keccak256({key.bytes, sizeof(key.bytes)})),
-                            .value = delta.second == bytes32_t{}
-                                         ? std::nullopt
-                                         : std::make_optional<byte_string_view>(
-                                               bytes_alloc_.emplace_back(
-                                                   encode_storage_db(
-                                                       key, delta.second))),
-                            .incarnation = false,
-                            .next = UpdateList{},
-                            .version = static_cast<int64_t>(block_number_)}));
-                    proposal_post_state_.storage[StorageKey{addr, inc, key}] =
-                        storage_page_t{delta.second};
-                }
-            }
-            value = bytes_alloc_.emplace_back(
-                encode_account_db(addr, account.value()));
-        }
-
-        if (!storage_updates.empty() || delta.account.first != account) {
-            bool const incarnation =
-                account.has_value() && delta.account.first.has_value() &&
-                delta.account.first->incarnation != account->incarnation;
-            account_updates.push_front(update_alloc_.emplace_back(Update{
-                .key = hash_alloc_.emplace_back(
-                    keccak256({addr.bytes, sizeof(addr.bytes)})),
-                .value = value,
-                .incarnation = incarnation,
-                .next = std::move(storage_updates),
-                .version = static_cast<int64_t>(block_number_)}));
-        }
-    }
+    build_slot_account_updates(
+        state_deltas,
+        proposal_post_state_,
+        account_updates,
+        update_alloc_,
+        bytes_alloc_,
+        hash_alloc_,
+        block_number_);
 
     updates_.push_front(update_alloc_.emplace_back(Update{
         .key = state_nibbles,

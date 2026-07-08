@@ -25,6 +25,7 @@
 
 #include <ankerl/unordered_dense.h>
 
+#include <cstdint>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
@@ -50,5 +51,8 @@ struct ProposalPostState
     AccountPostState accounts;
     StoragePostState storage;
 };
+
+using NamespacedProposalPostState =
+    ankerl::unordered_dense::segmented_map<uint64_t, ProposalPostState>;
 
 MONAD_NAMESPACE_END

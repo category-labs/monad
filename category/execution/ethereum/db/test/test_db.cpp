@@ -21,10 +21,12 @@
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
+#include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -43,6 +45,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -172,6 +175,320 @@ namespace
         }
         return senders;
     }
+
+    mpt::Update const *single_update(mpt::UpdateList const &updates)
+    {
+        if (updates.empty()) {
+            return nullptr;
+        }
+        auto it = updates.begin();
+        auto const *const update = &*it;
+        ++it;
+        return it == updates.end() ? update : nullptr;
+    }
+
+    void expect_update_values_equal(
+        std::optional<byte_string_view> const &lhs,
+        std::optional<byte_string_view> const &rhs)
+    {
+        ASSERT_EQ(lhs.has_value(), rhs.has_value());
+        if (!lhs.has_value()) {
+            return;
+        }
+        ASSERT_EQ(lhs->size(), rhs->size());
+        EXPECT_EQ(std::memcmp(lhs->data(), rhs->data(), lhs->size()), 0);
+    }
+
+    void expect_update_lists_equal(
+        mpt::UpdateList const &lhs, mpt::UpdateList const &rhs)
+    {
+        auto lhs_it = lhs.begin();
+        auto rhs_it = rhs.begin();
+        for (; lhs_it != lhs.end() && rhs_it != rhs.end(); ++lhs_it, ++rhs_it) {
+            EXPECT_TRUE(lhs_it->key == rhs_it->key)
+                << "lhs key " << lhs_it->key << " rhs key " << rhs_it->key;
+            expect_update_values_equal(lhs_it->value, rhs_it->value);
+            EXPECT_EQ(lhs_it->incarnation, rhs_it->incarnation);
+            EXPECT_EQ(lhs_it->version, rhs_it->version);
+            expect_update_lists_equal(lhs_it->next, rhs_it->next);
+        }
+        EXPECT_EQ(lhs_it == lhs.end(), rhs_it == rhs.end());
+    }
+
+    void emplace_account_delta(
+        StateDeltas &deltas, Address const &addr,
+        std::optional<Account> const &before,
+        std::optional<Account> const &after, bytes32_t const &storage_key,
+        bytes32_t const &storage_before, bytes32_t const &storage_after)
+    {
+        StateDeltas::accessor account_it{};
+        ASSERT_TRUE(deltas.emplace(
+            account_it,
+            addr,
+            StateDelta{.account = {before, after}, .storage = {}}));
+
+        StorageDeltas::accessor storage_it{};
+        ASSERT_TRUE(account_it->second.storage.emplace(
+            storage_it,
+            storage_key,
+            StorageDelta{storage_before, storage_after}));
+    }
+
+    void emplace_namespaced_account_delta(
+        NamespacedStateDeltas &ns_deltas, uint64_t const ns,
+        Address const &addr, std::optional<Account> const &before,
+        std::optional<Account> const &after, bytes32_t const &storage_key,
+        bytes32_t const &storage_before, bytes32_t const &storage_after)
+    {
+        NamespacedStateDeltas::accessor ns_it{};
+        ns_deltas.insert(ns_it, ns);
+        emplace_account_delta(
+            ns_it->second,
+            addr,
+            before,
+            after,
+            storage_key,
+            storage_before,
+            storage_after);
+    }
+
+    void emplace_root_and_namespace_delta(
+        StateDeltas &root_deltas, NamespacedStateDeltas &ns_deltas,
+        uint64_t const ns, Address const &addr,
+        std::optional<Account> const &before,
+        std::optional<Account> const &after, bytes32_t const &storage_key,
+        bytes32_t const &storage_before, bytes32_t const &storage_after)
+    {
+        emplace_account_delta(
+            root_deltas,
+            addr,
+            before,
+            after,
+            storage_key,
+            storage_before,
+            storage_after);
+        emplace_namespaced_account_delta(
+            ns_deltas,
+            ns,
+            addr,
+            before,
+            after,
+            storage_key,
+            storage_before,
+            storage_after);
+    }
+
+    void expect_empty_post_state(ProposalPostState const &post_state)
+    {
+        EXPECT_TRUE(post_state.accounts.empty());
+        EXPECT_TRUE(post_state.storage.empty());
+    }
+
+    void expect_account_post_state(
+        ProposalPostState const &post_state, Address const &addr,
+        Account const &account)
+    {
+        ASSERT_EQ(post_state.accounts.size(), 1);
+        auto const account_it = post_state.accounts.find(addr);
+        ASSERT_NE(account_it, post_state.accounts.end());
+        ASSERT_TRUE(account_it->second.has_value());
+        EXPECT_EQ(*account_it->second, account);
+    }
+
+    void expect_slot_post_state(
+        ProposalPostState const &post_state, Address const &addr,
+        Account const &account, bytes32_t const &storage_key,
+        bytes32_t const &value)
+    {
+        expect_account_post_state(post_state, addr, account);
+
+        ASSERT_EQ(post_state.storage.size(), 1);
+        auto const storage_it = post_state.storage.find(
+            StorageKey{addr, account.incarnation, storage_key});
+        ASSERT_NE(storage_it, post_state.storage.end());
+        EXPECT_EQ(storage_it->second, storage_page_t{value});
+    }
+
+    void expect_page_post_state(
+        ProposalPostState const &post_state, Address const &addr,
+        Account const &account, bytes32_t const &slot_key,
+        bytes32_t const &value)
+    {
+        expect_account_post_state(post_state, addr, account);
+
+        auto const page_key = compute_page_key(slot_key);
+        auto const slot_offset = compute_slot_offset(slot_key);
+
+        ASSERT_EQ(post_state.storage.size(), 1);
+        auto const storage_it = post_state.storage.find(
+            StorageKey{addr, account.incarnation, page_key});
+        ASSERT_NE(storage_it, post_state.storage.end());
+        EXPECT_EQ(storage_it->second[slot_offset], value);
+    }
+
+    ProposalPostState const *single_namespace_post_state(
+        NamespacedProposalPostState const &post_state, uint64_t const ns)
+    {
+        EXPECT_EQ(post_state.size(), 1);
+        auto const it = post_state.find(ns);
+        EXPECT_NE(it, post_state.end());
+        return it == post_state.end() ? nullptr : &it->second;
+    }
+
+    void expect_namespace_update_tree_matches_root(
+        mpt::UpdateList const &root_updates, mpt::UpdateList const &ns_updates,
+        uint64_t const ns)
+    {
+        auto const *const root_prefix = single_update(root_updates);
+        ASSERT_NE(root_prefix, nullptr);
+        auto const *const ns_prefix = single_update(ns_updates);
+        ASSERT_NE(ns_prefix, nullptr);
+        EXPECT_TRUE(root_prefix->key == ns_prefix->key);
+        expect_update_values_equal(root_prefix->value, ns_prefix->value);
+        EXPECT_EQ(root_prefix->incarnation, ns_prefix->incarnation);
+        EXPECT_EQ(root_prefix->version, ns_prefix->version);
+
+        auto const *const root_state_update = single_update(root_prefix->next);
+        ASSERT_NE(root_state_update, nullptr);
+        EXPECT_TRUE(root_state_update->key == mpt::NibblesView{state_nibbles});
+
+        auto const *const namespace_state_update =
+            single_update(ns_prefix->next);
+        ASSERT_NE(namespace_state_update, nullptr);
+        EXPECT_TRUE(
+            namespace_state_update->key ==
+            mpt::NibblesView{namespace_state_nibbles});
+        expect_update_values_equal(
+            root_state_update->value, namespace_state_update->value);
+        EXPECT_EQ(
+            root_state_update->incarnation,
+            namespace_state_update->incarnation);
+        EXPECT_EQ(root_state_update->version, namespace_state_update->version);
+
+        auto const *const namespace_update =
+            single_update(namespace_state_update->next);
+        ASSERT_NE(namespace_update, nullptr);
+        EXPECT_TRUE(
+            namespace_update->key ==
+            mpt::NibblesView{
+                mpt::serialize_as_big_endian<sizeof(uint64_t)>(ns)});
+
+        ASSERT_TRUE(namespace_update->value.has_value());
+        byte_string_view encoded_ns = *namespace_update->value;
+        auto const decoded_ns = rlp::decode_unsigned<uint64_t>(encoded_ns);
+        ASSERT_TRUE(decoded_ns.has_value());
+        EXPECT_EQ(decoded_ns.value(), ns);
+        EXPECT_TRUE(encoded_ns.empty());
+
+        expect_update_lists_equal(
+            root_state_update->next, namespace_update->next);
+    }
+
+    template <typename RootBuilder, typename NamespaceBuilder, typename Check>
+    void expect_namespace_builder_matches_root(
+        RootBuilder &root_builder, NamespaceBuilder &ns_builder,
+        StateDeltas const &root_deltas, NamespacedStateDeltas const &ns_deltas,
+        uint64_t const ns, Check const &check_post_state)
+    {
+        root_builder.add_state_deltas(root_deltas);
+        auto const root_post_state = root_builder.take_proposal_post_state();
+        auto const root_updates = root_builder.build(finalized_nibbles);
+
+        ns_builder.add_namespace_state_deltas(ns_deltas);
+        expect_empty_post_state(ns_builder.take_proposal_post_state());
+        auto const ns_post_state =
+            ns_builder.take_namespace_proposal_post_state();
+        auto const ns_updates = ns_builder.build(finalized_nibbles);
+
+        check_post_state(root_post_state);
+        auto const *const ns_inner_post_state =
+            single_namespace_post_state(ns_post_state, ns);
+        ASSERT_NE(ns_inner_post_state, nullptr);
+        check_post_state(*ns_inner_post_state);
+
+        expect_namespace_update_tree_matches_root(root_updates, ns_updates, ns);
+    }
+
+    void expect_slot_namespace_builder_matches_root(
+        uint64_t const block_number, StateDeltas const &root_deltas,
+        NamespacedStateDeltas const &ns_deltas, uint64_t const ns,
+        Address const &addr, Account const &account,
+        bytes32_t const &storage_key, bytes32_t const &value)
+    {
+        CommitBuilder root_builder{block_number};
+        CommitBuilder ns_builder{block_number};
+        expect_namespace_builder_matches_root(
+            root_builder,
+            ns_builder,
+            root_deltas,
+            ns_deltas,
+            ns,
+            [&](ProposalPostState const &post_state) {
+                expect_slot_post_state(
+                    post_state, addr, account, storage_key, value);
+            });
+    }
+
+    void expect_page_namespace_builder_matches_root(
+        uint64_t const block_number, StateDeltas const &root_deltas,
+        NamespacedStateDeltas const &ns_deltas, uint64_t const ns,
+        Address const &addr, Account const &account,
+        bytes32_t const &storage_key, bytes32_t const &value)
+    {
+        mpt::Db db{std::make_unique<MonadInMemoryMachine>()};
+        TrieDb tdb{db};
+        ASSERT_TRUE(tdb.is_page_encoded());
+
+        PageCommitBuilder root_builder{block_number, tdb};
+        PageCommitBuilder ns_builder{block_number, tdb};
+        expect_namespace_builder_matches_root(
+            root_builder,
+            ns_builder,
+            root_deltas,
+            ns_deltas,
+            ns,
+            [&](ProposalPostState const &post_state) {
+                expect_page_post_state(
+                    post_state, addr, account, storage_key, value);
+            });
+    }
+
+    void expect_namespace_builders_match_root(
+        uint64_t const block_number, uint64_t const ns, Address const &addr,
+        Account const &account, bytes32_t const &storage_key,
+        bytes32_t const &value)
+    {
+        StateDeltas root_deltas;
+        NamespacedStateDeltas ns_deltas;
+        emplace_root_and_namespace_delta(
+            root_deltas,
+            ns_deltas,
+            ns,
+            addr,
+            std::nullopt,
+            account,
+            storage_key,
+            bytes32_t{},
+            value);
+        expect_slot_namespace_builder_matches_root(
+            block_number,
+            root_deltas,
+            ns_deltas,
+            ns,
+            addr,
+            account,
+            storage_key,
+            value);
+        expect_page_namespace_builder_matches_root(
+            block_number,
+            root_deltas,
+            ns_deltas,
+            ns,
+            addr,
+            account,
+            storage_key,
+            value);
+    }
 }
 
 template <typename TDB>
@@ -181,6 +498,19 @@ struct DBTest : public TDB
 
 using DBTypes = ::testing::Types<InMemoryTrieDbFixture, OnDiskTrieDbFixture>;
 TYPED_TEST_SUITE(DBTest, DBTypes);
+
+TEST(CommitBuilderTest, namespace_state_delta_subtree_matches_root_subtree)
+{
+    constexpr uint64_t block_number = 42;
+    constexpr uint64_t ns = 0x0102030405060708ULL;
+    expect_namespace_builders_match_root(
+        block_number,
+        ns,
+        ADDR_A,
+        Account{.balance = 123, .nonce = 7},
+        key1,
+        value1);
+}
 
 TEST(DBTest, read_only)
 {

@@ -143,6 +143,45 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
     return *this;
 }
 
+CommitBuilder &CommitBuilder::add_namespace_state_deltas(
+    NamespacedStateDeltas const &ns_deltas)
+{
+    UpdateList namespace_updates;
+    for (auto const &[ns, inner] : ns_deltas) {
+        UpdateList account_updates;
+        build_slot_account_updates(
+            inner,
+            namespace_proposal_post_state_[ns],
+            account_updates,
+            update_alloc_,
+            bytes_alloc_,
+            hash_alloc_,
+            block_number_);
+
+        if (!account_updates.empty()) {
+            auto const &ns_key = bytes_alloc_.emplace_back(
+                serialize_as_big_endian<sizeof(uint64_t)>(ns));
+            namespace_updates.push_front(update_alloc_.emplace_back(Update{
+                .key = NibblesView{ns_key},
+                .value = bytes_alloc_.emplace_back(rlp::encode_unsigned(ns)),
+                .incarnation = false,
+                .next = std::move(account_updates),
+                .version = static_cast<int64_t>(block_number_)}));
+        }
+    }
+
+    if (!namespace_updates.empty()) {
+        updates_.push_front(update_alloc_.emplace_back(Update{
+            .key = namespace_state_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(namespace_updates),
+            .version = static_cast<int64_t>(block_number_)}));
+    }
+
+    return *this;
+}
+
 CommitBuilder &CommitBuilder::add_code(Code const &code)
 {
     UpdateList code_updates;

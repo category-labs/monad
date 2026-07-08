@@ -29,6 +29,7 @@
 #include <oneapi/tbb/concurrent_hash_map.h>
 #pragma GCC diagnostic pop
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -68,6 +69,9 @@ using StateDeltas = oneapi::tbb::concurrent_hash_map<
 
 static_assert(sizeof(StateDeltas) == 576);
 static_assert(alignof(StateDeltas) == 8);
+
+using NamespacedStateDeltas =
+    oneapi::tbb::concurrent_hash_map<uint64_t, StateDeltas>;
 
 using Code = oneapi::tbb::concurrent_hash_map<
     bytes32_t, vm::SharedIntercode, BytesHashCompare<bytes32_t>>;

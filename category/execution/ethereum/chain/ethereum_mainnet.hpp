@@ -35,6 +35,7 @@ struct Transaction;
 
 namespace eth_forks
 {
+    inline constexpr uint64_t OSAKA_ACTIVATION_TIMESTAMP = 1764798551;
     inline constexpr uint64_t PRAGUE_ACTIVATION_TIMESTAMP = 1746612311;
     inline constexpr uint64_t CANCUN_ACTIVATION_TIMESTAMP = 1710338135;
     inline constexpr uint64_t SHANGHAI_ACTIVATION_TIMESTAMP = 1681338455;

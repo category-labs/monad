@@ -48,7 +48,10 @@ uint256_t EthereumMainnet::get_chain_id() const
 monad_eth_revision EthereumMainnet::get_revision(
     uint64_t const block_number, uint64_t const timestamp) const
 {
-    if (MONAD_LIKELY(timestamp >= PRAGUE_ACTIVATION_TIMESTAMP)) {
+    if (MONAD_LIKELY(timestamp >= OSAKA_ACTIVATION_TIMESTAMP)) {
+        return MONAD_ETH_OSAKA;
+    }
+    else if (timestamp >= PRAGUE_ACTIVATION_TIMESTAMP) {
         return MONAD_ETH_PRAGUE;
     }
     else if (timestamp >= CANCUN_ACTIVATION_TIMESTAMP) {
@@ -74,8 +77,7 @@ monad_eth_revision EthereumMainnet::get_revision(
 
 BlobSchedule EthereumMainnet::get_blob_schedule(uint64_t const timestamp) const
 {
-    if (timestamp >= BPO1_ACTIVATION_TIMESTAMP &&
-        get_revision(0, timestamp) >= MONAD_ETH_OSAKA) {
+    if (timestamp >= BPO1_ACTIVATION_TIMESTAMP) {
         if (MONAD_LIKELY(timestamp >= BPO2_ACTIVATION_TIMESTAMP)) {
             return BPO2_BLOB_SCHEDULE;
         }

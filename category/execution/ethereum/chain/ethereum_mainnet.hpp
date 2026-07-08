@@ -24,6 +24,7 @@
 
 #include <evmc/evmc.h>
 
+#include <cstdint>
 #include <span>
 
 MONAD_NAMESPACE_BEGIN
@@ -31,6 +32,32 @@ MONAD_NAMESPACE_BEGIN
 struct BlockHeader;
 struct Receipt;
 struct Transaction;
+
+namespace eth_forks
+{
+    inline constexpr uint64_t PRAGUE_ACTIVATION_TIMESTAMP = 1746612311;
+    inline constexpr uint64_t CANCUN_ACTIVATION_TIMESTAMP = 1710338135;
+    inline constexpr uint64_t SHANGHAI_ACTIVATION_TIMESTAMP = 1681338455;
+
+    inline constexpr uint64_t PARIS_ACTIVATION_BLOCK_NUMBER = 15537394;
+    inline constexpr uint64_t LONDON_ACTIVATION_BLOCK_NUMBER = 12965000;
+    inline constexpr uint64_t BERLIN_ACTIVATION_BLOCK_NUMBER = 12244000;
+    inline constexpr uint64_t ISTANBUL_ACTIVATION_BLOCK_NUMBER = 9069000;
+
+    // Mainnet BPO activation times and blob parameters are canonicalized in
+    // EIP-8134 and EIP-8135. BPO scheduling itself is defined by EIP-7892.
+    inline constexpr uint64_t BPO1_ACTIVATION_TIMESTAMP = 1765290071;
+    inline constexpr uint64_t BPO2_ACTIVATION_TIMESTAMP = 1767747671;
+}
+
+namespace constants
+{
+    // Replay support policy: the earliest supported fork is Istanbul, so
+    // blocks before its activation cannot be executed. The revision-valued
+    // counterpart, EARLIEST_SUPPORTED_EVM_FORK, lives in vm/evm/traits.hpp.
+    inline constexpr uint64_t EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER =
+        eth_forks::ISTANBUL_ACTIVATION_BLOCK_NUMBER;
+}
 
 inline constexpr size_t MAX_CODE_SIZE_EIP170 = 24 * 1024; // 0x6000
 inline constexpr size_t MAX_INITCODE_SIZE_EIP3860 =

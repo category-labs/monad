@@ -36,17 +36,9 @@
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
-MONAD_ANONYMOUS_NAMESPACE_BEGIN
-
-// Mainnet BPO activation times and blob parameters are canonicalized in
-// EIP-8134 and EIP-8135. BPO scheduling itself is defined by EIP-7892.
-constexpr uint64_t PRAGUE_ACTIVATION_TIMESTAMP = 1746612311;
-constexpr uint64_t BPO1_ACTIVATION_TIMESTAMP = 1765290071;
-constexpr uint64_t BPO2_ACTIVATION_TIMESTAMP = 1767747671;
-
-MONAD_ANONYMOUS_NAMESPACE_END
-
 MONAD_NAMESPACE_BEGIN
+
+using namespace eth_forks;
 
 uint256_t EthereumMainnet::get_chain_id() const
 {
@@ -59,22 +51,22 @@ monad_eth_revision EthereumMainnet::get_revision(
     if (MONAD_LIKELY(timestamp >= PRAGUE_ACTIVATION_TIMESTAMP)) {
         return MONAD_ETH_PRAGUE;
     }
-    else if (timestamp >= 1710338135) {
+    else if (timestamp >= CANCUN_ACTIVATION_TIMESTAMP) {
         return MONAD_ETH_CANCUN;
     }
-    else if (timestamp >= 1681338455) {
+    else if (timestamp >= SHANGHAI_ACTIVATION_TIMESTAMP) {
         return MONAD_ETH_SHANGHAI;
     }
-    else if (block_number >= 15537394) {
+    else if (block_number >= PARIS_ACTIVATION_BLOCK_NUMBER) {
         return MONAD_ETH_PARIS;
     }
-    else if (block_number >= 12965000) {
+    else if (block_number >= LONDON_ACTIVATION_BLOCK_NUMBER) {
         return MONAD_ETH_LONDON;
     }
-    else if (block_number >= 12244000) {
+    else if (block_number >= BERLIN_ACTIVATION_BLOCK_NUMBER) {
         return MONAD_ETH_BERLIN;
     }
-    else if (block_number >= 9069000) {
+    else if (block_number >= ISTANBUL_ACTIVATION_BLOCK_NUMBER) {
         return MONAD_ETH_ISTANBUL;
     }
     MONAD_ASSERT(false, "unsupported fork");

@@ -36,6 +36,16 @@
 
 MONAD_NAMESPACE_BEGIN
 
+// Outcome of a cache read.
+enum class CacheReadStatus
+{
+    Hit, // served from proposal map or LRU
+    MissResolved, // both missed, proposal chain walked to the finalized base
+                  // -> disk value == finalized value -> safe to cache this miss
+    MissTruncated, // proposal chain truncated before the finalized base
+                   // -> can't prove finalized-consistent -> don't cache miss
+};
+
 // Encoding-agnostic LRU + proposal cache for accounts and storage leaves.
 // Storage values are held as storage_page_t, keyed by the trie key the
 // caller passes: slot_key (single slot at index 0) for slot encoding, or
@@ -62,44 +72,55 @@ class DbCache final
 public:
     DbCache() = default;
 
-    bool
+    CacheReadStatus
     try_read_account(Address const &address, std::optional<Account> &result)
     {
         auto const res = proposals_.try_read_account(address, result);
         if (res.found) {
-            return true;
+            return CacheReadStatus::Hit;
         }
-        if (!res.truncated) {
-            AccountsCache::ConstAccessor acc{};
-            if (accounts_.find(acc, address)) {
-                result = acc->second.value_;
-                return true;
-            }
+        if (res.truncated) {
+            return CacheReadStatus::MissTruncated;
         }
-        return false;
+        AccountsCache::ConstAccessor acc{};
+        if (accounts_.find(acc, address)) {
+            result = acc->second.value_;
+            return CacheReadStatus::Hit;
+        }
+        return CacheReadStatus::MissResolved;
     }
 
-    bool try_read_storage_page(
+    // Read-through: cache a finalized-consistent account fetched from disk
+    // after a `MissResolved` read. A nullopt is a valid (negative) entry: it
+    // records that the account is absent at the finalized baseline.
+    void insert_account(
+        Address const &address, std::optional<Account> const &account)
+    {
+        accounts_.insert(address, account);
+    }
+
+    CacheReadStatus try_read_storage_page(
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key, storage_page_t &result)
     {
         auto const res =
             proposals_.try_read_storage(address, incarnation, key, result);
         if (res.found) {
-            return true;
+            return CacheReadStatus::Hit;
         }
-        if (!res.truncated) {
-            StorageKey const skey{address, incarnation, key};
-            StorageCache::ConstAccessor acc{};
-            if (storage_.find(acc, skey)) {
-                result = acc->second.value_;
-                return true;
-            }
+        if (res.truncated) {
+            return CacheReadStatus::MissTruncated;
         }
-        return false;
+        StorageKey const skey{address, incarnation, key};
+        StorageCache::ConstAccessor acc{};
+        if (storage_.find(acc, skey)) {
+            result = acc->second.value_;
+            return CacheReadStatus::Hit;
+        }
+        return CacheReadStatus::MissResolved;
     }
 
-    bool try_read_storage(
+    CacheReadStatus try_read_storage(
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key, uint8_t const slot_offset, bytes32_t &result)
     {
@@ -109,17 +130,33 @@ public:
         if (res.found) {
             // slot_offset is 0 for slot encoding, the in-page offset for page.
             result = page[slot_offset];
-            return true;
+            return CacheReadStatus::Hit;
         }
-        if (!res.truncated) {
-            StorageKey const skey{address, incarnation, key};
-            StorageCache::ConstAccessor acc{};
-            if (storage_.find(acc, skey)) {
-                result = acc->second.value_[slot_offset];
-                return true;
-            }
+        if (res.truncated) {
+            return CacheReadStatus::MissTruncated;
         }
-        return false;
+        StorageKey const skey{address, incarnation, key};
+        StorageCache::ConstAccessor acc{};
+        if (storage_.find(acc, skey)) {
+            result = acc->second.value_[slot_offset];
+            return CacheReadStatus::Hit;
+        }
+        return CacheReadStatus::MissResolved;
+    }
+
+    // Read-through: insert a finalized-consistent storage page fetched from
+    // disk after a `MissResolved` read. Uses try_insert so a sibling read is
+    // never overwritten. An empty page is a valid (negative) entry: it records
+    // that the page is absent at the finalized baseline, so a follow-up
+    // read-modify-write in commit stage need not re-read from disk.
+    void insert_storage_page(
+        Address const &address, Incarnation const incarnation,
+        bytes32_t const &key, storage_page_t const &page)
+    {
+        StorageKey const skey{address, incarnation, key};
+        storage_page_t value = page;
+        storage_.try_insert(
+            skey, value, static_cast<uint32_t>(page.byte_size()));
     }
 
     void

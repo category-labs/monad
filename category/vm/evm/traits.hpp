@@ -304,7 +304,7 @@ namespace monad
 
         static consteval bool mip_11_active() noexcept
         {
-            return Rev >= MONAD_NEXT;
+            return false;
         }
 
         static consteval bool can_create_inside_delegated() noexcept

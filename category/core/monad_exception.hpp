@@ -18,6 +18,7 @@
 #include <category/core/backtrace.hpp>
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
+#include <category/core/throw.hpp>
 
 #include <evmc/evmc.h>
 
@@ -69,10 +70,11 @@ MONAD_NAMESPACE_END
     if (MONAD_LIKELY(expr)) { /* likeliest */                                  \
     }                                                                          \
     else {                                                                     \
-        throw monad::MonadException{                                           \
+        MONAD_THROW(                                                           \
+            monad::MonadException,                                             \
             (message),                                                         \
             #expr,                                                             \
             __extension__ __PRETTY_FUNCTION__,                                 \
             __FILE__,                                                          \
-            __LINE__};                                                         \
+            __LINE__);                                                         \
     }

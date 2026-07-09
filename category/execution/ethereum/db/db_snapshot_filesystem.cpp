@@ -20,11 +20,14 @@
 #include <category/core/hex.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
+#include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/db_snapshot_filesystem.h>
 
 #include <ankerl/unordered_dense.h>
 #include <blake3.h>
 
+#include <cerrno>
+#include <cstring>
 #include <fcntl.h>
 #include <filesystem>
 #include <format>
@@ -37,11 +40,17 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 struct SnapshotShardStream
 {
     std::ofstream foutput;
-    std::ofstream fchecksum;
+    // The checksum is written once, at destroy time, so only its path is kept
+    // here and the stream is opened lazily rather than held open for the whole
+    // dump. The data stream (foutput) is already held open per shard across all
+    // 256 shards; keeping the checksum stream open too would double that fd
+    // footprint, so deferring it halves the descriptors the dump holds at once.
+    std::filesystem::path checksum_path;
     blake3_hasher hasher;
 };
 
-using SnapshotShard = std::array<SnapshotShardStream, 4>;
+using SnapshotShard =
+    std::array<SnapshotShardStream, MONAD_SNAPSHOT_FILES_PER_SHARD>;
 
 MONAD_ANONYMOUS_NAMESPACE_END
 
@@ -75,9 +84,39 @@ void monad_db_snapshot_filesystem_write_user_context_destroy(
 {
     for (auto &[_, stream] : context->shard) {
         for (auto &shard : stream) {
+            // Flush and close the data file now, rather than letting the
+            // ofstream destructor do it (where the result would be discarded),
+            // so a write/flush/close failure -- e.g. ENOSPC on the final
+            // buffer, or a deferred write-back error surfaced only at close()
+            // -- aborts here at dump time with the right cause instead of
+            // surfacing later as a load-time checksum mismatch on a truncated
+            // file.
+            errno = 0;
+            shard.foutput.close();
+            MONAD_ASSERT_PRINTF(
+                shard.foutput.good(),
+                "failed to write snapshot data file %s: %s",
+                std::filesystem::path{shard.checksum_path}
+                    .replace_extension()
+                    .c_str(),
+                std::strerror(errno));
+
             monad::bytes32_t hash;
             blake3_hasher_finalize(&shard.hasher, hash.bytes, BLAKE3_OUT_LEN);
-            shard.fchecksum << fmt::format("{}", hash);
+            errno = 0;
+            std::ofstream fchecksum{shard.checksum_path, std::ios::out};
+            MONAD_ASSERT_PRINTF(
+                fchecksum.is_open(),
+                "failed to open %s: %s",
+                shard.checksum_path.c_str(),
+                std::strerror(errno));
+            fchecksum << fmt::format("{}", hash);
+            fchecksum.close();
+            MONAD_ASSERT_PRINTF(
+                fchecksum.good(),
+                "failed to write checksum %s: %s",
+                shard.checksum_path.c_str(),
+                std::strerror(errno));
         }
     }
     delete context;
@@ -98,17 +137,18 @@ uint64_t monad_db_snapshot_write_filesystem(
         MONAD_ASSERT(success);
         constexpr std::array files = {
             "eth_header", "account", "storage", "code"};
+        static_assert(files.size() == MONAD_SNAPSHOT_FILES_PER_SHARD);
         for (size_t i = 0; i < it->second.size(); ++i) {
-            auto &[foutput, fchecksum, hasher] = it->second.at(i);
+            auto &[foutput, checksum_path, hasher] = it->second.at(i);
             std::filesystem::path const output = shard_dir / files[i];
+            errno = 0;
             foutput.open(output, std::ios::binary | std::ios::out);
-            std::filesystem::path const checksum{
-                std::format("{}.blake3", output.c_str())};
-            fchecksum.open(checksum, std::ios::out);
             MONAD_ASSERT_PRINTF(
-                foutput.is_open(), "failed to open %s", output.c_str());
-            MONAD_ASSERT_PRINTF(
-                fchecksum.is_open(), "failed to open %s", checksum.c_str());
+                foutput.is_open(),
+                "failed to open %s: %s",
+                output.c_str(),
+                std::strerror(errno));
+            checksum_path = std::format("{}.blake3", output.c_str());
             blake3_hasher_init(&hasher);
         }
     }
@@ -137,17 +177,33 @@ void monad_db_snapshot_load_filesystem(
 
     auto const do_mmap = [](std::filesystem::path const file) {
         using namespace monad;
-        MONAD_ASSERT(std::filesystem::is_regular_file(file));
-        int fd = open(file.c_str(), O_RDONLY);
-        MONAD_ASSERT(fd != -1);
+        MONAD_ASSERT_PRINTF(
+            std::filesystem::is_regular_file(file),
+            "snapshot input file missing or not a regular file: %s",
+            file.c_str());
+        errno = 0;
+        int const fd = open(file.c_str(), O_RDONLY);
+        MONAD_ASSERT_PRINTF(
+            fd != -1,
+            "failed to open %s: %s",
+            file.c_str(),
+            std::strerror(errno));
 
         unsigned long const size = std::filesystem::file_size(file);
         void *data = nullptr;
         if (size) {
             data = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0);
-            MONAD_ASSERT(data != MAP_FAILED);
+            MONAD_ASSERT_PRINTF(
+                data != MAP_FAILED,
+                "failed to mmap %s: %s",
+                file.c_str(),
+                std::strerror(errno));
             // optimize for sequential accesses
-            MONAD_ASSERT(madvise(data, size, MADV_SEQUENTIAL) == 0);
+            MONAD_ASSERT_PRINTF(
+                madvise(data, size, MADV_SEQUENTIAL) == 0,
+                "madvise failed for %s: %s",
+                file.c_str(),
+                std::strerror(errno));
 
             std::filesystem::path const checksum{
                 std::format("{}.blake3", file.c_str())};
@@ -155,7 +211,13 @@ void monad_db_snapshot_load_filesystem(
                 std::filesystem::is_regular_file(checksum),
                 "missing checksum file %s",
                 checksum.c_str());
+            errno = 0;
             std::ifstream t(checksum);
+            MONAD_ASSERT_PRINTF(
+                t.is_open(),
+                "failed to open checksum file %s: %s",
+                checksum.c_str(),
+                std::strerror(errno));
             std::stringstream buffer;
             buffer << t.rdbuf();
             auto const stored_hash = from_hex<bytes32_t>(buffer.str());

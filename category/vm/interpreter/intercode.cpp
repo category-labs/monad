@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/assert.h>
+#include <category/core/monad_exception.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 
@@ -40,7 +40,10 @@ namespace monad::vm::interpreter
 
     uint8_t const *Intercode::pad(std::span<uint8_t const> const code)
     {
-        MONAD_ASSERT(code.size() <= *code_size_t::max());
+        MONAD_ASSERT_THROW(
+            code.size() <= *code_size_t::max(),
+            "Code size exceeds maximum representable value");
+
         auto *buffer =
             new uint8_t[start_padding_size + code.size() + end_padding_size];
 

@@ -59,6 +59,7 @@
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/utils/evm-as/compiler.hpp>
 #include <category/vm/utils/evm-as/validator.hpp>
@@ -861,6 +862,92 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
 
     EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
     EXPECT_TRUE(std::strcmp(ctx.result->message, "balance overflow") == 0);
+    EXPECT_EQ(ctx.result->output_data_len, 0);
+    EXPECT_EQ(ctx.result->encoded_trace_len, 0);
+    EXPECT_EQ(ctx.result->gas_refund, 0);
+    EXPECT_EQ(ctx.result->gas_used, 0);
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+// Regression test: eth_call's state-override feature lets a caller set an
+// account's code directly, bypassing the max-code-size checks that normally
+// run during contract creation. Overriding an account's code with something
+// larger than Intercode's representable size limit must fail gracefully
+// (EVMC_INTERNAL_ERROR) rather than aborting the whole executor process. See
+// Intercode::pad's MONAD_ASSERT_THROW.
+TEST_F(EthCallFixture, state_override_oversized_code_fails_gracefully)
+{
+    auto const from = ADDR_A;
+    auto const to = ADDR_B;
+
+    commit_sequential(
+        tdb,
+        StateDeltas(
+            {{from,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{.balance = 1'000'000, .code_hash = NULL_HASH}}}},
+             {to,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{.balance = 0, .code_hash = NULL_HASH}}}}}),
+        Code{},
+        BlockHeader{.number = 0});
+
+    Transaction const tx{
+        .gas_limit = 1'000'000u,
+        .to = to,
+    };
+
+    BlockHeader const header{.number = 0};
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    std::vector<uint8_t> const oversized_code(
+        *vm::interpreter::code_size_t::max() + 1, uint8_t{0});
+    add_override_address(state_override, to.bytes, sizeof(Address));
+    set_override_code(
+        state_override,
+        to.bytes,
+        sizeof(Address),
+        oversized_code.data(),
+        oversized_code.size());
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        NOOP_TRACER,
+        true);
+    f.get();
+
+    EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    EXPECT_STREQ(
+        ctx.result->message, "Code size exceeds maximum representable value");
     EXPECT_EQ(ctx.result->output_data_len, 0);
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);

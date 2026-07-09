@@ -1,3 +1,4 @@
 .git
 build
 docker
+.claude/worktrees

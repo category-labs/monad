@@ -75,6 +75,11 @@ public:
 
     vm::SharedVarcode read_code(bytes32_t const &);
 
+    // Conflict-diagnostic logging (TXN_CONFLICT / CONFLICT_DETAIL /
+    // BLOCK_STATS / DELTA_FIX). Off for perf runs; the relaxation machinery
+    // itself is unaffected.
+    static constexpr bool CONFLICT_DIAGNOSTICS = false;
+
     bool can_merge(State &) const;
 
     void merge(State const &);

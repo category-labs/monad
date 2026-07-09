@@ -21,7 +21,9 @@
 #include <category/core/log.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
+#include <category/execution/ethereum/core/fmt/int_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
@@ -151,9 +153,80 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
     }
 }
 
+namespace
+{
+    // Diagnostic logging for optimistic-execution merge conflicts; one line
+    // per mismatching account field.
+    void log_account_conflict(
+        Incarnation const incarnation, Address const &address,
+        std::optional<Account> const &orig,
+        std::optional<Account> const &actual)
+    {
+        if constexpr (!BlockState::CONFLICT_DIAGNOSTICS) {
+            return;
+        }
+        uint64_t const block = incarnation.get_block();
+        uint64_t const txn = incarnation.get_tx();
+        if (orig.has_value() != actual.has_value()) {
+            LOG_INFO(
+                "CONFLICT_DETAIL block={} txn={} addr={} kind=existence "
+                "orig={} actual={}",
+                block,
+                txn,
+                address,
+                orig.has_value(),
+                actual.has_value());
+            return;
+        }
+        if (orig->balance != actual->balance) {
+            LOG_INFO(
+                "CONFLICT_DETAIL block={} txn={} addr={} kind=balance "
+                "orig={} actual={}",
+                block,
+                txn,
+                address,
+                orig->balance,
+                actual->balance);
+        }
+        if (orig->nonce != actual->nonce) {
+            LOG_INFO(
+                "CONFLICT_DETAIL block={} txn={} addr={} kind=nonce "
+                "orig={} actual={}",
+                block,
+                txn,
+                address,
+                orig->nonce,
+                actual->nonce);
+        }
+        if (orig->code_hash != actual->code_hash) {
+            LOG_INFO(
+                "CONFLICT_DETAIL block={} txn={} addr={} kind=code_hash "
+                "orig={} actual={}",
+                block,
+                txn,
+                address,
+                orig->code_hash,
+                actual->code_hash);
+        }
+        if (orig->incarnation != actual->incarnation) {
+            LOG_INFO(
+                "CONFLICT_DETAIL block={} txn={} addr={} kind=incarnation "
+                "orig={} actual={}",
+                block,
+                txn,
+                address,
+                orig->incarnation.to_int(),
+                actual->incarnation.to_int());
+        }
+    }
+}
+
 bool BlockState::can_merge(State &state) const
 {
     MONAD_ASSERT(state_);
+    // Diagnostic variant: scan all originals and log every mismatch instead
+    // of returning at the first one.
+    unsigned mismatches = 0;
     auto const &original = state.original();
     for (auto &kv : original) {
         Address const &address = kv.first;
@@ -168,7 +241,12 @@ bool BlockState::can_merge(State &state) const
             // state up until this transaction
             if (!state.try_fix_account_mismatch(
                     address, it->second.account.second)) {
-                return false;
+                ++mismatches;
+                log_account_conflict(
+                    state.incarnation(),
+                    address,
+                    account,
+                    it->second.account.second);
             }
         }
         // TODO account.has_value()???
@@ -176,17 +254,38 @@ bool BlockState::can_merge(State &state) const
             StorageDeltas::const_accessor it2{};
             if (it->second.storage.find(it2, key)) {
                 if (value != it2->second.second) {
-                    return false;
+                    ++mismatches;
+                    if constexpr (BlockState::CONFLICT_DIAGNOSTICS) {
+                        LOG_INFO(
+                            "CONFLICT_DETAIL block={} txn={} addr={} "
+                            "kind=storage key={} orig={} actual={}",
+                            state.incarnation().get_block(),
+                            state.incarnation().get_tx(),
+                            address,
+                            key,
+                            value,
+                            it2->second.second);
+                    }
                 }
             }
             else {
                 if (value) {
-                    return false;
+                    ++mismatches;
+                    if constexpr (BlockState::CONFLICT_DIAGNOSTICS) {
+                        LOG_INFO(
+                            "CONFLICT_DETAIL block={} txn={} addr={} "
+                            "kind=storage_missing key={} orig={} actual=0x0",
+                            state.incarnation().get_block(),
+                            state.incarnation().get_tx(),
+                            address,
+                            key,
+                            value);
+                    }
                 }
             }
         }
     }
-    return true;
+    return mismatches == 0;
 }
 
 void BlockState::merge(State const &state)

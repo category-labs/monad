@@ -21,12 +21,14 @@
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/transaction_fmt.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
@@ -55,6 +57,9 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <ankerl/unordered_dense.h>
+
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -62,6 +67,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -332,6 +338,51 @@ Result<std::vector<Receipt>> execute_block(
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
     record_account_access_events(MONAD_ACCT_ACCESS_BLOCK_EPILOGUE, state);
+
+    if constexpr (BlockState::CONFLICT_DIAGNOSTICS) {
+        // Diagnostic: per-block ERC-20 density vs conflict retries.
+        // transfer(address,uint256) = 0xa9059cbb;
+        // transferFrom(address,address,uint256) = 0x23b872dd (selector shared
+        // with ERC-721, so counted separately).
+        size_t n_transfer = 0;
+        size_t n_transfer_from = 0;
+        ankerl::unordered_dense::map<Address, unsigned> token_counts;
+        for (auto const &tx : block.transactions) {
+            if (!tx.to.has_value() || tx.data.size() < 4) {
+                continue;
+            }
+            uint32_t const selector =
+                uint32_t{tx.data[0]} << 24 | uint32_t{tx.data[1]} << 16 |
+                uint32_t{tx.data[2]} << 8 | uint32_t{tx.data[3]};
+            if (selector == 0xa9059cbbU) {
+                ++n_transfer;
+                ++token_counts[tx.to.value()];
+            }
+            else if (selector == 0x23b872ddU) {
+                ++n_transfer_from;
+                ++token_counts[tx.to.value()];
+            }
+        }
+        std::vector<std::pair<Address, unsigned>> top(
+            token_counts.begin(), token_counts.end());
+        std::sort(top.begin(), top.end(), [](auto const &a, auto const &b) {
+            return a.second > b.second;
+        });
+        std::string tokens;
+        for (size_t i = 0; i < std::min<size_t>(top.size(), 8); ++i) {
+            tokens += fmt::format("{}:{},", top[i].first, top[i].second);
+        }
+        LOG_INFO(
+            "BLOCK_STATS block={} txns={} transfer={} transfer_from={} "
+            "retries={} beneficiary={} tokens={}",
+            block.header.number,
+            block.transactions.size(),
+            n_transfer,
+            n_transfer_from,
+            block_metrics.num_retries,
+            block.header.beneficiary,
+            tokens);
+    }
 
     return retvals;
 }

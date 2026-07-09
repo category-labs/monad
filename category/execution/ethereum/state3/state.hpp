@@ -122,6 +122,11 @@ public:
 
     vm::VM &vm();
 
+    Incarnation incarnation() const
+    {
+        return incarnation_;
+    }
+
 public:
     void set_original_nonce(Address const &, uint64_t nonce);
 

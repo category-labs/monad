@@ -19,10 +19,14 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp>
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
+#include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
@@ -59,6 +63,79 @@
 #include <utility>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+// Diagnostic: dump the merged txn's storage read/write-set with values, so
+// offline analysis can classify per-slot conflicts as delta-commutative
+// (final == orig +/- delta chains) vs order-dependent overwrites. Emitted at
+// the serialized merge point, so lines appear in commit order; only the
+// committed execution is dumped (not discarded optimistic passes).
+constexpr bool ENABLE_RWSET_TRACE = false;
+
+void log_rwset(
+    monad::State const &state, uint64_t const block, uint64_t const txn)
+{
+    if constexpr (!ENABLE_RWSET_TRACE) {
+        return;
+    }
+    auto const &original = state.original();
+    auto const &current = state.current();
+    for (auto const &[address, account_state] : original) {
+        auto const *written = [&]() -> monad::AccountState const * {
+            auto const it = current.find(address);
+            return it == current.end() ? nullptr : &it->second.recent();
+        }();
+        // Account-level line: lets offline analysis correlate storage reads
+        // with ETH balance movements (a storage value leaking into a native
+        // transfer is a non-commutative use).
+        {
+            auto const &orig_acct = get_account_for_trace(account_state);
+            monad::uint256_t const ob =
+                orig_acct.has_value() ? orig_acct->balance : 0;
+            monad::uint256_t const fb = [&] {
+                if (written == nullptr) {
+                    return ob;
+                }
+                auto const &acct = get_account_for_trace(*written);
+                return acct.has_value() ? acct->balance : ob;
+            }();
+            if (ob != fb) {
+                LOG_INFO(
+                    "RWSET_ACCT block={} txn={} addr={} bal_orig={} "
+                    "bal_final={}",
+                    block,
+                    txn,
+                    address,
+                    ob,
+                    fb);
+            }
+        }
+        for (auto const &[key, orig_value] : account_state.storage_) {
+            monad::bytes32_t const *final_value = nullptr;
+            if (written != nullptr) {
+                final_value = written->storage_.find(key);
+            }
+            if (final_value != nullptr && *final_value != orig_value) {
+                LOG_INFO(
+                    "RWSET block={} txn={} addr={} slot={} orig={} final={}",
+                    block,
+                    txn,
+                    address,
+                    key,
+                    orig_value,
+                    *final_value);
+            }
+            else {
+                LOG_INFO(
+                    "RWSET block={} txn={} addr={} slot={} orig={} final=-",
+                    block,
+                    txn,
+                    address,
+                    key,
+                    orig_value);
+            }
+        }
+    }
+}
 
 // YP Sec 6.2 "irrevocable_change"
 template <Traits traits>
@@ -451,7 +528,13 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
     {
         TRACE_TXN_EVENT(StartExecution);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}, true};
+        // Relaxed nonce/balance merge validation; ON so the conflict logs
+        // show only the residual conflicts that relaxation cannot absorb.
+        constexpr bool relaxed_validation = true;
+        State state{
+            block_state_,
+            Incarnation{header_.number, i_ + 1},
+            relaxed_validation};
         state.set_original_nonce(sender_, tx_.nonce);
 
         call_tracer_.reset();
@@ -470,10 +553,26 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             }
             auto const receipt = execute_final(state, result.value());
             block_state_.merge(state);
+            log_rwset(state, header_.number, i_);
             return receipt;
         }
     }
     ++block_metrics_.num_retries;
+    if constexpr (BlockState::CONFLICT_DIAGNOSTICS) {
+        LOG_INFO(
+            "TXN_CONFLICT block={} txn={} sender={} to={} selector=0x{:08x} "
+            "nonce={} value_zero={}",
+            header_.number,
+            i_,
+            sender_,
+            tx_.to.has_value() ? fmt::format("{}", tx_.to.value()) : "create",
+            tx_.data.size() >= 4
+                ? uint32_t{tx_.data[0]} << 24 | uint32_t{tx_.data[1]} << 16 |
+                      uint32_t{tx_.data[2]} << 8 | uint32_t{tx_.data[3]}
+                : 0U,
+            tx_.nonce,
+            tx_.value == 0);
+    }
     {
         TRACE_TXN_EVENT(StartRetry);
 
@@ -490,6 +589,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         }
         auto const receipt = execute_final(state, result.value());
         block_state_.merge(state);
+        log_rwset(state, header_.number, i_);
         return receipt;
     }
 }

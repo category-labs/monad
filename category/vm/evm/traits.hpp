@@ -37,8 +37,10 @@ namespace monad
         // The latest EVM fork whose execution semantics are implemented. Later
         // forks may exist in the monad_eth_revision enum (so the dispatch
         // infrastructure — explicit instantiations, switch cases, opcode and
-        // storage tables — is in place) but are not yet wired up behaviorally.
-        // Such forks are excluded from the typed-revision test matrices and
+        // storage tables — is in place) but are otherwise not yet wired up
+        // behaviorally, with one exception: AMSTERDAM carries the draft
+        // EIP-8024 DUPN/SWAPN/EXCHANGE opcodes (see eip_8024_active()). Such
+        // forks are still excluded from the typed-revision test matrices and
         // must not be run through evmone (see to_evmc_revision()).
         // TODO(amsterdam): bump to MONAD_ETH_AMSTERDAM once Amsterdam support
         // lands.
@@ -148,6 +150,20 @@ namespace monad
         static consteval bool eip_7951_active() noexcept
         {
             return Rev >= MONAD_ETH_OSAKA;
+        }
+
+        // EIP-8024: backward-compatible DUPN/SWAPN/EXCHANGE. Draft (under peer
+        // review), so it is staged on AMSTERDAM, the next fork above
+        // LATEST_SUPPORTED_EVM_FORK. AMSTERDAM is already wired into the
+        // dispatch machinery (explicit instantiations, the runtime switch, and
+        // the opcode/storage tables), so the draft rides that existing
+        // scaffolding instead of needing a revision added just to carry it. No
+        // MonadTraits maps to AMSTERDAM (evm_rev() caps at OSAKA) and it is
+        // excluded from evmone/fuzzing, so the feature is inert outside
+        // explicit EvmTraits<AMSTERDAM> unit tests.
+        static consteval bool eip_8024_active() noexcept
+        {
+            return Rev >= MONAD_ETH_AMSTERDAM;
         }
 
         static consteval bool mip_3_active() noexcept
@@ -292,6 +308,15 @@ namespace monad
         static consteval bool eip_7951_active() noexcept
         {
             return Rev >= MONAD_FOUR;
+        }
+
+        // EIP-8024: backward-compatible DUPN/SWAPN/EXCHANGE. Off on-chain for
+        // now (draft, under peer review). SHIP on the next Monad fork by
+        // flipping this to `return Rev >= MONAD_NEXT;` AND adding
+        // add_eip8024_opcodes(table) to make_opcode_table<MonadTraits<...>>.
+        static consteval bool eip_8024_active() noexcept
+        {
+            return false;
         }
 
         static consteval bool mip_3_active() noexcept

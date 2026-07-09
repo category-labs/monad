@@ -4411,3 +4411,167 @@ TEST(Emitter, ReleaseSrcAndDestRegression)
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
 }
+
+namespace
+{
+    // Builds a single-block IR that pushes `depth` items, so the emitter's
+    // per-block stack reservation (sized to the block's max stack delta) is
+    // large enough for a test that pushes up to `depth` values.
+    basic_blocks::BasicBlocksIR make_push_block_ir(unsigned const depth)
+    {
+        std::vector<uint8_t> code;
+        code.reserve(2 * depth);
+        for (unsigned i = 0; i < depth; ++i) {
+            code.push_back(static_cast<uint8_t>(PUSH1));
+            code.push_back(0);
+        }
+        return basic_blocks::BasicBlocksIR::unsafe_from(code);
+    }
+
+    uint256_t literal_at(Stack &stack, int32_t const index)
+    {
+        auto const e = stack.get(index);
+        EXPECT_TRUE(e->literal().has_value());
+        return e->literal().value().value;
+    }
+}
+
+// EIP-8024 EXCHANGE (Emitter::exchange, backed by Stack::exchange). DUPN and
+// SWAPN lower to the already-covered dup()/swap() paths, so exchange() and its
+// virtual-stack bookkeeping are the only new emitter surface these tests
+// target. They assert directly on the virtual stack (the unit under test);
+// end-to-end execution of the opcodes is covered by the interpreter-vs-compiler
+// tests in eip8024_tests.cpp.
+//
+// Absolute stack indices run bottom (0) to top. exchange(n, m) swaps the items
+// at depth n+1 and m+1 from the top and leaves the top itself untouched.
+
+TEST(Emitter, exchange_swaps_second_and_third)
+{
+    auto ir = make_push_block_ir(3);
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+
+    emit.push(0x33); // index 0 (3rd from top)
+    emit.push(0x22); // index 1 (2nd from top)
+    emit.push(0x11); // index 2 (top)
+
+    Stack &stack = emit.get_stack();
+    emit.exchange(1, 2); // swap the 2nd and 3rd items
+
+    EXPECT_EQ(literal_at(stack, 0), 0x22); // was the 2nd item
+    EXPECT_EQ(literal_at(stack, 1), 0x33); // was the 3rd item
+    EXPECT_EQ(literal_at(stack, 2), 0x11); // top untouched
+
+    (void)emit.finish_contract(rt);
+}
+
+TEST(Emitter, exchange_swaps_deep_pair_and_leaves_others)
+{
+    auto ir = make_push_block_ir(6);
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+
+    // indices (bottom..top) 0..5 hold 0x66,0x55,0x44,0x33,0x22,0x11
+    emit.push(0x66);
+    emit.push(0x55);
+    emit.push(0x44);
+    emit.push(0x33);
+    emit.push(0x22);
+    emit.push(0x11);
+
+    Stack &stack = emit.get_stack();
+    ASSERT_EQ(literal_at(stack, 3), 0x33); // 3rd from top
+    ASSERT_EQ(literal_at(stack, 1), 0x55); // 5th from top
+
+    emit.exchange(2, 4); // swap the 3rd and 5th items
+
+    EXPECT_EQ(literal_at(stack, 3), 0x55); // now holds the former 5th item
+    EXPECT_EQ(literal_at(stack, 1), 0x33); // now holds the former 3rd item
+    // Everything else is undisturbed.
+    EXPECT_EQ(literal_at(stack, 0), 0x66);
+    EXPECT_EQ(literal_at(stack, 2), 0x44);
+    EXPECT_EQ(literal_at(stack, 4), 0x22);
+    EXPECT_EQ(literal_at(stack, 5), 0x11);
+
+    (void)emit.finish_contract(rt);
+}
+
+TEST(Emitter, exchange_across_location_types)
+{
+    // The two exchanged items are forced into every combination of value
+    // location (literal / avx reg / general reg / spilled stack offset) before
+    // the exchange; exchange must move the element handles between indices
+    // regardless of where the values physically reside.
+    for (auto const loc_third : all_locations) {
+        for (auto const loc_second : all_locations) {
+            auto ir = make_push_block_ir(3);
+            asmjit::JitRuntime rt;
+            TestEmitter emit{rt, ir.codesize};
+            (void)emit.begin_new_block(ir.blocks()[0]);
+
+            emit.push(0x33); // index 0 (3rd from top)
+            emit.push(0x22); // index 1 (2nd from top)
+            emit.push(0x11); // index 2 (top)
+
+            Stack &stack = emit.get_stack();
+            // The stack retains ownership, so these raw pointers stay valid.
+            auto const *third = stack.get(0).get();
+            auto const *second = stack.get(1).get();
+
+            mov_literal_to_location_type(emit, 0, loc_third);
+            mov_literal_to_location_type(emit, 1, loc_second);
+
+            emit.exchange(1, 2); // swap the 2nd and 3rd items
+
+            EXPECT_EQ(stack.get(0).get(), second)
+                << "3rd@" << Emitter::location_type_to_string(loc_third)
+                << " 2nd@" << Emitter::location_type_to_string(loc_second);
+            EXPECT_EQ(stack.get(1).get(), third)
+                << "3rd@" << Emitter::location_type_to_string(loc_third)
+                << " 2nd@" << Emitter::location_type_to_string(loc_second);
+
+            (void)emit.finish_contract(rt);
+        }
+    }
+}
+
+TEST(Emitter, exchange_aliased_duplicated_element)
+{
+    // When both exchanged positions are occupied by the SAME element (a value
+    // that was DUPed), Stack::exchange must keep that element's stack-index set
+    // intact rather than corrupt it. Here the 2nd and 3rd items are two indices
+    // of one duplicated element.
+    auto ir = make_push_block_ir(4);
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+
+    Stack &stack = emit.get_stack();
+
+    emit.push(0x30); // [0x30]
+    emit.push(0x20); // [0x20, 0x30]
+    emit.dup(1); // [0x20, 0x20, 0x30] -- top two share one element
+    emit.push(0x99); // [0x99, 0x20, 0x20, 0x30] -- 2nd and 3rd share it
+
+    // Indices 1 and 2 are the two occurrences of the duplicated 0x20 element.
+    auto shared = stack.get(1);
+    ASSERT_EQ(stack.get(1).get(), stack.get(2).get());
+    ASSERT_EQ(shared->stack_indices().size(), 2u);
+
+    emit.exchange(1, 2); // swap the two aliased slots -- a no-op on values
+
+    ASSERT_EQ(stack.get(1).get(), stack.get(2).get());
+    ASSERT_EQ(stack.get(1).get(), shared.get());
+    ASSERT_EQ(shared->stack_indices().size(), 2u);
+    ASSERT_TRUE(shared->literal().has_value());
+    ASSERT_EQ(shared->literal().value().value, 0x20);
+    // The undisturbed neighbours keep their values.
+    EXPECT_EQ(literal_at(stack, 3), 0x99); // top
+    EXPECT_EQ(literal_at(stack, 0), 0x30); // bottom
+    shared.reset();
+
+    (void)emit.finish_contract(rt);
+}

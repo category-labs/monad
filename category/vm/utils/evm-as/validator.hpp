@@ -167,6 +167,54 @@ namespace monad::vm::utils::evm_as::internal
             return true;
         }
 
+        bool operator()(Eip8024I const &eip8024)
+        {
+            // A disallowed immediate behaves as INVALID (mirrors
+            // basic_blocks.hpp). Handle it like an InvalidI instruction and
+            // skip decoding, which would otherwise trip a debug assert.
+            bool const disallowed =
+                eip8024.opcode == compiler::EvmOpCode::EXCHANGE
+                    ? compiler::eip8024_pair_disallowed(eip8024.imm)
+                    : compiler::eip8024_single_disallowed(eip8024.imm);
+            if (disallowed) {
+                if (!allow_invalid) {
+                    error(pos, "Invalid instruction");
+                }
+                return true;
+            }
+
+            // EIP-8024's static opcode-table min_stack is a placeholder; the
+            // real requirement is dynamic and derives from the decoded operand
+            // (mirrors basic_blocks.hpp).
+            size_t min_stack = 0;
+            size_t stack_increase = 0;
+            if (eip8024.opcode == compiler::EvmOpCode::DUPN) {
+                auto const n = compiler::eip8024_decode_single(eip8024.imm);
+                min_stack = n;
+                stack_increase = n + 1;
+            }
+            else if (eip8024.opcode == compiler::EvmOpCode::SWAPN) {
+                auto const n = compiler::eip8024_decode_single(eip8024.imm);
+                min_stack = n + 1;
+                stack_increase = n + 1;
+            }
+            else {
+                auto const m =
+                    compiler::eip8024_decode_pair(eip8024.imm).second;
+                min_stack = static_cast<size_t>(m) + 1;
+                stack_increase = static_cast<size_t>(m) + 1;
+            }
+
+            if (vstack_size < min_stack) {
+                error(pos, "Stack underflow");
+                return false;
+            }
+
+            vstack_size = (vstack_size - min_stack) + stack_increase;
+
+            return check_stackoverflow();
+        }
+
         bool operator()(auto const &)
         {
             return true;

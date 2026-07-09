@@ -57,6 +57,15 @@ namespace monad::vm::interpreter
     {
         auto jumpdests = JumpdestMap(code.size(), false);
 
+        // Only PUSH data is skipped. The EIP-8024 opcodes (DUPN/SWAPN/EXCHANGE)
+        // are intentionally NOT special-cased here: their immediate byte is
+        // encoded so it can never be 0x5B (JUMPDEST) or a PUSH byte, so an
+        // unmodified legacy scan that treats them as 1-byte opcodes and
+        // inspects the following byte as an opcode yields exactly the correct
+        // valid-JUMPDEST set. This is EIP-8024's backward-compatibility
+        // guarantee; teaching this scan to skip their immediate would instead
+        // hide a legitimate JUMPDEST that follows an instruction with a
+        // disallowed immediate.
         for (auto i = 0u; i < code.size(); ++i) {
             auto const op = code[i];
 

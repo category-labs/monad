@@ -23,6 +23,7 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -262,6 +263,25 @@ namespace
         case Swap:
             emit.swap(instr.index());
             break;
+        // For DupN/SwapN/Exchange, index() holds the raw EIP-8024 immediate
+        // byte, decoded here to the operand. The decoders assert (in debug) the
+        // byte is not disallowed; that precondition is guaranteed upstream by
+        // BasicBlocksIR::scan_from, which returns InvalidInstruction for a
+        // disallowed immediate and therefore never emits one of these
+        // instructions with a disallowed index.
+        case DupN:
+            emit.dup(
+                static_cast<uint8_t>(eip8024_decode_single(instr.index())));
+            break;
+        case SwapN:
+            emit.swap(
+                static_cast<uint8_t>(eip8024_decode_single(instr.index())));
+            break;
+        case Exchange: {
+            auto const [n, m] = eip8024_decode_pair(instr.index());
+            emit.exchange(n, m);
+            break;
+        }
         case Log:
             switch (instr.index()) {
             case 0:

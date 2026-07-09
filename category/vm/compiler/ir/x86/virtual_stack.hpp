@@ -462,6 +462,13 @@ namespace monad::vm::compiler::native
         void swap(int32_t swap_index);
 
         /**
+         * Swap the two (non-top) stack elements at the given absolute indices.
+         * Generalises `swap` for EIP-8024 EXCHANGE. The indices must differ and
+         * both must be at or below the top.
+         */
+        void exchange(int32_t index_a, int32_t index_b);
+
+        /**
          * Clear deferred comparison and insert a stack offset to the
          * corresponding stack elements. Returns the old `DeferredComparison`
          * containing the stack elements.

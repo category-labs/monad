@@ -2020,3 +2020,82 @@ TEST(EvmAs, Invalid)
     std::string const expected_mnemonic = "INVALID\n";
     EXPECT_EQ(evm_as::mcompile(eb), expected_mnemonic);
 }
+
+TEST(EvmAs, Eip8024Emission)
+{
+    // The DUPN/SWAPN/EXCHANGE emitters encode the logical operand and serialize
+    // to the opcode byte followed by that single encoded immediate byte.
+    auto eb = evm_as::amsterdam();
+    eb.dupn(17).swapn(235).exchange(1, 2);
+
+    ASSERT_EQ(eb.size(), 3u);
+    ASSERT_TRUE(evm_as::Instruction::is_eip8024(eb[0]));
+    EXPECT_EQ(
+        evm_as::Instruction::as_eip8024(eb[0]).opcode,
+        compiler::EvmOpCode::DUPN);
+    EXPECT_EQ(
+        evm_as::Instruction::as_eip8024(eb[1]).opcode,
+        compiler::EvmOpCode::SWAPN);
+    EXPECT_EQ(
+        evm_as::Instruction::as_eip8024(eb[2]).opcode,
+        compiler::EvmOpCode::EXCHANGE);
+
+    std::vector<uint8_t> bytecode{};
+    evm_as::compile(eb, bytecode);
+    std::vector<uint8_t> const expected{
+        0xE6,
+        compiler::eip8024_encode_single(17),
+        0xE7,
+        compiler::eip8024_encode_single(235),
+        0xE8,
+        compiler::eip8024_encode_pair(1, 2)};
+    EXPECT_EQ(bytecode, expected);
+
+    std::string const expected_mnemonic = "DUPN 17\n"
+                                          "SWAPN 235\n"
+                                          "EXCHANGE 1, 2\n";
+    EXPECT_EQ(evm_as::mcompile(eb), expected_mnemonic);
+}
+
+TEST(EvmAs, Eip8024Gating)
+{
+    // Out-of-range operands assemble to INVALID rather than aborting or
+    // emitting a disallowed immediate byte (mirrors dup()/swap()).
+    {
+        auto eb = evm_as::amsterdam();
+        eb.dupn(16); // below the [17, 235] single range
+        ASSERT_EQ(eb.size(), 1u);
+        EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[0]));
+        EXPECT_FALSE(evm_as::validate(eb));
+    }
+    {
+        auto eb = evm_as::amsterdam();
+        eb.exchange(2, 2); // pair requires n < m
+        ASSERT_EQ(eb.size(), 1u);
+        EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[0]));
+    }
+    // A revision without EIP-8024 (Osaka) has no DUPN opcode, so the
+    // emitter yields INVALID even for an in-range operand.
+    {
+        auto eb = evm_as::osaka();
+        eb.dupn(17);
+        ASSERT_EQ(eb.size(), 1u);
+        EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[0]));
+    }
+    // A well-formed program passes stack validation; a too-shallow one is
+    // caught as underflow (exercises both branches of the Eip8024I validator
+    // overload).
+    {
+        auto eb = evm_as::amsterdam();
+        for (int i = 0; i < 18; ++i) {
+            eb.push(1);
+        }
+        eb.dupn(17);
+        EXPECT_TRUE(evm_as::validate(eb));
+    }
+    {
+        auto eb = evm_as::amsterdam();
+        eb.push(1).push(2).dupn(17);
+        EXPECT_FALSE(evm_as::validate(eb));
+    }
+}

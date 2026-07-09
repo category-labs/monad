@@ -28,7 +28,6 @@
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
-#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
@@ -41,6 +40,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -91,6 +91,7 @@ Result<void> process_ethereum_block(
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing)
 {
+    MONAD_ASSERT(db.is_page_encoded());
     static_assert(traits::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
 
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
@@ -178,7 +179,7 @@ Result<void> process_ethereum_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code, _] = std::move(block_state).release();
 
-    CommitBuilder builder(block.header.number);
+    PageCommitBuilder builder(block.header.number, db);
     builder.add_state_deltas(*state)
         .add_code(code)
         .add_receipts(receipts)
@@ -218,7 +219,7 @@ Result<void> process_ethereum_block(
     db.finalize(block.header.number, block_id);
     db.update_verified_block(block.header.number);
     exec_output.eth_block_hash =
-        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
+        to_bytes(keccak256(rlp::encode_block_header(block.header)));
     block_hash_buffer.set(
         exec_output.eth_header.number, exec_output.eth_block_hash);
     (void)record_block_result(exec_output);

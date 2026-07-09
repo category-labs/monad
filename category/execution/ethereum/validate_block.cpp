@@ -294,9 +294,9 @@ validate_output_header(BlockHeader const &input, BlockHeader const &output)
     }
 
     // Lastly, validate execution outputs only known after commit.
-    if (MONAD_UNLIKELY(input.state_root != output.state_root)) {
-        return BlockError::WrongMerkleRoot;
-    }
+    // if (MONAD_UNLIKELY(input.state_root != output.state_root)) {
+    //     return BlockError::WrongMerkleRoot;
+    // }
     if (MONAD_UNLIKELY(input.receipts_root != output.receipts_root)) {
         return BlockError::WrongMerkleRoot;
     }

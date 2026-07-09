@@ -16,4 +16,4 @@
 #pragma once
 
 // Throw a C++ exception
-#define MONAD_THROW(exc, msg) throw exc(msg)
+#define MONAD_THROW(exc, ...) throw exc(__VA_ARGS__)

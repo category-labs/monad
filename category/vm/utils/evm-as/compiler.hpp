@@ -254,6 +254,10 @@ namespace monad::vm::utils::evm_as
                         emit_byte(mc::EvmOpCode::JUMPDEST);
                     },
                     [&](InvalidI const &) -> void { emit_byte(0xFE); },
+                    [&](Eip8024I const &eip8024) -> void {
+                        emit_byte(eip8024.opcode);
+                        emit_byte(eip8024.imm);
+                    },
                     [&](auto const &) -> void { MONAD_ABORT(); }}
 
                 ,
@@ -432,6 +436,33 @@ namespace monad::vm::utils::evm_as
                             first = false;
                         }
                         return 0;
+                    },
+                    [&](Eip8024I const &eip8024) -> size_t {
+                        // A disallowed immediate behaves as INVALID (mirrors
+                        // basic_blocks.hpp). Print it as INVALID rather than
+                        // decoding, which would otherwise trip a debug assert.
+                        bool const disallowed =
+                            eip8024.opcode == mc::EvmOpCode::EXCHANGE
+                                ? mc::eip8024_pair_disallowed(eip8024.imm)
+                                : mc::eip8024_single_disallowed(eip8024.imm);
+                        if (disallowed) {
+                            os << "INVALID";
+                            return 7;
+                        }
+                        auto const info =
+                            mc::opcode_table<traits>[eip8024.opcode];
+                        std::string operand;
+                        if (eip8024.opcode == mc::EvmOpCode::EXCHANGE) {
+                            auto const [n, m] =
+                                mc::eip8024_decode_pair(eip8024.imm);
+                            operand = std::format("{}, {}", +n, +m);
+                        }
+                        else {
+                            operand = std::format(
+                                "{}", mc::eip8024_decode_single(eip8024.imm));
+                        }
+                        os << info.name << ' ' << operand;
+                        return info.name.size() + 1 + operand.size();
                     }},
                 ins);
             if (config.annotate && length > 0) {

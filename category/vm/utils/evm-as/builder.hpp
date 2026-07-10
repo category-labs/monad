@@ -203,6 +203,54 @@ namespace monad::vm::utils::evm_as
             return ins(static_cast<compiler::EvmOpCode>(opcode));
         }
 
+        // EIP-8024 DUPN: duplicate the n-th stack item (n in [17, 235]). The
+        // operand is validated and encoded here; an out-of-range operand or a
+        // revision without EIP-8024 yields an INVALID instruction, mirroring
+        // dup()/swap().
+        EvmBuilder &dupn(uint32_t const n) noexcept
+        {
+            if (!compiler::eip8024_single_operand_valid(n)) {
+                return insert(InvalidI{std::format("DUPN {}", n)});
+            }
+            if (compiler::is_unknown_opcode_info<traits>(
+                    lookup(compiler::EvmOpCode::DUPN))) {
+                return insert(InvalidI{"DUPN"});
+            }
+            return insert(Eip8024I{
+                compiler::EvmOpCode::DUPN, compiler::eip8024_encode_single(n)});
+        }
+
+        // EIP-8024 SWAPN: swap the top with the (n+1)-th item (n in [17, 235]).
+        EvmBuilder &swapn(uint32_t const n) noexcept
+        {
+            if (!compiler::eip8024_single_operand_valid(n)) {
+                return insert(InvalidI{std::format("SWAPN {}", n)});
+            }
+            if (compiler::is_unknown_opcode_info<traits>(
+                    lookup(compiler::EvmOpCode::SWAPN))) {
+                return insert(InvalidI{"SWAPN"});
+            }
+            return insert(Eip8024I{
+                compiler::EvmOpCode::SWAPN,
+                compiler::eip8024_encode_single(n)});
+        }
+
+        // EIP-8024 EXCHANGE: swap the n-th and m-th (non-top) items, with
+        // 1 <= n < m and n + m <= 30.
+        EvmBuilder &exchange(uint8_t const n, uint8_t const m) noexcept
+        {
+            if (!compiler::eip8024_pair_operand_valid(n, m)) {
+                return insert(InvalidI{std::format("EXCHANGE {}, {}", +n, +m)});
+            }
+            if (compiler::is_unknown_opcode_info<traits>(
+                    lookup(compiler::EvmOpCode::EXCHANGE))) {
+                return insert(InvalidI{"EXCHANGE"});
+            }
+            return insert(Eip8024I{
+                compiler::EvmOpCode::EXCHANGE,
+                compiler::eip8024_encode_pair(n, m)});
+        }
+
         EvmBuilder &comment(std::string const &comment) noexcept
         {
             auto commentop = CommentI{comment};

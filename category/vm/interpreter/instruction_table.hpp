@@ -85,6 +85,29 @@
     }                                                                          \
     while (false);
 
+// EIP-8024 opcodes (DUPN/SWAPN/EXCHANGE) carry a single immediate byte, so
+// advance the instruction pointer by two. Delta is the net stack change from
+// the opcode table (+1 for DUPN, 0 for SWAPN/EXCHANGE).
+#define MONAD_VM_NEXT_IMM(OP)                                                  \
+    do {                                                                       \
+        static constexpr auto delta =                                          \
+            compiler::opcode_table<traits>[(OP)].stack_increase -              \
+            compiler::opcode_table<traits>[(OP)].min_stack;                    \
+                                                                               \
+        instr_ptr += 2;                                                        \
+        if constexpr (debug_enabled) {                                         \
+            trace(analysis, gas_remaining, instr_ptr);                         \
+        }                                                                      \
+        MONAD_VM_MUST_TAIL return instruction_table<traits>[*instr_ptr](       \
+            ctx,                                                               \
+            analysis,                                                          \
+            stack_bottom,                                                      \
+            stack_top + delta,                                                 \
+            gas_remaining,                                                     \
+            instr_ptr);                                                        \
+    }                                                                          \
+    while (false);
+
 namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
@@ -97,6 +120,12 @@ namespace monad::vm::interpreter
 
         constexpr auto since = [](monad_eth_revision first, InstrEval impl) {
             return (traits::evm_rev() >= first) ? impl : invalid;
+        };
+
+        // Gate on a feature predicate rather than a bare revision (used by
+        // EIP-8024, which is staged behind eip_8024_active()).
+        constexpr auto when = [](bool const active, InstrEval impl) {
+            return active ? impl : invalid;
         };
 
         return {
@@ -339,22 +368,22 @@ namespace monad::vm::interpreter
             invalid, //
             invalid, //
 
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
+            invalid, // 0xE0,
+            invalid, // 0xE1,
+            invalid, // 0xE2,
+            invalid, // 0xE3,
+            invalid, // 0xE4,
+            invalid, // 0xE5,
+            when(traits::eip_8024_active(), dupn<traits>), // 0xE6,
+            when(traits::eip_8024_active(), swapn<traits>), // 0xE7,
+            when(traits::eip_8024_active(), exchange<traits>), // 0xE8,
+            invalid, // 0xE9,
+            invalid, // 0xEA,
+            invalid, // 0xEB,
+            invalid, // 0xEC,
+            invalid, // 0xED,
+            invalid, // 0xEE,
+            invalid, // 0xEF,
 
             create<traits>, // 0xF0,
             call<traits>, // 0xF1,
@@ -1488,6 +1517,115 @@ namespace monad::vm::interpreter
         MONAD_VM_NEXT(SWAP1 + (N - 1));
     }
 
+    // EIP-8024: DUPN/SWAPN/EXCHANGE. Unlike DUP*/SWAP*, the operand is a
+    // run-time immediate, so the minimum stack requirement is dynamic and these
+    // handlers do not use the static check_requirements: they charge the flat 3
+    // gas, validate the immediate and the stack depth manually, then advance
+    // past the opcode and its immediate byte (MONAD_VM_NEXT_IMM). instr_ptr[1]
+    // is always in bounds thanks to the trailing code padding. A disallowed
+    // immediate and stack underflow (plus stack overflow for DUPN) are all
+    // exceptional halts (ctx.exit(Error)), the same outcome as an invalid
+    // opcode.
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void dupn(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr)
+    {
+        static constexpr auto info = compiler::opcode_table<traits>[DUPN];
+
+        gas_remaining -= info.min_gas;
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            ctx.exit(OutOfGas);
+        }
+
+        uint8_t const imm = instr_ptr[1];
+        if (MONAD_UNLIKELY(compiler::eip8024_single_disallowed(imm))) {
+            ctx.exit(Error);
+        }
+
+        auto const n =
+            static_cast<ptrdiff_t>(compiler::eip8024_decode_single(imm));
+        auto const stack_size = stack_top - stack_bottom;
+        if (MONAD_UNLIKELY(stack_size < n)) {
+            ctx.exit(Error);
+        }
+        static constexpr auto max_safe_size =
+            1024 - (info.stack_increase - info.min_stack);
+        if (MONAD_UNLIKELY(stack_size > max_safe_size)) {
+            ctx.exit(Error);
+        }
+
+        push(stack_top, *(stack_top - (n - 1)));
+
+        MONAD_VM_NEXT_IMM(DUPN);
+    }
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void swapn(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr)
+    {
+        static constexpr auto info = compiler::opcode_table<traits>[SWAPN];
+
+        gas_remaining -= info.min_gas;
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            ctx.exit(OutOfGas);
+        }
+
+        uint8_t const imm = instr_ptr[1];
+        if (MONAD_UNLIKELY(compiler::eip8024_single_disallowed(imm))) {
+            ctx.exit(Error);
+        }
+
+        auto const n =
+            static_cast<ptrdiff_t>(compiler::eip8024_decode_single(imm));
+        auto const stack_size = stack_top - stack_bottom;
+        if (MONAD_UNLIKELY(stack_size < n + 1)) {
+            ctx.exit(Error);
+        }
+
+        auto const top = stack_top->to_avx();
+        *stack_top = *(stack_top - n);
+        *(stack_top - n) = uint256_t{top};
+
+        MONAD_VM_NEXT_IMM(SWAPN);
+    }
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void exchange(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr)
+    {
+        static constexpr auto info = compiler::opcode_table<traits>[EXCHANGE];
+
+        gas_remaining -= info.min_gas;
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            ctx.exit(OutOfGas);
+        }
+
+        uint8_t const imm = instr_ptr[1];
+        if (MONAD_UNLIKELY(compiler::eip8024_pair_disallowed(imm))) {
+            ctx.exit(Error);
+        }
+
+        auto const [n_val, m_val] = compiler::eip8024_decode_pair(imm);
+        auto const n = static_cast<ptrdiff_t>(n_val);
+        auto const m = static_cast<ptrdiff_t>(m_val);
+        auto const stack_size = stack_top - stack_bottom;
+        if (MONAD_UNLIKELY(stack_size < m + 1)) {
+            ctx.exit(Error);
+        }
+
+        auto const tmp = (stack_top - n)->to_avx();
+        *(stack_top - n) = *(stack_top - m);
+        *(stack_top - m) = uint256_t{tmp};
+
+        MONAD_VM_NEXT_IMM(EXCHANGE);
+    }
+
     // Control Flow
     namespace
     {
@@ -1797,3 +1935,4 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_MUST_TAIL
 #undef MONAD_VM_NEXT
 #undef MONAD_VM_NEXT_PUSH
+#undef MONAD_VM_NEXT_IMM

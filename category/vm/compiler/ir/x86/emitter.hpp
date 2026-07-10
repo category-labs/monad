@@ -294,6 +294,8 @@ namespace monad::vm::compiler::native
         void pop();
         void dup(uint8_t dup_index);
         void swap(uint8_t swap_index);
+        // EIP-8024 EXCHANGE: swap the items at depth n and m (1 <= n < m).
+        void exchange(uint8_t n, uint8_t m);
 
         void lt();
         void gt();

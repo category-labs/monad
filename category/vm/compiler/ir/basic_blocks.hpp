@@ -389,6 +389,60 @@ namespace monad::vm::compiler::basic_blocks
             break;
         }
 
+        // EIP-8024: DUPN/SWAPN/EXCHANGE carry a single immediate byte whose
+        // decoding gives the operand-dependent stack effect. Unlike the generic
+        // path below, compute min_stack/stack_increase from the decoded operand
+        // and stash the raw immediate in the index field (decoded again in
+        // codegen). A disallowed immediate behaves as INVALID; crucially we
+        // return WITHOUT consuming that byte, so the outer scan can still
+        // discover a 0x5B there as a JUMPDEST -- matching the interpreter and
+        // EIP-8024's backward-compatibility guarantee.
+        if constexpr (traits::eip_8024_active()) {
+            if (is_eip8024_opcode(opcode)) {
+                uint8_t imm = 0;
+                if (current_offset < bytes.size()) {
+                    imm = bytes[current_offset];
+                }
+
+                bool const disallowed = opcode == EXCHANGE
+                                            ? eip8024_pair_disallowed(imm)
+                                            : eip8024_single_disallowed(imm);
+                if (disallowed) {
+                    return Terminator::InvalidInstruction;
+                }
+
+                current_offset++;
+
+                uint8_t min_stack = 0;
+                uint8_t stack_increase = 0;
+                if (opcode == DUPN) {
+                    auto const n = eip8024_decode_single(imm);
+                    min_stack = static_cast<uint8_t>(n);
+                    stack_increase = static_cast<uint8_t>(n + 1);
+                }
+                else if (opcode == SWAPN) {
+                    auto const n = eip8024_decode_single(imm);
+                    min_stack = static_cast<uint8_t>(n + 1);
+                    stack_increase = static_cast<uint8_t>(n + 1);
+                }
+                else {
+                    auto const m = eip8024_decode_pair(imm).second;
+                    min_stack = static_cast<uint8_t>(m + 1);
+                    stack_increase = static_cast<uint8_t>(m + 1);
+                }
+
+                return Instruction(
+                    opcode_offset,
+                    evm_op_to_opcode(opcode),
+                    uint256_t{0},
+                    info.min_gas,
+                    min_stack,
+                    imm,
+                    stack_increase,
+                    info.dynamic_gas);
+            }
+        }
+
         auto const imm_size = info.num_args;
         uint256_t imm_value{0};
 

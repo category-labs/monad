@@ -66,6 +66,9 @@ namespace monad::vm::utils::evm_as
                                  return 1; // 1 byte encoding
                              },
                              [](InvalidI const &) -> size_t { return 1; },
+                             [](Eip8024I const &) -> size_t {
+                                 return 2; // opcode + 1 immediate byte.
+                             },
                              [](auto const &) -> size_t { MONAD_ABORT(); }},
                          ins);
         }
@@ -147,6 +150,9 @@ namespace monad::vm::utils::evm_as
                                 return 1; // 1 byte encoding
                             },
                             [](InvalidI const &) -> size_t { return 1; },
+                            [](Eip8024I const &) -> size_t {
+                                return 2; // opcode + 1 immediate byte.
+                            },
                             [](auto const &) -> size_t { MONAD_ABORT(); }},
                         ins);
 

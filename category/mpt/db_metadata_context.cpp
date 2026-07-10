@@ -989,6 +989,11 @@ void DbMetadataContext::replay_pending_shrink_grow_()
         do_deactivate_secondary_body_(op_param);
     }
     else if (op_kind == detail::db_metadata::PENDING_OP_PROMOTE) {
+        MONAD_ASSERT_PRINTF(
+            op_param == 0 || op_param == 1,
+            "corrupt db_metadata: pending promote op_param=%u out of range "
+            "(must be 0 or 1)",
+            op_param);
         LOG_INFO(
             "Replaying in-flight promote_secondary_to_primary_header (target "
             "primary_ring_idx = {}) after unclean shutdown",
@@ -1558,6 +1563,10 @@ void DbMetadataContext::deactivate_secondary_header()
 void DbMetadataContext::do_promote_secondary_to_primary_body_(
     uint8_t const target_ring_idx)
 {
+    MONAD_ASSERT_PRINTF(
+        target_ring_idx == 0 || target_ring_idx == 1,
+        "promote target primary_ring_idx=%u must be 0 or 1",
+        static_cast<unsigned>(target_ring_idx));
     for (auto const &copy : copies_) {
         auto *const m = copy.main;
         auto const g = m->hold_dirty();

@@ -145,18 +145,17 @@ public:
     }
 
     // Read-through: insert a finalized-consistent storage page fetched from
-    // disk after a `MissResolved` read. Uses try_insert so a sibling read is
-    // never overwritten. An empty page is a valid (negative) entry: it records
-    // that the page is absent at the finalized baseline, so a follow-up
-    // read-modify-write in commit stage need not re-read from disk.
+    // disk after a `MissResolved` read. try_insert_no_overwrite leaves an
+    // entry a concurrent sibling read already cached untouched (all concurrent
+    // read-throughs resolve against the same finalized baseline, so a colliding
+    // entry holds the same page anyway).
     void insert_storage_page(
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key, storage_page_t const &page)
     {
         StorageKey const skey{address, incarnation, key};
-        storage_page_t value = page;
-        storage_.try_insert(
-            skey, value, static_cast<uint32_t>(page.byte_size()));
+        storage_.try_insert_no_overwrite(
+            skey, page, static_cast<uint32_t>(page.byte_size()));
     }
 
     void

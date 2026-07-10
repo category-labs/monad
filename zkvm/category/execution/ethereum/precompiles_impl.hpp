@@ -237,6 +237,18 @@ ripemd160_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
             reinterpret_cast<zkvm_ripemd160_hash *>(out.data())) != ZKVM_EOK) {
         return PrecompileImplResult::failure();
     }
+    // The RIPEMD-160 precompile (0x03) returns the 20-byte digest right-aligned
+    // in a 32-byte word: 12 leading zero bytes then the digest. The two zkVM
+    // backends write their accelerator's digest to opposite ends of the word,
+    // so normalise to that layout per backend after writing straight into out:
+    //   - SP1 writes the digest into the FIRST 20 bytes (0..20), so shift it
+    //     right into out[12..32] in place and zero the leading 12 bytes.
+    //   - ZisK writes the digest into the LAST 20 bytes (12..32), which already
+    //     matches the EVM layout, so leave it as written.
+#if defined(MONAD_ZKVM_SP1)
+    std::memmove(out.data() + 12, out.data(), 20);
+    std::memset(out.data(), 0, 12);
+#endif
     return {out.data(), 32};
 }
 

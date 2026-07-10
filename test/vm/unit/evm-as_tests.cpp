@@ -2020,3 +2020,12 @@ TEST(EvmAs, Invalid)
     std::string const expected_mnemonic = "INVALID\n";
     EXPECT_EQ(evm_as::mcompile(eb), expected_mnemonic);
 }
+
+TEST(EvmAs, NewVarMaxSubscript)
+{
+    evm_as::internal::annot_context ctx{};
+    ctx.next_subscript = std::numeric_limits<size_t>::max();
+
+    std::string const var = evm_as::internal::new_var(ctx);
+    ASSERT_EQ(var, std::format("X{}", std::numeric_limits<size_t>::max()));
+}

@@ -14,6 +14,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
@@ -21,9 +24,12 @@
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
@@ -31,8 +37,10 @@
 #include <category/mpt/test/test_fixtures_gtest.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
+#include <category/mpt/update.hpp>
 
 #include <ethash/keccak.hpp>
+#include <intx/intx.hpp>
 #include <nlohmann/json.hpp>
 
 #include <gmock/gmock.h>
@@ -43,6 +51,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -181,6 +190,384 @@ struct DBTest : public TDB
 
 using DBTypes = ::testing::Types<InMemoryTrieDbFixture, OnDiskTrieDbFixture>;
 TYPED_TEST_SUITE(DBTest, DBTypes);
+
+namespace
+{
+    void seed_finalized_block_zero(mpt::Db &db, TrieDb &tdb)
+    {
+        tdb.reset_root(load_header({}, db, BlockHeader{.number = 0}), 0);
+    }
+
+    mpt::Nibbles
+    namespace_path(mpt::NibblesView const prefix, uint64_t const ns)
+    {
+        uint8_t ns_bytes[sizeof(uint64_t)];
+        intx::be::store(ns_bytes, ns);
+        return mpt::concat(
+            prefix,
+            namespace_state_nibbles,
+            mpt::NibblesView{to_byte_string_view(ns_bytes)});
+    }
+
+    mpt::Nibbles namespace_path(uint64_t const ns)
+    {
+        return namespace_path(finalized_nibbles, ns);
+    }
+
+    mpt::Nibbles namespace_account_path(uint64_t const ns, Address const &addr)
+    {
+        return mpt::concat(
+            namespace_path(ns),
+            mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})});
+    }
+
+    mpt::Nibbles namespace_storage_path(
+        uint64_t const ns, Address const &addr, bytes32_t const &key)
+    {
+        return mpt::concat(
+            namespace_account_path(ns, addr),
+            mpt::NibblesView{keccak256({key.bytes, sizeof(key.bytes)})});
+    }
+
+    void add_state_delta(
+        StateDeltas &state_deltas, Address const &addr, StateDelta delta)
+    {
+        StateDeltas::accessor it{};
+        state_deltas.emplace(it, addr, std::move(delta));
+    }
+
+    void add_namespace_state_delta(
+        NamespacedStateDeltas &ns_deltas, uint64_t const ns,
+        Address const &addr, StateDelta delta)
+    {
+        NamespacedStateDeltas::accessor ns_it{};
+        ns_deltas.emplace(ns_it, ns, StateDeltas{});
+        add_state_delta(ns_it->second, addr, std::move(delta));
+    }
+
+    bytes32_t commit_plain_state_root(
+        TrieDb &tdb, StateDeltas const &state_deltas,
+        uint64_t const block_number, bytes32_t const &block_id)
+    {
+        CommitBuilder builder(block_number);
+        builder.add_state_deltas(state_deltas);
+        BlockHeader header{.number = block_number};
+        tdb.commit(
+            block_id, builder, header, state_deltas, [&](BlockHeader &h) {
+                h.state_root = tdb.state_root();
+            });
+        return tdb.state_root();
+    }
+
+    NamespaceStateRoots commit_namespace_state(
+        TrieDb &tdb, NamespacedStateDeltas const &ns_deltas,
+        uint64_t const block_number, bytes32_t const &block_id)
+    {
+        CommitBuilder builder(block_number);
+        builder.add_namespace_state_deltas(ns_deltas);
+        return tdb.commit_namespace_state_deltas(
+            block_id, builder, ns_deltas, block_number);
+    }
+
+    void expect_namespace_root_node(
+        mpt::Db &db, TrieDb &tdb, mpt::NibblesView const prefix,
+        uint64_t const ns, bytes32_t const &expected_root,
+        uint64_t const block_number)
+    {
+        auto const res =
+            db.find(tdb.get_root(), namespace_path(prefix, ns), block_number);
+        ASSERT_TRUE(res.has_value());
+        auto const data = res.value().node->data();
+        ASSERT_EQ(data.size(), sizeof(bytes32_t));
+        EXPECT_EQ(to_bytes(data), expected_root);
+    }
+
+    void expect_namespace_root_node(
+        mpt::Db &db, TrieDb &tdb, uint64_t const ns,
+        bytes32_t const &expected_root, uint64_t const block_number)
+    {
+        expect_namespace_root_node(
+            db, tdb, finalized_nibbles, ns, expected_root, block_number);
+    }
+
+    bytes32_t
+    root_for_namespace(NamespaceStateRoots const &roots, uint64_t const ns)
+    {
+        auto const it =
+            std::find_if(roots.begin(), roots.end(), [ns](auto const &entry) {
+                return entry.first == ns;
+            });
+        MONAD_ASSERT(it != roots.end());
+        return it->second;
+    }
+}
+
+template <typename TDB>
+struct NamespaceWritePathTest : public TDB
+{
+    TrieDb tdb;
+
+    NamespaceWritePathTest()
+        : tdb{this->db}
+    {
+        seed_finalized_block_zero(this->db, tdb);
+    }
+};
+
+TYPED_TEST_SUITE(NamespaceWritePathTest, DBTypes);
+
+TYPED_TEST(NamespaceWritePathTest, namespace_raw_trie_insert)
+{
+    using namespace mpt;
+
+    constexpr uint64_t ns{0x1111111111111111ULL};
+    uint8_t ns_bytes[sizeof(uint64_t)];
+    intx::be::store(ns_bytes, ns);
+    auto const inner_hash = keccak256({ADDR_B.bytes, sizeof(ADDR_B.bytes)});
+    auto const inner_value = encode_account_db(ADDR_B, Account{.balance = 42});
+
+    std::deque<Update> alloc;
+    std::deque<byte_string> bytes_alloc;
+
+    UpdateList inner_list;
+    inner_list.push_front(alloc.emplace_back(Update{
+        .key = NibblesView{inner_hash},
+        .value = bytes_alloc.emplace_back(inner_value),
+        .next = UpdateList{},
+        .version = 1}));
+
+    UpdateList namespace_list;
+    namespace_list.push_front(alloc.emplace_back(Update{
+        .key = bytes_alloc.emplace_back(ns_bytes, sizeof(ns_bytes)),
+        .value = byte_string_view{},
+        .next = std::move(inner_list),
+        .version = 1}));
+
+    UpdateList state_list;
+    state_list.push_front(alloc.emplace_back(Update{
+        .key = namespace_state_nibbles,
+        .value = byte_string_view{},
+        .next = std::move(namespace_list),
+        .version = 1}));
+
+    UpdateList root_list;
+    root_list.push_front(alloc.emplace_back(Update{
+        .key = finalized_nibbles,
+        .value = byte_string_view{},
+        .next = std::move(state_list),
+        .version = 1}));
+
+    auto root = this->db.upsert({}, std::move(root_list), 1, true);
+
+    auto const inner_key = concat(
+        finalized_nibbles,
+        NAMESPACE_STATE_NIBBLE,
+        NibblesView{to_byte_string_view(ns_bytes)},
+        NibblesView{inner_hash});
+    auto inner_res = this->db.find(root, inner_key, 1);
+    EXPECT_TRUE(inner_res.has_value()) << "inner account not found";
+}
+
+TYPED_TEST(NamespaceWritePathTest, namespace_commit_empty_inner_deltas)
+{
+    constexpr uint64_t ns{0x1212121212121212ULL};
+    NamespacedStateDeltas ns_deltas;
+    NamespacedStateDeltas::accessor ns_it{};
+    ns_deltas.emplace(ns_it, ns, StateDeltas{});
+    ns_it.release();
+
+    auto const roots =
+        commit_namespace_state(this->tdb, ns_deltas, 1, bytes32_t{1});
+
+    ASSERT_EQ(roots.size(), 1);
+    EXPECT_EQ(roots[0].first, ns);
+    EXPECT_EQ(roots[0].second, NULL_ROOT);
+}
+
+TYPED_TEST(
+    NamespaceWritePathTest, namespace_commit_account_root_matches_plain_state)
+{
+    constexpr uint64_t ns{0x2222222222222222ULL};
+    StateDeltas inner;
+    StateDelta const delta{
+        .account = {std::nullopt, Account{.balance = 42}}, .storage = {}};
+    add_state_delta(inner, ADDR_A, delta);
+
+    mpt::Db expected_db{std::make_unique<InMemoryMachine>()};
+    TrieDb expected_tdb{expected_db};
+    auto const expected_root =
+        commit_plain_state_root(expected_tdb, inner, 1, bytes32_t{1});
+
+    NamespacedStateDeltas ns_deltas;
+    add_namespace_state_delta(ns_deltas, ns, ADDR_A, delta);
+    auto const roots =
+        commit_namespace_state(this->tdb, ns_deltas, 1, bytes32_t{1});
+    this->tdb.finalize(1, bytes32_t{1});
+    this->tdb.set_block_and_prefix(1);
+
+    ASSERT_EQ(roots.size(), 1);
+    EXPECT_EQ(roots[0].first, ns);
+    EXPECT_EQ(roots[0].second, expected_root);
+    expect_namespace_root_node(this->db, this->tdb, ns, expected_root, 1);
+
+    auto const account_res = this->db.find(
+        this->tdb.get_root(), namespace_account_path(ns, ADDR_A), 1);
+    ASSERT_TRUE(account_res.has_value());
+    auto encoded_account = account_res.value().node->value();
+    auto const decoded = decode_account_db_ignore_address(encoded_account);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded.value().balance, 42);
+}
+
+TYPED_TEST(
+    NamespaceWritePathTest, namespace_commit_storage_root_matches_plain_state)
+{
+    constexpr uint64_t ns{0x3333333333333333ULL};
+    Account const account{.balance = 100};
+    StateDeltas inner;
+    StateDelta const delta{
+        .account = {std::nullopt, account},
+        .storage = {{key1, {bytes32_t{}, value1}}}};
+    add_state_delta(inner, ADDR_A, delta);
+
+    mpt::Db expected_db{std::make_unique<InMemoryMachine>()};
+    TrieDb expected_tdb{expected_db};
+    auto const expected_root =
+        commit_plain_state_root(expected_tdb, inner, 1, bytes32_t{1});
+
+    NamespacedStateDeltas ns_deltas;
+    add_namespace_state_delta(ns_deltas, ns, ADDR_A, delta);
+    auto const roots =
+        commit_namespace_state(this->tdb, ns_deltas, 1, bytes32_t{1});
+    this->tdb.finalize(1, bytes32_t{1});
+    this->tdb.set_block_and_prefix(1);
+
+    ASSERT_EQ(roots.size(), 1);
+    EXPECT_EQ(roots[0].first, ns);
+    EXPECT_EQ(roots[0].second, expected_root);
+    expect_namespace_root_node(this->db, this->tdb, ns, expected_root, 1);
+
+    auto const storage_res = this->db.find(
+        this->tdb.get_root(), namespace_storage_path(ns, ADDR_A, key1), 1);
+    ASSERT_TRUE(storage_res.has_value());
+    auto encoded_storage = storage_res.value().node->value();
+    auto const decoded = decode_storage_db(encoded_storage);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded.value().first, key1);
+    EXPECT_EQ(decoded.value().second, value1);
+}
+
+TYPED_TEST(NamespaceWritePathTest, namespace_commit_multiple_namespaces)
+{
+    constexpr uint64_t namespace_1{0x5151515151515151ULL};
+    constexpr uint64_t namespace_2{0x5252525252525252ULL};
+    StateDelta const delta1{
+        .account = {std::nullopt, Account{.balance = 111}}, .storage = {}};
+    StateDelta const delta2{
+        .account = {std::nullopt, Account{.balance = 222}}, .storage = {}};
+
+    StateDeltas inner1;
+    add_state_delta(inner1, ADDR_A, delta1);
+    mpt::Db expected_db1{std::make_unique<InMemoryMachine>()};
+    TrieDb expected_tdb1{expected_db1};
+    auto const expected_root1 =
+        commit_plain_state_root(expected_tdb1, inner1, 1, bytes32_t{1});
+
+    StateDeltas inner2;
+    add_state_delta(inner2, ADDR_B, delta2);
+    mpt::Db expected_db2{std::make_unique<InMemoryMachine>()};
+    TrieDb expected_tdb2{expected_db2};
+    auto const expected_root2 =
+        commit_plain_state_root(expected_tdb2, inner2, 1, bytes32_t{1});
+
+    NamespacedStateDeltas ns_deltas;
+    add_namespace_state_delta(ns_deltas, namespace_1, ADDR_A, delta1);
+    add_namespace_state_delta(ns_deltas, namespace_2, ADDR_B, delta2);
+    auto const roots =
+        commit_namespace_state(this->tdb, ns_deltas, 1, bytes32_t{1});
+    this->tdb.finalize(1, bytes32_t{1});
+    this->tdb.set_block_and_prefix(1);
+
+    ASSERT_EQ(roots.size(), 2);
+    EXPECT_EQ(root_for_namespace(roots, namespace_1), expected_root1);
+    EXPECT_EQ(root_for_namespace(roots, namespace_2), expected_root2);
+    expect_namespace_root_node(
+        this->db, this->tdb, namespace_1, expected_root1, 1);
+    expect_namespace_root_node(
+        this->db, this->tdb, namespace_2, expected_root2, 1);
+}
+
+TYPED_TEST(NamespaceWritePathTest, namespace_commit_root_changes_across_writes)
+{
+    constexpr uint64_t ns{0x4444444444444444ULL};
+    mpt::Db expected_db{std::make_unique<InMemoryMachine>()};
+    TrieDb expected_tdb{expected_db};
+
+    StateDeltas inner_1;
+    StateDelta const delta_1{
+        .account = {std::nullopt, Account{.balance = 10}}, .storage = {}};
+    add_state_delta(inner_1, ADDR_A, delta_1);
+    auto const expected_root_1 =
+        commit_plain_state_root(expected_tdb, inner_1, 1, bytes32_t{1});
+
+    NamespacedStateDeltas ns_deltas_1;
+    add_namespace_state_delta(ns_deltas_1, ns, ADDR_A, delta_1);
+    auto const roots_1 =
+        commit_namespace_state(this->tdb, ns_deltas_1, 1, bytes32_t{1});
+    this->tdb.finalize(1, bytes32_t{1});
+    this->tdb.set_block_and_prefix(1);
+    ASSERT_EQ(roots_1.size(), 1);
+    EXPECT_EQ(roots_1[0].second, expected_root_1);
+
+    StateDeltas inner_2;
+    StateDelta const delta_2{
+        .account = {Account{.balance = 10}, Account{.balance = 20}},
+        .storage = {}};
+    add_state_delta(inner_2, ADDR_A, delta_2);
+    auto const expected_root_2 =
+        commit_plain_state_root(expected_tdb, inner_2, 2, bytes32_t{2});
+
+    NamespacedStateDeltas ns_deltas_2;
+    add_namespace_state_delta(ns_deltas_2, ns, ADDR_A, delta_2);
+    auto const roots_2 =
+        commit_namespace_state(this->tdb, ns_deltas_2, 2, bytes32_t{2});
+    this->tdb.finalize(2, bytes32_t{2});
+    this->tdb.set_block_and_prefix(2);
+    ASSERT_EQ(roots_2.size(), 1);
+    EXPECT_EQ(roots_2[0].second, expected_root_2);
+    EXPECT_NE(roots_1[0].second, roots_2[0].second);
+    expect_namespace_root_node(this->db, this->tdb, ns, expected_root_2, 2);
+}
+
+TEST_F(OnDiskTrieDbFixture, namespace_commit_uses_proposal_prefix_and_finalizes)
+{
+    constexpr uint64_t ns{0x5353535353535353ULL};
+    bytes32_t const block_id{1};
+    TrieDb tdb{this->db};
+    seed_finalized_block_zero(this->db, tdb);
+
+    StateDeltas inner;
+    StateDelta const delta{
+        .account = {std::nullopt, Account{.balance = 333}}, .storage = {}};
+    add_state_delta(inner, ADDR_A, delta);
+    mpt::Db expected_db{std::make_unique<InMemoryMachine>()};
+    TrieDb expected_tdb{expected_db};
+    auto const expected_root =
+        commit_plain_state_root(expected_tdb, inner, 1, block_id);
+
+    NamespacedStateDeltas ns_deltas;
+    add_namespace_state_delta(ns_deltas, ns, ADDR_A, delta);
+    auto const roots = commit_namespace_state(tdb, ns_deltas, 1, block_id);
+
+    ASSERT_EQ(roots.size(), 1);
+    EXPECT_EQ(roots[0].second, expected_root);
+    expect_namespace_root_node(
+        this->db, tdb, proposal_prefix(block_id), ns, expected_root, 1);
+
+    tdb.finalize(1, block_id);
+    tdb.set_block_and_prefix(1);
+    expect_namespace_root_node(this->db, tdb, ns, expected_root, 1);
+}
 
 TEST(DBTest, read_only)
 {

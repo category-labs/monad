@@ -13,8 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/bytes_hash_compare.hpp>
+#include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
+#include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/db/account_key.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -23,9 +28,14 @@
 #include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/update.hpp>
-#include <category/mpt/util.hpp>
 
 #include <ankerl/unordered_dense.h>
+
+#include <cstdint>
+#include <deque>
+#include <memory>
+#include <optional>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -54,7 +64,7 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         UpdateList storage_updates;
         std::optional<byte_string_view> value;
         auto const &account = delta.account.second;
-        proposal_post_state_.accounts[addr] = account;
+        proposal_post_state_.accounts[AccountKey{addr, std::nullopt}] = account;
         // reincarnated account starts with empty storage.
         bool const reincarnated =
             account.has_value() && delta.account.first.has_value() &&

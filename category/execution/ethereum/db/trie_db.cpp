@@ -56,6 +56,8 @@
 
 #include <evmc/evmc.hpp>
 
+#include <intx/intx.hpp>
+
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
@@ -212,11 +214,12 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
     return vm::make_shared_intercode(res.value().node->value());
 }
 
-void TrieDb::commit(
-    bytes32_t const &block_id, CommitBuilder &builder,
-    BlockHeader const &header, StateDeltas const & /*state_deltas*/,
-    std::function<void(BlockHeader &)> const populate_header_fn)
+void TrieDb::prepare_commit(
+    CommitBuilder const &builder, uint64_t const block_number,
+    bytes32_t const &block_id)
 {
+    MONAD_ASSERT(block_number <= std::numeric_limits<int64_t>::max());
+    MONAD_ASSERT(block_id != bytes32_t{});
     // The builder must be a PageCommitBuilder iff this db is page-encoded;
     // PageCommitBuilder is the only builder that produces page-keyed updates.
     MONAD_ASSERT_PRINTF(
@@ -224,13 +227,9 @@ void TrieDb::commit(
             is_page_encoded(),
         "encoding mismatch at block %lu: TrieDb::is_page_encoded=%d but commit "
         "builder is of wrong type",
-        header.number,
+        block_number,
         is_page_encoded());
 
-    auto const block_number = header.number;
-    MONAD_ASSERT(block_number <= std::numeric_limits<int64_t>::max());
-
-    MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk() && block_id != proposal_block_id_) {
         auto const dest_prefix = proposal_prefix(block_id);
         if (db_.get_latest_version() != INVALID_BLOCK_NUM) {
@@ -247,7 +246,14 @@ void TrieDb::commit(
         prefix_ = dest_prefix;
     }
     block_number_ = block_number;
+}
 
+void TrieDb::commit(
+    bytes32_t const &block_id, CommitBuilder &builder,
+    BlockHeader const &header, StateDeltas const & /*state_deltas*/,
+    std::function<void(BlockHeader &)> const populate_header_fn)
+{
+    prepare_commit(builder, header.number, block_id);
     curr_root_ = db_.upsert(
         std::move(curr_root_),
         builder.build(prefix_),
@@ -265,9 +271,55 @@ void TrieDb::commit(
         std::move(curr_root_), builder.build(prefix_), block_number_, false);
 
     if (cache_) {
-        cache_->update_proposal_state(
-            builder.take_proposal_post_state(), header.number, block_id);
+        cache_->update_proposal_post_state(
+            builder.take_proposal_post_state(),
+            std::nullopt,
+            header.number,
+            block_id);
     }
+}
+
+NamespaceStateRoots TrieDb::commit_namespace_state_deltas(
+    bytes32_t const &block_id, CommitBuilder &builder,
+    NamespacedStateDeltas const &ns_state_deltas, uint64_t const block_number)
+{
+    MONAD_ASSERT(!is_page_encoded());
+    if (ns_state_deltas.empty()) {
+        return {};
+    }
+
+    prepare_commit(builder, block_number, block_id);
+    curr_root_ = db_.upsert(
+        std::move(curr_root_),
+        builder.build(prefix_),
+        block_number_,
+        /*enable_compaction=*/true,
+        /*can_write_to_fast=*/true,
+        /*write_root=*/false);
+
+    if (cache_) {
+        auto ns_post_state = builder.take_namespace_proposal_post_state();
+        for (auto &[ns, post_state] : ns_post_state) {
+            cache_->update_proposal_post_state(
+                std::move(post_state),
+                std::optional<uint64_t>{ns},
+                block_number,
+                block_id);
+        }
+    }
+
+    NamespaceStateRoots roots;
+    roots.reserve(ns_state_deltas.size());
+    for (auto const &[ns, _] : ns_state_deltas) {
+        uint8_t ns_bytes[sizeof(uint64_t)];
+        intx::be::store(ns_bytes, ns);
+        roots.emplace_back(
+            ns,
+            merkle_root(concat(
+                namespace_state_nibbles,
+                NibblesView{to_byte_string_view(ns_bytes)})));
+    }
+    return roots;
 }
 
 void TrieDb::set_block_and_prefix(

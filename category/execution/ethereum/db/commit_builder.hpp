@@ -46,12 +46,16 @@ protected:
     // storage slot key, Paged based storage fills it with the actual storage
     // page keyed by storage page key.
     ProposalPostState proposal_post_state_;
+    NamespacedProposalPostState namespace_proposal_post_state_;
 
 public:
     explicit CommitBuilder(uint64_t block_number);
     virtual ~CommitBuilder() = default;
 
     virtual CommitBuilder &add_state_deltas(StateDeltas const &);
+
+    virtual CommitBuilder &
+    add_namespace_state_deltas(NamespacedStateDeltas const &);
 
     CommitBuilder &add_code(Code const &);
 
@@ -79,6 +83,11 @@ public:
     ProposalPostState take_proposal_post_state()
     {
         return std::move(proposal_post_state_);
+    }
+
+    NamespacedProposalPostState take_namespace_proposal_post_state()
+    {
+        return std::move(namespace_proposal_post_state_);
     }
 };
 

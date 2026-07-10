@@ -358,6 +358,25 @@ namespace
         }
     };
 
+    // Namespace-id nodes are value-bearing separators above account tries. If
+    // we reused the account compute at this boundary, AccountLeafProcessor
+    // would try to decode the namespace marker as an account; if we hashed the
+    // marker as generic leaf data, the namespace commitment would exclude the
+    // child account trie. The namespace computes use node.data(), the child
+    // trie root, as the payload instead.
+    struct NamespaceLeafProcessor
+    {
+        static byte_string_view process(mpt::Node const &node)
+        {
+            MONAD_ASSERT(node.has_value());
+            if (node.number_of_children()) {
+                MONAD_ASSERT(node.data().size() == sizeof(bytes32_t));
+                return node.data();
+            }
+            return {};
+        }
+    };
+
     Result<byte_string_view>
     parse_encoded_receipt_ignore_log_index(byte_string_view &enc)
     {
@@ -397,6 +416,8 @@ namespace
     };
 
     using AccountMerkleCompute = MerkleComputeBase<AccountLeafProcessor>;
+    using NamespacePrefixMerkleCompute =
+        MerkleComputeBase<NamespaceLeafProcessor>;
     using StorageMerkleCompute = MerkleComputeBase<StorageLeafProcessor>;
     using PagedStorageMerkleCompute =
         MerkleComputeBase<PagedStorageLeafProcessor>;
@@ -420,6 +441,20 @@ namespace
         StorageRootMerkleComputeImpl<StorageMerkleCompute>;
     using PagedStorageRootMerkleCompute =
         StorageRootMerkleComputeImpl<PagedStorageMerkleCompute>;
+
+    struct NamespaceRootMerkleCompute : public AccountMerkleCompute
+    {
+        virtual unsigned
+        compute(unsigned char *const buffer, Node const &node) override
+        {
+            MONAD_ASSERT(node.has_value());
+            return encode_two_pieces_reference(
+                buffer,
+                node.path_nibble_view(),
+                NamespaceLeafProcessor::process(node),
+                true);
+        }
+    };
 
     struct AccountRootMerkleCompute : public AccountMerkleCompute
     {
@@ -460,6 +495,8 @@ mpt::Compute &MachineBase::get_compute() const
 
     static AccountMerkleCompute account_compute;
     static AccountRootMerkleCompute account_root_compute;
+    static NamespacePrefixMerkleCompute namespace_prefix_compute;
+    static NamespaceRootMerkleCompute namespace_root_compute;
 
     static VarLenMerkleCompute generic_merkle_compute;
     static RootVarLenMerkleCompute generic_root_merkle_compute;
@@ -471,15 +508,36 @@ mpt::Compute &MachineBase::get_compute() const
         transaction_root_compute;
 
     auto const prefix_length = prefix_len();
+    constexpr uint8_t account_hash_nibbles = sizeof(bytes32_t) * 2;
     if (MONAD_LIKELY(table == TableType::State)) {
         MONAD_ASSERT(depth >= prefix_length);
         if (MONAD_UNLIKELY(depth == prefix_length)) {
             return account_root_compute;
         }
-        else if (depth < prefix_length + 2 * sizeof(bytes32_t)) {
+        else if (depth < prefix_length + account_hash_nibbles) {
             return account_compute;
         }
-        else if (depth == prefix_length + 2 * sizeof(bytes32_t)) {
+        else if (depth == prefix_length + account_hash_nibbles) {
+            return storage_root_compute();
+        }
+        else {
+            return storage_compute();
+        }
+    }
+    else if (table == TableType::NamespaceState) {
+        constexpr uint8_t namespace_id_nibbles = sizeof(uint64_t) * 2;
+        auto const namespace_depth = prefix_length + namespace_id_nibbles;
+        auto const account_depth = namespace_depth + account_hash_nibbles;
+        if (depth < namespace_depth) {
+            return namespace_prefix_compute;
+        }
+        else if (depth == namespace_depth) {
+            return namespace_root_compute;
+        }
+        else if (depth < account_depth) {
+            return account_compute;
+        }
+        else if (depth == account_depth) {
             return storage_root_compute();
         }
         else {
@@ -530,7 +588,7 @@ void MachineBase::down(unsigned char const nibble)
     if (MONAD_UNLIKELY(depth == prefix_length)) {
         MONAD_ASSERT(table == TableType::Prefix);
         MONAD_ASSERT_PRINTF(
-            nibble <= CALL_FRAME_NIBBLE,
+            nibble <= NAMESPACE_STATE_NIBBLE,
             "Invalid nibble %u",
             static_cast<unsigned>(nibble));
         table = static_cast<TableType>(nibble + 1);
@@ -614,7 +672,8 @@ bool OnDiskMachine::cache() const
     return table == TableType::Prefix ||
            ((depth <= prefix_len() + CACHE_DEPTH_IN_TABLE) &&
             (table == TableType::State || table == TableType::Code ||
-             table == TableType::TxHash || table == TableType::BlockHash));
+             table == TableType::NamespaceState || table == TableType::TxHash ||
+             table == TableType::BlockHash));
 }
 
 bool OnDiskMachine::compact() const

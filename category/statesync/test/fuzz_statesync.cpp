@@ -22,6 +22,7 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/timeline.hpp>
@@ -254,7 +255,15 @@ namespace
         update_storage(deltas, state, db, n, true);
     }
 
-    std::filesystem::path tmp_dbname()
+    std::unique_ptr<OnDiskMachine> make_on_disk_machine(bool const page_encoded)
+    {
+        if (page_encoded) {
+            return std::make_unique<MonadOnDiskMachine>();
+        }
+        return std::make_unique<OnDiskMachine>();
+    }
+
+    std::filesystem::path tmp_dbname(bool const page_encoded)
     {
         std::filesystem::path dbname(
             MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
@@ -267,13 +276,126 @@ namespace
         ::close(fd);
         char const *const path = dbname.c_str();
         mpt::Db db{
-            std::make_unique<OnDiskMachine>(),
+            make_on_disk_machine(page_encoded),
             mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
         monad::mpt::test::DbAccessor::aux(db)
             .metadata_ctx()
             .set_state_machine_kind(
-                timeline_id::primary, state_machine_kind::ethereum);
+                timeline_id::primary,
+                page_encoded ? state_machine_kind::monad
+                             : state_machine_kind::ethereum);
         return dbname;
+    }
+
+    void run_fuzz(
+        monad_chain_config const chain, bool const page_encoded,
+        std::span<uint8_t const> raw)
+    {
+        std::filesystem::path const cdbname{tmp_dbname(page_encoded)};
+        char const *const cdbname_str = cdbname.c_str();
+        monad_statesync_client client;
+        monad_statesync_client_context *const cctx =
+            monad_statesync_client_context_create(
+                chain,
+                &cdbname_str,
+                1,
+                static_cast<unsigned>(get_nprocs() - 1),
+                &client,
+                &statesync_send_request);
+        std::filesystem::path sdbname{tmp_dbname(page_encoded)};
+        mpt::Db sdb{
+            make_on_disk_machine(page_encoded),
+            OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}};
+        TrieDb stdb{sdb};
+        std::unique_ptr<monad_statesync_server_context> sctx =
+            std::make_unique<monad_statesync_server_context>(stdb);
+        mpt::AsyncIOContext io_ctx{
+            ReadOnlyOnDiskDbConfig{.dbname_paths{sdbname}}};
+        mpt::Db ro{io_ctx};
+        sctx->ro = &ro;
+        monad_statesync_server_network net{
+            .client = &client, .cctx = cctx, .buf = {}};
+        for (size_t i = 0; i < monad_statesync_client_prefixes(); ++i) {
+            monad_statesync_client_handle_new_peer(
+                cctx, i, monad_statesync_version());
+        }
+        monad_statesync_server *const server = monad_statesync_server_create(
+            sctx.get(),
+            &net,
+            &statesync_server_recv,
+            &statesync_server_send_upsert,
+            &statesync_server_send_done);
+
+        FuzzState state{};
+
+        bytes32_t parent_hash{};
+        BlockHeader hdr{.number = 0};
+
+        // write the genesis block
+        {
+            monad::test::commit_simple(
+                *sctx, StateDeltas({}), Code{}, NULL_HASH_BLAKE3, hdr);
+            sctx->finalize(0, NULL_HASH_BLAKE3);
+            auto const rlp = rlp::encode_block_header(sctx->read_eth_header());
+            parent_hash = to_bytes(keccak256(rlp));
+        }
+
+        while (raw.size() >= sizeof(uint64_t)) {
+            // generate state deltas for the new block
+            StateDeltas deltas;
+            uint64_t const n = unaligned_load<uint64_t>(raw.data());
+            raw = raw.subspan(sizeof(uint64_t));
+            Incarnation const incarnation{stdb.get_block_number(), 0};
+            switch (n % 6) {
+            case 0:
+                new_account(deltas, state, incarnation, n);
+                break;
+            case 1:
+                update_account(deltas, state, stdb, n, incarnation);
+                break;
+            case 2:
+                remove_account(deltas, state, stdb);
+                break;
+            case 3:
+                new_storage(deltas, state, stdb, n);
+                break;
+            case 4:
+                update_storage(deltas, state, stdb, n);
+                break;
+            case 5:
+                remove_storage(deltas, state, stdb, n);
+                break;
+            }
+            client.mask = raw.size() < sizeof(uint64_t)
+                              ? std::numeric_limits<uint64_t>::max()
+                              : n;
+
+            // write new block
+            hdr.number = stdb.get_block_number() + 1;
+            MONAD_ASSERT(hdr.number > 0);
+            hdr.parent_hash = parent_hash;
+            bytes32_t const curr_block_id = bytes32_t{hdr.number};
+            sctx->set_block_and_prefix(hdr.number - 1);
+            monad::test::commit_simple(
+                *sctx, StateDeltas(std::move(deltas)), {}, curr_block_id, hdr);
+            sctx->finalize(hdr.number, curr_block_id);
+            auto const rlp = rlp::encode_block_header(sctx->read_eth_header());
+            parent_hash = to_bytes(keccak256(rlp));
+
+            // statesync to that block
+            monad_statesync_client_handle_target(cctx, rlp.data(), rlp.size());
+            while (!client.rqs.empty()) {
+                monad_statesync_server_run_once(server);
+            }
+        }
+        flush_logger();
+        MONAD_ASSERT(monad_statesync_client_has_reached_target(cctx));
+        MONAD_ASSERT(monad_statesync_client_finalize(cctx));
+
+        monad_statesync_client_context_destroy(cctx);
+        monad_statesync_server_destroy(server);
+        std::filesystem::remove(cdbname);
+        std::filesystem::remove(sdbname);
     }
 
 }
@@ -289,111 +411,12 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
 
     quill::start(false);
     quill::get_root_logger()->set_log_level(quill::LogLevel::Error);
-    std::filesystem::path const cdbname{tmp_dbname()};
-    char const *const cdbname_str = cdbname.c_str();
-    monad_statesync_client client;
-    monad_statesync_client_context *const cctx =
-        monad_statesync_client_context_create(
-            CHAIN_CONFIG_MONAD_DEVNET,
-            &cdbname_str,
-            1,
-            static_cast<unsigned>(get_nprocs() - 1),
-            &client,
-            &statesync_send_request);
-    std::filesystem::path sdbname{tmp_dbname()};
-    mpt::Db sdb{
-        std::make_unique<OnDiskMachine>(),
-        OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}};
-    TrieDb stdb{sdb};
-    std::unique_ptr<monad_statesync_server_context> sctx =
-        std::make_unique<monad_statesync_server_context>(stdb);
-    mpt::AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths{sdbname}}};
-    mpt::Db ro{io_ctx};
-    sctx->ro = &ro;
-    monad_statesync_server_network net{
-        .client = &client, .cctx = cctx, .buf = {}};
-    for (size_t i = 0; i < monad_statesync_client_prefixes(); ++i) {
-        monad_statesync_client_handle_new_peer(
-            cctx, i, monad_statesync_version());
-    }
-    monad_statesync_server *const server = monad_statesync_server_create(
-        sctx.get(),
-        &net,
-        &statesync_server_recv,
-        &statesync_server_send_upsert,
-        &statesync_server_send_done);
 
-    std::span<uint8_t const> raw{data, size};
-    FuzzState state{};
-
-    bytes32_t parent_hash{};
-    BlockHeader hdr{.number = 0};
-
-    // write the genesis block
-    {
-        monad::test::commit_simple(
-            *sctx, StateDeltas({}), Code{}, NULL_HASH_BLAKE3, hdr);
-        sctx->finalize(0, NULL_HASH_BLAKE3);
-        auto const rlp = rlp::encode_block_header(sctx->read_eth_header());
-        parent_hash = to_bytes(keccak256(rlp));
-    }
-
-    while (raw.size() >= sizeof(uint64_t)) {
-        // generate state deltas for the new block
-        StateDeltas deltas;
-        uint64_t const n = unaligned_load<uint64_t>(raw.data());
-        raw = raw.subspan(sizeof(uint64_t));
-        Incarnation const incarnation{stdb.get_block_number(), 0};
-        switch (n % 6) {
-        case 0:
-            new_account(deltas, state, incarnation, n);
-            break;
-        case 1:
-            update_account(deltas, state, stdb, n, incarnation);
-            break;
-        case 2:
-            remove_account(deltas, state, stdb);
-            break;
-        case 3:
-            new_storage(deltas, state, stdb, n);
-            break;
-        case 4:
-            update_storage(deltas, state, stdb, n);
-            break;
-        case 5:
-            remove_storage(deltas, state, stdb, n);
-            break;
-        }
-        client.mask = raw.size() < sizeof(uint64_t)
-                          ? std::numeric_limits<uint64_t>::max()
-                          : n;
-
-        // write new block
-        hdr.number = stdb.get_block_number() + 1;
-        MONAD_ASSERT(hdr.number > 0);
-        hdr.parent_hash = parent_hash;
-        bytes32_t const curr_block_id = bytes32_t{hdr.number};
-        sctx->set_block_and_prefix(hdr.number - 1);
-        monad::test::commit_simple(
-            *sctx, StateDeltas(std::move(deltas)), {}, curr_block_id, hdr);
-        sctx->finalize(hdr.number, curr_block_id);
-        auto const rlp = rlp::encode_block_header(sctx->read_eth_header());
-        parent_hash = to_bytes(keccak256(rlp));
-
-        // statesync to that block
-        monad_statesync_client_handle_target(cctx, rlp.data(), rlp.size());
-        while (!client.rqs.empty()) {
-            monad_statesync_server_run_once(server);
-        }
-    }
-    flush_logger();
-    MONAD_ASSERT(monad_statesync_client_has_reached_target(cctx));
-    MONAD_ASSERT(monad_statesync_client_finalize(cctx));
-
-    monad_statesync_client_context_destroy(cctx);
-    monad_statesync_server_destroy(server);
-    std::filesystem::remove(cdbname);
-    std::filesystem::remove(sdbname);
+    // Fuzz both encodings each input, until slot encoding is retired:
+    // MONAD_TESTNET is pre-mip_8 (slot), MONAD_DEVNET is mip_8-active (page).
+    std::span<uint8_t const> const raw{data, size};
+    run_fuzz(CHAIN_CONFIG_MONAD_TESTNET, false, raw);
+    run_fuzz(CHAIN_CONFIG_MONAD_DEVNET, true, raw);
 
     return 0;
 }

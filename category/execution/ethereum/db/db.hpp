@@ -33,10 +33,14 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 class CommitBuilder;
+
+using NamespaceStateRoots = std::vector<std::pair<uint64_t, bytes32_t>>;
 
 struct Db
 {

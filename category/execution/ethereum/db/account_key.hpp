@@ -16,9 +16,7 @@
 #pragma once
 
 #include <category/core/address.hpp>
-#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 
 #include <cstdint>
 #include <cstring>
@@ -26,25 +24,19 @@
 
 MONAD_NAMESPACE_BEGIN
 
-// Composite cache key combining namespace scope, account address, account
-// incarnation, and the storage trie key. The trie key is slot_key for
-// slot-encoded storage or page_key for page-encoded storage; the cache layer
-// is encoding-agnostic.
-struct StorageKey
+// Composite cache key combining namespace scope and account address.
+struct AccountKey
 {
     static constexpr size_t k_namespace_prefix_bytes = 1 + sizeof(uint64_t);
-    static constexpr size_t k_payload_bytes =
-        sizeof(Address) + sizeof(Incarnation) + sizeof(bytes32_t);
+    static constexpr size_t k_payload_bytes = sizeof(Address);
     static constexpr size_t k_bytes =
         k_namespace_prefix_bytes + k_payload_bytes;
 
     uint8_t bytes[k_bytes];
 
-    StorageKey() = default;
+    AccountKey() = default;
 
-    StorageKey(
-        Address const &addr, Incarnation const incarnation,
-        bytes32_t const &key, std::optional<uint64_t> const &ns = std::nullopt)
+    explicit AccountKey(Address const &addr, std::optional<uint64_t> const &ns)
     {
         bytes[0] = ns.has_value() ? uint8_t{1} : uint8_t{0};
         uint64_t const ns_value = ns.value_or(uint64_t{});
@@ -52,13 +44,9 @@ struct StorageKey
 
         constexpr size_t address_offset = k_namespace_prefix_bytes;
         memcpy(&bytes[address_offset], addr.bytes, sizeof(Address));
-        constexpr size_t incarnation_offset = address_offset + sizeof(Address);
-        memcpy(&bytes[incarnation_offset], &incarnation, sizeof(Incarnation));
-        constexpr size_t key_offset = incarnation_offset + sizeof(Incarnation);
-        memcpy(&bytes[key_offset], key.bytes, sizeof(bytes32_t));
     }
 
-    bool operator==(StorageKey const &other) const
+    bool operator==(AccountKey const &other) const
     {
         return memcmp(bytes, other.bytes, k_bytes) == 0;
     }

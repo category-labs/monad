@@ -21,6 +21,7 @@
 #include <category/core/config.hpp>
 #include <category/core/lru/lru_cache.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/db/account_key.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -43,10 +44,10 @@ MONAD_NAMESPACE_BEGIN
 // key and offset based on its encoding; the cache does not.
 class DbCache final
 {
-    using AddressHashCompare = BytesHashCompare<Address>;
+    using AccountKeyHashCompare = BytesHashCompare<AccountKey>;
     using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
     using AccountsCache =
-        LruCache<Address, std::optional<Account>, AddressHashCompare>;
+        LruCache<AccountKey, std::optional<Account>, AccountKeyHashCompare>;
     // The cache is slot-granular: keyed by slot_key, the value is a
     // storage_page_t used as a single-slot container holding the value at
     // index 0 only. This will be compatible for future page-granular reads.
@@ -71,7 +72,7 @@ public:
         }
         if (!res.truncated) {
             AccountsCache::ConstAccessor acc{};
-            if (accounts_.find(acc, address)) {
+            if (accounts_.find(acc, AccountKey{address, std::nullopt})) {
                 result = acc->second.value_;
                 return true;
             }
@@ -128,11 +129,11 @@ public:
         proposals_.set_block_and_prefix(block_number, block_id);
     }
 
-    void update_proposal_state(
-        ProposalPostState post_state, uint64_t const block_number,
-        bytes32_t const &block_id)
+    void update_proposal_post_state(
+        ProposalPostState post_state, std::optional<uint64_t> const &ns,
+        uint64_t const block_number, bytes32_t const &block_id)
     {
-        proposals_.commit(std::move(post_state), block_number, block_id);
+        proposals_.commit(std::move(post_state), ns, block_number, block_id);
     }
 
     void on_finalize(uint64_t const block_number, bytes32_t const &block_id)
@@ -165,8 +166,8 @@ public:
 private:
     void insert_in_lru_caches(ProposalPostState const &post_state)
     {
-        for (auto const &[addr, acct] : post_state.accounts) {
-            accounts_.insert(addr, acct);
+        for (auto const &[key, acct] : post_state.accounts) {
+            accounts_.insert(key, acct);
         }
         for (auto const &[sk, leaf] : post_state.storage) {
             storage_.insert(sk, leaf, static_cast<uint32_t>(leaf.byte_size()));

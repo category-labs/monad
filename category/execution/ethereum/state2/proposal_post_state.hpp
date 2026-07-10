@@ -20,6 +20,7 @@
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/db/account_key.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
@@ -29,19 +30,19 @@
 
 MONAD_NAMESPACE_BEGIN
 
-// Account map keyed by Address. nullopt means the account was deleted (or
-// does not exist) for the proposal at hand. Populated by
+// Account map keyed by AccountKey{addr, ns}. nullopt means the account was
+// deleted (or does not exist) for the proposal at hand. Populated by
 // CommitBuilder::add_state_deltas (one entry per touched account) and drained
 // via CommitBuilder::take_proposal_post_state.
-using AccountPostState =
-    ankerl::unordered_dense::segmented_map<Address, std::optional<Account>>;
+using AccountPostState = ankerl::unordered_dense::segmented_map<
+    AccountKey, std::optional<Account>, BytesHashCompare<AccountKey>>;
 
-// Storage leaf map keyed by StorageKey{addr, incarnation, key}. The key
+// Storage leaf map keyed by StorageKey{addr, incarnation, key, ns}. The key
 // granularity matches the trie's storage subtree: slot_key (single slot at
-// index 0) for slot mode, page_key (full page) for page mode. The
-// key being present marks "touched by this proposal"; an empty
-// storage_page_t means every slot in that entry is zero (deleted), which is
-// stored as a present entry rather than absent.
+// index 0) for slot mode, page_key (full page) for page mode. The key being
+// present marks "touched by this proposal"; an empty storage_page_t means every
+// slot in that entry is zero (deleted), which is stored as a present entry
+// rather than absent.
 using StoragePostState = ankerl::unordered_dense::segmented_map<
     StorageKey, storage_page_t, BytesHashCompare<StorageKey>>;
 
@@ -50,5 +51,8 @@ struct ProposalPostState
     AccountPostState accounts;
     StoragePostState storage;
 };
+
+using NamespacedProposalPostState =
+    ankerl::unordered_dense::segmented_map<uint64_t, ProposalPostState>;
 
 MONAD_NAMESPACE_END

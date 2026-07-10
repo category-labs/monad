@@ -69,6 +69,10 @@ using StateDeltas = oneapi::tbb::concurrent_hash_map<
 static_assert(sizeof(StateDeltas) == 576);
 static_assert(alignof(StateDeltas) == 8);
 
+// Namespace -> per-account state deltas for namespace-scoped state.
+using NamespacedStateDeltas =
+    oneapi::tbb::concurrent_hash_map<uint64_t, StateDeltas>;
+
 using Code = oneapi::tbb::concurrent_hash_map<
     bytes32_t, vm::SharedIntercode, BytesHashCompare<bytes32_t>>;
 

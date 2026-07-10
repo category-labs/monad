@@ -16,15 +16,22 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/core/assert.h>
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/log.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
+#include <category/execution/ethereum/db/account_key.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/vm.hpp>
 
+#include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
@@ -32,15 +39,14 @@ MONAD_NAMESPACE_BEGIN
 class ProposalState
 {
     ProposalPostState post_state_;
+    NamespacedProposalPostState ns_post_state_;
     uint64_t parent_block_;
     bytes32_t parent_id_;
 
 public:
     ProposalState(
-        ProposalPostState post_state, uint64_t const parent_block_number,
-        bytes32_t const &parent_id)
-        : post_state_(std::move(post_state))
-        , parent_block_(parent_block_number)
+        uint64_t const parent_block_number, bytes32_t const &parent_id)
+        : parent_block_(parent_block_number)
         , parent_id_(parent_id)
     {
     }
@@ -55,10 +61,29 @@ public:
         return post_state_;
     }
 
+    NamespacedProposalPostState const &ns_post_state() const
+    {
+        return ns_post_state_;
+    }
+
+    void set_post_state(
+        ProposalPostState post_state, std::optional<uint64_t> const &ns)
+    {
+        if (!ns.has_value()) {
+            post_state_ = std::move(post_state);
+        }
+        else {
+            auto const inserted =
+                ns_post_state_.try_emplace(*ns, std::move(post_state)).second;
+            MONAD_ASSERT(inserted);
+        }
+    }
+
     bool try_read_account(
         Address const &address, std::optional<Account> &result) const
     {
-        auto const it = post_state_.accounts.find(address);
+        AccountKey const account_key{address, std::nullopt};
+        auto const it = post_state_.accounts.find(account_key);
         if (it != post_state_.accounts.end()) {
             result = it->second;
             return true;
@@ -70,7 +95,8 @@ public:
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key, storage_page_t &result) const
     {
-        auto const acct_it = post_state_.accounts.find(address);
+        AccountKey const account_key{address, std::nullopt};
+        auto const acct_it = post_state_.accounts.find(account_key);
         if (acct_it != post_state_.accounts.end()) {
             auto const &acct = acct_it->second;
             if (!acct.has_value() || acct->incarnation != incarnation) {
@@ -152,20 +178,24 @@ public:
     }
 
     void commit(
-        ProposalPostState post_state, uint64_t const block_number,
-        bytes32_t const &block_id)
+        ProposalPostState post_state, std::optional<uint64_t> const &ns,
+        uint64_t const block_number, bytes32_t const &block_id)
     {
-        if (proposal_map_.size() >= MAX_PROPOSAL_MAP_SIZE) {
-            truncate_proposal_map();
-        }
         auto const key = std::make_pair(block_number, block_id);
-        MONAD_ASSERT(
-            proposal_map_
-                .insert(
-                    {key,
-                     std::unique_ptr<ProposalState>(new ProposalState(
-                         std::move(post_state), block_, block_id_))})
-                .second == true);
+        auto it = proposal_map_.find(key);
+        if (it == proposal_map_.end()) {
+            if (proposal_map_.size() >= MAX_PROPOSAL_MAP_SIZE) {
+                truncate_proposal_map();
+            }
+            it = proposal_map_
+                     .insert(
+                         {key,
+                          std::make_unique<ProposalState>(block_, block_id_)})
+                     .first;
+        }
+
+        MONAD_ASSERT(it->second);
+        it->second->set_post_state(std::move(post_state), ns);
         block_ = block_number;
         block_id_ = block_id;
     }

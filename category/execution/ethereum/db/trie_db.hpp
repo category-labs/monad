@@ -85,6 +85,9 @@ public:
         bytes32_t const &block_id, CommitBuilder &builder,
         BlockHeader const &header, StateDeltas const &state_deltas,
         std::function<void(BlockHeader &)> populate_header_fn) override;
+    NamespaceStateRoots commit_namespace_state_deltas(
+        bytes32_t const &block_id, CommitBuilder &builder,
+        NamespacedStateDeltas const &, uint64_t block_number);
 
     virtual void
     finalize(uint64_t block_number, bytes32_t const &block_id) override;
@@ -106,6 +109,10 @@ public:
     uint64_t get_history_length() const;
 
 private:
+    void prepare_commit(
+        CommitBuilder const &builder, uint64_t block_number,
+        bytes32_t const &block_id);
+
     /// STATS
     std::atomic<uint64_t> n_account_no_value_{0};
     std::atomic<uint64_t> n_account_value_{0};

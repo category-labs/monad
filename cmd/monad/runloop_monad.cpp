@@ -382,7 +382,7 @@ Result<BlockExecOutput> propose_block(
             std::chrono::steady_clock::now() - block_begin);
     LOG_INFO(
         "__exec_block,bl={:8},id={},ts={}"
-        ",tx={:5},rt={:4},rtp={:5.2f}%"
+        ",tx={:5},rt={:4},rtp={:5.2f}%,cdip={:4},dip={:4}"
         ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
         ",gas={:9},gpse={:4},gps={:3}{}{}{}",
         block.header.number,
@@ -394,6 +394,8 @@ Result<BlockExecOutput> propose_block(
         block_metrics.num_retries,
         100.0 * (double)block_metrics.num_retries /
             std::max(1.0, (double)block.transactions.size()),
+        block_metrics.num_can_dip,
+        block_metrics.num_dipped,
         sender_recovery_time,
         block_metrics.tx_exec_time,
         commit_time,

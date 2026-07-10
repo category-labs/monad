@@ -22,6 +22,7 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -42,6 +43,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <monad/test/traits_test.hpp>
 
+#include <algorithm>
 #include <bitset>
 
 #include <gtest/gtest.h>
@@ -291,6 +293,28 @@ void run_revert_transaction_test(
 
         EXPECT_EQ(should_revert_cached, should_revert)
             << std::bitset<64>{prevent_dip_bitset};
+
+        BlockMetrics metrics;
+        record_reserve_dip_metrics<traits>(state, metrics);
+        if constexpr (traits::monad_rev() >= MONAD_FOUR) {
+            bool const can_dip = prevent_dip_bitset == 0;
+            // The sender dipped iff it was allowed to and its post-tx balance
+            // fell below the pre-tx reserve less the transaction's gas fees.
+            uint64_t const reserve_mon =
+                std::min(uint64_t{10}, initial_balance_mon);
+            bool const below_reserve =
+                gas_fee_mon > reserve_mon ||
+                initial_balance_mon - gas_fee_mon - value_mon <
+                    reserve_mon - gas_fee_mon;
+            EXPECT_EQ(metrics.num_can_dip, can_dip ? 1u : 0u)
+                << std::bitset<64>{prevent_dip_bitset};
+            EXPECT_EQ(metrics.num_dipped, (can_dip && below_reserve) ? 1u : 0u)
+                << std::bitset<64>{prevent_dip_bitset};
+        }
+        else {
+            EXPECT_EQ(metrics.num_can_dip, 0u);
+            EXPECT_EQ(metrics.num_dipped, 0u);
+        }
     }
 }
 

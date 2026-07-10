@@ -29,6 +29,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
+struct BlockMetrics;
 class State;
 struct Transaction;
 
@@ -47,5 +48,13 @@ void init_reserve_balance_context(
     State &state, Address const &sender, Transaction const &tx,
     std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
     trace::StateTracer &state_tracer, ChainContext<traits> const &ctx);
+
+/// Fold this transaction's reserve-balance dip outcome into the block
+/// metrics: whether the sender was eligible to dip into its reserve, and
+/// whether the end-of-transaction reserve check reached its allowed-dip
+/// exemption for the sender. No-op for EVM traits and Monad revisions
+/// before MONAD_FOUR, where the reserve is not enforced.
+template <Traits traits>
+void record_reserve_dip_metrics(State const &state, BlockMetrics &metrics);
 
 MONAD_NAMESPACE_END

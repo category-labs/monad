@@ -37,4 +37,11 @@ bool revert_transaction_cached(State &)
 
 EXPLICIT_EVM_TRAITS(revert_transaction_cached);
 
+template <Traits traits>
+void record_reserve_dip_metrics(State const &, BlockMetrics &)
+{
+}
+
+EXPLICIT_EVM_TRAITS(record_reserve_dip_metrics);
+
 MONAD_NAMESPACE_END

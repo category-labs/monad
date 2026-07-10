@@ -72,6 +72,10 @@ class State
     ReserveBalance rb_;
 
     template <Traits traits>
+    friend bool revert_transaction(
+        Address const &, Transaction const &, uint256_t const &, uint64_t,
+        State &, trace::StateTracer &, ChainContext<traits> const &);
+    template <Traits traits>
     friend bool revert_transaction_cached(State &);
     template <Traits traits>
         requires is_monad_trait_v<traits>
@@ -79,6 +83,8 @@ class State
         State &, Address const &, Transaction const &,
         std::optional<uint256_t> const &, uint64_t, trace::StateTracer &,
         ChainContext<traits> const &);
+    template <Traits traits>
+    friend void record_reserve_dip_metrics(State const &, BlockMetrics &);
 
 public:
     OriginalAccountState &original_account_state(Address const &);

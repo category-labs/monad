@@ -24,6 +24,13 @@ MONAD_NAMESPACE_BEGIN
 struct BlockMetrics
 {
     uint32_t num_retries{0};
+    /// Reserve-balance stats, populated by `record_reserve_dip_metrics`:
+    /// transactions whose sender was eligible to dip into its reserve, and
+    /// transactions where the end-of-transaction reserve check reached its
+    /// allowed-dip exemption for the sender. Always zero for EVM traits and
+    /// Monad revisions before MONAD_FOUR.
+    uint32_t num_can_dip{0};
+    uint32_t num_dipped{0};
     std::chrono::microseconds tx_exec_time{1};
 };
 

@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -469,6 +470,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
                 return std::move(result.error());
             }
             auto const receipt = execute_final(state, result.value());
+            record_reserve_dip_metrics<traits>(state, block_metrics_);
             block_state_.merge(state);
             return receipt;
         }
@@ -489,6 +491,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             return std::move(result.error());
         }
         auto const receipt = execute_final(state, result.value());
+        record_reserve_dip_metrics<traits>(state, block_metrics_);
         block_state_.merge(state);
         return receipt;
     }

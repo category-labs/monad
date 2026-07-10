@@ -56,6 +56,7 @@ class ReserveBalance
     Address sender_{};
     uint256_t sender_gas_fees_{0};
     bool sender_can_dip_{false};
+    bool sender_dipped_{false};
     FailedSet failed_{};
     ViolationThresholdMap violation_thresholds_{};
     std::function<uint256_t(Address const &)> get_max_reserve_{};
@@ -72,6 +73,19 @@ public:
     bool has_violation() const;
 
     bool failed_contains(Address const &address) const;
+
+    /// True iff this transaction's sender is eligible to dip into its
+    /// reserve (computed once per transaction in `init_from_tx`).
+    bool sender_can_dip() const;
+
+    /// True iff the end-of-transaction reserve check reached its allowed-dip
+    /// exemption for the sender. This tracks the check itself — which runs
+    /// before any top-level frame rollback and treats gas fees above the
+    /// full reserve as a dip — not whether the merged post-transaction
+    /// balance ended below the reserve.
+    bool sender_dipped() const;
+
+    void note_sender_dipped();
 
     void on_credit(Address const &);
     void on_debit(Address const &);

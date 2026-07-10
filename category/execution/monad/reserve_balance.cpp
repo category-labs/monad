@@ -21,6 +21,7 @@
 #include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
@@ -54,7 +55,7 @@ bool dipped_into_reserve(
     Address const &sender, Transaction const &tx,
     uint256_t const &base_fee_per_gas, uint64_t const i,
     trace::StateTracer &state_tracer, ChainContext<traits> const &ctx,
-    State &state)
+    State &state, ReserveBalance &rb)
 {
     MONAD_ASSERT(i < ctx.senders.size());
     MONAD_ASSERT(i < ctx.authorities.size());
@@ -122,6 +123,7 @@ bool dipped_into_reserve(
                     return true;
                 }
                 // Skip if allowed to dip into reserve
+                rb.note_sender_dipped();
             }
             else {
                 // Safety: this assertion should not be a recoverable one, as it
@@ -183,6 +185,21 @@ bool ReserveBalance::has_violation() const
 bool ReserveBalance::failed_contains(Address const &address) const
 {
     return failed_.contains(address);
+}
+
+bool ReserveBalance::sender_can_dip() const
+{
+    return sender_can_dip_;
+}
+
+bool ReserveBalance::sender_dipped() const
+{
+    return sender_dipped_;
+}
+
+void ReserveBalance::note_sender_dipped()
+{
+    sender_dipped_ = true;
 }
 
 bool ReserveBalance::subject_account(Address const &address)
@@ -343,6 +360,7 @@ void ReserveBalance::init_from_tx(
         sender_ = {};
         sender_gas_fees_ = 0;
         sender_can_dip_ = false;
+        sender_dipped_ = false;
         get_max_reserve_ = {};
         failed_.clear();
         return;
@@ -364,6 +382,7 @@ void ReserveBalance::init_from_tx(
     sender_gas_fees_ = uint256_t{tx.gas_limit} *
                        gas_price<traits>(tx, base_fee_per_gas.value_or(0));
     sender_can_dip_ = sender_can_dip;
+    sender_dipped_ = false;
     get_max_reserve_ = [](Address const &addr) {
         return get_max_reserve<traits>(addr);
     };
@@ -394,7 +413,14 @@ bool revert_transaction(
 {
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {
         return dipped_into_reserve<traits>(
-            sender, tx, base_fee_per_gas, i, state_tracer, ctx, state);
+            sender,
+            tx,
+            base_fee_per_gas,
+            i,
+            state_tracer,
+            ctx,
+            state,
+            state.rb_);
     }
     else if constexpr (traits::monad_rev() >= MONAD_ZERO) {
         return false;
@@ -402,6 +428,21 @@ bool revert_transaction(
 }
 
 EXPLICIT_MONAD_TRAITS(revert_transaction);
+
+template <Traits traits>
+void record_reserve_dip_metrics(State const &state, BlockMetrics &metrics)
+{
+    if constexpr (traits::monad_rev() >= MONAD_FOUR) {
+        if (state.rb_.sender_can_dip()) {
+            ++metrics.num_can_dip;
+        }
+        if (state.rb_.sender_dipped()) {
+            ++metrics.num_dipped;
+        }
+    }
+}
+
+EXPLICIT_MONAD_TRAITS(record_reserve_dip_metrics);
 
 template <Traits traits>
 bool revert_transaction_cached(State &state)

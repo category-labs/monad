@@ -17,9 +17,8 @@
 
 #include <array>
 #include <cstddef>
-#include <limits>
+#include <format>
 #include <ostream>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -60,33 +59,15 @@ namespace monad::vm::utils::evm_as::internal
 
     std::string new_var(annot_context &ctx)
     {
-        std::stringstream ss{};
-        ss << var_letters[ctx.next_letter++];
-        ctx.next_letter = ctx.next_letter % var_letters.size();
+        auto const letter = var_letters[ctx.next_letter++];
+        ctx.next_letter %= var_letters.size();
 
-        constexpr size_t sz = std::numeric_limits<size_t>::digits10;
-        char buffer[sz];
-        size_t i = 0;
-
-        if (ctx.next_subscript == 0) {
-            buffer[i++] = '0';
-        }
-        else {
-            size_t value = ctx.next_subscript;
-            while (value > 0) {
-                buffer[i++] = static_cast<char>('0' + (value % 10));
-                value /= 10;
-            }
-        }
-
-        for (size_t j = 0; j < i; j++) {
-            ss << buffer[i - j - 1];
-        }
+        auto const var = std::format("{}{}", letter, ctx.next_subscript);
 
         if (ctx.next_letter == 0) {
             ctx.next_subscript++;
         }
 
-        return ss.str();
+        return var;
     }
 }

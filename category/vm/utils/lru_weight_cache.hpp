@@ -128,6 +128,24 @@ namespace monad::vm::utils
             return true;
         }
 
+        /// Like try_insert, but takes `value` by const reference and never
+        /// mutates it or overwrites an existing entry. Returns true iff a new
+        /// entry was inserted.
+        bool try_insert_no_overwrite(
+            Key const &key, Value const &value, uint32_t const weight)
+        {
+            ConstAccessor acc;
+            if (!hmap_.insert(acc, {key, HashMapValue{value, weight}})) {
+                try_update_lru(&*acc);
+                return false;
+            }
+            ListNode const *const node = &*acc;
+            acc.release();
+            lru_.push_front(node);
+            adjust_by_delta_weight(weight);
+            return true;
+        }
+
         /// Get approximate total weight of the cached elements.
         uint64_t approx_weight() const
         {

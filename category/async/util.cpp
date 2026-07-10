@@ -40,95 +40,128 @@
 
 MONAD_ASYNC_NAMESPACE_BEGIN
 
-std::filesystem::path const &working_temporary_directory()
+std::filesystem::path detail::resolve_working_temporary_directory()
 {
-    static std::filesystem::path const v = [] {
-        std::filesystem::path ret;
-        auto test_path = [&](std::filesystem::path const &path) -> bool {
-            int fd = ::open(path.c_str(), O_RDWR | O_DIRECT | O_TMPFILE, 0600);
-            if (-1 == fd && ENOTSUP == errno) {
-                auto const path2 = path / "monad_XXXXXX";
-                std::string path2_str = path2.native();
-                fd = mkostemp(path2_str.data(), O_DIRECT);
-                if (-1 != fd) {
-                    unlink(path2_str.c_str());
-                }
-            }
+    std::filesystem::path ret;
+    auto test_path = [&](std::filesystem::path const &path) -> bool {
+        int fd = ::open(path.c_str(), O_RDWR | O_DIRECT | O_TMPFILE, 0600);
+        if (-1 == fd && ENOTSUP == errno) {
+            auto const path2 = path / "monad_XXXXXX";
+            std::string path2_str = path2.native();
+            fd = mkostemp(path2_str.data(), O_DIRECT);
             if (-1 != fd) {
-                struct statfs s = {};
-                if (-1 == fstatfs(fd, &s)) {
-                    ::close(fd);
-                    return false;
-                }
+                unlink(path2_str.c_str());
+            }
+        }
+        if (-1 != fd) {
+            struct statfs s = {};
+            if (-1 == fstatfs(fd, &s)) {
                 ::close(fd);
-                if (s.f_type == TMPFS_MAGIC) {
-                    return false;
-                }
-                ret = path;
-                return true;
+                return false;
             }
-            return false;
-        };
-        // Only observe environment variables if not a SUID or SGID situation
-        // FIXME? Is this actually enough? What about the non-standard saved
-        // uid/gid? Should I be checking if my executable is SUGID and its
-        // owning user is not mine?
-        if (getuid() == geteuid() && getgid() == getegid()) {
-            // Note that XDG_RUNTIME_DIR is the systemd runtime directory for
-            // the current user, usually mounted with tmpfs XDG_CACHE_HOME  is
-            // the systemd cache directory for the current user, usually at
-            // $HOME/.cache
-            static char const *variables[] = {
-                "TMPDIR",
-                "TMP",
-                "TEMP",
-                "TEMPDIR",
-                "XDG_RUNTIME_DIR",
-                "XDG_CACHE_HOME"};
-            for (auto const *const variable : variables) {
-                char const *const env = getenv(variable);
-                if (env != nullptr) {
-                    if (test_path(env)) {
-                        return ret;
-                    }
-                }
+            ::close(fd);
+            if (s.f_type == TMPFS_MAGIC) {
+                return false;
             }
-            // Also try $HOME/.cache
-            char const *const env = getenv("HOME");
+            ret = path;
+            return true;
+        }
+        return false;
+    };
+    // Only observe environment variables if not a SUID or SGID situation
+    // FIXME? Is this actually enough? What about the non-standard saved
+    // uid/gid? Should I be checking if my executable is SUGID and its
+    // owning user is not mine?
+    if (getuid() == geteuid() && getgid() == getegid()) {
+        // Explicit override for callers that do not require O_DIRECT
+        // (e.g. tests and fuzzers): if MONAD_TMPDIR_FORCE names a writable
+        // directory, use it verbatim, skipping the O_DIRECT probe and the
+        // tmpfs rejection that the normal search below performs. This lets
+        // such callers place their working files on a RAM-backed tmpfs (e.g.
+        // /dev/shm) to avoid SSD wear. Gated behind the same non-SUID/SGID
+        // check as the other environment variables so a setuid binary never
+        // trusts it. A value naming a directory that cannot be used throws,
+        // rather than silently falling through to a disk-backed location; an
+        // empty value is treated as unset.
+        if (char const *const forced = getenv("MONAD_TMPDIR_FORCE");
+            forced != nullptr && forced[0] != '\0') {
+            std::filesystem::path const path{forced};
+            auto const probe = path / "monad_XXXXXX";
+            std::string probe_str = probe.native();
+            int const fd = mkstemp(probe_str.data());
+            if (fd == -1) {
+                int const err = errno;
+                throw std::runtime_error(
+                    std::string{"MONAD_TMPDIR_FORCE is set to '"} + forced +
+                    "' which could not be used as a working temporary "
+                    "directory: " +
+                    strerror(err));
+            }
+            unlink(probe_str.c_str());
+            ::close(fd);
+            ret = path;
+            return ret;
+        }
+        // Note that XDG_RUNTIME_DIR is the systemd runtime directory for
+        // the current user, usually mounted with tmpfs XDG_CACHE_HOME  is
+        // the systemd cache directory for the current user, usually at
+        // $HOME/.cache
+        static char const *variables[] = {
+            "TMPDIR",
+            "TMP",
+            "TEMP",
+            "TEMPDIR",
+            "XDG_RUNTIME_DIR",
+            "XDG_CACHE_HOME"};
+        for (auto const *const variable : variables) {
+            char const *const env = getenv(variable);
             if (env != nullptr) {
-                std::filesystem::path buffer(env);
-                buffer /= ".cache";
-                if (test_path(buffer)) {
+                if (test_path(env)) {
                     return ret;
                 }
             }
         }
-        // TODO: Use getpwent_r() to extract current effective user home
-        // directory Hardcoded fallbacks in case environment is not available to
-        // us
-        if (test_path("/tmp")) {
-            return ret;
+        // Also try $HOME/.cache
+        char const *const env = getenv("HOME");
+        if (env != nullptr) {
+            std::filesystem::path buffer(env);
+            buffer /= ".cache";
+            if (test_path(buffer)) {
+                return ret;
+            }
         }
-        if (test_path("/var/tmp")) {
-            return ret;
-        }
-        if (test_path("/run/user/" + std::to_string(geteuid()))) {
-            return ret;
-        }
-        // Some systems with no writable hardcode fallbacks may have shared
-        // memory configured
-        if (test_path("/run/shm")) {
-            return ret;
-        }
-        // On some Docker images this is the only writable path anywhere
-        if (test_path("/")) {
-            return ret;
-        }
-        throw std::runtime_error(
-            "This system appears to have no writable temporary files location, "
-            "please set one using any of the usual environment variables e.g. "
-            "TMPDIR");
-    }();
+    }
+    // TODO: Use getpwent_r() to extract current effective user home
+    // directory Hardcoded fallbacks in case environment is not available to
+    // us
+    if (test_path("/tmp")) {
+        return ret;
+    }
+    if (test_path("/var/tmp")) {
+        return ret;
+    }
+    if (test_path("/run/user/" + std::to_string(geteuid()))) {
+        return ret;
+    }
+    // Some systems with no writable hardcode fallbacks may have shared
+    // memory configured
+    if (test_path("/run/shm")) {
+        return ret;
+    }
+    // On some Docker images this is the only writable path anywhere
+    if (test_path("/")) {
+        return ret;
+    }
+    throw std::runtime_error(
+        "This system appears to have no writable temporary files location, "
+        "please set one using any of the usual environment variables e.g. "
+        "TMPDIR");
+}
+
+std::filesystem::path const &working_temporary_directory()
+{
+    static std::filesystem::path const v =
+        detail::resolve_working_temporary_directory();
     return v;
 }
 

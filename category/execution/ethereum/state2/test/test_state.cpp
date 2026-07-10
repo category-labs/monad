@@ -182,19 +182,30 @@ namespace
         vm::VM vm;
     };
 
+    template <bool page_encoded>
     struct TwoOnDisk : public ::testing::Test
     {
         mpt::Db db1{
-            std::make_unique<OnDiskMachine>(),
+            page_encoded ? std::make_unique<MonadOnDiskMachine>()
+                         : std::make_unique<OnDiskMachine>(),
             mpt::OnDiskDbConfig{.file_size_db = 8}};
         mpt::Db db2{
-            std::make_unique<OnDiskMachine>(),
+            page_encoded ? std::make_unique<MonadOnDiskMachine>()
+                         : std::make_unique<OnDiskMachine>(),
             mpt::OnDiskDbConfig{.file_size_db = 8}};
         // baseline noncaching db for tdb1
         TrieDb tdb1{db1};
         TrieDb tdb2{db2, /*enable_multiblock_cache=*/true};
         vm::VM vm;
     };
+
+    template <typename T>
+    struct TwoOnDiskSuite : public T
+    {
+    };
+
+    using TwoOnDiskTypes = ::testing::Types<TwoOnDisk<false>, TwoOnDisk<true>>;
+    TYPED_TEST_SUITE(TwoOnDiskSuite, TwoOnDiskTypes);
 }
 
 DEFINE_TRAITS_FIXTURE(InMemoryStateTraitsTest);
@@ -2482,7 +2493,7 @@ namespace
     };
 }
 
-TEST_F(TwoOnDisk, random_proposals)
+TYPED_TEST(TwoOnDiskSuite, random_proposals)
 {
     this->tdb1.reset_root(
         load_header({}, this->db1, BlockHeader{.number = 0}), 0);

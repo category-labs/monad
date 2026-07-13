@@ -468,14 +468,11 @@ try {
                     block_db_timeout);
             }
             else {
-                // Live monad must be
-                // * slot-encoded primary + page-encoded secondary: dual-db mode
-                //
-                // TODO: after the migration fork, we will promote the
-                // page-encoded secondary to be the primary and deprecate the
-                // slot-encoded db, after which we can remove all dual-db
-                // logic and only require a page-encoded primary db for live
-                // monad.
+#if 0
+                // TODO: Enable this check when we announce the migration; 
+                // remove once dual-db is deprecated.
+                // Live monad must be dual db mode: slot-encoded primary + 
+                // page-encoded secondary.
                 if (chain_config == CHAIN_CONFIG_MONAD_TESTNET ||
                     chain_config == CHAIN_CONFIG_MONAD_MAINNET) {
                     MONAD_ASSERT_PRINTF(
@@ -488,6 +485,7 @@ try {
                             ? "monad_testnet"
                             : "monad_mainnet"); // TODO: remove at release2
                 }
+#endif
                 std::optional<mpt::Db> secondary_db;
                 std::optional<TrieDb> secondary_triedb;
                 if (raw_db.timeline_active(

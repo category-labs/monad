@@ -168,10 +168,13 @@ public:
         bytes32_t const &pre_state_root, byte_string_view encoded_nodes,
         byte_string_view encoded_codes);
 
-    std::optional<Account> read_account(Address const &) override;
+    std::optional<Account> read_account(
+        Address const &,
+        std::optional<uint64_t> const &ns = std::nullopt) override;
 
-    bytes32_t
-    read_storage(Address const &, Incarnation, bytes32_t const &key) override;
+    bytes32_t read_storage(
+        Address const &, Incarnation, bytes32_t const &key,
+        std::optional<uint64_t> const &ns = std::nullopt) override;
 
     storage_page_t read_storage_page(
         Address const &, Incarnation, bytes32_t const &page_key,

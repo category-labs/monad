@@ -18,6 +18,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -27,9 +28,12 @@
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
@@ -244,8 +248,8 @@ namespace
         Address const &addr, StateDelta delta)
     {
         NamespacedStateDeltas::accessor ns_it{};
-        ns_deltas.emplace(ns_it, ns, StateDeltas{});
-        add_state_delta(ns_it->second, addr, std::move(delta));
+        ns_deltas.emplace(ns_it, ns, std::make_unique<StateDeltas>());
+        add_state_delta(*ns_it->second, addr, std::move(delta));
     }
 
     bytes32_t commit_plain_state_root(
@@ -399,7 +403,7 @@ TYPED_TEST(NamespaceWritePathTest, namespace_commit_empty_inner_deltas)
     constexpr uint64_t ns{0x1212121212121212ULL};
     NamespacedStateDeltas ns_deltas;
     NamespacedStateDeltas::accessor ns_it{};
-    ns_deltas.emplace(ns_it, ns, StateDeltas{});
+    ns_deltas.emplace(ns_it, ns, std::make_unique<StateDeltas>());
     ns_it.release();
 
     auto const roots =
@@ -642,6 +646,73 @@ TYPED_TEST(
     ASSERT_TRUE(page.has_value());
     EXPECT_EQ(page.value()[compute_slot_offset(key1)], updated_value);
     EXPECT_EQ(page.value()[compute_slot_offset(adjacent_key)], value2);
+}
+
+TEST_F(OnDiskTrieDbWithFileFixture, namespace_reads)
+{
+    constexpr uint64_t namespace_1{0x1111111111111111ULL};
+    constexpr uint64_t namespace_2{0x2222222222222222ULL};
+    Account const account_1{.balance = 111};
+    Account const account_2{.balance = 222};
+
+    TrieDb tdb{this->db};
+    seed_finalized_block_zero(this->db, tdb);
+    NamespacedStateDeltas ns_deltas;
+    add_namespace_state_delta(
+        ns_deltas,
+        namespace_1,
+        ADDR_A,
+        StateDelta{
+            .account = {std::nullopt, account_1},
+            .storage = {{key1, {bytes32_t{}, value1}}}});
+    add_namespace_state_delta(
+        ns_deltas,
+        namespace_2,
+        ADDR_A,
+        StateDelta{
+            .account = {std::nullopt, account_2},
+            .storage = {{key1, {bytes32_t{}, value2}}}});
+    commit_namespace_state(tdb, ns_deltas, 1, bytes32_t{1});
+    tdb.finalize(1, bytes32_t{1});
+    tdb.set_block_and_prefix(1);
+
+    EXPECT_EQ(tdb.read_account(ADDR_A), std::nullopt);
+    EXPECT_EQ(tdb.read_account(ADDR_A, namespace_1), account_1);
+    EXPECT_EQ(
+        tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1, namespace_1), value1);
+    EXPECT_EQ(tdb.read_account(ADDR_A, namespace_2), account_2);
+    EXPECT_EQ(
+        tdb.read_storage(ADDR_A, Incarnation{0, 0}, key1, namespace_2), value2);
+
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    EXPECT_EQ(block_state.read_account(ADDR_A, namespace_1), account_1);
+    EXPECT_EQ(
+        block_state.read_storage(ADDR_A, Incarnation{0, 0}, key1, namespace_1),
+        value1);
+    EXPECT_EQ(block_state.read_account(ADDR_A, namespace_2), account_2);
+    EXPECT_EQ(
+        block_state.read_storage(ADDR_A, Incarnation{0, 0}, key1, namespace_2),
+        value2);
+
+    State state_1{block_state, Incarnation{1, 1}, false, namespace_1};
+    State state_2{block_state, Incarnation{1, 2}, false, namespace_2};
+    EXPECT_EQ(state_1.get_balance(ADDR_A), account_1.balance);
+    EXPECT_EQ(state_1.get_storage(ADDR_A, key1), value1);
+    EXPECT_EQ(state_2.get_balance(ADDR_A), account_2.balance);
+    EXPECT_EQ(state_2.get_storage(ADDR_A, key1), value2);
+
+    mpt::RODb rodb{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {this->dbname}}};
+    TrieRODb trie_ro{rodb};
+    trie_ro.set_block_and_prefix(1);
+    EXPECT_EQ(trie_ro.read_account(ADDR_A, namespace_1), account_1);
+    EXPECT_EQ(
+        trie_ro.read_storage(ADDR_A, Incarnation{0, 0}, key1, namespace_1),
+        value1);
+    EXPECT_EQ(trie_ro.read_account(ADDR_A, namespace_2), account_2);
+    EXPECT_EQ(
+        trie_ro.read_storage(ADDR_A, Incarnation{0, 0}, key1, namespace_2),
+        value2);
 }
 
 TEST(DBTest, read_only)

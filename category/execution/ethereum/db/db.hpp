@@ -45,10 +45,12 @@ using NamespaceStateRoots = std::vector<std::pair<uint64_t, bytes32_t>>;
 struct Db
 {
     virtual bool is_page_encoded() const = 0;
-    virtual std::optional<Account> read_account(Address const &) = 0;
+    virtual std::optional<Account> read_account(
+        Address const &, std::optional<uint64_t> const &ns = std::nullopt) = 0;
 
-    virtual bytes32_t
-    read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
+    virtual bytes32_t read_storage(
+        Address const &, Incarnation, bytes32_t const &key,
+        std::optional<uint64_t> const &ns = std::nullopt) = 0;
 
     virtual storage_page_t read_storage_page(
         Address const &, Incarnation, bytes32_t const &page_key,

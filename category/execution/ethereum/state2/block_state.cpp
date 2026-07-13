@@ -53,21 +53,40 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
 {
 }
 
-std::optional<Account> BlockState::read_account(Address const &address)
+StateDeltas &
+BlockState::get_or_create_state_deltas(std::optional<uint64_t> const &ns)
 {
+    if (!ns) {
+        MONAD_ASSERT(state_);
+        return *state_;
+    }
+
+    NamespacedStateDeltas::accessor ns_it{};
+    if (!ns_state_.find(ns_it, *ns)) {
+        auto deltas = std::make_unique<StateDeltas>();
+        ns_state_.emplace(ns_it, *ns, std::move(deltas));
+    }
+    MONAD_ASSERT(ns_it->second);
+    return *ns_it->second;
+}
+
+std::optional<Account> BlockState::read_account(
+    Address const &address, std::optional<uint64_t> const &ns)
+{
+    auto &deltas = get_or_create_state_deltas(ns);
+
     // block state
     {
         StateDeltas::const_accessor it{};
-        MONAD_ASSERT(state_);
-        if (MONAD_LIKELY(state_->find(it, address))) {
+        if (MONAD_LIKELY(deltas.find(it, address))) {
             return it->second.account.second;
         }
     }
     // database
     {
-        auto const result = db_.read_account(address);
+        auto const result = db_.read_account(address, ns);
         StateDeltas::const_accessor it{};
-        state_->emplace(
+        deltas.emplace(
             it,
             address,
             StateDelta{.account = {result, result}, .storage = {}});
@@ -76,14 +95,15 @@ std::optional<Account> BlockState::read_account(Address const &address)
 }
 
 bytes32_t BlockState::read_storage(
-    Address const &address, Incarnation const incarnation, bytes32_t const &key)
+    Address const &address, Incarnation const incarnation, bytes32_t const &key,
+    std::optional<uint64_t> const &ns)
 {
+    auto &deltas = get_or_create_state_deltas(ns);
     bool read_storage = false;
     // block state
     {
         StateDeltas::const_accessor it{};
-        MONAD_ASSERT(state_);
-        MONAD_ASSERT(state_->find(it, address));
+        MONAD_ASSERT(deltas.find(it, address));
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return {};
@@ -104,13 +124,13 @@ bytes32_t BlockState::read_storage(
     {
         bytes32_t result{};
         if (read_storage) {
-            result = db_.read_storage(address, incarnation, key);
+            result = db_.read_storage(address, incarnation, key, ns);
             MONAD_ASSERT(
                 !secondary_db_ || secondary_db_->read_storage(
-                                      address, incarnation, key) == result);
+                                      address, incarnation, key, ns) == result);
         }
         StateDeltas::accessor it{};
-        MONAD_ASSERT(state_->find(it, address));
+        MONAD_ASSERT(deltas.find(it, address));
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return result;

@@ -63,16 +63,17 @@ class DbCache final
 public:
     DbCache() = default;
 
-    bool
-    try_read_account(Address const &address, std::optional<Account> &result)
+    bool try_read_account(
+        Address const &address, std::optional<Account> &result,
+        std::optional<uint64_t> const &ns = std::nullopt)
     {
-        auto const res = proposals_.try_read_account(address, result);
+        auto const res = proposals_.try_read_account(address, result, ns);
         if (res.found) {
             return true;
         }
         if (!res.truncated) {
             AccountsCache::ConstAccessor acc{};
-            if (accounts_.find(acc, AccountKey{address, std::nullopt})) {
+            if (accounts_.find(acc, AccountKey{address, ns})) {
                 result = acc->second.value_;
                 return true;
             }
@@ -103,18 +104,19 @@ public:
 
     bool try_read_storage(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, uint8_t const slot_offset, bytes32_t &result)
+        bytes32_t const &key, uint8_t const slot_offset, bytes32_t &result,
+        std::optional<uint64_t> const &ns = std::nullopt)
     {
         storage_page_t page;
         auto const res =
-            proposals_.try_read_storage(address, incarnation, key, page);
+            proposals_.try_read_storage(address, incarnation, key, page, ns);
         if (res.found) {
             // slot_offset is 0 for slot encoding, the in-page offset for page.
             result = page[slot_offset];
             return true;
         }
         if (!res.truncated) {
-            StorageKey const skey{address, incarnation, key};
+            StorageKey const skey{address, incarnation, key, ns};
             StorageCache::ConstAccessor acc{};
             if (storage_.find(acc, skey)) {
                 result = acc->second.value_[slot_offset];
@@ -143,6 +145,7 @@ public:
             proposals_.finalize(block_number, block_id);
         if (ps) {
             insert_in_lru_caches(ps->post_state());
+            insert_in_lru_caches(ps->ns_post_state());
         }
         else {
             // Finalizing a truncated proposal. Clear LRU caches.  This is an
@@ -172,6 +175,13 @@ private:
         }
         for (auto const &[sk, leaf] : post_state.storage) {
             storage_.insert(sk, leaf, static_cast<uint32_t>(leaf.byte_size()));
+        }
+    }
+
+    void insert_in_lru_caches(NamespacedProposalPostState const &ns_post_state)
+    {
+        for (auto const &entry : ns_post_state) {
+            insert_in_lru_caches(entry.second);
         }
     }
 };

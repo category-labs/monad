@@ -103,19 +103,32 @@ Node::SharedPtr const &TrieDb::get_root() const
     return curr_root_;
 }
 
-std::optional<Account> TrieDb::read_account(Address const &addr)
+std::optional<Account>
+TrieDb::read_account(Address const &addr, std::optional<uint64_t> const &ns)
 {
     std::optional<Account> result;
-    if (cache_ && cache_->try_read_account(addr, result)) {
+    if (cache_ && cache_->try_read_account(addr, result, ns)) {
         return result;
     }
-    auto const res = db_.find(
-        curr_root_,
-        concat(
-            prefix_,
-            STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
-        block_number_);
+    auto const addr_hash = keccak256({addr.bytes, sizeof(addr.bytes)});
+    auto const res = [&] {
+        if (ns.has_value()) {
+            uint8_t ns_bytes[sizeof(uint64_t)];
+            intx::be::store(ns_bytes, *ns);
+            return db_.find(
+                curr_root_,
+                concat(
+                    prefix_,
+                    NAMESPACE_STATE_NIBBLE,
+                    NibblesView{to_byte_string_view(ns_bytes)},
+                    NibblesView{addr_hash}),
+                block_number_);
+        }
+        return db_.find(
+            curr_root_,
+            concat(prefix_, STATE_NIBBLE, NibblesView{addr_hash}),
+            block_number_);
+    }();
     if (res.has_error()) {
         stats_account_no_value();
         return std::nullopt;
@@ -126,24 +139,43 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 }
 
 bytes32_t TrieDb::read_storage(
-    Address const &addr, Incarnation const incarnation, bytes32_t const &key)
+    Address const &addr, Incarnation const incarnation, bytes32_t const &key,
+    std::optional<uint64_t> const &ns)
 {
     bytes32_t const lookup_key = storage_lookup_key(key);
     uint8_t const lookup_offset = page_encoded_ ? compute_slot_offset(key) : 0;
     bytes32_t result{};
-    if (cache_ && cache_->try_read_storage(
-                      addr, incarnation, lookup_key, lookup_offset, result)) {
+    if (cache_ &&
+        cache_->try_read_storage(
+            addr, incarnation, lookup_key, lookup_offset, result, ns)) {
         return result;
     }
-    auto const res = db_.find(
-        curr_root_,
-        concat(
-            prefix_,
-            STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{
-                keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
-        block_number_);
+    auto const addr_hash = keccak256({addr.bytes, sizeof(addr.bytes)});
+    auto const key_hash =
+        keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)});
+    auto const res = [&] {
+        if (ns.has_value()) {
+            uint8_t ns_bytes[sizeof(uint64_t)];
+            intx::be::store(ns_bytes, *ns);
+            return db_.find(
+                curr_root_,
+                concat(
+                    prefix_,
+                    NAMESPACE_STATE_NIBBLE,
+                    NibblesView{to_byte_string_view(ns_bytes)},
+                    NibblesView{addr_hash},
+                    NibblesView{key_hash}),
+                block_number_);
+        }
+        return db_.find(
+            curr_root_,
+            concat(
+                prefix_,
+                STATE_NIBBLE,
+                NibblesView{addr_hash},
+                NibblesView{key_hash}),
+            block_number_);
+    }();
     if (res.has_error()) {
         stats_storage_no_value();
         return {};

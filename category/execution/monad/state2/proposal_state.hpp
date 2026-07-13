@@ -80,11 +80,16 @@ public:
     }
 
     bool try_read_account(
-        Address const &address, std::optional<Account> &result) const
+        Address const &address, std::optional<Account> &result,
+        std::optional<uint64_t> const &ns = std::nullopt) const
     {
-        AccountKey const account_key{address, std::nullopt};
-        auto const it = post_state_.accounts.find(account_key);
-        if (it != post_state_.accounts.end()) {
+        ProposalPostState const *state = post_state_for(ns);
+        if (!state) {
+            return false;
+        }
+        AccountKey const account_key{address, ns};
+        auto const it = state->accounts.find(account_key);
+        if (it != state->accounts.end()) {
             result = it->second;
             return true;
         }
@@ -96,13 +101,9 @@ public:
         bytes32_t const &key, storage_page_t &result,
         std::optional<uint64_t> const &ns = std::nullopt) const
     {
-        ProposalPostState const *state = &post_state_;
-        if (ns.has_value()) {
-            auto const it = ns_post_state_.find(*ns);
-            if (it == ns_post_state_.end()) {
-                return false;
-            }
-            state = &it->second;
+        ProposalPostState const *state = post_state_for(ns);
+        if (!state) {
+            return false;
         }
         AccountKey const account_key{address, ns};
         auto const acct_it = state->accounts.find(account_key);
@@ -122,6 +123,20 @@ public:
             return true;
         }
         return false;
+    }
+
+private:
+    ProposalPostState const *
+    post_state_for(std::optional<uint64_t> const &ns) const
+    {
+        if (!ns.has_value()) {
+            return &post_state_;
+        }
+        auto const it = ns_post_state_.find(*ns);
+        if (it == ns_post_state_.end()) {
+            return nullptr;
+        }
+        return &it->second;
     }
 };
 
@@ -160,10 +175,11 @@ public:
     };
 
     TryReadResult try_read_account(
-        Address const &address, std::optional<Account> &result) const
+        Address const &address, std::optional<Account> &result,
+        std::optional<uint64_t> const &ns = std::nullopt) const
     {
-        auto const fn = [&address, &result](ProposalState const &ps) {
-            return ps.try_read_account(address, result);
+        auto const fn = [&address, &result, &ns](ProposalState const &ps) {
+            return ps.try_read_account(address, result, ns);
         };
         return try_read(fn);
     }

@@ -56,6 +56,8 @@ class State
 
     Incarnation const incarnation_;
 
+    std::optional<uint64_t> namespace_{};
+
     Map<Address, OriginalAccountState> original_{};
 
     Map<Address, VersionStack<AccountState>> current_{};
@@ -93,7 +95,9 @@ private:
     std::optional<Account> &current_account(Address const &);
 
 public:
-    State(BlockState &, Incarnation, bool relaxed_validation = false);
+    State(
+        BlockState &, Incarnation, bool relaxed_validation = false,
+        std::optional<uint64_t> ns = std::nullopt);
 
     State(State &&) = delete;
     State(State const &) = delete;

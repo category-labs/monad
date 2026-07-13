@@ -195,6 +195,25 @@ namespace
         TrieDb tdb2{db2, /*enable_multiblock_cache=*/true};
         vm::VM vm;
     };
+
+    void add_namespace_state_delta(
+        NamespacedStateDeltas &ns_deltas, uint64_t const ns,
+        Address const &addr, StateDelta delta)
+    {
+        NamespacedStateDeltas::accessor ns_it{};
+        ns_deltas.emplace(ns_it, ns, std::make_unique<StateDeltas>());
+        ns_it->second->emplace(addr, std::move(delta));
+    }
+
+    void commit_namespace_state(
+        TrieDb &tdb, NamespacedStateDeltas const &ns_deltas,
+        uint64_t const block_number, bytes32_t const &block_id)
+    {
+        auto builder = make_commit_builder(block_number, tdb);
+        builder->add_namespace_state_deltas(ns_deltas);
+        tdb.commit_namespace_state_deltas(
+            block_id, *builder, ns_deltas, block_number);
+    }
 }
 
 DEFINE_TRAITS_FIXTURE(InMemoryStateTraitsTest);
@@ -1802,9 +1821,30 @@ TYPED_TEST(OnDiskTestSuite, commit_multiple_proposals)
 
 TYPED_TEST(OnDiskCachedTestSuite, proposal_basics)
 {
+    constexpr uint64_t namespace_1{0x1111111111111111ULL};
+    constexpr uint64_t namespace_2{0x2222222222222222ULL};
     this->tdb.reset_root(
         load_header({}, this->db, BlockHeader{.number = 9}), 9);
     Db &db = this->tdb;
+
+    Account const ns1_account{.balance = 300'000};
+    Account const ns2_account{.balance = 500'000};
+    NamespacedStateDeltas ns_deltas_10;
+    add_namespace_state_delta(
+        ns_deltas_10,
+        namespace_1,
+        a,
+        StateDelta{
+            .account = {std::nullopt, ns1_account},
+            .storage = {{key1, {bytes32_t{}, value1}}}});
+    add_namespace_state_delta(
+        ns_deltas_10,
+        namespace_2,
+        a,
+        StateDelta{
+            .account = {std::nullopt, ns2_account},
+            .storage = {{key1, {bytes32_t{}, value2}}}});
+    commit_namespace_state(this->tdb, ns_deltas_10, 10, bytes32_t{10});
     commit_simple(
         db,
         StateDeltas(
@@ -1816,6 +1856,10 @@ TYPED_TEST(OnDiskCachedTestSuite, proposal_basics)
         BlockHeader{.number = 10});
     db.set_block_and_prefix(10, bytes32_t{10});
     EXPECT_EQ(db.read_account(a).value().balance, 30'000);
+    EXPECT_EQ(db.read_account(a, namespace_1), ns1_account);
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1, namespace_1), value1);
+    EXPECT_EQ(db.read_account(a, namespace_2), ns2_account);
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1, namespace_2), value2);
 
     db.set_block_and_prefix(10, bytes32_t{10});
     BlockState bs1(db, this->vm);
@@ -1830,7 +1874,18 @@ TYPED_TEST(OnDiskCachedTestSuite, proposal_basics)
         released_code1,
         bytes32_t{11},
         BlockHeader{.number = 11});
+    db.set_block_and_prefix(11, bytes32_t{11});
+    EXPECT_EQ(db.read_account(a, namespace_1), ns1_account);
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1, namespace_1), value1);
+    EXPECT_EQ(db.read_account(a, namespace_2), ns2_account);
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1, namespace_2), value2);
     db.finalize(11, bytes32_t{11});
+
+    db.set_block_and_prefix(11);
+    EXPECT_EQ(db.read_account(a, namespace_1), ns1_account);
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1, namespace_1), value1);
+    EXPECT_EQ(db.read_account(a, namespace_2), ns2_account);
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1, namespace_2), value2);
 
     db.set_block_and_prefix(11, bytes32_t{11});
     BlockState bs2(db, this->vm);
@@ -1844,6 +1899,16 @@ TYPED_TEST(OnDiskCachedTestSuite, proposal_basics)
         [released_state2,
          released_code2,
          _released_self_destruct_storage_reads2] = std::move(bs2).release();
+    Account const updated_ns1_account{.balance = 400'000};
+    NamespacedStateDeltas ns_deltas_12;
+    add_namespace_state_delta(
+        ns_deltas_12,
+        namespace_1,
+        a,
+        StateDelta{
+            .account = {ns1_account, updated_ns1_account},
+            .storage = {{key1, {value1, value3}}}});
+    commit_namespace_state(this->tdb, ns_deltas_12, 12, bytes32_t{12});
     commit_simple(
         db,
         *released_state2,
@@ -1851,11 +1916,23 @@ TYPED_TEST(OnDiskCachedTestSuite, proposal_basics)
         bytes32_t{12},
         BlockHeader{.number = 12});
     EXPECT_EQ(db.read_account(a).value().balance, 40'000);
+    EXPECT_EQ(db.read_account(a, namespace_1), updated_ns1_account);
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1, namespace_1), value3);
+    EXPECT_EQ(db.read_account(a, namespace_2), ns2_account);
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1, namespace_2), value2);
     db.finalize(12, bytes32_t{12});
     EXPECT_EQ(db.read_account(a).value().balance, 40'000);
+    EXPECT_EQ(db.read_account(a, namespace_1), updated_ns1_account);
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1, namespace_1), value3);
+    EXPECT_EQ(db.read_account(a, namespace_2), ns2_account);
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1, namespace_2), value2);
     // read an older block's state
     db.set_block_and_prefix(11); // set to block 11 finalized
     EXPECT_EQ(db.read_account(a).value().balance, 30'000);
+    EXPECT_EQ(db.read_account(a, namespace_1), ns1_account);
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1, namespace_1), value1);
+    EXPECT_EQ(db.read_account(a, namespace_2), ns2_account);
+    EXPECT_EQ(db.read_storage(a, Incarnation{0, 0}, key1, namespace_2), value2);
 }
 
 TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)

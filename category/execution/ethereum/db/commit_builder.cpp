@@ -165,9 +165,10 @@ CommitBuilder &CommitBuilder::add_namespace_state_deltas(
 {
     UpdateList namespace_updates;
     for (auto const &[ns, inner] : ns_deltas) {
+        MONAD_ASSERT(inner);
         UpdateList account_updates;
         build_slot_account_updates(
-            inner,
+            *inner,
             namespace_proposal_post_state_[ns],
             std::optional<uint64_t>{ns},
             account_updates,

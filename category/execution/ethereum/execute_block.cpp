@@ -175,14 +175,21 @@ Result<std::vector<Receipt>> execute_block_transactions(
         new std::optional<Result<Receipt>>[transactions.size()]};
     size_t const txn_count = transactions.size();
 
+    auto exception_promise = std::make_shared<boost::fibers::promise<void>>();
+    if (txn_count == 0) {
+        exception_promise->set_value();
+    }
+
     auto const tx_exec_begin = std::chrono::steady_clock::now();
     for (unsigned i = 0; i < txn_count; ++i) {
         priority_pool.submit(
             i,
             [&chain = chain,
              i = i,
+             txn_count = txn_count,
              results = results,
              promises = promises,
+             exception_promise = exception_promise,
              &transaction = transactions[i],
              &sender = senders[i],
              &authorities = authorities[i],
@@ -211,6 +218,9 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         state_tracer,
                         chain_ctx,
                         trace_transfers);
+                    if (i + 1 == txn_count) {
+                        exception_promise->set_value();
+                    }
                     if (results[i]->has_error()) {
                         record_txn_error_event(i, results[i]->error());
                     }
@@ -220,13 +230,15 @@ Result<std::vector<Receipt>> execute_block_transactions(
                     promises[i + 1].set_value();
                 }
                 catch (...) {
-                    promises[i + 1].set_exception(std::current_exception());
+                    exception_promise->set_exception(std::current_exception());
                 }
             });
     }
 
+    exception_promise->get_future().get(); // exception propagation
     auto const last = static_cast<ptrdiff_t>(transactions.size());
-    promises[last].get_future().get();
+    promises[last].get_future().wait();
+
     block_metrics.tx_exec_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - tx_exec_begin);

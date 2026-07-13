@@ -35,6 +35,9 @@ public:
     // storage_page_t entries. Use `take_proposal_post_state()` after this to
     // consume the result.
     CommitBuilder &add_state_deltas(StateDeltas const &) override;
+
+    CommitBuilder &
+    add_namespace_state_deltas(NamespacedStateDeltas const &) override;
 };
 
 // Selects the builder matching the db encoding: PageCommitBuilder for a

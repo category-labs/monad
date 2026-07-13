@@ -109,7 +109,8 @@ struct monad_statesync_server_context final : public monad::Db
 
     virtual monad::storage_page_t read_storage_page(
         monad::Address const &addr, monad::Incarnation,
-        monad::bytes32_t const &page_key) override;
+        monad::bytes32_t const &page_key,
+        std::optional<uint64_t> const &ns = std::nullopt) override;
 
     virtual monad::vm::SharedIntercode
     read_code(monad::bytes32_t const &hash) override;

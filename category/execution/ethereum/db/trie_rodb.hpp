@@ -133,8 +133,9 @@ public:
         }
     }
 
-    virtual storage_page_t
-    read_storage_page(Address const &, Incarnation, bytes32_t const &) override
+    virtual storage_page_t read_storage_page(
+        Address const &, Incarnation, bytes32_t const &,
+        std::optional<uint64_t> const & = std::nullopt) override
     {
         MONAD_ABORT("TrieRODb read_storage_page is currently not supported");
     }

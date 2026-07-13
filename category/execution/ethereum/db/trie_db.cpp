@@ -164,7 +164,7 @@ bytes32_t TrieDb::read_storage(
 
 storage_page_t TrieDb::read_storage_page(
     Address const &addr, Incarnation const incarnation,
-    bytes32_t const &page_key)
+    bytes32_t const &page_key, std::optional<uint64_t> const &ns)
 {
     if (!page_encoded_) {
         MONAD_ABORT("read_storage_page is only valid on a page-encoded TrieDb");
@@ -172,18 +172,35 @@ storage_page_t TrieDb::read_storage_page(
     else {
         storage_page_t result;
         if (cache_ && cache_->try_read_storage_page(
-                          addr, incarnation, page_key, result)) {
+                          addr, incarnation, page_key, result, ns)) {
             return result;
         }
-        auto const res = db_.find(
-            curr_root_,
-            concat(
-                prefix_,
-                STATE_NIBBLE,
-                NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                NibblesView{
-                    keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
-            block_number_);
+        auto const addr_hash = keccak256({addr.bytes, sizeof(addr.bytes)});
+        auto const page_hash =
+            keccak256({page_key.bytes, sizeof(page_key.bytes)});
+        auto const res = [&] {
+            if (ns.has_value()) {
+                uint8_t ns_bytes[sizeof(uint64_t)];
+                intx::be::store(ns_bytes, *ns);
+                return db_.find(
+                    curr_root_,
+                    concat(
+                        prefix_,
+                        NAMESPACE_STATE_NIBBLE,
+                        NibblesView{to_byte_string_view(ns_bytes)},
+                        NibblesView{addr_hash},
+                        NibblesView{page_hash}),
+                    block_number_);
+            }
+            return db_.find(
+                curr_root_,
+                concat(
+                    prefix_,
+                    STATE_NIBBLE,
+                    NibblesView{addr_hash},
+                    NibblesView{page_hash}),
+                block_number_);
+        }();
         if (res.has_error()) {
             stats_storage_no_value();
             return {};
@@ -283,7 +300,6 @@ NamespaceStateRoots TrieDb::commit_namespace_state_deltas(
     bytes32_t const &block_id, CommitBuilder &builder,
     NamespacedStateDeltas const &ns_state_deltas, uint64_t const block_number)
 {
-    MONAD_ASSERT(!is_page_encoded());
     if (ns_state_deltas.empty()) {
         return {};
     }

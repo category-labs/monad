@@ -18,6 +18,8 @@
 #include <category/core/config.hpp>
 
 #include <chrono>
+#include <cstdint>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -34,6 +36,9 @@ struct BlockMetrics
     /// Transactions that merged with a failed receipt (reverted or otherwise
     /// unsuccessful execution).
     uint32_t num_reverted{0};
+    /// Block-relative indices of the transactions counted in `num_dipped`,
+    /// in block order (merges are serialized in transaction order).
+    std::vector<uint32_t> dipped_tx_indices{};
     std::chrono::microseconds tx_exec_time{1};
 };
 

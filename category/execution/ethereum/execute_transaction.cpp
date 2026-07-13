@@ -471,8 +471,11 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             }
             auto const receipt = execute_final(state, result.value());
             block_metrics_.num_reverted += receipt.status == 0;
-            record_reserve_dip_metrics<traits>(
-                state, receipt.status == 1, block_metrics_);
+            if (record_reserve_dip_metrics<traits>(
+                    state, receipt.status == 1, block_metrics_)) {
+                block_metrics_.dipped_tx_indices.push_back(
+                    static_cast<uint32_t>(i_));
+            }
             block_state_.merge(state);
             return receipt;
         }
@@ -494,8 +497,11 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         }
         auto const receipt = execute_final(state, result.value());
         block_metrics_.num_reverted += receipt.status == 0;
-        record_reserve_dip_metrics<traits>(
-            state, receipt.status == 1, block_metrics_);
+        if (record_reserve_dip_metrics<traits>(
+                state, receipt.status == 1, block_metrics_)) {
+            block_metrics_.dipped_tx_indices.push_back(
+                static_cast<uint32_t>(i_));
+        }
         block_state_.merge(state);
         return receipt;
     }

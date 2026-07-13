@@ -38,8 +38,9 @@ bool revert_transaction_cached(State &)
 EXPLICIT_EVM_TRAITS(revert_transaction_cached);
 
 template <Traits traits>
-void record_reserve_dip_metrics(State const &, bool, BlockMetrics &)
+bool record_reserve_dip_metrics(State const &, bool, BlockMetrics &)
 {
+    return false;
 }
 
 EXPLICIT_EVM_TRAITS(record_reserve_dip_metrics);

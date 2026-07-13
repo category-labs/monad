@@ -54,10 +54,11 @@ void init_reserve_balance_context(
 /// for successful transactions only — whether the sender's allowed-dip
 /// exemption is what saved the transaction from a reserve-balance revert.
 /// Failed transactions never count as dips: they would have failed with or
-/// without the exemption. No-op for EVM traits and Monad revisions before
+/// without the exemption. Returns whether the transaction was counted as a
+/// dip. No-op returning false for EVM traits and Monad revisions before
 /// MONAD_FOUR, where the reserve is not enforced.
 template <Traits traits>
-void record_reserve_dip_metrics(
+bool record_reserve_dip_metrics(
     State const &state, bool tx_succeeded, BlockMetrics &metrics);
 
 MONAD_NAMESPACE_END

@@ -84,7 +84,7 @@ class State
         std::optional<uint256_t> const &, uint64_t, trace::StateTracer &,
         ChainContext<traits> const &);
     template <Traits traits>
-    friend void record_reserve_dip_metrics(State const &, bool, BlockMetrics &);
+    friend bool record_reserve_dip_metrics(State const &, bool, BlockMetrics &);
 
 public:
     OriginalAccountState &original_account_state(Address const &);

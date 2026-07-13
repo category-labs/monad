@@ -430,7 +430,7 @@ bool revert_transaction(
 EXPLICIT_MONAD_TRAITS(revert_transaction);
 
 template <Traits traits>
-void record_reserve_dip_metrics(
+bool record_reserve_dip_metrics(
     State const &state, bool const tx_succeeded, BlockMetrics &metrics)
 {
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {
@@ -441,8 +441,10 @@ void record_reserve_dip_metrics(
         // exemption, so only successful transactions count as dips.
         if (tx_succeeded && state.rb_.sender_dipped()) {
             ++metrics.num_dipped;
+            return true;
         }
     }
+    return false;
 }
 
 EXPLICIT_MONAD_TRAITS(record_reserve_dip_metrics);

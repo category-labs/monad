@@ -58,9 +58,11 @@
 #include <boost/outcome/try.hpp>
 
 #include <chrono>
+#include <cstdint>
 #include <deque>
 #include <filesystem>
 #include <optional>
+#include <string>
 #include <thread>
 #include <variant>
 #include <vector>
@@ -413,6 +415,21 @@ Result<BlockExecOutput> propose_block(
         db.print_stats(),
         vm.print_and_reset_block_counts(),
         vm.print_compiler_stats());
+
+    if (!block_metrics.dipped_tx_indices.empty()) {
+        std::string indices;
+        for (uint32_t const i : block_metrics.dipped_tx_indices) {
+            if (!indices.empty()) {
+                indices += ';';
+            }
+            indices += std::to_string(i);
+        }
+        LOG_INFO(
+            "__dip_txs,bl={},n={},idx={}",
+            block.header.number,
+            block_metrics.dipped_tx_indices.size(),
+            indices);
+    }
 
     return exec_output;
 }

@@ -294,8 +294,10 @@ void run_revert_transaction_test(
         EXPECT_EQ(should_revert_cached, should_revert)
             << std::bitset<64>{prevent_dip_bitset};
 
+        // The transaction succeeded iff the reserve check passed: this
+        // synthetic setup has no other failure modes.
         BlockMetrics metrics;
-        record_reserve_dip_metrics<traits>(state, metrics);
+        record_reserve_dip_metrics<traits>(state, !should_revert, metrics);
         if constexpr (traits::monad_rev() >= MONAD_FOUR) {
             bool const can_dip = prevent_dip_bitset == 0;
             // The sender dipped iff it was allowed to and its post-tx balance
@@ -309,6 +311,14 @@ void run_revert_transaction_test(
             EXPECT_EQ(metrics.num_can_dip, can_dip ? 1u : 0u)
                 << std::bitset<64>{prevent_dip_bitset};
             EXPECT_EQ(metrics.num_dipped, (can_dip && below_reserve) ? 1u : 0u)
+                << std::bitset<64>{prevent_dip_bitset};
+
+            // A failed transaction is never counted as a dip, though its
+            // sender's eligibility still counts.
+            BlockMetrics failed_metrics;
+            record_reserve_dip_metrics<traits>(state, false, failed_metrics);
+            EXPECT_EQ(failed_metrics.num_can_dip, metrics.num_can_dip);
+            EXPECT_EQ(failed_metrics.num_dipped, 0u)
                 << std::bitset<64>{prevent_dip_bitset};
         }
         else {

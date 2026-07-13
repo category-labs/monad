@@ -470,7 +470,9 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
                 return std::move(result.error());
             }
             auto const receipt = execute_final(state, result.value());
-            record_reserve_dip_metrics<traits>(state, block_metrics_);
+            block_metrics_.num_reverted += receipt.status == 0;
+            record_reserve_dip_metrics<traits>(
+                state, receipt.status == 1, block_metrics_);
             block_state_.merge(state);
             return receipt;
         }
@@ -491,7 +493,9 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             return std::move(result.error());
         }
         auto const receipt = execute_final(state, result.value());
-        record_reserve_dip_metrics<traits>(state, block_metrics_);
+        block_metrics_.num_reverted += receipt.status == 0;
+        record_reserve_dip_metrics<traits>(
+            state, receipt.status == 1, block_metrics_);
         block_state_.merge(state);
         return receipt;
     }

@@ -50,11 +50,14 @@ void init_reserve_balance_context(
     trace::StateTracer &state_tracer, ChainContext<traits> const &ctx);
 
 /// Fold this transaction's reserve-balance dip outcome into the block
-/// metrics: whether the sender was eligible to dip into its reserve, and
-/// whether the end-of-transaction reserve check reached its allowed-dip
-/// exemption for the sender. No-op for EVM traits and Monad revisions
-/// before MONAD_FOUR, where the reserve is not enforced.
+/// metrics: whether the sender was eligible to dip into its reserve, and —
+/// for successful transactions only — whether the sender's allowed-dip
+/// exemption is what saved the transaction from a reserve-balance revert.
+/// Failed transactions never count as dips: they would have failed with or
+/// without the exemption. No-op for EVM traits and Monad revisions before
+/// MONAD_FOUR, where the reserve is not enforced.
 template <Traits traits>
-void record_reserve_dip_metrics(State const &state, BlockMetrics &metrics);
+void record_reserve_dip_metrics(
+    State const &state, bool tx_succeeded, BlockMetrics &metrics);
 
 MONAD_NAMESPACE_END

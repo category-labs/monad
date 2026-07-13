@@ -132,32 +132,93 @@ namespace
         std::memcpy(evm64 + 16, raw48, 48);
     }
 
+#if defined(MONAD_ZKVM_SP1)
+    // EIP-2537 encodes the point at infinity as all-zero bytes, but SP1's
+    // zkcrypto bls12_381 codec signals infinity with the flag bit (byte 0,
+    // bit 6) and rejects an all-zero (0,0) as off-curve. Translate the raw
+    // G1/G2 point between the two forms: on input, flag an all-zero point; on
+    // output, an SP1 flagged-infinity result maps back to EVM all-zero.
+    void sp1_flag_infinity(uint8_t *raw, size_t n)
+    {
+        if (std::ranges::all_of(
+                std::span{raw, n}, [](auto b) { return b == 0; })) {
+            raw[0] = 0x40;
+        }
+    }
+
+    bool sp1_is_flagged_infinity(uint8_t const *raw, size_t n)
+    {
+        return raw[0] == 0x40 &&
+               std::ranges::all_of(
+                   std::span{raw + 1, n - 1}, [](auto b) { return b == 0; });
+    }
+#endif
+
     bool evm_g1_to_zkvm(uint8_t const *evm128, uint8_t *zkvm96)
     {
-        return evm_fp_to_raw(evm128, zkvm96) &&
-               evm_fp_to_raw(evm128 + 64, zkvm96 + 48);
+        if (!evm_fp_to_raw(evm128, zkvm96) ||
+            !evm_fp_to_raw(evm128 + 64, zkvm96 + 48)) {
+            return false;
+        }
+#if defined(MONAD_ZKVM_SP1)
+        sp1_flag_infinity(zkvm96, 96);
+#endif
+        return true;
     }
 
     void zkvm_g1_to_evm(uint8_t const *zkvm96, uint8_t *evm128)
     {
+#if defined(MONAD_ZKVM_SP1)
+        if (sp1_is_flagged_infinity(zkvm96, 96)) {
+            std::memset(evm128, 0, 128);
+            return;
+        }
+#endif
         raw_fp_to_evm(zkvm96, evm128);
         raw_fp_to_evm(zkvm96 + 48, evm128 + 64);
     }
 
     bool evm_g2_to_zkvm(uint8_t const *evm256, uint8_t *zkvm192)
     {
+#if defined(MONAD_ZKVM_SP1)
+        // SP1's zkcrypto bls12_381 decoder expects each Fp2 as c1 || c0, but
+        // EIP-2537 (and blst/ZisK) encode Fp2 as c0 || c1. Swap the two
+        // components of each of x and y when converting for SP1.
+        if (!evm_fp_to_raw(evm256 + 64, zkvm192) || // x.c1
+            !evm_fp_to_raw(evm256, zkvm192 + 48) || // x.c0
+            !evm_fp_to_raw(evm256 + 192, zkvm192 + 96) || // y.c1
+            !evm_fp_to_raw(evm256 + 128, zkvm192 + 144)) { // y.c0
+            return false;
+        }
+        sp1_flag_infinity(zkvm192, 192);
+        return true;
+#else
         return evm_fp_to_raw(evm256, zkvm192) &&
                evm_fp_to_raw(evm256 + 64, zkvm192 + 48) &&
                evm_fp_to_raw(evm256 + 128, zkvm192 + 96) &&
                evm_fp_to_raw(evm256 + 192, zkvm192 + 144);
+#endif
     }
 
     void zkvm_g2_to_evm(uint8_t const *zkvm192, uint8_t *evm256)
     {
+#if defined(MONAD_ZKVM_SP1)
+        if (sp1_is_flagged_infinity(zkvm192, 192)) {
+            std::memset(evm256, 0, 256);
+            return;
+        }
+        // SP1 emits each Fp2 as c1 || c0; swap back to EVM's c0 || c1 (mirror
+        // of evm_g2_to_zkvm).
+        raw_fp_to_evm(zkvm192 + 48, evm256); // x.c0
+        raw_fp_to_evm(zkvm192, evm256 + 64); // x.c1
+        raw_fp_to_evm(zkvm192 + 144, evm256 + 128); // y.c0
+        raw_fp_to_evm(zkvm192 + 96, evm256 + 192); // y.c1
+#else
         raw_fp_to_evm(zkvm192, evm256);
         raw_fp_to_evm(zkvm192 + 48, evm256 + 64);
         raw_fp_to_evm(zkvm192 + 96, evm256 + 128);
         raw_fp_to_evm(zkvm192 + 144, evm256 + 192);
+#endif
     }
 }
 
@@ -593,10 +654,18 @@ point_evaluation_impl(byte_string_view input, std::span<uint8_t, 64> const out)
     }
 
     zkvm_bls12_381_fp2 fp2;
+#if defined(MONAD_ZKVM_SP1)
+    // SP1's map_fp2_to_g2 expects Fp2 = c1 || c0 (see evm_g2_to_zkvm).
+    if (!evm_fp_to_raw(input.data() + 64, fp2.data) ||
+        !evm_fp_to_raw(input.data(), fp2.data + 48)) {
+        return {nullptr, 0};
+    }
+#else
     if (!evm_fp_to_raw(input.data(), fp2.data) ||
         !evm_fp_to_raw(input.data() + 64, fp2.data + 48)) {
         return PrecompileImplResult::failure();
     }
+#endif
 
     zkvm_bls12_381_g2_point result_point;
     if (zkvm_bls12_map_fp2_to_g2(&fp2, &result_point) != ZKVM_EOK) {

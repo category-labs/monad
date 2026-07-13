@@ -174,7 +174,8 @@ public:
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
 
     storage_page_t read_storage_page(
-        Address const &, Incarnation, bytes32_t const &page_key) override;
+        Address const &, Incarnation, bytes32_t const &page_key,
+        std::optional<uint64_t> const &ns = std::nullopt) override;
 
     vm::SharedIntercode read_code(bytes32_t const &code_hash) override;
 

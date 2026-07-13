@@ -75,7 +75,8 @@ public:
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
     virtual storage_page_t read_storage_page(
-        Address const &, Incarnation, bytes32_t const &page_key) override;
+        Address const &, Incarnation, bytes32_t const &page_key,
+        std::optional<uint64_t> const &ns = std::nullopt) override;
     virtual vm::SharedIntercode read_code(bytes32_t const &) override;
     virtual void set_block_and_prefix(
         uint64_t block_number,

@@ -82,15 +82,16 @@ public:
 
     bool try_read_storage_page(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, storage_page_t &result)
+        bytes32_t const &key, storage_page_t &result,
+        std::optional<uint64_t> const &ns = std::nullopt)
     {
         auto const res =
-            proposals_.try_read_storage(address, incarnation, key, result);
+            proposals_.try_read_storage(address, incarnation, key, result, ns);
         if (res.found) {
             return true;
         }
         if (!res.truncated) {
-            StorageKey const skey{address, incarnation, key};
+            StorageKey const skey{address, incarnation, key, ns};
             StorageCache::ConstAccessor acc{};
             if (storage_.find(acc, skey)) {
                 result = acc->second.value_;

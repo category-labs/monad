@@ -51,7 +51,8 @@ struct Db
     read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
 
     virtual storage_page_t read_storage_page(
-        Address const &, Incarnation, bytes32_t const &page_key) = 0;
+        Address const &, Incarnation, bytes32_t const &page_key,
+        std::optional<uint64_t> const &ns = std::nullopt) = 0;
 
     virtual vm::SharedIntercode read_code(bytes32_t const &) = 0;
 

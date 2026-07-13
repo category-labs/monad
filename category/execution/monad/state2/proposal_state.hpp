@@ -93,11 +93,20 @@ public:
 
     bool try_read_storage(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, storage_page_t &result) const
+        bytes32_t const &key, storage_page_t &result,
+        std::optional<uint64_t> const &ns = std::nullopt) const
     {
-        AccountKey const account_key{address, std::nullopt};
-        auto const acct_it = post_state_.accounts.find(account_key);
-        if (acct_it != post_state_.accounts.end()) {
+        ProposalPostState const *state = &post_state_;
+        if (ns.has_value()) {
+            auto const it = ns_post_state_.find(*ns);
+            if (it == ns_post_state_.end()) {
+                return false;
+            }
+            state = &it->second;
+        }
+        AccountKey const account_key{address, ns};
+        auto const acct_it = state->accounts.find(account_key);
+        if (acct_it != state->accounts.end()) {
             auto const &acct = acct_it->second;
             if (!acct.has_value() || acct->incarnation != incarnation) {
                 // Account deleted or incarnation cleared in this proposal:
@@ -106,9 +115,9 @@ public:
                 return true;
             }
         }
-        StorageKey const sk{address, incarnation, key};
-        auto const it = post_state_.storage.find(sk);
-        if (it != post_state_.storage.end()) {
+        StorageKey const sk{address, incarnation, key, ns};
+        auto const it = state->storage.find(sk);
+        if (it != state->storage.end()) {
             result = it->second;
             return true;
         }
@@ -161,12 +170,13 @@ public:
 
     TryReadResult try_read_storage(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, storage_page_t &result) const
+        bytes32_t const &key, storage_page_t &result,
+        std::optional<uint64_t> const &ns = std::nullopt) const
     {
-        auto const fn =
-            [&address, incarnation, &key, &result](ProposalState const &ps) {
-                return ps.try_read_storage(address, incarnation, key, result);
-            };
+        auto const fn = [&address, incarnation, &key, &result, &ns](
+                            ProposalState const &ps) {
+            return ps.try_read_storage(address, incarnation, key, result, ns);
+        };
         return try_read(fn);
     }
 

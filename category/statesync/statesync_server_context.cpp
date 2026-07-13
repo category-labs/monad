@@ -238,9 +238,9 @@ bytes32_t monad_statesync_server_context::read_storage(
 
 storage_page_t monad_statesync_server_context::read_storage_page(
     Address const &addr, Incarnation const incarnation,
-    bytes32_t const &page_key)
+    bytes32_t const &page_key, std::optional<uint64_t> const &ns)
 {
-    return rw.read_storage_page(addr, incarnation, page_key);
+    return rw.read_storage_page(addr, incarnation, page_key, ns);
 }
 
 monad::vm::SharedIntercode

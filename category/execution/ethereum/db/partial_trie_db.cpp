@@ -761,7 +761,8 @@ bytes32_t PartialTrieDb::read_storage(
 }
 
 storage_page_t PartialTrieDb::read_storage_page(
-    Address const &, Incarnation, bytes32_t const &)
+    Address const &, Incarnation, bytes32_t const &,
+    std::optional<uint64_t> const &)
 {
     MONAD_ABORT("PartialTrieDb read_storage_page is currently not supported");
 }

@@ -31,6 +31,8 @@
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
+#include <category/execution/monad/db/page_commit_builder.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -58,6 +60,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -249,11 +252,11 @@ namespace
         TrieDb &tdb, StateDeltas const &state_deltas,
         uint64_t const block_number, bytes32_t const &block_id)
     {
-        CommitBuilder builder(block_number);
-        builder.add_state_deltas(state_deltas);
+        auto builder = make_commit_builder(block_number, tdb);
+        builder->add_state_deltas(state_deltas);
         BlockHeader header{.number = block_number};
         tdb.commit(
-            block_id, builder, header, state_deltas, [&](BlockHeader &h) {
+            block_id, *builder, header, state_deltas, [&](BlockHeader &h) {
                 h.state_root = tdb.state_root();
             });
         return tdb.state_root();
@@ -263,10 +266,19 @@ namespace
         TrieDb &tdb, NamespacedStateDeltas const &ns_deltas,
         uint64_t const block_number, bytes32_t const &block_id)
     {
-        CommitBuilder builder(block_number);
-        builder.add_namespace_state_deltas(ns_deltas);
+        auto builder = make_commit_builder(block_number, tdb);
+        builder->add_namespace_state_deltas(ns_deltas);
         return tdb.commit_namespace_state_deltas(
-            block_id, builder, ns_deltas, block_number);
+            block_id, *builder, ns_deltas, block_number);
+    }
+
+    std::unique_ptr<mpt::StateMachine>
+    make_expected_machine(bool const page_encoded)
+    {
+        if (page_encoded) {
+            return std::make_unique<MonadInMemoryMachine>();
+        }
+        return std::make_unique<InMemoryMachine>();
     }
 
     void expect_namespace_root_node(
@@ -300,21 +312,35 @@ namespace
         MONAD_ASSERT(it != roots.end());
         return it->second;
     }
+
+    template <typename Machine>
+    mpt::Db make_namespace_db()
+    {
+        if constexpr (std::is_base_of_v<OnDiskMachine, Machine>) {
+            return mpt::Db{std::make_unique<Machine>(), mpt::OnDiskDbConfig{}};
+        }
+        else {
+            return mpt::Db{std::make_unique<Machine>()};
+        }
+    }
 }
 
-template <typename TDB>
-struct NamespaceWritePathTest : public TDB
+template <typename Machine>
+struct NamespaceWritePathTest : public ::testing::Test
 {
+    mpt::Db db{make_namespace_db<Machine>()};
     TrieDb tdb;
 
     NamespaceWritePathTest()
-        : tdb{this->db}
+        : tdb{db}
     {
-        seed_finalized_block_zero(this->db, tdb);
+        seed_finalized_block_zero(db, tdb);
     }
 };
 
-TYPED_TEST_SUITE(NamespaceWritePathTest, DBTypes);
+using NamespaceMachineTypes = ::testing::Types<
+    InMemoryMachine, OnDiskMachine, MonadInMemoryMachine, MonadOnDiskMachine>;
+TYPED_TEST_SUITE(NamespaceWritePathTest, NamespaceMachineTypes);
 
 TYPED_TEST(NamespaceWritePathTest, namespace_raw_trie_insert)
 {
@@ -393,7 +419,7 @@ TYPED_TEST(
         .account = {std::nullopt, Account{.balance = 42}}, .storage = {}};
     add_state_delta(inner, ADDR_A, delta);
 
-    mpt::Db expected_db{std::make_unique<InMemoryMachine>()};
+    mpt::Db expected_db{make_expected_machine(this->tdb.is_page_encoded())};
     TrieDb expected_tdb{expected_db};
     auto const expected_root =
         commit_plain_state_root(expected_tdb, inner, 1, bytes32_t{1});
@@ -430,7 +456,7 @@ TYPED_TEST(
         .storage = {{key1, {bytes32_t{}, value1}}}};
     add_state_delta(inner, ADDR_A, delta);
 
-    mpt::Db expected_db{std::make_unique<InMemoryMachine>()};
+    mpt::Db expected_db{make_expected_machine(this->tdb.is_page_encoded())};
     TrieDb expected_tdb{expected_db};
     auto const expected_root =
         commit_plain_state_root(expected_tdb, inner, 1, bytes32_t{1});
@@ -447,14 +473,25 @@ TYPED_TEST(
     EXPECT_EQ(roots[0].second, expected_root);
     expect_namespace_root_node(this->db, this->tdb, ns, expected_root, 1);
 
+    auto const storage_key =
+        this->tdb.is_page_encoded() ? compute_page_key(key1) : key1;
     auto const storage_res = this->db.find(
-        this->tdb.get_root(), namespace_storage_path(ns, ADDR_A, key1), 1);
+        this->tdb.get_root(),
+        namespace_storage_path(ns, ADDR_A, storage_key),
+        1);
     ASSERT_TRUE(storage_res.has_value());
     auto encoded_storage = storage_res.value().node->value();
-    auto const decoded = decode_storage_db(encoded_storage);
+    auto const decoded = decode_storage_db_raw(encoded_storage);
     ASSERT_TRUE(decoded.has_value());
-    EXPECT_EQ(decoded.value().first, key1);
-    EXPECT_EQ(decoded.value().second, value1);
+    EXPECT_EQ(to_bytes(decoded.value().first), storage_key);
+    if (this->tdb.is_page_encoded()) {
+        auto const page = decode_storage_page(decoded.value().second);
+        ASSERT_TRUE(page.has_value());
+        EXPECT_EQ(page.value()[compute_slot_offset(key1)], value1);
+    }
+    else {
+        EXPECT_EQ(to_bytes(decoded.value().second), value1);
+    }
 }
 
 TYPED_TEST(NamespaceWritePathTest, namespace_commit_multiple_namespaces)
@@ -468,14 +505,14 @@ TYPED_TEST(NamespaceWritePathTest, namespace_commit_multiple_namespaces)
 
     StateDeltas inner1;
     add_state_delta(inner1, ADDR_A, delta1);
-    mpt::Db expected_db1{std::make_unique<InMemoryMachine>()};
+    mpt::Db expected_db1{make_expected_machine(this->tdb.is_page_encoded())};
     TrieDb expected_tdb1{expected_db1};
     auto const expected_root1 =
         commit_plain_state_root(expected_tdb1, inner1, 1, bytes32_t{1});
 
     StateDeltas inner2;
     add_state_delta(inner2, ADDR_B, delta2);
-    mpt::Db expected_db2{std::make_unique<InMemoryMachine>()};
+    mpt::Db expected_db2{make_expected_machine(this->tdb.is_page_encoded())};
     TrieDb expected_tdb2{expected_db2};
     auto const expected_root2 =
         commit_plain_state_root(expected_tdb2, inner2, 1, bytes32_t{1});
@@ -500,7 +537,7 @@ TYPED_TEST(NamespaceWritePathTest, namespace_commit_multiple_namespaces)
 TYPED_TEST(NamespaceWritePathTest, namespace_commit_root_changes_across_writes)
 {
     constexpr uint64_t ns{0x4444444444444444ULL};
-    mpt::Db expected_db{std::make_unique<InMemoryMachine>()};
+    mpt::Db expected_db{make_expected_machine(this->tdb.is_page_encoded())};
     TrieDb expected_tdb{expected_db};
 
     StateDeltas inner_1;
@@ -539,34 +576,72 @@ TYPED_TEST(NamespaceWritePathTest, namespace_commit_root_changes_across_writes)
     expect_namespace_root_node(this->db, this->tdb, ns, expected_root_2, 2);
 }
 
-TEST_F(OnDiskTrieDbFixture, namespace_commit_uses_proposal_prefix_and_finalizes)
+TYPED_TEST(
+    NamespaceWritePathTest,
+    namespace_commit_preserves_unchanged_slots_in_existing_page)
 {
-    constexpr uint64_t ns{0x5353535353535353ULL};
-    bytes32_t const block_id{1};
-    TrieDb tdb{this->db};
-    seed_finalized_block_zero(this->db, tdb);
+    if (!this->tdb.is_page_encoded()) {
+        GTEST_SKIP() << "test requires page-encoded storage";
+    }
 
-    StateDeltas inner;
-    StateDelta const delta{
-        .account = {std::nullopt, Account{.balance = 333}}, .storage = {}};
-    add_state_delta(inner, ADDR_A, delta);
-    mpt::Db expected_db{std::make_unique<InMemoryMachine>()};
+    // A second write to a namespace page must load the existing page from the
+    // namespace trie. Seed two slots on one page, update one, and verify the
+    // untouched slot is preserved.
+    constexpr uint64_t ns{0x5454545454545454ULL};
+    auto const adjacent_key = compute_slot_key(
+        compute_page_key(key1),
+        static_cast<uint8_t>(compute_slot_offset(key1) + 1));
+    bytes32_t const updated_value{9};
+    Account const account{.balance = 100};
+
+    mpt::Db expected_db{std::make_unique<MonadInMemoryMachine>()};
     TrieDb expected_tdb{expected_db};
-    auto const expected_root =
-        commit_plain_state_root(expected_tdb, inner, 1, block_id);
 
-    NamespacedStateDeltas ns_deltas;
-    add_namespace_state_delta(ns_deltas, ns, ADDR_A, delta);
-    auto const roots = commit_namespace_state(tdb, ns_deltas, 1, block_id);
+    StateDelta const initial_delta{
+        .account = {std::nullopt, account},
+        .storage = {
+            {key1, {bytes32_t{}, value1}},
+            {adjacent_key, {bytes32_t{}, value2}}}};
+    StateDeltas initial_state;
+    add_state_delta(initial_state, ADDR_A, initial_delta);
+    commit_plain_state_root(expected_tdb, initial_state, 1, bytes32_t{1});
+
+    NamespacedStateDeltas initial_ns_state;
+    add_namespace_state_delta(initial_ns_state, ns, ADDR_A, initial_delta);
+    commit_namespace_state(this->tdb, initial_ns_state, 1, bytes32_t{1});
+    this->tdb.finalize(1, bytes32_t{1});
+    this->tdb.set_block_and_prefix(1);
+
+    StateDelta const update_delta{
+        .account = {account, account},
+        .storage = {{key1, {value1, updated_value}}}};
+    StateDeltas update_state;
+    add_state_delta(update_state, ADDR_A, update_delta);
+    auto const expected_root =
+        commit_plain_state_root(expected_tdb, update_state, 2, bytes32_t{2});
+
+    NamespacedStateDeltas update_ns_state;
+    add_namespace_state_delta(update_ns_state, ns, ADDR_A, update_delta);
+    auto const roots =
+        commit_namespace_state(this->tdb, update_ns_state, 2, bytes32_t{2});
+    this->tdb.finalize(2, bytes32_t{2});
+    this->tdb.set_block_and_prefix(2);
 
     ASSERT_EQ(roots.size(), 1);
     EXPECT_EQ(roots[0].second, expected_root);
-    expect_namespace_root_node(
-        this->db, tdb, proposal_prefix(block_id), ns, expected_root, 1);
 
-    tdb.finalize(1, block_id);
-    tdb.set_block_and_prefix(1);
-    expect_namespace_root_node(this->db, tdb, ns, expected_root, 1);
+    auto const page_key = compute_page_key(key1);
+    auto const storage_res = this->db.find(
+        this->tdb.get_root(), namespace_storage_path(ns, ADDR_A, page_key), 2);
+    ASSERT_TRUE(storage_res.has_value());
+    auto encoded_storage = storage_res.value().node->value();
+    auto const decoded = decode_storage_db_raw(encoded_storage);
+    ASSERT_TRUE(decoded.has_value());
+    ASSERT_EQ(to_bytes(decoded.value().first), page_key);
+    auto const page = decode_storage_page(decoded.value().second);
+    ASSERT_TRUE(page.has_value());
+    EXPECT_EQ(page.value()[compute_slot_offset(key1)], updated_value);
+    EXPECT_EQ(page.value()[compute_slot_offset(adjacent_key)], value2);
 }
 
 TEST(DBTest, read_only)

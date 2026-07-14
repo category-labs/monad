@@ -36,6 +36,7 @@
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/runtime/taint.hpp>
 #include <category/vm/vm.hpp>
 
 #include <ankerl/unordered_dense.h>
@@ -267,6 +268,15 @@ bool BlockState::can_merge(State &state) const
                             address, key, it2->second.second);
                         continue;
                     }
+                    // Conflict-slot LFU (serial here): frequency counts only
+                    // FAILED relaxations, so slots that are being fixed
+                    // successfully neither accrue counts nor tick the decay
+                    // clock; if one decays out it re-enters via a single
+                    // retry. Untracked slots always land here (no taint
+                    // data), which is how new hot slots bootstrap in.
+                    if (auto *const lfu = vm::runtime::taint_slot_lfu()) {
+                        lfu->bump(address, key);
+                    }
                     ++mismatches;
                     if constexpr (BlockState::CONFLICT_DIAGNOSTICS) {
                         LOG_INFO(
@@ -283,6 +293,9 @@ bool BlockState::can_merge(State &state) const
             }
             else {
                 if (value) {
+                    if (auto *const lfu = vm::runtime::taint_slot_lfu()) {
+                        lfu->bump(address, key);
+                    }
                     ++mismatches;
                     if constexpr (BlockState::CONFLICT_DIAGNOSTICS) {
                         LOG_INFO(

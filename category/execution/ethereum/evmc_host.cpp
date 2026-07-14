@@ -53,8 +53,10 @@ evmc::bytes32 EvmcHostBase::get_storage(
     evmc::address const &address, evmc::bytes32 const &key) const noexcept
 {
     try {
-        if (auto *const reg = state_.slot_taint_registry()) {
-            reg->note_load(address, key);
+        if (vm::runtime::taint_slot_tracked(address, key)) {
+            if (auto *const reg = state_.slot_taint_registry()) {
+                reg->note_load(address, key);
+            }
         }
         return state_.get_storage(address, key);
     }
@@ -69,8 +71,10 @@ evmc_storage_status EvmcHostBase::set_storage(
     evmc::bytes32 const &value) noexcept
 {
     try {
-        if (auto *const reg = state_.slot_taint_registry()) {
-            reg->note_store(address, key);
+        if (vm::runtime::taint_slot_tracked(address, key)) {
+            if (auto *const reg = state_.slot_taint_registry()) {
+                reg->note_store(address, key);
+            }
         }
         return state_.set_storage(address, key, value);
     }

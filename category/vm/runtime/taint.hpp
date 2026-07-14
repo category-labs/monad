@@ -30,6 +30,7 @@
 #include <evmc/evmc.hpp>
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <deque>
@@ -39,6 +40,169 @@
 
 namespace monad::vm::runtime
 {
+    // LFU-with-decay filter over conflict slots (MONAD_TAINT_LFU=<capacity>,
+    // unset/0 disables => track every slot). Populated at the serialized
+    // merge point on failed relaxations; a slot is tracked once it has
+    // recently failed min_track_ times, so the taint machinery ignores the
+    // cold tail entirely. Counts halve every decay_every_ bumps so stale
+    // hot slots age out (see MONAD_TAINT_LFU_MIN / MONAD_TAINT_LFU_DECAY).
+    //
+    // Concurrency: bump()/decay() run only at the serial merge point;
+    // tracked() is called from execution threads with relaxed atomics. A
+    // racy or mid-txn membership flip can only split a slot's seen/total
+    // coverage counts, which the fence turns into "not fixable" -- never an
+    // unsound fix.
+    class SlotLfu
+    {
+        struct Entry
+        {
+            std::atomic<uint64_t> key{0}; // slot hash; 0 = empty
+            std::atomic<uint32_t> count{0};
+        };
+
+        std::vector<Entry> table_;
+        uint64_t mask_;
+        uint64_t bumps_{0};
+
+        static constexpr uint32_t PROBES = 4;
+        uint32_t const min_track_;
+        uint64_t const decay_every_;
+
+        static uint64_t
+        hash(evmc::address const &addr, evmc::bytes32 const &key)
+        {
+            uint64_t h = 1469598103934665603ull;
+            auto const mix = [&h](uint8_t const *const p, size_t const n) {
+                for (size_t i = 0; i < n; ++i) {
+                    h ^= p[i];
+                    h *= 1099511628211ull;
+                }
+            };
+            mix(addr.bytes, sizeof(addr.bytes));
+            mix(key.bytes, sizeof(key.bytes));
+            return h == 0 ? 1 : h;
+        }
+
+    public:
+        explicit SlotLfu(
+            size_t const capacity, uint32_t const min_track,
+            uint64_t const decay_every)
+            : min_track_{min_track}
+            , decay_every_{decay_every}
+        {
+            size_t cap = 64;
+            while (cap < capacity) {
+                cap <<= 1;
+            }
+            table_ = std::vector<Entry>(cap);
+            mask_ = cap - 1;
+        }
+
+        bool
+        tracked(evmc::address const &addr, evmc::bytes32 const &key) const
+        {
+            uint64_t const h = hash(addr, key);
+            for (uint32_t p = 0; p < PROBES; ++p) {
+                Entry const &e = table_[(h + p) & mask_];
+                if (e.key.load(std::memory_order_relaxed) == h) {
+                    return e.count.load(std::memory_order_relaxed) >=
+                           min_track_;
+                }
+            }
+            return false;
+        }
+
+        // Serial merge point only.
+        void bump(evmc::address const &addr, evmc::bytes32 const &key)
+        {
+            uint64_t const h = hash(addr, key);
+            size_t victim = h & mask_;
+            uint32_t victim_count = UINT32_MAX;
+            bool placed = false;
+            for (uint32_t p = 0; p < PROBES; ++p) {
+                size_t const idx = (h + p) & mask_;
+                uint64_t const k = table_[idx].key.load(
+                    std::memory_order_relaxed);
+                if (k == h) {
+                    table_[idx].count.fetch_add(1, std::memory_order_relaxed);
+                    placed = true;
+                    break;
+                }
+                uint32_t const c =
+                    k == 0 ? 0
+                           : table_[idx].count.load(std::memory_order_relaxed);
+                if (c < victim_count) {
+                    victim_count = c;
+                    victim = idx;
+                }
+            }
+            if (!placed) {
+                if (victim_count == 0) {
+                    // empty or fully decayed entry: admit the newcomer
+                    table_[victim].count.store(1, std::memory_order_relaxed);
+                    table_[victim].key.store(h, std::memory_order_relaxed);
+                }
+                else {
+                    // classic frequency admission: newcomers erode the
+                    // coldest resident and are admitted once it hits zero
+                    table_[victim].count.fetch_sub(
+                        1, std::memory_order_relaxed);
+                }
+            }
+            if (++bumps_ % decay_every_ == 0) {
+                for (Entry &e : table_) {
+                    uint32_t const c = e.count.load(std::memory_order_relaxed);
+                    if (c != 0) {
+                        e.count.store(c / 2, std::memory_order_relaxed);
+                    }
+                }
+            }
+        }
+    };
+
+    // Process-lifetime singleton, configured once from the environment.
+    inline SlotLfu *taint_slot_lfu()
+    {
+        static SlotLfu *const lfu = []() -> SlotLfu * {
+            char const *const env = std::getenv("MONAD_TAINT_LFU");
+            if (env == nullptr) {
+                return nullptr;
+            }
+            unsigned long const cap = std::strtoul(env, nullptr, 10);
+            if (cap == 0) {
+                return nullptr;
+            }
+            // MONAD_TAINT_LFU_MIN: failures before a slot is tracked
+            // (default 2). MONAD_TAINT_LFU_DECAY: bumps between halvings
+            // (default 4096).
+            uint32_t min_track = 2;
+            if (char const *const e = std::getenv("MONAD_TAINT_LFU_MIN")) {
+                if (unsigned long const v = std::strtoul(e, nullptr, 10);
+                    v > 0) {
+                    min_track = static_cast<uint32_t>(v);
+                }
+            }
+            uint64_t decay_every = 4096;
+            if (char const *const e = std::getenv("MONAD_TAINT_LFU_DECAY")) {
+                if (unsigned long const v = std::strtoul(e, nullptr, 10);
+                    v > 0) {
+                    decay_every = v;
+                }
+            }
+            return new SlotLfu{
+                cap, min_track, decay_every}; // process-lifetime
+        }();
+        return lfu;
+    }
+
+    // nullptr LFU means "track every slot" (the universal default).
+    inline bool
+    taint_slot_tracked(evmc::address const &addr, evmc::bytes32 const &key)
+    {
+        SlotLfu const *const lfu = taint_slot_lfu();
+        return lfu == nullptr || lfu->tracked(addr, key);
+    }
+
     // A comparison observed on a tainted value: re-evaluated at merge time
     // against the actual base; the outcome must not change. For tainted
     // operands, lhs/rhs hold the linear offset vs the slot's txn-start value;
@@ -160,6 +324,11 @@ namespace monad::vm::runtime
         // SLOAD of (addr, key).
         uint32_t on_sload(evmc::address const &addr, evmc::bytes32 const &key)
         {
+            if (!taint_slot_tracked(addr, key)) {
+                // cold slot under the LFU filter: no tag, no registry entry
+                // (the coverage pings skip it with the same predicate)
+                return 0;
+            }
             auto &s = slot(addr, key);
             ++s.loads_seen;
             if (s.revoked) {
@@ -179,6 +348,14 @@ namespace monad::vm::runtime
         {
             if (key_tag != 0) {
                 revoke(key_tag);
+            }
+            if (!taint_slot_tracked(addr, key)) {
+                // untracked target slot: a tainted value flowing into it is
+                // still a cross-slot leak for the value's origin
+                if (value_tag != 0) {
+                    revoke(value_tag);
+                }
+                return;
             }
             auto &s = slot(addr, key);
             ++s.stores_seen;

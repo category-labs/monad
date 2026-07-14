@@ -43,6 +43,15 @@ int triedb_read(
 // is an encoded page; otherwise storage is slot-encoded.
 bool triedb_is_page_encoded(TriedbRoInner *);
 
+// Dual-DB migration phase of the on-disk triedb, derived from the primary
+// timeline's state-machine kind and secondary-timeline presence (the same
+// pair monad-mpt reports). Read racily from the mmap'd metadata; safe on a
+// read-only handle while the writer is live.
+//   0 = legacy        (primary ethereum, no secondary)
+//   1 = dual-timeline (primary ethereum, secondary active — migrating)
+//   2 = page-encoded  (primary monad — migration complete)
+uint8_t triedb_migration_phase(TriedbRoInner *);
+
 // Compute the storage page key for a 32-byte slot key on a page-encoded db:
 // page_key = slot >> 7. Writes the 32-byte big-endian page key (the key the
 // storage trie is looked up by) to out_page_key.

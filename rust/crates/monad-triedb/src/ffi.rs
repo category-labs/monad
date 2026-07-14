@@ -23,8 +23,8 @@ pub(crate) use self::bindings::{
     triedb_earliest_version, triedb_finalize, triedb_free_valset, triedb_is_page_encoded,
     triedb_latest_finalized_version, triedb_latest_proposed_block_id,
     triedb_latest_proposed_version, triedb_latest_verified_version, triedb_latest_voted_block_id,
-    triedb_latest_voted_version, triedb_open, triedb_poll, triedb_read, triedb_read_valset,
-    triedb_traverse, TriedbRoInner,
+    triedb_latest_voted_version, triedb_migration_phase, triedb_open, triedb_poll, triedb_read,
+    triedb_read_valset, triedb_traverse, TriedbRoInner,
 };
 pub use self::bindings::{validator_data, validator_set};
 

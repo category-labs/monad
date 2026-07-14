@@ -449,6 +449,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     add_library(${_guest_target} STATIC
         "${CMAKE_CURRENT_SOURCE_DIR}/ffi.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/execute_block_zkvm.cpp"
+        # Precompile golden-vector test entry (monad_zkvm_run_precompile_tests).
+        # Pulled into the archive so a test binary can link it; dead-stripped
+        # from the witness binary, which references only the witness entry.
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/precompile_tests/precompile_test.cpp"
         "${MONAD_ROOT}/category/vm/memory_pool.cpp"
         $<TARGET_OBJECTS:monad-core>
         $<TARGET_OBJECTS:monad-zkvm-core>
@@ -483,5 +487,16 @@ else()
     )
     monad_compile_options(monad-zkvm-x86-test-runner)
     target_link_libraries(monad-zkvm-x86-test-runner PRIVATE monad_execution)
+
+    # Precompile golden-vector test runner: same x86 driver, but its entry is
+    # the precompile-vector harness instead of the witness executor.
+    add_executable(monad-zkvm-x86-precompile-test
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/precompile_tests/precompile_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/x86_test_runner.cpp"
+    )
+    monad_compile_options(monad-zkvm-x86-precompile-test)
+    target_compile_definitions(monad-zkvm-x86-precompile-test PRIVATE
+        MONAD_ZKVM_X86_ENTRY=monad_zkvm_run_precompile_tests)
+    target_link_libraries(monad-zkvm-x86-precompile-test PRIVATE monad_execution)
 
 endif()

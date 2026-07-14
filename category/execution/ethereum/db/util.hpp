@@ -205,6 +205,10 @@ Result<byte_string_view> decode_storage_db_ignore_key(byte_string_view &);
 storage_page_t
 decode_storage_leaf_to_page(byte_string_view encoded, bool page_encoded);
 
+// Decode a page-encoded storage leaf (an encode_storage_page_db value) into its
+// page key and page; fails on a malformed leaf (including trailing bytes).
+Result<DecodedStoragePage> decode_storage_page_leaf(byte_string_view leaf);
+
 struct AccountLeafProcessor
 {
     static byte_string process(mpt::Node const &node);

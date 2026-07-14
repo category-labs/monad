@@ -773,6 +773,16 @@ decode_storage_leaf_to_page(byte_string_view encoded, bool const page_encoded)
     return page.value();
 }
 
+Result<DecodedStoragePage> decode_storage_page_leaf(byte_string_view leaf)
+{
+    BOOST_OUTCOME_TRY(auto const raw, decode_storage_db_raw(leaf));
+    if (!leaf.empty()) {
+        return rlp::DecodeError::InputTooLong;
+    }
+    BOOST_OUTCOME_TRY(auto page, decode_storage_page(raw.second));
+    return DecodedStoragePage{to_bytes(raw.first), std::move(page)};
+}
+
 byte_string AccountLeafProcessor::process(mpt::Node const &node)
 {
     MONAD_ASSERT(node.has_value());

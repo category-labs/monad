@@ -284,13 +284,12 @@ byte_string encode_storage_page(storage_page_t const &page)
 {
     byte_string encoded;
     encoded.reserve(page.size() * 34);
-    constexpr uint8_t SLOTS = static_cast<uint8_t>(storage_page_t::SLOTS);
-    for (uint8_t i = 0; i < SLOTS; ++i) {
-        bytes32_t const &value = page[i];
-        if (value != bytes32_t{}) {
-            encoded.push_back(i);
-            encoded += rlp::encode_bytes32_compact(value);
-        }
+    auto const values = page.values();
+    size_t dense = 0;
+    for (auto bits = page.bitmap(); bits != 0; bits &= bits - 1) {
+        encoded.push_back(lowest_offset(bits));
+        encoded += rlp::encode_bytes32_compact(values[dense]);
+        ++dense;
     }
     return encoded;
 }

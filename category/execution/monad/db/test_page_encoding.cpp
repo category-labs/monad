@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/rlp/decode_error.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
 #include <gtest/gtest.h>
@@ -133,4 +134,32 @@ TEST(PageEncoding, decode_rejects_truncated_pair)
     auto const result = decode_storage_page(enc);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.assume_error(), rlp::DecodeError::InputTooShort);
+}
+
+TEST(PageEncoding, decode_storage_page_leaf_roundtrip)
+{
+    constexpr bytes32_t page_key{uint64_t{0xabcd}};
+    storage_page_t page{};
+    page.set(0, bytes32_t{uint64_t{0x11}});
+    page.set(64, bytes32_t{uint64_t{0x22}});
+    page.set(127, bytes32_t{uint64_t{0x33}});
+
+    auto const leaf = encode_storage_page_db(page_key, page);
+    auto const decoded = decode_storage_page_leaf(byte_string_view{leaf});
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded.value().page_key, page_key);
+    EXPECT_EQ(decoded.value().page, page);
+}
+
+TEST(PageEncoding, decode_storage_page_leaf_rejects_trailing_bytes)
+{
+    constexpr bytes32_t page_key{uint64_t{0xabcd}};
+    storage_page_t page{};
+    page.set(3, bytes32_t{uint64_t{0x44}});
+
+    auto leaf = encode_storage_page_db(page_key, page);
+    leaf.push_back(0x00); // trailing byte after the RLP list
+    auto const decoded = decode_storage_page_leaf(byte_string_view{leaf});
+    ASSERT_TRUE(decoded.has_error());
+    EXPECT_EQ(decoded.assume_error(), rlp::DecodeError::InputTooLong);
 }

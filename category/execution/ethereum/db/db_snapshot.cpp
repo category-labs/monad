@@ -413,23 +413,15 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
                             user) == entry.size());
                 };
                 if (page_encoded) {
-                    // Source db is page-encoded: the storage leaf is
-                    // encode_storage_page_db(page_key, page). Expand it into
+                    // Source db is page-encoded: expand the storage leaf into
                     // one slot-encoded entry per non-zero slot so the dumped
                     // snapshot stays slot-granular and loads unchanged.
-                    byte_string_view enc{val};
-                    auto const raw = decode_storage_db_raw(enc);
-                    MONAD_ASSERT(raw.has_value());
-                    bytes32_t const page_key = to_bytes(raw.value().first);
-                    auto const page = decode_storage_page(raw.value().second);
-                    MONAD_ASSERT(page.has_value());
-                    for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
-                        bytes32_t const slot_val = page.value()[i];
-                        if (slot_val == bytes32_t{}) {
-                            continue;
-                        }
-                        emit_slot(encode_storage_db(
-                            compute_slot_key(page_key, i), slot_val));
+                    auto const decoded =
+                        decode_storage_page_leaf(byte_string_view{val});
+                    MONAD_ASSERT(decoded.has_value());
+                    for (auto const [slot_key, slot_val] :
+                         decoded.value().slots()) {
+                        emit_slot(encode_storage_db(slot_key, slot_val));
                     }
                 }
                 else {

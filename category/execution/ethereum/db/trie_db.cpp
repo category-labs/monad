@@ -504,27 +504,17 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
         {
             MONAD_ASSERT(node.has_value());
 
-            auto encoded_storage = node.value();
-            auto raw_res = decode_storage_db_raw(encoded_storage);
-            MONAD_ASSERT(raw_res.has_value());
-
             auto const acct_key = fmt::format(
                 "{}", NibblesView{path}.substr(0, KECCAK256_SIZE * 2));
 
             if (db.is_page_encoded()) {
-                // Page-encoded leaf: first element of the RLP list is the
-                // page_key (compact), second is the encoded page bytes.
-                // Fan out one JSON entry per populated slot, keyed by
-                // keccak256(slot_key) so the output matches a slot dump.
-                bytes32_t const page_key = to_bytes(raw_res.value().first);
-                auto const page = decode_storage_page(raw_res.value().second);
-                MONAD_ASSERT(page.has_value());
-                for (uint8_t off = 0; off < storage_page_t::SLOTS; ++off) {
-                    auto const &slot_value = page.value()[off];
-                    if (slot_value == bytes32_t{}) {
-                        continue;
-                    }
-                    bytes32_t const slot_key = compute_slot_key(page_key, off);
+                // Page-encoded leaf: fan out one JSON entry per populated slot,
+                // keyed by keccak256(slot_key) so the output matches a slot
+                // dump.
+                auto const decoded = decode_storage_page_leaf(node.value());
+                MONAD_ASSERT(decoded.has_value());
+                for (auto const [slot_key, slot_value] :
+                     decoded.value().slots()) {
                     auto const hashed_slot_key = to_bytes(
                         keccak256({slot_key.bytes, sizeof(slot_key.bytes)}));
                     auto const key = fmt::format("{}", hashed_slot_key);
@@ -544,6 +534,9 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
                 // Slot-encoded leaf: trie path under the account is
                 // keccak256(slot_key); the leaf carries (slot_key,
                 // slot_value).
+                auto encoded_storage = node.value();
+                auto const raw_res = decode_storage_db_raw(encoded_storage);
+                MONAD_ASSERT(raw_res.has_value());
                 bytes32_t const slot_key = to_bytes(raw_res.value().first);
                 bytes32_t const slot_value = to_bytes(raw_res.value().second);
                 auto const key = fmt::format(

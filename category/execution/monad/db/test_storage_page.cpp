@@ -321,3 +321,77 @@ TEST(MonadDb, byte_size_spill)
     // plus the live elements.
     EXPECT_GE(page.byte_size(), sizeof(storage_page_t) + 5 * sizeof(bytes32_t));
 }
+
+TEST(MonadDb, storage_page_slots_iterates_populated_in_ascending_order)
+{
+    // Offsets 63 and 64 straddle the two 64-bit halves of the 128-bit bitmap,
+    // exercising the lowest_offset() split and the dense-index lockstep across
+    // the boundary.
+    constexpr bytes32_t page_key{uint64_t{0x1234}};
+    constexpr uint8_t offsets[] = {0, 1, 63, 64, 126, 127};
+    constexpr size_t num_offsets = sizeof(offsets) / sizeof(offsets[0]);
+
+    storage_page_t page{};
+    for (uint8_t const off : offsets) {
+        page.set(off, bytes32_t{static_cast<uint64_t>(off + 1)});
+    }
+    DecodedStoragePage const decoded{page_key, page};
+
+    size_t i = 0;
+    for (auto const [slot_key, val] : decoded.slots()) {
+        ASSERT_LT(i, num_offsets);
+        uint8_t const off = offsets[i];
+        EXPECT_EQ(slot_key, compute_slot_key(page_key, off));
+        EXPECT_EQ(val, bytes32_t{static_cast<uint64_t>(off + 1)});
+        ++i;
+    }
+    EXPECT_EQ(i, num_offsets);
+}
+
+TEST(MonadDb, storage_page_slots_empty_page_yields_nothing)
+{
+    DecodedStoragePage const decoded{
+        bytes32_t{uint64_t{0xab}}, storage_page_t{}};
+    size_t count = 0;
+    for (auto const [slot_key, val] : decoded.slots()) {
+        (void)slot_key;
+        (void)val;
+        ++count;
+    }
+    EXPECT_EQ(count, 0u);
+}
+
+TEST(MonadDb, storage_page_slots_full_page)
+{
+    constexpr bytes32_t page_key{uint64_t{0x9999}};
+    storage_page_t page{};
+    for (uint8_t i = 0; i < storage_page_t::SLOTS; ++i) {
+        page.set(i, bytes32_t{static_cast<uint64_t>(i + 1)});
+    }
+    DecodedStoragePage const decoded{page_key, page};
+
+    size_t expected_off = 0;
+    for (auto const [slot_key, val] : decoded.slots()) {
+        EXPECT_EQ(
+            slot_key,
+            compute_slot_key(page_key, static_cast<uint8_t>(expected_off)));
+        EXPECT_EQ(val, bytes32_t{static_cast<uint64_t>(expected_off + 1)});
+        ++expected_off;
+    }
+    EXPECT_EQ(expected_off, storage_page_t::SLOTS);
+}
+
+TEST(MonadDb, lowest_offset_across_bitmap_halves)
+{
+    using bitmap_t = storage_page_t::bitmap_t;
+    EXPECT_EQ(lowest_offset(bitmap_t{1}), 0);
+    EXPECT_EQ(lowest_offset(bitmap_t{1} << 63), 63);
+    EXPECT_EQ(lowest_offset(bitmap_t{1} << 64), 64);
+    EXPECT_EQ(lowest_offset(bitmap_t{1} << 127), 127);
+    // With multiple bits set it returns the lowest; the 63/64 pair straddles
+    // the two 64-bit halves the split walks.
+    EXPECT_EQ(lowest_offset((bitmap_t{1} << 64) | (bitmap_t{1} << 63)), 63);
+    // Multiple bits, all in the high half: exercises the else-branch returning
+    // the lowest high-half bit rather than the highest.
+    EXPECT_EQ(lowest_offset((bitmap_t{1} << 100) | (bitmap_t{1} << 70)), 70);
+}

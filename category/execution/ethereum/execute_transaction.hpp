@@ -20,6 +20,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -28,12 +29,12 @@
 
 #include <cstdint>
 #include <span>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
 struct BlockHeader;
-struct BlockMetrics;
 class BlockState;
 struct CallTracerBase;
 struct Chain;
@@ -56,6 +57,9 @@ protected:
     Address const &sender_;
     std::span<std::optional<Address> const> const authorities_;
     BlockHeader const &header_;
+    /// Outcome of each EIP-7702 authorization entry of the most recent
+    /// attempt, in transaction order.
+    std::vector<TxAuthOutcome> auth_outcomes_{};
 
 public:
     ExecuteTransactionNoValidation(

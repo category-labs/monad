@@ -15,13 +15,42 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
+
+/// Outcome of one EIP-7702 authorization entry, in transaction order:
+/// 'd' = delegation applied, 'u' = undelegation applied, 'f' = the entry did
+/// not fire. `authority` is empty when signature recovery failed.
+struct TxAuthOutcome
+{
+    std::optional<Address> authority{};
+    char outcome{'f'};
+};
+
+/// Per-transaction facts backing the `__tx` research log line, populated for
+/// every merged transaction; `TxActivityLog` decides which lines are printed.
+struct TxRecord
+{
+    uint32_t index{0};
+    Address sender{};
+    uint64_t nonce{0};
+    uint256_t value{0};
+    uint256_t balance_before{0};
+    uint256_t balance_after{0};
+    bool success{false};
+    bool eligible{false};
+    bool dipped{false};
+    bool sender_delegated{false};
+    std::vector<TxAuthOutcome> auths{};
+};
 
 struct BlockMetrics
 {
@@ -39,6 +68,8 @@ struct BlockMetrics
     /// Block-relative indices of the transactions counted in `num_dipped`,
     /// in block order (merges are serialized in transaction order).
     std::vector<uint32_t> dipped_tx_indices{};
+    /// One record per merged transaction, in block order.
+    std::vector<TxRecord> tx_records{};
     std::chrono::microseconds tx_exec_time{1};
 };
 

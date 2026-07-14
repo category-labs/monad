@@ -49,16 +49,29 @@ void init_reserve_balance_context(
     std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
     trace::StateTracer &state_tracer, ChainContext<traits> const &ctx);
 
+/// Per-transaction outcome of the reserve-balance dip accounting.
+struct ReserveDipRecord
+{
+    /// The sender was eligible to dip into its reserve.
+    bool eligible{false};
+    /// The transaction succeeded and the allowed-dip exemption is what saved
+    /// it from a reserve-balance revert.
+    bool dipped{false};
+    /// The sender was EIP-7702-delegated when the reserve-balance context was
+    /// initialized for this transaction.
+    bool sender_delegated{false};
+};
+
 /// Fold this transaction's reserve-balance dip outcome into the block
-/// metrics: whether the sender was eligible to dip into its reserve, and —
-/// for successful transactions only — whether the sender's allowed-dip
-/// exemption is what saved the transaction from a reserve-balance revert.
-/// Failed transactions never count as dips: they would have failed with or
-/// without the exemption. Returns whether the transaction was counted as a
-/// dip. No-op returning false for EVM traits and Monad revisions before
-/// MONAD_FOUR, where the reserve is not enforced.
+/// metrics and return it: whether the sender was eligible to dip into its
+/// reserve, and — for successful transactions only — whether the sender's
+/// allowed-dip exemption is what saved the transaction from a reserve-balance
+/// revert. Failed transactions never count as dips: they would have failed
+/// with or without the exemption. No-op returning a default record for EVM
+/// traits and Monad revisions before MONAD_FOUR, where the reserve is not
+/// enforced.
 template <Traits traits>
-bool record_reserve_dip_metrics(
+ReserveDipRecord record_reserve_dip_metrics(
     State const &state, bool tx_succeeded, BlockMetrics &metrics);
 
 MONAD_NAMESPACE_END

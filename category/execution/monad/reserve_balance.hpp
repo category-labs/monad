@@ -57,6 +57,7 @@ class ReserveBalance
     uint256_t sender_gas_fees_{0};
     bool sender_can_dip_{false};
     bool sender_dipped_{false};
+    bool sender_delegated_{false};
     FailedSet failed_{};
     ViolationThresholdMap violation_thresholds_{};
     std::function<uint256_t(Address const &)> get_max_reserve_{};
@@ -84,6 +85,9 @@ public:
     /// full reserve as a dip — not whether the merged post-transaction
     /// balance ended below the reserve.
     bool sender_dipped() const;
+
+    /// True iff the sender was EIP-7702-delegated when `init_from_tx` ran.
+    bool sender_delegated() const;
 
     void note_sender_dipped();
 

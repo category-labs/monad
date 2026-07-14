@@ -38,6 +38,7 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/metrics/tx_activity_log.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
@@ -182,7 +183,8 @@ Result<BlockExecOutput> propose_block(
     MonadConsensusBlockHeader const &consensus_header, Block block,
     BlockHashChain &block_hash_chain, MonadChain const &chain, Db &db,
     vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
-    bool const enable_tracing, BlockCache &block_cache, Db *secondary_db)
+    bool const enable_tracing, BlockCache &block_cache,
+    TxActivityLog &tx_activity_log, Db *secondary_db)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -430,6 +432,7 @@ Result<BlockExecOutput> propose_block(
             block_metrics.dipped_tx_indices.size(),
             indices);
     }
+    tx_activity_log.record_block(block.header.number, block_metrics);
 
     return exec_output;
 }
@@ -537,6 +540,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     MONAD_ASSERT(last_finalized_block_number != mpt::INVALID_BLOCK_NUM);
 
     BlockCache block_cache;
+    TxActivityLog tx_activity_log;
     for_each_header(
         finalized_head,
         header_dir,
@@ -671,6 +675,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              start_block_num,
              enable_tracing,
              &block_cache,
+             &tx_activity_log,
              secondary_db](
                 bytes32_t const &block_id,
                 auto const &header) -> Result<std::pair<uint64_t, uint64_t>> {
@@ -731,6 +736,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     block_number == start_block_num,
                     enable_tracing,
                     block_cache,
+                    tx_activity_log,
                     secondary_db);
                 MONAD_ABORT_PRINTF("handled rev value %d", rev);
             };

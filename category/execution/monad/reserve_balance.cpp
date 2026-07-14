@@ -197,6 +197,11 @@ bool ReserveBalance::sender_dipped() const
     return sender_dipped_;
 }
 
+bool ReserveBalance::sender_delegated() const
+{
+    return sender_delegated_;
+}
+
 void ReserveBalance::note_sender_dipped()
 {
     sender_dipped_ = true;
@@ -361,6 +366,7 @@ void ReserveBalance::init_from_tx(
         sender_gas_fees_ = 0;
         sender_can_dip_ = false;
         sender_dipped_ = false;
+        sender_delegated_ = false;
         get_max_reserve_ = {};
         failed_.clear();
         return;
@@ -375,14 +381,17 @@ void ReserveBalance::init_from_tx(
         use_recent_code_hash_
             ? state_->get_code_hash(sender)
             : state_->original_account_state(sender).get_code_hash();
+    bool const sender_is_delegated =
+        is_delegated(*state_, sender_code_hash, state_tracer);
     bool const sender_can_dip = can_sender_dip_into_reserve<traits>(
-        sender, i, is_delegated(*state_, sender_code_hash, state_tracer), ctx);
+        sender, i, sender_is_delegated, ctx);
     tracking_enabled_ = true;
     sender_ = sender;
     sender_gas_fees_ = uint256_t{tx.gas_limit} *
                        gas_price<traits>(tx, base_fee_per_gas.value_or(0));
     sender_can_dip_ = sender_can_dip;
     sender_dipped_ = false;
+    sender_delegated_ = sender_is_delegated;
     get_max_reserve_ = [](Address const &addr) {
         return get_max_reserve<traits>(addr);
     };
@@ -430,21 +439,24 @@ bool revert_transaction(
 EXPLICIT_MONAD_TRAITS(revert_transaction);
 
 template <Traits traits>
-bool record_reserve_dip_metrics(
+ReserveDipRecord record_reserve_dip_metrics(
     State const &state, bool const tx_succeeded, BlockMetrics &metrics)
 {
+    ReserveDipRecord record{};
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {
-        if (state.rb_.sender_can_dip()) {
+        record.eligible = state.rb_.sender_can_dip();
+        record.sender_delegated = state.rb_.sender_delegated();
+        if (record.eligible) {
             ++metrics.num_can_dip;
         }
         // A failed transaction would have failed with or without the dip
         // exemption, so only successful transactions count as dips.
         if (tx_succeeded && state.rb_.sender_dipped()) {
             ++metrics.num_dipped;
-            return true;
+            record.dipped = true;
         }
     }
-    return false;
+    return record;
 }
 
 EXPLICIT_MONAD_TRAITS(record_reserve_dip_metrics);

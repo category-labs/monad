@@ -36,6 +36,7 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/metrics/tx_activity_log.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
@@ -128,7 +129,8 @@ Result<void> process_monad_block(
     ankerl::unordered_dense::segmented_set<Address> const
         &parent_senders_and_authorities,
     ankerl::unordered_dense::segmented_set<Address>
-        &senders_and_authorities_out)
+        &senders_and_authorities_out,
+    TxActivityLog &tx_activity_log)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -322,6 +324,7 @@ Result<void> process_monad_block(
             block_metrics.dipped_tx_indices.size(),
             indices);
     }
+    tx_activity_log.record_block(block.header.number, block_metrics);
 
     return outcome_e::success();
 }
@@ -354,6 +357,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
         grandparent_senders_and_authorities;
     ankerl::unordered_dense::segmented_set<Address>
         parent_senders_and_authorities;
+    TxActivityLog tx_activity_log;
 
     if (block_num > 1) {
         Block parent_block;
@@ -452,7 +456,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
                 enable_tracing,
                 grandparent_senders_and_authorities,
                 parent_senders_and_authorities,
-                senders_and_authorities);
+                senders_and_authorities,
+                tx_activity_log);
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
 

@@ -115,6 +115,8 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
         auto const &auth_entry = tx_.authorization_list[i];
         MONAD_ASSERT(auth_entry.sc.chain_id.has_value());
 
+        auth_outcomes_.push_back({authorities_[i], 'f'});
+
         // 1. Verify the chain ID is 0 or the ID of the current chain.
         auto const &chain_id = *auth_entry.sc.chain_id;
         auto const host_chain_id =
@@ -193,6 +195,8 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
 
         // 9. Increase the nonce of authority by one.
         state.set_nonce(*authority, auth_nonce + 1);
+
+        auth_outcomes_.back().outcome = auth_entry.address ? 'd' : 'u';
     }
 
     return refund;
@@ -232,6 +236,8 @@ template <Traits traits>
 evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     State &state, EvmcHost<traits> &host)
 {
+    auth_outcomes_.clear();
+
     if constexpr (::monad::is_monad_trait_v<traits>) {
         init_reserve_balance_context<traits>(
             state,
@@ -471,11 +477,24 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             }
             auto const receipt = execute_final(state, result.value());
             block_metrics_.num_reverted += receipt.status == 0;
-            if (record_reserve_dip_metrics<traits>(
-                    state, receipt.status == 1, block_metrics_)) {
+            auto const dip = record_reserve_dip_metrics<traits>(
+                state, receipt.status == 1, block_metrics_);
+            if (dip.dipped) {
                 block_metrics_.dipped_tx_indices.push_back(
                     static_cast<uint32_t>(i_));
             }
+            block_metrics_.tx_records.push_back(TxRecord{
+                .index = static_cast<uint32_t>(i_),
+                .sender = sender_,
+                .nonce = tx_.nonce,
+                .value = tx_.value,
+                .balance_before = state.get_original_balance(sender_),
+                .balance_after = state.get_balance(sender_),
+                .success = receipt.status == 1,
+                .eligible = dip.eligible,
+                .dipped = dip.dipped,
+                .sender_delegated = dip.sender_delegated,
+                .auths = std::move(this->auth_outcomes_)});
             block_state_.merge(state);
             return receipt;
         }
@@ -497,11 +516,24 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         }
         auto const receipt = execute_final(state, result.value());
         block_metrics_.num_reverted += receipt.status == 0;
-        if (record_reserve_dip_metrics<traits>(
-                state, receipt.status == 1, block_metrics_)) {
+        auto const dip = record_reserve_dip_metrics<traits>(
+            state, receipt.status == 1, block_metrics_);
+        if (dip.dipped) {
             block_metrics_.dipped_tx_indices.push_back(
                 static_cast<uint32_t>(i_));
         }
+        block_metrics_.tx_records.push_back(TxRecord{
+            .index = static_cast<uint32_t>(i_),
+            .sender = sender_,
+            .nonce = tx_.nonce,
+            .value = tx_.value,
+            .balance_before = state.get_original_balance(sender_),
+            .balance_after = state.get_balance(sender_),
+            .success = receipt.status == 1,
+            .eligible = dip.eligible,
+            .dipped = dip.dipped,
+            .sender_delegated = dip.sender_delegated,
+            .auths = std::move(this->auth_outcomes_)});
         block_state_.merge(state);
         return receipt;
     }

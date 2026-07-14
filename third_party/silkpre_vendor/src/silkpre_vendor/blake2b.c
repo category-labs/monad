@@ -13,7 +13,9 @@
    https://blake2.net.
 */
 
-#include "blake2b.h"
+// Modified 2026 by Category Labs: renamed silkpre prefixes to monad
+
+#include <silkpre_vendor/blake2b.h>
 
 #include <stdint.h>
 #include <string.h>
@@ -64,7 +66,7 @@ static inline uint64_t rotr64(const uint64_t w, const unsigned c) { return (w >>
         G(r, 7, v[3], v[4], v[9], v[14]);  \
     } while (0)
 
-void silkpre_blake2b_compress(SilkpreBlake2bState* S, const uint8_t block[SILKPRE_BLAKE2B_BLOCKBYTES], size_t r) {
+void monad_blake2b_compress(MonadBlake2bState* S, const uint8_t block[MONAD_BLAKE2B_BLOCKBYTES], size_t r) {
     uint64_t m[16];
     uint64_t v[16];
     size_t i;

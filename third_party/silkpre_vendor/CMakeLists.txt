@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# SHA-256 and RIPEMD-160 implementations vendored from silkpre.
+# SHA-256, RIPEMD-160, and BLAKE2F implementations vendored from silkpre.
 # See NOTICE and LICENSE.
 
 add_library(monad_crypto STATIC)
@@ -25,6 +25,8 @@ target_sources(monad_crypto PRIVATE
   "src/silkpre_vendor/rmd160.h"
   "src/silkpre_vendor/sha256.c"
   "src/silkpre_vendor/sha256.h"
+  "src/silkpre_vendor/blake2b.c"
+  "src/silkpre_vendor/blake2b.h"
 )
 
 # Consumers include the headers via `<silkpre_vendor/sha256.h>` etc.

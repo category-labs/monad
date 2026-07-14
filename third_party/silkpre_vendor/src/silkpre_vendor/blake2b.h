@@ -15,8 +15,10 @@
    Modified 2022 for Silkpre by Andrew Ashikhmin.
 */
 
-#ifndef SILKPRE_BLAKE2B_H_
-#define SILKPRE_BLAKE2B_H_
+// Modified 2026 by Category Labs: renamed silkpre prefixes to monad
+
+#ifndef MONAD_BLAKE2B_H_
+#define MONAD_BLAKE2B_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -25,19 +27,19 @@
 extern "C" {
 #endif
 
-enum { SILKPRE_BLAKE2B_BLOCKBYTES = 128 };
+enum { MONAD_BLAKE2B_BLOCKBYTES = 128 };
 
-typedef struct SilkpreBlake2bState {
+typedef struct MonadBlake2bState {
     uint64_t h[8];
     uint64_t t[2];
     uint64_t f[2];
-} SilkpreBlake2bState;
+} MonadBlake2bState;
 
 // https://tools.ietf.org/html/rfc7693#section-3.2
-void silkpre_blake2b_compress(SilkpreBlake2bState* S, const uint8_t block[SILKPRE_BLAKE2B_BLOCKBYTES], size_t r);
+void monad_blake2b_compress(MonadBlake2bState* S, const uint8_t block[MONAD_BLAKE2B_BLOCKBYTES], size_t r);
 
 #if defined(__cplusplus)
 }
 #endif
 
-#endif  // SILKPRE_BLAKE2B_H_
+#endif  // MONAD_BLAKE2B_H_

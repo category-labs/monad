@@ -154,6 +154,28 @@ bool triedb_is_page_encoded(TriedbRoInner *const db)
     return db->db.state_machine_type() == monad::mpt::state_machine_kind::monad;
 }
 
+uint8_t triedb_migration_phase(TriedbRoInner *const db)
+{
+    // Phase codes; must stay in sync with the contract in ffi.h and the Rust
+    // MigrationPhase mapping in lib.rs.
+    enum phase : uint8_t
+    {
+        legacy = 0,
+        dual_timeline = 1,
+        page_encoded = 2,
+    };
+
+    if (db == nullptr) {
+        return legacy;
+    }
+    if (db->db.state_machine_type() == monad::mpt::state_machine_kind::monad) {
+        return page_encoded;
+    }
+    return db->db.timeline_active(monad::mpt::timeline_id::secondary)
+               ? dual_timeline
+               : legacy;
+}
+
 void triedb_compute_page_key(
     uint8_t const *const slot_key, uint8_t *const out_page_key)
 {

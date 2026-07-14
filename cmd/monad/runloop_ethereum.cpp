@@ -37,6 +37,7 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/metrics/tx_activity_log.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
@@ -89,7 +90,8 @@ Result<void> process_ethereum_block(
     Chain const &chain, Db &db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
-    bytes32_t const &parent_block_id, bool const enable_tracing)
+    bytes32_t const &parent_block_id, bool const enable_tracing,
+    TxActivityLog &tx_activity_log)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
 
@@ -257,6 +259,8 @@ Result<void> process_ethereum_block(
         vm.print_and_reset_block_counts(),
         vm.print_compiler_stats());
 
+    tx_activity_log.record_block(block.header.number, block_metrics);
+
     return outcome_e::success();
 }
 
@@ -287,6 +291,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     }();
     BlockDb &block_db = *block_db_base;
     bytes32_t parent_block_id{};
+    TxActivityLog tx_activity_log;
 
     while (block_num <= end_block_num && stop == 0) {
         Block block;
@@ -310,7 +315,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 block,
                 block_id,
                 parent_block_id,
-                enable_tracing);
+                enable_tracing,
+                tx_activity_log);
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
 

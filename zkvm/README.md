@@ -138,4 +138,80 @@ cmake --build build-zkvm --target monad-zkvm-guest
 
 The Rust crates pick this same target up through the
 [`zkvm/build-support`](build-support/src/lib.rs) crate, which both
-`zkvm/zisk/build.rs` and `zkvm/sp1/program/build.rs` delegate to.
+`zkvm/zisk/build.rs` and `zkvm/sp1/script/build.rs` delegate to.
+
+## Testing
+
+Besides block witnesses, both backends can be exercised against the
+go-ethereum precompile golden vectors, which drive every crypto accelerator
+directly — no witness needed. A test guest
+([`precompile_test.cpp`](test/precompile_tests/precompile_test.cpp)) runs each
+vector through the matching precompile `_execute` shim (which routes crypto
+through the `zkvm_*` accelerators) and commits a pass/fail summary.
+
+### 1. Generate the vector blob
+
+[`gen_precompile_vectors.py`](test/precompile_tests/gen_precompile_vectors.py)
+serializes the geth golden JSON (vendored at
+`third_party/go-ethereum/core/vm/testdata/precompiles`) into a single binary
+blob consumed by both backends. Run from the repo root:
+
+```sh
+python3 zkvm/test/precompile_tests/gen_precompile_vectors.py \
+    third_party/go-ethereum/core/vm/testdata/precompiles \
+    /tmp/pt-vectors.bin
+#  → wrote 1847 cases, 3645425 bytes -> /tmp/pt-vectors.bin
+# (pass --exclude 0x09,0x11 to skip specific precompile addresses)
+```
+
+### 2. Run on SP1
+
+The `precompile-test` cargo feature swaps the witness executor for the test
+guest (see [SP1](#sp1) above); the input is the vector blob:
+
+```sh
+cd zkvm/sp1/script
+cargo run --release --features precompile-test -- --input /tmp/pt-vectors.bin
+#  Output: 0x5052303137070000370700000000000000000000
+```
+
+### 3. Run on ZisK
+
+ZisK builds the test guest as a separate binary
+(`monad-zkvm-zisk-precompile-test`) and takes the same length-prefixed framing
+as the witness run:
+
+```sh
+cd zkvm/zisk
+cargo-zisk build --release --bin monad-zkvm-zisk-precompile-test
+
+# Frame with the 8-byte LE length prefix (zero-padded to an 8-byte multiple).
+python3 -c "
+import struct, sys
+p = open(sys.argv[1],'rb').read()
+f = struct.pack('<Q', len(p)) + p
+f += b'\x00' * ((-len(f)) % 8)
+open(sys.argv[2],'wb').write(f)
+" /tmp/pt-vectors.bin /tmp/pt-vectors.framed.bin
+
+ziskemu \
+    -e target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk-precompile-test \
+    -i /tmp/pt-vectors.framed.bin \
+    -o /tmp/pt-out.bin
+xxd -p /tmp/pt-out.bin | head -1
+#  → 50523031370700003707000000000000000000000000...  (zero-padded to 256 bytes)
+```
+
+### Reading the result
+
+Both backends emit the same `PR01` summary (little-endian):
+
+```
+"PR01" | total u32 | passed u32 | failed u32 | logged u32 |
+    logged * { index u32 | addr u16 | got_status u8 }
+```
+
+A full pass has `total == passed` and `failed == 0`. Above, both decode to
+total = passed = `0x00000737` = 1847, failed = 0. On failure, up to 32 records
+(capped to fit ZisK's 256-byte committed output) each name the failing vector's
+index, precompile address, and returned status.

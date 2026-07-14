@@ -11,6 +11,17 @@ edition = "2021"
 # tree to avoid polluting the host workspace.
 [workspace]
 
+# The witness-execution guest (default) and the precompile golden-vector test
+# guest share this crate's build.rs (which builds the C++ guest archive); each
+# bin links that archive and calls a different C++ entry.
+[[bin]]
+name = "monad-zkvm-zisk"
+path = "src/main.rs"
+
+[[bin]]
+name = "monad-zkvm-zisk-precompile-test"
+path = "../test/precompile_tests/zisk_main.rs"
+
 [profile.release]
 opt-level = 3
 lto = true

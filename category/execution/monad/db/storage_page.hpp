@@ -26,8 +26,12 @@
 #include <evmc/evmc.hpp>
 
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
+#include <span>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -99,6 +103,15 @@ struct storage_page_t
     bitmap_t bitmap() const
     {
         return bitmap_;
+    }
+
+    // The non-zero values in ascending slot order: values()[k] is the value of
+    // the k-th set bit in bitmap(). Exposed so callers can walk bitmap() set
+    // bits in lockstep (O(popcount)) rather than probing all SLOTS via
+    // operator[].
+    std::span<bytes32_t const> values() const
+    {
+        return {values_.data(), values_.size()};
     }
 
     // Number of non-zero slots.
@@ -177,6 +190,107 @@ compute_slot_key(bytes32_t const &page_key, uint8_t const slot_offset)
         (page_int << storage_page_t::PAGE_KEY_SHIFT) | slot_offset;
     return store_be_as<bytes32_t>(slot_int);
 }
+
+// Slot offset of the lowest set bit in a non-empty bitmap. Split into two
+// 64-bit halves because std::countr_zero has no 128-bit overload.
+inline uint8_t lowest_offset(storage_page_t::bitmap_t const bitmap)
+{
+    auto const lo = static_cast<uint64_t>(bitmap);
+    return lo != 0 ? static_cast<uint8_t>(std::countr_zero(lo))
+                   : static_cast<uint8_t>(
+                         64 +
+                         std::countr_zero(static_cast<uint64_t>(bitmap >> 64)));
+}
+
+// A non-owning view over the populated (non-zero) slots of a decoded storage
+// page, yielding (slot_key, slot_value) in ascending offset order.
+class StoragePageSlots
+{
+public:
+    struct Sentinel
+    {
+    };
+
+    class iterator
+    {
+    public:
+        using value_type = std::pair<bytes32_t, bytes32_t>;
+        using difference_type = ptrdiff_t;
+        using iterator_category = std::input_iterator_tag;
+        using pointer = void;
+        using reference = value_type;
+
+        iterator(bytes32_t const &page_key, storage_page_t const &page)
+            : page_key_(page_key)
+            , values_(page.values())
+            , remaining_(page.bitmap())
+            , dense_index_(0)
+        {
+        }
+
+        value_type operator*() const
+        {
+            return {
+                compute_slot_key(page_key_, lowest_offset(remaining_)),
+                values_[dense_index_]};
+        }
+
+        iterator &operator++()
+        {
+            remaining_ &= remaining_ - 1; // clear lowest set bit
+            ++dense_index_;
+            return *this;
+        }
+
+        bool operator!=(Sentinel const &) const
+        {
+            return remaining_ != 0;
+        }
+
+    private:
+        bytes32_t page_key_;
+        std::span<bytes32_t const> values_;
+        storage_page_t::bitmap_t remaining_;
+        size_t dense_index_;
+    };
+
+    StoragePageSlots(bytes32_t const &page_key, storage_page_t const &page)
+        : page_key_(page_key)
+        , page_(&page)
+    {
+    }
+
+    iterator begin() const
+    {
+        return iterator(page_key_, *page_);
+    }
+
+    Sentinel end() const
+    {
+        return Sentinel{};
+    }
+
+private:
+    bytes32_t page_key_;
+    storage_page_t const *page_;
+};
+
+// Owning result of decoding a page-encoded storage leaf: its page key and page.
+struct DecodedStoragePage
+{
+    bytes32_t page_key;
+    storage_page_t page;
+
+    // The returned view borrows this object's page, so it is only valid while
+    // this object lives; deleted on rvalues to prevent iterating a view into a
+    // destroyed temporary.
+    StoragePageSlots slots() const &
+    {
+        return StoragePageSlots{page_key, page};
+    }
+
+    StoragePageSlots slots() const && = delete;
+};
 
 bytes32_t page_commit(storage_page_t const &page);
 

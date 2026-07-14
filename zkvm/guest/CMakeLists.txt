@@ -476,6 +476,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # ---- Final guest static archive ----
     add_library(${_guest_target} STATIC
         $<TARGET_OBJECTS:monad-zkvm-guest>
+        # Linked only by the precompile test binary.
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/precompile_tests/precompile_test.cpp"
         $<TARGET_OBJECTS:monad-core>
         $<TARGET_OBJECTS:monad-zkvm-core>
         $<TARGET_OBJECTS:monad_precompiles>
@@ -490,6 +492,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     )
     monad_compile_options(${_guest_target})
     monad_riscv_compile_options(${_guest_target})
+    target_link_libraries(${_guest_target}
+        PRIVATE monad-core monad_execution_ethereum)
 
 else()
     # ---- Host x86 mode ----
@@ -503,6 +507,18 @@ else()
     monad_compile_options(monad-zkvm-x86-test-runner)
     target_link_libraries(monad-zkvm-x86-test-runner
         PRIVATE monad-zkvm-guest monad_execution zkevm-standards)
+
+    # Precompile golden-vector test runner: same x86 driver, but its entry is
+    # the precompile-vector harness instead of the witness executor.
+    add_executable(monad-zkvm-x86-precompile-test
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/precompile_tests/precompile_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/x86_test_runner.cpp"
+    )
+    monad_compile_options(monad-zkvm-x86-precompile-test)
+    target_compile_definitions(monad-zkvm-x86-precompile-test PRIVATE
+        MONAD_ZKVM_X86_ENTRY=monad_zkvm_run_precompile_tests)
+    target_link_libraries(monad-zkvm-x86-precompile-test
+        PRIVATE monad_execution zkevm-standards)
 
 endif()
 

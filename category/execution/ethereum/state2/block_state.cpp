@@ -42,6 +42,7 @@
 
 #include <memory>
 #include <optional>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -227,6 +228,10 @@ bool BlockState::can_merge(State &state) const
     // Diagnostic variant: scan all originals and log every mismatch instead
     // of returning at the first one.
     unsigned mismatches = 0;
+    // Slot-taint experiment: eligible slots are collected during the scan and
+    // applied only after iteration completes (applying mutates the storage
+    // maps being iterated).
+    std::vector<std::tuple<Address, bytes32_t, bytes32_t>> delta_candidates;
     auto const &original = state.original();
     for (auto &kv : original) {
         Address const &address = kv.first;
@@ -254,6 +259,14 @@ bool BlockState::can_merge(State &state) const
             StorageDeltas::const_accessor it2{};
             if (it->second.storage.find(it2, key)) {
                 if (value != it2->second.second) {
+                    // Slot-taint experiment: delta-commutative use of the
+                    // slot can absorb the drift instead of retrying.
+                    if (state.slot_delta_fixable(
+                            address, key, it2->second.second)) {
+                        delta_candidates.emplace_back(
+                            address, key, it2->second.second);
+                        continue;
+                    }
                     ++mismatches;
                     if constexpr (BlockState::CONFLICT_DIAGNOSTICS) {
                         LOG_INFO(
@@ -282,6 +295,19 @@ bool BlockState::can_merge(State &state) const
                             value);
                     }
                 }
+            }
+        }
+    }
+    if (mismatches == 0) {
+        for (auto const &[addr, key, actual] : delta_candidates) {
+            state.apply_slot_delta(addr, key, actual);
+            if constexpr (BlockState::CONFLICT_DIAGNOSTICS) {
+                LOG_INFO(
+                    "DELTA_FIX block={} txn={} addr={} key={}",
+                    state.incarnation().get_block(),
+                    state.incarnation().get_tx(),
+                    addr,
+                    key);
             }
         }
     }

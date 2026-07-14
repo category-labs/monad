@@ -104,6 +104,9 @@ public:
     virtual PageStorageStatus update_page(
         evmc::address const &, evmc::bytes32 const &page_key,
         evmc_storage_status) noexcept override;
+
+    virtual vm::runtime::SlotTaintRegistry *
+    slot_taint_registry() noexcept override;
 };
 
 static_assert(sizeof(EvmcHostBase) == 72);

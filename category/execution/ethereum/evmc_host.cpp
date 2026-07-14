@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/vm/runtime/taint.hpp>
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
@@ -52,6 +53,9 @@ evmc::bytes32 EvmcHostBase::get_storage(
     evmc::address const &address, evmc::bytes32 const &key) const noexcept
 {
     try {
+        if (auto *const reg = state_.slot_taint_registry()) {
+            reg->note_load(address, key);
+        }
         return state_.get_storage(address, key);
     }
     catch (...) {
@@ -65,6 +69,9 @@ evmc_storage_status EvmcHostBase::set_storage(
     evmc::bytes32 const &value) noexcept
 {
     try {
+        if (auto *const reg = state_.slot_taint_registry()) {
+            reg->note_store(address, key);
+        }
         return state_.set_storage(address, key, value);
     }
     catch (...) {
@@ -218,6 +225,12 @@ void EvmcHostBase::set_transient_storage(
         capture_current_exception();
     }
     stack_unwind();
+}
+
+vm::runtime::SlotTaintRegistry *
+EvmcHostBase::slot_taint_registry() noexcept
+{
+    return state_.slot_taint_registry();
 }
 
 EvmcHostBase::PageStorageStatus EvmcHostBase::update_page(

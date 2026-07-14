@@ -247,6 +247,10 @@ namespace monad::vm::runtime
 
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
+        // Slot-taint experiment: per-frame shadow-stack tags; nullptr when
+        // taint tracking is disabled. Appended after the members whose
+        // offsets are pinned by context.S.
+        void *taint_frame = nullptr;
 
         [[gnu::always_inline]]
         constexpr void deduct_gas(int64_t const gas) noexcept

@@ -26,6 +26,7 @@
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/vm.hpp>
+#include <category/vm/runtime/taint.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -66,6 +67,13 @@ namespace monad::vm
         auto rt_ctx =
             runtime::Context::from(host_itf, host_ctx, msg, icode->code_span());
 
+        std::unique_ptr<runtime::TaintFrame> taint_frame;
+        if (auto *const taint_reg = host.slot_taint_registry()) {
+            taint_frame = std::make_unique<runtime::TaintFrame>();
+            taint_frame->registry = taint_reg;
+            rt_ctx.taint_frame = taint_frame.get();
+        }
+
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
 
@@ -90,6 +98,13 @@ namespace monad::vm
         auto const *const host_itf = &host.get_interface();
         auto *const host_ctx = host.to_context();
         auto rt_ctx = runtime::Context::from(host_itf, host_ctx, msg, code);
+
+        std::unique_ptr<runtime::TaintFrame> taint_frame;
+        if (auto *const taint_reg = host.slot_taint_registry()) {
+            taint_frame = std::make_unique<runtime::TaintFrame>();
+            taint_frame->registry = taint_reg;
+            rt_ctx.taint_frame = taint_frame.get();
+        }
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);

@@ -24,6 +24,7 @@
 #include <category/vm/interpreter/instructions_fwd.hpp>
 #include <category/vm/interpreter/push.hpp>
 #include <category/vm/interpreter/stack.hpp>
+#include <category/vm/interpreter/taint_hook.hpp>
 #include <category/vm/interpreter/types.hpp>
 #include <category/vm/runtime/runtime.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -51,6 +52,10 @@
             compiler::opcode_table<traits>[(OP)].stack_increase -              \
             compiler::opcode_table<traits>[(OP)].min_stack;                    \
                                                                                \
+        if (ctx.taint_frame != nullptr) {                                      \
+            taint_after_instruction<(OP), traits>(                             \
+                ctx, stack_bottom, stack_top);                                 \
+        }                                                                      \
         ++instr_ptr;                                                           \
         if constexpr (debug_enabled) {                                         \
             trace(analysis, gas_remaining, instr_ptr);                         \
@@ -71,6 +76,10 @@
             compiler::opcode_table<traits>[(OP)].stack_increase -              \
             compiler::opcode_table<traits>[(OP)].min_stack;                    \
                                                                                \
+        if (ctx.taint_frame != nullptr) {                                      \
+            taint_after_instruction<(OP), traits>(                             \
+                ctx, stack_bottom, stack_top);                                 \
+        }                                                                      \
         instr_ptr += (((OP) - PUSH0) + 1);                                     \
         if constexpr (debug_enabled) {                                         \
             trace(analysis, gas_remaining, instr_ptr);                         \
@@ -611,6 +620,9 @@ namespace monad::vm::interpreter
     {
         check_requirements<LT, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        if (ctx.taint_frame != nullptr) {
+            taint_before_compare<LT>(ctx, stack_bottom, stack_top);
+        }
         auto &&[a, b] = top_two(stack_top);
         b = a < b;
 
@@ -625,6 +637,9 @@ namespace monad::vm::interpreter
     {
         check_requirements<GT, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        if (ctx.taint_frame != nullptr) {
+            taint_before_compare<GT>(ctx, stack_bottom, stack_top);
+        }
         auto &&[a, b] = top_two(stack_top);
         b = a > b;
 
@@ -639,6 +654,9 @@ namespace monad::vm::interpreter
     {
         check_requirements<SLT, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        if (ctx.taint_frame != nullptr) {
+            taint_before_compare<SLT>(ctx, stack_bottom, stack_top);
+        }
         auto &&[a, b] = top_two(stack_top);
         b = slt(a, b);
 
@@ -653,6 +671,9 @@ namespace monad::vm::interpreter
     {
         check_requirements<SGT, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        if (ctx.taint_frame != nullptr) {
+            taint_before_compare<SGT>(ctx, stack_bottom, stack_top);
+        }
         auto &&[a, b] = top_two(stack_top);
         b = slt(b, a); // note swapped arguments
 
@@ -667,6 +688,9 @@ namespace monad::vm::interpreter
     {
         check_requirements<EQ, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        if (ctx.taint_frame != nullptr) {
+            taint_before_compare<EQ>(ctx, stack_bottom, stack_top);
+        }
         auto &&[a, b] = top_two(stack_top);
         b = (a == b);
 
@@ -681,6 +705,9 @@ namespace monad::vm::interpreter
     {
         check_requirements<ISZERO, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        if (ctx.taint_frame != nullptr) {
+            taint_before_compare<ISZERO>(ctx, stack_bottom, stack_top);
+        }
         auto &a = *stack_top;
         a = !a;
 
@@ -696,6 +723,9 @@ namespace monad::vm::interpreter
     {
         check_requirements<AND, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        if (ctx.taint_frame != nullptr) {
+            taint_before_and(ctx, stack_bottom, stack_top);
+        }
         auto &&[a, b] = top_two(stack_top);
         b = a & b;
 
@@ -780,6 +810,9 @@ namespace monad::vm::interpreter
     {
         check_requirements<SHR, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        if (ctx.taint_frame != nullptr) {
+            taint_before_shr(ctx, stack_bottom, stack_top);
+        }
         auto &&[shift, value] = top_two(stack_top);
         value >>= shift;
 
@@ -1324,6 +1357,14 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
+        if (ctx.taint_frame != nullptr && stack_top - stack_bottom >= 2) {
+            auto &frame = *static_cast<runtime::TaintFrame *>(ctx.taint_frame);
+            frame.registry->on_sstore(
+                ctx.env.recipient,
+                store_be_as<bytes32_t>(*stack_top),
+                taint_tag(frame, stack_bottom, stack_top - 1),
+                taint_tag(frame, stack_bottom, stack_top));
+        }
         checked_runtime_call<SSTORE, traits>(
             runtime::sstore<traits>,
             ctx,
@@ -1342,6 +1383,15 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
+        if (ctx.taint_frame != nullptr && stack_top - stack_bottom >= 1) {
+            auto &frame = *static_cast<runtime::TaintFrame *>(ctx.taint_frame);
+            uint32_t const key_tag = taint_tag(frame, stack_bottom, stack_top);
+            if (key_tag != 0) {
+                frame.registry->revoke(key_tag);
+            }
+            frame.pending_load = frame.registry->on_sload(
+                ctx.env.recipient, store_be_as<bytes32_t>(*stack_top));
+        }
         checked_runtime_call<SLOAD, traits>(
             runtime::sload<traits>,
             ctx,
@@ -1516,6 +1566,17 @@ namespace monad::vm::interpreter
     {
         check_requirements<JUMP, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        if (ctx.taint_frame != nullptr) {
+            auto &frame = *static_cast<runtime::TaintFrame *>(ctx.taint_frame);
+            if (frame.live != 0) {
+                uint32_t &t = taint_tag(frame, stack_bottom, stack_top);
+                if (t != 0) {
+                    frame.registry->revoke(t);
+                    frame.live -= 1;
+                    t = 0;
+                }
+            }
+        }
         auto const &target = pop(stack_top);
         auto const *const new_ip = jump_impl(ctx, analysis, target);
 
@@ -1534,6 +1595,19 @@ namespace monad::vm::interpreter
     {
         check_requirements<JUMPI, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        if (ctx.taint_frame != nullptr) {
+            auto &frame = *static_cast<runtime::TaintFrame *>(ctx.taint_frame);
+            if (frame.live != 0) {
+                for (auto *cell : {stack_top, stack_top - 1}) {
+                    uint32_t &t = taint_tag(frame, stack_bottom, cell);
+                    if (t != 0) {
+                        frame.registry->revoke(t);
+                        frame.live -= 1;
+                        t = 0;
+                    }
+                }
+            }
+        }
         auto const &target = pop(stack_top);
         auto const &cond = pop(stack_top);
 
@@ -1744,6 +1818,22 @@ namespace monad::vm::interpreter
         fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.size());
         check_requirements<RETURN, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        if (ctx.taint_frame != nullptr) {
+            auto &frame = *static_cast<runtime::TaintFrame *>(ctx.taint_frame);
+            if (frame.live != 0) {
+                // the returned memory range is chosen by these operands; a
+                // tainted offset/size would leak the slot value into the
+                // caller's observed returndata
+                for (auto *cell : {stack_top, stack_top - 1}) {
+                    uint32_t &t = taint_tag(frame, stack_bottom, cell);
+                    if (t != 0) {
+                        frame.registry->revoke(t);
+                        frame.live -= 1;
+                        t = 0;
+                    }
+                }
+            }
+        }
         return_impl(Success, ctx, stack_top, gas_remaining);
     }
 
@@ -1755,6 +1845,22 @@ namespace monad::vm::interpreter
     {
         check_requirements<REVERT, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        if (ctx.taint_frame != nullptr) {
+            auto &frame = *static_cast<runtime::TaintFrame *>(ctx.taint_frame);
+            if (frame.live != 0) {
+                // the returned memory range is chosen by these operands; a
+                // tainted offset/size would leak the slot value into the
+                // caller's observed returndata
+                for (auto *cell : {stack_top, stack_top - 1}) {
+                    uint32_t &t = taint_tag(frame, stack_bottom, cell);
+                    if (t != 0) {
+                        frame.registry->revoke(t);
+                        frame.live -= 1;
+                        t = 0;
+                    }
+                }
+            }
+        }
         return_impl(Revert, ctx, stack_top, gas_remaining);
     }
 
@@ -1765,6 +1871,20 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
         fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.size());
+        if (ctx.taint_frame != nullptr &&
+            stack_top - stack_bottom >= 1) {
+            auto &frame = *static_cast<runtime::TaintFrame *>(ctx.taint_frame);
+            if (frame.live != 0) {
+                // tainted beneficiary: the destination of the balance sweep
+                // would depend on the stale slot value
+                uint32_t &t = taint_tag(frame, stack_bottom, stack_top);
+                if (t != 0) {
+                    frame.registry->revoke(t);
+                    frame.live -= 1;
+                    t = 0;
+                }
+            }
+        }
         checked_runtime_call<SELFDESTRUCT, traits>(
             runtime::selfdestruct<traits>,
             ctx,

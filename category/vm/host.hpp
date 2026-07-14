@@ -25,6 +25,11 @@ namespace monad::vm
 {
     class VM;
 
+    namespace runtime
+    {
+        class SlotTaintRegistry;
+    }
+
     class Host : public evmc::Host
     {
         friend class VM;
@@ -39,6 +44,13 @@ namespace monad::vm
         virtual PageStorageStatus update_page(
             evmc::address const &, evmc::bytes32 const &,
             evmc_storage_status) noexcept = 0;
+
+        /// Slot-taint experiment: per-transaction registry, or nullptr when
+        /// taint tracking is disabled.
+        virtual runtime::SlotTaintRegistry *slot_taint_registry() noexcept
+        {
+            return nullptr;
+        }
 
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.

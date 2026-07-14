@@ -650,6 +650,90 @@ void State::set_to_state_incarnation(Address const &address)
     account.value().incarnation = incarnation_;
 }
 
+bool State::slot_delta_fixable(
+    Address const &address, bytes32_t const &key, bytes32_t const &actual) const
+{
+    if (!slot_taint_) {
+        return false;
+    }
+    auto const *const taint = slot_taint_->valid_delta(
+        evmc::address{static_cast<evmc_address const &>(address)},
+        evmc::bytes32{static_cast<evmc_bytes32 const &>(key)});
+    if (taint == nullptr) {
+        return false;
+    }
+
+    auto const orig_it = original_.find(address);
+    if (orig_it == original_.end()) {
+        return false;
+    }
+    auto const *const orig_val = orig_it->second.storage_.find(key);
+    if (orig_val == nullptr) {
+        return false;
+    }
+
+    auto const cur_it = current_.find(address);
+    if (cur_it == current_.end() || cur_it->second.size() != 1) {
+        return false;
+    }
+    auto const *const cur_val = cur_it->second.recent().storage_.find(key);
+    if (cur_val == nullptr) {
+        return false;
+    }
+
+    uint256_t const o = load_be<uint256_t>(*orig_val);
+    uint256_t const b = load_be<uint256_t>(actual);
+    uint256_t const net = taint->write_offsets.back();
+
+    // consistency: the registry's net offset must reproduce the observed
+    // write, else some traffic bypassed the taint machinery
+    if (load_be<uint256_t>(*cur_val) != o + net) {
+        return false;
+    }
+
+    // iteration-1 gas rule: every involved value, in both the observed and
+    // the shifted world, must be non-zero (zero-crossings change SSTORE gas
+    // classes and refunds -> retry instead)
+    if (o == 0 || b == 0) {
+        return false;
+    }
+    for (uint256_t const &c : taint->write_offsets) {
+        if (o + c == 0 || b + c == 0) {
+            return false;
+        }
+    }
+
+    // iteration 2: every comparison observed on the tainted value must have
+    // the same outcome against the actual merged base
+    if (!vm::runtime::check_constraints(*taint, b)) {
+        return false;
+    }
+    return true;
+}
+
+void State::apply_slot_delta(
+    Address const &address, bytes32_t const &key, bytes32_t const &actual)
+{
+    MONAD_ASSERT(slot_taint_);
+    auto const *const taint = slot_taint_->valid_delta(
+        evmc::address{static_cast<evmc_address const &>(address)},
+        evmc::bytes32{static_cast<evmc_bytes32 const &>(key)});
+    MONAD_ASSERT(taint != nullptr);
+
+    auto const orig_it = original_.find(address);
+    MONAD_ASSERT(orig_it != original_.end());
+    auto const cur_it = current_.find(address);
+    MONAD_ASSERT(cur_it != current_.end());
+    auto &recent = cur_it->second.recent();
+
+    uint256_t const b = load_be<uint256_t>(actual);
+    uint256_t const net = taint->write_offsets.back();
+
+    orig_it->second.storage_ = orig_it->second.storage_.insert({key, actual});
+    recent.storage_ =
+        recent.storage_.insert({key, store_be_as<bytes32_t>(b + net)});
+}
+
 // RELAXED MERGE
 // if original and current can be adjusted to satisfy min balance, adjust
 // both values for merge

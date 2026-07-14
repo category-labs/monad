@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/runtime/taint.hpp>
 #include <category/vm/vm.hpp>
 
 #include <evmc/evmc.h>
@@ -38,6 +39,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
@@ -69,6 +71,12 @@ class State
     std::deque<Set<Address>> dirty_;
 
     bool const relaxed_validation_{false};
+    // Slot-taint experiment: per-txn registry of delta-commutative storage
+    // slots (see category/vm/runtime/taint.hpp). Created lazily by
+    // slot_taint_registry() so txns that never execute EVM code skip the
+    // allocation; mutable because the accessor is called from const paths
+    // (host storage reads).
+    mutable std::unique_ptr<vm::runtime::SlotTaintRegistry> slot_taint_{};
     ReserveBalance rb_;
 
     template <Traits traits>
@@ -232,6 +240,30 @@ public:
     ////////////////////////////////////////
 
     void set_to_state_incarnation(Address const &);
+
+    static constexpr bool ENABLE_SLOT_TAINT = true;
+
+    vm::runtime::SlotTaintRegistry *slot_taint_registry() const
+    {
+        if constexpr (!ENABLE_SLOT_TAINT) {
+            return nullptr;
+        }
+        if (!slot_taint_) {
+            slot_taint_ = std::make_unique<vm::runtime::SlotTaintRegistry>();
+        }
+        return slot_taint_.get();
+    }
+
+    // Slot-taint experiment: a conflicted storage slot whose in-txn use was
+    // delta-commutative can absorb drift by shifting original and current by
+    // it. Iteration 1 gas rule: relax only when no involved value is zero.
+    // The check is const so can_merge may call it while iterating the state
+    // maps; apply_slot_delta mutates and must only run after iteration.
+    bool slot_delta_fixable(
+        Address const &, bytes32_t const &key, bytes32_t const &actual) const;
+
+    void apply_slot_delta(
+        Address const &, bytes32_t const &key, bytes32_t const &actual);
 
     // RELAXED MERGE
     // if original and current can be adjusted to satisfy min balance, adjust

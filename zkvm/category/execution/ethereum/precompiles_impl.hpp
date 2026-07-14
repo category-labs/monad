@@ -213,7 +213,10 @@ namespace
 
 MONAD_NAMESPACE_BEGIN
 
-inline bool init_trusted_setup()
+// Non-inline to match the host header: precompiles.cpp is the single TU
+// including this, and it must emit the symbol for other TUs (e.g. the
+// precompile test guest) that call the declaration in precompiles.hpp.
+bool init_trusted_setup()
 {
     return true;
 }

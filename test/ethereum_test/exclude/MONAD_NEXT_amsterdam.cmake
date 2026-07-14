@@ -13,21 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-add_library(monad-test-utils)
-
-target_sources(
-  monad-test-utils
-  PRIVATE from_json.cpp
-          from_json.hpp
-          json_state.cpp
-          json_state.hpp
-          test_state.hpp)
-
-target_include_directories(
-    monad-test-utils PUBLIC  ${PROJECT_SOURCE_DIR}/test/unit/common/include
-                     PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
-
-target_link_libraries(monad-test-utils PUBLIC nlohmann_json::nlohmann_json
-                                              monad_execution)
-
-monad_compile_options(monad-test-utils)
+# The MONAD_NEXT Amsterdam spec-test fixtures (EIP-7708, EIP-7843, EIP-8024)
+# expect a block header carrying the SLOTNUM field, which the execution layer
+# does not yet emit; every fixture therefore fails the genesis block-hash
+# check. Exclude the whole suite for now and drop entries here to re-enable
+# individual tests as support lands.
+set(MONAD_NEXT_amsterdam_excluded_tests "BlockchainTests.*")

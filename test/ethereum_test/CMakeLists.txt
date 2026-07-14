@@ -35,6 +35,16 @@ ExternalProject_Add(
   INSTALL_COMMAND ""
   LOG_DOWNLOAD ON)
 
+ExternalProject_Add(
+  MonadAmsterdamSpecTestFixtures
+  URL "https://github.com/monad-developers/execution-specs/releases/download/tests-monad_amsterdam@v0.2.0/fixtures_monad_amsterdam.tar.gz"
+  URL_HASH "SHA256=20b2a55f49a4b777f1abc6c196dc0afad22475b0ac598a39cc94fc598e22619d"
+  PREFIX ${CMAKE_BINARY_DIR}
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ""
+  INSTALL_COMMAND ""
+  LOG_DOWNLOAD ON)
+
 add_executable(monad-ethereum-test)
 target_link_libraries(monad-ethereum-test PRIVATE GTest::gtest monad-test-utils)
 target_sources(
@@ -100,6 +110,23 @@ endfunction()
 add_monad_test(FORK MONAD_EIGHT)
 add_monad_test(FORK MONAD_NINE)
 add_monad_test(FORK MONAD_NEXT)
+
+# MONAD_NEXT Amsterdam spec tests, from a separate fixtures release. While the
+# whole suite is excluded (see the exclusion file), the runner exits non-zero
+# via its "No tests were run" guard, so the job is marked WILL_FAIL to keep
+# ctest green. WILL_FAIL is set only while the suite is fully excluded: once
+# individual tests are re-enabled by dropping entries from the exclusion list,
+# the job runs normally so real failures (and unexpected passes) surface.
+include(${CMAKE_CURRENT_SOURCE_DIR}/exclude/MONAD_NEXT_amsterdam.cmake)
+list(JOIN MONAD_NEXT_amsterdam_excluded_tests ":" TESTS_EXCLUDED)
+add_test(NAME MONAD_NEXT_amsterdam_monad_ethereum_test
+         COMMAND monad-ethereum-test --fork MONAD_NEXT
+                 --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadAmsterdamSpecTestFixtures/blockchain_tests
+                 --gtest_filter=-:${TESTS_EXCLUDED})
+if(MONAD_NEXT_amsterdam_excluded_tests STREQUAL "BlockchainTests.*")
+  set_tests_properties(MONAD_NEXT_amsterdam_monad_ethereum_test
+                       PROPERTIES WILL_FAIL TRUE)
+endif()
 
 add_ethereum_test(FORK istanbul)
 add_ethereum_test(FORK berlin)

@@ -234,8 +234,15 @@ pub struct RevertCallResult {
     pub trace: Vec<u8>,
 }
 
+struct SendExecutorResult(*mut monad_executor_result);
+
+// The callback transfers unique ownership of the result allocation from the
+// C++ executor thread to the Rust future. The allocation is released exactly
+// once by the receiver or by the callback when that receiver has closed.
+unsafe impl Send for SendExecutorResult {}
+
 pub struct EthCallSenderContext {
-    sender: Sender<*mut monad_executor_result>,
+    sender: Sender<SendExecutorResult>,
     state_override_ctx: *mut std::ffi::c_void,
 }
 
@@ -280,8 +287,10 @@ pub unsafe extern "C" fn eth_call_submit_callback(
 
     // If the receiver has been dropped, we need to release the result here to avoid a memory leak.
     // Otherwise, the receiver will take ownership of the result and release it when done.
-    if user.sender.send(result).is_err() && !result.is_null() {
-        unsafe { ffi::monad_executor_result_release(result) };
+    if let Err(result) = user.sender.send(SendExecutorResult(result)) {
+        if !result.0.is_null() {
+            unsafe { ffi::monad_executor_result_release(result.0) };
+        }
     }
 
     // TODO(dhil): This check should be unnecessary as destroying `null` ought to be a no-op. It is currently not the case in the C++ code. Once it has been updated then this check would become redundant.
@@ -487,7 +496,7 @@ pub async fn eth_call(
     };
 
     let result = match recv.await {
-        Ok(r) => r,
+        Ok(r) => r.0,
         Err(e) => {
             warn!("callback from eth_call_executor failed: {:?}", e);
 

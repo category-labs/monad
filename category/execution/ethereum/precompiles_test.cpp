@@ -127,6 +127,23 @@ namespace
                                   "fffe5bfeffffffff00000001"})
             .value();
 
+    // EIP-152 test vector 8.
+    // The resulting gas cost (1 gas / round) exceeds any practical gas limit,
+    // testing the OUT_OF_GAS path in check_call_eth_precompile (without running
+    // the precompile).
+    static auto const BLAKE2F_MAX_ROUNDS_INPUT =
+        from_hex(
+            std::string_view{
+                "ffffffff" // maximum number of rounds
+                "48c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54f"
+                "a5d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e1319cd"
+                "e05b6162630000000000000000000000000000000000000000000000000000"
+                "00000000000000000000000000000000000000000000000000000000000000"
+                "00000000000000000000000000000000000000000000000000000000000000"
+                "00000000000000000000000000000000000000000000000000000000000000"
+                "0000000000000300000000000000000000000000000001"})
+            .value();
+
     struct evmc_some_error
     {
     };
@@ -290,6 +307,15 @@ namespace
          .expected = evmc_status_code::EVMC_OUT_OF_GAS,
          .gas = 50'000,
          .gas_offset = -1}};
+
+    // The maximum round number 0xFFFFFFFF is impractical to actually
+    // execute, so only check that the gas cost is enforced.
+    static test_case const BLAKE2F_MAX_ROUNDS_TEST_CASES[] = {
+        {.name = "blake_2f_max_rounds_gas_cost_only",
+         .input = BLAKE2F_MAX_ROUNDS_INPUT,
+         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
+         .gas = 30'000'000,
+         .gas_offset = 0}};
 
     template <Traits traits>
     void do_geth_tests(
@@ -511,6 +537,11 @@ TYPED_TEST(TraitsTest, blake2f)
 
     blake2f_test("blake_2f_valid", "blake2F.json");
     blake2f_test("blake_2f_invalid", "fail-blake2f.json");
+
+    do_geth_tests<typename TestFixture::Trait>(
+        "blake_2f_max_rounds_gas_cost_only",
+        BLAKE2F_MAX_ROUNDS_TEST_CASES,
+        0x09_address);
 }
 
 TYPED_TEST(TraitsTest, point_evaluation)

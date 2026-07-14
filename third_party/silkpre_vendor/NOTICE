@@ -11,6 +11,11 @@ rmd160.c / rmd160.h carry their own MIT-style permissive license,
 originally Copyright (c) 1996 Katholieke Universiteit Leuven
 (Antoon Bosselaers); the full notice is preserved in the file headers.
 
+blake2b.c / blake2b.h are derived from the reference implementation by
+Samuel Neves <sneves@dei.uc.pt>, usable under the terms of the CC0, the
+OpenSSL Licence, or the Apache Public License 2.0. The full notice is
+preserved in the file headers.
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.

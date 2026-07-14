@@ -18,6 +18,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
@@ -36,6 +37,7 @@
 
 #include <evmc/evmc.h>
 
+#include <silkpre_vendor/blake2b.h>
 #include <silkpre_vendor/rmd160.h>
 #include <silkpre_vendor/sha256.h>
 
@@ -46,9 +48,11 @@
 
 #include <silkpre/precompile.h>
 
+#include <bit>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <optional>
 #include <string_view>
 
@@ -184,7 +188,37 @@ PrecompileResult snarkv_execute(byte_string_view const input)
 
 PrecompileResult blake2bf_execute(byte_string_view const input)
 {
-    return silkpre_execute<silkpre_blake2_f_run>(input);
+    if (input.size() != 213) {
+        return {EVMC_PRECOMPILE_FAILURE, nullptr, 0};
+    }
+
+    uint8_t const f{input[212]};
+    if (f != 0 && f != 1) {
+        return {EVMC_PRECOMPILE_FAILURE, nullptr, 0};
+    }
+
+    MonadBlake2bState state{};
+    if (f) {
+        state.f[0] = std::numeric_limits<uint64_t>::max();
+    }
+
+    static_assert(std::endian::native == std::endian::little);
+    static_assert(sizeof(state.h) == 8 * 8);
+    std::memcpy(&state.h, input.data() + 4, 8 * 8);
+
+    uint8_t block[MONAD_BLAKE2B_BLOCKBYTES];
+    std::memcpy(block, input.data() + 68, MONAD_BLAKE2B_BLOCKBYTES);
+
+    std::memcpy(&state.t, input.data() + 196, 8 * 2);
+
+    uint32_t const r{load_be_unsafe<uint32_t>(input.data())};
+    monad_blake2b_compress(&state, block, r);
+
+    auto *const output = static_cast<uint8_t *>(std::malloc(64));
+    MONAD_ASSERT(output != nullptr);
+
+    std::memcpy(&output[0], &state.h[0], 8 * 8);
+    return {EVMC_SUCCESS, output, 64};
 }
 
 PrecompileResult point_evaluation_execute(byte_string_view const input)

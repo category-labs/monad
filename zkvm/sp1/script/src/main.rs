@@ -16,15 +16,19 @@
 use clap::Parser;
 use sp1_sdk::{utils, Elf, Prover, ProverClient, ProvingKey, SP1Stdin};
 
-// The guest ELF is produced by build.rs (C++ guest archive + program/main.c
-// linked against the vendored SP1 SDK) and its path exported as GUEST_ELF.
-const ELF_BYTES: &[u8] = include_bytes!(env!("GUEST_ELF"));
+// The guest ELF is produced by build.rs (C++ guest archive + entry main.c
+// linked against the vendored SP1 SDK) and its path exported as MONAD_ELF.
+// build.rs selects which guest to embed: the witness executor by default, or
+// the precompile golden-vector test guest under the `precompile-test` feature.
+const ELF_BYTES: &[u8] = include_bytes!(env!("MONAD_ELF"));
 const MONAD_ELF: Elf = Elf::Static(ELF_BYTES);
 
 #[derive(Parser)]
 #[command(about = "Monad witness-execution guest — SP1 host/prover")]
 struct Args {
-    /// Path to the RLP-encoded execution witness binary.
+    /// Path to the input binary: an RLP-encoded execution witness, or a
+    /// precompile golden-vector blob when built with the `precompile-test`
+    /// feature.
     #[arg(short, long)]
     input: String,
 
@@ -50,7 +54,7 @@ async fn main() {
     });
 
     println!("Monad witness-execution guest (SP1)");
-    println!("Witness size: {} bytes", input.len());
+    println!("Input size: {} bytes", input.len());
 
     // libzkevm's `read_input` (read_vec_raw) returns the raw input buffer, so
     // feed the witness bytes verbatim with write_slice. write_vec would prepend

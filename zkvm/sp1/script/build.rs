@@ -14,10 +14,18 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 fn main() {
-    // Build the C++ guest archive and link it (plus program/main.c) against
+    // Build the C++ guest archive and link it (plus the entry main.c) against
     // libzkevm.a — built from source from the SP1 zkEVM SDK — into the guest
-    // ELF. Surface its path to the host driver via GUEST_ELF (embedded by
-    // include_bytes! in src/main.rs).
-    let elf = monad_zkvm_build_support::Backend::Sp1.build_guest_elf();
-    println!("cargo:rustc-env=GUEST_ELF={}", elf.display());
+    // ELF, and surface its path to the host driver via MONAD_ELF (embedded by
+    // include_bytes! in src/main.rs). The `precompile-test` feature swaps the
+    // witness executor for the precompile golden-vector test guest; both share
+    // the guest archive + libzkevm.a and differ only in their entry main.c.
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_PRECOMPILE_TEST");
+    let backend = monad_zkvm_build_support::Backend::Sp1;
+    let elf = if std::env::var_os("CARGO_FEATURE_PRECOMPILE_TEST").is_some() {
+        backend.build_precompile_test_elf()
+    } else {
+        backend.build_guest_elf()
+    };
+    println!("cargo:rustc-env=MONAD_ELF={}", elf.display());
 }

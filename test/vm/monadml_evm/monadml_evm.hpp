@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2026 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,23 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/execution/ethereum/state3/account_state.hpp>
-#include <category/execution/ethereum/state3/state.hpp>
+#pragma once
 
-#include <evmc/evmc.hpp>
+#include <evmc/evmc.h>
 
-namespace monad::vm::fuzzing
-{
-    void assert_equal(
-        AccountState::StorageMap const &a, AccountState::StorageMap const &b);
-
-    void assert_equal(
-        Address const &k, State &a, AccountState const &as, State &b,
-        AccountState const &bs);
-
-    void assert_equal(State &, State &);
-
-    void assert_equal(
-        evmc::Result const &evmone_result, evmc::Result const &compiler_result,
-        bool strict_out_of_gas);
-}
+extern "C" struct evmc_vm *evmc_create_monadml_evm_default() noexcept;
+extern "C" struct evmc_vm *evmc_create_monadml_evm_debug_tstore() noexcept;

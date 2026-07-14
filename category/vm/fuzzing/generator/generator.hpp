@@ -21,6 +21,10 @@
 #include <category/core/cases.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
+
+#include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
+#include <category/execution/monad/staking/staking_contract.hpp>
+
 #include <category/vm/fuzzing/generator/choice.hpp>
 #include <category/vm/fuzzing/generator/instruction_data.hpp>
 
@@ -267,6 +271,13 @@ namespace monad::vm::fuzzing
         return dist(gen);
     }
 
+    template <typename Engine>
+    uint64_t random_uint64(Engine &gen)
+    {
+        auto dist = std::uniform_int_distribution<uint64_t>();
+        return dist(gen);
+    }
+
     template <size_t Bits = 256, typename Engine = void>
     Constant random_constant(Engine &gen)
         requires(Bits % 64 == 0 && Bits > 0 && Bits <= 256)
@@ -310,6 +321,26 @@ namespace monad::vm::fuzzing
     {
         auto dist = std::uniform_int_distribution<uint64_t>(0, 1 << 16);
         return Constant{dist(gen)};
+    }
+
+    template <typename Engine>
+    Constant some_good_constant(Engine &gen)
+    {
+        return discrete_choice<Constant>(
+            gen,
+            [](auto &g) { return random_constant(g); },
+            Choice(0.1, [](auto &g) { return meaningful_constant(g); }),
+            Choice(0.1, [](auto &g) { return small_constant(g); }),
+            Choice(0.1, [](auto &g) { return power_of_32_constant(g); }),
+            Choice(
+                0.1, [](auto &g) { return negated_power_of_32_constant(g); }),
+            Choice(0.1, [](auto &g) { return power_of_two_constant(g); }),
+            Choice(
+                0.1, [](auto &g) { return negated_power_of_two_constant(g); }),
+            Choice(
+                0.1,
+                [](auto &g) { return random_constant_with_cleared_words(g); }),
+            Choice(0.1, [](auto &g) { return memory_constant(g); }));
     }
 
     using Push = std::variant<ValidAddress, ValidJumpDest, Constant>;
@@ -467,16 +498,16 @@ namespace monad::vm::fuzzing
     using Instruction = std::variant<
         NonTerminator, Terminator, Push, Call, ReturnDataCopy, Create>;
 
-    template <typename Engine>
+    template <Traits traits, typename Engine>
     NonTerminator generate_common_non_terminator(Engine &eng)
     {
-        return NonTerminator{uniform_sample(eng, common_non_terminators)};
+        return NonTerminator{uniform_sample(eng, common_non_terminators<traits>)};
     }
 
-    template <typename Engine>
+    template <Traits traits, typename Engine>
     NonTerminator generate_uncommon_non_terminator(Engine &eng)
     {
-        return NonTerminator{uniform_sample(eng, uncommon_non_terminators)};
+        return NonTerminator{uniform_sample(eng, uncommon_non_terminators<traits>)};
     }
 
     template <typename Engine>
@@ -485,11 +516,11 @@ namespace monad::vm::fuzzing
         return NonTerminator{uniform_sample(eng, dup_non_terminator)};
     }
 
-    template <typename Engine>
+    template <Traits traits, typename Engine>
     Terminator generate_terminator(Engine &eng, bool const exit)
     {
-        auto opcode = exit ? uniform_sample(eng, exit_terminators)
-                           : uniform_sample(eng, jump_terminators);
+        auto opcode = exit ? uniform_sample(eng, exit_terminators<traits>)
+                           : uniform_sample(eng, jump_terminators<traits>);
 
         return Terminator{opcode};
     }
@@ -501,7 +532,7 @@ namespace monad::vm::fuzzing
         return NonTerminator{dist(eng)};
     }
 
-    template <typename Engine>
+    template <Traits traits, typename Engine>
     std::vector<Instruction> generate_block(
         GeneratorFocus const &focus, Engine &eng, bool const is_exit,
         bool const is_main)
@@ -583,7 +614,7 @@ namespace monad::vm::fuzzing
                 [](auto &g) { return generate_random_byte(g); },
                 Choice(
                     common_non_term_prob,
-                    [](auto &g) { return generate_common_non_terminator(g); }),
+                    [](auto &g) { return generate_common_non_terminator<traits>(g); }),
                 Choice(
                     push_prob,
                     [&focus](auto &g) { return generate_push(focus, g); }),
@@ -596,10 +627,10 @@ namespace monad::vm::fuzzing
                 Choice(
                     uncommon_non_term_prob,
                     [](auto &g) {
-                        return generate_uncommon_non_terminator(g);
+                        return generate_uncommon_non_terminator<traits>(g);
                     }),
                 Choice(terminate_prob, [&](auto &g) {
-                    return generate_terminator(g, is_exit);
+                    return generate_terminator<traits>(g, is_exit);
                 }));
 
             if (auto *term = std::get_if<Terminator>(&next_inst)) {
@@ -631,90 +662,45 @@ namespace monad::vm::fuzzing
         return program;
     }
 
-    template <typename Engine>
-    Address
-    generate_precompile_address(Engine &eng, monad_eth_revision const rev)
+    template <Traits traits>
+    std::vector<Address> make_precompile_vector()
     {
-        MONAD_ASSERT(rev >= MONAD_ETH_ISTANBUL);
-
-        auto addr = [rev, &eng]() {
-            if (rev <= MONAD_ETH_SHANGHAI) {
-                return uniform_sample(
-                    eng, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9});
-            }
-            else if (rev == MONAD_ETH_CANCUN) {
-                return uniform_sample(
-                    eng, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
-            }
-            else if (rev == MONAD_ETH_PRAGUE) {
-                return uniform_sample(
-                    eng,
-                    std::array{
-                        1,
-                        2,
-                        3,
-                        4,
-                        5,
-                        6,
-                        7,
-                        8,
-                        9,
-                        10,
-                        11,
-                        12,
-                        13,
-                        14,
-                        15,
-                        16,
-                        17});
-            }
-            else if (rev >= MONAD_ETH_OSAKA) {
-                // New precompile at address 0x100 (256): P256VERIFY
-                return uniform_sample(
-                    eng,
-                    std::array{
-                        1,
-                        2,
-                        3,
-                        4,
-                        5,
-                        6,
-                        7,
-                        8,
-                        9,
-                        10,
-                        11,
-                        12,
-                        13,
-                        14,
-                        15,
-                        16,
-                        17,
-                        256});
-            }
-            else {
-                MONAD_ABORT();
-            }
-        }();
-
-        return Address{static_cast<uint64_t>(addr)};
+        static_assert(traits::monad_rev() >= MONAD_EIGHT);
+        std::vector<Address> pre_compiles;
+        for (uint64_t i = 1; i <= 17; ++i) {
+            pre_compiles.emplace_back(i);
+        }
+        pre_compiles.emplace_back(256);
+        pre_compiles.push_back(staking::STAKING_CA);
+        if constexpr (traits::monad_rev() >= MONAD_NINE) {
+            pre_compiles.push_back(RESERVE_BALANCE_CA);
+        }
+        return pre_compiles;
     }
 
-    template <typename Engine>
+    template <Traits traits, typename Engine>
+    Address
+    generate_precompile_address(Engine &eng)
+    {
+        static auto pre_compiles = make_precompile_vector<traits>();
+        return uniform_sample(eng, pre_compiles);
+    }
+
+    template <Traits traits, typename Engine>
     void compile_address(
-        Engine &eng, monad_eth_revision const rev,
+        Engine &eng,
         std::vector<uint8_t> &program,
         std::vector<Address> const &valid_addresses)
     {
         auto const &addr = [&] {
             if (valid_addresses.empty()) {
-                return generate_precompile_address(eng, rev);
+                return generate_precompile_address<traits>(eng);
             }
             return discrete_choice<Address>(
                 eng,
                 [&](auto &g) { return uniform_sample(g, valid_addresses); },
-                Choice(0.001, [rev](auto &g) {
-                    return generate_precompile_address(g, rev);
+                Choice(0.001, [](auto &g) {
+                    return generate_precompile_address<traits>(g);
                 }));
         }();
 
@@ -760,9 +746,9 @@ namespace monad::vm::fuzzing
         program.push_back(RETURNDATACOPY);
     }
 
-    template <typename Engine>
+    template <Traits traits, typename Engine>
     void compile_create(
-        Engine &eng, monad_eth_revision const rev,
+        Engine &eng,
         std::vector<uint8_t> &program, Create const &c,
         std::vector<Address> const &valid_addresses)
     {
@@ -772,7 +758,7 @@ namespace monad::vm::fuzzing
             }
             // -> [salt (CREATE2)]
 
-            compile_address(eng, rev, program, valid_addresses);
+            compile_address<traits>(eng, program, valid_addresses);
             // -> [address, salt (CREATE2)]
             program.push_back(DUP1);
             // -> [address, address, salt (CREATE2)]
@@ -802,9 +788,9 @@ namespace monad::vm::fuzzing
         program.push_back(c.opcode);
     }
 
-    template <typename Engine>
+    template <Traits traits, typename Engine>
     void compile_call(
-        Engine &eng, monad_eth_revision const rev,
+        Engine &eng,
         std::vector<uint8_t> &program, Call const &call,
         std::vector<Address> const &valid_addresses)
     {
@@ -821,7 +807,7 @@ namespace monad::vm::fuzzing
                 compile_percent(program, call.balancePct);
             }
 
-            compile_address(eng, rev, program, valid_addresses);
+            compile_address<traits>(eng, program, valid_addresses);
 
             // send some percentage of available gas
             program.push_back(GAS);
@@ -881,9 +867,9 @@ namespace monad::vm::fuzzing
         MONAD_DEBUG_ASSERT(patches.empty());
     }
 
-    template <typename Engine>
+    template <Traits traits, typename Engine>
     void compile_block(
-        Engine &eng, monad_eth_revision const rev,
+        Engine &eng,
         std::vector<uint8_t> &program, std::vector<Instruction> const &block,
         std::vector<Address> const &valid_addresses,
         std::vector<uint32_t> &valid_jumpdests,
@@ -928,13 +914,13 @@ namespace monad::vm::fuzzing
                             eng, program, p, valid_addresses, jumpdest_patches);
                     },
                     [&](Call const &c) {
-                        compile_call(eng, rev, program, c, valid_addresses);
+                        compile_call<traits>(eng, program, c, valid_addresses);
                     },
                     [&](ReturnDataCopy const &r) {
                         compile_returndatacopy(program, r);
                     },
                     [&](Create const &c) {
-                        compile_create(eng, rev, program, c, valid_addresses);
+                        compile_create<traits>(eng, program, c, valid_addresses);
                     },
                 },
                 inst);
@@ -1010,9 +996,9 @@ namespace monad::vm::fuzzing
         }
     }
 
-    template <typename Engine>
+    template <Traits traits, typename Engine>
     std::vector<uint8_t> generate_program(
-        GeneratorFocus const &focus, Engine &eng, monad_eth_revision const rev,
+        GeneratorFocus const &focus, Engine &eng,
         std::vector<Address> const &valid_addresses)
     {
         auto prog = std::vector<uint8_t>{};
@@ -1036,11 +1022,10 @@ namespace monad::vm::fuzzing
             auto const is_main = (i == 0);
             auto const is_exit = (i > n_blocks - n_exit_blocks);
 
-            auto const block = generate_block(focus, eng, is_exit, is_main);
+            auto const block = generate_block<traits>(focus, eng, is_exit, is_main);
 
-            compile_block(
+            compile_block<traits>(
                 eng,
-                rev,
                 prog,
                 block,
                 valid_addresses,
@@ -1069,8 +1054,8 @@ namespace monad::vm::fuzzing
             },
             Choice(0.10, [](auto &) { return 0.0; }));
 
-        auto const factor =
-            address_lookup(target).size() * contract_addresses.size();
+        auto const factor = address_lookup(target)->intercode()->size() *
+                            contract_addresses.size();
 
         auto scale_dist = std::normal_distribution(
             /* mean */ 32.0, /* stddev */ 16.0);

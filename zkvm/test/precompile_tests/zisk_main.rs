@@ -13,15 +13,28 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+// ZisK entry for the precompile golden-vector test guest. Mirrors the witness
+// entry (zkvm/zisk/src/main.rs) but hands control to the precompile-test C++
+// entry, which reads a serialized vector blob via read_input and commits a
+// PR01 summary via write_output (both supplied by ziskos).
+
+#![no_main]
+ziskos::entrypoint!(main);
+
+extern "C" {
+    fn monad_zkvm_run_precompile_tests();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn zkvm_halt(status: i32) -> ! {
+    core::arch::asm!(
+        "ecall",
+        in("a0") status,
+        in("a7") 93i32,
+        options(noreturn),
+    );
+}
+
 fn main() {
-    // Both entries link the shared C++ archive and libzkevm.a built from the
-    // pinned SDK source. Export the selected ELF for src/main.rs to embed.
-    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_PRECOMPILE_TEST");
-    let backend = monad_zkvm_build_support::Backend::Sp1;
-    let elf = if std::env::var_os("CARGO_FEATURE_PRECOMPILE_TEST").is_some() {
-        backend.build_precompile_test_elf()
-    } else {
-        backend.build_guest_elf()
-    };
-    println!("cargo:rustc-env=MONAD_ELF={}", elf.display());
+    unsafe { monad_zkvm_run_precompile_tests() };
 }

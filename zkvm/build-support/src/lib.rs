@@ -100,7 +100,27 @@ impl Backend {
     /// The SDK library, headers, and linker script come from one checkout.
     #[cfg(feature = "sp1")]
     pub fn build_guest_elf(self) -> PathBuf {
-        assert!(matches!(self, Self::Sp1), "build_guest_elf is SP1-only");
+        self.link_guest_elf("zkvm/sp1/program/main.c", "monad-zkvm-guest-sp1.elf")
+    }
+    
+    /// SP1 guest ELF for the precompile golden-vector test entry. Same link as
+    /// [`Self::build_guest_elf`], but with the precompile-test `main.c` (which
+    /// calls `monad_zkvm_run_precompile_tests` instead of the witness entry).
+    #[cfg(feature = "sp1")]
+    pub fn build_precompile_test_elf(self) -> PathBuf {
+        self.link_guest_elf(
+            "zkvm/test/precompile_tests/sp1_main.c",
+            "monad-zkvm-precompile-test-sp1.elf",
+        )
+    }
+
+    /// Compile `main_rel` (a C entry relative to the repo root) and link it with
+    /// the shared guest archive + `libzkevm.a` into `elf_name`. The archive and
+    /// `libzkevm.a` builds are incremental/cached, so linking a second entry is
+    /// cheap.
+    #[cfg(feature = "sp1")]
+    fn link_guest_elf(self, main_rel: &str, elf_name: &str) -> PathBuf {
+        assert!(matches!(self, Self::Sp1), "link_guest_elf is SP1-only");
 
         let repo_root = locate_repo_root(&manifest_dir());
         let gcc = riscv_gcc(&riscv_toolchain_dir());
@@ -117,10 +137,10 @@ impl Backend {
         );
         let include = zkevm.join("include");
 
-        let main_c = repo_root.join("zkvm/sp1/program/main.c");
+        let main_c = repo_root.join(main_rel);
         let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR unset"));
-        let main_o = out_dir.join("main.o");
-        let elf = out_dir.join("monad-zkvm-guest-sp1.elf");
+        let main_o = out_dir.join(format!("{elf_name}.main.o"));
+        let elf = out_dir.join(elf_name);
 
         // The SDK's zkvm.ld plus our overlay adding the C++ guest's RELRO
         // sections (see relro.ld).

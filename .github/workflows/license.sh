@@ -34,6 +34,12 @@ PYTHON_LICENSE_LINES=(
     "# along with this program.  If not, see <http://www.gnu.org/licenses/>."
 )
 
+NEW_C_LICENSE_LINES=("${C_LICENSE_LINES[@]}")
+NEW_C_LICENSE_LINES[0]="^// Copyright \(C\) 2025-26 Category Labs, Inc\.$"
+
+NEW_PYTHON_LICENSE_LINES=("${PYTHON_LICENSE_LINES[@]}")
+NEW_PYTHON_LICENSE_LINES[0]="^# Copyright \(C\) 2025-26 Category Labs, Inc\.$"
+
 # Function to check if a file has valid license header
 check_license() {
     local file="$1"
@@ -66,6 +72,24 @@ check_license() {
 
 exit_code=0
 
+# CI supplies the PR or push base ref; local runs also detect staged additions.
+declare -A new_files
+
+if [ -n "${LICENSE_BASE_REF:-}" ]; then
+    if ! git rev-parse --verify --quiet "${LICENSE_BASE_REF}^{commit}" >/dev/null; then
+        echo "license base ref does not exist: ${LICENSE_BASE_REF}" >&2
+        exit 1
+    fi
+
+    while IFS= read -r -d '' file; do
+        new_files["$file"]=1
+    done < <(git diff --name-only --diff-filter=A -z "$LICENSE_BASE_REF" HEAD --)
+fi
+
+while IFS= read -r -d '' file; do
+    new_files["$file"]=1
+done < <(git diff --cached --name-only --diff-filter=A -z --)
+
 for file in $(git ls-files -- '*.rs' '*.h' '*.hpp' '*.c' '*.cpp' '*.S'); do
     directory=$(dirname "$file")
 
@@ -77,7 +101,12 @@ for file in $(git ls-files -- '*.rs' '*.h' '*.hpp' '*.c' '*.cpp' '*.S'); do
         continue
     fi
 
-    if check_license "$file" "${C_LICENSE_LINES[@]}"; then
+    license_lines=("${C_LICENSE_LINES[@]}")
+    if [ -n "${new_files[$file]+x}" ]; then
+        license_lines=("${NEW_C_LICENSE_LINES[@]}")
+    fi
+
+    if check_license "$file" "${license_lines[@]}"; then
         continue
     fi
 
@@ -93,7 +122,12 @@ for file in $(git ls-files -- '*.py' '*CMakeLists.txt' '*.cmake'); do
         continue
     fi
 
-    if check_license "$file" "${PYTHON_LICENSE_LINES[@]}"; then
+    license_lines=("${PYTHON_LICENSE_LINES[@]}")
+    if [ -n "${new_files[$file]+x}" ]; then
+        license_lines=("${NEW_PYTHON_LICENSE_LINES[@]}")
+    fi
+
+    if check_license "$file" "${license_lines[@]}"; then
         continue
     fi
 

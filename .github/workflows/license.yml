@@ -20,5 +20,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Check licenses
         run: .github/workflows/license.sh
+        env:
+          LICENSE_BASE_REF: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}

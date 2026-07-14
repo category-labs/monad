@@ -190,11 +190,6 @@ class UpdateAux
     double
     calculate_disk_usage_if_erased_up_to_and_including(uint64_t version) const;
 
-    // Version up to which timeline tid is erased when history is trimmed to
-    // version_to_erase, clamped to keep the timeline's newest version.
-    // Returns INVALID_BLOCK_NUM when the timeline holds nothing to trim.
-    uint64_t erase_boundary(uint64_t version_to_erase, timeline_id tid) const;
-
     /* Calculate the version up to which the database will automatically expire
     entries (referred to as "auto_expire" in code names).
 
@@ -276,6 +271,23 @@ public:
         Node::SharedPtr prev_root, StateMachine &, UpdateList &&,
         uint64_t version, bool compaction, bool can_write_to_fast,
         bool write_root, timeline_id tid);
+
+    struct TimelineCut
+    {
+        uint64_t erase_up_to;
+        uint64_t oldest_surviving; // INVALID_BLOCK_NUM if nothing survives
+    };
+
+    // Where timeline tid cuts when history is trimmed to version_to_erase,
+    // clamped so the timeline's newest version is never erased. The disk
+    // usage prediction and trim_all_timelines_up_to_and_including both take
+    // their boundaries from here, so the reclaim always matches the
+    // prediction. nullopt when the timeline is inactive or holds no
+    // versions.
+    std::optional<TimelineCut>
+    plan_trim(uint64_t version_to_erase, timeline_id tid) const;
+
+    void trim_all_timelines_up_to_and_including(uint64_t version_to_erase);
 
     void adjust_history_length_based_on_disk_usage();
     void move_trie_version_forward(

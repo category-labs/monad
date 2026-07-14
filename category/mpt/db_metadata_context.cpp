@@ -511,21 +511,21 @@ size_t DbMetadataContext::map_bytes_per_chunk_() const noexcept
 
 uint64_t DbMetadataContext::get_latest_finalized_version() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t const>(
+    return start_lifetime_as<std::atomic_uint64_t>(
                &copies_[0].main->latest_finalized_version)
         ->load(std::memory_order_acquire);
 }
 
 uint64_t DbMetadataContext::get_latest_verified_version() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t const>(
+    return start_lifetime_as<std::atomic_uint64_t>(
                &copies_[0].main->latest_verified_version)
         ->load(std::memory_order_acquire);
 }
 
 uint64_t DbMetadataContext::get_latest_voted_version() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t const>(
+    return start_lifetime_as<std::atomic_uint64_t>(
                &copies_[0].main->latest_voted_version)
         ->load(std::memory_order_acquire);
 }
@@ -537,7 +537,7 @@ bytes32_t DbMetadataContext::get_latest_voted_block_id() const noexcept
 
 uint64_t DbMetadataContext::get_latest_proposed_version() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t const>(
+    return start_lifetime_as<std::atomic_uint64_t>(
                &copies_[0].main->latest_proposed_version)
         ->load(std::memory_order_acquire);
 }
@@ -558,7 +558,7 @@ int64_t DbMetadataContext::get_auto_expire_version_metadata(
     auto const *const slot =
         (ring_idx == 0) ? &m->root_offsets_state.auto_expire_version_
                         : &m->secondary_timeline_state.auto_expire_version_;
-    return start_lifetime_as<std::atomic_int64_t const>(slot)->load(
+    return start_lifetime_as<std::atomic_int64_t>(slot)->load(
         std::memory_order_acquire);
 }
 
@@ -641,7 +641,7 @@ DbMetadataContext::get_state_machine_kind(timeline_id const tid) const noexcept
     auto const *const slot =
         (ring_idx == 0) ? &m->root_offsets_state.state_machine_kind_
                         : &m->secondary_timeline_state.state_machine_kind_;
-    auto const raw = start_lifetime_as<std::atomic_uint8_t const>(slot)->load(
+    auto const raw = start_lifetime_as<std::atomic_uint8_t>(slot)->load(
         std::memory_order_acquire);
     return static_cast<state_machine_kind>(raw);
 }
@@ -769,7 +769,7 @@ uint64_t DbMetadataContext::version_history_max_possible() const noexcept
 
 uint64_t DbMetadataContext::version_history_length() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t const>(
+    return start_lifetime_as<std::atomic_uint64_t>(
                &copies_[0].main->history_length)
         ->load(std::memory_order_relaxed);
 }
@@ -797,7 +797,7 @@ bool DbMetadataContext::timeline_active(timeline_id const tid) const noexcept
     if (tid == timeline_id::primary) {
         return true;
     }
-    return start_lifetime_as<std::atomic<uint8_t> const>(
+    return start_lifetime_as<std::atomic<uint8_t>>(
                &copies_[0].main->secondary_timeline_active_)
                ->load(std::memory_order_acquire) != 0;
 }
@@ -1205,10 +1205,10 @@ void DbMetadataContext::do_activate_secondary_body_(uint32_t const new_chunks)
         //    capacity excludes older versions (idempotent: std::max is a
         //    fixed point under repeated application).
         uint64_t const nv =
-            start_lifetime_as<std::atomic_uint64_t const>(pver_nv)->load(
+            start_lifetime_as<std::atomic_uint64_t>(pver_nv)->load(
                 std::memory_order_acquire);
         uint64_t const cur_lb =
-            start_lifetime_as<std::atomic_uint64_t const>(pver_lb)->load(
+            start_lifetime_as<std::atomic_uint64_t>(pver_lb)->load(
                 std::memory_order_acquire);
         uint64_t const new_lb =
             std::max(cur_lb, (nv >= new_cap) ? (nv - new_cap) : uint64_t{0});
@@ -1488,10 +1488,10 @@ void DbMetadataContext::do_deactivate_secondary_body_(
                 0xff,
                 tail_bytes);
             uint64_t const nv =
-                start_lifetime_as<std::atomic_uint64_t const>(pver_nv)->load(
+                start_lifetime_as<std::atomic_uint64_t>(pver_nv)->load(
                     std::memory_order_acquire);
             uint64_t const lb =
-                start_lifetime_as<std::atomic_uint64_t const>(pver_lb)->load(
+                start_lifetime_as<std::atomic_uint64_t>(pver_lb)->load(
                     std::memory_order_acquire);
             if (nv != lb) {
                 for (uint64_t v = lb; v < nv; v++) {

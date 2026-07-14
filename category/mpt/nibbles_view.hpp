@@ -21,6 +21,8 @@
 #include <category/core/nibble.h>
 #include <category/mpt/config.hpp>
 
+#include <algorithm>
+#include <compare>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -34,6 +36,10 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 class NibblesView;
 class Node;
+
+constexpr bool operator==(NibblesView const &a, NibblesView const &b);
+constexpr std::strong_ordering
+operator<=>(NibblesView const &a, NibblesView const &b);
 
 class Nibbles
 {
@@ -120,9 +126,6 @@ public:
     // at `pos` and up to `count` nibbles (or to the end if count == npos).
     // The returned Nibbles is always left-aligned (begin_nibble_ == 0).
     inline constexpr Nibbles substr(unsigned pos, unsigned count = npos) const;
-
-    inline constexpr bool operator==(NibblesView const &other) const;
-    inline constexpr auto operator<=>(NibblesView const &other) const;
 
     [[nodiscard]] unsigned char get(unsigned const i) const
     {
@@ -256,37 +259,6 @@ public:
         return substr(0, other.nibble_size()) == other;
     }
 
-    constexpr bool operator==(NibblesView const &other) const
-    {
-        if (this == &other) {
-            return true;
-        }
-
-        if (nibble_size() != other.nibble_size()) {
-            return false;
-        }
-
-        if (nibble_size()) {
-            for (auto i = 0u; i < nibble_size(); ++i) {
-                if (get(i) != other.get(i)) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    constexpr auto operator<=>(NibblesView const &other) const
-    {
-        unsigned const min_size = std::min(nibble_size(), other.nibble_size());
-        for (unsigned i = 0; i < min_size; ++i) {
-            if (get(i) != other.get(i)) {
-                return get(i) <=> other.get(i);
-            }
-        }
-        return nibble_size() <=> other.nibble_size();
-    }
-
     [[nodiscard]] unsigned char get(unsigned const i) const
     {
         MONAD_ASSERT(i < nibble_size());
@@ -308,14 +280,32 @@ inline Nibbles::Nibbles(NibblesView const nibbles)
     }
 }
 
-inline constexpr bool Nibbles::operator==(NibblesView const &other) const
+constexpr bool operator==(NibblesView const &a, NibblesView const &b)
 {
-    return NibblesView(*this) == other;
+    if (&a == &b) {
+        return true;
+    }
+    if (a.nibble_size() != b.nibble_size()) {
+        return false;
+    }
+    for (auto i = 0u; i < a.nibble_size(); ++i) {
+        if (a.get(i) != b.get(i)) {
+            return false;
+        }
+    }
+    return true;
 }
 
-inline constexpr auto Nibbles::operator<=>(NibblesView const &other) const
+constexpr std::strong_ordering
+operator<=>(NibblesView const &a, NibblesView const &b)
 {
-    return NibblesView(*this) <=> other;
+    unsigned const min_size = std::min(a.nibble_size(), b.nibble_size());
+    for (unsigned i = 0; i < min_size; ++i) {
+        if (a.get(i) != b.get(i)) {
+            return a.get(i) <=> b.get(i);
+        }
+    }
+    return a.nibble_size() <=> b.nibble_size();
 }
 
 template <class... Args>

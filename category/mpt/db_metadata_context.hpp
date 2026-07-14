@@ -149,7 +149,7 @@ public:
         chunk_offset_t operator[](size_t const i) const noexcept
         {
             MONAD_ASSERT(capacity_ != 0);
-            return start_lifetime_as<std::atomic<chunk_offset_t> const>(
+            return start_lifetime_as<std::atomic<chunk_offset_t>>(
                        &root_offsets_chunks_[i & (capacity_ - 1)])
                 ->load(std::memory_order_acquire);
         }
@@ -242,7 +242,7 @@ public:
     // naturally with a promote flip done under release.
     uint8_t primary_ring_idx() const noexcept
     {
-        return start_lifetime_as<std::atomic<uint8_t> const>(
+        return start_lifetime_as<std::atomic<uint8_t>>(
                    &copies_[0].main->primary_ring_idx)
             ->load(std::memory_order_acquire);
     }
@@ -535,7 +535,7 @@ private:
                 m->main->root_offsets.version_lower_bound_,
                 m->main->root_offsets.next_version_,
                 m->ring_a_span,
-                start_lifetime_as<std::atomic<uint32_t> const>(
+                start_lifetime_as<std::atomic<uint32_t>>(
                     &m->main->root_offsets.storage_.cnv_chunks_len)
                         ->load(std::memory_order_acquire) *
                     entries_per_chunk};
@@ -544,7 +544,7 @@ private:
             m->main->secondary_timeline.version_lower_bound_,
             m->main->secondary_timeline.next_version_,
             m->ring_b_span,
-            start_lifetime_as<std::atomic<uint32_t> const>(
+            start_lifetime_as<std::atomic<uint32_t>>(
                 &m->main->secondary_timeline.storage_.cnv_chunks_len)
                     ->load(std::memory_order_acquire) *
                 entries_per_chunk};

@@ -18,6 +18,7 @@
 #include <category/core/config.hpp>
 
 #include <cstddef>
+#include <version>
 
 #ifndef MONAD_USE_STD_START_LIFETIME_AS
     #if __cpp_lib_start_lifetime_as >= 202207L

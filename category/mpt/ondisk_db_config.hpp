@@ -49,6 +49,10 @@ struct OnDiskDbConfig
     // deactivation the chunks are returned to the primary. Must be a power
     // of 2. Each chunk can hold 1 << 24 = 16777216 historical entries.
     uint32_t root_offsets_chunk_count{2};
+    // Storage chunk capacity as a power of two (1 << n bytes). Only applied
+    // when the pool is created. Smaller chunks give tests finer disk-usage
+    // granularity on small db files.
+    uint32_t chunk_capacity{28};
 };
 
 struct ReadOnlyOnDiskDbConfig

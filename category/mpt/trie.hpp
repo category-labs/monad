@@ -190,6 +190,11 @@ class UpdateAux
     double
     calculate_disk_usage_if_erased_up_to_and_including(uint64_t version) const;
 
+    // Version up to which timeline tid is erased when history is trimmed to
+    // version_to_erase, clamped to keep the timeline's newest version.
+    // Returns INVALID_BLOCK_NUM when the timeline holds nothing to trim.
+    uint64_t erase_boundary(uint64_t version_to_erase, timeline_id tid) const;
+
     /* Calculate the version up to which the database will automatically expire
     entries (referred to as "auto_expire" in code names).
 

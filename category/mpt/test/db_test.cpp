@@ -946,6 +946,92 @@ TEST(DbTest, history_length_adjustment_reclaims_with_active_secondary)
     remove(dbname);
 }
 
+TEST(DbTest, history_length_adjustment_trims_both_timelines)
+{
+    // The secondary dual-writes every version the primary writes, as in
+    // production. Under disk pressure the controller must trim both
+    // timelines in tandem: trimming only the primary frees nothing (the
+    // secondary pins the GC boundary) and history collapses to
+    // MIN_HISTORY_LENGTH.
+    //
+    // Sizing: small chunks give fine disk-usage granularity, and small
+    // writes on a 2 GB file put the 0.8 trigger past the ~5000 versions
+    // fast compaction needs before it starts advancing the roots' compact
+    // offsets, without which erased versions reclaim nothing.
+    auto const dbname = create_temp_file(1);
+    OnDiskDbConfig const config{
+        .compaction = true,
+        .sq_thread_cpu{std::nullopt},
+        .dbname_paths = {dbname},
+        .chunk_capacity = 23}; // 8 MiB chunks, the smallest AsyncIO accepts
+    Db db{std::make_unique<StateMachineAlwaysEmpty>(), config};
+
+    constexpr unsigned nkeys = 25;
+    monad::byte_string const value(2 * 1024, 0xf);
+
+    auto batch_upsert = [&](Db &target,
+                            Node::SharedPtr &root,
+                            uint64_t const version,
+                            size_t const salt) {
+        UpdateList ls;
+        std::deque<monad::byte_string> bytes_alloc;
+        std::deque<Update> updates_alloc;
+        for (size_t i = 0; i < nkeys; ++i) {
+            ls.push_front(updates_alloc.emplace_back(Update{
+                .key = bytes_alloc.emplace_back(keccak_int_to_string(salt + i)),
+                .value = value,
+                .incarnation = false,
+                .next = UpdateList{}}));
+        }
+        root = target.upsert(std::move(root), std::move(ls), version);
+    };
+
+    Node::SharedPtr primary_root{};
+    uint64_t version = 0;
+    for (; version < 5; ++version) {
+        batch_upsert(db, primary_root, version, 0);
+    }
+
+    uint64_t const activation_version = version;
+    uint64_t const version_cap = version + 100000;
+    {
+        Db secondary_db = db.activate_secondary_timeline(
+            std::make_unique<StateMachineAlwaysEmpty>());
+        Node::SharedPtr secondary_root{};
+
+        uint64_t const start_history = db.get_history_length();
+        while (db.get_history_length() == start_history &&
+               version < version_cap) {
+            batch_upsert(secondary_db, secondary_root, version, 0xD00D0000);
+            batch_upsert(db, primary_root, version, 0);
+            ++version;
+        }
+        ASSERT_LT(db.get_history_length(), start_history)
+            << "controller never shrank history under disk pressure";
+        // Both timelines were trimmed, so the minimal cut relieves pressure
+        // without collapsing to the floor. The one-sided trim made every
+        // candidate look unreclaimable and slammed history to
+        // MIN_HISTORY_LENGTH here.
+        EXPECT_GT(db.get_history_length(), MIN_HISTORY_LENGTH);
+        // The secondary was trimmed in tandem with the primary; a one-sided
+        // trim leaves its min valid version pinned at activation.
+        auto const &meta = test::DbAccessor::aux(db).metadata_ctx();
+        EXPECT_GT(
+            meta.db_history_min_valid_version(timeline_id::secondary),
+            activation_version);
+        // Auto-expire advances up to 2 versions per upsert and the primary
+        // upserts last in the loop, so the two can skew by an expire step.
+        auto const primary_min =
+            meta.db_history_min_valid_version(timeline_id::primary);
+        auto const secondary_min =
+            meta.db_history_min_valid_version(timeline_id::secondary);
+        EXPECT_GE(primary_min, secondary_min);
+        EXPECT_LE(primary_min - secondary_min, 2);
+    }
+    db.deactivate_secondary_timeline();
+    remove(dbname);
+}
+
 TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_as_version_expire)
 {
     struct TraverseMachinePruneHistory final : public TraverseMachine

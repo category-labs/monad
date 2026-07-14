@@ -130,6 +130,7 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
     : pool{[&] -> async::storage_pool {
         async::storage_pool::creation_flags pool_options;
         pool_options.num_cnv_chunks = options.root_offsets_chunk_count + 1;
+        pool_options.set_chunk_capacity(options.chunk_capacity);
         auto const len = options.file_size_db * 1024 * 1024 * 1024 + 24576;
         if (options.dbname_paths.empty()) {
             return async::storage_pool{

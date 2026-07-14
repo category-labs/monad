@@ -480,6 +480,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # ---- Final guest static archive ----
     add_library(${_guest_target} STATIC
         $<TARGET_OBJECTS:monad-zkvm-guest>
+        # Precompile golden-vector test entry (monad_zkvm_run_precompile_tests).
+        # Pulled into the archive so a test binary can link it; dead-stripped
+        # from the witness binary, which references only the witness entry.
+        $<TARGET_OBJECTS:monad-zkvm-precompile-test>
         $<TARGET_OBJECTS:monad-core>
         $<TARGET_OBJECTS:monad-zkvm-core>
         $<TARGET_OBJECTS:monad_precompiles>
@@ -508,7 +512,28 @@ else()
     target_link_libraries(monad-zkvm-x86-test-runner
         PRIVATE monad-zkvm-guest monad_execution zkevm-standards)
 
+    # Precompile golden-vector test runner: same x86 driver, but its entry is
+    # the precompile-vector harness instead of the witness executor.
+    add_executable(monad-zkvm-x86-precompile-test
+        "${CMAKE_CURRENT_SOURCE_DIR}/x86_test_runner.cpp"
+    )
+    monad_compile_options(monad-zkvm-x86-precompile-test)
+    target_compile_definitions(monad-zkvm-x86-precompile-test PRIVATE
+        MONAD_ZKVM_X86_ENTRY=monad_zkvm_run_precompile_tests)
+    target_link_libraries(monad-zkvm-x86-precompile-test
+        PRIVATE monad-zkvm-precompile-test monad_execution zkevm-standards)
+
 endif()
+
+# ---- eth-act zkEVM standards (header-only), shared by both modes ----
+# The vendored zkevm-standards submodule: io-interface/zkvm_io.h (the guest's
+# read_input / write_output ABI) and c-interface-accelerators/
+# zkvm_accelerators.h (the crypto accelerator ABI the RISC-V shadows call).
+# Targets take it as a link dependency rather than adding the include dir
+# by hand; monad_riscv_compile_options links it for every bare-metal target.
+add_library(zkevm-standards INTERFACE)
+target_include_directories(zkevm-standards
+    INTERFACE "${THIRD_PARTY_DIR}/zkevm-standards/standards")
 
 # ---- Guest sources, shared by both modes ----
 # The witness pipeline itself. Defined once, after the mode split: the two
@@ -521,22 +546,21 @@ add_library(monad-zkvm-guest OBJECT
     "${CMAKE_CURRENT_SOURCE_DIR}/ffi.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/witness_block_hash_buffer.cpp"
 )
-monad_compile_options(monad-zkvm-guest)
-target_link_libraries(monad-zkvm-guest PRIVATE zkevm-standards)
-if(DEFINED MONAD_ZKVM_GUEST_TARGET)
-    monad_riscv_compile_options(monad-zkvm-guest)
-    target_link_libraries(monad-zkvm-guest
-        PRIVATE monad-core monad_execution_ethereum)
-else()
-    target_link_libraries(monad-zkvm-guest PRIVATE monad_execution)
-endif()
 
-# ---- eth-act zkEVM standards (header-only), shared by both modes ----
-# The vendored zkevm-standards submodule: io-interface/zkvm_io.h (the guest's
-# read_input / write_output ABI) and c-interface-accelerators/
-# zkvm_accelerators.h (the crypto accelerator ABI the RISC-V shadows call).
-# Targets take it as a link dependency rather than adding the include dir
-# by hand; monad_riscv_compile_options links it for every bare-metal target.
-add_library(zkevm-standards INTERFACE)
-target_include_directories(zkevm-standards
-    INTERFACE "${THIRD_PARTY_DIR}/zkevm-standards/standards")
+# The precompile golden-vector test entry (monad_zkvm_run_precompile_tests),
+# kept apart from the witness pipeline so that library stays test-free.
+add_library(monad-zkvm-precompile-test OBJECT
+    "${CMAKE_CURRENT_SOURCE_DIR}/../test/precompile_tests/precompile_test.cpp"
+)
+
+foreach(tgt monad-zkvm-guest monad-zkvm-precompile-test)
+    monad_compile_options(${tgt})
+    target_link_libraries(${tgt} PRIVATE zkevm-standards)
+    if(DEFINED MONAD_ZKVM_GUEST_TARGET)
+        monad_riscv_compile_options(${tgt})
+        target_link_libraries(${tgt}
+            PRIVATE monad-core monad_execution_ethereum)
+    else()
+        target_link_libraries(${tgt} PRIVATE monad_execution)
+    endif()
+endforeach()

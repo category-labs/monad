@@ -58,7 +58,24 @@ inline constexpr chunk_offset_t round_down_align(chunk_offset_t x) noexcept
     return x;
 }
 
-//! Returns a temporary directory in which `O_DIRECT` files definitely work
+namespace detail
+{
+    //! Uncached resolution of the working temporary directory: the
+    //! implementation behind working_temporary_directory(), split out so tests
+    //! can exercise it repeatedly under different MONAD_TMPDIR_FORCE settings
+    //! (the public entry point memoises its result in a function-local static).
+    extern std::filesystem::path resolve_working_temporary_directory();
+}
+
+//! Returns a temporary directory in which `O_DIRECT` files work by default
+//! (unless overridden; see `MONAD_TMPDIR_FORCE` below).
+//!
+//! Set the `MONAD_TMPDIR_FORCE` environment variable to override the search
+//! with an explicit directory, skipping the `O_DIRECT` probe and the tmpfs
+//! rejection. Intended for callers that do not require `O_DIRECT` (e.g. tests
+//! and fuzzers) so their working files can live on a RAM-backed tmpfs such as
+//! `/dev/shm`. Ignored for setuid/setgid processes; a set-but-unusable value
+//! throws.
 extern std::filesystem::path const &working_temporary_directory();
 
 //! Creates already deleted file so no need to clean it up

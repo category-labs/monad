@@ -50,3 +50,5 @@ endif()
 target_link_libraries(sender_receiver_test PRIVATE Boost::fiber)
 
 add_async_test(TARGET storage_pool_test SOURCES "storage_pool.cpp")
+
+add_async_test(TARGET util_test SOURCES "util.cpp")

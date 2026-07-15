@@ -669,49 +669,48 @@ void UpdateAux::erase_versions_up_to_and_including(
     release_unreferenced_chunks();
 }
 
-uint64_t UpdateAux::erase_boundary(
+std::optional<UpdateAux::TimelineCut> UpdateAux::plan_trim(
     uint64_t const version_to_erase, timeline_id const tid) const
 {
-    // Clamp so a timeline's newest version is never erased (a wipe would
-    // break promotion/deactivation). For the primary the clamp is inert:
-    // the caller bounds version_to_erase at MIN_HISTORY_LENGTH below the
-    // primary max. For the secondary it only bites if the timeline lags
-    // behind version_to_erase.
     if (!metadata_ctx_->timeline_active(tid)) {
-        return INVALID_BLOCK_NUM;
+        return std::nullopt;
     }
     auto const tl_max = metadata_ctx_->db_history_max_version(tid);
     if (tl_max == INVALID_BLOCK_NUM || tl_max == 0) {
-        return INVALID_BLOCK_NUM;
+        return std::nullopt;
     }
-    return std::min(version_to_erase, tl_max - 1);
+    auto const erase_up_to = std::min(version_to_erase, tl_max - 1);
+    uint64_t v = erase_up_to + 1;
+    while (v <= tl_max && !metadata_ctx_->version_is_valid_ondisk(v, tid)) {
+        v++;
+    }
+    return TimelineCut{
+        .erase_up_to = erase_up_to,
+        .oldest_surviving = v <= tl_max ? v : INVALID_BLOCK_NUM};
+}
+
+void UpdateAux::trim_all_timelines_up_to_and_including(
+    uint64_t const version_to_erase)
+{
+    for (auto const tid : {timeline_id::primary, timeline_id::secondary}) {
+        if (auto const cut = plan_trim(version_to_erase, tid)) {
+            erase_versions_up_to_and_including(cut->erase_up_to, tid);
+        }
+    }
 }
 
 double UpdateAux::calculate_disk_usage_if_erased_up_to_and_including(
     uint64_t const version_to_erase) const
 {
     MONAD_ASSERT(is_on_disk());
-    MONAD_ASSERT(metadata_ctx_->db_history_max_version() != INVALID_BLOCK_NUM);
-
-    // The controller erases both timelines in tandem to the same boundary,
-    // so the predicted GC boundary is the component-wise min over all
-    // active timelines of the oldest root surviving that timeline's erase.
     compact_offset_pair min_offsets{
         INVALID_COMPACT_VIRTUAL_OFFSET, INVALID_COMPACT_VIRTUAL_OFFSET};
     for (auto const tid : {timeline_id::primary, timeline_id::secondary}) {
-        auto const erase_up_to = erase_boundary(version_to_erase, tid);
-        if (erase_up_to == INVALID_BLOCK_NUM) {
-            // timeline inactive or holds no version
+        auto const cut = plan_trim(version_to_erase, tid);
+        if (!cut.has_value() || cut->oldest_surviving == INVALID_BLOCK_NUM) {
             continue;
         }
-        auto const tl_max = metadata_ctx_->db_history_max_version(tid);
-        uint64_t v = erase_up_to + 1;
-        while (v <= tl_max && !metadata_ctx_->version_is_valid_ondisk(v, tid)) {
-            v++;
-        }
-        if (v > tl_max) {
-            continue;
-        }
+        auto const v = cut->oldest_surviving;
         auto const root = read_node_blocking(
             *this, metadata_ctx_->get_root_offset_at_version(v, tid), v, tid);
         MONAD_ASSERT(root && root->has_value());
@@ -719,8 +718,6 @@ double UpdateAux::calculate_disk_usage_if_erased_up_to_and_including(
         min_offsets.fast = std::min(min_offsets.fast, offsets.fast);
         min_offsets.slow = std::min(min_offsets.slow, offsets.slow);
     }
-    // The primary always contributes: the caller bounds version_to_erase by
-    // MIN_HISTORY_LENGTH below the primary max, so a valid version survives.
     MONAD_ASSERT(
         min_offsets.fast != INVALID_COMPACT_VIRTUAL_OFFSET &&
         min_offsets.slow != INVALID_COMPACT_VIRTUAL_OFFSET);
@@ -776,14 +773,7 @@ void UpdateAux::adjust_history_length_based_on_disk_usage()
                 best_version_to_erase = *it;
             }
         }
-        // Trim both timelines in tandem so the reclaim matches the
-        // prediction; per-timeline boundaries keep each newest version.
-        for (auto const tid : {timeline_id::primary, timeline_id::secondary}) {
-            auto const erase_up_to = erase_boundary(best_version_to_erase, tid);
-            if (erase_up_to != INVALID_BLOCK_NUM) {
-                erase_versions_up_to_and_including(erase_up_to, tid);
-            }
-        }
+        trim_all_timelines_up_to_and_including(best_version_to_erase);
         metadata_ctx_->update_history_length_metadata(
             std::max(max_version - best_version_to_erase, MIN_HISTORY_LENGTH));
         MONAD_ASSERT(

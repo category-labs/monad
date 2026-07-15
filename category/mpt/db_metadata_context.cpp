@@ -670,17 +670,14 @@ void DbMetadataContext::update_history_length_metadata(
     auto do_ = [&](unsigned const which) {
         auto *const m = copies_[which].main;
         auto const g = m->hold_dirty();
-        auto const ro = root_offsets(which);
-        MONAD_ASSERT(history_len > 0 && history_len <= ro.capacity());
-        // history_length is a single parameter governing both timelines.
-        // Checking against the primary ring's capacity suffices because
-        // activation splits the cnv chunks evenly, giving both rings the
-        // same capacity; assert that invariant so a future uneven split
-        // cannot silently let history_len exceed the secondary's capacity.
+        // history_length is a single parameter governing both timelines, so
+        // it must fit every active ring.
+        MONAD_ASSERT(history_len > 0);
+        MONAD_ASSERT(history_len <= root_offsets(which).capacity());
         if (timeline_active(timeline_id::secondary)) {
             MONAD_ASSERT(
-                root_offsets(timeline_id::secondary, which).capacity() ==
-                ro.capacity());
+                history_len <=
+                root_offsets(timeline_id::secondary, which).capacity());
         }
         reinterpret_cast<std::atomic_uint64_t *>(&m->history_length)
             ->store(history_len, std::memory_order_relaxed);

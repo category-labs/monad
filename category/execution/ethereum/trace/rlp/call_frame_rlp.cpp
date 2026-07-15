@@ -27,6 +27,7 @@
 
 #include <boost/outcome/try.hpp>
 
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -84,6 +85,7 @@ byte_string encode_call_frames(std::span<CallFrame const> const call_frames)
 Result<CallFrame::Log> decode_call_frame_log(byte_string_view &enc)
 {
     CallFrame::Log log;
+    log.receipt_index = std::nullopt; // For event recording only
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
     BOOST_OUTCOME_TRY(log.log, decode_log(payload));
     BOOST_OUTCOME_TRY(log.position, decode_unsigned<size_t>(payload));

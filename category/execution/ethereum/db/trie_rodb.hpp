@@ -120,17 +120,9 @@ public:
                 "Block was invalidated in db while execution was in progress");
             return {};
         }
-        auto encoded_storage = storage_leaf_res.value().node->value();
-        auto const storage = decode_storage_db_ignore_key(encoded_storage);
-        MONAD_ASSERT(!storage.has_error());
-        if (page_encoded_) {
-            auto const page = decode_storage_page(storage.value());
-            MONAD_ASSERT(!page.has_error());
-            return page.value()[compute_slot_offset(key)];
-        }
-        else {
-            return to_bytes(storage.value());
-        }
+        auto const page = decode_storage_leaf_to_page(
+            storage_leaf_res.value().node->value(), page_encoded_);
+        return page[page_encoded_ ? compute_slot_offset(key) : 0];
     }
 
     virtual storage_page_t

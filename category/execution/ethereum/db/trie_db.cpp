@@ -144,41 +144,8 @@ bytes32_t TrieDb::read_storage(
     if (status == CacheReadStatus::Hit) {
         return result;
     }
-    auto const res = db_.find(
-        curr_root_,
-        concat(
-            prefix_,
-            STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{
-                keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
-        block_number_);
-
-    // Decode the leaf into a page (empty if absent): a full page for page
-    // encoding, a single-slot page for slot encoding. Read-through caches it on
-    // a resolved miss.
-    storage_page_t page;
-    if (res.has_error()) {
-        stats_storage_no_value();
-    }
-    else {
-        stats_storage_value();
-        auto encoded_storage = res.value().node->value();
-        auto const value = decode_storage_db_ignore_key(encoded_storage);
-        MONAD_ASSERT(!value.has_error());
-        if (page_encoded_) {
-            auto const decoded = decode_storage_page(value.value());
-            MONAD_ASSERT(!decoded.has_error());
-            page = decoded.value();
-        }
-        else {
-            page.set(0, to_bytes(value.value()));
-        }
-    }
-    if (cache_ && status == CacheReadStatus::MissResolved) {
-        cache_->insert_storage_page(addr, incarnation, lookup_key, page);
-    }
-    return page[lookup_offset];
+    return load_storage_page(
+        addr, incarnation, lookup_key, status)[lookup_offset];
 }
 
 storage_page_t TrieDb::read_storage_page(
@@ -188,40 +155,43 @@ storage_page_t TrieDb::read_storage_page(
     if (!page_encoded_) {
         MONAD_ABORT("read_storage_page is only valid on a page-encoded TrieDb");
     }
-    else {
-        storage_page_t result;
-        auto const status = cache_ ? cache_->try_read_storage_page(
-                                         addr, incarnation, page_key, result)
-                                   : CacheReadStatus::MissTruncated;
-        if (status == CacheReadStatus::Hit) {
-            return result;
-        }
-        auto const res = db_.find(
-            curr_root_,
-            concat(
-                prefix_,
-                STATE_NIBBLE,
-                NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                NibblesView{
-                    keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
-            block_number_);
-        if (res.has_error()) {
-            stats_storage_no_value();
-        }
-        else {
-            stats_storage_value();
-            auto encoded_storage = res.value().node->value();
-            auto const value = decode_storage_db_ignore_key(encoded_storage);
-            MONAD_ASSERT(!value.has_error());
-            auto const decoded = decode_storage_page(value.value());
-            MONAD_ASSERT(!decoded.has_error());
-            result = decoded.value();
-        }
-        if (cache_ && status == CacheReadStatus::MissResolved) {
-            cache_->insert_storage_page(addr, incarnation, page_key, result);
-        }
+    storage_page_t result;
+    auto const status =
+        cache_
+            ? cache_->try_read_storage_page(addr, incarnation, page_key, result)
+            : CacheReadStatus::MissTruncated;
+    if (status == CacheReadStatus::Hit) {
         return result;
     }
+    return load_storage_page(addr, incarnation, page_key, status);
+}
+
+storage_page_t TrieDb::load_storage_page(
+    Address const &addr, Incarnation const incarnation,
+    bytes32_t const &lookup_key, CacheReadStatus const status)
+{
+    auto const res = db_.find(
+        curr_root_,
+        concat(
+            prefix_,
+            STATE_NIBBLE,
+            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+            NibblesView{
+                keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
+        block_number_);
+    storage_page_t page;
+    if (res.has_error()) {
+        stats_storage_no_value();
+    }
+    else {
+        stats_storage_value();
+        page = decode_storage_leaf_to_page(
+            res.value().node->value(), page_encoded_);
+    }
+    if (cache_ && status == CacheReadStatus::MissResolved) {
+        cache_->insert_storage_page(addr, incarnation, lookup_key, page);
+    }
+    return page;
 }
 
 vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)

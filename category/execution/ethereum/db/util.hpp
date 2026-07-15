@@ -199,6 +199,12 @@ decode_storage_db_raw(byte_string_view &);
 Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &);
 Result<byte_string_view> decode_storage_db_ignore_key(byte_string_view &);
 
+// Decode a storage leaf value into a page: the full page for page encoding, a
+// single-slot page holding the value at offset 0 for slot encoding. Aborts on
+// a malformed leaf.
+storage_page_t
+decode_storage_leaf_to_page(byte_string_view encoded, bool page_encoded);
+
 struct AccountLeafProcessor
 {
     static byte_string process(mpt::Node const &node);

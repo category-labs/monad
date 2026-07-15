@@ -133,6 +133,12 @@ private:
     }
 
     bytes32_t merkle_root(mpt::Nibbles const &);
+
+    // read the storage page from disk, inserting into the cache on a resolved
+    // miss
+    storage_page_t load_storage_page(
+        Address const &, Incarnation, bytes32_t const &lookup_key,
+        CacheReadStatus);
 };
 
 MONAD_NAMESPACE_END

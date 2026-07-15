@@ -16,20 +16,23 @@
 #include <event.hpp>
 
 #include <category/core/assert.h>
-#include <category/core/cleanup.h>
+#include <category/core/cleanup.h> // NOLINT(misc-include-cleaner)
 #include <category/core/config.hpp>
 #include <category/core/event/event_iterator.h>
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
+#include <category/core/event/owned_event_ring.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 
 #include <gtest/gtest.h>
 #include <monad/test/config.hpp>
 
+#include <cerrno>
 #include <cstdint>
-#include <cstdlib>
 #include <memory>
+#include <string>
+#include <utility>
 
 #include <fcntl.h>
 #include <string.h>
@@ -38,26 +41,12 @@
 
 MONAD_NAMESPACE_BEGIN
 
-// Links against the global object in libmonad_execution_ethereum; remains
-// uninitialized if recording is disabled
+// These symbols link against the global objects in libmonad_execution_ethereum;
+// they remain uninitialized if execution event recording is disabled
+extern std::unique_ptr<OwnedEventRing> g_exec_event_ring;
 extern std::unique_ptr<ExecutionEventRecorder> g_exec_event_recorder;
 
 MONAD_NAMESPACE_END
-
-namespace
-{
-
-    char *g_unlink_name_buf;
-
-    void unlink_at_exit()
-    {
-        if (g_unlink_name_buf != nullptr) {
-            (void)unlink(g_unlink_name_buf);
-            std::free(g_unlink_name_buf);
-        }
-    }
-
-} // End of anonymous namespace
 
 MONAD_TEST_NAMESPACE_BEGIN
 
@@ -120,6 +109,9 @@ ConsumeMore:
             reinterpret_cast<monad_exec_txn_evm_output const *>(payload),
             event_ring);
         break;
+
+    default:
+        break;
     }
 
     // Look for more events until we find the end of the block (either
@@ -142,12 +134,6 @@ void init_exec_event_recorder(std::string const event_ring_path)
                                           CREATE_MODE);
 
     MONAD_ASSERT(ring_fd != -1);
-    if (!std::empty(event_ring_path)) {
-        g_unlink_name_buf = strdup(event_ring_path.c_str());
-        MONAD_ASSERT(g_unlink_name_buf != nullptr);
-        std::atexit(unlink_at_exit);
-    }
-
     monad_event_ring_simple_config const simple_cfg = {
         .descriptors_shift = DESCRIPTORS_SHIFT,
         .payload_buf_shift = PAYLOAD_BUF_SHIFT,
@@ -174,9 +160,19 @@ void init_exec_event_recorder(std::string const event_ring_path)
         "event library error -- %s",
         monad_event_ring_get_last_error());
 
-    // Create the execution recorder object
-    g_exec_event_recorder = std::make_unique<ExecutionEventRecorder>(
-        ring_fd, MEMFD_NAME, exec_ring);
+    int const owned_fd = dup(ring_fd);
+    MONAD_ASSERT_PRINTF(
+        owned_fd != -1, "dup(2) failed: %s (%d)", strerror(errno), errno);
+    g_exec_event_ring =
+        std::make_unique<OwnedEventRing>(owned_fd, event_ring_path, exec_ring);
+
+    auto ex_recorder = ExecutionEventRecorder::from_event_ring(
+        g_exec_event_ring->get_event_ring());
+    MONAD_ASSERT_PRINTF(
+        ex_recorder.has_value(),
+        "event library error -- %s",
+        monad_event_ring_get_last_error());
+    g_exec_event_recorder = std::move(*ex_recorder);
 }
 
 MONAD_TEST_NAMESPACE_END

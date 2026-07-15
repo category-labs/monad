@@ -216,11 +216,14 @@ constexpr uint64_t MONAD_EVENT_WINDOW_INCR = 1UL << 24;
 constexpr size_t MONAD_EVENT_PAYLOAD_ALIGN = 16;
 
 /*
- * Record error event payload definitions; in any event domain, the event_type
- * with code 1 is always a `RECORD_ERROR` event and has this payload type
+ * Record error event payload definitions
  */
 
 // clang-format off
+
+// In the schema of every content type, the event_type with code 1 is always a
+// `RECORD_ERROR` which indicates a payload of `struct monad_event_record_error`
+constexpr uint16_t MONAD_EVENT_RECORD_ERROR_EVENT_TYPE = 1;
 
 struct monad_event_record_error
 {

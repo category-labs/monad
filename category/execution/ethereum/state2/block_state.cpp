@@ -174,14 +174,26 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
 bool BlockState::can_merge(State &state) const
 {
     MONAD_ASSERT(state_);
-    auto const &original = state.original();
-    for (auto &kv : original) {
+    auto const &ns = state.get_namespace();
+    StateDeltas const *deltas = nullptr;
+    if (ns.has_value()) {
+        NamespacedStateDeltas::const_accessor ns_it{};
+        MONAD_ASSERT(ns_state_.find(ns_it, *ns));
+        MONAD_ASSERT(ns_it->second);
+        deltas = ns_it->second.get();
+    }
+    else {
+        deltas = state_.get();
+    }
+
+    for (auto &kv : state.original()) {
         Address const &address = kv.first;
         OriginalAccountState const &account_state = kv.second;
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
+        MONAD_ASSERT(deltas);
         StateDeltas::const_accessor it{};
-        MONAD_ASSERT(state_->find(it, address));
+        MONAD_ASSERT(deltas->find(it, address));
         if (account != it->second.account.second) {
             // RELAXED MERGE
             // try to fix original and current in `state` to match the block
@@ -233,13 +245,25 @@ void BlockState::merge(State const &state)
         code_.emplace(code_hash, it->second->intercode()); // TODO try_emplace
     }
 
-    MONAD_ASSERT(state_);
+    auto const &ns = state.get_namespace();
+    StateDeltas *deltas = nullptr;
+    if (ns.has_value()) {
+        NamespacedStateDeltas::accessor ns_it{};
+        MONAD_ASSERT(ns_state_.find(ns_it, *ns));
+        MONAD_ASSERT(ns_it->second);
+        deltas = ns_it->second.get();
+    }
+    else {
+        MONAD_ASSERT(state_);
+        deltas = state_.get();
+    }
+
     for (auto const &[address, stack] : current) {
         auto const &account_state = stack.recent();
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
         StateDeltas::accessor it{};
-        MONAD_ASSERT(state_->find(it, address));
+        MONAD_ASSERT(deltas->find(it, address));
         it->second.account.second = account;
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {

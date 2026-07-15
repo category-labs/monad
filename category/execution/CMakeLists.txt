@@ -308,12 +308,20 @@ target_include_directories(
   PRIVATE ${Boost_INCLUDE_DIRS}
   PUBLIC ${cthash_SOURCE_DIR}/include
   PUBLIC ${silkpre_SOURCE_DIR}/lib)
+if(COMMAND monad_target_include_boost_outcome_status_code_overlay)
+  monad_target_include_boost_outcome_status_code_overlay(
+    monad_execution_ethereum)
+endif()
 
 target_include_directories(
   monad_execution_native
   PUBLIC ${CATEGORY_MAIN_DIR}
   PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test
   PRIVATE ${Boost_INCLUDE_DIRS})
+if(COMMAND monad_target_include_boost_outcome_status_code_overlay)
+  monad_target_include_boost_outcome_status_code_overlay(
+    monad_execution_native)
+endif()
 
 target_compile_definitions(
   monad_execution_ethereum PUBLIC MONAD_CXX_CTYPES_USE_EVMC_HPP

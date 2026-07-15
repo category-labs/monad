@@ -207,6 +207,9 @@ endif()
 
 monad_compile_options(monad_core)
 target_include_directories(monad_core PUBLIC ${CATEGORY_MAIN_DIR})
+if(COMMAND monad_target_include_boost_outcome_status_code_overlay)
+  monad_target_include_boost_outcome_status_code_overlay(monad_core)
+endif()
 
 if(MONAD_CORE_FORCE_DEBUG_ASSERT)
   target_compile_definitions(monad_core PUBLIC "MONAD_CORE_FORCE_DEBUG_ASSERT")

@@ -51,11 +51,16 @@ struct HashStub
 
 using NodeIndex = ankerl::unordered_dense::map<bytes32_t, byte_string>;
 
+/// Intentionally undefined template. Specializations are expected to satisfy
+/// the `LeafValue` concept.
+template <typename T>
+struct LeafValueCodec;
+
 template <typename T>
 concept LeafValue =
     requires(byte_string_view &enc, NodeIndex const &nodes, T const &v) {
-        { T::decode(enc, nodes) } -> std::same_as<Result<T>>;
-        { T::encode(v) } -> std::same_as<byte_string>;
+        { LeafValueCodec<T>::decode(enc, nodes) } -> std::same_as<Result<T>>;
+        { LeafValueCodec<T>::encode(v) } -> std::same_as<byte_string>;
     };
 
 template <LeafValue V>
@@ -109,7 +114,11 @@ struct PartialNode
 struct StorageLeafValue
 {
     bytes32_t value;
+};
 
+template <>
+struct LeafValueCodec<StorageLeafValue>
+{
     static Result<StorageLeafValue>
     decode(byte_string_view &enc, NodeIndex const & /*nodes*/);
 
@@ -123,7 +132,11 @@ struct AccountLeafValue
     Account account;
     StorageTrie
         storage{}; ///< per-account storage MPT, embedded directly in the leaf
+};
 
+template <>
+struct LeafValueCodec<AccountLeafValue>
+{
     static Result<AccountLeafValue>
     decode(byte_string_view &enc, NodeIndex const &nodes);
 
@@ -144,6 +157,8 @@ using CodeIndex = ankerl::unordered_dense::map<bytes32_t, vm::SharedIntercode>;
 /// for TrieDb during zkVM STF proving.
 class PartialTrieDb final : public Db
 {
+    friend class PartialTrieDbBuilder;
+
     AccountTrie root_;
     CodeIndex codes_;
     uint64_t block_number_{0};
@@ -163,10 +178,6 @@ public:
     {
         return false;
     }
-
-    static Result<PartialTrieDb> from_witness(
-        bytes32_t const &pre_state_root, byte_string_view encoded_nodes,
-        byte_string_view encoded_codes);
 
     std::optional<Account> read_account(Address const &) override;
 
@@ -204,6 +215,14 @@ public:
     void update_voted_metadata(uint64_t, bytes32_t const &) override {}
 
     void update_proposed_metadata(uint64_t, bytes32_t const &) override {}
+};
+
+class PartialTrieDbBuilder
+{
+public:
+    static Result<PartialTrieDb> from_witness(
+        bytes32_t const &pre_state_root, byte_string_view encoded_nodes,
+        byte_string_view encoded_codes);
 };
 
 MONAD_NAMESPACE_END

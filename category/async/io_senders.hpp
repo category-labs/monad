@@ -229,7 +229,7 @@ public:
             return success();
         }
         catch (...) {
-            return system_code_from_exception();
+            return result_from_exception<void>(std::current_exception());
         }
     }
 

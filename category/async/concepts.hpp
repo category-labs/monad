@@ -16,29 +16,20 @@
 #pragma once
 
 #include <category/async/config.hpp>
+#include <category/core/result.hpp>
 
-#include <boost/outcome/experimental/status_result.hpp>
 #include <boost/outcome/try.hpp>
-
-// TODO unstable paths between versions
-#if __has_include(                                                             \
-    <boost/outcome/experimental/status-code/system_code_from_exception.hpp>)
-    #include <boost/outcome/experimental/status-code/system_code_from_exception.hpp>
-#else
-    #include <boost/outcome/experimental/status-code/status-code/system_code_from_exception.hpp>
-#endif
 
 #include <type_traits>
 
 MONAD_ASYNC_NAMESPACE_BEGIN
 
 template <class T>
-using result = ::boost::outcome_v2::experimental::status_result<T>;
-using ::boost::outcome_v2::experimental::errc;
-using ::boost::outcome_v2::experimental::failure;
-using ::boost::outcome_v2::experimental::posix_code;
-using ::boost::outcome_v2::experimental::success;
-using ::boost::outcome_v2::experimental::system_code_from_exception;
+using result = ::monad::Result<T>;
+using ::monad::outcome_e::errc;
+using ::monad::outcome_e::failure;
+using ::monad::outcome_e::posix_code;
+using ::monad::outcome_e::success;
 
 class erased_connected_operation;
 

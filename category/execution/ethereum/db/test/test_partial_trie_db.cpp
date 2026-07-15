@@ -48,10 +48,12 @@ namespace
     void storage_leaf_roundtrip(
         bytes32_t const &val, NodeIndex &nodes, std::string_view label = {})
     {
-        byte_string const enc = StorageLeafValue::encode(StorageLeafValue{val});
+        byte_string const enc =
+            LeafValueCodec<StorageLeafValue>::encode(StorageLeafValue{val});
 
         byte_string_view view{enc};
-        auto const decoded = StorageLeafValue::decode(view, nodes);
+        auto const decoded =
+            LeafValueCodec<StorageLeafValue>::decode(view, nodes);
         ASSERT_FALSE(decoded.has_error()) << label;
         EXPECT_EQ(decoded.value().value, val) << label;
         ASSERT_TRUE(view.empty()) << label;
@@ -72,13 +74,13 @@ namespace
     {
         bytes32_t const root = to_bytes(
             keccak256(byte_string_view{node_rlp.data(), node_rlp.size()}));
-        return PartialTrieDb::from_witness(
+        return PartialTrieDbBuilder::from_witness(
             root, byte_string_view{node_rlp.data(), node_rlp.size()}, {});
     }
 
     PartialTrieDb make_empty_db()
     {
-        auto result = PartialTrieDb::from_witness(NULL_ROOT, {}, {});
+        auto result = PartialTrieDbBuilder::from_witness(NULL_ROOT, {}, {});
         MONAD_ASSERT(!result.has_error());
         return std::move(result.value());
     }
@@ -232,7 +234,7 @@ TEST(StorageLeafValue, DecodeZeroValue)
     NodeIndex nodes{};
     byte_string const zero_rlp{static_cast<unsigned char>(0x80)};
     byte_string_view enc{zero_rlp.data(), zero_rlp.size()};
-    auto const result = StorageLeafValue::decode(enc, nodes);
+    auto const result = LeafValueCodec<StorageLeafValue>::decode(enc, nodes);
     ASSERT_FALSE(result.has_error());
     EXPECT_EQ(result.value().value, bytes32_t{});
 }
@@ -275,7 +277,7 @@ TEST(StorageLeafValue, DecodeTooLong)
         rlp::encode_string2(byte_string(33, static_cast<unsigned char>(0xff)));
     NodeIndex nodes{};
     byte_string_view enc{overlong.data(), overlong.size()};
-    auto const result = StorageLeafValue::decode(enc, nodes);
+    auto const result = LeafValueCodec<StorageLeafValue>::decode(enc, nodes);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), rlp::DecodeError::InputTooLong);
 }
@@ -289,7 +291,7 @@ TEST(AccountLeafValue, DecodeEncodeRoundtrip_EmptyStorage)
 
     NodeIndex nodes{};
     byte_string_view enc{encoded_acct};
-    auto const decoded = AccountLeafValue::decode(enc, nodes);
+    auto const decoded = LeafValueCodec<AccountLeafValue>::decode(enc, nodes);
     ASSERT_FALSE(decoded.has_error());
 
     auto const &decoded_acct = decoded.value();
@@ -300,7 +302,8 @@ TEST(AccountLeafValue, DecodeEncodeRoundtrip_EmptyStorage)
     // NULL_ROOT storage is represented as nullptr (empty trie), not HashStub.
     EXPECT_EQ(decoded_acct.storage, nullptr);
 
-    EXPECT_EQ(AccountLeafValue::encode(decoded_acct), encoded_acct);
+    EXPECT_EQ(
+        LeafValueCodec<AccountLeafValue>::encode(decoded_acct), encoded_acct);
 }
 
 TEST(PartialTrieDb, StateRoot_HashStubWhenRootAbsentFromNodeIndex)
@@ -310,7 +313,7 @@ TEST(PartialTrieDb, StateRoot_HashStubWhenRootAbsentFromNodeIndex)
     constexpr auto sentinel =
         0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef_bytes32;
 
-    auto result = PartialTrieDb::from_witness(sentinel, {}, {});
+    auto result = PartialTrieDbBuilder::from_witness(sentinel, {}, {});
     ASSERT_FALSE(result.has_error());
     EXPECT_EQ(result.value().state_root(), sentinel);
 }
@@ -332,7 +335,8 @@ TEST(PartialTrieDb, StateRoot_SingleLeafRoundtrip)
     // compact_sv == { 0x20, 0xAB }
 
     AccountLeafValue const val{.account = {.nonce = 1}};
-    byte_string const encoded_val = AccountLeafValue::encode(val);
+    byte_string const encoded_val =
+        LeafValueCodec<AccountLeafValue>::encode(val);
 
     byte_string const leaf_rlp = rlp::encode_list2(
         rlp::encode_string2(compact_sv),
@@ -426,7 +430,8 @@ TEST(PartialTrieDb, PathTooLong)
         compact_buf, mpt::NibblesView{path}, /*terminating=*/true);
 
     AccountLeafValue const val{.account = {.nonce = 1}};
-    byte_string const encoded_val = AccountLeafValue::encode(val);
+    byte_string const encoded_val =
+        LeafValueCodec<AccountLeafValue>::encode(val);
 
     byte_string const leaf_rlp = rlp::encode_list2(
         rlp::encode_string2(compact_sv),
@@ -443,7 +448,8 @@ TEST(PartialTrieDb, PathTooLongOver255CompactPath)
     byte_string compact_key(129, 0x00);
     compact_key[0] = 0x20; // leaf node, even path length
     AccountLeafValue const val{.account = {.nonce = 1}};
-    byte_string const encoded_val = AccountLeafValue::encode(val);
+    byte_string const encoded_val =
+        LeafValueCodec<AccountLeafValue>::encode(val);
     byte_string const leaf_rlp = rlp::encode_list2(
         rlp::encode_string2(
             byte_string_view{compact_key.data(), compact_key.size()}),
@@ -495,7 +501,7 @@ TEST(PartialTrieDb, ReadCode_PresentAndMissing)
         rlp::encode_string2(byte_string_view{code1.data(), code1.size()}) +
         rlp::encode_string2(byte_string_view{code2.data(), code2.size()});
 
-    auto result = PartialTrieDb::from_witness(
+    auto result = PartialTrieDbBuilder::from_witness(
         NULL_ROOT,
         {},
         byte_string_view{encoded_codes.data(), encoded_codes.size()});

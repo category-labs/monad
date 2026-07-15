@@ -173,7 +173,7 @@ namespace nlohmann
                     MONAD_ASSERT(
                         state.set_storage(
                             account_address, key_bytes32, value_bytes32) ==
-                        EVMC_STORAGE_ADDED);
+                        MONAD_STORAGE_ADDED);
                 }
             }
         }

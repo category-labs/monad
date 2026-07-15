@@ -74,10 +74,10 @@ TEST(PageTracker, cold_read_then_warm_read)
 {
     PageTracker pt;
 
-    EXPECT_EQ(pt.access_page(SLOT_A), EVMC_ACCESS_COLD);
-    EXPECT_EQ(pt.access_page(SLOT_A2), EVMC_ACCESS_WARM);
-    EXPECT_EQ(pt.access_page(SLOT_B), EVMC_ACCESS_COLD);
-    EXPECT_EQ(pt.access_page(SLOT_B), EVMC_ACCESS_WARM);
+    EXPECT_EQ(pt.access_page(SLOT_A), MONAD_ACCESS_COLD);
+    EXPECT_EQ(pt.access_page(SLOT_A2), MONAD_ACCESS_WARM);
+    EXPECT_EQ(pt.access_page(SLOT_B), MONAD_ACCESS_COLD);
+    EXPECT_EQ(pt.access_page(SLOT_B), MONAD_ACCESS_WARM);
 }
 
 TEST(PageTracker, deleted_then_readded_returns_to_baseline)

@@ -26,6 +26,8 @@
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
+#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/storage_status.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
@@ -157,7 +159,7 @@ public:
 
     void subtract_from_balance(Address const &, uint256_t const &delta);
 
-    evmc_storage_status
+    monad_storage_status
     set_storage(Address const &, bytes32_t const &key, bytes32_t const &value);
 
     void set_transient_storage(
@@ -165,10 +167,10 @@ public:
 
     void touch(Address const &);
 
-    evmc_access_status access_account(Address const &);
+    monad_access_status access_account(Address const &);
 
     template <Traits traits>
-    evmc_access_status access_storage(Address const &, bytes32_t const &key);
+    monad_access_status access_storage(Address const &, bytes32_t const &key);
 
     vm::Host::PageStorageStatus update_page(
         Address const &, bytes32_t const &key, evmc_storage_status status);

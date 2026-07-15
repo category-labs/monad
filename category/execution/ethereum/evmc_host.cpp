@@ -65,7 +65,7 @@ evmc_storage_status EvmcHostBase::set_storage(
     evmc::bytes32 const &value) noexcept
 {
     try {
-        return state_.set_storage(address, key, value);
+        return to_evmc_storage_status(state_.set_storage(address, key, value));
     }
     catch (...) {
         capture_current_exception();

@@ -184,7 +184,7 @@ namespace
                     sender_type::result_type res)
                 {
                     ++parent->cbs;
-                    callback(std::move(res));
+                    callback(monad::result_from_status_result(std::move(res)));
                     delete state;
                 }
             };

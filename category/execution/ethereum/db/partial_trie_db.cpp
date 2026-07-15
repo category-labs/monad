@@ -91,7 +91,7 @@ namespace
                         return rlp::DecodeError::TypeUnexpected;
                     }
                     BOOST_OUTCOME_TRY(
-                        auto value, T::decode(val_enc.second, nodes));
+                        auto value, LeafValueDecoder<T>::decode(val_enc.second, nodes));
                     MONAD_DEBUG_ASSERT(val_enc.second.empty());
                     return PartialNode<T>{
                         LeafData<T>{std::move(decoded_path), std::move(value)}};
@@ -134,7 +134,7 @@ namespace
         }
         BOOST_OUTCOME_TRY(auto v_enc, rlp::decode_string(enc));
         if (!v_enc.empty()) {
-            BOOST_OUTCOME_TRY(auto value, T::decode(v_enc, nodes));
+            BOOST_OUTCOME_TRY(auto value, LeafValueDecoder<T>::decode(v_enc, nodes));
             MONAD_DEBUG_ASSERT(v_enc.empty());
             branch.value = std::move(value);
         }
@@ -171,7 +171,7 @@ namespace
         else {
             // String: either empty (null slot) or 32-byte hash reference
             if (enc.empty()) {
-                return nullptr;
+                return std::unique_ptr<PartialNode<T>>{nullptr};
             }
             if (MONAD_UNLIKELY(enc.size() < 32)) {
                 return rlp::DecodeError::InputTooShort;
@@ -187,7 +187,7 @@ namespace
             // null pointer so encode/decode are symmetric with
             // AccountLeafValue.
             if (hash == NULL_ROOT) {
-                return nullptr;
+                return std::unique_ptr<PartialNode<T>>{nullptr};
             }
             auto it = nodes.find(hash);
             if (it == nodes.end()) {
@@ -627,7 +627,7 @@ namespace
 
 // ensures enc.empty() if successful
 Result<AccountLeafValue>
-AccountLeafValue::decode(byte_string_view &enc, NodeIndex const &nodes)
+LeafValueDecoder<AccountLeafValue>::decode(byte_string_view &enc, NodeIndex const &nodes)
 {
     bytes32_t storage_root{};
     BOOST_OUTCOME_TRY(Account acct, rlp::decode_account(storage_root, enc));
@@ -675,7 +675,7 @@ byte_string AccountLeafValue::encode(AccountLeafValue const &v)
 
 // ensures enc.empty() if successful
 Result<StorageLeafValue>
-StorageLeafValue::decode(byte_string_view &enc, NodeIndex const & /*nodes*/)
+LeafValueDecoder<StorageLeafValue>::decode(byte_string_view &enc, NodeIndex const & /*nodes*/)
 {
     BOOST_OUTCOME_TRY(auto const raw, rlp::decode_bytes32_compact(enc));
     if (MONAD_UNLIKELY(!enc.empty())) {
@@ -689,7 +689,7 @@ byte_string StorageLeafValue::encode(StorageLeafValue const &v)
     return rlp::encode_bytes32_compact(v.value);
 }
 
-Result<PartialTrieDb> PartialTrieDb::from_witness(
+Result<PartialTrieDb> partial_trie_db_from_witness(
     bytes32_t const &pre_state_root, byte_string_view encoded_nodes,
     byte_string_view encoded_codes)
 {

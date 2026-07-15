@@ -52,9 +52,14 @@ struct HashStub
 using NodeIndex = ankerl::unordered_dense::map<bytes32_t, byte_string>;
 
 template <typename T>
+struct LeafValueDecoder
+{
+};
+
+template <typename T>
 concept LeafValue =
     requires(byte_string_view &enc, NodeIndex const &nodes, T const &v) {
-        { T::decode(enc, nodes) } -> std::same_as<Result<T>>;
+        { LeafValueDecoder<T>::decode(enc, nodes) } -> std::same_as<Result<T>>;
         { T::encode(v) } -> std::same_as<byte_string>;
     };
 
@@ -110,10 +115,14 @@ struct StorageLeafValue
 {
     bytes32_t value;
 
+    static byte_string encode(StorageLeafValue const &v);
+};
+
+template <>
+struct LeafValueDecoder<StorageLeafValue>
+{
     static Result<StorageLeafValue>
     decode(byte_string_view &enc, NodeIndex const & /*nodes*/);
-
-    static byte_string encode(StorageLeafValue const &v);
 };
 
 using StorageTrie = ChildRef<StorageLeafValue>;
@@ -124,10 +133,15 @@ struct AccountLeafValue
     StorageTrie
         storage{}; ///< per-account storage MPT, embedded directly in the leaf
 
+    static byte_string encode(AccountLeafValue const &v);
+};
+
+template <>
+struct LeafValueDecoder<AccountLeafValue>
+{
     static Result<AccountLeafValue>
     decode(byte_string_view &enc, NodeIndex const &nodes);
 
-    static byte_string encode(AccountLeafValue const &v);
 };
 
 using AccountTrie = ChildRef<AccountLeafValue>;
@@ -149,13 +163,13 @@ class PartialTrieDb final : public Db
     uint64_t block_number_{0};
     BlockHeader last_committed_header_{};
 
+public:
     PartialTrieDb(AccountTrie root, CodeIndex codes)
         : root_{std::move(root)}
         , codes_{std::move(codes)}
     {
     }
 
-public:
     PartialTrieDb() = delete;
 
     // TODO: update impl to make it work with page-encoded storage
@@ -163,10 +177,6 @@ public:
     {
         return false;
     }
-
-    static Result<PartialTrieDb> from_witness(
-        bytes32_t const &pre_state_root, byte_string_view encoded_nodes,
-        byte_string_view encoded_codes);
 
     std::optional<Account> read_account(Address const &) override;
 
@@ -205,5 +215,10 @@ public:
 
     void update_proposed_metadata(uint64_t, bytes32_t const &) override {}
 };
+
+Result<PartialTrieDb> partial_trie_db_from_witness(
+    bytes32_t const &pre_state_root, byte_string_view encoded_nodes,
+    byte_string_view encoded_codes);
+
 
 MONAD_NAMESPACE_END

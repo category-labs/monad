@@ -226,13 +226,19 @@ Result<std::vector<Receipt>> execute_block_transactions(
     }
 
     auto const last = static_cast<ptrdiff_t>(transactions.size());
-    promises[last].get_future().get();
+    promises[last].get_future().wait();
     block_metrics.tx_exec_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - tx_exec_begin);
 
     std::vector<Receipt> retvals;
     for (unsigned i = 0; i < transactions.size(); ++i) {
+        /*
+        auto const exception_ptr = promises[i + 1].get_future().get_exception_ptr();
+        if (MONAD_UNLIKELY(exception_ptr)) {
+            std::rethrow_exception(exception_ptr);
+        }
+        */
         MONAD_ASSERT_THROW(
             results[i].has_value(), "missing transaction result");
         if (MONAD_UNLIKELY(results[i].value().has_error())) {

@@ -16,6 +16,10 @@
 #include <category/core/log.hpp>
 #include <category/core/log_ffi.h>
 
+#include <quill/Backend.h>
+#include <quill/Frontend.h>
+#include <quill/sinks/ConsoleSink.h>
+
 #include <cerrno>
 #include <chrono>
 #include <cstddef>
@@ -25,13 +29,16 @@
 #include <format>
 #include <memory>
 #include <span>
+#include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 static thread_local char error_buf[1024];
 
 struct monad_log_handler
 {
-    std::shared_ptr<quill::Handler> quill_handler;
+    std::shared_ptr<quill::Sink> quill_handler;
 };
 
 // We can't #include <syslog.h>, it has some macros that conflict with quill
@@ -107,10 +114,10 @@ constexpr quill::LogLevel to_quill_log_level(syslog_level const l)
 
 // A quill log handler that wraps quill's log message in a `monad_log` object
 // and calls the registered callback function
-class LogCallbackHandler : public quill::Handler
+class LogCallbackSink : public quill::Sink
 {
 public:
-    LogCallbackHandler(
+    LogCallbackSink(
         monad_log_write_callback *write_fn, monad_log_flush_callback *flush_fn,
         uintptr_t const user)
         : write_fn_{write_fn}
@@ -119,19 +126,29 @@ public:
     {
     }
 
-    QUILL_ATTRIBUTE_HOT void write(
-        quill::fmt_buffer_t const &log_message,
-        quill::TransitEvent const &log_event) override
+    QUILL_ATTRIBUTE_HOT void write_log(
+        quill::MacroMetadata const * /** log_metadata **/,
+        uint64_t /** log_timestamp **/, std::string_view /** thread_id **/,
+        std::string_view /** thread_name **/,
+        std::string const & /** process_id **/,
+        std::string_view /** logger_name **/, quill::LogLevel log_level,
+        std::string_view /** log_level_description **/,
+        std::string_view /** log_level_short_code **/,
+        std::vector<std::pair<std::string, std::string>> const
+            * /** named_args **/,
+        std::string_view /** log_message **/,
+        std::string_view log_statement) override
     {
+
         monad_log const log = {
-            .syslog_level = to_syslog_level(log_event.log_level()),
-            .message = log_message.data(),
-            .message_len = log_message.size(),
+            .syslog_level = to_syslog_level(log_level),
+            .message = log_statement.data(),
+            .message_len = log_statement.size(),
         };
         write_fn_(&log, user_);
     }
 
-    QUILL_ATTRIBUTE_HOT void flush() override
+    QUILL_ATTRIBUTE_HOT void flush_sink() noexcept override
     {
         if (flush_fn_ != nullptr) {
             flush_fn_(user_);
@@ -159,8 +176,9 @@ int monad_log_handler_create(
     }
     try {
         *handler_p = new monad_log_handler{
-            .quill_handler = quill::create_handler<LogCallbackHandler>(
-                std::string{name}, write_fn, flush_fn, user)};
+            .quill_handler =
+                quill::Frontend::create_or_get_sink<LogCallbackSink>(
+                    std::string{name}, write_fn, flush_fn, user)};
     }
     catch (std::exception const &ex) {
         *std::format_to(
@@ -178,16 +196,11 @@ int monad_log_handler_create_stdout_handler(
 {
     *handler_p = nullptr;
     try {
-        std::shared_ptr<quill::Handler> stdout_handler =
-            quill::stdout_handler();
-        stdout_handler->set_pattern(
-            "%(time) [%(thread_id)] %(file_name):%(line_number) "
-            "LOG_%(log_level)\t"
-            "%(message)",
-            "%Y-%m-%d %H:%M:%S.%Qns",
-            quill::Timezone::GmtTime);
+        auto stdout_sink =
+            quill::Frontend::create_or_get_sink<quill::ConsoleSink>(
+                "stdout_sink");
         *handler_p =
-            new monad_log_handler{.quill_handler = std::move(stdout_handler)};
+            new monad_log_handler{.quill_handler = std::move(stdout_sink)};
         return 0;
     }
     catch (std::exception const &ex) {
@@ -219,9 +232,9 @@ int monad_log_init(
             error_buf, "level {} out of syslog level range", level) = '\0';
         return ERANGE;
     }
-    quill::Config cfg;
     quill::LogLevel const quill_level =
         to_quill_log_level(static_cast<syslog_level>(level));
+    quill::BackendOptions backend_options{};
     if (quill_level >= quill::LogLevel::Warning) {
         // Quill is designed for high performance logging, which is potentially
         // important if we're producing a lot of messages. If the logging is
@@ -231,16 +244,25 @@ int monad_log_init(
         // background thread to sleep for much longer, so we don't schedule
         // it too often; we are worried about wasting limited CPU resources,
         // not the queue overflowing
-        cfg.backend_thread_sleep_duration =
+        backend_options.sleep_duration =
             duration_cast<nanoseconds>(microseconds{250});
     }
+
+    std::vector<std::shared_ptr<quill::Sink>> sinks;
     for (monad_log_handler *h : std::span{handlers, handler_count}) {
-        cfg.default_handlers.emplace_back(h->quill_handler);
+        sinks.emplace_back(h->quill_handler);
     }
+
     try {
-        quill::configure(cfg);
-        quill::start(false);
-        quill::get_root_logger()->set_log_level(quill_level);
+        monad_root_logger = quill::Frontend::create_or_get_logger(
+            "root",
+            sinks,
+            quill::PatternFormatterOptions{
+                monad::quill_default_pattern,
+                monad::quill_default_time_format,
+                quill::Timezone::GmtTime});
+        monad_root_logger->set_log_level(quill_level);
+        quill::Backend::start(backend_options);
     }
     catch (std::exception const &ex) {
         *std::format_to(

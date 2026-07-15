@@ -26,6 +26,12 @@ inline constexpr unsigned MONAD_SNAPSHOT_SHARDS =
     1 << (MONAD_SNAPSHOT_SHARD_NIBBLES * 4);
 static_assert(MONAD_SNAPSHOT_SHARDS == 256);
 
+// Number of files written per shard, one per monad_snapshot_type (eth_header,
+// account, storage, code). The filesystem dumper holds this many file
+// descriptors open per active shard for the whole dump, so a run needs roughly
+// (active shards) * MONAD_SNAPSHOT_FILES_PER_SHARD descriptors at its peak.
+inline constexpr unsigned MONAD_SNAPSHOT_FILES_PER_SHARD = 4;
+
 extern "C"
 {
 #endif

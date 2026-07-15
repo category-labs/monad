@@ -46,8 +46,13 @@
 #include <CLI/CLI.hpp>
 #include <evmc/evmc.hpp>
 
+#include <quill/std/Chrono.h>
+#include <quill/std/FilesystemPath.h>
+#include <quill/std/Vector.h>
+
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <charconv>
 #include <chrono>
 #include <cmath>
@@ -55,6 +60,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -73,6 +79,7 @@
 #include <vector>
 
 #include <stdio.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
 using namespace monad;
@@ -905,6 +912,70 @@ int main(int const argc, char *argv[])
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
     flush_logger();
 
+    // Validate snapshot-dump preconditions before opening the database or
+    // starting any work, so a misconfigured environment fails immediately with
+    // a non-zero exit code rather than part-way through (which would leave a
+    // partial snapshot behind).
+    if (dump_binary_snapshot.has_value()) {
+        if (shard_number >= total_shards) {
+            LOG_ERROR(
+                "shard_number ({}) must be < total_shards ({})",
+                shard_number,
+                total_shards);
+            return 1;
+        }
+        // The dumper processes the shard indices s in [0,
+        // MONAD_SNAPSHOT_SHARDS) with s % total_shards == shard_number (see
+        // db_snapshot.cpp), so this run handles ceil((SHARDS - shard_number) /
+        // total_shards) shards. The ternary guards the unsigned subtraction
+        // against shard_number >= SHARDS (no shards match, count is 0).
+        uint64_t const shards_this_run =
+            shard_number < MONAD_SNAPSHOT_SHARDS
+                ? (MONAD_SNAPSHOT_SHARDS - shard_number + total_shards - 1) /
+                      total_shards
+                : 0;
+        // The dumper holds one fd open per (shard, data file) for the whole
+        // run; add headroom for the triedb device(s), io_uring rings, logger,
+        // and std streams.
+        constexpr uint64_t fd_headroom = 256;
+        uint64_t const required_fds =
+            shards_this_run * MONAD_SNAPSHOT_FILES_PER_SHARD + fd_headroom;
+        struct rlimit limit{};
+        if (getrlimit(RLIMIT_NOFILE, &limit) != 0) {
+            // getrlimit essentially never fails for RLIMIT_NOFILE; if it
+            // somehow does we cannot verify the limit, so warn and proceed
+            // rather than block a dump that may well succeed. The dumper's
+            // open() asserts remain the backstop.
+            LOG_WARNING(
+                "could not read the open file descriptor limit (getrlimit "
+                "failed: {}); proceeding without the snapshot fd pre-flight "
+                "check",
+                std::strerror(errno));
+        }
+        else if (limit.rlim_cur < required_fds) {
+            // The soft limit was already raised toward the hard limit at
+            // startup (AsyncIO_rlimit_raiser in category/async/io.cpp), so
+            // reaching here means the hard limit itself is too low and must be
+            // raised (limits.conf / systemd LimitNOFILE).
+            auto const hard_limit = limit.rlim_max == RLIM_INFINITY
+                                        ? std::string{"unlimited"}
+                                        : std::to_string(limit.rlim_max);
+            LOG_ERROR(
+                "open file descriptor limit (soft {}, hard {}) is too low to "
+                "dump this snapshot, which needs about {} descriptors ({} "
+                "shards x {} files plus headroom). Raise the hard limit for "
+                "this user (e.g. add '<user> hard nofile 16384' to "
+                "/etc/security/limits.conf, or set LimitNOFILE in the systemd "
+                "unit) and retry.",
+                limit.rlim_cur,
+                hard_limit,
+                required_fds,
+                shards_this_run,
+                MONAD_SNAPSHOT_FILES_PER_SHARD);
+            return 1;
+        }
+    }
+
     uint64_t resolved_version = 0;
     {
         fmt::println("Opening read only database {}.", dbname_paths);
@@ -947,14 +1018,6 @@ int main(int const argc, char *argv[])
         }
     }
     if (dump_binary_snapshot.has_value()) {
-        if (shard_number >= total_shards) {
-            LOG_ERROR(
-                "shard_number ({}) must be < total_shards ({})",
-                shard_number,
-                total_shards);
-            return 1;
-        }
-
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
                 dump_binary_snapshot.value().c_str(), resolved_version);
@@ -974,6 +1037,11 @@ int main(int const argc, char *argv[])
             total_shards,
             shard_number,
             use_secondary);
+        // Finalize (flush/close the data files and write the checksums) before
+        // logging success: destroy asserts on a write/checksum failure, so
+        // doing it first keeps a late failure from being preceded by a
+        // success=true log line.
+        monad_db_snapshot_filesystem_write_user_context_destroy(context);
         LOG_INFO(
             "snapshot dump success={} version={} directory={} "
             "dump_from_secondary={} elapsed={}",
@@ -982,7 +1050,6 @@ int main(int const argc, char *argv[])
             dump_binary_snapshot.value(),
             use_secondary,
             std::chrono::steady_clock::now() - begin);
-        monad_db_snapshot_filesystem_write_user_context_destroy(context);
         return success == false;
     }
     else if (load_binary_snapshot.has_value()) {

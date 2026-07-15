@@ -29,6 +29,9 @@
 
 #include <evmc/evmc.h>
 
+#include <quill/Frontend.h>
+#include <quill/sinks/NullSink.h>
+
 #include <CLI/CLI.hpp>
 
 #include <gtest/gtest.h>
@@ -110,11 +113,12 @@ int main(int argc, char *argv[])
         vm_mode = vm::VM::mode_from_string(vm_mode_name.value());
     }
 
-    quill::start(true);
-    quill::get_root_logger()->set_log_level(log_level);
 #ifdef ENABLE_EVENT_TRACING
-    event_tracer = quill::create_logger("event_trace", quill::null_handler());
+    event_tracer = quill::Frontend::create_or_get_logger(
+        "event_trace",
+        quill::Frontend::create_or_get_sink<quill::NullSink>("null_sink"));
 #endif
+    init_root_logger(log_level);
 
     if (record_exec_events->count() > 0) {
         test::init_exec_event_recorder(record_exec_events_path);
@@ -144,7 +148,7 @@ int main(int argc, char *argv[])
         return_code = -1;
     }
 
-    quill::flush();
+    flush_logger();
 
     return return_code;
 }

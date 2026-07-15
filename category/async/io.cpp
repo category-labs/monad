@@ -132,17 +132,44 @@ namespace detail
     {
         AsyncIO_rlimit_raiser_impl()
         {
+            constexpr rlim_t target = 16384;
             struct rlimit r = {0, 0};
-            getrlimit(RLIMIT_NOFILE, &r);
-            if (r.rlim_cur < 4096) {
-                std::cerr << "WARNING: maximum file descriptor limit is "
-                          << r.rlim_cur
-                          << " which is less than 4096. 'Too many open files' "
-                             "errors may result. You can increase the hard "
-                             "file descriptor limit for a given user by adding "
-                             "to '/etc/security/limits.conf' '<username> hard "
-                             "nofile 16384'."
+            if (getrlimit(RLIMIT_NOFILE, &r) != 0) {
+                std::cerr << "WARNING: getrlimit(RLIMIT_NOFILE) failed: "
+                          << std::strerror(errno)
+                          << "; cannot check or raise the open file limit."
                           << std::endl;
+                return;
+            }
+            // Raise the soft limit toward target, capped at the hard limit
+            // (RLIM_INFINITY means the hard limit imposes no cap). The guard
+            // skips the call when the soft limit already meets the target.
+            rlim_t desired = target;
+            if (r.rlim_max != RLIM_INFINITY && r.rlim_max < desired) {
+                desired = r.rlim_max;
+            }
+            if (desired > r.rlim_cur) {
+                struct rlimit const want = {desired, r.rlim_max};
+                if (setrlimit(RLIMIT_NOFILE, &want) == 0) {
+                    r.rlim_cur = desired;
+                }
+                else {
+                    std::cerr << "WARNING: setrlimit(RLIMIT_NOFILE) to "
+                              << desired << " failed: " << std::strerror(errno)
+                              << "; proceeding with a soft limit of "
+                              << r.rlim_cur << "." << std::endl;
+                }
+            }
+            if (r.rlim_cur < 4096) {
+                std::cerr
+                    << "WARNING: maximum file descriptor limit is "
+                    << r.rlim_cur
+                    << " which is less than 4096. 'Too many open files' "
+                       "errors may result. Raise the hard file descriptor "
+                       "limit for this user (e.g. in "
+                       "'/etc/security/limits.conf': '<username> hard "
+                       "nofile 16384')."
+                    << std::endl;
             }
         }
     } AsyncIO_rlimit_raiser;

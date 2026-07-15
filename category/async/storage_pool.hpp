@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/async/util.hpp>
+#include <category/core/assert.h>
 
 #include <category/core/detail/start_lifetime_as_polyfill.hpp>
 
@@ -312,6 +313,8 @@ public:
     //! \brief Flags for storage pool creation
     struct creation_flags
     {
+        static constexpr uint32_t MAX_CHUNK_CAPACITY_BITS = (1 << 5) - 1;
+
         //! How much to shift left a bit to set chunk capacity during creation.
         //! The maximum is 32 (4Gb).
         uint32_t chunk_capacity : 5;
@@ -345,6 +348,14 @@ public:
             , allow_migration(false)
             , num_cnv_chunks(3)
         {
+        }
+
+        //! Set chunk_capacity with range validation; direct assignment to
+        //! the 5-bit field would silently truncate an oversized value.
+        constexpr void set_chunk_capacity(uint32_t const bits)
+        {
+            MONAD_ASSERT(bits <= MAX_CHUNK_CAPACITY_BITS);
+            chunk_capacity = bits & MAX_CHUNK_CAPACITY_BITS;
         }
     };
 

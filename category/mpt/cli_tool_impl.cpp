@@ -1682,7 +1682,7 @@ opened.
 
             auto mode =
                 MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing;
-            impl.flags.chunk_capacity = impl.chunk_capacity & 31;
+            impl.flags.set_chunk_capacity(impl.chunk_capacity);
             if (impl.create_chunk_increasing) {
                 impl.flags.interleave_chunks_evenly = true;
             }

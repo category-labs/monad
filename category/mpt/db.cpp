@@ -130,6 +130,7 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
     : pool{[&] -> async::storage_pool {
         async::storage_pool::creation_flags pool_options;
         pool_options.num_cnv_chunks = options.root_offsets_chunk_count + 1;
+        pool_options.set_chunk_capacity(options.chunk_capacity);
         auto const len = options.file_size_db * 1024 * 1024 * 1024 + 24576;
         if (options.dbname_paths.empty()) {
             return async::storage_pool{
@@ -812,9 +813,9 @@ public:
         MONAD_ASSERT(machine_ != nullptr);
         if (unflushed_version_ != INVALID_BLOCK_NUM &&
             unflushed_version_ != version) {
-            LOG_WARNING_CFORMAT(
-                "Update version %lu while db hasn't flushed the last update on "
-                "version %lu, the unflushed progress will be lost after this "
+            LOG_WARNING(
+                "Update version {} while db hasn't flushed the last update on "
+                "version {}, the unflushed progress will be lost after this "
                 "point",
                 version,
                 unflushed_version_);
@@ -907,9 +908,9 @@ public:
     {
         if (unflushed_version_ != INVALID_BLOCK_NUM &&
             unflushed_version_ != dest_version) {
-            LOG_WARNING_CFORMAT(
-                "Update version %lu while db hasn't flushed the last update on "
-                "version %lu, the unflushed progress will be lost after this "
+            LOG_WARNING(
+                "Update version {} while db hasn't flushed the last update on "
+                "version {}, the unflushed progress will be lost after this "
                 "point",
                 dest_version,
                 unflushed_version_);

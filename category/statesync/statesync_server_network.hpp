@@ -20,6 +20,9 @@
 #include <category/core/log.hpp>
 #include <category/statesync/statesync_messages.h>
 
+#include <quill/bundled/fmt/ranges.h>
+#include <quill/std/Chrono.h>
+
 #include <array>
 #include <chrono>
 #include <poll.h>

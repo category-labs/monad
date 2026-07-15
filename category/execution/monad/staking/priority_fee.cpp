@@ -47,9 +47,10 @@ void distribute_priority_fees(State &state)
     StakingContract contract(state, call_tracer);
     auto const res = contract.distribute_priority_fees(fees);
     if (res.has_error()) {
+        auto const error_message = res.error().message();
         LOG_WARNING(
             "staking: distribute priority fee reverted: {}",
-            res.error().message());
+            std::string{error_message.data(), error_message.size()});
         // At the start of block execution, the proposer id is always cleared to
         // 0 and is set by the reward syscall. If the reward syscall was not
         // included, `UnknownValidator` will be returned, and that is the only

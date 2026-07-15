@@ -29,6 +29,8 @@
 #include <category/statesync/statesync_server.h>
 #include <category/statesync/statesync_server_context.hpp>
 
+#include <quill/std/Chrono.h>
+
 #include <chrono>
 #include <fcntl.h>
 #include <mutex>

@@ -409,8 +409,7 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
         return -1;
     }
 
-    quill::start(false);
-    quill::get_root_logger()->set_log_level(quill::LogLevel::Error);
+    init_root_logger(quill::LogLevel::Error);
 
     // Fuzz both encodings each input, until slot encoding is retired:
     // MONAD_TESTNET is pre-mip_8 (slot), MONAD_DEVNET is mip_8-active (page).

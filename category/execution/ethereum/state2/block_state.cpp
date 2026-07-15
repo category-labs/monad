@@ -38,6 +38,8 @@
 
 #include <ankerl/unordered_dense.h>
 
+#include <quill/std/Optional.h>
+
 #include <memory>
 #include <optional>
 #include <utility>

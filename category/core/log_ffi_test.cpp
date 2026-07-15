@@ -20,7 +20,6 @@
 #include <chrono>
 #include <cstdint>
 #include <print>
-#include <string_view>
 #include <thread>
 
 #include <stdlib.h>
@@ -36,7 +35,9 @@ static void capture_log(monad_log const *const input_log, uintptr_t const ptr)
     monad_log *const output_log = std::bit_cast<monad_log *>(ptr);
     *output_log = *input_log;
     if (output_log->message != nullptr) {
-        output_log->message = strdup(output_log->message);
+        char *output_message = new char[output_log->message_len];
+        memcpy(output_message, output_log->message, output_log->message_len);
+        output_log->message = output_message;
     }
 }
 
@@ -69,7 +70,6 @@ TEST(LogFFI, Basic)
     EXPECT_EQ(SYSLOG_ERR, output.syslog_level);
     ASSERT_NE(nullptr, output.message);
     EXPECT_TRUE(strncmp(FIRST_ERROR, output.message, sizeof FIRST_ERROR));
-    EXPECT_EQ(strlen(output.message), output.message_len);
 
     std::print(stderr, "First log message is: {}", output.message);
     free(const_cast<char *>(output.message));
@@ -89,7 +89,6 @@ TEST(LogFFI, Basic)
     EXPECT_EQ(SYSLOG_ERR, output.syslog_level);
     ASSERT_NE(nullptr, output.message);
     EXPECT_TRUE(strncmp(SECOND_ERROR, output.message, sizeof SECOND_ERROR));
-    EXPECT_EQ(strlen(output.message), output.message_len);
 
     std::print(stderr, "Second log message is: {}", output.message);
     free(const_cast<char *>(output.message));

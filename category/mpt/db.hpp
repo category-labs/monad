@@ -90,6 +90,13 @@ public:
     state_machine_kind state_machine_type() const;
 };
 
+struct DbStorageStats
+{
+    // Both summed across all storage-pool devices.
+    uint64_t disk_capacity_bytes;
+    uint64_t disk_used_bytes;
+};
+
 // A Db is bound to one timeline. The constructors below produce a primary
 // Db; a secondary Db is obtained from activate_secondary_timeline /
 // open_secondary_timeline. Both instances share the underlying UpdateAux
@@ -206,6 +213,10 @@ public:
 
     bool is_on_disk() const;
     bool is_read_only() const;
+
+    // Storage-pool device accounting for on-disk Dbs; zeros when not on disk.
+    // Safe on a read-only handle while the writer is live.
+    DbStorageStats get_storage_stats() const;
 
     // Timeline lifecycle (callable on the primary Db only).
     //

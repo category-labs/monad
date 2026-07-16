@@ -64,6 +64,14 @@ impl MigrationPhase {
     }
 }
 
+/// Storage-pool disk capacity and usage in bytes. Zeros for in-memory /
+/// not-on-disk Dbs. Safe on a read-only handle while execution is writing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StorageStats {
+    pub disk_capacity_bytes: u64,
+    pub disk_used_bytes: u64,
+}
+
 struct SenderContext {
     sender: Sender<Option<Vec<u8>>>,
     completed_counter: Arc<AtomicUsize>,
@@ -279,6 +287,20 @@ impl TriedbHandle {
     /// mmap'd metadata) and safe on a read-only handle while execution writes.
     pub fn migration_phase(&self) -> MigrationPhase {
         MigrationPhase::from_code(unsafe { ffi::triedb_migration_phase(self.db_ptr) })
+    }
+
+    /// Storage-pool disk capacity and usage in bytes. Safe on a read-only
+    /// handle while execution writes.
+    pub fn storage_stats(&self) -> StorageStats {
+        let mut out = ffi::triedb_storage_stats {
+            disk_capacity_bytes: 0,
+            disk_used_bytes: 0,
+        };
+        unsafe { ffi::triedb_storage_stats_read(self.db_ptr, &mut out) };
+        StorageStats {
+            disk_capacity_bytes: out.disk_capacity_bytes,
+            disk_used_bytes: out.disk_used_bytes,
+        }
     }
 
     pub fn read(&self, key: &[u8], key_len_nibbles: u8, block_id: u64) -> Option<Vec<u8>> {

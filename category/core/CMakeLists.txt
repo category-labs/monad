@@ -82,6 +82,8 @@ add_library(
   "bytes.hpp"
   "bytes_hash_compare.hpp"
   "cases.hpp"
+  "checked_math.cpp"
+  "checked_math.hpp"
   "cleanup.h"
   "cleanup.c"
   "cpu_relax.h"

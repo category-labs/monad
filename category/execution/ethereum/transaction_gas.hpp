@@ -15,11 +15,11 @@
 
 #pragma once
 
+#include <category/core/checked_math.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/blob_schedule.hpp>
-#include <category/execution/ethereum/core/contract/checked_math.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>

@@ -51,8 +51,6 @@ add_library(
   "ethereum/core/contract/abi_encode.hpp"
   "ethereum/core/contract/abi_signatures.hpp"
   "ethereum/core/contract/big_endian.hpp"
-  "ethereum/core/contract/checked_math.cpp"
-  "ethereum/core/contract/checked_math.hpp"
   "ethereum/core/contract/events.hpp"
   "ethereum/core/contract/storage_array.hpp"
   "ethereum/core/contract/storage_variable.hpp"

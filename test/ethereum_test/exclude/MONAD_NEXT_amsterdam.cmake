@@ -13,9 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# The MONAD_NEXT Amsterdam spec-test fixtures (EIP-7708, EIP-7843, EIP-8024)
-# expect a block header carrying the SLOTNUM field, which the execution layer
-# does not yet emit; every fixture therefore fails the genesis block-hash
-# check. Exclude the whole suite for now and drop entries here to re-enable
-# individual tests as support lands.
-set(MONAD_NEXT_amsterdam_excluded_tests "BlockchainTests.*")
+# Only include slotnum tests, include other Amsterdam fixtures
+# as support is added.
+# This is intended to keep test suite clean within stacked
+# Amsterdam PRs.
+set(MONAD_NEXT_amsterdam_included_tests "*/amsterdam/eip7843_slotnum/*")
+set(MONAD_NEXT_amsterdam_excluded_tests "")

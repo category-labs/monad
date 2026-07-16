@@ -3151,6 +3151,13 @@ namespace monad::vm::compiler::native
         read_evmc_tx_context_word(offsetof(evmc_tx_context, blob_base_fee));
     }
 
+    // No discharge
+    void Emitter::slotnum()
+    {
+        read_evmc_tx_context_uint64_to_word(
+            offsetof(evmc_tx_context, block_round));
+    }
+
     // Discharge
     void Emitter::calldataload()
     {

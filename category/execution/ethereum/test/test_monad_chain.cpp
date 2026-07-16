@@ -108,7 +108,12 @@ TYPED_TEST(TraitsTest, Genesis)
 
         auto result =
             static_validate_header<typename TestFixture::Trait>(header);
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+        if constexpr (TestFixture::Trait::eip_7843_active()) {
+            // EIP-7843 (Amsterdam) requires block_access_list_hash and
+            // slot_number in the header, predating this header
+            EXPECT_TRUE(result.has_error());
+        }
+        else if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
             EXPECT_TRUE(result.has_value());
         }
         else {

@@ -81,6 +81,7 @@ namespace monad
         { T::eip_7691_active() } -> std::same_as<bool>;
         { T::eip_7823_active() } -> std::same_as<bool>;
         { T::eip_7883_active() } -> std::same_as<bool>;
+        { T::eip_7918_active() } -> std::same_as<bool>;
         { T::eip_7939_active() } -> std::same_as<bool>;
         { T::eip_7951_active() } -> std::same_as<bool>;
         { T::mip_3_active() } -> std::same_as<bool>;
@@ -162,6 +163,11 @@ namespace monad
         }
 
         static consteval bool eip_7883_active() noexcept
+        {
+            return Rev >= MONAD_ETH_OSAKA;
+        }
+
+        static consteval bool eip_7918_active() noexcept
         {
             return Rev >= MONAD_ETH_OSAKA;
         }
@@ -330,6 +336,11 @@ namespace monad
         static consteval bool eip_7883_active() noexcept
         {
             return evm_rev() >= MONAD_ETH_OSAKA;
+        }
+
+        static consteval bool eip_7918_active() noexcept
+        {
+            return false;
         }
 
         static consteval bool eip_7939_active() noexcept

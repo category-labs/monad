@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/test/test_traits_state.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <monad/test/traits_test.hpp>
@@ -431,6 +432,106 @@ TYPED_TEST(TraitsTest, optional_fields_existence)
 }
 
 #undef TEST_OPTIONAL_FIELD
+
+TYPED_TEST(TraitsTest, calc_excess_blob_gas)
+{
+    auto const target_blob_gas =
+        target_blob_gas_per_block(CANCUN_BLOB_SCHEDULE);
+
+    BlockHeader parent{
+        .blob_gas_used = target_blob_gas + GAS_PER_BLOB,
+        .excess_blob_gas = target_blob_gas};
+
+    EXPECT_EQ(
+        calc_excess_blob_gas<typename TestFixture::Trait>(
+            parent, CANCUN_BLOB_SCHEDULE),
+        target_blob_gas + GAS_PER_BLOB);
+
+    parent.blob_gas_used = 0;
+    parent.excess_blob_gas = target_blob_gas - 1;
+    EXPECT_EQ(
+        calc_excess_blob_gas<typename TestFixture::Trait>(
+            parent, CANCUN_BLOB_SCHEDULE),
+        0);
+}
+
+TYPED_TEST(TraitsTest, calc_excess_blob_gas_uses_reserve_price_when_active)
+{
+    BlobSchedule const blob_schedule = PRAGUE_BLOB_SCHEDULE;
+    auto const target_blob_gas = target_blob_gas_per_block(blob_schedule);
+
+    BlockHeader parent{
+        .base_fee_per_gas = uint256_t{1'000'000},
+        .blob_gas_used = target_blob_gas,
+        .excess_blob_gas = target_blob_gas};
+
+    uint64_t const expected_excess_blob_gas = [&] {
+        if constexpr (TestFixture::Trait::eip_7918_active()) {
+            return target_blob_gas +
+                   target_blob_gas *
+                       (blob_schedule.max_blobs_per_block -
+                        blob_schedule.target_blobs_per_block) /
+                       blob_schedule.max_blobs_per_block;
+        }
+        else {
+            return target_blob_gas;
+        }
+    }();
+
+    EXPECT_EQ(
+        calc_excess_blob_gas<typename TestFixture::Trait>(
+            parent, blob_schedule),
+        expected_excess_blob_gas);
+}
+
+TYPED_TEST(TraitsTest, validate_excess_blob_gas_against_parent)
+{
+    if constexpr (!TestFixture::Trait::eip_4844_active()) {
+        GTEST_SKIP() << "EIP-4844 is not active";
+    }
+    else {
+        static constexpr uint64_t timestamp =
+            TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE
+                ? uint64_t{1746612311}
+                : uint64_t{1710338135};
+
+        EthereumMainnet const chain;
+        auto const blob_schedule = chain.get_blob_schedule(timestamp);
+        auto const target_blob_gas = target_blob_gas_per_block(blob_schedule);
+
+        BlockHeader parent{
+            .blob_gas_used = target_blob_gas + GAS_PER_BLOB,
+            .excess_blob_gas = target_blob_gas};
+        uint64_t const expected_excess_blob_gas =
+            calc_excess_blob_gas<typename TestFixture::Trait>(
+                parent, blob_schedule);
+
+        BlockHeader header{
+            .number = 1,
+            .gas_limit = 10000,
+            .timestamp = timestamp,
+            .base_fee_per_gas = uint256_t{},
+            .withdrawals_root = bytes32_t{},
+            .blob_gas_used = uint64_t{0},
+            .excess_blob_gas = expected_excess_blob_gas,
+            .parent_beacon_block_root = bytes32_t{}};
+        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+            header.requests_hash = bytes32_t{};
+        }
+        Block block{.header = header, .withdrawals = std::vector<Withdrawal>{}};
+
+        auto result =
+            static_validate_block_with_parent<typename TestFixture::Trait>(
+                chain, block, parent);
+        EXPECT_TRUE(result.has_value());
+
+        block.header.excess_blob_gas = expected_excess_blob_gas + 1;
+        result = static_validate_block_with_parent<typename TestFixture::Trait>(
+            chain, block, parent);
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), BlockError::InvalidExcessBlobGas);
+    }
+}
 
 TYPED_TEST(TraitsTest, invalid_nonce)
 {

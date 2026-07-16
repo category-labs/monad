@@ -1001,6 +1001,24 @@ get_transactions<mpt::Db>(mpt::Db &, uint64_t, bytes32_t const &);
 template Result<std::vector<Transaction>>
 get_transactions<mpt::RODb>(mpt::RODb &, uint64_t, bytes32_t const &);
 
+template <typename DBType>
+    requires std::is_same_v<mpt::RODb, DBType>
+Result<BlockHeader> get_block_header(
+    DBType &db, uint64_t const block_number, bytes32_t const &block_id)
+{
+    Nibbles const prefix =
+        block_id == bytes32_t{} ? finalized_nibbles : proposal_prefix(block_id);
+    BOOST_OUTCOME_TRY(
+        auto const cursor,
+        db.find(concat(NibblesView{prefix}, BLOCKHEADER_NIBBLE), block_number));
+    auto encoded_header = cursor.node->value();
+    BOOST_OUTCOME_TRY(auto header, rlp::decode_block_header(encoded_header));
+    return header;
+}
+
+template Result<BlockHeader>
+get_block_header<mpt::RODb>(mpt::RODb &, uint64_t, bytes32_t const &);
+
 bool for_each_code(
     mpt::Db &db, uint64_t const block,
     std::function<void(bytes32_t const &, byte_string_view)> const fn)

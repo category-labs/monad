@@ -293,11 +293,13 @@ Result<BlockExecOutput> propose_block(
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
     // EIP-7843: surface the Monad consensus round to execution via the EL
-    // header's slot_number (in-memory only for now; not RLP-encoded). It is
-    // read into evmc_tx_context.block_round by get_tx_context and system_call.
+    // header's slot_number. It is read into evmc_tx_context.block_round by
+    // get_tx_context and system_call.
     // NOTE: only this path populates slot_number; RPC/trace re-execution does
     // not (see EXE-60).
-    block.header.slot_number = consensus_header.block_round;
+    if constexpr (traits::eip_7843_active()) {
+        block.header.slot_number = consensus_header.block_round;
+    }
 
     BlockExecOutput exec_output;
     BlockMetrics block_metrics;

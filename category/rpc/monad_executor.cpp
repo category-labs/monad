@@ -126,6 +126,7 @@ namespace
         "failed to recover the parent transactions context";
     char const *const GRANDPARENT_TRANSACTIONS_CONTEXT_ERR_MSG =
         "failed to recover the grandparent transactions context";
+    char const *const BLOCK_HEADER_ERR_MSG = "failed to read the block header";
     char const *const TRANSACTION_OUT_OF_BOUNDS_ERR_MSG =
         "transaction out of bounds";
     static ankerl::unordered_dense::segmented_set<Address>
@@ -383,16 +384,6 @@ namespace
         std::span<std::vector<std::optional<Address>> const> const
             authorities_view{authorities.data(), transactions_size};
 
-        // TODO(EXE-60): this re-execution path (and the sibling eth_call /
-        // eth_simulate paths in this file) receives a BlockHeader whose
-        // slot_number is unset (it is in-memory only, not RLP-encoded), so
-        // once SLOTNUM (EIP-7843) is wired the round read via
-        // evmc_tx_context.block_round would be 0. On this historical-trace
-        // path that diverges from how the block actually executed; the
-        // eth_call/eth_simulate paths run against synthetic headers where a 0
-        // round may be acceptable. Repopulate slot_number from the persisted
-        // MonadConsensusBlockHeader::block_round where a real round exists, per
-        // EXE-60.
         // Execute block header
         execute_block_header<traits>(block_state, header);
         BlockMetrics metrics{};
@@ -1391,6 +1382,16 @@ struct monad_executor
 
                     auto const chain = make_chain(chain_config);
 
+                    // EXE-37/EXE-60: overwrite block_header.slot_number with
+                    // the target block's persisted slot_number.
+                    auto const persisted_header =
+                        monad::get_block_header(db, block_number, block_id);
+                    MONAD_ASSERT_THROW(
+                        persisted_header.has_value(), BLOCK_HEADER_ERR_MSG);
+                    BlockHeader call_header = block_header;
+                    call_header.slot_number =
+                        persisted_header.assume_value().slot_number;
+
                     LazyBlockHash block_hash_buffer{db, block_number};
                     TrieRODb tdb{db};
                     std::vector<CallFrame> call_frames;
@@ -1431,7 +1432,7 @@ struct monad_executor
                                 eth_call_impl,
                                 *chain,
                                 transaction,
-                                block_header,
+                                call_header,
                                 block_number,
                                 block_id,
                                 sender,
@@ -1453,7 +1454,7 @@ struct monad_executor
                                 eth_call_impl,
                                 *chain,
                                 transaction,
-                                block_header,
+                                call_header,
                                 block_number,
                                 block_id,
                                 sender,
@@ -1733,6 +1734,18 @@ struct monad_executor
                                 grandparent_senders, grandparent_authorities);
                     }
 
+                    // EXE-37/EXE-60: on this historical-trace path, overwrite
+                    // block_header.slot_number with the target block's
+                    // persisted slot_number so it reflects how the block
+                    // actually executed.
+                    auto const persisted_header =
+                        monad::get_block_header(db, block_number, block_id);
+                    MONAD_ASSERT_THROW(
+                        persisted_header.has_value(), BLOCK_HEADER_ERR_MSG);
+                    BlockHeader header_to_trace = block_header;
+                    header_to_trace.slot_number =
+                        persisted_header.assume_value().slot_number;
+
                     // Set db to parent block state
                     TrieRODb tdb{db};
                     tdb.set_block_and_prefix(block_number - 1, parent_id);
@@ -1756,7 +1769,7 @@ struct monad_executor
                                 senders_and_authorities,
                                 senders,
                                 authorities,
-                                block_header,
+                                header_to_trace,
                                 transactions,
                                 trace_transaction,
                                 transaction_index,
@@ -1784,7 +1797,7 @@ struct monad_executor
                                 senders_and_authorities,
                                 senders,
                                 authorities,
-                                block_header,
+                                header_to_trace,
                                 transactions,
                                 trace_transaction,
                                 transaction_index,

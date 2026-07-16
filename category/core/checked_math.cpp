@@ -13,13 +13,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/execution/ethereum/core/contract/checked_math.hpp>
+#include <category/core/checked_math.hpp>
 
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
+#include <category/core/runtime/uint256.hpp>
 
+#include <array>
+#include <cstdint>
 #include <initializer_list>
 
 #include <boost/outcome/config.hpp>

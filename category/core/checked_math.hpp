@@ -16,9 +16,8 @@
 #pragma once
 
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
-#include <category/core/likely.h>
 #include <category/core/result.hpp>
+#include <category/core/runtime/uint256.hpp>
 
 #include <initializer_list>
 

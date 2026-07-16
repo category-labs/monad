@@ -15,6 +15,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/checked_math.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
@@ -23,7 +24,6 @@
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
-#include <category/execution/ethereum/core/contract/checked_math.hpp>
 #include <category/execution/ethereum/core/contract/events.hpp>
 #include <category/execution/ethereum/core/contract/storage_array.hpp>
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>

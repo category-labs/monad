@@ -20,9 +20,9 @@
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
-#include <category/execution/ethereum/core/contract/checked_math.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -160,8 +160,7 @@ Result<void> static_validate_transaction(
     }
 
     // EIP-1559: check gas_limit * max_fee_per_gas doesn't overflow uint256
-    if (MONAD_UNLIKELY(
-            !checked_mul(uint256_t{tx.gas_limit}, tx.max_fee_per_gas))) {
+    if (MONAD_UNLIKELY(!max_gas_cost(tx.gas_limit, tx.max_fee_per_gas))) {
         return TransactionError::GasLimitOverflow;
     }
 

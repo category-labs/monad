@@ -13,7 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# SHA-256, RIPEMD-160, and BLAKE2F implementations vendored from silkpre.
+# Vendored precompiles from silkpre:
+#   SHA-256, RIPEMD-160, BLAKE2F, ECRECOVER
 # See NOTICE and LICENSE.
 
 add_library(monad_crypto STATIC)
@@ -27,7 +28,12 @@ target_sources(monad_crypto PRIVATE
   "src/silkpre_vendor/sha256.h"
   "src/silkpre_vendor/blake2b.c"
   "src/silkpre_vendor/blake2b.h"
+  "src/silkpre_vendor/ecdsa.c"
+  "src/silkpre_vendor/ecdsa.h"
 )
+
+# ecdsa needs libsecp256k1 and ethash
+target_link_libraries(monad_crypto PUBLIC PkgConfig::secp256k1 ethash::keccak)
 
 # Consumers include the headers via `<silkpre_vendor/sha256.h>` etc.
 target_include_directories(monad_crypto PUBLIC src/)

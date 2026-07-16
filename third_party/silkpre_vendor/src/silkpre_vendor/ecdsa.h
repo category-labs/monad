@@ -14,8 +14,12 @@
    limitations under the License.
 */
 
-#ifndef SILKPRE_ECDSA_H_
-#define SILKPRE_ECDSA_H_
+// Modified 2026 by Category Labs:
+//   - Rename to use monad prefixes
+//   - Remove secp256k1_ecdh and related functions
+
+#ifndef MONAD_ECDSA_H_
+#define MONAD_ECDSA_H_
 
 // See Yellow Paper, Appendix F "Signing Transactions"
 
@@ -28,7 +32,7 @@
 extern "C" {
 #endif
 
-enum { SILKPRE_SECP256K1_CONTEXT_FLAGS = (SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY) };
+enum { MONAD_SECP256K1_CONTEXT_FLAGS = SECP256K1_CONTEXT_VERIFY };
 
 //! \brief Tries recover the address used for message signing
 //! \param [in] message : the signed message
@@ -36,17 +40,11 @@ enum { SILKPRE_SECP256K1_CONTEXT_FLAGS = (SECP256K1_CONTEXT_SIGN | SECP256K1_CON
 //! \param [in] odd_y_parity : whether y parity is odd
 //! \param [in] context: a pointer to an existing secp256k1 context
 //! \return Whether the recovery has succeeded
-bool silkpre_recover_address(uint8_t out[20], const uint8_t message[32], const uint8_t signature[64], bool odd_y_parity,
-                             secp256k1_context* context);
-
-bool silkpre_secp256k1_ecdh(
-    const secp256k1_context* context,
-    uint8_t* output,
-    const secp256k1_pubkey* public_key,
-    const uint8_t* private_key);
+bool monad_recover_address(uint8_t out[20], const uint8_t message[32], const uint8_t signature[64], bool odd_y_parity,
+                           secp256k1_context* context);
 
 #if defined(__cplusplus)
 }
 #endif
 
-#endif  // SILKPRE_ECDSA_H_
+#endif  // MONAD_ECDSA_H_

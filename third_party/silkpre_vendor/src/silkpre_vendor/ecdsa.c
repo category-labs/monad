@@ -14,12 +14,15 @@
    limitations under the License.
 */
 
-#include "ecdsa.h"
+// Modified 2026 by Category Labs:
+//   - Rename to use monad prefixes
+//   - Remove secp256k1_ecdh and related functions
+
+#include <silkpre_vendor/ecdsa.h>
 
 #include <string.h>
 
 #include <ethash/keccak.h>
-#include <secp256k1_ecdh.h>
 #include <secp256k1_recovery.h>
 
 //! \brief Tries recover public key used for message signing.
@@ -55,32 +58,11 @@ static bool public_key_to_address(uint8_t out[20], const uint8_t public_key[65])
     return true;
 }
 
-bool silkpre_recover_address(uint8_t out[20], const uint8_t message[32], const uint8_t signature[64], bool odd_y_parity,
+bool monad_recover_address(uint8_t out[20], const uint8_t message[32], const uint8_t signature[64], bool odd_y_parity,
                              secp256k1_context* context) {
     uint8_t public_key[65];
     if (!recover(public_key, message, signature, odd_y_parity, context)) {
         return false;
     }
     return public_key_to_address(out, public_key);
-}
-
-// degenerate hash function that just copies the given X value
-// see: ecies.GenerateShared in Erigon
-static int ecdh_hash_function_copy_x(
-    unsigned char *output,
-    const unsigned char *x32,
-    const unsigned char *y32,
-    void *data) {
-
-    memcpy(output, x32, 32);
-    return 1;
-};
-
-bool silkpre_secp256k1_ecdh(
-    const secp256k1_context* context,
-    uint8_t* output,
-    const secp256k1_pubkey* public_key,
-    const uint8_t* private_key) {
-
-    return secp256k1_ecdh(context, output, public_key, private_key, ecdh_hash_function_copy_x, NULL);
 }

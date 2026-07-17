@@ -65,13 +65,13 @@ std::span<unsigned char>
 encode_16_children(Node const &, std::span<unsigned char> result);
 
 byte_string encode_two_pieces(
-    NibblesView path, byte_string_view second, bool has_value = false);
+    NibblesView path, byte_string_view second, bool is_leaf = false);
 
 [[gnu::always_inline]] inline unsigned encode_two_pieces_reference(
     unsigned char *const dest, NibblesView const path,
-    byte_string_view const second, bool const has_value = false)
+    byte_string_view const second, bool const is_leaf = false)
 {
-    auto const rlp = encode_two_pieces(path, second, has_value);
+    auto const rlp = encode_two_pieces(path, second, is_leaf);
     return to_node_reference({rlp.data(), rlp.size()}, dest);
 }
 
@@ -342,8 +342,12 @@ struct VarLenMerkleCompute : Compute
         // rlp(encoded path, inline branch hash)
         if (node.has_path()) { // extension node, rlp encode with path too
             MONAD_ASSERT(node.bitpacked.data_len);
+            // A node with children is always an extension, even when it also
+            // carries a value: the value is already encoded in the 17th slot
+            // of the inline branch data, so the hex-prefix must be the
+            // non-terminating (extension) one.
             return encode_two_pieces_reference(
-                buffer, node.path_nibble_view(), node.data(), node.has_value());
+                buffer, node.path_nibble_view(), node.data(), false);
         }
         // Ethereum branch
         return compute_branch_reference_(buffer, node);
@@ -443,7 +447,11 @@ private:
                            compute_branch_reference_(branch_hash, *node)};
                    }())
                               : LeafValueProcessor::process(*node),
-                   node->has_value());
+                   // A node with children is an extension based on ethereum MPT
+                   // definition even if it also has a value; the value is
+                   // already inside the branch encoding. Only a childless node
+                   // takes the terminating leaf prefix.
+                   node->mask == 0);
     }
 };
 

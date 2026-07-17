@@ -27,7 +27,6 @@
 #include <evmc/evmc.hpp>
 #include <evmc/helpers.h>
 
-#include <array>
 #include <cstdint>
 #include <optional>
 #include <utility>

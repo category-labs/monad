@@ -48,6 +48,9 @@
 
 #include <silkpre/precompile.h>
 
+#include <gmp.h>
+
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <cstdlib>
@@ -176,9 +179,82 @@ PrecompileResult identity_execute(byte_string_view const input)
     return {EVMC_SUCCESS, output, input.size()};
 }
 
-PrecompileResult expmod_execute(byte_string_view const input)
+// EIP-198: Big integer modular exponentiation
+//
+// Implementation derived from github.com/category-labs/silkpre @ bbc3498
+// from The Silkpre Authors under Apache License, Version 2.0
+// (see third_party/silkpre_vendor/NOTICE).
+PrecompileResult expmod_execute(byte_string_view const input_view)
 {
-    return silkpre_execute<silkpre_expmod_run>(input);
+    byte_string input(input_view.data(), input_view.size());
+    if (input.size() < 3 * 32) {
+        input.resize(3 * 32, 0);
+    }
+
+    auto const base_len{load_be_unsafe<uint64_t>(&input[24])};
+    input.erase(0, 32);
+
+    auto const exponent_len{load_be_unsafe<uint64_t>(&input[24])};
+    input.erase(0, 32);
+
+    auto const modulus_len{load_be_unsafe<uint64_t>(&input[24])};
+    input.erase(0, 32);
+
+    if (modulus_len == 0) {
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+
+    auto const input_len = base_len + exponent_len + modulus_len;
+    if (input.size() < input_len) {
+        input.resize(input_len, 0);
+    }
+
+    mpz_t base;
+    mpz_init(base);
+    if (base_len > 0) {
+        mpz_import(base, base_len, 1, 1, 0, 0, input.data());
+        input.erase(0, base_len);
+    }
+
+    mpz_t exponent;
+    mpz_init(exponent);
+    if (exponent_len > 0) {
+        mpz_import(exponent, exponent_len, 1, 1, 0, 0, input.data());
+        input.erase(0, exponent_len);
+    }
+
+    mpz_t modulus;
+    mpz_init(modulus);
+    mpz_import(modulus, modulus_len, 1, 1, 0, 0, input.data());
+
+    auto *const output = static_cast<uint8_t *>(std::malloc(modulus_len));
+    MONAD_ASSERT(output != nullptr);
+    std::memset(output, 0, modulus_len);
+
+    if (mpz_sgn(modulus) == 0) {
+        mpz_clear(modulus);
+        mpz_clear(exponent);
+        mpz_clear(base);
+
+        return {EVMC_SUCCESS, output, static_cast<size_t>(modulus_len)};
+    }
+
+    mpz_t result;
+    mpz_init(result);
+
+    mpz_powm(result, base, exponent, modulus);
+
+    // export as little-endian
+    mpz_export(output, nullptr, -1, 1, 0, 0, result);
+    // and convert to big-endian
+    std::reverse(output, output + modulus_len);
+
+    mpz_clear(result);
+    mpz_clear(modulus);
+    mpz_clear(exponent);
+    mpz_clear(base);
+
+    return {EVMC_SUCCESS, output, static_cast<size_t>(modulus_len)};
 }
 
 PrecompileResult snarkv_execute(byte_string_view const input)

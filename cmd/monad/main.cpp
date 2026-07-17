@@ -15,7 +15,6 @@
 
 #include "event.hpp"
 #include "runloop_ethereum.hpp"
-#include "runloop_monad.hpp"
 #include "runloop_monad_ethblocks.hpp"
 
 #include <category/core/assert.h>
@@ -46,6 +45,7 @@
 #include <category/execution/monad/chain/chain_factory.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
+#include <category/execution/runloop/runloop_monad.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/statesync/statesync_server_network.hpp>
 #include <category/statesync/statesync_thread.hpp>

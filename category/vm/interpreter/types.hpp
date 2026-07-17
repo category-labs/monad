@@ -31,9 +31,15 @@
  * preserve the registers used for argument threading.
  *
  * See https://blog.reverberate.org/2025/02/10/tail-call-updates.html for a good
- * reference to this technique. It is not supported by GCC as of version 15.
+ * reference to this technique.
+ *
+ * Restricted to Clang: gcc-15 does not support preserve_none, and g++-16 (which
+ * does) miscompiles it together with the musttail dispatch below at -Og,
+ * corrupting gas accounting (wrong gas_used / state root in ethereum_test). It
+ * is only a marginal register-allocation optimisation, so gating it to Clang
+ * costs nothing on GCC.
  */
-#if defined(__has_attribute)
+#if defined(__has_attribute) && defined(__clang__)
     #if __has_attribute(preserve_none)
         #define MONAD_VM_INSTRUCTION_CALL __attribute__((preserve_none))
     #else

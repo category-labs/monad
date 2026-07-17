@@ -45,6 +45,6 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     MonadChain const &, std::filesystem::path const &, mpt::Db &, Db &,
     vm::VM &, BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &,
     uint64_t, sig_atomic_t const volatile &, bool enable_tracing,
-    Db *secondary_db);
+    Db *secondary_db = nullptr, bool is_first_run = true);
 
 MONAD_NAMESPACE_END

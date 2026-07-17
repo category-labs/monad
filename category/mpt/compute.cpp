@@ -31,19 +31,18 @@
 MONAD_MPT_NAMESPACE_BEGIN
 
 byte_string encode_two_pieces(
-    NibblesView const path, byte_string_view const second, bool const has_value)
+    NibblesView const path, byte_string_view const second, bool const is_leaf)
 {
     constexpr size_t max_compact_encode_size = KECCAK256_SIZE + 1;
 
     MONAD_ASSERT(path.data_size() <= KECCAK256_SIZE);
 
     unsigned char path_arr[max_compact_encode_size] = {0};
-    auto const first = compact_encode(path_arr, path, has_value);
+    auto const first = compact_encode(path_arr, path, is_leaf);
     MONAD_ASSERT(first.size() <= max_compact_encode_size);
     // leaf and hashed node ref requires rlp encoding,
     // rlp encoded but unhashed branch node ref doesn't
-    bool const need_encode_second =
-        has_value || second.size() >= KECCAK256_SIZE;
+    bool const need_encode_second = is_leaf || second.size() >= KECCAK256_SIZE;
     auto const concat_len =
         rlp::string_length(first) +
         (need_encode_second ? rlp::string_length(second) : second.size());

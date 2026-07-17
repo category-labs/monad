@@ -16,6 +16,7 @@
 #include <category/core/blake3.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/rlp/decode_error.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
@@ -180,4 +181,56 @@ TEST(Rlp_Block, MonadConsensusBlock)
     EXPECT_TRUE(consensus_body.transactions.empty());
     EXPECT_TRUE(consensus_body.ommers.empty());
     EXPECT_TRUE(consensus_body.withdrawals.empty());
+    EXPECT_TRUE(consensus_body.transaction_batches.empty());
+}
+
+TEST(Rlp_Block, MonadConsensusBlockBodyTransactionBatches)
+{
+    {
+        byte_string const encoded{0xc4, 0xc3, 0xc0, 0xc0, 0xc0};
+        auto view = byte_string_view{encoded};
+        auto decoded = rlp::decode_consensus_block_body(view);
+        ASSERT_FALSE(decoded.has_error());
+        EXPECT_TRUE(decoded.value().transaction_batches.empty());
+    }
+
+    {
+        Transaction tx{
+            .sc =
+                {.signature = {.r = 1, .s = 2, .y_parity = 0},
+                 .chain_id = uint256_t{20143}},
+            .nonce = 7,
+            .max_fee_per_gas = 3,
+            .gas_limit = 21'000,
+            .to = 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address,
+            .type = TransactionType::eip1559,
+        };
+        MonadTransactionBatch expected_batch{
+            .transactions = {tx}, .signature = {.r = 4, .s = 5, .y_parity = 1}};
+
+        byte_string const encoded{
+            0xf1, 0xf0, 0xc0, 0xc0, 0xc0, 0xec, 0xeb, 0xe7, 0xa6, 0x02,
+            0xe4, 0x82, 0x4e, 0xaf, 0x07, 0x80, 0x03, 0x82, 0x52, 0x08,
+            0x94, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa,
+            0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa,
+            0xaa, 0x80, 0x80, 0xc0, 0x80, 0x01, 0x02, 0x01, 0x04, 0x05};
+        auto view = byte_string_view{encoded};
+        auto decoded = rlp::decode_consensus_block_body(view);
+        ASSERT_FALSE(decoded.has_error());
+        EXPECT_TRUE(decoded.value().transactions.empty());
+        ASSERT_EQ(decoded.value().transaction_batches.size(), 1u);
+        EXPECT_EQ(decoded.value().transaction_batches[0], expected_batch);
+    }
+}
+
+TEST(Rlp_Block, MonadConsensusBlockBodyAcceptsPresentEmptyTransactionBatches)
+{
+    byte_string const encoded{0xc5, 0xc4, 0xc0, 0xc0, 0xc0, 0xc0};
+    auto view = byte_string_view{encoded};
+    auto decoded = rlp::decode_consensus_block_body(view);
+    ASSERT_FALSE(decoded.has_error());
+    EXPECT_TRUE(decoded.value().transactions.empty());
+    EXPECT_TRUE(decoded.value().ommers.empty());
+    EXPECT_TRUE(decoded.value().withdrawals.empty());
+    EXPECT_TRUE(decoded.value().transaction_batches.empty());
 }

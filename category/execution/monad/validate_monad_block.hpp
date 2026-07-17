@@ -34,6 +34,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
+struct MonadTransactionBatch;
 struct Transaction;
 
 enum class MonadBlockError
@@ -46,6 +47,8 @@ enum class MonadBlockError
     DuplicateSystemTransaction,
     UnknownSystemTransaction,
     InvalidRewardValue,
+    UnexpectedTransactionBatch,
+    InvalidTransactionBatchSignature,
 };
 
 template <class MonadConsensusBlockHeader>
@@ -55,6 +58,10 @@ static_validate_consensus_header(MonadConsensusBlockHeader const &);
 template <Traits traits>
 Result<void> static_validate_monad_body(
     std::span<Address const>, std::span<Transaction const>);
+
+template <Traits traits>
+Result<void> validate_monad_body(
+    std::span<Transaction const>, std::span<MonadTransactionBatch const>);
 
 MONAD_NAMESPACE_END
 

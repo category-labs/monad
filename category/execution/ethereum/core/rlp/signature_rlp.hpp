@@ -22,6 +22,7 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
+Result<EcdsaSignature> decode_ecdsa_signature_fields(byte_string_view &);
 Result<SignatureAndChain> decode_sc(byte_string_view &);
 
 MONAD_RLP_NAMESPACE_END

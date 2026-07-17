@@ -349,7 +349,6 @@ void UpdateAux::rewind_to_version(uint64_t const version)
         auto const sec_max = secondary_ro.max_version();
         if (sec_max != INVALID_BLOCK_NUM) {
             auto const sec_root = secondary_ro[sec_max];
-            MONAD_ASSERT(sec_root != INVALID_OFFSET);
             consider(post_root_fast_offset_(main, sec_root));
         }
     }

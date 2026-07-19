@@ -73,6 +73,8 @@ struct PrecompileSelector
         abi_encode_selector("getProposerValId()");
     static constexpr uint32_t GET_VALIDATOR =
         abi_encode_selector("getValidator(uint64)");
+    static constexpr uint32_t GET_VALIDATOR_ID =
+        abi_encode_selector("getValidatorId(address)");
     static constexpr uint32_t GET_DELEGATOR =
         abi_encode_selector("getDelegator(uint64,address)");
     static constexpr uint32_t GET_WITHDRAWAL_REQUEST =
@@ -100,6 +102,7 @@ static_assert(PrecompileSelector::EXTERNAL_REWARD == 0xe4b3303b);
 static_assert(PrecompileSelector::GET_EPOCH == 0x757991a8);
 static_assert(PrecompileSelector::GET_PROPOSER_VAL_ID == 0xfbacb0be);
 static_assert(PrecompileSelector::GET_VALIDATOR == 0x2b6d639a);
+static_assert(PrecompileSelector::GET_VALIDATOR_ID == 0x174e6832);
 static_assert(PrecompileSelector::GET_DELEGATOR == 0x573c1ce0);
 static_assert(PrecompileSelector::GET_WITHDRAWAL_REQUEST == 0x56fa2045);
 static_assert(PrecompileSelector::GET_CONSENSUS_VALIDATOR_SET == 0xfb29b729);
@@ -268,6 +271,15 @@ constexpr uint64_t GET_VALIDATOR_OP_COST = compute_costs(OpCount{
     .events = 0,
     .transfers = 0});
 
+constexpr uint64_t GET_VALIDATOR_ID_OP_COST = compute_costs(OpCount{
+    .warm_sloads = 0,
+    .cold_sloads = 1,
+    .warm_sstores = 0,
+    .warm_sstore_nonzero = 0,
+    .cold_sstores = 0,
+    .events = 0,
+    .transfers = 0});
+
 constexpr uint64_t GET_DELEGATOR_OP_COST = compute_costs(OpCount{
     .warm_sloads = 15,
     .cold_sloads = 17,
@@ -317,6 +329,7 @@ static_assert(EXTERNAL_REWARDS_OP_COST == 66575);
 static_assert(GET_EPOCH_OP_COST == 200);
 static_assert(GET_PROPOSER_VAL_ID_OP_COST == 100);
 static_assert(GET_VALIDATOR_OP_COST == 97200);
+static_assert(GET_VALIDATOR_ID_OP_COST == 8100);
 static_assert(GET_DELEGATOR_OP_COST == 184900);
 static_assert(GET_WITHDRAWAL_REQUEST_OP_COST == 24300);
 static_assert(GET_VALIDATOR_SET_OP_COST == 814000);
@@ -839,6 +852,11 @@ StakingContract::precompile_dispatch(byte_string_view &input)
         // [0, 12, 0, 0, 0, 0, 0]
         return {
             &StakingContract::precompile_get_validator, GET_VALIDATOR_OP_COST};
+    case PrecompileSelector::GET_VALIDATOR_ID:
+        // [0, 1, 0, 0, 0, 0, 0]
+        return {
+            &StakingContract::precompile_get_validator_id,
+            GET_VALIDATOR_ID_OP_COST};
     case PrecompileSelector::GET_DELEGATOR:
         // [15, 17, 1, 11, 1, 0, 0]
         return {
@@ -944,6 +962,19 @@ Result<byte_string> StakingContract::precompile_get_validator(
     encoder.add_bytes(to_byte_string_view(k.bls_pubkey));
 
     return encoder.encode_final();
+}
+
+Result<byte_string> StakingContract::precompile_get_validator_id(
+    byte_string_view input, Address const &, uint256_be_t const &msg_value)
+{
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+
+    BOOST_OUTCOME_TRY(auto const validator, abi_decode_fixed<Address>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
+        return StakingError::InvalidInput;
+    }
+
+    return byte_string{abi_encode_uint(vars.val_id(validator).load())};
 }
 
 Result<byte_string> StakingContract::precompile_get_delegator(

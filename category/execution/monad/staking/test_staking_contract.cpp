@@ -713,6 +713,9 @@ TEST_F(StakeLatest, nonpayable_functions_revert)
         contract.precompile_get_validator({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
+        contract.precompile_get_validator_id({}, {}, value).assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
         contract.precompile_get_delegator({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
@@ -4420,6 +4423,27 @@ TEST_F(StakeLatest, zero_reward_epochs)
 //////////////////
 // Getter Tests //
 //////////////////
+
+TEST_F(StakeLatest, get_validator_id_by_signing_address)
+{
+    auto const result =
+        add_validator(0xdeadbeef_address, ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(result.has_error());
+
+    AbiEncoder encoder;
+    encoder.add_address(result.value().sign_address);
+    auto const output = contract.precompile_get_validator_id(
+        encoder.encode_final(), {}, {});
+    ASSERT_FALSE(output.has_error());
+    EXPECT_EQ(output.value(), byte_string{abi_encode_uint(result.value().id)});
+
+    AbiEncoder unknown;
+    unknown.add_address(0xbad0_address);
+    auto const missing = contract.precompile_get_validator_id(
+        unknown.encode_final(), {}, {});
+    ASSERT_FALSE(missing.has_error());
+    EXPECT_EQ(missing.value(), byte_string{abi_encode_uint(u64_be{0})});
+}
 
 TEST_F(StakeLatest, get_valset_empty)
 {

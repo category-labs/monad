@@ -13,20 +13,41 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
+#include <category/execution/monad/namespace_bridge/namespace_bridge_contract.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
+#include <type_traits>
+
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+template <typename Contract>
+Contract make_monad_contract(
+    State &state, CallTracerBase &call_tracer, uint256_t const &tx_chain_id)
+{
+    if constexpr (std::is_constructible_v<
+                      Contract,
+                      State &,
+                      CallTracerBase &,
+                      uint256_t const &>) {
+        return Contract{state, call_tracer, tx_chain_id};
+    }
+    else {
+        return Contract{state, call_tracer};
+    }
+}
 
 template <Traits traits, typename Contract, Address contract_address>
 std::optional<evmc::Result> check_call_monad_precompile(
-    State &state, CallTracerBase &call_tracer, evmc_message const &msg)
+    State &state, CallTracerBase &call_tracer, evmc_message const &msg,
+    uint256_t const &tx_chain_id)
 {
 
     if (msg.code_address != contract_address) {
@@ -44,7 +65,8 @@ std::optional<evmc::Result> check_call_monad_precompile(
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
     }
 
-    Contract contract = Contract{state, call_tracer};
+    Contract contract =
+        make_monad_contract<Contract>(state, call_tracer, tx_chain_id);
     auto const res = (contract.*method)(input, msg.sender, msg.value);
     if (MONAD_LIKELY(res.has_value())) {
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);
@@ -76,14 +98,18 @@ bool is_precompile(Address const &address)
     // in.
     return is_eth_precompile<traits>(address) ||
            (address == staking::STAKING_CA) ||
-           (traits::monad_rev() >= MONAD_NINE && address == RESERVE_BALANCE_CA);
+           (traits::monad_rev() >= MONAD_NINE &&
+            address == RESERVE_BALANCE_CA) ||
+           (traits::monad_rev() >= MONAD_NEXT &&
+            address == NAMESPACE_BRIDGE_CA);
 }
 
 EXPLICIT_MONAD_TRAITS(is_precompile);
 
 template <Traits traits>
 std::optional<evmc::Result> check_call_precompile(
-    State &state, CallTracerBase &call_tracer, evmc_message const &msg)
+    State &state, CallTracerBase &call_tracer, evmc_message const &msg,
+    uint256_t const &tx_chain_id)
 {
     if (auto maybe_result = check_call_eth_precompile<traits>(msg)) {
         return maybe_result;
@@ -94,7 +120,7 @@ std::optional<evmc::Result> check_call_precompile(
         if constexpr ((cond)) {                                                \
             if (auto maybe_result =                                            \
                     check_call_monad_precompile<traits, contract, addr>(       \
-                        state, call_tracer, msg)) {                            \
+                        state, call_tracer, msg, tx_chain_id)) {               \
                 return maybe_result;                                           \
             }                                                                  \
         }                                                                      \
@@ -110,6 +136,11 @@ std::optional<evmc::Result> check_call_precompile(
         traits::monad_rev() >= MONAD_NINE,
         ReserveBalanceContract,
         RESERVE_BALANCE_CA);
+
+    CASE(
+        traits::monad_rev() >= MONAD_NEXT,
+        NamespaceBridgeContract,
+        NAMESPACE_BRIDGE_CA);
 
     return std::nullopt;
 

@@ -319,8 +319,12 @@ evmc::Result execute_call_message(
     }
 
     evmc::Result result;
+    // The enclosing tx's chain_id. Unused by EVM precompiles; the Monad
+    // namespace bridge uses it for global-method chain_id validation.
+    uint256_t const tx_chain_id =
+        load_be<uint256_t>(host->get_tx_context()->chain_id);
     if (auto maybe_result =
-            check_call_precompile<traits>(state, call_tracer, msg);
+            check_call_precompile<traits>(state, call_tracer, msg, tx_chain_id);
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }

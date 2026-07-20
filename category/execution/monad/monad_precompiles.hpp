@@ -17,6 +17,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/monad/revision.h>
@@ -34,7 +35,8 @@ template <Traits traits>
 bool is_precompile(Address const &);
 
 template <Traits traits>
-std::optional<evmc::Result>
-check_call_precompile(State &, CallTracerBase &, evmc_message const &msg);
+std::optional<evmc::Result> check_call_precompile(
+    State &, CallTracerBase &, evmc_message const &msg,
+    uint256_t const &tx_chain_id);
 
 MONAD_NAMESPACE_END

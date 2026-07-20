@@ -180,8 +180,8 @@ std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
 EXPLICIT_TRAITS(check_call_eth_precompile);
 
 template <Traits traits>
-std::optional<evmc::Result>
-check_call_precompile(State &, CallTracerBase &, evmc_message const &msg)
+std::optional<evmc::Result> check_call_precompile(
+    State &, CallTracerBase &, evmc_message const &msg, uint256_t const &)
 {
     return check_call_eth_precompile<traits>(msg);
 }

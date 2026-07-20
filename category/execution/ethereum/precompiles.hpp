@@ -18,6 +18,7 @@
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -44,9 +45,15 @@ bool is_precompile(Address const &);
 template <Traits traits>
 std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &);
 
+// `tx_chain_id` is the current transaction's chain_id (namespace-qualified
+// for Monad namespace txs). The Monad namespace bridge consumes it as the
+// network chain_id when validating registration calldata. Ignored for EVM and
+// other Monad precompiles. Defaults to zero for tests that don't exercise the
+// namespace bridge.
 template <Traits traits>
-std::optional<evmc::Result>
-check_call_precompile(State &, CallTracerBase &, evmc_message const &);
+std::optional<evmc::Result> check_call_precompile(
+    State &, CallTracerBase &, evmc_message const &,
+    uint256_t const &tx_chain_id = uint256_t{0});
 
 using precompiled_gas_cost_fn = std::optional<uint64_t>(byte_string_view);
 

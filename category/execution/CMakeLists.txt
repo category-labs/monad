@@ -266,6 +266,11 @@ add_library(
   "monad/validate_monad_transaction.hpp"
   "monad/validate_system_transaction.cpp"
   "monad/validate_system_transaction.hpp"
+  # monad/namespace_bridge
+  "monad/namespace_bridge/namespace_bridge_contract.cpp"
+  "monad/namespace_bridge/namespace_bridge_contract.hpp"
+  "monad/namespace_bridge/namespace_bridge_error.cpp"
+  "monad/namespace_bridge/namespace_bridge_error.hpp"
   # monad/reserve_balance
   "monad/reserve_balance/reserve_balance_contract.cpp"
   "monad/reserve_balance/reserve_balance_contract.hpp"

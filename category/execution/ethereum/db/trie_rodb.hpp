@@ -27,6 +27,8 @@
 
 #include <category/core/hex.hpp>
 
+#include <intx/intx.hpp>
+
 #include <memory>
 #include <optional>
 
@@ -79,14 +81,28 @@ public:
         block_number_ = block_number;
     }
 
-    virtual std::optional<Account> read_account(Address const &addr) override
+    virtual std::optional<Account> read_account(
+        Address const &addr,
+        std::optional<uint64_t> const &ns = std::nullopt) override
     {
-        auto acc_leaf_res = db_.find(
-            prefix_cursor_,
-            mpt::concat(
-                STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
-            block_number_);
+        auto const addr_hash = keccak256({addr.bytes, sizeof(addr.bytes)});
+        auto acc_leaf_res = [&] {
+            if (ns.has_value()) {
+                uint8_t ns_bytes[sizeof(uint64_t)];
+                intx::be::store(ns_bytes, *ns);
+                return db_.find(
+                    prefix_cursor_,
+                    mpt::concat(
+                        NAMESPACE_STATE_NIBBLE,
+                        mpt::NibblesView{to_byte_string_view(ns_bytes)},
+                        mpt::NibblesView{addr_hash}),
+                    block_number_);
+            }
+            return db_.find(
+                prefix_cursor_,
+                mpt::concat(STATE_NIBBLE, mpt::NibblesView{addr_hash}),
+                block_number_);
+        }();
         if (!acc_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(
                 acc_leaf_res.assume_error() !=
@@ -100,19 +116,36 @@ public:
     }
 
     virtual bytes32_t read_storage(
-        Address const &addr, Incarnation, bytes32_t const &key) override
+        Address const &addr, Incarnation, bytes32_t const &key,
+        std::optional<uint64_t> const &ns = std::nullopt) override
     {
         // On a page-encoded db the storage leaf is the page that contains the
         // slot, keyed by page_key; the slot value lives at its offset within.
         bytes32_t const lookup_key = storage_lookup_key(key);
-        auto storage_leaf_res = db_.find(
-            prefix_cursor_,
-            mpt::concat(
-                STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-                mpt::NibblesView{
-                    keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
-            block_number_);
+        auto const addr_hash = keccak256({addr.bytes, sizeof(addr.bytes)});
+        auto const key_hash =
+            keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)});
+        auto storage_leaf_res = [&] {
+            if (ns.has_value()) {
+                uint8_t ns_bytes[sizeof(uint64_t)];
+                intx::be::store(ns_bytes, *ns);
+                return db_.find(
+                    prefix_cursor_,
+                    mpt::concat(
+                        NAMESPACE_STATE_NIBBLE,
+                        mpt::NibblesView{to_byte_string_view(ns_bytes)},
+                        mpt::NibblesView{addr_hash},
+                        mpt::NibblesView{key_hash}),
+                    block_number_);
+            }
+            return db_.find(
+                prefix_cursor_,
+                mpt::concat(
+                    STATE_NIBBLE,
+                    mpt::NibblesView{addr_hash},
+                    mpt::NibblesView{key_hash}),
+                block_number_);
+        }();
         if (!storage_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(
                 storage_leaf_res.assume_error() !=

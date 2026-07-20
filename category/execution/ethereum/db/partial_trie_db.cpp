@@ -736,8 +736,10 @@ Result<PartialTrieDb> PartialTrieDb::from_witness(
     return PartialTrieDb{std::move(root_node), std::move(code_index)};
 }
 
-std::optional<Account> PartialTrieDb::read_account(Address const &addr)
+std::optional<Account> PartialTrieDb::read_account(
+    Address const &addr, std::optional<uint64_t> const &ns)
 {
+    MONAD_ASSERT(!ns.has_value());
     auto const key_hash = keccak256(addr.bytes);
     auto const result = trie_lookup(root_, mpt::NibblesView{key_hash});
     if (!result) {
@@ -747,8 +749,10 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
 }
 
 bytes32_t PartialTrieDb::read_storage(
-    Address const &addr, Incarnation, bytes32_t const &slot)
+    Address const &addr, Incarnation, bytes32_t const &slot,
+    std::optional<uint64_t> const &ns)
 {
+    MONAD_ASSERT(!ns.has_value());
     auto const acct_hash = keccak256(addr.bytes);
     auto const acct_result = trie_lookup(root_, mpt::NibblesView{acct_hash});
     if (!acct_result || !acct_result->storage) {

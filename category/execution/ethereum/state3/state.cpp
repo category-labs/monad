@@ -55,7 +55,7 @@ OriginalAccountState &State::original_account_state(Address const &address)
     auto it = original_.find(address);
     if (it == original_.end()) {
         // block state
-        auto const account = block_state_.read_account(address);
+        auto const account = block_state_.read_account(address, namespace_);
         it = original_.try_emplace(address, account).first;
     }
     return it->second;
@@ -94,9 +94,10 @@ std::optional<Account> &State::current_account(Address const &address)
 
 State::State(
     BlockState &block_state, Incarnation const incarnation,
-    bool const relaxed_validation)
+    bool const relaxed_validation, std::optional<uint64_t> ns)
     : block_state_{block_state}
     , incarnation_{incarnation}
+    , namespace_{std::move(ns)}
     , relaxed_validation_{relaxed_validation}
     , rb_{this}
 {
@@ -275,7 +276,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         }
         else {
             bytes32_t const value = block_state_.read_storage(
-                address, account.value().incarnation, key);
+                address, account.value().incarnation, key, namespace_);
             storage = storage.insert({key, value});
             return value;
         }
@@ -303,7 +304,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         }
         else {
             bytes32_t const value = block_state_.read_storage(
-                address, account.value().incarnation, key);
+                address, account.value().incarnation, key, namespace_);
             original_storage = original_storage.insert({key, value});
             return value;
         }
@@ -380,8 +381,8 @@ evmc_storage_status State::set_storage(
         }
         else {
             Incarnation const incarnation = account_state.account_->incarnation;
-            bytes32_t const value =
-                block_state_.read_storage(address, incarnation, key);
+            bytes32_t const value = block_state_.read_storage(
+                address, incarnation, key, namespace_);
             storage = storage.insert({key, value});
             original_value = value;
         }

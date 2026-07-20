@@ -224,16 +224,17 @@ bool monad_statesync_server_context::is_page_encoded() const
     return rw.is_page_encoded();
 }
 
-std::optional<Account>
-monad_statesync_server_context::read_account(Address const &addr)
+std::optional<Account> monad_statesync_server_context::read_account(
+    Address const &addr, std::optional<uint64_t> const &ns)
 {
-    return rw.read_account(addr);
+    return rw.read_account(addr, ns);
 }
 
 bytes32_t monad_statesync_server_context::read_storage(
-    Address const &addr, Incarnation const incarnation, bytes32_t const &key)
+    Address const &addr, Incarnation const incarnation, bytes32_t const &key,
+    std::optional<uint64_t> const &ns)
 {
-    return rw.read_storage(addr, incarnation, key);
+    return rw.read_storage(addr, incarnation, key, ns);
 }
 
 storage_page_t monad_statesync_server_context::read_storage_page(

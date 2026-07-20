@@ -29,6 +29,7 @@
 #include <ankerl/unordered_dense.h>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -48,6 +49,7 @@ class BlockState final
     Db *secondary_db_;
     vm::VM &vm_;
     std::unique_ptr<StateDeltas> state_;
+    NamespacedStateDeltas ns_state_;
     Code code_;
     /// Storage slot reads done against a pre-state account before it got
     /// SELFDESTRUCTed in the same block. `merge()` clears
@@ -61,6 +63,8 @@ class BlockState final
     /// the slots they wipe are not pre-state reads and must not be added.
     SelfDestructStorageReads self_destruct_storage_reads_;
 
+    StateDeltas &get_or_create_state_deltas(std::optional<uint64_t> const &ns);
+
 public:
     BlockState(Db &, vm::VM &, Db *secondary_db = nullptr);
 
@@ -69,9 +73,12 @@ public:
         return vm_;
     }
 
-    std::optional<Account> read_account(Address const &);
+    std::optional<Account> read_account(
+        Address const &, std::optional<uint64_t> const &ns = std::nullopt);
 
-    bytes32_t read_storage(Address const &, Incarnation, bytes32_t const &key);
+    bytes32_t read_storage(
+        Address const &, Incarnation, bytes32_t const &key,
+        std::optional<uint64_t> const &ns = std::nullopt);
 
     vm::SharedVarcode read_code(bytes32_t const &);
 

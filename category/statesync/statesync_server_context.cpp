@@ -52,7 +52,7 @@ void on_commit(
             for (auto const &[key, delta] : delta.storage) {
                 if (delta.first != delta.second &&
                     delta.second == bytes32_t{}) {
-                    LOG_INFO(
+                    LOG_DEBUG(
                         "Deleting Storage n={} addr={} storage={} ",
                         n,
                         addr,
@@ -120,7 +120,7 @@ void FinalizedDeletions::set_entry(
     for (auto const &deletion : deletions) {
         deletions_[free_start_++ % MAX_DELETIONS] = deletion;
     }
-    LOG_INFO(
+    LOG_DEBUG(
         "deletions buffer write i={} "
         "FinalizedDeletionsEntry{{block_number={} idx={} "
         "size={}}}",
@@ -136,7 +136,7 @@ void FinalizedDeletions::clear_entry(uint64_t const i)
     if (entry.block_number == INVALID_BLOCK_NUM) {
         return;
     }
-    LOG_INFO(
+    LOG_DEBUG(
         "deletions buffer clear i={} "
         "FinalizedDeletionsEntry{{block_number={} idx={} "
         "size={}}}",
@@ -203,7 +203,7 @@ void FinalizedDeletions::write(
         }
         set_entry(target_idx, end_block_number_, deletions);
     }
-    LOG_INFO(
+    LOG_DEBUG(
         "deletions buffer range={} free_deletions={}",
         start_block_number_ == INVALID_BLOCK_NUM
             ? "EMPTY"

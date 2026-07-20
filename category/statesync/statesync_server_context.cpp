@@ -316,6 +316,15 @@ void monad_statesync_server_context::commit(
         block_id, builder, header, state_deltas, std::move(populate_header_fn));
 }
 
+NamespaceStateRoots
+monad_statesync_server_context::commit_namespace_state_deltas(
+    bytes32_t const &block_id, CommitBuilder &builder,
+    NamespacedStateDeltas const &ns_state_deltas, uint64_t const block_number)
+{
+    return rw.commit_namespace_state_deltas(
+        block_id, builder, ns_state_deltas, block_number);
+}
+
 uint64_t monad_statesync_server_context::get_block_number() const
 {
     return rw.get_block_number();

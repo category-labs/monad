@@ -91,7 +91,7 @@ public:
         std::function<void(BlockHeader &)> populate_header_fn) override;
     NamespaceStateRoots commit_namespace_state_deltas(
         bytes32_t const &block_id, CommitBuilder &builder,
-        NamespacedStateDeltas const &, uint64_t block_number);
+        NamespacedStateDeltas const &, uint64_t block_number) override;
 
     virtual void
     finalize(uint64_t block_number, bytes32_t const &block_id) override;

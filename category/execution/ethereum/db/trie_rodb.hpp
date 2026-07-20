@@ -199,6 +199,13 @@ public:
         MONAD_ABORT();
     }
 
+    virtual NamespaceStateRoots commit_namespace_state_deltas(
+        bytes32_t const &, CommitBuilder &, NamespacedStateDeltas const &,
+        uint64_t) override
+    {
+        MONAD_ABORT();
+    }
+
     virtual void finalize(uint64_t, bytes32_t const &) override
     {
         MONAD_ABORT();

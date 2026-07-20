@@ -34,6 +34,48 @@ MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
     requires is_monad_trait_v<traits>
+NamespaceStateRoots commit_native_namespace_state_deltas(
+    Db &primary_db, Db *const secondary_db, bytes32_t const &block_id,
+    BlockHeader const &header, NamespacedStateDeltas const &ns_state_deltas)
+{
+    if (ns_state_deltas.empty()) {
+        return {};
+    }
+
+    if (secondary_db == nullptr) {
+        MONAD_ASSERT(primary_db.is_page_encoded() == traits::mip_8_active());
+        auto builder = make_commit_builder(header.number, primary_db);
+        builder->add_namespace_state_deltas(ns_state_deltas);
+        return primary_db.commit_namespace_state_deltas(
+            block_id, *builder, ns_state_deltas, header.number);
+    }
+
+    MONAD_ASSERT(
+        !primary_db.is_page_encoded() && secondary_db->is_page_encoded());
+    auto builder = make_commit_builder(header.number, primary_db);
+    builder->add_namespace_state_deltas(ns_state_deltas);
+
+    auto builder2 = make_commit_builder(header.number, *secondary_db);
+    builder2->add_namespace_state_deltas(ns_state_deltas);
+
+    bool const primary_is_canonical = !traits::mip_8_active();
+    if (primary_is_canonical) {
+        auto roots = primary_db.commit_namespace_state_deltas(
+            block_id, *builder, ns_state_deltas, header.number);
+        secondary_db->commit_namespace_state_deltas(
+            block_id, *builder2, ns_state_deltas, header.number);
+        return roots;
+    }
+
+    auto roots = secondary_db->commit_namespace_state_deltas(
+        block_id, *builder2, ns_state_deltas, header.number);
+    primary_db.commit_namespace_state_deltas(
+        block_id, *builder, ns_state_deltas, header.number);
+    return roots;
+}
+
+template <Traits traits>
+    requires is_monad_trait_v<traits>
 void commit_block(
     Db &primary_db, Db *const secondary_db, bytes32_t const &block_id,
     BlockHeader const &header, StateDeltas const &state,
@@ -110,6 +152,7 @@ void commit_block(
     }
 }
 
+EXPLICIT_MONAD_TRAITS(commit_native_namespace_state_deltas);
 EXPLICIT_MONAD_TRAITS(commit_block);
 
 MONAD_NAMESPACE_END

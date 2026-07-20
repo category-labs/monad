@@ -82,6 +82,10 @@ struct Db
         BlockHeader const &header, StateDeltas const &state_deltas,
         std::function<void(BlockHeader &)> populate_header_fn) = 0;
 
+    virtual NamespaceStateRoots commit_namespace_state_deltas(
+        bytes32_t const &block_id, CommitBuilder &builder,
+        NamespacedStateDeltas const &, uint64_t block_number) = 0;
+
     virtual std::string print_stats()
     {
         return {};

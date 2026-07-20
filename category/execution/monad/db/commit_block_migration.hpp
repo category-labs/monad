@@ -18,6 +18,7 @@
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -54,5 +55,11 @@ void commit_block(
     Db &primary_db, Db *secondary_db, bytes32_t const &block_id,
     BlockHeader const &header, StateDeltas const &state,
     BlockCommitAncillaries const &anc);
+
+template <Traits traits>
+    requires is_monad_trait_v<traits>
+NamespaceStateRoots commit_native_namespace_state_deltas(
+    Db &primary_db, Db *secondary_db, bytes32_t const &block_id,
+    BlockHeader const &header, NamespacedStateDeltas const &ns_state_deltas);
 
 MONAD_NAMESPACE_END

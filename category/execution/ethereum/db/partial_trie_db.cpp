@@ -890,4 +890,12 @@ void PartialTrieDb::commit(
     populate_header_fn(last_committed_header_);
 }
 
+NamespaceStateRoots PartialTrieDb::commit_namespace_state_deltas(
+    bytes32_t const &, CommitBuilder &, NamespacedStateDeltas const &ns_deltas,
+    uint64_t)
+{
+    MONAD_ASSERT(ns_deltas.empty());
+    return {};
+}
+
 MONAD_NAMESPACE_END

@@ -14,6 +14,13 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 fn main() {
+    // The eest-runner FFI lives in the C++ tree; without this, cargo's
+    // build-script caching skips recompiles when only this file changes.
+    println!(
+        "cargo:rerun-if-changed=../../../category/execution/runloop/\
+runloop_interface_monad.cpp"
+    );
+
     if monad_build::should_build_execution() {
         monad_build::MonadCMake::new(
             monad_build::repository_root(),

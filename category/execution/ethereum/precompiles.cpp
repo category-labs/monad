@@ -17,16 +17,17 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/precompiles.hpp>
-#include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/precompiles_impl.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
-#include <silkpre/precompile.h>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 #include <evmc/helpers.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -187,5 +188,251 @@ check_call_precompile(State &, CallTracerBase &, evmc_message const &msg)
 }
 
 EXPLICIT_EVM_TRAITS(check_call_precompile);
+
+static PrecompileResult
+from_impl_result(PrecompileImplResult result, uint8_t *out)
+{
+    auto const [data, size] = result;
+    if (data == nullptr) {
+        MONAD_DEBUG_ASSERT(size == 0);
+        std::free(out);
+        return PrecompileResult::failure();
+    }
+    if (size == 0) {
+        std::free(out);
+        return {EVMC_SUCCESS, nullptr, size};
+    }
+    return {EVMC_SUCCESS, data, size};
+}
+
+PrecompileResult ecrecover_execute(byte_string_view const input)
+{
+    static constexpr auto kSecp256k1n =
+        0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141_u256;
+
+    alignas(8) std::basic_string<uint8_t> d(128, '\0');
+    if (input.size() != 0) {
+        std::memcpy(d.data(), input.data(), std::min(input.size(), 128ul));
+    }
+
+    auto const v{load_be_unsafe<uint256_t>(&d[32])};
+    auto const r{load_be_unsafe<uint256_t>(&d[64])};
+    auto const s{load_be_unsafe<uint256_t>(&d[96])};
+
+    if (!r || !s || r >= kSecp256k1n || s >= kSecp256k1n) {
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+
+    if (v != 27 && v != 28) {
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+
+    uint8_t *out{static_cast<uint8_t *>(std::aligned_alloc(8, 32))};
+    MONAD_ASSERT(out != nullptr);
+
+    return from_impl_result(
+        ecrecover_impl(
+            std::span<uint8_t const, 32>{&d[0], 32},
+            std::span<uint8_t const, 64>{&d[64], 64},
+            v != 27,
+            std::span<uint8_t, 32>{out, 32}),
+        out);
+}
+
+PrecompileResult sha256_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::aligned_alloc(8, 32));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        sha256_impl(input, std::span<uint8_t, 32>{out, 32}), out);
+}
+
+PrecompileResult ripemd160_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::aligned_alloc(8, 32));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        ripemd160_impl(input, std::span<uint8_t, 32>{out, 32}), out);
+}
+
+[[gnu::always_inline]] inline uint64_t saturating_add64(uint64_t a, uint64_t b)
+{
+    uint64_t c = a + b;
+    if (c < a) {
+        c = std::numeric_limits<uint64_t>::max();
+    }
+    return c;
+}
+
+PrecompileResult expmod_execute(byte_string_view const input)
+{
+    std::basic_string<uint8_t> header(96, '\0');
+    if (input.size() != 0) {
+        std::memcpy(header.data(), input.data(), std::min(input.size(), 96ul));
+    }
+
+    uint64_t const mod_len = load_be_unsafe<uint64_t>(&header[88]);
+
+    if (mod_len == 0) {
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+
+    uint64_t const base_len = load_be_unsafe<uint64_t>(&header[24]);
+    uint64_t const exp_len = load_be_unsafe<uint64_t>(&header[56]);
+
+    uint64_t const padded_size_64 =
+        saturating_add64(base_len, saturating_add64(exp_len, mod_len));
+    size_t const padded_size =
+        padded_size_64 > std::numeric_limits<size_t>::max()
+            ? std::numeric_limits<size_t>::max()
+            : static_cast<size_t>(padded_size_64);
+    std::basic_string<uint8_t> padded_input(padded_size, '\0');
+    size_t terms_size = input.size() < 96 ? 0 : input.size() - 96;
+    if (terms_size != 0) {
+        std::memcpy(
+            padded_input.data(),
+            &input[96],
+            std::min(terms_size, padded_input.size()));
+    }
+
+    auto *const out = static_cast<uint8_t *>(std::malloc(mod_len));
+    MONAD_ASSERT(out != nullptr);
+    std::memset(out, 0, mod_len);
+    return from_impl_result(
+        expmod_impl(
+            std::span<uint8_t>{padded_input.data(), base_len},
+            std::span<uint8_t>{&padded_input[base_len], exp_len},
+            std::span<uint8_t>{&padded_input[base_len + exp_len], mod_len},
+            std::span<uint8_t>{out, mod_len}),
+        out);
+}
+
+PrecompileResult ecadd_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::aligned_alloc(8, 64));
+    MONAD_ASSERT(out != nullptr);
+    auto const clamped_input = input.substr(0, 128);
+    return from_impl_result(
+        ecadd_impl(clamped_input, std::span<uint8_t, 64>{out, 64}), out);
+}
+
+PrecompileResult ecmul_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::aligned_alloc(8, 64));
+    MONAD_ASSERT(out != nullptr);
+    auto const clamped_input = input.substr(0, 96);
+    return from_impl_result(
+        ecmul_impl(clamped_input, std::span<uint8_t, 64>{out, 64}), out);
+}
+
+PrecompileResult snarkv_execute(byte_string_view const input)
+{
+    if (input.size() % 192 != 0) {
+        return PrecompileResult::failure();
+    }
+
+    auto *const out = static_cast<uint8_t *>(std::malloc(32));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        snarkv_impl(input, std::span<uint8_t, 32>{out, 32}), out);
+}
+
+PrecompileResult blake2bf_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::aligned_alloc(8, 64));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        blake2bf_impl(input, std::span<uint8_t, 64>{out, 64}), out);
+}
+
+PrecompileResult point_evaluation_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(64));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        point_evaluation_impl(input, std::span<uint8_t, 64>{out, 64}), out);
+}
+
+PrecompileResult bls12_g1_add_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(128));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_g1_add_impl(input, std::span<uint8_t, 128>{out, 128}), out);
+}
+
+PrecompileResult bls12_g1_msm_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(128));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_g1_msm_impl(input, std::span<uint8_t, 128>{out, 128}), out);
+}
+
+PrecompileResult bls12_g2_add_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(256));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_g2_add_impl(input, std::span<uint8_t, 256>{out, 256}), out);
+}
+
+PrecompileResult bls12_g2_msm_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(256));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_g2_msm_impl(input, std::span<uint8_t, 256>{out, 256}), out);
+}
+
+PrecompileResult bls12_pairing_check_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(32));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_pairing_check_impl(input, std::span<uint8_t, 32>{out, 32}), out);
+}
+
+PrecompileResult bls12_map_fp_to_g1_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(128));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_map_fp_to_g1_impl(input, std::span<uint8_t, 128>{out, 128}), out);
+}
+
+PrecompileResult bls12_map_fp2_to_g2_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(256));
+    MONAD_ASSERT(out != nullptr);
+    return from_impl_result(
+        bls12_map_fp2_to_g2_impl(input, std::span<uint8_t, 256>{out, 256}),
+        out);
+}
+
+PrecompileResult p256_verify_execute(byte_string_view const input)
+{
+    auto *const out = static_cast<uint8_t *>(std::malloc(32));
+    MONAD_ASSERT(out != nullptr);
+    auto const result =
+        p256_verify_impl(input, std::span<uint8_t, 32>{out, 32});
+    if (result.data == nullptr) {
+        std::free(out);
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+    return {EVMC_SUCCESS, result.data, result.size};
+}
+
+PrecompileResult identity_execute(byte_string_view const input)
+{
+    if (input.empty()) {
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+    auto *const out = static_cast<uint8_t *>(std::malloc(input.size()));
+    MONAD_ASSERT(out != nullptr);
+    auto const result =
+        identity_impl(input, std::span<uint8_t>{out, input.size()});
+    return {EVMC_SUCCESS, result.data, result.size};
+}
 
 MONAD_NAMESPACE_END

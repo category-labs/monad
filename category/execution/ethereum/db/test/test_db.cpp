@@ -648,7 +648,7 @@ TYPED_TEST(
     EXPECT_EQ(page.value()[compute_slot_offset(adjacent_key)], value2);
 }
 
-TEST_F(OnDiskTrieDbWithFileFixture, namespace_reads)
+TEST_F(OnDiskTrieDbWithFileFixture, namespace_reads_and_merge)
 {
     constexpr uint64_t namespace_1{0x1111111111111111ULL};
     constexpr uint64_t namespace_2{0x2222222222222222ULL};
@@ -697,10 +697,13 @@ TEST_F(OnDiskTrieDbWithFileFixture, namespace_reads)
 
     State state_1{block_state, Incarnation{1, 1}, false, namespace_1};
     State state_2{block_state, Incarnation{1, 2}, false, namespace_2};
+    State stale_state_1{block_state, Incarnation{1, 3}, false, namespace_1};
     EXPECT_EQ(state_1.get_balance(ADDR_A), account_1.balance);
     EXPECT_EQ(state_1.get_storage(ADDR_A, key1), value1);
     EXPECT_EQ(state_2.get_balance(ADDR_A), account_2.balance);
     EXPECT_EQ(state_2.get_storage(ADDR_A, key1), value2);
+    EXPECT_EQ(stale_state_1.get_balance(ADDR_A), account_1.balance);
+    EXPECT_EQ(stale_state_1.get_storage(ADDR_A, key1), value1);
 
     mpt::RODb rodb{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {this->dbname}}};
     TrieRODb trie_ro{rodb};
@@ -712,6 +715,40 @@ TEST_F(OnDiskTrieDbWithFileFixture, namespace_reads)
     EXPECT_EQ(trie_ro.read_account(ADDR_A, namespace_2), account_2);
     EXPECT_EQ(
         trie_ro.read_storage(ADDR_A, Incarnation{0, 0}, key1, namespace_2),
+        value2);
+
+    state_1.add_to_balance(ADDR_A, 10);
+    EXPECT_EQ(state_1.set_storage(ADDR_A, key1, value2), EVMC_STORAGE_MODIFIED);
+    EXPECT_TRUE(block_state.can_merge(state_1));
+    block_state.merge(state_1);
+    EXPECT_EQ(
+        block_state.read_account(ADDR_A, namespace_1)->balance,
+        account_1.balance + 10);
+    EXPECT_EQ(
+        block_state.read_storage(ADDR_A, Incarnation{0, 0}, key1, namespace_1),
+        value2);
+    EXPECT_EQ(block_state.read_account(ADDR_A, namespace_2), account_2);
+    EXPECT_EQ(
+        block_state.read_storage(ADDR_A, Incarnation{0, 0}, key1, namespace_2),
+        value2);
+    EXPECT_EQ(block_state.read_account(ADDR_A), std::nullopt);
+    EXPECT_FALSE(block_state.can_merge(stale_state_1));
+
+    state_2.add_to_balance(ADDR_A, 20);
+    EXPECT_EQ(state_2.set_storage(ADDR_A, key1, value1), EVMC_STORAGE_MODIFIED);
+    EXPECT_TRUE(block_state.can_merge(state_2));
+    block_state.merge(state_2);
+    EXPECT_EQ(
+        block_state.read_account(ADDR_A, namespace_2)->balance,
+        account_2.balance + 20);
+    EXPECT_EQ(
+        block_state.read_storage(ADDR_A, Incarnation{0, 0}, key1, namespace_2),
+        value1);
+    EXPECT_EQ(
+        block_state.read_account(ADDR_A, namespace_1)->balance,
+        account_1.balance + 10);
+    EXPECT_EQ(
+        block_state.read_storage(ADDR_A, Incarnation{0, 0}, key1, namespace_1),
         value2);
 }
 

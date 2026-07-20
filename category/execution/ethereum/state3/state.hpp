@@ -104,6 +104,11 @@ public:
     State &operator=(State &&) = delete;
     State &operator=(State const &) = delete;
 
+    std::optional<uint64_t> const &get_namespace() const
+    {
+        return namespace_;
+    }
+
     Map<Address, OriginalAccountState> const &original() const;
 
     Map<Address, VersionStack<AccountState>> const &current() const;

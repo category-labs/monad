@@ -21,9 +21,7 @@
 #include <evmc/evmc.hpp>
 
 #include <array>
-#include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <string_view>
 #include <tuple>
 
@@ -252,13 +250,6 @@ namespace monad::vm::compiler
         SELFDESTRUCT = 0xFF
     };
 
-    consteval monad_eth_revision
-    previous_evm_revision(monad_eth_revision const rev)
-    {
-        MONAD_DEBUG_ASSERT(std::to_underlying(rev) > 0);
-        return monad_eth_revision(std::to_underlying(rev) - 1);
-    }
-
     /**
      * Placeholder value representing an opcode value not currently used by the
      * EVM specification. The value of `unknown_opcode_info` is significant, so
@@ -266,6 +257,17 @@ namespace monad::vm::compiler
      */
     constexpr auto unknown_opcode_info =
         OpCodeInfo{"UNKNOWN", 0, 0, false, false, 0, 0};
+
+    template <Traits traits>
+    consteval std::string_view eip_4399_name()
+    {
+        return traits::eip_4399_active() ? "PREVRANDAO" : "DIFFICULTY";
+    }
+
+    consteval OpCodeInfo when(bool const available, OpCodeInfo const info)
+    {
+        return available ? info : unknown_opcode_info;
+    }
 
     /**
      * Lookup table of opcode info for each possible 1-byte opcode value.
@@ -276,24 +278,11 @@ namespace monad::vm::compiler
      * revisions and become valid in later ones).
      */
     template <Traits traits>
-    consteval std::array<OpCodeInfo, 256> make_opcode_table() = delete;
-
-    template <Traits traits>
-    constexpr std::array<OpCodeInfo, 256> opcode_table =
-        make_opcode_table<traits>();
-
-    consteval inline void add_opcode(
-        uint8_t const opcode, std::array<OpCodeInfo, 256> &table,
-        OpCodeInfo const info)
+    consteval std::array<OpCodeInfo, 256> make_opcode_table()
     {
-        MONAD_DEBUG_ASSERT(table[opcode] == unknown_opcode_info);
-        table[opcode] = info;
-    }
+        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<MONAD_ETH_BERLIN>>()
-    {
+        // clang-format off
         return {
             OpCodeInfo{"STOP", 0, 0, 0, false, 0, 0}, // 0x00
             OpCodeInfo{"ADD", 0, 2, 1, false, 3, 0}, // 0x01
@@ -326,7 +315,7 @@ namespace monad::vm::compiler
             OpCodeInfo{"SHL", 0, 2, 1, false, 3, 0}, // 0x1B,
             OpCodeInfo{"SHR", 0, 2, 1, false, 3, 0}, // 0x1C,
             OpCodeInfo{"SAR", 0, 2, 1, false, 3, 0}, // 0x1D,
-            unknown_opcode_info,
+            when(traits::eip_7939_active(), {"CLZ", 0, 1, 1, false, 5, 0}), // 0x1E,
             unknown_opcode_info,
 
             OpCodeInfo{"SHA3", 0, 2, 1, true, 30, 0}, // 0x20,
@@ -367,13 +356,13 @@ namespace monad::vm::compiler
             OpCodeInfo{"COINBASE", 0, 0, 1, false, 2, 0}, // 0x41,
             OpCodeInfo{"TIMESTAMP", 0, 0, 1, false, 2, 0}, // 0x42,
             OpCodeInfo{"NUMBER", 0, 0, 1, false, 2, 0}, // 0x43,
-            OpCodeInfo{"DIFFICULTY", 0, 0, 1, false, 2, 0}, // 0x44,
+            OpCodeInfo{eip_4399_name<traits>(), 0, 0, 1, false, 2, 0}, // 0x44,
             OpCodeInfo{"GASLIMIT", 0, 0, 1, false, 2, 0}, // 0x45,
             OpCodeInfo{"CHAINID", 0, 0, 1, false, 2, 0}, // 0x46,
             OpCodeInfo{"SELFBALANCE", 0, 0, 1, false, 5, 0}, // 0x47,
-            unknown_opcode_info,
-            unknown_opcode_info,
-            unknown_opcode_info,
+            when(traits::eip_3198_active(), {"BASEFEE", 0, 0, 1, false, 2, 0}), // 0x48,
+            when(traits::has_blob_opcodes(), {"BLOBHASH", 0, 1, 1, false, 3, 0}), // 0x49,
+            when(traits::has_blob_opcodes(), {"BLOBBASEFEE", 0, 0, 1, false, 2, 0}), // 0x4A,
             unknown_opcode_info,
             unknown_opcode_info,
             unknown_opcode_info,
@@ -385,17 +374,17 @@ namespace monad::vm::compiler
             OpCodeInfo{"MSTORE", 0, 2, 0, true, 3, 0}, // 0x52,
             OpCodeInfo{"MSTORE8", 0, 2, 0, true, 3, 0}, // 0x53,
             OpCodeInfo{"SLOAD", 0, 1, 1, true, 100, 0}, // 0x54,
-            OpCodeInfo{"SSTORE", 0, 2, 0, true, 100, 0}, // 0x55,
+            OpCodeInfo{"SSTORE", 0, 2, 0, true, traits::base_sstore_cost(), 0}, // 0x55,
             OpCodeInfo{"JUMP", 0, 1, 0, false, 8, 0}, // 0x56,
             OpCodeInfo{"JUMPI", 0, 2, 0, false, 10, 0}, // 0x57,
             OpCodeInfo{"PC", 0, 0, 1, false, 2, 0}, // 0x58,
             OpCodeInfo{"MSIZE", 0, 0, 1, false, 2, 0}, // 0x59,
             OpCodeInfo{"GAS", 0, 0, 1, false, 2, 0}, // 0x5A,
             OpCodeInfo{"JUMPDEST", 0, 0, 0, false, 1, 0}, // 0x5B,
-            unknown_opcode_info,
-            unknown_opcode_info,
-            unknown_opcode_info,
-            unknown_opcode_info,
+            when(traits::eip_1153_active(), {"TLOAD", 0, 1, 1, false, 100, 0}), // 0x5C,
+            when(traits::eip_1153_active(), {"TSTORE", 0, 2, 0, false, 100, 0}), // 0x5D,
+            when(traits::eip_5656_active(), {"MCOPY", 0, 3, 0, true, 3, 0}), // 0x5E,
+            when(traits::eip_3855_active(), {"PUSH0", 0, 0, 1, false, 2, 0}), // 0x5F,
 
             OpCodeInfo{"PUSH1", 1, 0, 1, false, 3, 1}, // 0x60,
             OpCodeInfo{"PUSH2", 2, 0, 1, false, 3, 2}, // 0x61,
@@ -567,166 +556,12 @@ namespace monad::vm::compiler
             unknown_opcode_info,
             OpCodeInfo{"SELFDESTRUCT", 0, 1, 0, true, 5000, 0} // 0xFF,
         };
+        // clang-format on
     }
 
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<MONAD_ETH_LONDON>>()
-    {
-        auto table = make_opcode_table<
-            EvmTraits<previous_evm_revision(MONAD_ETH_LONDON)>>();
-
-        add_opcode(0x48, table, {"BASEFEE", 0, 0, 1, false, 2, 0});
-
-        return table;
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<MONAD_ETH_PARIS>>()
-    {
-        auto table = make_opcode_table<
-            EvmTraits<previous_evm_revision(MONAD_ETH_PARIS)>>();
-
-        table[0x44].name = "PREVRANDAO";
-
-        return table;
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<MONAD_ETH_SHANGHAI>>()
-    {
-        auto table = make_opcode_table<
-            EvmTraits<previous_evm_revision(MONAD_ETH_SHANGHAI)>>();
-
-        add_opcode(0x5F, table, {"PUSH0", 0, 0, 1, false, 2, 0});
-
-        return table;
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<MONAD_ETH_CANCUN>>()
-    {
-        auto table = make_opcode_table<
-            EvmTraits<previous_evm_revision(MONAD_ETH_CANCUN)>>();
-
-        add_opcode(0x49, table, {"BLOBHASH", 0, 1, 1, false, 3, 0});
-        add_opcode(0x4A, table, {"BLOBBASEFEE", 0, 0, 1, false, 2, 0});
-        add_opcode(0x5C, table, {"TLOAD", 0, 1, 1, false, 100, 0});
-        add_opcode(0x5D, table, {"TSTORE", 0, 2, 0, false, 100, 0});
-        add_opcode(0x5E, table, {"MCOPY", 0, 3, 0, true, 3, 0});
-
-        return table;
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<MONAD_ETH_PRAGUE>>()
-    {
-        return make_opcode_table<
-            EvmTraits<previous_evm_revision(MONAD_ETH_PRAGUE)>>();
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<MONAD_ETH_OSAKA>>()
-    {
-        auto table = make_opcode_table<
-            EvmTraits<previous_evm_revision(MONAD_ETH_OSAKA)>>();
-
-        // https://eips.ethereum.org/EIPS/eip-7939
-        add_opcode(0x1E, table, {"CLZ", 0, 1, 1, false, 5, 0});
-        return table;
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<EvmTraits<MONAD_ETH_AMSTERDAM>>()
-    {
-        return make_opcode_table<
-            EvmTraits<previous_evm_revision(MONAD_ETH_AMSTERDAM)>>();
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<MonadTraits<MONAD_ZERO>>()
-    {
-        return make_opcode_table<MonadTraits<MONAD_ZERO>::evm_base>();
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<MonadTraits<MONAD_ONE>>()
-    {
-        return make_opcode_table<MonadTraits<MONAD_ONE>::evm_base>();
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<MonadTraits<MONAD_TWO>>()
-    {
-        return make_opcode_table<MonadTraits<MONAD_TWO>::evm_base>();
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<MonadTraits<MONAD_THREE>>()
-    {
-        return make_opcode_table<MonadTraits<MONAD_THREE>::evm_base>();
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<MonadTraits<MONAD_FOUR>>()
-    {
-        return make_opcode_table<MonadTraits<MONAD_FOUR>::evm_base>();
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<MonadTraits<MONAD_FIVE>>()
-    {
-        return make_opcode_table<MonadTraits<MONAD_FIVE>::evm_base>();
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<MonadTraits<MONAD_SIX>>()
-    {
-        return make_opcode_table<MonadTraits<MONAD_SIX>::evm_base>();
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<MonadTraits<MONAD_SEVEN>>()
-    {
-        return make_opcode_table<MonadTraits<MONAD_SEVEN>::evm_base>();
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<MonadTraits<MONAD_EIGHT>>()
-    {
-        return make_opcode_table<MonadTraits<MONAD_EIGHT>::evm_base>();
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<MonadTraits<MONAD_NINE>>()
-    {
-        return make_opcode_table<MonadTraits<MONAD_NINE>::evm_base>();
-    }
-
-    template <>
-    consteval std::array<OpCodeInfo, 256>
-    make_opcode_table<MonadTraits<MONAD_NEXT>>()
-    {
-        auto table = make_opcode_table<MonadTraits<MONAD_NEXT>::evm_base>();
-        table[SSTORE].min_gas = MonadTraits<MONAD_NEXT>::base_sstore_cost();
-        return table;
-    }
+    template <Traits traits>
+    constexpr std::array<OpCodeInfo, 256> opcode_table =
+        make_opcode_table<traits>();
 
     /**
      * Returns `true` if `opcode` is an invalid opcode at this revision.

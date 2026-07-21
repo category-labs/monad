@@ -823,6 +823,7 @@ int main(int const argc, char *argv[])
     std::optional<std::filesystem::path> load_binary_snapshot;
     std::string version;
     unsigned dump_concurrency_limit = 2048;
+    unsigned load_concurrency = 0; // 0 => auto
     bool use_secondary = false;
     uint64_t total_shards = 1;
     uint64_t shard_number = 0;
@@ -889,6 +890,11 @@ int main(int const argc, char *argv[])
             "Load a binary snapshot to db")
         ->check(CLI::ExistingDirectory)
         ->excludes(dump_binary_snapshot_option);
+    cli_group->add_option(
+        "--load-concurrency,--load_concurrency",
+        load_concurrency,
+        "Number of worker threads for parallel snapshot load "
+        "(0 = auto, 1 = serial). Default: 0.");
     cli.add_flag(
         "--secondary",
         use_secondary,
@@ -1064,7 +1070,8 @@ int main(int const argc, char *argv[])
             sq_thread_cpu.value_or(std::numeric_limits<unsigned>::max()),
             load_binary_snapshot.value().c_str(),
             resolved_version,
-            use_secondary);
+            use_secondary,
+            load_concurrency);
         LOG_INFO(
             "snapshot version={} load_binary_snapshot={} load_to_secondary={} "
             "elapsed={}",

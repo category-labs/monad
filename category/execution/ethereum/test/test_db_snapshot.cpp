@@ -203,7 +203,8 @@ TEST(DbBinarySnapshot, Basic)
             static_cast<unsigned>(-1),
             snapshot_dir.path.c_str(),
             100,
-            /*load_to_secondary=*/false);
+            /*load_to_secondary=*/false,
+            /*concurrency=*/1u);
     }
 
     {
@@ -364,7 +365,8 @@ TEST(DbBinarySnapshot, MultipleShards)
             static_cast<unsigned>(-1),
             combined_root.path.c_str(),
             100,
-            /*load_to_secondary=*/false);
+            /*load_to_secondary=*/false,
+            /*concurrency=*/1u);
     }
     {
         AsyncIOContext io_context{
@@ -536,7 +538,8 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
             static_cast<unsigned>(-1),
             snapshot_dir.path.c_str(),
             BLOCK,
-            /*load_to_secondary=*/true);
+            /*load_to_secondary=*/true,
+            /*concurrency=*/1u);
     }
 
     // Verify secondary db is page-encoded and round-trip slot reads match.
@@ -730,7 +733,8 @@ TEST(DbBinarySnapshot, DumpFromSecondaryPageDb)
             static_cast<unsigned>(-1),
             snapshot_dir.path.c_str(),
             BLOCK,
-            /*load_to_secondary=*/false);
+            /*load_to_secondary=*/false,
+            /*concurrency=*/1u);
     }
 
     // Verify the target is slot-encoded and every slot round-trips.
@@ -753,4 +757,267 @@ TEST(DbBinarySnapshot, DumpFromSecondaryPageDb)
             }
         }
     }
+}
+
+// A parallel load (concurrency = 0 => all cores) must produce a bit-identical
+// state root to a serial load (concurrency = 1) and to the source db, since the
+// 256 shards are disjoint subtrees committed into one version.
+TEST(DbBinarySnapshot, ParallelLoadMatchesSerialSlot)
+{
+    using namespace monad;
+    using namespace monad::mpt;
+
+    constexpr uint64_t BLOCK = 100;
+    TempDb const src_db;
+    TempDir const snapshot_dir;
+
+    bytes32_t root_hash;
+    Code code_delta;
+    {
+        // 100k accounts spread across every shard prefix, decile storage, and
+        // 1k code blobs -- the Basic/MultipleShards construction.
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.dbname_paths = {src_db.path}}};
+        Node::SharedPtr root{};
+        for (uint64_t i = 0; i < 100; ++i) {
+            root = load_header(std::move(root), db, BlockHeader{.number = i});
+        }
+        db.update_finalized_version(99);
+        StateDeltas deltas;
+        for (uint64_t i = 0; i < 100'000; ++i) {
+            StorageDeltas storage;
+            if ((i % 100) == 0) {
+                for (uint64_t j = 0; j < 10; ++j) {
+                    storage.emplace(
+                        bytes32_t{j}, StorageDelta{bytes32_t{}, bytes32_t{j}});
+                }
+            }
+            deltas.emplace(
+                Address{i},
+                StateDelta{
+                    .account =
+                        {std::nullopt, Account{.balance = i, .nonce = i}},
+                    .storage = storage});
+        }
+        for (uint64_t i = 0; i < 1'000; ++i) {
+            std::vector<uint64_t> const bytes(100, i);
+            byte_string_view const code{
+                reinterpret_cast<unsigned char const *>(bytes.data()),
+                bytes.size() * sizeof(uint64_t)};
+            bytes32_t const hash = to_bytes(keccak256(code));
+            code_delta.emplace(hash, vm::make_shared_intercode(code));
+        }
+        TrieDb tdb{db};
+        monad::test::commit_simple(
+            tdb,
+            StateDeltas(std::move(deltas)),
+            code_delta,
+            bytes32_t{BLOCK},
+            BlockHeader{.number = BLOCK});
+        tdb.finalize(BLOCK, bytes32_t{BLOCK});
+        root_hash = tdb.state_root();
+    }
+
+    {
+        auto *const context =
+            monad_db_snapshot_filesystem_write_user_context_create(
+                snapshot_dir.path.c_str(), BLOCK);
+        char const *dbname_paths[] = {src_db.path.c_str()};
+        EXPECT_TRUE(monad_db_dump_snapshot(
+            dbname_paths,
+            1,
+            static_cast<unsigned>(-1),
+            BLOCK,
+            monad_db_snapshot_write_filesystem,
+            context,
+            2048,
+            1,
+            0,
+            /*dump_from_secondary=*/false));
+        monad_db_snapshot_filesystem_write_user_context_destroy(context);
+    }
+
+    auto load_and_root = [&](unsigned const concurrency) {
+        TempDb const dest_db;
+        {
+            mpt::Db dest_init{
+                std::make_unique<OnDiskMachine>(),
+                OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+            monad::mpt::test::DbAccessor::aux(dest_init)
+                .metadata_ctx()
+                .set_state_machine_kind(
+                    timeline_id::primary, state_machine_kind::ethereum);
+        }
+        char const *dest_paths[] = {dest_db.path.c_str()};
+        monad_db_snapshot_load_filesystem(
+            dest_paths,
+            1,
+            static_cast<unsigned>(-1),
+            snapshot_dir.path.c_str(),
+            BLOCK,
+            /*load_to_secondary=*/false,
+            concurrency);
+        AsyncIOContext io_context{
+            ReadOnlyOnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+        mpt::Db db{io_context};
+        TrieDb tdb{db};
+        tdb.set_block_and_prefix(BLOCK);
+        return tdb.state_root();
+    };
+
+    bytes32_t const serial = load_and_root(1u);
+    bytes32_t const parallel = load_and_root(0u);
+    EXPECT_EQ(serial, root_hash);
+    EXPECT_EQ(parallel, root_hash);
+    EXPECT_EQ(parallel, serial);
+}
+
+// A parallel load into a page-encoded secondary must match a serial one. This
+// covers the page-assembly path, which fill_prepared_shard runs per shard on
+// the worker threads: slots are grouped into page leaves before the commit.
+TEST(DbBinarySnapshot, ParallelLoadMatchesSerialPage)
+{
+    using namespace monad;
+    using namespace monad::mpt;
+
+    constexpr uint64_t BLOCK = 1;
+    // Dense slots pack a single page; sparse slots straddle page 0 and page 1
+    // (page boundary at slot 0x80, storage_page_t::SLOTS == 128).
+    constexpr std::array<uint8_t, 6> DENSE_SLOTS{
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
+    constexpr std::array<uint8_t, 4> SPARSE_SLOTS{0x00, 0x7f, 0x80, 0x81};
+
+    auto make_slot = [](uint8_t const b) {
+        bytes32_t k{};
+        k.bytes[31] = b;
+        return k;
+    };
+    auto make_val = [](Address const &a, uint8_t const b) {
+        bytes32_t v{};
+        v.bytes[30] = a.bytes[19];
+        v.bytes[31] = static_cast<uint8_t>(b ^ 0xa5);
+        return v;
+    };
+
+    TempDb const src_db;
+    TempDir const snapshot_dir;
+
+    // Slot-encoded source: 12 accounts spanning multiple shards, alternating
+    // dense and sparse storage.
+    {
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.dbname_paths = {src_db.path}}};
+        load_header({}, db, BlockHeader{.number = 0});
+        db.update_finalized_version(0);
+        StateDeltas deltas;
+        for (uint64_t i = 1; i <= 12; ++i) {
+            Address const addr{i};
+            StorageDeltas storage;
+            auto const add_slot = [&](uint8_t const b) {
+                storage.emplace(
+                    make_slot(b), StorageDelta{bytes32_t{}, make_val(addr, b)});
+            };
+            if (i % 2 == 0) {
+                for (auto const b : DENSE_SLOTS) {
+                    add_slot(b);
+                }
+            }
+            else {
+                for (auto const b : SPARSE_SLOTS) {
+                    add_slot(b);
+                }
+            }
+            deltas.emplace(
+                addr,
+                StateDelta{
+                    .account = {std::nullopt, Account{.balance = i}},
+                    .storage = storage});
+        }
+        TrieDb tdb{db};
+        monad::test::commit_simple(
+            tdb,
+            deltas,
+            Code{},
+            bytes32_t{BLOCK},
+            BlockHeader{.number = BLOCK});
+        tdb.finalize(BLOCK, bytes32_t{BLOCK});
+    }
+
+    {
+        auto *const context =
+            monad_db_snapshot_filesystem_write_user_context_create(
+                snapshot_dir.path.c_str(), BLOCK);
+        char const *dbpath[] = {src_db.path.c_str()};
+        EXPECT_TRUE(monad_db_dump_snapshot(
+            dbpath,
+            1,
+            static_cast<unsigned>(-1),
+            BLOCK,
+            monad_db_snapshot_write_filesystem,
+            context,
+            2048,
+            1,
+            0,
+            /*dump_from_secondary=*/false));
+        monad_db_snapshot_filesystem_write_user_context_destroy(context);
+    }
+
+    // A shard dir is created only when a shard has data, so the subdirectory
+    // count is the number of non-empty shards.
+    {
+        size_t shard_dirs = 0;
+        for (auto const &entry : std::filesystem::directory_iterator{
+                 snapshot_dir.path / std::to_string(BLOCK)}) {
+            if (entry.is_directory()) {
+                ++shard_dirs;
+            }
+        }
+        ASSERT_GE(shard_dirs, 2u) << "test needs a multi-shard snapshot";
+    }
+
+    auto page_root = [&](unsigned const concurrency) {
+        TempDb const dest_db;
+        // Fresh db with an activated (empty) page-encoded secondary; the loader
+        // opens that secondary, so both handles are dropped before the load.
+        // The first open of a fresh inode must not append -- it initializes the
+        // storage pool.
+        {
+            mpt::Db primary{
+                std::make_unique<OnDiskMachine>(),
+                OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+            [[maybe_unused]] auto const secondary =
+                primary.activate_secondary_timeline(
+                    std::make_unique<monad::MonadOnDiskMachine>());
+            MONAD_ASSERT(primary.timeline_active(timeline_id::secondary));
+        }
+        char const *dest_paths[] = {dest_db.path.c_str()};
+        monad_db_snapshot_load_filesystem(
+            dest_paths,
+            1,
+            static_cast<unsigned>(-1),
+            snapshot_dir.path.c_str(),
+            BLOCK,
+            /*load_to_secondary=*/true,
+            concurrency);
+
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.append = true, .dbname_paths = {dest_db.path}}};
+        {
+            auto db2 = db.open_secondary_timeline(
+                std::make_unique<monad::MonadOnDiskMachine>());
+            MONAD_ASSERT(db2.has_value());
+            db = std::move(db2.value());
+        }
+        TrieDb tdb{db};
+        MONAD_ASSERT(tdb.is_page_encoded());
+        tdb.set_block_and_prefix(BLOCK);
+        return tdb.state_root();
+    };
+
+    bytes32_t const serial = page_root(1u);
+    bytes32_t const parallel = page_root(0u);
+    EXPECT_EQ(parallel, serial);
 }

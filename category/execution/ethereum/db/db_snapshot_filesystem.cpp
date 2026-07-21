@@ -22,19 +22,29 @@
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/db_snapshot_filesystem.h>
+#include <category/execution/ethereum/db/db_snapshot_internal.hpp>
 
 #include <ankerl/unordered_dense.h>
 #include <blake3.h>
 
+#include <tbb/concurrent_queue.h>
+#include <tbb/parallel_for.h>
+#include <tbb/task_arena.h>
+
+#include <algorithm>
 #include <cerrno>
+#include <cstddef>
 #include <cstring>
+#include <exception>
 #include <fcntl.h>
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <linux/mman.h>
-#include <sys/mman.h>
+#include <memory>
+#include <thread>
 #include <unistd.h>
+#include <utility>
+#include <vector>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -163,10 +173,103 @@ uint64_t monad_db_snapshot_write_filesystem(
     return len;
 }
 
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+// Read one snapshot input file into a heap buffer and verify its stored BLAKE3
+// checksum. Uses pread rather than mmap: worker threads run this concurrently,
+// and per-shard mmap/munmap/madvise serialize on the process mmap_lock, which
+// dominates the parallel load with system-time contention. A size-0 file
+// returns an empty buffer.
+monad::byte_string read_file(std::filesystem::path const &file)
+{
+    using namespace monad;
+    MONAD_ASSERT_PRINTF(
+        std::filesystem::is_regular_file(file),
+        "snapshot input file missing or not a regular file: %s",
+        file.c_str());
+
+    size_t const size = std::filesystem::file_size(file);
+    byte_string buf;
+    if (size) {
+        buf.resize(size);
+        errno = 0;
+        int const fd = open(file.c_str(), O_RDONLY);
+        MONAD_ASSERT_PRINTF(
+            fd != -1,
+            "failed to open %s: %s",
+            file.c_str(),
+            std::strerror(errno));
+        posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+        for (size_t off = 0; off < size;) {
+            errno = 0;
+            ssize_t const n = pread(
+                fd, buf.data() + off, size - off, static_cast<off_t>(off));
+            MONAD_ASSERT_PRINTF(
+                n > 0,
+                "failed to read %s: %s",
+                file.c_str(),
+                std::strerror(errno));
+            off += static_cast<size_t>(n);
+        }
+        close(fd);
+
+        std::filesystem::path const checksum{
+            std::format("{}.blake3", file.c_str())};
+        MONAD_ASSERT_PRINTF(
+            std::filesystem::is_regular_file(checksum),
+            "missing checksum file %s",
+            checksum.c_str());
+        errno = 0;
+        std::ifstream t(checksum);
+        MONAD_ASSERT_PRINTF(
+            t.is_open(),
+            "failed to open checksum file %s: %s",
+            checksum.c_str(),
+            std::strerror(errno));
+        std::stringstream buffer;
+        buffer << t.rdbuf();
+        auto const stored_hash = from_hex<bytes32_t>(buffer.str());
+        auto const calculated_hash = to_bytes(blake3(buf));
+        MONAD_ASSERT_PRINTF(
+            stored_hash == calculated_hash,
+            "calculated checksum does not match stored checksum for file %s",
+            file.c_str());
+    }
+    return buf;
+}
+
+// Pure-CPU shard prep: read the 4 files into buffers owned by the result, then
+// build the shard's Updates from views into those buffers so they outlive the
+// consumer's upsert. Called from worker threads. The eth_header buffer is only
+// needed transiently (fill_prepared_shard copies it into ps->eth_header).
+std::unique_ptr<monad::PreparedShard> prepare_shard_from_files(
+    std::filesystem::path const &dir, uint64_t const shard,
+    uint64_t const block, bool const page_encoded)
+{
+    monad::byte_string const eth_header = read_file(dir / "eth_header");
+    auto ps = std::make_unique<monad::PreparedShard>();
+    ps->account_bytes = read_file(dir / "account");
+    ps->storage_bytes = read_file(dir / "storage");
+    ps->code_bytes = read_file(dir / "code");
+    fill_prepared_shard(
+        *ps,
+        shard,
+        block,
+        page_encoded,
+        monad::byte_string_view{eth_header},
+        monad::byte_string_view{ps->account_bytes},
+        monad::byte_string_view{ps->storage_bytes},
+        monad::byte_string_view{ps->code_bytes});
+    return ps;
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
 void monad_db_snapshot_load_filesystem(
     char const *const *const dbname_paths, size_t const len,
     unsigned const sq_thread_cpu, char const *const snapshot_dir,
-    uint64_t const block, bool const load_to_secondary)
+    uint64_t const block, bool const load_to_secondary,
+    unsigned const concurrency)
 {
     std::filesystem::path const root{std::format("{}/{}", snapshot_dir, block)};
     MONAD_ASSERT(std::filesystem::is_directory(root));
@@ -176,100 +279,80 @@ void monad_db_snapshot_load_filesystem(
     monad_db_snapshot_loader *const loader = monad_db_snapshot_loader_create(
         block, dbname_paths, len, sq_thread_cpu, load_to_secondary);
 
-    auto const do_mmap = [](std::filesystem::path const file) {
-        using namespace monad;
-        MONAD_ASSERT_PRINTF(
-            std::filesystem::is_regular_file(file),
-            "snapshot input file missing or not a regular file: %s",
-            file.c_str());
-        errno = 0;
-        int const fd = open(file.c_str(), O_RDONLY);
-        MONAD_ASSERT_PRINTF(
-            fd != -1,
-            "failed to open %s: %s",
-            file.c_str(),
-            std::strerror(errno));
+    // Read the target encoding once on this thread; the Db is touched only
+    // here and by commit_prepared, never by the workers.
+    bool const page_encoded = snapshot_loader_page_encoded(loader);
 
-        unsigned long const size = std::filesystem::file_size(file);
-        void *data = nullptr;
-        if (size) {
-            data = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0);
-            MONAD_ASSERT_PRINTF(
-                data != MAP_FAILED,
-                "failed to mmap %s: %s",
-                file.c_str(),
-                std::strerror(errno));
-            // optimize for sequential accesses
-            MONAD_ASSERT_PRINTF(
-                madvise(data, size, MADV_SEQUENTIAL) == 0,
-                "madvise failed for %s: %s",
-                file.c_str(),
-                std::strerror(errno));
-
-            std::filesystem::path const checksum{
-                std::format("{}.blake3", file.c_str())};
-            MONAD_ASSERT_PRINTF(
-                std::filesystem::is_regular_file(checksum),
-                "missing checksum file %s",
-                checksum.c_str());
-            errno = 0;
-            std::ifstream t(checksum);
-            MONAD_ASSERT_PRINTF(
-                t.is_open(),
-                "failed to open checksum file %s: %s",
-                checksum.c_str(),
-                std::strerror(errno));
-            std::stringstream buffer;
-            buffer << t.rdbuf();
-            auto const stored_hash = from_hex<bytes32_t>(buffer.str());
-            auto const calculated_hash = to_bytes(
-                blake3({reinterpret_cast<unsigned char const *>(data), size}));
-            MONAD_ASSERT_PRINTF(
-                stored_hash == calculated_hash,
-                "calculated checksum does not match stored checksum for file "
-                "%s",
-                file.c_str());
-        }
-        return std::make_tuple(
-            fd, reinterpret_cast<unsigned char const *>(data), size);
-    };
-
+    // The 256 shards are disjoint 2-nibble subtrees, so any commit order yields
+    // a bit-identical root.
+    std::vector<std::pair<uint64_t, std::filesystem::path>> shards;
     for (auto const &dir : std::filesystem::directory_iterator{root}) {
-        uint64_t const shard = std::stoull(dir.path().stem());
-        auto const [eth_header_fd, eth_header, eth_header_len] =
-            do_mmap(dir.path() / "eth_header");
-        auto const [account_fd, account, account_len] =
-            do_mmap(dir.path() / "account");
-        auto const [storage_fd, storage, storage_len] =
-            do_mmap(dir.path() / "storage");
-        auto const [code_fd, code, code_len] = do_mmap(dir.path() / "code");
-        monad_db_snapshot_loader_load(
-            loader,
-            shard,
-            eth_header,
-            eth_header_len,
-            account,
-            account_len,
-            storage,
-            storage_len,
-            code,
-            code_len);
-        if (eth_header) {
-            munmap((void *)eth_header, eth_header_len);
+        shards.emplace_back(std::stoull(dir.path().stem()), dir.path());
+    }
+
+    // Prep is a minority of the load (the serial upsert dominates), so a
+    // handful of workers keep the single consumer fed; more only inflate
+    // resident memory. Cap the auto (0) default rather than grabbing every
+    // core. Callers can still request an explicit higher count.
+    constexpr unsigned AUTO_WORKERS_CAP = 16;
+    unsigned const workers =
+        concurrency == 0
+            ? std::min(
+                  std::max(1u, std::thread::hardware_concurrency()),
+                  AUTO_WORKERS_CAP)
+            : concurrency;
+
+    if (workers <= 1) {
+        for (auto const &[shard, path] : shards) {
+            commit_prepared(
+                loader,
+                monad::prepare_shard_from_files(
+                    path, shard, block, page_encoded));
         }
-        if (account) {
-            munmap((void *)account, account_len);
+    }
+    else {
+        // Workers prep shards into a bounded queue; this thread (the sole Db
+        // user) commits them. Capacity == workers bounds resident prepped
+        // shards to ~2*workers (queued + in-flight). A trailing null pushed
+        // after the parallel_for barrier is a poison pill that unblocks the
+        // consumer even if a worker aborts.
+        tbb::concurrent_bounded_queue<std::unique_ptr<monad::PreparedShard>>
+            queue;
+        queue.set_capacity(static_cast<std::ptrdiff_t>(workers));
+
+        std::exception_ptr producer_error;
+        std::thread producer([&] {
+            try {
+                tbb::task_arena arena(static_cast<int>(workers));
+                arena.execute([&] {
+                    tbb::parallel_for(
+                        size_t{0}, shards.size(), [&](size_t const i) {
+                            queue.push(monad::prepare_shard_from_files(
+                                shards[i].second,
+                                shards[i].first,
+                                block,
+                                page_encoded));
+                        });
+                });
+            }
+            catch (...) {
+                producer_error = std::current_exception();
+            }
+            queue.push(nullptr);
+        });
+
+        while (true) {
+            std::unique_ptr<monad::PreparedShard> ps;
+            queue.pop(ps);
+            if (!ps) {
+                break;
+            }
+            commit_prepared(loader, std::move(ps));
         }
-        if (storage) {
-            munmap((void *)storage, storage_len);
+        producer.join();
+        if (producer_error) {
+            std::rethrow_exception(producer_error);
         }
-        if (code) {
-            munmap((void *)code, code_len);
-        }
-        close(eth_header_fd);
-        close(account_fd);
-        close(storage_fd);
-        close(code_fd);
     }
 
     monad_db_snapshot_loader_destroy(loader);

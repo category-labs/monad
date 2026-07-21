@@ -37,7 +37,8 @@ uint64_t monad_db_snapshot_write_filesystem(
 
 void monad_db_snapshot_load_filesystem(
     char const *const *dbname_paths, size_t len, unsigned sq_thread_cpu,
-    char const *snapshot_dir, uint64_t block, bool load_to_secondary);
+    char const *snapshot_dir, uint64_t block, bool load_to_secondary,
+    unsigned concurrency);
 
 #ifdef __cplusplus
 }

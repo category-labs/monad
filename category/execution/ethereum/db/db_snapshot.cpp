@@ -22,6 +22,7 @@
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
+#include <category/execution/ethereum/db/db_snapshot_internal.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
@@ -42,24 +43,6 @@ struct monad_db_snapshot_loader
     monad::mpt::Db db;
     monad::mpt::Node::SharedPtr root;
     std::array<monad::byte_string, 256> eth_headers;
-    std::deque<monad::hash256> hash_alloc;
-    std::deque<monad::mpt::Update> update_alloc;
-    std::deque<monad::byte_string> bytes_alloc;
-    std::array<
-        ankerl::unordered_dense::segmented_map<uint64_t, monad::mpt::Update>,
-        MONAD_SNAPSHOT_SHARDS>
-        account_offset_to_update;
-    // Per-shard page accumulator used only when page_encoded. Maps
-    // account_offset -> (page_key -> assembled storage_page_t).
-    std::array<
-        ankerl::unordered_dense::segmented_map<
-            uint64_t, ankerl::unordered_dense::map<
-                          monad::bytes32_t, monad::storage_page_t>>,
-        MONAD_SNAPSHOT_SHARDS>
-        page_accumulator;
-    monad::mpt::UpdateList state_updates;
-    monad::mpt::UpdateList code_updates;
-    uint64_t bytes_read;
 
     monad_db_snapshot_loader(
         uint64_t const block, char const *const *const dbname_paths,
@@ -68,7 +51,6 @@ struct monad_db_snapshot_loader
         : block{block}
         , db{open_target_db(
               dbname_paths, len, sq_thread_cpu, load_to_secondary)}
-        , bytes_read{0}
     {
     }
 
@@ -117,130 +99,6 @@ uint64_t get_shard(monad::mpt::NibblesView const path)
     }
     MONAD_ASSERT(ret < MONAD_SNAPSHOT_SHARDS);
     return ret;
-}
-
-// When the target is page-encoded, drain the accumulator into per-account
-// `next` lists. Each page becomes one Update keyed by keccak256(page_key)
-// with value encode_storage_page_db(page_key, page) (or std::nullopt if the
-// page is empty so the entry is a deletion). The encoded byte_strings are
-// kept alive in loader->bytes_alloc until the upsert completes; the Update
-// nodes are kept in loader->update_alloc for the same reason.
-void monad_db_snapshot_loader_finalize_pages(
-    monad_db_snapshot_loader *const loader)
-{
-    using namespace monad;
-    using namespace monad::mpt;
-    if (!loader->page_encoded()) {
-        return;
-    }
-    for (size_t shard = 0; shard < MONAD_SNAPSHOT_SHARDS; ++shard) {
-        auto &shard_pages = loader->page_accumulator.at(shard);
-        if (shard_pages.empty()) {
-            continue;
-        }
-        auto &shard_accounts = loader->account_offset_to_update.at(shard);
-        for (auto &[account_offset, pages] : shard_pages) {
-            auto &account_update = shard_accounts.at(account_offset);
-            for (auto const &[page_key, page] : pages) {
-                bool const is_empty = page.is_empty();
-                std::optional<byte_string_view> value;
-                if (!is_empty) {
-                    value = byte_string_view{loader->bytes_alloc.emplace_back(
-                        encode_storage_page_db(page_key, page))};
-                }
-                account_update.next.push_front(
-                    loader->update_alloc.emplace_back(Update{
-                        .key = loader->hash_alloc.emplace_back(keccak256(
-                            {page_key.bytes, sizeof(page_key.bytes)})),
-                        .value = value,
-                        .incarnation = false,
-                        .next = UpdateList{},
-                        .version = static_cast<int64_t>(loader->block)}));
-            }
-        }
-        shard_pages.clear();
-    }
-}
-
-void monad_db_snapshot_loader_flush(monad_db_snapshot_loader *const loader)
-{
-    using namespace monad;
-    using namespace monad::mpt;
-
-    monad_db_snapshot_loader_finalize_pages(loader);
-
-    Update state_update{
-        .key = state_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(loader->state_updates),
-        .version = static_cast<int64_t>(loader->block)};
-    Update code_update{
-        .key = code_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(loader->code_updates),
-        .version = static_cast<int64_t>(loader->block)};
-
-    UpdateList updates;
-    updates.push_front(state_update);
-    updates.push_front(code_update);
-
-    UpdateList finalized_updates;
-    Update finalized{
-        .key = finalized_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(updates),
-        .version = static_cast<int64_t>(loader->block)};
-    finalized_updates.push_front(finalized);
-
-    loader->root = loader->db.upsert(
-        std::move(loader->root),
-        std::move(finalized_updates),
-        loader->block,
-        false,
-        false);
-    loader->hash_alloc.clear();
-    loader->update_alloc.clear();
-    loader->bytes_alloc.clear();
-    for (auto &map : loader->account_offset_to_update) {
-        map.clear();
-    }
-    for (auto &map : loader->page_accumulator) {
-        map.clear();
-    }
-    loader->state_updates.clear();
-    loader->code_updates.clear();
-    loader->bytes_read = 0;
-}
-
-uint64_t monad_db_snapshot_loader_read_account(
-    monad_db_snapshot_loader *const loader, uint64_t const shard,
-    uint64_t const account_offset, monad::byte_string_view const accounts)
-{
-    using namespace monad;
-    using namespace monad::mpt;
-    byte_string_view bytes{accounts.substr(account_offset)};
-    byte_string_view const before{bytes};
-    auto const res = decode_account_db_raw(bytes);
-    MONAD_ASSERT(res.has_value());
-    auto const [address, account] = res.value();
-    MONAD_ASSERT(address.size() == sizeof(Address));
-    uint64_t const bytes_consumed = before.size() - bytes.size();
-    auto const [it, success] =
-        loader->account_offset_to_update.at(shard).emplace(
-            account_offset,
-            Update{
-                .key = loader->hash_alloc.emplace_back(keccak256(address)),
-                .value = before.substr(0, bytes_consumed),
-                .incarnation = false,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(loader->block)});
-    MONAD_ASSERT(success);
-    loader->state_updates.push_front(it->second);
-    loader->bytes_read += bytes_consumed;
-    return bytes_consumed;
 }
 
 class NibblePath
@@ -588,6 +446,193 @@ monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     return loader;
 }
 
+void fill_prepared_shard(
+    monad::PreparedShard &ps_ref, uint64_t const shard, uint64_t const block,
+    bool const page_encoded, monad::byte_string_view const eth_header,
+    monad::byte_string_view const account,
+    monad::byte_string_view const storage, monad::byte_string_view const code)
+{
+    using namespace monad;
+    using namespace monad::mpt;
+
+    PreparedShard *const ps = &ps_ref;
+    ps->shard = shard;
+
+    auto const read_account = [&](uint64_t const account_offset) -> uint64_t {
+        byte_string_view bytes{account.substr(account_offset)};
+        byte_string_view const before{bytes};
+        auto const res = decode_account_db_raw(bytes);
+        MONAD_ASSERT(res.has_value());
+        auto const [address, acct] = res.value();
+        MONAD_ASSERT(address.size() == sizeof(Address));
+        uint64_t const consumed = before.size() - bytes.size();
+        auto const [it, ok] = ps->account_updates.emplace(
+            account_offset,
+            Update{
+                .key = ps->hash_alloc.emplace_back(keccak256(address)),
+                .value = before.substr(0, consumed),
+                .incarnation = false,
+                .next = UpdateList{},
+                .version = static_cast<int64_t>(block)});
+        MONAD_ASSERT(ok);
+        ps->state_updates.push_front(it->second);
+        return consumed;
+    };
+
+    if (!account.empty()) {
+        for (uint64_t off = 0; off != account.size();) {
+            off += read_account(off);
+            MONAD_ASSERT(off <= account.size());
+        }
+    }
+
+    // Page mode: local accumulator drained into page-leaf Updates at the end.
+    ankerl::unordered_dense::segmented_map<
+        uint64_t,
+        ankerl::unordered_dense::map<bytes32_t, storage_page_t>>
+        page_accumulator;
+
+    if (!storage.empty()) {
+        MONAD_ASSERT(!account.empty());
+        byte_string_view sv{storage};
+        while (!sv.empty()) {
+            uint64_t const account_offset = unaligned_load<uint64_t>(sv.data());
+            if (!ps->account_updates.contains(account_offset)) {
+                read_account(account_offset);
+            }
+            sv.remove_prefix(sizeof(account_offset));
+            byte_string_view const before{sv}; // capture BEFORE decode
+            // decode_storage_db_raw advances sv and tolerates trailing bytes,
+            // since the storage stream concatenates multiple
+            // [account_offset, leaf.value()] entries.
+            auto const res = decode_storage_db_raw(sv);
+            MONAD_ASSERT(res.has_value());
+            uint64_t const consumed = before.size() - sv.size();
+            if (page_encoded) {
+                bytes32_t const slot_key = to_bytes(res.value().first);
+                bytes32_t const slot_val = to_bytes(res.value().second);
+                page_accumulator[account_offset][compute_page_key(slot_key)]
+                    .set(compute_slot_offset(slot_key), slot_val);
+            }
+            else {
+                // The leaf value must be the exact encoded bytes from the input
+                // stream (a view into `storage`), not a re-encode, which could
+                // differ and change the root.
+                auto &upd = ps->account_updates.at(account_offset);
+                upd.next.push_front(ps->update_alloc.emplace_back(Update{
+                    .key = ps->hash_alloc.emplace_back(
+                        keccak256(to_bytes(res.value().first))),
+                    .value = before.substr(0, consumed),
+                    .incarnation = false,
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(block)}));
+            }
+        }
+    }
+
+    // Drain the page accumulator into page-leaf Updates. Each page becomes one
+    // Update keyed by keccak256(page_key), valued with the encoded page (or a
+    // deletion when empty). All slots sharing a page_key are in this single
+    // shard's accumulator, so no cross-shard page merge is possible.
+    if (page_encoded) {
+        for (auto &[account_offset, pages] : page_accumulator) {
+            auto &account_update = ps->account_updates.at(account_offset);
+            for (auto const &[page_key, page] : pages) {
+                std::optional<byte_string_view> value;
+                if (!page.is_empty()) {
+                    value = byte_string_view{ps->bytes_alloc.emplace_back(
+                        encode_storage_page_db(page_key, page))};
+                }
+                account_update.next.push_front(
+                    ps->update_alloc.emplace_back(Update{
+                        .key = ps->hash_alloc.emplace_back(keccak256(
+                            {page_key.bytes, sizeof(page_key.bytes)})),
+                        .value = value,
+                        .incarnation = false,
+                        .next = UpdateList{},
+                        .version = static_cast<int64_t>(block)}));
+            }
+        }
+    }
+
+    if (!code.empty()) {
+        byte_string_view cv{code};
+        while (!cv.empty()) {
+            MONAD_ASSERT(cv.size() >= sizeof(uint64_t));
+            uint64_t const size = unaligned_load<uint64_t>(cv.data());
+            cv.remove_prefix(sizeof(uint64_t));
+            MONAD_ASSERT(cv.size() >= size);
+            byte_string_view const val = cv.substr(0, size);
+            ps->code_updates.push_front(ps->update_alloc.emplace_back(Update{
+                .key = ps->hash_alloc.emplace_back(keccak256(val)),
+                .value = val,
+                .incarnation = false,
+                .next = UpdateList{},
+                .version = static_cast<int64_t>(block)}));
+            cv.remove_prefix(size);
+        }
+    }
+
+    if (!eth_header.empty()) {
+        byte_string_view enc{eth_header};
+        auto const header = rlp::decode_block_header(enc);
+        MONAD_ASSERT(header.has_value());
+        MONAD_ASSERT(header.value().number == (block - shard));
+        ps->eth_header.assign(eth_header.begin(), eth_header.end());
+    }
+}
+
+void commit_prepared(
+    monad_db_snapshot_loader *const loader,
+    std::unique_ptr<monad::PreparedShard> ps)
+{
+    using namespace monad;
+    using namespace monad::mpt;
+
+    Update state_update{
+        .key = state_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(ps->state_updates),
+        .version = static_cast<int64_t>(loader->block)};
+    Update code_update{
+        .key = code_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(ps->code_updates),
+        .version = static_cast<int64_t>(loader->block)};
+
+    UpdateList updates;
+    updates.push_front(state_update);
+    updates.push_front(code_update);
+
+    UpdateList finalized_updates;
+    Update finalized{
+        .key = finalized_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(updates),
+        .version = static_cast<int64_t>(loader->block)};
+    finalized_updates.push_front(finalized);
+
+    loader->root = loader->db.upsert(
+        std::move(loader->root),
+        std::move(finalized_updates),
+        loader->block,
+        false,
+        false);
+
+    if (!ps->eth_header.empty()) {
+        loader->eth_headers.at(ps->shard) = std::move(ps->eth_header);
+    }
+    // ps (and its mmaps + allocs) freed here, after upsert copied the values.
+}
+
+bool snapshot_loader_page_encoded(monad_db_snapshot_loader const *const loader)
+{
+    return loader->page_encoded();
+}
+
 void monad_db_snapshot_loader_load(
     monad_db_snapshot_loader *const loader, uint64_t const shard,
     unsigned char const *const eth_header, size_t const eth_header_len,
@@ -595,116 +640,22 @@ void monad_db_snapshot_loader_load(
     unsigned char const *const storage, size_t const storage_len,
     unsigned char const *const code, size_t const code_len)
 {
-    using namespace monad;
-    using namespace monad::mpt;
-    constexpr size_t BYTES_READ_BEFORE_FLUSH = 10ull * 1024 * 1024 * 1024;
+    using monad::byte_string_view;
     MONAD_ASSERT(loader);
-    if (account) {
-        for (uint64_t account_offset = 0; account_offset != account_len;) {
-            account_offset += monad_db_snapshot_loader_read_account(
-                loader, shard, account_offset, {account, account_len});
-            if (loader->bytes_read >= BYTES_READ_BEFORE_FLUSH) {
-                monad_db_snapshot_loader_flush(loader);
-            }
-            MONAD_ASSERT(account_offset <= account_len);
-        }
-    }
-
-    if (storage) {
-        MONAD_ASSERT(account);
-        byte_string_view storage_view{storage, storage_len};
-        auto &account_offset_to_update =
-            loader->account_offset_to_update.at(shard);
-        while (!storage_view.empty()) {
-            uint64_t const account_offset =
-                unaligned_load<uint64_t>(storage_view.data());
-            if (!account_offset_to_update.contains(account_offset)) {
-                monad_db_snapshot_loader_read_account(
-                    loader, shard, account_offset, {account, account_len});
-            }
-            storage_view.remove_prefix(sizeof(account_offset));
-            byte_string_view const before{storage_view};
-            uint64_t consumed;
-            if (loader->page_encoded()) {
-                // The storage byte stream concatenates multiple
-                // [account_offset, leaf.value()] entries, so we use
-                // decode_storage_db_raw which advances the view in place
-                // and tolerates trailing bytes. Convert the raw views to
-                // bytes32_t (right-aligned) for the page accumulator.
-                auto const res = decode_storage_db_raw(storage_view);
-                MONAD_ASSERT(res.has_value());
-                bytes32_t const slot_key = to_bytes(res.value().first);
-                bytes32_t const slot_val = to_bytes(res.value().second);
-                consumed = before.size() - storage_view.size();
-                bytes32_t const pg_key = compute_page_key(slot_key);
-                uint8_t const slot_off = compute_slot_offset(slot_key);
-                auto &shard_pages = loader->page_accumulator.at(shard);
-                shard_pages[account_offset][pg_key].set(slot_off, slot_val);
-            }
-            else {
-                auto const res = decode_storage_db_raw(storage_view);
-                MONAD_ASSERT(res.has_value());
-                auto &update = account_offset_to_update.at(account_offset);
-                consumed = before.size() - storage_view.size();
-                update.next.push_front(loader->update_alloc.emplace_back(Update{
-                    .key = loader->hash_alloc.emplace_back(
-                        keccak256(to_bytes(res.value().first))),
-                    .value = before.substr(0, consumed),
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(loader->block)}));
-            }
-            loader->bytes_read += consumed;
-            // When page-encoded, all slots that share a page_key must be in
-            // the same flush. A mid-loop flush would emit a page Update for
-            // the slots seen so far; later slots in the same page would start
-            // a fresh accumulator entry and the next flush would emit another
-            // Update for the same keccak256(page_key), causing the mpt
-            // upsert to overwrite the earlier page (set-not-merge). Defer
-            // flushing until the unconditional final flush at end of load().
-            //
-            // Consequence: the page accumulator holds a whole shard's storage
-            // in RAM before that final flush. With the current state size this
-            // is not a problem. There will be a follow up to bound the memory
-            // usage.
-            if (!loader->page_encoded() &&
-                loader->bytes_read >= BYTES_READ_BEFORE_FLUSH) {
-                monad_db_snapshot_loader_flush(loader);
-            }
-        }
-    }
-
-    if (code) {
-        byte_string_view code_view{code, code_len};
-        while (!code_view.empty()) {
-            MONAD_ASSERT(code_view.size() >= sizeof(uint64_t));
-            uint64_t const size = unaligned_load<uint64_t>(code_view.data());
-            code_view.remove_prefix(sizeof(uint64_t));
-            MONAD_ASSERT(code_view.size() >= size);
-            byte_string_view const val = code_view.substr(0, size);
-            loader->code_updates.push_front(
-                loader->update_alloc.emplace_back(Update{
-                    .key = loader->hash_alloc.emplace_back(keccak256(val)),
-                    .value = val,
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(loader->block)}));
-            code_view.remove_prefix(size);
-            loader->bytes_read += sizeof(uint64_t) + size;
-            if (loader->bytes_read >= BYTES_READ_BEFORE_FLUSH) {
-                monad_db_snapshot_loader_flush(loader);
-            }
-        }
-    }
-
-    if (eth_header) {
-        byte_string_view enc{eth_header, eth_header_len};
-        auto const header = rlp::decode_block_header(enc);
-        MONAD_ASSERT(header.has_value());
-        MONAD_ASSERT(header.value().number == (loader->block - shard));
-        // stash to upsert versions last
-        loader->eth_headers.at(shard).assign(eth_header, eth_header_len);
-    }
-    monad_db_snapshot_loader_flush(loader);
+    auto const view = [](unsigned char const *const p, size_t const n) {
+        return p ? byte_string_view{p, n} : byte_string_view{};
+    };
+    auto ps = std::make_unique<monad::PreparedShard>();
+    fill_prepared_shard(
+        *ps,
+        shard,
+        loader->block,
+        loader->page_encoded(),
+        view(eth_header, eth_header_len),
+        view(account, account_len),
+        view(storage, storage_len),
+        view(code, code_len));
+    commit_prepared(loader, std::move(ps));
 }
 
 void monad_db_snapshot_loader_destroy(monad_db_snapshot_loader *const loader)

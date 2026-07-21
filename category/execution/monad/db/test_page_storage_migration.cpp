@@ -36,10 +36,13 @@
 
 #include <gtest/gtest.h>
 
+#include <intx/intx.hpp>
+
 #include <test_resource_data.h>
 
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <vector>
 
 // End to end test for the slot to page storage migration via the shared
@@ -135,6 +138,63 @@ namespace
                 .account = {prev_acct, new_acct},
                 .storage = std::move(storage)});
         return deltas;
+    }
+
+    NamespacedStateDeltas make_namespace_deltas(
+        uint64_t const ns, std::optional<Account> const &prev_acct,
+        std::optional<Account> const &new_acct,
+        std::vector<std::tuple<bytes32_t, bytes32_t, bytes32_t>> const &slots)
+    {
+        StorageDeltas storage;
+        for (auto const &[k, prev, next] : slots) {
+            storage.emplace(k, StorageDelta{prev, next});
+        }
+        NamespacedStateDeltas deltas;
+        NamespacedStateDeltas::accessor ns_it{};
+        deltas.emplace(ns_it, ns, std::make_unique<StateDeltas>());
+        ns_it->second->emplace(
+            ADDR_A,
+            StateDelta{
+                .account = {prev_acct, new_acct},
+                .storage = std::move(storage)});
+        return deltas;
+    }
+
+    bytes32_t namespace_root(
+        mpt::Db &db, TrieDb &tdb, uint64_t const ns,
+        uint64_t const block_number)
+    {
+        uint8_t ns_bytes[sizeof(uint64_t)];
+        intx::be::store(ns_bytes, ns);
+        auto const res = db.find(
+            tdb.get_root(),
+            mpt::concat(
+                finalized_nibbles,
+                namespace_state_nibbles,
+                mpt::NibblesView{to_byte_string_view(ns_bytes)}),
+            block_number);
+        if (!res.has_value() || res.value().node->data().empty()) {
+            return NULL_ROOT;
+        }
+        return to_bytes(res.value().node->data());
+    }
+
+    NamespaceStateRoots drive_namespace_commit(
+        TrieDb &tdb1, TrieDb &tdb2, Fork const fork,
+        uint64_t const block_number, bytes32_t const &block_id,
+        NamespacedStateDeltas const &ns_deltas)
+    {
+        MONAD_ASSERT(!tdb1.is_page_encoded() && tdb2.is_page_encoded());
+        BlockHeader const header{.number = block_number};
+        auto roots = fork == Fork::Post
+                         ? commit_native_namespace_state_deltas<PostMip8Fork>(
+                               tdb1, &tdb2, block_id, header, ns_deltas)
+                         : commit_native_namespace_state_deltas<PreMip8Fork>(
+                               tdb1, &tdb2, block_id, header, ns_deltas);
+
+        tdb1.finalize(block_number, block_id);
+        tdb2.finalize(block_number, block_id);
+        return roots;
     }
 }
 
@@ -300,6 +360,115 @@ TEST(MigrationFork, dual_write_state_root_handoff)
         EXPECT_EQ(
             tdb2.read_storage(ADDR_A, Incarnation{0, 0}, slot_0),
             bytes32_t{uint64_t{0xa2}});
+    }
+}
+
+TEST(MigrationFork, namespace_state_roots_follow_canonical_encoding)
+{
+    mpt::Db db1{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{}};
+    mpt::Db db2 =
+        db1.activate_secondary_timeline(std::make_unique<MonadOnDiskMachine>());
+    TrieDb tdb1{db1, true /* enable_multi_block_cache */};
+    TrieDb tdb2{db2};
+    ASSERT_FALSE(tdb1.is_page_encoded());
+    ASSERT_TRUE(tdb2.is_page_encoded());
+
+    GenesisState const GENESIS_STATE = MonadTestnet{}.get_genesis_state();
+    load_genesis_state(GENESIS_STATE, tdb1);
+    load_genesis_state(GENESIS_STATE, tdb2);
+
+    constexpr uint64_t ns = 0xfeed'face'cafe'0001ULL;
+    auto const make_block_id = [](uint64_t const n) { return bytes32_t{n}; };
+    Account ns_account{.nonce = 1, .incarnation = Incarnation{0, 0}};
+
+    auto const check_namespace_state =
+        [&](Account const &expected_account,
+            std::vector<std::pair<bytes32_t, bytes32_t>> const &expected_slots,
+            char const *const tag) {
+            SCOPED_TRACE(tag);
+
+            auto const check_db = [&](TrieDb &tdb, char const *const db_tag) {
+                SCOPED_TRACE(db_tag);
+                auto const account = tdb.read_account(ADDR_A, ns);
+                ASSERT_TRUE(account.has_value());
+                EXPECT_EQ(*account, expected_account);
+                for (auto const &[slot, expected] : expected_slots) {
+                    EXPECT_EQ(
+                        tdb.read_storage(
+                            ADDR_A, expected_account.incarnation, slot, ns),
+                        expected);
+                }
+            };
+
+            check_db(tdb1, "primary namespace state");
+            check_db(tdb2, "secondary namespace state");
+        };
+
+    tdb1.set_block_and_prefix(0, {});
+    tdb2.set_block_and_prefix(0, {});
+    EXPECT_TRUE(commit_native_namespace_state_deltas<PreMip8Fork>(
+                    tdb1,
+                    &tdb2,
+                    make_block_id(1),
+                    BlockHeader{.number = 1},
+                    NamespacedStateDeltas{})
+                    .empty());
+
+    // Pre fork, the slot-encoded primary namespace root is canonical.
+    {
+        auto const roots = drive_namespace_commit(
+            tdb1,
+            tdb2,
+            Fork::Pre,
+            1,
+            make_block_id(1),
+            make_namespace_deltas(
+                ns,
+                std::nullopt,
+                ns_account,
+                {{slot_0, bytes32_t{}, bytes32_t{uint64_t{0xa1}}},
+                 {slot_1, bytes32_t{}, bytes32_t{uint64_t{0xb1}}}}));
+        ASSERT_EQ(roots.size(), 1);
+        auto const primary_ns_root = namespace_root(db1, tdb1, ns, 1);
+        auto const secondary_ns_root = namespace_root(db2, tdb2, ns, 1);
+        EXPECT_EQ(roots.front().second, primary_ns_root);
+        EXPECT_NE(primary_ns_root, secondary_ns_root);
+        check_namespace_state(
+            ns_account,
+            {{slot_0, bytes32_t{uint64_t{0xa1}}},
+             {slot_1, bytes32_t{uint64_t{0xb1}}}},
+            "pre fork namespace state");
+    }
+
+    // Post fork, the page-encoded secondary namespace root is canonical.
+    {
+        tdb1.set_block_and_prefix(1, make_block_id(1));
+        tdb2.set_block_and_prefix(1, make_block_id(1));
+        auto next_account = ns_account;
+        next_account.nonce = 2;
+        auto const roots = drive_namespace_commit(
+            tdb1,
+            tdb2,
+            Fork::Post,
+            2,
+            make_block_id(2),
+            make_namespace_deltas(
+                ns,
+                ns_account,
+                next_account,
+                {{slot_0, bytes32_t{uint64_t{0xa1}}, bytes32_t{uint64_t{0xa2}}},
+                 {slot_far, bytes32_t{}, bytes32_t{uint64_t{0xfa}}}}));
+        ASSERT_EQ(roots.size(), 1);
+        auto const primary_ns_root = namespace_root(db1, tdb1, ns, 2);
+        auto const secondary_ns_root = namespace_root(db2, tdb2, ns, 2);
+        EXPECT_EQ(roots.front().second, secondary_ns_root);
+        EXPECT_NE(primary_ns_root, secondary_ns_root);
+        check_namespace_state(
+            next_account,
+            {{slot_0, bytes32_t{uint64_t{0xa2}}},
+             {slot_1, bytes32_t{uint64_t{0xb1}}},
+             {slot_far, bytes32_t{uint64_t{0xfa}}}},
+            "post fork namespace state");
     }
 }
 

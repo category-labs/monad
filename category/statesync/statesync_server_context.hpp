@@ -143,5 +143,9 @@ struct monad_statesync_server_context final : public monad::Db
         monad::BlockHeader const &, monad::StateDeltas const &,
         std::function<void(monad::BlockHeader &)>) override;
 
+    virtual monad::NamespaceStateRoots commit_namespace_state_deltas(
+        monad::bytes32_t const &, monad::CommitBuilder &,
+        monad::NamespacedStateDeltas const &, uint64_t) override;
+
     virtual uint64_t get_block_number() const override;
 };

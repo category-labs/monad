@@ -199,6 +199,10 @@ public:
         bytes32_t const &block_id, CommitBuilder &, BlockHeader const &,
         StateDeltas const &, std::function<void(BlockHeader &)>) override;
 
+    NamespaceStateRoots commit_namespace_state_deltas(
+        bytes32_t const &block_id, CommitBuilder &,
+        NamespacedStateDeltas const &, uint64_t block_number) override;
+
     // No-op overrides for operations that are irrelevant in the witness
     // context.
     void finalize(uint64_t, bytes32_t const &) override {}

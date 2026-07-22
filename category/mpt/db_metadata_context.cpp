@@ -564,8 +564,8 @@ void DbMetadataContext::set_latest_finalized_version(
 {
     auto do_ = [&](detail::db_metadata *m) {
         auto const g = m->hold_dirty();
-        reinterpret_cast<std::atomic_uint64_t *>(&m->latest_finalized_version)
-            ->store(version, std::memory_order_release);
+        std::atomic_ref<uint64_t>(m->latest_finalized_version)
+            .store(version, std::memory_order_release);
     };
     do_(copies_[0].main);
     do_(copies_[1].main);
@@ -576,8 +576,8 @@ void DbMetadataContext::set_latest_verified_version(
 {
     auto do_ = [&](detail::db_metadata *m) {
         auto const g = m->hold_dirty();
-        reinterpret_cast<std::atomic_uint64_t *>(&m->latest_verified_version)
-            ->store(version, std::memory_order_release);
+        std::atomic_ref<uint64_t>(m->latest_verified_version)
+            .store(version, std::memory_order_release);
     };
     do_(copies_[0].main);
     do_(copies_[1].main);
@@ -589,8 +589,8 @@ void DbMetadataContext::set_latest_voted(
     for (auto const i : {0, 1}) {
         auto *const m = copies_[i].main;
         auto const g = m->hold_dirty();
-        reinterpret_cast<std::atomic_uint64_t *>(&m->latest_voted_version)
-            ->store(version, std::memory_order_release);
+        std::atomic_ref<uint64_t>(m->latest_voted_version)
+            .store(version, std::memory_order_release);
         m->latest_voted_block_id = block_id;
     }
 }
@@ -601,8 +601,8 @@ void DbMetadataContext::set_latest_proposed(
     for (auto const i : {0, 1}) {
         auto *const m = copies_[i].main;
         auto const g = m->hold_dirty();
-        reinterpret_cast<std::atomic_uint64_t *>(&m->latest_proposed_version)
-            ->store(version, std::memory_order_release);
+        std::atomic_ref<uint64_t>(m->latest_proposed_version)
+            .store(version, std::memory_order_release);
         m->latest_proposed_block_id = block_id;
     }
 }
@@ -677,8 +677,8 @@ void DbMetadataContext::update_history_length_metadata(
                 root_offsets(timeline_id::secondary, which).capacity() ==
                 ro.capacity());
         }
-        reinterpret_cast<std::atomic_uint64_t *>(&m->history_length)
-            ->store(history_len, std::memory_order_relaxed);
+        std::atomic_ref<uint64_t>(m->history_length)
+            .store(history_len, std::memory_order_relaxed);
     };
     do_(0);
     do_(1);

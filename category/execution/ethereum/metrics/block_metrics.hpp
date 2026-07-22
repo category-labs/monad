@@ -25,6 +25,9 @@ struct BlockMetrics
 {
     uint32_t num_retries{0};
     std::chrono::microseconds tx_exec_time{1};
+    uint64_t sum_tx_gas_limit{0};
+    uint64_t gas_used{0};
+    uint64_t gas_exec{0};
 };
 
 MONAD_NAMESPACE_END

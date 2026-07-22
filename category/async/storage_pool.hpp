@@ -119,21 +119,22 @@ public:
                 return ret;
             }
 
-            // Only used for seq chunks. The elements alias shared on-disk
-            // storage; access each via std::atomic_ref<uint32_t>.
-            std::span<uint32_t> chunk_bytes_used(
-                file_offset_t const end_of_this_offset) const noexcept
+            // Only used for seq chunks. Returns an atomic view of the
+            // per-chunk bytes-used counter at `index`; the underlying uint32_t
+            // aliases shared on-disk storage, so access is always atomic.
+            std::atomic_ref<uint32_t> chunk_bytes_used_at(
+                file_offset_t const end_of_this_offset,
+                size_t const index) const noexcept
             {
                 static_assert(
                     sizeof(uint32_t) == sizeof(std::atomic<uint32_t>));
                 auto const count = chunks(end_of_this_offset);
-                return {
-                    start_lifetime_as_array<uint32_t>(
-                        const_cast<std::byte *>(
-                            reinterpret_cast<std::byte const *>(this)) -
-                            count * sizeof(uint32_t),
-                        count),
-                    count};
+                auto *const base = start_lifetime_as_array<uint32_t>(
+                    const_cast<std::byte *>(
+                        reinterpret_cast<std::byte const *>(this)) -
+                        count * sizeof(uint32_t),
+                    count);
+                return std::atomic_ref<uint32_t>(base[index]);
             }
 
             // Bytes used by the pool metadata on this device

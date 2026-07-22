@@ -56,7 +56,7 @@ namespace monad::vm
     template <Traits traits>
     evmc::Result VM::execute(
         Host &host, evmc_message const *msg, bytes32_t const &code_hash,
-        SharedVarcode const &vcode)
+        SharedVarcode const &vcode, uint64_t *const growth_gas_ptr)
     {
         auto const *const host_itf = &host.get_interface();
         auto *const host_ctx = host.to_context();
@@ -74,8 +74,8 @@ namespace monad::vm
         }
 #endif // MONAD_COMPILER_TESTING
 
-        auto rt_ctx =
-            runtime::Context::from(host_itf, host_ctx, msg, icode->code_span());
+        auto rt_ctx = runtime::Context::from(
+            host_itf, host_ctx, msg, icode->code_span(), growth_gas_ptr);
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
@@ -96,7 +96,8 @@ namespace monad::vm
 
     template <Traits traits>
     evmc::Result VM::execute_bytecode(
-        Host &host, evmc_message const *msg, std::span<uint8_t const> code)
+        Host &host, evmc_message const *msg, std::span<uint8_t const> code,
+        uint64_t *const growth_gas_ptr)
     {
         auto const *const host_itf = &host.get_interface();
         auto *const host_ctx = host.to_context();
@@ -113,7 +114,8 @@ namespace monad::vm
         }
 #endif // MONAD_COMPILER_TESTING
 
-        auto rt_ctx = runtime::Context::from(host_itf, host_ctx, msg, code);
+        auto rt_ctx = runtime::Context::from(
+            host_itf, host_ctx, msg, code, growth_gas_ptr);
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);

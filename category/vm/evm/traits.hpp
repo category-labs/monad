@@ -98,6 +98,8 @@ namespace monad
         { T::cold_account_cost() } -> std::same_as<int64_t>;
         { T::cold_storage_cost() } -> std::same_as<int64_t>;
         { T::base_sstore_cost() } -> std::same_as<int64_t>;
+        { T::sstore_growth_gas() } -> std::same_as<uint64_t>;
+        { T::create_growth_gas() } -> std::same_as<uint64_t>;
 
         // Instead of storing a revision, caches should identify revision
         // changes by storing the opaque value returned by this method. No
@@ -233,6 +235,16 @@ namespace monad
         static consteval int64_t base_sstore_cost() noexcept
         {
             return 100;
+        }
+
+        static consteval uint64_t sstore_growth_gas() noexcept
+        {
+            return 17100;
+        }
+
+        static consteval uint64_t create_growth_gas() noexcept
+        {
+            return 31900; // 32000 - 100 (execution cost estimate).
         }
 
         static uint64_t id() noexcept
@@ -433,6 +445,16 @@ namespace monad
                 return 8000;
             }
             return 2000;
+        }
+
+        static consteval uint64_t sstore_growth_gas() noexcept
+        {
+            return 17100;
+        }
+
+        static consteval uint64_t create_growth_gas() noexcept
+        {
+            return 31900; // 32000 - 100 (execution cost estimate).
         }
 
         static uint64_t id() noexcept

@@ -200,12 +200,13 @@ namespace monad::vm
         template <Traits traits>
         evmc::Result execute(
             Host &host, evmc_message const *msg, bytes32_t const &code_hash,
-            SharedVarcode const &vcode);
+            SharedVarcode const &vcode, uint64_t *growth_gas_ptr = nullptr);
 
         /// Execute the bytecode `code` with interpreter.
         template <Traits traits>
         evmc::Result execute_bytecode(
-            Host &host, evmc_message const *msg, std::span<uint8_t const> code);
+            Host &host, evmc_message const *msg, std::span<uint8_t const> code,
+            uint64_t *growth_gas_ptr = nullptr);
 
         /// Like `execute`, but without stack unwind support.
         template <Traits traits>

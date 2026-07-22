@@ -118,6 +118,7 @@ namespace monad::vm::runtime
             ctx->gas_remaining -= 9000;
         }
 
+        bool grew = false;
         if (call_kind == EVMC_CALL) {
             if (MONAD_UNLIKELY(
                     has_value && (ctx->env.evmc_flags & EVMC_STATIC))) {
@@ -131,6 +132,7 @@ namespace monad::vm::runtime
             if (has_value &&
                 !ctx->host->account_exists(ctx->context, &dest_address)) {
                 ctx->gas_remaining -= 25000;
+                grew = true;
             }
         }
 
@@ -152,6 +154,10 @@ namespace monad::vm::runtime
 
         if (MONAD_UNLIKELY(ctx->env.depth >= 1024)) {
             return 0;
+        }
+
+        if (grew) {
+            ctx->add_growth_gas(25000);
         }
 
         auto const message = evmc_message{

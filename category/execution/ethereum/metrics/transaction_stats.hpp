@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,34 +15,15 @@
 
 #pragma once
 
-#include <category/core/address.hpp>
 #include <category/core/config.hpp>
-#include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
-#include <functional>
+#include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 
-template <Traits traits>
-struct EvmcHost;
-
-class State;
-
-template <Traits traits>
-evmc::Result
-deploy_contract_code(State &, Address const &, evmc::Result) noexcept;
-
-template <Traits traits>
-evmc::Result execute_create_message(
-    EvmcHost<traits> *, State &, evmc_message const &,
-    uint64_t *growth_gas_ptr = nullptr);
-
-template <Traits traits>
-evmc::Result execute_call_message(
-    EvmcHost<traits> *, State &, evmc_message const &,
-    uint64_t *growth_gas_ptr = nullptr);
+struct TransactionStats
+{
+    uint64_t growth_gas{0};
+};
 
 MONAD_NAMESPACE_END

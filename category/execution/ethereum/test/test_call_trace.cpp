@@ -125,6 +125,102 @@ TEST(CallTrace, enter_and_exit)
     EXPECT_EQ(call_frames[1].depth, 1);
 }
 
+TEST(CallTrace, nested_frame_drop_keeps_enter_exit_in_sync)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
+
+    msg.depth = 0;
+    call_tracer.on_enter(msg);
+
+    msg.depth = 1;
+    call_tracer.on_enter(msg);
+    call_tracer.on_exit(res);
+
+    call_tracer.on_exit(res);
+    call_tracer.on_finish(1'000);
+
+    ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_EQ(call_frames[0].depth, 0);
+    EXPECT_EQ(call_frames[0].status, EVMC_SUCCESS);
+    EXPECT_EQ(call_frames[0].gas_used, 1'000);
+}
+
+TEST(CallTrace, zero_limit_drops_root_without_breaking_finish)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, 0};
+
+    msg.depth = 0;
+    call_tracer.on_enter(msg);
+    call_tracer.on_exit(res);
+    call_tracer.on_finish(0);
+
+    EXPECT_TRUE(call_frames.empty());
+}
+
+TEST(CallTrace, truncation_marker_only_in_json_output)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
+
+    msg.depth = 0;
+    call_tracer.on_enter(msg);
+
+    msg.depth = 1;
+    call_tracer.on_enter(msg);
+    call_tracer.on_exit(res);
+
+    call_tracer.on_exit(res);
+    call_tracer.on_finish(1'000);
+
+    ASSERT_EQ(call_frames.size(), 1);
+
+    nlohmann::json const trace = call_tracer.to_json().begin().value();
+    ASSERT_TRUE(trace.contains("calls"));
+    ASSERT_EQ(trace["calls"].size(), 1);
+
+    nlohmann::json const marker = trace["calls"][0];
+    EXPECT_EQ(marker["type"], "TRUNCATED");
+    EXPECT_EQ(marker["error"], "trace truncated");
+}
+
+TEST(CallTrace, json_output_has_no_marker_when_not_truncated)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+
+    msg.depth = 0;
+    call_tracer.on_enter(msg);
+    call_tracer.on_exit(res);
+    call_tracer.on_finish(1'000);
+
+    ASSERT_EQ(call_frames.size(), 1);
+
+    nlohmann::json const trace = call_tracer.to_json().begin().value();
+    ASSERT_TRUE(trace.contains("calls"));
+    EXPECT_TRUE(trace["calls"].empty());
+}
+
 TYPED_TEST(TraitsTest, execute_success)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};

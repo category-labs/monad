@@ -43,7 +43,6 @@ namespace eth_forks
     inline constexpr uint64_t PARIS_ACTIVATION_BLOCK_NUMBER = 15537394;
     inline constexpr uint64_t LONDON_ACTIVATION_BLOCK_NUMBER = 12965000;
     inline constexpr uint64_t BERLIN_ACTIVATION_BLOCK_NUMBER = 12244000;
-    inline constexpr uint64_t ISTANBUL_ACTIVATION_BLOCK_NUMBER = 9069000;
 
     // Mainnet BPO activation times and blob parameters are canonicalized in
     // EIP-8134 and EIP-8135. BPO scheduling itself is defined by EIP-7892.
@@ -53,11 +52,11 @@ namespace eth_forks
 
 namespace constants
 {
-    // Replay support policy: the earliest supported fork is Istanbul, so
+    // Replay support policy: the earliest supported fork is Berlin, so
     // blocks before its activation cannot be executed. The revision-valued
     // counterpart, EARLIEST_SUPPORTED_EVM_FORK, lives in vm/evm/traits.hpp.
     inline constexpr uint64_t EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER =
-        eth_forks::ISTANBUL_ACTIVATION_BLOCK_NUMBER;
+        eth_forks::BERLIN_ACTIVATION_BLOCK_NUMBER;
 }
 
 inline constexpr size_t MAX_CODE_SIZE_EIP170 = 24 * 1024; // 0x6000

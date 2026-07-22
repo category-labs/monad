@@ -20,19 +20,19 @@
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/revision.h>
 
+#include <cstddef>
 #include <evmc/evmc.h>
 
 #include <concepts>
 #include <cstdint>
 #include <limits>
-#include <utility>
 
 namespace monad
 {
     namespace constants
     {
         inline constexpr monad_eth_revision EARLIEST_SUPPORTED_EVM_FORK =
-            MONAD_ETH_ISTANBUL;
+            MONAD_ETH_BERLIN;
 
         // The latest EVM fork whose execution semantics are implemented. Later
         // forks may exist in the monad_eth_revision enum (so the dispatch
@@ -70,25 +70,34 @@ namespace monad
         { T::evm_rev() } -> std::same_as<monad_eth_revision>;
 
         // Feature flags
-        { T::eip_2565_active() } -> std::same_as<bool>;
-        { T::eip_2929_active() } -> std::same_as<bool>;
+
+        { T::eip_1153_active() } -> std::same_as<bool>;
+        { T::eip_3198_active() } -> std::same_as<bool>;
+        { T::eip_3855_active() } -> std::same_as<bool>;
+        { T::eip_4399_active() } -> std::same_as<bool>;
         { T::eip_4844_active() } -> std::same_as<bool>;
+        { T::eip_5656_active() } -> std::same_as<bool>;
         { T::eip_7685_active() } -> std::same_as<bool>;
         { T::eip_7691_active() } -> std::same_as<bool>;
         { T::eip_7823_active() } -> std::same_as<bool>;
         { T::eip_7883_active() } -> std::same_as<bool>;
+        { T::eip_7939_active() } -> std::same_as<bool>;
         { T::eip_7951_active() } -> std::same_as<bool>;
         { T::mip_3_active() } -> std::same_as<bool>;
         { T::mip_8_active() } -> std::same_as<bool>;
         { T::mip_11_active() } -> std::same_as<bool>;
         { T::mip_12_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
+        // If true, BLOBHASH/BLOBBASEFEE exist and return
+        // stub data. Separate from eip_4844_active.
+        { T::has_blob_opcodes() } -> std::same_as<bool>;
 
         // Constants
         { T::max_code_size() } -> std::same_as<size_t>;
         { T::max_initcode_size() } -> std::same_as<size_t>;
         { T::cold_account_cost() } -> std::same_as<int64_t>;
         { T::cold_storage_cost() } -> std::same_as<int64_t>;
+        { T::base_sstore_cost() } -> std::same_as<int64_t>;
 
         // Instead of storing a revision, caches should identify revision
         // changes by storing the opaque value returned by this method. No
@@ -100,25 +109,39 @@ namespace monad
     template <monad_eth_revision Rev>
     struct EvmTraits
     {
-        static_assert(
-            Rev >= MONAD_ETH_ISTANBUL, "EVM revision is not supported");
+        static_assert(Rev >= MONAD_ETH_BERLIN, "EVM revision is not supported");
 
         static consteval monad_eth_revision evm_rev() noexcept
         {
             return Rev;
         }
 
-        static consteval bool eip_2565_active() noexcept
+        static consteval bool eip_1153_active() noexcept
         {
-            return Rev >= MONAD_ETH_BERLIN;
+            return Rev >= MONAD_ETH_CANCUN;
         }
 
-        static consteval bool eip_2929_active() noexcept
+        static consteval bool eip_3198_active() noexcept
         {
-            return Rev >= MONAD_ETH_BERLIN;
+            return Rev >= MONAD_ETH_LONDON;
+        }
+
+        static consteval bool eip_3855_active() noexcept
+        {
+            return Rev >= MONAD_ETH_SHANGHAI;
+        }
+
+        static consteval bool eip_4399_active() noexcept
+        {
+            return Rev >= MONAD_ETH_PARIS;
         }
 
         static consteval bool eip_4844_active() noexcept
+        {
+            return Rev >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_5656_active() noexcept
         {
             return Rev >= MONAD_ETH_CANCUN;
         }
@@ -139,6 +162,11 @@ namespace monad
         }
 
         static consteval bool eip_7883_active() noexcept
+        {
+            return Rev >= MONAD_ETH_OSAKA;
+        }
+
+        static consteval bool eip_7939_active() noexcept
         {
             return Rev >= MONAD_ETH_OSAKA;
         }
@@ -173,6 +201,11 @@ namespace monad
             return true;
         }
 
+        static consteval bool has_blob_opcodes() noexcept
+        {
+            return Rev >= MONAD_ETH_CANCUN;
+        }
+
         static consteval size_t max_code_size() noexcept
         {
             return constants::MAX_CODE_SIZE_EIP170;
@@ -189,20 +222,17 @@ namespace monad
 
         static consteval int64_t cold_account_cost() noexcept
         {
-            if constexpr (eip_2929_active()) {
-                return 2500;
-            }
-
-            std::unreachable();
+            return 2500;
         }
 
         static consteval int64_t cold_storage_cost() noexcept
         {
-            if constexpr (eip_2929_active()) {
-                return 2000;
-            }
+            return 2000;
+        }
 
-            std::unreachable();
+        static consteval int64_t base_sstore_cost() noexcept
+        {
+            return 100;
         }
 
         static uint64_t id() noexcept
@@ -245,14 +275,24 @@ namespace monad
             return Rev;
         }
 
-        static consteval bool eip_2565_active() noexcept
+        static consteval bool eip_1153_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_BERLIN;
+            return evm_rev() >= MONAD_ETH_CANCUN;
         }
 
-        static consteval bool eip_2929_active() noexcept
+        static consteval bool eip_3198_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_BERLIN;
+            return evm_rev() >= MONAD_ETH_LONDON;
+        }
+
+        static consteval bool eip_3855_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_SHANGHAI;
+        }
+
+        static consteval bool eip_4399_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_PARIS;
         }
 
         static consteval bool eip_4844_active() noexcept
@@ -261,6 +301,11 @@ namespace monad
             // such that execution (and consensus) is accounting for the blob
             // gas used (irrevocable) in the reserve balance calculation
             return false;
+        }
+
+        static consteval bool eip_5656_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_CANCUN;
         }
 
         static consteval bool eip_7685_active() noexcept
@@ -287,6 +332,11 @@ namespace monad
             return evm_rev() >= MONAD_ETH_OSAKA;
         }
 
+        static consteval bool eip_7939_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_OSAKA;
+        }
+
         static consteval bool eip_7951_active() noexcept
         {
             return Rev >= MONAD_FOUR;
@@ -308,6 +358,11 @@ namespace monad
         static consteval bool can_create_inside_delegated() noexcept
         {
             return false;
+        }
+
+        static consteval bool has_blob_opcodes() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_CANCUN;
         }
 
         static consteval bool mip_8_active() noexcept
@@ -369,11 +424,7 @@ namespace monad
             if constexpr (monad_pricing_version() >= 1) {
                 return 10000;
             }
-            else if constexpr (eip_2929_active()) {
-                return 2500;
-            }
-
-            std::unreachable();
+            return 2500;
         }
 
         static consteval int64_t cold_storage_cost() noexcept
@@ -381,11 +432,7 @@ namespace monad
             if constexpr (monad_pricing_version() >= 1) {
                 return 8000;
             }
-            else if constexpr (eip_2929_active()) {
-                return 2000;
-            }
-
-            std::unreachable();
+            return 2000;
         }
 
         static uint64_t id() noexcept
@@ -413,7 +460,7 @@ namespace monad
         is_specialization_of_v<MonadTraits, T>;
 
     static_assert(is_monad_trait_v<MonadTraits<MONAD_ZERO>> == true);
-    static_assert(is_monad_trait_v<EvmTraits<MONAD_ETH_ISTANBUL>> == false);
+    static_assert(is_monad_trait_v<EvmTraits<MONAD_ETH_BERLIN>> == false);
     static_assert(is_evm_trait_v<MonadTraits<MONAD_ZERO>> == false);
-    static_assert(is_evm_trait_v<EvmTraits<MONAD_ETH_ISTANBUL>> == true);
+    static_assert(is_evm_trait_v<EvmTraits<MONAD_ETH_BERLIN>> == true);
 }

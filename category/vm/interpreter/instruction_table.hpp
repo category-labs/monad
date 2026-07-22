@@ -95,8 +95,10 @@ namespace monad::vm::interpreter
     {
         static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
 
-        constexpr auto since = [](monad_eth_revision first, InstrEval impl) {
-            return (traits::evm_rev() >= first) ? impl : invalid;
+        constexpr auto avail = [](compiler::EvmOpCode const opcode,
+                                  InstrEval impl) {
+            return !compiler::is_unknown_opcode_info<traits>(opcode) ? impl
+                                                                     : invalid;
         };
 
         return {
@@ -131,7 +133,7 @@ namespace monad::vm::interpreter
             shl<traits>, // 0x1B,
             shr<traits>, // 0x1C,
             sar<traits>, // 0x1D,
-            since(MONAD_ETH_OSAKA, clz<traits>), // 0x1E,
+            avail(CLZ, clz<traits>), // 0x1E,
             invalid, //
 
             sha3<traits>, // 0x20,
@@ -177,9 +179,9 @@ namespace monad::vm::interpreter
             gaslimit<traits>, // 0x45,
             chainid<traits>, // 0x46,
             selfbalance<traits>, // 0x47,
-            since(MONAD_ETH_LONDON, basefee<traits>), // 0x48,
-            since(MONAD_ETH_CANCUN, blobhash<traits>), // 0x49,
-            since(MONAD_ETH_CANCUN, blobbasefee<traits>), // 0x4A,
+            avail(BASEFEE, basefee<traits>), // 0x48,
+            avail(BLOBHASH, blobhash<traits>), // 0x49,
+            avail(BLOBBASEFEE, blobbasefee<traits>), // 0x4A,
             invalid, //
             invalid, //
             invalid, //
@@ -198,10 +200,10 @@ namespace monad::vm::interpreter
             msize<traits>, // 0x59,
             gas<traits>, // 0x5A,
             jumpdest<traits>, // 0x5B,
-            since(MONAD_ETH_CANCUN, tload<traits>), // 0x5C,
-            since(MONAD_ETH_CANCUN, tstore<traits>), // 0x5D,
-            since(MONAD_ETH_CANCUN, mcopy<traits>), // 0x5E,
-            since(MONAD_ETH_SHANGHAI, push<0, traits>), // 0x5F,
+            avail(TLOAD, tload<traits>), // 0x5C,
+            avail(TSTORE, tstore<traits>), // 0x5D,
+            avail(MCOPY, mcopy<traits>), // 0x5E,
+            avail(PUSH0, push<0, traits>), // 0x5F,
 
             push<1, traits>, // 0x60,
             push<2, traits>, // 0x61,

@@ -128,7 +128,6 @@ if(MONAD_NEXT_amsterdam_excluded_tests STREQUAL "BlockchainTests.*")
                        PROPERTIES WILL_FAIL TRUE)
 endif()
 
-add_ethereum_test(FORK istanbul)
 add_ethereum_test(FORK berlin)
 add_ethereum_test(FORK london)
 add_ethereum_test(FORK paris)

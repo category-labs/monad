@@ -63,7 +63,7 @@ namespace monad::vm::runtime
         evmc_call_kind const call_kind, bool const static_call,
         int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
         ctx->env.clear_return_data();
 
@@ -81,12 +81,10 @@ namespace monad::vm::runtime
 
         auto const dest_address = address_from_uint256(address);
 
-        if constexpr (traits::eip_2929_active()) {
-            auto const access_status =
-                ctx->host->access_account(ctx->context, &dest_address);
-            if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(traits::cold_account_cost());
-            }
+        auto const access_status =
+            ctx->host->access_account(ctx->context, &dest_address);
+        if (access_status == EVMC_ACCESS_COLD) {
+            ctx->deduct_gas(traits::cold_account_cost());
         }
 
         auto const code_address = [&]() -> Address {

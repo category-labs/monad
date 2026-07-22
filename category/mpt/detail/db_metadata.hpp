@@ -169,7 +169,7 @@ namespace detail
         struct timeline_state_t
         {
             // Last upsert's auto-expire version threshold for this timeline.
-            // Accessed via start_lifetime_as<std::atomic_int64_t>.
+            // Accessed atomically via std::atomic_ref<int64_t>.
             int64_t auto_expire_version_;
             // mpt::state_machine_kind for the timeline currently bound to
             // this physical ring. Stamped at pool create time by monad-mpt
@@ -279,14 +279,14 @@ namespace detail
 
         // used to know if the metadata was being
         // updated when the process suddenly exited
-        std::atomic<uint8_t> &is_dirty() noexcept
+        std::atomic_ref<uint8_t> is_dirty() noexcept
         {
             static_assert(sizeof(std::atomic<uint8_t>) == sizeof(uint8_t));
 #ifndef __clang__
             static_assert(bitfield_layout_check());
 #endif
-            return *start_lifetime_as<std::atomic<uint8_t>>(
-                (std::byte *)&capacity_in_free_list - 1);
+            return std::atomic_ref<uint8_t>(*start_lifetime_as<uint8_t>(
+                (std::byte *)&capacity_in_free_list - 1));
         }
 
         struct id_pair

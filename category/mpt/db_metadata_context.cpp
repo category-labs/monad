@@ -511,23 +511,20 @@ size_t DbMetadataContext::map_bytes_per_chunk_() const noexcept
 
 uint64_t DbMetadataContext::get_latest_finalized_version() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t>(
-               &copies_[0].main->latest_finalized_version)
-        ->load(std::memory_order_acquire);
+    return std::atomic_ref<uint64_t>(copies_[0].main->latest_finalized_version)
+        .load(std::memory_order_acquire);
 }
 
 uint64_t DbMetadataContext::get_latest_verified_version() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t>(
-               &copies_[0].main->latest_verified_version)
-        ->load(std::memory_order_acquire);
+    return std::atomic_ref<uint64_t>(copies_[0].main->latest_verified_version)
+        .load(std::memory_order_acquire);
 }
 
 uint64_t DbMetadataContext::get_latest_voted_version() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t>(
-               &copies_[0].main->latest_voted_version)
-        ->load(std::memory_order_acquire);
+    return std::atomic_ref<uint64_t>(copies_[0].main->latest_voted_version)
+        .load(std::memory_order_acquire);
 }
 
 bytes32_t DbMetadataContext::get_latest_voted_block_id() const noexcept
@@ -537,9 +534,8 @@ bytes32_t DbMetadataContext::get_latest_voted_block_id() const noexcept
 
 uint64_t DbMetadataContext::get_latest_proposed_version() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t>(
-               &copies_[0].main->latest_proposed_version)
-        ->load(std::memory_order_acquire);
+    return std::atomic_ref<uint64_t>(copies_[0].main->latest_proposed_version)
+        .load(std::memory_order_acquire);
 }
 
 bytes32_t DbMetadataContext::get_latest_proposed_block_id() const noexcept
@@ -550,16 +546,15 @@ bytes32_t DbMetadataContext::get_latest_proposed_block_id() const noexcept
 int64_t DbMetadataContext::get_auto_expire_version_metadata(
     timeline_id const tid) const noexcept
 {
-    auto const *const m = copies_[0].main;
+    auto *const m = copies_[0].main;
     uint8_t const primary_idx = primary_ring_idx();
     uint8_t const ring_idx = (tid == timeline_id::primary)
                                  ? primary_idx
                                  : static_cast<uint8_t>(primary_idx ^ 1u);
-    auto const *const slot =
-        (ring_idx == 0) ? &m->root_offsets_state.auto_expire_version_
-                        : &m->secondary_timeline_state.auto_expire_version_;
-    return start_lifetime_as<std::atomic_int64_t>(slot)->load(
-        std::memory_order_acquire);
+    auto *const slot = (ring_idx == 0)
+                           ? &m->root_offsets_state.auto_expire_version_
+                           : &m->secondary_timeline_state.auto_expire_version_;
+    return std::atomic_ref<int64_t>(*slot).load(std::memory_order_acquire);
 }
 
 // Version metadata setters
@@ -624,7 +619,7 @@ void DbMetadataContext::set_auto_expire_version_metadata(
         auto *const slot =
             (ring_idx == 0) ? &m->root_offsets_state.auto_expire_version_
                             : &m->secondary_timeline_state.auto_expire_version_;
-        start_lifetime_as<std::atomic_int64_t>(slot)->store(
+        std::atomic_ref<int64_t>(*slot).store(
             version, std::memory_order_release);
     };
     do_(copies_[0].main);
@@ -634,15 +629,15 @@ void DbMetadataContext::set_auto_expire_version_metadata(
 state_machine_kind
 DbMetadataContext::get_state_machine_kind(timeline_id const tid) const noexcept
 {
-    auto const *const m = copies_[0].main;
+    auto *const m = copies_[0].main;
     uint8_t const ring_idx = (tid == timeline_id::primary)
                                  ? primary_ring_idx()
                                  : (primary_ring_idx() ^ 1u);
-    auto const *const slot =
-        (ring_idx == 0) ? &m->root_offsets_state.state_machine_kind_
-                        : &m->secondary_timeline_state.state_machine_kind_;
-    auto const raw = start_lifetime_as<std::atomic_uint8_t>(slot)->load(
-        std::memory_order_acquire);
+    auto *const slot = (ring_idx == 0)
+                           ? &m->root_offsets_state.state_machine_kind_
+                           : &m->secondary_timeline_state.state_machine_kind_;
+    auto const raw =
+        std::atomic_ref<uint8_t>(*slot).load(std::memory_order_acquire);
     return static_cast<state_machine_kind>(raw);
 }
 
@@ -657,7 +652,7 @@ void DbMetadataContext::set_state_machine_kind(
         auto *const slot =
             (ring_idx == 0) ? &m->root_offsets_state.state_machine_kind_
                             : &m->secondary_timeline_state.state_machine_kind_;
-        start_lifetime_as<std::atomic_uint8_t>(slot)->store(
+        std::atomic_ref<uint8_t>(*slot).store(
             static_cast<uint8_t>(kind), std::memory_order_release);
     };
     do_(copies_[0].main);
@@ -769,9 +764,8 @@ uint64_t DbMetadataContext::version_history_max_possible() const noexcept
 
 uint64_t DbMetadataContext::version_history_length() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t>(
-               &copies_[0].main->history_length)
-        ->load(std::memory_order_relaxed);
+    return std::atomic_ref<uint64_t>(copies_[0].main->history_length)
+        .load(std::memory_order_relaxed);
 }
 
 uint64_t DbMetadataContext::db_history_range_lower_bound(
@@ -797,9 +791,8 @@ bool DbMetadataContext::timeline_active(timeline_id const tid) const noexcept
     if (tid == timeline_id::primary) {
         return true;
     }
-    return start_lifetime_as<std::atomic<uint8_t>>(
-               &copies_[0].main->secondary_timeline_active_)
-               ->load(std::memory_order_acquire) != 0;
+    return std::atomic_ref<uint8_t>(copies_[0].main->secondary_timeline_active_)
+               .load(std::memory_order_acquire) != 0;
 }
 
 void DbMetadataContext::reset_secondary_ring_storage_(
@@ -1205,15 +1198,13 @@ void DbMetadataContext::do_activate_secondary_body_(uint32_t const new_chunks)
         //    capacity excludes older versions (idempotent: std::max is a
         //    fixed point under repeated application).
         uint64_t const nv =
-            start_lifetime_as<std::atomic_uint64_t>(pver_nv)->load(
-                std::memory_order_acquire);
+            std::atomic_ref<uint64_t>(*pver_nv).load(std::memory_order_acquire);
         uint64_t const cur_lb =
-            start_lifetime_as<std::atomic_uint64_t>(pver_lb)->load(
-                std::memory_order_acquire);
+            std::atomic_ref<uint64_t>(*pver_lb).load(std::memory_order_acquire);
         uint64_t const new_lb =
             std::max(cur_lb, (nv >= new_cap) ? (nv - new_cap) : uint64_t{0});
         if (new_lb > cur_lb) {
-            start_lifetime_as<std::atomic_uint64_t>(pver_lb)->store(
+            std::atomic_ref<uint64_t>(*pver_lb).store(
                 new_lb, std::memory_order_release);
         }
         // 2. Under replay, the primary's tail slots [new_chunks, old_chunks)
@@ -1255,12 +1246,12 @@ void DbMetadataContext::do_activate_secondary_body_(uint32_t const new_chunks)
                 if (old_pos == new_pos) {
                     continue;
                 }
-                auto *src = start_lifetime_as<std::atomic<chunk_offset_t>>(
-                    &primary_span[old_pos]);
-                auto *dst = start_lifetime_as<std::atomic<chunk_offset_t>>(
-                    &primary_span[new_pos]);
-                dst->store(
-                    src->load(std::memory_order_acquire),
+                std::atomic_ref<chunk_offset_t> const src(
+                    primary_span[old_pos]);
+                std::atomic_ref<chunk_offset_t> const dst(
+                    primary_span[new_pos]);
+                dst.store(
+                    src.load(std::memory_order_acquire),
                     std::memory_order_release);
             }
         }
@@ -1317,18 +1308,16 @@ void DbMetadataContext::do_activate_secondary_body_(uint32_t const new_chunks)
         auto const secondary_live_bytes =
             uint64_t(new_chunks) * map_bytes_per_chunk_();
         memset((void *)secondary_span.data(), 0xff, secondary_live_bytes);
-        start_lifetime_as<std::atomic_uint64_t>(sver_lb)->store(
-            0, std::memory_order_release);
-        start_lifetime_as<std::atomic_uint64_t>(sver_nv)->store(
-            0, std::memory_order_release);
+        std::atomic_ref<uint64_t>(*sver_lb).store(0, std::memory_order_release);
+        std::atomic_ref<uint64_t>(*sver_nv).store(0, std::memory_order_release);
         // 7. Commit cnv_chunks_len (idempotent store of the same value).
-        start_lifetime_as<std::atomic<uint32_t>>(&pstore.cnv_chunks_len)
-            ->store(new_chunks, std::memory_order_release);
-        start_lifetime_as<std::atomic<uint32_t>>(&sstore.cnv_chunks_len)
-            ->store(new_chunks, std::memory_order_release);
+        std::atomic_ref<uint32_t>(pstore.cnv_chunks_len)
+            .store(new_chunks, std::memory_order_release);
+        std::atomic_ref<uint32_t>(sstore.cnv_chunks_len)
+            .store(new_chunks, std::memory_order_release);
         // 8. Flip secondary_timeline_active_ (idempotent).
-        start_lifetime_as<std::atomic<uint8_t>>(&m->secondary_timeline_active_)
-            ->store(1, std::memory_order_release);
+        std::atomic_ref<uint8_t>(m->secondary_timeline_active_)
+            .store(1, std::memory_order_release);
     }
 
     if (version_history_length() > new_cap) {
@@ -1487,12 +1476,10 @@ void DbMetadataContext::do_deactivate_secondary_body_(
                          old_cap * sizeof(chunk_offset_t)),
                 0xff,
                 tail_bytes);
-            uint64_t const nv =
-                start_lifetime_as<std::atomic_uint64_t>(pver_nv)->load(
-                    std::memory_order_acquire);
-            uint64_t const lb =
-                start_lifetime_as<std::atomic_uint64_t>(pver_lb)->load(
-                    std::memory_order_acquire);
+            uint64_t const nv = std::atomic_ref<uint64_t>(*pver_nv).load(
+                std::memory_order_acquire);
+            uint64_t const lb = std::atomic_ref<uint64_t>(*pver_lb).load(
+                std::memory_order_acquire);
             if (nv != lb) {
                 for (uint64_t v = lb; v < nv; v++) {
                     uint64_t const old_pos = v & (old_cap - 1);
@@ -1500,25 +1487,25 @@ void DbMetadataContext::do_deactivate_secondary_body_(
                     if (old_pos == new_pos) {
                         continue;
                     }
-                    auto *src = start_lifetime_as<std::atomic<chunk_offset_t>>(
-                        &primary_span[old_pos]);
-                    auto *dst = start_lifetime_as<std::atomic<chunk_offset_t>>(
-                        &primary_span[new_pos]);
-                    dst->store(
-                        src->load(std::memory_order_acquire),
+                    std::atomic_ref<chunk_offset_t> const src(
+                        primary_span[old_pos]);
+                    std::atomic_ref<chunk_offset_t> const dst(
+                        primary_span[new_pos]);
+                    dst.store(
+                        src.load(std::memory_order_acquire),
                         std::memory_order_release);
                 }
             }
         }
         // 4. Commit the grow / shrink (primary grows, secondary shrinks
         //    to 0). Idempotent stores.
-        start_lifetime_as<std::atomic<uint32_t>>(&pstore.cnv_chunks_len)
-            ->store(primary_new_chunks, std::memory_order_release);
-        start_lifetime_as<std::atomic<uint32_t>>(&sstore.cnv_chunks_len)
-            ->store(0, std::memory_order_release);
+        std::atomic_ref<uint32_t>(pstore.cnv_chunks_len)
+            .store(primary_new_chunks, std::memory_order_release);
+        std::atomic_ref<uint32_t>(sstore.cnv_chunks_len)
+            .store(0, std::memory_order_release);
         // 5. Mark secondary inactive (idempotent).
-        start_lifetime_as<std::atomic<uint8_t>>(&m->secondary_timeline_active_)
-            ->store(0, std::memory_order_release);
+        std::atomic_ref<uint8_t>(m->secondary_timeline_active_)
+            .store(0, std::memory_order_release);
     }
 }
 
@@ -1580,8 +1567,8 @@ void DbMetadataContext::do_promote_secondary_to_primary_body_(
     for (auto const &copy : copies_) {
         auto *const m = copy.main;
         auto const g = m->hold_dirty();
-        start_lifetime_as<std::atomic<uint8_t>>(&m->primary_ring_idx)
-            ->store(target_ring_idx, std::memory_order_release);
+        std::atomic_ref<uint8_t>(m->primary_ring_idx)
+            .store(target_ring_idx, std::memory_order_release);
     }
 }
 

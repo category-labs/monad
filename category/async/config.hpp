@@ -257,3 +257,11 @@ static_assert(sizeof(std::atomic<MONAD_ASYNC_NAMESPACE::chunk_offset_t>) == 8);
 static_assert(alignof(std::atomic<MONAD_ASYNC_NAMESPACE::chunk_offset_t>) == 8);
 static_assert(std::is_trivially_copyable_v<
               std::atomic<MONAD_ASYNC_NAMESPACE::chunk_offset_t>>);
+
+// The db metadata code views raw chunk_offset_t storage through
+// std::atomic_ref (the primary template, not the specialization above).
+// Require that view to be lock-free -- matching the uint64_t-backed
+// std::atomic<chunk_offset_t> -- so both use direct atomic instructions
+// rather than a per-process (hence non-shareable) lock table.
+static_assert(std::atomic_ref<
+              MONAD_ASYNC_NAMESPACE::chunk_offset_t>::is_always_lock_free);

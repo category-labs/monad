@@ -355,10 +355,10 @@ namespace trace
     {
         json res = json::object();
         for (auto const &[key, value] : storage) {
-            if (value == bytes32_t{}) {
-                // Zero values should not appear in the output.
-                continue;
-            }
+            // if (value == bytes32_t{}) {
+            //     // Zero values should not appear in the output.
+            //     continue;
+            // }
             auto const key_json = bytes_to_hex(key.bytes);
             auto const value_json = bytes_to_hex(value.bytes);
             res[key_json] = value_json;

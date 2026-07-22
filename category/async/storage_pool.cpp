@@ -121,7 +121,8 @@ std::pair<file_offset_t, file_offset_t> storage_pool::device_t::capacity() const
         auto const chunks = this->chunks();
         auto const useds = metadata_->chunk_bytes_used(size_of_file_);
         for (size_t n = 0; n < chunks; n++) {
-            used += useds[n].load(std::memory_order_acquire);
+            used += std::atomic_ref<uint32_t>(useds[n]).load(
+                std::memory_order_acquire);
         }
         return {capacity, used};
     }
@@ -166,11 +167,14 @@ std::pair<int, file_offset_t> storage_pool::chunk_t::write_fd(
             std::numeric_limits<uint32_t>::max());
         auto const size =
             (bytes_which_shall_be_written > 0)
-                ? chunk_bytes_used[chunkid_within_device_].fetch_add(
-                      static_cast<uint32_t>(bytes_which_shall_be_written),
-                      std::memory_order_acq_rel)
-                : chunk_bytes_used[chunkid_within_device_].load(
-                      std::memory_order_acquire);
+                ? std::atomic_ref<uint32_t>(
+                      chunk_bytes_used[chunkid_within_device_])
+                      .fetch_add(
+                          static_cast<uint32_t>(bytes_which_shall_be_written),
+                          std::memory_order_acq_rel)
+                : std::atomic_ref<uint32_t>(
+                      chunk_bytes_used[chunkid_within_device_])
+                      .load(std::memory_order_acquire);
         MONAD_ASSERT_PRINTF(
             size + bytes_which_shall_be_written <= metadata->chunk_capacity,
             "size %u bytes which shall be written %zu chunk capacity %u",
@@ -192,8 +196,9 @@ file_offset_t storage_pool::chunk_t::size() const
         }
         auto const chunk_bytes_used =
             metadata->chunk_bytes_used(device().size_of_file_);
-        return chunk_bytes_used[chunkid_within_device_].load(
-            std::memory_order_acquire);
+        return std::atomic_ref<uint32_t>(
+                   chunk_bytes_used[chunkid_within_device_])
+            .load(std::memory_order_acquire);
     }
     MONAD_ABORT("zonefs support isn't implemented yet");
 }
@@ -258,8 +263,8 @@ bool storage_pool::chunk_t::try_trim_contents(uint32_t bytes)
             auto const *metadata = device().metadata_;
             auto const chunk_bytes_used =
                 metadata->chunk_bytes_used(device().size_of_file_);
-            chunk_bytes_used[chunkid_within_device_].store(
-                bytes, std::memory_order_release);
+            std::atomic_ref<uint32_t>(chunk_bytes_used[chunkid_within_device_])
+                .store(bytes, std::memory_order_release);
         }
         return true;
     }
@@ -321,8 +326,8 @@ bool storage_pool::chunk_t::try_trim_contents(uint32_t bytes)
             auto const *metadata = device().metadata_;
             auto const chunk_bytes_used =
                 metadata->chunk_bytes_used(device().size_of_file_);
-            chunk_bytes_used[chunkid_within_device_].store(
-                bytes, std::memory_order_release);
+            std::atomic_ref<uint32_t>(chunk_bytes_used[chunkid_within_device_])
+                .store(bytes, std::memory_order_release);
         }
         return true;
     }

@@ -1499,9 +1499,8 @@ TEST(update_aux_test, replay_completes_pending_promote_after_crash)
         {
             auto *const m0 = const_cast<db_metadata *>(ctx.main(0));
             auto const g = m0->hold_dirty();
-            monad::start_lifetime_as<std::atomic<uint8_t>>(
-                &m0->primary_ring_idx)
-                ->store(1, std::memory_order_release);
+            std::atomic_ref<uint8_t>(m0->primary_ring_idx)
+                .store(1, std::memory_order_release);
         }
         ASSERT_EQ(ctx.main(0)->primary_ring_idx, 1u);
         ASSERT_EQ(ctx.main(1)->primary_ring_idx, 0u);

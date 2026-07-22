@@ -127,9 +127,9 @@ public:
             auto const wp = next_version_.load(std::memory_order_relaxed);
             auto const next_wp = wp + 1;
             MONAD_ASSERT(next_wp != 0);
-            auto *p = start_lifetime_as<std::atomic<chunk_offset_t>>(
-                &root_offsets_chunks_[wp & (capacity_ - 1)]);
-            p->store(o, std::memory_order_release);
+            std::atomic_ref<chunk_offset_t> const p(
+                root_offsets_chunks_[wp & (capacity_ - 1)]);
+            p.store(o, std::memory_order_release);
             next_version_.store(next_wp, std::memory_order_release);
             if (o != INVALID_OFFSET) {
                 update_version_lower_bound_();
@@ -139,9 +139,9 @@ public:
         void assign(size_t const i, chunk_offset_t const o) noexcept
         {
             MONAD_ASSERT(capacity_ != 0);
-            auto *p = start_lifetime_as<std::atomic<chunk_offset_t>>(
-                &root_offsets_chunks_[i & (capacity_ - 1)]);
-            p->store(o, std::memory_order_release);
+            std::atomic_ref<chunk_offset_t> const p(
+                root_offsets_chunks_[i & (capacity_ - 1)]);
+            p.store(o, std::memory_order_release);
             update_version_lower_bound_(
                 (o != INVALID_OFFSET) ? i : uint64_t(-1));
         }
@@ -149,9 +149,9 @@ public:
         chunk_offset_t operator[](size_t const i) const noexcept
         {
             MONAD_ASSERT(capacity_ != 0);
-            return start_lifetime_as<std::atomic<chunk_offset_t>>(
-                       &root_offsets_chunks_[i & (capacity_ - 1)])
-                ->load(std::memory_order_acquire);
+            return std::atomic_ref<chunk_offset_t>(
+                       root_offsets_chunks_[i & (capacity_ - 1)])
+                .load(std::memory_order_acquire);
         }
 
         // return INVALID_BLOCK_NUM indicates that db is empty
@@ -242,9 +242,8 @@ public:
     // naturally with a promote flip done under release.
     uint8_t primary_ring_idx() const noexcept
     {
-        return start_lifetime_as<std::atomic<uint8_t>>(
-                   &copies_[0].main->primary_ring_idx)
-            ->load(std::memory_order_acquire);
+        return std::atomic_ref<uint8_t>(copies_[0].main->primary_ring_idx)
+            .load(std::memory_order_acquire);
     }
 
     root_offsets_delegator
@@ -535,18 +534,18 @@ private:
                 m->main->root_offsets.version_lower_bound_,
                 m->main->root_offsets.next_version_,
                 m->ring_a_span,
-                start_lifetime_as<std::atomic<uint32_t>>(
-                    &m->main->root_offsets.storage_.cnv_chunks_len)
-                        ->load(std::memory_order_acquire) *
+                std::atomic_ref<uint32_t>(
+                    m->main->root_offsets.storage_.cnv_chunks_len)
+                        .load(std::memory_order_acquire) *
                     entries_per_chunk};
         }
         return root_offsets_delegator{
             m->main->secondary_timeline.version_lower_bound_,
             m->main->secondary_timeline.next_version_,
             m->ring_b_span,
-            start_lifetime_as<std::atomic<uint32_t>>(
-                &m->main->secondary_timeline.storage_.cnv_chunks_len)
-                    ->load(std::memory_order_acquire) *
+            std::atomic_ref<uint32_t>(
+                m->main->secondary_timeline.storage_.cnv_chunks_len)
+                    .load(std::memory_order_acquire) *
                 entries_per_chunk};
     }
 

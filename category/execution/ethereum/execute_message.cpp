@@ -175,7 +175,8 @@ void post_call(EvmcHost<traits> &host, State &state, evmc::Result const &result)
 
 template <Traits traits>
 evmc::Result execute_create_message(
-    EvmcHost<traits> *const host, State &state, evmc_message const &msg)
+    EvmcHost<traits> *const host, State &state, evmc_message const &msg,
+    uint64_t *const growth_gas_ptr)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
@@ -237,6 +238,12 @@ evmc::Result execute_create_message(
         call_tracer.on_exit(result);
         return result;
     }
+    if (growth_gas_ptr != nullptr) {
+        MONAD_DEBUG_ASSERT(
+            traits::create_growth_gas() <=
+            std::numeric_limits<uint64_t>::max() - *growth_gas_ptr);
+        *growth_gas_ptr += traits::create_growth_gas();
+    }
 
     state.push();
 
@@ -264,7 +271,7 @@ evmc::Result execute_create_message(
     };
 
     auto result = state.vm().execute_bytecode<traits>(
-        *host, &m_call, {msg.input_data, msg.input_size});
+        *host, &m_call, {msg.input_data, msg.input_size}, growth_gas_ptr);
 
     if (result.status_code == EVMC_SUCCESS) {
         result = deploy_contract_code<traits>(
@@ -304,7 +311,8 @@ EXPLICIT_TRAITS(execute_create_message);
 
 template <Traits traits>
 evmc::Result execute_call_message(
-    EvmcHost<traits> *const host, State &state, evmc_message const &msg)
+    EvmcHost<traits> *const host, State &state, evmc_message const &msg,
+    uint64_t *const growth_gas_ptr)
 {
     MONAD_ASSERT(
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
@@ -328,7 +336,8 @@ evmc::Result execute_call_message(
         auto const hash = state.get_code_hash(msg.code_address);
         auto const code = state.read_code(hash);
         trace::on_read_code(host->state_tracer_, hash, code->intercode());
-        result = state.vm().execute<traits>(*host, &msg, hash, code);
+        result =
+            state.vm().execute<traits>(*host, &msg, hash, code, growth_gas_ptr);
     }
 
     if (msg.depth == 0) {

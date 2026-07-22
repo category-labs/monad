@@ -16,7 +16,6 @@
 #pragma once
 
 #include <atomic>
-#include <bit>
 #include <cassert>
 #include <compare>
 #include <cstdint>
@@ -205,63 +204,10 @@ inline size_t iov_length(std::span<const struct iovec> const iovecs)
 
 MONAD_ASYNC_NAMESPACE_END
 
-namespace std
-{
-    template <>
-    class atomic<MONAD_ASYNC_NAMESPACE::chunk_offset_t>
-    {
-        atomic<uint64_t> v_;
-
-    public:
-        using value_type = MONAD_ASYNC_NAMESPACE::chunk_offset_t;
-
-        constexpr bool is_lock_free() const noexcept
-        {
-            return v_.is_lock_free();
-        }
-
-        constexpr explicit atomic(value_type const v) noexcept
-            : v_(std::bit_cast<uint64_t>(v))
-        {
-        }
-
-        atomic(atomic const &) = delete;
-        atomic(atomic &&) = delete;
-        atomic &operator=(atomic const &) = delete;
-        atomic &operator=(atomic &&) = delete;
-
-        void store(
-            value_type const v,
-            std::memory_order const ord = std::memory_order_seq_cst) noexcept
-        {
-            v_.store(std::bit_cast<uint64_t>(v), ord);
-        }
-
-        value_type load(std::memory_order const ord = std::memory_order_seq_cst)
-            const noexcept
-        {
-            return std::bit_cast<value_type>(v_.load(ord));
-        }
-
-        value_type exchange(
-            value_type const desired,
-            std::memory_order const ord = std::memory_order_seq_cst) noexcept
-        {
-            return std::bit_cast<value_type>(
-                v_.exchange(std::bit_cast<uint64_t>(desired), ord));
-        }
-    };
-}
-
-static_assert(sizeof(std::atomic<MONAD_ASYNC_NAMESPACE::chunk_offset_t>) == 8);
-static_assert(alignof(std::atomic<MONAD_ASYNC_NAMESPACE::chunk_offset_t>) == 8);
-static_assert(std::is_trivially_copyable_v<
-              std::atomic<MONAD_ASYNC_NAMESPACE::chunk_offset_t>>);
-
-// The db metadata code views raw chunk_offset_t storage through
-// std::atomic_ref (the primary template, not the specialization above).
-// Require that view to be lock-free -- matching the uint64_t-backed
-// std::atomic<chunk_offset_t> -- so both use direct atomic instructions
-// rather than a per-process (hence non-shareable) lock table.
+// chunk_offset_t storage in the db metadata is accessed through
+// std::atomic_ref (see db_metadata_context). It lives in cross-process
+// shared memory, so require that view to be lock-free: a lock-based
+// fallback would use a per-process (hence non-shareable) lock table and
+// break cross-process atomicity.
 static_assert(std::atomic_ref<
               MONAD_ASYNC_NAMESPACE::chunk_offset_t>::is_always_lock_free);

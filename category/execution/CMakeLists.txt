@@ -101,6 +101,8 @@ add_library(
   "ethereum/db/db_snapshot_filesystem.h"
   "ethereum/db/file_db.cpp"
   "ethereum/db/file_db.hpp"
+  "ethereum/db/offset_trie.hpp"
+  "ethereum/db/offset_trie.cpp"
   "ethereum/db/partial_trie_db.hpp"
   "ethereum/db/partial_trie_db.cpp"
   "ethereum/db/state_machine_init.cpp"

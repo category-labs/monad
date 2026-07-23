@@ -16,27 +16,51 @@
 # Helpers used by zkvm/CMakeLists.txt. Expects MONAD_ROOT to be set by the
 # caller before invoking the functions below that use it.
 
-# Apply the zkVM-specific compile options (warning suppressions, mirror
-# include path, preprocessor definitions) to a target that has already had
-# monad_compile_options applied.
-function(monad_zkvm_compile_options target)
+# Apply RISC-V cross-compile compile options (warning suppressions, mirror
+# include paths, bare-metal preprocessor definitions) to a target that has
+# already had monad_compile_options applied. Only called in cross-compile
+# mode — the x86 host build of monad-zkvm-guest-x86 doesn't need this.
+function(monad_riscv_compile_options target)
     # GCC 15+ checks uninstantiated template bodies for errors
     # (-Wtemplate-body). This fires on constexpr-guarded AVX2 code paths
     # that are never instantiated on non-x86 targets.
+    #
+    # Gated on COMPILE_LANGUAGE:CXX — the flag is C++-only; applying it to
+    # C TUs (e.g. assert.c) makes GCC emit a `command-line option ... is
+    # valid for C++/ObjC++ but not for C` error under -Werror.
     target_compile_options(
         ${target} PRIVATE
         $<$<COMPILE_LANG_AND_ID:CXX,GNU>:-Wno-template-body>)
 
-    target_include_directories(${target} BEFORE PUBLIC "${ZKVM_INCLUDE_DIR}")
+    # The shared shadow tree (zkvm/) is searched BEFORE MONAD_ROOT so that
+    # zkVM-specific headers override their
+    # host-tree counterparts.
+    target_include_directories(${target}
+        BEFORE PUBLIC "${ZKVM_INCLUDE_DIR}")
     target_include_directories(${target} PUBLIC "${MONAD_ROOT}")
+
+    # category/core/keccak.hpp aliases monad::hash256 to ethash::hash256, a
+    # header-only typedef in <ethash/hash_types.hpp>. The guest routes actual
+    # hashing through its own keccak accelerator (zkvm/category/core/keccak.h),
+    # so only ethash's header dir is needed here — not the ethash::keccak
+    # library the host links.
+    target_include_directories(${target}
+        PUBLIC "${MONAD_ROOT}/third_party/ethash/include")
 
     # NDEBUG: bare-metal zkVM has no libc, so __assert_func is missing.
     # _GLIBCXX_HAVE_ALIGNED_ALLOC: tells libstdc++ that our libc shim
     # (zkvm/core/libc.cpp) provides aligned_alloc; without it,
     # <cstdlib> does not expose std::aligned_alloc under newlib.
+    #
+    # IMMER_NO_FREE_LIST / IMMER_NO_THREAD_SAFETY: immer's persistent
+    # containers (state3 subsystem) otherwise pull machinery that can't link
+    # on bare metal. IMMER_NO_FREE_LIST drops the thread_local free list (no
+    # __tls_get_addr / __cxa_thread_atexit); IMMER_NO_THREAD_SAFETY swaps the
+    # atomic refcount/spinlock for the unsafe single-threaded variants. Both
+    # are sound because the guest is single-threaded.
     target_compile_definitions(${target} PUBLIC
         NDEBUG _GLIBCXX_HAVE_ALIGNED_ALLOC
-        "MONAD_ZKVM_${_ZKVM_BACKEND_UPPER}")
+        IMMER_NO_FREE_LIST=1 IMMER_NO_THREAD_SAFETY=1)
 endfunction()
 
 # Remove entries from a target's SOURCES whose path ends with one of the
@@ -58,5 +82,20 @@ function(monad_zkvm_drop_sources target)
         endif()
     endforeach()
     set_property(TARGET ${target} PROPERTY SOURCES ${_kept})
+endfunction()
+
+# Remove the named libraries from a target's link interface.
+function(monad_zkvm_drop_libraries target)
+    foreach(prop LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+        get_target_property(_libs ${target} ${prop})
+        if(_libs)
+            foreach(lib ${ARGN})
+                # PRIVATE deps appear in INTERFACE_LINK_LIBRARIES wrapped as
+                # $<LINK_ONLY:lib>, so drop both the plain and wrapped forms.
+                list(REMOVE_ITEM _libs "${lib}" "$<LINK_ONLY:${lib}>")
+            endforeach()
+            set_property(TARGET ${target} PROPERTY ${prop} ${_libs})
+        endif()
+    endforeach()
 endfunction()
 

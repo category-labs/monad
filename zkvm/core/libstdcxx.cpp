@@ -19,6 +19,9 @@
 #include <zkvm/core/zkvm_halt.h>
 
 #include <cstddef>
+#include <exception>
+#include <memory>
+#include <typeinfo>
 
 // operator new / delete
 [[gnu::always_inline]] static inline void *alloc_or_exit(std::size_t size)
@@ -51,18 +54,27 @@ void operator delete(void *, std::size_t) noexcept {}
 
 void operator delete[](void *, std::size_t) noexcept {}
 
-namespace std
+// std::terminate() and the rest of the C++ ABI runtime (__cxa_throw,
+// __cxa_allocate_exception, std::exception's dtor / vtable,
+// __gxx_personality_v0, _Unwind_Resume) come from libsupc++ + libgcc —
+// linked back in by zkvm/build-support since the toolchain file uses
+// -nostdlib++. See the explanation in zkvm/build-support/src/lib.rs.
+//
+// All of those error paths bottom out in abort() — libsupc++'s default
+// terminate_handler calls it, GCC's stack protector calls it, etc.
+// Newlib's bare-metal abort() ultimately calls _exit() which expects a
+// host kernel that the zkVM doesn't have. Route the chain into our
+// backend exit hook so every unrecoverable C++ ABI failure surfaces as a
+// clean zkvm_halt(1) (= failed proof) rather than a hang/trap.
+//
+// Weak so the SP1 backend's libzkevm.a, which exports its own strong abort()
+// (routed to SP1's halt), wins; on ZisK no other definition exists, so this
+// fallback is used.
+extern "C" [[gnu::weak]] [[noreturn]] void abort() noexcept
 {
-    [[noreturn]] void terminate() noexcept
-    {
-        zkvm_halt(1);
-    }
+    zkvm_halt(1);
 }
 
-// Static-storage-duration destructors get registered through __cxa_atexit
-// at construction time. The bare-metal zkVM exits via syscall_halt and
-// never runs these callbacks, so the registration itself is a no-op.
-// __dso_handle is referenced by __cxa_atexit calls the compiler emits.
 extern "C"
 {
 void *__dso_handle = nullptr;
@@ -71,4 +83,70 @@ int __cxa_atexit(void (*)(void *), void *, void *)
 {
     return 0;
 }
+
+// Thread-local dtor registration — no threads, nothing to run at exit.
+int __cxa_thread_atexit(void (*)(void *), void *, void *)
+{
+    return 0;
+}
+
+// Function-local static init guards. Single-threaded: acquire iff the low
+// byte is still zero; release sets it.
+int __cxa_guard_acquire(long long *g)
+{
+    return !*reinterpret_cast<char *>(g);
+}
+
+void __cxa_guard_release(long long *g)
+{
+    *reinterpret_cast<char *>(g) = 1;
+}
+
+void __cxa_guard_abort(long long *) {}
+}
+
+namespace std
+{
+    [[noreturn]] void terminate() noexcept
+    {
+        zkvm_halt(1);
+    }
+
+    [[noreturn]] void __throw_length_error(char const *)
+    {
+        zkvm_halt(1);
+    }
+
+    [[noreturn]] void __throw_logic_error(char const *)
+    {
+        zkvm_halt(1);
+    }
+
+    // Pulled in via std::function — its call operator's empty-target path
+    // and rethrow_exception in <functional>'s move/copy plumbing.
+    [[noreturn]] void __throw_bad_function_call()
+    {
+        zkvm_halt(1);
+    }
+
+    [[noreturn]] void rethrow_exception(exception_ptr)
+    {
+        zkvm_halt(1);
+    }
+
+    // std::exception_ptr is refcounted. With exceptions disabled the
+    // refcount path is dead code in practice (no exception ever gets
+    // captured), but std::function's move/copy still emits references to
+    // these. No-op bodies suffice — no real exception object exists.
+    namespace __exception_ptr
+    {
+        void exception_ptr::_M_addref() noexcept {}
+
+        void exception_ptr::_M_release() noexcept {}
+    }
+
+    bool _Sp_make_shared_tag::_S_eq(type_info const &) noexcept
+    {
+        return false;
+    }
 }

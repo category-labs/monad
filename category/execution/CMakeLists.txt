@@ -180,6 +180,7 @@ add_library(
   "ethereum/validate_transaction_error.hpp"
   # ethereum/metrics
   "ethereum/metrics/block_metrics.hpp"
+  "ethereum/metrics/transaction_stats.hpp"
   # ethereum/rlp
   "ethereum/rlp/config.hpp"
   "ethereum/rlp/decode.hpp"

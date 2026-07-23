@@ -16,6 +16,7 @@
 #include <category/core/fiber/fiber_thread_pool.hpp>
 
 #include <category/core/assert.h>
+#include <category/core/cpu_affinity.hpp>
 #include <category/core/fiber/config.hpp>
 #include <category/core/fiber/fiber_group.hpp>
 #include <category/core/fiber/priority_algorithm.hpp>
@@ -55,6 +56,7 @@ FiberThreadPool::FiberThreadPool(
             char name[16];
             std::snprintf(name, 16, "ftpool %u", i);
             pthread_setname_np(pthread_self(), name);
+            pin_this_thread_to_workers();
 
             boost::fibers::use_scheduling_algorithm<PriorityAlgorithm>(
                 queue_, prevent_spin_);
@@ -69,6 +71,7 @@ FiberThreadPool::FiberThreadPool(
     // from FiberGroup constructors.
     auto thread = std::thread([this] {
         pthread_setname_np(pthread_self(), "ftpool 0");
+        pin_this_thread_to_workers();
 
         boost::fibers::use_scheduling_algorithm<PriorityAlgorithm>(
             queue_, prevent_spin_);

@@ -14,9 +14,11 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/config.hpp>
+#include <category/core/cpu_affinity.hpp>
 #include <category/core/log.hpp>
 
 #include <quill/Backend.h>
+#include <quill/backend/BackendOptions.h>
 #include <quill/Frontend.h>
 #include <quill/sinks/ConsoleSink.h>
 #include <quill/sinks/FileSink.h>
@@ -39,7 +41,18 @@ void init_root_logger(quill::LogLevel const level)
             quill_default_time_format,
             quill::Timezone::GmtTime});
     monad_root_logger->set_log_level(level);
-    quill::Backend::start();
+    // Pin the Quill logging backend to its dedicated housekeeping core when
+    // configured (MONAD_HOUSEKEEPING_CPUS), keeping it off the worker cores and
+    // off the other housekeeping threads' cores.
+    auto const log_core = housekeeping_core(HousekeepingRole::Log);
+    if (log_core.has_value()) {
+        quill::BackendOptions backend_options;
+        backend_options.cpu_affinity = {*log_core};
+        quill::Backend::start(backend_options);
+    }
+    else {
+        quill::Backend::start();
+    }
 }
 
 void start_logger_minimal()

@@ -97,6 +97,8 @@ add_library(
   "is_specialization_of.hpp"
   "keccak.c"
   "keccak.h"
+  "cpu_affinity.cpp"
+  "cpu_affinity.hpp"
   "keccak.hpp"
   "likely.h"
   "log.cpp"

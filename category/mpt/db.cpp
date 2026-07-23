@@ -26,6 +26,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/cpu_affinity.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/core/log.hpp>
@@ -663,6 +664,10 @@ public:
 
     explicit OnDiskDbServiceThread(OnDiskDbConfig const &options)
         : worker_thread_([&, options = options] {
+            // Pin the MonadDB worker (and, by inheritance, its io_uring workers)
+            // to its dedicated housekeeping core when MONAD_HOUSEKEEPING_CPUS is
+            // set, so it does not share a core with other housekeeping threads.
+            pin_this_thread_to_housekeeping(HousekeepingRole::DbWorker);
             {
                 std::unique_lock const g(lock_);
                 worker_ = std::make_unique<DbAsyncWorker>(this, options);
@@ -679,6 +684,7 @@ public:
 
     explicit OnDiskDbServiceThread(ReadOnlyOnDiskDbConfig const &options)
         : worker_thread_([&, options = options] {
+            pin_this_thread_to_housekeeping(HousekeepingRole::DbWorker);
             {
                 std::unique_lock const g(lock_);
                 worker_ = std::make_unique<DbAsyncWorker>(this, options);

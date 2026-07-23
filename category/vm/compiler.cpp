@@ -15,6 +15,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
+#include <category/core/cpu_affinity.hpp>
 #include <category/core/likely.h>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
@@ -141,6 +142,11 @@ namespace monad::vm
 
     void Compiler::compile_loop()
     {
+        // Pin the async compiler thread to its dedicated housekeeping core when
+        // MONAD_HOUSEKEEPING_CPUS is set, keeping it off the worker cores and
+        // off the other housekeeping threads' cores.
+        ::monad::pin_this_thread_to_housekeeping(
+            ::monad::HousekeepingRole::Compiler);
         while (!stop_flag_.test(std::memory_order_acquire)) {
             // It is possible that a new compile job has arrived or the stop
             // flag has been set, so wait for at most 1 ms. The time 1 ms seems

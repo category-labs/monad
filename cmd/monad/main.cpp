@@ -19,6 +19,7 @@
 #include <category/core/basic_formatter.hpp>
 #include <category/core/cli/help_formatter.hpp>
 #include <category/core/config.hpp>
+#include <category/core/cpu_affinity.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
@@ -136,7 +137,17 @@ try {
     bool as_eth_blocks = false;
     std::chrono::seconds block_db_timeout = std::chrono::seconds::zero();
     std::string exec_event_ring_config;
-    unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
+    // Default the io_uring SQPOLL poller to its dedicated housekeeping core
+    // (HousekeepingRole::Sqpoll) when MONAD_HOUSEKEEPING_CPUS is set, so it
+    // stays off the worker cores and off the other housekeeping threads'
+    // cores; otherwise fall back to the last CPU. --sq-thread-cpu overrides.
+    unsigned sq_thread_cpu = [] {
+        auto const sqpoll_core =
+            monad::housekeeping_core(monad::HousekeepingRole::Sqpoll);
+        return sqpoll_core.has_value()
+                   ? static_cast<unsigned>(*sqpoll_core)
+                   : static_cast<unsigned>(get_nprocs() - 1);
+    }();
     bool disable_sq_thread_cpu = false;
     std::optional<unsigned> ro_sq_thread_cpu;
     std::vector<fs::path> dbname_paths;
@@ -247,6 +258,11 @@ try {
 
     init_root_logger(log_level);
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
+
+    // Pin the main runloop thread to the worker core set (opt-in via
+    // MONAD_WORKER_CPUS) so it shares cores with the fiber pool rather than
+    // the housekeeping threads.
+    monad::pin_this_thread_to_workers();
 
     // Initialize the event system if --exec-event-ring is specified
     if (exec_event_ring_option->count() > 0) {

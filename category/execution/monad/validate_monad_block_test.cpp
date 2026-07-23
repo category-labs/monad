@@ -293,3 +293,39 @@ TEST_P(BlockRewardLatest, reward_against_maximum)
         EXPECT_FALSE(res.has_error());
     }
 }
+
+TEST_F(ValidateMonadBlockLatest, validator_transaction_gas_budget)
+{
+    static constexpr auto validator_contract = 0xcccc_address;
+    std::vector<Address> const senders{
+        0xaaaa_address,
+        0xbbbb_address,
+    };
+    std::vector<Transaction> txns(senders.size());
+    for (auto &tx : txns) {
+        tx.type = TransactionType::eip1559;
+        tx.to = validator_contract;
+        tx.max_fee_per_gas = 75'000'000'001;
+        tx.max_priority_fee_per_gas = 1;
+    }
+
+    txns[0].gas_limit = 17'500'000;
+    txns[1].gas_limit = 17'500'000;
+    EXPECT_FALSE(
+        static_validate_monad_body<Trait>(senders, txns, validator_contract)
+            .has_error());
+
+    ++txns[1].gas_limit;
+    auto const result =
+        static_validate_monad_body<Trait>(senders, txns, validator_contract);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(
+        result.error(), MonadBlockError::ExceededValidatorTransactionGasLimit);
+
+    txns[1].gas_limit = 1;
+    txns[1].value = 1;
+    auto const malformed =
+        static_validate_monad_body<Trait>(senders, txns, validator_contract);
+    ASSERT_TRUE(malformed.has_error());
+    EXPECT_EQ(malformed.error(), MonadBlockError::InvalidValidatorTransaction);
+}

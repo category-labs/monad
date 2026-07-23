@@ -59,10 +59,24 @@ struct ChainContext<T>
 
 struct MonadChain : Chain
 {
+private:
+    std::optional<Address> validator_contract_;
+
+public:
     virtual monad_eth_revision
     get_revision(uint64_t block_number, uint64_t timestamp) const override;
 
     virtual monad_revision get_monad_revision(uint64_t timestamp) const = 0;
+
+    void set_validator_contract(Address const contract)
+    {
+        validator_contract_ = contract;
+    }
+
+    std::optional<Address> get_validator_contract() const override
+    {
+        return validator_contract_;
+    }
 };
 
 ankerl::unordered_dense::segmented_set<Address> combine_senders_and_authorities(

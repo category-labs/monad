@@ -21,6 +21,8 @@
 
 #include <evmc/evmc.h>
 
+#include <optional>
+
 static_assert(sizeof(evmc_tx_context) == 264);
 static_assert(alignof(evmc_tx_context) == 8);
 
@@ -49,6 +51,7 @@ inline constexpr evmc_tx_context EMPTY_TX_CONTEXT{
 template <Traits traits>
 evmc_tx_context get_tx_context(
     Transaction const &, Address const &sender, BlockHeader const &,
-    uint256_t const &chain_id);
+    uint256_t const &chain_id,
+    std::optional<uint256_t> const &gas_price_override = std::nullopt);
 
 MONAD_NAMESPACE_END

@@ -323,7 +323,8 @@ template <Traits traits>
 void ReserveBalance::init_from_tx(
     Address const &sender, Transaction const &tx,
     std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &ctx)
+    trace::StateTracer &state_tracer, ChainContext<traits> const &ctx,
+    bool const fee_exempt)
 {
     state_tracer_ = &state_tracer;
 
@@ -361,8 +362,10 @@ void ReserveBalance::init_from_tx(
         sender, i, is_delegated(*state_, sender_code_hash, state_tracer), ctx);
     tracking_enabled_ = true;
     sender_ = sender;
-    sender_gas_fees_ = uint256_t{tx.gas_limit} *
-                       gas_price<traits>(tx, base_fee_per_gas.value_or(0));
+    sender_gas_fees_ =
+        fee_exempt ? uint256_t{0}
+                   : uint256_t{tx.gas_limit} *
+                         gas_price<traits>(tx, base_fee_per_gas.value_or(0));
     sender_can_dip_ = sender_can_dip;
     get_max_reserve_ = [](Address const &addr) {
         return get_max_reserve<traits>(addr);
@@ -378,10 +381,11 @@ template <Traits traits>
 void init_reserve_balance_context(
     State &state, Address const &sender, Transaction const &tx,
     std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &ctx)
+    trace::StateTracer &state_tracer, ChainContext<traits> const &ctx,
+    bool const fee_exempt)
 {
     state.rb_.init_from_tx<traits>(
-        sender, tx, base_fee_per_gas, i, state_tracer, ctx);
+        sender, tx, base_fee_per_gas, i, state_tracer, ctx, fee_exempt);
 }
 
 EXPLICIT_MONAD_TRAITS(init_reserve_balance_context);

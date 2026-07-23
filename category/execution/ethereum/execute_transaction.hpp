@@ -56,11 +56,13 @@ protected:
     Address const &sender_;
     std::span<std::optional<Address> const> const authorities_;
     BlockHeader const &header_;
+    bool fee_exempt_;
 
 public:
     ExecuteTransactionNoValidation(
         Chain const &, Transaction const &, Address const &,
-        std::span<std::optional<Address> const>, BlockHeader const &);
+        std::span<std::optional<Address> const>, BlockHeader const &,
+        bool fee_exempt = false);
 
     evmc::Result operator()(State &, EvmcHost<traits> &);
 };
@@ -73,6 +75,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     using ExecuteTransactionNoValidation<traits>::sender_;
     using ExecuteTransactionNoValidation<traits>::authorities_;
     using ExecuteTransactionNoValidation<traits>::header_;
+    using ExecuteTransactionNoValidation<traits>::fee_exempt_;
 
     uint64_t i_;
     ChainContext<traits> const &chain_ctx_;
@@ -94,7 +97,7 @@ public:
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
         boost::fibers::promise<void> &prev, CallTracerBase &,
         trace::StateTracer &, ChainContext<traits> const &chain_ctx,
-        bool trace_transfers = false);
+        bool trace_transfers = false, bool fee_exempt = false);
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

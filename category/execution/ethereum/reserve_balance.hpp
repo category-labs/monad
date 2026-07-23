@@ -46,6 +46,7 @@ template <Traits traits>
 void init_reserve_balance_context(
     State &state, Address const &sender, Transaction const &tx,
     std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &ctx);
+    trace::StateTracer &state_tracer, ChainContext<traits> const &ctx,
+    bool fee_exempt = false);
 
 MONAD_NAMESPACE_END

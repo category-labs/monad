@@ -27,17 +27,22 @@
 #include <evmc/evmc.h>
 
 #include <cstdint>
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
 evmc_tx_context get_tx_context(
     Transaction const &tx, Address const &sender, BlockHeader const &hdr,
-    uint256_t const &chain_id)
+    uint256_t const &chain_id,
+    std::optional<uint256_t> const &gas_price_override)
 {
+    auto const effective_gas_price =
+        gas_price_override.has_value()
+            ? *gas_price_override
+            : gas_price<traits>(tx, hdr.base_fee_per_gas.value_or(0));
     return {
-        .tx_gas_price = store_be_as<bytes32_t>(
-            gas_price<traits>(tx, hdr.base_fee_per_gas.value_or(0))),
+        .tx_gas_price = store_be_as<bytes32_t>(effective_gas_price),
         .tx_origin = sender,
         .block_coinbase = hdr.beneficiary,
         .block_number = static_cast<int64_t>(hdr.number),

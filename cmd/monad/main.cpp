@@ -140,6 +140,7 @@ try {
     fs::path dump_snapshot;
     std::string statesync;
     fs::path chain_rlp_path;
+    std::optional<std::string> validator_contract;
     auto log_level = quill::LogLevel::Info;
 
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
@@ -197,6 +198,15 @@ try {
            "timeout in seconds for reading blocks from blockdb (0 = no retry)")
         ->needs(as_eth_blocks_flag);
     cli.add_option("--chain-rlp", chain_rlp_path, "path to chain rlp file");
+    cli.add_option(
+           "--validator-contract",
+           validator_contract,
+           "fee-exempt validator transaction contract address")
+        ->check([](std::string const &value) {
+            return from_hex<Address>(value).has_value()
+                       ? std::string{}
+                       : std::string{"invalid Ethereum address"};
+        });
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
     group
@@ -301,6 +311,15 @@ try {
     }();
 
     auto chain = make_chain(chain_config);
+    if (validator_contract.has_value()) {
+        auto *const monad_chain = dynamic_cast<MonadChain *>(chain.get());
+        if (monad_chain == nullptr) {
+            throw std::runtime_error(
+                "--validator-contract requires a Monad chain");
+        }
+        monad_chain->set_validator_contract(
+            from_hex<Address>(*validator_contract).value());
+    }
 
     TrieDb triedb{
         raw_db,

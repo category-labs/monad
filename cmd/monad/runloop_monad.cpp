@@ -221,8 +221,8 @@ Result<BlockExecOutput> propose_block(
                              .senders_and_authorities =
                                  std::move(senders_and_authorities)})
                      .second);
-    BOOST_OUTCOME_TRY(
-        static_validate_monad_body<traits>(senders, block.transactions));
+    BOOST_OUTCOME_TRY(static_validate_monad_body<traits>(
+        senders, block.transactions, chain.get_validator_contract()));
 
     // Create call frames vectors for tracers
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};

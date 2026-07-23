@@ -53,12 +53,12 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    trace::StateTracer &state_tracer);
+    trace::StateTracer &state_tracer, bool fee_exempt = false);
 
 template <Traits traits>
 [[gnu::always_inline]] inline Result<void> validate_ethereum_transaction(
     Transaction const &tx, Address const &sender, State &state,
-    trace::StateTracer &state_tracer)
+    trace::StateTracer &state_tracer, bool const fee_exempt = false)
 {
     using BOOST_OUTCOME_V2_NAMESPACE::success;
 
@@ -66,7 +66,8 @@ template <Traits traits>
     Result<uint256_t> const v0_r = [&]() -> Result<uint256_t> {
         BOOST_OUTCOME_TRY(
             uint256_t const gas_fee,
-            max_gas_cost(tx.gas_limit, tx.max_fee_per_gas));
+            max_gas_cost(
+                tx.gas_limit, fee_exempt ? uint256_t{0} : tx.max_fee_per_gas));
         BOOST_OUTCOME_TRY(
             uint256_t const base_cost, checked_add(tx.value, gas_fee));
         if (tx.type == TransactionType::eip4844) {

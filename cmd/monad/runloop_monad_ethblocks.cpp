@@ -171,8 +171,8 @@ Result<void> process_monad_block(
     auto const senders_and_authorities =
         combine_senders_and_authorities(senders, recovered_authorities);
 
-    BOOST_OUTCOME_TRY(
-        static_validate_monad_body<traits>(senders, block.transactions));
+    BOOST_OUTCOME_TRY(static_validate_monad_body<traits>(
+        senders, block.transactions, chain.get_validator_contract()));
 
     // Call tracer initialization
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};

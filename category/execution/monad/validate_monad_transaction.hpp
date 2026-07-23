@@ -55,7 +55,7 @@ Result<void> validate_transaction(
     Transaction const &, Address const &sender, State &,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> authorities,
-    trace::StateTracer &state_tracer);
+    trace::StateTracer &state_tracer, bool fee_exempt);
 
 MONAD_NAMESPACE_END
 

@@ -84,7 +84,8 @@ public:
     void init_from_tx(
         Address const &sender, Transaction const &tx,
         std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
-        trace::StateTracer &state_tracer, ChainContext<traits> const &ctx);
+        trace::StateTracer &state_tracer, ChainContext<traits> const &ctx,
+        bool fee_exempt = false);
 };
 
 template <Traits traits>

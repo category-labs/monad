@@ -78,7 +78,7 @@ class State
     friend void init_reserve_balance_context(
         State &, Address const &, Transaction const &,
         std::optional<uint256_t> const &, uint64_t, trace::StateTracer &,
-        ChainContext<traits> const &);
+        ChainContext<traits> const &, bool);
 
 public:
     OriginalAccountState &original_account_state(Address const &);

@@ -34,10 +34,10 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    trace::StateTracer &state_tracer)
+    trace::StateTracer &state_tracer, bool const fee_exempt)
 {
-    auto res =
-        validate_ethereum_transaction<traits>(tx, sender, state, state_tracer);
+    auto res = validate_ethereum_transaction<traits>(
+        tx, sender, state, state_tracer, fee_exempt);
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {
         if (res.has_error() &&
             res.error() != TransactionError::InsufficientBalance) {
@@ -45,7 +45,9 @@ Result<void> validate_transaction(
         }
 
         uint256_t const gas_fee =
-            uint256_t{tx.gas_limit} * gas_price<traits>(tx, base_fee_per_gas);
+            fee_exempt ? uint256_t{0}
+                       : uint256_t{tx.gas_limit} *
+                             gas_price<traits>(tx, base_fee_per_gas);
         if (MONAD_UNLIKELY(state.get_balance(sender) < gas_fee)) {
             return MonadTransactionError::InsufficientBalanceForFee;
         }

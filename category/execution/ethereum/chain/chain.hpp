@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
@@ -45,6 +46,11 @@ struct Chain
     get_revision(uint64_t block_number, uint64_t timestamp) const = 0;
 
     virtual GenesisState get_genesis_state() const = 0;
+
+    virtual std::optional<Address> get_validator_contract() const
+    {
+        return std::nullopt;
+    }
 };
 
 template <typename T>

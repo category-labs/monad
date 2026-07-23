@@ -21,6 +21,7 @@
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 
+#include <optional>
 #include <span>
 
 // TODO unstable paths between versions
@@ -46,6 +47,8 @@ enum class MonadBlockError
     DuplicateSystemTransaction,
     UnknownSystemTransaction,
     InvalidRewardValue,
+    InvalidValidatorTransaction,
+    ExceededValidatorTransactionGasLimit,
 };
 
 template <class MonadConsensusBlockHeader>
@@ -54,7 +57,8 @@ static_validate_consensus_header(MonadConsensusBlockHeader const &);
 
 template <Traits traits>
 Result<void> static_validate_monad_body(
-    std::span<Address const>, std::span<Transaction const>);
+    std::span<Address const>, std::span<Transaction const>,
+    std::optional<Address> const &validator_contract = std::nullopt);
 
 MONAD_NAMESPACE_END
 

@@ -25,7 +25,7 @@ pub use self::bindings::{
     monad_exec_txn_access_list_entry, monad_exec_txn_auth_list_entry, monad_exec_txn_call_frame,
     monad_exec_txn_evm_output, monad_exec_txn_header_start, monad_exec_txn_log,
     monad_exec_txn_reject, MONAD_EXEC_EVENT_COUNT, MONAD_TXN_EIP1559, MONAD_TXN_EIP2930,
-    MONAD_TXN_EIP4844, MONAD_TXN_EIP7702, MONAD_TXN_LEGACY,
+    MONAD_TXN_EIP4844, MONAD_TXN_EIP7702, MONAD_TXN_LEGACY, MONAD_TXN_VALIDATOR,
 };
 pub(crate) use self::bindings::{
     g_monad_exec_event_schema_hash, monad_exec_event_type, MONAD_EXEC_ACCOUNT_ACCESS,

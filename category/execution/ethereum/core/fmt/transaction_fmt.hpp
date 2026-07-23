@@ -45,6 +45,15 @@ struct fmt::formatter<monad::TransactionType> : public monad::BasicFormatter
         else if (t == monad::TransactionType::eip1559) {
             fmt::format_to(ctx.out(), "eip1559");
         }
+        else if (t == monad::TransactionType::eip4844) {
+            fmt::format_to(ctx.out(), "eip4844");
+        }
+        else if (t == monad::TransactionType::eip7702) {
+            fmt::format_to(ctx.out(), "eip7702");
+        }
+        else if (t == monad::TransactionType::validator) {
+            fmt::format_to(ctx.out(), "validator");
+        }
         else {
             fmt::format_to(ctx.out(), "Unknown Transaction Type");
         }

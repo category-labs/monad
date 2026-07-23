@@ -17,6 +17,7 @@
 #include <category/execution/monad/dispatch_transaction.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp>
 #include <category/execution/monad/system_sender.hpp>
+#include <category/execution/monad/validator_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -63,7 +64,9 @@ Result<Receipt> dispatch_transaction(
             call_tracer,
             state_tracer,
             chain_ctx,
-            trace_transfers}();
+            trace_transfers,
+            traits::monad_rev() >= MONAD_NEXT &&
+                is_validator_transaction(transaction)}();
     }
 }
 

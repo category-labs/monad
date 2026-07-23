@@ -533,3 +533,32 @@ TEST(Rlp_Transaction, ParseListMetadataLengthOverflow)
     auto result = decode_transaction(enc);
     EXPECT_TRUE(result.has_error());
 }
+
+TEST(Rlp_Transaction, ValidatorTransactionRoundTrip)
+{
+    Transaction const transaction{
+        .sc = {.r = 1, .s = 2, .chain_id = 1337, .y_parity = true},
+        .nonce = 9,
+        .max_fee_per_gas = 0,
+        .gas_limit = 5'000'000,
+        .value = 0,
+        .to = 0x3535353535353535353535353535353535353535_address,
+        .type = TransactionType::validator,
+        .data = {0x01, 0x02, 0x03},
+        .max_priority_fee_per_gas = 0,
+    };
+
+    auto const encoded = encode_transaction(transaction);
+    ASSERT_FALSE(encoded.empty());
+    EXPECT_EQ(encoded.front(), 0x7d);
+
+    byte_string_view encoded_view{encoded};
+    auto const decoded = decode_transaction(encoded_view);
+    ASSERT_FALSE(decoded.has_error());
+    EXPECT_TRUE(encoded_view.empty());
+    EXPECT_EQ(decoded.value(), transaction);
+
+    auto const signing_payload = encode_transaction_for_signing(transaction);
+    ASSERT_FALSE(signing_payload.empty());
+    EXPECT_EQ(signing_payload.front(), 0x7d);
+}

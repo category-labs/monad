@@ -90,12 +90,13 @@ template <Traits traits>
 ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     Chain const &chain, Transaction const &tx, Address const &sender,
     std::span<std::optional<Address> const> const authorities,
-    BlockHeader const &header)
+    BlockHeader const &header, bool const fee_exempt)
     : chain_{chain}
     , tx_{tx}
     , sender_{sender}
     , authorities_{authorities}
     , header_{header}
+    , fee_exempt_{fee_exempt}
 {
 }
 
@@ -235,7 +236,8 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
             state,
             sender_,
             tx_,
-            header_.base_fee_per_gas,
+            fee_exempt_ ? std::optional<uint256_t>{0}
+                        : header_.base_fee_per_gas,
             host.i_,
             host.state_tracer_,
             host.chain_ctx_);
@@ -245,7 +247,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         state,
         tx_,
         sender_,
-        header_.base_fee_per_gas.value_or(0),
+        fee_exempt_ ? 0 : header_.base_fee_per_gas.value_or(0),
         header_.excess_blob_gas.value_or(0));
 
     // EIP-7702
@@ -305,9 +307,9 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
-    bool const trace_transfers)
+    bool const trace_transfers, bool const fee_exempt)
     : ExecuteTransactionNoValidation<
-          traits>{chain, tx, sender, authorities, header}
+          traits>{chain, tx, sender, authorities, header, fee_exempt}
     , i_{i}
     , chain_ctx_{chain_ctx}
     , block_hash_buffer_{block_hash_buffer}
@@ -329,7 +331,7 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
             tx_,
             sender_,
             state,
-            header_.base_fee_per_gas.value_or(0),
+            fee_exempt_ ? 0 : header_.base_fee_per_gas.value_or(0),
             authorities_,
             state_tracer_);
         if (!result) {
@@ -342,8 +344,12 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
     };
     BOOST_OUTCOME_TRY(validate_lambda());
 
-    auto const tx_context =
-        get_tx_context<traits>(tx_, sender_, header_, chain_.get_chain_id());
+    auto const tx_context = get_tx_context<traits>(
+        tx_,
+        sender_,
+        header_,
+        chain_.get_chain_id(),
+        fee_exempt_ ? std::optional<uint256_t>{0} : std::nullopt);
     EvmcHost<traits> host{
         call_tracer_,
         state_tracer_,
@@ -351,7 +357,7 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         block_hash_buffer_,
         state,
         tx_,
-        header_.base_fee_per_gas,
+        fee_exempt_ ? std::optional<uint256_t>{0} : header_.base_fee_per_gas,
         i_,
         chain_ctx_,
         trace_transfers_};
@@ -376,7 +382,9 @@ Receipt ExecuteTransaction<traits>::execute_final(
         static_cast<uint64_t>(result.gas_left),
         static_cast<uint64_t>(result.gas_refund));
     auto const gas_cost =
-        gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
+        fee_exempt_
+            ? uint256_t{0}
+            : gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
     state.add_to_balance(sender_, gas_cost * gas_refund);
 
     auto gas_used = tx_.gas_limit - gas_refund;
@@ -392,8 +400,10 @@ Receipt ExecuteTransaction<traits>::execute_final(
         }
     }
 
-    uint256_t const reward = calculate_txn_award<traits>(
-        tx_, header_.base_fee_per_gas.value_or(0), gas_used);
+    uint256_t const reward =
+        fee_exempt_ ? uint256_t{0}
+                    : calculate_txn_award<traits>(
+                          tx_, header_.base_fee_per_gas.value_or(0), gas_used);
     if constexpr (traits::mip_11_active()) {
         staking::collect_priority_fee(state, reward);
     }
@@ -407,13 +417,13 @@ Receipt ExecuteTransaction<traits>::execute_final(
 
     Receipt receipt{
         .status = result.status_code == EVMC_SUCCESS ? 1u : 0u,
-        .gas_used = gas_used,
+        .gas_used = fee_exempt_ ? 0 : gas_used,
         .type = tx_.type};
     for (auto const &log : state.logs()) {
         receipt.add_log(std::move(log));
     }
 
-    call_tracer_.on_finish(receipt.gas_used);
+    call_tracer_.on_finish(gas_used);
     trace::run_tracer<traits>(state_tracer_, state);
     record_txn_output_events(
         static_cast<uint32_t>(this->i_),
@@ -432,7 +442,8 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
     {
         auto validation_result = static_validate_transaction<traits>(
             tx_,
-            header_.base_fee_per_gas,
+            fee_exempt_ ? std::optional<uint256_t>{0}
+                        : header_.base_fee_per_gas,
             header_.excess_blob_gas,
             chain_.get_chain_id());
         if (validation_result.has_error()) {

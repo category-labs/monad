@@ -20,6 +20,7 @@
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
+#include <category/execution/monad/validator_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
 #include <algorithm>
@@ -143,6 +144,24 @@ Result<void> static_validate_monad_body(
         }
     }
 
+    if constexpr (traits::monad_rev() >= MONAD_NEXT) {
+        uint64_t validator_gas = 0;
+        for (auto const &tx : txns) {
+            if (!is_validator_transaction(tx)) {
+                continue;
+            }
+            if (MONAD_UNLIKELY(!is_well_formed_validator_transaction(tx))) {
+                return MonadBlockError::InvalidValidatorTransaction;
+            }
+            if (MONAD_UNLIKELY(
+                    tx.gas_limit >
+                    VALIDATOR_TRANSACTION_BLOCK_GAS_LIMIT - validator_gas)) {
+                return MonadBlockError::ExceededValidatorTransactionGasLimit;
+            }
+            validator_gas += tx.gas_limit;
+        }
+    }
+
     return outcome::success();
 }
 
@@ -175,6 +194,12 @@ quick_status_code_from_enum<monad::MonadBlockError>::value_mappings()
          "unknown system transaction",
          {}},
         {MonadBlockError::InvalidRewardValue, "invalid reward value", {}},
+        {MonadBlockError::InvalidValidatorTransaction,
+         "invalid validator transaction",
+         {}},
+        {MonadBlockError::ExceededValidatorTransactionGasLimit,
+         "validator transaction gas limit exceeded",
+         {}},
     };
 
     return v;

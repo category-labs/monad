@@ -230,7 +230,7 @@ impl ExecutedBlock {
                 ffi::MONAD_TXN_EIP2930 => {
                     alloy_consensus::ReceiptEnvelope::Eip2930(receipt_with_bloom)
                 }
-                ffi::MONAD_TXN_EIP1559 => {
+                ffi::MONAD_TXN_EIP1559 | ffi::MONAD_TXN_VALIDATOR => {
                     alloy_consensus::ReceiptEnvelope::Eip1559(receipt_with_bloom)
                 }
                 ffi::MONAD_TXN_EIP4844 => {
@@ -428,7 +428,7 @@ impl ExecutedTxn {
                     txn_hash,
                 ))
             }
-            ffi::MONAD_TXN_EIP1559 => {
+            ffi::MONAD_TXN_EIP1559 | ffi::MONAD_TXN_VALIDATOR => {
                 alloy_consensus::TxEnvelope::Eip1559(alloy_consensus::Signed::new_unchecked(
                     alloy_consensus::TxEip1559 {
                         chain_id,

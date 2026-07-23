@@ -64,10 +64,23 @@ Result<void> static_validate_transaction(
         }
     }
 
+    if (MONAD_UNLIKELY(tx.type == TransactionType::validator)) {
+        if constexpr (requires { traits::monad_rev(); }) {
+            if constexpr (traits::monad_rev() < MONAD_NEXT) {
+                return TransactionError::TypeNotSupported;
+            }
+        }
+        else {
+            return TransactionError::TypeNotSupported;
+        }
+    }
+
     // TODO: remove the below logic once we fully migrate over to traits
     // EIP-2930 & EIP-2718
     if constexpr (traits::evm_rev() < MONAD_ETH_BERLIN) {
-        if (MONAD_UNLIKELY(tx.type != TransactionType::legacy)) {
+        if (MONAD_UNLIKELY(
+                tx.type != TransactionType::legacy &&
+                tx.type != TransactionType::validator)) {
             return TransactionError::TypeNotSupported;
         }
     }
@@ -75,7 +88,8 @@ Result<void> static_validate_transaction(
     else if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
         if (MONAD_UNLIKELY(
                 tx.type != TransactionType::legacy &&
-                tx.type != TransactionType::eip2930)) {
+                tx.type != TransactionType::eip2930 &&
+                tx.type != TransactionType::validator)) {
             return TransactionError::TypeNotSupported;
         }
     }
@@ -83,7 +97,8 @@ Result<void> static_validate_transaction(
         if (MONAD_UNLIKELY(
                 tx.type != TransactionType::legacy &&
                 tx.type != TransactionType::eip2930 &&
-                tx.type != TransactionType::eip1559)) {
+                tx.type != TransactionType::eip1559 &&
+                tx.type != TransactionType::validator)) {
             return TransactionError::TypeNotSupported;
         }
     }
@@ -92,7 +107,8 @@ Result<void> static_validate_transaction(
                 tx.type != TransactionType::legacy &&
                 tx.type != TransactionType::eip2930 &&
                 tx.type != TransactionType::eip1559 &&
-                tx.type != TransactionType::eip4844)) {
+                tx.type != TransactionType::eip4844 &&
+                tx.type != TransactionType::validator)) {
             return TransactionError::TypeNotSupported;
         }
     }
@@ -101,12 +117,15 @@ Result<void> static_validate_transaction(
                  tx.type != TransactionType::eip2930 &&
                  tx.type != TransactionType::eip1559 &&
                  tx.type != TransactionType::eip4844 &&
-                 tx.type != TransactionType::eip7702)) {
+                 tx.type != TransactionType::eip7702 &&
+                 tx.type != TransactionType::validator)) {
         return TransactionError::TypeNotSupported;
     }
 
     // EIP-1559
-    if (MONAD_UNLIKELY(tx.max_fee_per_gas < base_fee_per_gas.value_or(0))) {
+    if (MONAD_UNLIKELY(
+            tx.type != TransactionType::validator &&
+            tx.max_fee_per_gas < base_fee_per_gas.value_or(0))) {
         return TransactionError::MaxFeeLessThanBase;
     }
 

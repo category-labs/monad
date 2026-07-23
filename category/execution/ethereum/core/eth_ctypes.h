@@ -45,6 +45,7 @@ enum monad_c_transaction_type : uint8_t
     MONAD_TXN_EIP1559 = 2,
     MONAD_TXN_EIP4844 = 3,
     MONAD_TXN_EIP7702 = 4,
+    MONAD_TXN_VALIDATOR = 0x7d,
 };
 
 /// Entry in a EIP-2930 storage access warmup list

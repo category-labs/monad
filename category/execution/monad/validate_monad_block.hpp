@@ -46,6 +46,8 @@ enum class MonadBlockError
     DuplicateSystemTransaction,
     UnknownSystemTransaction,
     InvalidRewardValue,
+    InvalidValidatorTransaction,
+    ExceededValidatorTransactionGasLimit,
 };
 
 template <class MonadConsensusBlockHeader>

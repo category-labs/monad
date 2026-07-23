@@ -81,6 +81,25 @@ TEST(Rlp_Receipt, DecodeEncodeLog)
     }
 }
 
+TEST(Rlp_Receipt, ValidatorReceiptRoundTrip)
+{
+    Receipt const receipt{
+        .status = 1,
+        .gas_used = 0,
+        .type = TransactionType::validator,
+    };
+
+    auto const encoded = encode_receipt(receipt);
+    ASSERT_FALSE(encoded.empty());
+    EXPECT_EQ(encoded.front(), 0x7d);
+
+    byte_string_view encoded_view{encoded};
+    auto const decoded = decode_receipt(encoded_view);
+    ASSERT_FALSE(decoded.has_error());
+    EXPECT_TRUE(encoded_view.empty());
+    EXPECT_EQ(decoded.value(), receipt);
+}
+
 TEST(Rlp_Receipt, DecodeEncodeBloom)
 {
     static Receipt::Bloom bloom{};

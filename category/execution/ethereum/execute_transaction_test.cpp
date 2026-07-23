@@ -651,3 +651,67 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
 
     ASSERT_EQ(receipt.error(), TransactionError::WrongChainId);
 }
+
+TEST(ExecuteTransaction, fee_exempt_transaction_uses_zero_balance)
+{
+    using Trait = MonadTraits<MONAD_NEXT>;
+    static constexpr auto sender{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto recipient{
+        0x5353535353535353535353535353535353535353_address};
+    static constexpr auto beneficiary{
+        0xbebebebebebebebebebebebebebebebebebebebe_address};
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    BlockMetrics metrics;
+
+    Transaction const tx{
+        .sc = {.r = 1, .s = 2, .y_parity = 0},
+        .max_fee_per_gas = 0,
+        .gas_limit = 21'000,
+        .to = recipient,
+        .type = TransactionType::validator,
+        .max_priority_fee_per_gas = 0,
+    };
+    BlockHeader const header{
+        .gas_limit = 150'000'000,
+        .beneficiary = beneficiary,
+        .base_fee_per_gas = 50'000'000'000,
+    };
+    BlockHashBufferFinalized const block_hash_buffer;
+    boost::fibers::promise<void> prev{};
+    prev.set_value();
+    NoopCallTracer call_tracer;
+    trace::StateTracer state_tracer = std::monostate{};
+    auto const chain_ctx = ChainContext<Trait>::debug_empty();
+
+    auto const receipt = ExecuteTransaction<Trait>(
+        MonadDevnet{},
+        0,
+        tx,
+        sender,
+        {},
+        header,
+        block_hash_buffer,
+        block_state,
+        metrics,
+        prev,
+        call_tracer,
+        state_tracer,
+        chain_ctx,
+        false,
+        true)();
+
+    ASSERT_TRUE(receipt.has_value());
+    EXPECT_EQ(receipt.value().status, 1);
+    EXPECT_EQ(receipt.value().gas_used, 0);
+    EXPECT_EQ(receipt.value().type, TransactionType::validator);
+
+    State state{block_state, Incarnation{0, 0}};
+    EXPECT_EQ(state.get_balance(sender), 0);
+    EXPECT_EQ(state.get_balance(beneficiary), 0);
+    EXPECT_EQ(state.get_nonce(sender), 1);
+}

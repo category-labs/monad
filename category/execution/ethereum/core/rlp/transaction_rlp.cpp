@@ -112,6 +112,7 @@ byte_string encode_eip2718_base(Transaction const &txn)
     encoding += encode_unsigned(txn.nonce);
 
     if (txn.type == TransactionType::eip1559 ||
+        txn.type == TransactionType::validator ||
         txn.type == TransactionType::eip4844 ||
         txn.type == TransactionType::eip7702) {
         encoding += encode_unsigned(txn.max_priority_fee_per_gas);
@@ -306,11 +307,16 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
 {
     Transaction txn;
     MONAD_ASSERT(enc.size());
+    auto const type = enc[0];
     if (MONAD_UNLIKELY(
-            enc[0] >= static_cast<unsigned char>(TransactionType::LAST))) {
+            type != static_cast<unsigned char>(TransactionType::eip2930) &&
+            type != static_cast<unsigned char>(TransactionType::eip1559) &&
+            type != static_cast<unsigned char>(TransactionType::eip4844) &&
+            type != static_cast<unsigned char>(TransactionType::eip7702) &&
+            type != static_cast<unsigned char>(TransactionType::validator))) {
         return DecodeError::InvalidTxnType;
     }
-    txn.type = static_cast<TransactionType>(enc[0]);
+    txn.type = static_cast<TransactionType>(type);
     enc = enc.substr(1);
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
@@ -319,6 +325,7 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
     BOOST_OUTCOME_TRY(txn.nonce, decode_unsigned<uint64_t>(payload));
 
     if (txn.type == TransactionType::eip1559 ||
+        txn.type == TransactionType::validator ||
         txn.type == TransactionType::eip4844 ||
         txn.type == TransactionType::eip7702) {
         BOOST_OUTCOME_TRY(

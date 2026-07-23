@@ -144,6 +144,7 @@ inline constexpr uint256_t priority_fee_per_gas(
     auto const max_priority_fee_per_gas = tx.max_fee_per_gas - base_fee_per_gas;
 
     if (tx.type == TransactionType::eip1559 ||
+        tx.type == TransactionType::validator ||
         tx.type == TransactionType::eip4844 ||
         tx.type == TransactionType::eip7702) {
         return std::min(tx.max_priority_fee_per_gas, max_priority_fee_per_gas);

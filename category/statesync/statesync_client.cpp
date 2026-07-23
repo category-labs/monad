@@ -18,7 +18,9 @@
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
@@ -195,10 +197,10 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
     }
 
     // Roll one db forward from its synced version to the target, replaying the
-    // trailing block headers, then mark the target finalized. Applied to the
-    // primary and, in dual-db mode, the page-encoded secondary, so both
-    // timelines are version- and finalize-consistent at the target.
-    auto const roll_forward_and_finalize =
+    // trailing block headers. Applied to the primary and, in dual-db mode, the
+    // page-encoded secondary, so both timelines are version-consistent at the
+    // target.
+    auto const roll_forward =
         [ctx, &tgrt, latest_version](mpt::Db &db) -> bool {
         if (latest_version != tgrt.number) {
             db.move_trie_version_forward(latest_version, tgrt.number);
@@ -237,14 +239,13 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
                     false);
             }
         }
-        db.update_finalized_version(tgrt.number);
         return true;
     };
 
-    if (!roll_forward_and_finalize(ctx->db)) {
+    if (!roll_forward(ctx->db)) {
         return false;
     }
-    if (ctx->secondary_db && !roll_forward_and_finalize(*ctx->secondary_db)) {
+    if (ctx->secondary_db && !roll_forward(*ctx->secondary_db)) {
         return false;
     }
 
@@ -262,9 +263,22 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
             page_encoded ? "page" : "slot");
         db = ctx->secondary_tdb.get();
     }
-    db->set_block_and_prefix(ctx->db.get_latest_finalized_version());
-    MONAD_ASSERT(db->get_block_number() == tgrt.number);
-    return db->state_root() == tgrt.state_root;
+    db->set_block_and_prefix(tgrt.number);
+    if (auto const root = db->state_root(); root != tgrt.state_root) {
+        LOG_WARNING(
+            "statesync rejected target={}: state root mismatch, expected={} "
+            "actual={}",
+            tgrt.number,
+            fmt::format("{}", tgrt.state_root),
+            fmt::format("{}", root));
+        return false;
+    }
+
+    ctx->db.update_finalized_version(tgrt.number);
+    if (ctx->secondary_db) {
+        ctx->secondary_db->update_finalized_version(tgrt.number);
+    }
+    return true;
 }
 
 void monad_statesync_client_context_destroy(

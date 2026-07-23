@@ -37,7 +37,7 @@ compact_encode_len(unsigned const si, unsigned const ei)
 
 // Transform the nibbles to its compact encoding
 // https://ethereum.org/en/developers/docs/data-structures-and-encoding/patricia-merkle-trie/
-[[nodiscard]] constexpr byte_string_view compact_encode(
+constexpr void compact_encode_raw(
     unsigned char *const res, NibblesView const nibbles, bool const terminating)
 {
     unsigned i = 0;
@@ -57,7 +57,12 @@ compact_encode_len(unsigned const si, unsigned const ei)
         set_nibble(res, res_ci, nibbles.get(i));
         ++res_ci;
     }
+}
 
+[[nodiscard]] constexpr byte_string_view compact_encode(
+    unsigned char *const res, NibblesView const nibbles, bool const terminating)
+{
+    compact_encode_raw(res, nibbles, terminating);
     return byte_string_view{
         res, nibbles.nibble_size() ? (nibbles.nibble_size() / 2 + 1) : 1u};
 }

@@ -78,6 +78,8 @@ namespace
         0x8d8ebb65ec00cb973d4fe086a607728fd1b9de14aa48208381eed9592f0dee9a_bytes32;
     constexpr auto key7 =
         0xff896b09014882056009dedb136458f017fcef9a4729467d0d00b4fd413fb1f1_bytes32;
+    constexpr auto key8 =
+        0x1bcaa6207d1a05724c223335b6fe7af41a8e8ae2c0b6d737b05fe9abb98ee02b_bytes32;
     constexpr auto page0_slot1 =
         0x0000000000000000000000000000000000000000000000000000000000000001_bytes32;
     constexpr auto page1_slot0 =
@@ -1205,6 +1207,70 @@ TEST(PrestateTracer, prestate_access_storage)
                 "nonce": 1,
                 "storage": {
                     "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c": "0x0000000000000000000000000000000000000000000000000000000000000007"
+                }
+            }
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+
+    {
+        // Run statediff tracer
+        nlohmann::json trace;
+        trace::StateDiffTracer tracer{trace};
+        tracer.encode(tracer.trace(s), s);
+
+        // We only read the storage, so no changes are recorded in the
+        // statediff.
+        auto const json_str = R"(
+        {
+            "post": {},
+            "pre": {}
+        })";
+
+        EXPECT_EQ(trace, nlohmann::json::parse(json_str));
+    }
+}
+
+TEST(PrestateTracer, prestate_access_zero_storage)
+{
+    // Setup matter
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    Account const a{.balance = 0, .nonce = 1};
+
+    // Block 0
+    commit_sequential(
+        tdb,
+        StateDeltas(
+            {{ADDR_A,
+              StateDelta{.account = {std::nullopt, a}, .storage = {}}}}),
+        {},
+        BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    // Regression from block 89733717 capture: reading an untouched slot must
+    // still include that slot with a zero value in prestate output.
+    EXPECT_EQ(s.access_account(ADDR_A), EVMC_ACCESS_COLD);
+    EXPECT_EQ(s.get_storage(ADDR_A, key8), bytes32_t{});
+
+    {
+        // Run prestate tracer
+        nlohmann::json trace;
+        trace::PrestateTracer tracer{trace, ADDR_A};
+        tracer.encode(s.original(), s);
+
+        auto const json_str = R"(
+        {
+            "0x0000000000000000000000000000000000000100": {
+                "balance": "0x0",
+                "nonce": 1,
+                "storage": {
+                    "0x1bcaa6207d1a05724c223335b6fe7af41a8e8ae2c0b6d737b05fe9abb98ee02b": "0x0000000000000000000000000000000000000000000000000000000000000000"
                 }
             }
         })";

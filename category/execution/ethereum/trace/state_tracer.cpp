@@ -295,10 +295,11 @@ namespace trace
                 keys.push_back(bytes_to_hex(key.bytes));
             }
 
-            access_list.push_back(json::object({
-                {"address", bytes_to_hex(address.bytes)},
-                {"storageKeys", std::move(keys)},
-            }));
+            access_list.push_back(
+                json::object({
+                    {"address", bytes_to_hex(address.bytes)},
+                    {"storageKeys", std::move(keys)},
+                }));
         }
 
         storage_ = std::move(access_list);

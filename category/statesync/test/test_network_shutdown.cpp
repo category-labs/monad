@@ -140,11 +140,12 @@ TEST(StateSyncThread, shutdown_via_jthread_stop_token)
     connect_thread.join();
 
     std::unique_ptr<monad::StateSyncServer> sync_server =
-        monad::make_statesync_server(monad::StateSyncServerConfig{
-            .triedb = &triedb,
-            .network = &*net,
-            .ro_sq_thread_cpu = std::nullopt,
-            .dbname_paths = {db_file.path}});
+        monad::make_statesync_server(
+            monad::StateSyncServerConfig{
+                .triedb = &triedb,
+                .network = &*net,
+                .ro_sq_thread_cpu = std::nullopt,
+                .dbname_paths = {db_file.path}});
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
@@ -207,11 +208,12 @@ TEST(StateSyncThread, shutdown_during_reconnect)
     connect_thread.join();
 
     std::unique_ptr<monad::StateSyncServer> sync_server =
-        monad::make_statesync_server(monad::StateSyncServerConfig{
-            .triedb = &triedb,
-            .network = &*net,
-            .ro_sq_thread_cpu = std::nullopt,
-            .dbname_paths = {db_file.path}});
+        monad::make_statesync_server(
+            monad::StateSyncServerConfig{
+                .triedb = &triedb,
+                .network = &*net,
+                .ro_sq_thread_cpu = std::nullopt,
+                .dbname_paths = {db_file.path}});
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 

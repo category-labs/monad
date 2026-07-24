@@ -65,8 +65,9 @@ namespace
     std::string new_emitter_asm_log_path()
     {
         test_emitter_ix++;
-        return std::string(std::format(
-            "/tmp/monad_vm_test_logs/emitter_test_{}.s", test_emitter_ix));
+        return std::string(
+            std::format(
+                "/tmp/monad_vm_test_logs/emitter_test_{}.s", test_emitter_ix));
     }
 
     struct TestEmitter : Emitter

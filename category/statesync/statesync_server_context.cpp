@@ -42,8 +42,9 @@ void on_commit(
 
     auto &deletions =
         proposals
-            .emplace_back(ProposedDeletions{
-                .block_number = n, .block_id = block_id, .deletions = {}})
+            .emplace_back(
+                ProposedDeletions{
+                    .block_number = n, .block_id = block_id, .deletions = {}})
             .deletions;
 
     for (auto const &[addr, delta] : state_deltas) {

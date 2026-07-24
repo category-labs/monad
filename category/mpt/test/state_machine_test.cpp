@@ -176,20 +176,22 @@ TYPED_TEST_SUITE(StateMachineTest, StateMachineTestTypes);
 
 TYPED_TEST(StateMachineTest, create_new_trie)
 {
-    this->validate_down_calls(DownCalls{
-        {{}, 1},
-        {{1}, 1},
-        {{1, 1}, 1},
-        {{1, 1}, 2},
-        {{1, 1, 1}, 1},
-        {{1, 1, 2}, 2}});
+    this->validate_down_calls(
+        DownCalls{
+            {{}, 1},
+            {{1}, 1},
+            {{1, 1}, 1},
+            {{1, 1}, 2},
+            {{1, 1, 1}, 1},
+            {{1, 1, 2}, 2}});
 
-    this->validate_up_calls(UpCalls{
-        {{1, 1, 2, 2}, 1},
-        {{1, 1, 2}, 1},
-        {{1, 1}, 2},
-        {{1, 1, 1, 1}, 1},
-        {{1, 1, 1}, 1}});
+    this->validate_up_calls(
+        UpCalls{
+            {{1, 1, 2, 2}, 1},
+            {{1, 1, 2}, 1},
+            {{1, 1}, 2},
+            {{1, 1, 1, 1}, 1},
+            {{1, 1, 1}, 1}});
 
     this->validate_compute_calls(
         ComputeCalls{{1, 1, 1, 1}, {1, 1, 2, 2}, {1, 1}});
@@ -265,8 +267,14 @@ TYPED_TEST(StateMachineTest, mismatch_with_extension)
         std::move(this->root),
         make_update(0x2222_bytes, monad::byte_string_view{}));
 
-    this->validate_down_calls(DownCalls{
-        {{}, {2}}, {{2}, 2}, {{2, 2}, 2}, {{2, 2, 2}, 2}, {{}, 1}, {{1}, 1}});
+    this->validate_down_calls(
+        DownCalls{
+            {{}, {2}},
+            {{2}, 2},
+            {{2, 2}, 2},
+            {{2, 2, 2}, 2},
+            {{}, 1},
+            {{1}, 1}});
 
     this->validate_up_calls(UpCalls{{{1, 1}, 2}, {{2, 2, 2, 2}, 3}, {{2}, 1}});
 

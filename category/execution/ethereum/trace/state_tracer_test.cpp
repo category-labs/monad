@@ -1885,10 +1885,11 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
     std::vector<uint8_t> buf(A_ICODE->size(), 0);
     auto const n = host.copy_code(ADDR_A, 0, buf.data(), buf.size());
     EXPECT_EQ(n, A_ICODE->size());
-    EXPECT_TRUE(std::equal(
-        buf.begin(),
-        buf.begin() + static_cast<std::ptrdiff_t>(n),
-        A_ICODE->code()));
+    EXPECT_TRUE(
+        std::equal(
+            buf.begin(),
+            buf.begin() + static_cast<std::ptrdiff_t>(n),
+            A_ICODE->code()));
 
     auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
     EXPECT_EQ(codes.size(), 1u);

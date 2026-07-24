@@ -1158,8 +1158,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
         };
 
         byte_string const expected_data =
-            from_hex("0x00000000000000000000000000000000000000000000000000000"
-                     "000000F4240")
+            from_hex(
+                "0x00000000000000000000000000000000000000000000000000000"
+                "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
         EXPECT_EQ(call_frames[1].logs->at(0).log.topics, expected_topics);
@@ -1178,8 +1179,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
             abi_encode_address(SELFDESTRUCT_CONTRACT_ADDR)};
 
         byte_string const expected_data =
-            from_hex("0x00000000000000000000000000000000000000000000000000000"
-                     "000000F4240")
+            from_hex(
+                "0x00000000000000000000000000000000000000000000000000000"
+                "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
         EXPECT_EQ(logs[0].log.topics, expected_topics);
@@ -1196,8 +1198,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
         };
 
         byte_string const expected_data =
-            from_hex("0x00000000000000000000000000000000000000000000000000000"
-                     "000000F4240")
+            from_hex(
+                "0x00000000000000000000000000000000000000000000000000000"
+                "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
         EXPECT_EQ(logs[1].log.topics, expected_topics);
@@ -1520,8 +1523,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
             EXPECT_EQ(call_frames[1].logs->at(0).log.topics, expected_topics);
 
             byte_string const expected_data =
-                from_hex("0x0000000000000000000000000000000000000000000000000"
-                         "000000000000001")
+                from_hex(
+                    "0x0000000000000000000000000000000000000000000000000"
+                    "000000000000001")
                     .value();
 
             EXPECT_EQ(call_frames[1].logs->at(0).log.data, expected_data);

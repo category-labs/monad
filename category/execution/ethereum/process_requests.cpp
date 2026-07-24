@@ -286,11 +286,12 @@ Result<bytes32_t> process_requests(
             state_tracer,
             chain_ctx));
 
-    return compute_requests_hash(std::array<BlockRequest, 3>{{
-        {DEPOSIT_REQUEST_TYPE, std::move(deposit_output)},
-        {WITHDRAWAL_REQUEST_TYPE, std::move(withdrawal_output)},
-        {CONSOLIDATION_REQUEST_TYPE, std::move(consolidation_output)},
-    }});
+    return compute_requests_hash(
+        std::array<BlockRequest, 3>{{
+            {DEPOSIT_REQUEST_TYPE, std::move(deposit_output)},
+            {WITHDRAWAL_REQUEST_TYPE, std::move(withdrawal_output)},
+            {CONSOLIDATION_REQUEST_TYPE, std::move(consolidation_output)},
+        }});
 }
 
 EXPLICIT_EVM_TRAITS(process_requests);

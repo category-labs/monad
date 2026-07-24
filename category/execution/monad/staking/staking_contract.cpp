@@ -168,143 +168,159 @@ constexpr uint64_t compute_costs(OpCount const &ops)
            TRANSFER_COSTS * ops.transfers;
 }
 
-constexpr uint64_t ADD_VALIDATOR_OP_COST = compute_costs(OpCount{
-                                               .warm_sloads = 21,
-                                               .cold_sloads = 22,
-                                               .warm_sstores = 6,
-                                               .warm_sstore_nonzero = 15,
-                                               .cold_sstores = 9,
-                                               .events = 3,
-                                               .transfers = 0}) +
+constexpr uint64_t ADD_VALIDATOR_OP_COST = compute_costs(
+                                               OpCount{
+                                                   .warm_sloads = 21,
+                                                   .cold_sloads = 22,
+                                                   .warm_sstores = 6,
+                                                   .warm_sstore_nonzero = 15,
+                                                   .cold_sstores = 9,
+                                                   .events = 3,
+                                                   .transfers = 0}) +
                                            EC_RECOVER_COST + BLS_VERIFY_COST;
 
-constexpr uint64_t DELEGATE_OP_COST = compute_costs(OpCount{
-    .warm_sloads = 21,
-    .cold_sloads = 17,
-    .warm_sstores = 6,
-    .warm_sstore_nonzero = 14,
-    .cold_sstores = 5,
-    .events = 2,
-    .transfers = 0});
+constexpr uint64_t DELEGATE_OP_COST = compute_costs(
+    OpCount{
+        .warm_sloads = 21,
+        .cold_sloads = 17,
+        .warm_sstores = 6,
+        .warm_sstore_nonzero = 14,
+        .cold_sstores = 5,
+        .events = 2,
+        .transfers = 0});
 
-constexpr uint64_t UNDELEGATE_OP_COST = compute_costs(OpCount{
-    .warm_sloads = 15,
-    .cold_sloads = 11,
-    .warm_sstores = 8,
-    .warm_sstore_nonzero = 5,
-    .cold_sstores = 1,
-    .events = 2,
-    .transfers = 0});
+constexpr uint64_t UNDELEGATE_OP_COST = compute_costs(
+    OpCount{
+        .warm_sloads = 15,
+        .cold_sloads = 11,
+        .warm_sstores = 8,
+        .warm_sstore_nonzero = 5,
+        .cold_sstores = 1,
+        .events = 2,
+        .transfers = 0});
 
-constexpr uint64_t WITHDRAW_OP_COST = compute_costs(OpCount{
-    .warm_sloads = 11,
-    .cold_sloads = 6,
-    .warm_sstores = 1,
-    .warm_sstore_nonzero = 0,
-    .cold_sstores = 0,
-    .events = 1,
-    .transfers = 1});
+constexpr uint64_t WITHDRAW_OP_COST = compute_costs(
+    OpCount{
+        .warm_sloads = 11,
+        .cold_sloads = 6,
+        .warm_sstores = 1,
+        .warm_sstore_nonzero = 0,
+        .cold_sstores = 0,
+        .events = 1,
+        .transfers = 1});
 
-constexpr uint64_t COMPOUND_OP_COST = compute_costs(OpCount{
-    .warm_sloads = 46,
-    .cold_sloads = 17,
-    .warm_sstores = 6,
-    .warm_sstore_nonzero = 29,
-    .cold_sstores = 3,
-    .events = 3,
-    .transfers = 0});
+constexpr uint64_t COMPOUND_OP_COST = compute_costs(
+    OpCount{
+        .warm_sloads = 46,
+        .cold_sloads = 17,
+        .warm_sstores = 6,
+        .warm_sstore_nonzero = 29,
+        .cold_sstores = 3,
+        .events = 3,
+        .transfers = 0});
 
-constexpr uint64_t CLAIM_REWARDS_OP_COST = compute_costs(OpCount{
-    .warm_sloads = 16,
-    .cold_sloads = 11,
-    .warm_sstores = 2,
-    .warm_sstore_nonzero = 11,
-    .cold_sstores = 1,
-    .events = 1,
-    .transfers = 1});
+constexpr uint64_t CLAIM_REWARDS_OP_COST = compute_costs(
+    OpCount{
+        .warm_sloads = 16,
+        .cold_sloads = 11,
+        .warm_sstores = 2,
+        .warm_sstore_nonzero = 11,
+        .cold_sstores = 1,
+        .events = 1,
+        .transfers = 1});
 
-constexpr uint64_t CHANGE_COMMISSION_OP_COST = compute_costs(OpCount{
-    .warm_sloads = 0,
-    .cold_sloads = 3,
-    .warm_sstores = 0,
-    .warm_sstore_nonzero = 0,
-    .cold_sstores = 1,
-    .events = 1,
-    .transfers = 0});
+constexpr uint64_t CHANGE_COMMISSION_OP_COST = compute_costs(
+    OpCount{
+        .warm_sloads = 0,
+        .cold_sloads = 3,
+        .warm_sstores = 0,
+        .warm_sstore_nonzero = 0,
+        .cold_sstores = 1,
+        .events = 1,
+        .transfers = 0});
 
-constexpr uint64_t EXTERNAL_REWARDS_OP_COST = compute_costs(OpCount{
-    .warm_sloads = 0,
-    .cold_sloads = 5,
-    .warm_sstores = 0,
-    .warm_sstore_nonzero = 0,
-    .cold_sstores = 2,
-    .events = 1,
-    .transfers = 0});
+constexpr uint64_t EXTERNAL_REWARDS_OP_COST = compute_costs(
+    OpCount{
+        .warm_sloads = 0,
+        .cold_sloads = 5,
+        .warm_sstores = 0,
+        .warm_sstore_nonzero = 0,
+        .cold_sstores = 2,
+        .events = 1,
+        .transfers = 0});
 
-constexpr uint64_t GET_PROPOSER_VAL_ID_OP_COST = compute_costs(OpCount{
-    .warm_sloads = 1,
-    .cold_sloads = 0,
-    .warm_sstores = 0,
-    .warm_sstore_nonzero = 0,
-    .cold_sstores = 0,
-    .events = 0,
-    .transfers = 0});
+constexpr uint64_t GET_PROPOSER_VAL_ID_OP_COST = compute_costs(
+    OpCount{
+        .warm_sloads = 1,
+        .cold_sloads = 0,
+        .warm_sstores = 0,
+        .warm_sstore_nonzero = 0,
+        .cold_sstores = 0,
+        .events = 0,
+        .transfers = 0});
 
-constexpr uint64_t GET_EPOCH_OP_COST = compute_costs(OpCount{
-    .warm_sloads = 2,
-    .cold_sloads = 0,
-    .warm_sstores = 0,
-    .warm_sstore_nonzero = 0,
-    .cold_sstores = 0,
-    .events = 0,
-    .transfers = 0});
+constexpr uint64_t GET_EPOCH_OP_COST = compute_costs(
+    OpCount{
+        .warm_sloads = 2,
+        .cold_sloads = 0,
+        .warm_sstores = 0,
+        .warm_sstore_nonzero = 0,
+        .cold_sstores = 0,
+        .events = 0,
+        .transfers = 0});
 
-constexpr uint64_t GET_VALIDATOR_OP_COST = compute_costs(OpCount{
-    .warm_sloads = 0,
-    .cold_sloads = 12,
-    .warm_sstores = 0,
-    .warm_sstore_nonzero = 0,
-    .cold_sstores = 0,
-    .events = 0,
-    .transfers = 0});
+constexpr uint64_t GET_VALIDATOR_OP_COST = compute_costs(
+    OpCount{
+        .warm_sloads = 0,
+        .cold_sloads = 12,
+        .warm_sstores = 0,
+        .warm_sstore_nonzero = 0,
+        .cold_sstores = 0,
+        .events = 0,
+        .transfers = 0});
 
-constexpr uint64_t GET_DELEGATOR_OP_COST = compute_costs(OpCount{
-    .warm_sloads = 15,
-    .cold_sloads = 17,
-    .warm_sstores = 1,
-    .warm_sstore_nonzero = 11,
-    .cold_sstores = 1,
-    .events = 0,
-    .transfers = 0});
+constexpr uint64_t GET_DELEGATOR_OP_COST = compute_costs(
+    OpCount{
+        .warm_sloads = 15,
+        .cold_sloads = 17,
+        .warm_sstores = 1,
+        .warm_sstore_nonzero = 11,
+        .cold_sstores = 1,
+        .events = 0,
+        .transfers = 0});
 
-constexpr uint64_t GET_WITHDRAWAL_REQUEST_OP_COST = compute_costs(OpCount{
-    .warm_sloads = 0,
-    .cold_sloads = 3,
-    .warm_sstores = 0,
-    .warm_sstore_nonzero = 0,
-    .cold_sstores = 0,
-    .events = 0,
-    .transfers = 0});
+constexpr uint64_t GET_WITHDRAWAL_REQUEST_OP_COST = compute_costs(
+    OpCount{
+        .warm_sloads = 0,
+        .cold_sloads = 3,
+        .warm_sstores = 0,
+        .warm_sstore_nonzero = 0,
+        .cold_sstores = 0,
+        .events = 0,
+        .transfers = 0});
 
-constexpr uint64_t GET_VALIDATOR_SET_OP_COST = compute_costs(OpCount{
-                                                   .warm_sloads = 0,
-                                                   .cold_sloads = 100,
-                                                   .warm_sstores = 0,
-                                                   .warm_sstore_nonzero = 0,
-                                                   .cold_sstores = 0,
-                                                   .events = 0,
-                                                   .transfers = 0}) +
+constexpr uint64_t GET_VALIDATOR_SET_OP_COST = compute_costs(
+                                                   OpCount{
+                                                       .warm_sloads = 0,
+                                                       .cold_sloads = 100,
+                                                       .warm_sstores = 0,
+                                                       .warm_sstore_nonzero = 0,
+                                                       .cold_sstores = 0,
+                                                       .events = 0,
+                                                       .transfers = 0}) +
                                                MEMORY_EXPANSION_COST;
 
-constexpr uint64_t LINKED_LIST_GETTER_OP_COST = compute_costs(OpCount{
-                                                    .warm_sloads = 0,
-                                                    .cold_sloads = 100,
-                                                    .warm_sstores = 0,
-                                                    .warm_sstore_nonzero = 0,
-                                                    .cold_sstores = 0,
-                                                    .events = 0,
-                                                    .transfers = 0}) +
-                                                MEMORY_EXPANSION_COST;
+constexpr uint64_t LINKED_LIST_GETTER_OP_COST =
+    compute_costs(
+        OpCount{
+            .warm_sloads = 0,
+            .cold_sloads = 100,
+            .warm_sstores = 0,
+            .warm_sstore_nonzero = 0,
+            .cold_sstores = 0,
+            .events = 0,
+            .transfers = 0}) +
+    MEMORY_EXPANSION_COST;
 
 static_assert(ADD_VALIDATOR_OP_COST == 505125);
 static_assert(DELEGATE_OP_COST == 260850);
@@ -1226,11 +1242,13 @@ Result<byte_string> StakingContract::precompile_add_validator(
 
     // add validator metadata
     auto val = vars.val_execution(val_id);
-    val.keys().store(KeysPacked{
-        .secp_pubkey = secp_pubkey_compressed,
-        .bls_pubkey = bls_pubkey_compressed});
-    val.address_flags().store(AddressFlags{
-        .auth_address = auth_address, .flags = ValidatorFlagsStakeTooLow});
+    val.keys().store(
+        KeysPacked{
+            .secp_pubkey = secp_pubkey_compressed,
+            .bls_pubkey = bls_pubkey_compressed});
+    val.address_flags().store(
+        AddressFlags{
+            .auth_address = auth_address, .flags = ValidatorFlagsStakeTooLow});
     val.commission().store(commission);
 
     emit_validator_created_event(val_id, auth_address, commission);
@@ -1420,10 +1438,11 @@ Result<byte_string> StakingContract::precompile_undelegate(
     // each withdrawal request can be thought of as an independent delegator
     // whose stake is the amount being withdrawn.
     vars.withdrawal_request(val_id, msg_sender, withdrawal_id)
-        .store(WithdrawalRequest{
-            .amount = amount,
-            .acc = del.accumulated_reward_per_token().load(),
-            .epoch = withdrawal_epoch});
+        .store(
+            WithdrawalRequest{
+                .amount = amount,
+                .acc = del.accumulated_reward_per_token().load(),
+                .epoch = withdrawal_epoch});
     increment_accumulator_refcount(val_id);
 
     if (del.stake().load().native() == 0) {

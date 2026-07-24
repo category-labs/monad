@@ -160,16 +160,17 @@ void monad_statesync_client_context::commit()
                                   std::deque<hash256> &hash_alloc) {
         UpdateList storage;
         for (auto const &[key, val] : slot_deltas) {
-            storage.push_front(alloc.emplace_back(Update{
-                .key = hash_alloc.emplace_back(keccak256(key.bytes)),
-                .value = val == bytes32_t{}
-                             ? std::nullopt
-                             : std::make_optional<byte_string_view>(
-                                   bytes_alloc.emplace_back(
-                                       encode_storage_db(key, val))),
-                .incarnation = false,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(current)}));
+            storage.push_front(alloc.emplace_back(
+                Update{
+                    .key = hash_alloc.emplace_back(keccak256(key.bytes)),
+                    .value = val == bytes32_t{}
+                                 ? std::nullopt
+                                 : std::make_optional<byte_string_view>(
+                                       bytes_alloc.emplace_back(
+                                           encode_storage_db(key, val))),
+                    .incarnation = false,
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(current)}));
         }
         return storage;
     };
@@ -209,17 +210,18 @@ void monad_statesync_client_context::commit()
         }
         for (auto const &[page_key, page] : pages) {
             bool const is_empty = page.is_empty();
-            storage.push_front(alloc.emplace_back(Update{
-                .key = hash_alloc.emplace_back(
-                    keccak256({page_key.bytes, sizeof(page_key.bytes)})),
-                .value = is_empty
-                             ? std::nullopt
-                             : std::make_optional<byte_string_view>(
-                                   bytes_alloc.emplace_back(
-                                       encode_storage_page_db(page_key, page))),
-                .incarnation = false,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(current)}));
+            storage.push_front(alloc.emplace_back(
+                Update{
+                    .key = hash_alloc.emplace_back(
+                        keccak256({page_key.bytes, sizeof(page_key.bytes)})),
+                    .value = is_empty ? std::nullopt
+                                      : std::make_optional<byte_string_view>(
+                                            bytes_alloc.emplace_back(
+                                                encode_storage_page_db(
+                                                    page_key, page))),
+                    .incarnation = false,
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(current)}));
         }
         return storage;
     };
@@ -242,21 +244,23 @@ void monad_statesync_client_context::commit()
                 storage = build_storage(
                     addr, slot_deltas, alloc, bytes_alloc, hash_alloc);
             }
-            accounts.push_front(alloc.emplace_back(Update{
-                .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
-                .value = value,
-                .incarnation = false,
-                .next = std::move(storage),
-                .version = static_cast<int64_t>(current)}));
+            accounts.push_front(alloc.emplace_back(
+                Update{
+                    .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
+                    .value = value,
+                    .incarnation = false,
+                    .next = std::move(storage),
+                    .version = static_cast<int64_t>(current)}));
         }
         UpdateList code_updates;
         for (auto const &[hash, bytes] : code) {
-            code_updates.push_front(alloc.emplace_back(Update{
-                .key = NibblesView{hash},
-                .value = bytes,
-                .incarnation = false,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(current)}));
+            code_updates.push_front(alloc.emplace_back(
+                Update{
+                    .key = NibblesView{hash},
+                    .value = bytes,
+                    .incarnation = false,
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(current)}));
         }
 
         auto state_update = Update{

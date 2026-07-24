@@ -529,13 +529,13 @@ public:
             })
     auto make_connected(Sender &&sender, Receiver &&receiver)
     {
-        return make_connected_impl_ < Sender::my_operation_type ==
-               operation_type::write > ([&] {
-                   return connect<Sender, Receiver>(
-                       *this,
-                       std::forward<Sender>(sender),
-                       std::forward<Receiver>(receiver));
-               });
+        return make_connected_impl_<
+            Sender::my_operation_type == operation_type::write>([&] {
+            return connect<Sender, Receiver>(
+                *this,
+                std::forward<Sender>(sender),
+                std::forward<Receiver>(receiver));
+        });
     }
 
     //! Construct into internal memory a connected state for an i/o read
@@ -557,14 +557,11 @@ public:
         std::piecewise_construct_t _, std::tuple<SenderArgs...> &&sender_args,
         std::tuple<ReceiverArgs...> &&receiver_args)
     {
-        return make_connected_impl_ < Sender::my_operation_type ==
-               operation_type::write > ([&] {
-                   return connect<Sender, Receiver>(
-                       *this,
-                       _,
-                       std::move(sender_args),
-                       std::move(receiver_args));
-               });
+        return make_connected_impl_<
+            Sender::my_operation_type == operation_type::write>([&] {
+            return connect<Sender, Receiver>(
+                *this, _, std::move(sender_args), std::move(receiver_args));
+        });
     }
 
     template <class Base, sender Sender, receiver Receiver>

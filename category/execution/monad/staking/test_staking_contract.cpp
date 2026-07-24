@@ -770,8 +770,9 @@ TEST_F(StakeLatest, linked_list_removal_state_override)
 
     // state override invalid validator
     auto validator = contract.vars.val_execution(1u);
-    validator.address_flags().store(ValExecution::AddressFlags_t{
-        .auth_address = sentinel, .flags = ValidatorFlagsOk});
+    validator.address_flags().store(
+        ValExecution::AddressFlags_t{
+            .auth_address = sentinel, .flags = ValidatorFlagsOk});
     validator.stake().store(stake);
 
     // state override that the contract can process this withdrawal

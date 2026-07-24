@@ -85,17 +85,19 @@ namespace monad::vm::fuzzing
         evmc::Result const &evmone_result, evmc::Result const &compiler_result,
         bool const strict_out_of_gas)
     {
-        MONAD_ASSERT(std::ranges::equal(
-            evmone_result.create_address.bytes,
-            compiler_result.create_address.bytes));
+        MONAD_ASSERT(
+            std::ranges::equal(
+                evmone_result.create_address.bytes,
+                compiler_result.create_address.bytes));
 
         MONAD_ASSERT(evmone_result.gas_left == compiler_result.gas_left);
         MONAD_ASSERT(evmone_result.gas_refund == compiler_result.gas_refund);
 
-        MONAD_ASSERT(std::ranges::equal(
-            std::span(evmone_result.output_data, evmone_result.output_size),
-            std::span(
-                compiler_result.output_data, compiler_result.output_size)));
+        MONAD_ASSERT(
+            std::ranges::equal(
+                std::span(evmone_result.output_data, evmone_result.output_size),
+                std::span(
+                    compiler_result.output_data, compiler_result.output_size)));
 
         switch (evmone_result.status_code) {
         case EVMC_SUCCESS:

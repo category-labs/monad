@@ -320,12 +320,13 @@ void add_block_override_withdrawal(
         m->withdrawals = std::vector<Withdrawal>{};
     }
 
-    m->withdrawals->emplace_back(Withdrawal{
-        .index = index,
-        .validator_index = validator_index,
-        .amount = amount,
-        .recipient = recipient,
-    });
+    m->withdrawals->emplace_back(
+        Withdrawal{
+            .index = index,
+            .validator_index = validator_index,
+            .amount = amount,
+            .recipient = recipient,
+        });
 }
 
 struct monad_block_override_vec *monad_block_override_vec_create(size_t size)

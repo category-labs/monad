@@ -148,9 +148,10 @@ template <typename T>
             else {
                 error_code_message = "unknown";
             }
-            throw std::invalid_argument{error_message(fmt::format(
-                "std::from_chars failed with {} error code",
-                error_code_message))};
+            throw std::invalid_argument{error_message(
+                fmt::format(
+                    "std::from_chars failed with {} error code",
+                    error_code_message))};
         }
         throw std::invalid_argument{
             error_message("non-empty hexadecimal strings are supported")};
@@ -162,9 +163,9 @@ template <typename T>
                 if (value >= 0) {
                     return static_cast<T>(value);
                 }
-                throw std::invalid_argument{
-                    error_message("could not convert a negative double to an "
-                                  "unsigned integer")};
+                throw std::invalid_argument{error_message(
+                    "could not convert a negative double to an "
+                    "unsigned integer")};
             }
             else /* if constexpr(std::is_same_v<T, int64_t>) */ {
                 if (value >= std::numeric_limits<T>::min() &&
@@ -183,9 +184,9 @@ template <typename T>
                         static_cast<double>(std::numeric_limits<T>::max())) {
                     return static_cast<T>(value);
                 }
-                throw std::invalid_argument{
-                    error_message("converting a signed double to an unsigned "
-                                  "integer is not supported")};
+                throw std::invalid_argument{error_message(
+                    "converting a signed double to an unsigned "
+                    "integer is not supported")};
             }
             else /* if constexpr(std::is_same_v<T, int64_t>) */ {
                 if (value >= std::numeric_limits<T>::min() &&

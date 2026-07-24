@@ -74,32 +74,37 @@ namespace
             .value();
 
     static auto const ECRECOVER_VALID_KEY_OUTPUT =
-        from_hex(std::string_view{"000000000000000000000000a94f5374fce5ed"
-                                  "bc8e2a8697c15331677e6ebf0b"})
+        from_hex(
+            std::string_view{"000000000000000000000000a94f5374fce5ed"
+                             "bc8e2a8697c15331677e6ebf0b"})
             .value();
 
     // hash of empty string
     static auto const SHA256_NULL_HASH =
-        from_hex(std::string_view{"e3b0c44298fc1c149afbf4c8996fb92427ae41"
-                                  "e4649b934ca495991b7852b855"})
+        from_hex(
+            std::string_view{"e3b0c44298fc1c149afbf4c8996fb92427ae41"
+                             "e4649b934ca495991b7852b855"})
             .value();
 
     // hash of the string "lol"
     static auto const SHA256_LOL_HASH =
-        from_hex(std::string_view{"07123e1f482356c415f684407a3b8723e10b2c"
-                                  "bbc0b8fcd6282c49d37c9c1abc"})
+        from_hex(
+            std::string_view{"07123e1f482356c415f684407a3b8723e10b2c"
+                             "bbc0b8fcd6282c49d37c9c1abc"})
             .value();
 
     // hash of empty string padded to 32 bytes
     static auto const RIPEMD160_NULL_HASH =
-        from_hex(std::string_view{"0000000000000000000000009c1185a5c5e9fc"
-                                  "54612808977ee8f548b2258d31"})
+        from_hex(
+            std::string_view{"0000000000000000000000009c1185a5c5e9fc"
+                             "54612808977ee8f548b2258d31"})
             .value();
 
     // hash of the string "lol" padded to 32 bytes
     static auto const RIPEMD160_LOL_HASH =
-        from_hex(std::string_view{"00000000000000000000000014d61d472ae2e9"
-                                  "74453fb7a0ef239510f36bee24"})
+        from_hex(
+            std::string_view{"00000000000000000000000014d61d472ae2e9"
+                             "74453fb7a0ef239510f36bee24"})
             .value();
 
     // the following point evaluation input data was directly copied from
@@ -121,10 +126,11 @@ namespace
 
             .value();
     static auto const POINT_EVALUATION_EXPECTED =
-        from_hex(std::string_view{"00000000000000000000000000000000000000"
-                                  "0000000000000000000000100073"
-                                  "eda753299d7d483339d80809a1d80553bda402"
-                                  "fffe5bfeffffffff00000001"})
+        from_hex(
+            std::string_view{"00000000000000000000000000000000000000"
+                             "0000000000000000000000100073"
+                             "eda753299d7d483339d80809a1d80553bda402"
+                             "fffe5bfeffffffff00000001"})
             .value();
 
     // EIP-152 test vector 8.
@@ -704,41 +710,44 @@ TYPED_TEST(TraitsTest, modexp_truncated_input)
     auto const test_cases = std::array{
         test_case{
             .name = "truncated_modulus_len",
-            .input =
-                from_hex("0x00000000000000000000000000000000000000000000000"
+            .input = from_hex(
+                         "0x00000000000000000000000000000000000000000000000"
                          "0000000000000000100000000000000000000000000000000"
                          "0000000000000000000000000000000100000000000000000"
                          "000000000000000000000000000000005")
-                    .value(),
+                         .value(),
             .expected = expected_failure,
             .gas = 30'000'000,
         },
         test_case{
             .name = "truncated_exponent_len",
-            .input = from_hex("0x00000000000000000000000000000000000000000"
-                              "0000000000000000000000100000000000000000000"
-                              "00000000000000000000000000000005")
+            .input = from_hex(
+                         "0x00000000000000000000000000000000000000000"
+                         "0000000000000000000000100000000000000000000"
+                         "00000000000000000000000000000005")
                          .value(),
             .expected = expected_failure,
             .gas = 30'000'000,
         },
         test_case{
             .name = "truncated_base_len",
-            .input = from_hex("0x000000000000000000000000000000000000"
-                              "00000000000000000500")
+            .input = from_hex(
+                         "0x000000000000000000000000000000000000"
+                         "00000000000000000500")
                          .value(),
             .expected = expected_failure,
             .gas = 30'000'000,
         },
         test_case{
             .name = "truncated_exponent",
-            .input = from_hex("0x00000000000000000000000000000000000"
-                              "000000000000000000000"
-                              "0000000100000000000000000000000000000"
-                              "000000000000000000000"
-                              "0000000000000200000000000000000000000"
-                              "000000000000000000000"
-                              "000000000000000000050201")
+            .input = from_hex(
+                         "0x00000000000000000000000000000000000"
+                         "000000000000000000000"
+                         "0000000100000000000000000000000000000"
+                         "000000000000000000000"
+                         "0000000000000200000000000000000000000"
+                         "000000000000000000000"
+                         "000000000000000000050201")
                          .value(),
             .expected = from_hex("0x0000000000").value(),
             .gas = min_gas,

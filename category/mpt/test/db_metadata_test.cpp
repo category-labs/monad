@@ -89,8 +89,9 @@ TEST(db_metadata, DISABLED_copy)
             if (metadata[2]->chunk_info_count != 5 &&
                 metadata[2]->capacity_in_free_list == 5) {
                 if (!metadata[2]->is_dirty().load(std::memory_order_acquire)) {
-                    EXPECT_TRUE(metadata[2]->is_dirty().load(
-                        std::memory_order_acquire));
+                    EXPECT_TRUE(
+                        metadata[2]->is_dirty().load(
+                            std::memory_order_acquire));
                 }
                 count++;
             }

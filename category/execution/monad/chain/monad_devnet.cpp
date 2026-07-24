@@ -64,8 +64,9 @@ GenesisState MonadDevnet::get_genesis_state() const
     header.difficulty = 17179869184;
     header.gas_limit = 5000;
     store_be(header.nonce.data(), uint64_t{66});
-    header.extra_data = from_hex("0x11bbe8db4e347b4e8c937c1c8370e4b5ed33a"
-                                 "db3db69cbdb7a38e1e50b1b82fa")
+    header.extra_data = from_hex(
+                            "0x11bbe8db4e347b4e8c937c1c8370e4b5ed33a"
+                            "db3db69cbdb7a38e1e50b1b82fa")
                             .value();
     return {header, MONAD_DEVNET_ALLOC};
 }

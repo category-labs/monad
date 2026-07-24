@@ -62,10 +62,10 @@ byte_string encode_execution_witness(
     byte_string_view const block_rlp, std::span<byte_string const> const nodes,
     std::span<byte_string const> const codes,
     std::span<byte_string const> const headers,
-    ankerl::unordered_dense::segmented_set<Address> const
-        *const parent_senders_and_authorities,
-    ankerl::unordered_dense::segmented_set<Address> const
-        *const grandparent_senders_and_authorities)
+    ankerl::unordered_dense::segmented_set<Address> const *const
+        parent_senders_and_authorities,
+    ankerl::unordered_dense::segmented_set<Address> const *const
+        grandparent_senders_and_authorities)
 {
     // 20-byte address → 1-byte length prefix (0x94) + 20 payload bytes.
     static_assert(sizeof(Address) == 20);

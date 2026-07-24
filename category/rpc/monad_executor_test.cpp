@@ -3993,8 +3993,9 @@ TEST_F(EthCallFixture, eth_call_reserve_balance)
 
     // Transfer 5 MON to receipient
     auto const contract_code =
-        from_hex("0x5f5f5f5f674563918244f40000730000000000000000000000000"
-                 "0000000444444445af1")
+        from_hex(
+            "0x5f5f5f5f674563918244f40000730000000000000000000000000"
+            "0000000444444445af1")
             .value();
     auto const contract_code_hash = to_bytes(keccak256(contract_code));
     auto const contract_icode = monad::vm::make_shared_intercode(contract_code);
@@ -4946,8 +4947,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
     auto *const state_override = monad_state_override_vec_create(1);
     auto *const block_override = monad_block_override_vec_create(1);
 
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                rlp::encode_address(std::make_optional(sender)))));
 
     // A simple transfer
     Transaction const tx{
@@ -4956,8 +4959,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
         .to = recipient,
     };
     auto const encoded_tx = rlp::encode_transaction(tx);
-    auto const rlp_calls = to_vec(rlp::encode_list2(
-        rlp::encode_list2(rlp::encode_string2(byte_string_view(encoded_tx)))));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                rlp::encode_string2(byte_string_view(encoded_tx)))));
 
     // Header for the base block (block 1).
     BlockHeader const header{
@@ -5055,9 +5060,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
     auto *const block_overrides = monad_block_override_vec_create(2);
 
     auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(encoded_sender, encoded_sender),
-        rlp::encode_list2(encoded_sender, encoded_sender, encoded_sender)));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(encoded_sender, encoded_sender),
+            rlp::encode_list2(encoded_sender, encoded_sender, encoded_sender)));
 
     Transaction const tx0{
         .gas_limit = 200'000'000,
@@ -5065,9 +5071,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
         .to = recipient,
     };
     auto const encoded_tx0 = rlp::encode_string2(rlp::encode_transaction(tx0));
-    auto const rlp_calls = to_vec(rlp::encode_list2(
-        rlp::encode_list2(encoded_tx0, encoded_tx0),
-        rlp::encode_list2(encoded_tx0, encoded_tx0, encoded_tx0)));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(encoded_tx0, encoded_tx0),
+            rlp::encode_list2(encoded_tx0, encoded_tx0, encoded_tx0)));
 
     // Header for the base block (block 1).
     BlockHeader const header{
@@ -5152,8 +5159,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_single_call_block_255)
 
     // One sender for one simulated block.
     Address const sender = 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266_address;
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                rlp::encode_address(std::make_optional(sender)))));
 
     // One simple EIP-1559 transfer: send 1 ETH to 0xdeadbeef...
     Transaction const tx{
@@ -5163,8 +5172,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_single_call_block_255)
         .type = TransactionType::eip1559,
     };
     auto const encoded_tx = rlp::encode_transaction(tx);
-    auto const rlp_calls = to_vec(rlp::encode_list2(
-        rlp::encode_list2(rlp::encode_string2(byte_string_view(encoded_tx)))));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                rlp::encode_string2(byte_string_view(encoded_tx)))));
 
     // Header for the base block (block 255).
     BlockHeader const header{
@@ -5279,8 +5290,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_synthetic_gap)
 
     // One sender for one simulated block.
     Address const sender = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266_address;
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                rlp::encode_address(std::make_optional(sender)))));
 
     // One simple EIP-1559 transfer: send 1 ETH to 0xdeadbeef...
     Transaction const tx{
@@ -5290,8 +5303,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_synthetic_gap)
         .type = TransactionType::eip1559,
     };
     auto const encoded_tx = rlp::encode_transaction(tx);
-    auto const rlp_calls = to_vec(rlp::encode_list2(
-        rlp::encode_list2(rlp::encode_string2(byte_string_view(encoded_tx)))));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                rlp::encode_string2(byte_string_view(encoded_tx)))));
 
     // Header for the base block (block 255).
     BlockHeader const header{
@@ -5385,16 +5400,20 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
     auto *const so_overrides = monad_state_override_vec_create(256);
     for (size_t i = 0; i < 256; i++) {
         bool const is_even = (i % 2 == 0);
-        auto const encoded_tx = rlp::encode_transaction(Transaction{
-            .gas_limit = 200'000'000,
-            .value = uint256_t{1},
-            .to = is_even ? ping : pong,
-            .type = TransactionType::eip1559,
-        });
-        encoded_calls.push_back(rlp::encode_list2(
-            rlp::encode_string2(byte_string_view(encoded_tx))));
-        encoded_senders.push_back(rlp::encode_list2(rlp::encode_address(
-            std::optional<Address>{is_even ? pong : ping})));
+        auto const encoded_tx = rlp::encode_transaction(
+            Transaction{
+                .gas_limit = 200'000'000,
+                .value = uint256_t{1},
+                .to = is_even ? ping : pong,
+                .type = TransactionType::eip1559,
+            });
+        encoded_calls.push_back(
+            rlp::encode_list2(
+                rlp::encode_string2(byte_string_view(encoded_tx))));
+        encoded_senders.push_back(
+            rlp::encode_list2(
+                rlp::encode_address(
+                    std::optional<Address>{is_even ? pong : ping})));
         set_block_override_number_at(bo_overrides, i, 256 + i);
         set_block_override_time_at(bo_overrides, i, 256 + i * 10);
     }
@@ -5478,8 +5497,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
 
     // Build a minimal valid simulation payload (one call, no overrides).
     Address const sender = ADDR_A;
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                rlp::encode_address(std::make_optional(sender)))));
 
     Transaction const tx{
         .gas_limit = 200'000'000,
@@ -5488,8 +5509,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
         .type = TransactionType::eip1559,
     };
     auto const encoded_tx = rlp::encode_transaction(tx);
-    auto const rlp_calls = to_vec(rlp::encode_list2(
-        rlp::encode_list2(rlp::encode_string2(byte_string_view(encoded_tx)))));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                rlp::encode_string2(byte_string_view(encoded_tx)))));
 
     BlockHeader const header{
         .number = 255,
@@ -5643,8 +5666,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
         rlp::encode_address(std::make_optional(sender_a));
     auto const encoded_sender_b =
         rlp::encode_address(std::make_optional(sender_b));
-    auto const rlp_senders = to_vec(rlp::encode_list2(rlp::encode_list2(
-        encoded_sender_a, encoded_sender_b, encoded_sender_a)));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                encoded_sender_a, encoded_sender_b, encoded_sender_a)));
 
     // tx0: sender_a sends 2 MON (dips into reserve, allowed as first tx)
     Transaction const tx_dip{
@@ -5672,8 +5697,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
         rlp::encode_string2(rlp::encode_transaction(tx_safe));
     auto const encoded_tx_repeat =
         rlp::encode_string2(rlp::encode_transaction(tx_repeat));
-    auto const rlp_calls = to_vec(rlp::encode_list2(
-        rlp::encode_list2(encoded_tx_dip, encoded_tx_safe, encoded_tx_repeat)));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                encoded_tx_dip, encoded_tx_safe, encoded_tx_repeat)));
 
     BlockHeader const header{
         .number = 1,
@@ -5817,11 +5844,12 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
         // K=3 sliding window.
         auto const encoded_sender_x =
             rlp::encode_address(std::make_optional(sender_x));
-        auto const rlp_senders = to_vec(rlp::encode_list2(
-            rlp::encode_list2(encoded_sender_x),
-            rlp::encode_list2(encoded_sender_x),
-            rlp::encode_list2(encoded_sender_x),
-            rlp::encode_list2(encoded_sender_x)));
+        auto const rlp_senders = to_vec(
+            rlp::encode_list2(
+                rlp::encode_list2(encoded_sender_x),
+                rlp::encode_list2(encoded_sender_x),
+                rlp::encode_list2(encoded_sender_x),
+                rlp::encode_list2(encoded_sender_x)));
 
         Transaction const tx_dip{
             .gas_limit = 200'000'000,
@@ -5830,11 +5858,12 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
         };
         auto const encoded_tx_dip =
             rlp::encode_string2(rlp::encode_transaction(tx_dip));
-        auto const rlp_calls = to_vec(rlp::encode_list2(
-            rlp::encode_list2(encoded_tx_dip),
-            rlp::encode_list2(encoded_tx_dip),
-            rlp::encode_list2(encoded_tx_dip),
-            rlp::encode_list2(encoded_tx_dip)));
+        auto const rlp_calls = to_vec(
+            rlp::encode_list2(
+                rlp::encode_list2(encoded_tx_dip),
+                rlp::encode_list2(encoded_tx_dip),
+                rlp::encode_list2(encoded_tx_dip),
+                rlp::encode_list2(encoded_tx_dip)));
 
         BlockHeader const header{.number = 1, .gas_limit = 200'000'000};
         auto const rlp_header = to_vec(rlp::encode_block_header(header));
@@ -5961,21 +5990,23 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             rlp::encode_address(std::make_optional(other));
         auto const encoded_sender_x =
             rlp::encode_address(std::make_optional(sender_x));
-        auto const rlp_senders = to_vec(rlp::encode_list2(
-            rlp::encode_list2(encoded_other),
-            rlp::encode_list2(encoded_sender_x),
-            rlp::encode_list2(encoded_sender_x),
-            rlp::encode_list2(encoded_sender_x)));
+        auto const rlp_senders = to_vec(
+            rlp::encode_list2(
+                rlp::encode_list2(encoded_other),
+                rlp::encode_list2(encoded_sender_x),
+                rlp::encode_list2(encoded_sender_x),
+                rlp::encode_list2(encoded_sender_x)));
 
         auto const encoded_tx_auth =
             rlp::encode_string2(rlp::encode_transaction(tx_with_auth));
         auto const encoded_tx_dip =
             rlp::encode_string2(rlp::encode_transaction(tx_dip));
-        auto const rlp_calls = to_vec(rlp::encode_list2(
-            rlp::encode_list2(encoded_tx_auth),
-            rlp::encode_list2(encoded_tx_dip),
-            rlp::encode_list2(encoded_tx_dip),
-            rlp::encode_list2(encoded_tx_dip)));
+        auto const rlp_calls = to_vec(
+            rlp::encode_list2(
+                rlp::encode_list2(encoded_tx_auth),
+                rlp::encode_list2(encoded_tx_dip),
+                rlp::encode_list2(encoded_tx_dip),
+                rlp::encode_list2(encoded_tx_dip)));
 
         BlockHeader const header{.number = 1, .gas_limit = 200'000'000};
         auto const rlp_header = to_vec(rlp::encode_block_header(header));
@@ -6105,34 +6136,36 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
     CompiledCode const target_cc = compile(evm_as::latest().stop());
 
     // CALL wrapper: CALL(target); MSTORE result; RETURN 32 bytes
-    CompiledCode const call_cc = compile(evm_as::latest()
-                                             .call({.address = target})
-                                             .push0()
-                                             .mstore()
-                                             .return_(0, 32));
+    CompiledCode const call_cc = compile(
+        evm_as::latest()
+            .call({.address = target})
+            .push0()
+            .mstore()
+            .return_(0, 32));
 
     // STATICCALL wrapper
-    CompiledCode const staticcall_cc =
-        compile(evm_as::latest()
-                    .staticcall({.address = target})
-                    .push0()
-                    .mstore()
-                    .return_(0, 32));
+    CompiledCode const staticcall_cc = compile(
+        evm_as::latest()
+            .staticcall({.address = target})
+            .push0()
+            .mstore()
+            .return_(0, 32));
 
     // DELEGATECALL wrapper
-    CompiledCode const delegatecall_cc =
-        compile(evm_as::latest()
-                    .delegatecall({.address = target})
-                    .push0()
-                    .mstore()
-                    .return_(0, 32));
+    CompiledCode const delegatecall_cc = compile(
+        evm_as::latest()
+            .delegatecall({.address = target})
+            .push0()
+            .mstore()
+            .return_(0, 32));
 
     // CALLCODE wrapper
-    CompiledCode const callcode_cc = compile(evm_as::latest()
-                                                 .callcode({.address = target})
-                                                 .push0()
-                                                 .mstore()
-                                                 .return_(0, 32));
+    CompiledCode const callcode_cc = compile(
+        evm_as::latest()
+            .callcode({.address = target})
+            .push0()
+            .mstore()
+            .return_(0, 32));
 
     commit_sequential(
         tdb,
@@ -6187,8 +6220,9 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
 
     // 4 transactions from sender, each calling a different wrapper.
     auto const enc_sender = rlp::encode_address(std::make_optional(sender));
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(enc_sender, enc_sender, enc_sender, enc_sender)));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(enc_sender, enc_sender, enc_sender, enc_sender)));
 
     Transaction const tx_call{
         .gas_limit = 200'000'000, .value = 0, .to = call_wrapper};
@@ -6206,8 +6240,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
         rlp::encode_string2(rlp::encode_transaction(tx_delegatecall));
     auto const enc_callcode =
         rlp::encode_string2(rlp::encode_transaction(tx_callcode));
-    auto const rlp_calls = to_vec(rlp::encode_list2(rlp::encode_list2(
-        enc_call, enc_staticcall, enc_delegatecall, enc_callcode)));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                enc_call, enc_staticcall, enc_delegatecall, enc_callcode)));
 
     BlockHeader const header{.number = 1, .gas_limit = 800'000'000};
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
@@ -6345,21 +6381,23 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
     // Block 2: A sends 60 MON (will fail)
     // Block 3: B sends 50 MON to A
     // Block 4: A sends 60 MON (will succeed after refund)
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(encoded_a),
-        rlp::encode_list2(encoded_a),
-        rlp::encode_list2(encoded_b),
-        rlp::encode_list2(encoded_a)));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(encoded_a),
+            rlp::encode_list2(encoded_a),
+            rlp::encode_list2(encoded_b),
+            rlp::encode_list2(encoded_a)));
 
     auto const encoded_tx_a =
         rlp::encode_string2(rlp::encode_transaction(tx_a_sends_60));
     auto const encoded_tx_b =
         rlp::encode_string2(rlp::encode_transaction(tx_b_refunds_a));
-    auto const rlp_calls = to_vec(rlp::encode_list2(
-        rlp::encode_list2(encoded_tx_a),
-        rlp::encode_list2(encoded_tx_a),
-        rlp::encode_list2(encoded_tx_b),
-        rlp::encode_list2(encoded_tx_a)));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(encoded_tx_a),
+            rlp::encode_list2(encoded_tx_a),
+            rlp::encode_list2(encoded_tx_b),
+            rlp::encode_list2(encoded_tx_a)));
 
     BlockHeader const header{.number = 1, .gas_limit = 200'000'000};
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
@@ -6560,10 +6598,11 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
     };
 
     auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(encoded_sender),
-        rlp::encode_list2(encoded_sender),
-        rlp::encode_list2(encoded_sender)));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(encoded_sender),
+            rlp::encode_list2(encoded_sender),
+            rlp::encode_list2(encoded_sender)));
 
     auto const encoded_deploy =
         rlp::encode_string2(rlp::encode_transaction(deploy_tx));
@@ -6571,10 +6610,11 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
         rlp::encode_string2(rlp::encode_transaction(call_tx));
     auto const encoded_check =
         rlp::encode_string2(rlp::encode_transaction(check_tx));
-    auto const rlp_calls = to_vec(rlp::encode_list2(
-        rlp::encode_list2(encoded_deploy),
-        rlp::encode_list2(encoded_call),
-        rlp::encode_list2(encoded_check)));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(encoded_deploy),
+            rlp::encode_list2(encoded_call),
+            rlp::encode_list2(encoded_check)));
 
     BlockHeader const header{.number = 1, .gas_limit = 200'000'000};
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
@@ -6918,12 +6958,14 @@ TYPED_TEST(EthCallEncodingFixture, eth_simulate_v1_time_travel)
     };
 
     auto const enc_sender = rlp::encode_address(std::make_optional(sender));
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(enc_sender), rlp::encode_list2(enc_sender)));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(enc_sender), rlp::encode_list2(enc_sender)));
 
     auto const enc_tx = rlp::encode_string2(rlp::encode_transaction(tx));
-    auto const rlp_calls = to_vec(rlp::encode_list2(
-        rlp::encode_list2(enc_tx), rlp::encode_list2(enc_tx)));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(enc_tx), rlp::encode_list2(enc_tx)));
 
     BlockHeader const header{.number = 255, .gas_limit = 200'000'000};
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
@@ -7046,16 +7088,18 @@ TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
     };
 
     auto const enc_sender = rlp::encode_address(std::make_optional(sender));
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(enc_sender),
-        rlp::encode_list2(enc_sender),
-        rlp::encode_list2(enc_sender)));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(enc_sender),
+            rlp::encode_list2(enc_sender),
+            rlp::encode_list2(enc_sender)));
 
     auto const enc_tx = rlp::encode_string2(rlp::encode_transaction(tx));
-    auto const rlp_calls = to_vec(rlp::encode_list2(
-        rlp::encode_list2(enc_tx),
-        rlp::encode_list2(enc_tx),
-        rlp::encode_list2(enc_tx)));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(enc_tx),
+            rlp::encode_list2(enc_tx),
+            rlp::encode_list2(enc_tx)));
 
     BlockHeader const header{.number = 255, .gas_limit = 200'000'000};
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
@@ -7548,8 +7592,13 @@ TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
     auto *const block_overrides = monad_block_override_vec_create(1);
 
     auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
-    auto const rlp_senders = to_vec(rlp::encode_list2(rlp::encode_list2(
-        encoded_sender, encoded_sender, encoded_sender, encoded_sender)));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                encoded_sender,
+                encoded_sender,
+                encoded_sender,
+                encoded_sender)));
 
     AuthorizationEntry const auth_for_sender{
         .sc =
@@ -7612,8 +7661,13 @@ TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
         rlp::encode_string2(rlp::encode_transaction(tx_1559));
     auto const encoded_tx_7702 =
         rlp::encode_string2(rlp::encode_transaction(tx_7702));
-    auto const rlp_calls = to_vec(rlp::encode_list2(rlp::encode_list2(
-        encoded_tx_legacy, encoded_tx_2930, encoded_tx_1559, encoded_tx_7702)));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                encoded_tx_legacy,
+                encoded_tx_2930,
+                encoded_tx_1559,
+                encoded_tx_7702)));
 
     BlockHeader const header{
         .number = 1,
@@ -7714,8 +7768,10 @@ TEST_F(
     auto *const block_overrides = monad_block_override_vec_create(2);
 
     auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(encoded_sender), rlp::encode_list2(encoded_sender)));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(encoded_sender),
+            rlp::encode_list2(encoded_sender)));
 
     Transaction const tx0{
         .max_fee_per_gas = 1,
@@ -7735,8 +7791,9 @@ TEST_F(
 
     auto const encoded_tx0 = rlp::encode_string2(rlp::encode_transaction(tx0));
     auto const encoded_tx1 = rlp::encode_string2(rlp::encode_transaction(tx1));
-    auto const rlp_calls = to_vec(rlp::encode_list2(
-        rlp::encode_list2(encoded_tx0), rlp::encode_list2(encoded_tx1)));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(encoded_tx0), rlp::encode_list2(encoded_tx1)));
 
     BlockHeader const header{
         .number = 1,
@@ -7840,10 +7897,11 @@ TEST_F(EthCallFixture, eth_simulate_v1_gas_limit_enforcement)
     uint64_t const total_gas_limit = std::numeric_limits<uint64_t>::max() - 1;
 
     auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(encoded_sender),
-        rlp::encode_list2(encoded_sender),
-        rlp::encode_list2(encoded_sender)));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(encoded_sender),
+            rlp::encode_list2(encoded_sender),
+            rlp::encode_list2(encoded_sender)));
 
     // Keep gas within int64_t so tx context conversion remains defined.
     static constexpr uint64_t TX_GAS_LIMIT =
@@ -7855,10 +7913,11 @@ TEST_F(EthCallFixture, eth_simulate_v1_gas_limit_enforcement)
     };
 
     auto const encoded_tx = rlp::encode_string2(rlp::encode_transaction(tx));
-    auto const rlp_calls = to_vec(rlp::encode_list2(
-        rlp::encode_list2(encoded_tx),
-        rlp::encode_list2(encoded_tx),
-        rlp::encode_list2(encoded_tx)));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(encoded_tx),
+            rlp::encode_list2(encoded_tx),
+            rlp::encode_list2(encoded_tx)));
 
     // Header for the base block (block 1).
     BlockHeader const header{
@@ -7940,8 +7999,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
     add_block_override_withdrawal_at(
         block_override, 0, 0, 0, 100, recipient.bytes, sizeof(recipient.bytes));
 
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                rlp::encode_address(std::make_optional(sender)))));
 
     // A simple transfer
     Transaction const tx{
@@ -7950,8 +8011,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
         .to = recipient,
     };
     auto const encoded_tx = rlp::encode_transaction(tx);
-    auto const rlp_calls = to_vec(rlp::encode_list2(
-        rlp::encode_list2(rlp::encode_string2(byte_string_view(encoded_tx)))));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                rlp::encode_string2(byte_string_view(encoded_tx)))));
 
     // Header for the base block (block 256).
     BlockHeader const header{
@@ -8075,9 +8138,11 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
         override_value.bytes,
         sizeof(override_value.bytes));
 
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(rlp::encode_address(std::make_optional(sender))),
-        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(rlp::encode_address(std::make_optional(sender))),
+            rlp::encode_list2(
+                rlp::encode_address(std::make_optional(sender)))));
 
     // The call transaction
     Transaction const call_tx{
@@ -8085,11 +8150,12 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
         .to = contract,
     };
     auto const encoded_call_tx = rlp::encode_transaction(call_tx);
-    auto const rlp_calls = to_vec(rlp::encode_list2(
+    auto const rlp_calls = to_vec(
         rlp::encode_list2(
-            rlp::encode_string2(byte_string_view(encoded_call_tx))),
-        rlp::encode_list2(
-            rlp::encode_string2(byte_string_view(encoded_call_tx)))));
+            rlp::encode_list2(
+                rlp::encode_string2(byte_string_view(encoded_call_tx))),
+            rlp::encode_list2(
+                rlp::encode_string2(byte_string_view(encoded_call_tx)))));
 
     // Header for the base block (block 256).
     BlockHeader const header{
@@ -8147,8 +8213,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_transaction_input_too_long_causes_death)
     auto *const state_override = monad_state_override_vec_create(1);
     auto *const block_override = monad_block_override_vec_create(1);
 
-    auto const rlp_senders = to_vec(rlp::encode_list2(
-        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+    auto const rlp_senders = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                rlp::encode_address(std::make_optional(sender)))));
 
     // Encode a valid legacy transaction wrapped as an RLP string, then append
     // one trailing byte inside the string payload. When
@@ -8161,8 +8229,11 @@ TEST_F(EthCallFixture, eth_simulate_v1_transaction_input_too_long_causes_death)
     };
     auto encoded_tx_with_trailing = rlp::encode_transaction(tx);
     encoded_tx_with_trailing.push_back(0x00);
-    auto const rlp_calls = to_vec(rlp::encode_list2(rlp::encode_list2(
-        rlp::encode_string2(byte_string_view(encoded_tx_with_trailing)))));
+    auto const rlp_calls = to_vec(
+        rlp::encode_list2(
+            rlp::encode_list2(
+                rlp::encode_string2(
+                    byte_string_view(encoded_tx_with_trailing)))));
 
     BlockHeader const header{.number = 1, .gas_limit = 21'000};
     auto const rlp_header = to_vec(rlp::encode_block_header(header));

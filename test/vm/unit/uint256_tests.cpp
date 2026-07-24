@@ -707,7 +707,7 @@ TEST(uint256, shifts)
 TEST(uint256, load_store)
 {
     for (auto x : test_inputs) {
-        auto *le_bytes = std::bit_cast<uint8_t(*)[32]>(as_bytes(x));
+        auto *le_bytes = std::bit_cast<uint8_t (*)[32]>(as_bytes(x));
         ASSERT_EQ(x, load_le_unsafe<uint256_t>(as_bytes(x)));
         ASSERT_EQ(x, load_le<uint256_t>(*le_bytes));
 
@@ -718,7 +718,7 @@ TEST(uint256, load_store)
 
         auto const x_be = bswap(x);
 
-        auto *be_bytes = std::bit_cast<uint8_t(*)[32]>(as_bytes(x_be));
+        auto *be_bytes = std::bit_cast<uint8_t (*)[32]>(as_bytes(x_be));
         ASSERT_EQ(x, load_be_unsafe<uint256_t>(as_bytes(x_be)));
         ASSERT_EQ(x, load_be<uint256_t>(*be_bytes));
 

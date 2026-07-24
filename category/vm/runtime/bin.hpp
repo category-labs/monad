@@ -114,7 +114,7 @@ namespace monad::vm::runtime
         requires(x < 32 && N < 32)
     [[gnu::always_inline]]
     constexpr Bin<std::max(size_t{x}, N) + 1 - x>
-    shr_ceil(Bin<N> const y) noexcept
+        shr_ceil(Bin<N> const y) noexcept
     {
         return shr<x>(y + bin<Bin<x>::upper>);
     }

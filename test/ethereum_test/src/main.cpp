@@ -71,13 +71,17 @@ int main(int argc, char *argv[])
     app.add_option("--log_level", log_level, "Logging level")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
     app.add_option("--fork", fork_name, "Fork to run unit tests for")
-        ->transform(CLI::IsMember(
-            std::views::keys(test::revision_map) | std::ranges::to<std::set>(),
-            CLI::ignore_case));
+        ->transform(
+            CLI::IsMember(
+                std::views::keys(test::revision_map) |
+                    std::ranges::to<std::set>(),
+                CLI::ignore_case));
     app.add_option("--vm_mode", vm_mode_name, "Restrict to given VM mode")
-        ->transform(CLI::IsMember(
-            vm::VM::all_mode_names | std::ranges::to<std::set<std::string>>(),
-            CLI::ignore_case));
+        ->transform(
+            CLI::IsMember(
+                vm::VM::all_mode_names |
+                    std::ranges::to<std::set<std::string>>(),
+                CLI::ignore_case));
 
     app.callback([&]() {
         if (fork_name) {

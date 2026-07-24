@@ -87,8 +87,9 @@ namespace
         if (nibbles.begin_nibble()) { // not left-aligned
             Nibbles const compact_nibbles = nibbles.substr(0);
             MONAD_ASSERT(compact_nibbles.data_size() == sizeof(bytes32_t));
-            return to_bytes(byte_string_view{
-                compact_nibbles.data(), compact_nibbles.data_size()});
+            return to_bytes(
+                byte_string_view{
+                    compact_nibbles.data(), compact_nibbles.data_size()});
         }
         MONAD_ASSERT(nibbles.data_size() == sizeof(bytes32_t));
         return to_bytes(byte_string_view{nibbles.data(), nibbles.data_size()});
@@ -284,12 +285,13 @@ namespace
                 if (in.size() < entry_size) {
                     return total_processed;
                 }
-                code_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = in.substr(0, sizeof(bytes32_t)),
-                    .value = in.substr(hash_and_len_size, code_len),
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(block_id_)}));
+                code_updates.push_front(update_alloc_.emplace_back(
+                    Update{
+                        .key = in.substr(0, sizeof(bytes32_t)),
+                        .value = in.substr(hash_and_len_size, code_len),
+                        .incarnation = false,
+                        .next = UpdateList{},
+                        .version = static_cast<int64_t>(block_id_)}));
 
                 total_processed += entry_size;
                 in = in.substr(entry_size);
@@ -327,17 +329,19 @@ namespace
         {
             UpdateList storage_updates;
             while (!in.empty()) {
-                storage_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = in.substr(0, sizeof(bytes32_t)),
-                    .value = bytes_alloc_.emplace_back(encode_storage_db(
-                        bytes32_t{}, // TODO: update this when binary checkpoint
-                                     // includes unhashed storage slot
-                        unaligned_load<bytes32_t>(
-                            in.substr(sizeof(bytes32_t), sizeof(bytes32_t))
-                                .data()))),
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(block_id_)}));
+                storage_updates.push_front(update_alloc_.emplace_back(
+                    Update{
+                        .key = in.substr(0, sizeof(bytes32_t)),
+                        .value = bytes_alloc_.emplace_back(encode_storage_db(
+                            bytes32_t{}, // TODO: update this when binary
+                                         // checkpoint includes unhashed storage
+                                         // slot
+                            unaligned_load<bytes32_t>(
+                                in.substr(sizeof(bytes32_t), sizeof(bytes32_t))
+                                    .data()))),
+                        .incarnation = false,
+                        .next = UpdateList{},
+                        .version = static_cast<int64_t>(block_id_)}));
                 in = in.substr(storage_entry_size);
             }
             return storage_updates;

@@ -319,8 +319,9 @@ namespace monad::vm::utils
                         err("unknown opcode", op);
                     }
                     else {
-                        eb.ins(static_cast<monad::vm::compiler::EvmOpCode>(
-                            opcode.value()));
+                        eb.ins(
+                            static_cast<monad::vm::compiler::EvmOpCode>(
+                                opcode.value()));
                     }
                 }
 

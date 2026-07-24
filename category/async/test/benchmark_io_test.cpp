@@ -534,11 +534,11 @@ set it to the desired size beforehand).
             print_statistics();
         }
 
-        catch (const CLI::CallForHelp &e) {
+        catch (CLI::CallForHelp const &e) {
             std::cout << cli.help() << std::flush;
         }
 
-        catch (const CLI::RequiredError &e) {
+        catch (CLI::RequiredError const &e) {
             std::cerr << "FATAL: " << e.what() << "\n\n";
             std::cerr << cli.help() << std::flush;
             return 1;

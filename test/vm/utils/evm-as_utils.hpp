@@ -34,8 +34,7 @@ namespace monad::vm::test
         explicit KernelCalldata(size_t const calldata_size)
             : data_(calldata_size >> 5){MONAD_ASSERT((calldata_size & 31) == 0)}
 
-            uint8_t
-            & operator[](size_t const i)
+            uint8_t &operator[](size_t const i)
         {
             return data_[i >> 5].dims[i & 31];
         }

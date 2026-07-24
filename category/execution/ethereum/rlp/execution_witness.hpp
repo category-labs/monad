@@ -58,9 +58,9 @@ parse_execution_witness(byte_string_view witness_bytes);
 byte_string encode_execution_witness(
     byte_string_view block_rlp, std::span<byte_string const> nodes,
     std::span<byte_string const> codes, std::span<byte_string const> headers,
-    ankerl::unordered_dense::segmented_set<Address> const
-        *const parent_senders_and_authorities = nullptr,
-    ankerl::unordered_dense::segmented_set<Address> const
-        *const grandparent_senders_and_authorities = nullptr);
+    ankerl::unordered_dense::segmented_set<Address> const *const
+        parent_senders_and_authorities = nullptr,
+    ankerl::unordered_dense::segmented_set<Address> const *const
+        grandparent_senders_and_authorities = nullptr);
 
 MONAD_NAMESPACE_END

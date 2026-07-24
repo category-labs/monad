@@ -604,10 +604,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 for (BlockHeader const &h : header.delayed_execution_results) {
                     verified_blocks.push_back(h.number);
                 }
-                to_finalize.push_front(ToFinalize{
-                    .block = header.seqno,
-                    .block_id = id,
-                    .verified_blocks = std::move(verified_blocks)});
+                to_finalize.push_front(
+                    ToFinalize{
+                        .block = header.seqno,
+                        .block_id = id,
+                        .verified_blocks = std::move(verified_blocks)});
 
                 if (!has_executed(raw_db, header, id)) {
                     to_execute.push_front(
@@ -745,11 +746,12 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
         };
 
         for (auto const &[block_id, consensus_header] : to_execute) {
-            BOOST_OUTCOME_TRY(std::visit(
-                [&block_id, handle_to_execute](auto const &header) {
-                    return handle_to_execute(block_id, header);
-                },
-                consensus_header));
+            BOOST_OUTCOME_TRY(
+                std::visit(
+                    [&block_id, handle_to_execute](auto const &header) {
+                        return handle_to_execute(block_id, header);
+                    },
+                    consensus_header));
         }
 
         for (auto const &[block, block_id, verified_blocks] : to_finalize) {

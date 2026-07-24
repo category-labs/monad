@@ -426,8 +426,9 @@ namespace monad::vm::utils::evm_as
             load_address("inner-loop").jump();
 
             // Inner loop
-            this->comment("inner-loop, type: [p, XOR(p, arg(1)), ..., XOR(p, "
-                          "arg(n)), ...]");
+            this->comment(
+                "inner-loop, type: [p, XOR(p, arg(1)), ..., XOR(p, "
+                "arg(n)), ...]");
             this->jumpdest("inner-loop");
             for (size_t c = 0; c < inner_loop_unroll; c++) {
                 this->comment(std::format("Instruction sequence {}", c + 1));

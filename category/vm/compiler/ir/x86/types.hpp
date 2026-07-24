@@ -101,8 +101,9 @@ namespace monad::vm::compiler::native
         ErrorCode error_code() const
         {
             if (entrypoint_) {
-                MONAD_DEBUG_ASSERT(std::holds_alternative<native_code_size_t>(
-                    code_size_estimate_));
+                MONAD_DEBUG_ASSERT(
+                    std::holds_alternative<native_code_size_t>(
+                        code_size_estimate_));
                 return NoError;
             }
             if (std::holds_alternative<size_t>(code_size_estimate_)) {

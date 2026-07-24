@@ -232,10 +232,11 @@ namespace monad::vm::compiler::test
             ASSERT_EQ(actual.gas_refund, expected.gas_refund);
             ASSERT_EQ(actual.output_size, expected.output_size);
 
-            ASSERT_TRUE(std::equal(
-                actual.output_data,
-                actual.output_data + actual.output_size,
-                expected.output_data));
+            ASSERT_TRUE(
+                std::equal(
+                    actual.output_data,
+                    actual.output_data + actual.output_size,
+                    expected.output_data));
 
             ASSERT_EQ(
                 Address(actual.create_address),

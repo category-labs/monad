@@ -30,7 +30,7 @@ namespace monad::uint256::portable
 {
 
     [[gnu::always_inline]]
-    constexpr inline result_with_carry<uint64_t>
+    inline constexpr result_with_carry<uint64_t>
     addc(uint64_t const lhs, uint64_t const rhs, bool const carry_in) noexcept
     {
         uint64_t const sum = lhs + rhs;
@@ -40,7 +40,7 @@ namespace monad::uint256::portable
         return result_with_carry{.value = sum_carry, .carry = carry_out};
     }
 
-    [[gnu::always_inline]] constexpr inline result_with_carry<uint64_t>
+    [[gnu::always_inline]] inline constexpr result_with_carry<uint64_t>
     subb(uint64_t const lhs, uint64_t const rhs, bool const borrow_in) noexcept
     {
         uint64_t const sub = lhs - rhs;
@@ -65,7 +65,7 @@ namespace monad::uint256::portable
     }
 
     [[gnu::always_inline]]
-    constexpr inline div_result<uint64_t>
+    inline constexpr div_result<uint64_t>
     div(uint64_t u_hi, uint64_t u_lo, uint64_t const v) noexcept
     {
         using u128 = unsigned __int128;

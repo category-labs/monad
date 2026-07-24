@@ -495,10 +495,11 @@ void test_expand_memory_impl(Context &ctx, std::function<void(Bin<29>)> expand)
         break;
     }
 
-    ASSERT_TRUE(std::all_of(
-        ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
-            return b == 0;
-        }));
+    ASSERT_TRUE(
+        std::all_of(
+            ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
+                return b == 0;
+            }));
 
     expand(Bin<29>::unsafe_from(vm::test::TestMemory::capacity + 90));
     ASSERT_EQ(ctx.memory.size, vm::test::TestMemory::capacity + 96);
@@ -513,10 +514,11 @@ void test_expand_memory_impl(Context &ctx, std::function<void(Bin<29>)> expand)
         break;
     }
 
-    ASSERT_TRUE(std::all_of(
-        ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
-            return b == 0;
-        }));
+    ASSERT_TRUE(
+        std::all_of(
+            ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
+                return b == 0;
+            }));
 
     expand(Bin<29>::unsafe_from(new_capacity));
     ASSERT_EQ(ctx.memory.size, new_capacity);
@@ -531,10 +533,11 @@ void test_expand_memory_impl(Context &ctx, std::function<void(Bin<29>)> expand)
         break;
     }
 
-    ASSERT_TRUE(std::all_of(
-        ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
-            return b == 0;
-        }));
+    ASSERT_TRUE(
+        std::all_of(
+            ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
+                return b == 0;
+            }));
 
     expand(Bin<29>::unsafe_from(vm::test::TestMemory::capacity * 4 + 1));
     ASSERT_EQ(ctx.memory.size, vm::test::TestMemory::capacity * 4 + 32);
@@ -550,10 +553,11 @@ void test_expand_memory_impl(Context &ctx, std::function<void(Bin<29>)> expand)
         break;
     }
 
-    ASSERT_TRUE(std::all_of(
-        ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
-            return b == 0;
-        }));
+    ASSERT_TRUE(
+        std::all_of(
+            ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
+                return b == 0;
+            }));
 
     if (memory_version == Memory::Version::MIP3) {
         constexpr uint32_t max_size = 8 * 1024 * 1024;
@@ -561,10 +565,11 @@ void test_expand_memory_impl(Context &ctx, std::function<void(Bin<29>)> expand)
             Bin<29>::unsafe_from(max_size - 1), &ctx);
         ASSERT_EQ(ctx.memory.capacity, max_size * 2);
         ASSERT_EQ(ctx.memory.cost, max_size / 64);
-        ASSERT_TRUE(std::all_of(
-            ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
-                return b == 0;
-            }));
+        ASSERT_TRUE(
+            std::all_of(
+                ctx.memory.data, ctx.memory.data + ctx.memory.size, [](auto b) {
+                    return b == 0;
+                }));
     }
 }
 

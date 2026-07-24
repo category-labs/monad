@@ -799,8 +799,9 @@ public:
         }
         ::boost::fibers::promise<find_cursor_result_type> promise;
         auto fut = promise.get_future();
-        worker_thread_->submit(fiber_find_request_t{
-            .promise = std::move(promise), .start = start, .key = key});
+        worker_thread_->submit(
+            fiber_find_request_t{
+                .promise = std::move(promise), .start = start, .key = key});
         return fut.get();
     }
 
@@ -823,16 +824,17 @@ public:
         unflushed_version_ = write_root ? INVALID_BLOCK_NUM : version;
         ::boost::fibers::promise<Node::SharedPtr> promise;
         auto fut = promise.get_future();
-        worker_thread_->submit(OnDiskDbServiceThread::FiberUpsertRequest{
-            .promise = std::move(promise),
-            .prev_root = std::move(root),
-            .sm = *machine_,
-            .updates = std::move(updates),
-            .version = version,
-            .enable_compaction = enable_compaction && compaction_,
-            .can_write_to_fast = can_write_to_fast,
-            .write_root = write_root,
-            .tid = tid_});
+        worker_thread_->submit(
+            OnDiskDbServiceThread::FiberUpsertRequest{
+                .promise = std::move(promise),
+                .prev_root = std::move(root),
+                .sm = *machine_,
+                .updates = std::move(updates),
+                .version = version,
+                .enable_compaction = enable_compaction && compaction_,
+                .can_write_to_fast = can_write_to_fast,
+                .write_root = write_root,
+                .tid = tid_});
         return fut.get();
     }
 
@@ -841,11 +843,12 @@ public:
     {
         ::boost::fibers::promise<void> promise;
         auto fut = promise.get_future();
-        worker_thread_->submit(OnDiskDbServiceThread::MoveSubtrieRequest{
-            .promise = std::move(promise),
-            .src = src,
-            .dest = dest,
-            .tid = tid_});
+        worker_thread_->submit(
+            OnDiskDbServiceThread::MoveSubtrieRequest{
+                .promise = std::move(promise),
+                .src = src,
+                .dest = dest,
+                .tid = tid_});
         fut.get();
     }
 
@@ -875,13 +878,14 @@ public:
     {
         ::boost::fibers::promise<bool> promise;
         auto fut = promise.get_future();
-        worker_thread_->submit(OnDiskDbServiceThread::FiberTraverseRequest{
-            .promise = std::move(promise),
-            .root = std::move(node),
-            .machine = machine,
-            .version = version,
-            .concurrency_limit = concurrency_limit,
-            .tid = tid_});
+        worker_thread_->submit(
+            OnDiskDbServiceThread::FiberTraverseRequest{
+                .promise = std::move(promise),
+                .root = std::move(node),
+                .machine = machine,
+                .version = version,
+                .concurrency_limit = concurrency_limit,
+                .tid = tid_});
         return fut.get();
     }
 
@@ -919,15 +923,16 @@ public:
 
         ::boost::fibers::promise<Node::SharedPtr> promise;
         auto fut = promise.get_future();
-        worker_thread_->submit(OnDiskDbServiceThread::FiberCopyTrieRequest{
-            .promise = std::move(promise),
-            .src_root = std::move(src_root),
-            .src = src_prefix,
-            .dest_root = std::move(dest_root),
-            .dest = dest_prefix,
-            .dest_version = dest_version,
-            .tid = tid_,
-            .write_root = write_root});
+        worker_thread_->submit(
+            OnDiskDbServiceThread::FiberCopyTrieRequest{
+                .promise = std::move(promise),
+                .src_root = std::move(src_root),
+                .src = src_prefix,
+                .dest_root = std::move(dest_root),
+                .dest = dest_prefix,
+                .dest_version = dest_version,
+                .tid = tid_,
+                .write_root = write_root});
         return fut.get();
     }
 
@@ -993,19 +998,21 @@ struct RODb::Impl final
     {
         ::boost::fibers::promise<bool> promise;
         auto fut = promise.get_future();
-        worker_thread_->submit(OnDiskDbServiceThread::FiberTraverseRequest{
-            .promise = std::move(promise),
-            .root = std::move(node),
-            .machine = machine,
-            .version = version,
-            .concurrency_limit = concurrency_limit});
+        worker_thread_->submit(
+            OnDiskDbServiceThread::FiberTraverseRequest{
+                .promise = std::move(promise),
+                .root = std::move(node),
+                .machine = machine,
+                .version = version,
+                .concurrency_limit = concurrency_limit});
         return fut.get();
     }
 };
 
 RODb::RODb(ReadOnlyOnDiskDbConfig const &options)
-    : impl_(std::make_unique<Impl>(
-          std::make_shared<OnDiskDbServiceThread>(options)))
+    : impl_(
+          std::make_unique<Impl>(
+              std::make_shared<OnDiskDbServiceThread>(options)))
 {
 }
 

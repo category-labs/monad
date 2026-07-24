@@ -170,7 +170,7 @@ public:
 
 protected:
     virtual bool _do_failure(
-        const BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> &code)
+        BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> const &code)
         const noexcept override
     {
         (void)code;
@@ -179,8 +179,8 @@ protected:
     }
 
     virtual bool _do_equivalent(
-        const BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> &code1,
-        const BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> &code2)
+        BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> const &code1,
+        BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> const &code2)
         const noexcept override
     {
         MONAD_ASSERT(code1.domain() == *this);
@@ -204,7 +204,7 @@ protected:
     }
 
     virtual BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::generic_code _generic_code(
-        const BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> &code)
+        BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> const &code)
         const noexcept override
     {
         (void)code;
@@ -213,7 +213,7 @@ protected:
     }
 
     virtual string_ref _do_message(
-        const BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> &code)
+        BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> const &code)
         const noexcept override
     {
         MONAD_ASSERT(code.domain() == *this);
@@ -231,7 +231,7 @@ protected:
     }
 
     BOOST_OUTCOME_SYSTEM_ERROR2_NORETURN virtual void _do_throw_exception(
-        const BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> &code)
+        BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> const &code)
         const override
     {
         MONAD_ASSERT(code.domain() == *this);

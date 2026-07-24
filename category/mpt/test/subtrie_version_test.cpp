@@ -65,10 +65,11 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
 
         virtual bool down(unsigned char, Node const &node) override
         {
-            records.push(ExpectedSubtrieVersion{
-                .root = const_cast<Node *>(&node),
-                .min_subtrie_version = node.version,
-                .max_children_version = 0});
+            records.push(
+                ExpectedSubtrieVersion{
+                    .root = const_cast<Node *>(&node),
+                    .min_subtrie_version = node.version,
+                    .max_children_version = 0});
             return true;
         }
 
@@ -142,12 +143,13 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
             keccak256((unsigned char const *)&i, 8, kv.data());
             key_values.emplace_back(kv);
 
-            updates.push_front(updates_alloc.emplace_back(Update{
-                .key = key_values.back(),
-                .value = key_values.back(),
-                .incarnation = false,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(block_id)}));
+            updates.push_front(updates_alloc.emplace_back(
+                Update{
+                    .key = key_values.back(),
+                    .value = key_values.back(),
+                    .incarnation = false,
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(block_id)}));
             i++;
         }
         this->root = this->aux.do_update(
@@ -192,12 +194,13 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
             keccak256((unsigned char const *)&i, 8, kv.data());
             key_values.emplace_back(kv);
 
-            updates.push_front(updates_alloc.emplace_back(Update{
-                .key = key_values.back(),
-                .value = std::nullopt,
-                .incarnation = false,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(block_id)}));
+            updates.push_front(updates_alloc.emplace_back(
+                Update{
+                    .key = key_values.back(),
+                    .value = std::nullopt,
+                    .incarnation = false,
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(block_id)}));
             i++;
         }
         this->root = this->aux.do_update(

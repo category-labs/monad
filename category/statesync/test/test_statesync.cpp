@@ -608,9 +608,10 @@ TYPED_TEST(StateSyncTestBothForks, sync_from_some)
 
     // add new smart contract ADDR3
     auto const code =
-        from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                 "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
-                 "ffffffffffffffffffffff0160005500")
+        from_hex(
+            "7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
+            "ffffffffffffffffffffff0160005500")
             .value();
     auto const code_hash = to_bytes(keccak256(code));
     auto const icode = vm::make_shared_intercode(code);
@@ -1383,9 +1384,10 @@ TEST_F(StateSyncFixture, update_contract_twice)
         to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
 
     auto const code =
-        from_hex("7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                 "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
-                 "ffffffffffffffffffffff0160005500")
+        from_hex(
+            "7ffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            "fffffffffff7fffffffffffffffffffffffffffffffffffffffffff"
+            "ffffffffffffffffffffff0160005500")
             .value();
     auto const code_hash = to_bytes(keccak256(code));
     auto const icode = vm::make_shared_intercode(code);

@@ -112,8 +112,9 @@ void monad_statesync_client_handle_target(
     monad_statesync_client_context *const ctx, unsigned char const *const data,
     uint64_t const size)
 {
-    MONAD_ASSERT(std::ranges::all_of(
-        ctx->protocol, [](auto const &ptr) { return ptr != nullptr; }))
+    MONAD_ASSERT(std::ranges::all_of(ctx->protocol, [](auto const &ptr) {
+        return ptr != nullptr;
+    }))
 
     byte_string_view raw{data, size};
     auto const res = rlp::decode_block_header(raw);

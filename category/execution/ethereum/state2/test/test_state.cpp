@@ -114,9 +114,10 @@ namespace
 
     struct PageEncodedOnDiskStateTest : public ::testing::Test
     {
-        mpt::Db db{/* use the page encoded state machine*/
-                   std::make_unique<MonadOnDiskMachine>(),
-                   mpt::OnDiskDbConfig{}};
+        mpt::Db db{
+            /* use the page encoded state machine*/
+            std::make_unique<MonadOnDiskMachine>(),
+            mpt::OnDiskDbConfig{}};
         TrieDb tdb{db};
         vm::VM vm;
 

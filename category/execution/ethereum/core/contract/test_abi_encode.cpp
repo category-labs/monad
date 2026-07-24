@@ -80,11 +80,11 @@ TEST(AbiEncode, address)
 
 TEST(AbiEncode, bytes)
 {
-    byte_string const bls_pubkey =
-        from_hex("0x85686279cefd8ce0d32338910d476ca090b67"
-                 "f97fc6f2fbc7d96b0cf3d7dca2fe9"
-                 "80de55a715702f2ad35ee5f9bd6f9b")
-            .value();
+    byte_string const bls_pubkey = from_hex(
+                                       "0x85686279cefd8ce0d32338910d476ca090b67"
+                                       "f97fc6f2fbc7d96b0cf3d7dca2fe9"
+                                       "80de55a715702f2ad35ee5f9bd6f9b")
+                                       .value();
     byte_string const expected =
         from_hex(
             "000000000000000000000000000000000000000000000000000000000000003085"

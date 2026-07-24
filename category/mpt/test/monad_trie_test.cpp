@@ -497,8 +497,9 @@ int main(int const argc, char *argv[])
                 // init uring
                 monad::io::Ring ring1(
                     monad::io::RingConfig{512, sq_thread_cpu});
-                monad::io::Ring ring2(monad::io::RingConfig{
-                    16} /* max concurrent write buffers in use <= 6 */
+                monad::io::Ring ring2(
+                    monad::io::RingConfig{16}
+                    /* max concurrent write buffers in use <= 6 */
                 );
 
                 // init buffer
@@ -765,8 +766,8 @@ int main(int const argc, char *argv[])
                         }
 
                         void set_value(
-                            MONAD_ASYNC_NAMESPACE::erased_connected_operation
-                                *const io_state,
+                            MONAD_ASYNC_NAMESPACE::
+                                erased_connected_operation *const io_state,
                             find_bytes_request_sender::result_type const res)
                         {
                             MONAD_ASSERT(res);
@@ -959,10 +960,11 @@ int main(int const argc, char *argv[])
                                 monad::mpt::find_cursor_result_type>
                                 promise;
                             auto fut = promise.get_future();
-                            req.enqueue(fiber_find_request_t{
-                                .promise = std::move(promise),
-                                .start = state_start,
-                                .key = key});
+                            req.enqueue(
+                                fiber_find_request_t{
+                                    .promise = std::move(promise),
+                                    .start = state_start,
+                                    .key = key});
                             auto const [node_cursor, errc] = fut.get();
                             MONAD_ASSERT(node_cursor.is_valid());
                             MONAD_ASSERT(
@@ -1045,7 +1047,7 @@ int main(int const argc, char *argv[])
             }
         }
 
-        catch (const CLI::CallForHelp &e) {
+        catch (CLI::CallForHelp const &e) {
             std::cout << cli.help() << std::flush;
         }
     }

@@ -257,13 +257,14 @@ TEST(MonadDb, page_write_merges_slots)
     // Block 0: seed two slots on the same page.
     {
         PageCommitBuilder builder(0, tdb);
-        builder.add_state_deltas(StateDeltas{
-            {ADDR_A,
-             StateDelta{
-                 .account = {std::nullopt, acct},
-                 .storage = {
-                     {slot_key_0, {bytes32_t{}, val_0}},
-                     {slot_key_1, {bytes32_t{}, val_1}}}}}});
+        builder.add_state_deltas(
+            StateDeltas{
+                {ADDR_A,
+                 StateDelta{
+                     .account = {std::nullopt, acct},
+                     .storage = {
+                         {slot_key_0, {bytes32_t{}, val_0}},
+                         {slot_key_1, {bytes32_t{}, val_1}}}}}});
         auto root = mpt_db.upsert(nullptr, builder.build(finalized_nibbles), 0);
         tdb.reset_root(std::move(root), 0);
     }
@@ -276,11 +277,12 @@ TEST(MonadDb, page_write_merges_slots)
             tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
 
         PageCommitBuilder builder(1, tdb);
-        builder.add_state_deltas(StateDeltas{
-            {ADDR_A,
-             StateDelta{
-                 .account = {acct, acct},
-                 .storage = {{slot_key_0, {val_0, val_0_updated}}}}}});
+        builder.add_state_deltas(
+            StateDeltas{
+                {ADDR_A,
+                 StateDelta{
+                     .account = {acct, acct},
+                     .storage = {{slot_key_0, {val_0, val_0_updated}}}}}});
         auto root =
             mpt_db.upsert(tdb.get_root(), builder.build(finalized_nibbles), 1);
         tdb.reset_root(std::move(root), 1);

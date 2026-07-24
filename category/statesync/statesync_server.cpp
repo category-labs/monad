@@ -535,12 +535,13 @@ struct monad_statesync_server *monad_statesync_server_create(
     void (*statesync_server_send_done)(
         monad_statesync_server_network *, struct monad_sync_done))
 {
-    return new monad_statesync_server(monad_statesync_server{
-        .context = ctx,
-        .net = net,
-        .statesync_server_recv = statesync_server_recv,
-        .statesync_server_send_upsert = statesync_server_send_upsert,
-        .statesync_server_send_done = statesync_server_send_done});
+    return new monad_statesync_server(
+        monad_statesync_server{
+            .context = ctx,
+            .net = net,
+            .statesync_server_recv = statesync_server_recv,
+            .statesync_server_send_upsert = statesync_server_send_upsert,
+            .statesync_server_send_done = statesync_server_send_done});
 }
 
 void monad_statesync_server_run_once(struct monad_statesync_server *const sync)

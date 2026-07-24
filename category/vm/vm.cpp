@@ -197,8 +197,9 @@ namespace monad::vm
             if (MONAD_LIKELY(entry != nullptr)) {
                 return execute_native_entrypoint_raw<traits>(rt_ctx, entry);
             }
-            LOG_WARNING("WARNING: VM: fallback to interpreter: "
-                        "compilation failed in CompilerOnly mode.");
+            LOG_WARNING(
+                "WARNING: VM: fallback to interpreter: "
+                "compilation failed in CompilerOnly mode.");
         }
         else {
             compiler_.async_compile<traits>(code_hash, icode, compiler_config_);
@@ -255,8 +256,9 @@ namespace monad::vm
 #ifdef MONAD_COMPILER_TESTING
         execute_override_ = f;
 #else
-        MONAD_ABORT("debug_set_execute_override requires "
-                    "MONAD_COMPILER_TESTING is enabled");
+        MONAD_ABORT(
+            "debug_set_execute_override requires "
+            "MONAD_COMPILER_TESTING is enabled");
 #endif
     }
 

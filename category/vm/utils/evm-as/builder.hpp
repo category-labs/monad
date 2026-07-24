@@ -95,8 +95,9 @@ namespace monad::vm::utils::evm_as
         {
             if (compiler::is_unknown_opcode_info<traits>(
                     compiler::opcode_table<traits>[opcode])) {
-                return insert(InvalidI{
-                    std::format("0x{:X}", static_cast<uint8_t>(opcode))});
+                return insert(
+                    InvalidI{
+                        std::format("0x{:X}", static_cast<uint8_t>(opcode))});
             }
             return insert(PlainI{opcode});
         }

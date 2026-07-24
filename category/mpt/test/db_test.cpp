@@ -162,8 +162,9 @@ namespace
         std::atomic<size_t> cbs{0}; // callbacks when found
 
         OnDiskDbWithFileAsyncFixture()
-            : io_ctx(ReadOnlyOnDiskDbConfig{
-                  .dbname_paths = this->config.dbname_paths})
+            : io_ctx(
+                  ReadOnlyOnDiskDbConfig{
+                      .dbname_paths = this->config.dbname_paths})
             , ro_db(io_ctx)
             , ctx(async_context_create(ro_db))
         {
@@ -328,11 +329,12 @@ namespace
         std::deque<Update> updates_alloc;
         for (size_t i = offset; i < nkeys + offset; ++i) {
             auto &kv = bytes_alloc.emplace_back(keccak_int_to_string(i));
-            updates_alloc.push_back(Update{
-                .key = kv,
-                .value = kv,
-                .incarnation = false,
-                .next = UpdateList{}});
+            updates_alloc.push_back(
+                Update{
+                    .key = kv,
+                    .value = kv,
+                    .incarnation = false,
+                    .next = UpdateList{}});
         }
         return std::make_pair(std::move(bytes_alloc), std::move(updates_alloc));
     }
@@ -346,9 +348,10 @@ namespace
         static constexpr uint64_t num_blocks = 1000;
 
         ROOnDiskWithFileFixture()
-            : ro_db(ReadOnlyOnDiskDbConfig{
-                  .dbname_paths = this->config.dbname_paths,
-                  .node_lru_max_mem = 100 * NodeCache::AVERAGE_NODE_SIZE})
+            : ro_db(
+                  ReadOnlyOnDiskDbConfig{
+                      .dbname_paths = this->config.dbname_paths,
+                      .node_lru_max_mem = 100 * NodeCache::AVERAGE_NODE_SIZE})
             , pool(2, 16)
         {
             init_db_with_data();
@@ -856,12 +859,13 @@ TEST(DbTest, history_length_adjustment_never_under_min)
         std::deque<monad::byte_string> bytes_alloc;
         std::deque<Update> updates_alloc;
         for (size_t i = 0; i < nkeys; ++i) {
-            ls.push_front(updates_alloc.emplace_back(Update{
-                .key = bytes_alloc.emplace_back(
-                    keccak_int_to_string(version * nkeys + i)),
-                .value = large_value,
-                .incarnation = false,
-                .next = UpdateList{}}));
+            ls.push_front(updates_alloc.emplace_back(
+                Update{
+                    .key = bytes_alloc.emplace_back(
+                        keccak_int_to_string(version * nkeys + i)),
+                    .value = large_value,
+                    .incarnation = false,
+                    .next = UpdateList{}}));
         }
         root = db.upsert(std::move(root), std::move(ls), version);
     };
@@ -905,12 +909,13 @@ TEST(DbTest, history_length_adjustment_reclaims_with_active_secondary)
         std::deque<monad::byte_string> bytes_alloc;
         std::deque<Update> updates_alloc;
         for (size_t i = 0; i < nkeys; ++i) {
-            ls.push_front(updates_alloc.emplace_back(Update{
-                .key = bytes_alloc.emplace_back(
-                    keccak_int_to_string(salt + version * nkeys + i)),
-                .value = large_value,
-                .incarnation = false,
-                .next = UpdateList{}}));
+            ls.push_front(updates_alloc.emplace_back(
+                Update{
+                    .key = bytes_alloc.emplace_back(
+                        keccak_int_to_string(salt + version * nkeys + i)),
+                    .value = large_value,
+                    .incarnation = false,
+                    .next = UpdateList{}}));
         }
         root = target.upsert(std::move(root), std::move(ls), version);
     };
@@ -977,11 +982,13 @@ TEST(DbTest, history_length_adjustment_trims_both_timelines)
         std::deque<monad::byte_string> bytes_alloc;
         std::deque<Update> updates_alloc;
         for (size_t i = 0; i < nkeys; ++i) {
-            ls.push_front(updates_alloc.emplace_back(Update{
-                .key = bytes_alloc.emplace_back(keccak_int_to_string(salt + i)),
-                .value = value,
-                .incarnation = false,
-                .next = UpdateList{}}));
+            ls.push_front(updates_alloc.emplace_back(
+                Update{
+                    .key = bytes_alloc.emplace_back(
+                        keccak_int_to_string(salt + i)),
+                    .value = value,
+                    .incarnation = false,
+                    .next = UpdateList{}}));
         }
         root = target.upsert(std::move(root), std::move(ls), version);
     };

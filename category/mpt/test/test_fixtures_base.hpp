@@ -371,10 +371,13 @@ namespace monad::test
         OnDiskTrieBase()
             : ring1(monad::io::RingConfig{2})
             , ring2(monad::io::RingConfig{4})
-            , rwbuf(monad::io::make_buffers_for_segregated_read_write(
-                  ring1, ring2, 2, 4,
-                  MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
-                  MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE))
+            , rwbuf(
+                  monad::io::make_buffers_for_segregated_read_write(
+                      ring1, ring2, 2, 4,
+                      MONAD_ASYNC_NAMESPACE::AsyncIO::
+                          MONAD_IO_BUFFERS_READ_SIZE,
+                      MONAD_ASYNC_NAMESPACE::AsyncIO::
+                          MONAD_IO_BUFFERS_WRITE_SIZE))
             , io(pool, rwbuf)
             , root()
             , aux(io, MPT_TEST_HISTORY_LENGTH)
@@ -464,9 +467,9 @@ namespace monad::test
         {
             MONAD_ASYNC_NAMESPACE::storage_pool pool{[] {
                 MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flags;
-                auto const bitpos =
-                    std::countr_zero(MONAD_ASYNC_NAMESPACE::AsyncIO::
-                                         MONAD_IO_BUFFERS_WRITE_SIZE);
+                auto const bitpos = std::countr_zero(
+                    MONAD_ASYNC_NAMESPACE::AsyncIO::
+                        MONAD_IO_BUFFERS_WRITE_SIZE);
                 flags.chunk_capacity = bitpos;
                 if constexpr (Config.use_anonymous_inode) {
                     return MONAD_ASYNC_NAMESPACE::storage_pool(

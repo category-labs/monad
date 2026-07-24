@@ -583,13 +583,15 @@ public:
     //! Invoke completion specifying the read buffer filled by reference. If the
     //! Receiver does not expect the read buffer filled, this will silently
     //! decay into the bytes transferred `completed()` overload.
-    virtual void completed(result<std::reference_wrapper<filled_read_buffer>>
-                               read_buffer_filled) = 0;
+    virtual void completed(
+        result<std::reference_wrapper<filled_read_buffer>>
+            read_buffer_filled) = 0;
     //! Invoke completion specifying the write buffer written by reference. If
     //! the Receiver does not expect the write buffer written, this will
     //! silently decay into the bytes transferred `completed()` overload.
-    virtual void completed(result<std::reference_wrapper<filled_write_buffer>>
-                               write_buffer_written) = 0;
+    virtual void completed(
+        result<std::reference_wrapper<filled_write_buffer>>
+            write_buffer_written) = 0;
 
     // Overload ambiguity resolver so you can write `completed(success())`
     // without ambiguous overload warnings.

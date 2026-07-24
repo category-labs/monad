@@ -96,39 +96,43 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 // trie gets a deletion (nullopt) since it holds no empty leaf.
                 StorageKey const sk{addr, inc, page_key};
                 proposal_post_state_.storage[sk] = page;
-                storage_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = hash_alloc_.emplace_back(
-                        keccak256({page_key.bytes, sizeof(page_key.bytes)})),
-                    .value = is_empty ? std::nullopt
-                                      : std::make_optional<byte_string_view>(
-                                            bytes_alloc_.emplace_back(
-                                                encode_storage_page_db(
-                                                    page_key, page))),
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(block_number_)}));
+                storage_updates.push_front(update_alloc_.emplace_back(
+                    Update{
+                        .key = hash_alloc_.emplace_back(keccak256(
+                            {page_key.bytes, sizeof(page_key.bytes)})),
+                        .value = is_empty
+                                     ? std::nullopt
+                                     : std::make_optional<byte_string_view>(
+                                           bytes_alloc_.emplace_back(
+                                               encode_storage_page_db(
+                                                   page_key, page))),
+                        .incarnation = false,
+                        .next = UpdateList{},
+                        .version = static_cast<int64_t>(block_number_)}));
             }
             value = bytes_alloc_.emplace_back(
                 encode_account_db(addr, account.value()));
         }
 
         if (!storage_updates.empty() || delta.account.first != account) {
-            account_updates.push_front(update_alloc_.emplace_back(Update{
-                .key = hash_alloc_.emplace_back(
-                    keccak256({addr.bytes, sizeof(addr.bytes)})),
-                .value = value,
-                .incarnation = reincarnated,
-                .next = std::move(storage_updates),
-                .version = static_cast<int64_t>(block_number_)}));
+            account_updates.push_front(update_alloc_.emplace_back(
+                Update{
+                    .key = hash_alloc_.emplace_back(
+                        keccak256({addr.bytes, sizeof(addr.bytes)})),
+                    .value = value,
+                    .incarnation = reincarnated,
+                    .next = std::move(storage_updates),
+                    .version = static_cast<int64_t>(block_number_)}));
         }
     }
 
-    updates_.push_front(update_alloc_.emplace_back(Update{
-        .key = state_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(account_updates),
-        .version = static_cast<int64_t>(block_number_)}));
+    updates_.push_front(update_alloc_.emplace_back(
+        Update{
+            .key = state_nibbles,
+            .value = byte_string_view{},
+            .incarnation = false,
+            .next = std::move(account_updates),
+            .version = static_cast<int64_t>(block_number_)}));
 
     return *this;
 }

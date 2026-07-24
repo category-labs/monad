@@ -1553,14 +1553,15 @@ TEST(EvmAs, CallMacroExpansions)
         EXPECT_TRUE(evm_as::validate(eb2));
 
         auto eb3 = evm_as::latest();
-        eb3.call(evm_as::sugar::CallArgs{
-            .gas = 0x1000,
-            .address = Address{0xABBA},
-            .value = 0x3000,
-            .args_offset = 0x4000,
-            .args_size = 0x5000,
-            .ret_offset = 0x6000,
-            .ret_size = 0x7000});
+        eb3.call(
+            evm_as::sugar::CallArgs{
+                .gas = 0x1000,
+                .address = Address{0xABBA},
+                .value = 0x3000,
+                .args_offset = 0x4000,
+                .args_size = 0x5000,
+                .ret_offset = 0x6000,
+                .ret_size = 0x7000});
 
         std::vector<uint8_t> bytecode1{};
         evm_as::compile(eb1, bytecode1);
@@ -1899,10 +1900,12 @@ TEST(EvmAs, FixedBytesPush)
     eb.push(fixed_bytes<1>(255))
         .push(fixed_bytes<2>(0xABCD))
         .push(fixed_bytes<11>(0x0123456789ABCDEFFEDCBA_u256))
-        .push(fixed_bytes<27>(
-            0x0123456789ABCDEFFEDCBA9876543210FEDCBA9876543210123456_u256))
-        .push(fixed_bytes<32>(
-            0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF_u256));
+        .push(
+            fixed_bytes<27>(
+                0x0123456789ABCDEFFEDCBA9876543210FEDCBA9876543210123456_u256))
+        .push(
+            fixed_bytes<32>(
+                0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF_u256));
 
     EXPECT_TRUE(evm_as::validate(eb));
 

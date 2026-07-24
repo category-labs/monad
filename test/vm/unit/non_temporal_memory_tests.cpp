@@ -34,12 +34,14 @@ TEST(non_temporal_memory, bzero_32)
 
     alignas(32) uint8_t x[N];
     std::memset(x, 1, N);
-    ASSERT_TRUE(std::all_of(
-        std::begin(x), std::end(x), [](auto const b) { return b == 1; }));
+    ASSERT_TRUE(std::all_of(std::begin(x), std::end(x), [](auto const b) {
+        return b == 1;
+    }));
 
     non_temporal_bzero(&x, N);
-    ASSERT_TRUE(std::all_of(
-        std::begin(x), std::end(x), [](auto const b) { return b == 0; }));
+    ASSERT_TRUE(std::all_of(std::begin(x), std::end(x), [](auto const b) {
+        return b == 0;
+    }));
 }
 
 TEST(non_temporal_memory, bzero_160)
@@ -48,12 +50,14 @@ TEST(non_temporal_memory, bzero_160)
 
     alignas(32) uint8_t x[N];
     std::memset(x, 1, N);
-    ASSERT_TRUE(std::all_of(
-        std::begin(x), std::end(x), [](auto const b) { return b == 1; }));
+    ASSERT_TRUE(std::all_of(std::begin(x), std::end(x), [](auto const b) {
+        return b == 1;
+    }));
 
     non_temporal_bzero(&x, N);
-    ASSERT_TRUE(std::all_of(
-        std::begin(x), std::end(x), [](auto const b) { return b == 0; }));
+    ASSERT_TRUE(std::all_of(std::begin(x), std::end(x), [](auto const b) {
+        return b == 0;
+    }));
 }
 
 TEST(non_temporal_memory, memcpy_0)
@@ -74,16 +78,20 @@ TEST(non_temporal_memory, memcpy_32)
     alignas(32) uint8_t y[N];
     std::memset(x, 1, N);
     std::memset(y, 2, N);
-    ASSERT_TRUE(std::all_of(
-        std::begin(x), std::end(x), [](auto const b) { return b == 1; }));
-    ASSERT_TRUE(std::all_of(
-        std::begin(y), std::end(y), [](auto const b) { return b == 2; }));
+    ASSERT_TRUE(std::all_of(std::begin(x), std::end(x), [](auto const b) {
+        return b == 1;
+    }));
+    ASSERT_TRUE(std::all_of(std::begin(y), std::end(y), [](auto const b) {
+        return b == 2;
+    }));
 
     non_temporal_memcpy(&y, &x, N);
-    ASSERT_TRUE(std::all_of(
-        std::begin(x), std::end(x), [](auto const b) { return b == 1; }));
-    ASSERT_TRUE(std::all_of(
-        std::begin(y), std::end(y), [](auto const b) { return b == 1; }));
+    ASSERT_TRUE(std::all_of(std::begin(x), std::end(x), [](auto const b) {
+        return b == 1;
+    }));
+    ASSERT_TRUE(std::all_of(std::begin(y), std::end(y), [](auto const b) {
+        return b == 1;
+    }));
 }
 
 TEST(non_temporal_memory, memcpy_160)
@@ -94,14 +102,18 @@ TEST(non_temporal_memory, memcpy_160)
     alignas(32) uint8_t y[N];
     std::memset(x, 1, N);
     std::memset(y, 2, N);
-    ASSERT_TRUE(std::all_of(
-        std::begin(x), std::end(x), [](auto const b) { return b == 1; }));
-    ASSERT_TRUE(std::all_of(
-        std::begin(y), std::end(y), [](auto const b) { return b == 2; }));
+    ASSERT_TRUE(std::all_of(std::begin(x), std::end(x), [](auto const b) {
+        return b == 1;
+    }));
+    ASSERT_TRUE(std::all_of(std::begin(y), std::end(y), [](auto const b) {
+        return b == 2;
+    }));
 
     non_temporal_memcpy(&y, &x, N);
-    ASSERT_TRUE(std::all_of(
-        std::begin(x), std::end(x), [](auto const b) { return b == 1; }));
-    ASSERT_TRUE(std::all_of(
-        std::begin(y), std::end(y), [](auto const b) { return b == 1; }));
+    ASSERT_TRUE(std::all_of(std::begin(x), std::end(x), [](auto const b) {
+        return b == 1;
+    }));
+    ASSERT_TRUE(std::all_of(std::begin(y), std::end(y), [](auto const b) {
+        return b == 1;
+    }));
 }

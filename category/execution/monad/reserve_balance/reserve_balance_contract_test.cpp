@@ -131,43 +131,46 @@ struct ReserveBalanceEvm : public ReserveBalanceTest
 
 void add_revert_if_true(std::vector<uint8_t> &code)
 {
-    code.append_range(std::initializer_list<uint8_t>{
-        PUSH1,
-        static_cast<uint8_t>(code.size() + 6),
-        JUMPI,
-        PUSH1,
-        static_cast<uint8_t>(code.size() + 10),
-        JUMP,
-        JUMPDEST,
-        PUSH0,
-        PUSH0,
-        REVERT,
-        JUMPDEST,
-    });
+    code.append_range(
+        std::initializer_list<uint8_t>{
+            PUSH1,
+            static_cast<uint8_t>(code.size() + 6),
+            JUMPI,
+            PUSH1,
+            static_cast<uint8_t>(code.size() + 10),
+            JUMP,
+            JUMPDEST,
+            PUSH0,
+            PUSH0,
+            REVERT,
+            JUMPDEST,
+        });
 }
 
 void add_revert_if_false(std::vector<uint8_t> &code)
 {
-    code.append_range(std::initializer_list<uint8_t>{
-        PUSH1,
-        static_cast<uint8_t>(code.size() + 6),
-        JUMPI,
-        PUSH0,
-        PUSH0,
-        REVERT,
-        JUMPDEST});
+    code.append_range(
+        std::initializer_list<uint8_t>{
+            PUSH1,
+            static_cast<uint8_t>(code.size() + 6),
+            JUMPI,
+            PUSH0,
+            PUSH0,
+            REVERT,
+            JUMPDEST});
 }
 
 void add_callee_check(std::vector<uint8_t> &code)
 {
-    code.append_range(std::initializer_list<uint8_t>{
-        PUSH1,
-        static_cast<uint8_t>(code.size() + 4),
-        JUMPI,
-        STOP,
-        JUMPDEST,
-        0xFE,
-    });
+    code.append_range(
+        std::initializer_list<uint8_t>{
+            PUSH1,
+            static_cast<uint8_t>(code.size() + 4),
+            JUMPI,
+            STOP,
+            JUMPDEST,
+            0xFE,
+        });
 }
 
 void add_revert_check(std::vector<uint8_t> &code)
@@ -175,52 +178,56 @@ void add_revert_check(std::vector<uint8_t> &code)
     u32_be selector = abi_encode_selector("dippedIntoReserve()");
     auto const *s = selector.bytes;
     auto const *a = as_bytes(RESERVE_BALANCE_CA);
-    code.append_range(std::initializer_list<uint8_t>{
-        PUSH32, s[0],  s[1],  s[2],  s[3],  0,     0,     0,     0,
-        0,      0,     0,     0,     0,     0,     0,     0,     0,
-        0,      0,     0,     0,     0,     0,     0,     0,     0,
-        0,      0,     0,     0,     0,     0,     PUSH0,
-        MSTORE, // store selector
+    code.append_range(
+        std::initializer_list<uint8_t>{
+            PUSH32, s[0],  s[1],  s[2],  s[3],  0,     0,     0,     0,
+            0,      0,     0,     0,     0,     0,     0,     0,     0,
+            0,      0,     0,     0,     0,     0,     0,     0,     0,
+            0,      0,     0,     0,     0,     0,     PUSH0,
+            MSTORE, // store selector
 
-        PUSH1,
-        32, // return 1 byte
-        PUSH1,
-        32, // into offset 32
-        PUSH1,
-        4, // selector size
-        PUSH0, // arg offset
-        PUSH0, // no value
-        PUSH20, a[0],  a[1],  a[2],  a[3],  a[4],  a[5],  a[6],  a[7],
-        a[8],   a[9],  a[10], a[11], a[12], a[13], a[14], a[15], a[16],
-        a[17],  a[18], a[19], PUSH1,
-        100, // precompile gas cost
-        CALL,
+            PUSH1,
+            32, // return 1 byte
+            PUSH1,
+            32, // into offset 32
+            PUSH1,
+            4, // selector size
+            PUSH0, // arg offset
+            PUSH0, // no value
+            PUSH20, a[0],  a[1],  a[2],  a[3],  a[4],  a[5],  a[6],  a[7],
+            a[8],   a[9],  a[10], a[11], a[12], a[13], a[14], a[15], a[16],
+            a[17],  a[18], a[19], PUSH1,
+            100, // precompile gas cost
+            CALL,
 
-        POP,
-    });
-    code.append_range(std::initializer_list<uint8_t>{
-        RETURNDATASIZE,
-        PUSH1,
-        static_cast<uint8_t>(code.size() + 5),
-        JUMPI,
-        0xFE,
-        JUMPDEST,
-        PUSH1,
-        32,
-        MLOAD,
-    });
+            POP,
+        });
+    code.append_range(
+        std::initializer_list<uint8_t>{
+            RETURNDATASIZE,
+            PUSH1,
+            static_cast<uint8_t>(code.size() + 5),
+            JUMPI,
+            0xFE,
+            JUMPDEST,
+            PUSH1,
+            32,
+            MLOAD,
+        });
 }
 
 void add_spend_code(uint64_t const value_mon, std::vector<uint8_t> &code)
 {
     uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
     auto const *v = as_bytes(value);
-    code.append_range(std::initializer_list<uint8_t>{
-        PUSH0, PUSH0, PUSH0, PUSH0, PUSH32, v[31], v[30], v[29], v[28], v[27],
-        v[26], v[25], v[24], v[23], v[22],  v[21], v[20], v[19], v[18], v[17],
-        v[16], v[15], v[14], v[13], v[12],  v[11], v[10], v[9],  v[8],  v[7],
-        v[6],  v[5],  v[4],  v[3],  v[2],   v[1],  v[0],  PUSH0, PUSH0, CALL,
-    });
+    code.append_range(
+        std::initializer_list<uint8_t>{
+            PUSH0, PUSH0, PUSH0, PUSH0, PUSH32, v[31], v[30], v[29],
+            v[28], v[27], v[26], v[25], v[24],  v[23], v[22], v[21],
+            v[20], v[19], v[18], v[17], v[16],  v[15], v[14], v[13],
+            v[12], v[11], v[10], v[9],  v[8],   v[7],  v[6],  v[5],
+            v[4],  v[3],  v[2],  v[1],  v[0],   PUSH0, PUSH0, CALL,
+        });
 }
 
 void add_call_code(
@@ -228,14 +235,16 @@ void add_call_code(
 {
     auto const *v = as_bytes(target);
     auto const *g = as_bytes(gas_fee);
-    code.append_range(std::initializer_list<uint8_t>{
-        PUSH0, PUSH0, PUSH0, PUSH0, PUSH0, PUSH20, v[0],   v[1],  v[2],  v[3],
-        v[4],  v[5],  v[6],  v[7],  v[8],  v[9],   v[10],  v[11], v[12], v[13],
-        v[14], v[15], v[16], v[17], v[18], v[19],  PUSH32, g[31], g[30], g[29],
-        g[28], g[27], g[26], g[25], g[24], g[23],  g[22],  g[21], g[20], g[19],
-        g[18], g[17], g[16], g[15], g[14], g[13],  g[12],  g[11], g[10], g[9],
-        g[8],  g[7],  g[6],  g[5],  g[4],  g[3],   g[2],   g[1],  g[0],  CALL,
-    });
+    code.append_range(
+        std::initializer_list<uint8_t>{
+            PUSH0, PUSH0, PUSH0, PUSH0, PUSH0, PUSH20, v[0],  v[1],  v[2],
+            v[3],  v[4],  v[5],  v[6],  v[7],  v[8],   v[9],  v[10], v[11],
+            v[12], v[13], v[14], v[15], v[16], v[17],  v[18], v[19], PUSH32,
+            g[31], g[30], g[29], g[28], g[27], g[26],  g[25], g[24], g[23],
+            g[22], g[21], g[20], g[19], g[18], g[17],  g[16], g[15], g[14],
+            g[13], g[12], g[11], g[10], g[9],  g[8],   g[7],  g[6],  g[5],
+            g[4],  g[3],  g[2],  g[1],  g[0],  CALL,
+        });
 }
 
 template <Traits traits>

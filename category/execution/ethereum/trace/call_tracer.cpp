@@ -120,39 +120,40 @@ void CallTracer::on_enter(evmc_message const &msg)
         to = msg.code_address;
     }
 
-    frames_.emplace_back(CallFrame{
-        .type =
-            [kind = msg.kind] {
-                switch (kind) {
-                case EVMC_CALL:
-                    return CallType::CALL;
-                case EVMC_DELEGATECALL:
-                    return CallType::DELEGATECALL;
-                case EVMC_CALLCODE:
-                    return CallType::CALLCODE;
-                case EVMC_CREATE:
-                    return CallType::CREATE;
-                case EVMC_CREATE2:
-                    return CallType::CREATE2;
-                case EVMC_EOFCREATE:
-                    MONAD_ABORT(); // unsupported
-                }
-                MONAD_ABORT(); // unreachable
-            }(),
-        .flags = msg.flags,
-        .from = from,
-        .to = to,
-        .value = load_be<uint256_t>(msg.value),
-        .gas = depth == 0 ? tx_.gas_limit : static_cast<uint64_t>(msg.gas),
-        .gas_used = 0,
-        .input = msg.input_data == nullptr
-                     ? byte_string{}
-                     : byte_string{msg.input_data, msg.input_size},
-        .output = {},
-        .status = EVMC_FAILURE,
-        .depth = depth,
-        .logs = std::vector<CallFrame::Log>{},
-    });
+    frames_.emplace_back(
+        CallFrame{
+            .type =
+                [kind = msg.kind] {
+                    switch (kind) {
+                    case EVMC_CALL:
+                        return CallType::CALL;
+                    case EVMC_DELEGATECALL:
+                        return CallType::DELEGATECALL;
+                    case EVMC_CALLCODE:
+                        return CallType::CALLCODE;
+                    case EVMC_CREATE:
+                        return CallType::CREATE;
+                    case EVMC_CREATE2:
+                        return CallType::CREATE2;
+                    case EVMC_EOFCREATE:
+                        MONAD_ABORT(); // unsupported
+                    }
+                    MONAD_ABORT(); // unreachable
+                }(),
+            .flags = msg.flags,
+            .from = from,
+            .to = to,
+            .value = load_be<uint256_t>(msg.value),
+            .gas = depth == 0 ? tx_.gas_limit : static_cast<uint64_t>(msg.gas),
+            .gas_used = 0,
+            .input = msg.input_data == nullptr
+                         ? byte_string{}
+                         : byte_string{msg.input_data, msg.input_size},
+            .output = {},
+            .status = EVMC_FAILURE,
+            .depth = depth,
+            .logs = std::vector<CallFrame::Log>{},
+        });
 
     last_.push(frames_.size() - 1);
 }
@@ -207,20 +208,21 @@ void CallTracer::on_self_destruct(
 
     auto const &parent = frames_.at(last_.top());
 
-    frames_.emplace_back(CallFrame{
-        .type = CallType::SELFDESTRUCT,
-        .flags = 0,
-        .from = from,
-        .to = to,
-        .value = transferred_balance,
-        .gas = 0,
-        .gas_used = 0,
-        .input = {},
-        .output = {},
-        .status = EVMC_SUCCESS, // TODO
-        .depth = parent.depth + 1,
-        .logs = std::vector<CallFrame::Log>{},
-    });
+    frames_.emplace_back(
+        CallFrame{
+            .type = CallType::SELFDESTRUCT,
+            .flags = 0,
+            .from = from,
+            .to = to,
+            .value = transferred_balance,
+            .gas = 0,
+            .gas_used = 0,
+            .input = {},
+            .output = {},
+            .status = EVMC_SUCCESS, // TODO
+            .depth = parent.depth + 1,
+            .logs = std::vector<CallFrame::Log>{},
+        });
 }
 
 void CallTracer::on_finish(uint64_t const gas_used)

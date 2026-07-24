@@ -98,19 +98,21 @@ void BlockHashChain::propose(
 {
     for (auto it = proposals_.begin(); it != proposals_.end(); ++it) {
         if (it->block_id == parent_id) {
-            proposals_.emplace_back(Proposal{
-                .block_number = block_number,
-                .block_id = block_id,
-                .parent_id = parent_id,
-                .buf = BlockHashBufferProposal(hash, it->buf)});
+            proposals_.emplace_back(
+                Proposal{
+                    .block_number = block_number,
+                    .block_id = block_id,
+                    .parent_id = parent_id,
+                    .buf = BlockHashBufferProposal(hash, it->buf)});
             return;
         }
     }
-    proposals_.emplace_back(Proposal{
-        .block_number = block_number,
-        .block_id = block_id,
-        .parent_id = parent_id,
-        .buf = BlockHashBufferProposal(hash, buf_)});
+    proposals_.emplace_back(
+        Proposal{
+            .block_number = block_number,
+            .block_id = block_id,
+            .parent_id = parent_id,
+            .buf = BlockHashBufferProposal(hash, buf_)});
 }
 
 void BlockHashChain::finalize(bytes32_t const &block_id)

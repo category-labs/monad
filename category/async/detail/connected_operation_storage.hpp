@@ -173,8 +173,9 @@ namespace detail
             if (!r) {
                 this->being_executed_ = false;
                 static constexpr auto initiation_immediately_completed =
-                    make_status_code(MONAD_ASYNC_NAMESPACE::sender_errc::
-                                         initiation_immediately_completed);
+                    make_status_code(
+                        MONAD_ASYNC_NAMESPACE::sender_errc::
+                            initiation_immediately_completed);
                 if (r.assume_error() == initiation_immediately_completed) {
                     [[likely]] if (
                         r.assume_error().domain() ==

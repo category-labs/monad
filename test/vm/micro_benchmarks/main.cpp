@@ -327,22 +327,23 @@ static double execute_iteration(
     Address sender_address{200};
 
     evmone::test::TestState test_state{};
-    test_state.apply(evmone::state::StateDiff{
-        .modified_accounts =
-            {evmone::state::StateDiff::Entry{
-                 .addr = code_address,
-                 .nonce = 1,
-                 .balance = 10 * 30,
-                 .code = std::optional<evmc::bytes>{evmc::bytes(
-                     bytecode.data(), bytecode.size())},
-                 .modified_storage = {}},
-             evmone::state::StateDiff::Entry{
-                 .addr = sender_address,
-                 .nonce = 1,
-                 .balance = 10 * 30,
-                 .code = {},
-                 .modified_storage = {}}},
-        .deleted_accounts = {}});
+    test_state.apply(
+        evmone::state::StateDiff{
+            .modified_accounts =
+                {evmone::state::StateDiff::Entry{
+                     .addr = code_address,
+                     .nonce = 1,
+                     .balance = 10 * 30,
+                     .code = std::optional<evmc::bytes>{evmc::bytes(
+                         bytecode.data(), bytecode.size())},
+                     .modified_storage = {}},
+                 evmone::state::StateDiff::Entry{
+                     .addr = sender_address,
+                     .nonce = 1,
+                     .balance = 10 * 30,
+                     .code = {},
+                     .modified_storage = {}}},
+            .deleted_accounts = {}});
     evmone::state::State host_state{test_state};
     evmone::state::BlockInfo block_info{};
     evmone::test::TestBlockHashes block_hashes{};

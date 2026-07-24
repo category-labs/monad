@@ -461,8 +461,8 @@ public:
     template <class T = void>
     MONAD_ASYNC_NAMESPACE::file_offset_t print_list_info(
         MONAD_MPT_NAMESPACE::UpdateAux &aux,
-        MONAD_MPT_NAMESPACE::detail::db_metadata::chunk_info_t const
-            *const item_,
+        MONAD_MPT_NAMESPACE::detail::db_metadata::chunk_info_t const *const
+            item_,
         char const *name, T *list = nullptr)
     {
         if (item_ == nullptr) {
@@ -538,14 +538,16 @@ public:
              << aux.metadata_ctx().version_history_length()
              << " versions.\n     Latest proposed is ("
              << aux.metadata_ctx().get_latest_proposed_version() << ", "
-             << monad::to_hex(monad::byte_string_view(
-                    aux.metadata_ctx().get_latest_proposed_block_id().bytes,
-                    sizeof(monad::bytes32_t)))
+             << monad::to_hex(
+                    monad::byte_string_view(
+                        aux.metadata_ctx().get_latest_proposed_block_id().bytes,
+                        sizeof(monad::bytes32_t)))
              << ").\n     Latest voted is ("
              << aux.metadata_ctx().get_latest_voted_version() << ", "
-             << monad::to_hex(monad::byte_string_view(
-                    aux.metadata_ctx().get_latest_voted_block_id().bytes,
-                    sizeof(monad::bytes32_t)))
+             << monad::to_hex(
+                    monad::byte_string_view(
+                        aux.metadata_ctx().get_latest_voted_block_id().bytes,
+                        sizeof(monad::bytes32_t)))
              << ").\n     Latest finalized is "
              << aux.metadata_ctx().get_latest_finalized_version()
              << ", latest verified is "
@@ -1405,8 +1407,9 @@ public:
                     }
                     else if (
                         max_concurrency == 0 &&
-                        i.compression_thread.wait_for(std::chrono::milliseconds(
-                            10)) != std::future_status::timeout) {
+                        i.compression_thread.wait_for(
+                            std::chrono::milliseconds(10)) !=
+                            std::future_status::timeout) {
                         i.compression_thread.get();
                         {
                             auto const dist =
@@ -1652,15 +1655,16 @@ opened.
                    "honored on --create, --create-empty, --truncate (stamps "
                    "the primary) and --activate-secondary (stamps the "
                    "secondary); ignored on other subcommands.")
-                ->transform(CLI::CheckedTransformer(
-                    std::map<
-                        std::string,
-                        MONAD_MPT_NAMESPACE::state_machine_kind>{
-                        {"ethereum",
-                         MONAD_MPT_NAMESPACE::state_machine_kind::ethereum},
-                        {"monad",
-                         MONAD_MPT_NAMESPACE::state_machine_kind::monad}},
-                    CLI::ignore_case));
+                ->transform(
+                    CLI::CheckedTransformer(
+                        std::map<
+                            std::string,
+                            MONAD_MPT_NAMESPACE::state_machine_kind>{
+                            {"ethereum",
+                             MONAD_MPT_NAMESPACE::state_machine_kind::ethereum},
+                            {"monad",
+                             MONAD_MPT_NAMESPACE::state_machine_kind::monad}},
+                        CLI::ignore_case));
             cli.add_option(
                 "--compression-level",
                 impl.compression_level,
@@ -2003,11 +2007,11 @@ opened.
         }
     }
 
-    catch (const CLI::CallForHelp &e) {
+    catch (CLI::CallForHelp const &e) {
         cout << cli.help() << std::flush;
     }
 
-    catch (const CLI::RequiredError &e) {
+    catch (CLI::RequiredError const &e) {
         cerr << "FATAL: " << e.what() << "\n\n";
         cerr << cli.help() << std::flush;
         return 1;

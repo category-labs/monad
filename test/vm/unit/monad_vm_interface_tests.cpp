@@ -317,11 +317,12 @@ TEST(MonadVmInterface, VarcodeCache)
     ASSERT_NE(vcode3, vcode1);
     ASSERT_NE(vcode3, vcode2);
     auto vcode3_span = vcode3->intercode()->code_span();
-    ASSERT_TRUE(std::equal(
-        std::begin(vcode3_span),
-        std::end(vcode3_span),
-        std::begin(bytecode3),
-        std::end(bytecode3)));
+    ASSERT_TRUE(
+        std::equal(
+            std::begin(vcode3_span),
+            std::end(vcode3_span),
+            std::begin(bytecode3),
+            std::end(bytecode3)));
     ASSERT_EQ(vcode3->nativecode(), nullptr);
     ASSERT_EQ(vcode3, cache.get(hash3).value());
     ASSERT_EQ(vcode2, cache.get(hash2).value());

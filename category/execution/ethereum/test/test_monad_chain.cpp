@@ -448,16 +448,30 @@ TYPED_TEST(
         state, SENDER, tx, BASE_FEE_PER_GAS, 0, noop_state_tracer, context);
     state.subtract_from_balance(SENDER, sender_gas_fee);
 
-    EXPECT_TRUE(revert_transaction<traits>(
-        SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context));
+    EXPECT_TRUE(
+        revert_transaction<traits>(
+            SENDER,
+            tx,
+            BASE_FEE_PER_GAS,
+            0,
+            state,
+            noop_state_tracer,
+            context));
     EXPECT_TRUE(revert_transaction_cached<traits>(state));
 
     uint256_t const sender_balance = state.get_balance(SENDER);
     state.add_to_balance(
         SENDER, std::numeric_limits<uint256_t>::max() - sender_balance);
 
-    EXPECT_TRUE(revert_transaction<traits>(
-        SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context));
+    EXPECT_TRUE(
+        revert_transaction<traits>(
+            SENDER,
+            tx,
+            BASE_FEE_PER_GAS,
+            0,
+            state,
+            noop_state_tracer,
+            context));
     EXPECT_TRUE(revert_transaction_cached<traits>(state));
 }
 
@@ -522,14 +536,15 @@ TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
     state.subtract_from_balance(sender, sender_gas_fee);
     state.subtract_from_balance(staking::STAKING_CA, to_wei(1));
 
-    EXPECT_FALSE(revert_transaction<traits>(
-        sender,
-        tx,
-        base_fee_per_gas,
-        0,
-        state,
-        noop_state_tracer,
-        chain_context));
+    EXPECT_FALSE(
+        revert_transaction<traits>(
+            sender,
+            tx,
+            base_fee_per_gas,
+            0,
+            state,
+            noop_state_tracer,
+            chain_context));
     EXPECT_FALSE(revert_transaction_cached<traits>(state));
 }
 
@@ -598,8 +613,9 @@ TYPED_TEST(MonadTraitsTest, can_sender_dip_into_reserve)
             .senders = senders,
             .authorities = authorities,
         };
-        EXPECT_FALSE(can_sender_dip_into_reserve<typename TestFixture::Trait>(
-            Address{1}, 1, false, context));
+        EXPECT_FALSE(
+            can_sender_dip_into_reserve<typename TestFixture::Trait>(
+                Address{1}, 1, false, context));
     }
 }
 

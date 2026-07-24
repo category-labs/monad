@@ -253,8 +253,9 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     trace::StateTracer system_call_state_tracer{std::monostate{}};
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_tracers.emplace_back(std::make_unique<CallTracer>(
-            block.value().transactions[i], call_frames[i]));
+        call_tracers.emplace_back(
+            std::make_unique<CallTracer>(
+                block.value().transactions[i], call_frames[i]));
         state_tracers.emplace_back(
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
@@ -420,8 +421,9 @@ TYPED_TEST(TraitsTest, assertion_exception)
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     trace::StateTracer system_call_state_tracer{std::monostate{}};
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_tracers.emplace_back(std::make_unique<CallTracer>(
-            block.value().transactions[i], call_frames[i]));
+        call_tracers.emplace_back(
+            std::make_unique<CallTracer>(
+                block.value().transactions[i], call_frames[i]));
         state_tracers.emplace_back(
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
@@ -577,8 +579,9 @@ TYPED_TEST(TraitsTest, call_frames_refund)
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     trace::StateTracer system_call_state_tracer{std::monostate{}};
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_tracers.emplace_back(std::make_unique<CallTracer>(
-            block.value().transactions[i], call_frames[i]));
+        call_tracers.emplace_back(
+            std::make_unique<CallTracer>(
+                block.value().transactions[i], call_frames[i]));
         state_tracers.emplace_back(
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }

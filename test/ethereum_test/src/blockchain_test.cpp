@@ -472,16 +472,17 @@ Result<std::vector<Receipt>> execute_and_record(
     std::vector<Receipt> receipts;
     std::vector<std::vector<CallFrame>> call_frames;
 
-    auto result = record_block_result(execute<traits>(
-        chain,
-        block,
-        db,
-        vm,
-        block_hash_buffer,
-        senders_and_authorities_map,
-        enable_tracing,
-        receipts,
-        call_frames));
+    auto result = record_block_result(
+        execute<traits>(
+            chain,
+            block,
+            db,
+            vm,
+            block_hash_buffer,
+            senders_and_authorities_map,
+            enable_tracing,
+            receipts,
+            call_frames));
     if (result.has_error()) {
         // TODO(ken): why is std::move required here?
         return std::move(result.error());

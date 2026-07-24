@@ -137,9 +137,10 @@ TEST(update_aux_test, reader_dirty_aborts)
             m->is_dirty().store(1, std::memory_order_release);
         });
 
-    ASSERT_TRUE(const_cast<monad::mpt::detail::db_metadata *>(
-                    aux_writer->metadata_ctx().main())
-                    ->is_dirty());
+    ASSERT_TRUE(
+        const_cast<monad::mpt::detail::db_metadata *>(
+            aux_writer->metadata_ctx().main())
+            ->is_dirty());
 
     monad::io::Ring ring;
     monad::io::Buffers testrobuf = monad::io::make_buffers_for_read_only(

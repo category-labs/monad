@@ -341,9 +341,9 @@ namespace detail
         }
 
     public:
-        virtual void
-        completed(result<std::reference_wrapper<filled_read_buffer>>
-                      read_buffer_filled) override final
+        virtual void completed(
+            result<std::reference_wrapper<filled_read_buffer>>
+                read_buffer_filled) override final
         {
             this->completed_impl_(std::move(read_buffer_filled));
         }
@@ -380,9 +380,9 @@ namespace detail
         }
 
     public:
-        virtual void
-        completed(result<std::reference_wrapper<filled_write_buffer>>
-                      write_buffer_filled) override final
+        virtual void completed(
+            result<std::reference_wrapper<filled_write_buffer>>
+                write_buffer_filled) override final
         {
             this->completed_impl_(std::move(write_buffer_filled));
         }

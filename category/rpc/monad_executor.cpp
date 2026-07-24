@@ -214,12 +214,13 @@ namespace
         enriched_txn.sc.signature.r = 1;
         enriched_txn.sc.signature.s = 1;
 
-        BOOST_OUTCOME_TRY(static_validate_transaction<traits>(
-            enriched_txn,
-            header.base_fee_per_gas,
-            header.excess_blob_gas,
-            chain.get_chain_id(),
-            chain.get_blob_schedule(header.timestamp)));
+        BOOST_OUTCOME_TRY(
+            static_validate_transaction<traits>(
+                enriched_txn,
+                header.base_fee_per_gas,
+                header.excess_blob_gas,
+                chain.get_chain_id(),
+                chain.get_blob_schedule(header.timestamp)));
 
         tdb.set_block_and_prefix(block_number, block_id);
         BlockState block_state{tdb, vm};
@@ -244,8 +245,9 @@ namespace
             // a subroutine. Solving this issue by manually setting account to
             // be EOA for validation
             state.set_code(sender, {});
-            BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
-                enriched_txn, sender, state, state_tracer));
+            BOOST_OUTCOME_TRY(
+                validate_ethereum_transaction<traits>(
+                    enriched_txn, sender, state, state_tracer));
         }
 
         auto const senders = std::vector{sender};
@@ -447,19 +449,20 @@ namespace
             std::span<std::unique_ptr<trace::StateTracer>> const
                 state_tracers_view{state_tracers.data(), transactions_size};
 
-            BOOST_OUTCOME_TRY(execute_block_transactions<traits>(
-                chain,
-                header,
-                transactions_view,
-                senders_view,
-                authorities_view,
-                block_state,
-                buffer,
-                tx_exec_pool,
-                metrics,
-                noop_call_tracers_view,
-                state_tracers_view,
-                chain_context));
+            BOOST_OUTCOME_TRY(
+                execute_block_transactions<traits>(
+                    chain,
+                    header,
+                    transactions_view,
+                    senders_view,
+                    authorities_view,
+                    block_state,
+                    buffer,
+                    tx_exec_pool,
+                    metrics,
+                    noop_call_tracers_view,
+                    state_tracers_view,
+                    chain_context));
             return Result<nlohmann::json>{std::move(trace)};
         }
         else {
@@ -497,19 +500,20 @@ namespace
             std::span<std::unique_ptr<trace::StateTracer>> const
                 state_tracers_view{state_tracers.data(), transactions_size};
 
-            BOOST_OUTCOME_TRY(execute_block_transactions<traits>(
-                chain,
-                header,
-                transactions_view,
-                senders_view,
-                authorities_view,
-                block_state,
-                buffer,
-                tx_exec_pool,
-                metrics,
-                noop_call_tracers_view,
-                state_tracers_view,
-                chain_context));
+            BOOST_OUTCOME_TRY(
+                execute_block_transactions<traits>(
+                    chain,
+                    header,
+                    transactions_view,
+                    senders_view,
+                    authorities_view,
+                    block_state,
+                    buffer,
+                    tx_exec_pool,
+                    metrics,
+                    noop_call_tracers_view,
+                    state_tracers_view,
+                    chain_context));
 
             // Compose state traces
             return Result<nlohmann::json>{std::move(traces)};
@@ -580,14 +584,15 @@ namespace
             output["withdrawals"] = nlohmann::json::array();
             for (auto const &withdrawal :
                  block.withdrawals.value_or(std::vector<Withdrawal>{})) {
-                output["withdrawals"].emplace_back(nlohmann::json{
-                    {"index", std::format("0x{:x}", withdrawal.index)},
-                    {"validatorIndex",
-                     std::format("0x{:x}", withdrawal.validator_index)},
-                    {"amount", std::format("0x{:x}", withdrawal.amount)},
-                    {"recipient",
-                     std::format("0x{}", evmc::hex(withdrawal.recipient))},
-                });
+                output["withdrawals"].emplace_back(
+                    nlohmann::json{
+                        {"index", std::format("0x{:x}", withdrawal.index)},
+                        {"validatorIndex",
+                         std::format("0x{:x}", withdrawal.validator_index)},
+                        {"amount", std::format("0x{:x}", withdrawal.amount)},
+                        {"recipient",
+                         std::format("0x{}", evmc::hex(withdrawal.recipient))},
+                    });
             }
         }
     }
@@ -707,23 +712,24 @@ namespace
             if (call_frames[tx_idx][0].status == EVMC_SUCCESS) {
                 call_result["logs"] = nlohmann::json::array();
                 for (auto const &log : receipts[tx_idx].logs) {
-                    call_result["logs"].emplace_back(nlohmann::json{
-                        {"address", format_hex(log.address)},
-                        {"topics", nlohmann::json::array()},
-                        {"data", format_hex(log.data)},
-                        {"blockNumber",
-                         std::format("0x{:x}", block.header.number)},
-                        {
-                            "transactionHash",
-                            format_hex(txn_hashes[tx_idx]),
-                        },
-                        {"transactionIndex", std::format("0x{:x}", tx_idx)},
-                        {"blockHash", format_hex(block_hash)},
-                        {"logIndex", std::format("0x{:x}", log_index++)},
-                        // NOTE(dhil): Geth always emits logs with "removed"
-                        // fixed to `false`.
-                        {"removed", false},
-                    });
+                    call_result["logs"].emplace_back(
+                        nlohmann::json{
+                            {"address", format_hex(log.address)},
+                            {"topics", nlohmann::json::array()},
+                            {"data", format_hex(log.data)},
+                            {"blockNumber",
+                             std::format("0x{:x}", block.header.number)},
+                            {
+                                "transactionHash",
+                                format_hex(txn_hashes[tx_idx]),
+                            },
+                            {"transactionIndex", std::format("0x{:x}", tx_idx)},
+                            {"blockHash", format_hex(block_hash)},
+                            {"logIndex", std::format("0x{:x}", log_index++)},
+                            // NOTE(dhil): Geth always emits logs with "removed"
+                            // fixed to `false`.
+                            {"removed", false},
+                        });
                     for (auto const &topic : log.topics) {
                         call_result["logs"].back()["topics"].emplace_back(
                             format_hex(topic));

@@ -36,6 +36,15 @@ struct Secp256k1Signature
     uint8_t y_parity{};
 
     /**
+     * Returns true if the signature's r and s components are both within the
+     * range [1, secp256k1_order - 1].
+     */
+    constexpr bool has_valid_range() const
+    {
+        return r > 0 && s > 0 && r < secp256k1_order && s < secp256k1_order;
+    }
+
+    /**
      * Returns true if the signature's s component is in the upper (malleated)
      * range forbidden by EIP-2.
      */
@@ -46,16 +55,7 @@ struct Secp256k1Signature
 
     constexpr bool is_valid() const
     {
-        if (!r || !s) {
-            return false;
-        }
-        if (r >= secp256k1_order || s >= secp256k1_order) {
-            return false;
-        }
-        if (has_upper_s()) {
-            return false;
-        }
-        return true;
+        return has_valid_range() && !has_upper_s();
     }
 
     friend bool operator==(

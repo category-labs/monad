@@ -178,6 +178,21 @@ uint8_t triedb_migration_phase(TriedbRoInner *const db)
                : legacy;
 }
 
+void triedb_storage_stats_read(
+    TriedbRoInner *const db, triedb_storage_stats *const out)
+{
+    if (out == nullptr) {
+        return;
+    }
+    *out = {0, 0};
+    if (db == nullptr) {
+        return;
+    }
+    auto const stats = db->db.get_storage_stats();
+    out->disk_capacity_bytes = stats.disk_capacity_bytes;
+    out->disk_used_bytes = stats.disk_used_bytes;
+}
+
 void triedb_compute_page_key(
     uint8_t const *const slot_key, uint8_t *const out_page_key)
 {

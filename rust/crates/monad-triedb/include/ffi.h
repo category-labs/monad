@@ -52,6 +52,16 @@ bool triedb_is_page_encoded(TriedbRoInner *);
 //   2 = page-encoded  (primary monad — migration complete)
 uint8_t triedb_migration_phase(TriedbRoInner *);
 
+// Storage-pool disk capacity and usage, in bytes. Zeros for in-memory /
+// not-on-disk Dbs. Safe on a read-only handle while the writer is live.
+typedef struct triedb_storage_stats
+{
+    uint64_t disk_capacity_bytes;
+    uint64_t disk_used_bytes;
+} triedb_storage_stats;
+
+void triedb_storage_stats_read(TriedbRoInner *, triedb_storage_stats *out);
+
 // Compute the storage page key for a 32-byte slot key on a page-encoded db:
 // page_key = slot >> 7. Writes the 32-byte big-endian page key (the key the
 // storage trie is looked up by) to out_page_key.

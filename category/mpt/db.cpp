@@ -1318,6 +1318,22 @@ uint64_t Db::get_earliest_version() const
     return impl_->aux().metadata_ctx().db_history_min_valid_version(tid());
 }
 
+DbStorageStats Db::get_storage_stats() const
+{
+    MONAD_ASSERT(impl_);
+    if (!is_on_disk()) {
+        return {0, 0};
+    }
+    uint64_t capacity = 0;
+    uint64_t used = 0;
+    for (auto const &dev : impl_->aux().io->storage_pool().devices()) {
+        auto const [c, u] = dev.capacity();
+        capacity += c;
+        used += u;
+    }
+    return {capacity, used};
+}
+
 size_t Db::prefetch(Node::SharedPtr const &root)
 {
     MONAD_ASSERT(impl_);

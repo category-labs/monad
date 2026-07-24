@@ -56,18 +56,14 @@ struct BlockHeader
     std::optional<uint64_t> excess_blob_gas{std::nullopt}; // EIP-4844
     std::optional<bytes32_t> parent_beacon_block_root{std::nullopt}; // EIP-4788
     std::optional<bytes32_t> requests_hash{std::nullopt}; // EIP-7685
-    // EIP-7843. In-memory only: deliberately NOT RLP-encoded. Encoding is
-    // deferred to the 7843 activation fork. Adding it to encode_block_header
-    // now would change every block hash with no fork gate, and would lock an
-    // on-wire position that EIP-7843 leaves unpinned relative to a future
-    // EIP-7928 block_access_list_hash. The consensus round is durably carried
-    // in MonadConsensusBlockHeader::block_round, so replay paths can
-    // repopulate this from there without any on-wire encoding.
-    // Coverage: only the consensus execution path (propose_block in
-    // runloop_monad) populates this. Any entrypoint that does not repopulate
-    // it -- RPC/trace re-execution in monad_executor, historical-block replay
-    // runloops -- leaves it nullopt, so the round read via value_or(0) is 0
-    // there.
+    // EIP-7843. RLP-encoded as a trailing optional field (see
+    // encode_block_header/decode_block_header) once requests_hash is also
+    // present. The consensus round is durably carried in
+    // MonadConsensusBlockHeader::block_round; only the consensus execution
+    // path (propose_block in runloop_monad) populates this field from it.
+    // Any entrypoint that does not repopulate it -- RPC/trace re-execution in
+    // monad_executor, historical-block replay runloops -- leaves it nullopt,
+    // so the round read via value_or(0) is 0 there (see EXE-60).
     std::optional<uint64_t> slot_number{std::nullopt};
 
     friend bool operator==(BlockHeader const &, BlockHeader const &) = default;

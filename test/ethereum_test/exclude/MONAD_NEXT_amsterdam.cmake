@@ -18,4 +18,7 @@
 # does not yet emit; every fixture therefore fails the genesis block-hash
 # check. Exclude the whole suite for now and drop entries here to re-enable
 # individual tests as support lands.
-set(MONAD_NEXT_amsterdam_excluded_tests "BlockchainTests.*")
+set(MONAD_NEXT_amsterdam_excluded_tests
+      "BlockchainTests.for_monad_next/amsterdam/eip7708_eth_transfer_logs/*"
+      "BlockchainTests.for_monad_next/amsterdam/eip8024_dupn_swapn_exchange/*"
+)

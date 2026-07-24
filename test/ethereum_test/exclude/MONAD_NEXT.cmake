@@ -13,4 +13,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-set(MONAD_NEXT_excluded_tests "")
+# These two fixtures come from the pinned MonadSpecTestFixtures release
+# (tests-monad@v1.1.1), which predates SLOTNUM being added to MONAD_NEXT's
+# opcode table at 0x4B. Both fail since SLOTNUM/0x4B is a valid opcode.
+# Drop these entries once the fixture bundle is re-pinned past that point.
+set(MONAD_NEXT_excluded_tests
+      "BlockchainTests.for_monad_next/frontier/opcodes/all_opcodes/all_opcodes.json"
+      "BlockchainTests.for_monad_next/frontier/scenarios/scenarios/scenarios.json"
+)

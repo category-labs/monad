@@ -111,22 +111,13 @@ add_monad_test(FORK MONAD_EIGHT)
 add_monad_test(FORK MONAD_NINE)
 add_monad_test(FORK MONAD_NEXT)
 
-# MONAD_NEXT Amsterdam spec tests, from a separate fixtures release. While the
-# whole suite is excluded (see the exclusion file), the runner exits non-zero
-# via its "No tests were run" guard, so the job is marked WILL_FAIL to keep
-# ctest green. WILL_FAIL is set only while the suite is fully excluded: once
-# individual tests are re-enabled by dropping entries from the exclusion list,
-# the job runs normally so real failures (and unexpected passes) surface.
+# MONAD_NEXT Amsterdam spec tests, from a separate fixtures release.
 include(${CMAKE_CURRENT_SOURCE_DIR}/exclude/MONAD_NEXT_amsterdam.cmake)
 list(JOIN MONAD_NEXT_amsterdam_excluded_tests ":" TESTS_EXCLUDED)
 add_test(NAME MONAD_NEXT_amsterdam_monad_ethereum_test
          COMMAND monad-ethereum-test --fork MONAD_NEXT
                  --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadAmsterdamSpecTestFixtures/blockchain_tests
                  --gtest_filter=-:${TESTS_EXCLUDED})
-if(MONAD_NEXT_amsterdam_excluded_tests STREQUAL "BlockchainTests.*")
-  set_tests_properties(MONAD_NEXT_amsterdam_monad_ethereum_test
-                       PROPERTIES WILL_FAIL TRUE)
-endif()
 
 add_ethereum_test(FORK berlin)
 add_ethereum_test(FORK london)

@@ -245,6 +245,11 @@ template <typename DBType>
 Result<std::vector<Transaction>> get_transactions(
     DBType &, uint64_t block_number, bytes32_t const &block_id = {});
 
+template <typename DBType>
+    requires std::is_same_v<mpt::RODb, DBType>
+Result<BlockHeader> get_block_header(
+    DBType &, uint64_t block_number, bytes32_t const &block_id = {});
+
 bool for_each_code(
     mpt::Db &, uint64_t block,
     std::function<void(bytes32_t const &, byte_string_view)>);

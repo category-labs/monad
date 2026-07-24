@@ -182,7 +182,7 @@ namespace monad::vm::interpreter
             avail(BASEFEE, basefee<traits>), // 0x48,
             avail(BLOBHASH, blobhash<traits>), // 0x49,
             avail(BLOBBASEFEE, blobbasefee<traits>), // 0x4A,
-            invalid, //
+            avail(SLOTNUM, slotnum<traits>), // 0x4B,
             invalid, //
             invalid, //
             invalid, //
@@ -1245,6 +1245,19 @@ namespace monad::vm::interpreter
         push(stack_top, load_be<uint256_t>(ctx.env.tx_context->blob_base_fee));
 
         MONAD_VM_NEXT(BLOBBASEFEE);
+    }
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void slotnum(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr)
+    {
+        check_requirements<SLOTNUM, traits>(
+            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        push(stack_top, ctx.env.tx_context->block_round);
+
+        MONAD_VM_NEXT(SLOTNUM);
     }
 
     // Memory & Storage

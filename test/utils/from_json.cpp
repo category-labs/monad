@@ -122,6 +122,12 @@ monad::BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
             write_to.bytes);
     }
 
+    // Amsterdam fork (EIP-7843)
+    if (genesis_json.contains("slotNumber")) {
+        block_header.slot_number = std::stoull(
+            genesis_json["slotNumber"].get<std::string>(), nullptr, 0);
+    }
+
     return block_header;
 }
 

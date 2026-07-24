@@ -89,6 +89,12 @@ byte_string encode_block_header(BlockHeader const &block_header)
             encode_bytes32(block_header.requests_hash.value());
     }
 
+    if (block_header.slot_number.has_value()) {
+        MONAD_ASSERT(block_header.requests_hash.has_value());
+        encoded_block_header +=
+            encode_unsigned(block_header.slot_number.value());
+    }
+
     return encode_list2(encoded_block_header);
 }
 
@@ -184,6 +190,12 @@ Result<BlockHeader> decode_block_header(byte_string_view &enc)
                 if (payload.size() > 0) {
                     BOOST_OUTCOME_TRY(
                         block_header.requests_hash, decode_bytes32(payload));
+
+                    if (payload.size() > 0) {
+                        BOOST_OUTCOME_TRY(
+                            block_header.slot_number,
+                            decode_unsigned<uint64_t>(payload));
+                    }
                 }
             }
         }

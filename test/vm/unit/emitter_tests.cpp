@@ -3511,6 +3511,33 @@ TEST(Emitter, blobbasefee)
     ASSERT_EQ(load_le<uint256_t>(ret.size), 0xb00);
 }
 
+TEST(Emitter, slotnum)
+{
+    // SLOTNUM (EIP-7843) is Amsterdam-only.
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
+        {SLOTNUM, SLOTNUM},
+        basic_blocks::ChainMarker<EvmTraits<MONAD_ETH_AMSTERDAM>>{});
+
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+    emit.slotnum();
+    emit.slotnum();
+    emit.return_();
+
+    entrypoint_t entry = emit.finish_contract(rt);
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
+    auto const &ret = ctx->result;
+
+    tx_context.block_round = 8;
+
+    entry(&*ctx, nullptr);
+
+    ASSERT_EQ(load_le<uint256_t>(ret.offset), 8);
+    ASSERT_EQ(load_le<uint256_t>(ret.size), 8);
+}
+
 TEST(Emitter, caller)
 {
     auto ir = basic_blocks::BasicBlocksIR::unsafe_from({CALLER, CALLER});

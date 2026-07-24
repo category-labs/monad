@@ -130,6 +130,20 @@ namespace
         return v;
     }
 
+    BlockHeader
+    slotnum_header(uint64_t const number, uint64_t const slot_number)
+    {
+        return BlockHeader{
+            .number = number,
+            .base_fee_per_gas = 0,
+            .withdrawals_root = bytes32_t{},
+            .blob_gas_used = 0,
+            .excess_blob_gas = 0,
+            .parent_beacon_block_root = bytes32_t{},
+            .requests_hash = bytes32_t{},
+            .slot_number = slot_number};
+    }
+
     // Machine selects the db state machine: OnDiskMachine = slot-encoded,
     // MonadOnDiskMachine = page-encoded. The executor opens its own RODb on
     // dbname, so the on-disk encoding drives TrieRODb's read path.
@@ -474,6 +488,97 @@ TEST_F(EthCallFixture, on_proposed_block)
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 21000);
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, eth_call_slot_number_from_persisted_header)
+{
+    // EXE-60 regression test: eth_call must read slot_number from the
+    // target block's persisted header instead of the slot_number in
+    // the header passed over FFI.
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, StateDeltas({}), {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr auto contract_address =
+        0x00000000000000000000000000000000aaaaaaaa_address;
+
+    // SLOTNUM PUSH1 0x00 MSTORE PUSH1 0x20 PUSH1 0x00 RETURN
+    auto const contract_code = 0x4b60005260206000f3_bytes;
+    auto const contract_code_hash = to_bytes(keccak256(contract_code));
+    auto const contract_icode = vm::make_shared_intercode(contract_code);
+
+    uint64_t const real_round = 1234;
+    BlockHeader const persisted_header = slotnum_header(256, real_round);
+
+    commit_simple(
+        tdb,
+        StateDeltas(
+            {{contract_address,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0, .code_hash = contract_code_hash}}}}}),
+        Code{{contract_code_hash, contract_icode}},
+        bytes32_t{256},
+        persisted_header,
+        {},
+        {},
+        {},
+        {},
+        {},
+        std::vector<Withdrawal>{});
+    tdb.set_block_and_prefix(persisted_header.number, bytes32_t{256});
+
+    Transaction const tx{
+        .gas_limit = 100000u,
+        .to = contract_address,
+        .type = TransactionType::eip1559};
+
+    uint64_t const decoy_round = 9000;
+    static_assert(decoy_round != real_round);
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header =
+        to_vec(rlp::encode_block_header(slotnum_header(256, decoy_round)));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(sender)));
+    auto const rlp_block_id = to_vec(rlp::encode_bytes32(bytes32_t{256}));
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        persisted_header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        NOOP_TRACER,
+        true);
+    f.get();
+
+    ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->output_data_len, sizeof(bytes32_t));
+
+    bytes32_t result;
+    std::memcpy(result.bytes, ctx.result->output_data, sizeof(bytes32_t));
+    EXPECT_EQ(result, store_be_as<bytes32_t>(uint256_t{real_round}));
 
     monad_state_override_destroy(state_override);
     monad_executor_destroy(executor);
@@ -2154,6 +2259,125 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
             nlohmann::json::parse(expected),
             nlohmann::json::from_cbor(encoded_state_diff_trace));
     }
+
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, trace_block_slot_number_from_persisted_header)
+{
+    // EXE-60 regression test: the historical-trace path must read
+    // slot_number from the target block's persisted header instead
+    // of the slot_number in the header passed over FFI.
+    static constexpr Address ADDR_A =
+        0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address;
+
+    // SLOTNUM PUSH1 0x00 SSTORE
+    auto const contract_code = 0x4b600055_bytes;
+    auto const contract_code_hash = to_bytes(keccak256(contract_code));
+    auto const contract_icode = vm::make_shared_intercode(contract_code);
+
+    commit_sequential(
+        tdb,
+        StateDeltas(
+            {{ADDR_A,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0, .code_hash = contract_code_hash}}}}}),
+        Code{{contract_code_hash, contract_icode}},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 255; ++i) {
+        commit_sequential(tdb, StateDeltas({}), {}, BlockHeader{.number = i});
+    }
+
+    MonadDevnet const devnet;
+    Transaction tx;
+    tx.gas_limit = 100000u;
+    tx.nonce = 1;
+    tx.to = ADDR_A;
+    tx.sc = SignatureAndChain{{1, 1, 1}, devnet.get_chain_id()};
+
+    auto const sender = recover_sender(tx);
+    ASSERT_TRUE(sender.has_value());
+
+    commit_sequential(
+        tdb,
+        StateDeltas(
+            {{*sender,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = std::numeric_limits<uint256_t>::max(),
+                           .nonce = tx.nonce}}}}}),
+        {},
+        BlockHeader{.number = 255});
+
+    uint64_t const real_round = 1234;
+    std::vector<Receipt> const receipts = {
+        Receipt{.status = EVMC_SUCCESS, .gas_used = 20000u}};
+    std::vector<std::vector<CallFrame>> const call_frames = {{}};
+    std::vector<Transaction> const transactions = {tx};
+    std::vector<Address> const senders = {*sender};
+
+    commit_sequential(
+        tdb,
+        StateDeltas({}),
+        {},
+        slotnum_header(256, real_round),
+        receipts,
+        call_frames,
+        senders,
+        transactions,
+        {},
+        std::vector<Withdrawal>{});
+
+    uint64_t const decoy_round = 9000;
+    static_assert(decoy_round != real_round);
+    auto const rlp_header =
+        to_vec(rlp::encode_block_header(slotnum_header(256, decoy_round)));
+    auto const rlp_block_id = to_vec(rlp::encode_bytes32(bytes32_t{256}));
+    auto const rlp_parent_id = to_vec(rlp::encode_bytes32(bytes32_t{255}));
+    auto const rlp_grandparent_id = to_vec(rlp::encode_bytes32(bytes32_t{254}));
+
+    auto *executor = create_executor(dbname.string());
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_run_transactions(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_header.data(),
+        rlp_header.size(),
+        256,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_parent_id.data(),
+        rlp_parent_id.size(),
+        rlp_grandparent_id.data(),
+        rlp_grandparent_id.size(),
+        -1,
+        complete_callback,
+        (void *)&ctx,
+        STATEDIFF_TRACER);
+    f.get();
+
+    ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+
+    std::vector<uint8_t> const encoded_trace(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+    auto const trace_json = nlohmann::json::from_cbor(encoded_trace);
+
+    ASSERT_EQ(trace_json.size(), 1);
+    auto const &storage =
+        trace_json[0]["result"]["post"]
+                  ["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]["storage"];
+    ASSERT_EQ(storage.size(), 1);
+    auto const stored =
+        from_hex<bytes32_t>(storage.begin().value().get<std::string>()).value();
+    EXPECT_EQ(stored, store_be_as<bytes32_t>(uint256_t{real_round}));
 
     monad_executor_destroy(executor);
 }

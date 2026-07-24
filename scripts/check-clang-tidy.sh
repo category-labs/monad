@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-LLVM_VERSION=19
+LLVM_VERSION=21
 
 BUILD_DIR=build
 RUN_CLANG_TIDY="run-clang-tidy-$LLVM_VERSION"

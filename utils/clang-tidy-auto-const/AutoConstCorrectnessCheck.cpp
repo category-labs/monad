@@ -230,7 +230,7 @@ namespace clang::tidy::misc
             Diag << addQualifierToVarDecl(
                 *Variable,
                 *Result.Context,
-                DeclSpec::TQ_const,
+                Qualifiers::Const,
                 QualifierTarget::Value,
                 QualifierPolicy::Right);
             // FIXME: Add '{}' for default initialization if no user-defined
@@ -242,7 +242,7 @@ namespace clang::tidy::misc
             Diag << addQualifierToVarDecl(
                 *Variable,
                 *Result.Context,
-                DeclSpec::TQ_const,
+                Qualifiers::Const,
                 QualifierTarget::Value,
                 QualifierPolicy::Right);
             return;
@@ -253,7 +253,7 @@ namespace clang::tidy::misc
                 Diag << addQualifierToVarDecl(
                     *Variable,
                     *Result.Context,
-                    DeclSpec::TQ_const,
+                    Qualifiers::Const,
                     QualifierTarget::Value,
                     QualifierPolicy::Right);
             }

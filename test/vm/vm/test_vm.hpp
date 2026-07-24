@@ -96,7 +96,6 @@ private:
     Implementation impl_;
     evmone::VM evmone_vm_;
     monad::vm::VM monad_vm_;
-    char const *debug_dir_;
     monad::vm::CompilerConfig base_config;
     CodeMap<evmone::baseline::CodeAnalysis> code_analyses_;
     CodeMap<monad::vm::SharedIntercode> intercodes_;

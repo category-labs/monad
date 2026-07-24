@@ -54,6 +54,7 @@ enum class BlockError
     InvalidOmmerHeader,
     WrongLogsBloom,
     InvalidGasUsed,
+    InvalidExcessBlobGas,
     WrongMerkleRoot,
     SystemCallMissingCode,
     SystemCallFailed,
@@ -74,6 +75,10 @@ Result<void> static_validate_header(BlockHeader const &);
 
 template <Traits traits>
 Result<void> static_validate_block(Chain const &chain, Block const &);
+
+template <Traits traits>
+Result<void> static_validate_block_with_parent(
+    Chain const &chain, Block const &, BlockHeader const &parent_header);
 
 Result<void>
 validate_output_header(BlockHeader const &input, BlockHeader const &output);

@@ -24,7 +24,7 @@
 MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
-class PartialTrieDb;
+class Db;
 struct Block;
 
 namespace vm
@@ -42,7 +42,7 @@ namespace vm
 // full block-output hash.
 template <Traits traits>
 Result<bytes32_t> execute_block_zkvm(
-    Chain const &chain, Block const &block, PartialTrieDb &pdb, vm::VM &vm,
+    Chain const &chain, Block const &block, Db &pdb, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer,
     ChainContext<traits> const &chain_ctx);
 

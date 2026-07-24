@@ -41,7 +41,7 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
-#include <category/execution/ethereum/db/partial_trie_db.hpp>
+#include <category/execution/ethereum/db/offset_trie_db.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
@@ -52,6 +52,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace
 {
@@ -63,7 +64,7 @@ namespace
     template <monad::Traits traits>
     monad::Result<monad::bytes32_t> dispatch(
         monad::Chain const &chain, monad::Block const &block,
-        monad::PartialTrieDb &pdb, monad::vm::VM &vm,
+        monad::Db &pdb, monad::vm::VM &vm,
         monad::BlockHashBuffer const &block_hash_buffer)
     {
         return monad::execute_block_zkvm<traits>(
@@ -87,27 +88,29 @@ extern "C" void monad_zkvm_execute_witness(void)
         monad::byte_string_view{input, input_len});
     MONAD_ASSERT(witness.has_value());
 
-    // 2. Derive the pre-state root from the first node in the witness. The
-    //    encoder emits the accounts-trie root (or its wrapping extension)
-    //    as the first entry, so its keccak hash equals the live state root
-    //    by construction. Empty witness ⇒ empty trie ⇒ NULL_ROOT.
-    monad::bytes32_t pre_state_root = monad::NULL_ROOT;
+    // 2. Build the code index from the witness bytecodes (keccak-keyed), the
+    //    same content PartialTrieDb::from_witness indexed.
+    monad::mpt_witness::CodeIndex code_index;
     {
-        monad::byte_string_view view = witness.value().encoded_nodes;
-        if (!view.empty()) {
-            auto const first = monad::rlp::parse_list_metadata_raw(view);
-            MONAD_ASSERT(first.has_value());
-            pre_state_root = monad::to_bytes(monad::keccak256(first.value()));
+        monad::byte_string_view codes = witness.value().encoded_codes;
+        while (!codes.empty()) {
+            auto const bytes = monad::rlp::parse_string_metadata(codes);
+            MONAD_ASSERT(bytes.has_value());
+            code_index.emplace(
+                monad::to_bytes(monad::keccak256(bytes.value())),
+                monad::vm::make_shared_intercode(bytes.value()));
         }
     }
 
-    // 3. Reconstruct the partial state trie from the pre-state.
-    auto pdb_result = monad::PartialTrieDb::from_witness(
-        pre_state_root,
-        witness.value().encoded_nodes,
-        witness.value().encoded_codes);
-    MONAD_ASSERT(pdb_result.has_value());
-    auto &pdb = pdb_result.value();
+    // 3. Load the pre-state trie zero-copy from the offset-format node region
+    //    (validated + hash-primed by the TrieStore constructor). No external
+    //    pre-state root is needed — it is the blob's own header root.
+    monad::mpt_witness::TrieStore store{witness.value().encoded_nodes};
+    // A witness must carry a materialised pre-state trie; an overlay-id root is
+    // the empty-trie sentinel (root_off == 0), which the execution path cannot
+    // read from or commit onto.
+    MONAD_ASSERT(!monad::mpt_witness::is_overlay_id(store.root));
+    monad::OffsetTrieDb pdb{std::move(store), std::move(code_index)};
 
     // 4. Decode the embedded block.
     monad::byte_string_view block_view = witness.value().block_rlp;
@@ -124,7 +127,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     monad::EthereumMainnet const chain;
     monad::vm::VM vm;
     monad::BlockHashBufferFinalized const block_hash_buffer;
-    pdb.set_block_and_prefix(block.header.number);
+    pdb.set_block_and_prefix(block.header.number, monad::bytes32_t{});
 
     // 6. Pick the EVM revision from the block's position on the mainnet
     //    fork schedule and dispatch into the templated guest pipeline. The

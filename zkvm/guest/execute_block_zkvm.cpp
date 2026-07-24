@@ -29,7 +29,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
-#include <category/execution/ethereum/db/partial_trie_db.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -77,7 +77,7 @@ MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
 Result<bytes32_t> execute_block_zkvm(
-    Chain const &chain, Block const &block, PartialTrieDb &pdb, vm::VM &vm,
+    Chain const &chain, Block const &block, Db &pdb, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer,
     ChainContext<traits> const &chain_ctx)
 {

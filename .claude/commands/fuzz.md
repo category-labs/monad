@@ -20,7 +20,7 @@ The compiler fuzzer requires `MONAD_COMPILER_TESTING=ON` at configure time and i
 
 If the fuzzer binaries don't exist, offer to reconfigure. The CI fuzzing configuration is:
 ```bash
-CC=clang-19 CXX=clang++-19 cmake -G Ninja -B build \
+CC=clang-21 CXX=clang++-21 cmake -G Ninja -B build \
   -DCMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake \
   -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
   -DCMAKE_BUILD_TYPE=Release \

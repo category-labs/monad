@@ -12,4 +12,4 @@ rg --files -0 -g '*.hpp' -g '*.cpp' -g '*.c' -g '*.h' \
   "${root_dir}/cmd" \
   "${root_dir}/test" \
   "${root_dir}/zkvm" \
-  | xargs -0 -r clang-format-19 -i
+  | xargs -0 -r clang-format-21 -i

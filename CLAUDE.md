@@ -42,7 +42,7 @@ Use `/build`, `/test`, `/lint`, `/format`, `/fuzz` skills for full options (sani
 - **Single-commit PRs** unless there are very distinct changes (e.g. a lint fix followed by a feature). Squash/rebase before merging.
 - **Rebase on main** — no merge commits. Use `git rebase origin/main` before pushing.
 - Before creating a PR, ensure these checks pass:
-  1. **Formatting** (`/format`): `clang-format-19` on all source files
+  1. **Formatting** (`/format`): `clang-format-21` on all source files
   2. **Linting** (`/lint`): clang-tidy with const-correctness plugin, and trait instantiation checks
   3. **Tests** (`/test`): ctest unit tests and pytest
 

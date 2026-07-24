@@ -44,8 +44,8 @@ jobs:
             compiler:
               - CXX: g++-15
                 CC: gcc-15
-              - CXX: clang++-19
-                CC: clang-19
+              - CXX: clang++-21
+                CC: clang-21
             exclude:
               # GCC's implementation of ASAN breaks the must-tail calling
               # convention used by the interpreter, so we need to disable that

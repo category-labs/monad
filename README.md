@@ -41,7 +41,7 @@ Execution has two kinds of dependencies on third-party libraries:
 
 ### Minimum development tool requirements
 
-- gcc-15 or clang-19
+- gcc-15 or clang-21
 - CMake 3.27
 - Even when using clang, the only standard library supported is libstdc++;
   libc++ may work but it is not a tested platform

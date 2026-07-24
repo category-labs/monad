@@ -3,9 +3,9 @@
 packages=(
   apt-utils
   ca-certificates
-  clang-19
-  clang-tools-19
-  clang-tidy-19
+  clang-21
+  clang-tools-21
+  clang-tidy-21
   cmake
   curl
   dialog
@@ -14,9 +14,9 @@ packages=(
   gdb
   git
   gnupg
-  libclang-common-19-dev
-  libclang-rt-19-dev
-  llvm-19-dev
+  libclang-common-21-dev
+  libclang-rt-21-dev
+  llvm-21-dev
   make
   ninja-build
   pkg-config

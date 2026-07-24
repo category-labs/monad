@@ -80,8 +80,8 @@ RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake
   -DMONAD_COMPILER_BENCHMARKS=On  \
   -DMONAD_COMPILER_TESTING=On     \
   -DCMAKE_BUILD_TYPE=Debug        \
-  -DCMAKE_C_COMPILER=clang-19     \
-  -DCMAKE_CXX_COMPILER=clang++-19 \
+  -DCMAKE_C_COMPILER=clang-21     \
+  -DCMAKE_CXX_COMPILER=clang++-21 \
   -DUTILS_CLANG_TIDY_AUTO_CONST=On
 
 RUN cd src && cmake --build build -t ConstCorrectnessChecks
@@ -158,8 +158,8 @@ RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake
   -GNinja \
   -DCMAKE_BUILD_TYPE=Release \
   -DMONAD_COMPILER_TESTING=On \
-  -DCMAKE_C_COMPILER=clang-19 \
-  -DCMAKE_CXX_COMPILER=clang++-19
+  -DCMAKE_C_COMPILER=clang-21 \
+  -DCMAKE_CXX_COMPILER=clang++-21
 
 RUN cd src && cmake --build build -t monad-compiler-fuzzer
 RUN cd src && ./scripts/vm/ci-fuzzer.sh

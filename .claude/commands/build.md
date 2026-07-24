@@ -7,7 +7,7 @@ The user may pass arguments like:
 - `build` — only run the build step (configure first if build/ doesn't exist)
 - `clean` — remove the build directory and reconfigure from scratch
 - `<target>` — build a specific cmake target (e.g., `monad`, `monad-cli`, a test name)
-- Compiler selection: `--clang` to use Clang 19+ instead of GCC 15+ (default)
+- Compiler selection: `--clang` to use Clang 21+ instead of GCC 15+ (default)
 - CMake options as flags: `--debug`, `--release`, `--asan`, `--tsan`, `--ubsan`, `--coverage`, `--avx512`
 
 If no arguments are given, run the full cycle: configure (if needed) + build.
@@ -21,7 +21,7 @@ You are helping the user configure and build the monad C++ project located at $C
 - Generator: Ninja
 - Build directory: `build/` (relative to project root)
 - Default build type: `RelWithDebInfo`
-- Compiler requirements: GCC 15+ or Clang 19+
+- Compiler requirements: GCC 15+ or Clang 21+
 - CPU architecture: `-march=haswell` minimum (x86-64-v3)
 - Toolchain files: `category/core/toolchains/` — these set architecture and sanitizer flags
 
@@ -98,7 +98,7 @@ You are helping the user configure and build the monad C++ project located at $C
      which cmake ninja pkg-config
      # Compiler (check whichever was selected)
      which gcc-15 g++-15    # GCC (default)
-     which clang-19 clang++-19  # Clang (if --clang)
+     which clang-21 clang++-21  # Clang (if --clang)
      # Key dev libraries (check via pkg-config — TBB uses find_package, not pkg-config)
      pkg-config --exists liburing libzstd libcrypto++ gmp
      # TBB: cmake's find_package(TBB) looks for TBBConfig.cmake; check via dpkg
@@ -112,7 +112,7 @@ You are helping the user configure and build the monad C++ project located at $C
 4. **Configure step** (`cmake -G Ninja -B build ...`):
    - **Compiler selection**: The system default compiler may be too old. Explicitly set the compiler:
      - GCC (default): `CC=gcc-15 CXX=g++-15`
-     - Clang (`--clang` flag): `CC=clang-19 CXX=clang++-19`
+     - Clang (`--clang` flag): `CC=clang-21 CXX=clang++-21`
    - Ensure the required architecture flags are set (`-march=haswell` minimum) so that C/C++ and assembly sources (e.g., `keccak_impl.S`) compile correctly. The recommended way is to pass `-DCMAKE_TOOLCHAIN_FILE=category/core/toolchains/<toolchain>.cmake`. Alternatively, `CFLAGS`, `CXXFLAGS`, and `ASMFLAGS` environment variables can provide the same flags.
    - Always pass `-G Ninja`
    - Always pass `-DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE`
@@ -153,7 +153,7 @@ CC=gcc-15 CXX=g++-15 cmake -G Ninja -B build \
 
 Clang build:
 ```bash
-CC=clang-19 CXX=clang++-19 cmake -G Ninja -B build \
+CC=clang-21 CXX=clang++-21 cmake -G Ninja -B build \
   -DCMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake \
   -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo
@@ -169,7 +169,7 @@ CC=gcc-15 CXX=g++-15 cmake -G Ninja -B build \
 
 Clang ASAN build (includes fuzzing instrumentation — no plain Clang ASAN toolchain exists):
 ```bash
-CC=clang-19 CXX=clang++-19 cmake -G Ninja -B build \
+CC=clang-21 CXX=clang++-21 cmake -G Ninja -B build \
   -DCMAKE_TOOLCHAIN_FILE=category/core/toolchains/clang-fuzz.cmake \
   -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
   -DCMAKE_BUILD_TYPE=Debug
@@ -177,7 +177,7 @@ CC=clang-19 CXX=clang++-19 cmake -G Ninja -B build \
 
 Clang TSAN build:
 ```bash
-CC=clang-19 CXX=clang++-19 cmake -G Ninja -B build \
+CC=clang-21 CXX=clang++-21 cmake -G Ninja -B build \
   -DCMAKE_TOOLCHAIN_FILE=category/core/toolchains/clang-tsan.cmake \
   -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo
@@ -186,7 +186,7 @@ CC=clang-19 CXX=clang++-19 cmake -G Ninja -B build \
 ### Error handling
 
 - If cmake configure fails, check for missing dependencies and suggest install commands
-- If configure fails with "GCC version 15 or higher is required", ensure `CC=gcc-15 CXX=g++-15` is set (or use `CC=clang-19 CXX=clang++-19` for Clang)
+- If configure fails with "GCC version 15 or higher is required", ensure `CC=gcc-15 CXX=g++-15` is set (or use `CC=clang-21 CXX=clang++-21` for Clang)
 - If configure fails with missing `CMakeLists.txt` in `third_party/` (including `third_party/evmone`, which is required for `MONAD_COMPILER_TESTING`, `MONAD_COMPILER_BENCHMARKS`, lint, and fuzz builds), run `git submodule update --init --recursive`
 - If build fails with `#error avx2 or avx512 required`, ensure a toolchain file is being used
 - If build fails, show the relevant error lines and suggest fixes

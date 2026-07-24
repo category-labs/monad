@@ -13,7 +13,7 @@ You are running lint checks for the monad C++ project located at $CWD.
 ### Build requirements
 
 Linting requires a specific build configuration to match CI. All of these must be true, otherwise tell the user and offer to reconfigure:
-- Clang 19 compiler
+- Clang 21 compiler
 - Debug build type
 - `MONAD_COMPILER_TESTING=ON` and `MONAD_COMPILER_BENCHMARKS=ON`
 - `UTILS_CLANG_TIDY_AUTO_CONST=ON`
@@ -23,7 +23,7 @@ Linting requires a specific build configuration to match CI. All of these must b
 
 1. **Check build configuration.** Verify `build/compile_commands.json` exists and was generated with the right settings. If the build doesn't exist or doesn't match, configure it:
    ```bash
-   CC=clang-19 CXX=clang++-19 cmake -G Ninja -B build \
+   CC=clang-21 CXX=clang++-21 cmake -G Ninja -B build \
      -DCMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake \
      -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
      -DCMAKE_BUILD_TYPE=Debug \

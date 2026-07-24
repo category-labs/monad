@@ -13,8 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-find_package(LLVM 19.1.7 REQUIRED CONFIG)
-find_package(Clang 19.1.7 REQUIRED CONFIG)
+find_package(LLVM 21.1.8 REQUIRED CONFIG)
+find_package(Clang 21.1.8 REQUIRED CONFIG)
 
 add_library(ConstCorrectnessChecks SHARED "")
 target_compile_options(ConstCorrectnessChecks PRIVATE -fno-rtti)

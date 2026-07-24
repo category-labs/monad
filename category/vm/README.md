@@ -16,7 +16,7 @@ install the following dependencies via `apt`:
 ```
 build-essential
 cmake
-llvm-19-dev
+llvm-21-dev
 libbenchmark-dev
 libcli11-dev
 libgmock-dev
@@ -305,12 +305,12 @@ scripts/check-clang-tidy.sh
 
 Automatic fixes can be applied to a clean working tree with:
 ```console
-scripts/apply-clang-tidy-fixes.sh build run-clang-tidy-19
+scripts/apply-clang-tidy-fixes.sh build run-clang-tidy-21
 ```
 
 To run the formatter, call:
 ```console
-find {cmd,libs,test} -iname '*.h*' -o -iname '*.c*' | xargs clang-format-19 -i
+find {cmd,libs,test} -iname '*.h*' -o -iname '*.c*' | xargs clang-format-21 -i
 ```
 Care should be taken to make sure that automatically-fixed code compiles and is
 correct.

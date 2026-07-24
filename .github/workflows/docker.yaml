@@ -25,7 +25,7 @@ jobs:
     strategy:
       matrix:
         CMAKE_BUILD_TYPE: [RelWithDebInfo, Debug]
-        compiler: [{CXX: g++-15, CC: gcc-15}, {CXX: clang++-19, CC: clang-19}]
+        compiler: [{CXX: g++-15, CC: gcc-15}, {CXX: clang++-21, CC: clang-21}]
 
     runs-on: ubuntu-26.04-32
 

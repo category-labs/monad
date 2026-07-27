@@ -721,6 +721,15 @@ namespace monad::vm::compiler
 
     template <>
     consteval std::array<OpCodeInfo, 256>
+    make_opcode_table<MonadTraits<MONAD_TEN>>()
+    {
+        auto table = make_opcode_table<MonadTraits<MONAD_TEN>::evm_base>();
+        table[SSTORE].min_gas = MonadTraits<MONAD_TEN>::base_sstore_cost();
+        return table;
+    }
+
+    template <>
+    consteval std::array<OpCodeInfo, 256>
     make_opcode_table<MonadTraits<MONAD_NEXT>>()
     {
         auto table = make_opcode_table<MonadTraits<MONAD_NEXT>::evm_base>();

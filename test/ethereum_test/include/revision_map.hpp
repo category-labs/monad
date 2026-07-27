@@ -53,6 +53,7 @@ inline std::unordered_map<
         {"MONAD_SEVEN", MONAD_SEVEN},
         {"MONAD_EIGHT", MONAD_EIGHT},
         {"MONAD_NINE", MONAD_NINE},
+        {"MONAD_TEN", MONAD_TEN},
         {"MONAD_NEXT", MONAD_NEXT}};
 
 MONAD_TEST_NAMESPACE_END

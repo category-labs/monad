@@ -201,7 +201,7 @@ namespace monad
     // mip-8 (page-encoding) activation cutoff.
     constexpr bool mip_8_active(monad_revision const rev) noexcept
     {
-        return rev >= MONAD_NEXT;
+        return rev >= MONAD_TEN;
     }
 
     template <monad_revision Rev>

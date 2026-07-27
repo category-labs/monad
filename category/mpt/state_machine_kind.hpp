@@ -34,7 +34,7 @@ enum class state_machine_kind : uint8_t
     // so a zeroed metadata byte (DBs created before the kind was persisted,
     // freshly-created pools) reads back as ethereum with no migration step.
     ethereum = 0,
-    // MonadOnDiskMachine: page-encoded storage for chains at MONAD_NEXT or
+    // MonadOnDiskMachine: page-encoded storage for chains at MONAD_TEN or
     // later. Registered alongside ethereum.
     monad = 1,
     // Future kinds extend here. Never reorder or reuse values: they are

@@ -65,6 +65,8 @@
         return f<::monad::MonadTraits<MONAD_EIGHT>>(__VA_ARGS__);              \
     case MONAD_NINE:                                                           \
         return f<::monad::MonadTraits<MONAD_NINE>>(__VA_ARGS__);               \
+    case MONAD_TEN:                                                            \
+        return f<::monad::MonadTraits<MONAD_TEN>>(__VA_ARGS__);                \
     case MONAD_NEXT:                                                           \
         return f<::monad::MonadTraits<MONAD_NEXT>>(__VA_ARGS__);               \
     }

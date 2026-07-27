@@ -39,23 +39,41 @@ inline constexpr unsigned MONAD_SNAPSHOT_FILES_PER_SHARD = 4;
 //
 //   eth_header := rlp(header)
 //   account    := encode_account_db(address, account) ...
-//   storage    := [account_offset: uint64][encode_storage_db(key, value)] ...
+//   storage    := group*
 //   code       := [size: uint64][code] ...
 //
-// A storage record is prefixed by the offset of the owning account within the
-// shard's account stream, which is how the loader relinks it whatever order the
-// records arrive in. Those offsets count from the first account record rather
-// than from the stream header, so they do not depend on whether the header is
-// present.
+//   group      := [account_offset: uint64][payload_len: uint32][payload]
 //
-// A dump always writes the header, but a reader must also accept a stream that
-// lacks one and parse its records from byte 0: that is how a snapshot written
-// before the header existed is recognised.
+// Each group is prefixed by the offset of the owning account within the shard's
+// account stream, and holds the encode_storage_db(slot_key, slot_value) entries
+// of one storage leaf of the source db, in ascending slot-key order.
+// payload_len is never zero. Account offsets count from the first account
+// record, not from the stream header, so they do not depend on whether the
+// header is present.
+//
+// A group is closed: it holds every non-zero slot of its source leaf, and no
+// later group in the stream repeats any of them. When group_key_shift is also
+// at least as coarse as the target's page key, that is what lets the loader
+// emit a finished page as its group ends instead of buffering a whole shard.
+//
+// Two older storage layouts must also be read. A version 1 header, and no
+// header at all, both denote ungrouped storage records:
+//
+//   storage := [account_offset: uint64][one encode_storage_db entry] ...
+//
+// which the loader reads as groups of a single slot. No header at all is how a
+// snapshot written before headers existed is recognised; nothing outside the
+// storage stream differs between version 1 and version 2.
 //
 // Scalars are native-endian, which the format takes to be little-endian.
 inline constexpr uint32_t MONAD_SNAPSHOT_STREAM_MAGIC = 0x5347534d; // "MSGS"
-inline constexpr uint8_t MONAD_SNAPSHOT_STREAM_VERSION = 1;
+inline constexpr uint8_t MONAD_SNAPSHOT_STREAM_VERSION = 2;
+// Version 1 framed every stream the same way but held one slot entry per
+// storage record, and left the group_key_shift byte reserved.
+inline constexpr uint8_t MONAD_SNAPSHOT_STREAM_VERSION_UNGROUPED = 1;
 inline constexpr uint8_t MONAD_SNAPSHOT_STREAM_GUARD = 0xff;
+inline constexpr size_t MONAD_SNAPSHOT_STORAGE_GROUP_HEADER_SIZE =
+    sizeof(uint64_t) + sizeof(uint32_t);
 
 struct monad_snapshot_stream_header
 {
@@ -65,9 +83,13 @@ struct monad_snapshot_stream_header
     // kind is rejected rather than misparsed. Nothing here identifies the
     // shard, so files swapped between shards still load.
     uint8_t kind;
-    // Zero. Readers ignore it, so a later revision may give it a meaning
-    // without a version bump only if an unaware reader can correctly skip it.
-    uint8_t reserved;
+    // Meaning depends on kind; zero for every kind but MONAD_SNAPSHOT_STORAGE,
+    // where it is the number of low slot-key bits that do not participate in
+    // grouping: a group holds every non-zero slot sharing the remaining high
+    // bits. Zero there too means one slot per group, which groups nothing.
+    // Reserved in version 1, whose readers were told to accept any value, so it
+    // carries no meaning for a version 1 stream.
+    uint8_t group_key_shift;
     // MONAD_SNAPSHOT_STREAM_GUARD. The magic's first byte on disk is below
     // 0xc0, so a header can never be mistaken for the RLP list that opens an
     // eth_header or account stream; the guard is the most significant byte when
@@ -84,6 +106,14 @@ static_assert(sizeof(struct monad_snapshot_stream_header) == 8);
 // of the eight bytes on disk.
 static_assert(std::endian::native == std::endian::little);
 static_assert((MONAD_SNAPSHOT_STREAM_MAGIC & 0xff) < 0xc0);
+
+// Snapshot bytes the loader buffers before an intermediate upsert. This bounds
+// its peak memory, except for storage the loader cannot close page by page (see
+// monad_db_snapshot_loader_set_flush_bytes). Each flush costs one extra
+// incremental merklizing upsert, so it is set well above a typical shard and
+// only bites on outsized ones. A shard is flushed when its load ends whatever
+// the threshold, which is what keeps its buffered storage from outliving it.
+inline constexpr uint64_t MONAD_SNAPSHOT_DEFAULT_FLUSH_BYTES = 1ull << 30;
 
 extern "C"
 {
@@ -111,6 +141,16 @@ bool monad_db_dump_snapshot(
 struct monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     uint64_t block, char const *const *dbname_paths, size_t len,
     unsigned sq_thread_cpu, bool load_to_secondary);
+
+// Override MONAD_SNAPSHOT_DEFAULT_FLUSH_BYTES. Storage honours it only when the
+// loader can close pages as it reads, that is when the target is slot-encoded
+// or the stream's group_key_shift covers a whole target page. Otherwise — a
+// page-encoded target reading a stream whose groups hold one slot each, which
+// is every stream dumped from a slot-encoded db and every stream with no header
+// at all — a shard's storage has to be assembled in full before any of it can
+// be written.
+void monad_db_snapshot_loader_set_flush_bytes(
+    struct monad_db_snapshot_loader *loader, uint64_t bytes);
 
 void monad_db_snapshot_loader_load(
     struct monad_db_snapshot_loader *loader, uint64_t shard,

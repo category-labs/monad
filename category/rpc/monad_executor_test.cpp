@@ -1445,6 +1445,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         .logs =
             std::vector{
                 CallFrame::Log{
+                    .receipt_index = std::nullopt,
                     .log =
                         {.data = {},
                          .topics =
@@ -1456,6 +1457,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
                     .position = 0,
                 },
                 CallFrame::Log{
+                    .receipt_index = std::nullopt,
                     .log =
                         {.data = {},
                          .topics =
@@ -1515,6 +1517,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         .status = EVMC_SUCCESS,
         .depth = 1,
         .logs = std::vector{CallFrame::Log{
+            .receipt_index = std::nullopt,
             .log =
                 {.data = byte_string{store_be_as<bytes32_t>(
                      std::numeric_limits<uint256_t>::max() - 1)},

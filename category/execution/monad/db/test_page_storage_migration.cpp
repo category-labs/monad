@@ -65,11 +65,9 @@ namespace
     };
 
     // Revisions either side of the mip-8 (page-encoding) fork; keeps the
-    // MONAD_NEXT literal out of the call sites.
+    // MONAD_TEN literal out of the call sites.
     using PreMip8Fork = MonadTraits<MONAD_ZERO>;
-    using PostMip8Fork =
-        MonadTraits<MONAD_NEXT>; // TODO: replace MONAD_NEXT with the actual
-                                 // fork point constant when available
+    using PostMip8Fork = MonadTraits<MONAD_TEN>;
     static_assert(
         PostMip8Fork::mip_8_active(), "PostMip8Fork should have MIP-8 active");
 

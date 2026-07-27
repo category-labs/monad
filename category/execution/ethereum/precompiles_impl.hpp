@@ -52,11 +52,11 @@
 #include <silkpre/precompile.h>
 
 #include <algorithm>
-#include <gmp.h>
 #include <bit>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <gmp.h>
 #include <limits>
 #include <memory>
 #include <optional>

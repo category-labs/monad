@@ -45,10 +45,8 @@ add_subdirectory("${THIRD_PARTY_DIR}/silkpre_vendor")
 add_subdirectory("${THIRD_PARTY_DIR}/c-kzg-4844-builder" "${CMAKE_CURRENT_BINARY_DIR}/_c-kzg-4844")
 
 # cryptopp (system library)
-if(NOT TARGET PkgConfig::crypto++)
-  find_package(PkgConfig REQUIRED)
-  pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
-endif()
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
 
 # immer
 option(immer_BUILD_TESTS OFF)

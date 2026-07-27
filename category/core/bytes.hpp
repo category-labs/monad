@@ -23,6 +23,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/seeded_fast_hash.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -152,8 +153,7 @@ struct std::hash<monad::bytes32_t>
 {
     size_t operator()(monad::bytes32_t const &x) const noexcept
     {
-        return ankerl::unordered_dense::detail::wyhash::hash(
-            x.bytes, sizeof(x.bytes));
+        return monad::seeded_fast_hash(x.bytes, sizeof(x.bytes));
     }
 };
 

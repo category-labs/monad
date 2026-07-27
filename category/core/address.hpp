@@ -18,6 +18,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/seeded_fast_hash.hpp>
 
 #include <evmc/evmc.h>
 
@@ -118,8 +119,7 @@ struct std::hash<monad::Address>
 {
     size_t operator()(monad::Address const &x) const noexcept
     {
-        return ankerl::unordered_dense::detail::wyhash::hash(
-            x.bytes, sizeof(x.bytes));
+        return monad::seeded_fast_hash(x.bytes, sizeof(x.bytes));
     }
 };
 

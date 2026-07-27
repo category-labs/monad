@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -16,32 +16,14 @@
 #pragma once
 
 #include <category/core/config.hpp>
-#include <category/core/seeded_fast_hash.hpp>
+
+#include <cstddef>
+#include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 
-template <class Bytes>
-struct BytesHashCompare
-{
-    // Ankerl-style hasher requirement.
-    using is_avalanching = void;
+uint64_t set_hash_seed();
 
-    // TBB concurrent_hash_map calls hash() / equal(); ankerl::unordered_dense
-    // calls operator() / equal(). Provide both from the same type.
-    size_t hash(Bytes const &a) const
-    {
-        return seeded_fast_hash(a.bytes, sizeof(Bytes));
-    }
-
-    size_t operator()(Bytes const &a) const
-    {
-        return hash(a);
-    }
-
-    bool equal(Bytes const &a, Bytes const &b) const
-    {
-        return memcmp(a.bytes, b.bytes, sizeof(Bytes)) == 0;
-    }
-};
+uint64_t seeded_fast_hash(void const *data, size_t len) noexcept;
 
 MONAD_NAMESPACE_END

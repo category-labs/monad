@@ -24,6 +24,7 @@
 #include <category/core/log.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/core/procfs/statm.h>
+#include <category/core/seeded_fast_hash.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_hash_buffer/util.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
@@ -247,6 +248,9 @@ try {
 
     init_root_logger(log_level);
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
+
+    auto const hash_seed = set_hash_seed();
+    LOG_INFO("execution: hashtable seed: {}", hash_seed);
 
     // Initialize the event system if --exec-event-ring is specified
     if (exec_event_ring_option->count() > 0) {

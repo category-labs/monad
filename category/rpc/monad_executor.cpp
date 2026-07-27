@@ -32,6 +32,7 @@
 #include <category/core/result.hpp>
 #include <category/core/rlp/decode_error.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/core/seeded_fast_hash.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
@@ -2018,6 +2019,9 @@ monad_executor *monad_executor_create(
     unsigned const tx_exec_num_fibers, uint64_t const node_lru_max_mem,
     char const *const dbpath)
 {
+    uint64_t const hash_seed = set_hash_seed();
+    LOG_INFO("rpc: hashtable seed: {}", hash_seed);
+
     MONAD_ASSERT(dbpath);
     std::string const triedb_path{dbpath};
 

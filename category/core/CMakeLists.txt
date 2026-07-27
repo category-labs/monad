@@ -110,6 +110,8 @@ add_library(
   "path_util.c"
   "path_util.h"
   "result.hpp"
+  "seeded_fast_hash.cpp"
+  "seeded_fast_hash.hpp"
   "size_of.hpp"
   "small_prng.hpp"
   "spinlock.h"

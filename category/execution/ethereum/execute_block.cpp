@@ -217,18 +217,19 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         record_txn_error_event(i, results[i]->error());
                     }
                     record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_EXIT, i);
-                    // Call promise.set_value/set_exception the last thing,
-                    // because this signals that the transaction is finished.
-                    promises[i + 1].set_value();
                 }
                 catch (...) {
-                    promises[i + 1].set_exception(std::current_exception());
+                    results[i] = result_from_exception<Receipt>(
+                        std::current_exception());
                 }
+                // Call promise.set_value() the last thing, because this
+                // signals that the transaction is finished.
+                promises[i + 1].set_value();
             });
     }
 
     auto const last = static_cast<ptrdiff_t>(transactions.size());
-    promises[last].get_future().get();
+    promises[last].get_future().wait();
     block_metrics.tx_exec_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - tx_exec_begin);

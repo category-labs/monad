@@ -85,8 +85,6 @@ add_subdirectory("${THIRD_PARTY_DIR}/ethash" ethash)
 # blst (BLS12-381)
 set(BLST_SOURCE_DIR "${THIRD_PARTY_DIR}/blst")
 
-enable_language(ASM)
-
 add_library(blst STATIC
     "${BLST_SOURCE_DIR}/src/server.c")
 

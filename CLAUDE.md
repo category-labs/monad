@@ -55,7 +55,7 @@ All execution code is templated on a `Traits` parameter that encodes the chain r
 There are two trait families, defined in `category/vm/evm/traits.hpp`:
 
 - **`EvmTraits<evmc_revision>`** — one per EVM fork (HOMESTEAD through OSAKA, 14 total)
-- **`MonadTraits<monad_revision>`** — one per Monad revision (MONAD_ZERO through MONAD_NEXT, 11 total)
+- **`MonadTraits<monad_revision>`** — one per Monad revision (MONAD_ZERO through MONAD_NEXT, 12 total)
 
 Both satisfy the `Traits` concept, which exposes `consteval` methods for:
 - `evm_rev()` — the underlying EVM revision (MonadTraits maps to an EVM rev, e.g. MONAD_FOUR+ maps to EVMC_PRAGUE)
@@ -85,15 +85,15 @@ Templates must be explicitly instantiated in `.cpp` files using macros from `cat
 | Macro | What it instantiates | Revisions |
 |-------|---------------------|-----------|
 | `EXPLICIT_EVM_TRAITS(f)` | Free function `f` | 14 EVM revisions |
-| `EXPLICIT_MONAD_TRAITS(f)` | Free function `f` | 11 Monad revisions |
-| `EXPLICIT_TRAITS(f)` | Free function `f` | All 25 |
+| `EXPLICIT_MONAD_TRAITS(f)` | Free function `f` | 12 Monad revisions |
+| `EXPLICIT_TRAITS(f)` | Free function `f` | All 26 |
 | `EXPLICIT_EVM_TRAITS_CLASS(c)` | Class template `c` | 14 EVM revisions |
-| `EXPLICIT_MONAD_TRAITS_CLASS(c)` | Class template `c` | 11 Monad revisions |
-| `EXPLICIT_MONAD_TRAITS_STRUCT(c)` | Struct template `c` | 11 Monad revisions |
-| `EXPLICIT_TRAITS_CLASS(c)` | Class template `c` | All 25 |
+| `EXPLICIT_MONAD_TRAITS_CLASS(c)` | Class template `c` | 12 Monad revisions |
+| `EXPLICIT_MONAD_TRAITS_STRUCT(c)` | Struct template `c` | 12 Monad revisions |
+| `EXPLICIT_TRAITS_CLASS(c)` | Class template `c` | All 26 |
 | `EXPLICIT_EVM_TRAITS_MEMBER(f)` | Member function `f` | 14 EVM revisions |
-| `EXPLICIT_MONAD_TRAITS_MEMBER(f)` | Member function `f` | 11 Monad revisions |
-| `EXPLICIT_TRAITS_MEMBER(f)` | Member function `f` | All 25 |
+| `EXPLICIT_MONAD_TRAITS_MEMBER(f)` | Member function `f` | 12 Monad revisions |
+| `EXPLICIT_TRAITS_MEMBER(f)` | Member function `f` | All 26 |
 
 **Rules:**
 - Instantiation macros go in `.cpp` files only, never in headers.
@@ -156,7 +156,8 @@ Defined in `category/vm/evm/monad/revision.h`:
 |----------|---------------|-----------------|
 | MONAD_ZERO–THREE | EVMC_CANCUN | Base Monad; MONAD_TWO raises max code size to 128KB |
 | MONAD_FOUR–EIGHT | EVMC_PRAGUE | EIP-7951 active; larger initcode; Monad pricing v1 at MONAD_SEVEN |
-| MONAD_NINE+ | EVMC_OSAKA | MIP-3 active |
+| MONAD_NINE | EVMC_OSAKA | MIP-3 active |
+| MONAD_TEN | EVMC_OSAKA | MIP-8 (page-encoded storage) active |
 | MONAD_NEXT | EVMC_OSAKA | Future/development |
 
 Key differences from EVM traits: EIP-4844 (blob gas) is always disabled, cold account/storage costs are higher (Monad pricing), and code size limits are larger (128KB code, 256KB initcode). See the [Monad changelog](https://docs.monad.xyz/developer-essentials/changelog) for user-facing details of each revision.

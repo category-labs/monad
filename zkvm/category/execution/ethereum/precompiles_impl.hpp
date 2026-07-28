@@ -163,17 +163,7 @@ namespace
 
 MONAD_NAMESPACE_BEGIN
 
-PrecompileResult alloc_success(size_t buf_size)
-{
-    auto *obuf = static_cast<uint8_t *>(std::malloc(buf_size));
-    return {
-        .status_code = EVMC_SUCCESS,
-        .obuf = obuf,
-        .output_size = buf_size,
-    };
-}
-
-bool init_trusted_setup()
+inline bool init_trusted_setup()
 {
     return true;
 }

@@ -123,6 +123,9 @@ add_library(monad-zkvm-precompiles OBJECT
     "${MONAD_ROOT}/category/execution/ethereum/precompiles.cpp"
     "${MONAD_ROOT}/category/execution/ethereum/precompiles_gas_cost_impl.cpp"
 )
+target_include_directories(
+    monad-zkvm-precompiles
+    PRIVATE "${THIRD_PARTY_DIR}/zkevm-standards/standards")
 monad_compile_options(monad-zkvm-precompiles)
 monad_zkvm_compile_options(monad-zkvm-precompiles)
 target_link_libraries(monad-zkvm-precompiles PUBLIC unordered_dense evmc_cpp blst::blst)

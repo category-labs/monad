@@ -24,7 +24,7 @@
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 
-#include <core/zkvm_accelerators.h>
+#include <c-interface-accelerators/zkvm_accelerators.h>
 
 #include <evmc/evmc.hpp>
 #include <evmc/hex.hpp>

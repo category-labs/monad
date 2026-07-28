@@ -21,9 +21,16 @@ set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 set(RISCV_TOOLCHAIN_DIR "/opt/riscv" CACHE PATH "RISC-V toolchain directory")
 list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES RISCV_TOOLCHAIN_DIR)
 
-if(EXISTS "${RISCV_TOOLCHAIN_DIR}/bin/riscv64-unknown-elf-gcc")
-    set(RISCV_PREFIX "riscv64-unknown-elf-")
-else()
+# nix names the cross compiler riscv64-none-elf-, riscv-gnu-toolchain names
+# it riscv64-unknown-elf-; both are accepted.
+foreach(_candidate "riscv64-none-elf-" "riscv64-unknown-elf-")
+    if(EXISTS "${RISCV_TOOLCHAIN_DIR}/bin/${_candidate}gcc")
+        set(RISCV_PREFIX "${_candidate}")
+        break()
+    endif()
+endforeach()
+
+if(NOT DEFINED RISCV_PREFIX)
     message(FATAL_ERROR "No riscv64 gcc found in ${RISCV_TOOLCHAIN_DIR}/bin/")
 endif()
 

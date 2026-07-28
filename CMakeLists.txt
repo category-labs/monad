@@ -78,10 +78,25 @@ target_include_directories(ankerl_hash INTERFACE "third_party/ankerl")
 add_subdirectory(third_party/BLAKE3/c)
 set_target_properties(blake3 PROPERTIES C_VISIBILITY_PRESET default)
 
-# Precompile deps: blst, silkpre, c-kzg-4844, cryptopp, immer,
-# nlohmann_json, unordered_dense, asmjit
+# Precompile deps: blst, silkpre, c-kzg-4844, cryptopp
 set(DOWNLOAD_BLST OFF)
 include(cmake/precompile_deps.cmake)
+
+# immer
+option(immer_BUILD_TESTS OFF)
+option(immer_BUILD_EXAMPLES OFF)
+option(immer_BUILD_EXTRAS OFF)
+add_subdirectory("${THIRD_PARTY_DIR}/immer" "${CMAKE_CURRENT_BINARY_DIR}/_immer" SYSTEM)
+
+# nlohmann_json
+add_subdirectory("${THIRD_PARTY_DIR}/nlohmann_json" "${CMAKE_CURRENT_BINARY_DIR}/_nlohmann_json" SYSTEM)
+
+# unordered_dense
+add_subdirectory("${THIRD_PARTY_DIR}/unordered_dense" "${CMAKE_CURRENT_BINARY_DIR}/_unordered_dense")
+
+# asmjit
+set(ASMJIT_STATIC ON)
+add_subdirectory("${THIRD_PARTY_DIR}/asmjit" "${CMAKE_CURRENT_BINARY_DIR}/_asmjit")
 
 # cli11
 find_package(CLI11 REQUIRED)

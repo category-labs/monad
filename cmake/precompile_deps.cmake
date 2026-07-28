@@ -14,8 +14,10 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # Shared setup for third-party libraries needed by the precompile
-# implementations.  Included by both the root CMakeLists.txt (full build)
-# and category/zkvm/CMakeLists.txt (standalone zkvm build).
+# implementations.
+#
+# Keep this file focused on precompile-only dependencies so it can be reused
+# by standalone zkVM builds without pulling unrelated libraries.
 #
 # Expects THIRD_PARTY_DIR to be set by the caller.
 
@@ -47,19 +49,3 @@ add_subdirectory("${THIRD_PARTY_DIR}/c-kzg-4844-builder" "${CMAKE_CURRENT_BINARY
 # cryptopp (system library)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
-
-# immer
-option(immer_BUILD_TESTS OFF)
-option(immer_BUILD_EXAMPLES OFF)
-option(immer_BUILD_EXTRAS OFF)
-add_subdirectory("${THIRD_PARTY_DIR}/immer" "${CMAKE_CURRENT_BINARY_DIR}/_immer" SYSTEM)
-
-# nlohmann_json
-add_subdirectory("${THIRD_PARTY_DIR}/nlohmann_json" "${CMAKE_CURRENT_BINARY_DIR}/_nlohmann_json" SYSTEM)
-
-# unordered_dense
-add_subdirectory("${THIRD_PARTY_DIR}/unordered_dense" "${CMAKE_CURRENT_BINARY_DIR}/_unordered_dense")
-
-# asmjit
-set(ASMJIT_STATIC ON)
-add_subdirectory("${THIRD_PARTY_DIR}/asmjit" "${CMAKE_CURRENT_BINARY_DIR}/_asmjit")

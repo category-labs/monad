@@ -210,7 +210,7 @@ PrecompileResult ecrecover_execute(byte_string_view const input)
     static constexpr auto kSecp256k1n =
         0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141_u256;
 
-    alignas(8) std::basic_string<uint8_t> d(128, '\0');
+    std::basic_string<uint8_t> d(128, '\0');
     if (input.size() != 0) {
         std::memcpy(d.data(), input.data(), std::min(input.size(), 128ul));
     }

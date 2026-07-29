@@ -19,6 +19,8 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
+#include <category/execution/ethereum/db/file_db.hpp>
+#include <category/execution/ethereum/db/tar_file_db.hpp>
 
 #include <brotli/decode.h>
 #include <brotli/types.h>
@@ -27,24 +29,55 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
+
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+std::variant<FileDb, TarFileDb>
+make_backend(std::filesystem::path const &path, BlockDbFormat const fmt)
+{
+    BlockDbFormat resolved = fmt;
+    if (resolved == BlockDbFormat::Auto) {
+        resolved = TarFileDb::looks_like_tar_backed(path)
+                       ? BlockDbFormat::Tar
+                       : BlockDbFormat::Files;
+    }
+    if (resolved == BlockDbFormat::Tar) {
+        return std::variant<FileDb, TarFileDb>{
+            std::in_place_type<TarFileDb>, path};
+    }
+    return std::variant<FileDb, TarFileDb>{
+        std::in_place_type<FileDb>, path.c_str()};
+}
+
+std::optional<std::string>
+backend_get(std::variant<FileDb, TarFileDb> const &db, char const *const key)
+{
+    return std::visit([key](auto const &impl) { return impl.get(key); }, db);
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-BlockDb::BlockDb(std::filesystem::path const &dir)
-    : db_{dir.c_str()}
+BlockDb::BlockDb(std::filesystem::path const &dir, BlockDbFormat const fmt)
+    : db_{make_backend(dir, fmt)}
 {
 }
 
 bool BlockDb::get(uint64_t const num, Block &block) const
 {
     auto const key = std::to_string(num);
-    auto result = db_.get(key.c_str());
+    auto result = backend_get(db_, key.c_str());
     if (!result.has_value()) {
+        // FileDb-only legacy fallback: a block may live at `<N>M/<num>`.
+        // TarFileDb rejects this form internally.
         auto const folder = std::to_string(num / 1000000) + 'M';
-        auto const key = folder + '/' + std::to_string(num);
-        result = db_.get(key.c_str());
+        auto const fallback = folder + '/' + std::to_string(num);
+        result = backend_get(db_, fallback.c_str());
     }
     if (!result.has_value()) {
         return false;

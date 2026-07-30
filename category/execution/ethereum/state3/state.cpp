@@ -628,7 +628,9 @@ void State::store_log(Receipt::Log const &log)
 
 void State::set_to_state_incarnation(Address const &address)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    account_state.storage_ = {};
+    auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
         account = Account{.incarnation = incarnation_};
     }

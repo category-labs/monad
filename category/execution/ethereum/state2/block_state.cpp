@@ -222,8 +222,13 @@ void BlockState::merge(State const &state)
         auto const &storage = account_state.storage_;
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
+        auto const previous_account = it->second.account.second;
         it->second.account.second = account;
         if (account.has_value()) {
+            if (!previous_account.has_value() ||
+                previous_account->incarnation != account->incarnation) {
+                it->second.storage.clear();
+            }
             for (auto const &[key, value] : storage) {
                 StorageDeltas::accessor it2{};
                 if (it->second.storage.find(it2, key)) {

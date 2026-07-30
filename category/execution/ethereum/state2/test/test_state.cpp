@@ -1151,6 +1151,28 @@ TEST_F(InMemoryStateTest, set_storage_added)
     EXPECT_EQ(s.get_storage(b, key1), value2);
 }
 
+TEST_F(InMemoryStateTest, set_to_state_incarnation_clears_current_storage)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas({{b, StateDelta{.account = {std::nullopt, Account{}}}}}),
+        Code{},
+        BlockHeader{});
+
+    State s{bs, Incarnation{1, 1}};
+    EXPECT_TRUE(s.account_exists(b));
+
+    EXPECT_EQ(s.set_storage(b, key1, value1), EVMC_STORAGE_ADDED);
+    EXPECT_EQ(s.get_storage(b, key1), value1);
+
+    s.set_to_state_incarnation(b);
+    EXPECT_EQ(s.set_storage(b, key2, value2), EVMC_STORAGE_ADDED);
+
+    EXPECT_EQ(s.get_storage(b, key1), null);
+    EXPECT_EQ(s.get_storage(b, key2), value2);
+}
+
 TEST_F(InMemoryStateTest, set_storage_different_assigned)
 {
     BlockState bs{this->tdb, this->vm};

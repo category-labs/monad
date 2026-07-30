@@ -103,6 +103,9 @@ namespace monad::vm::compiler
         Dup = 0x80,
         Swap = 0x90,
         Log = 0xA0,
+        DupN = 0xE6,
+        SwapN = 0xE7,
+        Exchange = 0xE8,
         Create = 0xF0,
         Call = 0xF1,
         CallCode = 0xF2,
@@ -211,7 +214,9 @@ namespace monad::vm::compiler
     {
         MONAD_ASSERT(
             opcode() == OpCode::Push || opcode() == OpCode::Swap ||
-            opcode() == OpCode::Dup || opcode() == OpCode::Log);
+            opcode() == OpCode::Dup || opcode() == OpCode::Log ||
+            opcode() == OpCode::DupN || opcode() == OpCode::SwapN ||
+            opcode() == OpCode::Exchange);
         return index_;
     }
 
@@ -396,6 +401,12 @@ namespace monad::vm::compiler
             return "SWAP";
         case Log:
             return "LOG";
+        case DupN:
+            return "DUPN";
+        case SwapN:
+            return "SWAPN";
+        case Exchange:
+            return "EXCHANGE";
         case Create:
             return "CREATE";
         case Call:

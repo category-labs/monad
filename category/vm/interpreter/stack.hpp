@@ -17,11 +17,13 @@
 
 #include <category/core/assert.h>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/types.hpp>
 
 #include <evmc/evmc.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace monad::vm::interpreter
@@ -71,6 +73,84 @@ namespace monad::vm::interpreter
                 }
             }
         }
+    }
+
+    struct Eip8024Operands
+    {
+        ptrdiff_t n;
+        ptrdiff_t m; // meaningful only for EXCHANGE
+    };
+
+    // Dynamic analog of check_requirements for the EIP-8024 opcodes: validates
+    // the immediate, charges gas and checks the operand-dependent stack depth
+    // (exiting via ctx on failure), and returns the decoded operand offsets.
+    template <uint8_t Instr, Traits traits>
+    [[gnu::always_inline]] inline Eip8024Operands check_requirements_eip8024(
+        runtime::Context &ctx, uint256_t const *const stack_bottom,
+        uint256_t const *const stack_top, int64_t &gas_remaining,
+        uint8_t const imm)
+    {
+        static constexpr auto info = compiler::opcode_table<traits>[Instr];
+        static constexpr bool is_exchange = Instr == compiler::EXCHANGE;
+
+        // Validate the immediate before charging gas. A disallowed encoding
+        // makes this an invalid instruction, which aborts irrespective of the
+        // gas available, so charging first would report OutOfGas for what is
+        // really a malformed instruction. Charging nothing also matches how the
+        // interpreter treats every other invalid instruction (see `invalid`)
+        // and the compiler, where `decode_eip8024` turns a disallowed immediate
+        // into Terminator::InvalidInstruction during analysis, so the opcode
+        // never contributes its gas to the block. Mirrors the same ternary in
+        // `decode_eip8024`.
+        bool const disallowed = is_exchange
+                                    ? compiler::eip8024_pair_disallowed(imm)
+                                    : compiler::eip8024_single_disallowed(imm);
+        if (MONAD_UNLIKELY(disallowed)) {
+            ctx.exit(Error);
+        }
+
+        gas_remaining -= info.min_gas;
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            ctx.exit(OutOfGas);
+        }
+
+        auto const ops = [imm]() -> Eip8024Operands {
+            if constexpr (is_exchange) {
+                auto const [n_val, m_val] = compiler::eip8024_decode_pair(imm);
+                return {
+                    static_cast<ptrdiff_t>(n_val),
+                    static_cast<ptrdiff_t>(m_val)};
+            }
+            else {
+                return {
+                    static_cast<ptrdiff_t>(
+                        compiler::eip8024_decode_single(imm)),
+                    0};
+            }
+        }();
+
+        // The deepest slot touched: EXCHANGE reaches m + 1, DUPN reaches n and
+        // SWAPN reaches n + 1.
+        ptrdiff_t const min_stack =
+            is_exchange ? ops.m + 1
+                        : (Instr == compiler::DUPN ? ops.n : ops.n + 1);
+
+        auto const stack_size = stack_top - stack_bottom;
+        if (MONAD_UNLIKELY(stack_size < min_stack)) {
+            ctx.exit(Error);
+        }
+
+        // Only DUPN grows the stack; net-zero opcodes cannot overflow a valid
+        // stack, so the check is elided (mirrors check_requirements).
+        static constexpr auto delta = info.stack_increase - info.min_stack;
+        if constexpr (delta > 0) {
+            static constexpr auto max_safe_size = 1024 - delta;
+            if (MONAD_UNLIKELY(stack_size > max_safe_size)) {
+                ctx.exit(Error);
+            }
+        }
+
+        return ops;
     }
 
     [[gnu::always_inline]] inline void

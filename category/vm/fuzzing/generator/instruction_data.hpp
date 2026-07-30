@@ -48,6 +48,8 @@ namespace monad::vm::fuzzing
     //
     // TODO(EIP-7843): SLOTNUM (0x4B) is Amsterdam-only and unimplemented
     // by evmone.
+    // TODO(EIP-8024): DUPN/SWAPN/EXCHANGE (0xE6-0xE8) are Amsterdam-only and
+    // unimplemented by evmone.
 
     constexpr auto call_non_terminators = std::array{
         CALL,

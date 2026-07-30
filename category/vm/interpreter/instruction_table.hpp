@@ -45,13 +45,17 @@
     #error "No compiler support for __has_attribute"
 #endif
 
-#define MONAD_VM_NEXT(OP)                                                      \
+// Dispatch to the next instruction: advance instr_ptr by ADV bytes, then
+// tail-call the handler now under it with stack_top adjusted by OP's net stack
+// delta. The wrappers specialise ADV: 1 for ordinary opcodes, the PUSH data
+// size for the PUSH family, and 2 for the EIP-8024 immediate-carrying opcodes.
+#define MONAD_VM_NEXT_N(OP, ADV)                                               \
     do {                                                                       \
         static constexpr auto delta =                                          \
             compiler::opcode_table<traits>[(OP)].stack_increase -              \
             compiler::opcode_table<traits>[(OP)].min_stack;                    \
                                                                                \
-        ++instr_ptr;                                                           \
+        instr_ptr += (ADV);                                                    \
         if constexpr (debug_enabled) {                                         \
             trace(analysis, gas_remaining, instr_ptr);                         \
         }                                                                      \
@@ -65,25 +69,9 @@
     }                                                                          \
     while (false);
 
-#define MONAD_VM_NEXT_PUSH(OP)                                                 \
-    do {                                                                       \
-        static constexpr auto delta =                                          \
-            compiler::opcode_table<traits>[(OP)].stack_increase -              \
-            compiler::opcode_table<traits>[(OP)].min_stack;                    \
-                                                                               \
-        instr_ptr += (((OP) - PUSH0) + 1);                                     \
-        if constexpr (debug_enabled) {                                         \
-            trace(analysis, gas_remaining, instr_ptr);                         \
-        }                                                                      \
-        MONAD_VM_MUST_TAIL return instruction_table<traits>[*instr_ptr](       \
-            ctx,                                                               \
-            analysis,                                                          \
-            stack_bottom,                                                      \
-            stack_top + delta,                                                 \
-            gas_remaining,                                                     \
-            instr_ptr);                                                        \
-    }                                                                          \
-    while (false);
+#define MONAD_VM_NEXT(OP) MONAD_VM_NEXT_N(OP, 1)
+#define MONAD_VM_NEXT_PUSH(OP) MONAD_VM_NEXT_N(OP, ((OP) - PUSH0) + 1)
+#define MONAD_VM_NEXT_IMM(OP) MONAD_VM_NEXT_N(OP, 2)
 
 namespace monad::vm::interpreter
 {
@@ -341,22 +329,22 @@ namespace monad::vm::interpreter
             invalid, //
             invalid, //
 
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
-            invalid, //
+            invalid, // 0xE0,
+            invalid, // 0xE1,
+            invalid, // 0xE2,
+            invalid, // 0xE3,
+            invalid, // 0xE4,
+            invalid, // 0xE5,
+            avail(DUPN, dupn<traits>), // 0xE6,
+            avail(SWAPN, swapn<traits>), // 0xE7,
+            avail(EXCHANGE, exchange<traits>), // 0xE8,
+            invalid, // 0xE9,
+            invalid, // 0xEA,
+            invalid, // 0xEB,
+            invalid, // 0xEC,
+            invalid, // 0xED,
+            invalid, // 0xEE,
+            invalid, // 0xEF,
 
             create<traits>, // 0xF0,
             call<traits>, // 0xF1,
@@ -1503,6 +1491,56 @@ namespace monad::vm::interpreter
         MONAD_VM_NEXT(SWAP1 + (N - 1));
     }
 
+    // EIP-8024 DUPN/SWAPN/EXCHANGE: operand-dependent stack requirement, so
+    // these use check_requirements_eip8024 rather than the static
+    // check_requirements. instr_ptr[1] (the immediate) is in bounds thanks to
+    // trailing code padding.
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void dupn(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr)
+    {
+        auto const ops = check_requirements_eip8024<DUPN, traits>(
+            ctx, stack_bottom, stack_top, gas_remaining, instr_ptr[1]);
+
+        push(stack_top, *(stack_top - (ops.n - 1)));
+
+        MONAD_VM_NEXT_IMM(DUPN);
+    }
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void swapn(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr)
+    {
+        auto const ops = check_requirements_eip8024<SWAPN, traits>(
+            ctx, stack_bottom, stack_top, gas_remaining, instr_ptr[1]);
+
+        auto const top = stack_top->to_avx();
+        *stack_top = *(stack_top - ops.n);
+        *(stack_top - ops.n) = uint256_t{top};
+
+        MONAD_VM_NEXT_IMM(SWAPN);
+    }
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void exchange(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr)
+    {
+        auto const ops = check_requirements_eip8024<EXCHANGE, traits>(
+            ctx, stack_bottom, stack_top, gas_remaining, instr_ptr[1]);
+
+        auto const tmp = (stack_top - ops.n)->to_avx();
+        *(stack_top - ops.n) = *(stack_top - ops.m);
+        *(stack_top - ops.m) = uint256_t{tmp};
+
+        MONAD_VM_NEXT_IMM(EXCHANGE);
+    }
+
     // Control Flow
     namespace
     {
@@ -1810,5 +1848,7 @@ namespace monad::vm::interpreter
 }
 
 #undef MONAD_VM_MUST_TAIL
+#undef MONAD_VM_NEXT_N
 #undef MONAD_VM_NEXT
 #undef MONAD_VM_NEXT_PUSH
+#undef MONAD_VM_NEXT_IMM

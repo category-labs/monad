@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <string_view>
 #include <tuple>
+#include <utility>
 
 namespace monad::vm::compiler
 {
@@ -42,7 +43,12 @@ namespace monad::vm::compiler
          * program.
          *
          * This value is 0 for all instructions other than the `PUSHN` family,
-         * each of which expects N bytes to follow.
+         * each of which expects N bytes to follow, and the EIP-8024 opcodes
+         * (`DUPN`/`SWAPN`/`EXCHANGE`), each of which expects a single immediate
+         * operand byte. Note that the basic-block scanner does not read the
+         * EIP-8024 immediate through this field -- `decode_eip8024` consumes it
+         * directly, because unlike `PUSHN` data it also determines the
+         * instruction's stack effect and validity.
          */
         uint8_t num_args;
 
@@ -72,7 +78,8 @@ namespace monad::vm::compiler
         /**
          * The index within a set of related opcodes for this instruction.
          *
-         * N for all PUSHN, SWAPN, DUPN and LOGN instructions, and 0 otherwise.
+         * N for all PUSHN, SWAP1-16, DUP1-16 and LOGN instructions, and 0
+         * otherwise.
          */
         uint8_t index;
     };
@@ -240,6 +247,9 @@ namespace monad::vm::compiler
         LOG2 = 0xA2,
         LOG3 = 0xA3,
         LOG4 = 0xA4,
+        DUPN = 0xE6,
+        SWAPN = 0xE7,
+        EXCHANGE = 0xE8,
         CREATE = 0xF0,
         CALL = 0xF1,
         CALLCODE = 0xF2,
@@ -529,9 +539,12 @@ namespace monad::vm::compiler
             unknown_opcode_info,
             unknown_opcode_info,
             unknown_opcode_info,
-            unknown_opcode_info,
-            unknown_opcode_info,
-            unknown_opcode_info,
+            // EIP-8024: only the net delta (stack_increase - min_stack) is
+            // meaningful here; min_stack is a placeholder -- the real
+            // operand-dependent requirement comes from eip8024_stack_effect.
+            when(traits::eip_8024_active(), {"DUPN", 1, 0, 1, false, 3, 0}), // 0xE6,
+            when(traits::eip_8024_active(), {"SWAPN", 1, 0, 0, false, 3, 0}), // 0xE7,
+            when(traits::eip_8024_active(), {"EXCHANGE", 1, 0, 0, false, 3, 0}), // 0xE8,
             unknown_opcode_info,
             unknown_opcode_info,
             unknown_opcode_info,
@@ -588,7 +601,7 @@ namespace monad::vm::compiler
     }
 
     /**
-     * Returns `true` if `opcode` belongs to the `SWAPN` family of EVM opcodes.
+     * Returns `true` if `opcode` is one of the SWAP1-SWAP16 opcodes.
      */
     constexpr bool is_swap_opcode(uint8_t const opcode)
     {
@@ -596,7 +609,7 @@ namespace monad::vm::compiler
     }
 
     /**
-     * Returns `true` if `opcode` belongs to the `DUPN` family of EVM opcodes.
+     * Returns `true` if `opcode` is one of the DUP1-DUP16 opcodes.
      */
     constexpr bool is_dup_opcode(uint8_t const opcode)
     {
@@ -611,8 +624,117 @@ namespace monad::vm::compiler
         return opcode >= LOG0 && opcode <= LOG4;
     }
 
+    // The EIP-8024 opcodes (DUPN/SWAPN/EXCHANGE), each carrying a single
+    // immediate byte (unlike the DUP1-16/SWAP1-16 families).
+    constexpr bool is_eip8024_opcode(uint8_t const opcode)
+    {
+        return opcode == DUPN || opcode == SWAPN || opcode == EXCHANGE;
+    }
+
     /**
-     * Opcode must be the opcode of some DUPN instruction.
+     * EIP-8024 immediate encode/decode. The immediate is encoded so it can
+     * never equal JUMPDEST (0x5B) or a PUSH byte (0x60-0x7F); the disallowed
+     * raw ranges are 91..127 (single form: DUPN/SWAPN) and 82..127 (pair form:
+     * EXCHANGE). An instruction with a disallowed immediate behaves as INVALID.
+     *   decode_single(x) -> n in [17, 235]
+     *   decode_pair(x)   -> (n, m) with 1 <= n < m and n + m <= 30
+     */
+    constexpr bool eip8024_single_disallowed(uint8_t const x)
+    {
+        return x > 90 && x < 128;
+    }
+
+    constexpr bool eip8024_pair_disallowed(uint8_t const x)
+    {
+        return x > 81 && x < 128;
+    }
+
+    constexpr uint32_t eip8024_decode_single(uint8_t const x)
+    {
+        MONAD_DEBUG_ASSERT(!eip8024_single_disallowed(x));
+        return (static_cast<uint32_t>(x) + 145u) & 255u;
+    }
+
+    constexpr std::pair<uint8_t, uint8_t> eip8024_decode_pair(uint8_t const x)
+    {
+        MONAD_DEBUG_ASSERT(!eip8024_pair_disallowed(x));
+        auto const k = static_cast<uint8_t>(x ^ 143);
+        auto const q = static_cast<uint8_t>(k >> 4);
+        auto const r = static_cast<uint8_t>(k & 15u);
+        if (q < r) {
+            return {static_cast<uint8_t>(q + 1), static_cast<uint8_t>(r + 1)};
+        }
+        return {static_cast<uint8_t>(r + 1), static_cast<uint8_t>(29 - q)};
+    }
+
+    // Operand-dependent stack effect for an EIP-8024 opcode (imm must be a
+    // valid encoding). The net delta (stack_increase - min_stack) is operand-
+    // independent (+1 DUPN, 0 SWAPN/EXCHANGE) and is what the opcode_table
+    // carries.
+    struct Eip8024StackEffect
+    {
+        uint8_t min_stack;
+        uint8_t stack_increase;
+    };
+
+    constexpr Eip8024StackEffect
+    eip8024_stack_effect(uint8_t const opcode, uint8_t const imm)
+    {
+        if (opcode == DUPN) {
+            auto const n = eip8024_decode_single(imm);
+            return {static_cast<uint8_t>(n), static_cast<uint8_t>(n + 1)};
+        }
+        if (opcode == SWAPN) {
+            auto const n = eip8024_decode_single(imm);
+            return {static_cast<uint8_t>(n + 1), static_cast<uint8_t>(n + 1)};
+        }
+        // Pin the fall-through: this helper is shared by the basic-block
+        // scanner, the interpreter and the evm-as validator, and any other
+        // opcode reaching here would silently get a pair-decoded stack effect.
+        MONAD_DEBUG_ASSERT(opcode == EXCHANGE);
+        auto const m = eip8024_decode_pair(imm).second;
+        return {static_cast<uint8_t>(m + 1), static_cast<uint8_t>(m + 1)};
+    }
+
+    // Whether a logical EIP-8024 operand is in range: DUPN/SWAPN take a single
+    // n in [17, 235]; EXCHANGE takes a pair with 1 <= n < m and n + m <= 30.
+    // The encoders assert these, and the assembler builder gates on them.
+    constexpr bool eip8024_single_operand_valid(uint32_t const n)
+    {
+        return n >= 17 && n <= 235;
+    }
+
+    constexpr bool eip8024_pair_operand_valid(uint8_t const n, uint8_t const m)
+    {
+        return n >= 1 && n < m && (n + m) <= 30;
+    }
+
+    constexpr uint8_t eip8024_encode_single(uint32_t const n)
+    {
+        MONAD_DEBUG_ASSERT(eip8024_single_operand_valid(n));
+        // The uint8_t cast performs the modular (mod 256) reduction.
+        return static_cast<uint8_t>(n + 111u);
+    }
+
+    constexpr uint8_t eip8024_encode_pair(uint8_t const n, uint8_t const m)
+    {
+        MONAD_DEBUG_ASSERT(eip8024_pair_operand_valid(n, m));
+        uint8_t q;
+        uint8_t r;
+        if (m <= 16) {
+            q = static_cast<uint8_t>(n - 1);
+            r = static_cast<uint8_t>(m - 1);
+        }
+        else {
+            q = static_cast<uint8_t>(29 - m);
+            r = static_cast<uint8_t>(n - 1);
+        }
+        auto const k = static_cast<uint8_t>((q << 4) | r);
+        return static_cast<uint8_t>(k ^ 143);
+    }
+
+    /**
+     * Opcode must be one of DUP1-DUP16.
      * Returns `N`.
      */
     constexpr uint8_t get_dup_opcode_index(uint8_t const opcode)
@@ -623,7 +745,7 @@ namespace monad::vm::compiler
     }
 
     /**
-     * Opcode must be the opcode of some SWAPN instruction.
+     * Opcode must be one of SWAP1-SWAP16.
      * Returns `N`.
      */
     constexpr uint8_t get_swap_opcode_index(uint8_t const opcode)
@@ -654,7 +776,7 @@ namespace monad::vm::compiler
     }
 
     /**
-     * Opcode must be the opcode of some DUPN, SWAPN, PUSHN or LOGN instruction.
+     * Opcode must be one of DUP1-DUP16, SWAP1-SWAP16, PUSHN or LOGN.
      * Returns `N`.
      */
     constexpr uint8_t get_opcode_index(uint8_t const opcode)

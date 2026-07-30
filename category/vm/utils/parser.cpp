@@ -188,16 +188,37 @@ namespace monad::vm::utils
         return std::nullopt;
     }
 
+    // Disassembly names opcodes from the highest revision in the enum rather
+    // than MONAD_ETH_LATEST_STABLE_REVISION: a disassembler should be able to
+    // label bytes that only became instructions in a not-yet-stable fork
+    // (CLZ, SLOTNUM, DUPN/SWAPN/EXCHANGE). None of those byte values mean
+    // anything else at an earlier revision, so naming them costs nothing. The
+    // assembler (find_opcode) and validator (compile_tokens) deliberately stay
+    // on the latest stable revision.
+    using disasm_traits = EvmTraits<MONAD_ETH_MAX_REVISION>;
+
     std::string show_opcodes(std::vector<uint8_t> const &opcodes)
     {
         std::stringstream ss;
-        auto const &tbl = monad::vm::compiler::make_opcode_table<
-            EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>();
+        auto const &tbl =
+            monad::vm::compiler::make_opcode_table<disasm_traits>();
         for (size_t i = 0; i < opcodes.size(); ++i) {
             auto c = opcodes[i];
             ss << std::format("[{:#x}] {:#x} {}\n", i, c, tbl[opcodes[i]].name);
             if (c >= PUSH1 && c <= PUSH32) {
                 for (auto j = 0; j < c - PUSH0; ++j) {
+                    i++;
+                    ss << std::format("[{:#x}] {:#x}\n", i, opcodes[i]);
+                }
+            }
+            else if (is_eip8024_opcode(c)) {
+                // EIP-8024: DUPN/SWAPN/EXCHANGE carry a single immediate
+                // operand byte; print and skip it like PUSH data so the bytes
+                // after it stay aligned to instruction boundaries. Not gated on
+                // a revision (like the PUSH arm above): 0xE6-0xE8 are
+                // unassigned at every revision before Amsterdam, so there is no
+                // earlier interpretation of these bytes to preserve.
+                if (i + 1 < opcodes.size()) {
                     i++;
                     ss << std::format("[{:#x}] {:#x}\n", i, opcodes[i]);
                 }

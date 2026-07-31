@@ -407,8 +407,20 @@ Receipt ExecuteTransaction<traits>::execute_final(
         state.add_to_balance(header_.beneficiary, reward);
     }
 
-    // finalize state, Eqn. 77-79
-    state.destruct_suicides<traits>();
+    // finalize state, Eqn. 77-79.
+    //
+    // EIP-7708: destruct_suicides returns the residual balances it burns for
+    // accounts created and destroyed in this transaction (sorted by address);
+    // emit a Burn log for each. This runs after the beneficiary award above --
+    // monad credits header_.beneficiary directly (MIP-11 fee routing off) -- so
+    // if the beneficiary is itself such an account, the award it received is
+    // part of the burned balance, matching the priority-fee spec-test fixture.
+    [[maybe_unused]] auto const burned = state.destruct_suicides<traits>();
+    if constexpr (traits::eip_7708_active()) {
+        for (auto const &[address, amount] : burned) {
+            state.store_log(make_eip7708_burn_log(address, amount));
+        }
+    }
     state.destruct_touched_dead();
 
     Receipt receipt{

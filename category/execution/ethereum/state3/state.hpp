@@ -39,6 +39,8 @@
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -179,9 +181,11 @@ public:
     std::pair<bool, uint256_t>
     selfdestruct(Address const &, Address const &beneficiary);
 
-    // YP (87)
+    // YP (87). Also collects and returns the EIP-7708 residual balances burned
+    // at finalization -- (address, balance) sorted by address, empty when the
+    // rule is inactive (see the definition). Must be called at finalization.
     template <Traits traits>
-    void destruct_suicides();
+    std::vector<std::pair<Address, uint256_t>> destruct_suicides();
 
     // YP (88)
     void destruct_touched_dead();

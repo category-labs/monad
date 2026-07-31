@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
@@ -206,6 +207,24 @@ TYPED_TEST(TraitsTest, execute_success)
         .depth = 0,
         .logs = std::vector<CallFrame::Log>{},
     };
+
+    if constexpr (TestFixture::Trait::eip_7708_active()) {
+        // EIP-7708: the top-level value transfer emits a Transfer log on the
+        // consensus path (no trace_transfers needed), from SYSTEM_ADDRESS.
+        expected.logs->push_back(
+            {{
+                 .data =
+                     byte_string{store_be_as<bytes32_t, uint256_t>(0x10000)},
+                 .topics =
+                     std::vector{
+                         0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
+                         abi_encode_address(sender),
+                         abi_encode_address(ADDR_B),
+                     },
+                 .address = SYSTEM_ADDRESS,
+             },
+             0});
+    }
 
     EXPECT_EQ(call_frames[0], expected);
 }
@@ -785,7 +804,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
                         0x0000000000000000000000000000000000000000000000000000000000000100_bytes32,
                         0x0000000000000000000000000000000000000000000000000000000000000101_bytes32,
                     },
-                .address = 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address,
+                .address = TestFixture::Trait::eip_7708_active()
+                               ? SYSTEM_ADDRESS
+                               : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
             },
             0,
         }},
@@ -891,7 +912,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
                     0x0000000000000000000000000000000000000000000000000000000000000101_bytes32,
                     0x0000000000000000000000000000000000000000000000000000000000000102_bytes32,
                 },
-            .address = 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address,
+            .address = TestFixture::Trait::eip_7708_active()
+                           ? SYSTEM_ADDRESS
+                           : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
         },
         1, // position: after the selfdestruct sub-frame
     };
@@ -1551,4 +1574,241 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
             EXPECT_EQ(call_frames[1].logs->size(), 0);
         }
     }
+}
+
+namespace
+{
+    Receipt::Log eip7708_transfer_log(
+        Address const &from, Address const &to, uint256_t const &value)
+    {
+        return {
+            .data = byte_string{store_be_as<bytes32_t, uint256_t>(value)},
+            .topics =
+                std::vector{
+                    0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
+                    abi_encode_address(from),
+                    abi_encode_address(to),
+                },
+            .address = SYSTEM_ADDRESS};
+    }
+
+    Receipt::Log
+    eip7708_burn_log(Address const &burned, uint256_t const &amount)
+    {
+        return {
+            .data = byte_string{store_be_as<bytes32_t, uint256_t>(amount)},
+            .topics =
+                std::vector{
+                    0xcc16f5dbb4873280815c1ee09dbd06736cffcc184412cf7a71a0fdb75d397ca5_bytes32,
+                    abi_encode_address(burned),
+                },
+            .address = SYSTEM_ADDRESS};
+    }
+}
+
+// EIP-7708 is active on MonadTraits from MONAD_NEXT and on EvmTraits from
+// MONAD_ETH_AMSTERDAM. The shared TraitsTest matrix covers the MonadTraits
+// half, so the consensus-path (eip_7708_active()) branches in the cases above
+// do run. AMSTERDAM sits above LATEST_SUPPORTED_EVM_FORK and is excluded from
+// the EvmTraits half of that matrix, so pin a fixture to EvmTraits<AMSTERDAM>
+// to cover it too. Removable once LATEST_SUPPORTED_EVM_FORK includes
+// AMSTERDAM.
+//
+// The scaffolding lives on the fixture (as in InMemoryStateTestBase) rather
+// than being open-coded per case the way the older tests above do it, so a case
+// reads as: commit accounts, run a transaction, assert. gtest builds a fresh
+// fixture per test, so each gets its own db and State.
+template <typename T>
+struct Eip7708ActiveTest : public TraitsTest<T>
+{
+    using traits = typename TraitsTest<T>::Trait;
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    State state{block_state, Incarnation{0, 0}};
+    std::vector<CallFrame> call_frames;
+
+    void commit(StateDeltas const &deltas)
+    {
+        commit_sequential(tdb, deltas, Code{}, BlockHeader{});
+    }
+
+    // Runs `tx` from `sender`, which doubles as the block beneficiary.
+    evmc::Result run(Transaction const &tx, Address const &sender)
+    {
+        evmc_tx_context const tx_context{};
+        BlockHashBufferFinalized buffer{};
+        CallTracer call_tracer{tx, call_frames};
+        auto const chain_ctx = ChainContext<traits>::debug_empty();
+        constexpr std::span<std::optional<Address> const> authorities_empty{};
+        uint256_t base_fee{0};
+        trace::StateTracer noop_state_tracer = std::monostate{};
+        EvmcHost<traits> host{
+            call_tracer,
+            noop_state_tracer,
+            tx_context,
+            buffer,
+            state,
+            tx,
+            base_fee,
+            0,
+            chain_ctx};
+
+        return ExecuteTransactionNoValidation<traits>(
+            EthereumMainnet{},
+            tx,
+            sender,
+            authorities_empty,
+            BlockHeader{.beneficiary = sender})(state, host);
+    }
+
+    // The consensus-side logs (state_.store_log), as opposed to the
+    // call_tracer_.on_log copies that land in call_frames. execute_final is
+    // what copies these into the receipt; ExecuteTransactionNoValidation stops
+    // short of it, so the receipt/bloom end is covered by
+    // Eip7708FinalizationTest in execute_transaction_test.cpp.
+    auto const &logs()
+    {
+        return state.logs();
+    }
+};
+
+TYPED_TEST_SUITE(
+    Eip7708ActiveTest,
+    ::testing::Types<::detail::EvmRevisionConstant<MONAD_ETH_AMSTERDAM>>,
+    ::detail::RevisionTestNameGenerator);
+
+// Mirrors TraitsTest.execute_success but pinned to EvmTraits<AMSTERDAM>: with
+// eip_7708_active() true, the top-level value transfer must emit a Transfer log
+// from SYSTEM_ADDRESS on the consensus path.
+//
+// Asserts both artifacts emit_native_transfer_event produces. The call frame
+// covers call_tracer_.on_log (the eth_simulate trace); logs() covers
+// state_.store_log, the consensus one. Checking the call frame alone would
+// still pass with store_log deleted.
+TYPED_TEST(Eip7708ActiveTest, value_transfer_emits_consensus_transfer_log)
+{
+    using traits = typename TestFixture::Trait;
+
+    static_assert(traits::eip_7708_active());
+
+    static constexpr uint256_t transfer_value{0x10000};
+
+    this->commit(StateDeltas(
+        {{ADDR_A,
+          StateDelta{
+              .account =
+                  {std::nullopt,
+                   Account{
+                       .balance = 0x200000,
+                       .code_hash = NULL_HASH,
+                       .nonce = 0x0}}}},
+         {ADDR_B,
+          StateDelta{
+              .account = {
+                  std::nullopt,
+                  Account{.balance = 0, .code_hash = NULL_HASH}}}}}));
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 0x100000,
+        .value = transfer_value,
+        .to = ADDR_B,
+    };
+
+    auto const result = this->run(tx, ADDR_A);
+    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(this->call_frames.size(), 1u);
+
+    CallFrame const expected{
+        .type = CallType::CALL,
+        .flags = 0,
+        .from = ADDR_A,
+        .to = ADDR_B,
+        .value = transfer_value,
+        .gas = 0x100000,
+        .gas_used = 0x5208,
+        .status = EVMC_SUCCESS,
+        .depth = 0,
+        .logs =
+            std::vector<CallFrame::Log>{
+                {eip7708_transfer_log(ADDR_A, ADDR_B, transfer_value), 0}},
+    };
+
+    EXPECT_EQ(this->call_frames[0], expected);
+
+    ASSERT_EQ(this->logs().size(), 1u);
+    EXPECT_EQ(
+        this->logs()[0], eip7708_transfer_log(ADDR_A, ADDR_B, transfer_value));
+}
+
+// EIP-7708 Burn: an account created and destroyed in the same transaction that
+// sends its balance to itself destroys that balance, so EvmcHost::selfdestruct
+// emits a Burn log inline. A contract-creation transaction whose initcode is
+// ADDRESS SELFDESTRUCT is the minimal case -- the endowment lands on the new
+// account and is burned before the account ever gets code.
+TYPED_TEST(Eip7708ActiveTest, same_tx_selfdestruct_to_self_emits_burn_log)
+{
+    using traits = typename TestFixture::Trait;
+    using namespace monad::vm::utils;
+
+    static_assert(traits::eip_7708_active());
+
+    static constexpr uint256_t endowment{0x10000};
+
+    std::vector<uint8_t> initcode;
+    {
+        auto eb = evm_as::EvmBuilder<traits>();
+        evm_as::compile(eb.address().selfdestruct(), initcode);
+    }
+
+    this->commit(StateDeltas(
+        {{ADDR_A,
+          StateDelta{
+              .account = {
+                  std::nullopt,
+                  Account{
+                      .balance = 0x200000,
+                      .code_hash = NULL_HASH,
+                      .nonce = 0x0}}}}}));
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 0x100000,
+        .value = endowment,
+        .data = byte_string{initcode.data(), initcode.size()},
+    };
+
+    auto const result = this->run(tx, ADDR_A);
+    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+
+    Address const contract = result.create_address;
+    ASSERT_NE(contract, Address{});
+
+    // The endowment first moves sender -> contract (Transfer), then the
+    // initcode selfdestructs to self and destroys it (Burn). The selfdestruct
+    // itself emits no Transfer: from == to.
+    ASSERT_EQ(this->logs().size(), 2u);
+    EXPECT_EQ(
+        this->logs()[0], eip7708_transfer_log(ADDR_A, contract, endowment));
+    EXPECT_EQ(this->logs()[1], eip7708_burn_log(contract, endowment));
+
+    // A burn is value destruction, not a transfer between accounts, so it is
+    // deliberately kept out of the eth_simulate call trace (evmc_host.hpp
+    // stores it without a call_tracer_.on_log counterpart). The trace must
+    // therefore carry the Transfer and nothing else.
+    size_t traced_logs = 0;
+    for (auto const &frame : this->call_frames) {
+        if (frame.logs.has_value()) {
+            for (auto const &traced : *frame.logs) {
+                ++traced_logs;
+                EXPECT_EQ(
+                    traced.log,
+                    eip7708_transfer_log(ADDR_A, contract, endowment));
+            }
+        }
+    }
+    EXPECT_EQ(traced_logs, 1u);
 }

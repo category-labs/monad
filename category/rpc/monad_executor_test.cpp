@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -38,6 +39,7 @@
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -293,7 +295,23 @@ namespace
                 gas_specified ? tx.gas_limit : MONAD_ETH_CALL_LOW_GAS_LIMIT,
             .status = EVMC_SUCCESS,
             .depth = 0,
-            .logs = std::vector<CallFrame::Log>{},
+            // EIP-7708 is active on this chain, so the value transfer emits a
+            // consensus Transfer log from SYSTEM_ADDRESS. It reaches the call
+            // trace too -- emit_native_transfer_event pairs store_log with
+            // call_tracer_.on_log, as the LOG opcodes do.
+            .logs =
+                std::vector<CallFrame::Log>{
+                    {Receipt::Log{
+                         .data = byte_string{store_be_as<bytes32_t, uint256_t>(
+                             0x10000)},
+                         .topics =
+                             std::vector{
+                                 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
+                                 abi_encode_address(from),
+                                 abi_encode_address(ADDR_B),
+                             },
+                         .address = SYSTEM_ADDRESS},
+                     0}},
         };
 
         byte_string_view view(rlp_call_frames);
@@ -6872,10 +6890,44 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
         std::format("0x{}", to_hex(expected_bytes));
     EXPECT_EQ(output[1]["calls"][0]["returnData"], expected_return_data);
 
-    ASSERT_EQ(output[1]["calls"][0]["logs"].size(), 1);
-    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["data"], expected_return_data);
-    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["topics"].size(), 0);
-    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["blockNumber"], "0x3");
+    // EIP-7708: both value transfers now emit consensus Transfer logs from
+    // SYSTEM_ADDRESS, so the contract's own LOG0 is bracketed by one for the
+    // top-level transfer (sender -> deployed, 10 MON) and one for the internal
+    // call the contract makes (deployed -> beneficiary, 5 MON).
+    auto const topic_hex = [](bytes32_t const &b) {
+        return std::format("0x{}", to_hex(b));
+    };
+    auto const *const transfer_topic0 =
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+    auto const *const system_address =
+        "0xfffffffffffffffffffffffffffffffffffffffe";
+    auto const expected_full =
+        std::format("0x{}", to_hex(store_be_as<bytes32_t>(WEI_PER_MON * 10)));
+
+    ASSERT_EQ(output[1]["calls"][0]["logs"].size(), 3);
+
+    auto const &transfer_in = output[1]["calls"][0]["logs"][0];
+    EXPECT_EQ(transfer_in["address"], system_address);
+    EXPECT_EQ(transfer_in["data"], expected_full);
+    ASSERT_EQ(transfer_in["topics"].size(), 3);
+    EXPECT_EQ(transfer_in["topics"][0], transfer_topic0);
+    EXPECT_EQ(transfer_in["topics"][1], topic_hex(abi_encode_address(sender)));
+    EXPECT_EQ(
+        transfer_in["topics"][2], topic_hex(abi_encode_address(deployed)));
+
+    EXPECT_EQ(output[1]["calls"][0]["logs"][1]["data"], expected_return_data);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][1]["topics"].size(), 0);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][1]["blockNumber"], "0x3");
+
+    auto const &transfer_out = output[1]["calls"][0]["logs"][2];
+    EXPECT_EQ(transfer_out["address"], system_address);
+    EXPECT_EQ(transfer_out["data"], expected_return_data);
+    ASSERT_EQ(transfer_out["topics"].size(), 3);
+    EXPECT_EQ(transfer_out["topics"][0], transfer_topic0);
+    EXPECT_EQ(
+        transfer_out["topics"][1], topic_hex(abi_encode_address(deployed)));
+    EXPECT_EQ(
+        transfer_out["topics"][2], topic_hex(abi_encode_address(beneficiary)));
 
     // Third simulated block: balance checker confirms beneficiary received 5
     // MON.
@@ -6888,14 +6940,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
     monad_executor_destroy(executor);
 }
 
-// Test that native transfer logs are emitted when emit_native_transfer_logs is
-// true. A "forwarder" contract receives value from the sender and forwards
-// half of it to a "sink" contract. With native transfer logging enabled, we
-// expect two Transfer events emitted from the synthetic native-token address
-// (0xeeee...eeee):
+// Test that native transfer logs appear in eth_simulate output. A "forwarder"
+// contract receives value from the sender and forwards half of it to a "sink"
+// contract, producing two Transfer events:
 //
 //   1. sender    -> forwarder  (10 MON)    top-level value transfer
 //   2. forwarder -> sink       (5 MON)     internal CALL value transfer
+//
+// EIP-7708 is active on this chain, so these are consensus logs emitted from
+// SYSTEM_ADDRESS regardless of emit_native_transfer_logs. Before activation
+// they were an eth_simulate-only courtesy, emitted from the ERC-7528
+// native-token address (0xeeee...eeee) and only when that flag was set.
 TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
 {
     using namespace monad::vm::utils;
@@ -7048,9 +7103,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
     ASSERT_EQ(output[0]["calls"].size(), 1);
     EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
 
-    // Native transfer log constants.
-    static constexpr Address native_token =
-        0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address;
+    // Native transfer log constants. EIP-7708 being active makes the emitter
+    // SYSTEM_ADDRESS, not the pre-activation ERC-7528 placeholder.
     static constexpr bytes32_t transfer_sig =
         0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32;
 
@@ -7065,7 +7119,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
 
     // Log 0: sender -> forwarder (10 MON)
     EXPECT_EQ(logs[0]["logIndex"], "0x0");
-    EXPECT_EQ(logs[0]["address"], std::format("0x{}", to_hex(native_token)));
+    EXPECT_EQ(logs[0]["address"], std::format("0x{}", to_hex(SYSTEM_ADDRESS)));
     ASSERT_EQ(logs[0]["topics"].size(), 3);
     EXPECT_EQ(logs[0]["topics"][0], std::format("0x{}", to_hex(transfer_sig)));
     EXPECT_EQ(logs[0]["topics"][1], format_address_topic(sender));
@@ -7075,7 +7129,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
 
     // Log 1: forwarder -> sink (5 MON)
     EXPECT_EQ(logs[1]["logIndex"], "0x1");
-    EXPECT_EQ(logs[1]["address"], std::format("0x{}", to_hex(native_token)));
+    EXPECT_EQ(logs[1]["address"], std::format("0x{}", to_hex(SYSTEM_ADDRESS)));
     ASSERT_EQ(logs[1]["topics"].size(), 3);
     EXPECT_EQ(logs[1]["topics"][0], std::format("0x{}", to_hex(transfer_sig)));
     EXPECT_EQ(logs[1]["topics"][1], format_address_topic(forwarder_addr));

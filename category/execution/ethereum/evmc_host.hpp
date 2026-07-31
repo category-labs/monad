@@ -22,6 +22,7 @@
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/contract/events.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
@@ -46,6 +47,39 @@ static_assert(sizeof(vm::Host) == 24);
 static_assert(alignof(vm::Host) == 8);
 
 class BlockHashBuffer;
+
+// The system sender: the caller the EIP-7002/EIP-7251 system calls execute as,
+// and the emitter EIP-7708 attributes its synthetic logs to. Not owned by any
+// one of them.
+inline constexpr Address SYSTEM_ADDRESS =
+    0xfffffffffffffffffffffffffffffffffffffffe_address;
+
+// EIP-7708 emits its Transfer logs from SYSTEM_ADDRESS on the consensus path
+// (from the activation revision); eth_simulate on pre-activation blocks keeps
+// the ERC-7528 native-token pseudo-address instead. Burn logs have no
+// pre-activation form, so they always come from SYSTEM_ADDRESS.
+inline constexpr Address SIMULATE_NATIVE_TOKEN_LOG_ADDRESS =
+    0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address;
+
+// EIP-7708 Burn log, emitted at finalization for the residual balance of an
+// account created and destroyed in the same transaction (ETH received after it
+// selfdestructed, which is then destroyed). LOG2 from SYSTEM_ADDRESS:
+// topic1 = the burned account, data = the burned amount.
+inline Receipt::Log
+make_eip7708_burn_log(Address const &burned, uint256_t const &amount)
+{
+    static constexpr bytes32_t signature =
+        abi_encode_event_signature("Burn(address,uint256)");
+    static_assert(
+        signature ==
+        bytes32_from_hex("cc16f5dbb4873280815c1ee09dbd06736cffcc184412cf7a71a0"
+                         "fdb75d397ca5"));
+
+    return EventBuilder(SYSTEM_ADDRESS, signature)
+        .add_topic(abi_encode_address(burned))
+        .add_data(abi_encode_uint(u256_be{amount}))
+        .build();
+}
 
 class EvmcHostBase : public vm::Host
 {
@@ -155,6 +189,21 @@ struct EvmcHost final : public EvmcHostBase
     {
         MONAD_TRY
         {
+            // EIP-7708: an account created and destroyed in the same
+            // transaction that sends its balance to itself destroys that
+            // balance, so it emits a Burn log inline (a Transfer does not
+            // apply: from == to) before selfdestruct zeroes it. Residual
+            // balance arriving after this point is burned at finalization
+            // instead.
+            //
+            // Read before the call rather than after only to avoid depending on
+            // State::selfdestruct's internals; destruct() sets a flag without
+            // touching the account, so either order gives the same answer.
+            bool created_this_tx = false;
+            if constexpr (traits::eip_7708_active()) {
+                created_this_tx = state_.is_current_incarnation(address);
+            }
+
             auto const [result, transferred_balance] =
                 state_.selfdestruct<traits>(address, beneficiary);
 
@@ -163,6 +212,19 @@ struct EvmcHost final : public EvmcHostBase
 
             emit_native_transfer_event(
                 address, beneficiary, transferred_balance);
+
+            if constexpr (traits::eip_7708_active()) {
+                if (created_this_tx && beneficiary == address &&
+                    transferred_balance > 0) {
+                    // A burn is value destruction, not a transfer between
+                    // accounts, so it gets no call frame: unlike every other
+                    // log, it is stored on the receipt without a matching
+                    // call_tracer_.on_log. Consistent with the finalization
+                    // burns, which have no frame to attach to at all.
+                    state_.store_log(
+                        make_eip7708_burn_log(address, transferred_balance));
+                }
+            }
 
             return result;
         }
@@ -244,9 +306,14 @@ struct EvmcHost final : public EvmcHostBase
     {
         // Skip emitting native transfer events when no value is transferred or
         // `from` and `to` are the same account (i.e. no net transfer of funds).
-        if (log_native_transfers_ && value > 0 && from != to) {
-            static constexpr Address native_token_address =
-                0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address;
+        //
+        // EIP-7708 makes this a consensus rule from the activation revision;
+        // before then it fires only for eth_simulate's traceTransfers
+        // (log_native_transfers_).
+        constexpr bool consensus = traits::eip_7708_active();
+        if ((consensus || log_native_transfers_) && value > 0 && from != to) {
+            constexpr Address log_address =
+                consensus ? SYSTEM_ADDRESS : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS;
             static constexpr bytes32_t signature =
                 abi_encode_event_signature("Transfer(address,address,uint256)");
             static_assert(
@@ -254,7 +321,7 @@ struct EvmcHost final : public EvmcHostBase
                 bytes32_from_hex("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a"
                                  "11628f55a4df523b3ef"));
 
-            auto event = EventBuilder(native_token_address, signature)
+            auto event = EventBuilder(log_address, signature)
                              .add_topic(abi_encode_address(from))
                              .add_topic(abi_encode_address(to))
                              .add_data(abi_encode_uint(u256_be{value}))

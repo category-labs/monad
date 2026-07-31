@@ -79,6 +79,7 @@ TYPED_TEST(MonadTraitsTest, mip11_fork)
     NoopCallTracer call_tracer;
     trace::StateTracer state_tracer = std::monostate{};
     auto const chain_ctx = ChainContext<Trait>::debug_empty();
+    TxTraceContext const tx_trace_context{};
 
     MonadDevnet const chain;
     auto const receipt = ExecuteTransaction<Trait>(
@@ -95,7 +96,8 @@ TYPED_TEST(MonadTraitsTest, mip11_fork)
         call_tracer,
         state_tracer,
         chain_ctx,
-        /*exec_recorder*/ nullptr)();
+        /*exec_recorder*/ nullptr,
+        tx_trace_context)();
 
     ASSERT_FALSE(receipt.has_error());
     EXPECT_EQ(receipt.value().status, 1u);

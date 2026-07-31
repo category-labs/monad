@@ -51,7 +51,6 @@ using namespace monad::literals;
 class StakingContract
 {
     State &state_;
-    CallTracerBase &call_tracer_;
     TxTraceContext const tx_trace_context_;
 
 public:

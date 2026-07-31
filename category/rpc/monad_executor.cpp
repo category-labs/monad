@@ -314,7 +314,7 @@ namespace
             static_cast<uint64_t>(execution_result.gas_left),
             static_cast<uint64_t>(execution_result.gas_refund));
         auto const gas_used = enriched_txn.gas_limit - gas_refund;
-        call_tracer.on_finish(gas_used);
+        trace_context.run<trace::call_trace::Finish>(gas_used);
 
         execution_result.gas_refund = static_cast<int64_t>(gas_refund);
 

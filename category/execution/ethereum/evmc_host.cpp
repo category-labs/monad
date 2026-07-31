@@ -201,7 +201,7 @@ void EvmcHostBase::emit_log(
             log.topics.push_back({topics[i]});
         }
         state_.store_log(log);
-        call_tracer_.on_log(std::move(log));
+        get_tx_trace_context().run<trace::call_trace::Log>(std::move(log));
         return;
     }
     MONAD_CATCH(...)

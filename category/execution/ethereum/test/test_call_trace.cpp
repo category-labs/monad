@@ -69,6 +69,27 @@ namespace
 
     constexpr auto a = 0x5353535353535353535353535353535353535353_address;
     constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
+
+    struct TxTraceContextWithRunner
+    {
+        explicit TxTraceContextWithRunner(CallTracerBase &call_tracer)
+            : runner{call_tracer}
+            , erased_runner{trace::TypeErasedRunner::erase(runner)}
+            , runners{&erased_runner, 1}
+            , tx_trace_context{runners}
+        {
+        }
+
+        operator TxTraceContext const &() const
+        {
+            return tx_trace_context;
+        }
+
+        CallTraceRunner runner;
+        trace::TypeErasedRunner erased_runner;
+        std::span<trace::TypeErasedRunner const> runners;
+        TxTraceContext tx_trace_context;
+    };
 }
 
 TEST(CallFrame, to_json)
@@ -109,15 +130,19 @@ TEST(CallTrace, enter_and_exit)
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
+    CallTraceRunner call_trace_runner{call_tracer};
+    auto erased_runner = trace::TypeErasedRunner::erase(call_trace_runner);
+    std::span<trace::TypeErasedRunner const> const runners{&erased_runner, 1};
+    TxTraceContext const trace_ctx{runners};
     {
         msg.depth = 0;
-        call_tracer.on_enter(msg);
+        trace_ctx.run<trace::call_trace::Enter>(msg);
         {
             msg.depth = 1;
-            call_tracer.on_enter(msg);
-            call_tracer.on_exit(res);
+            trace_ctx.run<trace::call_trace::Enter>(msg);
+            trace_ctx.run<trace::call_trace::Exit>(res);
         }
-        call_tracer.on_exit(res);
+        trace_ctx.run<trace::call_trace::Exit>(res);
     }
 
     EXPECT_EQ(call_frames.size(), 2);
@@ -173,7 +198,7 @@ TYPED_TEST(TraitsTest, execute_success)
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithRunner trace_context{call_tracer};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         noop_state_tracer,
@@ -260,7 +285,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithRunner trace_context{call_tracer};
 
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
@@ -353,7 +378,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithRunner trace_context{call_tracer};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         noop_state_tracer,
@@ -479,7 +504,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithRunner trace_context{call_tracer};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         noop_state_tracer,
@@ -569,7 +594,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithRunner trace_context{call_tracer};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         noop_state_tracer,
@@ -669,7 +694,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithRunner trace_context{call_tracer};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         noop_state_tracer,
@@ -753,7 +778,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithRunner trace_context{call_tracer};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         noop_state_tracer,
@@ -864,7 +889,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithRunner trace_context{call_tracer};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         noop_state_tracer,
@@ -970,7 +995,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithRunner trace_context{call_tracer};
 
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
@@ -1116,7 +1141,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithRunner trace_context{call_tracer};
 
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
@@ -1334,7 +1359,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContext const trace_context{};
+    TxTraceContextWithRunner trace_context{call_tracer};
 
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
@@ -1498,7 +1523,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
         constexpr std::span<std::optional<Address> const> authorities_empty{};
-        TxTraceContext const trace_context{};
+        TxTraceContextWithRunner trace_context{call_tracer};
 
         EvmcHost<typename TestFixture::Trait> host{
             call_tracer,

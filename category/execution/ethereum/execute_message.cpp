@@ -181,8 +181,8 @@ evmc::Result execute_create_message(
 
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
-    auto &call_tracer = host->get_call_tracer();
-    call_tracer.on_enter(msg);
+    auto const trace_ctx = host->get_tx_trace_context();
+    perform_trace<trace::call_trace::Enter>(trace_ctx, msg);
 
     if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
         if constexpr (is_monad_trait_v<traits>) {
@@ -204,7 +204,7 @@ evmc::Result execute_create_message(
             }
         }
         evmc::Result result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
-        call_tracer.on_exit(result);
+        trace_ctx.template run<trace::call_trace::Exit>(result);
         return result;
     }
 
@@ -212,7 +212,7 @@ evmc::Result execute_create_message(
     if (nonce == UINT64_MAX) {
         // this overflow can only happen for msg.depth != 0
         evmc::Result result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
-        call_tracer.on_exit(result);
+        trace_ctx.template run<trace::call_trace::Exit>(result);
         return result;
     }
     state.set_nonce(msg.sender, nonce + 1);
@@ -233,7 +233,7 @@ evmc::Result execute_create_message(
     // Prevent overwriting contracts - EIP-684
     if (state.account_has_code_or_nonce(contract_address)) {
         evmc::Result result{EVMC_INVALID_INSTRUCTION};
-        call_tracer.on_exit(result);
+        trace_ctx.template run<trace::call_trace::Exit>(result);
         return result;
     }
 
@@ -294,7 +294,7 @@ evmc::Result execute_create_message(
         reject_frame(*host, state);
     }
 
-    call_tracer.on_exit(result);
+    trace_ctx.template run<trace::call_trace::Exit>(result);
 
     return result;
 }
@@ -309,11 +309,12 @@ evmc::Result execute_call_message(
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
         msg.kind == EVMC_CALL);
 
+    auto const trace_ctx = host->get_tx_trace_context();
     auto &call_tracer = host->get_call_tracer();
-    call_tracer.on_enter(msg);
+    trace_ctx.template run<trace::call_trace::Enter>(msg);
 
     if (auto result = pre_call<traits>(*host, msg, state); result.has_value()) {
-        call_tracer.on_exit(result.value());
+        trace_ctx.template run<trace::call_trace::Exit>(result.value());
         return std::move(result.value());
     }
 
@@ -345,7 +346,7 @@ evmc::Result execute_call_message(
     }
 
     post_call(*host, state, result);
-    call_tracer.on_exit(result);
+    trace_ctx.template run<trace::call_trace::Exit>(result);
     return result;
 }
 

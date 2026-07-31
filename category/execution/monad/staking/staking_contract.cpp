@@ -372,10 +372,9 @@ MONAD_STAKING_ANONYMOUS_NAMESPACE_END
 MONAD_STAKING_NAMESPACE_BEGIN
 
 StakingContract::StakingContract(
-    State &state, CallTracerBase &call_tracer,
+    State &state, CallTracerBase &,
     TxTraceContext const tx_trace_context)
     : state_{state}
-    , call_tracer_{call_tracer}
     , tx_trace_context_{tx_trace_context}
     , vars{state}
 {
@@ -2118,7 +2117,7 @@ std::tuple<bool, Ptr, std::vector<Ptr>> StakingContract::linked_list_traverse(
 void StakingContract::emit_log(Receipt::Log const &log)
 {
     state_.store_log(log);
-    call_tracer_.on_log(log);
+    tx_trace_context_.run<trace::call_trace::Log>(log);
 }
 
 MONAD_STAKING_NAMESPACE_END

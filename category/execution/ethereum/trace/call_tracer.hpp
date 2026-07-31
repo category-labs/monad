@@ -126,6 +126,11 @@ struct CallTraceRunner
         tracer.reset();
     }
 
+    void operator()(monad::trace::call_trace::GetCallFrames const &op)
+    {
+        *op.call_frames = tracer.get_call_frames();
+    }
+
     CallTracerBase &tracer;
 };
 

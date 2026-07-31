@@ -15,11 +15,12 @@
 
 fn main() {
     if monad_build::should_build_execution() {
-        monad_build::MonadCMake::new(
-            monad_build::repository_root(),
-            monad_build::MonadCMakeLinkage::Dynamic,
-        )
-        .build("monad_execution");
+        let root = monad_build::repository_root();
+        for path in ["CMakeLists.txt", "cmake", "category", "third_party"] {
+            println!("cargo:rerun-if-changed={}", root.join(path).display());
+        }
+        monad_build::MonadCMake::new(&root, monad_build::MonadCMakeLinkage::Dynamic)
+            .build("monad_execution");
     }
 
     monad_build::bindgen::MonadBindgen::default()

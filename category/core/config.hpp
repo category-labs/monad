@@ -17,6 +17,7 @@
 
 #include <bit>
 #include <climits>
+#include <cstdint>
 
 #define MONAD_NAMESPACE_BEGIN                                                  \
     namespace monad                                                            \
@@ -34,6 +35,19 @@
 #define MONAD_ANONYMOUS_NAMESPACE_END                                          \
     }                                                                          \
     MONAD_NAMESPACE_END
+
+// Asserts a sizeof/alignof/offsetof budget that only holds under the 64-bit
+// host ABI. Pointer, size_t and container widths all shrink on a 32-bit target
+// (the rv32im zkVM guest), moving every offset in a type that contains one, so
+// these budgets are compiled out there rather than restated as a second set of
+// magic numbers that nothing would keep honest. Layout properties that hold on
+// every target — an alignment that comes from a uint64_t member, say — should
+// stay a plain static_assert.
+#if UINTPTR_MAX == UINT64_MAX
+    #define MONAD_ASSERT_LP64_LAYOUT(...) static_assert(__VA_ARGS__)
+#else
+    #define MONAD_ASSERT_LP64_LAYOUT(...)
+#endif
 
 static_assert(CHAR_BIT == 8);
 

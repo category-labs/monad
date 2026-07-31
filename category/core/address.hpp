@@ -118,8 +118,9 @@ struct std::hash<monad::Address>
 {
     size_t operator()(monad::Address const &x) const noexcept
     {
-        return ankerl::unordered_dense::detail::wyhash::hash(
-            x.bytes, sizeof(x.bytes));
+        return static_cast<size_t>(
+            ankerl::unordered_dense::detail::wyhash::hash(
+                x.bytes, sizeof(x.bytes)));
     }
 };
 

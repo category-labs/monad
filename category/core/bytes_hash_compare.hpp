@@ -34,7 +34,7 @@ struct BytesHashCompare
     // calls operator() / equal(). Provide both from the same type.
     size_t hash(Bytes const &a) const
     {
-        return komihash(a.bytes, sizeof(Bytes), 0);
+        return static_cast<size_t>(komihash(a.bytes, sizeof(Bytes), 0));
     }
 
     size_t operator()(Bytes const &a) const

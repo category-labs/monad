@@ -1,0 +1,78 @@
+[package]
+name = "monad-zkvm-openvm-script"
+description = "Host driver and prover for the monad OpenVM witness-execution guest"
+version = "0.1.0"
+edition = "2021"
+
+# Standalone workspace. The sibling guest crate (../Cargo.toml) is also one,
+# and for the opposite reason: it cross-builds for riscv32im with OpenVM's
+# patched crypto crates, while this one is a native host binary linking the
+# whole prover. Neither dependency graph should touch the other.
+[workspace]
+
+[dependencies]
+# powdr's OpenVM fork, at the tag powdr-openvm pins. This must be the exact
+# tag the guest is built against — the SDK carries the VM circuit definitions,
+# so a version skew between host and guest is a proving-key mismatch, not a
+# compile error.
+#
+# Default features pull in halo2 and the EVM verifier stack, which only
+# `prove_evm` needs, so they are off — but `parallel` and `jemalloc` are both
+# in upstream's default set and both belong here: proving is allocation heavy
+# and multithreaded, and measuring it against the system allocator would not
+# be measuring the configuration OpenVM ships. `jemalloc` installs a
+# `#[global_allocator]` inside openvm-stark-backend, so enabling it is all
+# this crate has to do.
+openvm-sdk = { git = "https://github.com/powdr-labs/openvm.git", tag = "v2.0.0-beta.2-powdr.1", default-features = false, features = ["parallel", "jemalloc"] }
+openvm-sdk-config = { git = "https://github.com/powdr-labs/openvm.git", tag = "v2.0.0-beta.2-powdr.1", default-features = false }
+
+# powdr's autoprecompile middleware, for the `powdr` binary. Behind a feature
+# because it is a large dependency tree that the baseline driver has no use
+# for, and pinned to the same revision whose Cargo.toml pins the OpenVM tag
+# above — the two must agree or the VM circuits will not match. This is the
+# same commit the installed `powdr_openvm_riscv` CLI was built from.
+powdr-openvm = { git = "https://github.com/powdr-labs/powdr.git", rev = "f70d6b1708a89737ad5de59dec7feda858c957cc", optional = true }
+powdr-openvm-riscv = { git = "https://github.com/powdr-labs/powdr.git", rev = "f70d6b1708a89737ad5de59dec7feda858c957cc", optional = true }
+powdr-autoprecompiles = { git = "https://github.com/powdr-labs/powdr.git", rev = "f70d6b1708a89737ad5de59dec7feda858c957cc", optional = true }
+# Needed to reproduce powdr's `compile_openvm` rather than call it: it hardcodes
+# an empty target filter, which trips openvm's `find_unique_executable` on our
+# two-binary package. The pieces it assembles are public, just spread across
+# these crates.
+powdr-riscv-elf = { git = "https://github.com/powdr-labs/powdr.git", rev = "f70d6b1708a89737ad5de59dec7feda858c957cc", optional = true }
+powdr-openvm-riscv-hints-circuit = { git = "https://github.com/powdr-labs/powdr.git", rev = "f70d6b1708a89737ad5de59dec7feda858c957cc", optional = true }
+powdr-openvm-riscv-hints-transpiler = { git = "https://github.com/powdr-labs/powdr.git", rev = "f70d6b1708a89737ad5de59dec7feda858c957cc", optional = true }
+openvm-build = { git = "https://github.com/powdr-labs/openvm.git", tag = "v2.0.0-beta.2-powdr.1", optional = true }
+
+clap = { version = "4", features = ["derive"] }
+eyre = "0.6"
+toml = "0.8"
+
+[features]
+# The autoprecompile driver (`src/bin/powdr.rs`).
+powdr = [
+    "dep:powdr-openvm",
+    "dep:powdr-openvm-riscv",
+    "dep:powdr-autoprecompiles",
+    "dep:powdr-riscv-elf",
+    "dep:powdr-openvm-riscv-hints-circuit",
+    "dep:powdr-openvm-riscv-hints-transpiler",
+    "dep:openvm-build",
+]
+
+# Shared config/timing helpers, used by both binaries so the autoprecompile
+# numbers stay comparable with the baseline ones.
+[lib]
+name = "monad_zkvm_openvm_script"
+path = "src/lib.rs"
+
+[[bin]]
+name = "monad-zkvm-openvm-script"
+path = "src/main.rs"
+
+[[bin]]
+name = "monad-zkvm-openvm-powdr"
+path = "src/bin/powdr.rs"
+required-features = ["powdr"]
+
+[profile.release]
+opt-level = 3

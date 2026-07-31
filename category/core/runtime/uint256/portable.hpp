@@ -68,10 +68,9 @@ namespace monad::uint256::portable
     constexpr inline div_result<uint64_t>
     div(uint64_t u_hi, uint64_t u_lo, uint64_t const v) noexcept
     {
-        using u128 = unsigned __int128;
-        auto const u = static_cast<u128>(uint128_t{u_lo, u_hi});
-        auto const quot = static_cast<uint64_t>(u / v);
-        auto const rem = static_cast<uint64_t>(u % v);
+        uint64_t quot = 0;
+        uint64_t rem = 0;
+        div128by64(u_hi, u_lo, v, quot, rem);
         return {.quot = quot, .rem = rem};
     }
 
@@ -80,10 +79,7 @@ namespace monad::uint256::portable
         uint64_t const x, uint64_t const y, uint64_t &r_hi,
         uint64_t &r_lo) noexcept
     {
-        using u128 = unsigned __int128;
-        u128 const prod = static_cast<u128>(x) * static_cast<u128>(y);
-        r_hi = static_cast<uint64_t>(prod >> u128{64});
-        r_lo = static_cast<uint64_t>(prod);
+        mul64x64(x, y, r_hi, r_lo);
     }
 
     template <size_t R, size_t M, size_t N>

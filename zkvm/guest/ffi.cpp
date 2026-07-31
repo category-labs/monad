@@ -118,12 +118,31 @@ extern "C" void monad_zkvm_execute_witness(void)
 
     // 5. Build the execution context. EthereumMainnet is the MVP chain;
     //    monad-chain dispatch lands when we wire monad witnesses up.
-    //    BlockHashBuffer is left empty in Phase 4 — populating it from
-    //    witness.encoded_headers is a follow-up; blocks that don't read
-    //    the BLOCKHASH opcode are unaffected by this.
     monad::EthereumMainnet const chain;
     monad::vm::VM vm;
-    monad::BlockHashBufferFinalized const block_hash_buffer;
+
+    // Seed the block-hash buffer from the witness's ancestor headers, which
+    // is what lets BLOCKHASH resolve without a live chain. The encoder emits
+    // only the range the block actually queried, ascending and contiguous,
+    // ending at the parent — which is exactly what `set` requires, since it
+    // rejects a number that is not the one after the last.
+    monad::BlockHashBufferFinalized block_hash_buffer;
+    {
+        monad::byte_string_view headers = witness.value().encoded_headers;
+        while (!headers.empty()) {
+            auto const payload = monad::rlp::parse_string_metadata(headers);
+            MONAD_ASSERT(payload.has_value());
+            // decode_block_header consumes its argument, so the hash is taken
+            // over a separate view of the same bytes.
+            monad::byte_string_view header_view = payload.value();
+            auto const header = monad::rlp::decode_block_header(header_view);
+            MONAD_ASSERT(header.has_value());
+            block_hash_buffer.set(
+                header.value().number,
+                monad::to_bytes(monad::keccak256(payload.value())));
+        }
+    }
+
     pdb.set_block_and_prefix(block.header.number);
 
     // 6. Pick the EVM revision from the block's position on the mainnet

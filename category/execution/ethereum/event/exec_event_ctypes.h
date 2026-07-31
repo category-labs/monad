@@ -40,6 +40,20 @@ extern "C"
 {
 #endif
 
+/// 128-bit nanosecond timestamp. 32-bit targets (the rv32im zkVM guest) have no
+/// 128-bit integer type; they compile this header for the event enums and
+/// payload declarations only — the recorders that read and write the field are
+/// not built for them — so a same-size placeholder is enough there.
+#if defined(__SIZEOF_INT128__)
+typedef __uint128_t monad_c_uint128_ne;
+#else
+typedef struct
+{
+    uint64_t lo;
+    uint64_t hi;
+} monad_c_uint128_ne;
+#endif
+
 /// Each type of event is assigned a unique value in this enumeration
 enum monad_exec_event_type : uint16_t
 {
@@ -108,7 +122,8 @@ struct monad_exec_block_start
         block_tag;                    ///< Proposal is for this block
     uint64_t round;                   ///< Round when block was proposed
     uint64_t epoch;                   ///< Epoch when block was proposed
-    __uint128_t proposal_epoch_nanos; ///< UNIX epoch nanosecond timestamp
+    monad_c_uint128_ne
+        proposal_epoch_nanos;         ///< UNIX epoch nanosecond timestamp
     monad_c_uint256_ne chain_id;      ///< Blockchain we're associated with
     struct monad_c_secp256k1_pubkey
         author;                       ///< Public key of block author

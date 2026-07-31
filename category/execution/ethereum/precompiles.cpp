@@ -212,7 +212,8 @@ PrecompileResult ecrecover_execute(byte_string_view const input)
 
     alignas(8) std::basic_string<uint8_t> d(128, '\0');
     if (input.size() != 0) {
-        std::memcpy(d.data(), input.data(), std::min(input.size(), 128ul));
+        std::memcpy(
+            d.data(), input.data(), std::min(input.size(), size_t{128}));
     }
 
     auto const v{load_be_unsafe<uint256_t>(&d[32])};
@@ -268,7 +269,8 @@ PrecompileResult expmod_execute(byte_string_view const input)
 {
     std::basic_string<uint8_t> header(96, '\0');
     if (input.size() != 0) {
-        std::memcpy(header.data(), input.data(), std::min(input.size(), 96ul));
+        std::memcpy(
+            header.data(), input.data(), std::min(input.size(), size_t{96}));
     }
 
     uint64_t const mod_len = load_be_unsafe<uint64_t>(&header[88]);
@@ -282,10 +284,11 @@ PrecompileResult expmod_execute(byte_string_view const input)
 
     uint64_t const padded_size_64 =
         saturating_add64(base_len, saturating_add64(exp_len, mod_len));
-    size_t const padded_size =
-        padded_size_64 > std::numeric_limits<size_t>::max()
-            ? std::numeric_limits<size_t>::max()
-            : static_cast<size_t>(padded_size_64);
+    size_t const padded_size = narrow_to_size(padded_size_64);
+    // Each length is a summand of padded_size_64, so it narrows safely too.
+    size_t const base_size = narrow_to_size(base_len);
+    size_t const exp_size = narrow_to_size(exp_len);
+    size_t const mod_size = narrow_to_size(mod_len);
     std::basic_string<uint8_t> padded_input(padded_size, '\0');
     size_t terms_size = input.size() < 96 ? 0 : input.size() - 96;
     if (terms_size != 0) {
@@ -295,15 +298,15 @@ PrecompileResult expmod_execute(byte_string_view const input)
             std::min(terms_size, padded_input.size()));
     }
 
-    auto *const out = static_cast<uint8_t *>(std::malloc(mod_len));
+    auto *const out = static_cast<uint8_t *>(std::malloc(mod_size));
     MONAD_ASSERT(out != nullptr);
-    std::memset(out, 0, mod_len);
+    std::memset(out, 0, mod_size);
     return from_impl_result(
         expmod_impl(
-            std::span<uint8_t>{padded_input.data(), base_len},
-            std::span<uint8_t>{&padded_input[base_len], exp_len},
-            std::span<uint8_t>{&padded_input[base_len + exp_len], mod_len},
-            std::span<uint8_t>{out, mod_len}),
+            std::span<uint8_t>{padded_input.data(), base_size},
+            std::span<uint8_t>{&padded_input[base_size], exp_size},
+            std::span<uint8_t>{&padded_input[base_size + exp_size], mod_size},
+            std::span<uint8_t>{out, mod_size}),
         out);
 }
 

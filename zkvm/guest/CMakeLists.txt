@@ -37,9 +37,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     project(monad-zkvm-guest LANGUAGES C CXX ASM)
 
-    if(NOT MONAD_ZKVM_GUEST_TARGET MATCHES "^(zisk|sp1)$")
+    if(NOT MONAD_ZKVM_GUEST_TARGET MATCHES "^(zisk|sp1|openvm)$")
         message(FATAL_ERROR
-            "MONAD_ZKVM_GUEST_TARGET must be 'zisk' or 'sp1', got "
+            "MONAD_ZKVM_GUEST_TARGET must be 'zisk', 'sp1' or 'openvm', got "
             "'${MONAD_ZKVM_GUEST_TARGET}'")
     endif()
     if(MONAD_COMPILER_TESTING)
@@ -57,12 +57,29 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     string(APPEND CMAKE_CXX_FLAGS
         " -mcmodel=medany -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti")
 
+    # OpenVM only: no switch jump tables. GCC emits those as a rodata word per
+    # case holding `case_target - table_base`, which on RISC-V is an
+    # R_RISCV_ADD32/R_RISCV_SUB32 relocation pair. powdr's ELF reader — which
+    # the autoprecompile pipeline goes through to recover basic-block
+    # boundaries — accepts only R_RISCV_32 in data sections and panics on
+    # anything else. A Rust guest never produces label-difference pairs, so
+    # upstream has not needed to handle them; this C++ guest produced 395.
+    # The cost is comparison chains in place of an indirect jump for large
+    # switches, which is why it is scoped to the one backend that needs it.
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "openvm")
+        string(APPEND CMAKE_C_FLAGS " -fno-jump-tables")
+        string(APPEND CMAKE_CXX_FLAGS " -fno-jump-tables")
+    endif()
+
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
 
     # The SP1 and ZisK ripemd160 accelerators place the digest at opposite
     # ends of their 32-byte output word, so the precompile shim normalises
     # them differently (zkvm/category/execution/ethereum/precompiles_impl.hpp).
     # Expose the backend as a compile definition for that per-backend branch.
+    # OpenVM needs none: its shims (zkvm/openvm/src/accel.rs) follow the ZisK
+    # conventions — digest at [12,32), EIP-2537 point encodings — so the
+    # unbranched path is already correct for it.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "sp1")
         add_compile_definitions(MONAD_ZKVM_SP1)
     endif()
@@ -124,6 +141,57 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     option(immer_BUILD_EXAMPLES OFF)
     option(immer_BUILD_EXTRAS OFF)
     add_subdirectory("${THIRD_PARTY_DIR}/immer" immer SYSTEM)
+
+    # ---- immer portability patch (upstream bug, 32-bit targets only) ----
+    #
+    # immer v0.8.1's node::sizeof_values_n calls
+    #     std::max(sizeof(values_t), immer_offsetof(...) + sizeof(...) * count)
+    # whose arguments are size_t and count_t (= uint32_t). On a 64-bit target
+    # the product promotes to size_t and both arguments agree, so the call
+    # compiles. On rv32 with this newlib, uint32_t is `unsigned long` while
+    # size_t is `unsigned int` — same width, distinct types — so template
+    # argument deduction fails and every translation unit that instantiates
+    # immer::set (i.e. everything touching state3/account_substate.hpp) fails
+    # to compile. Upstream master still has this as of 2026-07-29, so bumping
+    # the submodule does not help; the fix is to name the template argument.
+    #
+    # Rather than modify the pinned submodule — which would leave third_party/
+    # dirty for everyone — generate a patched copy of the one header at
+    # configure time and put it on the include path ahead of immer's own
+    # directory. Same approach as build-support's patch_zkvm_ld, including the
+    # anchor assertion: if a submodule bump moves this code, configuration
+    # fails loudly here instead of silently compiling unpatched. Passed with
+    # -isystem (via SYSTEM below) so immer keeps its system-header warning
+    # suppression; a plain -I would win the search order but subject the copy
+    # to -Werror.
+    #
+    # Remove this block once the fix is upstream and the submodule is bumped:
+    #   https://github.com/arximboldi/immer — std::max<std::size_t> in
+    #   immer/detail/hamts/node.hpp.
+    set(_immer_node_rel "immer/detail/hamts/node.hpp")
+    set(_immer_node_src "${THIRD_PARTY_DIR}/immer/${_immer_node_rel}")
+    set(_immer_patch_dir "${CMAKE_CURRENT_BINARY_DIR}/immer-patched")
+    set(_immer_node_dst "${_immer_patch_dir}/${_immer_node_rel}")
+
+    file(READ "${_immer_node_src}" _immer_node_text)
+    set(_immer_anchor "return std::max(sizeof(values_t),")
+    string(FIND "${_immer_node_text}" "${_immer_anchor}" _immer_anchor_pos)
+    if(_immer_anchor_pos EQUAL -1)
+        message(FATAL_ERROR
+            "immer layout changed (${_immer_node_src}): no `${_immer_anchor}` "
+            "to patch. If upstream fixed sizeof_values_n, delete this block; "
+            "otherwise update the anchor.")
+    endif()
+    string(REPLACE
+        "${_immer_anchor}"
+        "return std::max<std::size_t>(sizeof(values_t),"
+        _immer_node_text "${_immer_node_text}")
+    file(WRITE "${_immer_node_dst}" "${_immer_node_text}")
+
+    # BUILD_INTERFACE because immer is an installable target: a build-directory
+    # path may not appear in what it exports.
+    target_include_directories(immer SYSTEM BEFORE
+        INTERFACE "$<BUILD_INTERFACE:${_immer_patch_dir}>")
 
     # komihash — header-only, used by category/core/bytes_hash_compare.hpp.
     # Mirrors root CMakeLists.txt:138.
@@ -192,8 +260,15 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # ---- Extract setjmp/longjmp from the compiler's newlib libc.a ----
 
+    # The -print-file-name / -print-libgcc-file-name queries below resolve
+    # per-multilib, so they must see the same -march/-mabi the guest is compiled
+    # with. Without them a multilib toolchain answers for its *default* variant
+    # and the extracted objects are silently the wrong ABI — an rv64 setjmp.o in
+    # an rv32 archive, which only surfaces at link time.
+    separate_arguments(_target_c_flags NATIVE_COMMAND "${CMAKE_C_FLAGS}")
+
     execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -print-file-name=libc.a
+        COMMAND ${CMAKE_C_COMPILER} ${_target_c_flags} -print-file-name=libc.a
         OUTPUT_VARIABLE _libc_a
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
@@ -227,29 +302,151 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "libc.a not found via compiler query")
     endif()
 
-    # ---- Extract __popcountdi2 from the compiler's libgcc.a ----
-    # immer's HAMT bit math needs __popcountdi2
+    # ---- Extract the needed compiler runtime routines from libgcc.a ----
+    #
+    # The guest links no libgcc, so any routine GCC lowers to a libcall has to
+    # be carried in this archive. Members are located by the symbol they define
+    # rather than by file name, because the file names are ABI-dependent:
+    # __popcountdi2 lives in _popcountsi2.o for rv64 but _popcountdi2.o for
+    # rv32, so a hardcoded name silently yields the wrong object (or, with a
+    # multilib toolchain, the wrong ABI) and only fails at link time.
+    #
+    # This is the union over all guest ABIs, and is advisory: which routines GCC
+    # actually emits libcalls for is ABI-dependent, and so is which ones libgcc
+    # even contains. rv64 has no __popcountsi2 or __clzsi2 (it uses the DImode
+    # routines), rv32 has no native 64-bit modulo and so needs __umoddi3. A
+    # symbol absent from this target's libgcc is therefore normal and not an
+    # error; the post-build check below is what enforces completeness, by
+    # failing on anything the finished archive still needs and libgcc could have
+    # supplied.
+    set(_libgcc_syms
+        __popcountsi2 __popcountdi2  # immer's HAMT bit math
+        __clzsi2 __clzdi2            # std::countl_zero
+        __bswapsi2 __bswapdi2        # std::byteswap
+        __umoddi3                    # 64-bit modulo, a libcall on rv32
+        __mulsf3 __fixunssfsi __floatunsisf  # soft float
+    )
+
     execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -print-libgcc-file-name
+        COMMAND ${CMAKE_C_COMPILER} ${_target_c_flags} -print-libgcc-file-name
         OUTPUT_VARIABLE _libgcc_a
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
+    if(NOT EXISTS "${_libgcc_a}")
+        message(FATAL_ERROR "libgcc.a not found via compiler query")
+    endif()
+
     set(_libgcc_dir "${CMAKE_CURRENT_BINARY_DIR}/_libgcc_objs")
+    file(REMOVE_RECURSE "${_libgcc_dir}")
     file(MAKE_DIRECTORY "${_libgcc_dir}")
-    if(EXISTS "${_libgcc_a}")
+
+    # `nm` on an archive prints a `member.o:` header before each member's
+    # symbols. Two passes build the maps needed below: which member defines a
+    # symbol, and which symbols a member leaves undefined.
+    execute_process(
+        COMMAND ${CMAKE_NM} --defined-only "${_libgcc_a}"
+        OUTPUT_VARIABLE _nm_def OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    execute_process(
+        COMMAND ${CMAKE_NM} --undefined-only "${_libgcc_a}"
+        OUTPUT_VARIABLE _nm_undef OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+
+    # _def_<sym> = defining member; _undef_<member> = symbols it needs.
+    string(REPLACE "\n" ";" _lines "${_nm_def}")
+    set(_member "")
+    foreach(_line IN LISTS _lines)
+        if(_line MATCHES "^(.+\\.o):$")
+            set(_member "${CMAKE_MATCH_1}")
+        elseif(_line MATCHES "[ \t]([A-Za-z_][A-Za-z0-9_]*)$")
+            if(NOT DEFINED "_def_${CMAKE_MATCH_1}")
+                set("_def_${CMAKE_MATCH_1}" "${_member}")
+            endif()
+        endif()
+    endforeach()
+    string(REPLACE "\n" ";" _lines "${_nm_undef}")
+    set(_member "")
+    foreach(_line IN LISTS _lines)
+        if(_line MATCHES "^(.+\\.o):$")
+            set(_member "${CMAKE_MATCH_1}")
+        elseif(_line MATCHES "[ \t]([A-Za-z_][A-Za-z0-9_]*)$")
+            list(APPEND "_undef_${_member}" "${CMAKE_MATCH_1}")
+        endif()
+    endforeach()
+
+    # Transitive closure: an extracted member may itself need another libgcc
+    # symbol (_popcountdi2.o calls __popcountsi2; the clz routines reference the
+    # __clz_tab table), and the guest links no libgcc to satisfy them.
+    set(_worklist "${_libgcc_syms}")
+    set(_libgcc_members "")
+    set(_seen_syms "")
+    while(_worklist)
+        list(POP_FRONT _worklist _sym)
+        if("${_sym}" IN_LIST _seen_syms)
+            continue()
+        endif()
+        list(APPEND _seen_syms "${_sym}")
+        if(NOT DEFINED "_def_${_sym}")
+            # Normal: this ABI's libgcc does not carry the routine, or it is
+            # provided by a guest stub or the backend's Rust compiler_builtins.
+            continue()
+        endif()
+        set(_m "${_def_${_sym}}")
+        if(NOT "${_m}" IN_LIST _libgcc_members)
+            list(APPEND _libgcc_members "${_m}")
+            if(DEFINED "_undef_${_m}")
+                list(APPEND _worklist ${_undef_${_m}})
+            endif()
+        endif()
+    endwhile()
+    foreach(_obj IN LISTS _libgcc_members)
         execute_process(
-            COMMAND ${CMAKE_AR} x "${_libgcc_a}" "_popcountsi2.o"
+            COMMAND ${CMAKE_AR} x "${_libgcc_a}" "${_obj}"
             WORKING_DIRECTORY "${_libgcc_dir}"
         )
-        file(GLOB _libgcc_objs "${_libgcc_dir}/*.o")
-        if(NOT _libgcc_objs)
-            message(FATAL_ERROR
-                "Failed to extract __popcountdi2 from ${_libgcc_a}")
-        endif()
-    else()
-        message(FATAL_ERROR
-            "libgcc.a not found via compiler query")
+    endforeach()
+    file(GLOB _libgcc_objs "${_libgcc_dir}/*.o")
+    if(NOT _libgcc_objs)
+        message(FATAL_ERROR "Failed to extract any objects from ${_libgcc_a}")
     endif()
+    message(STATUS
+        "zkvm: extracted libgcc members ${_libgcc_members} from ${_libgcc_a}")
+
+    # ---- Verify the extracted objects match this target's ABI ----
+    #
+    # Completeness is not checkable here: the backends link Rust, whose
+    # compiler_builtins supplies most of these routines, so the archive is
+    # legitimately not self-contained (rv64 leaves __udivti3/__umodti3 to it).
+    # What *is* checkable, and what silently broke before, is ABI: the
+    # -print-*-file-name queries above resolve per-multilib, and if they answer
+    # for the wrong variant the objects land in the archive with the wrong word
+    # size and only fail at the backend's final link.
+    #
+    # Compare ELF class (byte 4 of e_ident: 1 = 32-bit, 2 = 64-bit) against a
+    # freshly compiled probe, which is by definition this target's ABI.
+    set(_probe_c "${CMAKE_CURRENT_BINARY_DIR}/_abi_probe.c")
+    set(_probe_o "${CMAKE_CURRENT_BINARY_DIR}/_abi_probe.o")
+    file(WRITE "${_probe_c}" "int _monad_abi_probe;\n")
+    execute_process(
+        COMMAND ${CMAKE_C_COMPILER} ${_target_c_flags} -c "${_probe_c}"
+                -o "${_probe_o}"
+        RESULT_VARIABLE _probe_rc)
+    if(NOT _probe_rc EQUAL 0)
+        message(FATAL_ERROR "failed to compile the ABI probe object")
+    endif()
+    file(READ "${_probe_o}" _probe_ident HEX LIMIT 5)
+    string(SUBSTRING "${_probe_ident}" 8 2 _want_elf_class)
+
+    foreach(_obj IN LISTS _libc_objs _libgcc_objs)
+        file(READ "${_obj}" _obj_ident HEX LIMIT 5)
+        string(SUBSTRING "${_obj_ident}" 8 2 _obj_elf_class)
+        if(NOT _obj_elf_class STREQUAL _want_elf_class)
+            message(FATAL_ERROR
+                "${_obj} is ELF class 0x${_obj_elf_class} but this target "
+                "compiles to ELF class 0x${_want_elf_class} (01 = 32-bit, "
+                "02 = 64-bit). The toolchain answered -print-file-name for the "
+                "wrong multilib: check that it has a variant matching "
+                "'${CMAKE_C_FLAGS}' (riscv64-unknown-elf-gcc -print-multi-lib).")
+        endif()
+    endforeach()
 
     # ---- Bare-metal libc / libstdc++ stubs ----
 

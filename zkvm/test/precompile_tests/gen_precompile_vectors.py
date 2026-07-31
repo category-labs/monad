@@ -28,6 +28,7 @@
 # Usage: gen_precompile_vectors.py <geth-testdata-dir> <out.bin>
 
 import json
+import re
 import struct
 import sys
 from pathlib import Path
@@ -65,21 +66,77 @@ FILES = [
 ]
 
 
+# The blob EIP-4844's point-evaluation precompile (0x0a) returns on success,
+# per the EIP: FIELD_ELEMENTS_PER_BLOB and the BLS12-381 scalar modulus, each
+# as a 32-byte big-endian word.
+POINT_EVALUATION_RETURN = bytes.fromhex(
+    "0000000000000000000000000000000000000000000000000000000000001000"
+    "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001")
+
+
+def kzg_cases(root):
+    """Point-evaluation vectors from c-kzg-4844's verify_kzg_proof suite.
+
+    geth's precompile testdata has no point-evaluation file, so 0x0a is the
+    one precompile the golden set would otherwise not cover at all. These come
+    from a different vendored source and are therefore opt-in, which also
+    keeps the default blob reproducible from the go-ethereum tree alone.
+
+    The consensus-layer vectors give the four KZG arguments; the EVM
+    precompile prepends the versioned hash, which is SHA-256 of the commitment
+    with the first byte replaced by the KZG version tag. A `null` output means
+    the inputs are malformed and the precompile must reject them, which is the
+    same thing as a `false` proof check at the EVM layer.
+    """
+    import hashlib
+
+    field = re.compile(r"(\w+): '0x([0-9a-fA-F]*)'")
+    for data in sorted(Path(root).glob("*/data.yaml")):
+        text = data.read_text()
+        args = {k: bytes.fromhex(v) for k, v in field.findall(text)}
+        commitment = args["commitment"]
+        if len(commitment) != 48 or any(
+                len(args.get(k, b"")) != n
+                for k, n in (("z", 32), ("y", 32), ("proof", 48))):
+            # Malformed-length inputs exercise the caller's length check, not
+            # the accelerator; the precompile's own guard rejects them before
+            # any of this code runs.
+            continue
+        digest = bytearray(hashlib.sha256(commitment).digest())
+        digest[0] = 0x01
+        inp = bytes(digest) + args["z"] + args["y"] + commitment + args["proof"]
+        if re.search(r"^output: true$", text, re.M):
+            yield inp, 0, POINT_EVALUATION_RETURN
+        else:
+            yield inp, 1, b""
+
+
 def main():
     if len(sys.argv) < 3:
         sys.exit(
             f"usage: {sys.argv[0]} <geth-testdata-dir> <out.bin> "
-            "[--exclude 0x09,0x11]")
+            "[--exclude 0x09,0x11] [--kzg <c-kzg verify_kzg_proof dir>]")
     src = Path(sys.argv[1])
     out = Path(sys.argv[2])
     exclude = set()
     if "--exclude" in sys.argv:
         spec = sys.argv[sys.argv.index("--exclude") + 1]
         exclude = {int(a, 16) for a in spec.split(",") if a}
+    kzg_dir = None
+    if "--kzg" in sys.argv:
+        kzg_dir = sys.argv[sys.argv.index("--kzg") + 1]
 
     cases = bytearray()
     count = 0
     per_addr = {}
+
+    if kzg_dir is not None and 0x0A not in exclude:
+        for inp, kind, exp in kzg_cases(kzg_dir):
+            cases += struct.pack("<HI", 0x0A, len(inp)) + inp
+            cases += struct.pack("<BI", kind, len(exp)) + exp
+            count += 1
+            per_addr[0x0A] = per_addr.get(0x0A, 0) + 1
+
     for name, addr, kind in FILES:
         if addr in exclude:
             continue

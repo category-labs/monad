@@ -225,8 +225,10 @@ std::optional<uint64_t> expmod_gas_cost(byte_string_view const input)
     uint256_t exp_head{0}; // first 32 bytes of the exponent
     auto const exp_index = 96 + base_len64;
     if (input.length() > exp_index) { // input contains bytes of exponents
+        // exp_index is below input.length() here, so it narrows safely.
         exp_head = uint256_load_partial_be(
-            input.substr(exp_index), std::min(32ul, exp_len64));
+            input.substr(narrow_to_size(exp_index)),
+            static_cast<size_t>(std::min(uint64_t{32}, exp_len64)));
     }
     size_t const bit_len{256 - countl_zero(exp_head)};
 

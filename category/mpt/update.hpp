@@ -19,6 +19,7 @@
 #include <category/mpt/nibbles_view.hpp>
 
 #include <category/core/byte_string.hpp>
+#include <category/core/config.hpp>
 
 #include <boost/intrusive/slist.hpp>
 
@@ -45,7 +46,7 @@ struct Update
     }
 };
 
-static_assert(sizeof(Update) == 80);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(Update) == 80);
 static_assert(alignof(Update) == 8);
 
 // An update can mean

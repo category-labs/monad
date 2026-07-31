@@ -18,4 +18,4 @@ precompile-test = []
 [build-dependencies]
 # Cross-builds the C++ guest archive and links it against libzkevm.a — built
 # from the SP1 zkEVM SDK source (via sp1-build) — into the guest ELF. See build.rs.
-monad-zkvm-build-support = { path = "../../build-support" }
+monad-zkvm-build-support = { path = "../../build-support", features = ["sp1"] }

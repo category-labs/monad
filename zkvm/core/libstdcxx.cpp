@@ -54,13 +54,16 @@ void operator delete(void *, std::size_t) noexcept {}
 
 void operator delete[](void *, std::size_t) noexcept {}
 
-// std::terminate() and the rest of the C++ ABI runtime (__cxa_throw,
-// __cxa_allocate_exception, std::exception's dtor / vtable,
-// __gxx_personality_v0, _Unwind_Resume) come from libsupc++ + libgcc —
-// linked back in by zkvm/build-support since the toolchain file uses
-// -nostdlib++. See the explanation in zkvm/build-support/src/lib.rs.
+// The guest links neither libstdc++ nor libsupc++ (the toolchain file passes
+// -nostdlib++, and nothing links them back in), so every C++ runtime symbol the
+// compiler emits a reference to has to be defined in this file. Exceptions are
+// disabled (-fno-exceptions), which is what keeps the list short: the unwinder
+// surface (__cxa_throw, __cxa_allocate_exception, __gxx_personality_v0,
+// _Unwind_Resume) is never referenced at all. What remains is the handful of
+// `std::__throw_*` helpers that libstdc++ containers call on a failed
+// precondition, plus the __cxa_* bookkeeping below.
 //
-// All of those error paths bottom out in abort() — libsupc++'s default
+// All of those error paths bottom out in abort() — the default
 // terminate_handler calls it, GCC's stack protector calls it, etc.
 // Newlib's bare-metal abort() ultimately calls _exit() which expects a
 // host kernel that the zkVM doesn't have. Route the chain into our
@@ -88,6 +91,14 @@ int __cxa_atexit(void (*)(void *), void *, void *)
 int __cxa_thread_atexit(void (*)(void *), void *, void *)
 {
     return 0;
+}
+
+// Emitted into the vtable slot of a pure virtual function; reaching it means a
+// pure virtual was called during construction or destruction. Normally supplied
+// by libsupc++, which the guest does not link.
+[[noreturn]] void __cxa_pure_virtual()
+{
+    zkvm_halt(1);
 }
 
 // Function-local static init guards. Single-threaded: acquire iff the low
@@ -118,6 +129,23 @@ namespace std
     }
 
     [[noreturn]] void __throw_logic_error(char const *)
+    {
+        zkvm_halt(1);
+    }
+
+    // Both are reached from allocating containers: __throw_bad_alloc when the
+    // allocator returns null, __throw_bad_array_new_length when an element
+    // count times its element size overflows size_t. Referenced only on 32-bit
+    // targets (ankerl::unordered_dense's growth path, via State and
+    // CommitBuilder) — with a 64-bit size_t GCC proves the overflow check
+    // cannot fire against the container's own max_size and folds the call away,
+    // whereas a 32-bit size_t makes it a live branch.
+    [[noreturn]] void __throw_bad_alloc()
+    {
+        zkvm_halt(1);
+    }
+
+    [[noreturn]] void __throw_bad_array_new_length()
     {
         zkvm_halt(1);
     }

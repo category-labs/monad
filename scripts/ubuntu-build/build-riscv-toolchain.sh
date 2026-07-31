@@ -9,9 +9,31 @@ PREFIX="/root/riscv"
 git clone --depth 1 --branch "${BRANCH}" "${REPO}" "${SRC}"
 cd "${SRC}"
 
+# Multilib: rv64ima/lp64 is the default variant (ZisK) and rv64im/lp64 covers
+# SP1, which has no atomics; both are served by the rv64 default plus flags. The
+# rv32im/ilp32 variant exists for OpenVM, which is a 32-bit ISA — without it the
+# compiler still accepts -march=rv32im -mabi=ilp32, but -print-file-name and
+# -print-libgcc-file-name hand back the rv64 libc.a/libgcc.a, and the newlib and
+# libgcc objects the guest archive extracts from them (setjmp, strcmp,
+# __popcountdi2) are then the wrong ABI and will not link.
 ./configure --prefix="${PREFIX}" \
   --with-arch=rv64ima \
-  --with-abi=lp64
+  --with-abi=lp64 \
+  --with-multilib-generator="rv64ima-lp64--;rv32im-ilp32--"
+
+# Fetch the submodules the newlib toolchain needs, one at a time, before the
+# parallel build starts. Two reasons, both of which fail the build on a cold
+# tree otherwise:
+#   - `make -j` clones several submodules at once and sourceware.org answers
+#     HTTP 429 (rate limited).
+#   - the pinned submodule commits are not branch tips, so a shallow clone does
+#     not contain them; git then asks sourceware for those exact commits, which
+#     it refuses. These are deliberately full clones for that reason.
+# Listed explicitly because the repo also carries qemu, llvm, glibc and musl
+# submodules that this toolchain does not need.
+for _module in binutils gcc newlib gdb; do
+    git -C "${SRC}" submodule update --init "${_module}"
+done
 
 make -j"$(nproc)"
 

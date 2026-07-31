@@ -120,7 +120,7 @@ Result<bytes32_t> execute_block_zkvm(
     std::vector<Receipt> receipts;
     receipts.reserve(block.transactions.size());
 
-    for (uint64_t i = 0; i < block.transactions.size(); ++i) {
+    for (size_t i = 0; i < block.transactions.size(); ++i) {
         boost::fibers::promise<void> prev{};
         prev.set_value();
         ExecuteTransaction<traits> exec{

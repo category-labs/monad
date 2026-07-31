@@ -13,17 +13,23 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Shared cmake-driver logic for the ZisK and SP1 guest build.rs files.
+//! Shared cmake-driver logic for the ZisK, SP1, and OpenVM guest build.rs
+//! files.
 //!
-//! Both crates drive `zkvm/guest/CMakeLists.txt` directly as the top-level
+//! All crates drive `zkvm/guest/CMakeLists.txt` directly as the top-level
 //! CMake project. The only backend-distinguishing cmake input is
-//! `MONAD_ZKVM_GUEST_TARGET` (`zisk` or `sp1`) — the cmake derives the target
-//! name (`monad-zkvm-guest-<suffix>`) and the per-backend mirror include
-//! directory (`zkvm/<suffix>/`) from that. Backends also differ in RISC-V
-//! march/flags and a couple of linker args, handled here. Consumer build.rs
-//! files just call `Backend::Zisk.build_guest_lib()` (or `Sp1`).
+//! `MONAD_ZKVM_GUEST_TARGET` (`zisk`, `sp1`, or `openvm`) — the cmake derives
+//! the target name (`monad-zkvm-guest-<suffix>`) and the per-backend mirror
+//! include directory (`zkvm/<suffix>/`) from that. Backends also differ in
+//! RISC-V march/flags and a couple of linker args, handled here. Consumer
+//! build.rs files just call `Backend::Zisk.build_guest_lib()` (or `Sp1`,
+//! `OpenVm`).
 
-use std::{env, path::{Path, PathBuf}, process::Command};
+use std::{env, path::{Path, PathBuf}};
+// Only the SP1 link step shells out; the ZisK and OpenVM paths hand the whole
+// archive build to the `cmake` crate.
+#[cfg(feature = "sp1")]
+use std::process::Command;
 
 // SP1 v6's RISC-V profile is rv64im (no atomics); ZisK's is rv64ima. The
 // default zkvm/ toolchain file picks rv64ima, so for SP1 we override the
@@ -35,10 +41,22 @@ const SP1_CXX_FLAGS: &str = "-march=rv64im -mabi=lp64 -mcmodel=medany \
     -ffunction-sections -fdata-sections";
 const SP1_ASM_FLAGS: &str = "-march=rv64im -mabi=lp64";
 
+// OpenVM 2 is rv32im-only (ILP32): the ISA caps guest addresses at 2^29 and
+// there is no 64-bit profile, so unlike ZisK/SP1 this is a genuinely 32-bit
+// build. No atomics ('a'), same as SP1. The RISC-V GCC therefore needs an
+// rv32im/ilp32 multilib for this backend — see zkvm/openvm/README.md.
+const OPENVM_C_FLAGS: &str = "-march=rv32im -mabi=ilp32 -mcmodel=medany \
+    -nostartfiles -ffunction-sections -fdata-sections";
+const OPENVM_CXX_FLAGS: &str = "-march=rv32im -mabi=ilp32 -mcmodel=medany \
+    -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti \
+    -ffunction-sections -fdata-sections";
+const OPENVM_ASM_FLAGS: &str = "-march=rv32im -mabi=ilp32";
+
 #[derive(Clone, Copy, Debug)]
 pub enum Backend {
     Zisk,
     Sp1,
+    OpenVm,
 }
 
 impl Backend {
@@ -48,6 +66,7 @@ impl Backend {
         match self {
             Self::Zisk => "zisk",
             Self::Sp1 => "sp1",
+            Self::OpenVm => "openvm",
         }
     }
 
@@ -67,6 +86,9 @@ impl Backend {
         match self {
             Self::Zisk => "riscv64ima-zisk-zkvm-elf",
             Self::Sp1 => "riscv64im-succinct-zkvm-elf",
+            // OpenVM guests build for the risc0 Rust target (Tier 3, known to
+            // cc-rs); OpenVM's transpiler consumes the resulting rv32im ELF.
+            Self::OpenVm => "riscv32im-risc0-zkvm-elf",
         }
     }
 
@@ -107,10 +129,18 @@ impl Backend {
         });
         cfg.define("CMAKE_PREFIX_PATH", &prefix_path);
 
-        if let Self::Sp1 = self {
-            cfg.define("CMAKE_C_FLAGS_INIT", SP1_C_FLAGS)
-                .define("CMAKE_CXX_FLAGS_INIT", SP1_CXX_FLAGS)
-                .define("CMAKE_ASM_FLAGS_INIT", SP1_ASM_FLAGS);
+        match self {
+            Self::Zisk => {}
+            Self::Sp1 => {
+                cfg.define("CMAKE_C_FLAGS_INIT", SP1_C_FLAGS)
+                    .define("CMAKE_CXX_FLAGS_INIT", SP1_CXX_FLAGS)
+                    .define("CMAKE_ASM_FLAGS_INIT", SP1_ASM_FLAGS);
+            }
+            Self::OpenVm => {
+                cfg.define("CMAKE_C_FLAGS_INIT", OPENVM_C_FLAGS)
+                    .define("CMAKE_CXX_FLAGS_INIT", OPENVM_CXX_FLAGS)
+                    .define("CMAKE_ASM_FLAGS_INIT", OPENVM_ASM_FLAGS);
+            }
         }
 
         let dst = cfg.build();
@@ -131,6 +161,15 @@ impl Backend {
                 println!("cargo:rustc-link-arg=-T{}", align_ld.display());
             }
             Self::Sp1 => {}
+            // OpenVM's memory layout comes from openvm-platform via the risc0
+            // target's link, and no script fragment is needed: rust-lld both
+            // synthesizes the __init_array_start/end boundary symbols the C++
+            // archive's static ctors are walked with and keeps .init_array
+            // alive through --gc-sections, so runtime::run_init_array sees a
+            // populated range. (Verified on the transpiled guest; contrast
+            // align.ld and patch_zkvm_ld, which exist because ZisK's and SP1's
+            // linker scripts do not do this for us.)
+            Self::OpenVm => {}
         }
         println!("cargo:rustc-link-arg=--gc-sections");
         println!(
@@ -151,6 +190,7 @@ impl Backend {
     /// accelerator header come from the same SP1 source. Unlike the ZisK path
     /// there is no Rust guest crate: `libzkevm.a` supplies `_start`, the
     /// allocator, the IO ABI, and every accelerator.
+    #[cfg(feature = "sp1")]
     pub fn build_guest_elf(self) -> PathBuf {
         self.link_guest_elf("zkvm/sp1/program/main.c", "monad-zkvm-guest-sp1.elf")
     }
@@ -158,6 +198,7 @@ impl Backend {
     /// SP1 guest ELF for the precompile golden-vector test entry. Same link as
     /// [`Self::build_guest_elf`], but with the precompile-test `main.c` (which
     /// calls `monad_zkvm_run_precompile_tests` instead of the witness entry).
+    #[cfg(feature = "sp1")]
     pub fn build_precompile_test_elf(self) -> PathBuf {
         self.link_guest_elf(
             "zkvm/test/precompile_tests/sp1_main.c",
@@ -169,6 +210,7 @@ impl Backend {
     /// the shared guest archive + `libzkevm.a` into `elf_name`. The archive and
     /// `libzkevm.a` builds are incremental/cached, so linking a second entry is
     /// cheap.
+    #[cfg(feature = "sp1")]
     fn link_guest_elf(self, main_rel: &str, elf_name: &str) -> PathBuf {
         assert!(matches!(self, Self::Sp1), "link_guest_elf is SP1-only");
 
@@ -248,6 +290,7 @@ impl Backend {
 /// (before `.data`) so the C++ guest's `main()` can run its static
 /// constructors — the upstream script targets Rust guests whose `_start`
 /// skips `.init_array`. Everything else (RAM layout, symbols) is kept verbatim.
+#[cfg(feature = "sp1")]
 fn patch_zkvm_ld(src: &Path, dst: &Path) {
     let script = std::fs::read_to_string(src)
         .unwrap_or_else(|e| panic!("failed to read {}: {e}", src.display()));
@@ -294,6 +337,7 @@ fn patch_zkvm_ld(src: &Path, dst: &Path) {
 /// cargo fetched for that dependency. cargo checks out the whole SP1 repo, so
 /// `zkevm/libzkevm-cabi`, `zkevm/zkvm.ld`, and `zkevm/include/` sit alongside
 /// the `crates/build` crate we depend on — no submodule or vendored blob.
+#[cfg(feature = "sp1")]
 fn sp1_zkevm_dir() -> PathBuf {
     let meta = cargo_metadata::MetadataCommand::new()
         .exec()
@@ -377,8 +421,9 @@ fn walk_emit(root: &Path) {
 }
 
 // The RISC-V GCC toolchain dir, from the RISCV_TOOLCHAIN_DIR env var set in
-// the local zkvm/.cargo/config.toml (see zkvm/README.md). Required for both
-// backends.
+// the local zkvm/.cargo/config.toml (see zkvm/README.md). Required for all
+// three backends. Note OpenVM additionally needs that toolchain to carry an
+// rv32im/ilp32 multilib (see zkvm/openvm/README.md).
 fn riscv_toolchain_dir() -> String {
     let dir = env::var("RISCV_TOOLCHAIN_DIR").unwrap_or_default();
     assert!(
@@ -392,6 +437,7 @@ fn riscv_toolchain_dir() -> String {
 // Full path to the RISC-V gcc under `<toolchain_dir>/bin`, auto-detecting the
 // target prefix the same way category/core/toolchains/riscv64-elf.cmake
 // does (riscv64-none-elf- for nix, riscv64-unknown-elf- for ZisK).
+#[cfg(feature = "sp1")]
 fn riscv_gcc(toolchain_dir: &str) -> PathBuf {
     let bin = Path::new(toolchain_dir).join("bin");
     for prefix in ["riscv64-none-elf-", "riscv64-unknown-elf-"] {

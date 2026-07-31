@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/runtime/uint128.hpp>
@@ -192,6 +193,19 @@ store_be_as(SrcT const x) noexcept
     static_assert(sizeof(DstT::bytes) == sizeof(SrcT));
     static_assert(std::is_trivially_copyable_v<DstT>);
     return std::bit_cast<DstT>(bswap(x));
+}
+
+// Narrows a 64-bit byte count, length or index to size_t. The identity on a
+// 64-bit target. On a 32-bit one (the rv32im zkVM guest) size_t is narrower
+// than the uint64_t these values are carried in, and many of them derive from
+// block or transaction input, so the value is asserted to fit rather than
+// silently truncated into an undersized allocation or a wild index.
+[[nodiscard]] constexpr size_t narrow_to_size(uint64_t const n)
+{
+    if constexpr (sizeof(size_t) < sizeof(uint64_t)) {
+        MONAD_ASSERT(n <= std::numeric_limits<size_t>::max());
+    }
+    return static_cast<size_t>(n);
 }
 
 MONAD_NAMESPACE_END

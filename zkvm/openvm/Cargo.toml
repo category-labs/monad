@@ -1,0 +1,77 @@
+[package]
+name = "monad-zkvm-openvm"
+description = "Monad witness-execution guest for the OpenVM 2 zkVM"
+version = "0.1.0"
+edition = "2021"
+
+# Standalone workspace, for the same reason as zkvm/zisk: the guest cross-
+# builds for riscv32im-risc0-zkvm-elf with OpenVM's patched crypto crates and
+# must not pollute the host workspace's dependency resolution.
+[workspace]
+
+# The witness-execution guest (default) and the precompile golden-vector test
+# guest share this crate's build.rs (which builds the C++ guest archive) and
+# the runtime/accel modules; each bin links that archive and calls a
+# different C++ entry.
+[[bin]]
+name = "monad-zkvm-openvm"
+path = "src/main.rs"
+
+[[bin]]
+name = "monad-zkvm-openvm-precompile-test"
+path = "../test/precompile_tests/openvm_main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[dependencies]
+# OpenVM v2 guest SDK, from powdr's fork rather than openvm-org upstream.
+#
+# powdr-openvm — the autoprecompile middleware this backend is meant to feed —
+# pins every OpenVM crate to this fork and tag, and the pin is not negotiable
+# from our side: the `.vmexe` serialisation differs between it and upstream
+# v2.0.1 (a 2.0.1-transpiled executable fails to deserialise with a bitcode
+# error), so the guest, the host driver in `script/`, and the `cargo-openvm`
+# CLI that transpiles must all be built from this one tag.
+#
+# Everything resolves from that single tag so the guest libs and the `openvm`
+# crate cannot drift apart.
+openvm = { git = "https://github.com/powdr-labs/openvm.git", tag = "v2.0.0-beta.2-powdr.1" }
+openvm-keccak256 = { git = "https://github.com/powdr-labs/openvm.git", tag = "v2.0.0-beta.2-powdr.1", default-features = false }
+# default-features = false turns off `import_sha2`, which otherwise replaces the
+# inherent `Sha256::digest` -> [u8; 32] with the `sha2::Digest` blanket impl
+# returning a `GenericArray`. The plain array is what the accelerator ABI wants,
+# and skipping the trait means this crate does not depend on openvm-sha2 and
+# ripemd resolving to the same `digest` crate version.
+openvm-sha2 = { git = "https://github.com/powdr-labs/openvm.git", tag = "v2.0.0-beta.2-powdr.1", default-features = false }
+
+# Required by the generated openvm_init.rs, which calls
+# `openvm_algebra_guest::moduli_macros::moduli_init!`, `..::complex_macros::
+# complex_init!` and `openvm_ecc_guest::sw_macros::sw_init!` by absolute path.
+# They are not referenced anywhere else in this crate's own source.
+openvm-algebra-guest = { git = "https://github.com/powdr-labs/openvm.git", tag = "v2.0.0-beta.2-powdr.1" }
+openvm-ecc-guest = { git = "https://github.com/powdr-labs/openvm.git", tag = "v2.0.0-beta.2-powdr.1" }
+
+# OpenVM's patched RustCrypto curve crates. Upstream names these packages
+# `k256`/`p256` (deliberately, so they can also be used via [patch.crates-io]),
+# so the local aliases carry the openvm- prefix and `package` names the real
+# one. `ecdsa` is in their default feature set; it is named here so a future
+# default-features change cannot silently drop signature verification.
+# Concrete BN254 / BLS12-381 field, curve and pairing types. The curve features
+# are not additive conveniences: each one pulls in a `moduli_declare!` /
+# `sw_declare!` set that the generated openvm_init.rs must also list, so they
+# have to match `openvm.toml`'s `pairing.supported_curves` exactly.
+openvm-pairing = { git = "https://github.com/powdr-labs/openvm.git", tag = "v2.0.0-beta.2-powdr.1", features = ["bn254", "bls12_381"] }
+
+openvm-k256 = { git = "https://github.com/powdr-labs/openvm.git", tag = "v2.0.0-beta.2-powdr.1", package = "k256", features = ["ecdsa"] }
+openvm-p256 = { git = "https://github.com/powdr-labs/openvm.git", tag = "v2.0.0-beta.2-powdr.1", package = "p256", features = ["ecdsa"] }
+
+# Software fallbacks for precompiles with no OpenVM extension (see accel.rs).
+ripemd = { version = "0.1", default-features = false }
+aurora-engine-modexp = { version = "1.2", default-features = false }
+
+[build-dependencies]
+monad-zkvm-build-support = { path = "../build-support" }

@@ -21,6 +21,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
+#include <category/core/runtime/uint128.hpp>
 
 #include <boost/container/small_vector.hpp>
 #include <evmc/evmc.hpp>
@@ -43,7 +44,10 @@ struct storage_page_t
     static constexpr size_t NUM_PAIRS = SLOTS / 2;
     static constexpr uint8_t SLOT_OFFSET_MASK = (1 << PAGE_KEY_SHIFT) - 1;
 
-    using bitmap_t = unsigned __int128;
+    // 128 bits, one per slot. uint128_t rather than `unsigned __int128` so the
+    // page commitment builds for 32-bit targets; the two are layout-identical,
+    // which blake3_seal's little-endian memcpy of this field relies on.
+    using bitmap_t = uint128_t;
 
     storage_page_t() noexcept = default;
 
@@ -138,7 +142,7 @@ struct storage_page_t
 private:
     bool has_bit_(uint8_t const i) const
     {
-        return (bitmap_ >> i) & static_cast<bitmap_t>(1);
+        return ((bitmap_ >> i) & static_cast<bitmap_t>(1)) != 0;
     }
 
     void set_bit_(uint8_t const i)

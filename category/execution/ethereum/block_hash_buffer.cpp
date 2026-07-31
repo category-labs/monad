@@ -69,7 +69,7 @@ BlockHashBufferProposal::BlockHashBufferProposal(
         n_ > 0 && n_ > buf_->n(), "n_=%lu, n=%lu", n_, buf_->n());
     deltas_.push_back(h);
     deltas_.insert(deltas_.end(), parent.deltas_.begin(), parent.deltas_.end());
-    deltas_.resize(n_ - buf_->n());
+    deltas_.resize(narrow_to_size(n_ - buf_->n()));
 }
 
 uint64_t BlockHashBufferProposal::n() const
@@ -80,7 +80,7 @@ uint64_t BlockHashBufferProposal::n() const
 bytes32_t const &BlockHashBufferProposal::get(uint64_t const n) const
 {
     MONAD_ASSERT_PRINTF(n < n_ && n + N >= n_, "n_=%lu, n=%lu", n_, n);
-    size_t const idx = n_ - n - 1;
+    size_t const idx = narrow_to_size(n_ - n - 1);
     if (idx < deltas_.size()) {
         return deltas_.at(idx);
     }

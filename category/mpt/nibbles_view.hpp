@@ -17,6 +17,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/nibble.h>
 #include <category/mpt/config.hpp>
@@ -143,8 +144,8 @@ public:
     }
 };
 
-static_assert(sizeof(Nibbles) == 16);
-static_assert(alignof(Nibbles) == 8);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(Nibbles) == 16);
+MONAD_ASSERT_LP64_LAYOUT(alignof(Nibbles) == 8);
 
 class NibblesView
 {
@@ -266,8 +267,8 @@ public:
     }
 };
 
-static_assert(sizeof(NibblesView) == 16);
-static_assert(alignof(NibblesView) == 8);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(NibblesView) == 16);
+MONAD_ASSERT_LP64_LAYOUT(alignof(NibblesView) == 8);
 static_assert(std::is_trivially_copyable_v<NibblesView> == true);
 
 inline Nibbles::Nibbles(NibblesView const nibbles)

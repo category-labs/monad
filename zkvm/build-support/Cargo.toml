@@ -1,6 +1,6 @@
 [package]
 name = "monad-zkvm-build-support"
-description = "Shared build.rs helper for the monad ZisK / SP1 guest crates"
+description = "Shared build.rs helper for the monad ZisK / SP1 / OpenVM guest crates"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,13 +10,21 @@ edition = "2021"
 [lib]
 path = "src/lib.rs"
 
+[features]
+# The SP1 guest-ELF link step. Off by default because pulling SP1 in is not
+# free: SP1 v6.3.1 pins `p3-field =0.4.3-succinct` while OpenVM pins an exact
+# version in the same `0.4` bucket, and two exact pins in one bucket cannot
+# co-resolve in a single lockfile. Only `zkvm/sp1/script` needs this, and only
+# it turns it on; the ZisK and OpenVM guests build the archive and stop.
+sp1 = ["dep:sp1-build", "dep:cargo_metadata"]
+
 [dependencies]
 cmake = "0.1"
 # Locates the sp1-build git checkout (which carries the whole SP1 repo, incl.
 # zkevm/libzkevm-cabi) so build.rs can compile libzkevm.a from source.
-cargo_metadata = "0.18"
+cargo_metadata = { version = "0.18", optional = true }
 # The SP1 zkEVM SDK: `find_lld()` and `build_program_staticlib()` for the guest
 # link step, and — via cargo's full-repo git checkout — the `zkevm/` source
 # (libzkevm-cabi, zkvm.ld, include/) that build.rs compiles into libzkevm.a
 # from source. Pinned to a release tag so the built lib matches this ABI.
-sp1-build = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
+sp1-build = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1", optional = true }

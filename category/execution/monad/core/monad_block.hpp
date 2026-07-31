@@ -71,8 +71,8 @@ struct MonadSignerMap
     operator==(MonadSignerMap const &, MonadSignerMap const &) = default;
 };
 
-static_assert(sizeof(MonadSignerMap) == 40);
-static_assert(alignof(MonadSignerMap) == 8);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(MonadSignerMap) == 40);
+MONAD_ASSERT_LP64_LAYOUT(alignof(MonadSignerMap) == 8);
 
 struct MonadSignatures
 {
@@ -83,8 +83,8 @@ struct MonadSignatures
     operator==(MonadSignatures const &, MonadSignatures const &) = default;
 };
 
-static_assert(sizeof(MonadSignatures) == 136);
-static_assert(alignof(MonadSignatures) == 8);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(MonadSignatures) == 136);
+MONAD_ASSERT_LP64_LAYOUT(alignof(MonadSignatures) == 8);
 
 template <typename MonadVote>
 struct MonadQuorumCertificate
@@ -100,10 +100,10 @@ struct MonadQuorumCertificate
 using MonadQuorumCertificateV0 = MonadQuorumCertificate<MonadVoteV0>;
 using MonadQuorumCertificateV1 = MonadQuorumCertificate<MonadVoteV1>;
 
-static_assert(sizeof(MonadQuorumCertificateV0) == 224);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(MonadQuorumCertificateV0) == 224);
 static_assert(alignof(MonadQuorumCertificateV0) == 8);
 
-static_assert(sizeof(MonadQuorumCertificateV1) == 184);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(MonadQuorumCertificateV1) == 184);
 static_assert(alignof(MonadQuorumCertificateV1) == 8);
 
 template <class MonadQuorumCertificate>
@@ -146,13 +146,13 @@ struct MonadConsensusBlockHeaderV2 : MonadConsensusBlockHeaderV1
         MonadConsensusBlockHeaderV2 const &) = default;
 };
 
-static_assert(sizeof(MonadConsensusBlockHeaderV0) == 1232);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(MonadConsensusBlockHeaderV0) == 1232);
 static_assert(alignof(MonadConsensusBlockHeaderV0) == 8);
 
-static_assert(sizeof(MonadConsensusBlockHeaderV1) == 1192);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(MonadConsensusBlockHeaderV1) == 1192);
 static_assert(alignof(MonadConsensusBlockHeaderV1) == 8);
 
-static_assert(sizeof(MonadConsensusBlockHeaderV2) == 1216);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(MonadConsensusBlockHeaderV2) == 1216);
 static_assert(alignof(MonadConsensusBlockHeaderV2) == 8);
 
 struct MonadConsensusBlockBody
@@ -166,8 +166,8 @@ struct MonadConsensusBlockBody
         MonadConsensusBlockBody const &) = default;
 };
 
-static_assert(sizeof(MonadConsensusBlockBody) == 72);
-static_assert(alignof(MonadConsensusBlockBody) == 8);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(MonadConsensusBlockBody) == 72);
+MONAD_ASSERT_LP64_LAYOUT(alignof(MonadConsensusBlockBody) == 8);
 
 template <class MonadConsensusBlockHeader>
 struct MonadConsensusBlock
@@ -183,13 +183,13 @@ using MonadConsensusBlockV0 = MonadConsensusBlock<MonadConsensusBlockHeaderV0>;
 using MonadConsensusBlockV1 = MonadConsensusBlock<MonadConsensusBlockHeaderV1>;
 using MonadConsensusBlockV2 = MonadConsensusBlock<MonadConsensusBlockHeaderV2>;
 
-static_assert(sizeof(MonadConsensusBlockV0) == 1304);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(MonadConsensusBlockV0) == 1304);
 static_assert(alignof(MonadConsensusBlockV0) == 8);
 
-static_assert(sizeof(MonadConsensusBlockV1) == 1264);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(MonadConsensusBlockV1) == 1264);
 static_assert(alignof(MonadConsensusBlockV1) == 8);
 
-static_assert(sizeof(MonadConsensusBlockV2) == 1288);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(MonadConsensusBlockV2) == 1288);
 static_assert(alignof(MonadConsensusBlockV2) == 8);
 
 MONAD_NAMESPACE_END

@@ -21,6 +21,9 @@
 
 #include <zkvm/core/zkvm_io.h>
 
+#include <category/core/assert.h>
+#include <category/execution/ethereum/precompiles.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -101,6 +104,13 @@ int main(int const argc, char **const argv)
     }
     g_input.assign(
         std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{});
+
+    // This runner links the host precompiles rather than the backends'
+    // accelerator shims, so it inherits the host's KZG setup requirement:
+    // point_evaluation_impl unwraps a trusted setup that every other host
+    // entry point (cmd/monad, the test suites) loads at startup. In a real
+    // guest build this is the shadow header's no-op.
+    MONAD_ASSERT(monad::init_trusted_setup());
 
     MONAD_ZKVM_X86_ENTRY();
     return 0;

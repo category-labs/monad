@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/byte_string.hpp>
+#include <category/core/config.hpp>
 #include <category/core/endian.hpp> // NOLINT
 #include <category/core/keccak.h>
 #include <category/core/math.hpp>
@@ -360,7 +361,7 @@ struct ChildData
     void copy_old_child(Node *old, unsigned i);
 };
 
-static_assert(sizeof(ChildData) == 80);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(ChildData) == 80);
 static_assert(alignof(ChildData) == 8);
 
 constexpr size_t calculate_node_size(

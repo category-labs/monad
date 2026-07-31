@@ -39,7 +39,7 @@ namespace monad::vm::runtime
         auto const &tx_context = *ctx->env.tx_context;
 
         auto const first_allowed_block =
-            std::max(tx_context.block_number - 256, 0L);
+            std::max(tx_context.block_number - 256, int64_t{0});
         if (block_number >= first_allowed_block &&
             block_number < tx_context.block_number) {
             auto const hash = static_cast<bytes32_t>(

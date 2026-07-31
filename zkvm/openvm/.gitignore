@@ -1,0 +1,7 @@
+# `cargo openvm build` writes the transpiled .vmexe here (the default
+# --output-dir, named after the CLI rather than chosen by us).
+/openvm/
+
+# openvm_init.rs is NOT ignored: it is generated from openvm.toml, but upstream
+# tracks it for every guest crate, and committing it keeps a plain `cargo build`
+# (and rust-analyzer) working without first running `cargo openvm build`.

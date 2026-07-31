@@ -152,8 +152,9 @@ struct std::hash<monad::bytes32_t>
 {
     size_t operator()(monad::bytes32_t const &x) const noexcept
     {
-        return ankerl::unordered_dense::detail::wyhash::hash(
-            x.bytes, sizeof(x.bytes));
+        return static_cast<size_t>(
+            ankerl::unordered_dense::detail::wyhash::hash(
+                x.bytes, sizeof(x.bytes)));
     }
 };
 

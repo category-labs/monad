@@ -49,7 +49,7 @@ struct fnv1a_hash
     {
         auto ret = begin();
         add(ret, v);
-        return ret;
+        return static_cast<size_t>(ret);
     }
 };
 

@@ -4,7 +4,9 @@ Phase 0 scaffold for executing monad witnesses inside a zero-knowledge VM.
 The C++ guest library is shared across backends. On ZisK a Rust guest crate
 owns the entrypoint and the input/output ABI (via ziskos); on SP1 the
 entrypoint (`program/main.c`) and the IO/accelerator ABI come from `libzkevm.a`,
-leaving only the host-side driver in Rust.
+leaving only the host-side driver in Rust; on OpenVM a Rust guest crate owns
+the entrypoint and implements the whole ABI itself, since OpenVM has no eth-act
+runtime library at all.
 
 ## Layout
 
@@ -15,23 +17,27 @@ zkvm/
 │   └── zkvm_halt.h
 ├── category/             # mirror tree shadowing host headers (BEFORE include path)
 ├── guest/                # C++ library called from every backend
-│   ├── ffi.cpp           # stub monad_zkvm_execute_witness (Phase 0)
+│   ├── ffi.cpp           # monad_zkvm_execute_witness (witness -> post-state root)
 │   └── CMakeLists.txt
 ├── build-support/        # guest-build helpers (build_guest_lib / build_guest_elf)
 ├── zisk/                 # ZisK guest crate
+├── openvm/               # OpenVM 2 guest crate (see openvm/README.md)
+│   └── script/           #   host driver / prover (clap CLI)
 └── sp1/                  # SP1 cargo workspace
     ├── program/          #   C guest entry (main.c)
     └── script/           #   host driver / prover (clap CLI)
 ```
 
-Both backends drive the same C++ guest entry point: a parameterless
+All three backends drive the same C++ guest entry point: a parameterless
 `monad_zkvm_execute_witness()` that reads the witness via `read_input` and
 emits the post-state root via `write_output`, both from
 [`zkvm_io.h`](core/zkvm_io.h). On ZisK the guest is a Rust crate and those
 symbols are provided by `ziskos`; on SP1 there is no Rust guest — the entry is
 `program/main.c`, and `read_input` / `write_output` (plus `_start`, the
 allocator, and the `zkvm_*` accelerators) come from `libzkevm.a`, built from the
-SP1 zkEVM SDK source at build time.
+SP1 zkEVM SDK source at build time. On OpenVM the guest is a Rust crate again,
+but nothing analogous to `ziskos` or `libzkevm.a` exists, so the crate supplies
+the I/O ABI and all 19 accelerators itself.
 
 ## Prerequisites
 
@@ -142,7 +148,7 @@ The Rust crates pick this same target up through the
 
 ## Testing
 
-Besides block witnesses, both backends can be exercised against the
+Besides block witnesses, all three backends can be exercised against the
 go-ethereum precompile golden vectors, which drive every crypto accelerator
 directly — no witness needed. A test guest
 ([`precompile_test.cpp`](test/precompile_tests/precompile_test.cpp)) runs each
@@ -154,7 +160,7 @@ through the `zkvm_*` accelerators) and commits a pass/fail summary.
 [`gen_precompile_vectors.py`](test/precompile_tests/gen_precompile_vectors.py)
 serializes the geth golden JSON (vendored at
 `third_party/go-ethereum/core/vm/testdata/precompiles`) into a single binary
-blob consumed by both backends. Run from the repo root:
+blob consumed by all three backends. Run from the repo root:
 
 ```sh
 python3 zkvm/test/precompile_tests/gen_precompile_vectors.py \
@@ -163,6 +169,22 @@ python3 zkvm/test/precompile_tests/gen_precompile_vectors.py \
 #  → wrote 1847 cases, 3645425 bytes -> /tmp/pt-vectors.bin
 # (pass --exclude 0x09,0x11 to skip specific precompile addresses)
 ```
+
+geth's precompile testdata has no point-evaluation file, so that default set
+leaves 0x0a — and therefore the whole KZG accelerator — untested. Adding
+`--kzg` pulls those cases from c-kzg-4844's consensus-layer vectors, which are
+also vendored, and prepends the versioned hash the EVM layer expects:
+
+```sh
+python3 zkvm/test/precompile_tests/gen_precompile_vectors.py \
+    third_party/go-ethereum/core/vm/testdata/precompiles \
+    /tmp/pt-vectors.bin \
+    --kzg third_party/c-kzg-4844/tests/verify_kzg_proof/kzg-mainnet
+#  → wrote 1961 cases, 3672023 bytes -> /tmp/pt-vectors.bin
+```
+
+It is a flag rather than the default so the plain invocation stays
+reproducible from the go-ethereum tree alone.
 
 ### 2. Run on SP1
 
@@ -202,16 +224,64 @@ xxd -p /tmp/pt-out.bin | head -1
 #  → 50523031370700003707000000000000000000000000...  (zero-padded to 256 bytes)
 ```
 
+### 4. Run on OpenVM
+
+OpenVM transpiles the test guest to a second `.vmexe` and can execute it
+without proving. The input is a JSON file of hex strings under an `input` key,
+each prefixed `01` to mark it as bytes rather than field elements:
+
+```sh
+cd zkvm/openvm
+# The CLI must come from powdr's OpenVM fork — see openvm/README.md's version
+# pin section; a mismatched transpiler produces an unloadable .vmexe.
+RISCV_TOOLCHAIN_DIR=~/riscv_gcc_multilib cargo openvm build
+
+python3 -c "
+import json, sys
+b = open(sys.argv[1],'rb').read()
+json.dump({'input': ['01' + b.hex()]}, open(sys.argv[2],'w'))
+" /tmp/pt-vectors.bin /tmp/pt-vectors.json
+
+cargo openvm run \
+    --exe openvm/release/monad-zkvm-openvm-precompile-test.vmexe \
+    --input /tmp/pt-vectors.json
+#  → Execution output: [80, 82, 48, 49, 169, 7, 0, 0, 169, 7, 0, 0, 0, ...]
+```
+
+Roughly three minutes for the full set; the BLS12-381 subgroup checks over the
+software G2 arithmetic dominate.
+
+### Witness execution
+
+All three backends take an RLP-encoded execution witness and emit the block's
+post-state root. The witness must carry a **real mainnet block**: the guest
+picks its EVM revision from the block number and timestamp on the mainnet fork
+schedule, so a fixture block numbered 1 with a small timestamp is rejected as
+an unsupported fork.
+
+`zkvm/guest/x86_test_runner.cpp` builds the same guest entry as a native
+executable linking the host precompiles, which is the fastest way to get a
+readable stack trace out of a failing witness:
+
+```sh
+cmake --build build --target monad-zkvm-x86-test-runner
+./build/zkvm/guest/monad-zkvm-x86-test-runner --input /path/to/witness.bin | xxd -p
+```
+
+It is a semantic reference, not an ABI test — it does not route crypto through
+the `zkvm_*` accelerators.
+
 ### Reading the result
 
-Both backends emit the same `PR01` summary (little-endian):
+All three backends emit the same `PR01` summary (little-endian):
 
 ```
 "PR01" | total u32 | passed u32 | failed u32 | logged u32 |
     logged * { index u32 | addr u16 | got_status u8 }
 ```
 
-A full pass has `total == passed` and `failed == 0`. Above, both decode to
-total = passed = `0x00000737` = 1847, failed = 0. On failure, up to 32 records
-(capped to fit ZisK's 256-byte committed output) each name the failing vector's
-index, precompile address, and returned status.
+A full pass has `total == passed` and `failed == 0`. Above, SP1 and ZisK both
+decode to total = passed = `0x00000737` = 1847 and OpenVM to `0x000007a9` =
+1961 (the geth set plus the KZG cases), all with failed = 0. On failure, up to
+32 records (capped to fit ZisK's 256-byte committed output) each name the
+failing vector's index, precompile address, and returned status.

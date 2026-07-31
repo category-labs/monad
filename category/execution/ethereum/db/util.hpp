@@ -99,8 +99,8 @@ protected:
     virtual mpt::Compute &storage_root_compute() const;
 };
 
-static_assert(sizeof(MachineBase) == 16);
-static_assert(alignof(MachineBase) == 8);
+MONAD_ASSERT_LP64_LAYOUT(sizeof(MachineBase) == 16);
+MONAD_ASSERT_LP64_LAYOUT(alignof(MachineBase) == 8);
 
 struct InMemoryMachine : public MachineBase
 {
@@ -230,7 +230,9 @@ void write_to_file(
 mpt::Node::SharedPtr load_from_binary(
     mpt::Db &, std::istream &accounts, std::istream &code,
     uint64_t init_block_number = 0,
-    size_t buf_size = 1ul << 32); // TODO: dynamic loading
+    // 4 GiB, halved where that does not fit in size_t (32-bit targets).
+    size_t buf_size = size_t{1} << (sizeof(size_t) >= 8 ? 32 : 31));
+// TODO: dynamic loading
 
 mpt::Node::SharedPtr
 load_header(mpt::Node::SharedPtr, mpt::Db &, BlockHeader const &);

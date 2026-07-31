@@ -516,7 +516,7 @@ inline uint256_t signextend(uint256_t const &byte_index_256, uint256_t const &x)
     }
 
     uint64_t const byte_index = byte_index_256[0];
-    uint64_t const word_index = byte_index >> 3;
+    size_t const word_index = static_cast<size_t>(byte_index >> 3);
     uint64_t const word = x[word_index];
     int64_t const signed_word = static_cast<int64_t>(word);
     uint64_t const bit_index = (byte_index & 7) * 8;
@@ -529,7 +529,7 @@ inline uint256_t signextend(uint256_t const &byte_index_256, uint256_t const &x)
     uint64_t const lower = static_cast<uint64_t>(signed_lower);
     uint64_t const sign_bits = static_cast<uint64_t>(signed_byte >> 63);
     ret[word_index] = upper | lower;
-    for (uint64_t j = word_index + 1; j < 4; ++j) {
+    for (size_t j = word_index + 1; j < 4; ++j) {
         ret[j] = sign_bits;
     }
     return ret;
@@ -704,8 +704,7 @@ long_div(size_t m, uint64_t const *u, uint64_t v, uint64_t *quot)
 constexpr void
 knuth_div(size_t m, uint64_t *u, size_t n, uint64_t const *v, uint64_t *quot)
 {
-    using u128 = unsigned __int128;
-    using i128 = __int128;
+    using u128 = uint128_t;
     constexpr size_t BASE_SHIFT = 64;
 
     MONAD_DEBUG_ASSERT(m >= n);
@@ -781,7 +780,7 @@ knuth_div(size_t m, uint64_t *u, size_t n, uint64_t const *v, uint64_t *quot)
             u128 const prod = q_hat * v[j];
             t = u[j + ix] - k - (prod & 0xffffffffffffffff);
             u[j + ix] = static_cast<uint64_t>(t);
-            k = (prod >> 64) - static_cast<u128>(static_cast<i128>(t) >> 64);
+            k = (prod >> 64) - arithmetic_shift_right_64(t);
         }
         t = u[ix + n] - k;
         u[ix + n] = static_cast<uint64_t>(t);
@@ -789,7 +788,7 @@ knuth_div(size_t m, uint64_t *u, size_t n, uint64_t const *v, uint64_t *quot)
         // Our estimate for q_hat was one too high
         // u[ix+n .. ix] += v[n .. 0]
         // q_hat -= 1
-        if (t >> 127) {
+        if ((t.hi >> 63) != 0) {
             q_hat -= 1;
             u128 k = 0;
             for (size_t j = 0; j < n; j++) {
@@ -997,7 +996,7 @@ inline uint256_t byte(uint256_t const &byte_index_256, uint256_t const &x)
         return 0;
     }
     uint64_t const byte_index = 31 - byte_index_256[0];
-    uint64_t const word_index = byte_index >> 3;
+    size_t const word_index = static_cast<size_t>(byte_index >> 3);
     uint64_t const word = x[word_index];
     uint64_t const bit_index = (byte_index & 7) << 3;
     uint64_t const byte = static_cast<uint8_t>(word >> bit_index);

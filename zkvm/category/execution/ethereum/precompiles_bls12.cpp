@@ -47,7 +47,7 @@ namespace bls12
             536,  536, 535, 534, 533, 532, 532, 531, 530, 529, 528, 528, 527,
             526,  525, 525, 524, 523, 522, 522, 521, 520, 520, 519};
 
-        return table[std::min(k, 128ul) - 1];
+        return table[static_cast<size_t>(std::min(k, uint64_t{128})) - 1];
     }
 
     template <>
@@ -67,7 +67,7 @@ namespace bls12
             540,  539,  538, 537, 537, 536, 535, 535, 534, 533, 532, 532, 531,
             530,  530,  529, 528, 528, 527, 526, 526, 525, 524, 524};
 
-        return table[std::min(k, 128ul) - 1];
+        return table[static_cast<size_t>(std::min(k, uint64_t{128})) - 1];
     }
 }
 

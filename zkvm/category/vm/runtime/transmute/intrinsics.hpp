@@ -36,7 +36,8 @@ namespace monad::vm::runtime
         std::memcpy(
             as_bytes(v),
             bytes,
-            std::min(max_len, static_cast<int64_t>(uint256_t::num_bytes)));
+            static_cast<size_t>(
+                std::min(max_len, static_cast<int64_t>(uint256_t::num_bytes))));
         return v;
     }
 }

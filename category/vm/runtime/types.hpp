@@ -18,6 +18,7 @@
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -399,8 +400,8 @@ namespace monad::vm::runtime
     };
 
     // Update context.S accordingly if these offsets change:
-    static_assert(offsetof(Context, gas_remaining) == 16);
-    static_assert(offsetof(Context, memory) == 264);
+    MONAD_ASSERT_LP64_LAYOUT(offsetof(Context, gas_remaining) == 16);
+    MONAD_ASSERT_LP64_LAYOUT(offsetof(Context, memory) == 264);
     static_assert(offsetof(Memory, size) == 0);
     static_assert(offsetof(Memory, capacity) == 4);
     static_assert(offsetof(Memory, data) == 8);

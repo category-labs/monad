@@ -79,5 +79,16 @@ namespace monad::trace::call_trace
     {
     };
 
-    using Signature = Signature<Enter, Exit, Log, SelfDestruct, Finish, Reset>;
+    struct GetCallFrames
+    {
+        explicit GetCallFrames(std::span<CallFrame const> *call_frames)
+            : call_frames{call_frames}
+        {
+        }
+
+        std::span<CallFrame const> *call_frames;
+    };
+
+    using Signature =
+        Signature<Enter, Exit, Log, SelfDestruct, Finish, Reset, GetCallFrames>;
 }

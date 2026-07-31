@@ -421,12 +421,14 @@ Receipt ExecuteTransaction<traits>::execute_final(
         receipt.add_log(std::move(log));
     }
 
-    call_tracer_.on_finish(receipt.gas_used);
+    tx_trace_context_.run<trace::call_trace::Finish>(receipt.gas_used);
     trace::run_tracer<traits>(state_tracer_, state);
+    std::span<CallFrame const> call_frames{};
+    tx_trace_context_.run<trace::call_trace::GetCallFrames>(&call_frames);
     record_txn_output_events(
         static_cast<uint32_t>(this->i_),
         receipt,
-        call_tracer_.get_call_frames(),
+        call_frames,
         state);
 
     return receipt;
@@ -456,7 +458,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
         state.set_original_nonce(sender_, tx_.nonce);
 
-        call_tracer_.reset();
+        tx_trace_context_.run<trace::call_trace::Reset>();
         trace::reset(state_tracer_);
 
         auto result = execute_impl2(state);
@@ -481,7 +483,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
 
-        call_tracer_.reset();
+        tx_trace_context_.run<trace::call_trace::Reset>();
         trace::reset(state_tracer_);
 
         auto result = execute_impl2(state);

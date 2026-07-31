@@ -65,6 +65,11 @@ public:
         CallTracerBase &, trace::StateTracer &, evmc_tx_context const &,
         BlockHashBuffer const &, State &, bool log_native_transfers) noexcept;
 
+    virtual TxTraceContext get_tx_trace_context() const noexcept
+    {
+        return TxTraceContext{};
+    }
+
     virtual ~EvmcHostBase() noexcept = default;
 
     virtual evmc::bytes32 get_storage(
@@ -162,7 +167,7 @@ struct EvmcHost final : public EvmcHostBase
             auto const [result, transferred_balance] =
                 state_.selfdestruct<traits>(address, beneficiary);
 
-            call_tracer_.on_self_destruct(
+            tx_trace_context_.run<trace::call_trace::SelfDestruct>(
                 address, beneficiary, transferred_balance);
 
             emit_native_transfer_event(
@@ -243,7 +248,7 @@ struct EvmcHost final : public EvmcHostBase
         return call_tracer_;
     }
 
-    TxTraceContext get_tx_trace_context() const noexcept
+    TxTraceContext get_tx_trace_context() const noexcept override
     {
         return tx_trace_context_;
     }
@@ -270,7 +275,7 @@ struct EvmcHost final : public EvmcHostBase
                              .build();
 
             state_.store_log(event);
-            call_tracer_.on_log(std::move(event));
+            tx_trace_context_.run<trace::call_trace::Log>(std::move(event));
         }
     }
 };

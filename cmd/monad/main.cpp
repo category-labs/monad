@@ -197,15 +197,20 @@ try {
         zkvm_witness,
         "directory to write a zkVM execution witness and post-state root to "
         "for every executed block (ethereum chains only)");
-    auto *const as_eth_blocks_flag = cli.add_flag(
+    cli.add_flag(
         "--as-eth-blocks,--as_eth_blocks",
         as_eth_blocks,
         "ingest monad blocks in evm format");
+    // No longer ->needs(as_eth_blocks_flag): the ethereum runloop honours this
+    // too now, so the flag means the same thing on every path. Tying it to
+    // --as-eth-blocks was correct while only the monad runloop could wait, but
+    // it made the option unusable for exactly the case that needs it most —
+    // following the chain head with one long-lived process.
     cli.add_option(
-           "--block-db-timeout,--block_db_timeout",
-           block_db_timeout,
-           "timeout in seconds for reading blocks from blockdb (0 = no retry)")
-        ->needs(as_eth_blocks_flag);
+        "--block-db-timeout,--block_db_timeout",
+        block_db_timeout,
+        "seconds to wait for a block that is not in the block_db yet before "
+        "treating its absence as fatal (0 = no retry, abort immediately)");
     cli.add_option("--chain-rlp", chain_rlp_path, "path to chain rlp file");
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
@@ -465,7 +470,12 @@ try {
                 stop,
                 trace_calls,
                 {},
-                witness_dump.has_value() ? &*witness_dump : nullptr);
+                witness_dump.has_value() ? &*witness_dump : nullptr,
+                // Same meaning as on the monad runloop: wait this long for a
+                // block that has not been written to the block_db yet. Zero
+                // (the default) keeps the historical abort-immediately
+                // behaviour.
+                block_db_timeout);
         case CHAIN_CONFIG_HIVE_NET:
             return runloop_ethereum(
                 *chain,

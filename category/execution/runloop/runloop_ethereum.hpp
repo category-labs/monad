@@ -59,6 +59,19 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
     sig_atomic_t const volatile &, bool enable_tracing,
     std::filesystem::path const &rlp_path = {},
-    WitnessDumpConfig const *witness_dump = nullptr);
+    WitnessDumpConfig const *witness_dump = nullptr,
+    // How long to wait for a block that is not in the block_db YET, before
+    // treating its absence as fatal. Zero keeps the historical behaviour: a
+    // missing block aborts immediately, which is right for replaying finalized
+    // history where the caller guarantees the range exists.
+    //
+    // Non-zero is what lets ONE process follow the chain head. The loop is
+    // already unbounded (--nblocks defaults to UINT64_MAX); catching up with
+    // the tip was its only exit, because "not fetched yet" — a normal condition
+    // a few seconds from resolving — was indistinguishable from "corrupt". The
+    // monad runloop already has this via --block-db-timeout; this gives the
+    // ethereum runloop the same grace period, and the flag the same meaning on
+    // both paths instead of being silently ignored on one.
+    std::chrono::seconds block_db_timeout = std::chrono::seconds::zero());
 
 MONAD_NAMESPACE_END

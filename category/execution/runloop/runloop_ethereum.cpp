@@ -62,6 +62,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <vector>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -413,7 +414,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
     bool const enable_tracing, std::filesystem::path const &rlp_path,
-    WitnessDumpConfig const *const witness_dump)
+    WitnessDumpConfig const *const witness_dump,
+    std::chrono::seconds const block_db_timeout)
 {
     uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
@@ -438,10 +440,38 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
     while (block_num <= end_block_num && stop == 0) {
         Block block;
-        MONAD_ASSERT_PRINTF(
-            block_db.get(block_num, block),
-            "Could not query %lu from blockdb",
-            block_num);
+        // Wait for a block that has not been written yet, rather than treating
+        // its absence as corruption. The assertion is KEPT as the terminal
+        // condition — only now it fires once the grace period has elapsed, so a
+        // genuinely missing block still aborts loudly and a block that is
+        // merely a few seconds away no longer does. Skipping is never an
+        // option: this is a sequential state machine, and applying N+1 on the
+        // state of N-1 would diverge silently and only surface hundreds of
+        // blocks later.
+        if (block_db_timeout == std::chrono::seconds::zero()) {
+            MONAD_ASSERT_PRINTF(
+                block_db.get(block_num, block),
+                "Could not query %lu from blockdb",
+                block_num);
+        }
+        else {
+            auto const deadline =
+                std::chrono::steady_clock::now() + block_db_timeout;
+            while (!block_db.get(block_num, block)) {
+                MONAD_ASSERT_PRINTF(
+                    std::chrono::steady_clock::now() < deadline,
+                    "Could not query %lu from blockdb after waiting %lus",
+                    block_num,
+                    static_cast<unsigned long>(block_db_timeout.count()));
+                // Honour SIGINT/SIGTERM while waiting: without this a stop
+                // would not be seen until a block arrived, which at the tip can
+                // be a full slot away.
+                if (stop != 0) {
+                    return {ntxs, total_gas};
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds{25});
+            }
+        }
 
         BlockHeader const parent_header = db.read_eth_header();
         MONAD_ASSERT_PRINTF(
@@ -474,7 +504,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
         if (witness_dump != nullptr) {
             dump_witness(
-                *witness_dump, block, witness_capture, block_db,
+                *witness_dump,
+                block,
+                witness_capture,
+                block_db,
                 encoded_headers);
         }
 

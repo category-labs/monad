@@ -38,13 +38,8 @@ namespace monad::trace
     // allowing us to store heterogeneous runners in the same container.
     struct TypeErasedRunner
     {
-        struct VTableEntry
-        {
-            std::type_index tag{typeid(void)};
-            std::function<void(void const *, void *)> fn{nullptr};
-        };
-
-        TypeErasedRunner() = delete;
+        using DispatchFn =
+            std::function<bool(std::type_index const &, void const *, void *)>;
 
         template <typename R>
             requires Runner<R>
@@ -52,60 +47,67 @@ namespace monad::trace
         {
             using Signature =
                 typename std::remove_cvref_t<decltype(r)>::Signature;
-            constexpr size_t num_ops = std::tuple_size_v<Signature>;
+            TypeErasedRunner erased_runner{};
+            erased_runner.dispatch_ = [runner = std::forward<decltype(r)>(r)](
+                                          std::type_index const &op_type,
+                                          void const *raw_op,
+                                          void *result) mutable -> bool {
+                constexpr size_t num_ops = std::tuple_size_v<Signature>;
 
-            TypeErasedRunner runner{num_ops};
-            runner.for_each_op<Signature, 0, num_ops>(
-                std::forward<decltype(r)>(r));
-            return runner;
+                auto dispatch_case = [&]<size_t I>(auto &self) mutable -> bool {
+                    if constexpr (I == num_ops) {
+                        return false;
+                    }
+                    else {
+                        using Op = std::tuple_element_t<I, Signature>;
+                        if (op_type == std::type_index(typeid(Op))) {
+                            // TODO(dhil): This assertion is redundant if this
+                            // object was applied by the tracing context
+                            // object. It would be good to make this
+                            // abstraction tighter, so that we know invoking
+                            // this case is always well-defined.
+                            MONAD_ASSERT(raw_op);
+                            auto const &op = *static_cast<Op const *>(raw_op);
+
+                            if constexpr (std::same_as<
+                                              return_type_t<Op>,
+                                              void>) {
+                                std::invoke(runner, op);
+                            }
+                            else {
+                                // TODO(dhil): Similarly, this assertion is
+                                // redundant.
+                                MONAD_ASSERT(result);
+                                auto &answer =
+                                    *static_cast<answer_type_t<Op> *>(result);
+                                answer.emplace(std::invoke(runner, op));
+                            }
+                            return true;
+                        }
+
+                        return self.template operator()<I + 1>(self);
+                    }
+                };
+
+                return dispatch_case.template operator()<0>(dispatch_case);
+            };
+            return erased_runner;
+        }
+
+        bool dispatch(
+            std::type_index const &op_type, void const *op, void *result) const
+        {
+            MONAD_ASSERT(dispatch_);
+            return dispatch_(op_type, op, result);
         }
 
     private:
-        TypeErasedRunner(size_t vtable_size);
+        TypeErasedRunner() = default;
 
-        template <typename Signature, size_t I, size_t N>
-        void for_each_op(Runner auto &r)
-        {
-            if constexpr (I < N) {
-                using Op = std::tuple_element_t<I, Signature>;
-
-                // Install the operation case.
-                vtable_[I] = VTableEntry{
-                    std::type_index(typeid(Op)),
-                    [runner = std::forward<decltype(r)>(r)](
-                        void const *raw_op, void *result) mutable {
-                        // TODO(dhil): This assertion is redundant if this
-                        // object was applied by the tracing context object. It
-                        // would be good to make this abstraction tighter, so
-                        // that we know invoking this case is always
-                        // well-defined.
-                        MONAD_ASSERT(raw_op);
-                        auto const &op = *static_cast<Op const *>(raw_op);
-
-                        if constexpr (std::same_as<return_type_t<Op>, void>) {
-                            std::invoke(runner, op);
-                        }
-                        else {
-                            // TODO(dhil): Similarly, this assertion is
-                            // redundant.
-                            MONAD_ASSERT(result);
-                            auto &answer =
-                                *static_cast<answer_type_t<Op> *>(result);
-                            answer.emplace(std::invoke(runner, op));
-                        }
-                    }};
-                for_each_op<Signature, I + 1, N>(r);
-            }
-        }
-
-    public:
-        // NOTE(dhil): We expect `vtable_.size()` to be small (e.g. < 10), so we
-        // use a dense representation and linear scan instead of a hash map.
-        std::unique_ptr<VTableEntry[]> vtable_;
-        size_t const vtable_size_;
+        DispatchFn dispatch_;
     };
 
-    static_assert(sizeof(TypeErasedRunner) == 16);
+    static_assert(sizeof(TypeErasedRunner) == 32);
 }
 
 MONAD_NAMESPACE_BEGIN

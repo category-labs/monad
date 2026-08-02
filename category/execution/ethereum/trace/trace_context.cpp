@@ -36,13 +36,9 @@ TxTraceContext::TxTraceContext(
 void TxTraceContext::dispatch(
     std::type_index const &op_type, void const *op, void *result) const
 {
-    for (auto &runner : runners_) {
-        for (size_t i = 0; i < runner.vtable_size_; ++i) {
-            auto const &entry = runner.vtable_[i];
-            if (entry.tag == op_type) {
-                entry.fn(op, result);
-                return;
-            }
+    for (auto const &runner : runners_) {
+        if (runner.dispatch(op_type, op, result)) {
+            return;
         }
     }
 }
@@ -91,12 +87,3 @@ TxTraceContext BlockTraceContext::slice(size_t i) const
 }
 
 MONAD_NAMESPACE_END
-
-namespace monad::trace
-{
-    TypeErasedRunner::TypeErasedRunner(size_t vtable_size)
-        : vtable_{std::make_unique_for_overwrite<VTableEntry[]>(vtable_size)}
-        , vtable_size_{vtable_size}
-    {
-    }
-}

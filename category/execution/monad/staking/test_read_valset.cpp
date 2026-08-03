@@ -25,7 +25,6 @@
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/staking/read_valset.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
@@ -95,8 +94,7 @@ protected:
             TrieDb tdb{db};
             BlockState bs{tdb, vm};
             State state{bs, Incarnation{0, 0}};
-            NoopCallTracer call_tracer{};
-            StakingContract contract{state, call_tracer, TxTraceContext{}};
+            StakingContract contract{state, TxTraceContext{}};
 
             state.add_to_balance(STAKING_CA, 0);
 

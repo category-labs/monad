@@ -42,7 +42,6 @@
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/trace_context.hpp>
@@ -162,13 +161,11 @@ Result<std::vector<Receipt>> execute_block_transactions(
     std::span<std::vector<std::optional<Address>> const> const authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::FiberGroup &priority_pool, BlockMetrics &block_metrics,
-    std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
     ChainContext<traits> const &chain_ctx, bool const trace_transfers,
     BlockTraceContext const &block_trace_context)
 {
     MONAD_ASSERT(senders.size() == transactions.size());
-    MONAD_ASSERT(senders.size() == call_tracers.size());
     MONAD_ASSERT(senders.size() == state_tracers.size());
     MONAD_ASSERT(block_trace_context.can_slice(transactions.size()));
 
@@ -195,7 +192,6 @@ Result<std::vector<Receipt>> execute_block_transactions(
              &block_hash_buffer = block_hash_buffer,
              &block_state,
              &block_metrics,
-             &call_tracer = *call_tracers[i],
              &state_tracer = *state_tracers[i],
              trace_ctx = block_trace_context.slice(i),
              &chain_ctx = chain_ctx,
@@ -213,7 +209,6 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         block_state,
                         block_metrics,
                         promises[i],
-                        call_tracer,
                         state_tracer,
                         chain_ctx,
                         trace_ctx,
@@ -270,7 +265,6 @@ Result<std::vector<Receipt>> execute_block(
     std::span<std::vector<std::optional<Address>> const> const authorities,
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::FiberGroup &priority_pool, BlockMetrics &block_metrics,
-    std::span<std::unique_ptr<CallTracerBase>> const call_tracers,
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
     trace::StateTracer &system_call_state_tracer,
     ChainContext<traits> const &chain_ctx, bool const trace_transfers,
@@ -281,7 +275,6 @@ Result<std::vector<Receipt>> execute_block(
     TRACE_BLOCK_EVENT(StartBlock);
 
     MONAD_ASSERT(senders.size() == block.transactions.size());
-    MONAD_ASSERT(senders.size() == call_tracers.size());
     MONAD_ASSERT(senders.size() == state_tracers.size());
     MONAD_ASSERT(block_trace_context.can_slice(block.transactions.size()));
 
@@ -299,7 +292,6 @@ Result<std::vector<Receipt>> execute_block(
             block_hash_buffer,
             priority_pool,
             block_metrics,
-            call_tracers,
             state_tracers,
             chain_ctx,
             trace_transfers,

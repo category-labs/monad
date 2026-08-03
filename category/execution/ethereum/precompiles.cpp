@@ -182,7 +182,7 @@ EXPLICIT_TRAITS(check_call_eth_precompile);
 
 template <Traits traits>
 std::optional<evmc::Result> check_call_precompile(
-    State &, CallTracerBase &, TxTraceContext const, evmc_message const &msg)
+    State &, TxTraceContext const, evmc_message const &msg)
 {
     return check_call_eth_precompile<traits>(msg);
 }

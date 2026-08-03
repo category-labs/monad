@@ -99,14 +99,12 @@ namespace
                 header,
                 chain.get_chain_id(),
                 chain.get_blob_schedule(header.timestamp));
-            NoopCallTracer call_tracer{};
 
             uint256_t base_fee{0};
             trace::StateTracer noop_state_tracer = std::monostate{};
             TxTraceContext const trace_context{};
             EvmcHost<Trait> host{
-                call_tracer,
-                noop_state_tracer,
+                                noop_state_tracer,
                 tx_context,
                 buffer,
                 state,

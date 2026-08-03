@@ -37,7 +37,6 @@ class BlockHashBuffer;
 struct BlockHeader;
 struct BlockMetrics;
 class BlockState;
-struct CallTracerBase;
 struct Chain;
 template <Traits traits>
 struct EvmcHost;
@@ -82,7 +81,6 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
     boost::fibers::promise<void> &prev_;
-    CallTracerBase &call_tracer_;
     trace::StateTracer &state_tracer_;
     bool trace_transfers_;
     TxTraceContext tx_trace_context_;
@@ -95,8 +93,8 @@ public:
         Chain const &, uint64_t i, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
-        boost::fibers::promise<void> &prev, CallTracerBase &,
-        trace::StateTracer &, ChainContext<traits> const &chain_ctx,
+        boost::fibers::promise<void> &prev, trace::StateTracer &,
+        ChainContext<traits> const &chain_ctx,
         TxTraceContext const tx_trace_context, bool trace_transfers = false);
     ~ExecuteTransaction() = default;
 

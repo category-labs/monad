@@ -35,7 +35,6 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/test/input_generation.hpp>
@@ -91,8 +90,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     TrieDb tdb{db};
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
-    NoopCallTracer call_tracer{};
-    StakingContract contract{state, call_tracer, TxTraceContext{}};
+    StakingContract contract{state, TxTraceContext{}};
 
     // test constants
     static constexpr uint256_t MIN_VALIDATE_STAKE =

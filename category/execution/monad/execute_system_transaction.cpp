@@ -29,7 +29,6 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
@@ -73,8 +72,7 @@ ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &header, BlockState &block_state,
     BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
-    CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
-    TxTraceContext const &tx_trace_context)
+    trace::StateTracer &state_tracer, TxTraceContext const &tx_trace_context)
     : chain_{chain}
     , i_{i}
     , tx_{tx}
@@ -83,7 +81,6 @@ ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     , block_state_{block_state}
     , block_metrics_{block_metrics}
     , prev_{prev}
-    , call_tracer_{call_tracer}
     , state_tracer_{state_tracer}
     , tx_trace_context_{tx_trace_context}
 {
@@ -228,7 +225,7 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
     // creates staking account in state if it doesn't exist
     state.add_to_balance(staking::STAKING_CA, 0);
 
-    staking::StakingContract contract(state, call_tracer_, tx_trace_context_);
+    staking::StakingContract contract(state, tx_trace_context_);
     if (MONAD_UNLIKELY(calldata.size() < 4)) {
         return staking::StakingError::InvalidInput;
     }

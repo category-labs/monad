@@ -17,7 +17,6 @@
 #include <category/core/log.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
@@ -43,9 +42,8 @@ void distribute_priority_fees(State &state)
 
     state.push();
     state.add_to_balance(STAKING_CA, fees);
-    NoopCallTracer call_tracer;
     TxTraceContext tr_ctx{};
-    StakingContract contract(state, call_tracer, tr_ctx);
+    StakingContract contract(state, tr_ctx);
     auto const res = contract.distribute_priority_fees(fees);
     if (res.has_error()) {
         auto const error_message = res.error().message();

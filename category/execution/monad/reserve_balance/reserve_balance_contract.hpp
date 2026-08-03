@@ -22,7 +22,6 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -33,13 +32,10 @@ inline constexpr Address RESERVE_BALANCE_CA = Address{0x1001};
 class ReserveBalanceContract
 {
     State &state_;
-    // TODO(dhil): Remove annotation once used in event emission.
-    [[maybe_unused]] CallTracerBase &call_tracer_;
     [[maybe_unused]] TxTraceContext const trace_ctx_;
 
 public:
-    ReserveBalanceContract(
-        State &state, CallTracerBase &tracer, TxTraceContext trace_ctx);
+    ReserveBalanceContract(State &state, TxTraceContext trace_ctx);
 
     using PrecompileFunc = Result<byte_string> (ReserveBalanceContract::*)(
         byte_string_view, Address const &, uint256_be_t const &);

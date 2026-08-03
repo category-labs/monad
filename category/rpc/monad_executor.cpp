@@ -202,7 +202,7 @@ namespace
         std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
         vm::VM &vm, BlockHashBuffer const &buffer,
         monad_state_override const &state_overrides,
-        CallTracerBase &call_tracer, trace::StateTracer &state_tracer)
+        TxTraceContext const trace_context, trace::StateTracer &state_tracer)
     {
         Transaction enriched_txn{txn};
 
@@ -282,14 +282,7 @@ namespace
             chain.get_chain_id(),
             chain.get_blob_schedule(header.timestamp));
 
-        CallTraceRunner call_trace_runner{call_tracer};
-        auto erased_runner = trace::TypeErasedRunner::erase(call_trace_runner);
-        std::span<trace::TypeErasedRunner const> const call_tracers{
-            &erased_runner, 1};
-        TxTraceContext const trace_context{call_tracers};
-
         EvmcHost<traits> host{
-            call_tracer,
             state_tracer,
             tx_context,
             buffer,
@@ -407,24 +400,7 @@ namespace
         std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
         state_tracers.reserve(transactions_size);
 
-        std::vector<std::unique_ptr<CallTracerBase>> noop_call_tracers{};
-        noop_call_tracers.reserve(transactions_size);
-
-        for (size_t i = 0; i < transactions_size; ++i) {
-            noop_call_tracers.emplace_back(std::make_unique<NoopCallTracer>());
-        }
-        std::span<std::unique_ptr<CallTracerBase>> const noop_call_tracers_view{
-            noop_call_tracers.data(), transactions_size};
-
         BlockTraceContext block_trace_context{transactions_size};
-        std::vector<CallTraceRunner> call_trace_runners;
-        call_trace_runners.reserve(transactions_size);
-        for (size_t i = 0; i < transactions_size; ++i) {
-            call_trace_runners.emplace_back(
-                CallTraceRunner{*noop_call_tracers[i].get()});
-        }
-        block_trace_context.with_runners(
-            std::span<CallTraceRunner const>{call_trace_runners});
 
         auto const chain_context = [&] {
             if constexpr (is_monad_trait_v<traits>) {
@@ -474,7 +450,6 @@ namespace
                 buffer,
                 tx_exec_pool,
                 metrics,
-                noop_call_tracers_view,
                 state_tracers_view,
                 chain_context,
                 false,
@@ -526,7 +501,6 @@ namespace
                 buffer,
                 tx_exec_pool,
                 metrics,
-                noop_call_tracers_view,
                 state_tracers_view,
                 chain_context,
                 false,
@@ -893,8 +867,6 @@ namespace
                 };
 
                 auto block_metrics = BlockMetrics{};
-                auto call_tracers =
-                    std::vector<std::unique_ptr<CallTracerBase>>{};
                 auto state_tracers =
                     std::vector<std::unique_ptr<trace::StateTracer>>{};
                 trace::StateTracer system_call_state_tracer{std::monostate{}};
@@ -919,7 +891,6 @@ namespace
                         block_hash_buffer,
                         tx_exec_pool,
                         block_metrics,
-                        call_tracers,
                         state_tracers,
                         system_call_state_tracer,
                         chain_context,
@@ -1003,8 +974,8 @@ namespace
             auto block_metrics = BlockMetrics{};
             auto call_frames = std::vector<std::vector<CallFrame>>{};
             call_frames.reserve(calls[block_idx].size());
-            auto call_tracers = std::vector<std::unique_ptr<CallTracerBase>>{};
-            call_tracers.reserve(calls[block_idx].size());
+            auto call_trace_runners = std::vector<CallTraceRunner>{};
+            call_trace_runners.reserve(calls[block_idx].size());
             auto state_tracers =
                 std::vector<std::unique_ptr<trace::StateTracer>>{};
             state_tracers.reserve(calls[block_idx].size());
@@ -1012,8 +983,7 @@ namespace
 
             for (Transaction const &tx : calls[block_idx]) {
                 call_frames.emplace_back();
-                call_tracers.emplace_back(
-                    std::make_unique<CallTracer>(tx, call_frames.back()));
+                call_trace_runners.emplace_back(tx, call_frames.back());
                 state_tracers.emplace_back(
                     std::make_unique<trace::StateTracer>());
             }
@@ -1030,14 +1000,8 @@ namespace
 
             auto block_trace_context =
                 BlockTraceContext{block.transactions.size()};
-            std::vector<CallTraceRunner> call_trace_runners;
-            call_trace_runners.reserve(call_tracers.size());
-            for (size_t i = 0; i < call_tracers.size(); ++i) {
-                call_trace_runners.emplace_back(
-                    CallTraceRunner{*call_tracers[i].get()});
-            }
             block_trace_context.with_runners(
-                std::span<CallTraceRunner const>{call_trace_runners});
+                std::span<CallTraceRunner>{call_trace_runners});
 
             BOOST_OUTCOME_TRY(
                 auto const receipts,
@@ -1050,7 +1014,6 @@ namespace
                     block_hash_buffer,
                     tx_exec_pool,
                     block_metrics,
-                    call_tracers,
                     state_tracers,
                     system_call_state_tracer,
                     chain_context,
@@ -1431,12 +1394,22 @@ struct monad_executor
                     TrieRODb tdb{db};
                     std::vector<CallFrame> call_frames;
                     nlohmann::json state_trace;
-                    std::unique_ptr<CallTracerBase> call_tracer =
-                        tracer_config == CALL_TRACER
-                            ? std::unique_ptr<CallTracerBase>{std::make_unique<
-                                  CallTracer>(transaction, call_frames)}
-                            : std::unique_ptr<CallTracerBase>{
-                                  std::make_unique<NoopCallTracer>()};
+                    std::optional<trace::TypeErasedRunner> erased_runner{};
+                    if (tracer_config == CALL_TRACER) {
+                        CallTraceRunner call_trace_runner{
+                            transaction, call_frames};
+                        erased_runner =
+                            trace::TypeErasedRunner::erase(call_trace_runner);
+                    }
+                    auto const trace_context = [&]() -> TxTraceContext {
+                        if (tracer_config != CALL_TRACER) {
+                            return TxTraceContext{};
+                        }
+                        MONAD_ASSERT(erased_runner.has_value());
+                        std::span<trace::TypeErasedRunner const> const
+                            call_trace_runners{&*erased_runner, 1};
+                        return TxTraceContext{call_trace_runners};
+                    }();
                     auto state_tracer = [&]() -> trace::StateTracer {
                         switch (tracer_config) {
                         case NOOP_TRACER:
@@ -1476,7 +1449,7 @@ struct monad_executor
                                 vm_,
                                 block_hash_buffer,
                                 *state_overrides,
-                                *call_tracer,
+                                trace_context,
                                 state_tracer);
                             MONAD_ASSERT(false);
                         }
@@ -1498,7 +1471,7 @@ struct monad_executor
                                 vm_,
                                 block_hash_buffer,
                                 *state_overrides,
-                                *call_tracer,
+                                trace_context,
                                 state_tracer);
                             MONAD_ASSERT(false);
                         }

@@ -305,8 +305,8 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     std::span<std::optional<Address> const> const authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
+    boost::fibers::promise<void> &prev, trace::StateTracer &state_tracer,
+    ChainContext<traits> const &chain_ctx,
     TxTraceContext const tx_trace_context, bool const trace_transfers)
     : ExecuteTransactionNoValidation<
           traits>{chain, tx, sender, authorities, header}
@@ -316,7 +316,6 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     , block_state_{block_state}
     , block_metrics_{block_metrics}
     , prev_{prev}
-    , call_tracer_{call_tracer}
     , state_tracer_{state_tracer}
     , trace_transfers_{trace_transfers}
     , tx_trace_context_{std::move(tx_trace_context)}
@@ -352,7 +351,6 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         chain_.get_chain_id(),
         chain_.get_blob_schedule(header_.timestamp));
     EvmcHost<traits> host{
-        call_tracer_,
         state_tracer_,
         tx_context,
         block_hash_buffer_,

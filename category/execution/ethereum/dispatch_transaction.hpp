@@ -39,7 +39,6 @@ class BlockState;
 class State;
 struct BlockHeader;
 struct BlockMetrics;
-struct CallTracerBase;
 struct Chain;
 struct Transaction;
 
@@ -50,8 +49,8 @@ Result<Receipt> dispatch_transaction(
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
+    boost::fibers::promise<void> &prev, trace::StateTracer &state_tracer,
+    ChainContext<traits> const &chain_ctx,
     TxTraceContext const &tx_trace_context, bool trace_transfers = false);
 
 MONAD_NAMESPACE_END

@@ -15,23 +15,16 @@
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
-#include <category/core/basic_formatter.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
-#include <category/core/keccak.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
-#include <nlohmann/json.hpp>
-#include <nlohmann/json_fwd.hpp>
-
-#include <quill/bundled/fmt/ranges.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -43,53 +36,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
-namespace
-{
-    void to_json_helper(
-        std::span<CallFrame const> const frames, nlohmann::json &json,
-        size_t &pos)
-    {
-        if (pos >= frames.size()) {
-            return;
-        }
-        json = to_json(frames[pos]);
-
-        while (pos + 1 < frames.size()) {
-            MONAD_ASSERT(json.contains("depth"));
-            if (frames[pos + 1].depth > json["depth"]) {
-                nlohmann::json j;
-                pos++;
-                to_json_helper(frames, j, pos);
-                json["calls"].push_back(j);
-            }
-            else {
-                return;
-            }
-        }
-    }
-}
-
-void NoopCallTracer::on_enter(evmc_message const &) {}
-
-void NoopCallTracer::on_exit(evmc::Result const &) {}
-
-void NoopCallTracer::on_log(Receipt::Log) {}
-
-void NoopCallTracer::on_self_destruct(
-    Address const &, Address const &, uint256_t const &)
-{
-}
-
-void NoopCallTracer::on_finish(uint64_t const) {}
-
-void NoopCallTracer::reset() {}
-
-std::span<CallFrame const> NoopCallTracer::get_call_frames() const
-{
-    return {};
-}
-
-CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
+CallTraceRunner::CallTraceRunner(
+    Transaction const &tx, std::vector<CallFrame> &frames)
     : frames_(frames)
     , tx_(tx)
 {
@@ -97,8 +45,10 @@ CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
     positions_.push(0);
 }
 
-void CallTracer::on_enter(evmc_message const &msg)
+void CallTraceRunner::operator()(monad::trace::call_trace::Enter const &op)
 {
+    auto const &msg = op.message;
+
     MONAD_ASSERT(!positions_.empty());
 
     positions_.top()++;
@@ -157,8 +107,10 @@ void CallTracer::on_enter(evmc_message const &msg)
     last_.push(frames_.size() - 1);
 }
 
-void CallTracer::on_exit(evmc::Result const &res)
+void CallTraceRunner::operator()(monad::trace::call_trace::Exit const &op)
 {
+    auto const &res = op.result;
+
     MONAD_ASSERT(!frames_.empty());
     MONAD_ASSERT(!last_.empty());
     MONAD_ASSERT(!positions_.empty());
@@ -185,8 +137,10 @@ void CallTracer::on_exit(evmc::Result const &res)
     positions_.pop();
 }
 
-void CallTracer::on_log(Receipt::Log log)
+void CallTraceRunner::operator()(monad::trace::call_trace::Log const &op)
 {
+    Receipt::Log log = op.log;
+
     MONAD_ASSERT(!frames_.empty());
     MONAD_ASSERT(!last_.empty());
     MONAD_ASSERT(!positions_.empty());
@@ -197,10 +151,13 @@ void CallTracer::on_log(Receipt::Log log)
     frame.logs->emplace_back(std::move(log), positions_.top());
 }
 
-void CallTracer::on_self_destruct(
-    Address const &from, Address const &to,
-    uint256_t const &transferred_balance)
+void CallTraceRunner::operator()(
+    monad::trace::call_trace::SelfDestruct const &op)
 {
+    auto const &from = op.from;
+    auto const &to = op.to;
+    auto const &transferred_balance = op.transferred_balance;
+
     MONAD_ASSERT(!last_.empty());
     MONAD_ASSERT(!positions_.empty());
     positions_.top()++;
@@ -223,14 +180,16 @@ void CallTracer::on_self_destruct(
     });
 }
 
-void CallTracer::on_finish(uint64_t const gas_used)
+void CallTraceRunner::operator()(monad::trace::call_trace::Finish const &op)
 {
+    auto const gas_used = op.gas_used;
+
     MONAD_ASSERT(!frames_.empty());
     MONAD_ASSERT(last_.empty());
     frames_.front().gas_used = gas_used;
 }
 
-void CallTracer::reset()
+void CallTraceRunner::operator()(monad::trace::call_trace::Reset const &)
 {
     frames_.clear();
     last_ = std::stack<size_t>{};
@@ -239,27 +198,10 @@ void CallTracer::reset()
     positions_.push(0);
 }
 
-std::span<CallFrame const> CallTracer::get_call_frames() const
+void CallTraceRunner::operator()(
+    monad::trace::call_trace::GetCallFrames const &op)
 {
-    return frames_;
-}
-
-nlohmann::json CallTracer::to_json() const
-{
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(frames_[0].depth == 0);
-
-    size_t pos = 0;
-
-    nlohmann::json res{};
-    auto const hash = keccak256(rlp::encode_transaction(tx_));
-    auto const key = fmt::format(
-        "0x{:02x}", fmt::join(std::as_bytes(std::span(hash.bytes)), ""));
-    nlohmann::json value{};
-    to_json_helper(frames_, value, pos);
-    res[key] = value;
-
-    return res;
+    *op.call_frames = frames_;
 }
 
 MONAD_NAMESPACE_END

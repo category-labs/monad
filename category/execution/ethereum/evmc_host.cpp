@@ -25,7 +25,6 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 
 #include <evmc/evmc.h>
@@ -38,13 +37,12 @@
 MONAD_NAMESPACE_BEGIN
 
 EvmcHostBase::EvmcHostBase(
-    CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
-    evmc_tx_context const &tx_context, BlockHashBuffer const &block_hash_buffer,
-    State &state, bool const log_native_transfers) noexcept
+    trace::StateTracer &state_tracer, evmc_tx_context const &tx_context,
+    BlockHashBuffer const &block_hash_buffer, State &state,
+    bool const log_native_transfers) noexcept
     : block_hash_buffer_{block_hash_buffer}
     , tx_context_{tx_context}
     , state_{state}
-    , call_tracer_{call_tracer}
     , log_native_transfers_{log_native_transfers}
     , state_tracer_{state_tracer}
 {

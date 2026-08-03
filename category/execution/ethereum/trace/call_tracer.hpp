@@ -22,9 +22,7 @@
 #include <category/execution/ethereum/trace/call_trace_operations.hpp>
 
 #include <evmc/evmc.hpp>
-#include <nlohmann/json_fwd.hpp>
 
-#include <optional>
 #include <span>
 #include <stack>
 #include <vector>
@@ -33,105 +31,25 @@ MONAD_NAMESPACE_BEGIN
 
 struct Transaction;
 
-struct CallTracerBase
-{
-    virtual ~CallTracerBase() = default;
-
-    virtual void on_enter(evmc_message const &) = 0;
-    virtual void on_exit(evmc::Result const &) = 0;
-    virtual void on_log(Receipt::Log) = 0;
-    virtual void on_self_destruct(
-        Address const &from, Address const &to,
-        uint256_t const &transferred_balance) = 0;
-    virtual void on_finish(uint64_t const) = 0;
-    virtual void reset() = 0;
-    virtual std::span<CallFrame const> get_call_frames() const = 0;
-};
-
-struct NoopCallTracer final : public CallTracerBase
-{
-    virtual void on_enter(evmc_message const &) override;
-    virtual void on_exit(evmc::Result const &) override;
-    virtual void on_log(Receipt::Log) override;
-    virtual void on_self_destruct(
-        Address const &, Address const &, uint256_t const &) override;
-    virtual void on_finish(uint64_t const) override;
-    virtual void reset() override;
-    virtual std::span<CallFrame const> get_call_frames() const override;
-};
-
-class CallTracer final : public CallTracerBase
-{
-    std::vector<CallFrame> &frames_;
-    std::stack<size_t> last_{};
-    std::stack<size_t> positions_{};
-    Transaction const &tx_;
-
-public:
-    CallTracer() = delete;
-    CallTracer(CallTracer const &) = delete;
-    CallTracer(CallTracer &&) = delete;
-    CallTracer(Transaction const &, std::vector<CallFrame> &);
-
-    virtual void on_enter(evmc_message const &) override;
-    virtual void on_exit(evmc::Result const &) override;
-    virtual void on_log(Receipt::Log) override;
-    virtual void on_self_destruct(
-        Address const &from, Address const &to,
-        uint256_t const &transferred_balance) override;
-    virtual void on_finish(uint64_t const) override;
-    virtual void reset() override;
-    virtual std::span<CallFrame const> get_call_frames() const override;
-
-    nlohmann::json to_json() const;
-};
-
-// Experimental
 struct CallTraceRunner
 {
     using Signature = monad::trace::call_trace::Signature;
 
-    CallTraceRunner(CallTracerBase &tracer)
-        : tracer(tracer)
-    {
-    }
+    CallTraceRunner(Transaction const &, std::vector<CallFrame> &);
 
-    void operator()(monad::trace::call_trace::Enter const &op)
-    {
-        tracer.on_enter(op.message);
-    }
+    void operator()(monad::trace::call_trace::Enter const &);
+    void operator()(monad::trace::call_trace::Exit const &);
+    void operator()(monad::trace::call_trace::Log const &);
+    void operator()(monad::trace::call_trace::SelfDestruct const &);
+    void operator()(monad::trace::call_trace::Finish const &);
+    void operator()(monad::trace::call_trace::Reset const &);
+    void operator()(monad::trace::call_trace::GetCallFrames const &);
 
-    void operator()(monad::trace::call_trace::Exit const &op)
-    {
-        tracer.on_exit(op.result);
-    }
-
-    void operator()(monad::trace::call_trace::Log const &op)
-    {
-        tracer.on_log(op.log);
-    }
-
-    void operator()(monad::trace::call_trace::SelfDestruct const &op)
-    {
-        tracer.on_self_destruct(op.from, op.to, op.transferred_balance);
-    }
-
-    void operator()(monad::trace::call_trace::Finish const &op)
-    {
-        tracer.on_finish(op.gas_used);
-    }
-
-    void operator()(monad::trace::call_trace::Reset const &)
-    {
-        tracer.reset();
-    }
-
-    void operator()(monad::trace::call_trace::GetCallFrames const &op)
-    {
-        *op.call_frames = tracer.get_call_frames();
-    }
-
-    CallTracerBase &tracer;
+private:
+    std::vector<CallFrame> &frames_;
+    std::stack<size_t> last_{};
+    std::stack<size_t> positions_{};
+    Transaction const &tx_;
 };
 
 MONAD_NAMESPACE_END

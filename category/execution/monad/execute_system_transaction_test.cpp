@@ -61,8 +61,6 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
 
     BlockHeader const header{.number = 0};
 
-    NoopCallTracer noop_call_tracer;
-
     // Create a system transaction that calls syscallOnEpochChange
     auto const epoch_change_tx = [](uint64_t tx_nonce,
                                     uint64_t next_epoch) -> Transaction {
@@ -102,7 +100,6 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 block_state,
                 block_metrics,
                 promise,
-                noop_call_tracer,
                 prestate_tracer,
                 /*exec_recorder=*/nullptr,
                 TxTraceContext{}}();
@@ -139,7 +136,6 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 block_state,
                 block_metrics,
                 promise,
-                noop_call_tracer,
                 prestate_tracer,
                 /*exec_recorder=*/nullptr,
                 TxTraceContext{}}();
@@ -178,8 +174,6 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
 
     BlockHeader const header{.number = 0};
 
-    NoopCallTracer noop_call_tracer;
-
     auto const epoch_change_tx = [](uint64_t tx_nonce,
                                     uint64_t next_epoch) -> Transaction {
         return Transaction{
@@ -213,7 +207,6 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 block_state,
                 block_metrics,
                 promise,
-                noop_call_tracer,
                 statediff_tracer,
                 /*exec_recorder=*/nullptr,
                 TxTraceContext{}}();
@@ -256,7 +249,6 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 block_state,
                 block_metrics,
                 promise,
-                noop_call_tracer,
                 statediff_tracer,
                 /*exec_recorder=*/nullptr,
                 TxTraceContext{}}();
@@ -304,8 +296,6 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
     BlockMetrics block_metrics;
 
     BlockHeader const header{};
-
-    NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
 
     auto const tx = Transaction{.type = TransactionType::eip7702};
@@ -323,7 +313,6 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
             block_state,
             block_metrics,
             promise,
-            noop_call_tracer,
             noop_state_tracer,
             /*exec_recorder=*/nullptr,
             TxTraceContext{}}();
@@ -344,8 +333,6 @@ TEST(SystemTransaction, static_validate_transaction_failure)
     BlockMetrics block_metrics;
 
     BlockHeader const header{.number = 0};
-
-    NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
 
     auto const tx = Transaction{
@@ -364,7 +351,6 @@ TEST(SystemTransaction, static_validate_transaction_failure)
             block_state,
             block_metrics,
             promise,
-            noop_call_tracer,
             noop_state_tracer,
             /*exec_recorder=*/nullptr,
             TxTraceContext{}}();

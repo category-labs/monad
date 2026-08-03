@@ -249,12 +249,13 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
         recover_authorities(block.value().transactions, pool);
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    std::vector<CallTraceRunner> call_trace_runners;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     trace::StateTracer system_call_state_tracer{std::monostate{}};
+    call_trace_runners.reserve(block.value().transactions.size());
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_tracers.emplace_back(std::make_unique<CallTracer>(
-            block.value().transactions[i], call_frames[i]));
+        call_trace_runners.emplace_back(
+            block.value().transactions[i], call_frames[i]);
         state_tracers.emplace_back(
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
@@ -282,14 +283,7 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
     }();
 
     BlockTraceContext block_trace_context(block.value().transactions.size());
-    std::vector<CallTraceRunner> call_trace_runners;
-    call_trace_runners.reserve(block.value().transactions.size());
-    for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_trace_runners.emplace_back(
-            CallTraceRunner{*call_tracers[i].get()});
-    }
-    block_trace_context.with_runners(
-        std::span<CallTraceRunner const>{call_trace_runners});
+    block_trace_context.with_runners(std::span{call_trace_runners});
 
     auto execute = [&](Chain const &chain) -> Result<std::vector<Receipt>> {
         return execute_block<typename TestFixture::Trait>(
@@ -301,7 +295,6 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
             block_hash_buffer,
             pool.fiber_group(),
             metrics,
-            call_tracers,
             state_tracers,
             system_call_state_tracer,
             chain_ctx,
@@ -429,12 +422,13 @@ TYPED_TEST(TraitsTest, assertion_exception)
         recover_authorities(block.value().transactions, pool);
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    std::vector<CallTraceRunner> call_trace_runners;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     trace::StateTracer system_call_state_tracer{std::monostate{}};
+    call_trace_runners.reserve(block.value().transactions.size());
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_tracers.emplace_back(std::make_unique<CallTracer>(
-            block.value().transactions[i], call_frames[i]));
+        call_trace_runners.emplace_back(
+            block.value().transactions[i], call_frames[i]);
         state_tracers.emplace_back(
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
@@ -462,14 +456,7 @@ TYPED_TEST(TraitsTest, assertion_exception)
     }();
 
     BlockTraceContext block_trace_context(block.value().transactions.size());
-    std::vector<CallTraceRunner> call_trace_runners;
-    call_trace_runners.reserve(block.value().transactions.size());
-    for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_trace_runners.emplace_back(
-            CallTraceRunner{*call_tracers[i].get()});
-    }
-    block_trace_context.with_runners(
-        std::span<CallTraceRunner const>{call_trace_runners});
+    block_trace_context.with_runners(std::span{call_trace_runners});
 
     auto execute = [&](Chain const &chain) {
         (void)execute_block<typename TestFixture::Trait>(
@@ -481,7 +468,6 @@ TYPED_TEST(TraitsTest, assertion_exception)
             block_hash_buffer,
             pool.fiber_group(),
             metrics,
-            call_tracers,
             state_tracers,
             system_call_state_tracer,
             chain_ctx,
@@ -599,12 +585,13 @@ TYPED_TEST(TraitsTest, call_frames_refund)
         recover_authorities(block.value().transactions, pool);
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    std::vector<CallTraceRunner> call_trace_runners;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     trace::StateTracer system_call_state_tracer{std::monostate{}};
+    call_trace_runners.reserve(block.value().transactions.size());
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_tracers.emplace_back(std::make_unique<CallTracer>(
-            block.value().transactions[i], call_frames[i]));
+        call_trace_runners.emplace_back(
+            block.value().transactions[i], call_frames[i]);
         state_tracers.emplace_back(
             std::make_unique<trace::StateTracer>(std::monostate{}));
     }
@@ -632,14 +619,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
     }();
 
     BlockTraceContext block_trace_context(block.value().transactions.size());
-    std::vector<CallTraceRunner> call_trace_runners;
-    call_trace_runners.reserve(block.value().transactions.size());
-    for (size_t i = 0; i < block.value().transactions.size(); ++i) {
-        call_trace_runners.emplace_back(
-            CallTraceRunner{*call_tracers[i].get()});
-    }
-    block_trace_context.with_runners(
-        std::span<CallTraceRunner const>{call_trace_runners});
+    block_trace_context.with_runners(std::span{call_trace_runners});
 
     auto execute = [&](Chain const &chain) -> Result<std::vector<Receipt>> {
         return execute_block<typename TestFixture::Trait>(
@@ -651,7 +631,6 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             block_hash_buffer,
             pool.fiber_group(),
             metrics,
-            call_tracers,
             state_tracers,
             system_call_state_tracer,
             chain_ctx,

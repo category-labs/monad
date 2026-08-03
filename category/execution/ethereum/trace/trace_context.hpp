@@ -211,7 +211,7 @@ public:
 
     template <typename R>
         requires Runner<R>
-    BlockTraceContext &with_runners(std::span<R const> const runners)
+    BlockTraceContext &with_runners(std::span<R> const runners)
     {
         using namespace monad::trace;
         // TODO(dhil): This requirement is stricter than it need be, as we can

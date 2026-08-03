@@ -23,7 +23,6 @@
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/contract/storage_array.hpp>
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/monad/staking/config.hpp>
 #include <category/execution/monad/staking/util/consensus_view.hpp>
@@ -54,7 +53,7 @@ class StakingContract
     TxTraceContext const tx_trace_context_;
 
 public:
-    StakingContract(State &, CallTracerBase &, TxTraceContext const);
+    StakingContract(State &, TxTraceContext const);
 
     struct WithdrawalRequest
     {

@@ -18,7 +18,6 @@
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/staking/read_valset.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
@@ -37,8 +36,7 @@ read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
     BlockState block_state{tdb, vm};
     Incarnation const incarnation{block_num, Incarnation::LAST_TX - 1u};
     State state{block_state, incarnation};
-    NoopCallTracer call_tracer{};
-    staking::StakingContract contract(state, call_tracer, TxTraceContext{});
+    staking::StakingContract contract(state, TxTraceContext{});
     state.add_to_balance(staking::STAKING_CA, 0);
 
     uint64_t const contract_epoch = contract.vars.epoch.load().native();

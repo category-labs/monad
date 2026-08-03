@@ -14,7 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/likely.h>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/staking/execute_block_prelude.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
@@ -35,8 +34,7 @@ void execute_block_prelude(State &state)
 
     // pessimistically clear the proposer id slot in the case no reward txn is
     // included with this block.
-    NoopCallTracer call_tracer;
-    StakingContract contract(state, call_tracer, TxTraceContext{});
+    StakingContract contract(state, TxTraceContext{});
     contract.vars.proposer_val_id.clear();
 }
 

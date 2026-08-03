@@ -179,33 +179,26 @@ Result<void> process_monad_block(
     BOOST_OUTCOME_TRY(
         static_validate_monad_body<traits>(senders, block.transactions));
 
-    // Call tracer initialization
+    // Call trace runner initialization
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
-        block.transactions.size()};
+    std::vector<CallTraceRunner> call_trace_runners;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(
         block.transactions.size());
     trace::StateTracer system_call_state_tracer{std::monostate{}};
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
-        call_tracers[i] =
-            enable_tracing
-                ? std::unique_ptr<CallTracerBase>{std::make_unique<CallTracer>(
-                      block.transactions[i], call_frames[i])}
-                : std::unique_ptr<CallTracerBase>{
-                      std::make_unique<NoopCallTracer>()};
+        if (enable_tracing) {
+            call_trace_runners.emplace_back(
+                block.transactions[i], call_frames[i]);
+        }
         state_tracers[i] =
             std::make_unique<trace::StateTracer>(std::monostate{});
     }
 
     BlockTraceContext block_trace_context(block.transactions.size());
-    std::vector<CallTraceRunner> call_trace_runners;
-    call_trace_runners.reserve(block.transactions.size());
-    for (unsigned i = 0; i < block.transactions.size(); ++i) {
-        call_trace_runners.emplace_back(
-            CallTraceRunner{*call_tracers[i].get()});
+    if (enable_tracing) {
+        block_trace_context.with_runners(
+            std::span<CallTraceRunner>{call_trace_runners});
     }
-    block_trace_context.with_runners(
-        std::span<CallTraceRunner const>{call_trace_runners});
 
     senders_and_authorities_out = senders_and_authorities;
 
@@ -237,7 +230,6 @@ Result<void> process_monad_block(
             block_hash_buffer,
             priority_pool.fiber_group(),
             block_metrics,
-            call_tracers,
             state_tracers,
             system_call_state_tracer,
             chain_context,

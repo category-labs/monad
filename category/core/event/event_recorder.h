@@ -19,7 +19,7 @@
  * @file
  *
  * Defines the event recorder object and its API; recorders are used for
- * writing events
+ * writing events. See the documentation in `event_recorder.md` for details.
  */
 
 #include <stddef.h>

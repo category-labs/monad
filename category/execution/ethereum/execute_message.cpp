@@ -310,7 +310,6 @@ evmc::Result execute_call_message(
         msg.kind == EVMC_CALL);
 
     auto const trace_ctx = host->get_tx_trace_context();
-    auto &call_tracer = host->get_call_tracer();
     trace::emit<trace::call_trace::Enter>(trace_ctx, msg);
 
     if (auto result = pre_call<traits>(*host, msg, state); result.has_value()) {
@@ -319,8 +318,8 @@ evmc::Result execute_call_message(
     }
 
     evmc::Result result;
-    if (auto maybe_result = check_call_precompile<traits>(
-            state, call_tracer, host->get_tx_trace_context(), msg);
+    if (auto maybe_result =
+            check_call_precompile<traits>(state, trace_ctx, msg);
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }

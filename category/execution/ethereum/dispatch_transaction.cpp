@@ -26,8 +26,8 @@ Result<Receipt> dispatch_transaction(
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
+    boost::fibers::promise<void> &prev, trace::StateTracer &state_tracer,
+    ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *const exec_recorder,
     TxTraceContext const &tx_trace_context, bool const trace_transfers)
 {
@@ -42,7 +42,6 @@ Result<Receipt> dispatch_transaction(
         block_state,
         block_metrics,
         prev,
-        call_tracer,
         state_tracer,
         chain_ctx,
         exec_recorder,

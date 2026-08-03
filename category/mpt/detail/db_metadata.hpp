@@ -169,7 +169,7 @@ namespace detail
         struct timeline_state_t
         {
             // Last upsert's auto-expire version threshold for this timeline.
-            // Accessed via start_lifetime_as<std::atomic_int64_t>.
+            // Accessed atomically via std::atomic_ref<int64_t>.
             int64_t auto_expire_version_;
             // mpt::state_machine_kind for the timeline currently bound to
             // this physical ring. Stamped at pool create time by monad-mpt
@@ -279,14 +279,14 @@ namespace detail
 
         // used to know if the metadata was being
         // updated when the process suddenly exited
-        std::atomic<uint8_t> &is_dirty() noexcept
+        std::atomic_ref<uint8_t> is_dirty() noexcept
         {
             static_assert(sizeof(std::atomic<uint8_t>) == sizeof(uint8_t));
 #ifndef __clang__
             static_assert(bitfield_layout_check());
 #endif
-            return *start_lifetime_as<std::atomic<uint8_t>>(
-                (std::byte *)&capacity_in_free_list - 1);
+            return std::atomic_ref<uint8_t>(*start_lifetime_as<uint8_t>(
+                (std::byte *)&capacity_in_free_list - 1));
         }
 
         struct id_pair
@@ -361,6 +361,10 @@ namespace detail
 #endif
         static_assert(sizeof(chunk_info_t) == 8);
         static_assert(std::is_trivially_copyable_v<chunk_info_t>);
+        // chunk_info[] lives in cross-process shared memory and is accessed
+        // via std::atomic_ref<chunk_info_t>; require lock-free so it uses
+        // direct atomic instructions rather than a per-process lock table.
+        static_assert(std::atomic_ref<chunk_info_t>::is_always_lock_free);
 
         auto hold_dirty() noexcept
         {
@@ -405,8 +409,14 @@ namespace detail
             uint32_t const idx, std::memory_order const load_ord =
                                     std::memory_order_seq_cst) const noexcept
         {
-            return reinterpret_cast<std::atomic<chunk_info_t> const *>(at(idx))
-                ->load(load_ord);
+            // at() is const-qualified, but chunk_info[] is mutable shared
+            // memory; std::atomic_ref gains a const-qualified form only in
+            // C++26 (P3323R1), so a const_cast is required here for now.
+            // TODO(C++26/P3323): use std::atomic_ref<chunk_info_t const> and
+            // drop the const_cast.
+            return std::atomic_ref<chunk_info_t>(
+                       *const_cast<chunk_info_t *>(at(idx)))
+                .load(load_ord);
         }
 
         chunk_info_t const *free_list_begin() const noexcept
@@ -499,7 +509,7 @@ namespace detail
                     tail->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID);
                 list.end = tail->next_chunk_id = i->index(this) & 0xfffffU;
             }
-            reinterpret_cast<std::atomic<chunk_info_t> *>(i)->store(
+            std::atomic_ref<chunk_info_t>(*i).store(
                 info, std::memory_order_release);
         }
 
@@ -604,29 +614,34 @@ namespace detail
         MONAD_ASSERT((((uintptr_t)dest_) & 7) == 0);
         MONAD_ASSERT((((uintptr_t)src_) & 7) == 0);
         MONAD_ASSERT((((uintptr_t)bytes) & 7) == 0);
-        auto *dest = reinterpret_cast<std::atomic<uint64_t> *>(dest_);
-        auto const *src = reinterpret_cast<std::atomic<uint64_t> const *>(src_);
+        auto *dest = reinterpret_cast<uint64_t *>(dest_);
+        // src_ is const but aliases mutable shared memory; std::atomic_ref
+        // gains a const-qualified form only in C++26 (P3323R1), so cast the
+        // const away for now.
+        // TODO(C++26/P3323): use std::atomic_ref<uint64_t const>, drop cast.
+        auto *src = reinterpret_cast<uint64_t *>(const_cast<void *>(src_));
         while (bytes >= 64) {
-            auto const a0 = (src++)->load(load_ord);
-            auto const a1 = (src++)->load(load_ord);
-            auto const a2 = (src++)->load(load_ord);
-            auto const a3 = (src++)->load(load_ord);
-            auto const a4 = (src++)->load(load_ord);
-            auto const a5 = (src++)->load(load_ord);
-            auto const a6 = (src++)->load(load_ord);
-            auto const a7 = (src++)->load(load_ord);
-            (dest++)->store(a0, store_ord);
-            (dest++)->store(a1, store_ord);
-            (dest++)->store(a2, store_ord);
-            (dest++)->store(a3, store_ord);
-            (dest++)->store(a4, store_ord);
-            (dest++)->store(a5, store_ord);
-            (dest++)->store(a6, store_ord);
-            (dest++)->store(a7, store_ord);
+            auto const a0 = std::atomic_ref<uint64_t>(*src++).load(load_ord);
+            auto const a1 = std::atomic_ref<uint64_t>(*src++).load(load_ord);
+            auto const a2 = std::atomic_ref<uint64_t>(*src++).load(load_ord);
+            auto const a3 = std::atomic_ref<uint64_t>(*src++).load(load_ord);
+            auto const a4 = std::atomic_ref<uint64_t>(*src++).load(load_ord);
+            auto const a5 = std::atomic_ref<uint64_t>(*src++).load(load_ord);
+            auto const a6 = std::atomic_ref<uint64_t>(*src++).load(load_ord);
+            auto const a7 = std::atomic_ref<uint64_t>(*src++).load(load_ord);
+            std::atomic_ref<uint64_t>(*dest++).store(a0, store_ord);
+            std::atomic_ref<uint64_t>(*dest++).store(a1, store_ord);
+            std::atomic_ref<uint64_t>(*dest++).store(a2, store_ord);
+            std::atomic_ref<uint64_t>(*dest++).store(a3, store_ord);
+            std::atomic_ref<uint64_t>(*dest++).store(a4, store_ord);
+            std::atomic_ref<uint64_t>(*dest++).store(a5, store_ord);
+            std::atomic_ref<uint64_t>(*dest++).store(a6, store_ord);
+            std::atomic_ref<uint64_t>(*dest++).store(a7, store_ord);
             bytes -= 64;
         }
         for (size_t n = 0; n < bytes; n += 8) {
-            (dest++)->store((src++)->load(load_ord), store_ord);
+            std::atomic_ref<uint64_t>(*dest++).store(
+                std::atomic_ref<uint64_t>(*src++).load(load_ord), store_ord);
         }
     }
 

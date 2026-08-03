@@ -21,7 +21,7 @@
 #include <category/execution/ethereum/core/ecrecover.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 
-#include <silkpre/ecdsa.h>
+#include <silkpre_vendor/ecdsa.h>
 
 #include <secp256k1.h>
 
@@ -48,17 +48,15 @@ recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
     store_be(signature, sig.r);
     store_be(signature + sizeof(sig.r), sig.s);
 
-    thread_local std::unique_ptr<
-        secp256k1_context,
-        decltype(&secp256k1_context_destroy)> const
-        context(
-            secp256k1_context_create(SILKPRE_SECP256K1_CONTEXT_FLAGS),
-            &secp256k1_context_destroy);
+    thread_local std::
+        unique_ptr<secp256k1_context, void (*)(secp256k1_context *)> const
+            context(
+                secp256k1_context_create(MONAD_SECP256K1_CONTEXT_FLAGS),
+                &secp256k1_context_destroy);
 
     Address result;
 
-    // TODO: remove silkpre
-    if (!silkpre_recover_address(
+    if (!monad_recover_address(
             result.bytes,
             encoding_hash.bytes,
             signature,

@@ -90,7 +90,8 @@ template <Traits traits>
 Result<void> process_ethereum_block(
     Chain const &chain, Db &db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
-    fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
+    fiber::PriorityPool &priority_pool, Block &block,
+    BlockHeader const &parent_header, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
@@ -111,7 +112,8 @@ Result<void> process_ethereum_block(
         std::nullopt);
 
     // Block input validation
-    BOOST_OUTCOME_TRY(static_validate_block<traits>(chain, block));
+    BOOST_OUTCOME_TRY(
+        static_validate_block_with_parent<traits>(chain, block, parent_header));
 
     // Sender and authority recovery
     auto const sender_recovery_begin = std::chrono::steady_clock::now();
@@ -297,6 +299,13 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             "Could not query %lu from blockdb",
             block_num);
 
+        BlockHeader const parent_header = db.read_eth_header();
+        MONAD_ASSERT_PRINTF(
+            parent_header.number + 1 == block.header.number,
+            "parent header number %lu does not precede block %lu",
+            parent_header.number,
+            block.header.number);
+
         bytes32_t const block_id = bytes32_t{block.header.number};
         monad_eth_revision const rev =
             chain.get_revision(block.header.number, block.header.timestamp);
@@ -310,6 +319,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 block_hash_buffer,
                 priority_pool,
                 block,
+                parent_header,
                 block_id,
                 parent_block_id,
                 enable_tracing);

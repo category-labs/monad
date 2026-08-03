@@ -100,6 +100,8 @@ EXPLICIT_EVM_TRAITS(blake2bf_gas_cost);
 template <Traits traits>
 static uint256_t mult_complexity(uint256_t const &max_len) noexcept
 {
+    static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+
     if constexpr (traits::eip_7883_active()) {
         uint256_t const words{(max_len + 7) >> 3}; // ceil(max_len/8)
         if (max_len > 32) {
@@ -109,35 +111,23 @@ static uint256_t mult_complexity(uint256_t const &max_len) noexcept
             return 16;
         }
     }
-    else if constexpr (traits::eip_2565_active()) {
+    else {
+        // EIP-2565 repricing since Berlin
         uint256_t const words{(max_len + 7) >> 3}; // ceil(max_len/8)
         return words * words;
-    }
-    else {
-        uint256_t const max_len_squared{max_len * max_len};
-        if (max_len <= 64) {
-            return max_len_squared;
-        }
-        else if (max_len <= 1024) {
-            return (max_len_squared >> 2) + 96 * max_len - 3072;
-        }
-        else {
-            return (max_len_squared >> 4) + 480 * max_len - 199680;
-        }
     }
 }
 
 template <Traits traits>
 static uint256_t expmod_gas_denominator() noexcept
 {
+    static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+
     if constexpr (traits::eip_7883_active()) {
         return 1;
     }
-    else if constexpr (traits::eip_2565_active()) {
-        return 3;
-    }
     else {
-        return 20; // Pre EIP-2565 (EIP-198)
+        return 3; // EIP-2565 repricing since Berlin
     }
 }
 
@@ -160,14 +150,13 @@ uint256_t expmod_iteration_count(uint256_t exp_len256, size_t bit_len) noexcept
 template <Traits traits>
 constexpr uint64_t expmod_min_gas()
 {
+    static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+
     if constexpr (traits::eip_7883_active()) {
         return 500;
     }
-    else if constexpr (traits::eip_2565_active()) {
-        return 200;
-    }
     else {
-        return 0; // Pre EIP-2565 (EIP-198)
+        return 200; // EIP-2565 repricing since Berlin
     }
 }
 

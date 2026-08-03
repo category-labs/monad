@@ -226,6 +226,24 @@ Result<void> static_validate_4844(Chain const &chain, Block const &block)
 }
 
 template <Traits traits>
+Result<void> static_validate_4844_parent(
+    Chain const &chain, Block const &block, BlockHeader const &parent_header)
+{
+    if constexpr (traits::eip_4844_active()) {
+        auto const blob_schedule =
+            chain.get_blob_schedule(block.header.timestamp);
+        uint64_t const expected_excess_blob_gas =
+            calc_excess_blob_gas<traits>(parent_header, blob_schedule);
+        if (MONAD_UNLIKELY(
+                block.header.excess_blob_gas.value() !=
+                expected_excess_blob_gas)) {
+            return BlockError::InvalidExcessBlobGas;
+        }
+    }
+    return success();
+}
+
+template <Traits traits>
 Result<void> static_validate_body(Chain const &chain, Block const &block)
 {
     // EIP-4895
@@ -257,6 +275,19 @@ Result<void> static_validate_block(Chain const &chain, Block const &block)
 }
 
 EXPLICIT_TRAITS(static_validate_block);
+
+template <Traits traits>
+Result<void> static_validate_block_with_parent(
+    Chain const &chain, Block const &block, BlockHeader const &parent_header)
+{
+    BOOST_OUTCOME_TRY(static_validate_block<traits>(chain, block));
+    BOOST_OUTCOME_TRY(
+        static_validate_4844_parent<traits>(chain, block, parent_header));
+
+    return success();
+}
+
+EXPLICIT_TRAITS(static_validate_block_with_parent);
 
 Result<void>
 validate_output_header(BlockHeader const &input, BlockHeader const &output)
@@ -330,6 +361,7 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
         {BlockError::InvalidOmmerHeader, "invalid ommer header", {}},
         {BlockError::WrongLogsBloom, "wrong logs bloom", {}},
         {BlockError::InvalidGasUsed, "invalid gas used", {}},
+        {BlockError::InvalidExcessBlobGas, "invalid excess blob gas", {}},
         {BlockError::WrongMerkleRoot, "wrong merkle root", {}},
         {BlockError::SystemCallMissingCode,
          "system call target has no code",

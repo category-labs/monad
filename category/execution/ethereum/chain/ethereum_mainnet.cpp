@@ -69,9 +69,6 @@ monad_eth_revision EthereumMainnet::get_revision(
     else if (block_number >= BERLIN_ACTIVATION_BLOCK_NUMBER) {
         return MONAD_ETH_BERLIN;
     }
-    else if (block_number >= ISTANBUL_ACTIVATION_BLOCK_NUMBER) {
-        return MONAD_ETH_ISTANBUL;
-    }
     MONAD_ASSERT(false, "unsupported fork");
 }
 

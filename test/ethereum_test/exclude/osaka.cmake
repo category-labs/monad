@@ -14,17 +14,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 set(osaka_excluded_tests
-    # Blobs (EIP-4844, EIP-7918)
-    "BlockchainTests.cancun/eip4844_blobs/test_invalid_excess_blob_gas_above_target_change.json"
-    "BlockchainTests.cancun/eip4844_blobs/test_invalid_excess_blob_gas_change.json"
-    "BlockchainTests.cancun/eip4844_blobs/test_invalid_excess_blob_gas_target_blobs_increase_from_zero.json"
-    "BlockchainTests.cancun/eip4844_blobs/test_invalid_negative_excess_blob_gas.json"
-    "BlockchainTests.cancun/eip4844_blobs/test_invalid_non_multiple_excess_blob_gas.json"
-    "BlockchainTests.cancun/eip4844_blobs/test_invalid_static_excess_blob_gas.json"
-    "BlockchainTests.cancun/eip4844_blobs/test_invalid_static_excess_blob_gas_from_zero_on_blobs_above_target.json"
-    "BlockchainTests.cancun/eip4844_blobs/test_invalid_zero_excess_blob_gas_in_header.json"
-    "BlockchainTests.osaka/eip7918_blob_reserve_price/test_reserve_price_boundary.json"
-
     # Unimplemented Prague EIPs
     "BlockchainTests.prague/eip6110_deposits/*"
     "BlockchainTests.prague/eip7685_general_purpose_el_requests/*"

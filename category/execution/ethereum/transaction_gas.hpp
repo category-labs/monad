@@ -64,6 +64,9 @@ max_gas_cost(uint64_t const gas_limit, uint256_t const max_fee_per_gas) noexcept
 // EIP-4844
 inline constexpr uint64_t GAS_PER_BLOB = 131'072;
 
+// EIP-7918
+inline constexpr uint64_t BLOB_BASE_COST = 8192;
+
 template <Traits traits>
 inline constexpr BlobSchedule default_blob_schedule() noexcept
 {
@@ -82,10 +85,21 @@ max_blob_gas_per_block(BlobSchedule const &blob_schedule) noexcept
     return blob_schedule.max_blobs_per_block * GAS_PER_BLOB;
 }
 
+inline constexpr uint64_t
+target_blob_gas_per_block(BlobSchedule const &blob_schedule) noexcept
+{
+    return blob_schedule.target_blobs_per_block * GAS_PER_BLOB;
+}
+
 uint256_t
 calc_blob_fee(Transaction const &, uint64_t, BlobSchedule const &) noexcept;
 
 uint256_t get_base_fee_per_blob_gas(uint64_t, BlobSchedule const &) noexcept;
+
+template <Traits traits>
+uint64_t calc_excess_blob_gas(
+    BlockHeader const &parent_header,
+    BlobSchedule const &current_blob_schedule) noexcept;
 
 uint64_t get_total_blob_gas(Transaction const &) noexcept;
 

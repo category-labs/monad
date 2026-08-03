@@ -258,7 +258,7 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
 
 TYPED_TEST(TraitsTest, refunds_delete)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -280,15 +280,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
             }
         }
 
-        if constexpr (TestFixture::Trait::evm_rev() == MONAD_ETH_ISTANBUL) {
-            // Gas decreased due to calldata cost reduction in EIP-2028
-            // where gas per non-zero byte was reduced from 68 to 16
-            return 41'040;
-        }
-        else {
-            // Gas increased due to storage repricing in Berlin
-            return 43'140;
-        }
+        // Gas increased due to storage repricing in Berlin
+        return 43'140;
     }();
 
     static constexpr auto gas_charged_tx2 = [] {
@@ -481,7 +474,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
 
 TYPED_TEST(TraitsTest, refunds_delete_then_set)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -588,19 +581,10 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
                     }
                 }
 
-                if constexpr (
-                    TestFixture::Trait::evm_rev() == MONAD_ETH_ISTANBUL) {
-                    return 26'812;
-                }
-
                 return 26'112;
             }();
 
             static constexpr auto storage_refund_evm_uncapped = [] {
-                if constexpr (
-                    TestFixture::Trait::evm_rev() == MONAD_ETH_ISTANBUL) {
-                    return 4200;
-                }
                 return 2800;
             }();
             static constexpr auto storage_refund = [=] {

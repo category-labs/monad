@@ -38,6 +38,12 @@
 #include <span>
 #include <string>
 
+#if defined(MONAD_COMPILER_TESTING) || defined(MONAD_COMPILER_BENCHMARKS)
+static constexpr bool enable_execute_override = true;
+#else
+static constexpr bool enable_execute_override = false;
+#endif
+
 namespace monad::vm
 {
     using namespace monad::vm::utils;
@@ -62,17 +68,17 @@ namespace monad::vm
         auto *const host_ctx = host.to_context();
         auto const &icode = vcode->intercode();
 
-#ifdef MONAD_COMPILER_TESTING
-        if (execute_override_) {
-            return execute_override_(
-                host_itf,
-                host_ctx,
-                traits::evm_rev(),
-                msg,
-                icode->code(),
-                icode->size());
+        if constexpr (enable_execute_override) {
+            if (execute_override_) {
+                return execute_override_(
+                    host_itf,
+                    host_ctx,
+                    traits::evm_rev(),
+                    msg,
+                    icode->code(),
+                    icode->size());
+            }
         }
-#endif // MONAD_COMPILER_TESTING
 
         auto rt_ctx =
             runtime::Context::from(host_itf, host_ctx, msg, icode->code_span());
@@ -101,17 +107,17 @@ namespace monad::vm
         auto const *const host_itf = &host.get_interface();
         auto *const host_ctx = host.to_context();
 
-#ifdef MONAD_COMPILER_TESTING
-        if (execute_override_) {
-            return execute_override_(
-                host_itf,
-                host_ctx,
-                traits::evm_rev(),
-                msg,
-                code.data(),
-                code.size());
+        if constexpr (enable_execute_override) {
+            if (execute_override_) {
+                return execute_override_(
+                    host_itf,
+                    host_ctx,
+                    traits::evm_rev(),
+                    msg,
+                    code.data(),
+                    code.size());
+            }
         }
-#endif // MONAD_COMPILER_TESTING
 
         auto rt_ctx = runtime::Context::from(host_itf, host_ctx, msg, code);
 
@@ -252,12 +258,14 @@ namespace monad::vm
 
     void VM::debug_set_execute_override(ExecuteOverride f [[maybe_unused]])
     {
-#ifdef MONAD_COMPILER_TESTING
-        execute_override_ = f;
-#else
-        MONAD_ABORT("debug_set_execute_override requires "
-                    "MONAD_COMPILER_TESTING is enabled");
-#endif
+        if constexpr (enable_execute_override) {
+            execute_override_ = f;
+        }
+        else {
+            MONAD_ABORT("debug_set_execute_override is not available in this "
+                        "build configuration (requires MONAD_COMPILER_TESTING "
+                        "or MONAD_COMPILER_BENCHMARKS)");
+        }
     }
 
     std::string VM::mode_to_string(Mode const mode)

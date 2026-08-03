@@ -29,6 +29,7 @@ target_link_libraries(vm-micro-benchmarks
     PRIVATE evmone::statetestutils
     PRIVATE evmone-blockchaintest-lib
     PRIVATE monad_execution
+    PRIVATE monad-test-utils
 )
 
 target_include_directories(vm-micro-benchmarks

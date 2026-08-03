@@ -443,13 +443,9 @@ TYPED_TEST(TraitsTest, identity)
 
 TYPED_TEST(TraitsTest, modular_exponentiation)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BYZANTIUM);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
 
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_BERLIN) {
-        do_geth_tests<typename TestFixture::Trait>(
-            "Modular Exponentiation", "modexp.json", 0x05_address);
-    }
-    else if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_OSAKA) {
+    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_OSAKA) {
         // EIP-2565 repricing since Berlin
         do_geth_tests<typename TestFixture::Trait>(
             "Modular Exponentiation", "modexp_eip2565.json", 0x05_address);
@@ -686,7 +682,7 @@ TYPED_TEST(TraitsTest, p256_verify)
 
 TYPED_TEST(TraitsTest, modexp_truncated_input)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BYZANTIUM);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
 
     // Before Osaka, inputs to modexp could be arbitrarily large, and
     // would just fail for gas reasons. After Osaka, the large padded
@@ -700,11 +696,8 @@ TYPED_TEST(TraitsTest, modexp_truncated_input)
         if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_OSAKA) {
             return 500;
         }
-        else if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN) {
-            return 200;
-        }
         else {
-            return 10;
+            return 200;
         }
     }();
 

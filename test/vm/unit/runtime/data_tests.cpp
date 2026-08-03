@@ -37,17 +37,14 @@ constexpr auto wei = uint256_t{782374};
 template <typename Trait>
 constexpr auto gas_remaining_cold_access()
 {
+    static_assert(Trait::evm_rev() >= MONAD_ETH_BERLIN);
+
     if constexpr (is_monad_trait_v<Trait>) {
         if constexpr (Trait::monad_rev() >= MONAD_SEVEN) {
             return 0;
         }
     }
-    if constexpr (Trait::evm_rev() <= MONAD_ETH_ISTANBUL) {
-        return 10'000;
-    }
-    else {
-        return 7'500;
-    }
+    return 7'500;
 };
 
 TYPED_TEST(RuntimeTraitsTest, BalanceCold)

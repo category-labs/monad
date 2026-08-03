@@ -322,8 +322,8 @@ void validate_post_state(nlohmann::json const &json, nlohmann::json const &db)
 
 template <Traits traits>
 Result<BlockExecOutput> execute(
-    Chain const &chain, Block &block, monad::Db &db, vm::VM &vm,
-    BlockHashBuffer const &block_hash_buffer,
+    Chain const &chain, Block &block, BlockHeader const &parent_header,
+    monad::Db &db, vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
     std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
         &senders_and_authorities_map,
     bool enable_tracing, std::vector<Receipt> &receipts,
@@ -333,7 +333,8 @@ Result<BlockExecOutput> execute(
 
     using namespace monad::test;
 
-    BOOST_OUTCOME_TRY(static_validate_block<traits>(chain, block));
+    BOOST_OUTCOME_TRY(
+        static_validate_block_with_parent<traits>(chain, block, parent_header));
 
     BlockState block_state(db, vm);
     BlockMetrics metrics;
@@ -451,8 +452,8 @@ Result<BlockExecOutput> execute(
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_and_record(
-    Chain const &chain, Block &block, monad::Db &db, vm::VM &vm,
-    BlockHashBuffer const &block_hash_buffer,
+    Chain const &chain, Block &block, BlockHeader const &parent_header,
+    monad::Db &db, vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
     std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
         &senders_and_authorities_map,
     bool enable_tracing)
@@ -475,6 +476,7 @@ Result<std::vector<Receipt>> execute_and_record(
     auto result = record_block_result(execute<traits>(
         chain,
         block,
+        parent_header,
         db,
         vm,
         block_hash_buffer,
@@ -520,6 +522,7 @@ void process_test(
     // genesis block has no senders or authorities
     senders_and_authorities_map[0] =
         ankerl::unordered_dense::segmented_set<Address>{};
+    BlockHeader parent_header = json_state.header;
 
     for (auto const &j_block : j_contents.at("blocks")) {
 
@@ -549,6 +552,7 @@ void process_test(
         auto const result = execute_and_record<traits>(
             chain,
             block.value(),
+            parent_header,
             tdb,
             vm,
             block_hash_buffer,
@@ -578,6 +582,7 @@ void process_test(
 
         if (!result.has_error()) {
             db_post_state = tdb.to_json();
+            parent_header = block.value().header;
             EXPECT_FALSE(j_block.contains("expectException")) << name;
             EXPECT_EQ(tdb.get_block_number(), curr_block_number) << name;
             auto const root = tdb.get_root();

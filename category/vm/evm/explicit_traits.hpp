@@ -25,8 +25,6 @@
 // Template free functions
 
 #define EXPLICIT_EVM_TRAITS(f)                                                 \
-    template decltype(f<::monad::EvmTraits<MONAD_ETH_ISTANBUL>>)               \
-        f<::monad::EvmTraits<MONAD_ETH_ISTANBUL>>;                             \
     template decltype(f<::monad::EvmTraits<MONAD_ETH_BERLIN>>)                 \
         f<::monad::EvmTraits<MONAD_ETH_BERLIN>>;                               \
     template decltype(f<::monad::EvmTraits<MONAD_ETH_LONDON>>)                 \
@@ -65,6 +63,8 @@
         f<::monad::MonadTraits<MONAD_EIGHT>>;                                  \
     template decltype(f<::monad::MonadTraits<MONAD_NINE>>)                     \
         f<::monad::MonadTraits<MONAD_NINE>>;                                   \
+    template decltype(f<::monad::MonadTraits<MONAD_TEN>>)                      \
+        f<::monad::MonadTraits<MONAD_TEN>>;                                    \
     template decltype(f<::monad::MonadTraits<MONAD_NEXT>>)                     \
         f<::monad::MonadTraits<MONAD_NEXT>>;
 
@@ -75,7 +75,6 @@
 // Template classes
 
 #define EXPLICIT_EVM_TRAITS_CLASS(c)                                           \
-    template class c<::monad::EvmTraits<MONAD_ETH_ISTANBUL>>;                  \
     template class c<::monad::EvmTraits<MONAD_ETH_BERLIN>>;                    \
     template class c<::monad::EvmTraits<MONAD_ETH_LONDON>>;                    \
     template class c<::monad::EvmTraits<MONAD_ETH_PARIS>>;                     \
@@ -96,6 +95,7 @@
     template class c<::monad::MonadTraits<MONAD_SEVEN>>;                       \
     template class c<::monad::MonadTraits<MONAD_EIGHT>>;                       \
     template class c<::monad::MonadTraits<MONAD_NINE>>;                        \
+    template class c<::monad::MonadTraits<MONAD_TEN>>;                         \
     template class c<::monad::MonadTraits<MONAD_NEXT>>;
 
 #define EXPLICIT_TRAITS_CLASS(c)                                               \
@@ -113,6 +113,7 @@
     template struct c<::monad::MonadTraits<MONAD_SEVEN>>;                      \
     template struct c<::monad::MonadTraits<MONAD_EIGHT>>;                      \
     template struct c<::monad::MonadTraits<MONAD_NINE>>;                       \
+    template struct c<::monad::MonadTraits<MONAD_TEN>>;                        \
     template struct c<::monad::MonadTraits<MONAD_NEXT>>;
 
 // Template member functions
@@ -137,7 +138,6 @@
     }
 
 #define EXPLICIT_EVM_TRAITS_MEMBER_LIST(f, id)                                 \
-    template void id<&f<::monad::EvmTraits<MONAD_ETH_ISTANBUL>>>();            \
     template void id<&f<::monad::EvmTraits<MONAD_ETH_BERLIN>>>();              \
     template void id<&f<::monad::EvmTraits<MONAD_ETH_LONDON>>>();              \
     template void id<&f<::monad::EvmTraits<MONAD_ETH_PARIS>>>();               \
@@ -166,6 +166,7 @@
     template void id<&f<::monad::MonadTraits<MONAD_SEVEN>>>();                 \
     template void id<&f<::monad::MonadTraits<MONAD_EIGHT>>>();                 \
     template void id<&f<::monad::MonadTraits<MONAD_NINE>>>();                  \
+    template void id<&f<::monad::MonadTraits<MONAD_TEN>>>();                   \
     template void id<&f<::monad::MonadTraits<MONAD_NEXT>>>();
 
 #define EXPLICIT_MONAD_TRAITS_MEMBER_HELPER(f, id)                             \

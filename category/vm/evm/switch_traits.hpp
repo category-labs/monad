@@ -39,8 +39,6 @@
         return f<::monad::EvmTraits<MONAD_ETH_LONDON>>(__VA_ARGS__);           \
     case MONAD_ETH_BERLIN:                                                     \
         return f<::monad::EvmTraits<MONAD_ETH_BERLIN>>(__VA_ARGS__);           \
-    case MONAD_ETH_ISTANBUL:                                                   \
-        return f<::monad::EvmTraits<MONAD_ETH_ISTANBUL>>(__VA_ARGS__);         \
     default:                                                                   \
         break;                                                                 \
     }
@@ -67,6 +65,8 @@
         return f<::monad::MonadTraits<MONAD_EIGHT>>(__VA_ARGS__);              \
     case MONAD_NINE:                                                           \
         return f<::monad::MonadTraits<MONAD_NINE>>(__VA_ARGS__);               \
+    case MONAD_TEN:                                                            \
+        return f<::monad::MonadTraits<MONAD_TEN>>(__VA_ARGS__);                \
     case MONAD_NEXT:                                                           \
         return f<::monad::MonadTraits<MONAD_NEXT>>(__VA_ARGS__);               \
     }

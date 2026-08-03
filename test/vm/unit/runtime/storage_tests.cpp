@@ -57,6 +57,8 @@ TEST_F(RuntimeTest, TransientStorage)
 
 TYPED_TEST(RuntimeTraitsTest, StorageLoadCold)
 {
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+
     using traits = TestFixture::Trait;
     auto load = TestFixture::wrap(sload<traits>);
 
@@ -66,12 +68,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageLoadCold)
                 return 8000;
             }
         }
-        if constexpr (traits::evm_rev() <= MONAD_ETH_ISTANBUL) {
-            return 0;
-        }
-        else {
-            return 2000;
-        }
+        return 2000;
     }();
     ASSERT_EQ(load(key), 0);
     ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
@@ -97,7 +94,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageLoadWarm)
 
 TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
 
     using traits = TestFixture::Trait;
     auto load = TestFixture::wrap(sload<traits>);
@@ -139,17 +136,12 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
             return do_test(28000, 19900);
         }
     }
-    if constexpr (traits::evm_rev() == MONAD_ETH_ISTANBUL) {
-        do_test(19200, 19200);
-    }
-    else {
-        do_test(22000, 19900);
-    }
+    do_test(22000, 19900);
 }
 
 TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
 
     using traits = TestFixture::Trait;
     auto load = TestFixture::wrap(sload<traits>);
@@ -206,12 +198,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
             return do_test(0, 2800);
         }
     }
-    if constexpr (traits::evm_rev() == MONAD_ETH_ISTANBUL) {
-        do_test(8100, 4200);
-    }
-    else {
-        do_test(6000, 2800);
-    }
+    do_test(6000, 2800);
 }
 
 TYPED_TEST(RuntimeTraitsTest, StorageLoadDifferentSlotsSamePage)

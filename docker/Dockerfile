@@ -120,31 +120,49 @@ RUN cd src/rust && cargo check --all-targets --all-features
 RUN cd src/rust && cargo doc --all-features --no-deps
 RUN cd src/rust && cargo test --release --doc --all-features
 
-FROM base AS base_riscv_gnu_toolchain
+# nixos/nix:2.35.1 — pinned by digest; keep the tag in this comment in sync
+FROM nixos/nix@sha256:377d4887aca98f0dfa12971c1ea6d6a625a435d8b610d4c95a436843da6fbfd1 AS riscv_toolchain_nix
 
-COPY scripts/ubuntu-build/ /opt
-RUN apt-get update && \
-    /opt/install-riscv-deps.sh && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+COPY nix /nix-src
 
-# Clone, build, install, strip, and remove the build tree in a single layer.
-# Only /root/riscv is consumed downstream; the build tree must be removed in
-# the same RUN it was created or it persists in the layer.
-RUN /opt/build-riscv-toolchain.sh && \
-    rm -rf /opt
+# Garbage-collect the build-time closure (GCC sources, stdenv, the stage-1
+# compiler) in the same RUN: a later RUN cannot reclaim it, because the bytes
+# are already committed to this layer. This takes the store from ~3.6 GB to
+# roughly the runtime closure. --out-link registers a GC root so the
+# toolchain survives; nix's own paths are rooted by the default profile.
+#
+# The store path is read back from that symlink rather than from
+# --print-out-paths, which prints one line per derivation output and would
+# leave /toolchain-path unusable if the toolchain ever grew a second output.
+RUN nix --extra-experimental-features "nix-command flakes" \
+        build /nix-src#toolchainEnv --out-link /toolchain && \
+    readlink -f /toolchain > /toolchain-path && \
+    nix-collect-garbage > /dev/null
 
-ENV PATH="/root/riscv/bin:${PATH}"
+FROM base AS base_riscv_toolchain
+
+# The toolchain sits at a hash-named store path that moves whenever the pin
+# does, so resolve it into a stable /riscv symlink here rather than baking
+# the path into this file. The absolute symlink targets inside the store
+# resolve because the store is copied to the same absolute location.
+COPY --from=riscv_toolchain_nix /nix/store /nix/store
+COPY --from=riscv_toolchain_nix /toolchain-path /tmp/toolchain-path
+RUN ln -s "$(cat /tmp/toolchain-path)" /riscv && rm /tmp/toolchain-path
+
+COPY scripts/ubuntu-build/check-riscv-gcc.sh /tmp/check-riscv-gcc.sh
+RUN /tmp/check-riscv-gcc.sh && rm /tmp/check-riscv-gcc.sh
+
+ENV PATH="/riscv/bin:${PATH}"
 
 WORKDIR /
 
-FROM base_riscv_gnu_toolchain AS build_zk
+FROM base_riscv_toolchain AS build_zk
 
 COPY . src
 
 RUN cd src && cmake -B build-zkvm -S zkvm/guest \
     -DCMAKE_TOOLCHAIN_FILE=/src/category/core/toolchains/riscv64-elf.cmake \
-    -DRISCV_TOOLCHAIN_DIR=/root/riscv \
+    -DRISCV_TOOLCHAIN_DIR=/riscv \
     -DCMAKE_BUILD_TYPE=Release
 RUN cd src && cmake --build build-zkvm --target monad-zkvm --parallel
 

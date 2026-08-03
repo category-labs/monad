@@ -27,8 +27,8 @@ ExternalProject_Add(
 
 ExternalProject_Add(
   MonadSpecTestFixtures
-  URL "https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.1.1/fixtures_monad.tar.gz"
-  URL_HASH "SHA256=1837b6bbbb51bd956623c5efc92f0c6123be7ea7563492703ff085d7c31876f2"
+  URL "https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.2.0/fixtures_monad.tar.gz"
+  URL_HASH "SHA256=d0210111e5902d375b9b428824df820f1e2ce8aa79c645445f862a22a364cc87"
   PREFIX ${CMAKE_BINARY_DIR}
   CONFIGURE_COMMAND ""
   BUILD_COMMAND ""
@@ -109,7 +109,7 @@ endfunction()
 
 add_monad_test(FORK MONAD_EIGHT)
 add_monad_test(FORK MONAD_NINE)
-add_monad_test(FORK MONAD_NEXT)
+add_monad_test(FORK MONAD_TEN)
 
 # MONAD_NEXT Amsterdam spec tests, from a separate fixtures release. While the
 # whole suite is excluded (see the exclusion file), the runner exits non-zero
@@ -128,7 +128,6 @@ if(MONAD_NEXT_amsterdam_excluded_tests STREQUAL "BlockchainTests.*")
                        PROPERTIES WILL_FAIL TRUE)
 endif()
 
-add_ethereum_test(FORK istanbul)
 add_ethereum_test(FORK berlin)
 add_ethereum_test(FORK london)
 add_ethereum_test(FORK paris)

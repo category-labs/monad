@@ -102,6 +102,8 @@ namespace monad::vm::compiler::test
             std::int64_t gas_limit,
             std::span<std::uint8_t const> calldata) noexcept
         {
+            static_assert(TraitsTest<T>::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+
             result_ = evmc::Result();
             output_data_ = {};
 
@@ -112,10 +114,9 @@ namespace monad::vm::compiler::test
             msg_.input_data = calldata.data();
             msg_.input_size = calldata.size();
 
-            if (TraitsTest<T>::Trait::evm_rev() >= MONAD_ETH_BERLIN) {
-                host_.access_account(msg_.sender);
-                host_.access_account(msg_.recipient);
-            }
+            // EIP-2929: sender and recipient start warm (active since Berlin)
+            host_.access_account(msg_.sender);
+            host_.access_account(msg_.recipient);
         }
 
         void execute(

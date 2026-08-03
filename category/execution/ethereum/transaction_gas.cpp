@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -109,14 +110,12 @@ EXPLICIT_TRAITS(g_data);
 template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &tx) noexcept
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
-    uint64_t gas = 21'000 + g_data<traits>(tx) + g_txn_create(tx);
+    // EIP-2930: access-list and storage-key cost (active since Berlin)
+    uint64_t gas = 21'000 + g_data<traits>(tx) + g_txn_create(tx) +
+                   g_access_and_storage(tx);
 
-    // EIP-2930: access-list and storage-key cost (Berlin)
-    if constexpr (traits::evm_rev() >= MONAD_ETH_BERLIN) {
-        gas += g_access_and_storage(tx);
-    }
     // EIP-3860: per-word initcode cost (Shanghai)
     if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
         gas += g_extra_cost_init(tx);
@@ -224,6 +223,46 @@ uint256_t get_base_fee_per_blob_gas(
         uint256_t{excess_blob_gas},
         uint256_t{blob_schedule.blob_base_fee_update_fraction});
 }
+
+template <Traits traits>
+uint64_t calc_excess_blob_gas(
+    BlockHeader const &parent_header,
+    BlobSchedule const &current_blob_schedule) noexcept
+{
+    uint64_t const total_blob_gas = parent_header.excess_blob_gas.value_or(0) +
+                                    parent_header.blob_gas_used.value_or(0);
+    uint64_t const target_blob_gas =
+        target_blob_gas_per_block(current_blob_schedule);
+
+    if (total_blob_gas < target_blob_gas) {
+        return 0;
+    }
+
+    if constexpr (traits::eip_7918_active()) {
+        constexpr uint256_t PRICE_RATIO = GAS_PER_BLOB / BLOB_BASE_COST;
+
+        auto const threshold = checked_mul(
+            PRICE_RATIO,
+            get_base_fee_per_blob_gas(
+                parent_header.excess_blob_gas.value_or(0),
+                current_blob_schedule));
+
+        uint256_t const execution_base_fee =
+            parent_header.base_fee_per_gas.value_or(uint256_t{});
+
+        if (threshold && execution_base_fee > threshold.assume_value()) {
+            return parent_header.excess_blob_gas.value_or(0) +
+                   parent_header.blob_gas_used.value_or(0) *
+                       (current_blob_schedule.max_blobs_per_block -
+                        current_blob_schedule.target_blobs_per_block) /
+                       current_blob_schedule.max_blobs_per_block;
+        }
+    }
+
+    return total_blob_gas - target_blob_gas;
+}
+
+EXPLICIT_TRAITS(calc_excess_blob_gas);
 
 uint64_t get_total_blob_gas(Transaction const &tx) noexcept
 {

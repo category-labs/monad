@@ -466,9 +466,22 @@ EXPLICIT_TRAITS_MEMBER(State::selfdestruct);
 
 // YP (87)
 template <Traits traits>
-void State::destruct_suicides()
+std::vector<std::pair<Address, uint256_t>> State::destruct_suicides()
 {
     MONAD_ASSERT(!version_);
+
+    // The EIP-7708 capture below sits in the CANCUN+ branch of the loop, since
+    // only EIP-6780 leaves same-tx-created-and-destroyed accounts to burn.
+    // Enforce that coupling rather than trusting it: activating 7708 on an
+    // earlier revision would silently skip every burn instead of failing.
+    static_assert(
+        !traits::eip_7708_active() || traits::evm_rev() >= MONAD_ETH_CANCUN);
+
+    // EIP-7708: the residual balance of an account created and destroyed in the
+    // same transaction is burned here. Capture (address, balance) before the
+    // reset so the caller can emit a Burn log; returned sorted by address
+    // (empty when the rule is inactive).
+    std::vector<std::pair<Address, uint256_t>> burned;
 
     for (auto &it : current_) {
         auto &stack = it.second;
@@ -482,11 +495,27 @@ void State::destruct_suicides()
             }
             else {
                 if (account->incarnation == incarnation_) {
+                    if constexpr (traits::eip_7708_active()) {
+                        if (account->balance > 0) {
+                            burned.emplace_back(it.first, account->balance);
+                        }
+                    }
                     account.reset();
                 }
             }
         }
     }
+
+    // current_ iterates in an unspecified order, but the Burn logs go into the
+    // consensus receipt, so sort by address for a deterministic emission order.
+    if constexpr (traits::eip_7708_active()) {
+        std::sort(
+            burned.begin(), burned.end(), [](auto const &a, auto const &b) {
+                return a.first < b.first;
+            });
+    }
+
+    return burned;
 }
 
 EXPLICIT_TRAITS_MEMBER(State::destruct_suicides);

@@ -2518,3 +2518,80 @@ TYPED_TEST(TwoOnDiskSuite, random_proposals)
         "Random proposal generation: {} iterations with seed {}", iters, seed);
     gen->run(iters);
 }
+
+// EIP-7708 activates in EvmTraits at MONAD_ETH_AMSTERDAM, which sits above
+// LATEST_SUPPORTED_EVM_FORK and is therefore excluded from the shared revision
+// matrix, so pin a fixture to it. Removable once LATEST_SUPPORTED_EVM_FORK is
+// bumped to include AMSTERDAM.
+template <typename T>
+struct Eip7708StateTest : public InMemoryStateTraitsTest<T>
+{
+};
+
+TYPED_TEST_SUITE(
+    Eip7708StateTest,
+    ::testing::Types<::detail::EvmRevisionConstant<MONAD_ETH_AMSTERDAM>>,
+    ::detail::RevisionTestNameGenerator);
+
+// destruct_suicides returns the residual balances it burns so the caller can
+// emit a Burn log for each. current_ is an unordered map, so the pairs must
+// come back sorted by address: the Burn logs go into the consensus receipt and
+// their relative order fixes the receipt log indices.
+TYPED_TEST(Eip7708StateTest, destruct_suicides_returns_sorted_burned_balances)
+{
+    using traits = typename TestFixture::Trait;
+
+    static_assert(traits::eip_7708_active());
+
+    // By address: a (0x53..) < c (0xa5..) < b (0xbe..).
+    static_assert(a < c);
+    static_assert(c < b);
+
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 1000,
+                           .incarnation = Incarnation{1, 1}}}}},
+             {b,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 2000,
+                           .incarnation = Incarnation{1, 1}}}}},
+             {c,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 3000,
+                           .incarnation = Incarnation{1, 1}}}}}}),
+        Code{},
+        BlockHeader{});
+
+    State s{bs, Incarnation{1, 1}};
+
+    // Destroy in an order that is deliberately not address order, then credit
+    // each account a residual balance -- ETH received after it selfdestructed,
+    // which is what finalization burns.
+    for (auto const &addr : {b, c, a}) {
+        s.selfdestruct<traits>(addr, addr);
+        EXPECT_EQ(s.get_balance(addr), 0);
+    }
+    s.add_to_balance(b, 300);
+    s.add_to_balance(c, 200);
+    s.add_to_balance(a, 100);
+
+    auto const burned = s.destruct_suicides<traits>();
+
+    EXPECT_EQ(
+        burned,
+        (std::vector<std::pair<Address, uint256_t>>{
+            {a, 100}, {c, 200}, {b, 300}}));
+}

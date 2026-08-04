@@ -20,9 +20,13 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/contract/abi_encode.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -34,6 +38,7 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/utils/evm-as.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
@@ -48,6 +53,7 @@
 #include <limits>
 #include <optional>
 #include <variant>
+#include <vector>
 
 using namespace monad;
 
@@ -659,4 +665,132 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
     ASSERT_TRUE(receipt.has_error());
 
     ASSERT_EQ(receipt.error(), TransactionError::WrongChainId);
+}
+
+// EIP-7708 activates in EvmTraits at MONAD_ETH_AMSTERDAM, which sits above
+// LATEST_SUPPORTED_EVM_FORK and is therefore excluded from the shared revision
+// matrix, so pin a fixture to it. Removable once LATEST_SUPPORTED_EVM_FORK is
+// bumped to include AMSTERDAM.
+template <typename T>
+struct Eip7708FinalizationTest : public TraitsTest<T>
+{
+};
+
+TYPED_TEST_SUITE(
+    Eip7708FinalizationTest,
+    ::testing::Types<::detail::EvmRevisionConstant<MONAD_ETH_AMSTERDAM>>,
+    ::detail::RevisionTestNameGenerator);
+
+// EIP-7708 Burn, finalization site: ETH that reaches an account after it has
+// already selfdestructed (created and destroyed in the same transaction) is
+// destroyed by destruct_suicides, and execute_final emits a Burn log for it.
+//
+// Making the created account the block beneficiary is the minimal way to
+// produce that residual balance without a second contract: execute_final
+// credits the txn award to header_.beneficiary before destruct_suicides runs,
+// so the award is exactly what gets burned. This mirrors the priority-fee
+// spec-test fixture. Unlike the inline burn, this path only exists in the full
+// ExecuteTransaction, so assert the consensus receipt directly.
+TYPED_TEST(Eip7708FinalizationTest, finalization_burn_log_for_same_tx_account)
+{
+    using traits = typename TestFixture::Trait;
+    using namespace monad::vm::utils;
+
+    static_assert(traits::eip_7708_active());
+
+    static constexpr auto from{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr uint64_t nonce = 25;
+    static constexpr uint256_t max_fee_per_gas = 10;
+    static constexpr uint64_t gas_limit = 200000;
+    static constexpr uint256_t initial_balance = 56000000000000000;
+
+    std::vector<uint8_t> initcode;
+    {
+        auto eb = evm_as::EvmBuilder<traits>();
+        evm_as::compile(eb.address().selfdestruct(), initcode);
+    }
+
+    auto const contract = create_contract_address(from, nonce);
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    BlockMetrics metrics;
+
+    {
+        State state{bs, Incarnation{0, 0}};
+        state.add_to_balance(from, initial_balance);
+        state.set_nonce(from, nonce);
+        bs.merge(state);
+    }
+
+    // Value 0: the endowment path is covered elsewhere, and a zero endowment
+    // keeps the selfdestruct from emitting an inline Burn, so the only log in
+    // the receipt is the finalization one under test.
+    Transaction const tx{
+        .sc =
+            {
+                .signature =
+                    {
+                        .r =
+                            0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256,
+                        .s =
+                            0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256,
+                    },
+            },
+        .nonce = nonce,
+        .max_fee_per_gas = max_fee_per_gas,
+        .gas_limit = gas_limit,
+        .value = 0,
+        .data = byte_string{initcode.data(), initcode.size()},
+    };
+
+    BlockHeader const header{
+        .number = constants::EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER,
+        .beneficiary = contract};
+    BlockHashBufferFinalized const block_hash_buffer;
+
+    boost::fibers::promise<void> prev{};
+    prev.set_value();
+
+    NoopCallTracer noop_call_tracer;
+    trace::StateTracer noop_state_tracer = std::monostate{};
+    auto const chain_ctx = ChainContext<traits>::debug_empty();
+
+    auto const receipt = ExecuteTransaction<traits>(
+        EthereumMainnet{},
+        0,
+        tx,
+        from,
+        {},
+        header,
+        block_hash_buffer,
+        bs,
+        metrics,
+        prev,
+        noop_call_tracer,
+        noop_state_tracer,
+        chain_ctx)();
+
+    ASSERT_TRUE(!receipt.has_error());
+    EXPECT_EQ(receipt.value().status, 1u);
+
+    // Legacy transaction with no base fee, so the award is the whole gas cost.
+    uint256_t const award =
+        uint256_t{receipt.value().gas_used} * max_fee_per_gas;
+    ASSERT_TRUE(award > 0);
+
+    ASSERT_EQ(receipt.value().logs.size(), 1u);
+    EXPECT_EQ(
+        receipt.value().logs[0],
+        (Receipt::Log{
+            .data = byte_string{store_be_as<bytes32_t, uint256_t>(award)},
+            .topics =
+                std::vector{
+                    0xcc16f5dbb4873280815c1ee09dbd06736cffcc184412cf7a71a0fdb75d397ca5_bytes32,
+                    abi_encode_address(contract),
+                },
+            .address = SYSTEM_ADDRESS}));
 }

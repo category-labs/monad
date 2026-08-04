@@ -79,6 +79,7 @@ namespace monad
         { T::eip_5656_active() } -> std::same_as<bool>;
         { T::eip_7685_active() } -> std::same_as<bool>;
         { T::eip_7691_active() } -> std::same_as<bool>;
+        { T::eip_7708_active() } -> std::same_as<bool>;
         { T::eip_7823_active() } -> std::same_as<bool>;
         { T::eip_7843_active() } -> std::same_as<bool>;
         { T::eip_7883_active() } -> std::same_as<bool>;
@@ -190,6 +191,21 @@ namespace monad
         }
 
         static consteval bool eip_8024_active() noexcept
+        {
+            return Rev >= MONAD_ETH_AMSTERDAM;
+        }
+
+        // EIP-7708: ETH transfers emit a Transfer log. A consensus state-
+        // transition rule (not an opcode); read in the execution layer's
+        // emit_native_transfer_event. Active on AMSTERDAM for unit tests.
+        //
+        // Scope is the EIP's four sites -- tx-level transfer, CALL,
+        // SELFDESTRUCT, CREATE/CREATE2 -- each nonzero-value and to a different
+        // account. Withdrawals (not attached to a transaction, so no natural
+        // emission point) and coinbase/base fees (a distinct category) were
+        // considered by the EIP and excluded: those paths stay silent by
+        // design.
+        static consteval bool eip_7708_active() noexcept
         {
             return Rev >= MONAD_ETH_AMSTERDAM;
         }
@@ -374,6 +390,14 @@ namespace monad
         }
 
         static consteval bool eip_8024_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_AMSTERDAM;
+        }
+
+        // EIP-7708: value transfers emit a Transfer log, plus monad's Burn log
+        // at finalization for an EIP-6780 same-tx-created-and-destroyed
+        // account. See the EvmTraits overload for the scope the EIP defines.
+        static consteval bool eip_7708_active() noexcept
         {
             return evm_rev() >= MONAD_ETH_AMSTERDAM;
         }

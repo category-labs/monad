@@ -486,6 +486,17 @@ try {
                             : "monad_mainnet"); // TODO: remove at release2
                 }
 
+                if (chain_config == CHAIN_CONFIG_MONAD_DEVNET) {
+                    bool const has_page_timeline =
+                        db.is_page_encoded()
+                        || raw_db.timeline_active(
+                               monad::mpt::timeline_id::secondary);
+                    MONAD_ASSERT_PRINTF(
+                        has_page_timeline,
+                        "live monad requires a page-encoded timeline "
+                        "(as primary or secondary) on monad_devnet");
+                }
+
                 std::optional<mpt::Db> secondary_db;
                 std::optional<TrieDb> secondary_triedb;
                 if (raw_db.timeline_active(

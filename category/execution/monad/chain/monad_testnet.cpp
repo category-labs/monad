@@ -76,6 +76,7 @@ GenesisState MonadTestnet::get_genesis_state() const
         .excess_blob_gas = 0,
         .parent_beacon_block_root = NULL_ROOT,
         .requests_hash = NULL_HASH,
+        // When Amsterdam is enabled, add block_access_list_hash/slot_number
     };
     return {header, MONAD_TESTNET_ALLOC};
 }

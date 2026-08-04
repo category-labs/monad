@@ -37,8 +37,8 @@ ExternalProject_Add(
 
 ExternalProject_Add(
   MonadAmsterdamSpecTestFixtures
-  URL "https://github.com/monad-developers/execution-specs/releases/download/tests-monad_amsterdam@v0.2.0/fixtures_monad_amsterdam.tar.gz"
-  URL_HASH "SHA256=20b2a55f49a4b777f1abc6c196dc0afad22475b0ac598a39cc94fc598e22619d"
+  URL "https://github.com/monad-developers/execution-specs/releases/download/tests-monad_amsterdam@v0.4.0/fixtures_monad_amsterdam.tar.gz"
+  URL_HASH "SHA256=ca088c1d4ee77d7e594a662c390a65c4b45e6591b82594538952057611475c7f"
   PREFIX ${CMAKE_BINARY_DIR}
   CONFIGURE_COMMAND ""
   BUILD_COMMAND ""
@@ -111,22 +111,14 @@ add_monad_test(FORK MONAD_EIGHT)
 add_monad_test(FORK MONAD_NINE)
 add_monad_test(FORK MONAD_TEN)
 
-# MONAD_NEXT Amsterdam spec tests, from a separate fixtures release. While the
-# whole suite is excluded (see the exclusion file), the runner exits non-zero
-# via its "No tests were run" guard, so the job is marked WILL_FAIL to keep
-# ctest green. WILL_FAIL is set only while the suite is fully excluded: once
-# individual tests are re-enabled by dropping entries from the exclusion list,
-# the job runs normally so real failures (and unexpected passes) surface.
+# MONAD_NEXT Amsterdam spec tests, from a separate fixtures release.
 include(${CMAKE_CURRENT_SOURCE_DIR}/exclude/MONAD_NEXT_amsterdam.cmake)
+list(JOIN MONAD_NEXT_amsterdam_included_tests ":" TESTS_INCLUDED)
 list(JOIN MONAD_NEXT_amsterdam_excluded_tests ":" TESTS_EXCLUDED)
 add_test(NAME MONAD_NEXT_amsterdam_monad_ethereum_test
          COMMAND monad-ethereum-test --fork MONAD_NEXT
                  --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadAmsterdamSpecTestFixtures/blockchain_tests
-                 --gtest_filter=-:${TESTS_EXCLUDED})
-if(MONAD_NEXT_amsterdam_excluded_tests STREQUAL "BlockchainTests.*")
-  set_tests_properties(MONAD_NEXT_amsterdam_monad_ethereum_test
-                       PROPERTIES WILL_FAIL TRUE)
-endif()
+                 --gtest_filter=${TESTS_INCLUDED}:-${TESTS_EXCLUDED})
 
 add_ethereum_test(FORK berlin)
 add_ethereum_test(FORK london)

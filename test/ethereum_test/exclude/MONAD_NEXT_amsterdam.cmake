@@ -17,5 +17,7 @@
 # as support is added.
 # This is intended to keep test suite clean within stacked
 # Amsterdam PRs.
-set(MONAD_NEXT_amsterdam_included_tests "*/amsterdam/eip7843_slotnum/*")
+set(MONAD_NEXT_amsterdam_included_tests
+    "*/amsterdam/eip7843_slotnum/*"
+    "*/amsterdam/eip8024_dupn_swapn_exchange/*")
 set(MONAD_NEXT_amsterdam_excluded_tests "")

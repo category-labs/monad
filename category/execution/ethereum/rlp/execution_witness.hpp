@@ -34,7 +34,8 @@ MONAD_NAMESPACE_BEGIN
 ///
 /// Wire format (6-field RLP list):
 ///   [0] block_rlp                     RLP-encoded block
-///   [1] [node...]                     RLP list of MPT node preimages
+///   [1] nodes                         offset-format node blob (see
+///                                     offset_trie_db.hpp) in a list envelope
 ///   [2] [code...]                     RLP list of contract bytecodes
 ///   [3] [header...]                   RLP list of ancestor block headers
 ///   [4] [address...]                  Parent sender+authority set
@@ -56,7 +57,7 @@ Result<ExecutionWitness>
 parse_execution_witness(byte_string_view witness_bytes);
 
 byte_string encode_execution_witness(
-    byte_string_view block_rlp, std::span<byte_string const> nodes,
+    byte_string_view block_rlp, byte_string_view nodes,
     std::span<byte_string const> codes, std::span<byte_string const> headers,
     ankerl::unordered_dense::segmented_set<Address> const
         *const parent_senders_and_authorities = nullptr,

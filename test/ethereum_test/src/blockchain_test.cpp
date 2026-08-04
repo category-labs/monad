@@ -839,12 +839,9 @@ void process_test(
                         ? lookup_senders(curr_block_number - 2)
                         : nullptr;
 
-                // encode_execution_witness concatenates the node entries raw,
-                // so a single-element span makes field [1] exactly the blob.
-                byte_string const nodes_blob[1] = {witness_data.nodes};
                 byte_string const witness_bytes = encode_execution_witness(
                     block_rlp,
-                    nodes_blob,
+                    witness_data.nodes,
                     witness_data.codes,
                     headers_slice,
                     parent_senders,

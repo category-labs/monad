@@ -168,11 +168,9 @@ TEST(EncodeExecutionWitness, AllFieldsRoundtrip)
     // back the unwrapped payload.
     byte_string const block_rlp{0x01, 0x02, 0x03, 0x04};
 
-    // Nodes are already complete RLP items and are emitted raw, so the parsed
-    // [1] payload is their straight concatenation.
-    std::vector<byte_string> const nodes{
-        rlp::encode_list2(rlp::encode_string2(byte_string{0xaa})),
-        rlp::encode_string2(byte_string{0xbb, 0xcc})};
+    // The node blob is opaque to the encoder and emitted raw, so the parsed
+    // [1] payload is exactly the input bytes.
+    byte_string const nodes{0xaa, 0xbb, 0xcc, 0xdd, 0xee};
 
     // Codes and headers are each wrapped as RLP strings by the encoder.
     std::vector<byte_string> const codes{
@@ -195,8 +193,8 @@ TEST(EncodeExecutionWitness, AllFieldsRoundtrip)
 
     EXPECT_EQ(w.block_rlp, byte_string_view{block_rlp});
 
-    // [1] nodes: raw concatenation.
-    EXPECT_EQ(w.encoded_nodes, byte_string_view{nodes[0] + nodes[1]});
+    // [1] nodes: the blob emitted raw.
+    EXPECT_EQ(w.encoded_nodes, byte_string_view{nodes});
 
     // [2] codes / [3] headers: each entry wrapped as an RLP string.
     EXPECT_EQ(

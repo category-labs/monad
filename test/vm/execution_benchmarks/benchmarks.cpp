@@ -162,6 +162,20 @@ namespace
         }
     }
 
+    vm::VM::ExecuteOverride to_execute_override(evmc::VM &vm)
+    {
+        return [&vm](
+                   auto const *const host,
+                   auto *const context,
+                   auto const rev,
+                   auto const *const msg,
+                   auto const *const code,
+                   auto const code_size) -> evmc::Result {
+            return vm.execute(
+                *host, context, to_evmc_revision(rev), *msg, code, code_size);
+        };
+    }
+
     // This benchmark runner assumes that no state is modified during execution,
     // as it re-uses the same state between all the runs. For anything other
     // that micro-benchmarks of e.g. specific opcodes, use the JSON format with
@@ -176,16 +190,20 @@ namespace
         auto const json_state = JsonState{};
         auto const test_state = json_state.make_test_state();
         vm::VM monad_vm;
+        monad_vm.debug_set_execute_override(to_execute_override(vm));
         BlockState block_state{test_state->trie_db, monad_vm};
         monad::State state{
-            block_state, Incarnation{json_state.header.number, 1}};
+            block_state, Incarnation{json_state.header.number + 1, 1}};
+
+        state.create_contract(msg.code_address);
+        state.set_code(msg.code_address, {code.data(), code.size()});
 
         TestBlockHashBuffer block_hash_buffer{};
         Transaction tx{};
         Address const tx_sender{};
         std::optional<uint256_t> base_fee_per_gas{};
         std::vector<std::optional<Address>> authorities{};
-        BlockHeader const header{};
+        BlockHeader const header{.number = json_state.header.number + 1};
         EthereumMainnet const chain{};
 
         constexpr auto rev = MONAD_ETH_CANCUN;
@@ -253,16 +271,17 @@ namespace
         Address const tx_sender{};
         std::optional<uint256_t> base_fee_per_gas{};
         std::vector<std::optional<Address>> authorities{};
-        BlockHeader const header{};
+        BlockHeader const header{.number = json_state.header.number + 1};
         EthereumMainnet const chain{};
 
         for (auto _ : bench_state) {
             bench_state.PauseTiming();
 
             vm::VM monad_vm;
+            monad_vm.debug_set_execute_override(to_execute_override(vm));
             BlockState block_state{test_state->trie_db, monad_vm};
             monad::State state{
-                block_state, Incarnation{json_state.header.number, 1}};
+                block_state, Incarnation{json_state.header.number + 1, 1}};
 
             touch_init_state(json_state, state);
 

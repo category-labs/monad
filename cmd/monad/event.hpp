@@ -49,7 +49,7 @@ struct EventRingConfig
 // event data on average, so the below size keeps a few minutes worth of
 // history and gives a large amount of slack for slow consumers. These values
 // are likely to change in the future, you can view current numbers using the
-// `eventcap execstats` subcommand
+// `monad-event-cli execstats` subcommand
 constexpr uint8_t DEFAULT_EXEC_RING_DESCRIPTORS_SHIFT = 21;
 constexpr uint8_t DEFAULT_EXEC_RING_PAYLOAD_BUF_SHIFT = 29;
 

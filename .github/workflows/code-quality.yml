@@ -74,5 +74,7 @@ jobs:
           with:
             context: .
             file: docker/Dockerfile
+            build-args: |-
+              UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
             target: code_quality
             cache-from: type=gha,scope=base

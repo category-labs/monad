@@ -29,6 +29,8 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
+          build-args: |-
+            UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
           ulimit: "memlock=-1:-1"
           target: base
           cache-to: type=gha,scope=base
@@ -38,6 +40,8 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
+          build-args: |-
+            UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
           ulimit: "memlock=-1:-1"
           target: base_rust
           cache-from: type=gha,scope=base

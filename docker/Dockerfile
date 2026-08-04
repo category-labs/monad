@@ -2,6 +2,13 @@
 
 FROM ubuntu:26.04 AS base
 
+# Optional mirror to use instead of the default Ubuntu archive.
+ARG UBUNTU_MIRROR
+RUN if [ -n "${UBUNTU_MIRROR}" ]; then \
+        sed -Ei "s,http://(archive|security)\.ubuntu\.com/ubuntu/?,${UBUNTU_MIRROR},g" \
+            /etc/apt/sources.list.d/ubuntu.sources; \
+    fi
+
 COPY scripts/ubuntu-build/ /opt
 
 RUN apt-get update && \

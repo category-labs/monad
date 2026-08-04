@@ -59,6 +59,7 @@ jobs:
             CXX=${{ matrix.compiler.CXX }}
             CMAKE_BUILD_TYPE=${{ matrix.CMAKE_BUILD_TYPE }}
             TOOLCHAIN=gcc-avx2
+            UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
           allow: security.insecure # for tests which use io_uring
           ulimit: "memlock=-1:-1"
           target: build_and_test

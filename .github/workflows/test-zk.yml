@@ -41,6 +41,8 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
+          build-args: |-
+            UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
           target: build_zk
           cache-from: |
             type=gha,scope=riscv-toolchain

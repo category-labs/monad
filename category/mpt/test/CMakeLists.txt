@@ -53,6 +53,8 @@ add_trie_test(TARGET node_disk_pages_spare_test SOURCES
 add_trie_test(TARGET node_test SOURCES "node_test.cpp")
 add_trie_test(TARGET node_writer_test SOURCES "node_writer_test.cpp")
 add_trie_test(TARGET parallel_upsert_test SOURCES "parallel_upsert_test.cpp")
+add_trie_test(TARGET parallel_upsert_writer_test SOURCES
+              "parallel_upsert_writer_test.cpp")
 add_trie_test(TARGET plain_trie_test SOURCES "plain_trie_test.cpp")
 add_trie_test(TARGET rewind_test SOURCES "rewind_test.cpp")
 add_trie_test(TARGET state_machine_test SOURCES "state_machine_test.cpp")

@@ -471,14 +471,33 @@ void UpdateAux::init(AsyncIO &io_, std::optional<uint64_t> const history_len)
 
 void UpdateAux::reset_node_writers()
 {
-    auto init_node_writer = [&](chunk_offset_t const node_writer_offset)
-        -> node_writer_unique_ptr_type {
-        auto const &chunk =
+    /* The append point must already be at the recorded offset. Both ways in
+    guarantee it: the resume path trims each chunk back to the record
+    (`rewind_to_match_offsets`, whose trim aborts rather than fail), and
+    `DbMetadataContext` refuses to initialise a new db over a pool holding any
+    data at all. A recorded offset at chunk capacity is legal, and leaves an
+    empty reservation whose first write moves on to a fresh chunk.
+    */
+    auto init_node_writer =
+        [&](chunk_offset_t const node_writer_offset,
+            bool const in_fast_list) -> node_writer_unique_ptr_type {
+        auto &chunk =
             io->storage_pool().chunk(storage_pool::seq, node_writer_offset.id);
-        MONAD_ASSERT(chunk.size() >= node_writer_offset.offset);
         size_t const bytes_to_write = std::min(
             AsyncIO::WRITE_BUFFER_SIZE,
             size_t(chunk.capacity() - node_writer_offset.offset));
+        auto const base = chunk.reserve(bytes_to_write);
+        MONAD_ASSERT_PRINTF(
+            base == node_writer_offset.offset,
+            "chunk %u append point %llu is not the recorded %s list offset "
+            "%llu",
+            uint32_t(node_writer_offset.id),
+            static_cast<unsigned long long>(base),
+            in_fast_list ? "fast" : "slow",
+            static_cast<unsigned long long>(node_writer_offset.offset));
+        set_reservation(
+            in_fast_list,
+            node_writer_reservation{node_writer_offset, base + bytes_to_write});
         return io ? io->make_connected(
                         write_single_buffer_sender{
                             node_writer_offset, bytes_to_write},
@@ -486,9 +505,9 @@ void UpdateAux::reset_node_writers()
                   : node_writer_unique_ptr_type{};
     };
     node_writer_fast = init_node_writer(
-        metadata_ctx_->main()->db_offsets.start_of_wip_offset_fast);
+        metadata_ctx_->main()->db_offsets.start_of_wip_offset_fast, true);
     node_writer_slow = init_node_writer(
-        metadata_ctx_->main()->db_offsets.start_of_wip_offset_slow);
+        metadata_ctx_->main()->db_offsets.start_of_wip_offset_slow, false);
 
     last_block_end_offset_fast_ = compact_virtual_chunk_offset_t{
         physical_to_virtual(node_writer_fast->sender().offset())};

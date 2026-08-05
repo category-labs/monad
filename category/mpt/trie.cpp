@@ -19,6 +19,7 @@
 #include <category/async/config.hpp>
 #include <category/async/erased_connected_operation.hpp>
 #include <category/async/io_senders.hpp>
+#include <category/async/storage_pool.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/likely.h>
@@ -1631,6 +1632,22 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
         in_fast_list ? UpdateAux::chunk_list::fast
                      : UpdateAux::chunk_list::slow,
         idx);
+    /* Reserved after the retry check, which must not consume space, and after
+    the list append, as physical_to_virtual cannot translate a free chunk's
+    offset.
+    */
+    auto const base = aux.io->storage_pool()
+                          .chunk(storage_pool::seq, idx)
+                          .reserve(AsyncIO::WRITE_BUFFER_SIZE);
+    MONAD_ASSERT_PRINTF(
+        base == 0,
+        "chunk %u came off the free list with %llu bytes already reserved",
+        idx,
+        static_cast<unsigned long long>(base));
+    aux.set_reservation(
+        in_fast_list,
+        node_writer_reservation{
+            offset_of_new_writer, AsyncIO::WRITE_BUFFER_SIZE});
     return ret;
 }
 
@@ -1648,22 +1665,35 @@ node_writer_unique_ptr_type replace_node_writer(
     auto const chunk_capacity =
         aux.io->chunk_capacity(offset_of_next_writer.id);
     MONAD_ASSERT(offset <= chunk_capacity);
+    /* Continue inside the reservation this writer already holds, so that
+    flushing a partly filled buffer does not orphan the rest of it.
+    */
+    auto const reservation = aux.reservation(in_fast_list);
+    bool const reservation_exhausted =
+        offset_of_next_writer.id != reservation.begin.id ||
+        offset + DISK_PAGE_SIZE > reservation.end;
+    MONAD_ASSERT(reservation_exhausted || offset >= reservation.begin.offset);
     detail::db_metadata::chunk_info_t const *ci_ = nullptr;
     uint32_t idx;
-    if (offset == chunk_capacity) {
-        // If after the current write buffer we're hitting chunk capacity, we
-        // replace writer to the start of next chunk.
+    if (reservation_exhausted && chunk_capacity - offset < DISK_PAGE_SIZE) {
+        // Nothing left to reserve in this chunk, so we replace writer to the
+        // start of next chunk.
         ci_ = aux.metadata_ctx().main()->free_list_end();
         MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
         idx = ci_->index(aux.metadata_ctx().main());
         offset_of_next_writer.id = idx & 0xfffffU;
         offset_of_next_writer.offset = 0;
     }
+    // Sized from where the writer is placed, so size and placement cannot
+    // disagree whoever else is reserving in this chunk
+    size_t const bytes_to_write =
+        reservation_exhausted
+            ? std::min(
+                  AsyncIO::WRITE_BUFFER_SIZE,
+                  (size_t)(chunk_capacity - offset_of_next_writer.offset))
+            : (size_t)(reservation.end - offset);
     // See above about handling potential reentrancy correctly
     auto *const node_writer_ptr = node_writer.get();
-    size_t const bytes_to_write = std::min(
-        AsyncIO::WRITE_BUFFER_SIZE,
-        (size_t)(chunk_capacity - offset_of_next_writer.offset));
     auto ret = aux.io->make_connected(
         write_single_buffer_sender{offset_of_next_writer, bytes_to_write},
         write_operation_io_receiver{bytes_to_write});
@@ -1678,6 +1708,26 @@ node_writer_unique_ptr_type replace_node_writer(
             in_fast_list ? UpdateAux::chunk_list::fast
                          : UpdateAux::chunk_list::slow,
             idx);
+    }
+    if (reservation_exhausted) {
+        /* Reserved after the retry check, which must not consume space, and
+        after the list append, as physical_to_virtual cannot translate a free
+        chunk's offset.
+        */
+        auto const base =
+            aux.io->storage_pool()
+                .chunk(storage_pool::seq, offset_of_next_writer.id)
+                .reserve(bytes_to_write);
+        MONAD_ASSERT_PRINTF(
+            base == offset_of_next_writer.offset,
+            "chunk %u reserved %llu where the writer is placed at %llu",
+            uint32_t(offset_of_next_writer.id),
+            static_cast<unsigned long long>(base),
+            static_cast<unsigned long long>(offset_of_next_writer.offset));
+        aux.set_reservation(
+            in_fast_list,
+            node_writer_reservation{
+                offset_of_next_writer, base + bytes_to_write});
     }
     return ret;
 }

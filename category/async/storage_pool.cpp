@@ -181,6 +181,48 @@ std::pair<int, file_offset_t> storage_pool::chunk_t::write_fd(
     MONAD_ABORT("zonefs support isn't implemented yet");
 }
 
+file_offset_t storage_pool::chunk_t::reserve(size_t const bytes) noexcept
+{
+    MONAD_ASSERT(device().is_file() || device().is_block_device());
+    if (!append_only_) {
+        return 0;
+    }
+    MONAD_ASSERT(bytes <= std::numeric_limits<uint32_t>::max());
+    auto const *const metadata = device().metadata_;
+    auto const cbu = metadata->chunk_bytes_used_at(
+        device().size_of_file_, chunkid_within_device_);
+    auto const size =
+        cbu.fetch_add(static_cast<uint32_t>(bytes), std::memory_order_acq_rel);
+    MONAD_ASSERT_PRINTF(
+        size + bytes <= metadata->chunk_capacity,
+        "reserved %u + %zu exceeds chunk capacity %u",
+        size,
+        bytes,
+        metadata->chunk_capacity);
+    return size;
+}
+
+file_offset_t storage_pool::chunk_t::reserved_bytes() const noexcept
+{
+    MONAD_ASSERT(device().is_file() || device().is_block_device());
+    if (!append_only_) {
+        return capacity_;
+    }
+    auto const *const metadata = device().metadata_;
+    return metadata
+        ->chunk_bytes_used_at(device().size_of_file_, chunkid_within_device_)
+        .load(std::memory_order_acquire);
+}
+
+std::pair<int, file_offset_t> storage_pool::chunk_t::write_offset(
+    file_offset_t const chunk_relative) const noexcept
+{
+    MONAD_ASSERT(device().is_file() || device().is_block_device());
+    // Past the capacity would address the neighbouring chunk
+    MONAD_DEBUG_ASSERT(chunk_relative <= capacity_);
+    return {write_fd_, offset_ + chunk_relative};
+}
+
 file_offset_t storage_pool::chunk_t::size() const
 {
     if (device().is_file() || device().is_block_device()) {

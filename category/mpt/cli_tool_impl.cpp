@@ -774,14 +774,14 @@ public:
         chunks.reserve(1024);
         {
             monad::io::Ring ring(monad::io::RingConfig{1});
-            monad::io::Buffers rwbuf =
-                monad::io::make_buffers_for_mixed_read_write(
-                    ring,
-                    2,
-                    2,
-                    MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
-                    MONAD_ASYNC_NAMESPACE::AsyncIO::
-                        MONAD_IO_BUFFERS_WRITE_SIZE);
+            /* Read only, as a triedb opened for writing reserves space in its
+            work-in-progress chunks, which would displace the appends below.
+            Only metadata is touched here, and that is written directly.
+            */
+            monad::io::Buffers rwbuf = monad::io::make_buffers_for_read_only(
+                ring,
+                2,
+                MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
             auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*pool, rwbuf};
             MONAD_MPT_NAMESPACE::UpdateAux aux(io);
             for (;;) {
@@ -817,6 +817,18 @@ public:
                 aux.metadata_ctx().remove(chunkid);
                 chunks.push_back(chunkid);
             }
+        }
+
+        /* Each archived chunk is appended at its destination's append point, so
+        every destination must still be at the zero the truncated pool left it
+        at.
+        */
+        for (uint32_t n = 0; n < pool->chunks(monad::async::storage_pool::seq);
+             n++) {
+            MONAD_ASSERT_PRINTF(
+                pool->chunk(monad::async::storage_pool::seq, n).size() == 0,
+                "seq chunk %u is not empty before restoring into it",
+                n);
         }
 
         // Do the decompression into the pool

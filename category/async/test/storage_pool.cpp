@@ -240,6 +240,29 @@ namespace
         run_tests(pool);
     }
 
+    TEST(StoragePool, reservation_is_independent_of_placement)
+    {
+        storage_pool pool(use_anonymous_inode_tag{});
+        auto &chunk = pool.chunk(storage_pool::seq, 0);
+
+        EXPECT_EQ(chunk.reserved_bytes(), 0);
+        EXPECT_EQ(chunk.reserve(4096), 0);
+        EXPECT_EQ(chunk.reserve(4096), 4096);
+        EXPECT_EQ(chunk.reserved_bytes(), 8192);
+
+        // Placement neither reserves nor depends on reservation order.
+        auto const [fd, absolute] = chunk.write_offset(4096);
+        EXPECT_GE(fd, 0);
+        EXPECT_EQ(chunk.reserved_bytes(), 8192);
+        EXPECT_EQ(chunk.write_offset(0).second + 4096, absolute);
+
+        // Conventional chunks have no append point
+        auto &cnv_chunk = pool.chunk(storage_pool::cnv, 0);
+        EXPECT_EQ(cnv_chunk.reserved_bytes(), cnv_chunk.capacity());
+        EXPECT_EQ(cnv_chunk.reserve(4096), 0);
+        EXPECT_EQ(cnv_chunk.reserved_bytes(), cnv_chunk.capacity());
+    }
+
     TEST(StoragePool, raw_partitions)
     {
         ASSERT_DEATH(

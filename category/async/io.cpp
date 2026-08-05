@@ -442,17 +442,18 @@ void AsyncIO::submit_request_(
     MONAD_ASSERT(buffer.size() <= WRITE_BUFFER_SIZE);
 
     auto const &ci = seq_chunks_[chunk_and_offset.id];
-    auto const offset = ci.chunk.write_fd(buffer.size()).second;
-    /* Do sanity check to ensure initiator is definitely appending where
-    they are supposed to be appending.
+    /* Writes place themselves; all this can check is that the initiator asks
+    for a range it has reserved.
     */
     MONAD_ASSERT_PRINTF(
-        (chunk_and_offset.offset & 0xffff) == (offset & 0xffff),
-        "where we are appending %u is not where we are supposed to be "
-        "appending %llu. Chunk id is %u",
-        (chunk_and_offset.offset & 0xffff),
-        (offset & 0xffff),
+        chunk_and_offset.offset + buffer.size() <= ci.chunk.reserved_bytes(),
+        "write of %zu bytes at chunk-relative %llu is outside the %llu bytes "
+        "reserved in chunk %u",
+        buffer.size(),
+        static_cast<unsigned long long>(chunk_and_offset.offset),
+        static_cast<unsigned long long>(ci.chunk.reserved_bytes()),
         chunk_and_offset.id);
+    auto const offset = ci.chunk.write_offset(chunk_and_offset.offset).second;
 
     auto *const wr_ring =
         (wr_uring_ != nullptr) ? &wr_uring_->get_ring() : &uring_.get_ring();

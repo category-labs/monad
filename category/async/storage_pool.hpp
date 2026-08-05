@@ -267,6 +267,20 @@ public:
         std::pair<int, file_offset_t>
         write_fd(size_t bytes_which_shall_be_written) noexcept;
 
+        //! \brief Reserves `bytes` at the append point, returning the
+        //! chunk-relative offset of the reservation. Thread safe. Conventional
+        //! chunks have no append point and always return 0.
+        file_offset_t reserve(size_t bytes) noexcept;
+
+        //! \brief Bytes reserved at the append point so far. This is the same
+        //! counter `size()` reports, not a second one.
+        file_offset_t reserved_bytes() const noexcept;
+
+        //! \brief The fd and absolute offset at which to write a chunk-relative
+        //! offset that lies inside an existing reservation. Reserves nothing.
+        std::pair<int, file_offset_t>
+        write_offset(file_offset_t chunk_relative) const noexcept;
+
         //! \brief Returns the capacity of the zone
         file_offset_t capacity() const noexcept
         {
@@ -283,8 +297,14 @@ public:
             return {chunk_type::cnv, chunkid_within_zone_};
         }
 
-        //! \brief Returns the current amount of the zone filled with data (note
-        //! the OS syscall can sometimes lag reality for a few milliseconds)
+        /*! \brief Returns the current amount of the zone filled with data (note
+        the OS syscall can sometimes lag reality for a few milliseconds).
+
+        For a sequential write chunk this is the append point, i.e.
+        `reserved_bytes()`, which a writer holding a reservation puts up to that
+        reservation ahead of the bytes actually written. Do not read this as
+        "where the data ends" unless you know nobody holds a reservation.
+        */
         file_offset_t size() const;
 
         //! \brief Destroys the contents of the chunk, releasing the backing

@@ -229,6 +229,14 @@ namespace
         std::vector<monad::async::file_offset_t> seq;
         seq.reserve(sqe_exhaustion_does_not_reorder_writes_receiver::COUNT * 2);
 
+        // Each write below places itself at an offset this test chooses, so
+        // claim the whole range they will use up front
+        pool.chunk(pool.seq, 0)
+            .reserve(
+                (2 * sqe_exhaustion_does_not_reorder_writes_receiver::COUNT +
+                 1) *
+                monad::async::DISK_PAGE_SIZE);
+
         uint32_t offset = 0;
         auto s1 = testio.make_connected(
             monad::async::write_single_buffer_sender(

@@ -166,6 +166,17 @@ public:
     }
 };
 
+/* A node writer's exclusive claim on `[begin, end)` of one chunk. A
+replacement writer is positioned at the next unwritten offset inside the claim
+and reserves again only once it is exhausted, so flushing a partly filled
+buffer does not orphan the rest of the claim. `end` is chunk relative and may
+equal the chunk capacity, which `chunk_offset_t` cannot represent. */
+struct node_writer_reservation
+{
+    chunk_offset_t begin{INVALID_OFFSET};
+    file_offset_t end{0};
+};
+
 chunk_offset_t async_write_node_set_spare(UpdateAux &, Node &, bool is_fast);
 
 chunk_offset_t
@@ -232,6 +243,11 @@ class UpdateAux
         MIN_COMPACT_VIRTUAL_OFFSET};
     bool alternate_slow_fast_writer_{false};
     bool can_write_to_fast_{true};
+
+    // Byte range each node writer may place buffers within; always in the same
+    // chunk as the writer it belongs to.
+    node_writer_reservation reservation_fast_;
+    node_writer_reservation reservation_slow_;
 
     // Non-null enables parallel merklization of new subtries. Only ever set on
     // the aux of a triedb service thread that runs without compaction.
@@ -356,6 +372,18 @@ public:
         can_write_to_fast_ = v;
     }
 
+    node_writer_reservation const &
+    reservation(bool const in_fast_list) const noexcept
+    {
+        return in_fast_list ? reservation_fast_ : reservation_slow_;
+    }
+
+    void set_reservation(
+        bool const in_fast_list, node_writer_reservation const v) noexcept
+    {
+        (in_fast_list ? reservation_fast_ : reservation_slow_) = v;
+    }
+
     ParallelUpsertContext *parallel() const noexcept
     {
         return parallel_;
@@ -393,7 +421,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAux) == 128 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAux) == 160 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAux) == 8);
 
 template <receiver Receiver>

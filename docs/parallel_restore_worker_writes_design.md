@@ -117,6 +117,30 @@ Therefore:
   `offset + size <= reservation cursor`, which is a check on placement rather
   than on the low bits of an address.
 
+Two consequences of reserving ahead of writing, both accepted:
+
+- `chunk_bytes_used` — which `chunk_t::size()` returns for a seq chunk, the same
+  counter `reserved_bytes()` reads — stops meaning "bytes of valid data" while a
+  triedb is open for writing; it is the allocator cursor and runs up to one
+  reservation ahead of each writer. It is back in step at the next open, which
+  trims it to the recorded offset. Three consequences for its readers:
+  - Anything that appends with `write_fd` cannot assume a triedb it just opened
+    left the append point alone. The `cli_tool` restore did, and now opens its
+    scratch triedb read-only.
+  - `Db::get_storage_stats` overstates by ≤ 8 MB per writer **on block devices
+    only**: `device_t::capacity()` sums `chunk_bytes_used` there, while for a
+    file-backed pool it reports `st_blocks` (`storage_pool.cpp:104-105`), and a
+    reserved-but-unwritten tail is a hole that does not move the gauge.
+  - `cli_tool --archive` copies `chunk.size()` bytes per chunk
+    (`cli_tool_impl.cpp:489`, then `clone_contents_into`), so an archive taken by a
+    process that also holds a writable triedb captures each writer's unwritten
+    tail. Harmless — those bytes sit above the restored db's `start_of_wip` and are
+    trimmed at its first open — but the archive is marginally larger.
+- The exclusive end of a reservation is a chunk-relative byte count, not a
+  `chunk_offset_t`: the last reservation in a chunk ends *at* `chunk_capacity`,
+  and with the default 28-bit capacity that is one past `chunk_offset_t`'s
+  28-bit offset field.
+
 Out-of-order writes within a chunk are then fine on files and block devices. They
 are not fine on genuinely zoned devices — but `write_fd` `MONAD_ABORT`s on zonefs
 today (`storage_pool.cpp:181`), so this is a trade we are stating, not a contract
@@ -346,11 +370,16 @@ proves the case is exercised must be shown to fire when the mechanism is disable
    *not* catch it: `trie.cpp:1325-1327` is an `||`, so it passes when only one
    component is invalid, and `copy_trie.cpp:52-53,138-139` feed
    `physical_to_virtual` straight into `calc_min_offsets` with no check at all.
-3. **Cursor versus metadata offset at open.** If a crash can leave
-   `chunk_bytes_used` ahead of the metadata's recorded fast/slow offsets, then
-   reserve-at-grant resumes at the cursor and leaves a gap, where today's writer
-   resumes at the metadata offset. Confirm which is authoritative on open and
-   state the reconciliation rule.
+3. **Cursor versus metadata offset at open — resolved, they cannot disagree.**
+   `rewind_to_match_offsets` trims both work-in-progress chunks to the recorded
+   fast/slow offsets (`update_aux.cpp:217,229`) before `reset_node_writers` runs,
+   and `try_trim_contents` stores `min(chunk_bytes_used, bytes)`, so a cursor a
+   crash left ahead is reconciled *downward* to the record. The metadata offset
+   is therefore authoritative at open and the reservation cursor is authoritative
+   during a run. `reset_node_writers` nevertheless positions each writer at what
+   `reserve()` returns and logs the gap when the cursor is ahead, which orphans
+   those bytes rather than overwriting them; across the whole `monad_trie`,
+   `monad_async` and `DbBinarySnapshot` suites the gap was never non-zero.
 4. **Zoned devices.** Out-of-order intra-chunk writes are incompatible with
    sequential-write-required zones. Unimplemented today; recorded so the
    constraint is not rediscovered later.

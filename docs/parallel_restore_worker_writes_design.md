@@ -232,26 +232,126 @@ proves the case is exercised must be shown to fire when the mechanism is disable
 - **Reservation guard.** The new `offset + size <= cursor` check exercised by the
   ordinary parallel tests; no death test, matching the existing choice not to add
   one for the snapshot kind-mismatch assert.
-- **Compaction after a parallel restore.** Restore in parallel, then upsert enough
-  versions to drive compaction across the restored region, then read back. This is
-  the cheapest form of the audit item below.
+- **Compaction after a parallel restore.**
+  `DbBinarySnapshot.CompactionAfterParallelRestore` (in place). It verifies every
+  stored min-offset pair against offsets recomputed from the `fnext` arrays, then
+  drives real slow-list compaction over the restored region and reads back. Note
+  what it can and cannot catch: the per-pair verification is exact, but the
+  compaction drive alone cannot detect a *uniformly* too-high minimum, because
+  `advance_compact_offsets` derives the boundary from the same minimum it then
+  checks against. Injecting a min that omits the children's minima passes the
+  compaction drive and fails only the per-pair verification, so keep both.
 
 ## Risks and open verification items
 
-1. **Compaction ordering.** Interleaved extents break global post-order
-   monotonicity of virtual offsets. `min_offset_fast/slow` exists so compaction
-   need not assume it, but `trie.cpp:614-620` asserts a child's virtual offset is
-   below the current writer's offset, which shows the assumption is written down
-   in at least one place. Restore-into-empty does not reach that assert (it is on
-   the single-child re-read path), but every other consumer of the min-offset
-   arrays needs an explicit audit before this lands. Failure mode is a compaction
-   abort long after the restore, so this is the item to settle first.
-2. **Cursor versus metadata offset at open.** If a crash can leave
+1. **Compaction ordering — audited, no blocker.** Interleaved extents break
+   global post-order monotonicity of virtual offsets. Every consumer of
+   `min_offset_fast/slow` and of `compact_virtual_chunk_offset_t` was read; all
+   of them fall into one of three order-independent shapes.
+
+   *Takes a minimum.* `calc_min_offsets` (`trie.hpp:566-583`) is
+   `std::min` over the children's stored pairs plus, optionally, the node's own
+   offset — the result is a true minimum whichever side of its children the
+   parent lands on. Every writer of the arrays goes through it or copies an
+   existing entry verbatim: `create_node_from_children_if_any` (`trie.cpp:581`),
+   `retire_partition_` (`trie.cpp:767`), `fillin_parent_after_expiration`
+   (`trie.cpp:1323`), `try_fillin_parent_with_rewritten_node`
+   (`trie.cpp:1472-1491`, which explicitly folds the *new* offset in with
+   `std::min`, i.e. already tolerates it being lower than a child's),
+   `mismatch_handler_` (`trie.cpp:1229`), `copy_trie.cpp:52,61,94,102,138,266`,
+   `ChildData::copy_old_child` (`node.cpp:495`),
+   `create_node_with_children` (`node.cpp:590-598`) and
+   `create_node_with_expired_branches` (`trie.cpp:509-522`). Same shape at the
+   GC boundary: `release_unreferenced_chunks` (`update_aux.cpp:612-650`) and
+   `calculate_disk_usage_if_erased_up_to_and_including`
+   (`update_aux.cpp:699-737`) take a component-wise min over the timelines'
+   oldest roots and convert `get_count()` to a chunk count.
+
+   *Compares against a compaction cutoff.* `maybe_expire_or_compact_child`
+   (`trie.cpp:169,177`), the `compact_` child loop (`trie.cpp:1443-1453`), the
+   fast-vs-slow placement decision (`trie.cpp:1414-1422`, node's own offset
+   against the cutoff), the three corruption asserts (`trie.cpp:583-585`,
+   `trie.cpp:1492`, `update_aux.cpp:905`) and
+   `collect_compaction_read_stats` (`update_aux.cpp:1262`). All of these are
+   subtrie-min against a per-timeline boundary; none relates a parent to a
+   child.
+
+   *Uses a virtual offset as an identity, not an order.* The read path only ever
+   tests a virtual offset for equality (stale-recycle detection) or uses it as
+   the `NodeCache` key: `find_notify_fiber.cpp:139-140,296-306,367-370`,
+   `find_request_sender.hpp:183-190,250-258`, `db.cpp:1554-1556,1612-1614`,
+   `node_cache.hpp`.
+
+   Nothing outside `category/mpt` touches the arrays at all.
+
+   Only four sites order virtual offsets, and none of them is parent-vs-child:
+
+   - `trie.cpp:614-620` — the one the design flagged, `child offset < service
+     writer's offset`. Confirmed to be on the single-child re-read branch of
+     `create_node_compute_data_possibly_async`, which the pure-insert path
+     (`create_new_trie_` → `create_node_from_children_if_any`) does not call at
+     all. Measured, not assumed: with a `fprintf` in that branch, all seven
+     `DbBinarySnapshot` tests — including a 256-shard parallel restore at 8
+     workers — and `db_test`, `merkle_trie_test`, `monad_trie_test`,
+     `compaction_test`, `update_aux_test`, `subtrie_version_test`,
+     `min_truncated_offsets_test`, `virtual_offset_test`, `append_test`,
+     `dual_timeline_test` reach it zero times. Reachability depends only on trie
+     shape and the caching policy (a single-child node whose child was evicted),
+     neither of which worker writes changes. The assert nevertheless becomes
+     *semantically* wrong for the duration of a worker-writes upsert, because a
+     worker extent legitimately sits ahead of the service writer: Task 3 should
+     re-base it on the reservation cursor rather than
+     `node_writer_fast/slow->sender().offset()`, or drop it.
+   - `rewind_to_match_offsets` (`update_aux.cpp:164-165,179-180`) — last root
+     vs. the metadata's `start_of_wip` offset. Holds as long as
+     `advance_db_offsets_to` is given the reservation cursor rather than the
+     service writer's offset (§Chunk grants); risk item 3 is the same question.
+   - `rewind_to_version` (`update_aux.cpp:339-340`) — max of two timelines'
+     post-root offsets.
+   - the disk-growth arithmetic (`update_aux.cpp:852-861,939-974`) samples
+     `node_writer_fast->sender().offset()` and subtracts a previous mark, so it
+     assumes the *service writer's* offset increases monotonically, which it
+     does. It would understate growth if worker writes and compaction ever ran
+     together, but `db.cpp:462` asserts they cannot.
+
+   **Verdict: no consumer assumes a parent's virtual offset exceeds its
+   children's.** That is the whole of what this audit establishes: losing
+   post-order monotonicity is not by itself a hazard. It is *not* a claim that
+   the min-offset machinery is safe under worker writes in general — see the
+   precondition below, which is a separate hazard the same audit turned up.
+
+   Pinned by `DbBinarySnapshot.CompactionAfterParallelRestore`, which restores in
+   parallel, verifies every stored min-offset pair in the restored trie against
+   offsets recomputed from the `fnext` arrays, then drives eight versions of real
+   slow-list compaction across the restored region and reads every account and
+   slot back.
+2. **Precondition: a chunk must be on the fast or slow list before any worker
+   writes into it.** `physical_to_virtual` (`update_aux.cpp:76-91`) returns
+   `INVALID_VIRTUAL_OFFSET` for an offset whose chunk is still on the free list,
+   and `calc_min_offsets` (`trie.hpp:571-574`) then silently *skips* folding the
+   node's own offset into the pair. The result is a uniformly too-high minimum —
+   exactly the corruption class the compaction drive in the test cannot detect
+   (§Testing) — and the failure surfaces much later, as either the
+   `update_aux.cpp:906` abort or `free_compacted_chunks` releasing a chunk that
+   still holds live nodes.
+
+   So chunk grant must be ordered **append-to-list before extent hand-out**, not
+   reserve-then-append. Every existing feed of `physical_to_virtual` into
+   `calc_min_offsets` on the write path guards this with
+   `MONAD_ASSERT(virtual_offset != INVALID_VIRTUAL_OFFSET)` —
+   `create_node_from_children_if_any` (`trie.cpp:580`), `retire_partition_`
+   (`trie.cpp:765`), `fillin_parent_after_expiration` (`trie.cpp:1322`) — and
+   `WorkerNodeWriter` must carry the same assert, since it is what turns a
+   mis-ordered grant into an abort instead of silent corruption. Two things do
+   *not* catch it: `trie.cpp:1325-1327` is an `||`, so it passes when only one
+   component is invalid, and `copy_trie.cpp:52-53,138-139` feed
+   `physical_to_virtual` straight into `calc_min_offsets` with no check at all.
+3. **Cursor versus metadata offset at open.** If a crash can leave
    `chunk_bytes_used` ahead of the metadata's recorded fast/slow offsets, then
    reserve-at-grant resumes at the cursor and leaves a gap, where today's writer
    resumes at the metadata offset. Confirm which is authoritative on open and
    state the reconciliation rule.
-3. **Zoned devices.** Out-of-order intra-chunk writes are incompatible with
+4. **Zoned devices.** Out-of-order intra-chunk writes are incompatible with
    sequential-write-required zones. Unimplemented today; recorded so the
    constraint is not rediscovered later.
 

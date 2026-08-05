@@ -39,8 +39,11 @@
 #include <ankerl/unordered_dense.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
+#include <vector>
 
 namespace monad::mpt::test
 {
@@ -64,13 +67,11 @@ namespace
         int fd;
         std::string path;
 
-        TempDb()
+        explicit TempDb(uint64_t const bytes = 8ULL * 1024 * 1024 * 1024)
             : fd{MONAD_ASYNC_NAMESPACE::make_temporary_inode()}
             , path{"/proc/self/fd/" + std::to_string(fd)}
         {
-            MONAD_ASSERT(
-                -1 !=
-                ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
+            MONAD_ASSERT(-1 != ::ftruncate(fd, static_cast<off_t>(bytes)));
         }
 
         TempDb(TempDb const &) = delete;
@@ -105,6 +106,181 @@ namespace
             std::filesystem::remove_all(path, ec);
         }
     };
+
+    // Recomputes, from the offsets actually recorded in each node's fnext
+    // array, the minimum virtual offset over every subtrie, and compares it
+    // against the min-offset pair the writer stored in the parent. Compaction
+    // prunes its walk with those stored pairs, so an entry that is not the true
+    // minimum silently leaves data below the compaction boundary unrewritten.
+    struct MinOffsetVerifier final : public monad::mpt::TraverseMachine
+    {
+        monad::mpt::UpdateAux const *aux{nullptr};
+        size_t nodes{0};
+        size_t compared{0};
+
+        struct Record
+        {
+            monad::mpt::Node const *node{nullptr};
+            monad::mpt::compact_offset_pair subtrie_min{};
+        };
+
+        std::vector<Record> path;
+
+        bool
+        down(unsigned char const branch, monad::mpt::Node const &node) override
+        {
+            ++nodes;
+            monad::mpt::compact_offset_pair own;
+            if (!path.empty()) {
+                auto const *parent = path.back().node;
+                auto const virt = aux->physical_to_virtual(
+                    parent->fnext(parent->to_child_index(branch)));
+                MONAD_ASSERT(virt != monad::mpt::INVALID_VIRTUAL_OFFSET);
+                (virt.in_fast_list() ? own.fast : own.slow) =
+                    monad::mpt::compact_virtual_chunk_offset_t{virt};
+            }
+            path.push_back({&node, own});
+            return true;
+        }
+
+        void up(unsigned char const branch, monad::mpt::Node const &) override
+        {
+            auto const child = path.back();
+            path.pop_back();
+            if (path.empty()) {
+                return;
+            }
+            auto &parent = path.back();
+            auto const stored =
+                parent.node->min_offsets(parent.node->to_child_index(branch));
+            EXPECT_EQ((uint32_t)stored.fast, (uint32_t)child.subtrie_min.fast)
+                << "min_offset_fast at node " << nodes << " branch "
+                << static_cast<unsigned>(branch);
+            EXPECT_EQ((uint32_t)stored.slow, (uint32_t)child.subtrie_min.slow)
+                << "min_offset_slow at node " << nodes << " branch "
+                << static_cast<unsigned>(branch);
+            ++compared;
+            parent.subtrie_min.fast =
+                std::min(parent.subtrie_min.fast, child.subtrie_min.fast);
+            parent.subtrie_min.slow =
+                std::min(parent.subtrie_min.slow, child.subtrie_min.slow);
+        }
+
+        std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<MinOffsetVerifier>(*this);
+        }
+    };
+
+    // Slot-encoded source db holding `accounts` accounts, each with its own
+    // index as balance and nonce, and every fiftieth one also holding slots
+    // 0..9 valued by index. Slot 0 is written as zero, which is a deletion, so
+    // only slots 1..9 survive. Returns the state root at `block`.
+    monad::bytes32_t build_source_db(
+        TempDb const &src, uint64_t const accounts, uint64_t const block)
+    {
+        using namespace monad;
+        using namespace monad::mpt;
+
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.dbname_paths = {src.path}}};
+        load_header({}, db, BlockHeader{.number = 0});
+        db.update_finalized_version(0);
+        StateDeltas deltas;
+        for (uint64_t i = 0; i < accounts; ++i) {
+            StorageDeltas storage;
+            if ((i % 50) == 0) {
+                for (uint64_t j = 0; j < 10; ++j) {
+                    storage.emplace(
+                        bytes32_t{j}, StorageDelta{bytes32_t{}, bytes32_t{j}});
+                }
+            }
+            deltas.emplace(
+                Address{i},
+                StateDelta{
+                    .account =
+                        {std::nullopt, Account{.balance = i, .nonce = i}},
+                    .storage = storage});
+        }
+        TrieDb tdb{db};
+        monad::test::commit_simple(
+            tdb,
+            deltas,
+            Code{},
+            bytes32_t{block},
+            BlockHeader{.number = block});
+        tdb.finalize(block, bytes32_t{block});
+        return tdb.state_root();
+    }
+
+    // Single-shard dump of `block` from the primary timeline of `src`.
+    void
+    dump_snapshot(TempDb const &src, TempDir const &dir, uint64_t const block)
+    {
+        auto *const context =
+            monad_db_snapshot_filesystem_write_user_context_create(
+                dir.path.c_str(), block);
+        char const *dbpath[] = {src.path.c_str()};
+        EXPECT_TRUE(monad_db_dump_snapshot(
+            dbpath,
+            1,
+            static_cast<unsigned>(-1),
+            block,
+            monad_db_snapshot_write_filesystem,
+            context,
+            /*dump_concurrency_limit=*/2048,
+            /*total_shards=*/1,
+            /*shard_number=*/0,
+            /*dump_from_secondary=*/false));
+        monad_db_snapshot_filesystem_write_user_context_destroy(context);
+    }
+
+    // Stamp the kind so the snapshot loader's metadata-driven Db ctor (via
+    // monad_db_snapshot_loader_create) can resolve it. This is also the only
+    // open that creates the storage pool, so it is the only one where
+    // chunk_capacity takes effect.
+    void init_dest(
+        TempDb const &dest, monad::mpt::state_machine_kind const kind,
+        uint32_t const chunk_capacity_bits =
+            monad::mpt::OnDiskDbConfig{}.chunk_capacity)
+    {
+        using namespace monad;
+        using namespace monad::mpt;
+
+        mpt::Db dest_init{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{
+                .dbname_paths = {dest.path},
+                .chunk_capacity = chunk_capacity_bits}};
+        monad::mpt::test::DbAccessor::aux(dest_init)
+            .metadata_ctx()
+            .set_state_machine_kind(timeline_id::primary, kind);
+    }
+
+    // Reads back what build_source_db wrote, for account indices below
+    // `accounts`. A root hash does not depend on child offsets, so it cannot
+    // tell a correctly written subtrie from an unreachable one; only reading
+    // the leaves can.
+    void expect_entries_readable(monad::TrieDb &tdb, uint64_t const accounts)
+    {
+        using namespace monad;
+
+        Incarnation const inc{0, 0};
+        for (uint64_t i = 0; i < accounts; i += 50) {
+            Address const addr{i};
+            auto const account = tdb.read_account(addr);
+            EXPECT_TRUE(account.has_value()) << "account " << i;
+            if (account.has_value()) {
+                EXPECT_EQ(account->balance, i);
+            }
+            for (uint64_t j = 1; j < 10; ++j) {
+                EXPECT_EQ(
+                    tdb.read_storage(addr, inc, bytes32_t{j}), bytes32_t{j})
+                    << "account " << i << " slot " << j;
+            }
+        }
+    }
 }
 
 TEST(DbBinarySnapshot, Basic)
@@ -247,75 +423,22 @@ TEST(DbBinarySnapshot, ParallelMerklizationMatchesSerial)
     // mainnet-scale threshold would leave nothing partitioned and the test
     // would quietly stop covering the parallel path.
     constexpr uint32_t PARTITION_MIN_UPDATES = 4;
+    constexpr uint64_t ACCOUNTS = 50'000;
+    // Read-back is a spot check here: ParallelLoadMatchesSerialSlot and
+    // CompactionAfterParallelRestore cover the whole key space.
+    constexpr uint64_t ACCOUNTS_TO_READ_BACK = 1'000;
 
     TempDb const src_db;
     TempDir const snapshot_dir;
 
-    bytes32_t source_root;
-    {
-        mpt::Db db{
-            std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.dbname_paths = {src_db.path}}};
-        load_header({}, db, BlockHeader{.number = 0});
-        db.update_finalized_version(0);
-        StateDeltas deltas;
-        for (uint64_t i = 0; i < 50'000; ++i) {
-            StorageDeltas storage;
-            if ((i % 50) == 0) {
-                for (uint64_t j = 0; j < 10; ++j) {
-                    storage.emplace(
-                        bytes32_t{j}, StorageDelta{bytes32_t{}, bytes32_t{j}});
-                }
-            }
-            deltas.emplace(
-                Address{i},
-                StateDelta{
-                    .account =
-                        {std::nullopt, Account{.balance = i, .nonce = i}},
-                    .storage = storage});
-        }
-        TrieDb tdb{db};
-        monad::test::commit_simple(
-            tdb,
-            deltas,
-            Code{},
-            bytes32_t{BLOCK},
-            BlockHeader{.number = BLOCK});
-        tdb.finalize(BLOCK, bytes32_t{BLOCK});
-        source_root = tdb.state_root();
-    }
-
-    {
-        auto *const context =
-            monad_db_snapshot_filesystem_write_user_context_create(
-                snapshot_dir.path.c_str(), BLOCK);
-        char const *dbpath[] = {src_db.path.c_str()};
-        EXPECT_TRUE(monad_db_dump_snapshot(
-            dbpath,
-            1,
-            static_cast<unsigned>(-1),
-            BLOCK,
-            monad_db_snapshot_write_filesystem,
-            context,
-            2048,
-            1,
-            0,
-            /*dump_from_secondary=*/false));
-        monad_db_snapshot_filesystem_write_user_context_destroy(context);
-    }
+    bytes32_t const source_root = build_source_db(src_db, ACCOUNTS, BLOCK);
+    dump_snapshot(src_db, snapshot_dir, BLOCK);
 
     auto const restored_root = [&snapshot_dir, BLOCK](
                                    TempDb const &dest,
                                    state_machine_kind const kind,
                                    unsigned const concurrency) {
-        {
-            mpt::Db dest_init{
-                std::make_unique<OnDiskMachine>(),
-                OnDiskDbConfig{.dbname_paths = {dest.path}}};
-            monad::mpt::test::DbAccessor::aux(dest_init)
-                .metadata_ctx()
-                .set_state_machine_kind(timeline_id::primary, kind);
-        }
+        init_dest(dest, kind);
         char const *dbpath[] = {dest.path.c_str()};
         monad_db_snapshot_load_filesystem(
             dbpath,
@@ -334,25 +457,7 @@ TEST(DbBinarySnapshot, ParallelMerklizationMatchesSerial)
         EXPECT_EQ(db.get_latest_version(), BLOCK);
         TrieDb tdb{db};
         tdb.set_block_and_prefix(BLOCK);
-
-        // A root hash does not depend on child offsets, so it cannot tell a
-        // correctly written subtrie from an unreachable one. Read leaves back.
-        Incarnation const inc{0, 0};
-        for (uint64_t i = 0; i < 1'000; i += 50) {
-            Address const addr{i};
-            auto const account = tdb.read_account(addr);
-            EXPECT_TRUE(account.has_value()) << "account " << i;
-            if (account.has_value()) {
-                EXPECT_EQ(account->balance, i);
-            }
-            // The source gave every fiftieth account slots 1..9 holding their
-            // own index; slot 0 was written as zero, which is a deletion.
-            for (uint64_t j = 1; j < 10; ++j) {
-                EXPECT_EQ(
-                    tdb.read_storage(addr, inc, bytes32_t{j}), bytes32_t{j})
-                    << "account " << i << " slot " << j;
-            }
-        }
+        expect_entries_readable(tdb, ACCOUNTS_TO_READ_BACK);
         return tdb.state_root();
     };
 
@@ -376,6 +481,138 @@ TEST(DbBinarySnapshot, ParallelMerklizationMatchesSerial)
     EXPECT_EQ(
         restored_root(page_parallel, state_machine_kind::monad, WORKERS),
         page_root);
+}
+
+// Compaction decides whether to rewrite a subtrie by reading the min-offset
+// arrays that the restore wrote into every parent, so it -- not the root hash,
+// which is independent of child offsets -- is where an offset a worker got
+// wrong surfaces.
+TEST(DbBinarySnapshot, CompactionAfterParallelRestore)
+{
+    using namespace monad;
+    using namespace monad::mpt;
+
+    constexpr uint64_t BLOCK = 1;
+    constexpr unsigned WORKERS = 4;
+    constexpr uint32_t PARTITION_MIN_UPDATES = 4;
+    // Versions upserted with compaction on. Each advances the slow-list
+    // compaction boundary by one compact_virtual_chunk_offset_t unit (64 KiB).
+    constexpr uint64_t COMPACTION_VERSIONS = 8;
+    // The loader upserts with can_write_to_fast = false, so the restored trie
+    // lands in the slow list, and UpdateAux::advance_compact_offsets only
+    // starts compacting that list once total pool usage exceeds 60% and
+    // slow-list usage exceeds 20%. The destination pool is therefore sized so
+    // that the restore alone clears both: 8 MiB chunks (the smallest AsyncIO
+    // accepts) and few enough of them. The usage assertions below fail loudly
+    // if a change in node footprint moves it out of that window, rather than
+    // letting the test silently stop compacting.
+    constexpr uint32_t DEST_CHUNK_CAPACITY_BITS = 23;
+    constexpr uint64_t DEST_POOL_BYTES = 58ULL << 20;
+    // Sized so the restored trie lands near the middle of its second 8 MiB
+    // slow chunk, which is what leaves the usage window above room to drift.
+    constexpr uint64_t ACCOUNTS = 65'000;
+
+    TempDb const src_db;
+    TempDir const snapshot_dir;
+
+    bytes32_t const source_root = build_source_db(src_db, ACCOUNTS, BLOCK);
+    dump_snapshot(src_db, snapshot_dir, BLOCK);
+
+    TempDb const dest_db{DEST_POOL_BYTES};
+    init_dest(dest_db, state_machine_kind::ethereum, DEST_CHUNK_CAPACITY_BITS);
+    char const *dest_paths[] = {dest_db.path.c_str()};
+    monad_db_snapshot_load_filesystem(
+        dest_paths,
+        1,
+        static_cast<unsigned>(-1),
+        snapshot_dir.path.c_str(),
+        BLOCK,
+        /*load_to_secondary=*/false,
+        /*load_concurrency=*/1u,
+        WORKERS,
+        PARTITION_MIN_UPDATES);
+
+    compact_offset_pair boundary_before{};
+    compact_offset_pair boundary_after{};
+    {
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{
+                .append = true,
+                .compaction = true,
+                .dbname_paths = {dest_db.path},
+                .chunk_capacity = DEST_CHUNK_CAPACITY_BITS}};
+        auto &aux = monad::mpt::test::DbAccessor::aux(db);
+        double const slow_usage = aux.num_chunks(UpdateAux::chunk_list::slow) /
+                                  static_cast<double>(aux.io->chunk_count());
+        ASSERT_GT(aux.disk_usage(), 0.6)
+            << "destination pool no longer full enough for slow-list "
+               "compaction to start; retune ACCOUNTS or DEST_POOL_BYTES";
+        ASSERT_GT(slow_usage, 0.2)
+            << "restore no longer fills enough of the slow list; retune "
+               "ACCOUNTS or DEST_POOL_BYTES";
+        ASSERT_LT(aux.disk_usage(), 0.8)
+            << "destination pool too full: history trimming would run and the "
+               "compaction upserts may run out of chunks; retune ACCOUNTS or "
+               "DEST_POOL_BYTES";
+
+        // Compaction prunes its walk with the min-offset pair each parent
+        // stores per child, so every one of them has to be the true minimum
+        // over that child's subtrie.
+        auto verify_min_offsets = [&](uint64_t const version) {
+            auto const root = db.load_root_for_version(version);
+            MONAD_ASSERT(root);
+            MinOffsetVerifier verifier;
+            verifier.aux = &aux;
+            EXPECT_TRUE(
+                db.traverse_blocking(NodeCursor{root}, verifier, version));
+            EXPECT_TRUE(verifier.path.empty());
+            EXPECT_GT(verifier.compared, 10'000u)
+                << "traversal covered too little of the restored trie";
+            return compact_offset_pair::deserialize(root->value());
+        };
+
+        boundary_before = verify_min_offsets(BLOCK);
+        TrieDb tdb{db};
+        tdb.set_block_and_prefix(BLOCK);
+        // Compaction only descends where the update itself descends, so these
+        // have to touch the state table rather than the block header alone.
+        for (uint64_t v = BLOCK + 1; v <= BLOCK + COMPACTION_VERSIONS; ++v) {
+            StateDeltas deltas;
+            deltas.emplace(
+                Address{1'000'000 + v},
+                StateDelta{
+                    .account = {std::nullopt, Account{.balance = v}},
+                    .storage = {}});
+            monad::test::commit_simple(
+                tdb, deltas, Code{}, bytes32_t{v}, BlockHeader{.number = v});
+            tdb.finalize(v, bytes32_t{v});
+        }
+        boundary_after = verify_min_offsets(BLOCK + COMPACTION_VERSIONS);
+    }
+
+    /* A moved boundary shows compaction ran over the restored region and pruned
+    self-consistently: advance_compact_offsets aborts if the trie still
+    references an offset below the boundary it recorded last version. It does
+    not show the recorded minima are the true ones, because that same function
+    derives the boundary from the minimum it later checks against
+    (update_aux.cpp:904-913), so a uniformly too-high minimum passes here. Only
+    MinOffsetVerifier catches that, which is why both checks exist. */
+    EXPECT_GT((uint32_t)boundary_after.slow, (uint32_t)boundary_before.slow);
+
+    {
+        AsyncIOContext io_context{
+            ReadOnlyOnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+        mpt::Db db{io_context};
+        EXPECT_EQ(db.get_latest_version(), BLOCK + COMPACTION_VERSIONS);
+        TrieDb tdb{db};
+        // The restored version is still readable, and still hashes to what the
+        // source did, after compaction rewrote part of it.
+        tdb.set_block_and_prefix(BLOCK);
+        EXPECT_EQ(tdb.state_root(), source_root);
+        tdb.set_block_and_prefix(BLOCK + COMPACTION_VERSIONS);
+        expect_entries_readable(tdb, ACCOUNTS);
+    }
 }
 
 TEST(DbBinarySnapshot, MultipleShards)

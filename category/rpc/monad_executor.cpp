@@ -867,6 +867,9 @@ namespace
                     // NOTE(dhil): Synthetic blocks carry forward the block
                     // beneficiary.
                     .beneficiary = header.beneficiary,
+                    // TODO(dhil): The simulation does not compute roots at this
+                    // time.
+                    .parent_beacon_block_root = bytes32_t{},
                 };
                 Block const synthetic_block{
                     .header = synthetic_header,
@@ -945,6 +948,9 @@ namespace
                     header.timestamp + DEFAULT_TIMESTAMP_INCREMENT),
                 .beneficiary = bo.fee_recipient.value_or(header.beneficiary),
                 .base_fee_per_gas = bo.base_fee_per_gas,
+                // TODO(dhil): The simulation does not compute roots at this
+                // time.
+                .parent_beacon_block_root = bytes32_t{},
             };
 
             // Construct state

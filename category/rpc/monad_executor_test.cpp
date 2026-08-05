@@ -8203,3 +8203,118 @@ TEST_F(EthCallFixture, eth_simulate_v1_transaction_input_too_long_causes_death)
     monad_block_override_vec_destroy(block_override);
     monad_state_override_vec_destroy(state_override);
 }
+
+// The EIP-4788 implementation expects beacon roots to be present in headers.
+TEST_F(EthCallFixture, eth_simulate_v1_beacon_roots)
+{
+    static constexpr Address sender =
+        0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266_address;
+    static constexpr Address beacon_roots =
+        0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02_address;
+
+    bytes32_t one_wei{};
+    one_wei.bytes[31] = 1;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = uint256_t{1'000'000}, .nonce = 0}}}}},
+        {},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+    auto *const state_overrides = monad_state_override_vec_create(1);
+    auto *const block_overrides = monad_block_override_vec_create(1);
+
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 21'000,
+        .value = 0,
+        .to = sender,
+        .type = TransactionType::eip1559,
+        .max_priority_fee_per_gas = 0,
+    };
+    auto const encoded_tx = rlp::encode_transaction(tx);
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_string2(byte_string_view(encoded_tx)))));
+
+    BlockHeader const header{
+        .number = 255,
+        .gas_limit = 200'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto submit_simulation = [&](callback_context &ctx) {
+        boost::fibers::future<void> f = ctx.promise.get_future();
+
+        monad_executor_eth_simulate_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            255,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            simulate_gas_limit,
+            simulate_max_calls,
+            state_overrides,
+            block_overrides,
+            false,
+            complete_callback,
+            (void *)&ctx);
+
+        f.get();
+    };
+
+    // Baseline sanity check: no override, call succeeds.
+    callback_context baseline_ctx;
+    submit_simulation(baseline_ctx);
+    ASSERT_EQ(baseline_ctx.result->status_code, EVMC_SUCCESS);
+
+    // Inject an account on the beacon-roots address.
+    add_override_address_at(
+        state_overrides, 0, beacon_roots.bytes, sizeof(beacon_roots.bytes));
+    set_override_balance_at(
+        state_overrides,
+        0,
+        beacon_roots.bytes,
+        sizeof(beacon_roots.bytes),
+        one_wei.bytes,
+        sizeof(one_wei.bytes));
+
+    callback_context overridden_ctx;
+    submit_simulation(overridden_ctx);
+
+    ASSERT_EQ(overridden_ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(overridden_ctx.result->encoded_trace_len > 0);
+    nlohmann::json output = nlohmann::json::from_cbor(
+        overridden_ctx.result->encoded_trace,
+        overridden_ctx.result->encoded_trace +
+            overridden_ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 1);
+    ASSERT_EQ(output[0]["calls"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+
+    monad_block_override_vec_destroy(block_overrides);
+    monad_state_override_vec_destroy(state_overrides);
+    monad_executor_destroy(executor);
+}

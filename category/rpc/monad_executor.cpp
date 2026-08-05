@@ -185,6 +185,19 @@ namespace
 
             // Remove all override
             if (!state_delta.state.empty()) {
+                // A possible side-effect of `set_to_state_incarnation` is that
+                // it can alter what `set_storage` sees as the original storage
+                // (c.f. `update_state`). Therefore we prime the original
+                // storage slots against the existing block state incarnation
+                // before resetting the account incarnation. Consequently, merge
+                // validation remains consistent when a previous simulated
+                // block already mutated these slots.
+
+                // As with `state_diff`, access the account first.
+                (void)state.get_nonce(address);
+                for (auto const &[key, _] : state_delta.state) {
+                    (void)state.get_storage(address, key);
+                }
                 state.set_to_state_incarnation(address);
                 update_state(state_delta.state);
             }

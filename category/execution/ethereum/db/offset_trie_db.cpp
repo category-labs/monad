@@ -100,7 +100,7 @@ namespace mpt_witness
         auto const id = static_cast<NodeId>(
             static_cast<uint32_t>(node.bytes() - blob_.data()));
         if (node.tag() == DIGEST) {
-            hashes_.emplace(id, DigestView{node}.hash());
+            // A digest's hash IS the 32 bytes in the blob; child_ref reads it there.
             return;
         }
         unsigned char buf[MAX_NODE_RLP];
@@ -202,9 +202,6 @@ namespace mpt_witness
             rlp::encode_string(dest.last(33), byte_string_view{h.bytes, 32});
             return dest.shrink(33);
         };
-        if (auto const it = hashes_.find(id); it != hashes_.end()) {
-            return hash_ref(it->second);
-        }
         // Pre-state (priming) reads bound-check and resolve against the blob;
         // current reads consult the overlay first.
         NodeViewBase const node = [&]() -> NodeViewBase {
@@ -216,10 +213,13 @@ namespace mpt_witness
                 return get_current(id);
             }
         }();
+        // Resolved BEFORE the map is consulted: a digest's hash is the bytes at a known
+        // offset, so it needs neither a probe nor an entry.
         if (node.tag() == DIGEST) {
-            bytes32_t const h = DigestView{node}.hash();
-            hashes_.emplace(id, h);
-            return hash_ref(h);
+            return hash_ref(DigestView{node}.hash());
+        }
+        if (auto const it = hashes_.find(id); it != hashes_.end()) {
+            return hash_ref(it->second);
         }
         unsigned char scratch[MAX_NODE_RLP];
         node_rlp_span const rem =

@@ -21,9 +21,9 @@
 
 #include <evmc/evmc.h>
 #include <evmc/helpers.h>
+
 #include <gtest/gtest.h>
 
-#include <format>
 #include <type_traits>
 #include <utility>
 
@@ -35,11 +35,31 @@ namespace detail
     template <monad_eth_revision rev>
     using EvmRevisionConstant = std::integral_constant<monad_eth_revision, rev>;
 
-    template <std::size_t... Is>
-    constexpr auto make_monad_revision_types(std::index_sequence<Is...>)
+    template <monad_eth_revision Until, std::size_t... Is>
+    constexpr auto make_monad_revision_types_until(std::index_sequence<Is...>)
     {
-        return ::testing::Types<
-            MonadRevisionConstant<static_cast<monad_revision>(Is)>...>{};
+        constexpr auto filtered = [] {
+            std::array<std::size_t, sizeof...(Is)> result{};
+            std::size_t count = 0;
+
+            (
+                [&] {
+                    constexpr auto monad_rev = static_cast<monad_revision>(Is);
+                    constexpr auto evm_rev =
+                        monad::MonadTraits<monad_rev>::evm_rev();
+                    if (evm_rev <= Until) {
+                        result[count++] = Is;
+                    }
+                }(),
+                ...);
+
+            return std::pair{result, count};
+        }();
+
+        return [&]<std::size_t... Js>(std::index_sequence<Js...>) {
+            return ::testing::Types<MonadRevisionConstant<
+                static_cast<monad_revision>(filtered.first[Js])>...>{};
+        }(std::make_index_sequence<filtered.second>{});
     }
 
     template <std::size_t... Is>
@@ -154,8 +174,10 @@ namespace detail
         }(std::make_index_sequence<filtered.second>{});
     }
 
-    using MonadRevisionTypes = decltype(make_monad_revision_types(
-        std::make_index_sequence<MONAD_NEXT + 1>{}));
+    using MonadRevisionTypes =
+        decltype(make_monad_revision_types_until<
+                 monad::constants::LATEST_SUPPORTED_EVM_FORK>(
+            std::make_index_sequence<MONAD_NEXT + 1>{}));
 
     template <monad_eth_revision Since>
     using MonadRevisionTypesSinceEvmRevision =

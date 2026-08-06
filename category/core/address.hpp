@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <functional>
 #include <type_traits>
+#include <category/core/bit_primitives.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -116,10 +117,10 @@ MONAD_NAMESPACE_END
 template <>
 struct std::hash<monad::Address>
 {
+    [[gnu::always_inline]] inline
     size_t operator()(monad::Address const &x) const noexcept
     {
-        return ankerl::unordered_dense::detail::wyhash::hash(
-            x.bytes, sizeof(x.bytes));
+        return monad::bits::hash_bytes20(x.bytes);
     }
 };
 

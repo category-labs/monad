@@ -25,6 +25,7 @@
 
 #include <concepts>
 #include <tuple>
+#include <category/core/bit_primitives.hpp>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -286,16 +287,16 @@ inline byte_string serialize_as_big_endian(UnsignedInteger n)
 {
     MONAD_ASSERT(N <= sizeof(UnsignedInteger));
 
-    // std::byteswap is C++23 only, using GCC intrinsic instead
+    // monad::bits::bswap is C++23 only, using GCC intrinsic instead
     if constexpr (std::endian::native != std::endian::big) {
         if constexpr (sizeof(UnsignedInteger) <= 2) {
-            n = __builtin_bswap16(n);
+            n = monad::bits::bswap16(n);
         }
         else if constexpr (sizeof(UnsignedInteger) == 4) {
-            n = __builtin_bswap32(n);
+            n = monad::bits::bswap32(n);
         }
         else if constexpr (sizeof(UnsignedInteger) == 8) {
-            n = __builtin_bswap64(n);
+            n = monad::bits::bswap64(n);
         }
         else {
             return serialize_as_big_endian<N>(static_cast<uint64_t>(n));

@@ -33,6 +33,7 @@
 #include <bit>
 #include <cstddef>
 #include <functional>
+#include <category/core/bit_primitives.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -151,9 +152,19 @@ MONAD_NAMESPACE_END
 template <>
 struct std::hash<monad::bytes32_t>
 {
+    [[gnu::always_inline]] inline
     size_t operator()(monad::bytes32_t const &x) const noexcept
     {
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
+        // zkVM guest: fold + fmix64 (category/core/bit_primitives.hpp),
+        // measured on the guest where komihash-class byte-wise hashing is
+        // step-priced; no entropy source exists there anyway, so the seed
+        // would be constant.
+        return monad::bits::hash_bytes32(x.bytes);
+#else
+        // Node: seeded komihash -- HashDoS protection, seeded at startup.
         return monad::seeded_fast_hash(x.bytes, sizeof(x.bytes));
+#endif
     }
 };
 

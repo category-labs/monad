@@ -1,0 +1,68 @@
+diff --git a/include/ankerl/unordered_dense.h b/include/ankerl/unordered_dense.h
+index e2d3851..361cd8c 100644
+--- a/include/ankerl/unordered_dense.h
++++ b/include/ankerl/unordered_dense.h
+@@ -885,7 +885,7 @@ private:
+ 
+     [[nodiscard]] constexpr auto calc_shifts_for_size(size_t s) const -> uint8_t {
+         auto shifts = initial_shifts;
+-        while (shifts > 0 && static_cast<size_t>(static_cast<float>(calc_num_buckets(shifts)) * max_load_factor()) < s) {
++        while (shifts > 0 && static_cast<size_t>((static_cast<uint64_t>(calc_num_buckets(shifts)) * 4) / 5) < s) {
+             --shifts;
+         }
+         return shifts;
+@@ -925,7 +925,7 @@ private:
+             // reached the maximum, make sure we can use each bucket
+             m_max_bucket_capacity = max_bucket_count();
+         } else {
+-            m_max_bucket_capacity = static_cast<value_idx_type>(static_cast<float>(m_num_buckets) * max_load_factor());
++            m_max_bucket_capacity = static_cast<value_idx_type>((static_cast<uint64_t>(m_num_buckets) * 4) / 5);
+         }
+     }
+ 
+diff --git a/immer/detail/hamts/bits.hpp b/immer/detail/hamts/bits.hpp
+index 0b4b923..18ef97f 100644
+--- a/immer/detail/hamts/bits.hpp
++++ b/immer/detail/hamts/bits.hpp
+@@ -13,6 +13,23 @@
+ 
+ #if defined(_MSC_VER)
+ #include <intrin.h> // __popcnt
++
++#ifndef MONAD_POPCOUNT_INLINE_MEASUREMENT
++#define MONAD_POPCOUNT_INLINE_MEASUREMENT
++namespace monad_popcount_inline {
++[[gnu::always_inline]] inline constexpr int p64(unsigned long long x) noexcept
++{
++    x = x - ((x >> 1) & 0x5555555555555555ull);
++    x = (x & 0x3333333333333333ull) + ((x >> 2) & 0x3333333333333333ull);
++    x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0Full;
++    return (int)((x * 0x0101010101010101ull) >> 56);
++}
++template <typename T> [[gnu::always_inline]] inline constexpr int pc(T x) noexcept
++{
++    return p64((unsigned long long)x);
++}
++}
++#endif
+ #endif
+ 
+ namespace immer {
+@@ -89,7 +106,7 @@ inline count_t popcount(std::uint32_t x)
+ #if defined(_MSC_VER)
+     return __popcnt(x);
+ #else
+-    return __builtin_popcount(x);
++    return monad_popcount_inline::pc(x);
+ #endif
+ #else
+     return popcount_fallback(x);
+@@ -108,7 +125,7 @@ inline count_t popcount(std::uint64_t x)
+            popcount(static_cast<std::uint32_t>(x));
+ #endif
+ #else
+-    return __builtin_popcountll(x);
++    return monad_popcount_inline::pc(x);
+ #endif
+ #else
+     return popcount_fallback(x);

@@ -60,7 +60,7 @@ namespace monad::vm::interpreter
     {
         auto jumpdests = JumpdestMap(code.size(), false);
 
-        for (auto i = 0u; i < code.size(); ++i) {
+        for (size_t i = 0; i < code.size(); ++i) {
             auto const op = code[i];
 
             if (op == EvmOpCode::JUMPDEST) {

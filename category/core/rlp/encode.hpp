@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/assume.h>
+#include <category/core/bit_primitives.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/endian.hpp>
 #include <category/core/likely.h>
@@ -33,7 +34,7 @@ namespace impl
 {
     constexpr size_t length_length(size_t const n)
     {
-        size_t const lz_bits = static_cast<size_t>(std::countl_zero(n));
+        size_t const lz_bits = static_cast<size_t>(monad::bits::countl_zero(n));
         size_t const lz_bytes = lz_bits / 8;
         return sizeof(size_t) - lz_bytes;
     }
@@ -44,7 +45,7 @@ namespace impl
     constexpr std::span<unsigned char>
     encode_length(std::span<unsigned char> d, size_t n)
     {
-        size_t const lz_bits = static_cast<size_t>(std::countl_zero(n));
+        size_t const lz_bits = static_cast<size_t>(monad::bits::countl_zero(n));
         size_t const lz_bytes = lz_bits / 8;
         if (MONAD_LIKELY(n != 0)) {
             n <<= lz_bytes * 8;

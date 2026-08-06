@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/assert.h>
+#include <category/core/bit_primitives.hpp>
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint128.hpp>
@@ -585,7 +586,7 @@ inline constexpr uint32_t count_significant_bytes(uint256_t const &x) noexcept
     else {
         auto const leading_word = x[significant_words - 1];
         auto const leading_significant_bytes = static_cast<uint32_t>(
-            (64 - std::countl_zero(leading_word) + 7) / 8);
+            (64 - monad::bits::countl_zero(leading_word) + 7) / 8);
         return leading_significant_bytes + (significant_words - 1) * 8;
     }
 }
@@ -839,7 +840,7 @@ udivrem(words_t<M> const &u, words_t<N> const &v) noexcept
     }
 
     auto const normalize_shift =
-        static_cast<uint8_t>(std::countl_zero(v[n - 1]));
+        static_cast<uint8_t>(monad::bits::countl_zero(v[n - 1]));
 
     // Extra word so the normalization shift never overflows u
     words_t<M + 1> u_norm;
@@ -977,7 +978,7 @@ exp(uint256_t base, uint256_t const &exponent) noexcept
     for (size_t w = 0; w < sig_words; w++) {
         uint64_t word_exp = exponent[w];
         int32_t significant_bits =
-            w + 1 == sig_words ? 64 - std::countl_zero(word_exp) : 64;
+            w + 1 == sig_words ? 64 - monad::bits::countl_zero(word_exp) : 64;
         while (significant_bits) {
             if (word_exp & 1) {
                 result = truncating_mul(result, base);
@@ -1065,7 +1066,7 @@ inline constexpr size_t countl_zero(uint256_t const &x)
 {
     size_t cnt = 0;
     for (size_t i = 0; i < uint256_t::num_words; i++) {
-        cnt += static_cast<size_t>(std::countl_zero(x[3 - i]));
+        cnt += static_cast<size_t>(monad::bits::countl_zero(x[3 - i]));
         if (cnt != ((i + 1U) * 64U)) {
             return cnt;
         }

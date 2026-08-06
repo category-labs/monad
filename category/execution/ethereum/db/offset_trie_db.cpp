@@ -91,14 +91,14 @@ namespace mpt_witness
 
         // Empty trie: reserve the sentinel root id so fresh_id never reuses it.
         if (is_overlay_id(root)) {
-            next_id_ = NodeId{static_cast<uint32_t>(root) + 1};
+            next_id_ = NodeId{static_cast<uint64_t>(root) + 1};
         }
     }
 
     void TrieStore::prime_node(NodeViewBase const node)
     {
         auto const id = static_cast<NodeId>(
-            static_cast<uint32_t>(node.bytes() - blob_.data()));
+            static_cast<uint64_t>(node.bytes() - blob_.data()));
         if (node.tag() == DIGEST) {
             // A digest's hash IS the 32 bytes in the blob; child_ref reads it there.
             return;
@@ -201,7 +201,7 @@ namespace mpt_witness
         // current reads consult the overlay first.
         NodeViewBase const node = [&]() -> NodeViewBase {
             if constexpr (priming_pass) {
-                MONAD_ASSERT(static_cast<uint32_t>(id) < blob_.size());
+                MONAD_ASSERT(static_cast<uint64_t>(id) < blob_.size());
                 return get_original(id);
             }
             else {
@@ -418,7 +418,7 @@ namespace mpt_witness
     NodeId TrieStore::fresh_id()
     {
         NodeId const fresh = next_id_;
-        next_id_ = NodeId{static_cast<uint32_t>(next_id_) + 1};
+        next_id_ = NodeId{static_cast<uint64_t>(next_id_) + 1};
         return fresh;
     }
 

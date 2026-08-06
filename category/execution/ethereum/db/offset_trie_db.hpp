@@ -71,14 +71,18 @@ namespace mpt_witness
     // A node's stable identity (see §9). 0 = null; [HEADER_LEN, blob_len) is a
     // blob offset (unless shadowed by the overlay); >= OVERLAY_BASE is a fresh
     // overlay node.
-    enum class NodeId : uint32_t
+    // 64-bit on purpose: a 32-bit type makes the compiler emit addw/addiw/srliw everywhere
+    // this id is arithmetic, an instruction class the reth guest never uses. The value range
+    // is unchanged (blobs are bounded well below 2 GiB) and the wire format is untouched —
+    // append_u32/rd_u32 still read and write four bytes.
+    enum class NodeId : uint64_t
     {
     };
     inline constexpr NodeId NULL_ID{0};
 
     inline bool is_overlay_id(NodeId id)
     {
-        return static_cast<uint32_t>(id) >= OVERLAY_BASE;
+        return static_cast<uint64_t>(id) >= OVERLAY_BASE;
     }
 
     // Hasher so the overlay/hash maps can key on NodeId directly (an enum class
@@ -89,8 +93,8 @@ namespace mpt_witness
 
         uint64_t operator()(NodeId const id) const noexcept
         {
-            return ankerl::unordered_dense::hash<uint32_t>{}(
-                static_cast<uint32_t>(id));
+            return ankerl::unordered_dense::hash<uint64_t>{}(
+                static_cast<uint64_t>(id));
         }
     };
 
@@ -352,9 +356,9 @@ namespace mpt_witness
         {
             MONAD_ASSERT(!is_overlay_id(id) && id != NULL_ID);
             MONAD_ASSERT(
-                static_cast<uint32_t>(id) >= HEADER_LEN &&
-                static_cast<uint32_t>(id) < blob_.size());
-            return NodeViewBase{blob_.data() + static_cast<uint32_t>(id)};
+                static_cast<uint64_t>(id) >= HEADER_LEN &&
+                static_cast<uint64_t>(id) < blob_.size());
+            return NodeViewBase{blob_.data() + static_cast<uint64_t>(id)};
         }
 
         // Current bytes for `id` — overlay entry if present, else the blob.

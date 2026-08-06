@@ -103,17 +103,12 @@ namespace mpt_witness
             // A digest's hash IS the 32 bytes in the blob; child_ref reads it there.
             return;
         }
-        unsigned char buf[MAX_NODE_RLP];
-        node_rlp_span const rem =
-            encode_rlp<true>(node, node_rlp_span{buf}); // priming pass
-        // Only hash-referenced nodes (canonical RLP >= 32 B) are cached;
-        // smaller nodes are inlined by their parent, so caching their hash
-        // would make child_ref emit a 32-byte ref where the trie inlines it.
-        if (rem.rlp_size() >= 32) {
-            bytes32_t h;
-            keccak256(rem.rlp_data(), rem.rlp_size(), h.bytes);
-            hashes_.emplace(id, h);
-        }
+        // No eager hashing. child_ref and TrieStore::hash already RLP-encode and keccak a
+        // node on a cache miss and store the result, so every node that is referenced is
+        // still hashed exactly once — and nodes the block never reaches are not hashed at
+        // all. The constructor's walk is kept: it checks that the nodes tile the blob,
+        // which is a soundness check on the witness rather than an optimisation.
+        (void)node;
     }
 
     std::optional<NodeViewBase>

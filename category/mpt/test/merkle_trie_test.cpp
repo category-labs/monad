@@ -698,6 +698,31 @@ TYPED_TEST(TrieTest, variable_length_trie)
     }
 }
 
+// A node with both children and a value (one key a proper prefix of another)
+// must be encoded as an extension, not a leaf. Expected root is the Ethereum
+// canonical MPT vector "branch-value-update" from
+// third_party/ethereum-tests/TrieTests/trietest.json. Not reachable in
+// production state roots: variable-length trie in production is keyed by
+// a prefix-free set (self-delimiting RLP indices).
+TYPED_TEST(TrieTest, leaf_on_branch_canonical_root)
+{
+    this->sm = std::make_unique<StateMachineAlwaysVarLen>();
+
+    auto const abc = 0x616263_bytes; // "abc"
+    auto const abcd = 0x61626364_bytes; // "abcd"
+
+    this->root = upsert_updates(
+        this->aux,
+        *this->sm,
+        std::move(this->root),
+        make_update(abc, abc),
+        make_update(abcd, abcd));
+
+    EXPECT_EQ(
+        this->root_hash(),
+        0x7a320748f780ad9ad5b0837302075ce0eeba6c26e3d8562c67ccc0f1b273298a_bytes);
+}
+
 TYPED_TEST(TrieTest, variable_length_trie_with_prefix)
 {
     constexpr uint64_t version = 0;

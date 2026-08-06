@@ -82,22 +82,6 @@ set(ETHASH_TESTING OFF CACHE BOOL "" FORCE)
 set(ETHASH_INSTALL_CMAKE_CONFIG OFF CACHE BOOL "" FORCE)
 add_subdirectory("${THIRD_PARTY_DIR}/ethash" ethash)
 
-# blst (BLS12-381)
-set(BLST_SOURCE_DIR "${THIRD_PARTY_DIR}/blst")
-
-add_library(blst STATIC
-    "${BLST_SOURCE_DIR}/src/server.c")
-
-target_include_directories(blst PUBLIC ${BLST_SOURCE_DIR}/bindings)
-
-# The compilation options and definitions match what build.sh would do; if you
-# upgrade libblst, ensure this is still the case
-target_compile_definitions(blst PRIVATE __BLST_PORTABLE__)
-target_compile_options(blst PRIVATE -Wall -Wextra -Werror)
-set_target_properties(blst PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-add_library(blst::blst ALIAS blst)
-
 # -------------------------------------------------------------------
 # VM component libraries
 # -------------------------------------------------------------------
@@ -122,13 +106,14 @@ monad_zkvm_drop_sources(monad-vm-interpreter "entry\\.S")
 add_library(monad-zkvm-precompiles OBJECT
     "${MONAD_ROOT}/category/execution/ethereum/precompiles.cpp"
     "${MONAD_ROOT}/category/execution/ethereum/precompiles_gas_cost_impl.cpp"
+    "${MONAD_ROOT}/zkvm/category/execution/ethereum/precompiles_bls12.cpp"
 )
 target_include_directories(
     monad-zkvm-precompiles
     PRIVATE "${THIRD_PARTY_DIR}/zkevm-standards/standards")
 monad_compile_options(monad-zkvm-precompiles)
 monad_zkvm_compile_options(monad-zkvm-precompiles)
-target_link_libraries(monad-zkvm-precompiles PUBLIC unordered_dense evmc_cpp blst::blst)
+target_link_libraries(monad-zkvm-precompiles PUBLIC unordered_dense evmc_cpp)
 
 foreach(tgt monad-vm-evm monad-vm-runtime monad-vm-interpreter)
     monad_zkvm_compile_options(${tgt})

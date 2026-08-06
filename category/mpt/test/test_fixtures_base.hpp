@@ -77,9 +77,9 @@ namespace monad::test
 
         virtual Compute &get_compute() const override
         {
-            static MerkleCompute m{};
-            static RootMerkleCompute rm{};
-            static EmptyCompute e{};
+            thread_local MerkleCompute m{};
+            thread_local RootMerkleCompute rm{};
+            thread_local EmptyCompute e{};
             if (MONAD_LIKELY(depth > prefix_len)) {
                 return m;
             }
@@ -136,9 +136,9 @@ namespace monad::test
 
         virtual Compute &get_compute() const override
         {
-            static VarLenMerkleCompute m{};
-            static RootVarLenMerkleCompute rm{};
-            static EmptyCompute e{};
+            thread_local VarLenMerkleCompute m{};
+            thread_local RootVarLenMerkleCompute rm{};
+            thread_local EmptyCompute e{};
             if (MONAD_LIKELY(depth > prefix_len)) {
                 return m;
             }
@@ -202,7 +202,7 @@ namespace monad::test
 
         virtual Compute &get_compute() const override
         {
-            static Compute c{};
+            thread_local Compute c{};
             return c;
         }
 
@@ -219,6 +219,12 @@ namespace monad::test
         virtual constexpr bool auto_expire() const override
         {
             return config.expire;
+        }
+
+        // Inert unless the aux was given a ParallelUpsertContext.
+        virtual bool subtries_are_partitionable() const override
+        {
+            return true;
         }
 
         virtual constexpr bool is_variable_length() const override

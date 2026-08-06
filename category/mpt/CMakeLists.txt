@@ -59,6 +59,8 @@ add_library(
   "node_cache.hpp"
   "node_cursor.hpp"
   "ondisk_db_config.hpp"
+  "parallel_upsert.cpp"
+  "parallel_upsert.hpp"
   "request.hpp"
   "read_node_blocking.cpp"
   "state_machine.hpp"

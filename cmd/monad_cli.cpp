@@ -824,6 +824,8 @@ int main(int const argc, char *argv[])
     std::string version;
     unsigned dump_concurrency_limit = 2048;
     unsigned load_concurrency = 0; // 0 => auto
+    unsigned upsert_concurrency = 0;
+    unsigned partition_min_updates = 1024;
     bool use_secondary = false;
     uint64_t total_shards = 1;
     uint64_t shard_number = 0;
@@ -883,18 +885,38 @@ int main(int const argc, char *argv[])
             "Each "
             "shard writes its portion of data and headers.")
         ->needs(dump_binary_snapshot_option);
+    auto *const load_binary_snapshot_option =
+        cli_group
+            ->add_option(
+                "--load-binary-snapshot,--load_binary_snapshot",
+                load_binary_snapshot,
+                "Load a binary snapshot to db")
+            ->check(CLI::ExistingDirectory)
+            ->excludes(dump_binary_snapshot_option);
+    auto *const upsert_concurrency_option =
+        cli_group
+            ->add_option(
+                "--upsert-concurrency,--upsert_concurrency",
+                upsert_concurrency,
+                "Worker threads that merklize new subtries while loading a "
+                "snapshot. 0 (the default) keeps all of it on the triedb "
+                "service thread.")
+            ->needs(load_binary_snapshot_option);
     cli_group
         ->add_option(
-            "--load-binary-snapshot,--load_binary_snapshot",
-            load_binary_snapshot,
-            "Load a binary snapshot to db")
-        ->check(CLI::ExistingDirectory)
-        ->excludes(dump_binary_snapshot_option);
-    cli_group->add_option(
-        "--load-concurrency,--load_concurrency",
-        load_concurrency,
-        "Number of worker threads for parallel snapshot load "
-        "(0 = auto, 1 = serial). Default: 0.");
+            "--partition-min-updates,--partition_min_updates",
+            partition_min_updates,
+            "How many updates a new subtrie must cover to be merklized by a "
+            "worker instead of in the recursion.")
+        ->check(CLI::Range(2u, 1u << 24))
+        ->needs(upsert_concurrency_option);
+    cli_group
+        ->add_option(
+            "--load-concurrency,--load_concurrency",
+            load_concurrency,
+            "Worker threads that decode and prepare snapshot shards ahead of "
+            "the triedb upsert (0 = auto, 1 = serial). Default: 0.")
+        ->needs(load_binary_snapshot_option);
     cli.add_flag(
         "--secondary",
         use_secondary,
@@ -1071,13 +1093,20 @@ int main(int const argc, char *argv[])
             load_binary_snapshot.value().c_str(),
             resolved_version,
             use_secondary,
-            load_concurrency);
+            load_concurrency,
+            upsert_concurrency,
+            partition_min_updates);
         LOG_INFO(
             "snapshot version={} load_binary_snapshot={} load_to_secondary={} "
+            "load_concurrency={} upsert_concurrency={} "
+            "partition_min_updates={} "
             "elapsed={}",
             resolved_version,
             load_binary_snapshot.value(),
             use_secondary,
+            load_concurrency,
+            upsert_concurrency,
+            partition_min_updates,
             std::chrono::steady_clock::now() - begin);
     }
     return 0;

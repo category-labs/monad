@@ -40,6 +40,7 @@
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/node_cursor.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/parallel_upsert.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/trie.hpp>
@@ -438,6 +439,7 @@ private:
         OnDiskDbServiceThread *parent;
         AsyncIOContext async_io;
         UpdateAux aux;
+        std::unique_ptr<ParallelUpsertContext> parallel;
         std::atomic<bool> sleeping{false}, done{false};
 
         DbAsyncWorker(
@@ -455,6 +457,13 @@ private:
             , async_io(options)
             , aux{async_io.io, options.fixed_history_length}
         {
+            if (options.upsert_concurrency > 0) {
+                // A worker never compacts, so the two must not be combined
+                MONAD_ASSERT(!options.compaction);
+                parallel = std::make_unique<ParallelUpsertContext>(
+                    options.upsert_concurrency, options.partition_min_updates);
+                aux.set_parallel(parallel.get());
+            }
             if (options.rewind_to_latest_finalized) {
                 auto const latest_block_id =
                     aux.metadata_ctx().get_latest_finalized_version();

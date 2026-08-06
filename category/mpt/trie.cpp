@@ -29,6 +29,7 @@
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cursor.hpp>
+#include <category/mpt/parallel_upsert.hpp>
 #include <category/mpt/request.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/update.hpp>
@@ -722,6 +723,87 @@ void update_value_and_subtrie_(
 }
 
 /////////////////////////////////////////////////////
+// Parallel merklization of new subtries
+/////////////////////////////////////////////////////
+
+// Post-order list of every descendant of `node`, carrying the caching decision
+// the serial write loop would have made. `sm` sits at `node`'s depth.
+void collect_partition_writes_(
+    StateMachine &sm, Node &node,
+    std::vector<ParallelUpsertContext::PendingWrite> &out)
+{
+    unsigned const number_of_children = node.number_of_children();
+    for (auto const [index, branch] : NodeChildrenRange(node.mask)) {
+        MONAD_ASSERT(node.fnext(index) == INVALID_OFFSET);
+        MONAD_ASSERT(node.next(index) != nullptr);
+        Node &child = *node.next(index);
+        auto const child_path = child.path_nibble_view();
+        sm.down(branch);
+        for (unsigned n = 0; n < child_path.nibble_size(); ++n) {
+            sm.down(child_path.get(n));
+        }
+        collect_partition_writes_(sm, child, out);
+        bool const cache_node = sm.cache();
+        sm.up(1 + child_path.nibble_size());
+        out.push_back(
+            {.node = &child,
+             .parent = &node,
+             .index = index,
+             // Always keep a single child: see create_node_from_children_if_any
+             .evict = !cache_node && number_of_children > 1});
+    }
+}
+
+// Assign disk offsets to a finished partition. Flat by design: the worker
+// already walked the subtrie and stepped the StateMachine, so all that is left
+// here is allocating offsets and patching the arrays it left invalid.
+void retire_partition_(UpdateAux &aux, ParallelUpsertContext::Partition &p)
+{
+    for (auto const &w : p.writes) {
+        auto const offset = async_write_node_set_spare(aux, *w.node, true);
+        auto const virtual_offset = aux.physical_to_virtual(offset);
+        MONAD_ASSERT(virtual_offset != INVALID_VIRTUAL_OFFSET);
+        w.parent->set_fnext(w.index, offset);
+        w.parent->set_min_offsets(
+            w.index, calc_min_offsets(*w.node, virtual_offset));
+        if (w.evict) {
+            w.parent->set_next(w.index, nullptr);
+        }
+    }
+    p.writes.clear();
+}
+
+void build_partition_subtrie(
+    ParallelUpsertContext &ctx, ParallelUpsertContext::Partition &p)
+{
+    // An in-memory aux is what suppresses the writes and leaves the subtrie
+    // resident for the service thread to serialize later
+    UpdateAux aux;
+    // Lets this partition split again where its own sublists are still large,
+    // so in-flight parallelism is not capped at one node's child count. The
+    // recursion ends on its own once the sublists fall below the threshold.
+    aux.set_parallel(&ctx);
+    create_new_trie_(
+        aux,
+        *p.sm,
+        p.version,
+        *p.out,
+        std::move(p.updates),
+        p.tid,
+        p.prefix_index);
+    if (!p.collect_writes) {
+        return;
+    }
+    MONAD_ASSERT(p.out->ptr);
+    auto const path = p.out->ptr->path_nibble_view();
+    for (unsigned n = 0; n < path.nibble_size(); ++n) {
+        p.sm->down(path.get(n));
+    }
+    collect_partition_writes_(*p.sm, *p.out->ptr, p.writes);
+    p.sm->up(path.nibble_size());
+}
+
+/////////////////////////////////////////////////////
 // Create a new trie from a list of updates, no incarnation
 /////////////////////////////////////////////////////
 void create_new_trie_(
@@ -810,19 +892,54 @@ void create_new_trie_from_requests_(
 {
     // version will be updated bottom up
     uint16_t const mask = requests.mask;
-    std::vector<ChildData> children(size_t(std::popcount(mask)));
+    auto const number_of_children = static_cast<size_t>(std::popcount(mask));
+    std::vector<ChildData> children(number_of_children);
+    auto *const parallel = aux.parallel();
+    bool const partitionable =
+        parallel != nullptr && sm.subtries_are_partitionable();
+    ParallelUpsertContext::Batch batch{partitionable ? number_of_children : 0};
+    bool partitioned = false;
     for (auto const [index, branch] : NodeChildrenRange(mask)) {
         children[index].branch = branch;
         sm.down(branch);
-        create_new_trie_(
-            aux,
-            sm,
-            version,
-            children[index],
-            std::move(requests[branch]),
-            tid,
-            prefix_index + 1);
+        // Small subtries do not pay for a handoff, so siblings of very
+        // different sizes are split unevenly on purpose
+        if (partitionable &&
+            requests[branch].size() >= parallel->partition_min_updates()) {
+            partitioned = true;
+            parallel->submit(
+                batch,
+                {.out = &children[index],
+                 .updates = std::move(requests[branch]),
+                 .sm = sm.clone(),
+                 .prefix_index = prefix_index + 1,
+                 .tid = tid,
+                 .collect_writes = aux.is_on_disk()});
+        }
+        else {
+            create_new_trie_(
+                aux,
+                sm,
+                version,
+                children[index],
+                std::move(requests[branch]),
+                tid,
+                prefix_index + 1);
+        }
         sm.up(1);
+    }
+    if (partitioned) {
+        parallel->wait(batch);
+        for (auto &done : batch.partitions()) {
+            // A branch enters the mask only once its update sublist is
+            // non-empty, so a partition always produces a subtrie
+            MONAD_ASSERT(done.out->ptr);
+            version = std::max(version, done.version);
+            // A nested partition is written as part of its parent's list
+            if (aux.is_on_disk()) {
+                retire_partition_(aux, done);
+            }
+        }
     }
     // can have empty children
     auto node = create_node_from_children_if_any(

@@ -58,6 +58,7 @@
 MONAD_MPT_NAMESPACE_BEGIN
 
 class Node;
+class ParallelUpsertContext;
 
 struct write_operation_io_receiver
 {
@@ -232,6 +233,10 @@ class UpdateAux
     bool alternate_slow_fast_writer_{false};
     bool can_write_to_fast_{true};
 
+    // Non-null enables parallel merklization of new subtries. Only ever set on
+    // the aux of a triedb service thread that runs without compaction.
+    ParallelUpsertContext *parallel_{nullptr};
+
 public:
     // Allocate the first cnv chunk for db metadata copies
     static constexpr unsigned cnv_chunks_for_db_metadata = 1;
@@ -351,6 +356,16 @@ public:
         can_write_to_fast_ = v;
     }
 
+    ParallelUpsertContext *parallel() const noexcept
+    {
+        return parallel_;
+    }
+
+    void set_parallel(ParallelUpsertContext *const ctx) noexcept
+    {
+        parallel_ = ctx;
+    }
+
     constexpr bool is_in_memory() const noexcept
     {
         return io == nullptr;
@@ -378,7 +393,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAux) == 120 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAux) == 128 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAux) == 8);
 
 template <receiver Receiver>

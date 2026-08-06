@@ -51,6 +51,14 @@ struct StateMachine
     {
         return false;
     }
+
+    // True when subtries below the current position may be merklized by a
+    // parallel upsert worker instead of in the recursion. Whether a particular
+    // subtrie is worth handing over is decided by its size, not here.
+    virtual bool subtries_are_partitionable() const
+    {
+        return false;
+    }
 };
 
 MONAD_MPT_NAMESPACE_END

@@ -55,9 +55,14 @@ bool monad_db_dump_snapshot(
     void *user, unsigned dump_concurrency_limit, uint64_t total_shards,
     uint64_t shard_number, bool dump_from_secondary);
 
+/* `upsert_concurrency` worker threads merklize the new subtries a flush
+   creates; 0 keeps all of it on the triedb service thread.
+   `partition_min_updates` is how many updates a subtrie must cover to be worth
+   handing over, and is ignored when the concurrency is 0. */
 struct monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     uint64_t block, char const *const *dbname_paths, size_t len,
-    unsigned sq_thread_cpu, bool load_to_secondary);
+    unsigned sq_thread_cpu, bool load_to_secondary, unsigned upsert_concurrency,
+    uint32_t partition_min_updates);
 
 void monad_db_snapshot_loader_load(
     struct monad_db_snapshot_loader *loader, uint64_t shard,

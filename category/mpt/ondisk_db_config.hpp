@@ -17,6 +17,7 @@
 
 #include <category/mpt/config.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <vector>
@@ -53,6 +54,17 @@ struct OnDiskDbConfig
     // when the pool is created. Smaller chunks give tests finer disk-usage
     // granularity on small db files.
     uint32_t chunk_capacity{28};
+    // Worker threads that merklize new subtries in parallel during an upsert.
+    // 0 keeps all of it on the triedb service thread. Requires compaction to
+    // be off, so in practice only snapshot restore sets it.
+    unsigned upsert_concurrency{0};
+    // Updates a new subtrie must cover before it is handed to a worker rather
+    // than built in the recursion. Ignored when upsert_concurrency is 0. Too
+    // small and partitions stop paying for their own handoff; too large and
+    // there are not enough of them to keep the workers busy. A partition is
+    // itself split when its own sublists clear the threshold, so this bounds
+    // skew as well as granularity.
+    uint32_t partition_min_updates{1024};
 };
 
 struct ReadOnlyOnDiskDbConfig

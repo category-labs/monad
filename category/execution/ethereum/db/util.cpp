@@ -452,20 +452,26 @@ constexpr uint8_t MachineBase::prefix_len() const
                                               : FINALIZED_PREFIX_LEN;
 }
 
+// The computes below are thread_local, not plain function statics, because
+// MerkleComputeBase carries mutable state from compute_node_data_len() to the
+// matching set_node_data(); two threads merklizing at once through one shared
+// instance would interleave those calls and produce wrong hashes.
 mpt::Compute &MachineBase::get_compute() const
 {
-    static EmptyCompute empty_compute;
+    thread_local EmptyCompute empty_compute;
 
-    static AccountMerkleCompute account_compute;
-    static AccountRootMerkleCompute account_root_compute;
+    thread_local AccountMerkleCompute account_compute;
+    thread_local AccountRootMerkleCompute account_root_compute;
 
-    static VarLenMerkleCompute generic_merkle_compute;
-    static RootVarLenMerkleCompute generic_root_merkle_compute;
+    thread_local VarLenMerkleCompute generic_merkle_compute;
+    thread_local RootVarLenMerkleCompute generic_root_merkle_compute;
 
-    static VarLenMerkleCompute<ReceiptLeafProcessor> receipt_compute;
-    static RootVarLenMerkleCompute<ReceiptLeafProcessor> receipt_root_compute;
-    static VarLenMerkleCompute<TransactionLeafProcessor> transaction_compute;
-    static RootVarLenMerkleCompute<TransactionLeafProcessor>
+    thread_local VarLenMerkleCompute<ReceiptLeafProcessor> receipt_compute;
+    thread_local RootVarLenMerkleCompute<ReceiptLeafProcessor>
+        receipt_root_compute;
+    thread_local VarLenMerkleCompute<TransactionLeafProcessor>
+        transaction_compute;
+    thread_local RootVarLenMerkleCompute<TransactionLeafProcessor>
         transaction_root_compute;
 
     auto const prefix_length = prefix_len();
@@ -505,6 +511,15 @@ bool MachineBase::is_variable_length() const
     return depth > prefix_len() &&
            (table == TableType::Transaction || table == TableType::Receipt ||
             table == TableType::Withdrawal || table == TableType::CallFrame);
+}
+
+bool MachineBase::subtries_are_partitionable() const
+{
+    // Restricted to the two tables keyed by a hash. The others are shallow, and
+    // the variable-length ones would additionally have to be proven safe to
+    // merklize out of order.
+    return depth >= prefix_len() &&
+           (table == TableType::State || table == TableType::Code);
 }
 
 void MachineBase::down(unsigned char const nibble)
@@ -549,13 +564,13 @@ void MachineBase::up(size_t const n)
 
 mpt::Compute &MachineBase::storage_compute() const
 {
-    static StorageMerkleCompute compute;
+    thread_local StorageMerkleCompute compute;
     return compute;
 }
 
 mpt::Compute &MachineBase::storage_root_compute() const
 {
-    static StorageRootMerkleCompute compute;
+    thread_local StorageRootMerkleCompute compute;
     return compute;
 }
 
@@ -591,13 +606,13 @@ std::unique_ptr<StateMachine> MonadInMemoryMachine::clone() const
 
 mpt::Compute &MonadInMemoryMachine::storage_compute() const
 {
-    static PagedStorageMerkleCompute compute;
+    thread_local PagedStorageMerkleCompute compute;
     return compute;
 }
 
 mpt::Compute &MonadInMemoryMachine::storage_root_compute() const
 {
-    static PagedStorageRootMerkleCompute compute;
+    thread_local PagedStorageRootMerkleCompute compute;
     return compute;
 }
 
@@ -642,13 +657,13 @@ std::unique_ptr<StateMachine> MonadOnDiskMachine::clone() const
 
 mpt::Compute &MonadOnDiskMachine::storage_compute() const
 {
-    static PagedStorageMerkleCompute compute;
+    thread_local PagedStorageMerkleCompute compute;
     return compute;
 }
 
 mpt::Compute &MonadOnDiskMachine::storage_root_compute() const
 {
-    static PagedStorageRootMerkleCompute compute;
+    thread_local PagedStorageRootMerkleCompute compute;
     return compute;
 }
 

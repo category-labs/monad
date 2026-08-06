@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <exception>
 #include <fcntl.h>
@@ -269,7 +270,8 @@ void monad_db_snapshot_load_filesystem(
     char const *const *const dbname_paths, size_t const len,
     unsigned const sq_thread_cpu, char const *const snapshot_dir,
     uint64_t const block, bool const load_to_secondary,
-    unsigned const concurrency)
+    unsigned const load_concurrency, unsigned const upsert_concurrency,
+    uint32_t const partition_min_updates)
 {
     std::filesystem::path const root{std::format("{}/{}", snapshot_dir, block)};
     MONAD_ASSERT(std::filesystem::is_directory(root));
@@ -277,7 +279,13 @@ void monad_db_snapshot_load_filesystem(
     // by monad_db_dump_snapshot from a slot db). If the target timeline is
     // page-encoded, the loader converts slot leaves to page leaves on the fly.
     monad_db_snapshot_loader *const loader = monad_db_snapshot_loader_create(
-        block, dbname_paths, len, sq_thread_cpu, load_to_secondary);
+        block,
+        dbname_paths,
+        len,
+        sq_thread_cpu,
+        load_to_secondary,
+        upsert_concurrency,
+        partition_min_updates);
 
     // Read the target encoding once on this thread; the Db is touched only
     // here and by commit_prepared, never by the workers.
@@ -290,17 +298,17 @@ void monad_db_snapshot_load_filesystem(
         shards.emplace_back(std::stoull(dir.path().stem()), dir.path());
     }
 
-    // Prep is a minority of the load (the serial upsert dominates), so a
-    // handful of workers keep the single consumer fed; more only inflate
-    // resident memory. Cap the auto (0) default rather than grabbing every
-    // core. Callers can still request an explicit higher count.
+    // Beyond a handful of workers the consumer is already saturated and more
+    // only inflate resident memory, since each in-flight shard is held whole.
+    // Cap the auto (0) default rather than grabbing every core; callers can
+    // still request an explicit higher count.
     constexpr unsigned AUTO_WORKERS_CAP = 16;
     unsigned const workers =
-        concurrency == 0
+        load_concurrency == 0
             ? std::min(
                   std::max(1u, std::thread::hardware_concurrency()),
                   AUTO_WORKERS_CAP)
-            : concurrency;
+            : load_concurrency;
 
     if (workers <= 1) {
         for (auto const &[shard, path] : shards) {

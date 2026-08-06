@@ -32,6 +32,7 @@
 
 #include <ankerl/unordered_dense.h>
 
+#include <cstdint>
 #include <deque>
 #include <limits>
 #include <memory>
@@ -47,10 +48,12 @@ struct monad_db_snapshot_loader
     monad_db_snapshot_loader(
         uint64_t const block, char const *const *const dbname_paths,
         size_t const len, unsigned const sq_thread_cpu,
-        bool const load_to_secondary)
+        bool const load_to_secondary, unsigned const upsert_concurrency,
+        uint32_t const partition_min_updates)
         : block{block}
         , db{open_target_db(
-              dbname_paths, len, sq_thread_cpu, load_to_secondary)}
+              dbname_paths, len, sq_thread_cpu, load_to_secondary,
+              upsert_concurrency, partition_min_updates)}
     {
     }
 
@@ -62,7 +65,8 @@ struct monad_db_snapshot_loader
 private:
     static monad::mpt::Db open_target_db(
         char const *const *const dbname_paths, size_t const len,
-        unsigned const sq_thread_cpu, bool const load_to_secondary)
+        unsigned const sq_thread_cpu, bool const load_to_secondary,
+        unsigned const upsert_concurrency, uint32_t const partition_min_updates)
     {
         monad::mpt::Db primary{monad::mpt::OnDiskDbConfig{
             .append = true,
@@ -74,7 +78,9 @@ private:
                 sq_thread_cpu == std::numeric_limits<unsigned>::max()
                     ? std::nullopt
                     : std::make_optional(sq_thread_cpu),
-            .dbname_paths = {dbname_paths, dbname_paths + len}}};
+            .dbname_paths = {dbname_paths, dbname_paths + len},
+            .upsert_concurrency = upsert_concurrency,
+            .partition_min_updates = partition_min_updates}};
         if (!load_to_secondary) {
             return primary;
         }
@@ -432,14 +438,21 @@ bool monad_db_dump_snapshot(
 monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     uint64_t const block, char const *const *const dbname_paths,
     size_t const len, unsigned const sq_thread_cpu,
-    bool const load_to_secondary)
+    bool const load_to_secondary, unsigned const upsert_concurrency,
+    uint32_t const partition_min_updates)
 {
     // The metadata-driven Db ctor and open_secondary_timeline() resolve the
     // persisted kind through the registry, so both factories must be present.
     monad::register_ethereum_state_machines();
     monad::register_monad_state_machines();
     auto *loader = new monad_db_snapshot_loader(
-        block, dbname_paths, len, sq_thread_cpu, load_to_secondary);
+        block,
+        dbname_paths,
+        len,
+        sq_thread_cpu,
+        load_to_secondary,
+        upsert_concurrency,
+        partition_min_updates);
     MONAD_ASSERT(
         loader->db.get_latest_version() == monad::mpt::INVALID_BLOCK_NUM,
         "database must be empty when loading snapshot");

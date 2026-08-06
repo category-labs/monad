@@ -85,6 +85,7 @@ struct MachineBase : public mpt::StateMachine
     virtual void down(unsigned char nibble) override;
     virtual void up(size_t n) override;
     virtual bool is_variable_length() const override;
+    virtual bool subtries_are_partitionable() const override;
     constexpr uint8_t prefix_len() const;
 
     constexpr uint8_t max_depth(uint8_t const prefix_length) const

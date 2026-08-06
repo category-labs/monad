@@ -35,10 +35,15 @@ uint64_t monad_db_snapshot_write_filesystem(
     uint64_t shard, monad_snapshot_type, unsigned char const *bytes, size_t len,
     void *user);
 
+/* load_concurrency is the number of threads that decode and prepare shards
+   ahead of the upsert (0 = auto, 1 = serial). See
+   monad_db_snapshot_loader_create for upsert_concurrency and
+   partition_min_updates. */
 void monad_db_snapshot_load_filesystem(
     char const *const *dbname_paths, size_t len, unsigned sq_thread_cpu,
     char const *snapshot_dir, uint64_t block, bool load_to_secondary,
-    unsigned concurrency);
+    unsigned load_concurrency, unsigned upsert_concurrency,
+    uint32_t partition_min_updates);
 
 #ifdef __cplusplus
 }

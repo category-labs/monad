@@ -39,6 +39,7 @@
 #include <ankerl/unordered_dense.h>
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <filesystem>
 
 namespace monad::mpt::test
@@ -204,7 +205,9 @@ TEST(DbBinarySnapshot, Basic)
             snapshot_dir.path.c_str(),
             100,
             /*load_to_secondary=*/false,
-            /*concurrency=*/1u);
+            /*load_concurrency=*/1u,
+            /*upsert_concurrency=*/0,
+            /*partition_min_updates=*/0);
     }
 
     {
@@ -227,6 +230,152 @@ TEST(DbBinarySnapshot, Basic)
                 byte_string_view(icode->code(), icode->size()));
         }
     }
+}
+
+// Merklizing the restored trie across worker threads must not change it. Both
+// target encodings are covered because they hash storage with different
+// Compute objects, and those carry state across calls.
+TEST(DbBinarySnapshot, ParallelMerklizationMatchesSerial)
+{
+    using namespace monad;
+    using namespace monad::mpt;
+
+    constexpr uint64_t BLOCK = 1;
+    constexpr unsigned WORKERS = 8;
+    // The loader flushes per shard, so one upsert here carries only a few
+    // hundred accounts and its sublists are a dozen or so entries. A
+    // mainnet-scale threshold would leave nothing partitioned and the test
+    // would quietly stop covering the parallel path.
+    constexpr uint32_t PARTITION_MIN_UPDATES = 4;
+
+    TempDb const src_db;
+    TempDir const snapshot_dir;
+
+    bytes32_t source_root;
+    {
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.dbname_paths = {src_db.path}}};
+        load_header({}, db, BlockHeader{.number = 0});
+        db.update_finalized_version(0);
+        StateDeltas deltas;
+        for (uint64_t i = 0; i < 50'000; ++i) {
+            StorageDeltas storage;
+            if ((i % 50) == 0) {
+                for (uint64_t j = 0; j < 10; ++j) {
+                    storage.emplace(
+                        bytes32_t{j}, StorageDelta{bytes32_t{}, bytes32_t{j}});
+                }
+            }
+            deltas.emplace(
+                Address{i},
+                StateDelta{
+                    .account =
+                        {std::nullopt, Account{.balance = i, .nonce = i}},
+                    .storage = storage});
+        }
+        TrieDb tdb{db};
+        monad::test::commit_simple(
+            tdb,
+            deltas,
+            Code{},
+            bytes32_t{BLOCK},
+            BlockHeader{.number = BLOCK});
+        tdb.finalize(BLOCK, bytes32_t{BLOCK});
+        source_root = tdb.state_root();
+    }
+
+    {
+        auto *const context =
+            monad_db_snapshot_filesystem_write_user_context_create(
+                snapshot_dir.path.c_str(), BLOCK);
+        char const *dbpath[] = {src_db.path.c_str()};
+        EXPECT_TRUE(monad_db_dump_snapshot(
+            dbpath,
+            1,
+            static_cast<unsigned>(-1),
+            BLOCK,
+            monad_db_snapshot_write_filesystem,
+            context,
+            2048,
+            1,
+            0,
+            /*dump_from_secondary=*/false));
+        monad_db_snapshot_filesystem_write_user_context_destroy(context);
+    }
+
+    auto const restored_root = [&snapshot_dir, BLOCK](
+                                   TempDb const &dest,
+                                   state_machine_kind const kind,
+                                   unsigned const concurrency) {
+        {
+            mpt::Db dest_init{
+                std::make_unique<OnDiskMachine>(),
+                OnDiskDbConfig{.dbname_paths = {dest.path}}};
+            monad::mpt::test::DbAccessor::aux(dest_init)
+                .metadata_ctx()
+                .set_state_machine_kind(timeline_id::primary, kind);
+        }
+        char const *dbpath[] = {dest.path.c_str()};
+        monad_db_snapshot_load_filesystem(
+            dbpath,
+            1,
+            static_cast<unsigned>(-1),
+            snapshot_dir.path.c_str(),
+            BLOCK,
+            /*load_to_secondary=*/false,
+            /*load_concurrency=*/1u,
+            concurrency,
+            PARTITION_MIN_UPDATES);
+
+        AsyncIOContext io_context{
+            ReadOnlyOnDiskDbConfig{.dbname_paths = {dest.path}}};
+        mpt::Db db{io_context};
+        EXPECT_EQ(db.get_latest_version(), BLOCK);
+        TrieDb tdb{db};
+        tdb.set_block_and_prefix(BLOCK);
+
+        // A root hash does not depend on child offsets, so it cannot tell a
+        // correctly written subtrie from an unreachable one. Read leaves back.
+        Incarnation const inc{0, 0};
+        for (uint64_t i = 0; i < 1'000; i += 50) {
+            Address const addr{i};
+            auto const account = tdb.read_account(addr);
+            EXPECT_TRUE(account.has_value()) << "account " << i;
+            if (account.has_value()) {
+                EXPECT_EQ(account->balance, i);
+            }
+            // The source gave every fiftieth account slots 1..9 holding their
+            // own index; slot 0 was written as zero, which is a deletion.
+            for (uint64_t j = 1; j < 10; ++j) {
+                EXPECT_EQ(
+                    tdb.read_storage(addr, inc, bytes32_t{j}), bytes32_t{j})
+                    << "account " << i << " slot " << j;
+            }
+        }
+        return tdb.state_root();
+    };
+
+    TempDb const slot_serial;
+    TempDb const slot_parallel;
+    TempDb const page_serial;
+    TempDb const page_parallel;
+
+    EXPECT_EQ(
+        restored_root(slot_serial, state_machine_kind::ethereum, 0),
+        source_root);
+    EXPECT_EQ(
+        restored_root(slot_parallel, state_machine_kind::ethereum, WORKERS),
+        source_root);
+
+    // Page and slot encodings hash to different roots by design, so the page
+    // target is compared against its own serial load.
+    auto const page_root =
+        restored_root(page_serial, state_machine_kind::monad, 0);
+    EXPECT_NE(page_root, source_root);
+    EXPECT_EQ(
+        restored_root(page_parallel, state_machine_kind::monad, WORKERS),
+        page_root);
 }
 
 TEST(DbBinarySnapshot, MultipleShards)
@@ -366,7 +515,9 @@ TEST(DbBinarySnapshot, MultipleShards)
             combined_root.path.c_str(),
             100,
             /*load_to_secondary=*/false,
-            /*concurrency=*/1u);
+            /*load_concurrency=*/1u,
+            /*upsert_concurrency=*/0,
+            /*partition_min_updates=*/0);
     }
     {
         AsyncIOContext io_context{
@@ -539,7 +690,9 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
             snapshot_dir.path.c_str(),
             BLOCK,
             /*load_to_secondary=*/true,
-            /*concurrency=*/1u);
+            /*load_concurrency=*/1u,
+            /*upsert_concurrency=*/0,
+            /*partition_min_updates=*/0);
     }
 
     // Verify secondary db is page-encoded and round-trip slot reads match.
@@ -734,7 +887,9 @@ TEST(DbBinarySnapshot, DumpFromSecondaryPageDb)
             snapshot_dir.path.c_str(),
             BLOCK,
             /*load_to_secondary=*/false,
-            /*concurrency=*/1u);
+            /*load_concurrency=*/1u,
+            /*upsert_concurrency=*/0,
+            /*partition_min_updates=*/0);
     }
 
     // Verify the target is slot-encoded and every slot round-trips.
@@ -838,7 +993,8 @@ TEST(DbBinarySnapshot, ParallelLoadMatchesSerialSlot)
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
     }
 
-    auto load_and_root = [&](unsigned const concurrency) {
+    auto load_and_root = [&](unsigned const load_concurrency,
+                             unsigned const upsert_concurrency) {
         TempDb const dest_db;
         {
             mpt::Db dest_init{
@@ -857,7 +1013,9 @@ TEST(DbBinarySnapshot, ParallelLoadMatchesSerialSlot)
             snapshot_dir.path.c_str(),
             BLOCK,
             /*load_to_secondary=*/false,
-            concurrency);
+            load_concurrency,
+            upsert_concurrency,
+            /*partition_min_updates=*/upsert_concurrency == 0 ? 0u : 4u);
         AsyncIOContext io_context{
             ReadOnlyOnDiskDbConfig{.dbname_paths = {dest_db.path}}};
         mpt::Db db{io_context};
@@ -866,11 +1024,16 @@ TEST(DbBinarySnapshot, ParallelLoadMatchesSerialSlot)
         return tdb.state_root();
     };
 
-    bytes32_t const serial = load_and_root(1u);
-    bytes32_t const parallel = load_and_root(0u);
+    bytes32_t const serial = load_and_root(1u, 0u);
+    bytes32_t const parallel = load_and_root(0u, 0u);
+    // Parallel prep feeding partitioned merklization: the two features touch
+    // the same load, prep on the worker threads and merklization behind the
+    // single service thread, so the combination needs its own root check.
+    bytes32_t const both = load_and_root(0u, 8u);
     EXPECT_EQ(serial, root_hash);
     EXPECT_EQ(parallel, root_hash);
     EXPECT_EQ(parallel, serial);
+    EXPECT_EQ(both, root_hash);
 }
 
 // A parallel load into a page-encoded secondary must match a serial one. This
@@ -977,7 +1140,7 @@ TEST(DbBinarySnapshot, ParallelLoadMatchesSerialPage)
         ASSERT_GE(shard_dirs, 2u) << "test needs a multi-shard snapshot";
     }
 
-    auto page_root = [&](unsigned const concurrency) {
+    auto page_root = [&](unsigned const load_concurrency) {
         TempDb const dest_db;
         // Fresh db with an activated (empty) page-encoded secondary; the loader
         // opens that secondary, so both handles are dropped before the load.
@@ -1000,7 +1163,9 @@ TEST(DbBinarySnapshot, ParallelLoadMatchesSerialPage)
             snapshot_dir.path.c_str(),
             BLOCK,
             /*load_to_secondary=*/true,
-            concurrency);
+            load_concurrency,
+            /*upsert_concurrency=*/0,
+            /*partition_min_updates=*/0);
 
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
@@ -1017,6 +1182,10 @@ TEST(DbBinarySnapshot, ParallelLoadMatchesSerialPage)
         return tdb.state_root();
     };
 
+    // Page target plus partitioned merklization is covered by
+    // ParallelMerklizationMatchesSerial; this fixture cannot reach a partition
+    // (one account per shard, and page encoding collapses an account's slots
+    // into a single leaf, so no sublist is ever large enough).
     bytes32_t const serial = page_root(1u);
     bytes32_t const parallel = page_root(0u);
     EXPECT_EQ(parallel, serial);

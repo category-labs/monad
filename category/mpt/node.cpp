@@ -36,6 +36,7 @@
 #include <span>
 #include <utility>
 #include <vector>
+#include <category/core/bit_primitives.hpp>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -81,7 +82,7 @@ unsigned Node::to_child_index(unsigned const branch) const noexcept
 
 unsigned Node::number_of_children() const noexcept
 {
-    return static_cast<unsigned>(std::popcount(mask));
+    return static_cast<unsigned>(monad::bits::popcount(mask));
 }
 
 std::span<unaligned_t<chunk_offset_t>> Node::child_fnext_data() noexcept
@@ -548,7 +549,7 @@ Node::SharedPtr make_node(
     NibblesView const path, std::optional<byte_string_view> const value,
     size_t const data_size, int64_t const version)
 {
-    auto const number_of_children = static_cast<size_t>(std::popcount(mask));
+    auto const number_of_children = static_cast<size_t>(monad::bits::popcount(mask));
     std::vector<uint16_t> child_data_offsets;
     child_data_offsets.reserve(children.size());
     uint16_t total_child_data_size = 0;

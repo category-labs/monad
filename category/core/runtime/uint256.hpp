@@ -558,10 +558,10 @@ inline uint256_t countr_zero(uint256_t const &x)
 
 constexpr size_t popcount(uint256_t const &x)
 {
-    return static_cast<size_t>(std::popcount(x[0])) +
-           static_cast<size_t>(std::popcount(x[1])) +
-           static_cast<size_t>(std::popcount(x[2])) +
-           static_cast<size_t>(std::popcount(x[3]));
+    return static_cast<size_t>(monad::bits::popcount(x[0])) +
+           static_cast<size_t>(monad::bits::popcount(x[1])) +
+           static_cast<size_t>(monad::bits::popcount(x[2])) +
+           static_cast<size_t>(monad::bits::popcount(x[3]));
 }
 
 template <size_t N>

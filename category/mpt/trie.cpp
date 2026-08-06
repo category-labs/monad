@@ -47,6 +47,7 @@
 #include <span>
 #include <utility>
 #include <vector>
+#include <category/core/bit_primitives.hpp>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -417,7 +418,7 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
     }
     auto const mask = tnode->mask;
     auto const &orig = tnode->node;
-    auto const number_of_children = static_cast<size_t>(std::popcount(mask));
+    auto const number_of_children = static_cast<size_t>(monad::bits::popcount(mask));
     if (number_of_children == 1 && !orig->has_value()) {
         auto const child_branch = static_cast<uint8_t>(std::countr_zero(mask));
         auto const child_index = orig->to_child_index(child_branch);
@@ -538,7 +539,7 @@ Node::SharedPtr create_node_from_children_if_any(
 {
     aux.collect_number_nodes_created_stats();
     // handle non child and single child cases
-    auto const number_of_children = static_cast<unsigned>(std::popcount(mask));
+    auto const number_of_children = static_cast<unsigned>(monad::bits::popcount(mask));
     if (number_of_children == 0) {
         return leaf_data.has_value()
                    ? make_node(0, {}, path, leaf_data, {}, version)
@@ -810,7 +811,7 @@ void create_new_trie_from_requests_(
 {
     // version will be updated bottom up
     uint16_t const mask = requests.mask;
-    std::vector<ChildData> children(size_t(std::popcount(mask)));
+    std::vector<ChildData> children(size_t(monad::bits::popcount(mask)));
     for (auto const [index, branch] : NodeChildrenRange(mask)) {
         children[index].branch = branch;
         sm.down(branch);
@@ -984,7 +985,7 @@ void dispatch_updates_impl_(
         version,
         opt_leaf_data,
         opt_leaf_data.has_value() ? old_ptr : Node::SharedPtr{});
-    MONAD_ASSERT(tnode->children.size() == size_t(std::popcount(orig_mask)));
+    MONAD_ASSERT(tnode->children.size() == size_t(monad::bits::popcount(orig_mask)));
     auto &children = tnode->children;
 
     for (auto const [index, branch] : NodeChildrenRange(orig_mask)) {
@@ -1055,7 +1056,7 @@ void mismatch_handler_(
         static_cast<uint16_t>(1u << old_nibble | requests.mask);
     auto tnode = make_tnode(orig_mask, &parent, entry.branch, path);
     auto const number_of_children =
-        static_cast<unsigned>(std::popcount(orig_mask));
+        static_cast<unsigned>(monad::bits::popcount(orig_mask));
     MONAD_ASSERT(
         tnode->children.size() == number_of_children && number_of_children > 0);
     auto &children = tnode->children;

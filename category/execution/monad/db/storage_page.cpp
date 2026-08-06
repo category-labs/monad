@@ -39,6 +39,7 @@ extern "C"
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <category/core/bit_primitives.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -244,7 +245,7 @@ namespace
         init_leaves(page, pair_bitmap, scratch);
 
         uint64_t bm = pair_bitmap;
-        for (uint8_t level = 0; level < 6 && std::popcount(bm) > 1; ++level) {
+        for (uint8_t level = 0; level < 6 && monad::bits::popcount(bm) > 1; ++level) {
             bm = merge_at_level(level, bm, scratch);
         }
 

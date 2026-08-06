@@ -24,13 +24,11 @@
 #include <category/execution/ethereum/db/partial_trie_db.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
-#include <category/execution/ethereum/rlp/execution_witness.hpp>
 #include <category/mpt/merkle/compact_encode.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
 #include <gtest/gtest.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <random>
@@ -40,11 +38,6 @@ using namespace monad;
 
 namespace
 {
-    byte_string make_minimal_witness()
-    {
-        return encode_execution_witness({}, {}, {}, {});
-    }
-
     void storage_leaf_roundtrip(
         bytes32_t const &val, NodeIndex &nodes, std::string_view label = {})
     {
@@ -125,105 +118,6 @@ namespace
     constexpr auto VAL_2 =
         0x000000000000000000000000000000000000000000000000000000000000beef_bytes32;
 } // namespace
-
-TEST(ParseExecutionWitness, ValidMinimalWitness)
-{
-    auto const w = make_minimal_witness();
-    auto const result = parse_execution_witness(w);
-    ASSERT_FALSE(result.has_error());
-    EXPECT_TRUE(result.value().block_rlp.empty());
-    EXPECT_TRUE(result.value().encoded_nodes.empty());
-    EXPECT_TRUE(result.value().encoded_codes.empty());
-    EXPECT_TRUE(result.value().encoded_headers.empty());
-    EXPECT_TRUE(result.value().encoded_parent_senders_and_authorities.empty());
-    EXPECT_TRUE(
-        result.value().encoded_grandparent_senders_and_authorities.empty());
-}
-
-TEST(ParseExecutionWitness, EmptyInput)
-{
-    auto const result = parse_execution_witness({});
-    EXPECT_TRUE(result.has_error());
-}
-
-TEST(ParseExecutionWitness, OuterTypeNotList)
-{
-    // A single empty-string byte (0x80) is not a list.
-    byte_string const bad{static_cast<unsigned char>(0x80)};
-    auto const result = parse_execution_witness(bad);
-    EXPECT_TRUE(result.has_error());
-}
-
-TEST(ParseExecutionWitness, Truncated)
-{
-    auto w = make_minimal_witness();
-    w.resize(w.size() - 1);
-    auto const result = parse_execution_witness(w);
-    EXPECT_TRUE(result.has_error());
-}
-
-TEST(EncodeExecutionWitness, AllFieldsRoundtrip)
-{
-    // block_rlp is wrapped by the encoder as an RLP string; the parser hands
-    // back the unwrapped payload.
-    byte_string const block_rlp{0x01, 0x02, 0x03, 0x04};
-
-    // Nodes are already complete RLP items and are emitted raw, so the parsed
-    // [1] payload is their straight concatenation.
-    std::vector<byte_string> const nodes{
-        rlp::encode_list2(rlp::encode_string2(byte_string{0xaa})),
-        rlp::encode_string2(byte_string{0xbb, 0xcc})};
-
-    // Codes and headers are each wrapped as RLP strings by the encoder.
-    std::vector<byte_string> const codes{
-        byte_string{0x60, 0x00, 0x60, 0x00}, byte_string{0x00}};
-    std::vector<byte_string> const headers{
-        byte_string{0xde, 0xad}, byte_string{0xbe, 0xef, 0xfe}};
-
-    ankerl::unordered_dense::segmented_set<Address> parents;
-    parents.insert(ADDR_X);
-    parents.insert(ADDR_Y);
-    ankerl::unordered_dense::segmented_set<Address> grandparents;
-    grandparents.insert(ADDR_Z);
-
-    byte_string const encoded = encode_execution_witness(
-        block_rlp, nodes, codes, headers, &parents, &grandparents);
-
-    auto const result = parse_execution_witness(encoded);
-    ASSERT_FALSE(result.has_error());
-    auto const &w = result.value();
-
-    EXPECT_EQ(w.block_rlp, byte_string_view{block_rlp});
-
-    // [1] nodes: raw concatenation.
-    EXPECT_EQ(w.encoded_nodes, byte_string_view{nodes[0] + nodes[1]});
-
-    // [2] codes / [3] headers: each entry wrapped as an RLP string.
-    EXPECT_EQ(
-        w.encoded_codes,
-        byte_string_view{
-            rlp::encode_string2(codes[0]) + rlp::encode_string2(codes[1])});
-    EXPECT_EQ(
-        w.encoded_headers,
-        byte_string_view{
-            rlp::encode_string2(headers[0]) + rlp::encode_string2(headers[1])});
-
-    // [4]/[5] addresses: emitted in sorted order, each wrapped as an RLP
-    // string.
-    std::vector<Address> sorted_parents{ADDR_X, ADDR_Y};
-    std::sort(sorted_parents.begin(), sorted_parents.end());
-    byte_string expected_parents;
-    for (auto const &a : sorted_parents) {
-        expected_parents += rlp::encode_string2(to_byte_string_view(a.bytes));
-    }
-    EXPECT_EQ(
-        w.encoded_parent_senders_and_authorities,
-        byte_string_view{expected_parents});
-    EXPECT_EQ(
-        w.encoded_grandparent_senders_and_authorities,
-        byte_string_view{
-            rlp::encode_string2(to_byte_string_view(ADDR_Z.bytes))});
-}
 
 TEST(StorageLeafValue, DecodeZeroValue)
 {

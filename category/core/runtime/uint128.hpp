@@ -29,6 +29,7 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <category/core/bit_primitives.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -209,7 +210,7 @@ operator>>(uint128_t const x, uint64_t const shift) noexcept
 
 [[nodiscard]] constexpr uint128_t byteswap(uint128_t const x) noexcept
 {
-    return {std::byteswap(x.hi), std::byteswap(x.lo)};
+    return {monad::bits::bswap(x.hi), monad::bits::bswap(x.lo)};
 }
 
 [[nodiscard]] inline std::string

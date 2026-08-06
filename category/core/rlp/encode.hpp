@@ -26,6 +26,7 @@
 #include <bit>
 #include <cstddef>
 #include <span>
+#include <category/core/bit_primitives.hpp>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
@@ -50,7 +51,7 @@ namespace impl
             n <<= lz_bytes * 8;
         }
 
-        size_t const n_be = std::byteswap(n);
+        size_t const n_be = monad::bits::bswap(n);
         MONAD_ASSUME(d.size() >= sizeof(size_t));
         unaligned_store(d.data(), n_be);
         return d.subspan((sizeof(size_t) - lz_bytes));

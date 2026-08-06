@@ -27,6 +27,7 @@
 #include <cstring>
 #include <optional>
 #include <span>
+#include <category/core/bit_primitives.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -94,7 +95,7 @@ blake2bf_gas_cost_ethereum(byte_string_view const input)
     static_assert(
         std::endian::native == std::endian::little,
         "blake2bf_gas_cost_ethereum only works on little-endian platforms");
-    return std::byteswap(rounds);
+    return monad::bits::bswap(rounds);
 }
 
 template <Traits traits>

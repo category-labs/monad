@@ -189,6 +189,9 @@ Node::SharedPtr upsert(
     timeline_id const tid)
 {
     aux.reset_stats();
+    if (aux.is_on_disk() && aux.parallel() != nullptr) {
+        aux.init_parallel_extents();
+    }
     auto sentinel = make_tnode(1 /*mask*/);
     ChildData &entry = sentinel->children[0];
     sentinel->children[0] = ChildData{.branch = 0};
@@ -611,14 +614,15 @@ void create_node_compute_data_possibly_async(
                 auto const virtual_child_offset =
                     aux.physical_to_virtual(child.offset);
                 MONAD_ASSERT(virtual_child_offset != INVALID_VIRTUAL_OFFSET);
-                // child offset is older than current node writer's start offset
+                /* The child is written, so its bytes lie inside a reservation
+                somebody took. Nothing stronger holds: extents of one chunk are
+                handed to several writers at once, so a child can sit ahead of
+                the offset any one of them is at. */
                 MONAD_ASSERT(
-                    virtual_child_offset <
-                    aux.physical_to_virtual((virtual_child_offset.in_fast_list()
-                                                 ? aux.node_writer_fast
-                                                 : aux.node_writer_slow)
-                                                ->sender()
-                                                .offset()));
+                    child.offset.offset <
+                    aux.io->storage_pool()
+                        .chunk(storage_pool::seq, child.offset.id)
+                        .reserved_bytes());
             }
             node_receiver_t recv{
                 [aux = &aux, sm = sm.clone(), tnode = std::move(tnode), tid](
@@ -727,63 +731,11 @@ void update_value_and_subtrie_(
 // Parallel merklization of new subtries
 /////////////////////////////////////////////////////
 
-// Post-order list of every descendant of `node`, carrying the caching decision
-// the serial write loop would have made. `sm` sits at `node`'s depth.
-void collect_partition_writes_(
-    StateMachine &sm, Node &node,
-    std::vector<ParallelUpsertContext::PendingWrite> &out)
-{
-    unsigned const number_of_children = node.number_of_children();
-    for (auto const [index, branch] : NodeChildrenRange(node.mask)) {
-        MONAD_ASSERT(node.fnext(index) == INVALID_OFFSET);
-        MONAD_ASSERT(node.next(index) != nullptr);
-        Node &child = *node.next(index);
-        auto const child_path = child.path_nibble_view();
-        sm.down(branch);
-        for (unsigned n = 0; n < child_path.nibble_size(); ++n) {
-            sm.down(child_path.get(n));
-        }
-        collect_partition_writes_(sm, child, out);
-        bool const cache_node = sm.cache();
-        sm.up(1 + child_path.nibble_size());
-        out.push_back(
-            {.node = &child,
-             .parent = &node,
-             .index = index,
-             // Always keep a single child: see create_node_from_children_if_any
-             .evict = !cache_node && number_of_children > 1});
-    }
-}
-
-// Assign disk offsets to a finished partition. Flat by design: the worker
-// already walked the subtrie and stepped the StateMachine, so all that is left
-// here is allocating offsets and patching the arrays it left invalid.
-void retire_partition_(UpdateAux &aux, ParallelUpsertContext::Partition &p)
-{
-    for (auto const &w : p.writes) {
-        auto const offset = async_write_node_set_spare(aux, *w.node, true);
-        auto const virtual_offset = aux.physical_to_virtual(offset);
-        MONAD_ASSERT(virtual_offset != INVALID_VIRTUAL_OFFSET);
-        w.parent->set_fnext(w.index, offset);
-        w.parent->set_min_offsets(
-            w.index, calc_min_offsets(*w.node, virtual_offset));
-        if (w.evict) {
-            w.parent->set_next(w.index, nullptr);
-        }
-    }
-    p.writes.clear();
-}
-
 void build_partition_subtrie(
     ParallelUpsertContext &ctx, ParallelUpsertContext::Partition &p)
 {
-    // An in-memory aux is what suppresses the writes and leaves the subtrie
-    // resident for the service thread to serialize later
     UpdateAux aux;
-    // Lets this partition split again where its own sublists are still large,
-    // so in-flight parallelism is not capped at one node's child count. The
-    // recursion ends on its own once the sublists fall below the threshold.
-    aux.set_parallel(&ctx);
+    aux.init_for_partition_worker(*p.submitter, ctx);
     create_new_trie_(
         aux,
         *p.sm,
@@ -792,16 +744,6 @@ void build_partition_subtrie(
         std::move(p.updates),
         p.tid,
         p.prefix_index);
-    if (!p.collect_writes) {
-        return;
-    }
-    MONAD_ASSERT(p.out->ptr);
-    auto const path = p.out->ptr->path_nibble_view();
-    for (unsigned n = 0; n < path.nibble_size(); ++n) {
-        p.sm->down(path.get(n));
-    }
-    collect_partition_writes_(*p.sm, *p.out->ptr, p.writes);
-    p.sm->up(path.nibble_size());
 }
 
 /////////////////////////////////////////////////////
@@ -915,7 +857,7 @@ void create_new_trie_from_requests_(
                  .sm = sm.clone(),
                  .prefix_index = prefix_index + 1,
                  .tid = tid,
-                 .collect_writes = aux.is_on_disk()});
+                 .submitter = &aux});
         }
         else {
             create_new_trie_(
@@ -931,15 +873,11 @@ void create_new_trie_from_requests_(
     }
     if (partitioned) {
         parallel->wait(batch);
-        for (auto &done : batch.partitions()) {
+        for (auto const &done : batch.partitions()) {
             // A branch enters the mask only once its update sublist is
             // non-empty, so a partition always produces a subtrie
             MONAD_ASSERT(done.out->ptr);
             version = std::max(version, done.version);
-            // A nested partition is written as part of its parent's list
-            if (aux.is_on_disk()) {
-                retire_partition_(aux, done);
-            }
         }
     }
     // can have empty children
@@ -1559,16 +1497,57 @@ void propagate_upward(
 // Async write
 /////////////////////////////////////////////////////
 
+/* Replaces `node_writer` with one placed where a node of `min_bytes` fits
+whole: the start of a fresh chunk, or - once a parallel upsert shares this
+writer's chunk with its workers, so that the bytes past its reservation are no
+longer its to take - the start of a freshly reserved extent, which the allocator
+puts in a fresh chunk only if the current one cannot hold it.
+*/
 node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
-    UpdateAux &aux, node_writer_unique_ptr_type &node_writer)
+    UpdateAux &aux, node_writer_unique_ptr_type const &node_writer,
+    size_t const min_bytes)
 {
     auto *sender = &node_writer->sender();
     bool const in_fast_list =
         aux.metadata_ctx().main()->at(sender->offset().id)->in_fast_list;
-    auto const *ci_ = aux.metadata_ctx().main()->free_list_end();
-    MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
-    auto const idx = ci_->index(aux.metadata_ctx().main());
-    chunk_offset_t const offset_of_new_writer{idx, 0};
+    // Which writer this is and which list its chunk is on must agree, or the
+    // reservation below would be recorded against the other writer's
+    MONAD_ASSERT(in_fast_list == aux.is_fast_writer(node_writer));
+    auto *const extents = aux.extent_allocator_for(node_writer);
+    detail::db_metadata::chunk_info_t const *ci_ = nullptr;
+    uint32_t idx = 0;
+    chunk_offset_t offset_of_new_writer{0, 0};
+    size_t bytes_to_write = 0;
+    file_offset_t reservation_end = 0;
+    if (extents == nullptr) {
+        // The extent allocator pops this list under extent_lock_; an unlocked
+        // pop here is only safe when no worker can be inside reserve_extent.
+        MONAD_ASSERT(
+            aux.parallel() == nullptr ||
+            aux.parallel()->no_partitions_in_flight());
+        ci_ = aux.metadata_ctx().main()->free_list_end();
+        MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
+        idx = ci_->index(aux.metadata_ctx().main());
+        offset_of_new_writer = chunk_offset_t{idx, 0};
+        bytes_to_write = AsyncIO::WRITE_BUFFER_SIZE;
+        reservation_end = AsyncIO::WRITE_BUFFER_SIZE;
+    }
+    else {
+        /* Never larger than one write buffer, because the replacement writer is
+        sized from it and a buffer is what the node is serialized into. The
+        allocator has to hand out at least what a whole node needs, though, so a
+        node bigger than an extent takes a bespoke reservation of its own. */
+        auto const want = std::max(
+            round_up_align<DISK_PAGE_BITS>(min_bytes), extents->extent_bytes());
+        auto const at = extents->reserve_extent(
+            round_up_align<DISK_PAGE_BITS>(min_bytes), want);
+        MONAD_ASSERT(at.bytes >= min_bytes);
+        // A buffer of a non page multiple could not be written with O_DIRECT
+        MONAD_ASSERT(at.bytes == round_down_align<DISK_PAGE_BITS>(at.bytes));
+        offset_of_new_writer = chunk_offset_t{at.chunk_id, at.base};
+        bytes_to_write = std::min(AsyncIO::WRITE_BUFFER_SIZE, at.bytes);
+        reservation_end = at.base + at.bytes;
+    }
     // Pad buffer of existing node write that is about to get initiated so it's
     // O_DIRECT i/o aligned
     auto const remaining_buffer_bytes = sender->remaining_buffer_bytes();
@@ -1610,15 +1589,17 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
         reentrancy_detection.max_count = my_reentrancy_count;
     }
     auto ret = aux.io->make_connected(
-        write_single_buffer_sender{
-            offset_of_new_writer, AsyncIO::WRITE_BUFFER_SIZE},
-        write_operation_io_receiver{AsyncIO::WRITE_BUFFER_SIZE});
+        write_single_buffer_sender{offset_of_new_writer, bytes_to_write},
+        write_operation_io_receiver{bytes_to_write});
     reentrancy_detection.count--;
     MONAD_ASSERT(reentrancy_detection.count >= 0);
     // The deepest-most reentrancy must succeed, and all less deep reentrancies
     // must retry
     if (my_reentrancy_count != reentrancy_detection.max_count) {
-        // We reentered, please retry
+        /* We reentered, please retry. An extent reserved above is given up
+        rather than reused: the reentrant call has already reserved and written
+        one of its own, so these bytes stay unwritten below the allocator's
+        cursor, as any other orphaned extent does. */
         LOG_INFO(
             "replace_node_writer_to_start_at_new_chunk retry "
             "my_reentrancy_count = "
@@ -1627,38 +1608,43 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
             reentrancy_detection.max_count);
         return {};
     }
-    aux.metadata_ctx().remove(idx);
-    aux.metadata_ctx().append(
-        in_fast_list ? UpdateAux::chunk_list::fast
-                     : UpdateAux::chunk_list::slow,
-        idx);
-    /* Reserved after the retry check, which must not consume space, and after
-    the list append, as physical_to_virtual cannot translate a free chunk's
-    offset.
-    */
-    auto const base = aux.io->storage_pool()
-                          .chunk(storage_pool::seq, idx)
-                          .reserve(AsyncIO::WRITE_BUFFER_SIZE);
-    MONAD_ASSERT_PRINTF(
-        base == 0,
-        "chunk %u came off the free list with %llu bytes already reserved",
-        idx,
-        static_cast<unsigned long long>(base));
+    if (extents == nullptr) {
+        aux.metadata_ctx().remove(idx);
+        aux.metadata_ctx().append(
+            in_fast_list ? UpdateAux::chunk_list::fast
+                         : UpdateAux::chunk_list::slow,
+            idx);
+        /* Reserved after the retry check, which must not consume space, and
+        after the list append, as physical_to_virtual cannot translate a free
+        chunk's offset.
+        */
+        auto const base = aux.io->storage_pool()
+                              .chunk(storage_pool::seq, idx)
+                              .reserve(bytes_to_write);
+        MONAD_ASSERT_PRINTF(
+            base == 0,
+            "chunk %u came off the free list with %llu bytes already reserved",
+            idx,
+            static_cast<unsigned long long>(base));
+    }
     aux.set_reservation(
         in_fast_list,
-        node_writer_reservation{
-            offset_of_new_writer, AsyncIO::WRITE_BUFFER_SIZE});
+        node_writer_reservation{offset_of_new_writer, reservation_end});
     return ret;
 }
 
 node_writer_unique_ptr_type replace_node_writer(
-    UpdateAux &aux, node_writer_unique_ptr_type const &node_writer)
+    UpdateAux &aux, node_writer_unique_ptr_type const &node_writer,
+    size_t const min_bytes)
 {
     // Can't use add_to_offset(), because it asserts if we go past the
     // capacity
     auto offset_of_next_writer = node_writer->sender().offset();
     bool const in_fast_list =
         aux.metadata_ctx().main()->at(offset_of_next_writer.id)->in_fast_list;
+    // Which writer this is and which list its chunk is on must agree, or the
+    // reservation below would be recorded against the other writer's
+    MONAD_ASSERT(in_fast_list == aux.is_fast_writer(node_writer));
     file_offset_t offset = offset_of_next_writer.offset;
     offset += node_writer->sender().written_buffer_bytes();
     offset_of_next_writer.offset = offset & chunk_offset_t::max_offset;
@@ -1671,13 +1657,24 @@ node_writer_unique_ptr_type replace_node_writer(
     auto const reservation = aux.reservation(in_fast_list);
     bool const reservation_exhausted =
         offset_of_next_writer.id != reservation.begin.id ||
-        offset + DISK_PAGE_SIZE > reservation.end;
+        offset + min_bytes > reservation.end;
     MONAD_ASSERT(reservation_exhausted || offset >= reservation.begin.offset);
+    if (reservation_exhausted && aux.extent_allocator_for(node_writer)) {
+        // Somebody else may already own the bytes past this reservation, so the
+        // replacement goes wherever the allocator puts it
+        return replace_node_writer_to_start_at_new_chunk(
+            aux, node_writer, min_bytes);
+    }
     detail::db_metadata::chunk_info_t const *ci_ = nullptr;
     uint32_t idx;
-    if (reservation_exhausted && chunk_capacity - offset < DISK_PAGE_SIZE) {
+    if (reservation_exhausted && chunk_capacity - offset < min_bytes) {
         // Nothing left to reserve in this chunk, so we replace writer to the
         // start of next chunk.
+        // The extent allocator pops this list under extent_lock_; an unlocked
+        // pop here is only safe when no worker can be inside reserve_extent.
+        MONAD_ASSERT(
+            aux.parallel() == nullptr ||
+            aux.parallel()->no_partitions_in_flight());
         ci_ = aux.metadata_ctx().main()->free_list_end();
         MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
         idx = ci_->index(aux.metadata_ctx().main());
@@ -1691,7 +1688,9 @@ node_writer_unique_ptr_type replace_node_writer(
             ? std::min(
                   AsyncIO::WRITE_BUFFER_SIZE,
                   (size_t)(chunk_capacity - offset_of_next_writer.offset))
-            : (size_t)(reservation.end - offset);
+            : std::min(
+                  AsyncIO::WRITE_BUFFER_SIZE,
+                  (size_t)(reservation.end - offset));
     // See above about handling potential reentrancy correctly
     auto *const node_writer_ptr = node_writer.get();
     auto ret = aux.io->make_connected(
@@ -1758,12 +1757,23 @@ retry:
         auto const chunk_remaining_bytes =
             aux.io->chunk_capacity(sender->offset().id) -
             sender->offset().offset - sender->written_buffer_bytes();
+        /* A node is contiguous on disk, so it may only cross a buffer boundary
+        into bytes this writer is certain of. Without a parallel upsert that is
+        the whole of the rest of the chunk; with one it is the rest of this
+        writer's reservation, because the bytes past it belong to whoever
+        reserves next.
+        */
+        auto const contiguous_bytes_left =
+            aux.extent_allocator_for(node_writer) == nullptr
+                ? chunk_remaining_bytes
+                : aux.reservation(node_writer).end - sender->offset().offset -
+                      sender->written_buffer_bytes();
         node_writer_unique_ptr_type new_node_writer{};
         unsigned offset_in_on_disk_node = 0;
-        if (size > chunk_remaining_bytes) {
-            // Node won't fit in the rest of current chunk, start at a new chunk
-            new_node_writer =
-                replace_node_writer_to_start_at_new_chunk(aux, node_writer);
+        if (size > contiguous_bytes_left) {
+            // Node won't fit in what is left, start at a new chunk or extent
+            new_node_writer = replace_node_writer_to_start_at_new_chunk(
+                aux, node_writer, size);
             if (!new_node_writer) {
                 goto retry;
             }
@@ -1787,7 +1797,10 @@ retry:
                 size,
                 offset_in_on_disk_node);
             offset_in_on_disk_node += bytes_to_append;
-            new_node_writer = replace_node_writer(aux, node_writer);
+            // The rest of the node must land contiguously with what was just
+            // appended, which is what asking for that many bytes secures
+            new_node_writer = replace_node_writer(
+                aux, node_writer, size - offset_in_on_disk_node);
             if (!new_node_writer) {
                 goto retry;
             }
@@ -1831,7 +1844,8 @@ retry:
             if (offset_in_on_disk_node < size &&
                 node_writer->sender().remaining_buffer_bytes() == 0) {
                 // replace node writer
-                new_node_writer = replace_node_writer(aux, node_writer);
+                new_node_writer = replace_node_writer(
+                    aux, node_writer, size - offset_in_on_disk_node);
                 if (!new_node_writer) {
                     // Reentrance: the reentrant call may have interleaved
                     // data into the writer, so continuing would make this
@@ -1855,8 +1869,35 @@ retry:
 // Return node's physical offset the node is written at, triedb should not
 // depend on any metadata to walk the data structure.
 chunk_offset_t
-async_write_node_set_spare(UpdateAux &aux, Node &node, bool write_to_fast)
+async_write_node_set_spare(UpdateAux &caller, Node &node, bool write_to_fast)
 {
+    /* The only place a thread other than the triedb service thread may write:
+    a pool thread serializes into a writer of its own and so never reaches
+    AsyncIO, whose ring, shared write buffers and db_metadata mutations are none
+    of them thread safe. */
+    if (auto *const parallel = caller.parallel()) {
+        if (auto *const writer = parallel->writer_for_this_thread()) {
+            /* A worker writes into whichever list the allocator holds extents
+            in, so that has to be the list this node was destined for. The
+            service thread's own writes are cross-checked against the chunk
+            lists below instead.
+            */
+            bool const to_fast =
+                write_to_fast && caller.writer_owner().can_write_to_fast();
+            MONAD_ASSERT_PRINTF(
+                parallel->owns_extents_of(to_fast),
+                "a node destined for the %s list cannot go into extents of the "
+                "other one",
+                to_fast ? "fast" : "slow");
+            return writer->append(node);
+        }
+    }
+    /* Everything below is the triedb's own thread, either in the ordinary
+    recursion or in a partition it picked up while waiting on a batch. Both go
+    through its node writers, and so through the aux that owns them rather than
+    through a partition's own.
+    */
+    UpdateAux &aux = caller.writer_owner();
     write_to_fast &= aux.can_write_to_fast();
     if (aux.alternate_slow_fast_writer()) {
         // alternate between slow and fast writer
@@ -1880,6 +1921,12 @@ async_write_node_set_spare(UpdateAux &aux, Node &node, bool write_to_fast)
 
 void flush_buffered_writes(UpdateAux &aux)
 {
+    /* Before anything the service thread holds, and so before the root offset
+    the caller goes on to publish: a root must never be reachable over a node
+    still sitting in a worker's buffer. */
+    if (auto *const parallel = aux.parallel()) {
+        parallel->flush_writers();
+    }
     // Round up with all bits zero
     auto replace = [&](node_writer_unique_ptr_type &node_writer) {
         auto *sender = &node_writer->sender();
@@ -1918,8 +1965,7 @@ chunk_offset_t write_new_root_node(
     flush_buffered_writes(aux);
     // advance fast and slow ring's latest offset in db metadata
     aux.metadata_ctx().advance_db_offsets_to(
-        aux.node_writer_fast->sender().offset(),
-        aux.node_writer_slow->sender().offset());
+        aux.wip_offset(true), aux.wip_offset(false));
 
     auto const max_version_in_db =
         aux.metadata_ctx().db_history_max_version(tid);

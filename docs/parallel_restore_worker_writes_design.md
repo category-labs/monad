@@ -1,23 +1,34 @@
 # Worker-side node writes for parallel restore — design
 
-> Each merklization worker gets a reserved byte range in the fast chunk and an
-> 8 MB buffer, runs the ordinary write-and-evict recursion against it, and
+> Each merklization worker gets a reserved byte range in the current chunk of
+> the upsert's target list (the slow list for a restore) and an 8 MB buffer,
+> runs the ordinary write-and-evict recursion against it, and
 > `pwrite`s the buffer itself. Node serialization, disk-offset assignment and
 > node freeing leave the triedb service thread. Enabled only for the snapshot
 > restore path.
 >
-> `file:line` references are against `34c374ec6`; if they drift, grep the cited
-> symbol.
+> `file:line` references are against `34c374ec6`, the commit this was designed
+> against, except where a section says otherwise. Line numbers drift; grep the
+> cited symbol.
 
 ## Goal / non-goals
 
 **Goal.** Take the write path and the allocator off the triedb service thread,
-which the combined parallel-restore profile identifies as the remaining ceiling.
-In the 80.1 s combined run the service thread is busy 50.6 s (63% duty) and is
-the dominant single thread; of that, the write path (offset allocation,
-`fnext`/`min_offset` patching, serialization) is ~28% ≈ 14 s and `malloc`/`free`
-is ~15% ≈ 7.6 s. Both are per-node costs that belong wherever the node was
-built.
+which parallel-restore profiling identifies as the remaining ceiling. Two
+different runs supply that picture, and they must not be conflated:
+
+- *Where the wall goes*: in the **both-on** run (80.1 s wall) the service thread
+  is busy 50.6 s — 63% duty — and is the dominant single thread.
+- *Where the service thread's time goes*: the only per-symbol profile of the
+  pre-change code is `par16_flat_2026-08-04.data`, which is the
+  **merklization-only** run (131.2 s wall, service thread 55.4 s). There the write
+  path (offset allocation, `fnext`/`min_offset` patching, serialization) is 25.2%
+  ≈ 13.9 s and `malloc`/`free` is 14.2% ≈ 7.9 s.
+
+Both are per-node costs that belong wherever the node was built. The shares come
+from the merklization-only run and the wall from the both-on run, so any "N
+seconds of the service thread" figure below that mixes them is an estimate, not a
+measurement.
 
 **Non-goals.**
 
@@ -29,9 +40,18 @@ built.
   (`node.hpp:169-186`), which is inside the allocation but outside the disk image,
   and on `allocate_shared`'s inline control block: neither leaves room for the
   4-byte size prefix at the alignment the format needs.
-- **Not** reducing total CPU. Malloc and the serialize memcpy still happen; they
-  move to threads that are idle. Peak measured demand for the whole combined job
-  was 6.9 of 16 cores.
+- **Not** reducing total CPU against a *serial* restore: it rises there, 228 →
+  274 core-seconds (**1.20×**), and that extra 20% is what parallelizing costs.
+  The run averages 8.65 cores over its 31.7 s wall. Deliberately no "parallel
+  efficiency" figure: the job runs ~34 threads (16 prep, 16 merklization, the
+  service thread, the loader's consumer) on a 128-core box, so there is no
+  processor count to divide a speedup by, and quoting one invites the reader to
+  assume a different denominator than the one used. CPU does fall against the
+  write-list baseline this
+  design replaces, ~359 → ~277 s, because dropping the write list also drops the
+  separate `collect_partition_writes_` walk over the finished subtrie; see
+  Measured. Peak measured demand was 6.9 of 16 cores, a **pre-change** figure
+  from the 16-core box that has not been re-measured since.
 - **Not** changing the snapshot format, the wire, or the dump side.
 
 **Scope caveat.** The reservation change below is *not* restore-only. The service
@@ -42,12 +62,18 @@ with one that can.
 
 ## Background
 
-Today a worker builds its partition against an in-memory `UpdateAux`, which
-suppresses writes because `create_node_from_children_if_any` gates its
-write-and-evict loop on `aux.is_on_disk()` (`trie.cpp:569`). The whole subtrie
-therefore stays resident, the worker records a post-order write list
-(`collect_partition_writes_`, `trie.cpp:731`), and the service thread replays it
-flat in `retire_partition_` (`trie.cpp:760`):
+This section describes the baseline this design replaces, as parallel
+merklization first shipped it. That baseline is a state internal to this work,
+not anything `main` ever had — on `main` restore is serial and there is no write
+list at all. None of the names below survives in the tree; they are here because
+the argument for the change is an argument about what they cost.
+
+In that baseline a worker built its partition against an in-memory `UpdateAux`,
+which suppressed writes because `create_node_from_children_if_any` gated its
+write-and-evict loop on `aux.is_on_disk()`. The whole subtrie therefore stayed
+resident, the worker recorded a post-order write list
+(`collect_partition_writes_`), and the service thread replayed it flat in
+`retire_partition_`:
 
 ```cpp
 for (auto const &w : p.writes) {
@@ -61,23 +87,23 @@ for (auto const &w : p.writes) {
 }
 ```
 
-That loop is the whole cost. The last line drops the only owning reference to a
-node the worker allocated, so every eviction is a cross-thread cold free — the
-23× `unlink_chunk` in the profile is that signature. The rest is the write path
+That loop was the whole cost. The last line dropped the only owning reference to
+a node the worker allocated, so every eviction was a cross-thread cold free — the
+23× `unlink_chunk` in the profile is that signature. The rest was the write path
 itself.
 
 The serial recursion already does exactly the same four things on the thread that
-built the node (`trie.cpp:569-593`). So the change is not to add a mechanism but
-to stop suppressing the one that exists.
+built the node (`create_node_from_children_if_any`). So the change is not to add
+a mechanism but to stop suppressing the one that exists.
 
 ### Why offsets can be assigned locally
 
-`collect_partition_writes_` is post-order because a parent's `fnext` array is part
+The recorded write list was post-order because a parent's `fnext` array is part
 of its own disk image, so children must have offsets first. The create recursion
 is already post-order for the same reason. Given a private byte range, a worker
 can satisfy that ordering without consulting anybody: `physical_to_virtual`
 (`update_aux.cpp:74-91`) reads only `atomic_load_chunk_info(..., acquire)` and an
-`insertion_count` that is fixed once the chunk is on the fast list, so
+`insertion_count` that is fixed once the chunk is on the fast or slow list, so
 `min_offsets` is computable on the worker too.
 
 Only the partition root crosses a thread boundary, and it always did: the root
@@ -108,11 +134,13 @@ Therefore:
 - `chunk_t::reserve(bytes) -> file_offset_t` — the existing `fetch_add`, named for
   what it does.
 - `chunk_t::write_offset(chunk_relative) -> {fd, absolute}` — no `fetch_add`.
-- Writer creation reserves. `reset_node_writers` (`update_aux.cpp:474-486`),
+- A writer holds a reservation `[base, base + len)` and a replacement buffer is
+  positioned at the next unwritten offset *inside* it; it reserves again only when
+  the reservation is exhausted. `reset_node_writers` (`update_aux.cpp:474-486`),
   `replace_node_writer` and `replace_node_writer_to_start_at_new_chunk`
-  (`trie.cpp:1561,1637`) each already compute `bytes_to_write`; the writer's
-  offset becomes the reserved offset rather than
-  `offset + written_buffer_bytes()`.
+  (`trie.cpp:1561,1637`) are the three sites. Resuming inside the reservation is
+  what keeps the live path waste-free: reserving afresh at every flush would
+  orphan the unwritten tail of an 8 MB reservation once per block.
 - `submit_request_` writes at the caller's offset and asserts
   `offset + size <= reservation cursor`, which is a check on placement rather
   than on the low bits of an address.
@@ -151,21 +179,27 @@ we are breaking silently.
 `WorkerNodeWriter`, one per worker **thread** — not per partition — in
 `parallel_upsert.{hpp,cpp}`:
 
-- Owns an `aligned_alloc(DMA_PAGE_SIZE, WORKER_EXTENT_BYTES)` buffer for its
-  lifetime. No registered-buffer pool, so `wr_buffers` stays at its default of 4
-  (`ondisk_db_config.hpp:37`).
-- Holds a reserved range `[base, base + len)` in the current fast chunk and a
-  cursor. `append(Node const &)` serializes with `serialize_node_to_buffer` and
-  returns the `chunk_offset_t`, with the `spare` page count set exactly as
-  `async_write_node_set_spare` does (`trie.cpp:1826-1827`).
+- Owns an `aligned_alloc(DISK_PAGE_SIZE, extent_bytes)` buffer for its
+  lifetime: the pool's write fd is O_DIRECT against 512-byte blocks, and
+  `DMA_PAGE_SIZE` (64) is too small an alignment for it. No registered-buffer
+  pool, so `wr_buffers` stays at its default of 4 (`ondisk_db_config.hpp:37`).
+- Holds a reserved range `[base, base + len)` in the target list's current
+  chunk and a cursor. `append(Node const &)` serializes with
+  `serialize_node_to_buffer` and returns the `chunk_offset_t`, with the
+  `spare` page count set exactly as `async_write_node_set_spare` does
+  (`trie.cpp:1826-1827`).
 - When the node does not fit: pad the tail to `DISK_PAGE_SIZE` with `memset`,
   `pwrite` the buffer at `write_offset(base + flushed)`, and reserve the next
   extent. Blocking is deliberate — ~4 ms per 8 MB on NVMe, on a thread that is
   otherwise hashing.
-- `WORKER_EXTENT_BYTES == AsyncIO::WRITE_BUFFER_SIZE`. No CLI knob, but a
-  test-only override on `ParallelUpsertContext`, for the same reason
-  `set_flush_bytes` has one and no flag: at unit-test scale a production-sized
-  extent means the boundary paths never execute.
+- The extent is `min(AsyncIO::WRITE_BUFFER_SIZE, chunk_capacity / 32)`, i.e. 8 MB
+  on a production 256 MB chunk and a proportionally smaller slice of a smaller
+  one. A fraction has to bound it: with an extent that is a large part of a
+  chunk, the first few writers each own a whole chunk and the free list empties
+  long before any of them has filled what it holds. No CLI knob, but a test-only
+  override on `ParallelUpsertContext`, for the same reason `set_flush_bytes` has
+  one and no flag: at unit-test scale a production-sized extent means the
+  boundary paths never execute.
 
 A node larger than an extent gets its own reservation of
 `round_up_align<DISK_PAGE_BITS>(disk_size)` and is written directly from the node
@@ -174,45 +208,115 @@ rather than through the buffer. Restore values top out far below 8 MB, but
 
 ### Chunk grants
 
-Extents inside a chunk are lock-free: one atomic cursor, reservation order
-defines placement. Crossing a chunk needs a free-list pop and a
-`metadata_ctx().append`, which stay service-thread-only. A worker whose
-reservation would exceed `chunk_capacity` clamps to the 512-aligned remainder and
-requests the next chunk through the context. At 256 MB per chunk that is ~44
-grants for an 11 GB restore.
+Every reservation takes `extent_lock_`: the remainder read and the reservation
+that consumes it have to be one critical section, or two reservers racing the
+same remainder would both clamp to it and both reserve it
+(`ParallelUpsertContext::reserve_extent`). Crossing a chunk needs a free-list
+pop and a `metadata_ctx().append`, which run under that same lock on whichever
+thread exhausted the chunk — service thread or worker alike, not
+service-thread-only. A worker whose reservation would exceed `chunk_capacity`
+clamps to the 512-aligned remainder and requests the next chunk through the
+context. At 256 MB per chunk that is ~44 grants for an 11 GB restore.
 
 `advance_db_offsets_to` (`trie.cpp:1870`) then takes the reservation cursor rather
 than the service writer's offset, since worker extents may sit ahead of it. Gaps
 below the cursor — a worker's partly-used extent — are orphaned bytes; nothing
-scans the region, every node is reached by a recorded offset.
+scans the region, every node is reached by a recorded offset. Two consequences:
+
+- The recorded chunk must be the last of its list, because
+  `rewind_to_match_offsets` (`update_aux.cpp:207-229`) *destroys* every chunk
+  after it. The grant is therefore the sole appender of that list while a
+  parallel upsert is in flight, and the cursor is always in the chunk it last
+  granted. When that chunk is exactly full the cursor grants one more, since an
+  offset of the capacity is one past `chunk_offset_t`'s 28-bit offset field and
+  `try_trim_contents` cannot punch a zero-length hole at it either.
+- The tail of a chunk the allocator has moved past is orphaned wholesale if the
+  service thread's own writer still holds an extent in it, which it does whenever
+  it writes slowly enough not to exhaust that extent. Bounded by one chunk per
+  restore, and it is what
+  `DbBinarySnapshot.CompactionAfterParallelRestore`'s pool sizing has to leave
+  room for.
 
 ### Which writer a partition uses
 
 `wait()` helps rather than idles, so a partition can run on any pool thread *or on
 the service thread itself*. Writer selection is therefore by thread, not by
 partition: a pool thread serializes into its own `WorkerNodeWriter`, and the
-service thread keeps using `node_writer_fast` and the uring path exactly as
-today. Nested partitions inherit the same rule, so a subtrie can span two
+service thread keeps using `node_writer_fast`/`node_writer_slow` and the uring
+path. Nested partitions inherit the same rule, so a subtrie can span two
 writers — which is sound, because a child's offset is final before its parent is
 serialized regardless of which extent it landed in.
 
+A partition worker's aux has no node writers of its own, so a partition the
+service thread picks up writes through `UpdateAux::writer_owner()`, the aux that
+does. That aux is also the one whose `can_write_to_fast` and reservations apply,
+which is what keeps those writes in the same chunk list the workers reserve from.
+
+The service thread's writer for that list takes its buffer placement from the
+allocator too, rather than from `chunk_t`'s append point: it shares the chunk, so
+neither the append point nor the bytes past its own reservation are its to take.
+A node that no longer fits inside that reservation therefore starts a fresh
+extent instead of being split across one boundary
+(`async_write_node`), because a node has to be contiguous on disk and the bytes
+after the reservation belong to whoever reserves next.
+
 ### What the worker aux may touch
 
-The worker's `UpdateAux` is constructed per partition as it is now, plus
-`set_parallel(&ctx)` so nested partitioning still fires. It must report
-`is_on_disk()`, which is `io != nullptr` (`trie.hpp:374`), so it carries the
-service thread's `AsyncIO` pointer — but only for `chunk_capacity`, `chunk_count`
-and `storage_pool().chunk()`. Writes dispatch to the calling thread's writer at
+The worker's `UpdateAux` is constructed per partition, borrowing the submitter's
+`AsyncIO` pointer, its `DbMetadataContext` and a copy of its per-timeline
+compaction state, plus `set_parallel(&ctx)` so nested partitioning still fires. It
+must report `is_on_disk()`, which is `io != nullptr` (`trie.hpp:374`); it reads
+`chunk_capacity`, `chunk_count` and `storage_pool().chunk()` through the i/o
+pointer, translates its own write offsets through the metadata, and checks its own
+nodes against the compaction and auto-expire thresholds of the upsert that cut it.
+Writes dispatch to the calling thread's writer at
 the single site `async_write_node_set_spare`, so a pool thread never enters
 `async_write_node`, whose first statement is
 `aux.io->poll_nonblocking_if_not_within_completions(1)` (`trie.cpp:1690`).
 
-To make that a checked property rather than a convention, `AsyncIO` records its
-owning thread at construction and `MONAD_DEBUG_ASSERT`s ownership in `poll_*`
-and `make_connected`. Debug-only: `poll_*` is hot in live execution.
+That is a checked property rather than a convention: `AsyncIO` already records its
+owning thread and asserts it unconditionally in `poll_uring_` (`io.cpp:531`),
+which every `poll_*` entry point funnels through, and `make_connected` gains the
+same check as a `MONAD_DEBUG_ASSERT` — debug only, because it is hot in live
+execution.
 
-`metadata_ctx` is read concurrently and only through
-`atomic_load_chunk_info`. Nothing on the worker mutates it.
+`metadata_ctx` is read concurrently and only through `atomic_load_chunk_info`.
+A worker *is* a mutator of it, though: the chunk grant runs on whichever thread
+exhausted the chunk, so `remove`/`append` are no longer service-thread-only.
+Three things keep that sound:
+
+- Mutators are serialized against each other by `extent_lock_`, which the grant
+  runs under. Every other `db_metadata` mutation an upsert makes — history
+  trimming, `advance_db_offsets_to`, compaction — happens on the triedb's own
+  thread with no partition in flight. The two places that could break that are
+  `replace_node_writer` and `replace_node_writer_to_start_at_new_chunk`, which
+  pop `free_list_end()` and `remove`/`append` it *without* `extent_lock_` on the
+  branch taken when the allocator does not own that writer's list. Both assert
+  `no_partitions_in_flight()` before the pop, so an unlocked pop that could race
+  a worker's grant aborts rather than losing an update to the tail's
+  `chunk_info_t` word.
+
+  Two facts keep that assert from firing during a restore, and both are worth
+  knowing before changing either: `db.cpp` asserts `!options.compaction`
+  whenever `upsert_concurrency > 0`, and the loader upserts with
+  `can_write_to_fast = false`, so the only writer the service thread advances is
+  the one the allocator owns — which routes to the locked path instead. A
+  configuration that advanced both writers with workers live would hit the
+  assert, not the race.
+- Readers on the *find* path are lock-free and atomic, so the append has to
+  publish atomically to match. `append_` (`db_metadata.hpp`) stores the new
+  chunk's whole word with `std::atomic_ref` release, and links it onto the
+  previous tail the same way: that tail is exactly the chunk the workers are
+  filling and translating offsets in, so a bitfield write there would be a data
+  race, benign on x86-64 but visible to TSAN and not a thing to leave in.
+
+  The service thread's own *write* path is not atomic in the same way. It reads
+  `at(off.id)->in_fast_list` as a plain bitfield load at three sites — the two
+  `replace_node_writer*` entry checks and the post-write cross-check in
+  `async_write_node_set_spare`. When that chunk is the list tail, those loads race
+  a worker's release store: the same benign-on-x86-64, TSAN-visible class as the
+  race fixed on the writing side, and unfixed here.
+- `remove` touches only the free list's own links, which no worker reads.
 
 ### Publication barrier
 
@@ -228,12 +332,12 @@ the next `DISK_PAGE_SIZE` boundary. Per-upsert padding over 256 shard upserts is
 then ~2 MB total; a fresh extent per upsert would waste up to 8 MB × workers ×
 256.
 
-### What gets deleted
+### What the baseline loses
 
-`ParallelUpsertContext::PendingWrite`, `Partition::writes`,
-`Partition::collect_writes`, `collect_partition_writes_` (`trie.cpp:731-755`),
-`retire_partition_` (`trie.cpp:760-774`), and the in-memory-aux comment contract
-in `build_partition_subtrie`. The worker runs the unmodified create recursion.
+Gone from the tree: `ParallelUpsertContext::PendingWrite`, `Partition::writes`,
+`Partition::collect_writes`, `collect_partition_writes_`, `retire_partition_`,
+and the in-memory-aux comment contract in `build_partition_subtrie`. The worker
+runs the unmodified create recursion.
 
 ## Testing
 
@@ -277,8 +381,8 @@ proves the case is exercised must be shown to fire when the mechanism is disable
    `std::min` over the children's stored pairs plus, optionally, the node's own
    offset — the result is a true minimum whichever side of its children the
    parent lands on. Every writer of the arrays goes through it or copies an
-   existing entry verbatim: `create_node_from_children_if_any` (`trie.cpp:581`),
-   `retire_partition_` (`trie.cpp:767`), `fillin_parent_after_expiration`
+   existing entry verbatim: `create_node_from_children_if_any` (which is also the
+   worker's path), `fillin_parent_after_expiration`
    (`trie.cpp:1323`), `try_fillin_parent_with_rewritten_node`
    (`trie.cpp:1472-1491`, which explicitly folds the *new* offset in with
    `std::min`, i.e. already tolerates it being lower than a child's),
@@ -359,14 +463,14 @@ proves the case is exercised must be shown to fire when the mechanism is disable
    `update_aux.cpp:906` abort or `free_compacted_chunks` releasing a chunk that
    still holds live nodes.
 
-   So chunk grant must be ordered **append-to-list before extent hand-out**, not
-   reserve-then-append. Every existing feed of `physical_to_virtual` into
-   `calc_min_offsets` on the write path guards this with
+   So chunk grant is ordered **append-to-list before extent hand-out**, not
+   reserve-then-append; both grant sites carry a comment saying why. Every feed of
+   `physical_to_virtual` into `calc_min_offsets` on the write path guards this with
    `MONAD_ASSERT(virtual_offset != INVALID_VIRTUAL_OFFSET)` —
-   `create_node_from_children_if_any` (`trie.cpp:580`), `retire_partition_`
-   (`trie.cpp:765`), `fillin_parent_after_expiration` (`trie.cpp:1322`) — and
-   `WorkerNodeWriter` must carry the same assert, since it is what turns a
-   mis-ordered grant into an abort instead of silent corruption. Two things do
+   `create_node_from_children_if_any` and `fillin_parent_after_expiration`
+   (`trie.cpp:1322`). The worker needs no assert of its own: it reaches the arrays
+   only through that same recursion, which is what turns a mis-ordered grant into
+   an abort instead of silent corruption. Two things do
    *not* catch it: `trie.cpp:1325-1327` is an `||`, so it passes when only one
    component is invalid, and `copy_trie.cpp:52-53,138-139` feed
    `physical_to_virtual` straight into `calc_min_offsets` with no check at all.
@@ -384,24 +488,174 @@ proves the case is exercised must be shown to fire when the mechanism is disable
    sequential-write-required zones. Unimplemented today; recorded so the
    constraint is not rediscovered later.
 
-## Measurement plan
+## Measured
 
 Same harness and oracle as the combined measurement: mainnet block 90045827
-(11 GB, 256 shards), slot/`ethereum` target, warm cache, `combo_profile.sh <load>
-<upsert> <tag>` plus the per-thread CPU sampler, and the restored root read back
-and compared against the snapshot header's own `state_root`
-(`0x4aa9630d…`). Configs: serial, Phase 1 only, both-on before, both-on after.
+(11 GB, 256 shards), slot/`ethereum` target, warm cache, per-thread CPU sampler,
+and the restored root read back and compared against the snapshot header's own
+`state_root`. Every row below produced
+`0x4aa9630da0d07bff562084bf09e58c5256198082fb93ba04d1c2c134f6d3fe11`.
 
-Expected: the service thread loses ~20 s of the ~50.6 s it burns in the 80.1 s
-combined run, taking the wall to roughly 60-65 s — **~3.3-3.5× cumulative** — with
-peak RSS *falling*, since 16 × 8 MB of buffers replaces multi-GB of resident
-subtries. What remains on the service thread afterwards is the unpartitioned
-merklization of the top levels (~12.8% ≈ 6.5 s) and io_uring.
+| `--load-concurrency` | `--upsert-concurrency` | wall | vs serial | peak RSS |
+|---|---|---|---|---|
+| 1 | 0 | 215.4 s | 1.00× | 6.50 GB |
+| auto (16) | 0 | 165.7 s | 1.30× | 13.87 GB |
+| auto (16) | 16 — before | 80.1 s | 2.66× | 16.69 GB |
+| auto (16) | 16 — after | **~31 s** | **~6.9×** | 13.92 GB |
+
+The after row is two runs, 31.7 s and 30.9 s — a 2.6% spread, which is why it is
+quoted to two significant figures and not as a mean. Serial reproduces the earlier
+round's 212.9 s to 1.2% and Phase-1-only its 162.3 s to 2.1%; that is the noise
+this comparison carries.
+
+Nothing short-circuited: `getrusage` file-system output is 72,238,208 blocks of
+512 B against serial's 72,237,904 — **0.0004% apart** — so all three configurations
+wrote the same 37 GB, and the root hash says they wrote it correctly.
+
+**The prediction held on the mechanism and badly understated the result.** The
+service thread's write path and allocator went from 13.9 s and 7.9 s (shares from
+the merklization-only profile, §Goal) to 0.36 s and 0.32 s — ~21 s removed against
+an estimate of ~20 s. But the wall did not land at the predicted 60-65 s, it landed
+at ~31 s.
+
+The reason is not "superadditivity", which names a result rather than a mechanism.
+The wall is very nearly the service thread's own CPU divided by its duty cycle:
+50.6 / 0.63 = 80.3 s before, 21.6 / 0.68 = 31.7 s after, both within 0.3% of the
+measured walls. That is close to an identity — duty *is* CPU over wall — so it
+explains nothing by itself, but it localizes the wall to one thread and shows what
+the estimate got wrong: it assumed duty would hold while CPU fell. Duty instead
+*rose* 63 → 68%, so the wall fell by more than the CPU did. The two mechanisms
+behind that are `Db::upsert` blocking its caller on a promise, which converts
+service-thread time directly into loader idle time, and the fact that the service
+thread's poll cost is partly a function of how long the run lasts, so a shorter
+wall is self-reinforcing.
+
+The service thread lost **29.0 s** in total (50.6 → 21.6), of which the write path
+and allocator account for ~21 s. The remaining ~8 s is mostly io_uring polling,
+measured at 14.9 → 7.6 s across the two profiles — a term the design never
+predicted because it is a consequence of the wall shrinking rather than of moving
+any work.
+
+Two secondary predictions:
+
+- **Peak RSS fell, 16.69 → 13.92 GB**, and is now within noise of Phase 1 on its
+  own (13.87 GB). Merklization concurrency has stopped costing resident memory at
+  all: what remains is Phase 1 holding in-flight shards. Against a *serial*
+  restore, though, RSS still more than doubles (6.50 → 13.92 GB) and essentially
+  all of that is Phase 1 — which is what
+  `parallel_snapshot_restore_memory_bounding.md` exists to address.
+- **Total CPU fell against the write-list baseline**, ~359 → ~277 s — against a
+  *serial* restore it rises, 228 → 274 core-seconds, as the non-goal above
+  states. The dominant cause of the fall is not allocator
+  locality but that **the second StateMachine walk is gone**: a worker used to walk
+  its finished subtrie again to build the write list, and per worker
+  `collect_partition_writes_` (0.63 s) has disappeared while `MachineBase::down`
+  fell 4.10 → 2.00 s. Over 16 workers that is the right order to be most of the
+  drop. Allocator locality is the smaller term — service `malloc`/`free` 7.9 →
+  0.32 s and per-worker 0.66 → 0.31 s, so roughly a quarter of it. Kernel mutex
+  contention also collapsed on the workers, `osq_lock` 0.49 → 0.002 s each. Work
+  was *eliminated*, not merely relocated, which is why a non-goal was over-achieved.
+
+  The walk figure is the robust one: `MachineBase::down` per worker is 4.10 s before
+  and **2.00 s in both** post-change records — 19.74% × 10.13 s user-only and 17.80%
+  × 11.24 s kernel-inclusive — with `collect_partition_writes_` absent from both. So
+  the halving survives both the precision setting and run-to-run noise.
+
+  Three caveats. The before side is the merklization-only profile, so these are
+  per-thread comparisons across two configurations, and the total-CPU drop itself
+  cannot be decomposed exactly. The before record was taken at `precise_ip=0` and
+  both after records at `precise_ip=2`, a boundary every per-symbol comparison here
+  crosses; it redistributes samples *within* a tight loop's symbol family without
+  moving the family's total much, which is why the figures quoted above are either
+  whole buckets or symbols confirmed in both after records.
+
+  And keccak is **not** usable as a control, for two independent reasons. Its
+  per-invocation cost genuinely changes with concurrency: prep-side hashing, which is
+  byte-for-byte identical and untouched by this branch, went **36.1 s on one loader
+  thread to 45.7 s across 16 prep threads, +27%**, while effective clock fell
+  4.95 → 4.63 GHz (cycles ÷ CPU-seconds) as concurrency rose 2.62 → 8.69 cores.
+  Separately, per-thread keccak is not stable enough to compare: the two after
+  records of the *same* configuration put worker keccak at 3.12 s and 3.90 s, a 25%
+  spread, so against one of them keccak *fell* versus the before record's 3.21 s.
+  Attribution inside the family swings likewise (`SHA3_absorb` 2.97 / 3.66 / 0.77%).
+  The invocation count, by contrast, is pinned exactly — the matching root fixes the
+  merklization-side node set and the snapshot fixes the prep side — so equal work is
+  established by that and by the file-system output, never by equal hashing time.
+
+### What the service thread does now
+
+21.6 s of CPU across a 31.7 s wall — 68% duty, up from 63%, and still the busiest
+single thread. Of that 21.6 s, **16.3 s is user and 5.3 s is system**, which matters
+for reading any profile of it: a `--all-user` record sees only the 16.3 s, so
+scaling its relative shares by 21.6 s inflates every bucket by a third and smears
+the kernel time invisibly across user categories. The table below therefore comes
+from a separate kernel-inclusive record of the same configuration
+(`t6_both_kern.data`, 33.3 s wall, service thread 22.5 s of CPU), so shares and
+scale share one run:
+
+| bucket | share | seconds |
+|---|---|---|
+| merklization | 29.5% | 6.64 s |
+| io_uring (user) | 20.6% | 4.62 s |
+| keccak | 17.3% | 3.89 s |
+| kernel: block I/O + page cache | 13.4% | 3.02 s |
+| kernel: not separable from the above | 12.2% | 2.74 s |
+| memcpy/memset | 1.9% | 0.42 s |
+| write path | 1.6% | 0.36 s |
+| malloc/free | 1.4% | 0.32 s |
+| dispatch + locks | 0.9% | 0.20 s |
+
+Grouped, the thread is **trie build 10.5 s (47%) against I/O 9.6 s (43%)**. The
+bucket table's own split understates I/O, because the categories above are drawn by
+symbol-name patterns that miss cases: of the 12.2% "not separable",
+
+- **3.1 pp is I/O by symbol name** that the I/O pattern missed only because it
+  requires `bio_`/`dm_` *with* a trailing underscore — `__split_and_process_bio`,
+  `__map_bio`, `clone_endio`, `linear_map`, `alloc_io`, `alloc_tio`,
+  `ll_back_merge_fn`, `end_buffer_async_write`, `try_to_free_buffers`,
+  `block_commit_write`, `mempool_*`;
+- **5.8 pp is slab, memcg and page-allocator churn** — `kernel_init_pages` alone is
+  2.4 pp, plus `__memcg_slab_free_hook`, `kmem_cache_free`, `refill_obj_stock` —
+  which exists to allocate the `bio` and `buffer_head` objects the I/O path consumes;
+- only **3.3 pp is generic** (scheduler, RCU, page faults, speculation thunks).
+
+So I/O is **at least 8.3 s (37%)** counting only what is named for I/O, **9.6 s
+(43%)** once the allocator churn serving it is included, and **10.4 s (46%)** if all
+kernel time is charged to it.
+
+The decisive argument does not depend on that split. The 16 merklization workers run
+the *same trie-build code* and spend **0.14-0.17 s of system time against ~10.6 s of
+user — 1.3-1.6%** — while this thread is 5.30 s of 21.63 s, **24.5%**. Whatever the
+service thread's kernel time is, it is not trie build. **So trie build and I/O are
+co-equal on this thread**; I/O is not a minor residue, and the earlier reading of it
+as "28%" was an artifact of the user-only scaling described above.
+
+The trie-build half is not residue from the unpartitioned top levels. Every
+trie-build symbol sits at a *proportional* share of its value on a worker —
+~0.6-0.75 across symbols, and as low as 0.55 against the busiest worker
+(`__KeccakF1600` 17.33 vs 25.77%, `MachineBase::down` 13.14 vs 19.74%,
+`decode_storage_db_raw` 1.60 vs 2.57%, `encode_16_children` 0.35 vs 0.51%) — which
+is what helping through `wait()` looks like: the same work, scaled. Top-level-only
+work would be the opposite shape, with `encode_16_children` over-represented and a
+storage-leaf decode near zero. So driving the trie-build half down moves it to a
+worker rather than deleting it, which is why the next lever is elsewhere (see
+`parallel_merklization_design.md`, "Remaining headroom"). Those ratios are from the
+user-only record, where they are internally consistent because both sides are
+scaled the same way.
 
 ## Rollout
 
 Worker writes are inert unless `--upsert-concurrency` is set, so the default
-restore path and all of block execution keep today's behavior. The reservation
+restore path and all of block execution keep today's behavior.
+
+One limitation comes with the flag: because the workers take extents from one
+chunk list, and which list that is follows from the first upsert's
+`can_write_to_fast`, a db opened with `--upsert-concurrency` is bound to one
+destination for its whole life. A snapshot restore writes to the slow list, so
+the same `Db` cannot afterwards serve ordinary block upserts, which write to the
+fast one; `init_parallel_extents` aborts with that message rather than mixing the
+two. The snapshot loader opens its own `Db` and closes it, so nothing in the
+product hits this. The reservation
 refactor is shared code and ships with it; it is behavior-preserving for the
 single-writer case.
 

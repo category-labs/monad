@@ -38,6 +38,8 @@
 MONAD_MPT_NAMESPACE_BEGIN
 
 class Node;
+class UpdateAux;
+class WorkerNodeWriter;
 struct ChildData;
 
 //! \brief A byte range reserved for one writer inside one sequential chunk.
@@ -52,19 +54,21 @@ struct ExtentReservation
 service thread.
 
 A partition is a subtrie absent from the previous version and big enough to be
-worth a handoff, so a worker only builds nodes: it runs the ordinary create
-recursion against a private in-memory `UpdateAux`, which suppresses every write
-and leaves the whole subtrie resident, and records the post-order list of nodes
-to write. The service thread walks that list to assign disk offsets, so node
-serialization, offset allocation and db_metadata mutation remain single
-threaded.
+worth a handoff. A worker runs the ordinary create recursion against an
+`UpdateAux` of its own that borrows the submitter's i/o and metadata, so it
+builds, serializes, places and frees its own nodes: writes dispatch to the
+calling thread's `WorkerNodeWriter`, which owns a byte range reserved for it
+alone. Only the partition root crosses a thread boundary, as any child offset
+always did.
 
 The partitions of one trie node are submitted and awaited as a batch by the
 recursion frame that cut them. A partition splits again wherever its own
 sublists are still large, so in-flight parallelism is not capped at one node's
 child count and a lopsided subtrie is broken up rather than serialising its
 batch; to keep that deadlock free, a thread waiting on a batch runs queued
-partitions itself rather than blocking while work is available.
+partitions itself rather than blocking while work is available. A partition that
+runs on the service thread that way writes through the triedb write path as
+usual, because writer selection is by thread rather than by partition.
 */
 class ParallelUpsertContext
 {
@@ -72,25 +76,9 @@ public:
     /*! \brief One subtrie handed to a worker.
 
     `out` and the `Update` objects reachable from `updates` belong to the
-    submitting frame and must outlive the batch. `sm` arrives positioned at
-    `out`'s branch and is left there, so the service thread can reuse it to
-    walk the finished subtrie.
+    submitting frame and must outlive the batch. `sm` is the worker's own clone,
+    positioned at `out`'s branch.
     */
-    /*! \brief One descendant of a finished partition, ready to be written.
-
-    Recorded in post-order, so a parent's child offsets are final before the
-    parent is serialized. `evict` is the caching decision the serial write loop
-    would have made, computed on the worker where the StateMachine walk is
-    parallel.
-    */
-    struct PendingWrite
-    {
-        Node *node{nullptr};
-        Node *parent{nullptr};
-        uint8_t index{0};
-        bool evict{false};
-    };
-
     struct Partition
     {
         ChildData *out{nullptr};
@@ -98,12 +86,16 @@ public:
         std::unique_ptr<StateMachine> sm{};
         unsigned prefix_index{0};
         timeline_id tid{timeline_id::primary};
-        // Only a partition cut by the service thread needs a write list; a
-        // nested one is covered by its parent partition's walk.
-        bool collect_writes{false};
+        /* The aux the partition was cut from. The worker constructs its own
+        from it, borrowing the i/o, the metadata and the timeline state, and
+        never writes through its node writers. It does read the submitter's
+        mutable `can_write_to_fast_` on every node write, to pick the
+        destination list; that is safe only because the flag is set before the
+        upsert starts and not touched again while partitions are in flight, and
+        is published through the queue mutex. */
+        UpdateAux *submitter{nullptr};
         // Written by the worker: the largest version in the built subtrie.
         int64_t version{0};
-        std::vector<PendingWrite> writes{};
     };
 
     /*! \brief The partitions of one trie node, awaited together.
@@ -159,9 +151,13 @@ public:
 
     Helps rather than idles, which is what makes nested partitions safe: a
     thread only blocks when the queue is empty, so the work its batch is waiting
-    on can always be picked up by somebody. Never polls the caller's AsyncIO, so
-    waiting cannot reenter the caller's own update recursion through an i/o
-    completion.
+    on can always be picked up by somebody.
+
+    A partition run this way writes through whatever writer its thread would use
+    outside one, so on the triedb's own thread it goes through the node writers
+    and can poll AsyncIO, which can complete a read and resume an unrelated
+    frame of the update recursion. That is the same reentrancy an ordinary node
+    write carries.
     */
     void wait(Batch &);
 
@@ -176,11 +172,94 @@ public:
     */
     using ChunkGrant = std::function<uint32_t()>;
 
-    //! \brief Points the extent allocator at the chunk to reserve from. Call
-    //! exactly once, before any `reserve_extent`: re-pointing it would leave
-    //! every live writer's extent in a chunk, or a pool, it no longer tracks.
+    /*! \brief Points the extent allocator at the chunk to reserve from, which
+    must be the last chunk of `in_fast_list`'s list and the one the service
+    thread's own writer reserves from too.
+
+    Call exactly once, before any `reserve_extent`: re-pointing it would leave
+    every live writer's extent in a chunk, or a pool, it no longer tracks.
+    */
     void init_extents(
-        MONAD_ASYNC_NAMESPACE::storage_pool &, uint32_t chunk_id, ChunkGrant);
+        MONAD_ASYNC_NAMESPACE::storage_pool &, uint32_t chunk_id,
+        bool in_fast_list, ChunkGrant);
+
+    //! \brief Whether `init_extents` has run, i.e. whether extents can be
+    //! reserved yet.
+    bool extents_ready() const noexcept
+    {
+        return extent_pool_ != nullptr;
+    }
+
+    /*! \brief Whether any worker can currently be inside `reserve_extent`.
+
+    The precise guard for an unlocked `db_metadata` free-list pop: safe only
+    when no worker can be mutating the same lists under `extent_lock_`.
+    */
+    bool no_partitions_in_flight() const noexcept
+    {
+        return partitions_in_flight_.load(std::memory_order_acquire) == 0;
+    }
+
+    //! \brief Whether the writer of `in_fast_list`'s list shares its chunk with
+    //! this context's workers, and so must place its buffers in reserved
+    //! extents rather than at the chunk's append point.
+    bool owns_extents_of(bool const in_fast_list) const noexcept
+    {
+        return extents_ready() && extents_in_fast_list_ == in_fast_list;
+    }
+
+    //! \brief How many bytes a reservation asks for. Page multiple, never above
+    //! `AsyncIO::WRITE_BUFFER_SIZE`, so one extent always fits in one write
+    //! buffer.
+    size_t extent_bytes() const noexcept
+    {
+        MONAD_ASSERT(extents_ready());
+        return extent_bytes_;
+    }
+
+    /*! \brief The offset every extent handed out so far lies below, which is
+    what the db's work-in-progress offset must record: a worker's extent can sit
+    ahead of the service thread's own writer, and everything after the recorded
+    chunk is destroyed at the next open.
+
+    Grants a fresh chunk when the current one is exactly full, because a
+    chunk-relative offset of the capacity is one past what `chunk_offset_t` can
+    represent.
+    */
+    chunk_offset_t extent_cursor();
+
+    /*! \brief The writer this thread serializes into, or null on any thread
+    that is not one of this context's pool threads.
+
+    Null on the triedb service thread, including while it helps inside `wait()`:
+    it keeps using its own node writers and the uring path.
+    */
+    WorkerNodeWriter *writer_for_this_thread();
+
+    //! \brief Writes out every pool thread's buffered nodes. The publication
+    //! barrier: a root must never be published over an unflushed node.
+    void flush_writers();
+
+    //! \brief Nodes appended to a pool thread's own writer.
+    size_t appended_nodes() const noexcept;
+
+    //! \brief Partitions built by a pool thread rather than by a helping
+    //! service thread.
+    size_t partitions_built_by_workers() const noexcept
+    {
+        return partitions_built_by_workers_.load(std::memory_order_acquire);
+    }
+
+    /*! \brief Overrides the reservation size. WARNING: for unit testing only.
+
+    A production sized extent leaves every boundary path unexecuted at test
+    scale. Call before `init_extents`.
+    */
+    void set_extent_bytes_unit_testing_only(size_t const bytes)
+    {
+        MONAD_ASSERT(!extents_ready());
+        extent_bytes_override_ = bytes;
+    }
 
     /*! \brief Reserves the next extent, of between `min_bytes` and
     `want_bytes`, granting a new chunk when the current one cannot hold
@@ -206,8 +285,9 @@ public:
     ExtentReservation reserve_extent(size_t min_bytes, size_t want_bytes);
 
 private:
-    void run();
+    void run(unsigned index);
     bool try_run_one();
+    uint32_t grant_chunk_under_lock_();
 
     std::mutex lock_;
     // One condvar for both "work arrived" and "batch finished": a thread inside
@@ -218,12 +298,27 @@ private:
     std::vector<std::thread> workers_;
     uint32_t const partition_min_updates_;
     bool stop_{false};
+    // Partitions submitted but not yet built, over every batch. Only read to
+    // check that nothing is in flight.
+    std::atomic<unsigned> partitions_in_flight_{0};
+    std::atomic<size_t> partitions_built_by_workers_{0};
+
+    /* One writer per pool thread, indexed by the thread's own index and touched
+    by no other thread while a partition is in flight. Built lazily, because
+    the chunk to reserve from is not known until the first upsert. */
+    std::vector<std::unique_ptr<WorkerNodeWriter>> writers_;
 
     // Serializes the read-then-reserve pair across every writer sharing a chunk
     std::mutex extent_lock_;
     MONAD_ASYNC_NAMESPACE::storage_pool *extent_pool_{nullptr};
     ChunkGrant grant_chunk_{};
     uint32_t extent_chunk_id_{0};
+    size_t extent_bytes_{0};
+    size_t extent_bytes_override_{0};
+    bool extents_in_fast_list_{false};
+    // Set for as long as a thread is inside the grant, which must be one at a
+    // time: it mutates the db_metadata chunk lists.
+    std::atomic<bool> granting_{false};
 };
 
 /*! \brief Writes the nodes one worker builds into a byte range reserved for
@@ -235,10 +330,11 @@ here goes through `AsyncIO`: its ring, its shared write buffers and the
 `db_metadata` mutations it makes are none of them thread safe.
 
 Not thread safe, and deliberately so: there is exactly one instance per worker
-thread, and no instance is ever touched by a thread other than its own. Several
-instances may write into the same chunk at once — their extents are disjoint
-because reservation order alone decides placement, and every reservation goes
-through one `ExtentSource`.
+thread, and no instance is touched by another thread while its own has work.
+`ParallelUpsertContext::flush_writers` is the one exception, and it runs on the
+service thread with no partition in flight. Several instances may write into the
+same chunk at once — their extents are disjoint because reservation order alone
+decides placement, and every reservation goes through one `ExtentSource`.
 */
 class WorkerNodeWriter
 {
@@ -270,6 +366,11 @@ public:
     */
     void flush();
 
+    size_t appended_nodes() const noexcept
+    {
+        return appended_nodes_;
+    }
+
 private:
     ExtentReservation reserve_(size_t min_bytes, size_t want_bytes);
     chunk_offset_t append_oversized_(Node const &, uint32_t disk_size);
@@ -295,9 +396,10 @@ private:
     size_t len_{0};
     size_t used_{0};
     size_t flushed_{0};
+    size_t appended_nodes_{0};
 };
 
-/*! \brief Build a partition's subtrie in memory and record its write list.
+/*! \brief Build a partition's subtrie, writing its nodes as they are built.
 
 Defined in trie.cpp, which owns the create recursion. Runs on whichever thread
 picked the partition up.

@@ -491,9 +491,17 @@ namespace detail
             else {
                 MONAD_ASSERT((list.end & ~0xfffffU) == 0);
                 info.prev_chunk_id = list.end & 0xfffffU;
-                auto *tail = at_(list.end);
+                /* The tail of a fast or slow list is read concurrently, and
+                atomically, by any thread translating an offset inside it -- a
+                parallel upsert's workers fill exactly that chunk. Linking the
+                new chunk on is therefore a release store of the whole word
+                rather than a bitfield write. Mutators are serialized elsewhere:
+                on the triedb's own thread, or under the extent allocator's
+                lock. */
+                std::atomic_ref<chunk_info_t> const tail(*at_(list.end));
+                auto tail_info = tail.load(std::memory_order_relaxed);
                 uint32_t const insertion_count =
-                    uint32_t(tail->insertion_count()) + 1;
+                    uint32_t(tail_info.insertion_count()) + 1;
                 // Strict less-than because MAX_COUNT is reserved for
                 // INVALID_VIRTUAL_OFFSET so that no valid virtual offset
                 // compacts to INVALID_COMPACT_VIRTUAL_OFFSET.
@@ -506,8 +514,10 @@ namespace detail
                 info.insertion_count0_ = insertion_count & 0x3ff;
                 info.insertion_count1_ = insertion_count >> 10 & 0x3ff;
                 MONAD_ASSERT(
-                    tail->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID);
-                list.end = tail->next_chunk_id = i->index(this) & 0xfffffU;
+                    tail_info.next_chunk_id == chunk_info_t::INVALID_CHUNK_ID);
+                tail_info.next_chunk_id = i->index(this) & 0xfffffU;
+                tail.store(tail_info, std::memory_order_release);
+                list.end = tail_info.next_chunk_id;
             }
             std::atomic_ref<chunk_info_t>(*i).store(
                 info, std::memory_order_release);

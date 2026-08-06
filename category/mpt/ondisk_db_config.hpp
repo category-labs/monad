@@ -56,7 +56,10 @@ struct OnDiskDbConfig
     uint32_t chunk_capacity{28};
     // Worker threads that merklize new subtries in parallel during an upsert.
     // 0 keeps all of it on the triedb service thread. Requires compaction to
-    // be off, so in practice only snapshot restore sets it.
+    // be off, so in practice only snapshot restore sets it. A Db configured
+    // with this is bound to one write destination for its whole life: after
+    // the first upsert, rewind_to_version, clear_ondisk_db and an upsert with
+    // a different can_write_to_fast all abort.
     unsigned upsert_concurrency{0};
     // Updates a new subtrie must cover before it is handed to a worker rather
     // than built in the recursion. Ignored when upsert_concurrency is 0. Too

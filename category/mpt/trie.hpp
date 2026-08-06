@@ -182,8 +182,13 @@ chunk_offset_t async_write_node_set_spare(UpdateAux &, Node &, bool is_fast);
 chunk_offset_t
 write_new_root_node(UpdateAux &, Node &root, uint64_t version, timeline_id tid);
 
-node_writer_unique_ptr_type
-replace_node_writer(UpdateAux &, node_writer_unique_ptr_type const &);
+/*! \brief Replaces `node_writer` with one placed at the next unwritten offset
+of its reservation, or at a fresh reservation of at least `min_bytes` once the
+current one cannot hold that much.
+*/
+node_writer_unique_ptr_type replace_node_writer(
+    UpdateAux &, node_writer_unique_ptr_type const &,
+    size_t min_bytes = DISK_PAGE_SIZE);
 
 // \class Auxiliaries for triedb update
 class UpdateAux
@@ -222,12 +227,18 @@ class UpdateAux
 
     void update_disk_growth_data();
 
+    uint32_t grant_chunk_for_extents_(bool in_fast_list);
+
     uint32_t initial_insertion_count_on_pool_creation_{0};
     bool enable_dynamic_history_length_{true};
 
     // Owns the mmap lifecycle for db_metadata. Contains the two copies of
-    // mmap'd db_metadata pointers and root_offsets spans.
-    std::unique_ptr<DbMetadataContext> metadata_ctx_;
+    // mmap'd db_metadata pointers and root_offsets spans. Null on a partition
+    // worker's aux, which borrows the submitter's.
+    std::unique_ptr<DbMetadataContext> metadata_ctx_owner_;
+    // What every accessor reads. A partition worker's aux points at the
+    // submitter's, which it only ever reads.
+    DbMetadataContext *metadata_ctx_{nullptr};
 
     /******** Compaction ********/
     uint32_t chunks_to_remove_before_count_fast_{0};
@@ -252,6 +263,10 @@ class UpdateAux
     // Non-null enables parallel merklization of new subtries. Only ever set on
     // the aux of a triedb service thread that runs without compaction.
     ParallelUpsertContext *parallel_{nullptr};
+
+    // Non-null on a partition worker's aux, which has no node writers of its
+    // own: it points at the aux that does.
+    UpdateAux *writer_owner_{nullptr};
 
 public:
     // Allocate the first cnv chunk for db metadata copies
@@ -286,6 +301,19 @@ public:
     {
         init(io_, history_len);
     }
+
+    /*! \brief Turns this into the on-disk aux of one partition worker: it
+    borrows `from`'s i/o, metadata and timeline state, owns none of them, and
+    has no node writers of its own because every write it makes dispatches to
+    the calling thread's `WorkerNodeWriter`.
+
+    Lives on the stack of the frame that builds the partition, which holds only
+    because the create recursion never suspends: nothing below
+    `create_new_trie_` reads a node, so no `node_receiver_t` continuation ever
+    captures this aux. Making that recursion asynchronous would leave one
+    holding a dangling pointer.
+    */
+    void init_for_partition_worker(UpdateAux &from, ParallelUpsertContext &);
 
     ~UpdateAux();
 
@@ -372,16 +400,56 @@ public:
         can_write_to_fast_ = v;
     }
 
+    bool
+    is_fast_writer(node_writer_unique_ptr_type const &writer) const noexcept
+    {
+        return &writer == &node_writer_fast;
+    }
+
     node_writer_reservation const &
     reservation(bool const in_fast_list) const noexcept
     {
         return in_fast_list ? reservation_fast_ : reservation_slow_;
     }
 
+    node_writer_reservation const &
+    reservation(node_writer_unique_ptr_type const &writer) const noexcept
+    {
+        return reservation(is_fast_writer(writer));
+    }
+
+    /*! \brief The extent allocator `writer` must place its buffers through, or
+    null when it may simply take the next bytes of its chunk.
+
+    Non-null only for the one writer whose chunk the parallel workers reserve
+    extents from: it is then not alone in that chunk, so both the append point
+    and the bytes past its own reservation stop being its to take. Null
+    throughout block execution, which runs without a parallel context.
+    */
+    ParallelUpsertContext *
+    extent_allocator_for(node_writer_unique_ptr_type const &writer) const;
+
     void set_reservation(
         bool const in_fast_list, node_writer_reservation const v) noexcept
     {
         (in_fast_list ? reservation_fast_ : reservation_slow_) = v;
+    }
+
+    /*! \brief Points this aux's parallel context at the chunk its workers take
+    extents from, if it has one and they do not have it yet. Idempotent, and
+    must run before the first partition of an upsert is submitted.
+    */
+    void init_parallel_extents();
+
+    /*! \brief The aux owning the node writers this one's writes go through.
+
+    Itself, except on a partition worker's aux: a partition that the thread
+    owning the triedb picks up while waiting writes through that thread's own
+    writers, exactly as the recursion outside any partition does.
+    */
+    UpdateAux &writer_owner() noexcept
+    {
+        return writer_owner_ != nullptr ? *writer_owner_ : *this;
     }
 
     ParallelUpsertContext *parallel() const noexcept
@@ -418,10 +486,16 @@ public:
     void activate_secondary_timeline();
     void deactivate_secondary_timeline();
     void promote_secondary_to_primary();
+
+    /*! \brief Where `in_fast_list`'s work-in-progress offset must be recorded:
+    the extent allocator's cursor while the parallel workers share that
+    writer's chunk, and the writer's own offset otherwise.
+    */
+    chunk_offset_t wip_offset(bool in_fast_list);
 };
 
 static_assert(
-    sizeof(UpdateAux) == 160 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAux) == 176 + sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAux) == 8);
 
 template <receiver Receiver>

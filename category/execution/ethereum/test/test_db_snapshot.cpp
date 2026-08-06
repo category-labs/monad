@@ -507,10 +507,13 @@ TEST(DbBinarySnapshot, CompactionAfterParallelRestore)
     // if a change in node footprint moves it out of that window, rather than
     // letting the test silently stop compacting.
     constexpr uint32_t DEST_CHUNK_CAPACITY_BITS = 23;
-    constexpr uint64_t DEST_POOL_BYTES = 58ULL << 20;
-    // Sized so the restored trie lands near the middle of its second 8 MiB
-    // slow chunk, which is what leaves the usage window above room to drift.
-    constexpr uint64_t ACCOUNTS = 65'000;
+    constexpr uint64_t DEST_POOL_BYTES = 92ULL << 20;
+    /* Sized so the restore fills four of the pool's eight 8 MiB chunks, leaving
+    three free for the compaction upserts. The margin has to cover the tail of a
+    chunk the extent allocator has moved past while the service thread's own
+    writer still holds an extent in it: those bytes sit below the recorded
+    work-in-progress offset and are never written. */
+    constexpr uint64_t ACCOUNTS = 130'000;
 
     TempDb const src_db;
     TempDir const snapshot_dir;

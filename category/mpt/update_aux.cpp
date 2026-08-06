@@ -26,6 +26,7 @@
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/detail/unsigned_20.hpp>
+#include <category/mpt/parallel_upsert.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
@@ -368,8 +369,108 @@ UpdateAux::~UpdateAux()
         node_writer_fast.reset();
         node_writer_slow.reset();
         io = nullptr;
-        metadata_ctx_.reset();
+        metadata_ctx_ = nullptr;
+        metadata_ctx_owner_.reset();
     }
+}
+
+void UpdateAux::init_for_partition_worker(
+    UpdateAux &from, ParallelUpsertContext &ctx)
+{
+    MONAD_ASSERT(io == nullptr);
+    MONAD_ASSERT(from.is_on_disk());
+    io = from.io;
+    metadata_ctx_ = from.metadata_ctx_;
+    writer_owner_ = &from.writer_owner();
+    // The compaction and auto-expire thresholds the recursion checks its own
+    // nodes against are fixed for the whole upsert
+    std::copy_n(from.timeline_, NUM_TIMELINES, timeline_);
+    // Lets this partition split again where its own sublists are still large,
+    // so in-flight parallelism is not capped at one node's child count. The
+    // recursion ends on its own once the sublists fall below the threshold.
+    set_parallel(&ctx);
+}
+
+ParallelUpsertContext *
+UpdateAux::extent_allocator_for(node_writer_unique_ptr_type const &writer) const
+{
+    if (parallel_ == nullptr) {
+        return nullptr;
+    }
+    return parallel_->owns_extents_of(is_fast_writer(writer)) ? parallel_
+                                                              : nullptr;
+}
+
+void UpdateAux::init_parallel_extents()
+{
+    MONAD_ASSERT(parallel_ != nullptr);
+    if (parallel_->extents_ready()) {
+        /* The list the workers share cannot change under them, and which list
+        that is follows from where the service thread's own writes go. A db
+        opened with --upsert-concurrency is therefore bound to one destination
+        for its whole life: a snapshot restore, which writes to the slow list,
+        cannot afterwards serve ordinary upserts, which write to the fast one.
+        */
+        MONAD_ASSERT_PRINTF(
+            parallel_->owns_extents_of(can_write_to_fast_),
+            "this db's parallel workers hold extents in the %s list, so an "
+            "upsert writing to the %s one cannot be served",
+            can_write_to_fast_ ? "slow" : "fast",
+            can_write_to_fast_ ? "fast" : "slow");
+        return;
+    }
+    MONAD_ASSERT(
+        !alternate_slow_fast_writer_,
+        "parallel workers take extents from one chunk list, so the writer "
+        "cannot alternate between the two");
+    bool const in_fast_list = can_write_to_fast_;
+    /* The end of the list rather than the writer's own chunk: the recorded
+    work-in-progress offset destroys every chunk after its own at the next open,
+    so the allocator's cursor has to be the list's last chunk. */
+    uint32_t const chunk_id = in_fast_list
+                                  ? metadata_ctx_->main()->fast_list.end
+                                  : metadata_ctx_->main()->slow_list.end;
+    parallel_->init_extents(
+        io->storage_pool(), chunk_id, in_fast_list, [this, in_fast_list] {
+            return grant_chunk_for_extents_(in_fast_list);
+        });
+}
+
+uint32_t UpdateAux::grant_chunk_for_extents_(bool const in_fast_list)
+{
+    /* Appended to the list before the id is handed out: physical_to_virtual
+    yields INVALID_VIRTUAL_OFFSET for a chunk still on the free list, and
+    calc_min_offsets then silently drops the node's own offset, making every
+    subtrie minimum computed from it too high.
+
+    Runs under the allocator's lock, which is the only thing serializing this
+    against the reservations of the workers. That is sufficient because every
+    other db_metadata mutation an upsert makes happens with no partition in
+    flight. */
+    auto const *const ci = metadata_ctx_->main()->free_list_end();
+    MONAD_ASSERT(ci != nullptr); // we are out of free blocks!
+    auto const idx = ci->index(metadata_ctx_->main());
+    metadata_ctx_->remove(idx);
+    metadata_ctx_->append(
+        in_fast_list ? chunk_list::fast : chunk_list::slow, idx);
+    MONAD_ASSERT(
+        io->storage_pool().chunk(storage_pool::seq, idx).reserved_bytes() == 0);
+    return idx;
+}
+
+chunk_offset_t UpdateAux::wip_offset(bool const in_fast_list)
+{
+    auto const &writer = in_fast_list ? node_writer_fast : node_writer_slow;
+    if (auto *const extents = extent_allocator_for(writer)) {
+        auto const at = extents->extent_cursor();
+        // Every chunk after the recorded one is destroyed at the next open, so
+        // the allocator has to be the sole appender of this list
+        MONAD_ASSERT(
+            at.id == (in_fast_list ? metadata_ctx_->main()->fast_list.end
+                                   : metadata_ctx_->main()->slow_list.end));
+        return at;
+    }
+    return writer->sender().offset();
 }
 
 void UpdateAux::init(AsyncIO &io_, std::optional<uint64_t> const history_len)
@@ -379,7 +480,8 @@ void UpdateAux::init(AsyncIO &io_, std::optional<uint64_t> const history_len)
         io = nullptr;
         node_writer_fast.reset();
         node_writer_slow.reset();
-        metadata_ctx_.reset();
+        metadata_ctx_ = nullptr;
+        metadata_ctx_owner_.reset();
     }
     io = &io_;
 
@@ -422,7 +524,8 @@ void UpdateAux::init(AsyncIO &io_, std::optional<uint64_t> const history_len)
         }
     }
 
-    metadata_ctx_ = std::make_unique<DbMetadataContext>(io_);
+    metadata_ctx_owner_ = std::make_unique<DbMetadataContext>(io_);
+    metadata_ctx_ = metadata_ctx_owner_.get();
 
     if (metadata_ctx_->is_new_pool()) {
         metadata_ctx_->init_new_pool(
@@ -471,12 +574,20 @@ void UpdateAux::init(AsyncIO &io_, std::optional<uint64_t> const history_len)
 
 void UpdateAux::reset_node_writers()
 {
+    /* Both writers reserve at the append point directly, which is only safe
+    while nobody else reserves in their chunks. Every way in here runs before
+    the extent allocator exists: opening the db, and the two rewinds, which are
+    driven from the Db constructor. */
+    MONAD_ASSERT(
+        parallel_ == nullptr || !parallel_->extents_ready(),
+        "a db whose parallel workers already hold extents cannot be rewound: "
+        "its writers would reserve at an append point the workers share");
     /* The append point must already be at the recorded offset. Both ways in
     guarantee it: the resume path trims each chunk back to the record
     (`rewind_to_match_offsets`, whose trim aborts rather than fail), and
     `DbMetadataContext` refuses to initialise a new db over a pool holding any
-    data at all. A recorded offset at chunk capacity is legal, and leaves an
-    empty reservation whose first write moves on to a fresh chunk.
+    data at all. There is always a page of the chunk left to reserve, because
+    nothing ever records an offset at the capacity.
     */
     auto init_node_writer =
         [&](chunk_offset_t const node_writer_offset,

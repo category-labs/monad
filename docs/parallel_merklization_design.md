@@ -1,7 +1,8 @@
 # Parallel merklization — design
 
-> Worker threads merklize disjoint *new* subtries in memory; the triedb service
-> thread serializes the results and closes the top levels. Enabled only for the
+> Worker threads merklize disjoint *new* subtries and write their own nodes as
+> they go (`parallel_restore_worker_writes_design.md`); the triedb service
+> thread assembles the results into the top levels. Enabled only for the
 > snapshot restore path.
 >
 > `file:line` references are against `1fe408daa`; if they drift, grep the cited
@@ -18,12 +19,21 @@ and merklization is the bulk of it. That is what this design attacks: the
 
 **Non-goals.**
 
-- **Not** parallelizing the writer. Node serialization, disk-offset assignment
-  and `db_metadata` mutation stay on the single triedb service thread. Two prior
-  attempts (`max/parallel-snapshot-threaded`,
-  `dev/max/parallel-snapshot-restore`) tried a thread-safe shared node writer
-  and drowned in deadlocks; the writer is a pipeline stage here, not a
-  contended resource.
+- **Not** parallelizing the writer.
+
+  > **Superseded.** True of this design as it first shipped: node
+  > serialization, disk-offset assignment and `db_metadata` mutation all
+  > stayed on the single triedb service thread, with a worker's finished
+  > subtrie crossing to it as an in-memory handoff (see "Writing the finished
+  > subtrie"). Worker threads now do all three themselves, through their own
+  > `WorkerNodeWriter`, reserved out of the same chunk the service thread's own
+  > writer uses; see `parallel_restore_worker_writes_design.md`. What the
+  > non-goal got right and still holds: no writer is a *contended* resource
+  > shared across threads. Two prior attempts (`max/parallel-snapshot-threaded`,
+  > `dev/max/parallel-snapshot-restore`) tried making one node writer
+  > thread-safe and drowned in deadlocks; the shipped design still avoids that
+  > failure mode, just by giving each thread a disjoint writer of its own
+  > rather than by keeping every write on one thread.
 - **Not** enabling this for block execution. `upsert_concurrency` defaults to 0
   and the hook is inert unless a caller opts in. Only the snapshot loader does.
 - **Not** changing the snapshot format, the wire, or the dump side.
@@ -57,16 +67,21 @@ Four structural facts make the split possible.
 `child_fnext_data()` / `child_min_offset_{fast,slow}_data()`, which are plain
 writable arrays in the node image — patchable after the fact.
 
-**The in-memory `UpdateAux` already suppresses writing.**
-`create_node_from_children_if_any` guards its whole write-and-evict loop on
-`aux.is_on_disk()`. A subtrie built against a default `UpdateAux` therefore comes
-out fully resident with every child offset `INVALID_OFFSET` — exactly the handoff
-shape a worker needs, with no new gate in the recursion.
+**The in-memory `UpdateAux` already suppresses writing — true only of the
+design as it first shipped.** `create_node_from_children_if_any` guards its
+whole write-and-evict loop on `aux.is_on_disk()`. A subtrie built against a
+default `UpdateAux` therefore comes out fully resident with every child offset
+`INVALID_OFFSET`, which was the handoff shape the first version of this design
+used, with no new gate needed in the recursion. The shipped worker's
+`UpdateAux` instead borrows the submitter's `io` and `metadata_ctx_`
+(`UpdateAux::init_for_partition_worker`), so `is_on_disk()` is true and the
+recursion writes and evicts for real; see
+`parallel_restore_worker_writes_design.md`.
 
 **Restoring into an empty database only ever creates.** A flush upserts account
 hashes that do not exist yet, so the whole thing is built by `create_new_trie_` /
-`create_new_trie_from_requests_`. No worker ever has to read an old node, and no
-worker does I/O at all.
+`create_new_trie_from_requests_`. No worker ever has to read an old node, which
+is why a worker's borrowed `io` is only ever used to write.
 
 **Update sublists are counted.** `Requests::sublists` are
 `boost::intrusive::slist` with constant-time size (16 bytes per list in the
@@ -81,19 +96,20 @@ deciding whether to hand it over.
 service thread                                worker (or a helping thread)
   create_new_trie_from_requests_
     per branch whose sublist is large:
-      submit{&children[i],                  ──►  create_new_trie_ against a
-             updates_sublist,                     private in-memory UpdateAux:
-             sm.clone(), prefix_index}            nothing written, every node
-      wait(batch)   ← runs queued work           retained, offsets invalid
+      submit{&children[i],                  ──►  create_new_trie_ against an
+             updates_sublist,                     UpdateAux of its own, writing
+             sm.clone(), prefix_index}            and evicting each node into
+      wait(batch)   ← runs queued work           its own reserved extent
                                                  …splitting again wherever its
                                                  own sublists are still large
-                                            ◄──  ChildData + post-order write
-      per partition: retire_partition_             list + subtrie version
-        → async_write_node_set_spare
-        → patch fnext / min_offsets
-        → drop uncached node pointers
+                                            ◄──  ChildData (offset already
+                                                   assigned) + subtrie version
     create_node_from_children_if_any()             ← unchanged
 ```
+
+The worker's write step is `parallel_restore_worker_writes_design.md`'s subject;
+as this design first shipped, the worker retained the whole subtrie and the
+service thread wrote it (see "Writing the finished subtrie").
 
 Partitions are cut and joined by one recursion frame — a fork-join, not an
 asynchronous completion. That keeps `UpdateTNode::npending`
@@ -204,18 +220,21 @@ inside a default 8 MB stack.
 
 ### Writing the finished subtrie
 
-The worker records, in post-order, every descendant it built:
+> **Superseded.** This is how the subtrie reached disk when this design first
+> shipped, and the profile it produced is what motivated replacing it. Workers now
+> write their own nodes; see `parallel_restore_worker_writes_design.md`. The
+> paragraph on where the StateMachine walk belongs still holds — that is why the
+> section is kept rather than cut.
 
-```cpp
-struct PendingWrite { Node *node; Node *parent; uint8_t index; bool evict; };
-```
-
-and the service thread's retirement is a flat loop over that list: allocate an
-offset with `async_write_node_set_spare`, patch `child_fnext_data()[i]` and
-`child_min_offset_{fast,slow}_data()[i]` from `calc_min_offsets`, and drop the
-pointer if `evict`. Post-order matters twice: a child's min-offset array is final
-before its parent's entry is computed, and a node's `fnext` array is patched
-before the node image itself is serialized.
+The worker recorded, in post-order, every descendant it built — node, parent,
+child index, and whether to evict — and the service thread's retirement was a
+flat loop over that list: allocate an offset with `async_write_node_set_spare`,
+patch `child_fnext_data()[i]` and `child_min_offset_{fast,slow}_data()[i]` from
+`calc_min_offsets`, and drop the pointer if evicting. Post-order mattered twice: a
+child's min-offset array is final before its parent's entry is computed, and a
+node's `fnext` array is patched before the node image itself is serialized. Both
+orderings are properties of the disk format, so the create recursion the workers
+now run satisfies them for the same reason.
 
 The walk itself — stepping the StateMachine nibble by nibble to evaluate
 `sm.cache()` at each child's own depth — is the expensive part, and it belongs on
@@ -253,20 +272,37 @@ merklizes concurrently too.
 ### Ordering and safety
 
 - **Partitions are disjoint** and are built purely from the update list, so no
-  two threads touch the same subtree and none reads what the writer is emitting.
-- **A worker performs no I/O and touches no shared trie state.** Its in-memory
-  aux has no `AsyncIO`, no `metadata_ctx_`, no node writers, and default
-  compaction state. The only objects it mutates are its own `sm` clone, its own
-  `ChildData`, its own write list, and the `Update` objects of its own sublist
-  (which `Requests::split_into_sublists` has already partitioned by branch).
+  two threads touch the same subtree and none reads what another is writing.
+- **A worker does I/O.** Its `UpdateAux` borrows the submitter's `io` and
+  `metadata_ctx_` (`UpdateAux::init_for_partition_worker`), so `is_on_disk()` is
+  true and the ordinary create recursion writes and evicts for real, through a
+  blocking `pwrite` of its own thread's `WorkerNodeWriter`
+  (`category/mpt/parallel_upsert.cpp`'s `write_` / `flush`). What stays private
+  to a worker is its `sm` clone, its `ChildData`, and the `Update` objects of
+  its own sublist, which `Requests::split_into_sublists` has already
+  partitioned by branch.
+- **A worker is a `db_metadata` mutator.** Crossing a chunk boundary pops the
+  free list and appends the fast or slow list
+  (`UpdateAux::grant_chunk_for_extents_`, `category/mpt/update_aux.cpp`), on
+  whichever thread exhausted the chunk — service thread or worker alike.
+  `extent_lock_` serializes every grant against every other worker's
+  reservation and against the service writer's own, which is what keeps
+  concurrent grants sound. See `parallel_restore_worker_writes_design.md`,
+  "What the worker aux may touch", for the two other call sites that pop the
+  same free list without that lock and why they are unreached today.
 - **`Node::SharedPtr` is `std::shared_ptr`**, and the trie/node allocators are
   stateless wrappers over `malloc` / `operator new`, so building nodes on one
   thread and releasing them on another is safe.
-- **Waiting never polls the caller's `AsyncIO`**, so a batch cannot be joined
-  from inside one of the caller's own I/O completions.
+- **Waiting *does* poll the caller's `AsyncIO`** when a batch is helped from the
+  triedb's own thread: that partition writes through the ordinary node writers
+  and the uring path, exactly as it would outside a partition, which can
+  complete a read and resume an unrelated frame of the update recursion. That
+  is the same reentrancy an ordinary node write already carries, not one
+  `wait()` adds — see `ParallelUpsertContext::wait`'s docstring in
+  `parallel_upsert.hpp`.
 - `DbAsyncWorker` refuses to combine concurrency with compaction: a worker never
-  compacts, and retirement skips the compaction assertions the serial write loop
-  makes.
+  compacts, because `db.cpp` asserts `!options.compaction` whenever
+  `upsert_concurrency > 0`.
 
 ### Restore wiring
 
@@ -443,6 +479,10 @@ The cost is resident memory, 6.50 → 16.69 GB, and it is mostly Phase 1 holding
 each in-flight shard whole (14.31 GB on its own) rather than this design's
 in-flight subtries.
 
+These are the numbers for this design as it first shipped, and they are what the
+profiling below analyses. Worker-side node writes then took the combined row to
+~31 s / ~6.9× and 13.92 GB — see `parallel_restore_worker_writes_design.md`.
+
 ### Thread budget
 
 The two features size their pools differently, which matters because the fleet's
@@ -480,34 +520,65 @@ adds only ~1 GiB.
 
 ### Remaining headroom
 
-**The write path is the ceiling, but only now that the loader is pipelined.** In
-the combined run the service thread is 50.6 s of the 80.1 s wall and is the
-dominant thread, which puts the write path at ~14 s of 80 s ≈ 1.2×. Serialization
-into the node writer and offset allocation are single threaded by this design's
-own non-goal, so this is the next real change rather than more merklization
-concurrency.
+The write path and the cross-thread free that this profile named as the ceiling
+were the subject of `parallel_restore_worker_writes_design.md`, which moved both
+onto the worker that built the node and took the combined wall from 80.1 s to
+~31 s. On the service thread the write path is now 0.36 s and `malloc`/`free`
+0.32 s, from 13.9 s and 7.9 s. What follows is the headroom that remains after it.
 
-Two cheaper things are visible in the same profile:
+**Freeing the prepared shard is the largest single serialized cost left.** The
+loader's consumer thread — the one that calls `Db::upsert` and therefore blocks
+until the service thread finishes — spends ~4.3-4.6 s of its 7.1 s of CPU
+(5.3 s user + 1.8 s system) on allocator work. That the work sits under
+`std::default_delete<PreparedShard>` in `commit_prepared` is an inference from a
+flat profile with no call graph, not a measured call-tree fact: what is measured is
+that free-related symbols are 87% of the thread's *user* samples and that
+`commit_prepared` and the deleter both appear among them. If the inference holds it
+is the same defect worker writes just fixed one layer up — the shard is built on a
+prep worker and freed on the consumer, so a cross-thread free lands between two
+upserts instead of on an idle thread.
 
-- **8.4 s of malloc/free on the service thread** is it releasing the nodes the
-  workers built, and that cost is created by this design rather than inherited.
-  Process-wide allocator time goes from 2.6 s serial to 14.7 s here — `_int_free`
-  2.14 → 8.43 s, `_int_malloc` 0.41 → 4.65 s, and `unlink_chunk` 0.07 → 1.58 s,
-  a 23× jump that is the signature of bulk-freeing cold chunks — with more than
-  half of it landing on the critical path. The cause is structural: a worker
-  suppresses the write-and-evict loop, so a whole subtrie is allocated on one
-  thread and then freed on another in one go, instead of each node being written
-  and evicted as the serial recursion reaches it. Freeing on the worker, or an
-  arena per partition, recovers most of it — over half of what perfecting the
-  entire write path would give, for far less work.
+How much of that ~4.5 s is on the critical path is bounded rather than known: the
+service thread idles 31.7 − 21.6 = **10.1 s**, so there is room for all of it to be
+exposed, but nothing here proves it is. And the run already moves 37 GB in 31.7 s ≈
+**1.17 GB/s**; removing ~4.5 s would demand ~1.36 GB/s, and **nobody has checked
+whether the device sustains that**, so this lever may prove device-bound rather
+than CPU-bound.
 
-For contrast, the **dispatch itself is free**: `submit` is 0.20% of the service
-thread and locks, futex and scheduling together another 0.03%, so handing 32 839
-partitions to the pool costs it about 0.13 s. `split_into_sublists` is not part of
-that — the serial recursion splits by branch too, and process-wide it grows only
-6.1 → 9.8 s. Whatever the handoff costs, it is not the splitting.
-- `MachineBase::down`, one virtual call per nibble, 16% of the serial service
-  thread and still 7.8% of the parallel one.
+**The service thread is not trie-build bound — trie build and I/O are co-equal.**
+The breakdown below is off a kernel-inclusive record of the both-on configuration
+(`t6_both_kern.data`, service thread **22.47 s** of CPU), not off the 21.6 s the
+per-thread sampler reports for the unprofiled run, so shares and seconds share one
+run; mixing the two is how the earlier reading of this profile went wrong. On that
+record trie build is **10.5 s (47%)** and I/O **9.6 s (43%)**, between a floor of
+8.3 s (37%) counting only symbols named for I/O and a ceiling of 10.4 s (46%) with
+all kernel time charged to it.
+
+That the kernel half is not trie build is settled independently of the split: the
+16 workers run the same trie-build code at 1.3-1.6% system time, against this
+thread's 24.5%. The trie-build half is `wait()` helping rather than residue — every
+trie-build symbol sits at a proportional ~0.6-0.75 of its share on a worker, so the
+service thread is doing somewhat over a worker's worth of ordinary partition work,
+which would move rather than disappear. The I/O half is the genuine residue, and it
+is roughly half again to twice what an earlier reading suggested, which had scaled a
+user-only record by a user-plus-system total. See
+`parallel_restore_worker_writes_design.md`, "What the service thread does now".
+
+Two smaller items survive from the earlier profile:
+
+- **The dispatch itself is free**: `submit` is 0.20% of the service thread and
+  locks, futex and scheduling together another 0.03%, so handing 32 839 partitions
+  to the pool costs it about 0.13 s. `split_into_sublists` is not part of that —
+  the serial recursion splits by branch too, and process-wide it grows only
+  6.1 → 9.8 s. Whatever the handoff costs, it is not the splitting.
+- `MachineBase::down`, one virtual call per nibble, **got about twice as cheap**:
+  4.30 → 2.00 s on the service thread and 4.10 → 2.00 s per worker, because the
+  second walk over the finished subtrie disappeared along with the write list. Its
+  *share* of the service thread nevertheless rose, purely because the write path
+  left: **7.8 → 8.9%** comparing kernel-inclusive records, or 8.4 → 13.1% comparing
+  user-only ones. Quoting one base against the other — as "7.8 → 13.1%" does — is
+  the very error this bullet exists to warn about. The share is the misleading
+  number; the seconds are the real one.
 
 ## Testing
 

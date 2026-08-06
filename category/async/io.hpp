@@ -19,9 +19,11 @@
 
 #include <category/async/storage_pool.hpp>
 
+#include <category/core/assert.h>
 #include <category/core/io/buffer_pool.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
+#include <category/core/tl_tid.h>
 
 #include <category/core/mem/allocators.hpp>
 
@@ -488,6 +490,11 @@ private:
     template <bool is_write, class F>
     auto make_connected_impl_(F &&connect)
     {
+        /* Takes an i/o buffer and may poll the ring to get one, neither of
+        which is thread safe. Debug only because it is hot; poll_uring_ asserts
+        the same thing unconditionally, so the release build still cannot poll
+        from a foreign thread. */
+        MONAD_DEBUG_ASSERT(owning_tid_ == get_tl_tid());
         using connected_type = decltype(connect());
         static_assert(sizeof(connected_type) <= MAX_CONNECTED_OPERATION_SIZE);
         using traits =

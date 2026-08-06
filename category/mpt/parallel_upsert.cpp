@@ -16,8 +16,10 @@
 #include <category/mpt/parallel_upsert.hpp>
 
 #include <category/async/config.hpp>
+#include <category/async/io.hpp>
 #include <category/async/storage_pool.hpp>
 #include <category/core/assert.h>
+#include <category/core/config.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
@@ -27,6 +29,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <utility>
 
@@ -34,6 +37,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+/* Which pool thread of which context this is. Unset on the triedb service
+thread, including while it helps inside wait(), so writer selection is by thread
+rather than by partition. */
+thread_local MONAD_MPT_NAMESPACE::ParallelUpsertContext const
+    *tls_pool_context = nullptr;
+thread_local unsigned tls_pool_index = 0;
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -108,6 +122,7 @@ WorkerNodeWriter::append_oversized_(Node const &node, uint32_t const disk_size)
     chunk_offset_t offset{at.chunk_id, at.base};
     offset.set_spare(static_cast<uint16_t>(
         node_disk_pages_spare_15{num_pages(offset.offset, disk_size)}));
+    ++appended_nodes_;
     return offset;
 }
 
@@ -133,6 +148,7 @@ chunk_offset_t WorkerNodeWriter::append(Node const &node)
     offset.set_spare(static_cast<uint16_t>(
         node_disk_pages_spare_15{num_pages(offset.offset, disk_size)}));
     used_ += disk_size;
+    ++appended_nodes_;
     return offset;
 }
 
@@ -154,16 +170,74 @@ void WorkerNodeWriter::flush()
 
 void ParallelUpsertContext::init_extents(
     MONAD_ASYNC_NAMESPACE::storage_pool &pool, uint32_t const chunk_id,
-    ChunkGrant grant_chunk)
+    bool const in_fast_list, ChunkGrant grant_chunk)
 {
     MONAD_ASSERT(grant_chunk != nullptr);
     std::unique_lock const g(extent_lock_);
     // Re-pointing the allocator would leave every live writer's extent in a
     // chunk, or a pool, the allocator no longer knows about
     MONAD_ASSERT(extent_pool_ == nullptr);
-    extent_pool_ = &pool;
     extent_chunk_id_ = chunk_id;
     grant_chunk_ = std::move(grant_chunk);
+    extents_in_fast_list_ = in_fast_list;
+    if (extent_bytes_override_ != 0) {
+        extent_bytes_ = extent_bytes_override_;
+    }
+    else {
+        /* One write buffer, which is a thirty-second of a production chunk.
+        Writers that each hold a larger fraction than that exhaust the free list
+        long before they have filled what they hold, so a smaller chunk scales
+        the extent down with it rather than handing one writer the lot. */
+        static constexpr size_t CHUNK_FRACTION = 32;
+        auto const capacity =
+            pool.chunk(MONAD_ASYNC_NAMESPACE::storage_pool::seq, chunk_id)
+                .capacity();
+        extent_bytes_ = std::min(
+            MONAD_ASYNC_NAMESPACE::AsyncIO::WRITE_BUFFER_SIZE,
+            static_cast<size_t>(
+                round_down_align<DISK_PAGE_BITS>(capacity / CHUNK_FRACTION)));
+    }
+    MONAD_ASSERT(extent_bytes_ > 0);
+    MONAD_ASSERT(
+        extent_bytes_ <= MONAD_ASYNC_NAMESPACE::AsyncIO::WRITE_BUFFER_SIZE);
+    MONAD_ASSERT(
+        extent_bytes_ == round_down_align<DISK_PAGE_BITS>(extent_bytes_));
+    // Published last: extents_ready() is read without the lock by the service
+    // thread deciding whether its own writer must reserve through here
+    extent_pool_ = &pool;
+}
+
+uint32_t ParallelUpsertContext::grant_chunk_under_lock_()
+{
+    /* The grant mutates the db_metadata chunk lists, which tolerate one mutator
+    at a time and cannot themselves detect a second. `extent_lock_`, which both
+    callers hold, is what provides that; this flag is here to catch a caller
+    added later that does not, and the grant must not block on another thread.
+    */
+    bool const was_granting =
+        granting_.exchange(true, std::memory_order_acq_rel);
+    MONAD_ASSERT(!was_granting);
+    auto const chunk_id = grant_chunk_();
+    granting_.store(false, std::memory_order_release);
+    return chunk_id;
+}
+
+chunk_offset_t ParallelUpsertContext::extent_cursor()
+{
+    std::unique_lock const g(extent_lock_);
+    MONAD_ASSERT(extent_pool_ != nullptr);
+    auto const &chunk = [this]() -> decltype(auto) {
+        return extent_pool_->chunk(
+            MONAD_ASYNC_NAMESPACE::storage_pool::seq, extent_chunk_id_);
+    };
+    /* A chunk with nothing left cannot be resumed from: an offset of the
+    capacity is one past what chunk_offset_t holds for a full sized chunk, and
+    try_trim_contents cannot punch a zero length hole at it either. */
+    if (chunk().reserved_bytes() >= chunk().capacity()) {
+        extent_chunk_id_ = grant_chunk_under_lock_();
+        MONAD_ASSERT(chunk().reserved_bytes() == 0);
+    }
+    return {extent_chunk_id_, chunk().reserved_bytes()};
 }
 
 ExtentReservation ParallelUpsertContext::reserve_extent(
@@ -184,7 +258,7 @@ ExtentReservation ParallelUpsertContext::reserve_extent(
     };
     auto space = available();
     if (space < min_bytes) {
-        extent_chunk_id_ = grant_chunk_();
+        extent_chunk_id_ = grant_chunk_under_lock_();
         space = available();
         MONAD_ASSERT_PRINTF(
             space >= min_bytes,
@@ -210,9 +284,10 @@ ParallelUpsertContext::ParallelUpsertContext(
 {
     MONAD_ASSERT(workers > 0);
     MONAD_ASSERT(partition_min_updates > 1);
+    writers_.resize(workers);
     workers_.reserve(workers);
     for (unsigned n = 0; n < workers; ++n) {
-        workers_.emplace_back([this] { run(); });
+        workers_.emplace_back([this, n] { run(n); });
     }
 }
 
@@ -233,10 +308,14 @@ void ParallelUpsertContext::submit(Batch &batch, Partition &&partition)
 {
     MONAD_ASSERT(partition.out != nullptr);
     MONAD_ASSERT(partition.sm != nullptr);
+    MONAD_ASSERT(partition.submitter != nullptr);
     // Growing would move the partitions the workers were handed
     MONAD_ASSERT(batch.partitions_.size() < batch.partitions_.capacity());
     batch.partitions_.push_back(std::move(partition));
     batch.remaining_.fetch_add(1, std::memory_order_relaxed);
+    // Release, so the acquire load in no_partitions_in_flight() is paired and
+    // actually carries the guarantee its callers rely on
+    partitions_in_flight_.fetch_add(1, std::memory_order_release);
     {
         std::unique_lock const g(lock_);
         queue_.emplace_back(&batch, &batch.partitions_.back());
@@ -261,8 +340,12 @@ bool ParallelUpsertContext::try_run_one()
         partition = queued_partition;
     }
     build_partition_subtrie(*this, *partition);
+    if (tls_pool_context == this) {
+        partitions_built_by_workers_.fetch_add(1, std::memory_order_release);
+    }
     {
         std::unique_lock const g(lock_);
+        partitions_in_flight_.fetch_sub(1, std::memory_order_release);
         if (batch->remaining_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
             cv_.notify_all();
         }
@@ -284,8 +367,10 @@ void ParallelUpsertContext::wait(Batch &batch)
     }
 }
 
-void ParallelUpsertContext::run()
+void ParallelUpsertContext::run(unsigned const index)
 {
+    tls_pool_context = this;
+    tls_pool_index = index;
     for (;;) {
         {
             std::unique_lock g(lock_);
@@ -296,6 +381,49 @@ void ParallelUpsertContext::run()
         }
         (void)try_run_one();
     }
+}
+
+WorkerNodeWriter *ParallelUpsertContext::writer_for_this_thread()
+{
+    if (tls_pool_context != this) {
+        return nullptr;
+    }
+    auto &writer = writers_[tls_pool_index];
+    if (writer == nullptr) {
+        std::unique_lock const g(extent_lock_);
+        MONAD_ASSERT(extent_pool_ != nullptr);
+        writer = std::make_unique<WorkerNodeWriter>(
+            *extent_pool_,
+            extent_bytes_,
+            [this](size_t const min_bytes, size_t const want_bytes) {
+                return reserve_extent(min_bytes, want_bytes);
+            });
+    }
+    return writer.get();
+}
+
+void ParallelUpsertContext::flush_writers()
+{
+    /* Runs on the service thread with nothing in flight, so no writer is in use
+    by its owner. Each worker's appends happen before the batch completion this
+    thread acquired in wait(), which is what makes its buffer visible here. */
+    MONAD_ASSERT(partitions_in_flight_.load(std::memory_order_acquire) == 0);
+    for (auto &writer : writers_) {
+        if (writer != nullptr) {
+            writer->flush();
+        }
+    }
+}
+
+size_t ParallelUpsertContext::appended_nodes() const noexcept
+{
+    size_t total = 0;
+    for (auto const &writer : writers_) {
+        if (writer != nullptr) {
+            total += writer->appended_nodes();
+        }
+    }
+    return total;
 }
 
 MONAD_MPT_NAMESPACE_END

@@ -95,11 +95,12 @@ namespace
             storage_pool &pool, uint32_t const chunk_id,
             uint32_t const grant_chunk_id)
         {
-            ctx.init_extents(pool, chunk_id, [this, grant_chunk_id] {
-                MONAD_ASSERT(grant_chunk_id != NO_GRANT);
-                ++grants;
-                return grant_chunk_id;
-            });
+            ctx.init_extents(
+                pool, chunk_id, /*in_fast_list=*/true, [this, grant_chunk_id] {
+                    MONAD_ASSERT(grant_chunk_id != NO_GRANT);
+                    ++grants;
+                    return grant_chunk_id;
+                });
         }
 
         WorkerNodeWriter::ExtentSource source()
@@ -123,10 +124,11 @@ namespace
         };
         ParallelUpsertContext ctx{1, 2};
         std::atomic<uint32_t> next_chunk_id{1};
-        ctx.init_extents(pool, leave_only_the_tail(0), [&] {
-            return leave_only_the_tail(
-                next_chunk_id.fetch_add(1, std::memory_order_relaxed));
-        });
+        ctx.init_extents(
+            pool, leave_only_the_tail(0), /*in_fast_list=*/true, [&] {
+                return leave_only_the_tail(
+                    next_chunk_id.fetch_add(1, std::memory_order_relaxed));
+            });
 
         constexpr unsigned reservers = 2;
         constexpr unsigned per_reserver = 256;

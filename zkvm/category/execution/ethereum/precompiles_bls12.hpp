@@ -21,8 +21,6 @@
 
 #include <category/execution/ethereum/precompiles.hpp>
 
-#include <blst.h>
-
 #include <array>
 #include <cstdint>
 #include <optional>

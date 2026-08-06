@@ -36,6 +36,7 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <category/core/bit_primitives.hpp>
 
 // GCC's overeager SLP vectorizer sometimes pessimizes code. For functions that
 // are particularly sensitive about this (such as multiplication), the
@@ -1010,10 +1011,10 @@ inline uint256_t byte(uint256_t const &byte_index_256, uint256_t const &x)
 byteswap(uint256_t const &x) noexcept
 {
     return uint256_t{
-        std::byteswap(x[3]),
-        std::byteswap(x[2]),
-        std::byteswap(x[1]),
-        std::byteswap(x[0])};
+        monad::bits::bswap(x[3]),
+        monad::bits::bswap(x[2]),
+        monad::bits::bswap(x[1]),
+        monad::bits::bswap(x[0])};
 }
 
 consteval uint256_t operator""_u256(char const *s)

@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <cstring>
 #include <numeric>
+#include <category/core/bit_primitives.hpp>
 
 namespace monad::vm::interpreter
 {
@@ -56,7 +57,7 @@ namespace monad::vm::interpreter
         [[gnu::always_inline]] inline subword_t
         read_unaligned(uint8_t const *const ptr)
         {
-            return std::byteswap(unaligned_load<subword_t>(ptr));
+            return monad::bits::bswap(unaligned_load<subword_t>(ptr));
         }
 
         template <size_t N, Traits traits>
@@ -84,7 +85,7 @@ namespace monad::vm::interpreter
                     instr_ptr + 1,
                     leading_part);
 
-                return std::byteswap(word);
+                return monad::bits::bswap(word);
             }();
 
             if constexpr (whole_words == 0) {

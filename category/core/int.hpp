@@ -27,6 +27,7 @@
 #include <limits>
 #include <string>
 #include <type_traits>
+#include <category/core/bit_primitives.hpp>
 
 static_assert(
     std::endian::native == std::endian::little,
@@ -101,7 +102,7 @@ template <typename T>
         return byteswap(x);
     }
     else if constexpr (std::unsigned_integral<T>) {
-        return std::byteswap(x);
+        return monad::bits::bswap(x);
     }
     else {
         static_assert(sizeof(T) == 0, "bswap not supported for this type");

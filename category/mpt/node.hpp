@@ -30,6 +30,7 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <category/core/bit_primitives.hpp>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -172,7 +173,7 @@ public:
     /* Member funcs and data layout that exceeds node struct size is organized
     as below:
     * `number_of_children()` is the number of children the node has and equals
-    std::popcount(mask)
+    monad::bits::popcount(mask)
     * `fnext` array: size-n array storing children's on-disk offsets
     * `data_offset` array: size-n array each stores a specific child data's
     starting offset
@@ -425,7 +426,7 @@ inline Node::SharedPtr deserialize_node_from_buffer(
     read_pos += Node::disk_size_bytes;
     // Load the on disk node
     auto const mask = unaligned_load<uint16_t>(read_pos);
-    auto const number_of_children = static_cast<unsigned>(std::popcount(mask));
+    auto const number_of_children = static_cast<unsigned>(monad::bits::popcount(mask));
     uint32_t const base_size = disk_size - Node::disk_size_bytes;
     auto const alloc_size = round_up_align<3>(base_size) +
                             number_of_children * sizeof(Node::SharedPtr);

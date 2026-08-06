@@ -31,6 +31,7 @@
 #include <tuple>
 #include <utility>
 #include <vector>
+#include <category/core/bit_primitives.hpp>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -41,7 +42,7 @@ Node::SharedPtr create_node_add_new_branch(
 {
     uint16_t const mask =
         static_cast<uint16_t>(node->mask | (1u << new_branch));
-    std::vector<ChildData> children(static_cast<unsigned>(std::popcount(mask)));
+    std::vector<ChildData> children(static_cast<unsigned>(monad::bits::popcount(mask)));
     for (unsigned i = 0, j = 0, old_j = 0, bit = 1; i < 16; ++i, bit <<= 1) {
         if (i == new_branch) {
             auto &child = children[j];

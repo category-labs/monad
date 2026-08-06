@@ -26,6 +26,7 @@
 
 #include <optional>
 #include <vector>
+#include <category/core/bit_primitives.hpp>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -133,7 +134,7 @@ struct UpdateTNode : public UpdateExpireBase
         Node::SharedPtr old = {})
         : Base(
               parent, tnode_type::update,
-              static_cast<uint8_t>(std::popcount(orig_mask)), branch, orig_mask)
+              static_cast<uint8_t>(monad::bits::popcount(orig_mask)), branch, orig_mask)
         , orig_mask(orig_mask)
         , old(std::move(old))
         , children(npending)
@@ -153,7 +154,7 @@ struct UpdateTNode : public UpdateExpireBase
 
     [[nodiscard]] unsigned number_of_children() const
     {
-        return static_cast<unsigned>(std::popcount(mask));
+        return static_cast<unsigned>(monad::bits::popcount(mask));
     }
 
     constexpr uint8_t child_index() const noexcept

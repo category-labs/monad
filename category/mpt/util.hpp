@@ -278,7 +278,7 @@ bitmask_index(uint16_t const mask, unsigned const i) noexcept
     MONAD_ASSERT(mask & (1u << i));
     uint16_t const filter = UINT16_MAX >> (16 - i);
     return static_cast<unsigned>(
-        std::popcount(static_cast<uint16_t>(mask & filter)));
+        monad::bits::popcount(static_cast<uint16_t>(mask & filter)));
 }
 
 //! convert an integral's least significant N bytes to a size-N byte string

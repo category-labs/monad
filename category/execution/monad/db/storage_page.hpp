@@ -32,6 +32,7 @@
 #include <iterator>
 #include <span>
 #include <utility>
+#include <category/core/bit_primitives.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -157,9 +158,9 @@ private:
     {
         bitmap_t const below = bitmap_ & ((static_cast<bitmap_t>(1) << i) - 1);
         return static_cast<size_t>(
-                   std::popcount(static_cast<uint64_t>(below))) +
+                   monad::bits::popcount(static_cast<uint64_t>(below))) +
                static_cast<size_t>(
-                   std::popcount(static_cast<uint64_t>(below >> 64)));
+                   monad::bits::popcount(static_cast<uint64_t>(below >> 64)));
     }
 
     static constexpr size_t INLINE_VALUES = 4;

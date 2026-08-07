@@ -667,9 +667,32 @@ extern "C" void syscall_arith256_mod(ZiskArith256ModParams *params);
 }
 #endif
 
+#ifdef MONAD_ZKVM_SP1
+// SP1's 256-bit precompile: result = (x op y) mod modulus, op 0 = multiply,
+// and an all-zero modulus means 2^256 -- so one door serves both the EVM's
+// truncating MUL and MULMOD. u64 limbs, [0] least significant, like ours.
+extern "C" void sys_bigint(
+    uint64_t (*result)[4], uint64_t op, uint64_t const (*x)[4],
+    uint64_t const (*y)[4], uint64_t const (*modulus)[4]);
+
+[[gnu::noinline]] inline uint256_t sp1_bigint_mulmod(
+    uint256_t const &a, uint256_t const &b, uint256_t const &mod) noexcept
+{
+    alignas(8) uint64_t const A[4] = {a[0], a[1], a[2], a[3]};
+    alignas(8) uint64_t const B[4] = {b[0], b[1], b[2], b[3]};
+    alignas(8) uint64_t const M[4] = {mod[0], mod[1], mod[2], mod[3]};
+    alignas(8) uint64_t R[4];
+    sys_bigint(&R, 0, &A, &B, &M);
+    return uint256_t{R[0], R[1], R[2], R[3]};
+}
+#endif
+
+
 inline constexpr uint256_t
 operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept
 {
+    // NOT routed on SP1: measured -0.15 % median -- sys_bigint's fixed cost
+    // loses against the school-book multiply there (it wins on ZisK).
     return truncating_mul(lhs, rhs);
 }
 
@@ -971,6 +994,14 @@ mulmod(uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
             return 0;
         }
         return zisk_arith256_mod(u, v, 0, mod);
+    }
+#endif
+#ifdef MONAD_ZKVM_SP1
+    if (!std::is_constant_evaluated()) {
+        if (mod == 0) {
+            return 0;
+        }
+        return sp1_bigint_mulmod(u, v, mod);
     }
 #endif
     auto const prod =

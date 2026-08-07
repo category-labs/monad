@@ -66,6 +66,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // Prime hashes bottom-up over the blob's nodes (children precede
     // parents), rejecting any node whose extent leaves the region.
     unsigned char const *const region_end = blob_.end();
+    blob_hash_idx_.assign((blob_.size() >> 2) + 2, 0);
     NodeViewBase node{base + HEADER_LEN};
     while (node.bytes() < region_end) {
         match(
@@ -87,10 +88,13 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
 
                         auto const id = static_cast<NodeId>(
                             static_cast<uint32_t>(node.bytes() - blob_.data()));
-                        hashes_.emplace(id, h);
+                        blob_hash_put(id, h);
                     }
                 }});
 
+        // The flat hash table indexes node starts by offset >> 2; the format's
+        // minimum node is 7 bytes, so aliasing means a malformed witness.
+        MONAD_ASSERT(node.end() - node.bytes() >= 5);
         node = NodeViewBase{node.end()};
     }
     MONAD_ASSERT(node.bytes() == region_end); // nodes tile exactly
@@ -151,6 +155,11 @@ bytes32_t OffsetTrie::hash(NodeId const id)
             [](NullView) { return NULL_ROOT; },
             [](DigestView d) { return d.hash(); },
             [&](auto) {
+                if (!is_overlay_id(id)) {
+                    if (bytes32_t const *const h = blob_hash_find(id)) {
+                        return *h;
+                    }
+                }
                 if (auto const it = hashes_.find(id); it != hashes_.end()) {
                     return it->second;
                 }
@@ -204,6 +213,11 @@ OffsetTrie::child_ref(NodeId const id, OffsetTrie::node_rlp_span dest)
         bytes32_t const h = DigestView{node}.hash();
         hashes_.emplace(id, h);
         return hash_ref(h);
+    }
+    if (!is_overlay_id(id)) {
+        if (bytes32_t const *const h = blob_hash_find(id)) {
+            return hash_ref(*h);
+        }
     }
     if (auto const it = hashes_.find(id); it != hashes_.end()) {
         return hash_ref(it->second);
@@ -420,7 +434,7 @@ NodeId OffsetTrie::put_node(NodeId const id, byte_string node)
         overlay_[fresh] = std::move(node);
         return fresh;
     }
-    hashes_.erase(id); // bytes changed; the cached hash is stale
+    hash_cache_erase(id); // bytes changed; the cached hash is stale
     overlay_[id] = std::move(node);
     return id;
 }
@@ -504,7 +518,7 @@ Tag OffsetTrie::fold_ext_node_path_maybe(
 std::pair<NodeId, Nibbles>
 OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
 {
-    hashes_.erase(id); // dirtied along the descent
+    hash_cache_erase(id); // dirtied along the descent
     // Leaf split/overwrite, shared by both leaf types. Only re-emitting the
     // displaced old leaf differs (`reput_old`): storage keeps its value, an
     // account its acct_rlp + storage. The caller reads the old leaf's
@@ -641,7 +655,7 @@ OffsetTrie::erase_node(NodeId const id, NibblesView const key)
                 }
                 // child survived; fold the ext path into it if it collapsed
                 // to a leaf/ext, but keep `id` of the ext node
-                hashes_.erase(id);
+                hash_cache_erase(id);
                 NodeViewBase const child = get_current(child_id);
                 return match(
                     child,
@@ -669,7 +683,7 @@ OffsetTrie::erase_node(NodeId const id, NibblesView const key)
                 if (erase_child == OffsetTrie::EraseResult::Unmodified) {
                     return OffsetTrie::EraseResult::Unmodified;
                 }
-                hashes_.erase(id);
+                hash_cache_erase(id);
                 if (erase_child == OffsetTrie::EraseResult::Erased) {
                     children[branch] = NULL_ID;
                 }

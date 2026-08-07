@@ -487,6 +487,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     add_library(${_guest_target} STATIC
         "${CMAKE_CURRENT_SOURCE_DIR}/ffi.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/execute_block_zkvm.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/body_roots.cpp"
         # Precompile golden-vector test entry (monad_zkvm_run_precompile_tests).
         # Pulled into the archive so a test binary can link it; dead-stripped
         # from the witness binary, which references only the witness entry.
@@ -521,6 +522,7 @@ else()
     add_executable(monad-zkvm-x86-test-runner
         "${CMAKE_CURRENT_SOURCE_DIR}/ffi.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/execute_block_zkvm.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/body_roots.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/x86_test_runner.cpp"
     )
     monad_compile_options(monad-zkvm-x86-test-runner)

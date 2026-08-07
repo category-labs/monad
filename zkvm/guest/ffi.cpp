@@ -36,6 +36,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/result.hpp>
+#include <category/crypto/hash256.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
@@ -126,6 +127,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     //    chain: the node blob carries its own root, so without that check a
     //    witness could be built over an arbitrary trie.
     monad::BlockHashBufferFinalized block_hash_buffer;
+    monad::bytes32_t pre_state_root{};
     {
         bool checked_pre_state_root = false;
         monad::byte_string_view headers = witness.value().encoded_headers;
@@ -140,7 +142,13 @@ extern "C" void monad_zkvm_execute_witness(void)
                 header.value().number,
                 monad::to_bytes(monad::keccak256(payload.value())));
             if (header.value().number + 1 == block.header.number) {
-                MONAD_ASSERT(pdb.state_root() == header.value().state_root);
+                pre_state_root = pdb.state_root();
+                // The witness parent must agree with the trie it delivers --
+                // an in-guest consistency check. The BINDING to the real
+                // chain is the exposure of pre_state_root as a public value
+                // below: the verifier compares it against the canonical
+                // parent header, which the prover cannot choose.
+                MONAD_ASSERT(pre_state_root == header.value().state_root);
                 checked_pre_state_root = true;
             }
         }
@@ -169,5 +177,22 @@ extern "C" void monad_zkvm_execute_witness(void)
     MONAD_ASSERT(root_result.has_value());
 
     monad::bytes32_t const &state_root = root_result.value();
+
+    // The hash of the block that was executed, from the canonical header
+    // encoding -- the same bytes a node hashes to identify the block.
+    monad::byte_string const header_rlp =
+        monad::rlp::encode_block_header(block.header);
+    monad_hash256 const block_hash = monad::keccak256(header_rlp);
+
+    // Public values, in order: post-state root, pre-state root, block hash.
+    // The verifier must check ALL THREE against the chain: post == this
+    // block's state_root, pre == the parent's state_root, hash == the
+    // canonical hash at this height. The first alone proves only that SOME
+    // state yields this post-root; the second binds the witness to the real
+    // pre-state; the third binds the execution to the real block -- and,
+    // with it, the ancestor headers walked above, whose chain the BLOCKHASH
+    // buffer serves.
     write_output(state_root.bytes, sizeof(state_root.bytes));
+    write_output(pre_state_root.bytes, sizeof(pre_state_root.bytes));
+    write_output(block_hash.bytes, sizeof(block_hash.bytes));
 }

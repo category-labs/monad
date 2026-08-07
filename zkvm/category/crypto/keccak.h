@@ -13,20 +13,33 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Shared zkVM shadow of category/crypto/keccak.h. The host declares
-// monad_keccak256() and defines it out of line over OpenSSL's SHA3 core; the
-// guest takes the always_inline definition from the vendored ethash sponge
-// instead, so the two cannot share a declaration. Everything else callers use
-// from the host header is reproduced below.
+// Guest-only header: inline monad_keccak256 and select the backend.
+// The host and x86 runner keep category/crypto/keccak.h.
 
 #pragma once
 
-// Include order matters: the vendored sponge calls monad_keccakf1600() without
-// declaring it, so the backend's definition has to be in scope first.
-#include <category/crypto/keccakf1600.h>
-
-#include <category/crypto/ethash_vendor/keccak.h>
-
 #include <stddef.h>
+#include <stdint.h>
 
 constexpr size_t KECCAK256_SIZE = 32;
+
+#ifdef MONAD_ZKVM_ZISK
+
+// Dedicated ZisK sponge, implemented in zkvm/guest/keccak_accel.cpp.
+extern "C" void monad_zkvm_keccak256_fast(
+    void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
+
+[[gnu::always_inline]] static inline void monad_keccak256(
+    void const *const in, size_t const len, uint8_t out[KECCAK256_SIZE])
+{
+    monad_zkvm_keccak256_fast(in, len, out);
+}
+
+#else
+
+// SP1 keeps ethash's sponge; define monad_keccakf1600 before including it.
+    #include <category/crypto/keccakf1600.h>
+
+    #include <category/crypto/ethash_vendor/keccak.h>
+
+#endif

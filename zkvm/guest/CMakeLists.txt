@@ -13,20 +13,23 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# The monad zkVM guest library. Two modes:
+# The monad zkVM guest library. The guest sources proper live in the
+# monad-zkvm-guest OBJECT library, defined once at the bottom of this file
+# and consumed by both modes:
 #
 # 1. Cross-compile (RISC-V): invoked standalone as the top-level CMake
 #    project (via `cmake -S zkvm/guest ...`, typically from the build-support
 #    crate). The caller sets MONAD_ZKVM_GUEST_TARGET to a backend suffix
 #    (zisk or sp1) — used only to name the resulting archive
 #    (monad-zkvm-guest-<suffix>). This file drives the full bare-metal
-#    build and bundles everything into a single STATIC archive.
+#    build and bundles everything, monad-zkvm-guest included, into a single
+#    STATIC archive.
 #
 # 2. Host x86: invoked from the root host CMakeLists.txt via
 #    add_subdirectory(zkvm/guest). MONAD_ZKVM_GUEST_TARGET is not set;
-#    this file builds the monad-zkvm-x86-test-runner executable directly
-#    from ffi.cpp + x86_test_runner.cpp linked against the host's existing
-#    monad_execution target. No intermediate static library.
+#    this file builds the monad-zkvm-x86-test-runner executable from
+#    x86_test_runner.cpp + monad-zkvm-guest, linked against the host's
+#    existing monad_execution target.
 
 cmake_minimum_required(VERSION 3.20)
 
@@ -426,6 +429,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # ---- Final guest static archive ----
     add_library(${_guest_target} STATIC
+        $<TARGET_OBJECTS:monad-zkvm-guest>
         $<TARGET_OBJECTS:monad-core>
         $<TARGET_OBJECTS:monad-zkvm-core>
         $<TARGET_OBJECTS:monad_precompiles>
@@ -444,17 +448,34 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 else()
     # ---- Host x86 mode ----
     # Reached via add_subdirectory(zkvm/guest) from the root host CMakeLists.
-    # x86 has a single consumer (monad-zkvm-x86-test-runner), so ffi.cpp +
-    # x86_test_runner.cpp compile straight into the executable; no
-    # intermediate static library.
+    # The x86 driver links the shared monad-zkvm-guest objects against the
+    # host's existing monad_execution target.
 
     add_executable(monad-zkvm-x86-test-runner
         "${CMAKE_CURRENT_SOURCE_DIR}/x86_test_runner.cpp"
     )
     monad_compile_options(monad-zkvm-x86-test-runner)
     target_link_libraries(monad-zkvm-x86-test-runner
-        PRIVATE monad_execution zkevm-standards)
+        PRIVATE monad-zkvm-guest monad_execution zkevm-standards)
 
+endif()
+
+# ---- Guest sources, shared by both modes ----
+# The witness pipeline itself. Defined once, after the mode split: the two
+# modes differ only in what these sources compile against — the adapted
+# bare-metal targets on RISC-V, the host's monad_execution on x86 — so only
+# the dependency edge is conditional, never the target or its file list.
+add_library(monad-zkvm-guest OBJECT
+    "${CMAKE_CURRENT_SOURCE_DIR}/body_roots.cpp"
+)
+monad_compile_options(monad-zkvm-guest)
+target_link_libraries(monad-zkvm-guest PRIVATE zkevm-standards)
+if(DEFINED MONAD_ZKVM_GUEST_TARGET)
+    monad_riscv_compile_options(monad-zkvm-guest)
+    target_link_libraries(monad-zkvm-guest
+        PRIVATE monad-core monad_execution_ethereum)
+else()
+    target_link_libraries(monad-zkvm-guest PRIVATE monad_execution)
 endif()
 
 # ---- eth-act zkEVM standards (header-only), shared by both modes ----

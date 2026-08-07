@@ -632,9 +632,44 @@ truncating_mul(uint256_t const &x, uint256_t const &y) noexcept
 
 MONAD_NO_VECTORIZE
 [[gnu::noinline]]
+#ifdef MONAD_ZKVM_ZISK
+// ZisK's 256-bit precompile computes d = a*b+c into (dl, dh); the truncating
+// EVM MUL is dl with c = 0. Same no_mangle extern "C" door as arith256_mod
+// below; measured A/B decides whether the syscall's fixed cost beats the
+// 16-partial-product school-book multiply.
+struct ZiskArith256Params
+{
+    uint64_t const *a;
+    uint64_t const *b;
+    uint64_t const *c;
+    uint64_t *dl;
+    uint64_t *dh;
+};
+
+extern "C" void syscall_arith256(ZiskArith256Params *params);
+
+[[gnu::noinline]] inline uint256_t
+zisk_arith256_mul(uint256_t const &a, uint256_t const &b) noexcept
+{
+    alignas(8) uint64_t const A[4] = {a[0], a[1], a[2], a[3]};
+    alignas(8) uint64_t const B[4] = {b[0], b[1], b[2], b[3]};
+    alignas(8) uint64_t const C[4] = {0, 0, 0, 0};
+    alignas(8) uint64_t DL[4];
+    alignas(8) uint64_t DH[4];
+    ZiskArith256Params p{A, B, C, DL, DH};
+    syscall_arith256(&p);
+    return uint256_t{DL[0], DL[1], DL[2], DL[3]};
+}
+#endif
+
 inline constexpr uint256_t
 operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept
 {
+#ifdef MONAD_ZKVM_ZISK
+    if (!std::is_constant_evaluated()) {
+        return zisk_arith256_mul(lhs, rhs);
+    }
+#endif
     return truncating_mul(lhs, rhs);
 }
 

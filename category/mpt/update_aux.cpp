@@ -239,10 +239,10 @@ void UpdateAux::clear_ondisk_db()
         metadata_ctx_->timeline_active(timeline_id::secondary);
     auto do_ = [&](unsigned const which) {
         auto const g = metadata_ctx_->main_mutable(which)->hold_dirty();
-        metadata_ctx_->root_offsets(timeline_id::primary, which).reset_all(0);
+        metadata_ctx_->root_offsets(timeline_id::primary, which).reset_all();
         if (secondary_active) {
             metadata_ctx_->root_offsets(timeline_id::secondary, which)
-                .reset_all(0);
+                .reset_all();
         }
     };
     do_(0);

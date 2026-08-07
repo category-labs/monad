@@ -911,11 +911,55 @@ addmod(uint256_t const &x, uint256_t const &y, uint256_t const &mod) noexcept
     return uint256_t{udivrem(sum, mod.as_words()).rem};
 }
 
+
+#ifdef MONAD_ZKVM_ZISK
+// ZisK exposes its 256-bit modular-arithmetic precompile as a no_mangle extern
+// "C" syscall (ziskos::syscalls::arith256_mod): d = (a * b + c) mod module.
+// The guest already links and executes it through zisklib's bn254 field code,
+// so this adds no dependency -- it routes the EVM's MULMOD/ADDMOD, whose
+// software cost is dominated by the 512/256 divmod, through the same door.
+// Layout: four little-endian 64-bit limbs, [0] = least significant -- the same
+// convention as words_. Callers guard module != 0 (math.hpp does; EVM returns 0
+// there), and the fallback below keeps the guard anyway.
+struct ZiskArith256ModParams
+{
+    uint64_t const *a;
+    uint64_t const *b;
+    uint64_t const *c;
+    uint64_t const *module;
+    uint64_t *d;
+};
+
+extern "C" void syscall_arith256_mod(ZiskArith256ModParams *params);
+
+[[gnu::noinline]] inline uint256_t zisk_arith256_mod(
+    uint256_t const &a, uint256_t const &b, uint256_t const &c,
+    uint256_t const &mod) noexcept
+{
+    alignas(8) uint64_t const A[4] = {a[0], a[1], a[2], a[3]};
+    alignas(8) uint64_t const B[4] = {b[0], b[1], b[2], b[3]};
+    alignas(8) uint64_t const C[4] = {c[0], c[1], c[2], c[3]};
+    alignas(8) uint64_t const M[4] = {mod[0], mod[1], mod[2], mod[3]};
+    alignas(8) uint64_t D[4];
+    ZiskArith256ModParams p{A, B, C, M, D};
+    syscall_arith256_mod(&p);
+    return uint256_t{D[0], D[1], D[2], D[3]};
+}
+#endif
+
 MONAD_NO_VECTORIZE
 [[gnu::noinline]]
 inline constexpr uint256_t
 mulmod(uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
 {
+#ifdef MONAD_ZKVM_ZISK
+    if (!std::is_constant_evaluated()) {
+        if (mod == 0) {
+            return 0;
+        }
+        return zisk_arith256_mod(u, v, 0, mod);
+    }
+#endif
     auto const prod =
         truncating_mul<2 * uint256_t::num_words>(u.as_words(), v.as_words());
     return uint256_t{udivrem(prod, mod.as_words()).rem};

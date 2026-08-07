@@ -256,6 +256,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "  \"asm_flags\": \"${CMAKE_ASM_FLAGS}\"\n"
             "}\n")
     endif()
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        add_compile_definitions(MONAD_ZKVM_ZISK)
+    endif()
 
     # Repo + third-party paths.
     set(MONAD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")

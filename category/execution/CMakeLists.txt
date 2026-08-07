@@ -91,6 +91,8 @@ add_library(
   "ethereum/core/units.hpp"
   "ethereum/core/withdrawal.hpp"
   # ethereum/db
+  "ethereum/db/ordered_trie.cpp"
+  "ethereum/db/ordered_trie.hpp"
   "ethereum/db/block_db.cpp"
   "ethereum/db/block_db.hpp"
   "ethereum/db/commit_builder.cpp"

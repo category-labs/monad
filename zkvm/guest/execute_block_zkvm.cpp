@@ -38,7 +38,12 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+
+#include "body_roots.hpp"
 #include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
@@ -143,11 +148,70 @@ Result<bytes32_t> execute_block_zkvm(
         receipts.push_back(std::move(receipt));
     }
 
+    // 3.5 Body binding. The transactions and withdrawals executed above, and
+    //    the receipts produced, must be the ones the header commits to: the
+    //    header's hash is a public value, so these three equalities are what
+    //    make "this block's body" part of the proven statement rather than a
+    //    prover-supplied claim. Without them, block_rlp could carry any body
+    //    whose execution lands the same post-state root.
+    {
+        std::vector<byte_string> enc;
+        enc.reserve(block.transactions.size());
+        for (auto const &tx : block.transactions) {
+            enc.push_back(rlp::encode_transaction(tx));
+        }
+        if (MONAD_UNLIKELY(
+                ordered_trie_root(enc) != block.header.transactions_root)) {
+            return BlockError::WrongMerkleRoot;
+        }
+        if (MONAD_UNLIKELY(
+                !block.ommers.empty() ||
+                block.header.ommers_hash != NULL_LIST_HASH)) {
+            return BlockError::WrongOmmersHash;
+        }
+        if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+            MONAD_ASSERT(
+                block.header.withdrawals_root.has_value() &&
+                block.withdrawals.has_value());
+            enc.clear();
+            enc.reserve(block.withdrawals->size());
+            for (auto const &w : *block.withdrawals) {
+                enc.push_back(rlp::encode_withdrawal(w));
+            }
+            if (MONAD_UNLIKELY(
+                    ordered_trie_root(enc) !=
+                    *block.header.withdrawals_root)) {
+                return BlockError::WrongMerkleRoot;
+            }
+        }
+    }
+
     // YP eq. 22 — cumulative gas fixup. Mirrors execute_block.cpp:292-296.
     uint64_t cumulative_gas_used = 0;
     for (auto &r : receipts) {
         cumulative_gas_used += r.gas_used;
         r.gas_used = cumulative_gas_used;
+    }
+    if (MONAD_UNLIKELY(cumulative_gas_used != block.header.gas_used)) {
+        return BlockError::InvalidGasUsed;
+    }
+    {
+        std::vector<byte_string> enc;
+        enc.reserve(receipts.size());
+        Receipt::Bloom bloom{};
+        for (auto const &r : receipts) {
+            enc.push_back(rlp::encode_receipt(r));
+            for (size_t i = 0; i < bloom.size(); ++i) {
+                bloom[i] |= r.bloom[i];
+            }
+        }
+        if (MONAD_UNLIKELY(
+                ordered_trie_root(enc) != block.header.receipts_root)) {
+            return BlockError::WrongMerkleRoot;
+        }
+        if (MONAD_UNLIKELY(bloom != block.header.logs_bloom)) {
+            return BlockError::WrongLogsBloom;
+        }
     }
 
     // 4. Epilogue: withdrawals, requests-hash check, block reward — same

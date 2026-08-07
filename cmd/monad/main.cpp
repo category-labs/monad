@@ -19,6 +19,7 @@
 #include <category/core/basic_formatter.hpp>
 #include <category/core/cli/help_formatter.hpp>
 #include <category/core/config.hpp>
+#include <category/core/event/owned_event_ring.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
@@ -37,6 +38,7 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
+#include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -137,6 +139,8 @@ try {
     bool as_eth_blocks = false;
     std::chrono::seconds block_db_timeout = std::chrono::seconds::zero();
     std::string exec_event_ring_config;
+    std::unique_ptr<OwnedEventRing> exec_event_ring;
+    std::optional<ExecutionEventRecorder> opt_exec_recorder;
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     bool disable_sq_thread_cpu = false;
     std::optional<unsigned> ro_sq_thread_cpu;
@@ -262,13 +266,28 @@ try {
         }
         auto config = try_parse_event_ring_config(exec_event_ring_config);
         MONAD_ASSERT(config, "not validated by CLI11?");
-        if (init_execution_event_recorder(std::move(*config)) != 0) {
+        if (init_execution_event_ring(std::move(*config), exec_event_ring) !=
+            0) {
+            // We don't log the return code; it's reported in the extensive
+            // diagnostic logs emitted by init_execution_event_ring on failure
             LOG_ERROR(
                 "cannot continue without execution event ring `{}`",
                 exec_event_ring_config);
             return 1;
         }
+
+        if (auto ex_recorder = ExecutionEventRecorder::from_event_ring(
+                exec_event_ring->get_event_ring())) {
+            opt_exec_recorder = std::move(*ex_recorder);
+        }
+        else {
+            LOG_ERROR(
+                "event library error -- {}", monad_event_ring_get_last_error());
+            return 1;
+        }
     }
+    ExecutionEventRecorder *const exec_recorder =
+        opt_exec_recorder ? std::addressof(*opt_exec_recorder) : nullptr;
 
 #ifdef ENABLE_EVENT_TRACING
     event_tracer = create_event_tracer(trace_log);
@@ -442,7 +461,8 @@ try {
                 block_num,
                 end_block_num,
                 stop,
-                trace_calls);
+                trace_calls,
+                exec_recorder);
         case CHAIN_CONFIG_HIVE_NET:
             return runloop_ethereum(
                 *chain,
@@ -455,6 +475,7 @@ try {
                 end_block_num,
                 stop,
                 trace_calls,
+                exec_recorder,
                 chain_rlp_path);
         case CHAIN_CONFIG_MONAD_DEVNET:
         case CHAIN_CONFIG_MONAD_TESTNET:
@@ -471,7 +492,8 @@ try {
                     end_block_num,
                     stop,
                     trace_calls,
-                    block_db_timeout);
+                    block_db_timeout,
+                    exec_recorder);
             }
             else {
                 // TODO: Remove this check once dual-db is deprecated.
@@ -517,6 +539,7 @@ try {
                     end_block_num,
                     stop,
                     trace_calls,
+                    exec_recorder,
                     secondary_triedb.has_value() ? &*secondary_triedb
                                                  : nullptr);
             }

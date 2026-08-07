@@ -94,7 +94,8 @@ TYPED_TEST(MonadTraitsTest, mip11_fork)
         prev,
         call_tracer,
         state_tracer,
-        chain_ctx)();
+        chain_ctx,
+        /*exec_recorder*/ nullptr)();
 
     ASSERT_FALSE(receipt.has_error());
     EXPECT_EQ(receipt.value().status, 1u);

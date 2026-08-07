@@ -411,6 +411,7 @@ try {
         runloop->block_num + nblocks - 1,
         stop,
         /* enable_tracing = */ false,
+        /* exec_recorder = */ nullptr,
         &runloop->secondary_runloop_db,
         runloop_override);
 

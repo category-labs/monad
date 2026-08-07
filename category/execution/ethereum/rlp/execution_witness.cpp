@@ -59,7 +59,7 @@ Result<ExecutionWitness> parse_execution_witness(byte_string_view witness_bytes)
 }
 
 byte_string encode_execution_witness(
-    byte_string_view const block_rlp, std::span<byte_string const> const nodes,
+    byte_string_view const block_rlp, byte_string_view const nodes,
     std::span<byte_string const> const codes,
     std::span<byte_string const> const headers,
     ankerl::unordered_dense::segmented_set<Address> const
@@ -72,10 +72,7 @@ byte_string encode_execution_witness(
     constexpr size_t addr_string_size = 1 + sizeof(Address);
 
     // Pre-calc: payload size of every nested list, then total output size.
-    size_t nodes_payload = 0;
-    for (auto const &n : nodes) {
-        nodes_payload += n.size();
-    }
+    size_t const nodes_payload = nodes.size();
     size_t codes_payload = 0;
     for (auto const &c : codes) {
         codes_payload += rlp::string_length(c);
@@ -111,11 +108,11 @@ byte_string encode_execution_witness(
     // [0] block_rlp wrapped as RLP string
     d = rlp::encode_string(d, block_rlp);
 
-    // [1] nodes — each entry is itself a complete RLP list, concatenated raw
+    // [1] nodes — the offset-format blob emitted raw inside a list envelope
     d = rlp::encode_list_prefix(d, nodes_payload);
-    for (auto const &n : nodes) {
-        std::memcpy(d.data(), n.data(), n.size());
-        d = d.subspan(n.size());
+    if (!nodes.empty()) {
+        std::memcpy(d.data(), nodes.data(), nodes.size());
+        d = d.subspan(nodes.size());
     }
 
     // [2] codes — each raw bytecode wrapped as RLP string

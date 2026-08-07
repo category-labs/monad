@@ -309,6 +309,7 @@ target_link_libraries(
          monad_execution_ethereum
          monad_execution_native
          monad_execution_runloop
+         monad_precompiles
          monad_rpc
          monad_statesync
          monad-vm
@@ -340,3 +341,5 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/test/vm)
 if(UTILS_CLANG_TIDY_AUTO_CONST)
   add_subdirectory(${PROJECT_SOURCE_DIR}/utils)
 endif()
+
+add_subdirectory(${PROJECT_SOURCE_DIR}/zkvm/guest)

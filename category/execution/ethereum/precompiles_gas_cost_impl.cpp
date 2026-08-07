@@ -15,6 +15,7 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/int.hpp>
+#include <category/core/likely.h>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
 #include <category/vm/evm/explicit_traits.hpp>

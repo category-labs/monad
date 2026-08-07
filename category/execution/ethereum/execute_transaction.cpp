@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/metrics/transaction_stats.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -229,7 +230,7 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message(
 
 template <Traits traits>
 evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
-    State &state, EvmcHost<traits> &host)
+    State &state, EvmcHost<traits> &host, TransactionStats *const stats)
 {
     if constexpr (::monad::is_monad_trait_v<traits>) {
         init_reserve_balance_context<traits>(
@@ -287,10 +288,13 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         }
     }
 
-    auto result =
-        (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
-            ? ::monad::execute_create_message<traits>(&host, state, msg)
-            : ::monad::execute_call_message<traits>(&host, state, msg);
+    uint64_t *const growth_gas_ptr =
+        stats != nullptr ? &stats->growth_gas : nullptr;
+    auto result = (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
+                      ? ::monad::execute_create_message<traits>(
+                            &host, state, msg, growth_gas_ptr)
+                      : ::monad::execute_call_message<traits>(
+                            &host, state, msg, growth_gas_ptr);
 
     result.gas_refund += auth_refund;
     return result;
@@ -324,7 +328,8 @@ ExecuteTransaction<traits>::ExecuteTransaction(
 }
 
 template <Traits traits>
-Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
+Result<evmc::Result>
+ExecuteTransaction<traits>::execute_impl2(State &state, TransactionStats &stats)
 {
     auto const validate_lambda = [this, &state] {
         auto result = validate_transaction<traits>(
@@ -362,18 +367,25 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         chain_ctx_,
         trace_transfers_};
 
-    return ExecuteTransactionNoValidation<traits>::operator()(state, host);
+    return ExecuteTransactionNoValidation<traits>::operator()(
+        state, host, &stats);
 }
 
 template <Traits traits>
 Receipt ExecuteTransaction<traits>::execute_final(
-    State &state, evmc::Result const &result)
+    State &state, TransactionStats const &stats, evmc::Result const &result)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
     MONAD_ASSERT(result.gas_left >= 0);
     MONAD_ASSERT(result.gas_refund >= 0);
     MONAD_ASSERT(tx_.gas_limit >= static_cast<uint64_t>(result.gas_left));
+    auto const tx_gas_used =
+        tx_.gas_limit - static_cast<uint64_t>(result.gas_left);
+    block_metrics_.sum_tx_gas_limit += tx_.gas_limit;
+    block_metrics_.gas_used += tx_gas_used;
+    MONAD_DEBUG_ASSERT(stats.growth_gas <= tx_gas_used);
+    block_metrics_.gas_exec += tx_gas_used - stats.growth_gas;
 
     // refund and priority, Eqn. 73-76
     // Monad specification §4.2: Storage Gas Cost and Refunds
@@ -452,12 +464,13 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         TRACE_TXN_EVENT(StartExecution);
 
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        TransactionStats stats{};
         state.set_original_nonce(sender_, tx_.nonce);
 
         call_tracer_.reset();
         trace::reset(state_tracer_);
 
-        auto result = execute_impl2(state);
+        auto result = execute_impl2(state, stats);
 
         {
             TRACE_TXN_EVENT(StartStall);
@@ -468,7 +481,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             if (result.has_error()) {
                 return std::move(result.error());
             }
-            auto const receipt = execute_final(state, result.value());
+            auto const receipt = execute_final(state, stats, result.value());
             block_state_.merge(state);
             return receipt;
         }
@@ -478,17 +491,18 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         TRACE_TXN_EVENT(StartRetry);
 
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        TransactionStats stats{};
 
         call_tracer_.reset();
         trace::reset(state_tracer_);
 
-        auto result = execute_impl2(state);
+        auto result = execute_impl2(state, stats);
 
         MONAD_ASSERT(block_state_.can_merge(state));
         if (result.has_error()) {
             return std::move(result.error());
         }
-        auto const receipt = execute_final(state, result.value());
+        auto const receipt = execute_final(state, stats, result.value());
         block_state_.merge(state);
         return receipt;
     }

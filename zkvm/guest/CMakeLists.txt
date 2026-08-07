@@ -791,6 +791,7 @@ endif()
 # bare-metal targets on RISC-V, the host's monad_execution on x86 — so only
 # the dependency edge is conditional, never the target or its file list.
 add_library(monad-zkvm-guest OBJECT
+    "${CMAKE_CURRENT_SOURCE_DIR}/keccak_accel.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_block.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/witness_block_hash_buffer.cpp"

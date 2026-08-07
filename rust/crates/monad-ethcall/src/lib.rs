@@ -344,6 +344,7 @@ pub struct EthCallRequest<'a> {
     pub block_id: Option<[u8; 32]>,
     pub state_override_set: &'a StateOverrideSet,
     pub tracer: MonadTracer,
+    pub call_tracer_max_size: usize,
     pub gas_specified: bool,
 }
 
@@ -360,6 +361,7 @@ pub async fn eth_call(
         block_id,
         state_override_set,
         tracer,
+        call_tracer_max_size,
         gas_specified,
     } = request;
 
@@ -482,6 +484,7 @@ pub async fn eth_call(
             Some(eth_call_submit_callback),
             sender_ctx_ptr as *mut std::ffi::c_void,
             tracer.into(),
+            call_tracer_max_size,
             gas_specified,
         )
     };
@@ -985,6 +988,7 @@ pub async fn eth_simulate_v1(
     grandparent_id: Option<[u8; 32]>,
     gas_limit: u64,
     max_calls: usize,
+    call_tracers_max_size: usize,
     emit_native_transfer_logs: bool,
     eth_call_executor: &EthCallExecutor,
     overrides: &[(&BlockOverride, &StateOverrideSet)],
@@ -1135,6 +1139,7 @@ pub async fn eth_simulate_v1(
             rlp_encoded_grandparent_id.len(),
             gas_limit,
             max_calls,
+            call_tracers_max_size,
             state_overrides.as_mut_ptr(),
             block_overrides.as_mut_ptr(),
             emit_native_transfer_logs,

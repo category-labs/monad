@@ -45,6 +45,7 @@ struct CallTracerBase
     virtual void on_finish(uint64_t const) = 0;
     virtual void reset() = 0;
     virtual std::span<CallFrame const> get_call_frames() const = 0;
+    virtual bool truncated() const = 0;
 };
 
 struct NoopCallTracer final : public CallTracerBase
@@ -57,6 +58,7 @@ struct NoopCallTracer final : public CallTracerBase
     virtual void on_finish(uint64_t const) override;
     virtual void reset() override;
     virtual std::span<CallFrame const> get_call_frames() const override;
+    virtual bool truncated() const override;
 };
 
 class CallTracer final : public CallTracerBase
@@ -65,12 +67,21 @@ class CallTracer final : public CallTracerBase
     std::stack<size_t> last_{};
     std::stack<size_t> positions_{};
     Transaction const &tx_;
+    size_t const max_size_;
+    size_t size_{0};
+    bool truncated_{false};
+    size_t dropped_subtree_depth_{0};
+
+    bool fits(size_t additional_size) const;
+    size_t log_size(Receipt::Log const &) const;
 
 public:
     CallTracer() = delete;
     CallTracer(CallTracer const &) = delete;
     CallTracer(CallTracer &&) = delete;
     CallTracer(Transaction const &, std::vector<CallFrame> &);
+    CallTracer(
+        Transaction const &, std::vector<CallFrame> &, size_t const max_size);
 
     virtual void on_enter(evmc_message const &) override;
     virtual void on_exit(evmc::Result const &) override;
@@ -81,6 +92,7 @@ public:
     virtual void on_finish(uint64_t const) override;
     virtual void reset() override;
     virtual std::span<CallFrame const> get_call_frames() const override;
+    virtual bool truncated() const override;
 
     nlohmann::json to_json() const;
 };

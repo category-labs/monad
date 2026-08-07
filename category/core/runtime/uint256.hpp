@@ -629,6 +629,51 @@ truncating_mul(uint256_t const &x, uint256_t const &y) noexcept
         truncating_mul<uint256_t::num_words>(x.as_words(), y.as_words())};
 }
 
+#ifdef MONAD_ZKVM_ZISK
+// ZisK exposes its 256-bit modular-arithmetic precompile as a no_mangle extern
+// "C" syscall (ziskos::syscalls::arith256_mod): d = (a * b + c) mod module.
+// The guest already links and executes it through zisklib's bn254 field code,
+// so this adds no dependency -- it routes the EVM's MULMOD/ADDMOD, whose
+// software cost is dominated by the 512/256 divmod, through the same door.
+// Layout: four little-endian 64-bit limbs, [0] = least significant -- the same
+// convention as words_. Callers guard module != 0 (math.hpp does; EVM returns 0
+// there), and the fallback below keeps the guard anyway.
+struct ZiskArith256ModParams
+{
+    uint64_t const *a;
+    uint64_t const *b;
+    uint64_t const *c;
+    uint64_t const *module;
+    uint64_t *d;
+};
+
+extern "C" void syscall_arith256_mod(ZiskArith256ModParams *params);
+
+[[gnu::noinline]] inline uint256_t zisk_arith256_mod(
+    uint256_t const &a, uint256_t const &b, uint256_t const &c,
+    uint256_t const &mod) noexcept
+{
+    // The operands are read where they lie. A uint256_t is at least 8-aligned
+    // and its words are the little-endian limb order the syscall wants, so
+    // staging the four of them into locals buys nothing and costs sixteen
+    // loads and sixteen stores a call.
+    static_assert(alignof(uint256_t) >= 8);
+    static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
+    alignas(8) uint64_t D[4];
+    ZiskArith256ModParams p{
+        reinterpret_cast<uint64_t const *>(&a),
+        reinterpret_cast<uint64_t const *>(&b),
+        reinterpret_cast<uint64_t const *>(&c),
+        reinterpret_cast<uint64_t const *>(&mod),
+        D};
+    syscall_arith256_mod(&p);
+    // Through a local and not straight into the return slot: the precompile's
+    // write order is not ours to assume, and a caller may pass an operand it
+    // also assigns to.
+    return uint256_t{D[0], D[1], D[2], D[3]};
+}
+#endif
+
 MONAD_NO_VECTORIZE
 [[gnu::noinline]]
 constexpr uint256_t
@@ -915,6 +960,14 @@ MONAD_NO_VECTORIZE
 constexpr uint256_t
 mulmod(uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
 {
+#ifdef MONAD_ZKVM_ZISK
+    if (!std::is_constant_evaluated()) {
+        if (mod == 0) {
+            return 0;
+        }
+        return zisk_arith256_mod(u, v, 0, mod);
+    }
+#endif
     auto const prod =
         truncating_mul<2 * uint256_t::num_words>(u.as_words(), v.as_words());
     return uint256_t{udivrem(prod, mod.as_words()).rem};

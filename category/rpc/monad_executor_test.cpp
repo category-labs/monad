@@ -8318,3 +8318,115 @@ TEST_F(EthCallFixture, eth_simulate_v1_beacon_roots)
     monad_state_override_vec_destroy(state_overrides);
     monad_executor_destroy(executor);
 }
+
+// Exercise the EVM Prague simulate path where requests_hash is not populated
+// in synthetic headers and execute_block asserts on its presence.
+TEST_F(
+    EthCallFixture,
+    eth_simulate_v1_evm_prague_missing_requests_hash_causes_death)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+    static constexpr Address withdrawal_request_address =
+        0x00000961ef480eb55e80d19ad83579a64c007002_address;
+    static constexpr Address consolidation_request_address =
+        0x0000bbddc7ce488642fb579f8b00f3a590007251_address;
+    constexpr std::array<uint8_t, 1> system_stub_code{0x00};
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = uint256_t{1'000'000}, .nonce = 0}}}}},
+        {},
+        BlockHeader{.number = 0});
+    commit_sequential(tdb, {}, {}, BlockHeader{.number = 1});
+
+    auto *const executor = create_executor(dbname.string());
+    auto *const state_overrides = monad_state_override_vec_create(1);
+    auto *const block_overrides = monad_block_override_vec_create(1);
+
+    add_override_address_at(
+        state_overrides,
+        0,
+        withdrawal_request_address.bytes,
+        sizeof(withdrawal_request_address.bytes));
+    set_override_code_at(
+        state_overrides,
+        0,
+        withdrawal_request_address.bytes,
+        sizeof(withdrawal_request_address.bytes),
+        system_stub_code.data(),
+        system_stub_code.size());
+    add_override_address_at(
+        state_overrides,
+        0,
+        consolidation_request_address.bytes,
+        sizeof(consolidation_request_address.bytes));
+    set_override_code_at(
+        state_overrides,
+        0,
+        consolidation_request_address.bytes,
+        sizeof(consolidation_request_address.bytes),
+        system_stub_code.data(),
+        system_stub_code.size());
+
+    auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders =
+        to_vec(rlp::encode_list2(rlp::encode_list2(encoded_sender)));
+
+    Transaction const tx{
+        .gas_limit = 21'000,
+        .value = uint256_t{1},
+        .to = recipient,
+    };
+    auto const encoded_tx = rlp::encode_transaction(tx);
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_string2(byte_string_view(encoded_tx)))));
+
+    // Timestamp 60 selects Prague on CHAIN_CONFIG_HIVE_NET.
+    BlockHeader const header{
+        .number = 1,
+        .gas_limit = 200'000'000,
+        .timestamp = 60,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    callback_context ctx;
+
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_HIVE_NET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        state_overrides,
+        block_overrides,
+        false,
+        complete_callback,
+        &ctx);
+    f.get();
+
+    EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+
+    monad_block_override_vec_destroy(block_overrides);
+    monad_state_override_vec_destroy(state_overrides);
+    monad_executor_destroy(executor);
+}

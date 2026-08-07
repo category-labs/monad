@@ -30,12 +30,28 @@ extern "C"
 {
 #endif
 
+#ifdef MONAD_ZKVM_ZISK
+// ZisK: enter the precompile through a word-wise absorb
+// (zkvm/guest/keccak_zisk.cpp). zisklib's zkvm_keccak256 assembles the sponge
+// state byte by byte -- ~400-530 steps of marshalling per permutation. SP1
+// keeps the accelerator shim below (its wrapper is already thin: 310
+// instructions, no byte-marshalling).
+void monad_zisk_keccak256(void const *in, size_t len, unsigned char out[32]);
+
+[[gnu::always_inline]] static inline void keccak256(
+    unsigned char const *const in, unsigned long const len,
+    unsigned char out[KECCAK256_SIZE])
+{
+    monad_zisk_keccak256(in, (size_t)len, out);
+}
+#else
 [[gnu::always_inline]] static inline void keccak256(
     unsigned char const *const in, unsigned long const len,
     unsigned char out[KECCAK256_SIZE])
 {
     zkvm_keccak256(in, (size_t)len, (zkvm_keccak256_hash *)out);
 }
+#endif
 
 #ifdef __cplusplus
 }

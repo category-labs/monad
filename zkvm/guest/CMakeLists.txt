@@ -577,11 +577,20 @@ else()
     target_link_libraries(monad-zkvm-x86-test-runner
         PRIVATE monad-zkvm-guest monad_execution zkevm-standards)
 
+    monad_add_test(monad-zkvm-keccak-test
+        keccak_accel.cpp
+        test/keccak_accel_test.cpp
+        test/keccak_reference.c
+    )
+    target_compile_definitions(monad-zkvm-keccak-test
+        PRIVATE MONAD_ZKVM_KECCAK_TEST)
+
 endif()
 
 # ---- Guest sources, shared by both modes ----
 # Both modes share the witness pipeline; only guests carry an ELF build stamp.
 add_library(monad-zkvm-guest OBJECT
+    "${CMAKE_CURRENT_SOURCE_DIR}/keccak_accel.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_block.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/witness_block_hash_buffer.cpp"

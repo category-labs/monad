@@ -141,18 +141,34 @@ namespace monad::bits
     // a bare multiply leaves those nearly unmixed: without it this change measured 0.15 % SLOWER
     // overall and 2.8 % slower on the largest blocks, because the trie deepened. With it, +1.24 %.
 
-    inline constexpr uint64_t GOLDEN = 0x9E3779B97F4A7C15ull;
+    // Finalizer: murmur3's fmix64. Three xor-shifts and two multiplies, and the history is the
+    // reason for every one of them. v1 (bare fold-and-multiply) measured 0.15 % SLOWER overall:
+    // immer's HAMT indexes on the LOW bits and a multiply only carries upward. v2 added one
+    // xor-shift (h ^= h >> 29) and turned the lever positive (+1.24 %) -- and still left the champ
+    // 1.55x deeper than under wyhash, because for consecutive storage slots the varying byte sits
+    // at the TOP of the last word and one shift only pushes that entropy down to about bit 27,
+    // while the champ consumes 5-6 bits per level from the bottom. fmix64 finishes the avalanche.
+    //
+    // The state roots cannot validate any of this (a map is correct under any deterministic hash);
+    // the step count is the only check, and it caught both earlier versions.
+
+    [[gnu::always_inline]] inline constexpr uint64_t fmix64(uint64_t h) noexcept
+    {
+        h ^= h >> 33;
+        h *= 0xFF51AFD7ED558CCDull;
+        h ^= h >> 33;
+        h *= 0xC4CEB9FE1A85EC53ull;
+        h ^= h >> 33;
+        return h;
+    }
 
     [[gnu::always_inline]] inline uint64_t hash_bytes20(unsigned char const *const p) noexcept
     {
-        uint64_t const h = (load64(p) ^ load64(p + 8) ^ load64(p + 12)) * GOLDEN;
-        return h ^ (h >> 29);
+        return fmix64(load64(p) ^ load64(p + 8) ^ load64(p + 12));
     }
 
     [[gnu::always_inline]] inline uint64_t hash_bytes32(unsigned char const *const p) noexcept
     {
-        uint64_t const h =
-            (load64(p) ^ load64(p + 8) ^ load64(p + 16) ^ load64(p + 24)) * GOLDEN;
-        return h ^ (h >> 29);
+        return fmix64(load64(p) ^ load64(p + 8) ^ load64(p + 16) ^ load64(p + 24));
     }
 }

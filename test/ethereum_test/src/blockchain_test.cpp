@@ -18,6 +18,8 @@
 #include <event.hpp>
 #include <revision_map.hpp>
 
+#include <category/execution/ethereum/tracking_block_hash_buffer.hpp>
+
 #include <test/utils/from_json.hpp>
 
 #include <category/core/address.hpp>
@@ -43,8 +45,12 @@
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/ethereum/db/offset_trie.hpp>
+#include <category/execution/ethereum/db/partial_trie_db.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/db/witness_generator.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/exec_iter_help.h>
@@ -52,7 +58,9 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
+#include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/rlp/execution_witness.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
@@ -91,6 +99,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -327,7 +336,12 @@ Result<BlockExecOutput> execute(
     std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
         &senders_and_authorities_map,
     bool enable_tracing, std::vector<Receipt> &receipts,
-    std::vector<std::vector<CallFrame>> &call_frames)
+    std::vector<std::vector<CallFrame>> &call_frames,
+    std::function<void(
+        StateDeltas const &,
+        ankerl::unordered_dense::segmented_map<
+            bytes32_t, vm::SharedIntercode> const &,
+        SelfDestructStorageReads const &)> const &on_pre_commit = {})
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
 
@@ -354,9 +368,21 @@ Result<BlockExecOutput> execute(
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
         block.transactions.size()};
     call_frames.resize(block.transactions.size());
+    // When a pre-commit hook is installed (witness round-trip), record
+    // every bytecode the EVM reads during the block via CodeTracer so we
+    // can hand the consumer a complete `read_codes` map. Otherwise stay
+    // on the zero-cost `std::monostate` path.
+    bool const collect_read_codes = static_cast<bool>(on_pre_commit);
+    auto make_state_tracer = [collect_read_codes] {
+        return collect_read_codes
+                   ? std::make_unique<trace::StateTracer>(trace::CodeTracer{})
+                   : std::make_unique<trace::StateTracer>(std::monostate{});
+    };
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(
         block.transactions.size());
-    trace::StateTracer system_call_state_tracer{std::monostate{}};
+    trace::StateTracer system_call_state_tracer =
+        collect_read_codes ? trace::StateTracer{trace::CodeTracer{}}
+                           : trace::StateTracer{std::monostate{}};
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         call_tracers[i] =
             enable_tracing
@@ -364,8 +390,7 @@ Result<BlockExecOutput> execute(
                       block.transactions[i], call_frames[i])}
                 : std::unique_ptr<CallTracerBase>{
                       std::make_unique<NoopCallTracer>()};
-        state_tracers[i] =
-            std::make_unique<trace::StateTracer>(std::monostate{});
+        state_tracers[i] = make_state_tracer();
     }
 
     senders_and_authorities_map[block.header.number] =
@@ -408,7 +433,31 @@ Result<BlockExecOutput> execute(
             chain_context));
 
     block_state.log_debug();
-    auto [state, code, _] = std::move(block_state).release();
+    auto [state, code, self_destruct_storage_reads] =
+        std::move(block_state).release();
+
+    if (on_pre_commit) {
+        // Merge the per-tracer codes maps into a single `read_codes`
+        // for the witness consumer. Each per-tx tracer and the
+        // system-call tracer holds its own CodeTracer instance under
+        // collect_read_codes.
+        ankerl::unordered_dense::segmented_map<bytes32_t, vm::SharedIntercode>
+            read_codes;
+        auto const merge_read_codes = [&](trace::StateTracer const &tracer) {
+            auto const *const ct = std::get_if<trace::CodeTracer>(&tracer);
+            if (ct == nullptr) {
+                return;
+            }
+            for (auto const &kv : ct->codes) {
+                read_codes.emplace(kv.first, kv.second);
+            }
+        };
+        merge_read_codes(system_call_state_tracer);
+        for (auto const &tracer : state_tracers) {
+            merge_read_codes(*tracer);
+        }
+        on_pre_commit(*state, read_codes, self_destruct_storage_reads);
+    }
 
     MONAD_ASSERT(db.is_page_encoded() == traits::mip_8_active());
     auto builder = make_commit_builder(block.header.number, db);
@@ -456,7 +505,12 @@ Result<std::vector<Receipt>> execute_and_record(
     monad::Db &db, vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
     std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
         &senders_and_authorities_map,
-    bool enable_tracing)
+    bool enable_tracing,
+    std::function<void(
+        StateDeltas const &,
+        ankerl::unordered_dense::segmented_map<
+            bytes32_t, vm::SharedIntercode> const &,
+        SelfDestructStorageReads const &)> const &on_pre_commit = {})
 {
     record_block_start(
         bytes32_t{block.header.number},
@@ -483,7 +537,8 @@ Result<std::vector<Receipt>> execute_and_record(
         senders_and_authorities_map,
         enable_tracing,
         receipts,
-        call_frames));
+        call_frames,
+        on_pre_commit));
     if (result.has_error()) {
         // TODO(ken): why is std::move required here?
         return std::move(result.error());
@@ -496,7 +551,7 @@ Result<std::vector<Receipt>> execute_and_record(
 template <Traits traits>
 void process_test(
     std::string const &name, nlohmann::json const &j_contents,
-    vm::VM::Mode const vm_mode, bool enable_tracing)
+    vm::VM::Mode const vm_mode, bool enable_tracing, bool witness_roundtrip)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_BYZANTIUM);
 
@@ -509,7 +564,20 @@ void process_test(
     TraitsMainnet<traits> const chain{
         network, parse_blob_schedule_config(j_contents)};
 
+    // Witness round-tripping is limited to InterpreterOnly, the mode whose
+    // reads the CodeTracer sees in full. MIP-8 revisions are excluded until
+    // the witness format carries page-encoded storage: PartialTrieDb serves
+    // plain slots only, so execute<traits> would trip its
+    // is_page_encoded()/mip_8_active() assertion.
+    bool const roundtrip_witness = witness_roundtrip &&
+                                   vm_mode == vm::VM::Mode::InterpreterOnly &&
+                                   !traits::mip_8_active();
+
     vm::VM vm{vm_mode};
+    // Separate vm for witness round-trip re-execution. Pre-loaded codes
+    // accumulate across blocks (warm cache), but the round-trip path
+    // never touches the live `vm`.
+    vm::VM vm_witness;
     mpt::Db &db = test_state->db;
     auto &tdb = test_state->trie_db;
 
@@ -523,6 +591,12 @@ void process_test(
     senders_and_authorities_map[0] =
         ankerl::unordered_dense::segmented_set<Address>{};
     BlockHeader parent_header = json_state.header;
+
+    std::vector<byte_string> ancestor_headers;
+    if (roundtrip_witness) {
+        ancestor_headers.push_back(
+            rlp::encode_block_header(tdb.read_eth_header()));
+    }
 
     for (auto const &j_block : j_contents.at("blocks")) {
 
@@ -549,15 +623,59 @@ void process_test(
             block.value().header.number - 1, block.value().header.parent_hash);
 
         uint64_t const curr_block_number = block.value().header.number;
+
+        // Witness-only: capture pre-state-root and the touched-set witness
+        // via a pre-commit hook; track BLOCKHASH queries to know which
+        // ancestor headers belong in the witness.
+        TrackingBlockHashBuffer tracking_buf{block_hash_buffer};
+        WitnessData witness_data;
+        bytes32_t pre_state_root;
+        std::function<void(
+            StateDeltas const &,
+            ankerl::unordered_dense::
+                segmented_map<bytes32_t, vm::SharedIntercode> const &,
+            SelfDestructStorageReads const &)>
+            on_pre_commit;
+        if (roundtrip_witness) {
+            on_pre_commit = [&](StateDeltas const &deltas,
+                                ankerl::unordered_dense::segmented_map<
+                                    bytes32_t,
+                                    vm::SharedIntercode> const &read_codes,
+                                SelfDestructStorageReads const
+                                    &self_destruct_storage_reads) {
+                pre_state_root = tdb.state_root();
+                auto cursor_res = db.find(
+                    tdb.get_root(),
+                    mpt::concat(FINALIZED_NIBBLE, STATE_NIBBLE),
+                    curr_block_number);
+                ASSERT_TRUE(cursor_res.has_value())
+                    << "state-trie lookup failed while generating witness for "
+                    << name << " at block " << curr_block_number;
+                witness_data = generate_witness(
+                    db,
+                    cursor_res.value(),
+                    curr_block_number,
+                    deltas,
+                    read_codes,
+                    self_destruct_storage_reads);
+            };
+        }
+
+        BlockHashBuffer const &exec_buf =
+            roundtrip_witness
+                ? static_cast<BlockHashBuffer const &>(tracking_buf)
+                : static_cast<BlockHashBuffer const &>(block_hash_buffer);
+
         auto const result = execute_and_record<traits>(
             chain,
             block.value(),
             parent_header,
             tdb,
             vm,
-            block_hash_buffer,
+            exec_buf,
             senders_and_authorities_map,
-            enable_tracing);
+            enable_tracing,
+            on_pre_commit);
 
         ExecutionEvents exec_events{};
         bool check_exec_events = false; // Won't do gtest checks if disabled
@@ -580,6 +698,10 @@ void process_test(
 
         if (!result.has_error()) {
             db_post_state = tdb.to_json();
+            // The witness round-trip below replays this same block, so it
+            // needs the header this execution validated against, captured
+            // before parent_header advances.
+            BlockHeader const exec_parent_header = parent_header;
             parent_header = block.value().header;
             EXPECT_FALSE(j_block.contains("expectException")) << name;
             EXPECT_EQ(tdb.get_block_number(), curr_block_number) << name;
@@ -695,6 +817,154 @@ void process_test(
                         << name;
                 }
             }
+
+            // Witness round-trip: encode the witness, parse it back,
+            // reconstruct a fresh PartialTrieDb, and re-execute the
+            // block against it. The post-state root must match the
+            // live tdb's.
+            if (roundtrip_witness) {
+                uint64_t const lowest =
+                    tracking_buf.min_queried().value_or(curr_block_number - 1);
+                MONAD_ASSERT(lowest < curr_block_number);
+                MONAD_ASSERT(ancestor_headers.size() >= curr_block_number);
+                std::vector<byte_string> const headers_slice(
+                    ancestor_headers.begin() + static_cast<ptrdiff_t>(lowest),
+                    ancestor_headers.begin() +
+                        static_cast<ptrdiff_t>(curr_block_number));
+
+                auto const lookup_senders = [&](uint64_t const n)
+                    -> ankerl::unordered_dense::segmented_set<Address> const * {
+                    auto const it = senders_and_authorities_map.find(n);
+                    return it != senders_and_authorities_map.end() ? &it->second
+                                                                   : nullptr;
+                };
+                auto const *const parent_senders =
+                    (curr_block_number >= 1)
+                        ? lookup_senders(curr_block_number - 1)
+                        : nullptr;
+                auto const *const grandparent_senders =
+                    (curr_block_number >= 2)
+                        ? lookup_senders(curr_block_number - 2)
+                        : nullptr;
+
+                byte_string const witness_bytes = encode_execution_witness(
+                    block_rlp,
+                    witness_data.nodes,
+                    witness_data.codes,
+                    headers_slice,
+                    parent_senders,
+                    grandparent_senders);
+
+                auto const witness = parse_execution_witness(witness_bytes);
+                ASSERT_TRUE(witness.has_value())
+                    << "generated witness failed to parse for " << name
+                    << " block " << curr_block_number;
+
+                CodeIndex code_index;
+                byte_string_view codes = witness.value().encoded_codes;
+                while (!codes.empty()) {
+                    auto const code = rlp::parse_string_metadata(codes);
+                    ASSERT_TRUE(code.has_value())
+                        << "witness code rlp parse failed for " << name
+                        << " block " << curr_block_number;
+                    code_index.emplace(
+                        to_bytes(keccak256(code.value())),
+                        vm::make_shared_intercode(code.value()));
+                }
+
+                // The blob carries its own root, so nothing external is needed
+                // to load it; check it against the live pre-state root.
+                mpt::OffsetTrie store{witness.value().encoded_nodes};
+                ASSERT_EQ(store.state_root(), pre_state_root)
+                    << "witness pre-state root mismatch for " << name
+                    << " block " << curr_block_number;
+                PartialTrieDb db_witness{
+                    std::move(store), std::move(code_index)};
+
+                BlockHashBufferFinalized block_hash_buffer_witness;
+                byte_string_view headers_view = witness.value().encoded_headers;
+                while (!headers_view.empty()) {
+                    auto const payload_res =
+                        rlp::parse_string_metadata(headers_view);
+                    ASSERT_TRUE(payload_res.has_value())
+                        << "ancestor header rlp parse failed for " << name
+                        << " block " << curr_block_number;
+                    byte_string_view const payload = payload_res.value();
+                    byte_string_view header_enc = payload;
+                    auto decoded_header = rlp::decode_block_header(header_enc);
+                    ASSERT_TRUE(decoded_header.has_value())
+                        << "ancestor header decode failed for " << name
+                        << " block " << curr_block_number;
+                    bytes32_t const hash = to_bytes(keccak256(payload));
+                    block_hash_buffer_witness.set(
+                        decoded_header.value().number, hash);
+                }
+
+                std::vector<Receipt> receipts_witness;
+                std::vector<std::vector<CallFrame>> call_frames_witness;
+                // Fresh per-block map seeded from the witness payload's
+                // [4]/[5] address-set fields. execute<>() populates [curr]
+                // itself; [curr-1] and [curr-2] are decoded here so
+                // ChainContext for Monad traits sees the same membership
+                // decisions as the live path.
+                std::map<
+                    uint64_t,
+                    ankerl::unordered_dense::segmented_set<Address>>
+                    senders_and_authorities_map_witness{};
+                auto const decode_addr_set = [&](byte_string_view list)
+                    -> ankerl::unordered_dense::segmented_set<Address> {
+                    ankerl::unordered_dense::segmented_set<Address> out;
+                    while (!list.empty()) {
+                        auto const s = rlp::decode_string(list);
+                        MONAD_ASSERT(s.has_value());
+                        MONAD_ASSERT(s.value().size() == sizeof(Address));
+                        Address a;
+                        std::memcpy(a.bytes, s.value().data(), sizeof(Address));
+                        out.insert(a);
+                    }
+                    return out;
+                };
+                if (curr_block_number >= 1) {
+                    senders_and_authorities_map_witness[curr_block_number - 1] =
+                        decode_addr_set(
+                            witness.value()
+                                .encoded_parent_senders_and_authorities);
+                }
+                if (curr_block_number >= 2) {
+                    senders_and_authorities_map_witness[curr_block_number - 2] =
+                        decode_addr_set(
+                            witness.value()
+                                .encoded_grandparent_senders_and_authorities);
+                }
+                auto const result_witness = execute<traits>(
+                    chain,
+                    // assume block was encoded correctly in the witness to
+                    // avoid rlp round-trip
+                    block.value(),
+                    exec_parent_header,
+                    db_witness,
+                    vm_witness,
+                    block_hash_buffer_witness,
+                    senders_and_authorities_map_witness,
+                    /*enable_tracing=*/false,
+                    receipts_witness,
+                    call_frames_witness);
+                EXPECT_TRUE(result_witness.has_value())
+                    << "witness round-trip execution failed for " << name
+                    << " block " << curr_block_number << ": "
+                    << (result_witness.has_error()
+                            ? result_witness.error().message().c_str()
+                            : "");
+
+                if (result_witness.has_value()) {
+                    EXPECT_EQ(db_witness.state_root(), tdb.state_root())
+                        << "post-state root mismatch (round-trip) for " << name
+                        << " block " << curr_block_number;
+                }
+
+                ancestor_headers.push_back(
+                    rlp::encode_block_header(block.value().header));
+            }
         }
         else {
             // Error case: if this test failed unexpectedly, then serialize the
@@ -734,18 +1004,29 @@ void process_test(
 void process_test(
     std::variant<monad_eth_revision, monad_revision> const &revision,
     std::string const &name, nlohmann::json const &j_contents,
-    vm::VM::Mode const vm_mode, bool const enable_tracing)
+    vm::VM::Mode const vm_mode, bool const enable_tracing,
+    bool const witness_roundtrip)
 {
     if (std::holds_alternative<monad_eth_revision>(revision)) {
         auto const rev = std::get<monad_eth_revision>(revision);
         SWITCH_EVM_TRAITS(
-            process_test, name, j_contents, vm_mode, enable_tracing);
+            process_test,
+            name,
+            j_contents,
+            vm_mode,
+            enable_tracing,
+            witness_roundtrip);
         MONAD_ASSERT(false);
     }
     else {
         auto const rev = std::get<monad_revision>(revision);
         SWITCH_MONAD_TRAITS(
-            process_test, name, j_contents, vm_mode, enable_tracing);
+            process_test,
+            name,
+            j_contents,
+            vm_mode,
+            enable_tracing,
+            witness_roundtrip);
         MONAD_ASSERT(false);
     }
 }
@@ -796,7 +1077,13 @@ void BlockchainTest::TestBody()
             }
             auto const enum_name = vm::VM::mode_to_string(vm_mode);
             auto const full_name = name + "(" + enum_name + " VM mode)";
-            process_test(rev, full_name, j_contents, vm_mode, enable_tracing_);
+            process_test(
+                rev,
+                full_name,
+                j_contents,
+                vm_mode,
+                enable_tracing_,
+                witness_roundtrip_);
         }
     }
 
@@ -813,35 +1100,42 @@ void register_blockchain_tests_path(
     std::filesystem::path const &root,
     std::optional<std::variant<monad_eth_revision, monad_revision>> const
         &revision,
-    std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing)
+    std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing,
+    bool const witness_roundtrip)
 {
     namespace fs = std::filesystem;
     MONAD_ASSERT(fs::exists(root));
 
-    auto register_test = [&root, &revision, vm_mode, enable_tracing](
-                             fs::path const &path) {
-        if (path.extension() == ".json") {
-            MONAD_ASSERT(fs::is_regular_file(path));
+    auto register_test =
+        [&root, &revision, vm_mode, enable_tracing, witness_roundtrip](
+            fs::path const &path) {
+            if (path.extension() == ".json") {
+                MONAD_ASSERT(fs::is_regular_file(path));
 
-            auto test_name = path == root ? path.filename().string()
-                                          : fs::relative(path, root).string();
-            // get rid of minus signs, which is a special symbol when used in
-            // filtering
-            std::ranges::replace(test_name, '-', '_');
+                auto test_name = path == root
+                                     ? path.filename().string()
+                                     : fs::relative(path, root).string();
+                // get rid of minus signs, which is a special symbol when used
+                // in filtering
+                std::ranges::replace(test_name, '-', '_');
 
-            testing::RegisterTest(
-                "BlockchainTests",
-                test_name.c_str(),
-                nullptr,
-                nullptr,
-                path.string().c_str(),
-                0,
-                [=] {
-                    return new test::BlockchainTest(
-                        path, revision, vm_mode, enable_tracing);
-                });
-        }
-    };
+                testing::RegisterTest(
+                    "BlockchainTests",
+                    test_name.c_str(),
+                    nullptr,
+                    nullptr,
+                    path.string().c_str(),
+                    0,
+                    [=] {
+                        return new test::BlockchainTest(
+                            path,
+                            revision,
+                            vm_mode,
+                            enable_tracing,
+                            witness_roundtrip);
+                    });
+            }
+        };
 
     if (fs::is_directory(root)) {
         for (auto const &entry : fs::recursive_directory_iterator{root}) {
@@ -857,7 +1151,8 @@ void register_blockchain_tests_path(
 void register_blockchain_tests(
     std::optional<std::variant<monad_eth_revision, monad_revision>> const
         &revision,
-    std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing)
+    std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing,
+    bool const witness_roundtrip)
 {
     // skip slow tests
     testing::FLAGS_gtest_filter +=
@@ -871,18 +1166,21 @@ void register_blockchain_tests(
         test_resource::ethereum_tests_dir / "BlockchainTests",
         revision,
         vm_mode,
-        enable_tracing);
+        enable_tracing,
+        witness_roundtrip);
     register_blockchain_tests_path(
         test_resource::internal_blockchain_tests_dir,
         revision,
         vm_mode,
-        enable_tracing);
+        enable_tracing,
+        witness_roundtrip);
     register_blockchain_tests_path(
         test_resource::build_dir /
             "src/ExecutionSpecTestFixtures/blockchain_tests",
         revision,
         vm_mode,
-        enable_tracing);
+        enable_tracing,
+        witness_roundtrip);
 }
 
 MONAD_TEST_NAMESPACE_END

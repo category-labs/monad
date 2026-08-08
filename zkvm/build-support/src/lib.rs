@@ -217,6 +217,26 @@ impl Backend {
             .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", gcc.display()));
         assert!(status.success(), "gcc failed compiling {}", main_c.display());
 
+        // 1b) Weaken compiler_builtins' mem* in libzkevm.a. The guest archive
+        // carries word-wise replacements (zkvm/guest/mem_sp1.cpp) -- the Rust
+        // builtins are byte loops on this target (memcmp always; memcpy
+        // whenever src and dst are not co-aligned) and measured at over a
+        // third of the SP1 guest's attributed instructions. Both definitions
+        // are strong, so the link is a duplicate-symbol error unless the SDK
+        // side is demoted; weakening (not removing) keeps libzkevm.a
+        // self-sufficient for SDK examples linked without our archive.
+        let weakened = out_dir.join("libzkevm-weakmem.a");
+        std::fs::copy(&libzkevm, &weakened)
+            .unwrap_or_else(|e| panic!("copying libzkevm.a: {e}"));
+        let objcopy = riscv_tool(&riscv_toolchain_dir(), "objcopy");
+        let status = Command::new(&objcopy)
+            .args(["-W", "memcpy", "-W", "memset", "-W", "memcmp", "-W", "memmove"])
+            .arg(&weakened)
+            .status()
+            .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", objcopy.display()));
+        assert!(status.success(), "objcopy failed weakening {}", weakened.display());
+        let libzkevm = weakened;
+
         // 2) Link main.o + guest archive + libzkevm.a against zkvm.ld via
         //    ld.lld (the linker libzkevm.a was built/tested with).
         let lld = sp1_build::find_lld().expect(
@@ -393,15 +413,20 @@ fn riscv_toolchain_dir() -> String {
 // target prefix the same way category/core/toolchains/riscv64-elf.cmake
 // does (riscv64-none-elf- for nix, riscv64-unknown-elf- for ZisK).
 fn riscv_gcc(toolchain_dir: &str) -> PathBuf {
+    riscv_tool(toolchain_dir, "gcc")
+}
+
+// Same prefix detection, any binutil (gcc, objcopy, ...).
+fn riscv_tool(toolchain_dir: &str, tool: &str) -> PathBuf {
     let bin = Path::new(toolchain_dir).join("bin");
     for prefix in ["riscv64-none-elf-", "riscv64-unknown-elf-"] {
-        let gcc = bin.join(format!("{prefix}gcc"));
-        if gcc.exists() {
-            return gcc;
+        let t = bin.join(format!("{prefix}{tool}"));
+        if t.exists() {
+            return t;
         }
     }
     panic!(
-        "no riscv64 gcc (riscv64-none-elf-gcc or riscv64-unknown-elf-gcc) found in {}",
+        "no riscv64 {tool} (riscv64-none-elf-{tool} or riscv64-unknown-elf-{tool}) found in {}",
         bin.display()
     );
 }

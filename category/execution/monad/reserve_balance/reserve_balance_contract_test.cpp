@@ -72,7 +72,7 @@ using namespace monad;
 using namespace monad::vm;
 using enum monad::vm::compiler::EvmOpCode;
 
-enum Outcome
+enum ExpectedOutcome
 {
     WillRevert,
     WontRevert,
@@ -242,7 +242,7 @@ template <Traits traits>
     requires is_monad_trait_v<traits>
 void run_dipped_into_reserve_test(
     uint64_t const initial_balance_mon, uint64_t const value_mon,
-    Outcome outcome)
+    ExpectedOutcome outcome)
 {
     static constexpr uint256_t GAS_FEE = 4 * 1000000000000000000ULL;
     static constexpr uint256_t BASE_FEE_PER_GAS = 10;
@@ -268,7 +268,7 @@ void run_dipped_into_reserve_test(
     std::vector<uint8_t> entrypoint_code;
     add_call_code(GAS_FEE / 4, EOA, entrypoint_code);
     add_revert_check(entrypoint_code);
-    if (outcome == Outcome::WillRevert) {
+    if (outcome == ExpectedOutcome::WillRevert) {
         add_revert_if_true(entrypoint_code);
     }
 
@@ -540,12 +540,12 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_with_argument)
 
 TYPED_TEST(MonadTraitsTest, reverttransaction_no_dip)
 {
-    constexpr Outcome outcome = [] {
+    constexpr ExpectedOutcome outcome = [] {
         if (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
-            return Outcome::WontRevert;
+            return ExpectedOutcome::WontRevert;
         }
         else {
-            return Outcome::ContractMissing;
+            return ExpectedOutcome::ContractMissing;
         }
     }();
 
@@ -554,12 +554,12 @@ TYPED_TEST(MonadTraitsTest, reverttransaction_no_dip)
 
 TYPED_TEST(MonadTraitsTest, reverttransaction_revert)
 {
-    constexpr Outcome outcome = [] {
+    constexpr ExpectedOutcome outcome = [] {
         if (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
-            return Outcome::WillRevert;
+            return ExpectedOutcome::WillRevert;
         }
         else {
-            return Outcome::ContractMissing;
+            return ExpectedOutcome::ContractMissing;
         }
     }();
 

@@ -443,7 +443,8 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             chain_.get_chain_id(),
             chain_.get_blob_schedule(header_.timestamp));
         if (validation_result.has_error()) {
-            prev_.get_future().wait();
+            // Use future.get() to rethrow on exception from previous tx:
+            prev_.get_future().get();
             return std::move(validation_result).as_failure();
         }
     }
@@ -461,7 +462,8 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 
         {
             TRACE_TXN_EVENT(StartStall);
-            prev_.get_future().wait();
+            // Use future.get() to rethrow on exception from previous tx:
+            prev_.get_future().get();
         }
 
         if (block_state_.can_merge(state)) {

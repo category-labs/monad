@@ -17,7 +17,10 @@
 
 #include <category/core/config.hpp>
 
+#include <boost/outcome.hpp>
 #include <boost/outcome/experimental/status_result.hpp>
+
+#include <exception>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -26,5 +29,30 @@ namespace outcome_e = outcome::experimental;
 
 template <typename T>
 using Result = outcome_e::status_result<T>;
+
+template <typename T>
+using Outcome =
+    outcome::outcome<T, typename Result<T>::error_type, std::exception_ptr>;
+
+template <typename T>
+Outcome<T> outcome_from_result(Result<T> res)
+{
+    if (res.has_error()) {
+        return std::move(res).as_failure();
+    }
+    return std::move(res).assume_value();
+}
+
+template <typename T>
+Result<T> result_from_outcome_or_throw(Outcome<T> out)
+{
+    if (out.has_exception()) {
+        std::rethrow_exception(out.exception());
+    }
+    if (out.has_error()) {
+        return std::move(out).assume_error();
+    }
+    return std::move(out).assume_value();
+}
 
 MONAD_NAMESPACE_END

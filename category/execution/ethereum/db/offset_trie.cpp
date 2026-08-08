@@ -188,11 +188,17 @@ OffsetTrie::child_ref(NodeId const id, OffsetTrie::node_rlp_span dest)
     // witness nodes), primed blob hash -- so the 16-slot branch loop does not
     // pay the full-body call and its register-heavy prologue per child. The
     // slow tail (overlay, map, recursive encode) stays out of line.
+    //
+    // Valid for BOTH passes, because neither case can be shadowed: put_node
+    // (the only overlay writer) calls hash_cache_erase(id) before shadowing
+    // an original id -- so a flat-store hit proves the node was never dirtied
+    // -- and it can never land on a DIGEST at all: the descent aborts on
+    // digests, written paths carry real nodes. The blob bytes ARE the node.
     if (id == NULL_ID) {
         dest.back() = 0x80; // RLP empty string
         return dest.shrink(1);
     }
-    if constexpr (priming_pass) {
+    if (!is_overlay_id(id)) {
         MONAD_ASSERT(static_cast<uint64_t>(id) < blob_.size());
         NodeViewBase const node = get_original(id);
         if (node.tag() == DIGEST) {

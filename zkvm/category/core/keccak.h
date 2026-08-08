@@ -30,19 +30,21 @@ extern "C"
 {
 #endif
 
-#ifdef MONAD_ZKVM_ZISK
-// ZisK: enter the precompile through a word-wise absorb
-// (zkvm/guest/keccak_zisk.cpp). zisklib's zkvm_keccak256 assembles the sponge
-// state byte by byte -- ~400-530 steps of marshalling per permutation. SP1
-// keeps the accelerator shim below (its wrapper is already thin: 310
-// instructions, no byte-marshalling).
-void monad_zisk_keccak256(void const *in, size_t len, unsigned char out[32]);
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
+// Both backends: enter the permutation precompile through a word-wise absorb
+// (zkvm/guest/keccak_accel.cpp). The stock wrappers marshal the sponge byte by
+// byte -- zisklib's at ~400-530 steps per permutation, SP1's via tiny_keccak's
+// software sponge at 19.5 % of the guest's attributed work. (An earlier note
+// called the SP1 shim "already thin, 310 instructions" -- that was its
+// call-site setup, not the absorb; the profile priced the truth.)
+void monad_zkvm_keccak256_fast(
+    void const *in, size_t len, unsigned char out[32]);
 
 [[gnu::always_inline]] static inline void keccak256(
     unsigned char const *const in, unsigned long const len,
     unsigned char out[KECCAK256_SIZE])
 {
-    monad_zisk_keccak256(in, (size_t)len, out);
+    monad_zkvm_keccak256_fast(in, (size_t)len, out);
 }
 #else
 [[gnu::always_inline]] static inline void keccak256(

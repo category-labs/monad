@@ -482,6 +482,9 @@ private:
     template <bool priming_pass>
     node_rlp_span child_ref(NodeId id, node_rlp_span dest);
 
+    template <bool priming_pass>
+    node_rlp_span child_ref_slow(NodeId id, node_rlp_span dest);
+
     // The node's full canonical Ethereum RLP. Reads `node`'s fields and
     // resolves its children through child_ref.
     template <bool priming_pass = false>

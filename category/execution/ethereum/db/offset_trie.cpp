@@ -184,6 +184,35 @@ template <bool priming_pass>
 OffsetTrie::node_rlp_span
 OffsetTrie::child_ref(NodeId const id, OffsetTrie::node_rlp_span dest)
 {
+    // Inline head for the dominant cases -- NULL, digest child (90.2 % of
+    // witness nodes), primed blob hash -- so the 16-slot branch loop does not
+    // pay the full-body call and its register-heavy prologue per child. The
+    // slow tail (overlay, map, recursive encode) stays out of line.
+    if (id == NULL_ID) {
+        dest.back() = 0x80; // RLP empty string
+        return dest.shrink(1);
+    }
+    if constexpr (priming_pass) {
+        MONAD_ASSERT(static_cast<uint64_t>(id) < blob_.size());
+        NodeViewBase const node = get_original(id);
+        if (node.tag() == DIGEST) {
+            rlp::encode_string(
+                dest.last(33),
+                byte_string_view{DigestView{node}.hash().bytes, 32});
+            return dest.shrink(33);
+        }
+        if (bytes32_t const *const h = blob_hash_find(id)) {
+            rlp::encode_string(dest.last(33), byte_string_view{h->bytes, 32});
+            return dest.shrink(33);
+        }
+    }
+    return child_ref_slow<priming_pass>(id, dest);
+}
+
+template <bool priming_pass>
+OffsetTrie::node_rlp_span
+OffsetTrie::child_ref_slow(NodeId const id, OffsetTrie::node_rlp_span dest)
+{
     if (id == NULL_ID) {
         dest.back() = 0x80; // RLP empty string
         return dest.shrink(1);

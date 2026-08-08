@@ -61,6 +61,15 @@ inline constexpr uint32_t HEADER_LEN = 8; // magic(4) root_offset(4)
 // collision). Real witnesses are ~MBs, far under 2 GiB.
 inline constexpr uint32_t OVERLAY_BASE = 1u << 31;
 
+// The on-blob encoding of a node id is FOUR bytes, independent of the width of
+// the in-memory type. Keeping the two apart is what lets NodeId be 64-bit in
+// registers -- which kills the addw/addiw/srliw class in the reader's hottest
+// paths -- while the witness format stays exactly as generated. Deriving node
+// extents from sizeof(NodeId) instead couples them: widening the enum then
+// makes end() believe a branch is 128 bytes rather than 64, and the reader
+// misparses the blob it was handed.
+inline constexpr size_t NODE_ID_WIRE = 4;
+
 // Upper bound on a single node's canonical RLP: 16 child refs (<=33 B each)
 // + value slot + list header. 700 leaves margin.
 inline constexpr size_t MAX_NODE_RLP = 700;
@@ -68,14 +77,16 @@ inline constexpr size_t MAX_NODE_RLP = 700;
 // A node's stable id. 0 = null; `n` in the [HEADER_LEN, blob_len) range is
 // a blob offset (unless shadowed by an overlay); n >= OVERLAY_BASE is a
 // fresh overlay node.
-enum class NodeId : uint32_t
+// 64-bit on purpose: see NODE_ID_WIRE above -- the register width and the wire
+// width are deliberately different.
+enum class NodeId : uint64_t
 {
 };
 inline constexpr NodeId NULL_ID{0};
 
 inline bool is_overlay_id(NodeId id)
 {
-    return static_cast<uint32_t>(id) >= OVERLAY_BASE;
+    return static_cast<uint64_t>(id) >= OVERLAY_BASE;
 }
 
 struct NodeIdHash
@@ -84,8 +95,8 @@ struct NodeIdHash
 
     uint64_t operator()(NodeId const id) const noexcept
     {
-        return ankerl::unordered_dense::hash<uint32_t>{}(
-            static_cast<uint32_t>(id));
+        return ankerl::unordered_dense::hash<uint64_t>{}(
+            static_cast<uint64_t>(id));
     }
 };
 
@@ -179,7 +190,7 @@ inline unsigned char const *path_view_end(unsigned char const *const p)
 // over a path or account RLP. The rest of the node follows that field.
 inline unsigned char const *child_end(unsigned char const *const p)
 {
-    return p + sizeof(NodeId);
+    return p + NODE_ID_WIRE;
 }
 
 inline unsigned char const *account_rlp_end(unsigned char const *const p)
@@ -192,7 +203,7 @@ inline unsigned char const *NodeViewBase::end() const
 {
     switch (tag()) {
     case BRANCH: // 16 child offsets
-        return payload() + 16 * sizeof(NodeId);
+        return payload() + 16 * NODE_ID_WIRE;
     case EXT: // child offset + path
         return path_view_end(child_end(payload()));
     case LEAF_ACCT: // storage offset + path + acc length + acc rlp
@@ -384,9 +395,9 @@ public:
         // NULL_ID resolves to the blob's first magic byte, i.e. the EMPTY
         // tag
         MONAD_ASSERT(
-            id == NULL_ID || (static_cast<uint32_t>(id) >= HEADER_LEN &&
-                              static_cast<uint32_t>(id) < blob_.size()));
-        return NodeViewBase{blob_.data() + static_cast<uint32_t>(id)};
+            id == NULL_ID || (static_cast<uint64_t>(id) >= HEADER_LEN &&
+                              static_cast<uint64_t>(id) < blob_.size()));
+        return NodeViewBase{blob_.data() + static_cast<uint64_t>(id)};
     }
 
     // Current bytes for `id` — overlay entry if present, else the blob.

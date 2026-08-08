@@ -198,7 +198,7 @@ OffsetTrie::child_ref(NodeId const id, OffsetTrie::node_rlp_span dest)
     // current reads consult the overlay first.
     NodeViewBase const node = [&]() -> NodeViewBase {
         if constexpr (priming_pass) {
-            MONAD_ASSERT(static_cast<uint32_t>(id) < blob_.size());
+            MONAD_ASSERT(static_cast<uint64_t>(id) < blob_.size());
             return get_original(id);
         }
         else {
@@ -339,7 +339,9 @@ namespace
     void append_node_id(byte_string &b, NodeId const v)
     {
         static_assert(std::endian::native == std::endian::little);
-        b.append(reinterpret_cast<unsigned char const *>(&v), sizeof(v));
+        auto const w = static_cast<uint32_t>(v);
+        static_assert(sizeof(w) == NODE_ID_WIRE);
+        b.append(reinterpret_cast<unsigned char const *>(&w), sizeof(w));
     }
 
     void append_rlp(byte_string &b, byte_string_view const v)
@@ -423,7 +425,7 @@ void append_digest(byte_string &out, bytes32_t const &hash)
 NodeId OffsetTrie::fresh_id()
 {
     NodeId const fresh = next_id_;
-    next_id_ = NodeId{static_cast<uint32_t>(next_id_) + 1};
+    next_id_ = NodeId{static_cast<uint64_t>(next_id_) + 1};
     return fresh;
 }
 

@@ -173,7 +173,7 @@ struct ankerl::unordered_dense::hash<monad::bytes32_t>
 {
     using is_avalanching = void;
 
-    uint64_t operator()(monad::bytes32_t const &x) const noexcept
+    [[gnu::always_inline]] inline uint64_t operator()(monad::bytes32_t const &x) const noexcept
     {
         return std::hash<monad::bytes32_t>{}(x);
     }

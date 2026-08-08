@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 
+#include <bit>
 #include <cstdint>
 
 // Guest map hashes seeded from the block hash before populating maps.
@@ -63,6 +64,58 @@ namespace bits
         }
         // An odd multiplier preserves distinct tails for a fixed prefix.
         map_keys[3] |= 1;
+    }
+
+    // Exact zero-byte detector (Hacker's Delight): the returned word has 0x80
+    // at every byte of x that is 0x00 and nothing anywhere else. The masked add
+    // cannot carry across byte lanes (0x7f + 0x7f = 0xfe), which is what makes
+    // it exact -- the shorter (x - lo) & ~x & hi form contaminates the lane
+    // above a zero byte through its borrow.
+    [[gnu::always_inline]] inline constexpr uint64_t
+    zero_byte_mask(uint64_t const x) noexcept
+    {
+        // The trick is revolves around 0x7f ((127)₁₀ = (1111111)₂).
+        // Take a byte b: b + 0x7f < 0x80 iif b = 0. If b > 0, b + 0x7f ⩾ 0x80,
+        // and the first bit of b + 0x7f is 1. This is this bit that we care
+        // about.
+        // However, if b is larger than 0x80, the carry corrupts the higher
+        // bytes.
+        // & 0x7f remove this corruption, as b & & 0x7f < 0x80 for all b.
+        // However, this breaks for b = 0x80: | x brings the highest bit back.
+        // This leaves a dirty result — with the highest bit at 1 if b > 0, and
+        // at 0 if b = 0 — where irrelevant bytes are the unneeded result from
+        // the previous addition.
+        // They are all set to 1 with | k7f, and the final ~ turns the
+        // bytes > 0 into 0x00, and the 0 bytes into 0x80
+        constexpr uint64_t k7f = 0x7f7f7f7f7f7f7f7full;
+        return ~((((x & k7f) + k7f) | x) | k7f);
+    }
+
+    // Number of 0x00 bytes in x. The mask carries one 0x01 flag per zero
+    // byte, so the count is its population -- one `cpop` under Zbb. Gathering
+    // the flags into the top byte with a multiply instead would be 97 cells
+    // against 56 for the bit-manipulation ops.
+    [[gnu::always_inline]] inline constexpr unsigned
+    count_zero_bytes(uint64_t const x) noexcept
+    {
+        return static_cast<unsigned>(std::popcount(zero_byte_mask(x) >> 7));
+    }
+
+    // Returns eight times the number of nonzero bytes, allowing callers to
+    // sum words before dividing by eight. A 64-bit result avoids extra
+    // widening.
+    [[gnu::always_inline]] inline uint64_t
+    nonzero_byte_bits(uint64_t const x) noexcept
+    {
+#if defined(__riscv_zbb) && __riscv_xlen == 64
+        // orc.b maps nonzero bytes to 0xFF; popcount counts eight bits per
+        // byte. The 64-bit builtin requires RV64.
+        return static_cast<uint64_t>(
+            __builtin_popcountll(__builtin_riscv_orc_b_64(x)));
+#else
+        // Portable equivalent using the zero-byte count.
+        return static_cast<uint64_t>(8u - count_zero_bytes(x)) << 3u;
+#endif
     }
 
     // Fold a 128-bit product to 64 bits. Mix words before combining them

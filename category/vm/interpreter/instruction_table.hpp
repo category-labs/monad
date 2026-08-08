@@ -1483,9 +1483,22 @@ namespace monad::vm::interpreter
         check_requirements<SWAP1 + (N - 1), traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
 
+#if defined(MONAD_ZKVM_SP1)
+        // rv32: the trivial 32-byte uint256 copies lower to memcpy CALLS
+        // (~95 k per block across SWAP1-3 alone, measured by the memcpy
+        // return-address histogram); exchange the four lanes in place.
+        auto *const a = reinterpret_cast<uint64_t *>(stack_top);
+        auto *const b = reinterpret_cast<uint64_t *>(stack_top - N);
+        for (int i = 0; i < 4; ++i) {
+            uint64_t const t = a[i];
+            a[i] = b[i];
+            b[i] = t;
+        }
+#else
         auto const top = stack_top->to_avx();
         *stack_top = *(stack_top - N);
         *(stack_top - N) = uint256_t{top};
+#endif
 
         MONAD_VM_NEXT(SWAP1 + (N - 1));
     }

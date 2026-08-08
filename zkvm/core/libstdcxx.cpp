@@ -15,35 +15,64 @@
 
 // Minimal C++ runtime stubs for bare-metal zkVM.
 
+#include <zkvm/core/arena.hpp>
 #include <zkvm/core/libc.hpp>
 #include <zkvm/core/zkvm_halt.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <exception>
 #include <memory>
 #include <typeinfo>
 
 // operator new / delete
-[[gnu::always_inline]] static inline void *alloc_or_exit(std::size_t size)
+//
+// delete never frees memory in the guest. Serve new/new[] from 32 MiB chunks
+// (larger for oversized requests) to amortize allocator overhead. When a
+// request does not fit, abandon the tail and start a new chunk. The fast path
+// is zkvm_arena_alloc in zkvm/core/arena.hpp, shared with other buffers the
+// guest never frees.
+namespace
 {
-    if (size == 0) {
-        size = 1;
+    constexpr std::size_t ARENA_CHUNK = std::size_t{32} << 20;
+}
+
+ZkvmArena zkvm_arena = {nullptr, nullptr};
+
+void *zkvm_arena_alloc_slow(std::size_t size)
+{
+    unsigned char *next = zkvm_arena.next;
+    // Normalize small requests to 16; GCC emits a branchless maxu. Only a
+    // zero-byte request can fit after it, and 16 is already rounded.
+    size = std::max(size, std::size_t{16});
+    if (size > static_cast<std::size_t>(zkvm_arena.end - next)) {
+        // Round the required size up to 16, checking for overflow. The check
+        // lives here, off the inline fast path, which cannot overflow.
+        if (__builtin_add_overflow(size, std::size_t{15}, &size)) {
+            zkvm_halt(1);
+        }
+        size &= ~std::size_t{15};
+        // Reserve at least ARENA_CHUNK, or enough for this request.
+        std::size_t const chunk = std::max(size, ARENA_CHUNK);
+        next = static_cast<unsigned char *>(sys_alloc_aligned(chunk, 16));
+        if (!next) {
+            zkvm_halt(1);
+        }
+        zkvm_arena.end = next + chunk;
     }
-    void *ptr = sys_alloc_aligned(size, 16);
-    if (!ptr) {
-        zkvm_halt(1);
-    }
-    return ptr;
+    // Advance past the allocation and return its start.
+    zkvm_arena.next = next + size;
+    return next;
 }
 
 void *operator new(std::size_t size)
 {
-    return alloc_or_exit(size);
+    return zkvm_arena_alloc(size);
 }
 
 void *operator new[](std::size_t size)
 {
-    return alloc_or_exit(size);
+    return zkvm_arena_alloc(size);
 }
 
 void operator delete(void *) noexcept {}

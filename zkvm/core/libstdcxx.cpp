@@ -18,21 +18,56 @@
 #include <zkvm/core/libc.hpp>
 #include <zkvm/core/zkvm_halt.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <exception>
 #include <memory>
 #include <typeinfo>
 
 // operator new / delete
+//
+// delete never frees memory in the guest. Serve new/new[] from 32 MiB chunks
+// (larger for oversized requests) to amortize allocator overhead. When a
+// request does not fit, abandon the tail and start a new chunk.
+namespace
+{
+    constexpr std::size_t ARENA_CHUNK = std::size_t{32} << 20;
+    unsigned char *g_arena_cur = nullptr;
+    std::size_t g_arena_left = 0;
+}
+
 [[gnu::always_inline]] static inline void *alloc_or_exit(std::size_t size)
 {
-    if (size == 0) {
-        size = 1;
+    // g_arena_left is a multiple of 16, so test the fit before rounding.
+    // Checking overflow only on refills lets GCC omit the frame otherwise.
+    // size - 1 also sends zero-byte requests here (unsigned wraparound).
+    if (size - 1 >= g_arena_left) {
+        // Normalize small requests to 16; GCC emits a branchless maxu.
+        size = std::max(size, std::size_t{16});
+        if (size > g_arena_left) {
+            // Round the required size up to 16, checking for overflow.
+            if (__builtin_add_overflow(size, std::size_t{15}, &size)) {
+                zkvm_halt(1);
+            }
+            size &= ~std::size_t{15};
+            // Reserve at least ARENA_CHUNK, or enough for this request.
+            std::size_t const chunk = std::max(size, ARENA_CHUNK);
+            g_arena_cur =
+                static_cast<unsigned char *>(sys_alloc_aligned(chunk, 16));
+            if (!g_arena_cur) {
+                zkvm_halt(1);
+            }
+            g_arena_left = chunk;
+        }
     }
-    void *ptr = sys_alloc_aligned(size, 16);
-    if (!ptr) {
-        zkvm_halt(1);
+    else {
+        // The request fits: round up to 16 without risk of overflow.
+        size = (size + 15) & ~std::size_t{15};
     }
+    // Save the allocation's start, then advance to the next free address.
+    void *const ptr = g_arena_cur;
+    g_arena_cur += size;
+    g_arena_left -= size;
     return ptr;
 }
 

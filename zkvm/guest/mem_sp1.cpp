@@ -48,6 +48,28 @@ void *memcpy(void *const dst, void const *const src, size_t n)
 {
     auto *d = static_cast<unsigned char *>(dst);
     auto const *s = static_cast<unsigned char const *>(src);
+    // Fast paths first. The dynamic histogram (block 25551991: 894 k calls,
+    // 36 MB) says the guest's copies are overwhelmingly TINY -- uint256 stack
+    // moves and 32-byte hash writes -- so the per-call machinery below costs
+    // more than the payload. n == 32 with both sides word-aligned is the EVM
+    // stack move (to_avx / stack assignments compile to memcpy calls on this
+    // target); take it in eight straight-line words.
+    if (n == 32 &&
+        ((reinterpret_cast<uintptr_t>(d) | reinterpret_cast<uintptr_t>(s)) &
+         (W - 1)) == 0) {
+        auto *dw = reinterpret_cast<word *>(d);
+        auto const *sw = reinterpret_cast<word const *>(s);
+        for (size_t i = 0; i < 32 / W; ++i) {
+            dw[i] = sw[i];
+        }
+        return dst;
+    }
+    if (n < W) {
+        for (size_t i = 0; i < n; ++i) {
+            d[i] = s[i];
+        }
+        return dst;
+    }
     // Align the DESTINATION: stores are the expensive half of a copy.
     while (n != 0 && (reinterpret_cast<uintptr_t>(d) & (W - 1)) != 0) {
         *d++ = *s++;

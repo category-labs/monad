@@ -210,9 +210,11 @@ OffsetTrie::child_ref(NodeId const id, OffsetTrie::node_rlp_span dest)
     // known offset, so it needs neither a probe nor an entry -- 90.2 % of
     // witness nodes are digests, and the probe was the measured cost.
     if (node.tag() == DIGEST) {
-        bytes32_t const h = DigestView{node}.hash();
-        hashes_.emplace(id, h);
-        return hash_ref(h);
+        // No map entry: the digest is resolved before the map on every
+        // reference, so a cached copy would never be read back -- inserting it
+        // only grew the table (~30 k dead entries per block) and paid the
+        // rehash cascades.
+        return hash_ref(DigestView{node}.hash());
     }
     if (!is_overlay_id(id)) {
         if (bytes32_t const *const h = blob_hash_find(id)) {

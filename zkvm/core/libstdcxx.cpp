@@ -24,15 +24,38 @@
 #include <typeinfo>
 
 // operator new / delete
+//
+// The guest never frees: operator delete is (and was) a no-op, so every
+// allocation lives to the end of the run and the underlying allocator's
+// bookkeeping (SP1: embedded_alloc's TLSF, 6.6 % of the guest's attributed
+// instructions; ZisK: 0.4 %) buys nothing. Bump inside large chunks instead:
+// one underlying allocation per 32 MiB, a pointer add per operator new. The
+// tail of a chunk is abandoned when an allocation does not fit -- bounded
+// waste, and nothing was ever coming back anyway.
+namespace
+{
+    constexpr std::size_t ARENA_CHUNK = std::size_t{32} << 20;
+    unsigned char *g_arena_cur = nullptr;
+    std::size_t g_arena_left = 0;
+}
+
 [[gnu::always_inline]] static inline void *alloc_or_exit(std::size_t size)
 {
+    size = (size + 15) & ~std::size_t{15};
     if (size == 0) {
-        size = 1;
+        size = 16;
     }
-    void *ptr = sys_alloc_aligned(size, 16);
-    if (!ptr) {
-        zkvm_halt(1);
+    if (size > g_arena_left) {
+        std::size_t const chunk = size > ARENA_CHUNK ? size : ARENA_CHUNK;
+        g_arena_cur = static_cast<unsigned char *>(sys_alloc_aligned(chunk, 16));
+        if (!g_arena_cur) {
+            zkvm_halt(1);
+        }
+        g_arena_left = chunk;
     }
+    void *const ptr = g_arena_cur;
+    g_arena_cur += size;
+    g_arena_left -= size;
     return ptr;
 }
 

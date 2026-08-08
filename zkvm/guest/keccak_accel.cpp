@@ -13,7 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// keccak256 for the ZisK guest, entered directly at the precompile.
+// keccak256 for the zkVM guests, entered directly at the permutation
+// precompile -- one word-wise sponge, two syscall doors.
 //
 // zisklib's wrapper assembles the sponge state BYTE BY BYTE — its
 // disassembly is 137 lbu / 119 slli / 119 or per iteration group — which
@@ -30,7 +31,12 @@
 // cross-checked against canonical mainnet data (block hash, pre/post state
 // roots, body roots), so a divergence here cannot pass unnoticed.
 
-#ifdef MONAD_ZKVM_ZISK
+// SP1's wrapper has the same disease in a different coat: zkvm_keccak256 is
+// tiny_keccak's sponge in software (only keccak-f reaches the KECCAK_PERMUTE
+// precompile), absorbing byte by byte -- measured at 19.5 % of the SP1 guest's
+// attributed work, because the pre-state binding hashes the whole witness trie.
+
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
 
 #include <cstddef>
 #include <cstdint>
@@ -39,11 +45,29 @@
 extern "C"
 {
 
+#ifdef MONAD_ZKVM_ZISK
 // ziskos's raw precompile entry (no_mangle, extern "C"), the same door
 // zisklib's own wrapper uses.
 void syscall_keccak_f(uint64_t (*state)[25]);
 
-void monad_zisk_keccak256(void const *const in, size_t len, uint8_t out[32])
+static inline void keccak_permute(uint64_t (*state)[25])
+{
+    syscall_keccak_f(state);
+}
+#else
+// SP1's syscall_keccak_permute symbol is LTO-internalised inside libzkevm.a,
+// so emit the ecall the SDK itself emits: t0 = KECCAK_PERMUTE (0x00_01_01_09),
+// a0 = state, a1 = 0. The precompile rewrites the 25 u64 lanes in place.
+static inline void keccak_permute(uint64_t (*state)[25])
+{
+    register uintptr_t a0 asm("a0") = reinterpret_cast<uintptr_t>(state);
+    register uintptr_t a1 asm("a1") = 0;
+    register uint32_t t0 asm("t0") = 0x00010109u;
+    asm volatile("ecall" : "+r"(a0) : "r"(t0), "r"(a1) : "memory");
+}
+#endif
+
+void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32])
 {
     constexpr size_t RATE = 136;
     constexpr size_t WORDS = RATE / 8; // 17
@@ -58,7 +82,7 @@ void monad_zisk_keccak256(void const *const in, size_t len, uint8_t out[32])
             for (size_t i = 0; i < WORDS; ++i) {
                 st[i] ^= w[i];
             }
-            syscall_keccak_f(&st);
+            keccak_permute(&st);
             p += RATE;
             len -= RATE;
         }
@@ -79,7 +103,7 @@ void monad_zisk_keccak256(void const *const in, size_t len, uint8_t out[32])
                 st[i] ^= (lo >> rs) | (hi << ls);
                 lo = hi;
             }
-            syscall_keccak_f(&st);
+            keccak_permute(&st);
             p += RATE;
             len -= RATE;
         }
@@ -90,7 +114,7 @@ void monad_zisk_keccak256(void const *const in, size_t len, uint8_t out[32])
             for (size_t i = 0; i < WORDS; ++i) {
                 st[i] ^= w[i];
             }
-            syscall_keccak_f(&st);
+            keccak_permute(&st);
             p += RATE;
             len -= RATE;
         }
@@ -107,11 +131,11 @@ void monad_zisk_keccak256(void const *const in, size_t len, uint8_t out[32])
     for (size_t i = 0; i < WORDS; ++i) {
         st[i] ^= w[i];
     }
-    syscall_keccak_f(&st);
+    keccak_permute(&st);
 
     std::memcpy(out, st, 32);
 }
 
 } // extern "C"
 
-#endif // MONAD_ZKVM_ZISK
+#endif // MONAD_ZKVM_ZISK || MONAD_ZKVM_SP1

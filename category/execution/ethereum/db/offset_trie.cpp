@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bit_primitives.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 
 #include <category/core/assert.h>
@@ -202,13 +203,33 @@ OffsetTrie::child_ref(NodeId const id, OffsetTrie::node_rlp_span dest)
         MONAD_ASSERT(static_cast<uint64_t>(id) < blob_.size());
         NodeViewBase const node = get_original(id);
         if (node.tag() == DIGEST) {
+#if defined(MONAD_ZKVM_SP1)
+            // rv32: inline the 33-byte hash-ref write (memcpy CALL otherwise).
+            // ZisK keeps encode_string: measured -6.2 % with the inline copy,
+            // its memcpy handles misalignment better than generic shift-combine.
+            {
+                auto const span33 = dest.last(33);
+                span33.data()[0] = 0xa0;
+                bits::copy32_from_aligned(
+                    span33.data() + 1, DigestView{node}.hash().bytes);
+            }
+#else
             rlp::encode_string(
                 dest.last(33),
                 byte_string_view{DigestView{node}.hash().bytes, 32});
+#endif
             return dest.shrink(33);
         }
         if (bytes32_t const *const h = blob_hash_find(id)) {
+#if defined(MONAD_ZKVM_SP1)
+            {
+                auto const span33 = dest.last(33);
+                span33.data()[0] = 0xa0;
+                bits::copy32_from_aligned(span33.data() + 1, h->bytes);
+            }
+#else
             rlp::encode_string(dest.last(33), byte_string_view{h->bytes, 32});
+#endif
             return dest.shrink(33);
         }
     }
@@ -226,7 +247,13 @@ OffsetTrie::child_ref_slow(NodeId const id, OffsetTrie::node_rlp_span dest)
     // A 32-byte hash reference is the RLP string of the hash (exactly 33 B:
     // 0xa0 + 32, no length prefix) — write it straight into the tail.
     auto const hash_ref = [&](bytes32_t const &h) {
+#if defined(MONAD_ZKVM_SP1)
+        auto const span33 = dest.last(33);
+        span33.data()[0] = 0xa0; // RLP string header for exactly 32 bytes
+        bits::copy32_from_aligned(span33.data() + 1, h.bytes);
+#else
         rlp::encode_string(dest.last(33), byte_string_view{h.bytes, 32});
+#endif
         return dest.shrink(33);
     };
     // Pre-state (priming) reads bound-check and resolve against the blob;

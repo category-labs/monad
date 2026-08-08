@@ -139,7 +139,7 @@ struct ankerl::unordered_dense::hash<monad::Address>
 {
     using is_avalanching = void;
 
-    uint64_t operator()(monad::Address const &x) const noexcept
+    [[gnu::always_inline]] inline uint64_t operator()(monad::Address const &x) const noexcept
     {
         return std::hash<monad::Address>{}(x);
     }

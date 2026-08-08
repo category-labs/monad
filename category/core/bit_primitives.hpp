@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #pragma once
 
+#include <bit>
 #include <cstdint>
 
 // Hash-map key hashing for the zkVM guest, and the 64-bit-constant load it rests on.
@@ -67,6 +68,41 @@ namespace monad::bits
     // The final xor-shift is not optional. `immer`'s HAMT indexes on the LOW bits of the hash, and
     // a bare multiply leaves those nearly unmixed: without it this change measured 0.15 % SLOWER
     // overall and 2.8 % slower on the largest blocks, because the trie deepened. With it, +1.24 %.
+
+    // Exact zero-byte detector (Hacker's Delight): the returned word has 0x80
+    // at every byte of x that is 0x00 and nothing anywhere else. The masked add
+    // cannot carry across byte lanes (0x7f + 0x7f = 0xfe), which is what makes
+    // it exact -- the shorter (x - lo) & ~x & hi form contaminates the lane
+    // above a zero byte through its borrow.
+    [[gnu::always_inline]] inline constexpr uint64_t
+    zero_byte_mask(uint64_t const x) noexcept
+    {
+        // The trick is revolves around 0x7f ((127)₁₀ = (1111111)₂).
+        // Take a byte b: b + 0x7f < 0x80 iif b = 0. If b > 0, b + 0x7f ⩾ 0x80,
+        // and the first bit of b + 0x7f is 1. This is this bit that we care
+        // about.
+        // However, if b is larger than 0x80, the carry corrupts the higher
+        // bytes.
+        // & 0x7f remove this corruption, as b & & 0x7f < 0x80 for all b.
+        // However, this breaks for b = 0x80: | x brings the highest bit back.
+        // This leaves a dirty result — with the highest bit at 1 if b > 0, and
+        // at 0 if b = 0 — where irrelevant bytes are the unneeded result from
+        // the previous addition.
+        // They are all set to 1 with | k7f, and the final ~ turns the
+        // bytes > 0 into 0x00, and the 0 bytes into 0x80
+        constexpr uint64_t k7f = 0x7f7f7f7f7f7f7f7full;
+        return ~((((x & k7f) + k7f) | x) | k7f);
+    }
+
+    // Number of 0x00 bytes in x. The mask carries one 0x01 flag per zero
+    // byte, so the count is its population -- one `cpop` under Zbb. Gathering
+    // the flags into the top byte with a multiply instead would be 97 cells
+    // against 56 for the bit-manipulation ops.
+    [[gnu::always_inline]] inline constexpr unsigned
+    count_zero_bytes(uint64_t const x) noexcept
+    {
+        return static_cast<unsigned>(std::popcount(zero_byte_mask(x) >> 7));
+    }
 
     // Finalizer: murmur3's fmix64. Three xor-shifts and two multiplies, and the history is the
     // reason for every one of them. v1 (bare fold-and-multiply) measured 0.15 % SLOWER overall:

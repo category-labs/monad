@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
+#include <category/core/bit_primitives.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -96,10 +97,25 @@ constexpr uint64_t g_extra_cost_init(Transaction const &tx) noexcept
 
 std::pair<uint64_t, uint64_t> tokens_in_calldata(Transaction const &tx) noexcept
 {
-    auto const zeros = static_cast<uint64_t>(std::count_if(
-        std::cbegin(tx.data), std::cend(tx.data), [](unsigned char c) {
-            return c == 0x00;
-        }));
+    // Word-at-a-time zero counting (EIP-2028 prices zero and nonzero calldata
+    // bytes differently). Byte heads and tails keep every load aligned: an
+    // unaligned 8-byte load spans two words and costs more than the 17 cells
+    // an aligned one does, and the byte loop on <8-byte remainders costs less
+    // than any masking cleverness.
+    auto const *p = tx.data.data();
+    size_t n = tx.data.size();
+    uint64_t zeros = 0;
+    while (n != 0 && (reinterpret_cast<uintptr_t>(p) & 7) != 0) {
+        zeros += (*p == 0x00);
+        ++p;
+        --n;
+    }
+    for (; n >= 8; p += 8, n -= 8) {
+        zeros += bits::count_zero_bytes(*reinterpret_cast<uint64_t const *>(p));
+    }
+    for (; n != 0; ++p, --n) {
+        zeros += (*p == 0x00);
+    }
     auto const nonzeros = tx.data.size() - zeros;
     return {zeros, nonzeros};
 }

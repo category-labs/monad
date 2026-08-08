@@ -141,6 +141,26 @@ namespace monad::bits
     // a bare multiply leaves those nearly unmixed: without it this change measured 0.15 % SLOWER
     // overall and 2.8 % slower on the largest blocks, because the trie deepened. With it, +1.24 %.
 
+    // Exact zero-byte detector (Hacker's Delight): the returned word has 0x80
+    // at every byte of x that is 0x00 and nothing anywhere else. The masked add
+    // cannot carry across byte lanes (0x7f + 0x7f = 0xfe), which is what makes
+    // it exact -- the shorter (x - lo) & ~x & hi form contaminates the lane
+    // above a zero byte through its borrow.
+    [[gnu::always_inline]] inline constexpr uint64_t
+    zero_byte_mask(uint64_t const x) noexcept
+    {
+        constexpr uint64_t k7f = 0x7f7f7f7f7f7f7f7full;
+        return ~((((x & k7f) + k7f) | x) | k7f);
+    }
+
+    // Number of 0x00 bytes in x: gather the 0x01 flags into the top byte.
+    [[gnu::always_inline]] inline constexpr unsigned
+    count_zero_bytes(uint64_t const x) noexcept
+    {
+        constexpr uint64_t k01 = 0x0101010101010101ull;
+        return static_cast<unsigned>(((zero_byte_mask(x) >> 7) * k01) >> 56);
+    }
+
     // Finalizer: murmur3's fmix64. Three xor-shifts and two multiplies, and the history is the
     // reason for every one of them. v1 (bare fold-and-multiply) measured 0.15 % SLOWER overall:
     // immer's HAMT indexes on the LOW bits and a multiply only carries upward. v2 added one

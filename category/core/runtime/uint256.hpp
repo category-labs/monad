@@ -196,10 +196,18 @@ public:
     [[gnu::always_inline]]
     inline m256i to_avx() const noexcept
     {
+#if defined(MONAD_ZKVM_SP1)
+        m256i result;
+        result[0] = words_[0]; result[1] = words_[1];
+        result[2] = words_[2]; result[3] = words_[3];
+        return result;
+#else
         m256i result;
         std::memcpy(&result, &words_, sizeof(result));
         return result;
+#endif
     }
+
 
     [[gnu::always_inline]]
     inline constexpr explicit operator bool() const noexcept
@@ -505,6 +513,7 @@ public:
         return from_string(s.c_str());
     }
 };
+
 
 static_assert(std::is_trivially_copyable_v<uint256_t>);
 

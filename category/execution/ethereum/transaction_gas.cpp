@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
+#include <category/core/bit_primitives.hpp>
 #include <category/core/checked_math.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
@@ -26,8 +27,8 @@
 #include <category/vm/evm/traits.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
@@ -97,10 +98,27 @@ constexpr uint64_t g_extra_cost_init(Transaction const &tx) noexcept
 
 std::pair<uint64_t, uint64_t> tokens_in_calldata(Transaction const &tx) noexcept
 {
-    auto const zeros = static_cast<uint64_t>(std::count_if(
-        std::cbegin(tx.data), std::cend(tx.data), [](unsigned char c) {
-            return c == 0x00;
-        }));
+    // Count aligned word_count between byte-wise head and tail scans.
+    // Sum nonzero bits first, converting to a byte count only once.
+    auto const *cursor = tx.data.data();
+    size_t remaining_bytes = tx.data.size();
+    uint64_t zeros = 0;
+    while (remaining_bytes != 0 &&
+           (reinterpret_cast<uintptr_t>(cursor) & 7) != 0) {
+        zeros += (*cursor == 0x00);
+        ++cursor;
+        --remaining_bytes;
+    }
+    size_t const word_count = remaining_bytes >> 3;
+    uint64_t nonzero_bits = 0;
+    for (; remaining_bytes >= 8; cursor += 8, remaining_bytes -= 8) {
+        nonzero_bits += bits::nonzero_byte_bits(
+            *reinterpret_cast<uint64_t const *>(cursor));
+    }
+    zeros += (word_count * 8u) - (nonzero_bits >> 3);
+    for (; remaining_bytes != 0; ++cursor, --remaining_bytes) {
+        zeros += (*cursor == 0x00);
+    }
     auto const nonzeros = tx.data.size() - zeros;
     return {zeros, nonzeros};
 }

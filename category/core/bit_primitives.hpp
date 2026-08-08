@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 
+#include <bit>
 #include <cstdint>
 
 // Guest map hashes seeded from the block hash before populating maps.
@@ -63,6 +64,40 @@ namespace bits
         }
         // An odd multiplier preserves distinct tails for a fixed prefix.
         map_keys[3] |= 1;
+    }
+
+    // Set 0x80 in each zero byte. Unlike subtraction-based detectors,
+    // this mask is exact: no carry or borrow crosses byte boundaries.
+    [[gnu::always_inline]] inline constexpr uint64_t
+    zero_byte_mask(uint64_t const x) noexcept
+    {
+        // Mask low bits to prevent carries; OR x preserves each high bit.
+        constexpr uint64_t byte_low_bits = 0x7f7f7f7f7f7f7f7full;
+        return ~((((x & byte_low_bits) + byte_low_bits) | x) | byte_low_bits);
+    }
+
+    // Count zero bytes from the mask's one set bit per zero byte.
+    [[gnu::always_inline]] inline constexpr unsigned
+    count_zero_bytes(uint64_t const x) noexcept
+    {
+        return static_cast<unsigned>(std::popcount(zero_byte_mask(x) >> 7));
+    }
+
+    // Returns eight times the number of nonzero bytes, allowing callers to
+    // sum words before dividing by eight. A 64-bit result avoids extra
+    // widening.
+    [[gnu::always_inline]] inline uint64_t
+    nonzero_byte_bits(uint64_t const x) noexcept
+    {
+#if defined(__riscv_zbb) && __riscv_xlen == 64
+        // orc.b maps nonzero bytes to 0xFF; popcount counts eight bits per
+        // byte. The 64-bit builtin requires RV64.
+        return static_cast<uint64_t>(
+            __builtin_popcountll(__builtin_riscv_orc_b_64(x)));
+#else
+        // Portable equivalent using the zero-byte count.
+        return static_cast<uint64_t>(8u - count_zero_bytes(x)) << 3u;
+#endif
     }
 
     // Fold a 128-bit product to 64 bits. Mix words before combining them

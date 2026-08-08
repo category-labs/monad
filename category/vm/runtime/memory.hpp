@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/bit_primitives.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -31,7 +32,18 @@ namespace monad::vm::runtime
     {
         auto const offset = ctx->get_memory_offset(*offset_ptr);
         ctx->expand_memory<traits>(offset + bin<32>);
+#if defined(MONAD_ZKVM_SP1)
+        // Same story in the load direction (~20 k per block).
+        {
+            uint256_t le;
+            bits::copy32_to_aligned(
+                reinterpret_cast<unsigned char *>(&le),
+                ctx->memory.data + *offset);
+            *result_ptr = bswap(le);
+        }
+#else
         *result_ptr = load_be_unsafe<uint256_t>(ctx->memory.data + *offset);
+#endif
     }
 
     template <Traits traits>
@@ -40,7 +52,18 @@ namespace monad::vm::runtime
     {
         auto const offset = ctx->get_memory_offset(*offset_ptr);
         ctx->expand_memory<traits>(offset + bin<32>);
+#if defined(MONAD_ZKVM_SP1)
+        // rv32: the 32-byte store_be staging is a memcpy CALL to unaligned EVM
+        // memory (~28 k per block); swap in registers, copy inline.
+        {
+            auto const be = bswap(*value_ptr);
+            bits::copy32_from_aligned(
+                ctx->memory.data + *offset,
+                reinterpret_cast<unsigned char const *>(&be));
+        }
+#else
         store_be(ctx->memory.data + *offset, *value_ptr);
+#endif
     }
 
     template <Traits traits>

@@ -161,6 +161,87 @@ namespace monad::bits
         return static_cast<unsigned>(((zero_byte_mask(x) >> 7) * k01) >> 56);
     }
 
+    // Fixed-size 32-byte copy for KNOWN-aligned sources and arbitrary
+    // destinations, inline. On rv32 (SP1) a 32-byte copy with unknown
+    // destination alignment is a memcpy CALL (~18 cycles of overhead on a
+    // ~60-cycle operation), and the guest pays it ~400 k times per block on
+    // hash-reference writes and EVM memory staging. Head-align the
+    // destination, then combine aligned source words; never reads or writes
+    // outside [dst, dst+32) / [src, src+32).
+    [[gnu::always_inline]] inline void
+    copy32_from_aligned(unsigned char *d, unsigned char const *s) noexcept
+    {
+        using word = uintptr_t;
+        constexpr size_t W = sizeof(word);
+        size_t const head =
+            (W - (reinterpret_cast<uintptr_t>(d) & (W - 1))) & (W - 1);
+        for (size_t i = 0; i < head; ++i) {
+            d[i] = s[i];
+        }
+        d += head;
+        s += head;
+        size_t const n = 32 - head;
+        uintptr_t const mis = reinterpret_cast<uintptr_t>(s) & (W - 1);
+        if (mis == 0) {
+            for (size_t i = 0; i + W <= n; i += W) {
+                *reinterpret_cast<word *>(d + i) =
+                    *reinterpret_cast<word const *>(s + i);
+            }
+        }
+        else {
+            unsigned const rs = 8u * static_cast<unsigned>(mis);
+            unsigned const ls = 8u * static_cast<unsigned>(W) - rs;
+            auto const *sw = reinterpret_cast<word const *>(s - mis);
+            word lo = *sw;
+            size_t i = 0;
+            for (; i + W <= n - (W - mis); i += W) {
+                word const hi = *++sw;
+                *reinterpret_cast<word *>(d + i) = (lo >> rs) | (hi << ls);
+                lo = hi;
+            }
+            for (; i < n; ++i) {
+                d[i] = s[i];
+            }
+        }
+        size_t const tail = n & (W - 1);
+        if (mis == 0) {
+            for (size_t i = n - tail; i < n; ++i) {
+                d[i] = s[i];
+            }
+        }
+    }
+
+    // Mirror: arbitrary source, WORD-ALIGNED destination (EVM memory loads
+    // stage into an aligned local before the byte swap).
+    [[gnu::always_inline]] inline void
+    copy32_to_aligned(unsigned char *d, unsigned char const *s) noexcept
+    {
+        using word = uintptr_t;
+        constexpr size_t W = sizeof(word);
+        uintptr_t const mis = reinterpret_cast<uintptr_t>(s) & (W - 1);
+        if (mis == 0) {
+            for (size_t i = 0; i < 32; i += W) {
+                *reinterpret_cast<word *>(d + i) =
+                    *reinterpret_cast<word const *>(s + i);
+            }
+            return;
+        }
+        unsigned const rs = 8u * static_cast<unsigned>(mis);
+        unsigned const ls = 8u * static_cast<unsigned>(W) - rs;
+        auto const *sw = reinterpret_cast<word const *>(s - mis);
+        word lo = *sw;
+        size_t i = 0;
+        // The last word would read past s + 32; finish it in bytes.
+        for (; i + W <= 32 - (W - mis); i += W) {
+            word const hi = *++sw;
+            *reinterpret_cast<word *>(d + i) = (lo >> rs) | (hi << ls);
+            lo = hi;
+        }
+        for (; i < 32; ++i) {
+            d[i] = s[i];
+        }
+    }
+
     // Finalizer: murmur3's fmix64. Three xor-shifts and two multiplies, and the history is the
     // reason for every one of them. v1 (bare fold-and-multiply) measured 0.15 % SLOWER overall:
     // immer's HAMT indexes on the LOW bits and a multiply only carries upward. v2 added one

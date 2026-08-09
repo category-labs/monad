@@ -526,13 +526,11 @@ private:
 
     byte_string_view blob_;
     ankerl::unordered_dense::map<NodeId, byte_string, NodeIdHash> overlay_;
-    // Hash cache. One map for everything again: the flat offset-indexed store
-    // that used to sit in front of it was re-verdicted on the current base and
-    // REMOVED -- once the dead digest emplaces were gone the map holds only
-    // primed real nodes and overlay/dirtied entries, and the flat table's
-    // fixed cost (a ~1.75 MB index zeroed per block) outweighed what its
-    // probe-free lookups saved (504-block A/B: removal wins 0.57 % steps,
-    // 0.14 % cost, 408/504 blocks).
+    // Hash cache. One map again: the flat offset-indexed store was
+    // re-verdicted on the current base and removed (504-block A/B: removal
+    // wins 0.57 % steps / 0.14 % cost on 408/504 blocks) -- once the dead
+    // digest emplaces were gone the map is small enough that its probe beats
+    // the flat table's fixed cost (a ~1.75 MB index zeroed per block).
     void hash_cache_erase(NodeId const id)
     {
         hashes_.erase(id);

@@ -211,19 +211,6 @@ OffsetTrie::child_ref(NodeId const id, OffsetTrie::node_rlp_span dest)
 #endif
             return dest.shrink(33);
         }
-        if (auto const it = hashes_.find(id); it != hashes_.end()) {
-#if defined(MONAD_ZKVM_SP1)
-            {
-                auto const span33 = dest.last(33);
-                span33.data()[0] = 0xa0;
-                bits::copy32_from_aligned(span33.data() + 1, it->second.bytes);
-            }
-#else
-            rlp::encode_string(
-                dest.last(33), byte_string_view{it->second.bytes, 32});
-#endif
-            return dest.shrink(33);
-        }
     }
     return child_ref_slow<priming_pass>(id, dest);
 }

@@ -315,7 +315,6 @@ Result<std::vector<Receipt>> execute_block(
                 system_call_state_tracer,
                 chain_ctx,
                 retvals));
-        MONAD_ASSERT(block.header.requests_hash.has_value());
         if (MONAD_UNLIKELY(
                 computed_requests_hash != block.header.requests_hash.value())) {
             return BlockError::InvalidRequestsHash;

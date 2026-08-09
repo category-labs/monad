@@ -39,7 +39,12 @@ namespace monad::vm::runtime
             bits::copy32_to_aligned(
                 reinterpret_cast<unsigned char *>(&le),
                 ctx->memory.data + *offset);
-            *result_ptr = bswap(le);
+            // Lane-store the swapped result: the uint256 assignment is a
+            // 32-byte memcpy call on rv32 (18 k per block in the histogram).
+            auto const be = bswap(le);
+            auto *const d = reinterpret_cast<uint64_t *>(result_ptr);
+            auto const *const sw = reinterpret_cast<uint64_t const *>(&be);
+            d[0] = sw[0]; d[1] = sw[1]; d[2] = sw[2]; d[3] = sw[3];
         }
 #else
         *result_ptr = load_be_unsafe<uint256_t>(ctx->memory.data + *offset);

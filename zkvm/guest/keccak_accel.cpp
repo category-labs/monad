@@ -42,6 +42,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include <category/core/bit_primitives.hpp>
+
 extern "C"
 {
 
@@ -133,7 +135,14 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
     }
     keccak_permute(&st);
 
+#ifdef MONAD_ZKVM_SP1
+    // out is a caller buffer of arbitrary alignment; st is 8-aligned. Inline
+    // the fixed-size copy instead of paying the memcpy call ~30 k times per
+    // block (the v6 histogram's keccak-tail entry).
+    monad::bits::copy32_from_aligned(out, reinterpret_cast<unsigned char const *>(st));
+#else
     std::memcpy(out, st, 32);
+#endif
 }
 
 } // extern "C"

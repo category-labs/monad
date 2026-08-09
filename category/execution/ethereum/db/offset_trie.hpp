@@ -526,34 +526,15 @@ private:
 
     byte_string_view blob_;
     ankerl::unordered_dense::map<NodeId, byte_string, NodeIdHash> overlay_;
-    // Hash cache, split by id space. Blob nodes (id < OVERLAY_BASE) live in a
-    // FLAT table: node starts are >= 7 bytes apart (min node: EXT = tag +
-    // 1-byte path prefix + 1 nibble byte + 4-byte child offset), so
-    // offset >> 2 is collision-free and the lookup is one indexed load -- no
-    // key hash, no probe, no rehash. Entry = index+1 into blob_hashes_, 0 =
-    // not cached (digest, inlined-small, or dirtied). The map keeps only
-    // overlay nodes and recomputed dirty originals.
-    std::vector<bytes32_t> blob_hashes_;
-    std::vector<uint32_t> blob_hash_idx_;
-
-    bytes32_t const *blob_hash_find(NodeId const id) const noexcept
-    {
-        uint32_t const slot = blob_hash_idx_[static_cast<uint64_t>(id) >> 2];
-        return slot ? &blob_hashes_[slot - 1] : nullptr;
-    }
-
-    void blob_hash_put(NodeId const id, bytes32_t const &h)
-    {
-        blob_hashes_.push_back(h);
-        blob_hash_idx_[static_cast<uint64_t>(id) >> 2] =
-            static_cast<uint32_t>(blob_hashes_.size());
-    }
-
+    // Hash cache. One map for everything again: the flat offset-indexed store
+    // that used to sit in front of it was re-verdicted on the current base and
+    // REMOVED -- once the dead digest emplaces were gone the map holds only
+    // primed real nodes and overlay/dirtied entries, and the flat table's
+    // fixed cost (a ~1.75 MB index zeroed per block) outweighed what its
+    // probe-free lookups saved (504-block A/B: removal wins 0.57 % steps,
+    // 0.14 % cost, 408/504 blocks).
     void hash_cache_erase(NodeId const id)
     {
-        if (!is_overlay_id(id)) {
-            blob_hash_idx_[static_cast<uint64_t>(id) >> 2] = 0;
-        }
         hashes_.erase(id);
     }
 

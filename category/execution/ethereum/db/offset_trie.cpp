@@ -67,7 +67,6 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // Prime hashes bottom-up over the blob's nodes (children precede
     // parents), rejecting any node whose extent leaves the region.
     unsigned char const *const region_end = blob_.end();
-    blob_hash_idx_.assign((blob_.size() >> 2) + 2, 0);
     NodeViewBase node{base + HEADER_LEN};
     while (node.bytes() < region_end) {
         match(
@@ -89,13 +88,10 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
 
                         auto const id = static_cast<NodeId>(
                             static_cast<uint32_t>(node.bytes() - blob_.data()));
-                        blob_hash_put(id, h);
+                        hashes_.emplace(id, h);
                     }
                 }});
 
-        // The flat hash table indexes node starts by offset >> 2; the format's
-        // minimum node is 7 bytes, so aliasing means a malformed witness.
-        MONAD_ASSERT(node.end() - node.bytes() >= 5);
         node = NodeViewBase{node.end()};
     }
     MONAD_ASSERT(node.bytes() == region_end); // nodes tile exactly
@@ -156,11 +152,6 @@ bytes32_t OffsetTrie::hash(NodeId const id)
             [](NullView) { return NULL_ROOT; },
             [](DigestView d) { return d.hash(); },
             [&](auto) {
-                if (!is_overlay_id(id)) {
-                    if (bytes32_t const *const h = blob_hash_find(id)) {
-                        return *h;
-                    }
-                }
                 if (auto const it = hashes_.find(id); it != hashes_.end()) {
                     return it->second;
                 }
@@ -220,15 +211,16 @@ OffsetTrie::child_ref(NodeId const id, OffsetTrie::node_rlp_span dest)
 #endif
             return dest.shrink(33);
         }
-        if (bytes32_t const *const h = blob_hash_find(id)) {
+        if (auto const it = hashes_.find(id); it != hashes_.end()) {
 #if defined(MONAD_ZKVM_SP1)
             {
                 auto const span33 = dest.last(33);
                 span33.data()[0] = 0xa0;
-                bits::copy32_from_aligned(span33.data() + 1, h->bytes);
+                bits::copy32_from_aligned(span33.data() + 1, it->second.bytes);
             }
 #else
-            rlp::encode_string(dest.last(33), byte_string_view{h->bytes, 32});
+            rlp::encode_string(
+                dest.last(33), byte_string_view{it->second.bytes, 32});
 #endif
             return dest.shrink(33);
         }
@@ -277,11 +269,6 @@ OffsetTrie::child_ref_slow(NodeId const id, OffsetTrie::node_rlp_span dest)
         // only grew the table (~30 k dead entries per block) and paid the
         // rehash cascades.
         return hash_ref(DigestView{node}.hash());
-    }
-    if (!is_overlay_id(id)) {
-        if (bytes32_t const *const h = blob_hash_find(id)) {
-            return hash_ref(*h);
-        }
     }
     if (auto const it = hashes_.find(id); it != hashes_.end()) {
         return hash_ref(it->second);

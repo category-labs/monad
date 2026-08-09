@@ -198,11 +198,16 @@ OffsetTrie::child_ref(NodeId const id, OffsetTrie::node_rlp_span dest)
             // rv32: inline the 33-byte hash-ref write (memcpy CALL otherwise).
             // ZisK keeps encode_string: measured -6.2 % with the inline copy,
             // its memcpy handles misalignment better than generic shift-combine.
+            // Straight from the node bytes: DigestView::hash() returns by
+            // value, and on rv32 that materialisation is ITSELF a 32-byte
+            // memcpy call -- the v6 histogram's top site, 154 k per block.
+            // The blob's 8-byte header keeps the shift-combine's backward
+            // aligned read in bounds.
             {
                 auto const span33 = dest.last(33);
                 span33.data()[0] = 0xa0;
                 bits::copy32_from_aligned(
-                    span33.data() + 1, DigestView{node}.hash().bytes);
+                    span33.data() + 1, DigestView{node}.payload());
             }
 #else
             rlp::encode_string(
@@ -255,7 +260,16 @@ OffsetTrie::child_ref_slow(NodeId const id, OffsetTrie::node_rlp_span dest)
         // reference, so a cached copy would never be read back -- inserting it
         // only grew the table (~30 k dead entries per block) and paid the
         // rehash cascades.
+#if defined(MONAD_ZKVM_SP1)
+        // Avoid the by-value hash() materialisation (a 32-byte memcpy call
+        // on rv32); write the ref straight from the node bytes.
+        auto const span33 = dest.last(33);
+        span33.data()[0] = 0xa0;
+        bits::copy32_from_aligned(span33.data() + 1, DigestView{node}.payload());
+        return dest.shrink(33);
+#else
         return hash_ref(DigestView{node}.hash());
+#endif
     }
     if (auto const it = hashes_.find(id); it != hashes_.end()) {
         return hash_ref(it->second);

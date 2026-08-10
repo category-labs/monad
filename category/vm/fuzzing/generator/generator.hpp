@@ -282,10 +282,10 @@ namespace monad::vm::fuzzing
         auto dist = std::uniform_int_distribution<uint256_t::word_type>();
 
         return Constant{uint256_t{
-            words >= 0 ? dist(gen) : 0,
-            words >= 1 ? dist(gen) : 0,
-            words >= 2 ? dist(gen) : 0,
-            words >= 3 ? dist(gen) : 0,
+            words > 0 ? dist(gen) : 0,
+            words > 1 ? dist(gen) : 0,
+            words > 2 ? dist(gen) : 0,
+            words > 3 ? dist(gen) : 0,
         }};
     }
 

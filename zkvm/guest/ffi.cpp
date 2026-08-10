@@ -122,13 +122,22 @@ extern "C" void monad_zkvm_execute_witness(void)
 
     // 5. Walk the ancestor headers, which the witness carries in ascending
     //    contiguous block order ending at the parent. They serve BLOCKHASH,
-    //    and the parent's state root binds the supplied pre-state trie to the
-    //    chain: the node blob carries its own root, so without that check a
-    //    witness could be built over an arbitrary trie.
+    //    and are bound to the canonical chain IN-GUEST: each header must hash
+    //    to the next one's parent_hash, and the parent (the last) must hash to
+    //    the executing block's parent_hash -- which the exposed block-hash
+    //    public value pins to the canonical chain. By induction every ancestor
+    //    is then bound. Without this a prover could put arbitrary hashes in the
+    //    BLOCKHASH buffer for any ancestor whose EIP-2935 history slot is
+    //    absent, and BLOCKHASH would return a value it chose. The parent's
+    //    state root is additionally checked against the delivered trie and
+    //    exposed as pre_state_root (public value #2).
     monad::BlockHashBufferFinalized block_hash_buffer;
     monad::bytes32_t pre_state_root{};
     {
         bool checked_pre_state_root = false;
+        bool have_prev = false;
+        monad::bytes32_t prev_id{};
+        uint64_t prev_number = 0;
         monad::byte_string_view headers = witness.value().encoded_headers;
         while (!headers.empty()) {
             auto const payload = monad::rlp::parse_string_metadata(headers);
@@ -137,19 +146,30 @@ extern "C" void monad_zkvm_execute_witness(void)
             auto const header = monad::rlp::decode_block_header(header_view);
             MONAD_ASSERT(header.has_value());
             MONAD_ASSERT(header_view.empty());
-            block_hash_buffer.set(
-                header.value().number,
-                monad::to_bytes(monad::keccak256(payload.value())));
+            monad::bytes32_t const id =
+                monad::to_bytes(monad::keccak256(payload.value()));
+            // Chain link: an ancestor is trusted only if the next header in
+            // the ascending walk names it as its parent. The walk must also be
+            // gap-free, so each number is exactly one past the previous.
+            if (have_prev) {
+                MONAD_ASSERT(header.value().number == prev_number + 1);
+                MONAD_ASSERT(header.value().parent_hash == prev_id);
+            }
+            block_hash_buffer.set(header.value().number, id);
             if (header.value().number + 1 == block.header.number) {
+                // Top anchor: the parent must hash to the executing block's
+                // parent_hash. The block hash is a public value the verifier
+                // pins to canonical, so this binds the whole ancestor chain.
+                MONAD_ASSERT(id == block.header.parent_hash);
                 pre_state_root = pdb.state_root();
-                // The witness parent must agree with the trie it delivers --
-                // an in-guest consistency check. The BINDING to the real
-                // chain is the exposure of pre_state_root as a public value
-                // below: the verifier compares it against the canonical
-                // parent header, which the prover cannot choose.
+                // The delivered trie must match the (now chain-bound) parent
+                // state root; pre_state_root is also exposed as a public value.
                 MONAD_ASSERT(pre_state_root == header.value().state_root);
                 checked_pre_state_root = true;
             }
+            prev_id = id;
+            prev_number = header.value().number;
+            have_prev = true;
         }
         MONAD_ASSERT(checked_pre_state_root);
     }

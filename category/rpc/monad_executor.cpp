@@ -610,71 +610,84 @@ namespace
             txn_hashes.size() == block.transactions.size(),
             "transaction hashes size mismatch with transactions");
 
-        auto const value_size = [](this auto const &self,
-                                   auto const &x) -> size_t {
-            using type = std::remove_cv_t<std::remove_reference_t<decltype(x)>>;
-            if constexpr (
-                std::is_same_v<type, size_t> ||
-                std::is_same_v<type, uint64_t> ||
-                std::is_same_v<type, uint256_t>) {
+        auto const value_size = [](auto const &x) -> size_t {
+            auto const inner = [](this auto const &self,
+                                  auto const &x) -> size_t {
+                using type =
+                    std::remove_cv_t<std::remove_reference_t<decltype(x)>>;
+                if constexpr (
+                    std::is_same_v<type, size_t> ||
+                    std::is_same_v<type, uint64_t> ||
+                    std::is_same_v<type, uint256_t>) {
 
-                size_t digits = 0;
-                type num{x};
-                do {
-                    num >>= 4;
-                    digits++;
+                    size_t digits = 0;
+                    type num{x};
+                    do {
+                        num >>= 4;
+                        digits++;
+                    }
+                    while (num != 0);
+                    return digits + 2 /* 0xABCDEF.... */;
                 }
-                while (num != 0);
-                return digits + 2 /* 0xABCDEF.... */;
-            }
-            else if constexpr (std::is_same_v<type, bytes32_t>) {
-                return 2 * sizeof(bytes32_t) + 2 /* 0xABCDEF.... */;
-            }
-            else if constexpr (std::is_same_v<type, Address>) {
-                return 2 * sizeof(Address) + 2 /* 0xABCDEF.... */;
-            }
-            else if constexpr (
-                std::is_same_v<type, byte_string_view> ||
-                std::is_same_v<type, byte_string>) {
-                return x.size() * 2 + 2 /* 0xABCDEF.... */;
-            }
-            else if constexpr (std::is_same_v<
-                                   type,
-                                   std::array<unsigned char, 8>>) {
-                return 18; // 0x0000...
-            }
-            else if constexpr (std::is_same_v<
-                                   type,
-                                   std::array<unsigned char, 256>>) {
-                return 514; // 0x0000...
-            }
-            else if constexpr (std::is_same_v<type, std::optional<uint64_t>>) {
-                if (x.has_value()) {
-                    return self(x.value());
+                else if constexpr (std::is_same_v<type, bytes32_t>) {
+                    return 2 * sizeof(bytes32_t) + 2 /* 0xABCDEF.... */;
+                }
+                else if constexpr (std::is_same_v<type, Address>) {
+                    return 2 * sizeof(Address) + 2 /* 0xABCDEF.... */;
+                }
+                else if constexpr (
+                    std::is_same_v<type, byte_string_view> ||
+                    std::is_same_v<type, byte_string>) {
+                    return x.size() * 2 + 2 /* 0xABCDEF.... */;
+                }
+                else if constexpr (std::is_same_v<
+                                       type,
+                                       std::array<unsigned char, 8>>) {
+                    return 18; // 0x0000...
+                }
+                else if constexpr (std::is_same_v<
+                                       type,
+                                       std::array<unsigned char, 256>>) {
+                    return 514; // 0x0000...
+                }
+                else if constexpr (std::is_same_v<
+                                       type,
+                                       std::optional<uint64_t>>) {
+                    if (x.has_value()) {
+                        return self(x.value());
+                    }
+                    else {
+                        return 3; // 0x0
+                    }
+                }
+                else if constexpr (std::is_same_v<
+                                       type,
+                                       std::optional<bytes32_t>>) {
+                    return sizeof(bytes32_t) * 2 + 2; // 0xABCDEF...
+                }
+                else if constexpr (std::is_same_v<
+                                       type,
+                                       std::optional<Address>>) {
+                    return sizeof(Address) * 2 + 2; // 0xABCDEF...
+                }
+                else if constexpr (std::is_same_v<
+                                       type,
+                                       std::optional<uint256_t>>) {
+                    if (x.has_value()) {
+                        return self(x.value());
+                    }
+                    else {
+                        return 3; // 0x0
+                    }
                 }
                 else {
-                    return 3; // 0x0
+                    static_assert(
+                        std::is_same_v<type, void>,
+                        "unsupported type for value_size");
                 }
-            }
-            else if constexpr (std::is_same_v<type, std::optional<bytes32_t>>) {
-                return sizeof(bytes32_t) * 2 + 2; // 0xABCDEF...
-            }
-            else if constexpr (std::is_same_v<type, std::optional<Address>>) {
-                return sizeof(Address) * 2 + 2; // 0xABCDEF...
-            }
-            else if constexpr (std::is_same_v<type, std::optional<uint256_t>>) {
-                if (x.has_value()) {
-                    return self(x.value());
-                }
-                else {
-                    return 3; // 0x0
-                }
-            }
-            else {
-                static_assert(
-                    std::is_same_v<type, void>,
-                    "unsupported type for value_size");
-            }
+            };
+
+            return sizeof(nlohmann::json::value_t) + inner(x);
         };
 
         static constexpr std::string_view calls = "calls";
@@ -702,8 +715,8 @@ namespace
         // in-memory representation.
 
         carried_size +=
-            calls.size() + sizeof(nlohmann::json::value_t) +
-            sizeof(nlohmann::json::array_t) +
+            calls.size() + sizeof(nlohmann::json::array_t) +
+            sizeof(nlohmann::json::value_t) +
             sizeof(nlohmann::json::object_t) * block.transactions.size();
 
         // NOTE(dhil): First we calculate the size of the "calls" field. This is
@@ -716,9 +729,9 @@ namespace
 
             carried_size +=
                 // Field names + value sizes
-                (return_data.size() + sizeof(nlohmann::json::value_t) +
+                (return_data.size() +
                  value_size(call_frames[tx_idx][0].output)) +
-                (gas_used.size() + sizeof(nlohmann::json::value_t) +
+                (gas_used.size() +
                  value_size(call_frames[tx_idx][0].gas_used)) +
                 (status.size() + sizeof(nlohmann::json::value_t) +
                  3); // NOTE(dhil): Return status is always 3
@@ -731,26 +744,19 @@ namespace
                 for (auto const &log : receipts[tx_idx].logs) {
                     carried_size +=
                         sizeof(nlohmann::json::object_t) +
-                        (address.size() + sizeof(nlohmann::json::value_t) +
-                         value_size(log.address)) +
+                        (address.size() + value_size(log.address)) +
                         (topics.size() + sizeof(nlohmann::json::array_t) +
-                         ((sizeof(nlohmann::json::value_t) +
-                           sizeof(bytes32_t) * 2 + 2) *
-                          log.topics.size())) +
-                        (data.size() + sizeof(nlohmann::json::value_t) +
-                         value_size(log.data)) +
-                        (block_number.size() + sizeof(nlohmann::json::value_t) +
+                         (sizeof(nlohmann::json::value_t) +
+                          sizeof(bytes32_t) * 2 + 2) *
+                             log.topics.size()) +
+                        (data.size() + value_size(log.data)) +
+                        (block_number.size() +
                          value_size(block.header.number)) +
                         (transaction_hash.size() +
-                         sizeof(nlohmann::json::value_t) +
                          value_size(txn_hashes[tx_idx])) +
-                        (transaction_index.size() +
-                         sizeof(nlohmann::json::value_t) + value_size(tx_idx)) +
-                        (block_hash_field.size() +
-                         sizeof(nlohmann::json::value_t) +
-                         value_size(block_hash)) +
-                        (log_index.size() + sizeof(nlohmann::json::value_t) +
-                         value_size(log_index_cnt++)) +
+                        (transaction_index.size() + value_size(tx_idx)) +
+                        (block_hash_field.size() + value_size(block_hash)) +
+                        (log_index.size() + value_size(log_index_cnt++)) +
                         (removed.size() + sizeof(nlohmann::json::value_t) +
                          sizeof(bool));
                 }
@@ -796,46 +802,31 @@ namespace
         static constexpr std::string_view recipient = "recipient";
 
         carried_size +=
-            (hash.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block_hash)) +
-            (parent_hash.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block.header.parent_hash)) +
-            (sha3_uncles.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block.header.ommers_hash)) +
-            (miner.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block.header.beneficiary)) +
-            (size.size() + sizeof(nlohmann::json::value_t) +
+            (hash.size() + value_size(block_hash)) +
+            (parent_hash.size() + value_size(block.header.parent_hash)) +
+            (sha3_uncles.size() + value_size(block.header.ommers_hash)) +
+            (miner.size() + value_size(block.header.beneficiary)) +
+            (size.size() +
              // NOTE(dhil): The block size is calculated later, however, its
              // size is bounded by size_t. This is a conservative estimate which
              // likely overestimates the size of the field by 10-12 bytes or so.
              value_size(std::numeric_limits<size_t>::max())) +
-            (state_root.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block.header.state_root)) +
-            (transactions_root.size() + sizeof(nlohmann::json::value_t) +
+            (state_root.size() + value_size(block.header.state_root)) +
+            (transactions_root.size() +
              value_size(block.header.transactions_root)) +
-            (receipts_root.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block.header.receipts_root)) +
-            (withdrawals_root.size() + sizeof(nlohmann::json::value_t) +
+            (receipts_root.size() + value_size(block.header.receipts_root)) +
+            (withdrawals_root.size() +
              value_size(block.header.withdrawals_root)) +
-            (logs_bloom.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block.header.logs_bloom)) +
-            (difficulty.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block.header.difficulty)) +
-            (number.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block.header.number)) +
-            (gas_limit.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block.header.gas_limit)) +
-            (gas_used.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block.header.gas_used)) +
-            (timestamp.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block.header.timestamp)) +
-            (extra_data.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block.header.extra_data)) +
-            (mix_hash.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block.header.prev_randao)) +
-            (nonce.size() + sizeof(nlohmann::json::value_t) +
-             value_size(block.header.nonce)) +
-            (base_fee_per_gas.size() + sizeof(nlohmann::json::value_t) +
+            (logs_bloom.size() + value_size(block.header.logs_bloom)) +
+            (difficulty.size() + value_size(block.header.difficulty)) +
+            (number.size() + value_size(block.header.number)) +
+            (gas_limit.size() + value_size(block.header.gas_limit)) +
+            (gas_used.size() + value_size(block.header.gas_used)) +
+            (timestamp.size() + value_size(block.header.timestamp)) +
+            (extra_data.size() + value_size(block.header.extra_data)) +
+            (mix_hash.size() + value_size(block.header.prev_randao)) +
+            (nonce.size() + value_size(block.header.nonce)) +
+            (base_fee_per_gas.size() +
              value_size(block.header.base_fee_per_gas)) +
             (uncles.size() + sizeof(nlohmann::json::array_t) +
              block.ommers.size() * (sizeof(nlohmann::json::value_t) +
@@ -849,14 +840,11 @@ namespace
              block.withdrawals.value_or(std::vector<Withdrawal>{})) {
             carried_size +=
                 (sizeof(nlohmann::json::object_t) +
-                 (index.size() + sizeof(nlohmann::json::value_t) +
-                  value_size(withdrawal.index)) +
-                 (validator_index.size() + sizeof(nlohmann::json::value_t) +
+                 (index.size() + value_size(withdrawal.index)) +
+                 (validator_index.size() +
                   value_size(withdrawal.validator_index)) +
-                 (amount.size() + sizeof(nlohmann::json::value_t) +
-                  value_size(withdrawal.amount)) +
-                 (recipient.size() + sizeof(nlohmann::json::value_t) +
-                  value_size(withdrawal.recipient)));
+                 (amount.size() + value_size(withdrawal.amount)) +
+                 (recipient.size() + value_size(withdrawal.recipient)));
         }
 
         MONAD_ASSERT_THROW(

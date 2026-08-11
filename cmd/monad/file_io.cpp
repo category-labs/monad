@@ -39,8 +39,22 @@ byte_string read_file(bytes32_t const &id, std::filesystem::path const &dir)
     byte_string const data{
         std::istreambuf_iterator<char>(is), std::istreambuf_iterator<char>()};
     auto const checksum = to_bytes(blake3(data));
+
+    // Decrypted execution blocks retain their consensus IDs in chain links,
+    // while their bytes have different content hashes. Such IDs are symlink
+    // aliases; verify bytes against the final content-addressed filename.
+    auto const content_id_string =
+        std::filesystem::canonical(path).filename().string();
+    auto const content_id_res = from_hex(content_id_string);
     MONAD_ASSERT_PRINTF(
-        checksum == id, "Checksum failed for file: %s", path.c_str());
+        content_id_res.has_value() &&
+            content_id_res.value().size() == sizeof(bytes32_t),
+        "Content path not a block hash %s -> %s",
+        path.c_str(),
+        content_id_string.c_str());
+    auto const content_id = to_bytes(content_id_res.value());
+    MONAD_ASSERT_PRINTF(
+        checksum == content_id, "Checksum failed for file: %s", path.c_str());
     return data;
 }
 

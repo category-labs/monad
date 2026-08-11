@@ -173,8 +173,8 @@ Result<std::vector<Receipt>> execute_block_transactions(
         new boost::fibers::promise<void>[transactions.size() + 1]};
     promises[0].set_value();
 
-    std::shared_ptr<std::optional<Result<Receipt>>[]> const results{
-        new std::optional<Result<Receipt>>[transactions.size()]};
+    std::shared_ptr<std::optional<Outcome<Receipt>>[]> const outcomes{
+        new std::optional<Outcome<Receipt>>[transactions.size()]};
     size_t const txn_count = transactions.size();
 
     auto const tx_exec_begin = std::chrono::steady_clock::now();
@@ -183,7 +183,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
             i,
             [&chain = chain,
              i = i,
-             results = results,
+             outcomes = outcomes,
              promises = promises,
              &transaction = transactions[i],
              &sender = senders[i],
@@ -198,7 +198,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
              trace_transfers = trace_transfers] {
                 record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
                 try {
-                    results[i] = dispatch_transaction<traits>(
+                    auto result = dispatch_transaction<traits>(
                         chain,
                         i,
                         transaction,
@@ -213,22 +213,29 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         state_tracer,
                         chain_ctx,
                         trace_transfers);
-                    if (results[i]->has_error()) {
-                        record_txn_error_event(i, results[i]->error());
+                    if (result.has_error()) {
+                        record_txn_error_event(i, result.error());
                     }
                     record_txn_marker_event(MONAD_EXEC_TXN_PERF_EVM_EXIT, i);
-                    // Call promise.set_value/set_exception the last thing,
-                    // because this signals that the transaction is finished.
+                    outcomes[i] = outcome_from_result(std::move(result));
+                    // Call promise.set_value() the last thing, because
+                    // this signals that the transaction is finished.
                     promises[i + 1].set_value();
                 }
                 catch (...) {
-                    promises[i + 1].set_exception(std::current_exception());
+                    auto ex = std::current_exception();
+                    outcomes[i] = outcome::failure(ex);
+                    // Call promise.set_exception() the last thing, because
+                    // this signals that the transaction is finished.
+                    promises[i + 1].set_exception(ex);
                 }
             });
     }
 
     auto const last = static_cast<ptrdiff_t>(transactions.size());
-    promises[last].get_future().get();
+    // Wait for last transaction with future.wait(), because the outcomes are
+    // responsible for exception propagation.
+    promises[last].get_future().wait();
     block_metrics.tx_exec_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - tx_exec_begin);
@@ -236,15 +243,17 @@ Result<std::vector<Receipt>> execute_block_transactions(
     std::vector<Receipt> retvals;
     for (unsigned i = 0; i < transactions.size(); ++i) {
         MONAD_ASSERT_THROW(
-            results[i].has_value(), "missing transaction result");
-        if (MONAD_UNLIKELY(results[i].value().has_error())) {
+            outcomes[i].has_value(), "missing transaction result");
+        auto result =
+            result_from_outcome_or_throw(std::move(outcomes[i]).value());
+        if (MONAD_UNLIKELY(result.has_error())) {
             LOG_ERROR(
                 "tx {} {} validation failed: {}",
                 i,
                 transactions[i],
-                results[i].value().assume_error().message().c_str());
+                result.assume_error().message().c_str());
         }
-        BOOST_OUTCOME_TRY(auto retval, std::move(results[i].value()));
+        BOOST_OUTCOME_TRY(auto retval, std::move(result));
         retvals.push_back(std::move(retval));
     }
 

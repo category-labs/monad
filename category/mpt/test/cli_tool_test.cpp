@@ -344,6 +344,116 @@ namespace
     }
 }
 
+// --create on an existing pool cannot restamp it: the kind is only applied
+// when the pool is newly created or truncated. An explicit --state-machine
+// that disagrees with the stamp is therefore an error, not a silent no-op.
+TEST(cli_tool, create_with_conflicting_state_machine_on_existing_pool_rejected)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view create_args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, create_args));
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            temppath,
+            "--create",
+            "--state-machine",
+            "monad"};
+        EXPECT_NE(0, main_impl(cout, cerr, args));
+        EXPECT_NE(
+            std::string::npos, cerr.str().find("already stamped 'ethereum'"));
+    }
+
+    EXPECT_EQ(
+        read_kind(temppath, monad::mpt::timeline_id::primary),
+        monad::mpt::state_machine_kind::ethereum);
+}
+
+// Re-running a provisioning script must stay idempotent.
+TEST(cli_tool, create_with_matching_state_machine_on_existing_pool_accepted)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view create_args[] = {
+            "monad-mpt",
+            "--storage",
+            temppath,
+            "--create",
+            "--state-machine",
+            "ethereum"};
+        ASSERT_EQ(0, main_impl(cout, cerr, create_args));
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            temppath,
+            "--create",
+            "--state-machine",
+            "ethereum"};
+        EXPECT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+
+    EXPECT_EQ(
+        read_kind(temppath, monad::mpt::timeline_id::primary),
+        monad::mpt::state_machine_kind::ethereum);
+}
+
+// --create with no --state-machine is create-if-needed-else-open; the
+// ethereum default must not be read as a request to restamp.
+TEST(cli_tool, create_without_state_machine_on_existing_pool_accepted)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            temppath,
+            "--truncate",
+            "--state-machine",
+            "monad",
+            "--yes"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        EXPECT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+
+    EXPECT_EQ(
+        read_kind(temppath, monad::mpt::timeline_id::primary),
+        monad::mpt::state_machine_kind::monad);
+}
+
 TEST(cli_tool, activate_secondary_stamps_secondary_kind)
 {
     char temppath[] = "cli_tool_test_XXXXXX";
@@ -382,6 +492,44 @@ TEST(cli_tool, activate_secondary_stamps_secondary_kind)
     EXPECT_EQ(
         read_kind(temppath, monad::mpt::timeline_id::secondary),
         monad::mpt::state_machine_kind::ethereum);
+}
+
+// The dual-timeline arrangement: slot primary, page secondary. Here
+// --state-machine targets the secondary, so it must not be read as a
+// conflicting request to restamp the ethereum primary.
+TEST(cli_tool, activate_secondary_with_kind_differing_from_primary_accepted)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view create_args[] = {
+            "monad-mpt", "--storage", temppath, "--create"};
+        ASSERT_EQ(0, main_impl(cout, cerr, create_args));
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            temppath,
+            "--activate-secondary",
+            "--state-machine",
+            "monad"};
+        EXPECT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+
+    EXPECT_EQ(
+        read_kind(temppath, monad::mpt::timeline_id::primary),
+        monad::mpt::state_machine_kind::ethereum);
+    EXPECT_EQ(
+        read_kind(temppath, monad::mpt::timeline_id::secondary),
+        monad::mpt::state_machine_kind::monad);
 }
 
 TEST(cli_tool, activate_secondary_defaults_to_ethereum_when_flag_omitted)
@@ -916,6 +1064,50 @@ TEST_F(cli_tool_restore_preserves_kind, restore_preserves_state_machine_kind)
             return read_kind(dbpath2, monad::mpt::timeline_id::primary);
         }).get();
     EXPECT_EQ(restored_kind, synthetic_kind);
+}
+
+// The archive carries the kind, so an explicit --state-machine alongside
+// --restore can only be ignored. Rejecting the pair at parse time keeps the
+// target database intact; --restore would otherwise truncate it first.
+TEST(cli_tool, restore_with_state_machine_rejected)
+{
+    char temppath[] = "cli_tool_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            temppath,
+            "--truncate",
+            "--state-machine",
+            "monad",
+            "--yes"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            temppath,
+            "--restore",
+            "no_such_archive",
+            "--state-machine",
+            "ethereum",
+            "--yes"};
+        EXPECT_NE(0, main_impl(cout, cerr, args));
+        EXPECT_NE(std::string::npos, cerr.str().find("excludes"));
+    }
+
+    EXPECT_EQ(
+        read_kind(temppath, monad::mpt::timeline_id::primary),
+        monad::mpt::state_machine_kind::monad);
 }
 
 // Round-trips a Db whose secondary timeline is active and holds a key

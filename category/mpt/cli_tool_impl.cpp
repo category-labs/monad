@@ -425,6 +425,9 @@ struct impl_t
     bool repair_database = false;
     MONAD_MPT_NAMESPACE::state_machine_kind state_machine =
         MONAD_MPT_NAMESPACE::state_machine_kind::ethereum;
+    // Distinguishes an operator-supplied --state-machine from the ethereum
+    // default; the value alone cannot.
+    bool state_machine_explicit = false;
     std::optional<uint64_t> rewind_database_to;
     std::optional<uint64_t> reset_history_length;
     bool create_chunk_increasing = false;
@@ -1599,7 +1602,7 @@ opened.
                 "which "
                 "can be later restored with this tool (implies "
                 "--allow-dirty).");
-            cli.add_option(
+            auto *const restore_opt = cli.add_option(
                 "--restore",
                 impl.restore_database,
                 "destroy any existing database, replacing it with the archived "
@@ -1651,7 +1654,8 @@ opened.
                    "implementation via the registry. Defaults to 'ethereum'; "
                    "honored on --create, --create-empty, --truncate (stamps "
                    "the primary) and --activate-secondary (stamps the "
-                   "secondary); ignored on other subcommands.")
+                   "secondary); ignored on other subcommands. Rejected with "
+                   "--restore, which carries the kind in the archive.")
                 ->transform(CLI::CheckedTransformer(
                     std::map<
                         std::string,
@@ -1660,7 +1664,8 @@ opened.
                          MONAD_MPT_NAMESPACE::state_machine_kind::ethereum},
                         {"monad",
                          MONAD_MPT_NAMESPACE::state_machine_kind::monad}},
-                    CLI::ignore_case));
+                    CLI::ignore_case))
+                ->excludes(restore_opt);
             cli.add_option(
                 "--compression-level",
                 impl.compression_level,
@@ -1677,6 +1682,7 @@ opened.
                 std::vector<std::string> rargs(args.rbegin(), --args.rend());
                 cli.parse(std::move(rargs));
             }
+            impl.state_machine_explicit = cli.count("--state-machine") > 0;
 
             monad::start_logger_minimal();
 
@@ -1792,12 +1798,33 @@ opened.
 
         // Stamp the persisted StateMachine kind on freshly-created or
         // truncated pools. Existing pools keep whatever was previously
-        // stamped — passing --state-machine on an open here is a no-op.
+        // stamped, so an operator asking for a kind the pool does not already
+        // carry is refused rather than silently ignored.
         if (aux.metadata_ctx().is_new_pool()) {
             aux.metadata_ctx().set_state_machine_kind(
                 MONAD_MPT_NAMESPACE::timeline_id::primary, impl.state_machine);
             cout << "Stamped state-machine kind on primary timeline to "
                  << state_machine_kind_name(impl.state_machine) << ".\n";
+        }
+        // --activate-secondary stamps the secondary below, and --restore
+        // (which sets truncate_database) cannot carry an explicit kind at
+        // all; neither is a request to restamp the primary.
+        else if (
+            impl.state_machine_explicit &&
+            (impl.create_database || impl.create_empty_database ||
+             (impl.truncate_database && impl.restore_database.empty()))) {
+            auto const stamped = aux.metadata_ctx().get_state_machine_kind(
+                MONAD_MPT_NAMESPACE::timeline_id::primary);
+            if (stamped != impl.state_machine) {
+                cerr << "FATAL: cannot stamp state-machine kind '"
+                     << state_machine_kind_name(impl.state_machine)
+                     << "' on an existing database already stamped '"
+                     << state_machine_kind_name(stamped)
+                     << "'. Use --truncate --state-machine "
+                     << state_machine_kind_name(impl.state_machine)
+                     << " to discard its contents and restamp it.\n";
+                return 1;
+            }
         }
 
         // Secondary timeline lifecycle. These execute against the open

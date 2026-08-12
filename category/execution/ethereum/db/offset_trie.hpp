@@ -18,6 +18,7 @@
 // Offset-based, zero-copy witness trie for the zkVM guest.
 
 #include <category/core/assert.h>
+#include <category/core/bit_primitives.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
@@ -521,6 +522,24 @@ private:
     };
 
     template <bool priming_pass>
+    // rv32 (SP1) writes the 33-byte hash-ref inline instead of through
+    // rlp::encode_string, whose generic path is a memcpy CALL per child.
+    // ZisK deliberately keeps encode_string: measured -6.2 % with the inline
+    // copy there, because its memcpy handles misalignment better than a
+    // generic shift-combine. Guarded, so only the backend that wins uses it.
+    static inline node_rlp_span
+    write_hash_ref(node_rlp_span dest, unsigned char const *const hash32)
+    {
+#if defined(MONAD_ZKVM_SP1)
+        auto const span33 = dest.last(33);
+        span33.data()[0] = 0xa0;
+        bits::copy32_from_aligned(span33.data() + 1, hash32);
+#else
+        rlp::encode_string(dest.last(33), byte_string_view{hash32, 32});
+#endif
+        return dest.shrink(33);
+    }
+
     node_rlp_span child_ref_compute(
         NodeId const id, NodeViewBase const node, node_rlp_span dest);
 
@@ -548,15 +567,11 @@ private:
                     MONAD_ABORT("malformed trie: node not found");
                 },
                 [&](DigestView d) {
-                    rlp::encode_string(dest.last(33), d.hash_view());
-                    return dest.shrink(33);
+                    return write_hash_ref(dest, d.hash_view().data());
                 },
                 [&](auto) {
                     if (auto const it = hashes_.find(id); it != hashes_.end()) {
-                        bytes32_t const &hash = it->second;
-                        rlp::encode_string(
-                            dest.last(33), byte_string_view{hash.bytes, 32});
-                        return dest.shrink(33);
+                        return write_hash_ref(dest, it->second.bytes);
                     }
                     return child_ref_compute<priming_pass>(id, node, dest);
                 }});

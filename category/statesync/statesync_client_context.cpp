@@ -142,10 +142,11 @@ void monad_statesync_client_context::commit()
     std::deque<monad_hash256> hash_alloc;
 
     // Build the page-encoded storage UpdateList for one account's deltas.
-    // Slots are grouped by page_key and merged onto the page's current
-    // contents, read from the trie on first touch, so several slot writes at
-    // the same page_key compose into one update. A page that ends up empty
-    // becomes a delete on the page entry. Pages from one account never
+    // Slots are grouped by page_key so several slot writes at the same
+    // page_key compose into one update. A page starts from its current
+    // contents, read from the trie on first touch, unless the whole page
+    // arrived on the wire, in which case it starts empty. A page that ends up
+    // empty becomes a delete on the page entry. Pages from one account never
     // collide with another's, so no cross-account cache is needed.
     auto const build_page_storage = [&](Address const &addr,
                                         StorageDeltas const &slot_deltas) {
@@ -155,6 +156,9 @@ void monad_statesync_client_context::commit()
             storage_page_t,
             BytesHashCompare<bytes32_t>>
             pages;
+        auto const cov = covered_pages.find(addr);
+        auto const *const covered =
+            cov == covered_pages.end() ? nullptr : &cov->second;
         for (auto const &[slot_key, slot_val] : slot_deltas) {
             auto const pg_key = compute_page_key(slot_key);
             auto const slot_off = compute_slot_offset(slot_key);
@@ -162,8 +166,10 @@ void monad_statesync_client_context::commit()
             if (inserted) {
                 // Incarnation isn't tracked in statesync deltas; TrieDb
                 // ignores it for storage reads, so a fixed value is fine.
-                it->second =
-                    tdb.read_storage_page(addr, Incarnation{0, 0}, pg_key);
+                it->second = covered != nullptr && covered->contains(pg_key)
+                                 ? storage_page_t{}
+                                 : tdb.read_storage_page(
+                                       addr, Incarnation{0, 0}, pg_key);
             }
             it->second.set(slot_off, slot_val);
         }
@@ -254,4 +260,6 @@ void monad_statesync_client_context::commit()
 
     code.clear();
     deltas.clear();
+    covered_pages.clear();
+    n_upserts = 0;
 }

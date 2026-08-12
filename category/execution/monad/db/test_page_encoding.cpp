@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
 #include <category/core/rlp/decode_error.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
@@ -162,4 +163,29 @@ TEST(PageEncoding, decode_storage_page_leaf_rejects_trailing_bytes)
     auto const decoded = decode_storage_page_leaf(byte_string_view{leaf});
     ASSERT_TRUE(decoded.has_error());
     EXPECT_EQ(decoded.assume_error(), rlp::DecodeError::InputTooLong);
+}
+
+TEST(PageEncoding, decode_storage_page_leaf_rejects_non_canonical_page_key)
+{
+    constexpr auto largest =
+        0x01ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff_bytes32;
+    constexpr auto one_past =
+        0x0200000000000000000000000000000000000000000000000000000000000000_bytes32;
+    ASSERT_EQ(
+        compute_page_key(
+            0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff_bytes32),
+        largest);
+
+    storage_page_t page{};
+    page.set(0, bytes32_t{uint64_t{0x55}});
+
+    auto const ok = encode_storage_page_db(largest, page);
+    auto const accepted = decode_storage_page_leaf(byte_string_view{ok});
+    ASSERT_TRUE(accepted.has_value());
+    EXPECT_EQ(accepted.value().page_key, largest);
+
+    auto const bad = encode_storage_page_db(one_past, page);
+    auto const rejected = decode_storage_page_leaf(byte_string_view{bad});
+    ASSERT_TRUE(rejected.has_error());
+    EXPECT_EQ(rejected.assume_error(), rlp::DecodeError::NonCanonical);
 }

@@ -207,7 +207,8 @@ storage_page_t
 decode_storage_leaf_to_page(byte_string_view encoded, bool page_encoded);
 
 // Decode a page-encoded storage leaf (an encode_storage_page_db value) into its
-// page key and page; fails on a malformed leaf (including trailing bytes).
+// page key and page; fails on a malformed leaf (including trailing bytes) and
+// on a page key that compute_page_key cannot produce.
 Result<DecodedStoragePage> decode_storage_page_leaf(byte_string_view leaf);
 
 struct AccountLeafProcessor

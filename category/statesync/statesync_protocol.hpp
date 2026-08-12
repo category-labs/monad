@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 #include <category/statesync/statesync_messages.h>
+#include <category/statesync/statesync_version.h>
 
 struct monad_statesync_client_context;
 
@@ -36,10 +37,34 @@ struct StatesyncProtocol
 
 struct StatesyncProtocolV1_2 : StatesyncProtocol
 {
+    explicit StatesyncProtocolV1_2(uint32_t const version)
+        : version_{version}
+    {
+    }
+
     virtual void send_request(
         monad_statesync_client_context *, uint64_t prefix) const override;
 
     virtual bool handle_upsert(
+        monad_statesync_client_context *, monad_sync_type,
+        unsigned char const *, uint64_t) const override;
+
+protected:
+    virtual bool apply_upsert(
+        monad_statesync_client_context *, monad_sync_type,
+        unsigned char const *, uint64_t) const;
+
+    // the version this client declared to the peer; a request advertises it so
+    // the server knows which records the client can decode
+    uint32_t const version_;
+};
+
+struct StatesyncProtocolV1_3 : StatesyncProtocolV1_2
+{
+    using StatesyncProtocolV1_2::StatesyncProtocolV1_2;
+
+protected:
+    virtual bool apply_upsert(
         monad_statesync_client_context *, monad_sync_type,
         unsigned char const *, uint64_t) const override;
 };

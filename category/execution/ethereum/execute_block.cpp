@@ -313,6 +313,9 @@ Result<std::vector<Receipt>> execute_block(
     }
 
     if constexpr (traits::eip_7685_active()) {
+        MONAD_ASSERT_THROW(
+            block.header.requests_hash.has_value(),
+            "block header must have requests hash when EIP-7685 is active");
         BOOST_OUTCOME_TRY(
             auto const computed_requests_hash,
             process_requests<traits>(

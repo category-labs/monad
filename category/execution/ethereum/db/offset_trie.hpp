@@ -543,7 +543,6 @@ private:
         }
     };
 
-    template <bool priming_pass>
     // rv32 (SP1) writes the 33-byte hash-ref inline instead of through
     // rlp::encode_string, whose generic path is a memcpy CALL per child.
     // ZisK deliberately keeps encode_string: measured -6.2 % with the inline
@@ -562,6 +561,7 @@ private:
         return dest.shrink(33);
     }
 
+    template <bool priming_pass>
     node_rlp_span child_ref_compute(
         NodeId const id, NodeViewBase const node, node_rlp_span dest);
 

@@ -38,10 +38,15 @@ namespace fiber
     class PriorityPool;
 }
 
+// Blocks always execute on and commit to the primary `db`, whose encoding
+// must match the block's revision. A page-encoded `secondary_db`, when
+// non-null, is the pre-promote migration backfill and is mirrored on every
+// commit; a slot-encoded secondary is post-promote frozen history and takes no
+// writes.
 Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
-    MonadChain const &, std::filesystem::path const &, Db &, vm::VM &,
-    BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
-    sig_atomic_t const volatile &, bool enable_tracing,
+    MonadChain const &, std::filesystem::path const &, Db &, Db *secondary_db,
+    vm::VM &, BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &,
+    uint64_t, sig_atomic_t const volatile &, bool enable_tracing,
     std::chrono::seconds block_db_timeout);
 
 MONAD_NAMESPACE_END

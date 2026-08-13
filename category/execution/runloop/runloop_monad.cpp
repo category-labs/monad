@@ -281,14 +281,11 @@ Result<BlockExecOutput> propose_block(
 
     // Core execution: transaction-level EVM execution that tracks state
     // changes but does not commit them
-    db.set_block_and_prefix(
-        block.header.number - 1,
-        is_first_block ? bytes32_t{} : consensus_header.parent_id());
-    if (secondary_db != nullptr) {
-        secondary_db->set_block_and_prefix(
+    for_each_db(db, secondary_db, [&](Db &d) {
+        d.set_block_and_prefix(
             block.header.number - 1,
             is_first_block ? bytes32_t{} : consensus_header.parent_id());
-    }
+    });
     block.header.parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
@@ -366,21 +363,14 @@ Result<BlockExecOutput> propose_block(
 
     // Dual-db migration: log both timelines' state roots (slot primary vs
     // page secondary) so a divergence is visible per block.
-    if (secondary_db != nullptr) {
-        LOG_INFO(
-            "block={}, block_id={} state_root primary={} secondary={}",
-            block.header.number,
-            block_id,
-            db.state_root(),
-            secondary_db->state_root());
-    }
-    else {
-        LOG_INFO(
-            "block={}, block_id={} state_root primary={}",
-            block.header.number,
-            block_id,
-            db.state_root());
-    }
+    LOG_INFO(
+        "block={}, block_id={} state_root primary={}{}",
+        block.header.number,
+        block_id,
+        db.state_root(),
+        secondary_db != nullptr
+            ? fmt::format(" secondary={}", secondary_db->state_root())
+            : std::string{});
 
     // Emit the block metrics log line
     [[maybe_unused]] auto const block_time =
@@ -501,12 +491,11 @@ MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     MonadChain const &chain, std::filesystem::path const &ledger_dir,
-    mpt::Db &raw_db, Db &db, vm::VM &vm,
+    mpt::Db &raw_db, Db &db, Db *secondary_db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
-    bool const enable_tracing, Db *secondary_db,
-    RunloopMonadOverride const runloop_override)
+    bool const enable_tracing, RunloopMonadOverride const runloop_override)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
     bool is_first_block = runloop_override.is_first_run();
@@ -664,11 +653,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 auto const &header) -> Result<std::pair<uint64_t, uint64_t>> {
             auto const block_time_start = std::chrono::steady_clock::now();
 
-            db.update_voted_metadata(header.seqno - 1, header.parent_id());
-            if (secondary_db != nullptr) {
-                secondary_db->update_voted_metadata(
-                    header.seqno - 1, header.parent_id());
-            }
+            for_each_db(db, secondary_db, [&](Db &d) {
+                d.update_voted_metadata(header.seqno - 1, header.parent_id());
+            });
             record_block_qc(header, last_finalized_block_number);
 
             uint64_t const block_number = header.execution_inputs.number;
@@ -729,10 +716,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
 
             is_first_block = false;
 
-            db.update_proposed_metadata(header.seqno, block_id);
-            if (secondary_db != nullptr) {
-                secondary_db->update_proposed_metadata(header.seqno, block_id);
-            }
+            for_each_db(db, secondary_db, [&](Db &d) {
+                d.update_proposed_metadata(header.seqno, block_id);
+            });
 
             log_tps(
                 block_number,
@@ -757,20 +743,17 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 "Processing finalization for block {} with block_id {}",
                 block,
                 block_id);
-            db.finalize(block, block_id);
-            if (secondary_db != nullptr) {
-                secondary_db->finalize(block, block_id);
-            }
+            for_each_db(
+                db, secondary_db, [&](Db &d) { d.finalize(block, block_id); });
             block_hash_chain.finalize(block_id);
             record_block_finalized(block_id, block);
             finalized_block_num = block;
 
             if (!verified_blocks.empty() &&
                 verified_blocks.back() != mpt::INVALID_BLOCK_NUM) {
-                db.update_verified_block(verified_blocks.back());
-                if (secondary_db != nullptr) {
-                    secondary_db->update_verified_block(verified_blocks.back());
-                }
+                for_each_db(db, secondary_db, [&](Db &d) {
+                    d.update_verified_block(verified_blocks.back());
+                });
             }
             record_block_verified(verified_blocks);
         }

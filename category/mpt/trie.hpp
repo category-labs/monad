@@ -510,13 +510,13 @@ void find_notify_fiber_future(
 void find_owning_notify_fiber_future(
     UpdateAux &, NodeCache &, inflight_map_owning_t &,
     ::boost::fibers::promise<find_owning_cursor_result_type> promise,
-    NodeCursor const &start, NibblesView, uint64_t version);
+    NodeCursor const &start, NibblesView, uint64_t version, timeline_id tid);
 
 // rodb load root
 void load_root_notify_fiber_future(
     UpdateAux &, NodeCache &, inflight_map_owning_t &,
     ::boost::fibers::promise<find_owning_cursor_result_type> promise,
-    uint64_t version);
+    uint64_t version, timeline_id tid);
 
 /*! \brief blocking find node indexed by key from root, It works for both
 on-disk and in-memory trie. When node along key is not yet in memory, it loads

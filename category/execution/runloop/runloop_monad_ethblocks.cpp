@@ -119,7 +119,7 @@ void get_block_with_retry(
 template <Traits traits>
     requires is_monad_trait_v<traits>
 Result<void> process_monad_block(
-    MonadChain const &chain, Db &db, vm::VM &vm,
+    MonadChain const &chain, Db &db, Db *const mirror_db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing,
@@ -207,12 +207,14 @@ Result<void> process_monad_block(
 
     // Core execution: transaction-level EVM execution that tracks state
     // changes but does not commit them
-    db.set_block_and_prefix(block.header.number - 1, parent_block_id);
+    for_each_db(db, mirror_db, [&](Db &d) {
+        d.set_block_and_prefix(block.header.number - 1, parent_block_id);
+    });
     block.header.parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
     BlockMetrics block_metrics;
-    BlockState block_state(db, vm);
+    BlockState block_state(db, vm, mirror_db);
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const receipts,
@@ -244,7 +246,7 @@ Result<void> process_monad_block(
         .call_frames = call_frames,
         .ommers = block.ommers,
         .withdrawals = block.withdrawals};
-    commit_block<traits>(db, nullptr, block_id, block.header, *state, anc);
+    commit_block<traits>(db, mirror_db, block_id, block.header, *state, anc);
 
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -263,13 +265,28 @@ Result<void> process_monad_block(
 
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer
-    db.finalize(block.header.number, block_id);
-    db.update_verified_block(block.header.number);
+    for_each_db(db, mirror_db, [&](Db &d) {
+        d.finalize(block.header.number, block_id);
+        d.update_verified_block(block.header.number);
+    });
     exec_output.eth_block_hash =
         to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
     block_hash_buffer.set(
         exec_output.eth_header.number, exec_output.eth_block_hash);
     (void)record_block_result(exec_output);
+
+    LOG_INFO(
+        "block={}, block_id={} state_root {}={}{}",
+        block.header.number,
+        block_id,
+        db.is_page_encoded() ? "page" : "slot",
+        db.state_root(),
+        mirror_db != nullptr
+            ? fmt::format(
+                  " mirror_{}={}",
+                  mirror_db->is_page_encoded() ? "page" : "slot",
+                  mirror_db->state_root())
+            : std::string{});
 
     // Emit the block metrics log line
     [[maybe_unused]] auto const block_time =
@@ -314,7 +331,8 @@ MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     MonadChain const &chain, std::filesystem::path const &ledger_dir, Db &db,
-    vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
+    Db *const secondary_db, vm::VM &vm,
+    BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
     bool const enable_tracing, std::chrono::seconds const block_db_timeout)
@@ -406,18 +424,25 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
         monad_revision const rev =
             chain.get_monad_revision(block.header.timestamp);
 
-        // Storage encoding is fixed for the lifetime of the runloop (it
-        // matches the TrieDbImpl<page_encoded> backing `db`). If the
-        // replay crosses the mip-8 cutoff in either direction, the
-        // encoding the caller picked at startup no longer matches what
-        // this block's revision expects.
+        // Blocks always execute on and commit to the primary; the primary's
+        // encoding must match the block's revision. Before the mip-8 cutoff
+        // the primary is the slot db and a page-encoded secondary, when
+        // open, is mirrored so it can be promoted at the cutoff (offline,
+        // via monad-mpt). After the promote the primary is the page db and
+        // the slot secondary is frozen history that takes no writes.
         MONAD_ASSERT_PRINTF(
-            mip_8_active(rev) == db.is_page_encoded(),
-            "monad revision %d at block %lu crosses mip-8 cutoff "
-            "but db was opened with page_encoded=%d",
+            db.is_page_encoded() == mip_8_active(rev),
+            "monad revision %d at block %lu needs a %s-encoded primary "
+            "(found %s); %s",
             rev,
             block.header.number,
-            db.is_page_encoded());
+            mip_8_active(rev) ? "page" : "slot",
+            db.is_page_encoded() ? "page" : "slot",
+            mip_8_active(rev)
+                ? "run monad-mpt --promote-secondary offline"
+                : "pre MIP-8 blocks cannot replay on a promoted db");
+
+        Db *const mirror_db = !mip_8_active(rev) ? secondary_db : nullptr;
 
         ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
         BOOST_OUTCOME_TRY([&] {
@@ -425,6 +450,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
                 process_monad_block,
                 chain,
                 db,
+                mirror_db,
                 vm,
                 block_hash_buffer,
                 priority_pool,

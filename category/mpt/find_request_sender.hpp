@@ -69,6 +69,7 @@ private:
     NibblesView key_;
     AsyncInflightNodes &inflights_;
     std::optional<find_result_type<T>> res_{std::nullopt};
+    timeline_id timeline_;
     bool tid_checked_{false};
     bool return_value_{true};
 
@@ -93,13 +94,14 @@ public:
     constexpr find_request_sender(
         UpdateAux &aux, NodeCache &node_cache, AsyncInflightNodes &inflights,
         NodeCursor const root, uint64_t const version, NibblesView const key,
-        bool const return_value)
+        bool const return_value, timeline_id const timeline)
         : aux_(aux)
         , node_cache_(node_cache)
         , root_(root)
         , version_(version)
         , key_(key)
         , inflights_(inflights)
+        , timeline_(timeline)
         , return_value_(return_value)
     {
         MONAD_ASSERT(root_.is_valid());
@@ -250,7 +252,8 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
             virtual_chunk_offset_t const virt_offset =
                 aux_.physical_to_virtual(offset);
             // Verify version after translating address
-            if (!aux_.metadata_ctx().version_is_valid_ondisk(version_)) {
+            if (!aux_.metadata_ctx().version_is_valid_ondisk(
+                    version_, timeline_)) {
                 res_ = {T{}, find_result::version_no_longer_exist};
                 io_state->completed(success());
                 return success();

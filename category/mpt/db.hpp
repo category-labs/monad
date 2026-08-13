@@ -61,15 +61,18 @@ struct AsyncIOContext
     explicit AsyncIOContext(OnDiskDbConfig const &options);
 };
 
-// Hardcode it to open the primary timeline. All timelines are always in sync
-// and store the canonical state.
+// A read-only db handle bound to one timeline (primary by default). During
+// the dual-timeline migration the timelines differ in encoding and, once
+// post-fork commits go to the page-encoded timeline only, in which versions
+// they have on file.
 class RODb
 {
     struct Impl;
     std::unique_ptr<Impl> impl_;
 
 public:
-    explicit RODb(ReadOnlyOnDiskDbConfig const &);
+    explicit RODb(
+        ReadOnlyOnDiskDbConfig const &, timeline_id tid = timeline_id::primary);
     ~RODb();
 
     RODb(RODb const &) = delete;
@@ -83,6 +86,8 @@ public:
 
     uint64_t get_latest_version() const;
     uint64_t get_earliest_version() const;
+    bool timeline_active(timeline_id) const;
+    bool version_is_valid_ondisk(uint64_t version) const;
     bool traverse(
         NodeCursor const &, TraverseMachine &, uint64_t block_id,
         size_t concurrency_limit = 4096);
@@ -268,6 +273,9 @@ struct AsyncContext
         uint64_t, std::vector<std::function<void(std::shared_ptr<Node>)>>>;
 
     UpdateAux &aux;
+    // Timeline of the Db this context was created from; the async senders
+    // route root lookups and version-validity checks through it.
+    timeline_id const tid;
     NodeCache node_cache;
     inflight_root_t inflight_roots;
     AsyncInflightNodes inflight_nodes;
@@ -346,8 +354,7 @@ namespace detail
 inline detail::TraverseSender make_traverse_sender(
     AsyncContext *const context, Node::SharedPtr traverse_root,
     std::unique_ptr<TraverseMachine> machine, uint64_t const block_id,
-    size_t const concurrency_limit = 4096,
-    timeline_id const tid = timeline_id::primary)
+    size_t const concurrency_limit = 4096)
 {
     MONAD_ASSERT(context);
     return {
@@ -355,7 +362,7 @@ inline detail::TraverseSender make_traverse_sender(
         std::move(traverse_root),
         std::move(machine),
         block_id,
-        tid,
+        context->tid,
         concurrency_limit};
 }
 

@@ -321,6 +321,27 @@ try {
     TrieDb triedb{
         raw_db,
         /*enable_multiblock_cache=*/true};
+
+    // Dual-timeline: open the secondary alongside the primary. The primary
+    // always owns the latest state; a secondary is optional.
+    // runloop_monad: writes every block to every open db.
+    // runloop_monad_ethblocks:
+    //             before mip8 fork: writes every block to every open db
+    //             after mip8 fork: asserts primary db must be page-encoded,
+    //             writes to primary db only, freeze secondary slot db if
+    //             secondary db is active.
+    std::optional<mpt::Db> secondary_raw_db;
+    std::optional<TrieDb> secondary_db;
+    if (!db_in_memory &&
+        raw_db.timeline_active(monad::mpt::timeline_id::secondary)) {
+        secondary_raw_db = raw_db.open_secondary_timeline();
+        MONAD_ASSERT(secondary_raw_db.has_value());
+        secondary_db.emplace(*secondary_raw_db);
+        MONAD_ASSERT(
+            secondary_db->is_page_encoded() != triedb.is_page_encoded(),
+            "dual-timeline dbs must pair one slot and one page encoding");
+    }
+
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
         if (!snapshot.empty()) {
@@ -392,7 +413,7 @@ try {
     if (!db_in_memory) {
         mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
             .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths = dbname_paths}};
-        mpt::Db rodb{io_ctx};
+        mpt::Db rodb{io_ctx, monad::mpt::timeline_id::primary};
         initialized_headers_from_triedb = init_block_hash_buffer_from_triedb(
             rodb, start_block_num, block_hash_buffer);
     }
@@ -454,12 +475,13 @@ try {
                 chain_rlp_path);
         case CHAIN_CONFIG_MONAD_DEVNET:
         case CHAIN_CONFIG_MONAD_TESTNET:
-        case CHAIN_CONFIG_MONAD_MAINNET:
+        case CHAIN_CONFIG_MONAD_MAINNET: {
             if (as_eth_blocks) {
                 return runloop_monad_ethblocks(
                     dynamic_cast<MonadChain const &>(*chain),
                     block_db_path,
                     db,
+                    secondary_db.has_value() ? &*secondary_db : nullptr,
                     vm,
                     block_hash_buffer,
                     priority_pool,
@@ -476,8 +498,7 @@ try {
                 if (chain_config == CHAIN_CONFIG_MONAD_TESTNET ||
                     chain_config == CHAIN_CONFIG_MONAD_MAINNET) {
                     bool const primary_is_page = db.is_page_encoded();
-                    bool const secondary_active = raw_db.timeline_active(
-                        monad::mpt::timeline_id::secondary);
+                    bool const secondary_active = secondary_db.has_value();
                     MONAD_ASSERT_PRINTF(
                         primary_is_page || secondary_active,
                         "live monad requires a page-encoded timeline "
@@ -490,32 +511,21 @@ try {
                         secondary_active);
                 }
 
-                std::optional<mpt::Db> secondary_db;
-                std::optional<TrieDb> secondary_triedb;
-                if (raw_db.timeline_active(
-                        monad::mpt::timeline_id::secondary)) {
-                    secondary_db = raw_db.open_secondary_timeline();
-                    MONAD_ASSERT(secondary_db.has_value());
-                    secondary_triedb.emplace(*secondary_db);
-                    MONAD_ASSERT(
-                        secondary_triedb->is_page_encoded(),
-                        "secondary timeline must be page-encoded");
-                }
                 return runloop_monad(
                     dynamic_cast<MonadChain const &>(*chain),
                     block_db_path,
                     raw_db,
                     db,
+                    secondary_db.has_value() ? &*secondary_db : nullptr,
                     vm,
                     block_hash_buffer,
                     priority_pool,
                     block_num,
                     end_block_num,
                     stop,
-                    trace_calls,
-                    secondary_triedb.has_value() ? &*secondary_triedb
-                                                 : nullptr);
+                    trace_calls);
             }
+        }
         }
         MONAD_ABORT_PRINTF("Unsupported chain");
     }();

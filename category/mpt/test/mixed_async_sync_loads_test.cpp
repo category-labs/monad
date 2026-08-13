@@ -86,7 +86,8 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
             NodeCursor{root},
             latest_version,
             key,
-            true),
+            true,
+            timeline_id::primary),
         receiver_t{});
     state.initiate();
 

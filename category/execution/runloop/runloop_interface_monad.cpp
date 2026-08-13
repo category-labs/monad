@@ -404,6 +404,7 @@ try {
         runloop->ledger_dir,
         runloop->raw_db,
         runloop->runloop_db,
+        &runloop->secondary_runloop_db,
         runloop->vm,
         runloop->block_hash_buffer,
         runloop->priority_pool,
@@ -411,7 +412,6 @@ try {
         runloop->block_num + nblocks - 1,
         stop,
         /* enable_tracing = */ false,
-        &runloop->secondary_runloop_db,
         runloop_override);
 
     runloop->is_first_run = false;

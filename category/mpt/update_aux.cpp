@@ -287,7 +287,10 @@ static std::optional<chunk_offset_t> post_root_fast_offset_(
 void UpdateAux::rewind_to_version(uint64_t const version)
 {
     MONAD_ASSERT(is_on_disk());
-    MONAD_ASSERT(metadata_ctx_->version_is_valid_ondisk(version));
+    MONAD_ASSERT(
+        metadata_ctx_->version_is_valid_ondisk(version, timeline_id::primary) ||
+        metadata_ctx_->version_is_valid_ondisk(
+            version, timeline_id::secondary));
 
     bool const secondary_active =
         metadata_ctx_->timeline_active(timeline_id::secondary);
@@ -298,8 +301,9 @@ void UpdateAux::rewind_to_version(uint64_t const version)
     bool const secondary_needs_rewind =
         secondary_active && secondary_max_before != INVALID_BLOCK_NUM &&
         secondary_max_before > version;
+    auto const primary_max_before = metadata_ctx_->db_history_max_version();
     bool const primary_needs_rewind =
-        metadata_ctx_->db_history_max_version() > version;
+        primary_max_before != INVALID_BLOCK_NUM && primary_max_before > version;
     if (!primary_needs_rewind && !secondary_needs_rewind) {
         return;
     }
@@ -341,8 +345,10 @@ void UpdateAux::rewind_to_version(uint64_t const version)
             cutoff_fast = candidate;
         }
     };
-    consider(
-        post_root_fast_offset_(main, metadata_ctx_->root_offsets()[version]));
+    // Range-checked lookup: a `version` outside the primary's range yields
+    // INVALID_OFFSET (raw ring indexing would return a stale slot).
+    consider(post_root_fast_offset_(
+        main, metadata_ctx_->get_root_offset_at_version(version)));
     if (secondary_active) {
         auto const secondary_ro =
             metadata_ctx_->root_offsets(timeline_id::secondary);

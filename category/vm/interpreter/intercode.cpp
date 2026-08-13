@@ -18,6 +18,7 @@
 #include <category/vm/interpreter/intercode.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -56,21 +57,37 @@ namespace monad::vm::interpreter
         return buffer + start_padding_size;
     }
 
+    namespace
+    {
+        /// Push-data length per opcode, 0 for everything else. One load replaces
+        /// the two range compares and the subtract that is_push_opcode /
+        /// get_push_opcode_index expand to -- and the scan below runs this test on
+        /// EVERY code byte of EVERY distinct contract a block touches, which is
+        /// why the function is the single hottest one in the guest.
+        constexpr auto push_data_len = [] {
+            std::array<uint8_t, 256> t{};
+            for (unsigned op = PUSH0; op <= PUSH32; ++op) {
+                t[op] = static_cast<uint8_t>(op - PUSH0);
+            }
+            return t;
+        }();
+    }
+
     auto Intercode::find_jumpdests(std::span<uint8_t const> const code)
         -> JumpdestMap
     {
         auto jumpdests = JumpdestMap(code.size(), false);
 
-        for (size_t i = 0; i < code.size(); ++i) {
-            auto const op = code[i];
-
+        // Raw pointer, hoisted end: the span's operator[] and the re-read of
+        // code.size() per iteration are pure overhead in a loop this hot.
+        uint8_t const *p = code.data();
+        uint8_t const *const end = p + code.size();
+        while (p < end) {
+            auto const op = *p;
             if (op == EvmOpCode::JUMPDEST) {
-                jumpdests[i] = true;
+                jumpdests[static_cast<size_t>(p - code.data())] = true;
             }
-
-            if (is_push_opcode(op)) {
-                i += get_push_opcode_index(op);
-            }
+            p += 1 + push_data_len[op];
         }
 
         return jumpdests;

@@ -207,11 +207,9 @@ Result<void> process_monad_block(
 
     // Core execution: transaction-level EVM execution that tracks state
     // changes but does not commit them
-    db.set_block_and_prefix(block.header.number - 1, parent_block_id);
-    if (secondary_db != nullptr) {
-        secondary_db->set_block_and_prefix(
-            block.header.number - 1, parent_block_id);
-    }
+    for_each_db(db, secondary_db, [&](Db &d) {
+        d.set_block_and_prefix(block.header.number - 1, parent_block_id);
+    });
     block.header.parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
@@ -267,33 +265,24 @@ Result<void> process_monad_block(
 
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer
-    db.finalize(block.header.number, block_id);
-    db.update_verified_block(block.header.number);
-    if (secondary_db != nullptr) {
-        secondary_db->finalize(block.header.number, block_id);
-        secondary_db->update_verified_block(block.header.number);
-    }
+    for_each_db(db, secondary_db, [&](Db &d) {
+        d.finalize(block.header.number, block_id);
+        d.update_verified_block(block.header.number);
+    });
     exec_output.eth_block_hash =
         to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
     block_hash_buffer.set(
         exec_output.eth_header.number, exec_output.eth_block_hash);
     (void)record_block_result(exec_output);
 
-    if (secondary_db != nullptr) {
-        LOG_INFO(
-            "block={}, block_id={} state_root primary={} secondary={}",
-            block.header.number,
-            block_id,
-            db.state_root(),
-            secondary_db->state_root());
-    }
-    else {
-        LOG_INFO(
-            "block={}, block_id={} state_root primary={}",
-            block.header.number,
-            block_id,
-            db.state_root());
-    }
+    LOG_INFO(
+        "block={}, block_id={} state_root primary={}{}",
+        block.header.number,
+        block_id,
+        db.state_root(),
+        secondary_db != nullptr
+            ? fmt::format(" secondary={}", secondary_db->state_root())
+            : std::string{});
 
     // Emit the block metrics log line
     [[maybe_unused]] auto const block_time =

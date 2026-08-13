@@ -18,6 +18,7 @@
 #include <category/vm/interpreter/intercode.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -30,7 +31,8 @@ namespace monad::vm::interpreter
         : padded_code_(pad(code))
         , code_size_(
               code_size_t::unsafe_from(static_cast<uint32_t>(code.size())))
-        , jumpdest_map_(find_jumpdests(code))
+        // A truncated PUSH may advance past the code, but stays in the padding.
+        , jumpdest_map_(find_jumpdests(code_span()))
     {
     }
 
@@ -56,21 +58,37 @@ namespace monad::vm::interpreter
         return buffer + start_padding_size;
     }
 
+    namespace
+    {
+        // Whole advance per opcode: 1 + immediate data, 1 for non-PUSH.
+        // One lookup replaces range checks and subtraction during the scan,
+        // and holding the +1 here keeps an addiw out of the hot loop, which
+        // runs on every code byte of every distinct contract.
+        constexpr auto advance = [] {
+            std::array<uint8_t, 256> t{};
+            t.fill(1);
+            for (unsigned op = PUSH0; op <= PUSH32; ++op) {
+                t[op] = static_cast<uint8_t>(1 + op - PUSH0);
+            }
+            return t;
+        }();
+    }
+
     auto Intercode::find_jumpdests(std::span<uint8_t const> const code)
         -> JumpdestMap
     {
+        static_assert(end_padding_size >= PUSH32 - PUSH0);
         auto jumpdests = JumpdestMap(code.size(), false);
 
-        for (size_t i = 0; i < code.size(); ++i) {
-            auto const op = code[i];
-
+        // Skip PUSH data: its bytes cannot be jump destinations.
+        uint8_t const *p = code.data();
+        uint8_t const *const end = p + code.size();
+        while (p < end) {
+            auto const op = *p;
             if (op == EvmOpCode::JUMPDEST) {
-                jumpdests[i] = true;
+                jumpdests[static_cast<size_t>(p - code.data())] = true;
             }
-
-            if (is_push_opcode(op)) {
-                i += get_push_opcode_index(op);
-            }
+            p += advance[op];
         }
 
         return jumpdests;

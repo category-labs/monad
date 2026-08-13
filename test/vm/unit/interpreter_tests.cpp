@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -37,6 +38,7 @@ TEST(Intercode, CodeSizeEmpty)
 {
     auto const code = make_intercode();
     ASSERT_EQ(code.size(), 0);
+    ASSERT_FALSE(code.is_jumpdest(0));
 }
 
 TEST(Intercode, CodeSizeNonEmpty)
@@ -81,4 +83,40 @@ TEST(Intercode, Jumpdests)
     ASSERT_TRUE(code.is_jumpdest(7));
     ASSERT_FALSE(code.is_jumpdest(8));
     ASSERT_FALSE(code.is_jumpdest(3894));
+}
+
+TEST(Intercode, TruncatedPushJumpdests)
+{
+    for (unsigned n = 1; n <= 32; ++n) {
+        for (unsigned available = 0; available < n; ++available) {
+            SCOPED_TRACE(
+                ::testing::Message()
+                << "PUSH" << n << ", data bytes=" << available);
+            auto ops = std::vector<std::uint8_t>(available + 2, JUMPDEST);
+            ops[1] = static_cast<std::uint8_t>(PUSH0 + n);
+            auto const code = Intercode(ops);
+
+            ASSERT_TRUE(code.is_jumpdest(0));
+            for (std::size_t i = 1; i <= ops.size(); ++i) {
+                ASSERT_FALSE(code.is_jumpdest(i));
+            }
+        }
+    }
+}
+
+TEST(Intercode, JumpdestAfterPush)
+{
+    for (unsigned n = 0; n <= 32; ++n) {
+        SCOPED_TRACE(::testing::Message() << "PUSH" << n);
+        auto ops = std::vector<std::uint8_t>(n + 3, JUMPDEST);
+        ops[1] = static_cast<std::uint8_t>(PUSH0 + n);
+        auto const code = Intercode(ops);
+
+        ASSERT_TRUE(code.is_jumpdest(0));
+        for (std::size_t i = 1; i < ops.size() - 1; ++i) {
+            ASSERT_FALSE(code.is_jumpdest(i));
+        }
+        ASSERT_TRUE(code.is_jumpdest(ops.size() - 1));
+        ASSERT_FALSE(code.is_jumpdest(ops.size()));
+    }
 }

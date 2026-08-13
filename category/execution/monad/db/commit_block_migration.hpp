@@ -55,4 +55,14 @@ void commit_block(
     BlockHeader const &header, StateDeltas const &state,
     BlockCommitAncillaries const &anc);
 
+// apply f to both dbs that are present
+template <typename F>
+void for_each_db(Db &db, Db *const secondary_db, F &&f)
+{
+    f(db);
+    if (secondary_db != nullptr) {
+        f(*secondary_db);
+    }
+}
+
 MONAD_NAMESPACE_END

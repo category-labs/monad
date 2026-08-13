@@ -43,6 +43,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     MonadChain const &, std::filesystem::path const &, Db &, vm::VM &,
     BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
     sig_atomic_t const volatile &, bool enable_tracing,
-    std::chrono::seconds block_db_timeout, ExecutionEventRecorder *);
+    std::chrono::seconds block_db_timeout, ExecutionEventRecorder *,
+    Db *secondary_db);
 
 MONAD_NAMESPACE_END

@@ -17,6 +17,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
+#include <category/core/runtime/bit.hpp>
 #include <category/core/throw.hpp>
 
 #include <algorithm>
@@ -209,7 +210,7 @@ operator>>(uint128_t const x, uint64_t const shift) noexcept
 
 [[nodiscard]] constexpr uint128_t byteswap(uint128_t const x) noexcept
 {
-    return {std::byteswap(x.hi), std::byteswap(x.lo)};
+    return {bit::byteswap(x.hi), bit::byteswap(x.lo)};
 }
 
 [[nodiscard]] inline std::string

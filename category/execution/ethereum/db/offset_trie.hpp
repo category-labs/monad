@@ -77,6 +77,11 @@ inline constexpr NodeId NULL_ID{0};
 using node_id_wire = uint32_t;
 
 inline constexpr size_t HASH_RLP_LEN = 33; // 0xa0 ‖ 32 B
+
+// A digest node's own size in the blob: DIGEST ‖ 32 B. Numerically the same
+// as HASH_RLP_LEN, and that is the point — a run of digest nodes is the run
+// of hash-refs their parent needs, tag bytes apart.
+inline constexpr size_t DIGEST_NODE_LEN = 33;
 // Widest that run can get: 1 + 8 for the nonce, 1 + 32 for the balance. Both
 // are RLP-zeroless, so real accounts sit far below this.
 inline constexpr size_t MAX_NONCE_BALANCE_RLP_LEN = 42;

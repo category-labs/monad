@@ -277,9 +277,47 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
             [&, wrap](BranchView b) -> std::span<unsigned char> {
                 dest.back() = 0x80; // empty branch value — last list element
                 dest = dest.shrink(1);
+                // The wire child fields are 4 bytes wide and land at odd
+                // offsets inside the payload, so widening one per slot costs
+                // a byte-at-a-time load. Take all 16 in one aligned read.
+                alignas(8) node_id_wire raw[16];
+                std::memcpy(raw, b.payload(), sizeof(raw));
+                // A digest node's blob bytes are DIGEST ‖ hash32, and the
+                // hash-ref its parent must emit is 0xa0 ‖ hash32 — the same
+                // 33 bytes but for the first. The producer lays a branch's
+                // digest children at consecutive offsets in slot order, so a
+                // run of them already *is*, in the blob, the byte run this
+                // branch needs: copy the run whole and stamp its tag bytes
+                // rather than resolving and re-encoding slot by slot.
+                //
+                // Reading the tag from the blob is sound on both passes: a
+                // digest is never shadowed, because every mutation path
+                // (upsert_node, erase_node, fold_ext_node_path_maybe) aborts
+                // on a DigestView, so no id reaching put_node names one.
+                auto const digest_at = [this](node_id_wire const w) {
+                    return w != 0 && w < OVERLAY_BASE &&
+                           get_original(NodeId{w}).tag() == Tag::DIGEST;
+                };
                 for (int i = 15; i >= 0; --i) {
-                    dest = child_ref<priming_pass>(
-                        b.child(static_cast<unsigned>(i)), dest);
+                    if (!digest_at(raw[i])) {
+                        dest = child_ref<priming_pass>(NodeId{raw[i]}, dest);
+                        continue;
+                    }
+                    int lo = i;
+                    while (lo > 0 && digest_at(raw[lo - 1]) &&
+                           uint64_t{raw[lo]} ==
+                               uint64_t{raw[lo - 1]} + DIGEST_NODE_LEN) {
+                        --lo;
+                    }
+                    size_t const run =
+                        static_cast<size_t>(i - lo + 1) * HASH_RLP_LEN;
+                    unsigned char *const out = dest.last(run).data();
+                    std::memcpy(out, blob_.data() + raw[lo], run);
+                    for (size_t k = 0; k < run; k += HASH_RLP_LEN) {
+                        out[k] = 0xa0;
+                    }
+                    dest = dest.shrink(run);
+                    i = lo; // the loop's --i steps past the run
                 }
                 return wrap(dest);
             },

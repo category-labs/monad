@@ -17,6 +17,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/opcodes.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -103,6 +104,9 @@ namespace monad::vm::compiler
         Dup = 0x80,
         Swap = 0x90,
         Log = 0xA0,
+        DupN = 0xE6,
+        SwapN = 0xE7,
+        Exchange = 0xE8,
         Create = 0xF0,
         Call = 0xF1,
         CallCode = 0xF2,
@@ -129,6 +133,8 @@ namespace monad::vm::compiler
         constexpr uint32_t static_gas_cost() const noexcept;
         constexpr OpCode opcode() const noexcept;
         constexpr uint8_t stack_args() const noexcept;
+        // N for PUSHN, DUP1-16, SWAP1-16 and LOGN. For the EIP-8024 opcodes it
+        // is the raw encoded immediate instead; decode with eip8024_decode_*.
         constexpr uint8_t index() const noexcept;
         constexpr bool increases_stack() const noexcept;
         constexpr uint8_t stack_increase() const noexcept;
@@ -211,7 +217,9 @@ namespace monad::vm::compiler
     {
         MONAD_ASSERT(
             opcode() == OpCode::Push || opcode() == OpCode::Swap ||
-            opcode() == OpCode::Dup || opcode() == OpCode::Log);
+            opcode() == OpCode::Dup || opcode() == OpCode::Log ||
+            opcode() == OpCode::DupN || opcode() == OpCode::SwapN ||
+            opcode() == OpCode::Exchange);
         return index_;
     }
 
@@ -396,6 +404,12 @@ namespace monad::vm::compiler
             return "SWAP";
         case Log:
             return "LOG";
+        case DupN:
+            return "DUPN";
+        case SwapN:
+            return "SWAPN";
+        case Exchange:
+            return "EXCHANGE";
         case Create:
             return "CREATE";
         case Call:
@@ -454,6 +468,24 @@ struct std::formatter<monad::vm::compiler::Instruction>
                 inst.opcode(),
                 inst.index(),
                 inst.immediate_value());
+        }
+
+        // index() holds the raw encoded immediate for these, so decode it --
+        // printing it directly would render DUPN 17 as "DUPN128". Matches the
+        // mnemonic evm-as emits.
+        if (inst.opcode() == DupN || inst.opcode() == SwapN) {
+            return std::format_to(
+                ctx.out(),
+                "{} {}",
+                inst.opcode(),
+                +monad::vm::compiler::eip8024_decode_single(inst.index()));
+        }
+
+        if (inst.opcode() == Exchange) {
+            auto const [n, m] =
+                monad::vm::compiler::eip8024_decode_pair(inst.index());
+            return std::format_to(
+                ctx.out(), "{} {}, {}", inst.opcode(), +n, +m);
         }
 
         if (inst.opcode() == Push || inst.opcode() == Dup ||

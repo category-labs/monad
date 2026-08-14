@@ -354,6 +354,37 @@ namespace monad::vm::compiler::basic_blocks
     template <Traits traits, typename... Args>
     BasicBlocksIR unsafe_make_ir(Args &&...);
 
+    // EIP-8024: the immediate gives an operand-dependent stack effect (computed
+    // here; raw byte stashed in index for codegen). A disallowed immediate is
+    // INVALID and returns without consuming the byte, so a following 0x5B is
+    // still discoverable as a JUMPDEST.
+    inline std::variant<Instruction, Terminator, JumpDest> decode_eip8024(
+        uint8_t const opcode, uint32_t const opcode_offset,
+        OpCodeInfo const &info, std::span<uint8_t const> const bytes,
+        uint32_t &current_offset)
+    {
+        uint8_t const imm =
+            current_offset < bytes.size() ? bytes[current_offset] : uint8_t{0};
+
+        if (!eip8024_immediate_valid(opcode, imm)) {
+            return Terminator::InvalidInstruction;
+        }
+
+        current_offset++;
+
+        auto const [min_stack, stack_increase] =
+            eip8024_stack_effect(opcode, imm);
+
+        return Instruction(
+            opcode_offset,
+            evm_op_to_opcode(opcode),
+            info.min_gas,
+            min_stack,
+            imm,
+            stack_increase,
+            info.dynamic_gas);
+    }
+
     template <Traits traits>
     std::variant<Instruction, Terminator, JumpDest> BasicBlocksIR::scan_from(
         std::span<uint8_t const> bytes, uint32_t &current_offset)
@@ -387,6 +418,13 @@ namespace monad::vm::compiler::basic_blocks
             return JumpDest{opcode_offset};
         default:
             break;
+        }
+
+        if constexpr (traits::eip_8024_active()) {
+            if (is_eip8024_opcode(opcode)) {
+                return decode_eip8024(
+                    opcode, opcode_offset, info, bytes, current_offset);
+            }
         }
 
         auto const imm_size = info.num_args;

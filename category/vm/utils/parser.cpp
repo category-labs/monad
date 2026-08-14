@@ -188,16 +188,33 @@ namespace monad::vm::utils
         return std::nullopt;
     }
 
+    // Name every opcode the VM knows, including any staged into the
+    // EXPERIMENTAL slot -- printing UNKNOWN for a byte the VM would execute is
+    // worse than naming one that may not ship. find_opcode and compile_tokens
+    // stay on latest stable.
+    using disasm_traits = EvmTraits<MONAD_ETH_MAX_REVISION>;
+
     std::string show_opcodes(std::vector<uint8_t> const &opcodes)
     {
         std::stringstream ss;
-        auto const &tbl = monad::vm::compiler::make_opcode_table<
-            EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>();
+        auto const &tbl =
+            monad::vm::compiler::make_opcode_table<disasm_traits>();
         for (size_t i = 0; i < opcodes.size(); ++i) {
             auto c = opcodes[i];
             ss << std::format("[{:#x}] {:#x} {}\n", i, c, tbl[opcodes[i]].name);
             if (c >= PUSH1 && c <= PUSH32) {
                 for (auto j = 0; j < c - PUSH0; ++j) {
+                    i++;
+                    ss << std::format("[{:#x}] {:#x}\n", i, opcodes[i]);
+                }
+            }
+            else if (is_eip8024_opcode(c) && i + 1 < opcodes.size()) {
+                // Consume the immediate like PUSH data, but only for an allowed
+                // encoding: a disallowed immediate makes the opcode INVALID and
+                // leaves the byte a separate instruction, possibly a JUMPDEST.
+                // Not revision-gated; 0xE6-0xE8 are unassigned earlier.
+                auto const imm = opcodes[i + 1];
+                if (eip8024_immediate_valid(c, imm)) {
                     i++;
                     ss << std::format("[{:#x}] {:#x}\n", i, opcodes[i]);
                 }

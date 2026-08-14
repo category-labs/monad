@@ -201,6 +201,13 @@ public:
         result[0] = words_[0]; result[1] = words_[1];
         result[2] = words_[2]; result[3] = words_[3];
         return result;
+#elif !defined(__AVX2__)
+        // Off AVX2, m256i is words_t<4> — the very type words_ already has,
+        // so this is a plain struct return. The memcpy below cannot be
+        // inlined on rv64: through the builtin's void * the alignment is
+        // inferred as 8 bits, 32 byte-moves blow the straight-move budget,
+        // and it becomes a library call on the EVM stack's hottest path.
+        return words_;
 #else
         m256i result;
         std::memcpy(&result, &words_, sizeof(result));

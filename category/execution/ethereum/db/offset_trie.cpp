@@ -97,8 +97,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             node,
             Cases{
                 [&](BranchView b) {
-                    for (NodeId c : b.children()) {
-                        is_valid_offset(c);
+                    // b.children() widens each 4-byte wire field on its own,
+                    // and the field never lands 4-aligned, so a slot costs
+                    // nine instructions to read before it costs anything to
+                    // check. Take all 16 in one aligned read instead: the
+                    // branch's extent was validated by checked_end above, and
+                    // a BRANCH is exactly payload() + 16 wire fields.
+                    alignas(8) node_id_wire raw[16];
+                    std::memcpy(raw, b.payload(), sizeof(raw));
+                    for (node_id_wire const w : raw) {
+                        is_valid_offset(NodeId{w});
                     }
                 },
                 [&](ExtView e) { is_valid_offset(e.child()); },

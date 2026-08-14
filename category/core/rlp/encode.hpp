@@ -18,6 +18,7 @@
 #include <category/core/assume.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/endian.hpp>
+#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/rlp/config.hpp>
 #include <category/core/runtime/unaligned.hpp>
@@ -50,7 +51,7 @@ namespace impl
             n <<= lz_bytes * 8;
         }
 
-        size_t const n_be = std::byteswap(n);
+        size_t const n_be = bswap(n);
         MONAD_ASSUME(d.size() >= sizeof(size_t));
         unaligned_store(d.data(), n_be);
         return d.subspan((sizeof(size_t) - lz_bytes));

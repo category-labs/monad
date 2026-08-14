@@ -217,6 +217,14 @@ public:
         return data_;
     }
 
+    // Parity of the first nibble within data()'s first byte. Callers that
+    // walk a path by whole bytes need it to know whether the run is
+    // byte-aligned or displaced by one nibble.
+    [[nodiscard]] constexpr bool begin_nibble() const noexcept
+    {
+        return begin_nibble_;
+    }
+
     [[nodiscard]] bool empty() const noexcept
     {
         return !data_;
@@ -288,7 +296,33 @@ constexpr bool operator==(NibblesView const &a, NibblesView const &b)
     if (a.nibble_size() != b.nibble_size()) {
         return false;
     }
-    for (auto i = 0u; i < a.nibble_size(); ++i) {
+    unsigned const n = a.nibble_size();
+    // Paths run 56-59 nibbles here, so the nibble-at-a-time compare below is
+    // ~60 read-modify-writes per call. When both sides sit at the same parity
+    // the shared run is whole bytes: compare those with memcmp and handle only
+    // the ragged nibble at each end. Mismatched parity keeps the nibble walk.
+    if (!std::is_constant_evaluated() && n != 0 &&
+        a.begin_nibble() == b.begin_nibble()) {
+        unsigned i = 0;
+        unsigned byte = 0;
+        if (a.begin_nibble()) { // odd start: one low nibble, then aligned
+            if ((a.data()[0] & 0x0F) != (b.data()[0] & 0x0F)) {
+                return false;
+            }
+            i = 1;
+            byte = 1;
+        }
+        unsigned const whole = (n - i) / 2;
+        if (std::memcmp(a.data() + byte, b.data() + byte, whole) != 0) {
+            return false;
+        }
+        if ((n - i) % 2) { // trailing high nibble
+            return (a.data()[byte + whole] & 0xF0) ==
+                   (b.data()[byte + whole] & 0xF0);
+        }
+        return true;
+    }
+    for (auto i = 0u; i < n; ++i) {
         if (a.get(i) != b.get(i)) {
             return false;
         }

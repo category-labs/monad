@@ -270,8 +270,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # ---- Extract setjmp/longjmp from the compiler's newlib libc.a ----
 
+    # Match the guest's -march/-mabi when selecting multilib libraries.
+    # The compiler default may otherwise select incompatible RV32 objects.
+    separate_arguments(_arch_query UNIX_COMMAND "${CMAKE_C_FLAGS}")
+
     execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -print-file-name=libc.a
+        COMMAND ${CMAKE_C_COMPILER} ${_arch_query} -print-file-name=libc.a
         OUTPUT_VARIABLE _libc_a
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
@@ -312,7 +316,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # and symbols by machine mode si = 32, di = 64, ti = 128 bits
     # where risvc64 word is 64 bits, hence __popcount*di*2
     execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -print-libgcc-file-name
+        COMMAND ${CMAKE_C_COMPILER} ${_arch_query} -print-libgcc-file-name
         OUTPUT_VARIABLE _libgcc_a
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )

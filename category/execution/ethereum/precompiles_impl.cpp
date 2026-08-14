@@ -62,7 +62,43 @@
 
 namespace
 {
-    std::optional<KZGSettings> g_trustedSetup;
+    // The KZG trusted setup costs ~2 s to load: decompressing and subgroup-checking 4096 G1 + 65 G2
+    // points, which `perf record` on a `--nblocks 0` run shows as 55 % of monad's startup CPU sitting in
+    // blst's __mulx_mont_384. It is independent of database size (1.93 s against a fresh 8 GB db, 2.02 s
+    // against a 440 GB one), which is what identifies it as binary initialisation rather than file
+    // opening, and `load_trusted_setup_file`'s `0` is already c-kzg's cheapest precompute, so the load
+    // itself has nothing left to tune.
+    //
+    // Only the point_evaluation precompile (0x0a) needs it, and most blocks never touch it — so it is
+    // loaded on FIRST USE. For a producer that starts one process per block (--min-follow-batch 1) that
+    // 2 s was being paid per block, over half of the chain->witness latency.
+    //
+    // A function-local static, not a checked global: initialisation of one is thread-safe by
+    // [stmt.dcl]/4, and this is now reached from parallel transaction execution rather than from a
+    // single-threaded main(). The previous check-then-act on a global optional had no such guarantee.
+    KZGSettings const &trusted_setup()
+    {
+        static std::optional<KZGSettings> const setup =
+            []() -> std::optional<KZGSettings> {
+            auto const data = c_kzg_4844::trusted_setup_data();
+            std::optional<KZGSettings> loaded;
+            KZGSettings settings;
+            FILE *fp = fmemopen((void *)(data.data()), data.size(), "r");
+            if (fp) {
+                if (load_trusted_setup_file(&settings, fp, 0) == C_KZG_OK) {
+                    loaded.emplace(settings);
+                }
+                fclose(fp);
+            }
+            return loaded;
+        }();
+        // The setup is embedded in the binary, so a failure to load is a broken build, not a runtime
+        // condition. Aborting keeps the old MONAD_ASSERT semantics: what moves is WHEN it is paid, not
+        // what happens on failure. Returning a failure from the precompile instead would turn a broken
+        // build into a wrong block result.
+        MONAD_ASSERT(setup.has_value());
+        return *setup;
+    }
 
     monad::bytes32_t kzg_to_version_hashed(KZGCommitment const &commitment)
     {
@@ -95,20 +131,13 @@ namespace
 
 MONAD_NAMESPACE_BEGIN
 
+// Forces the load and reports success. Kept because the tests call it to fail early and loudly
+// (precompiles_test.cpp, blockchain_test.cpp); nothing on the production path needs to, since
+// point_evaluation_execute loads on demand. Calling it from main() is what cost 2 s per process.
 bool init_trusted_setup()
 {
-    if (!g_trustedSetup.has_value()) {
-        auto const setup = c_kzg_4844::trusted_setup_data();
-        KZGSettings settings;
-        FILE *fp = fmemopen((void *)(setup.data()), setup.size(), "r");
-        if (fp) {
-            if (load_trusted_setup_file(&settings, fp, 0) == C_KZG_OK) {
-                g_trustedSetup.emplace(settings);
-            }
-            fclose(fp);
-        }
-    }
-    return g_trustedSetup.has_value();
+    trusted_setup();
+    return true;
 }
 
 // TODO: remove silkpre
@@ -275,7 +304,7 @@ PrecompileResult point_evaluation_execute(byte_string_view const input)
     }
 
     bool ok{false};
-    verify_kzg_proof(&ok, &commitment, z, y, proof, &g_trustedSetup.value());
+    verify_kzg_proof(&ok, &commitment, z, y, proof, std::addressof(trusted_setup()));
     if (!ok) {
         return PrecompileResult::failure();
     }

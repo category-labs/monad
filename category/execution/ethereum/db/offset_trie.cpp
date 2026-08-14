@@ -172,10 +172,15 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
                     MONAD_ABORT("incomplete witness: lookup hit a Digest");
                 },
                 [](NullView) -> NodeId {
-                    // There is only a single NullView node, namely the NULL_ID
-                    // magic header. However, since id is strictly greater than
-                    // 0 inside the loop, get_original can never reach it.
-                    std::unreachable();
+                    // Unreachable as written: the only EMPTY-tagged byte is
+                    // the magic header at NULL_ID, id is non-null inside the
+                    // loop, and the constructor checks every child offset is a
+                    // recorded node start. That last premise is the fragile
+                    // one — it lives in a different function, it is the most
+                    // expensive thing the constructor does, and an optimisation
+                    // that drops it turns this arm from diagnosed into
+                    // undefined. The abort is one cold switch arm; keep it.
+                    MONAD_ABORT("malformed trie: node not found");
                 },
             });
     }

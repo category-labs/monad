@@ -34,7 +34,6 @@
 #include <cstdint>
 #include <cstring>
 #include <numeric>
-#include <category/core/bit_primitives.hpp>
 
 namespace monad::vm::interpreter
 {
@@ -54,10 +53,26 @@ namespace monad::vm::interpreter
 
         using subword_t = uint256_t::word_type;
 
+        // Assemble K big-endian bytes straight into a word. Going through a
+        // little-endian load and a byte swap makes the word escape to the
+        // stack on a target with no byte-swap instruction, which then pays a
+        // reload plus the full mask-and-shift swap; shifting the bytes into
+        // place costs K-1 ors and nothing else.
+        template <size_t K>
+        [[gnu::always_inline]] inline subword_t
+        load_be_k(uint8_t const *const p) noexcept
+        {
+            static_assert(K >= 1 && K <= 8);
+            return [p]<size_t... Is>(std::index_sequence<Is...>) {
+                return ((static_cast<subword_t>(p[Is]) << (8 * (K - 1 - Is))) |
+                        ...);
+            }(std::make_index_sequence<K>{});
+        }
+
         [[gnu::always_inline]] inline subword_t
         read_unaligned(uint8_t const *const ptr)
         {
-            return monad::bits::bswap(unaligned_load<subword_t>(ptr));
+            return load_be_k<8>(ptr);
         }
 
         template <size_t N, Traits traits>
@@ -74,18 +89,12 @@ namespace monad::vm::interpreter
                 ctx, analysis, stack_bottom, stack_top, gas_remaining);
 
             auto const leading_word = [instr_ptr] {
-                auto word = subword_t{0};
-
                 if constexpr (leading_part == 0) {
-                    return word;
+                    return subword_t{0};
                 }
-
-                std::memcpy(
-                    reinterpret_cast<uint8_t *>(&word) + (8 - leading_part),
-                    instr_ptr + 1,
-                    leading_part);
-
-                return monad::bits::bswap(word);
+                else {
+                    return load_be_k<leading_part>(instr_ptr + 1);
+                }
             }();
 
             if constexpr (whole_words == 0) {

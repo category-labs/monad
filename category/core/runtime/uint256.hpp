@@ -18,6 +18,7 @@
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
+#include <category/core/runtime/bit.hpp>
 #include <category/core/runtime/uint128.hpp>
 #include <category/core/runtime/uint256/intrinsics.hpp>
 #include <category/core/runtime/uint256/portable.hpp>
@@ -1008,10 +1009,10 @@ inline uint256_t byte(uint256_t const &byte_index_256, uint256_t const &x)
 [[gnu::always_inline]] constexpr uint256_t byteswap(uint256_t const &x) noexcept
 {
     return uint256_t{
-        std::byteswap(x[3]),
-        std::byteswap(x[2]),
-        std::byteswap(x[1]),
-        std::byteswap(x[0])};
+        bit::byteswap(x[3]),
+        bit::byteswap(x[2]),
+        bit::byteswap(x[1]),
+        bit::byteswap(x[0])};
 }
 
 consteval uint256_t operator""_u256(char const *s)

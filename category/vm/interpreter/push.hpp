@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/vm/evm/opcodes.hpp>
@@ -56,7 +57,7 @@ namespace monad::vm::interpreter
         [[gnu::always_inline]] inline subword_t
         read_unaligned(uint8_t const *const ptr)
         {
-            return std::byteswap(unaligned_load<subword_t>(ptr));
+            return bswap(unaligned_load<subword_t>(ptr));
         }
 
         template <size_t N, Traits traits>
@@ -84,7 +85,7 @@ namespace monad::vm::interpreter
                     instr_ptr + 1,
                     leading_part);
 
-                return std::byteswap(word);
+                return bswap(word);
             }();
 
             if constexpr (whole_words == 0) {

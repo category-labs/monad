@@ -168,6 +168,7 @@ add_library(
   "rlp/decode_error.hpp"
   "rlp/encode.hpp"
   # runtime
+  "runtime/bit.hpp"
   "runtime/non_temporal_memory.hpp"
   "runtime/uint256.hpp"
   "runtime/uint256/intrinsics.hpp"

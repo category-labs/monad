@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/runtime/bit.hpp>
 #include <category/core/runtime/uint128.hpp>
 #include <category/core/runtime/uint256.hpp>
 
@@ -101,7 +102,7 @@ template <typename T>
         return byteswap(x);
     }
     else if constexpr (std::unsigned_integral<T>) {
-        return std::byteswap(x);
+        return bit::byteswap(x);
     }
     else {
         static_assert(sizeof(T) == 0, "bswap not supported for this type");

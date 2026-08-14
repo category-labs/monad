@@ -18,6 +18,7 @@
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -94,7 +95,7 @@ blake2bf_gas_cost_ethereum(byte_string_view const input)
     static_assert(
         std::endian::native == std::endian::little,
         "blake2bf_gas_cost_ethereum only works on little-endian platforms");
-    return std::byteswap(rounds);
+    return bswap(rounds);
 }
 
 template <Traits traits>

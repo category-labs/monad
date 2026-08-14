@@ -217,6 +217,12 @@ public:
         return data_;
     }
 
+    // True if the view starts in the low nibble of data()[0].
+    [[nodiscard]] constexpr bool begin_nibble() const noexcept
+    {
+        return begin_nibble_;
+    }
+
     [[nodiscard]] bool empty() const noexcept
     {
         return !data_;

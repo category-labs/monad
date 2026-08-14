@@ -215,7 +215,7 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
                     // There is only a single NullView node, namely the NULL_ID
                     // magic header. However, since id is strictly greater than
                     // 0 inside the loop, get_original can never reach it.
-                    std::unreachable();
+                    MONAD_ABORT("malformed trie: node not found");
                 },
             });
     }

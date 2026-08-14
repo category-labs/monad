@@ -355,8 +355,14 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # ---- Extract setjmp/longjmp from the compiler's newlib libc.a ----
 
+    # The query must carry the same -march/-mabi as the compile, or a multilib
+    # toolchain answers with its default variant — on an rv32 default that is a
+    # libc.a whose objects the rv64 link rejects as "incompatible with
+    # elf64-littleriscv".
+    separate_arguments(_arch_query UNIX_COMMAND "${CMAKE_C_FLAGS}")
+
     execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -print-file-name=libc.a
+        COMMAND ${CMAKE_C_COMPILER} ${_arch_query} -print-file-name=libc.a
         OUTPUT_VARIABLE _libc_a
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
@@ -393,7 +399,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # ---- Extract __popcountdi2 from the compiler's libgcc.a ----
     # immer's HAMT bit math needs __popcountdi2
     execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -print-libgcc-file-name
+        COMMAND ${CMAKE_C_COMPILER} ${_arch_query} -print-libgcc-file-name
         OUTPUT_VARIABLE _libgcc_a
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )

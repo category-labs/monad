@@ -217,6 +217,14 @@ public:
         return data_;
     }
 
+    // Parity of the first nibble within data()'s first byte. Callers that
+    // walk a path by whole bytes need it to know whether the run is
+    // byte-aligned or displaced by one nibble.
+    [[nodiscard]] constexpr bool begin_nibble() const noexcept
+    {
+        return begin_nibble_;
+    }
+
     [[nodiscard]] bool empty() const noexcept
     {
         return !data_;

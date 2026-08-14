@@ -23,7 +23,9 @@
 #include <category/mpt/nibbles_view.hpp>
 
 #include <cassert>
+#include <cstring>
 #include <limits>
+#include <type_traits>
 #include <utility>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -51,10 +53,29 @@ constexpr void compact_encode_raw(
         i = 1;
     }
 
-    unsigned res_ci = 2;
-    for (; i < nibbles.nibble_size(); i++) {
-        set_nibble(res, res_ci, nibbles.get(i));
-        ++res_ci;
+    // The remaining nibbles fill whole bytes starting at res[1].
+    // Copy aligned input; shift by four bits when it starts in a low nibble.
+    if (std::is_constant_evaluated()) {
+        unsigned output_nibble = 2;
+        for (; i < nibbles.nibble_size(); i++) {
+            set_nibble(res, output_nibble, nibbles.get(i));
+            ++output_nibble;
+        }
+        return;
+    }
+
+    unsigned const remaining_nibbles = nibbles.nibble_size() - i;
+    unsigned const source_nibble = nibbles.begin_nibble() + i;
+    unsigned char const *const source = nibbles.data() + source_nibble / 2;
+
+    if (source_nibble % 2 == 0) {
+        std::memcpy(res + 1, source, remaining_nibbles / 2);
+    }
+    else {
+        for (unsigned k = 0; k < remaining_nibbles / 2; ++k) {
+            res[1 + k] = static_cast<unsigned char>(
+                (source[k] << 4) | (source[k + 1] >> 4));
+        }
     }
 }
 

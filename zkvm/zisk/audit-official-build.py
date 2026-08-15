@@ -20,7 +20,7 @@ RUNTIME_SOURCE = (
 )
 EXPECTED_COMPILER = ("GNU", "15.2.0")
 EXPECTED_MARCH = "rv64ima_zicsr_zbb_zbs_zbkb"
-EXPECTED_MTUNE = "size"
+EXPECTED_MTUNE = "generic-ooo"
 REQUIRED_FLAGS = (
     "-O3",
     "-mabi=lp64",

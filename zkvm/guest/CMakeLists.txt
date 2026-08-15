@@ -73,27 +73,18 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     string(APPEND CMAKE_CXX_FLAGS
         " -mcmodel=medany -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti")
 
-    # ZisK-only codegen tuning, duplicated from Polygon's ziskethone guest
-    # (github.com/0xPolygonHermez/ziskethone, cpp-guest/zisk/toolchain.cmake +
-    # cpp-guest/zisk/CMakeLists.txt).
-    #  - -march adds Zbb/Zbs/Zbkb, transpiled natively by ZisK >= v1.2.0-alpha.
-    #  - -mtune=size was ziskethone's dominant single win (-13% block cost);
-    #    -funroll-loops + the widened inliner --params cut call/loop overhead
-    #    on hot paths. Combined measurement upstream: -16% block cost /
-    #    -21.6% steps. -flto was rejected there (marginal gain, overran the
-    #    ZisK RAM ceiling).
-    #  - -fno-pic: cmake-rs injects cc-rs's -fPIC, but the guest is a
-    #    statically linked fixed-address ELF, so PIC only buys GOT
-    #    indirections on global accesses.
+    # ZisK settings adapted from Polygon's ziskethone guest
+    # (github.com/0xPolygonHermez/ziskethone, cpp-guest/zisk:
+    # toolchain.cmake and CMakeLists.txt).
+    # Zbb/Zbs/Zbkb are supported by ZisK >= v1.2.0-alpha. Unrolling and inlining
+    # reduce loop/call overhead; upstream rejected LTO for exceeding ZisK's RAM.
+    # The fixed-address guest needs no PIC/GOT indirections.
     #
-    # These are appended (not set via CMAKE_*_FLAGS_INIT) because cmake-rs
-    # overrides CMAKE_*_FLAGS, and the -march must land after cc-rs's
-    # -march=rv64ima — the last flag wins.
+    # Append after cmake-rs's flags: the last -march wins.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         set(_zisk_march "-march=rv64ima_zicsr_zbb_zbs_zbkb -mabi=lp64")
         string(JOIN " " _zisk_opt
             "-fno-pic"
-            "-mtune=size"
             "-funroll-loops"
             "--param=max-inline-insns-single=1600"
             "--param=max-inline-insns-auto=533"
@@ -119,6 +110,11 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+        # Favor direct unaligned word accesses on ZisK over byte-wise loads.
+        # SP1's handling of unaligned accesses has not been validated here.
+        # Set tuning before the official profile hashes the compiler flags.
+        string(APPEND CMAKE_C_FLAGS " -mtune=generic-ooo")
+        string(APPEND CMAKE_CXX_FLAGS " -mtune=generic-ooo")
     endif()
 
     if(MONAD_ZKVM_OFFICIAL_PROFILE)

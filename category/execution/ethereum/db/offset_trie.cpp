@@ -100,13 +100,24 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     // b.children() widens each 4-byte wire field on its own,
                     // and the field never lands 4-aligned, so a slot costs
                     // nine instructions to read before it costs anything to
-                    // check. Take all 16 in one aligned read instead: the
+                    // check. Read the 16 fields as eight words instead: the
                     // branch's extent was validated by checked_end above, and
                     // a BRANCH is exactly payload() + 16 wire fields.
-                    alignas(8) node_id_wire raw[16];
-                    std::memcpy(raw, b.payload(), sizeof(raw));
-                    for (node_id_wire const w : raw) {
-                        is_valid_offset(NodeId{w});
+                    //
+                    // Each word is checked in the register it lands in.
+                    // Staging the eight into an array first made gcc spill all
+                    // of them and read them back a field at a time, and the
+                    // frame slot it picked sits past the 12-bit offset window,
+                    // so every one of those accesses also re-materialised the
+                    // stack base (`addi aN, sp, 2047`).
+                    unsigned char const *const p = b.payload();
+                    for (unsigned i = 0; i < 16; i += 2) {
+                        uint64_t const pair =
+                            bits::load64(p + i * sizeof(node_id_wire));
+                        is_valid_offset(
+                            NodeId{static_cast<node_id_wire>(pair)});
+                        is_valid_offset(
+                            NodeId{static_cast<node_id_wire>(pair >> 32)});
                     }
                 },
                 [&](ExtView e) { is_valid_offset(e.child()); },

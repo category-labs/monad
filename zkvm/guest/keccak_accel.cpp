@@ -76,6 +76,40 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
 
     uint64_t st[25] = {};
     auto const *p = static_cast<unsigned char const *>(in);
+
+#ifdef MONAD_ZKVM_ZISK
+    // ZisK executes an unaligned load directly (the MemAlign state machine),
+    // so the sponge needs no alignment case at all: one loop, one load per
+    // lane, whatever `in` is aligned to.
+    //
+    // This is also strictly safer than the shift-combine it replaces. That
+    // path read w[i+1] for i = 16, i.e. up to 7 bytes past p + RATE, which is
+    // why it carried a `len > RATE + 7` guard and a buffered trailing block.
+    // bits::load64(p + 8*i) reads exactly [p + 8i, p + 8i + 8) — the rate
+    // block and nothing else — so both the guard and the trailing case go.
+    //
+    // Measured on r4-jd-blockhash, block 25551991: 30,171 calls, of which
+    // 6,529 (21.6 %) took the misaligned branch, whose body is 3,130,932
+    // steps. Compiled both ways at -O3 -mtune=generic-ooo, the 17-lane block
+    // unrolls to 91 instructions here against 153 for the shift-combine, so
+    // that body lands near 1.86 M. Saves 90.4 M cells of MAIN, pays 20.0 M of
+    // unaligned MEMORY (106 against 16 on the 222,115 lanes that were
+    // misaligned) — net +70.4 M, +0.30 % of COST.
+    //
+    // load64 is one `ld` here because the guest is built -mtune=generic-ooo;
+    // under the default tuning it would be byte-staged and this loop would be
+    // far worse than the branch it replaces. The two changes are coupled.
+    while (len >= RATE) {
+        for (size_t i = 0; i < WORDS; ++i) {
+            st[i] ^= monad::bits::load64(p + 8 * i);
+        }
+        keccak_permute(&st);
+        p += RATE;
+        len -= RATE;
+    }
+#else
+    // SP1 is rv32im and its handling of unaligned access has not been
+    // established, so it keeps the alignment split.
     uintptr_t const mis = reinterpret_cast<uintptr_t>(p) & 7;
 
     if (mis == 0) {
@@ -121,6 +155,7 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
             len -= RATE;
         }
     }
+#endif
 
     // Final block: remainder plus pad10*1 with the 0x01 domain byte.
     alignas(8) unsigned char last[RATE] = {};

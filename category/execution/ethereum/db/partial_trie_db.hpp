@@ -40,6 +40,19 @@ using CodeIndex = ankerl::unordered_dense::map<bytes32_t, vm::SharedIntercode>;
 class PartialTrieDb final : public Db
 {
     mpt::OffsetTrie trie_;
+    // The EVM reads an account's slots in bursts, and read_storage resolves the
+    // storage root from scratch each time: a keccak of the address, then a
+    // descent of the account trie. sroot_addr_/sroot_id_ remember the last one,
+    // so a burst pays for one.
+    // read_storage descends twice, into the account trie and then into that
+    // account's storage trie, and both go through find_original -- the
+    // pre-state, immutable for the whole block. So the entry is sound and never
+    // needs invalidating.
+    mutable Address sroot_addr_{};
+    mutable mpt::NodeId sroot_id_{mpt::NULL_ID};
+    // sroot_valid_ separates "nothing cached" from "cached the zero address",
+    // which is a real address.
+    mutable bool sroot_valid_{false};
     CodeIndex codes_;
     uint64_t block_number_{0};
     BlockHeader last_committed_header_{};

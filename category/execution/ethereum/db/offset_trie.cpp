@@ -510,10 +510,12 @@ NodeId OffsetTrie::put_node(NodeId const id, byte_string node)
 {
     if (id == NULL_ID) {
         NodeId const fresh = fresh_id();
+        overlay_filter_mark(fresh); // must precede/accompany every insert
         overlay_[fresh] = std::move(node);
         return fresh;
     }
     hashes_.erase(id); // bytes changed; the cached hash is stale
+    overlay_filter_mark(id);
     overlay_[id] = std::move(node);
     return id;
 }

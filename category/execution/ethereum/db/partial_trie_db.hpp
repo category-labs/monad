@@ -40,6 +40,13 @@ using CodeIndex = ankerl::unordered_dense::map<bytes32_t, vm::SharedIntercode>;
 class PartialTrieDb final : public Db
 {
     mpt::OffsetTrie trie_;
+    // Cache the last account's storage root to avoid hashing its address and
+    // traversing the account trie on consecutive slot reads. These roots refer
+    // to the immutable pre-state; overlay mutations do not invalidate them.
+    mutable Address storage_memo_address_{};
+    mutable mpt::NodeId storage_memo_root_{mpt::NULL_ID};
+    // A separate flag allows caching the zero address and an absent account.
+    mutable bool storage_memo_valid_{false};
     CodeIndex codes_;
     uint64_t block_number_{0};
     BlockHeader last_committed_header_{};

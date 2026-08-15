@@ -62,17 +62,25 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-std::optional<Account> PartialTrieDb::read_account(Address const &addr)
+std::optional<Account> PartialTrieDb::read_account(Address const &address)
 {
-    auto const key = keccak256(addr.bytes);
+    auto const key = keccak256(address.bytes);
+    // Reuse the storage root found by this account lookup for later slot reads.
     return match(
         trie_.find_original(trie_.root, mpt::NibblesView{key}),
         Cases{
-            [](mpt::NullView) -> std::optional<Account> {
+            [&](mpt::NullView) -> std::optional<Account> {
+                // Cache absence too, so slot reads need not repeat this lookup.
+                storage_memo_address_ = address;
+                storage_memo_root_ = mpt::NULL_ID;
+                storage_memo_valid_ = true;
                 return std::nullopt;
             },
-            [](mpt::AccountLeafView l) -> std::optional<Account> {
-                return l.account();
+            [&](mpt::AccountLeafView leaf) -> std::optional<Account> {
+                storage_memo_address_ = address;
+                storage_memo_root_ = leaf.storage();
+                storage_memo_valid_ = true;
+                return leaf.account();
             },
             [](auto) -> std::optional<Account> {
                 MONAD_ABORT("incorrect node type returned in read_account");
@@ -80,28 +88,37 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
 }
 
 bytes32_t PartialTrieDb::read_storage(
-    Address const &addr, Incarnation, bytes32_t const &slot)
+    Address const &address, Incarnation, bytes32_t const &slot)
 {
-    auto const akey = keccak256(addr.bytes);
-    auto const sroot = match(
-        trie_.find_original(trie_.root, mpt::NibblesView{akey}),
-        Cases{
-            [](mpt::NullView) { return mpt::NULL_ID; },
-            [](mpt::AccountLeafView l) { return l.storage(); },
-            [](auto) -> mpt::NodeId {
-                MONAD_ABORT("incorrect node type returned in read_storage");
-            }});
+    mpt::NodeId storage_root;
+    if (storage_memo_valid_ && storage_memo_address_ == address) {
+        storage_root = storage_memo_root_;
+    }
+    else {
+        auto const account_key = keccak256(address.bytes);
+        storage_root = match(
+            trie_.find_original(trie_.root, mpt::NibblesView{account_key}),
+            Cases{
+                [](mpt::NullView) { return mpt::NULL_ID; },
+                [](mpt::AccountLeafView leaf) { return leaf.storage(); },
+                [](auto) -> mpt::NodeId {
+                    MONAD_ABORT("incorrect node type returned in read_storage");
+                }});
+        storage_memo_address_ = address;
+        storage_memo_root_ = storage_root;
+        storage_memo_valid_ = true;
+    }
 
-    if (sroot == mpt::NULL_ID) {
+    if (storage_root == mpt::NULL_ID) {
         return bytes32_t{};
     }
-    auto const skey = keccak256(slot.bytes);
+    auto const slot_key = keccak256(slot.bytes);
 
     return match(
-        trie_.find_original(sroot, mpt::NibblesView{skey}),
+        trie_.find_original(storage_root, mpt::NibblesView{slot_key}),
         Cases{
             [](mpt::NullView) { return bytes32_t{}; },
-            [](mpt::StorageLeafView l) { return l.value(); },
+            [](mpt::StorageLeafView leaf) { return leaf.value(); },
             [](auto) -> bytes32_t {
                 MONAD_ABORT("incorrect node type returned in read_storage");
             }});

@@ -104,6 +104,22 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+        # GCC's default tuning for this target is -mtune=rocket, whose cost
+        # model says an unaligned access is slow, so a 4-byte load through a
+        # 1-aligned pointer becomes nine instructions instead of one. The
+        # guest reads 4-byte child ids out of a witness blob that never aligns
+        # them, so it pays that everywhere. ZisK executes the unaligned load
+        # directly -- 504 of 504 corpus blocks give byte-identical public
+        # values with this on.
+        #
+        # ZisK only: the SP1 emulator's handling of unaligned access has not
+        # been established, and the same flag there would be a guess.
+        #
+        # Here rather than lower down: the official profile signs
+        # CMAKE_{C,CXX}_FLAGS, and a flag appended after that signature would
+        # leave two differently-built guests claiming one identity.
+        string(APPEND CMAKE_C_FLAGS " -mtune=generic-ooo")
+        string(APPEND CMAKE_CXX_FLAGS " -mtune=generic-ooo")
     endif()
 
     if(MONAD_ZKVM_OFFICIAL_PROFILE)

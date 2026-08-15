@@ -64,10 +64,14 @@ namespace monad::vm::interpreter
         /// get_push_opcode_index expand to -- and the scan below runs this test on
         /// EVERY code byte of EVERY distinct contract a block touches, which is
         /// why the function is the single hottest one in the guest.
-        constexpr auto push_data_len = [] {
+        // The table holds the whole advance, 1 + push data, not the push
+        // data alone: the +1 is otherwise an addiw inside the hot loop, on
+        // every opcode of every contract.
+        constexpr auto advance = [] {
             std::array<uint8_t, 256> t{};
+            t.fill(1);
             for (unsigned op = PUSH0; op <= PUSH32; ++op) {
-                t[op] = static_cast<uint8_t>(op - PUSH0);
+                t[op] = static_cast<uint8_t>(1 + op - PUSH0);
             }
             return t;
         }();
@@ -87,7 +91,7 @@ namespace monad::vm::interpreter
             if (op == EvmOpCode::JUMPDEST) {
                 jumpdests[static_cast<size_t>(p - code.data())] = true;
             }
-            p += 1 + push_data_len[op];
+            p += advance[op];
         }
 
         return jumpdests;

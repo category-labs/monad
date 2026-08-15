@@ -65,13 +65,24 @@ MONAD_NAMESPACE_BEGIN
 std::optional<Account> PartialTrieDb::read_account(Address const &addr)
 {
     auto const key = keccak256(addr.bytes);
+    // This descent already reaches the account's leaf, and the leaf carries its storage root -- so
+    // prime the one-entry cache with it.
     return match(
         trie_.find_original(trie_.root, mpt::NibblesView{key}),
         Cases{
-            [](mpt::NullView) -> std::optional<Account> {
+            [&](mpt::NullView) -> std::optional<Account> {
+                // An absent account is worth caching too, and NULL_ID is what read_storage would
+                // have concluded: otherwise every storage read against it re-descends to find the
+                // same nothing.
+                sroot_addr_ = addr;
+                sroot_id_ = mpt::NULL_ID;
+                sroot_valid_ = true;
                 return std::nullopt;
             },
-            [](mpt::AccountLeafView l) -> std::optional<Account> {
+            [&](mpt::AccountLeafView l) -> std::optional<Account> {
+                sroot_addr_ = addr;
+                sroot_id_ = l.storage();
+                sroot_valid_ = true;
                 return l.account();
             },
             [](auto) -> std::optional<Account> {
@@ -82,15 +93,24 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
 bytes32_t PartialTrieDb::read_storage(
     Address const &addr, Incarnation, bytes32_t const &slot)
 {
-    auto const akey = keccak256(addr.bytes);
-    auto const sroot = match(
-        trie_.find_original(trie_.root, mpt::NibblesView{akey}),
-        Cases{
-            [](mpt::NullView) { return mpt::NULL_ID; },
-            [](mpt::AccountLeafView l) { return l.storage(); },
-            [](auto) -> mpt::NodeId {
-                MONAD_ABORT("incorrect node type returned in read_storage");
-            }});
+    mpt::NodeId sroot;
+    if (sroot_valid_ && sroot_addr_ == addr) {
+        sroot = sroot_id_;
+    }
+    else {
+        auto const akey = keccak256(addr.bytes);
+        sroot = match(
+            trie_.find_original(trie_.root, mpt::NibblesView{akey}),
+            Cases{
+                [](mpt::NullView) { return mpt::NULL_ID; },
+                [](mpt::AccountLeafView l) { return l.storage(); },
+                [](auto) -> mpt::NodeId {
+                    MONAD_ABORT("incorrect node type returned in read_storage");
+                }});
+        sroot_addr_ = addr;
+        sroot_id_ = sroot;
+        sroot_valid_ = true;
+    }
 
     if (sroot == mpt::NULL_ID) {
         return bytes32_t{};

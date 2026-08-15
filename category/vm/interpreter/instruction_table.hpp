@@ -65,6 +65,65 @@
     }                                                                          \
     while (false);
 
+// The gas and stack checks, as a macro rather than a call.
+//
+// check_requirements() is [[gnu::always_inline]] and its ctx.exit() calls are
+// noreturn — but a noreturn *call* is still a `jal`, which clobbers `ra`, and
+// `ra` is live across the whole handler because the dispatch at the end is a
+// tail jump that must return to *our* caller. So GCC saves and restores it:
+// `addi sp,sp,-16 / sd ra,8(sp) ... ld ra,8(sp) / addi sp,sp,16`, four
+// instructions of frame on every opcode, including ones like ADD that call
+// nothing on the fast path.
+//
+// Tail-calling the exit removes the clobber and the frame with it. musttail
+// has to be *lexically* in the handler to survive: marking it inside
+// check_requirements compiles, but the inliner drops it and the frame comes
+// back — measured, 27 instructions with the frame either way, against 23
+// with the macro. That is the same reason MONAD_VM_NEXT is a macro.
+//
+// Behaviour is unchanged: same conditions, same StatusCode, same
+// Context::exit. Only the call instruction differs (`j` for `jal`) and the
+// frame is torn down first — which is safe because Context::exit longjmps,
+// restoring sp from the jmp_buf rather than unwinding through our frame.
+//
+// Worth 4 instructions x 1,069,980 opcodes on block 25551991 = 4.3 M steps,
+// 3.3 % of the current guest.
+#define MONAD_VM_CHECK(OP)                                                     \
+    do {                                                                       \
+        static constexpr auto monad_vm_ci = compiler::opcode_table<traits>[(OP)]; \
+                                                                               \
+        if constexpr (monad_vm_ci.min_gas > 0) {                               \
+            gas_remaining -= monad_vm_ci.min_gas;                              \
+            if (MONAD_UNLIKELY(gas_remaining < 0)) {                           \
+                MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);                  \
+            }                                                                  \
+        }                                                                      \
+                                                                               \
+        if constexpr (!(monad_vm_ci.min_stack == 0 &&                          \
+                        monad_vm_ci.stack_increase == 0)) {                    \
+            auto const monad_vm_sz = stack_top - stack_bottom;                 \
+            MONAD_DEBUG_ASSERT(monad_vm_sz <= 1024);                           \
+                                                                               \
+            if constexpr (monad_vm_ci.min_stack > 0) {                         \
+                if (MONAD_UNLIKELY(monad_vm_sz < monad_vm_ci.min_stack)) {     \
+                    MONAD_VM_MUST_TAIL return ctx.exit(Error);                 \
+                }                                                              \
+            }                                                                  \
+                                                                               \
+            if constexpr (monad_vm_ci.stack_increase > 0) {                    \
+                static constexpr auto monad_vm_delta =                         \
+                    monad_vm_ci.stack_increase - monad_vm_ci.min_stack;        \
+                static constexpr auto monad_vm_max = 1024 - monad_vm_delta;    \
+                if constexpr (monad_vm_max < 1024) {                           \
+                    if (MONAD_UNLIKELY(monad_vm_sz > monad_vm_max)) {          \
+                        MONAD_VM_MUST_TAIL return ctx.exit(Error);             \
+                    }                                                          \
+                }                                                              \
+            }                                                                  \
+        }                                                                      \
+    }                                                                          \
+    while (false)
+
 #define MONAD_VM_NEXT_PUSH(OP)                                                 \
     do {                                                                       \
         static constexpr auto delta =                                          \
@@ -424,8 +483,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<ADD, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(ADD);
         auto &&[a, b] = top_two(stack_top);
         b = a + b;
 
@@ -456,8 +514,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<SUB, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(SUB);
         auto &&[a, b] = top_two(stack_top);
         b = a - b;
 
@@ -596,8 +653,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<SIGNEXTEND, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(SIGNEXTEND);
         auto &&[b, x] = top_two(stack_top);
         x = signextend(b, x);
 
@@ -611,8 +667,7 @@ namespace monad::vm::interpreter
        uint256_t const *stack_bottom, uint256_t *stack_top,
        int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<LT, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(LT);
         auto &&[a, b] = top_two(stack_top);
         b = a < b;
 
@@ -625,8 +680,7 @@ namespace monad::vm::interpreter
        uint256_t const *stack_bottom, uint256_t *stack_top,
        int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<GT, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(GT);
         auto &&[a, b] = top_two(stack_top);
         b = a > b;
 
@@ -639,8 +693,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<SLT, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(SLT);
         auto &&[a, b] = top_two(stack_top);
         b = slt(a, b);
 
@@ -653,8 +706,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<SGT, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(SGT);
         auto &&[a, b] = top_two(stack_top);
         b = slt(b, a); // note swapped arguments
 
@@ -667,8 +719,7 @@ namespace monad::vm::interpreter
        uint256_t const *stack_bottom, uint256_t *stack_top,
        int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<EQ, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(EQ);
         auto &&[a, b] = top_two(stack_top);
         b = (a == b);
 
@@ -681,8 +732,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<ISZERO, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(ISZERO);
         auto &a = *stack_top;
         a = !a;
 
@@ -696,8 +746,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<AND, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(AND);
         auto &&[a, b] = top_two(stack_top);
         b = a & b;
 
@@ -710,8 +759,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<OR, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(OR);
         auto &&[a, b] = top_two(stack_top);
         b = a | b;
 
@@ -724,8 +772,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<XOR, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(XOR);
         auto &&[a, b] = top_two(stack_top);
         b = a ^ b;
 
@@ -738,8 +785,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<NOT, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(NOT);
         auto &a = *stack_top;
         a = ~a;
 
@@ -752,8 +798,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<BYTE, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(BYTE);
         auto &&[i, x] = top_two(stack_top);
         x = byte(i, x);
 
@@ -766,8 +811,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<SHL, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(SHL);
         auto &&[shift, value] = top_two(stack_top);
         value <<= shift;
 
@@ -780,8 +824,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<SHR, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(SHR);
         auto &&[shift, value] = top_two(stack_top);
         value >>= shift;
 
@@ -794,8 +837,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<SAR, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(SAR);
         auto &&[shift, value] = top_two(stack_top);
         value = sar(shift, value);
 
@@ -808,8 +850,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<CLZ, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(CLZ);
         auto &a = *stack_top;
         a = countl_zero(a);
 
@@ -841,8 +882,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<ADDRESS, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(ADDRESS);
         push(stack_top, runtime::uint256_from_address(ctx.env.recipient));
 
         MONAD_VM_NEXT(ADDRESS);
@@ -872,8 +912,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<ORIGIN, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(ORIGIN);
         push(
             stack_top,
             runtime::uint256_from_address(ctx.env.tx_context->tx_origin));
@@ -887,8 +926,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<CALLER, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(CALLER);
         push(stack_top, runtime::uint256_from_address(ctx.env.sender));
 
         MONAD_VM_NEXT(CALLER);
@@ -900,8 +938,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<CALLVALUE, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(CALLVALUE);
         push(stack_top, load_be<uint256_t>(ctx.env.value));
 
         MONAD_VM_NEXT(CALLVALUE);
@@ -931,8 +968,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<CALLDATASIZE, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(CALLDATASIZE);
         push(stack_top, ctx.env.input_data_size);
 
         MONAD_VM_NEXT(CALLDATASIZE);
@@ -962,8 +998,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<CODESIZE, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(CODESIZE);
         push(stack_top, ctx.env.code_size);
 
         MONAD_VM_NEXT(CODESIZE);
@@ -993,8 +1028,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<GASPRICE, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(GASPRICE);
         push(stack_top, load_be<uint256_t>(ctx.env.tx_context->tx_gas_price));
 
         MONAD_VM_NEXT(GASPRICE);
@@ -1042,8 +1076,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<RETURNDATASIZE, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(RETURNDATASIZE);
         push(stack_top, ctx.env.return_data_size);
 
         MONAD_VM_NEXT(RETURNDATASIZE);
@@ -1109,8 +1142,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<COINBASE, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(COINBASE);
         push(
             stack_top,
             runtime::uint256_from_address(ctx.env.tx_context->block_coinbase));
@@ -1124,8 +1156,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<TIMESTAMP, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(TIMESTAMP);
         push(stack_top, ctx.env.tx_context->block_timestamp);
 
         MONAD_VM_NEXT(TIMESTAMP);
@@ -1137,8 +1168,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<NUMBER, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(NUMBER);
         push(stack_top, ctx.env.tx_context->block_number);
 
         MONAD_VM_NEXT(NUMBER);
@@ -1150,8 +1180,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<DIFFICULTY, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(DIFFICULTY);
         push(
             stack_top,
             load_be<uint256_t>(ctx.env.tx_context->block_prev_randao));
@@ -1165,8 +1194,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<GASLIMIT, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(GASLIMIT);
         push(stack_top, ctx.env.tx_context->block_gas_limit);
 
         MONAD_VM_NEXT(GASLIMIT);
@@ -1178,8 +1206,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<CHAINID, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(CHAINID);
         push(stack_top, load_be<uint256_t>(ctx.env.tx_context->chain_id));
 
         MONAD_VM_NEXT(CHAINID);
@@ -1209,8 +1236,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<BASEFEE, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(BASEFEE);
         push(stack_top, load_be<uint256_t>(ctx.env.tx_context->block_base_fee));
 
         MONAD_VM_NEXT(BASEFEE);
@@ -1240,8 +1266,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<BLOBBASEFEE, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(BLOBBASEFEE);
         push(stack_top, load_be<uint256_t>(ctx.env.tx_context->blob_base_fee));
 
         MONAD_VM_NEXT(BLOBBASEFEE);
@@ -1399,8 +1424,7 @@ namespace monad::vm::interpreter
        uint256_t const *stack_bottom, uint256_t *stack_top,
        int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<PC, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(PC);
         push(stack_top, instr_ptr - analysis.code());
 
         MONAD_VM_NEXT(PC);
@@ -1412,8 +1436,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<MSIZE, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(MSIZE);
         push(stack_top, ctx.memory.size);
 
         MONAD_VM_NEXT(MSIZE);
@@ -1425,8 +1448,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<GAS, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(GAS);
         push(stack_top, gas_remaining);
 
         MONAD_VM_NEXT(GAS);
@@ -1452,8 +1474,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<POP, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(POP);
         MONAD_VM_NEXT(POP);
     }
 
@@ -1464,8 +1485,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<DUP1 + (N - 1), traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(DUP1 + (N - 1));
 
         auto *const old_top = stack_top;
         push(stack_top, *(old_top - (N - 1)));
@@ -1480,8 +1500,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<SWAP1 + (N - 1), traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(SWAP1 + (N - 1));
 
 #if defined(MONAD_ZKVM_SP1)
         // rv32: the trivial 32-byte uint256 copies lower to memcpy CALLS
@@ -1529,8 +1548,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *)
     {
-        check_requirements<JUMP, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(JUMP);
         auto const &target = pop(stack_top);
         auto const *const new_ip = jump_impl(ctx, analysis, target);
 
@@ -1547,8 +1565,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
-        check_requirements<JUMPI, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(JUMPI);
         auto const &target = pop(stack_top);
         auto const &cond = pop(stack_top);
 
@@ -1586,8 +1603,7 @@ namespace monad::vm::interpreter
             stack_bottom,
             stack_top,
             static_cast<uint64_t>(instr_ptr - analysis.code()));
-        check_requirements<JUMPDEST, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(JUMPDEST);
 
         MONAD_VM_NEXT(JUMPDEST);
     }
@@ -1757,8 +1773,7 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *)
     {
         fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.size());
-        check_requirements<RETURN, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(RETURN);
         return_impl(Success, ctx, stack_top, gas_remaining);
     }
 
@@ -1768,8 +1783,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *)
     {
-        check_requirements<REVERT, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        MONAD_VM_CHECK(REVERT);
         return_impl(Revert, ctx, stack_top, gas_remaining);
     }
 

@@ -82,15 +82,24 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
 bytes32_t PartialTrieDb::read_storage(
     Address const &addr, Incarnation, bytes32_t const &slot)
 {
-    auto const akey = keccak256(addr.bytes);
-    auto const sroot = match(
-        trie_.find_original(trie_.root, mpt::NibblesView{akey}),
-        Cases{
-            [](mpt::NullView) { return mpt::NULL_ID; },
-            [](mpt::AccountLeafView l) { return l.storage(); },
-            [](auto) -> mpt::NodeId {
-                MONAD_ABORT("incorrect node type returned in read_storage");
-            }});
+    mpt::NodeId sroot;
+    if (sroot_valid_ && sroot_addr_ == addr) {
+        sroot = sroot_id_;
+    }
+    else {
+        auto const akey = keccak256(addr.bytes);
+        sroot = match(
+            trie_.find_original(trie_.root, mpt::NibblesView{akey}),
+            Cases{
+                [](mpt::NullView) { return mpt::NULL_ID; },
+                [](mpt::AccountLeafView l) { return l.storage(); },
+                [](auto) -> mpt::NodeId {
+                    MONAD_ABORT("incorrect node type returned in read_storage");
+                }});
+        sroot_addr_ = addr;
+        sroot_id_ = sroot;
+        sroot_valid_ = true;
+    }
 
     if (sroot == mpt::NULL_ID) {
         return bytes32_t{};

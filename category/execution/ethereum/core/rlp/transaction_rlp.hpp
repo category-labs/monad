@@ -42,4 +42,14 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &);
 Result<Transaction> decode_transaction(byte_string_view &);
 Result<std::vector<Transaction>> decode_transaction_list(byte_string_view &enc);
 
+// As above, and if `raw_transactions` is non-null, appends to it the exact
+// byte slice each transaction was decoded from -- for a legacy transaction the
+// list with its header, for a typed one the unwrapped `type | payload`, not
+// the RLP string the block body wraps that in.
+//
+// The slices point into `enc`; nothing here copies, and the caller owns that
+// buffer's lifetime.
+Result<std::vector<Transaction>> decode_transaction_list(
+    byte_string_view &enc, std::vector<byte_string_view> *raw_transactions);
+
 MONAD_RLP_NAMESPACE_END

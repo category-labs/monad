@@ -341,7 +341,7 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
         BOOST_OUTCOME_TRY(
             txn.max_fee_per_blob_gas, decode_unsigned<uint256_t>(payload));
         BOOST_OUTCOME_TRY(auto hashes_payload, parse_list_metadata(payload));
-        while (hashes_payload.size() >= sizeof(bytes32_t)) {
+        while (!hashes_payload.empty()) {
             BOOST_OUTCOME_TRY(auto const hash, decode_bytes32(hashes_payload));
             txn.blob_versioned_hashes.emplace_back(std::move(hash));
         }

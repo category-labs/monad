@@ -33,11 +33,11 @@
 
 #include <ankerl/unordered_dense.h>
 
-#include <immer/vector.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <vector>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
@@ -60,7 +60,11 @@ class State
 
     Map<Address, VersionStack<AccountState>> current_{};
 
-    VersionStack<immer::vector<Receipt::Log>> logs_{{}};
+    // Logs are append-only. Each frame saves the current size so reverting
+    // can discard its logs without persistent-vector snapshots.
+    std::vector<Receipt::Log> logs_{};
+    // One saved size per open frame; log_marks_.size() == version_.
+    std::vector<size_t> log_marks_{};
 
     Map<bytes32_t, vm::SharedVarcode> code_{};
 
@@ -221,7 +225,7 @@ public:
 
     ////////////////////////////////////////
 
-    immer::vector<Receipt::Log> const &logs();
+    std::vector<Receipt::Log> const &logs();
 
     void store_log(Receipt::Log const &);
     void store_log(Receipt::Log &&);

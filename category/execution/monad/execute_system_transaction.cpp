@@ -32,6 +32,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
@@ -96,7 +97,8 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
             std::nullopt /* 0 base fee to pass validation */,
             std::nullopt /* 0 blob fee to pass validation */,
             chain_.get_chain_id(),
-            chain_.get_blob_schedule(header_.timestamp));
+            chain_.get_blob_schedule(header_.timestamp),
+            tokens_in_calldata(tx));
         if (tx_validation_result.has_error()) {
             prev_.wait();
             return std::move(tx_validation_result).as_failure();

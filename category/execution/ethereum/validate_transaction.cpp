@@ -48,7 +48,7 @@ template <Traits traits>
 Result<void> static_validate_transaction(
     Transaction const &tx, std::optional<uint256_t> const &base_fee_per_gas,
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id,
-    BlobSchedule const &blob_schedule)
+    BlobSchedule const &blob_schedule, CalldataTokens const tokens)
 {
     static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
@@ -100,12 +100,15 @@ Result<void> static_validate_transaction(
     }
 
     // YP eq. 62
-    if (MONAD_UNLIKELY(intrinsic_gas<traits>(tx) > tx.gas_limit)) {
+    if (MONAD_UNLIKELY(
+            intrinsic_gas_counted<traits>(tx, tokens) > tx.gas_limit)) {
         return TransactionError::IntrinsicGasGreaterThanLimit;
     }
 
     if constexpr (traits::eip_7623_active()) {
-        if (MONAD_UNLIKELY(floor_data_gas<traits>(tx) > tx.gas_limit)) {
+        // EIP-7623
+        if (MONAD_UNLIKELY(
+                floor_data_gas_counted<traits>(tx, tokens) > tx.gas_limit)) {
             return TransactionError::IntrinsicGasGreaterThanLimit;
         }
     }

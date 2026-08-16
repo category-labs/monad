@@ -18,6 +18,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 
+#include <span>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -26,6 +27,9 @@ MONAD_NAMESPACE_BEGIN
 //! the shape of the transactions, receipts and withdrawals tries, and it is
 //! what binds the block BODY the guest executed to the header whose hash is a
 //! public value. The empty trie returns NULL_ROOT.
+bytes32_t ordered_trie_root(std::span<byte_string_view const> items);
+
+//! Convenience overload for callers holding owned buffers.
 bytes32_t ordered_trie_root(std::vector<byte_string> const &items);
 
 MONAD_NAMESPACE_END

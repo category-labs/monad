@@ -31,6 +31,8 @@
 #include <zkvm/core/zkvm_io.h>
 #include <zkvm/guest/execute_block_zkvm.hpp>
 
+#include <span>
+
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
@@ -66,12 +68,15 @@ namespace
     // is an empty aggregate, so we materialise it here.
     template <monad::Traits traits>
     monad::Result<monad::bytes32_t> dispatch(
-        monad::Chain const &chain, monad::Block const &block, monad::Db &pdb,
-        monad::vm::VM &vm, monad::BlockHashBuffer const &block_hash_buffer)
+        monad::Chain const &chain, monad::Block const &block,
+        std::span<monad::byte_string_view const> const raw_transactions,
+        monad::Db &pdb, monad::vm::VM &vm,
+        monad::BlockHashBuffer const &block_hash_buffer)
     {
         return monad::execute_block_zkvm<traits>(
             chain,
             block,
+            raw_transactions,
             pdb,
             vm,
             block_hash_buffer,
@@ -116,7 +121,12 @@ extern "C" void monad_zkvm_execute_witness(void)
 
     // 4. Decode the embedded block.
     monad::byte_string_view block_view = witness.value().block_rlp;
-    auto block_result = monad::rlp::decode_block(block_view);
+    // The byte slice each transaction was decoded from, kept so the
+    // transactions-root check can be made against those bytes rather than
+    // against a re-encoding of what was decoded from them.
+    std::vector<monad::byte_string_view> raw_transactions;
+    auto block_result =
+        monad::rlp::decode_block(block_view, &raw_transactions);
     MONAD_ASSERT(block_result.has_value());
     MONAD_ASSERT(block_view.empty());
     auto const &block = block_result.value();
@@ -187,7 +197,9 @@ extern "C" void monad_zkvm_execute_witness(void)
     monad_eth_revision const rev =
         chain.get_revision(block.header.number, block.header.timestamp);
     auto const root_result = [&]() -> monad::Result<monad::bytes32_t> {
-        SWITCH_EVM_TRAITS(dispatch, chain, block, pdb, vm, block_hash_buffer);
+        SWITCH_EVM_TRAITS(
+            dispatch, chain, block, raw_transactions, pdb, vm,
+            block_hash_buffer);
         // SWITCH_EVM_TRAITS only covers Byzantium+; older revisions fall
         // through. execute_block_zkvm's static_assert requires
         // Spurious-Dragon+ anyway.

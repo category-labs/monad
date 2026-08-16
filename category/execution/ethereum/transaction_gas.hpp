@@ -29,14 +29,28 @@ MONAD_NAMESPACE_BEGIN
 struct Transaction;
 struct BlockHeader;
 
-template <Traits traits>
-uint64_t g_data(Transaction const &) noexcept;
+// Calldata byte counts shared by intrinsic and floor gas calculations.
+struct CalldataTokens
+{
+    uint64_t zeros;
+    uint64_t nonzeros;
+};
+
+CalldataTokens tokens_in_calldata(Transaction const &) noexcept;
 
 template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &) noexcept;
 
+// intrinsic_gas for a caller that already holds the counts.
+template <Traits traits>
+uint64_t intrinsic_gas_counted(Transaction const &, CalldataTokens) noexcept;
+
 template <Traits traits>
 uint64_t floor_data_gas(Transaction const &) noexcept;
+
+// floor_data_gas for a caller that already holds the counts.
+template <Traits traits>
+uint64_t floor_data_gas_counted(Transaction const &, CalldataTokens) noexcept;
 
 template <Traits traits>
 uint256_t

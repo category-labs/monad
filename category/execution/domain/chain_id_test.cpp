@@ -122,7 +122,12 @@ TEST(DomainChainId, ordinary_static_validation_rejects_domain)
     Transaction const tx = valid_transaction(domain_id);
 
     auto const result = static_validate_transaction<Traits>(
-        tx, 0, std::nullopt, network_chain_id, default_blob_schedule<Traits>());
+        tx,
+        0,
+        std::nullopt,
+        network_chain_id,
+        default_blob_schedule<Traits>(),
+        tokens_in_calldata(tx));
 
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::WrongChainId);

@@ -46,6 +46,19 @@ encode_unsigned(std::span<unsigned char> dest, unsigned_integral auto const &n)
         dest, zeroless_view({as_bytes(big_endian), sizeof(big_endian)}));
 }
 
+#ifdef MONAD_ZKVM_ZISK
+// Count leading zero bytes directly instead of scanning them.
+inline std::span<unsigned char>
+encode_unsigned(std::span<unsigned char> dest, uint64_t const value)
+{
+    uint64_t const big_endian = bswap(value);
+    unsigned const zero_bytes =
+        static_cast<unsigned>(std::countl_zero(value)) >> 3;
+    return encode_string(
+        dest, {as_bytes(big_endian) + zero_bytes, 8u - zero_bytes});
+}
+#endif
+
 template <unsigned_integral T>
 inline Result<T> decode_unsigned(byte_string_view &enc)
 {

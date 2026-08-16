@@ -88,13 +88,29 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
     // bits::load64(p + 8*i) reads exactly [p + 8i, p + 8i + 8) — the rate
     // block and nothing else — so both the guard and the trailing case go.
     //
-    // Measured on r4-jd-blockhash, block 25551991: 30,171 calls, of which
-    // 6,529 (21.6 %) took the misaligned branch, whose body is 3,130,932
-    // steps. Compiled both ways at -O3 -mtune=generic-ooo, the 17-lane block
-    // unrolls to 91 instructions here against 153 for the shift-combine, so
-    // that body lands near 1.86 M. Saves 90.4 M cells of MAIN, pays 20.0 M of
-    // unaligned MEMORY (106 against 16 on the 222,115 lanes that were
-    // misaligned) — net +70.4 M, +0.30 % of COST.
+    // Measured on r4-jd-blockhash, block 25551991: 30,171 calls, 60,377 full
+    // rate blocks, 22,603 of them (37 %) on a misaligned input. Compiled both
+    // ways at -O3 -mtune=generic-ooo, the 17-lane block unrolls to 91
+    // instructions here against 153 for the shift-combine.
+    //
+    // Per misaligned block: 62 instructions saved (4,216 cells of MAIN)
+    // against 17 lanes that go from an aligned read to a boundary-crossing
+    // one, 159 against 16 (2,431 cells of MEMORY). Net 1,785 per block,
+    // 40.3 M, +0.20 % of COST.
+    //
+    // An 8-byte read that crosses an 8-byte boundary is 159, not the 106 an
+    // earlier pass here used: 106 is the price of a *sub-word* access, which
+    // is what the model charges anything that is not 8 bytes wide at an
+    // 8-aligned address. Both figures are measured (ziskemu, one inline-asm
+    // access per loop iteration); the constant names in emu_costs.rs do not
+    // say which is which. That error is why this comment first read +0.30 %.
+    //
+    // Staging each block through an aligned buffer would be better still —
+    // 8,371 per block against 9,469 here and 11,270 for the shift-combine —
+    // but only if the copy reaches ZisK's dma_memcpy. gcc inlines a 136-byte
+    // std::memcpy into 17 unaligned ld/sd pairs instead, which lands at
+    // 11,543, worse than everything. Getting the call would mean hiding the
+    // constant size from the optimiser; not worth the fragility for 0.12 %.
     //
     // load64 is one `ld` here because the guest is built -mtune=generic-ooo;
     // under the default tuning it would be byte-staged and this loop would be

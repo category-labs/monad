@@ -60,7 +60,8 @@ void process_transaction(Transaction const &txn, nlohmann::json const &expected)
             std::nullopt,
             std::nullopt,
             1,
-            default_blob_schedule<traits>());
+            default_blob_schedule<traits>(),
+            tokens_in_calldata(txn));
         result.has_error()) {
         EXPECT_TRUE(expected.contains("exception"));
     }

@@ -20,7 +20,9 @@
 #include <category/core/int.hpp>
 #include <category/core/rlp/config.hpp>
 
+#include <bit>
 #include <concepts>
+#include <cstring>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
@@ -41,6 +43,48 @@ inline byte_string to_big_compact(unsigned_integral auto n)
     n = bswap(n);
     return byte_string(
         zeroless_view({reinterpret_cast<unsigned char *>(&n), sizeof(n)}));
+}
+
+#ifdef MONAD_ZKVM_ZISK
+// Count leading zero bytes directly instead of scanning them.
+inline byte_string to_big_compact(uint64_t const value)
+{
+    uint64_t const big_endian = bswap(value);
+    unsigned const zero_bytes =
+        static_cast<unsigned>(std::countl_zero(value)) >> 3;
+    return byte_string{byte_string_view{
+        reinterpret_cast<unsigned char const *>(&big_endian) + zero_bytes,
+        8u - zero_bytes}};
+}
+#endif
+
+// Skip zero high words and count the top word's leading zero bytes.
+// Only significant words need byte-swapping.
+inline byte_string to_big_compact(uint256_t const &value)
+{
+    size_t word_count = uint256_t::num_words;
+    while (word_count != 0 && value[word_count - 1] == 0) {
+        --word_count;
+    }
+    if (word_count == 0) {
+        return byte_string{}; // RLP of zero is the empty string
+    }
+    unsigned const top_word_bytes =
+        8u -
+        static_cast<unsigned>(std::countl_zero(value[word_count - 1]) >> 3);
+    size_t const byte_count = (word_count - 1) * 8 + top_word_bytes;
+
+    // Store significant words in big-endian order, then trim leading zeros.
+    alignas(8) unsigned char big_endian_bytes[uint256_t::num_bytes];
+    for (size_t i = 0; i < word_count; ++i) {
+        uint64_t const swapped_word = bswap(value[i]);
+        std::memcpy(
+            big_endian_bytes + (word_count - 1 - i) * 8,
+            &swapped_word,
+            sizeof(swapped_word));
+    }
+    return byte_string{byte_string_view{
+        big_endian_bytes + (word_count * 8 - byte_count), byte_count}};
 }
 
 // Size helpers and cursor-based writers avoid temporary nested encodings.

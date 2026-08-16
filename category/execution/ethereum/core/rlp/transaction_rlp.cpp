@@ -382,26 +382,62 @@ Result<Transaction> decode_transaction(byte_string_view &enc)
     }
 }
 
+namespace
+{
+    // `remember_raw_transactions` controls whether the transaction slices are
+    // written to `raw_transactions`.
+    template <bool remember_raw_transactions>
+    Result<std::vector<Transaction>> decode_transaction_list_impl(
+        byte_string_view &enc,
+        std::vector<byte_string_view> *const raw_transactions)
+    {
+        std::vector<Transaction> transactions;
+        BOOST_OUTCOME_TRY(auto ls, parse_list_metadata(enc));
+
+        // TODO: Reserve txn vector size for better perf
+        while (!ls.empty()) {
+            if (ls[0] >= 0xc0) {
+                auto const before = ls;
+                BOOST_OUTCOME_TRY(auto tx, decode_transaction_legacy(ls));
+                if constexpr (remember_raw_transactions) {
+                    // The list including its header -- what the trie holds for
+                    // a legacy transaction.
+                    raw_transactions->push_back(
+                        before.substr(0, before.size() - ls.size()));
+                }
+                transactions.emplace_back(std::move(tx));
+            }
+            else {
+                BOOST_OUTCOME_TRY(auto str, parse_string_metadata(ls));
+                // Captured before decoding, because decode_transaction_eip2718
+                // advances the view it is given. `str` is already the unwrapped
+                // `type | payload` -- the body's string envelope is not part of
+                // what the trie holds.
+                if constexpr (remember_raw_transactions) {
+                    raw_transactions->push_back(str);
+                }
+                BOOST_OUTCOME_TRY(auto tx, decode_transaction_eip2718(str));
+                transactions.emplace_back(std::move(tx));
+            }
+        }
+        MONAD_ASSERT(ls.empty());
+
+        return transactions;
+    }
+}
+
 Result<std::vector<Transaction>> decode_transaction_list(byte_string_view &enc)
 {
-    std::vector<Transaction> transactions;
-    BOOST_OUTCOME_TRY(auto ls, parse_list_metadata(enc));
+    return decode_transaction_list_impl<false>(enc, nullptr);
+}
 
-    // TODO: Reserve txn vector size for better perf
-    while (!ls.empty()) {
-        if (ls[0] >= 0xc0) {
-            BOOST_OUTCOME_TRY(auto tx, decode_transaction_legacy(ls));
-            transactions.emplace_back(std::move(tx));
-        }
-        else {
-            BOOST_OUTCOME_TRY(auto str, parse_string_metadata(ls));
-            BOOST_OUTCOME_TRY(auto tx, decode_transaction_eip2718(str));
-            transactions.emplace_back(std::move(tx));
-        }
-    }
-    MONAD_ASSERT(ls.empty());
-
-    return transactions;
+Result<std::vector<Transaction>> decode_transaction_list(
+    byte_string_view &enc,
+    std::vector<byte_string_view> *const raw_transactions)
+{
+    return raw_transactions != nullptr
+               ? decode_transaction_list_impl<true>(enc, raw_transactions)
+               : decode_transaction_list(enc);
 }
 
 MONAD_RLP_NAMESPACE_END

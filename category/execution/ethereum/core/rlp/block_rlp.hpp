@@ -29,6 +29,14 @@ byte_string encode_block(Block const &);
 byte_string encode_ommers(std::vector<BlockHeader> const &);
 
 Result<Block> decode_block(byte_string_view &);
+
+// As above, and if `raw_transactions` is non-null, fills it with the value the
+// transactions trie holds for each transaction -- the list with its header for
+// a legacy one, the unwrapped `type | payload` for a typed one (EIP-2718), not
+// the body's string envelope. See decode_transaction_list. The slices point
+// into `enc`.
+Result<Block> decode_block(
+    byte_string_view &, std::vector<byte_string_view> *raw_transactions);
 Result<BlockHeader> decode_block_header(byte_string_view &);
 Result<std::vector<BlockHeader>>
 decode_block_header_vector(byte_string_view &enc);

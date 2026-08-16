@@ -85,7 +85,7 @@ inline constexpr uint64_t g_extra_cost_init(Transaction const &tx) noexcept
     return 0u;
 }
 
-std::pair<uint64_t, uint64_t> tokens_in_calldata(Transaction const &tx) noexcept
+CalldataTokens tokens_in_calldata(Transaction const &tx) noexcept
 {
     // Word-at-a-time zero counting (EIP-2028 prices zero and nonzero calldata
     // bytes differently). Byte heads and tails keep every load aligned: the
@@ -107,7 +107,7 @@ std::pair<uint64_t, uint64_t> tokens_in_calldata(Transaction const &tx) noexcept
         zeros += (*p == 0x00);
     }
     auto const nonzeros = tx.data.size() - zeros;
-    return {zeros, nonzeros};
+    return CalldataTokens{zeros, nonzeros};
 }
 
 // YP, Eqn. 60, first summation
@@ -116,10 +116,10 @@ uint64_t g_data(Transaction const &tx) noexcept
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
 
-    auto const [zeros, nonzeros] = tokens_in_calldata(tx);
+    auto const t = tokens_in_calldata(tx);
 
     // EIP-2028
-    return zeros * 4u + nonzeros * 16u;
+    return t.zeros * 4u + t.nonzeros * 16u;
 }
 
 EXPLICIT_TRAITS(g_data);
@@ -127,11 +127,21 @@ EXPLICIT_TRAITS(g_data);
 template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &tx) noexcept
 {
+    return intrinsic_gas_counted<traits>(tx, tokens_in_calldata(tx));
+}
+
+EXPLICIT_TRAITS(intrinsic_gas);
+
+template <Traits traits>
+uint64_t
+intrinsic_gas_counted(Transaction const &tx, CalldataTokens const t) noexcept
+{
     static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
     // EIP-2930: access-list and storage-key cost (active since Berlin)
-    uint64_t gas = 21'000 + g_data<traits>(tx) + g_txn_create(tx) +
-                   g_access_and_storage(tx);
+    // EIP-2028 prices the calldata bytes.
+    uint64_t gas = 21'000 + (t.zeros * 4u + t.nonzeros * 16u) +
+                   g_txn_create(tx) + g_access_and_storage(tx);
 
     // EIP-3860: per-word initcode cost (Shanghai)
     if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
@@ -145,12 +155,17 @@ uint64_t intrinsic_gas(Transaction const &tx) noexcept
     return gas;
 }
 
-EXPLICIT_TRAITS(intrinsic_gas);
+EXPLICIT_TRAITS(intrinsic_gas_counted);
 
 uint64_t floor_data_gas(Transaction const &tx) noexcept
 {
-    auto const [zeros, nonzeros] = tokens_in_calldata(tx);
-    return 21'000 + (zeros * 10u + nonzeros * 40u);
+    return floor_data_gas(tokens_in_calldata(tx));
+}
+
+uint64_t floor_data_gas(CalldataTokens const t) noexcept
+{
+    // EIP-7623
+    return 21'000 + (t.zeros * 10u + t.nonzeros * 40u);
 }
 
 inline constexpr uint256_t priority_fee_per_gas(

@@ -97,6 +97,7 @@ ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     , sender_{sender}
     , authorities_{authorities}
     , header_{header}
+    , tokens_{tokens_in_calldata(tx)}
 {
 }
 
@@ -212,7 +213,8 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message(
         .kind = to_address.first,
         .flags = 0,
         .depth = 0,
-        .gas = static_cast<int64_t>(tx_.gas_limit - intrinsic_gas<traits>(tx_)),
+        .gas = static_cast<int64_t>(
+            tx_.gas_limit - intrinsic_gas_counted<traits>(tx_, tokens_)),
         .recipient = to_address.second,
         .sender = sender_,
         .input_data = tx_.data.data(),
@@ -391,7 +393,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
 
     // EIP-7623
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
-        auto const floor_gas = floor_data_gas(tx_);
+        auto const floor_gas = floor_data_gas(tokens_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;
             state.subtract_from_balance(sender_, gas_cost * delta);
@@ -444,7 +446,8 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             header_.base_fee_per_gas,
             header_.excess_blob_gas,
             chain_.get_chain_id(),
-            chain_.get_blob_schedule(header_.timestamp));
+            chain_.get_blob_schedule(header_.timestamp),
+            tokens_);
         if (validation_result.has_error()) {
             prev_.get_future().wait();
             return std::move(validation_result).as_failure();

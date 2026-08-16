@@ -31,13 +31,35 @@ MONAD_NAMESPACE_BEGIN
 struct Transaction;
 struct BlockHeader;
 
+// Zero and non-zero calldata byte counts, which EIP-2028 and EIP-7623 price
+// differently. Both intrinsic_gas and floor_data_gas need them, and every
+// transaction goes through both twice -- once to validate, once to execute --
+// so each transaction's calldata was being counted four times. Measured on
+// block 25551991: 1,032 counts for 258 transactions, 578,740 steps. The
+// counts are a pure function of tx.data, so the caller takes them once and
+// hands them down.
+struct CalldataTokens
+{
+    uint64_t zeros;
+    uint64_t nonzeros;
+};
+
+CalldataTokens tokens_in_calldata(Transaction const &) noexcept;
+
 template <Traits traits>
 uint64_t g_data(Transaction const &) noexcept;
 
 template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &) noexcept;
 
+// intrinsic_gas for a caller that already holds the counts. A separate name
+// rather than an overload: EXPLICIT_TRAITS instantiates through
+// `decltype(f<traits>)`, which an overload set makes ambiguous.
+template <Traits traits>
+uint64_t intrinsic_gas_counted(Transaction const &, CalldataTokens) noexcept;
+
 uint64_t floor_data_gas(Transaction const &) noexcept;
+uint64_t floor_data_gas(CalldataTokens) noexcept;
 
 template <Traits traits>
 uint256_t

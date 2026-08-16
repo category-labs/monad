@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
@@ -58,6 +59,9 @@ protected:
     Address const &sender_;
     std::span<std::optional<Address> const> const authorities_;
     BlockHeader const &header_;
+    // Counted once here. Validation and execution each price the calldata
+    // twice, and the counts are a pure function of tx_.data.
+    CalldataTokens const tokens_;
 
 public:
     ExecuteTransactionNoValidation(
@@ -75,6 +79,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     using ExecuteTransactionNoValidation<traits>::sender_;
     using ExecuteTransactionNoValidation<traits>::authorities_;
     using ExecuteTransactionNoValidation<traits>::header_;
+    using ExecuteTransactionNoValidation<traits>::tokens_;
 
     uint64_t i_;
     ChainContext<traits> const &chain_ctx_;

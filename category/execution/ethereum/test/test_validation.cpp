@@ -71,7 +71,8 @@ TYPED_TEST(TraitsTest, validate_enough_gas)
             0,
             std::nullopt,
             1,
-            default_blob_schedule<typename TestFixture::Trait>());
+            default_blob_schedule<typename TestFixture::Trait>(),
+            tokens_in_calldata(t));
 
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::IntrinsicGasGreaterThanLimit);
@@ -94,7 +95,8 @@ TYPED_TEST(TraitsTest, validate_floor_gas)
             0,
             std::nullopt,
             1,
-            default_blob_schedule<typename TestFixture::Trait>());
+            default_blob_schedule<typename TestFixture::Trait>(),
+            tokens_in_calldata(t));
 
     if constexpr (TestFixture::Trait::eip_7623_active()) {
         ASSERT_TRUE(result.has_error());
@@ -215,7 +217,8 @@ TYPED_TEST(InMemoryStateTraitsTest, successful_validation)
             0,
             std::nullopt,
             1,
-            default_blob_schedule<typename TestFixture::Trait>());
+            default_blob_schedule<typename TestFixture::Trait>(),
+            tokens_in_calldata(tx));
     EXPECT_TRUE(result1.has_value());
 
     trace::StateTracer noop_state_tracer = std::monostate{};
@@ -243,7 +246,8 @@ TYPED_TEST(TraitsTest, invalid_signature)
             0,
             std::nullopt,
             1,
-            default_blob_schedule<typename TestFixture::Trait>());
+            default_blob_schedule<typename TestFixture::Trait>(),
+            tokens_in_calldata(t));
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InvalidSignature);
 }
@@ -264,7 +268,8 @@ TYPED_TEST(TraitsTest, max_fee_less_than_base)
             37'000'000'000,
             std::nullopt,
             1,
-            default_blob_schedule<typename TestFixture::Trait>());
+            default_blob_schedule<typename TestFixture::Trait>(),
+            tokens_in_calldata(t));
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::MaxFeeLessThanBase);
 }
@@ -285,7 +290,8 @@ TYPED_TEST(TraitsTest, priority_fee_greater_than_max)
             29'000'000'000,
             std::nullopt,
             1,
-            default_blob_schedule<typename TestFixture::Trait>());
+            default_blob_schedule<typename TestFixture::Trait>(),
+            tokens_in_calldata(t));
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::PriorityFeeGreaterThanMax);
 }
@@ -331,7 +337,9 @@ TYPED_TEST(TraitsTest, init_code_exceed_limit)
             0,
             std::nullopt,
             1,
-            default_blob_schedule<typename TestFixture::Trait>());
+            default_blob_schedule<typename TestFixture::Trait>(),
+            tokens_in_calldata(t));
+    // init codesize validation since EIP-3860
     if constexpr (TestFixture::Trait::eip_3860_active()) {
         ASSERT_TRUE(result.has_error());
         EXPECT_EQ(result.error(), TransactionError::InitCodeLimitExceeded);

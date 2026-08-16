@@ -80,6 +80,21 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         # been established, and the same flag there would be a guess.
         string(APPEND CMAKE_C_FLAGS " -mtune=generic-ooo")
         string(APPEND CMAKE_CXX_FLAGS " -mtune=generic-ooo")
+
+        # rv64ima has no `cpop`, so every __builtin_popcount gcc emits is a
+        # libgcc call. Force-include the macro override into every guest C++
+        # TU, third-party ones included -- see the header for why inlining
+        # beats the link-time __popcountdi2 override in zkvm/core/libc.cpp
+        # (0.359 % of the block against 0.14 %). C is left alone: the C
+        # sources here are blst/BLAKE3/secp256k1, which carry their own bit
+        # primitives and emit no popcount into the linked image.
+        #
+        # ZisK only for the same reason as -mtune above: rv64im has no `cpop`
+        # either and the header degrades to a plain constexpr SWAR there, but
+        # the SP1 guest is not built or measured here and an unmeasured flag
+        # is a guess. Worth extending once it is.
+        string(APPEND CMAKE_CXX_FLAGS
+            " -include ${CMAKE_CURRENT_SOURCE_DIR}/../core/builtin_popcount.hpp")
     endif()
 
     # Repo + third-party paths.

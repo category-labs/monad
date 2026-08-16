@@ -1,13 +1,16 @@
 # Submodule patches for the zkVM guest
 
-Two changes that could not be committed with the levers they belong to, because they live in
-submodules pointing at upstream repositories (`martinus/unordered_dense`, `arximboldi/immer`)
-rather than at forks.
+One change that cannot be committed with the lever it belongs to, because it lives in a submodule
+pointing at an upstream repository (`martinus/unordered_dense`) rather than at a fork.
 
-**Nothing applies these automatically.** They are kept here so the work is versioned and reviewable,
-not because the build consumes them.
+**Nothing applies it automatically.** It is kept here so the work is versioned and reviewable, not
+because the build consumes it.
 
-## What they are
+There used to be a second hunk here, for `arximboldi/immer`. It is gone: the same win is now
+carried by this repository. See "The immer hunk, and why it left" below — the short version is that
+a submodule patch was never the only way to reach it, and the alternative measured *identically*.
+
+## What it is
 
 `third_party/unordered_dense` — the map stores `max_load_factor` as a `float` and computes
 `m_num_buckets * 0.8f` on every rehash and size query. The guest has no FPU, so each one is a call
@@ -15,52 +18,70 @@ to `__floatundisf` and `__mulsf3`. For the power-of-two bucket counts this map u
 is the same integer. This one is arguably upstreamable: it is strictly better on any target and
 loses nothing.
 
-`third_party/immer` — the HAMT's `popcount`. There is no `cpop` on riscv64ima, so
-`__builtin_popcountll` becomes a call to a 30-instruction libgcc helper, and the champ makes one
-per level of every lookup and every insert.
+There is no way to reach it from this repository. `default_max_load_factor` is a
+`static constexpr float` **member**, not a configuration macro, and the multiply is written out at
+the two use sites — nothing an include-path shim or a force-included header can bind to. Unlike the
+immer hunk, this one really does need the submodule.
 
-## What they are worth, on the current guest
+## What it is worth — measured end to end, not estimated
 
-Re-measured on the `mtune` build, block 25551991 (`profiling/FINDINGS.md` §19 for the cost model):
+Built and run on block 25551991, branch `al/zkvm-r4-levers` at `83aeb3ad7`, public output
+byte-identical:
 
-| | | |
+| build | STEPS | COST |
 |---|---|---|
-| `__popcountdi2` | 41,909 calls, 1,257,270 steps | 0.96 % of the guest |
-| `__floatundisf` + `__mulsf3` | 368,154 steps | 0.28 % of the guest |
+| branch, submodules pristine | 119,173,370 | 18,931,554,415 |
+| + this hunk | 118,695,720 | **18,884,245,287** |
 
-The popcount hunk takes the call path from 31 instructions to 18 and pays four 8-byte loads:
-**820 COST per call, 34.4 M, 0.17 % of total COST**. The load-factor hunk removes the soft-float
-family outright: **~25 M, 0.13 %**. Together **~0.30 %**.
+**−477,650 steps, −47,309,128 COST, 0.236 % of the reference.**
 
-The earlier note here said "0.40 point, 1.4 % of the total gain" from a 16-block run against
-`ed16787ae`. That was a share of the guest's own work on an older build, not of COST, and it is not
-comparable to the figures above — the guest has since lost 22 % of its steps.
+Every earlier number in this file was an estimate, and every estimate was low. This hunk was
+recorded at 0.13 %; it is 0.236 %. The immer hunk was recorded at 0.17 %; it is 0.359 %. The
+estimates priced the instructions removed from the callee and missed what removing a *call* does to
+the caller.
 
-## Two corrections to the immer hunk
+Two older figures were also wrong and are recorded here so nobody re-derives them: "0.40 point,
+1.4 % of the total gain", which was a share of the guest's own work on a build that has since lost
+22 % of its steps; and the claim that SP1 is rv32im, which it is not — see
+`zkvm/build-support/src/lib.rs`, it is rv64im.
 
-**It did not compile.** The inline replacement was inserted inside the `#if defined(_MSC_VER)`
-guard at the top of `bits.hpp`, while the two call sites that use it are on the `#else` side. On
-gcc that is `error: 'monad_popcount_inline' has not been declared`, twice. Whatever produced the
-0.40-point measurement above, it was not this file. The namespace now sits above the guard.
+## The immer hunk, and why it left
 
-**The constants were still immediates.** rv64 has no 64-bit immediate, so gcc rebuilt each of the
-SWAR's four constants with `lui/addi/slli/add` at every site — which is most of why the libgcc
-helper costs 30 instructions in the first place. Fetching them from `.rodata` instead takes the
-inline body from 29 instructions to 19. Same arithmetic either way: 20,004,166 host cases against
-`__builtin_popcountll` (all 64 single- and double-bit patterns, all 64 prefixes, 20 M random words
-biased sparse and dense), 0 divergences.
+The HAMT's `popcount`. riscv64ima has no `cpop`, so `__builtin_popcountll` becomes a call to a
+30-instruction libgcc helper, and the champ makes one per level of every lookup and every insert:
+41,909 calls a block — all of the guest's popcount traffic, as it turns out.
 
-The fetch is `asm("ld %0, %1" : "=r"(v) : "m"(c))` under `MONAD_ZKVM_ZISK` only, behind
-`if !consteval`. gcc folds any constant it can see straight back into an immediate, and the operand
-has to be `"m"` rather than `"r"` or gcc is free to satisfy the address by rebuilding the value —
-which is the thing being removed. SP1 is rv32im, where a 64-bit constant is two 32-bit halves and
-materialising costs about what loading would; the host keeps the plain literals.
+It never needed a submodule. `__builtin_popcountll` is an ordinary identifier to the preprocessor,
+so a force-included header can redefine it — for every guest translation unit at once, third-party
+ones included, from a file this repository owns. That is `zkvm/core/builtin_popcount.hpp`, wired up
+in `zkvm/guest/CMakeLists.txt`, and it measures **byte-identically** to the patched submodule:
+117,870,371 steps and 18,812,345,445 COST either way.
 
-## Applying them
+Two things had to be right before that held, and both are written down beside the code:
 
-    git apply --directory=third_party/unordered_dense  # first hunk
-    git apply --directory=third_party/immer            # second hunk
+**The hunk did not compile.** The inline replacement was inserted inside the `#if defined(_MSC_VER)`
+guard at the top of `bits.hpp`, while the two call sites that use it are on the `#else` side. On gcc
+that is `error: 'monad_popcount_inline' has not been declared`, twice. Whatever produced the
+original 0.40-point measurement, it was not this file.
 
-or, to carry them properly: fork `unordered_dense` under `category-labs`, land the integer
-load-factor change there, and bump the submodule pointer. `immer`'s single site is not worth a fork
-on its own.
+**The constants have to be fetched, and the second one has to be hoisted.** rv64 has no 64-bit
+immediate, so gcc rebuilds each of the SWAR's four constants with `lui/addi/slli/add` at every
+site — which is most of why the libgcc helper costs 30 instructions in the first place. Loading them
+from `.rodata` instead takes the body from 29 instructions to 19. Then, counter-intuitively, one of
+the four should go *back* to being an immediate: `bits::popcount64` refuses to hoist it into a
+`const` local because standalone that costs two instructions, and standalone that is correct — but
+inside immer's descent loop a materialised constant is loop-invariant arithmetic that LICM lifts out
+and an `asm` load is not, and the difference is 0.124 % of the block. `popcount64_licm` in
+`zkvm/core/builtin_popcount.hpp` is the loop-facing form; `bits::popcount64` stays as it is.
+
+Same arithmetic in every form: 20,004,166 host cases against `__builtin_popcountll` (all 64 single-
+and double-bit patterns, all 64 prefixes, 20 M random words biased sparse and dense), 0 divergences.
+
+## Applying it
+
+    git apply --directory=third_party/unordered_dense third_party/patches/zkvm-guest-submodules.patch
+
+That leaves the submodule dirty and records nothing: a submodule is a separate repository pinned by
+SHA, so no commit in *this* repository can carry its file contents. To carry it properly, fork
+`unordered_dense` under `category-labs`, land the integer load-factor change there, and bump the
+submodule pointer — the pointer bump *is* a commit here.

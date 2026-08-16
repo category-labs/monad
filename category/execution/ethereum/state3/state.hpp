@@ -34,11 +34,11 @@
 
 #include <ankerl/unordered_dense.h>
 
-#include <immer/vector.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <vector>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
@@ -61,7 +61,12 @@ class State
 
     Map<Address, VersionStack<AccountState>> current_{};
 
-    VersionStack<immer::vector<Receipt::Log>> logs_{{}};
+    // Logs are append-only. Each frame saves the current size so reverting
+    // can discard its logs without persistent-vector snapshots.
+    std::vector<Receipt::Log> logs_{};
+    // Saved log sizes in bytes; convert to counts only on rollback.
+    // log_marks_.size() == version_.
+    std::vector<size_t> log_marks_{};
 
     Map<bytes32_t, vm::SharedVarcode> code_{};
 
@@ -222,10 +227,21 @@ public:
 
     ////////////////////////////////////////
 
-    immer::vector<Receipt::Log> const &logs();
+    std::vector<Receipt::Log> const &logs();
+    // The logs, handed over and cleared. A receipt is their last reader: the
+    // events that follow read the receipt's, and nothing reverts afterwards.
+    std::vector<Receipt::Log> take_logs();
 
     void store_log(Receipt::Log const &);
     void store_log(Receipt::Log &&);
+#if defined(MONAD_ZKVM_ZISK)
+    // Convert maker directly into the new log; no intermediate Log to move.
+    template <typename Maker>
+    Receipt::Log const &emplace_log(Maker const &maker)
+    {
+        return logs_.emplace_back(maker);
+    }
+#endif
 
     ////////////////////////////////////////
 

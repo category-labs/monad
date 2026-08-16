@@ -48,6 +48,18 @@
 
 MONAD_NAMESPACE_BEGIN
 
+namespace
+{
+    // Measure used bytes without dividing by sizeof(T).
+    template <typename T>
+    [[gnu::always_inline]] inline size_t bytes_of(std::vector<T> const &v)
+    {
+        return static_cast<size_t>(
+            reinterpret_cast<char const *>(std::to_address(v.cend())) -
+            reinterpret_cast<char const *>(v.data()));
+    }
+}
+
 OriginalAccountState &State::original_account_state(Address const &address)
 {
     auto it = original_.find(address);
@@ -129,6 +141,7 @@ void State::push()
 
     ++version_;
     dirty_.emplace_back();
+    log_marks_.push_back(bytes_of(logs_));
 }
 
 void State::pop_accept()
@@ -147,7 +160,8 @@ void State::pop_accept()
         }
     }
 
-    logs_.pop_accept(version_);
+    // Accepted: the frame's logs stay where they are, only its watermark goes.
+    log_marks_.pop_back();
 
     --version_;
 }
@@ -168,7 +182,9 @@ void State::pop_reject()
         }
     }
 
-    logs_.pop_reject(version_);
+    // Rejected: drop exactly what this frame appended.
+    logs_.resize(log_marks_.back() / sizeof(Receipt::Log));
+    log_marks_.pop_back();
 
     while (removals.size()) {
         current_.erase(removals.back());
@@ -624,21 +640,24 @@ void State::create_account_no_rollback(Address const &address)
         }};
 }
 
-immer::vector<Receipt::Log> const &State::logs()
+std::vector<Receipt::Log> const &State::logs()
 {
-    return logs_.recent();
+    return logs_;
+}
+
+std::vector<Receipt::Log> State::take_logs()
+{
+    return std::exchange(logs_, {});
 }
 
 void State::store_log(Receipt::Log const &log)
 {
-    auto &logs = logs_.current(version_);
-    logs = logs.push_back(log);
+    logs_.push_back(log);
 }
 
 void State::store_log(Receipt::Log &&log)
 {
-    auto &logs = logs_.current(version_);
-    logs = logs.push_back(std::move(log));
+    logs_.push_back(std::move(log));
 }
 
 void State::set_to_state_incarnation(Address const &address)

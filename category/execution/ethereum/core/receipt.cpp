@@ -146,10 +146,4 @@ void populate_bloom(Receipt::Bloom &bloom, Receipt::Log const &log)
 }
 #endif
 
-void Receipt::add_log(Receipt::Log const &log)
-{
-    logs.push_back(log);
-    populate_bloom(bloom, log);
-}
-
 MONAD_NAMESPACE_END

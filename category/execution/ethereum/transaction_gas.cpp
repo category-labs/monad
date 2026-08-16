@@ -18,6 +18,7 @@
 #include <category/core/checked_math.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/thread_local.h>
 #include <category/execution/ethereum/chain/blob_schedule.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
@@ -262,10 +263,32 @@ uint256_t get_base_fee_per_blob_gas(
     uint64_t const excess_blob_gas, BlobSchedule const &blob_schedule) noexcept
 {
     constexpr uint256_t MIN_BASE_FEE_PER_BLOB_GAS = 1;
-    return fake_exponential(
+
+    // Zero excess_blob_gas gas is valid, so an empty cache needs a separate
+    // flag.
+    struct BlobFeeCache
+    {
+        uint64_t excess_blob_gas;
+        uint64_t update_fraction;
+        uint256_t base_fee;
+        bool valid;
+    };
+
+    // Constant initialization avoids guest guard and teardown support.
+    static MONAD_THREAD_LOCAL BlobFeeCache cache{};
+
+    uint64_t const update_fraction =
+        blob_schedule.blob_base_fee_update_fraction;
+    if (cache.valid && cache.excess_blob_gas == excess_blob_gas &&
+        cache.update_fraction == update_fraction) {
+        return cache.base_fee;
+    }
+    uint256_t const base_fee = fake_exponential(
         MIN_BASE_FEE_PER_BLOB_GAS,
         uint256_t{excess_blob_gas},
-        uint256_t{blob_schedule.blob_base_fee_update_fraction});
+        uint256_t{update_fraction});
+    cache = BlobFeeCache{excess_blob_gas, update_fraction, base_fee, true};
+    return base_fee;
 }
 
 template <Traits traits>

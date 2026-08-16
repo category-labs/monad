@@ -17,6 +17,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bit_primitives.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
@@ -27,6 +28,7 @@
 #include <boost/outcome/try.hpp>
 
 #include <concepts>
+#include <cstring>
 #include <type_traits>
 #include <utility>
 
@@ -47,10 +49,35 @@ inline Result<T> decode_raw_num(byte_string_view const enc)
         return DecodeError::LeadingZero;
     }
 
+    // Assemble the words directly. The obvious form -- memcpy into the tail
+    // of a zeroed T, then bswap the whole thing -- costs two things it does
+    // not need to. The memcpy length is a runtime value, so it is a real call
+    // (dma_memcpy) even for one byte; and the bswap runs over the full width,
+    // all four words of a uint256 even when the value fits in one. Measured on
+    // block 25551991: AccountLeafView::account is 701 calls at 207 steps and
+    // 38 % of that is this pair, of which the byte-swap of three words that
+    // are entirely zero.
+    //
+    // `enc` is big-endian and minimal (the leading-zero check above), so the
+    // low word of the result is its last eight bytes, and so on up. Whole
+    // words go through one load and one bswap64; the short remainder, which is
+    // all there is for the common small value, goes byte at a time.
     T result{};
-    std::memcpy(
-        &as_bytes(result)[sizeof(T) - enc.size()], enc.data(), enc.size());
-    return bswap(result);
+    uint8_t *const dst = as_bytes(result);
+    unsigned char const *p = enc.data() + enc.size();
+    size_t n = enc.size();
+    size_t o = 0;
+    while (n >= sizeof(uint64_t)) {
+        p -= sizeof(uint64_t);
+        n -= sizeof(uint64_t);
+        uint64_t const w = monad::bits::bswap64(monad::bits::load64(p));
+        std::memcpy(dst + o, &w, sizeof(w)); // constant size: no call
+        o += sizeof(uint64_t);
+    }
+    for (size_t i = 0; i < n; ++i) {
+        dst[o + i] = enc[n - 1 - i];
+    }
+    return result;
 }
 
 inline Result<size_t> decode_length(byte_string_view const enc)

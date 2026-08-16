@@ -18,6 +18,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 
@@ -26,8 +27,10 @@
 
 #include <test_resource_data.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 using namespace monad;
 using namespace monad::literals;
@@ -1062,4 +1065,56 @@ TEST(Rlp_block, IntTypeMismatchRegression)
         rlp::decode_block_header(encoded_block_header_view);
     ASSERT_FALSE(decoded_block_header.has_error());
     EXPECT_EQ(decoded_block_header.value(), block_header);
+}
+
+TEST(Rlp_Block, DecodeBlockRawTransactions)
+{
+    Transaction const legacy{
+        .sc = {.signature = {.r = 1, .s = 1}},
+        .nonce = 0,
+        .max_fee_per_gas = 1,
+        .gas_limit = 21'000,
+        .value = 0,
+        .to = 0x3535353535353535353535353535353535353535_address};
+    Transaction const typed{
+        .sc = {.signature = {.r = 1, .s = 1, .y_parity = false}, .chain_id = 1},
+        .nonce = 1,
+        .max_fee_per_gas = 1,
+        .gas_limit = 21'000,
+        .value = 0,
+        .to = 0x3535353535353535353535353535353535353535_address,
+        .type = TransactionType::eip1559,
+        .max_priority_fee_per_gas = 1};
+    Block const block{.transactions = {legacy, typed}};
+    auto const encoded_block = rlp::encode_block(block);
+
+    byte_string_view enc{encoded_block};
+    std::vector<byte_string_view> raw;
+    auto const decoded = rlp::decode_block(enc, raw);
+    ASSERT_FALSE(decoded.has_error());
+    EXPECT_TRUE(enc.empty());
+    EXPECT_EQ(decoded.value(), block);
+
+    // Each entry is exactly what the transactions trie hashes: a legacy
+    // transaction is its RLP list with the header retained, a typed one is
+    // `type || payload` with the block body's string envelope stripped.
+    ASSERT_EQ(raw.size(), 2u);
+    EXPECT_EQ(raw[0], rlp::encode_transaction(legacy));
+    EXPECT_GE(raw[0][0], 0xc0);
+    EXPECT_EQ(raw[1], rlp::encode_transaction(typed));
+    EXPECT_EQ(raw[1][0], 0x02);
+
+    for (size_t i = 0; i < raw.size(); ++i) {
+        // The views alias the input buffer rather than a copy.
+        EXPECT_GE(raw[i].data(), encoded_block.data());
+        EXPECT_LE(
+            raw[i].data() + raw[i].size(),
+            encoded_block.data() + encoded_block.size());
+        // And each one is accepted by the standalone decoder as-is.
+        byte_string_view view{raw[i]};
+        auto const tx = rlp::decode_transaction(view);
+        ASSERT_FALSE(tx.has_error());
+        EXPECT_TRUE(view.empty());
+        EXPECT_EQ(tx.value(), block.transactions[i]);
+    }
 }

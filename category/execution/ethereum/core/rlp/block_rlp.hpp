@@ -29,6 +29,8 @@ byte_string encode_block(Block const &);
 byte_string encode_ommers(std::vector<BlockHeader> const &);
 
 Result<Block> decode_block(byte_string_view &);
+Result<Block> decode_block(
+    byte_string_view &, std::vector<byte_string_view> &raw_transactions);
 Result<BlockHeader> decode_block_header(byte_string_view &);
 Result<std::vector<BlockHeader>>
 decode_block_header_vector(byte_string_view &enc);

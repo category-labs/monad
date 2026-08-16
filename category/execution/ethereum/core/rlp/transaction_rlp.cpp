@@ -36,6 +36,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -382,19 +383,33 @@ Result<Transaction> decode_transaction(byte_string_view &enc)
     }
 }
 
-Result<std::vector<Transaction>> decode_transaction_list(byte_string_view &enc)
+template <NullptrOrRef<std::vector<byte_string_view>> Out>
+Result<std::vector<Transaction>>
+decode_transaction_list(byte_string_view &enc, Out const raw_transactions)
 {
+    constexpr bool keep_raw_transactions = !std::same_as<Out, std::nullptr_t>;
+
     std::vector<Transaction> transactions;
     BOOST_OUTCOME_TRY(auto ls, parse_list_metadata(enc));
 
     // TODO: Reserve txn vector size for better perf
     while (!ls.empty()) {
         if (ls[0] >= 0xc0) {
+            auto const before = ls;
             BOOST_OUTCOME_TRY(auto tx, decode_transaction_legacy(ls));
+            if constexpr (keep_raw_transactions) {
+                raw_transactions.get().push_back(
+                    before.substr(0, before.size() - ls.size()));
+            }
             transactions.emplace_back(std::move(tx));
         }
         else {
             BOOST_OUTCOME_TRY(auto str, parse_string_metadata(ls));
+            // raw_transactions entries must be parsable with
+            // decode_transaction, hence we store the unwrapped str payload
+            if constexpr (keep_raw_transactions) {
+                raw_transactions.get().push_back(str);
+            }
             BOOST_OUTCOME_TRY(auto tx, decode_transaction_eip2718(str));
             transactions.emplace_back(std::move(tx));
         }
@@ -403,5 +418,11 @@ Result<std::vector<Transaction>> decode_transaction_list(byte_string_view &enc)
 
     return transactions;
 }
+
+template Result<std::vector<Transaction>>
+decode_transaction_list<std::nullptr_t>(byte_string_view &, std::nullptr_t);
+template Result<std::vector<Transaction>>
+decode_transaction_list<std::reference_wrapper<std::vector<byte_string_view>>>(
+    byte_string_view &, std::reference_wrapper<std::vector<byte_string_view>>);
 
 MONAD_RLP_NAMESPACE_END

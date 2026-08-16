@@ -21,6 +21,8 @@
 #include <category/core/rlp/config.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 
+#include <concepts>
+#include <cstddef>
 #include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN
@@ -40,6 +42,17 @@ Result<AuthorizationList> decode_authorization_list(byte_string_view &);
 Result<Transaction> decode_transaction_legacy(byte_string_view &);
 Result<Transaction> decode_transaction_eip2718(byte_string_view &);
 Result<Transaction> decode_transaction(byte_string_view &);
-Result<std::vector<Transaction>> decode_transaction_list(byte_string_view &enc);
+
+template <class Out>
+    requires std::same_as<Out, std::nullptr_t> ||
+             std::same_as<Out, std::vector<byte_string_view> *>
+Result<std::vector<Transaction>>
+decode_transaction_list(byte_string_view &enc, Out const raw_transactions);
+
+inline Result<std::vector<Transaction>>
+decode_transaction_list(byte_string_view &enc)
+{
+    return decode_transaction_list(enc, nullptr);
+}
 
 MONAD_RLP_NAMESPACE_END

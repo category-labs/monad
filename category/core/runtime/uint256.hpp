@@ -940,9 +940,49 @@ udivrem(words_t<M> const &u, words_t<N> const &v) noexcept
     return result;
 }
 
+#ifdef MONAD_ZKVM_ZISK
+// ZisK does not divide 256-bit integers, it *checks* a division: the host
+// supplies (q, r) as a free input and the guest verifies Euclid's lemma with
+// the arith256 precompile -- q*b + r == a in one 256x256 -> 512 multiply,
+// high half zero, r < b. zisklib exports that whole routine, verification
+// included, as a no_mangle extern "C" symbol (ziskos v1.0.0-alpha,
+// zisklib/lib/uint256/div.rs), so this is a declaration and a call, not a
+// hand-written free-input protocol.
+//
+// The guest's own udivrem is Knuth's algorithm D: 18,367 calls on block
+// 25551991, 3,284,818 steps, 2.51 % of the guest, 179 per call -- and 31 of
+// those 179 are the prologue spilling thirteen callee-saved registers, before
+// any dividing happens. The hinted path is a fixed cost instead: the free-input
+// CSR exchange, one arith256 (1,424), and three 256-bit compares.
+//
+// It is deliberately NOT the verification that is written here. Getting
+// Euclid's lemma subtly wrong -- checking the low half and forgetting the high
+// one, say -- lets a prover claim any quotient it likes, and that is exactly
+// the code zisklib already maintains and tests.
+extern "C" void div_rem256_c(
+    uint64_t const *a, uint64_t const *b, uint64_t *quo, uint64_t *rem);
+#endif
+
 [[gnu::always_inline]] constexpr inline div_result<uint256_t>
 udivrem(uint256_t const &u, uint256_t const &v) noexcept
 {
+#ifdef MONAD_ZKVM_ZISK
+    if !consteval {
+        // div_rem256_c panics on a zero divisor and the software path aborts
+        // through MONAD_ASSERT(n). Route only the non-zero case so the abort
+        // stays the one the guest already has, raised from the same place.
+        if (v[0] | v[1] | v[2] | v[3]) {
+            alignas(8) uint64_t const a[4] = {u[0], u[1], u[2], u[3]};
+            alignas(8) uint64_t const b[4] = {v[0], v[1], v[2], v[3]};
+            alignas(8) uint64_t q[4];
+            alignas(8) uint64_t r[4];
+            div_rem256_c(a, b, q, r);
+            return {
+                .quot = uint256_t{q[0], q[1], q[2], q[3]},
+                .rem = uint256_t{r[0], r[1], r[2], r[3]}};
+        }
+    }
+#endif
     auto const r = udivrem(u.as_words(), v.as_words());
     return {.quot = uint256_t{r.quot}, .rem = uint256_t{r.rem}};
 }

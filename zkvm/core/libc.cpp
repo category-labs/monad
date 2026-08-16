@@ -15,7 +15,10 @@
 
 // Minimal C library functions for bare-metal zkVM.
 // The zkVM environment uses a bump allocator — free is a no-op.
+//
+// Also carries one libgcc override — see __popcountdi2 at the bottom.
 
+#include <category/core/bit_primitives.hpp>
 #include <zkvm/core/libc.hpp>
 
 #include <cstddef>
@@ -61,6 +64,33 @@ void *aligned_alloc(std::size_t alignment, std::size_t size)
         return nullptr;
     }
     return sys_alloc_aligned(size, alignment);
+}
+
+// riscv64ima has no `cpop`, so every __builtin_popcountll becomes a call to
+// libgcc's helper. immer's HAMT makes 41,909 of them per block (25551991) —
+// 1,257,270 steps, 0.96 % of the guest — and libgcc's body is 30 instructions
+// because it rebuilds each of the SWAR's four 64-bit constants from
+// lui/addi/slli/add, which is what a 64-bit immediate costs on this target.
+//
+// bits::popcount64 is the same arithmetic with the constants fetched from
+// .rodata: 19 instructions and four 8-aligned 8-byte loads. Against libgcc's
+// 30 that is 684 COST per call, 28.7 M, 0.14 %.
+//
+// Defining the symbol here rather than patching a caller: libgcc is a static
+// archive searched after this object, so the linker resolves __popcountdi2 to
+// this definition and never pulls libgcc's _popcountdi2.o. That is the same
+// mechanism malloc/free above rely on, and it composes with the immer hunk in
+// third_party/patches — if that is ever applied, immer inlines its own copy
+// and this simply goes uncalled.
+//
+// It is also the one change on this branch whose *effect* a build cannot show
+// by passing: if the link order ever put libgcc first, this would silently do
+// nothing. To check it took, disassemble __popcountdi2 in the ELF — 19
+// instructions with two `ld` off a shared anchor is this one, 30 with three
+// `lui` is libgcc's.
+int __popcountdi2(std::uint64_t const x)
+{
+    return monad::bits::popcount64(x);
 }
 
 } // extern "C"

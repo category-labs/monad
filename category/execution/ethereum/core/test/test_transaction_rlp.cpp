@@ -16,8 +16,12 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/execution/ethereum/core/rlp/address_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/rlp/encode2.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -540,4 +544,52 @@ TEST(Rlp_Transaction, ParseListMetadataLengthOverflow)
     byte_string_view enc{input};
     auto result = decode_transaction(enc);
     EXPECT_TRUE(result.has_error());
+}
+
+TEST(Rlp_Transaction, DecodeEip4844BlobHashListTrailingBytes)
+{
+    // Builds a type-3 transaction whose blob_versioned_hashes list contains
+    // one well-formed hash followed by `trailing`, which is appended raw to
+    // the list body. Anything 1-31 bytes long is too short to be a bytes32
+    // and must be rejected, not skipped.
+    auto const encode_blob_tx = [](byte_string const &trailing) {
+        byte_string const hashes =
+            encode_bytes32(
+                0x0101010101010101010101010101010101010101010101010101010101010101_bytes32) +
+            trailing;
+        return byte_string{0x03} +
+               encode_list2(
+                   encode_unsigned(1u), // chain_id
+                   encode_unsigned(0u), // nonce
+                   encode_unsigned(1u), // max_priority_fee_per_gas
+                   encode_unsigned(1u), // max_fee_per_gas
+                   encode_unsigned(21'000u), // gas_limit
+                   encode_address(
+                       0x3535353535353535353535353535353535353535_address),
+                   encode_unsigned(0u), // value
+                   encode_string2(byte_string{}), // data
+                   encode_access_list({}),
+                   encode_unsigned(1u), // max_fee_per_blob_gas
+                   encode_list2(hashes),
+                   encode_unsigned(0u), // y_parity
+                   encode_unsigned(1u), // r
+                   encode_unsigned(1u)); // s
+    };
+
+    {
+        auto const good = encode_blob_tx({});
+        byte_string_view enc{good};
+        auto const result = decode_transaction(enc);
+        ASSERT_FALSE(result.has_error());
+        EXPECT_EQ(result.value().blob_versioned_hashes.size(), 1u);
+    }
+    // Both ends of the 1-31 byte range: a single-byte RLP string, and a
+    // 30-byte RLP string (31 bytes encoded).
+    for (auto const &trailing :
+         {byte_string{0x01}, encode_string2(byte_string(30, 0x01))}) {
+        auto const bad = encode_blob_tx(trailing);
+        byte_string_view enc{bad};
+        auto const result = decode_transaction(enc);
+        EXPECT_TRUE(result.has_error()) << trailing.size();
+    }
 }

@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -191,9 +192,37 @@ void StateHostBase::emit_log(
 {
     MONAD_TRY
     {
+        static_assert(std::is_convertible_v<bytes32_t const &, bytes32_t>);
+#if defined(MONAD_ZKVM_ZISK)
+        // Construct the Log in place without moving temporary data or topics.
+        struct LogBuilder
+        {
+            Address const &address;
+            uint8_t const *data;
+            size_t data_size;
+            bytes32_t const *topics;
+            size_t num_topics;
+
+            operator Receipt::Log() const
+            {
+                return Receipt::Log{
+                    .data = {data, data_size},
+                    // LOG0 may supply nullptr: do not form a range from it.
+                    .topics = num_topics == 0
+                                  ? std::vector<bytes32_t>{}
+                                  : std::vector<
+                                        bytes32_t>{topics, topics + num_topics},
+                    .address = address};
+            }
+        };
+
+        Receipt::Log const &log = state_.emplace_log(
+            LogBuilder{address, data, data_size, topics, num_topics});
+        call_tracer_.on_log(log);
+        return;
+#else
         Receipt::Log log{.data = {data, data_size}, .address = address};
         // Copy all topics in one range.
-        static_assert(std::is_convertible_v<bytes32_t const &, bytes32_t>);
         if (num_topics != 0) {
             log.topics.assign(topics, topics + num_topics);
         }
@@ -201,6 +230,7 @@ void StateHostBase::emit_log(
         call_tracer_.on_log(log);
         state_.store_log(std::move(log));
         return;
+#endif
     }
     MONAD_CATCH(...)
     {

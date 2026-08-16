@@ -29,6 +29,7 @@
     #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #endif
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
@@ -480,12 +481,10 @@ Receipt ExecuteTransaction<traits>::execute_final(
         .status = result.status_code == CallStatus::Success ? 1u : 0u,
         .gas_used = gas_used,
         .type = tx_.type};
-    // Reserved: add_log grows the vector one push at a time otherwise, and
-    // with a bump allocator every intermediate capacity is allocated, copied
-    // forward and abandoned.
-    receipt.logs.reserve(state.logs().size());
-    for (auto const &log : state.logs()) {
-        receipt.add_log(log);
+    // Transfer the logs without copying their data and topics.
+    receipt.logs = state.take_logs();
+    for (auto const &log : receipt.logs) {
+        populate_bloom(receipt.bloom, log);
     }
 
     call_tracer_.on_finish(receipt.gas_used);

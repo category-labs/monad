@@ -66,7 +66,7 @@ TEST(Receipt, populate_bloom)
     EXPECT_EQ(output, bloom);
 }
 
-TEST(Receipt, add_log)
+TEST(Receipt, populate_bloom_with_topics)
 {
     static constexpr auto addr{
         0x3535353535353535353535353535353535353535_address};
@@ -79,7 +79,8 @@ TEST(Receipt, add_log)
         .data = data, .topics = {topic1, topic2}, .address = addr};
 
     Receipt r{};
-    r.add_log(log);
+    r.logs.push_back(log);
+    populate_bloom(r.bloom, r.logs.back());
 
     Receipt::Bloom const output{
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

@@ -16,6 +16,7 @@
 #include <category/core/bit_primitives.hpp>
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
+#include <category/core/thread_local.h>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
@@ -234,10 +235,38 @@ uint256_t get_base_fee_per_blob_gas(
     uint64_t const excess_blob_gas, BlobSchedule const &blob_schedule) noexcept
 {
     constexpr uint256_t MIN_BASE_FEE_PER_BLOB_GAS = 1;
-    return fake_exponential(
+
+    // Both arguments are block-level constants, and get_tx_context asks for
+    // this once per message frame -- 258 times on block 25551991, each one 53
+    // iterations of a 256-bit Taylor series at 3,778 steps. That is 0.76 % of
+    // the guest spent computing one number 258 times.
+    //
+    // One entry is enough: the key cannot change within a block, and changes
+    // once between blocks. And it is a complete key -- fake_exponential reads
+    // nothing from blob_schedule but the update fraction, so two calls that
+    // agree on (excess, fraction) cannot disagree on the result.
+    struct Memo
+    {
+        uint64_t excess;
+        uint64_t fraction;
+        uint256_t value;
+        bool valid;
+    };
+    // Constant-initialised, so it lands in .bss with no guard variable and no
+    // atexit registration -- both of which the bare-metal guest lacks.
+    static MONAD_THREAD_LOCAL Memo memo{};
+
+    uint64_t const fraction = blob_schedule.blob_base_fee_update_fraction;
+    if (memo.valid && memo.excess == excess_blob_gas &&
+        memo.fraction == fraction) {
+        return memo.value;
+    }
+    uint256_t const value = fake_exponential(
         MIN_BASE_FEE_PER_BLOB_GAS,
         uint256_t{excess_blob_gas},
-        uint256_t{blob_schedule.blob_base_fee_update_fraction});
+        uint256_t{fraction});
+    memo = Memo{excess_blob_gas, fraction, value, true};
+    return value;
 }
 
 template <Traits traits>

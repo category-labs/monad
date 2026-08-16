@@ -253,12 +253,50 @@ namespace monad::bits
     // The state roots cannot validate any of this (a map is correct under any deterministic hash);
     // the step count is the only check, and it caught both earlier versions.
 
+    // The two finalisation constants as objects, not literals, and adjacent
+    // so that one PC-relative address reaches both -- see fmix_k.
+    alignas(8) inline constexpr uint64_t FMIX_K[2] = {
+        0xFF51AFD7ED558CCDull, 0xC4CEB9FE1A85EC53ull};
+
+    // rv64 has no 64-bit immediate, so gcc rebuilds each of those constants
+    // from scratch at every inlined call site: lui/addi/slli/addi/addi/slli/addi
+    // for the first and six more for the second -- 13 of the 27 instructions
+    // hash_bytes20 assembles to. The guest calls fmix64 112,425 times (block
+    // 25551991), so it spends over a million steps re-deriving two numbers
+    // that never change.
+    //
+    // Fetching them is one shared PC-relative address plus a load each, 13
+    // instructions down to 4: hash_bytes20 assembles to 18 instead of 27.
+    // An 8-aligned 8-byte load is 16 in the ZisK cost model against 68 for
+    // every instruction it replaces, so 9 x 68 - 2 x 16 = 580 COST per call,
+    // 65.2 M, 0.33 % of the guest's total.
+    //
+    // It has to be asm to survive: gcc folds any constant it can see straight
+    // back into an immediate, whatever it is spelled as. The operand is "m"
+    // and not "r" so that the constraint asks for the load itself -- with "r"
+    // gcc is free to satisfy the address by rebuilding the value.
+    //
+    // ZisK only. SP1 is rv32im, where a 64-bit constant is two 32-bit halves
+    // and materialising costs about what loading would.
+    [[gnu::always_inline]] inline constexpr uint64_t
+    fmix_k(uint64_t const &k) noexcept
+    {
+#if defined(MONAD_ZKVM_ZISK)
+        if !consteval {
+            uint64_t v;
+            asm("ld %0, %1" : "=r"(v) : "m"(k));
+            return v;
+        }
+#endif
+        return k;
+    }
+
     [[gnu::always_inline]] inline constexpr uint64_t fmix64(uint64_t h) noexcept
     {
         h ^= h >> 33;
-        h *= 0xFF51AFD7ED558CCDull;
+        h *= fmix_k(FMIX_K[0]);
         h ^= h >> 33;
-        h *= 0xC4CEB9FE1A85EC53ull;
+        h *= fmix_k(FMIX_K[1]);
         h ^= h >> 33;
         return h;
     }

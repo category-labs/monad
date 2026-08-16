@@ -35,6 +35,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -209,13 +210,19 @@ decode_block_header_vector(byte_string_view &enc)
     return ommers;
 }
 
-Result<Block> decode_block(byte_string_view &enc)
+template <typename Out>
+    requires std::same_as<Out, std::nullptr_t> ||
+             std::same_as<
+                 Out, std::reference_wrapper<std::vector<byte_string_view>>>
+Result<Block>
+decode_block_impl(byte_string_view &enc, Out const raw_transactions)
 {
     Block block;
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
     BOOST_OUTCOME_TRY(block.header, decode_block_header(payload));
-    BOOST_OUTCOME_TRY(block.transactions, decode_transaction_list(payload));
+    BOOST_OUTCOME_TRY(
+        block.transactions, decode_transaction_list(payload, raw_transactions));
     BOOST_OUTCOME_TRY(block.ommers, decode_block_header_vector(payload));
 
     if (payload.size() > 0) {
@@ -228,6 +235,17 @@ Result<Block> decode_block(byte_string_view &enc)
     }
 
     return block;
+}
+
+Result<Block> decode_block(byte_string_view &enc)
+{
+    return decode_block_impl(enc, nullptr);
+}
+
+Result<Block> decode_block(
+    byte_string_view &enc, std::vector<byte_string_view> &raw_transactions)
+{
+    return decode_block_impl(enc, std::ref(raw_transactions));
 }
 
 MONAD_RLP_NAMESPACE_END

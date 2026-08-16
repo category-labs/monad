@@ -173,6 +173,16 @@ namespace
 
 bytes32_t ordered_trie_root(std::vector<byte_string> const &items)
 {
+    std::vector<byte_string_view> views;
+    views.reserve(items.size());
+    for (auto const &i : items) {
+        views.emplace_back(i);
+    }
+    return ordered_trie_root(std::span<byte_string_view const>{views});
+}
+
+bytes32_t ordered_trie_root(std::span<byte_string_view const> const items)
+{
     if (items.empty()) {
         return NULL_ROOT;
     }
@@ -206,7 +216,7 @@ bytes32_t ordered_trie_root(std::vector<byte_string> const &items)
             item.nib.push_back(b >> 4);
             item.nib.push_back(b & 0xf);
         }
-        item.val = byte_string_view{items[i]};
+        item.val = items[i];
         it.push_back(std::move(item));
     }
     std::sort(it.begin(), it.end(), [](Item const &a, Item const &b) {

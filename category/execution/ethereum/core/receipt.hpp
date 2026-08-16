@@ -42,8 +42,6 @@ struct Receipt
     TransactionType type{}; // R_x
     std::vector<Log> logs{}; // R_l
 
-    void add_log(Receipt::Log const &);
-
     friend bool operator==(Receipt const &, Receipt const &) = default;
 };
 

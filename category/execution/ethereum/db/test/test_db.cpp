@@ -487,12 +487,13 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     // receipt with log
     Receipt rct{
         .status = 1, .gas_used = 65'092, .type = TransactionType::legacy};
-    rct.add_log(Receipt::Log{
+    rct.logs.push_back(Receipt::Log{
         .data =
             0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000043b2126e7a22e0c288dfb469e3de4d2c097f3ca0000000000000000000000000000000000000000000000001195387bce41fd4990000000000000000000000000000000000000000000000000000000000000000_bytes,
         .topics =
             {0xf341246adaac6f497bc2a656f546ab9e182111d630394f0c57c710a59a2cb567_bytes32},
         .address = 0x8d12a197cb00d4747a1fe03395095ce2a5cc6819_address});
+    populate_bloom(rct.bloom, rct.logs.back());
     receipts.push_back(std::move(rct));
 
     std::vector<Transaction> transactions;

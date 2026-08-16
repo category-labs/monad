@@ -216,11 +216,19 @@ decode_block_header_vector(byte_string_view &enc)
 
 Result<Block> decode_block(byte_string_view &enc)
 {
+    return decode_block(enc, nullptr);
+}
+
+Result<Block> decode_block(
+    byte_string_view &enc, std::vector<byte_string_view> *const raw_transactions)
+{
     Block block;
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
     BOOST_OUTCOME_TRY(block.header, decode_block_header(payload));
-    BOOST_OUTCOME_TRY(block.transactions, decode_transaction_list(payload));
+    BOOST_OUTCOME_TRY(
+        block.transactions,
+        decode_transaction_list(payload, raw_transactions));
     BOOST_OUTCOME_TRY(block.ommers, decode_block_header_vector(payload));
 
     if (payload.size() > 0) {

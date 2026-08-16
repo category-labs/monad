@@ -21,6 +21,8 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/vm/evm/traits.hpp>
 
+#include <span>
+
 MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
@@ -40,9 +42,14 @@ namespace vm
 // MVP: emits the post-state root only. Receipts are computed (and the YP eq.22
 // cumulative-gas fixup is applied) but discarded; Phase 7 wires them into a
 // full block-output hash.
+// `raw_transactions` is the byte slice each transaction was decoded from, in
+// order, as decode_block hands them out. The transactions-root check uses
+// those bytes directly rather than re-encoding what was decoded from them --
+// see the note at the body binding.
 template <Traits traits>
 Result<bytes32_t> execute_block_zkvm(
-    Chain const &chain, Block const &block, Db &pdb, vm::VM &vm,
+    Chain const &chain, Block const &block,
+    std::span<byte_string_view const> raw_transactions, Db &pdb, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer,
     ChainContext<traits> const &chain_ctx);
 

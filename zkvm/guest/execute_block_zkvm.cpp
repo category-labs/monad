@@ -82,8 +82,9 @@ MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
 Result<bytes32_t> execute_block_zkvm(
-    Chain const &chain, Block const &block, Db &pdb, vm::VM &vm,
-    BlockHashBuffer const &block_hash_buffer,
+    Chain const &chain, Block const &block,
+    std::span<byte_string_view const> const raw_transactions, Db &pdb,
+    vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
     ChainContext<traits> const &chain_ctx)
 {
     static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
@@ -98,18 +99,8 @@ Result<bytes32_t> execute_block_zkvm(
     senders.reserve(block.transactions.size());
     std::vector<std::vector<std::optional<Address>>> authorities;
     authorities.reserve(block.transactions.size());
-    // The pre-signature encoding of each transaction, kept because step 3
-    // below needs the same bytes again for the transactions root. Encoding it
-    // twice is a second full walk over every uint256 field and the calldata --
-    // ~342,500 steps on block 25551991, 0.26 % of the guest -- and the two
-    // encodings differ only in what they append after this. Held rather than
-    // folded into one loop so that a bad sender still reports before a bad
-    // transactions root.
-    std::vector<byte_string> tx_bases;
-    tx_bases.reserve(block.transactions.size());
     for (auto const &tx : block.transactions) {
-        tx_bases.push_back(rlp::encode_transaction_base(tx));
-        auto const s = recover_sender(tx, tx_bases.back());
+        auto const s = recover_sender(tx);
         if (MONAD_UNLIKELY(!s.has_value())) {
             return TransactionError::MissingSender;
         }
@@ -165,14 +156,18 @@ Result<bytes32_t> execute_block_zkvm(
     //    prover-supplied claim. Without them, block_rlp could carry any body
     //    whose execution lands the same post-state root.
     {
-        std::vector<byte_string> enc;
-        enc.reserve(block.transactions.size());
-        for (size_t i = 0; i < block.transactions.size(); ++i) {
-            enc.push_back(rlp::encode_transaction(
-                block.transactions[i], tx_bases[i]));
-        }
+        // Against the bytes the transactions were decoded from, not against a
+        // re-encoding of what was decoded. That is the stronger of the two:
+        // re-encoding proves "what I executed, canonically re-encoded, hashes
+        // to the committed root", which admits any input whose re-encoding is
+        // canonical even where decode was lossy; this proves "the bytes I
+        // decoded from hash to the committed root", and the transactions
+        // executed came from exactly those slices by construction. It also
+        // costs nothing -- the slices are already in hand.
+        MONAD_ASSERT(raw_transactions.size() == block.transactions.size());
         if (MONAD_UNLIKELY(
-                ordered_trie_root(enc) != block.header.transactions_root)) {
+                ordered_trie_root(raw_transactions) !=
+                block.header.transactions_root)) {
             return BlockError::WrongMerkleRoot;
         }
         if (MONAD_UNLIKELY(
@@ -184,7 +179,7 @@ Result<bytes32_t> execute_block_zkvm(
             MONAD_ASSERT(
                 block.header.withdrawals_root.has_value() &&
                 block.withdrawals.has_value());
-            enc.clear();
+            std::vector<byte_string> enc;
             enc.reserve(block.withdrawals->size());
             for (auto const &w : *block.withdrawals) {
                 enc.push_back(rlp::encode_withdrawal(w));

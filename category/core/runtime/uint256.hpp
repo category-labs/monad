@@ -910,9 +910,38 @@ udivrem(words_t<M> const &u, words_t<N> const &v) noexcept
     return result;
 }
 
+#ifdef MONAD_ZKVM_ZISK
+// Replace software division with zisklib's verified quotient/remainder hint.
+// It checks q*b + r == a in 512 bits (high half zero) and r < b.
+extern "C" void div_rem256_c(
+    uint64_t const *a, uint64_t const *b, uint64_t *quo, uint64_t *rem);
+#endif
+
 [[gnu::always_inline]] constexpr div_result<uint256_t>
 udivrem(uint256_t const &u, uint256_t const &v) noexcept
 {
+#ifdef MONAD_ZKVM_ZISK
+    if !consteval {
+        // Keep division by zero on the existing assertion path.
+        if (v[0] | v[1] | v[2] | v[3]) {
+            // Read the aligned operands in place; their layout matches the
+            // shim. Keep outputs separate to avoid relying on its read/write
+            // order.
+            static_assert(alignof(uint256_t) >= 8);
+            static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
+            alignas(8) uint64_t q[4];
+            alignas(8) uint64_t r[4];
+            div_rem256_c(
+                reinterpret_cast<uint64_t const *>(&u),
+                reinterpret_cast<uint64_t const *>(&v),
+                q,
+                r);
+            return {
+                .quot = uint256_t{q[0], q[1], q[2], q[3]},
+                .rem = uint256_t{r[0], r[1], r[2], r[3]}};
+        }
+    }
+#endif
     auto const r = udivrem(u.as_words(), v.as_words());
     return {.quot = uint256_t{r.quot}, .rem = uint256_t{r.rem}};
 }

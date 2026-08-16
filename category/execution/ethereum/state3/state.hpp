@@ -33,11 +33,11 @@
 
 #include <ankerl/unordered_dense.h>
 
-#include <immer/vector.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <vector>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
@@ -60,7 +60,20 @@ class State
 
     Map<Address, VersionStack<AccountState>> current_{};
 
-    VersionStack<immer::vector<Receipt::Log>> logs_{{}};
+    // Logs are append-only within a transaction, and a rejected frame discards
+    // exactly the ones it appended -- so a flat vector plus one watermark per
+    // open version is the whole journal.
+    //
+    // This was VersionStack<immer::vector<Log>>. immer buys an O(1) snapshot
+    // when a frame opens, which is real, but a watermark buys the same thing
+    // for a size_t, and immer charges for it on every append: a node-path
+    // allocation and an rbtree descent. Measured on block 25551991 -- 701
+    // appends at 275.8 steps, 117,747 more inside immer's rbtree, and 103,679
+    // in the deque of vectors that held the versions.
+    std::vector<Receipt::Log> logs_{};
+    // log_marks_.size() == version_: logs_.size() as it was when each open
+    // frame started.
+    std::vector<size_t> log_marks_{};
 
     Map<bytes32_t, vm::SharedVarcode> code_{};
 
@@ -219,7 +232,7 @@ public:
 
     ////////////////////////////////////////
 
-    immer::vector<Receipt::Log> const &logs();
+    std::vector<Receipt::Log> const &logs();
 
     void store_log(Receipt::Log const &);
 

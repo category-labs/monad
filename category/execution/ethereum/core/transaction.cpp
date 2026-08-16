@@ -34,8 +34,15 @@ std::optional<Address> recover_authority(AuthorizationEntry const &auth_entry)
 
 std::optional<Address> recover_sender(Transaction const &tx)
 {
+    return recover_sender(tx, rlp::encode_transaction_base(tx));
+}
+
+std::optional<Address>
+recover_sender(Transaction const &tx, byte_string const &base)
+{
     TRACE_TXN_EVENT(StartSenderRecovery);
-    byte_string const tx_encoding = rlp::encode_transaction_for_signing(tx);
+    byte_string const tx_encoding =
+        rlp::encode_transaction_for_signing(tx, base);
     return recover_address(tx.sc.signature, tx_encoding);
 }
 

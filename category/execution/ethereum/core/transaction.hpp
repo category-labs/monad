@@ -100,4 +100,8 @@ static_assert(alignof(Transaction) == 8);
 
 std::optional<Address> recover_sender(Transaction const &);
 
+// For a caller that already holds the transaction's pre-signature encoding --
+// see rlp::encode_transaction_base.
+std::optional<Address> recover_sender(Transaction const &, byte_string const &base);
+
 MONAD_NAMESPACE_END

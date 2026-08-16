@@ -31,14 +31,32 @@ MONAD_NAMESPACE_BEGIN
 struct Transaction;
 struct BlockHeader;
 
-template <Traits traits>
-uint64_t g_data(Transaction const &) noexcept;
+// Zero and non-zero calldata byte counts, which EIP-2028 and EIP-7623 price
+// differently. Both intrinsic_gas and floor_data_gas need them, and every
+// transaction goes through both twice -- once to validate, once to execute.
+// The counts are a pure function of tx.data, so the caller takes them once and
+// hands them down.
+struct CalldataTokens
+{
+    uint64_t zeros;
+    uint64_t nonzeros;
+};
+
+CalldataTokens tokens_in_calldata(Transaction const &) noexcept;
 
 template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &) noexcept;
 
+// intrinsic_gas for a caller that already holds the counts.
+template <Traits traits>
+uint64_t intrinsic_gas_counted(Transaction const &, CalldataTokens) noexcept;
+
 template <Traits traits>
 uint64_t floor_data_gas(Transaction const &) noexcept;
+
+// floor_data_gas for a caller that already holds the counts.
+template <Traits traits>
+uint64_t floor_data_gas_counted(Transaction const &, CalldataTokens) noexcept;
 
 template <Traits traits>
 uint256_t

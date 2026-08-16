@@ -43,11 +43,17 @@
 
 MONAD_NAMESPACE_BEGIN
 
+// `tokens` is the transaction's calldata zero/non-zero split, which both of
+// this function's gas checks need. It is a required parameter rather than
+// something computed here because a transaction that validates is then
+// executed, and execution needs the same counts again: passing them in takes
+// the block from four counts per transaction to one. tokens_in_calldata(tx)
+// is the right argument for a caller that has no better source.
 template <Traits traits>
 Result<void> static_validate_transaction(
     Transaction const &, std::optional<uint256_t> const &base_fee_per_gas,
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id,
-    BlobSchedule const &blob_schedule);
+    BlobSchedule const &blob_schedule, CalldataTokens tokens);
 
 template <Traits traits>
 Result<void> validate_transaction(

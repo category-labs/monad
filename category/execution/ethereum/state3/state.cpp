@@ -131,6 +131,7 @@ void State::push()
 
     ++version_;
     dirty_.emplace_back();
+    log_marks_.push_back(logs_.size());
 }
 
 void State::pop_accept()
@@ -149,7 +150,8 @@ void State::pop_accept()
         }
     }
 
-    logs_.pop_accept(version_);
+    // Accepted: the frame's logs stay where they are, only its watermark goes.
+    log_marks_.pop_back();
 
     --version_;
 }
@@ -170,7 +172,9 @@ void State::pop_reject()
         }
     }
 
-    logs_.pop_reject(version_);
+    // Rejected: drop exactly what this frame appended.
+    logs_.resize(log_marks_.back());
+    log_marks_.pop_back();
 
     while (removals.size()) {
         current_.erase(removals.back());
@@ -615,15 +619,14 @@ void State::create_account_no_rollback(Address const &address)
         }};
 }
 
-immer::vector<Receipt::Log> const &State::logs()
+std::vector<Receipt::Log> const &State::logs()
 {
-    return logs_.recent();
+    return logs_;
 }
 
 void State::store_log(Receipt::Log const &log)
 {
-    auto &logs = logs_.current(version_);
-    logs = logs.push_back(log);
+    logs_.push_back(log);
 }
 
 void State::set_to_state_incarnation(Address const &address)

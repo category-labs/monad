@@ -98,8 +98,18 @@ Result<bytes32_t> execute_block_zkvm(
     senders.reserve(block.transactions.size());
     std::vector<std::vector<std::optional<Address>>> authorities;
     authorities.reserve(block.transactions.size());
+    // The pre-signature encoding of each transaction, kept because step 3
+    // below needs the same bytes again for the transactions root. Encoding it
+    // twice is a second full walk over every uint256 field and the calldata --
+    // ~342,500 steps on block 25551991, 0.26 % of the guest -- and the two
+    // encodings differ only in what they append after this. Held rather than
+    // folded into one loop so that a bad sender still reports before a bad
+    // transactions root.
+    std::vector<byte_string> tx_bases;
+    tx_bases.reserve(block.transactions.size());
     for (auto const &tx : block.transactions) {
-        auto const s = recover_sender(tx);
+        tx_bases.push_back(rlp::encode_transaction_base(tx));
+        auto const s = recover_sender(tx, tx_bases.back());
         if (MONAD_UNLIKELY(!s.has_value())) {
             return TransactionError::MissingSender;
         }
@@ -157,8 +167,9 @@ Result<bytes32_t> execute_block_zkvm(
     {
         std::vector<byte_string> enc;
         enc.reserve(block.transactions.size());
-        for (auto const &tx : block.transactions) {
-            enc.push_back(rlp::encode_transaction(tx));
+        for (size_t i = 0; i < block.transactions.size(); ++i) {
+            enc.push_back(rlp::encode_transaction(
+                block.transactions[i], tx_bases[i]));
         }
         if (MONAD_UNLIKELY(
                 ordered_trie_root(enc) != block.header.transactions_root)) {

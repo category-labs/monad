@@ -27,8 +27,24 @@ MONAD_RLP_NAMESPACE_BEGIN
 
 byte_string encode_access_list(AccessList const &);
 byte_string encode_authorization_entry_for_signing(AuthorizationEntry const &);
+// The transaction's fields up to but not including the signature. The signing
+// payload and the full encoding differ only in what they append after it and
+// in the list header that wraps it, so these are the same bytes both times --
+// and a block encodes every transaction both ways: once in recover_sender for
+// the signing hash, once for the transactions root. Take it once.
+//
+// Measured on block 25551991: 258 transactions, 516 base encodings, ~685,000
+// steps between them. The second pass is a full walk over every uint256 field
+// and the calldata again -- ~342,500 steps, 0.26 % of the guest -- for bytes
+// that are already in hand.
+byte_string encode_transaction_base(Transaction const &);
+
 byte_string encode_transaction(Transaction const &);
 byte_string encode_transaction_for_signing(Transaction const &);
+
+byte_string encode_transaction(Transaction const &, byte_string const &base);
+byte_string
+encode_transaction_for_signing(Transaction const &, byte_string const &base);
 
 Result<std::vector<bytes32_t>> decode_access_entry_keys(byte_string_view &);
 Result<AccessEntry> decode_access_entry(byte_string_view &);

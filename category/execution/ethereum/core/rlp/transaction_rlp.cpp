@@ -140,11 +140,23 @@ byte_string encode_eip2718_base(Transaction const &txn)
     return encoding;
 }
 
+byte_string encode_transaction_base(Transaction const &txn)
+{
+    return txn.type == TransactionType::legacy ? encode_legacy_base(txn)
+                                               : encode_eip2718_base(txn);
+}
+
 byte_string encode_transaction(Transaction const &txn)
+{
+    return encode_transaction(txn, encode_transaction_base(txn));
+}
+
+byte_string
+encode_transaction(Transaction const &txn, byte_string const &base)
 {
     if (txn.type == TransactionType::legacy) {
         return encode_list2(
-            encode_legacy_base(txn),
+            base,
             encode_unsigned(get_v(txn.sc)),
             encode_unsigned(txn.sc.signature.r),
             encode_unsigned(txn.sc.signature.s));
@@ -154,7 +166,7 @@ byte_string encode_transaction(Transaction const &txn)
             byte_string(1, static_cast<unsigned char>(txn.type));
 
         return prefix + encode_list2(
-                            encode_eip2718_base(txn),
+                            base,
                             encode_unsigned(txn.sc.signature.y_parity),
                             encode_unsigned(txn.sc.signature.r),
                             encode_unsigned(txn.sc.signature.s));
@@ -163,23 +175,29 @@ byte_string encode_transaction(Transaction const &txn)
 
 byte_string encode_transaction_for_signing(Transaction const &txn)
 {
+    return encode_transaction_for_signing(txn, encode_transaction_base(txn));
+}
+
+byte_string encode_transaction_for_signing(
+    Transaction const &txn, byte_string const &base)
+{
     if (txn.type == TransactionType::legacy) {
         if (txn.sc.chain_id.has_value()) {
             return encode_list2(
-                encode_legacy_base(txn),
+                base,
                 encode_unsigned(txn.sc.chain_id.value_or(0)),
                 encode_unsigned(0u),
                 encode_unsigned(0u));
         }
         else {
-            return encode_list2(encode_legacy_base(txn));
+            return encode_list2(base);
         }
     }
     else {
         auto const prefix =
             byte_string(1, static_cast<unsigned char>(txn.type));
 
-        return prefix + encode_list2(encode_eip2718_base(txn));
+        return prefix + encode_list2(base);
     }
 }
 

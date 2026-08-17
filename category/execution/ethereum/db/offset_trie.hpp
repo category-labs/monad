@@ -62,6 +62,9 @@ inline constexpr uint32_t HEADER_LEN = 8; // magic(4) root_offset(4)
 // + value slot + list header. 700 leaves margin.
 inline constexpr size_t MAX_NODE_RLP = 700;
 
+// Longest path a node may carry.
+inline constexpr unsigned MAX_PATH_NIBBLES = 64;
+
 // A node's stable id. 0 = null; `n` in the [HEADER_LEN, blob_len) range is
 // a blob offset (unless shadowed by an overlay); n >= OVERLAY_BASE is a
 // fresh overlay node.
@@ -76,7 +79,8 @@ inline constexpr NodeId NULL_ID{0};
 // Width of a child/root field in the node encoding
 using node_id_wire_t = uint32_t;
 
-inline constexpr size_t HASH_RLP_LEN = 33; // 0xa0 ‖ 32 B
+inline constexpr size_t HASH_RLP_LEN = KECCAK256_SIZE + 1; // 0xa0 ‖ 32 B
+using hash_rlp_view = std::span<unsigned char const, HASH_RLP_LEN>;
 // Widest that run can get: 1 + 8 for the nonce, 1 + 32 for the balance. Both
 // are RLP-zeroless, so real accounts sit far below this.
 inline constexpr size_t MAX_NONCE_BALANCE_RLP_LEN = 42;
@@ -172,9 +176,9 @@ inline unsigned path_length(unsigned char const *const p)
 }
 
 // Packed size of the path in bytes — half the nibble count, rounded up.
-inline unsigned path_byte_length(unsigned char const *const p)
+inline unsigned path_byte_length(unsigned n)
 {
-    return (path_length(p) + 1) / 2;
+    return (n + 1) / 2;
 }
 
 inline NibblesView path_view(unsigned char const *const p)
@@ -182,25 +186,41 @@ inline NibblesView path_view(unsigned char const *const p)
     return NibblesView{0u, path_length(p), p + 1};
 }
 
+template <typename C>
+inline C path_view_end(C const p, unsigned nlen)
+{
+    return p + 1 + path_byte_length(nlen);
+}
+
 inline unsigned char const *path_view_end(unsigned char const *const p)
 {
-    return p + 1 + path_byte_length(p);
+    return path_view_end(p, path_length(p));
 }
 
 // LEAF_ACCT and EXT keep their child id at a fixed position right after the
 // tag, so storage()/child() is a constant-offset read instead of a walk
 // over a path or account RLP. The rest of the node follows that field.
-inline unsigned char const *child_end(unsigned char const *const p)
+template <typename C>
+inline C child_end(C const p)
 {
     return p + sizeof(node_id_wire_t);
 }
 
-// One past a LEAF_ACCT's field runs, from the start of its code hash: the
-// fixed-width hash, then the length byte and the nonce ‖ balance run it
-// counts.
+template <typename C>
+inline C code_hash_end(C const p)
+{
+    return p + HASH_RLP_LEN;
+}
+
+template <typename C>
+inline C rlp_end(C const p, unsigned nlen)
+{
+    return p + 1 + nlen;
+}
+
 inline unsigned char const *rlp_end(unsigned char const *const p)
 {
-    return p + HASH_RLP_LEN + 1 + p[HASH_RLP_LEN];
+    return rlp_end(p, p[0]);
 }
 
 inline unsigned char const *
@@ -208,41 +228,55 @@ NodeViewBase::checked_end(unsigned char const *const region_end) const
 {
     MONAD_DEBUG_ASSERT(bytes() < region_end);
 
-    auto const path_view_end_checked =
-        [region_end](unsigned char const *const p) {
-            MONAD_ASSERT(p < region_end);
-            return path_view_end(p);
-        };
+    size_t const avail = static_cast<size_t>(region_end - bytes());
 
-    auto const rlp_end_checked = [region_end](unsigned char const *const p) {
-        MONAD_ASSERT(static_cast<size_t>(region_end - p) > HASH_RLP_LEN);
-        return rlp_end(p);
+    auto const fits = [avail](size_t const off) {
+        MONAD_ASSERT(off <= avail);
+        return off;
     };
 
-    unsigned char const *end_ptr{nullptr};
+    auto const at = [this, avail](size_t const off) -> unsigned {
+        MONAD_ASSERT(off < avail);
+        return bytes()[off];
+    };
+
+    auto const path_view_end_checked = [&](size_t const off) {
+        unsigned const nlen = at(off);
+        MONAD_ASSERT(nlen <= MAX_PATH_NIBBLES);
+        return fits(path_view_end(off, nlen));
+    };
+
+    auto const rlp_end_checked = [&](size_t const off) {
+        unsigned const rlp_len = at(off);
+        return fits(rlp_end(off, rlp_len));
+    };
+
+    constexpr size_t PAYLOAD_OFF = 1;
+
+    size_t end_off{0};
 
     switch (tag()) {
-    case BRANCH: // 16 child offsets
-        end_ptr = payload() + 16 * sizeof(node_id_wire_t);
+    case BRANCH: // tag + 16 child offsets
+        end_off = fits(PAYLOAD_OFF + 16 * sizeof(node_id_wire_t));
         break;
     case EXT: // child offset + path
-        end_ptr = path_view_end_checked(child_end(payload()));
+        end_off = path_view_end_checked(child_end(PAYLOAD_OFF));
         break;
     case LEAF_ACCT: // storage offset + code hash + nonce & balance length +
                     // nonce & balance + path
-        end_ptr = path_view_end_checked(rlp_end_checked(child_end(payload())));
+        end_off = path_view_end_checked(
+            rlp_end_checked(code_hash_end(child_end(PAYLOAD_OFF))));
         break;
     case LEAF_STORAGE: // 32-byte value + path
-        end_ptr = path_view_end_checked(payload() + 32);
+        end_off = path_view_end_checked(PAYLOAD_OFF + 32);
         break;
     case DIGEST: // 32-byte hash
-        end_ptr = payload() + 32;
+        end_off = fits(PAYLOAD_OFF + 32);
         break;
     default:
         MONAD_ABORT("offset trie: invalid node tag");
     }
-    MONAD_ASSERT(end_ptr <= region_end);
-    return end_ptr;
+    return bytes() + end_off;
 }
 
 class NullView : public NodeViewBase
@@ -316,9 +350,9 @@ public:
     }
 
     // code_hash as an RLP string
-    byte_string_view code_hash_rlp() const
+    hash_rlp_view code_hash_rlp() const
     {
-        return byte_string_view{child_end(payload()), HASH_RLP_LEN};
+        return hash_rlp_view{child_end(payload()), HASH_RLP_LEN};
     }
 
     // nonce ‖ balance as RLP strings
@@ -332,7 +366,7 @@ public:
 
     NibblesView path() const
     {
-        return path_view(rlp_end(child_end(payload())));
+        return path_view(rlp_end(code_hash_end(child_end(payload()))));
     }
 
     // lazily RLP-decode the account (fields for read_account)
@@ -341,7 +375,9 @@ public:
         Account acct;
         // Decoded through the accessors, so the stored length is bounded here
         // as well and not only on the extent walk.
-        byte_string_view code_hash = code_hash_rlp();
+        auto const code_hash_bytes = code_hash_rlp();
+        byte_string_view code_hash{
+            code_hash_bytes.data(), code_hash_bytes.size()};
         auto const hash = rlp::decode_bytes32(code_hash);
         MONAD_ASSERT(hash.has_value());
         acct.code_hash = hash.value();
@@ -391,6 +427,13 @@ public:
         bytes32_t h;
         std::memcpy(h.bytes, payload(), 32);
         return h;
+    }
+
+    // Since the DIGEST byte is 0x80 + KECCAK256_SIZE, a digest node is also a
+    // valid RLP encoded string
+    hash_rlp_view hash_rlp() const
+    {
+        return hash_rlp_view{bytes(), HASH_RLP_LEN};
     }
 };
 
@@ -574,21 +617,30 @@ private:
                 },
                 [&](DigestView d) {
                     static_assert(DIGEST == 0x80 + KECCAK256_SIZE);
-                    std::memcpy(
-                        dest.last(HASH_RLP_LEN).data(),
-                        d.bytes(),
-                        HASH_RLP_LEN);
-                    return dest.shrink(HASH_RLP_LEN);
+                    return encode_rlp(d.hash_rlp(), dest);
                 },
                 [&](auto) {
                     if (auto const it = hashes_.find(id); it != hashes_.end()) {
                         bytes32_t const &hash = it->second;
-                        rlp::encode_string(
-                            dest.last(33), byte_string_view{hash.bytes, 32});
-                        return dest.shrink(33);
+                        return encode_rlp(hash, dest);
                     }
                     return child_ref_compute<priming_pass>(id, node, dest);
                 }});
+    }
+
+    node_rlp_span encode_rlp(bytes32_t const &hash32, node_rlp_span dest)
+    {
+        static_assert(HASH_RLP_LEN == KECCAK256_SIZE + 1);
+        auto const hash_span = dest.last(HASH_RLP_LEN);
+        hash_span[0] = 0xa0;
+        std::memcpy(hash_span.data() + 1, hash32.bytes, KECCAK256_SIZE);
+        return dest.shrink(HASH_RLP_LEN);
+    }
+
+    node_rlp_span encode_rlp(hash_rlp_view const hash, node_rlp_span dest)
+    {
+        std::memcpy(dest.last(hash.size()).data(), hash.data(), hash.size());
+        return dest.shrink(hash.size());
     }
 
     // The node's full canonical Ethereum RLP. Reads `node`'s fields and

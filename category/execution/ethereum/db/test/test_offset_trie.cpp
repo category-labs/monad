@@ -258,11 +258,69 @@ TEST(OffsetTrieDeathTest, OutOfRangeChildAborts)
     EXPECT_DEATH((void)OffsetTrie{blob}, "");
 }
 
+// A LEAF_ACCT tag in the last byte of the blob: its storage field alone runs
+// past the end, so validation has to reject the node rather than go on to read
+// the nonce/balance length byte another 34 bytes out.
+TEST(OffsetTrieDeathTest, TruncatedAccountLeafAborts)
+{
+    BlobBuilder bb;
+    bb.buf.push_back(static_cast<unsigned char>(LEAF_ACCT)); // nothing follows
+    byte_string const blob = bb.finalize(HEADER_LEN);
+    EXPECT_DEATH((void)OffsetTrie{blob}, "");
+}
+
+// The encoder never dedupes identical subtries, so a node reached from two
+// parents is malformed. Priming clears a child's bit when a parent claims it,
+// leaving the second claim to find it already clear.
+TEST(OffsetTrieDeathTest, SharedChildAborts)
+{
+    BlobBuilder bb;
+    uint32_t const leaf = bb.storage_leaf({0xa}, bytes32_t{});
+    std::array<uint32_t, 16> ch{};
+    ch[3] = leaf;
+    ch[7] = leaf; // one leaf claimed by two branch slots
+    uint32_t const br = bb.branch(ch);
+    byte_string const blob = bb.finalize(br);
+    EXPECT_DEATH((void)OffsetTrie{blob}, "");
+}
+
+// A node no parent references is unreachable from the root, which priming
+// catches as a bit still set once the walk has consumed the whole blob.
+TEST(OffsetTrieDeathTest, UnreachableNodeAborts)
+{
+    BlobBuilder bb;
+    uint32_t const leaf = bb.storage_leaf({0xa}, bytes32_t{});
+    (void)bb.storage_leaf({0xb}, bytes32_t{}); // nothing references this
+    std::array<uint32_t, 16> ch{};
+    ch[3] = leaf;
+    uint32_t const br = bb.branch(ch);
+    byte_string const blob = bb.finalize(br);
+    EXPECT_DEATH((void)OffsetTrie{blob}, "");
+}
+
+// The count byte can spell 255 nibbles, but encode_path only emits a
+// short-string RLP prefix
+TEST(OffsetTrieDeathTest, OverlongPathAborts)
+{
+    BlobBuilder bb;
+    // Start from the longest supported path, a whole key, so that bumping the
+    // count leaves the node tiling the blob exactly: only the path length is
+    // wrong, not the node's extent.
+    std::vector<uint8_t> const nibs(MAX_PATH_NIBBLES, 0xa);
+    uint32_t const leaf = bb.storage_leaf(nibs, bytes32_t{});
+    // LEAF_STORAGE layout: tag, 32-byte value, then the path's count byte.
+    bb.buf[leaf + 1 + 32] = MAX_PATH_NIBBLES + 1;
+    bb.buf.push_back(0); // the extra packed byte one more nibble implies
+    byte_string const blob = bb.finalize(leaf);
+    EXPECT_DEATH((void)OffsetTrie{blob}, "");
+}
+
 TEST(OffsetTrie, HashSingleStorageLeaf)
 {
     bytes32_t v{};
     v.bytes[31] = 0x11;
-    std::vector<uint8_t> const nibs = {1, 2, 3};
+    // A leaf that is its own root must have a full bytes32_t as a path
+    std::vector<uint8_t> const nibs = key_nibbles(make_key(0x12, 0x34));
 
     BlobBuilder bb;
     uint32_t const leaf = bb.storage_leaf(nibs, v);

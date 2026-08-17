@@ -76,7 +76,8 @@ inline constexpr NodeId NULL_ID{0};
 // Width of a child/root field in the node encoding
 using node_id_wire_t = uint32_t;
 
-inline constexpr size_t HASH_RLP_LEN = 33; // 0xa0 ‖ 32 B
+inline constexpr size_t HASH_RLP_LEN = KECCAK256_SIZE + 1; // 0xa0 ‖ 32 B
+using hash_rlp_view = std::span<unsigned char const, HASH_RLP_LEN>;
 // Widest that run can get: 1 + 8 for the nonce, 1 + 32 for the balance. Both
 // are RLP-zeroless, so real accounts sit far below this.
 inline constexpr size_t MAX_NONCE_BALANCE_RLP_LEN = 42;
@@ -316,9 +317,9 @@ public:
     }
 
     // code_hash as an RLP string
-    byte_string_view code_hash_rlp() const
+    hash_rlp_view code_hash_rlp() const
     {
-        return byte_string_view{child_end(payload()), HASH_RLP_LEN};
+        return hash_rlp_view{child_end(payload()), HASH_RLP_LEN};
     }
 
     // nonce ‖ balance as RLP strings
@@ -341,7 +342,9 @@ public:
         Account acct;
         // Decoded through the accessors, so the stored length is bounded here
         // as well and not only on the extent walk.
-        byte_string_view code_hash = code_hash_rlp();
+        auto const code_hash_bytes = code_hash_rlp();
+        byte_string_view code_hash{
+            code_hash_bytes.data(), code_hash_bytes.size()};
         auto const hash = rlp::decode_bytes32(code_hash);
         MONAD_ASSERT(hash.has_value());
         acct.code_hash = hash.value();
@@ -391,6 +394,13 @@ public:
         bytes32_t h;
         std::memcpy(h.bytes, payload(), 32);
         return h;
+    }
+
+    // Since the DIGEST byte is 0x80 + KECCAK256_SIZE, a digest node is also a
+    // valid RLP encoded string
+    hash_rlp_view hash_rlp() const
+    {
+        return hash_rlp_view{bytes(), HASH_RLP_LEN};
     }
 };
 
@@ -574,21 +584,30 @@ private:
                 },
                 [&](DigestView d) {
                     static_assert(DIGEST == 0x80 + KECCAK256_SIZE);
-                    std::memcpy(
-                        dest.last(HASH_RLP_LEN).data(),
-                        d.bytes(),
-                        HASH_RLP_LEN);
-                    return dest.shrink(HASH_RLP_LEN);
+                    return encode_rlp(d.hash_rlp(), dest);
                 },
                 [&](auto) {
                     if (auto const it = hashes_.find(id); it != hashes_.end()) {
                         bytes32_t const &hash = it->second;
-                        rlp::encode_string(
-                            dest.last(33), byte_string_view{hash.bytes, 32});
-                        return dest.shrink(33);
+                        return encode_rlp(hash, dest);
                     }
                     return child_ref_compute<priming_pass>(id, node, dest);
                 }});
+    }
+
+    node_rlp_span encode_rlp(bytes32_t const &hash32, node_rlp_span dest)
+    {
+        static_assert(HASH_RLP_LEN == KECCAK256_SIZE + 1);
+        auto const hash_span = dest.last(HASH_RLP_LEN);
+        hash_span[0] = 0xa0;
+        std::memcpy(hash_span.data() + 1, hash32.bytes, KECCAK256_SIZE);
+        return dest.shrink(HASH_RLP_LEN);
+    }
+
+    node_rlp_span encode_rlp(hash_rlp_view const hash, node_rlp_span dest)
+    {
+        std::memcpy(dest.last(hash.size()).data(), hash.data(), hash.size());
+        return dest.shrink(hash.size());
     }
 
     // The node's full canonical Ethereum RLP. Reads `node`'s fields and

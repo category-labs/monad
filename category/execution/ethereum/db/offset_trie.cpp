@@ -352,17 +352,8 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // through hash() is what ties the account to its storage — a
                 // leaf can only claim the root its subtree actually hashes to,
                 // and NULL_ID resolves to NULL_ROOT, i.e. no storage at all.
-                bytes32_t const storage_root = hash(l.storage());
-                byte_string_view const code_hash = l.code_hash_rlp();
-                std::memcpy(
-                    dest.last(HASH_RLP_LEN).data(),
-                    code_hash.data(),
-                    HASH_RLP_LEN);
-                dest = dest.shrink(HASH_RLP_LEN);
-                rlp::encode_string(
-                    dest.last(HASH_RLP_LEN),
-                    byte_string_view{storage_root.bytes, 32});
-                dest = dest.shrink(HASH_RLP_LEN);
+                dest = encode_rlp(l.code_hash_rlp(), dest);
+                dest = encode_rlp(hash(l.storage()), dest);
                 byte_string_view const nonce_balance = l.nonce_balance_rlp();
                 std::memcpy(
                     dest.last(nonce_balance.size()).data(),

@@ -1,0 +1,7 @@
+[package]
+name = "monad-statesync-version"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+monad-build = { workspace = true, features = ["bindgen"] }

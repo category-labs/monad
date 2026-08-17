@@ -22,6 +22,27 @@ extern "C"
 {
 #endif
 
+// Components of a statesync protocol version. These are the single source of
+// the {major, minor} pairs monad-bft's StateSyncVersion also names, and bindgen
+// exports them to the rust side.
+enum monad_statesync_version_num : uint16_t
+{
+    MONAD_STATESYNC_MAJOR = 1,
+    // Client acknowledges each response. Minors 0 and 1 predate that and are no
+    // longer spoken; nothing deployed still runs them.
+    MONAD_STATESYNC_MINOR_2 = 2,
+};
+
+// A version as monad-bft's StateSyncVersion encodes it: major << 16 | minor.
+enum monad_statesync_protocol_version : uint32_t
+{
+    MONAD_STATESYNC_VERSION_1_2 =
+        MONAD_STATESYNC_MAJOR << 16 | MONAD_STATESYNC_MINOR_2,
+
+    MONAD_STATESYNC_VERSION_MIN = MONAD_STATESYNC_VERSION_1_2,
+    MONAD_STATESYNC_VERSION = MONAD_STATESYNC_VERSION_1_2,
+};
+
 uint32_t monad_statesync_version();
 
 bool monad_statesync_client_compatible(uint32_t version);

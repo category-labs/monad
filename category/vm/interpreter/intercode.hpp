@@ -29,18 +29,9 @@ namespace monad::vm::interpreter
 
     class Intercode
     {
-        // 30 bytes of initial padding ensures that we can implement all
-        // PUSHN opcodes by reading data from _before_ the instruction
-        // pointer with a single 32-byte read, then cleaning up any
-        // over-read in the result value.
-        //
-        // 32 and not the 30 that read needs: the guest hashes a contract body
-        // straight out of this buffer, and the keccak rate is a multiple of 8,
-        // so a start that is not 8-aligned makes every lane of every rate
-        // block a boundary-crossing load. operator new is 16-byte aligned
-        // (the guest's is sys_alloc_aligned(size, 16)), so a 32-byte offset
-        // lands aligned where 30 lands at 6 mod 8 every time. Two bytes a
-        // contract, and more front padding is harmless for the read above.
+        // PUSHN needs up to 30 bytes of front padding for its 32-byte reads.
+        // Use 32 to preserve 8-byte alignment for Keccak and ZisK JUMPDEST;
+        // the allocation is already 16-byte aligned.
         static constexpr size_t start_padding_size = 32;
 
         // 32 for a truncated PUSH32, 1 for a STOP so that we don't have to
@@ -87,6 +78,16 @@ namespace monad::vm::interpreter
                 // Read bit i % 64 from word i / 64.
                 return (words_[i >> 6] >> (i & 63)) & 1;
 #endif
+            }
+
+            size_t word_count() const noexcept
+            {
+                return words_.size();
+            }
+
+            uint64_t *words() noexcept
+            {
+                return words_.data();
             }
         };
 

@@ -80,7 +80,8 @@ namespace monad::vm::interpreter
     auto Intercode::find_jumpdests(std::span<uint8_t const> const code)
         -> JumpdestMap
     {
-        auto jumpdests = JumpdestMap(code.size(), false);
+        auto jumpdests = JumpdestMap(code.size());
+
 
         // Raw pointer, hoisted end: the span's operator[] and the re-read of
         // code.size() per iteration are pure overhead in a loop this hot.
@@ -89,7 +90,7 @@ namespace monad::vm::interpreter
         while (p < end) {
             auto const op = *p;
             if (op == EvmOpCode::JUMPDEST) {
-                jumpdests[static_cast<size_t>(p - code.data())] = true;
+                jumpdests.set(static_cast<size_t>(p - code.data()));
             }
             p += advance[op];
         }

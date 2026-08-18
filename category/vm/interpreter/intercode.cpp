@@ -30,7 +30,8 @@ namespace monad::vm::interpreter
         : padded_code_(pad(code))
         , code_size_(
               code_size_t::unsafe_from(static_cast<uint32_t>(code.size())))
-        , jumpdest_map_(find_jumpdests(code))
+        , jumpdest_map_(find_jumpdests(
+              std::span<uint8_t const>{padded_code_, code.size()}))
     {
     }
 
@@ -61,6 +62,40 @@ namespace monad::vm::interpreter
     {
         auto jumpdests = JumpdestMap(code.size());
 
+#ifdef MONAD_ZKVM_ZISK
+        // ZisK proves a JUMPDEST bitmap directly: csrs on the syscall port with
+        // the bytecode pointer, then a dummy add carrying destination and size.
+        // Two instructions replace six per code byte.
+        //
+        // Its preconditions are the caller's to meet, and breaking one leaves
+        // the program unprovable rather than unsound: both pointers 8-byte
+        // aligned, the bitmap at least size/64 words, and size > 0. All three
+        // are CHECKED and none assumed -- padded_code_ is aligned by the
+        // padding constant and vector<uint64_t> by its allocator, and the map
+        // is constructed from this same code.size() two lines above, so each
+        // holds today. Any of them ceasing to hold turns a provable guest into
+        // an unprovable one with nothing to point at, which is precisely the
+        // failure that leaves no evidence: the machine writes whole 64-bit
+        // words, so a bitmap short of size/64 is written past its end.
+        auto const aligned =
+            (reinterpret_cast<uintptr_t>(code.data()) % 8) == 0 &&
+            (reinterpret_cast<uintptr_t>(jumpdests.words()) % 8) == 0;
+        auto const covered = jumpdests.word_count() >= (code.size() + 63) / 64;
+        if (aligned && covered && !code.empty()) {
+            uint64_t *const dst = jumpdests.words();
+            uint8_t const *const src = code.data();
+            size_t const size = code.size();
+            // zicsr is part of the official ZisK target architecture.
+            asm volatile("csrs 0x81c, %0\n\t"
+                         "add x0, %1, %2\n\t"
+                         :
+                         : "r"(src), "r"(dst), "r"(size)
+                         : "memory");
+            return jumpdests;
+        }
+#endif
+
+        // Software fallback for non-ZisK builds or unmet preconditions.
         for (size_t i = 0; i < code.size(); ++i) {
             auto const op = code[i];
 

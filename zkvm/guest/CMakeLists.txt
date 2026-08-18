@@ -48,19 +48,16 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "MONAD_COMPILER_TESTING is not supported in zkVM builds")
     endif()
 
-    # Fail-closed identity for report/release ZisK artifacts. This baseline
-    # deliberately certifies only properties already present on the Sam/ZisK
-    # 1.2 branch. A later optimisation that depends on a build switch, compiler
-    # extension or runtime precompile must append its name to
-    # _monad_zkvm_official_features and extend the post-link audit in the same
-    # commit. Ordinary source changes need no feature bit: the embedded full
-    # Git commit and the ELF digest already identify them.
+    # Add required build switches, compiler extensions and precompiles to
+    # _monad_zkvm_official_features and the post-link audit in the same commit.
+    # The Git commit and ELF digest identify ordinary source changes.
     option(MONAD_ZKVM_OFFICIAL_PROFILE
            "build the audited, fail-closed official ZisK guest profile" OFF)
     set(_monad_zkvm_official_features "baseline" "zisk-dma" "keccakf-memo"
                                       "wide-memory-size" "varcode-cache"
                                       "no-dirty-accounts"
-                                      "no-merge-constraints")
+                                      "no-merge-constraints"
+                                      "jumpdest-precompile")
     set(_monad_zkvm_runtime_version "1.2.0-alpha")
     set(_monad_zkvm_runtime_revision
         "fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3")

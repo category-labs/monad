@@ -274,8 +274,7 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
     bytes32_t h;
     monad_keccak256(child_rlp, child_rlp_len, h.bytes);
     hashes_.emplace(id, h);
-    rlp::encode_string(dest.last(33), byte_string_view{h.bytes, 32});
-    return dest.shrink(33);
+    return encode_rlp(h, dest);
 }
 
 template <bool priming_pass>

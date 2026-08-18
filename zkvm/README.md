@@ -68,9 +68,10 @@ zkvm/zisk/build-official.sh
 ```
 
 The official profile requires ZisK 1.3.1-alpha, GCC 15.2.0 and the baseline
-codegen flags. It embeds the commit and build identity in the ELF, then audits
-the result and writes `<elf>.build.json` with the ELF hash. Keep that manifest
-with published benchmark artifacts.
+codegen flags. The profile also requires the ZisK JUMPDEST precompile to occur
+in the linked ELF. It embeds the commit and build identity in the ELF, then
+audits the result and writes `<elf>.build.json` with the ELF hash. Keep that
+manifest with published benchmark artifacts.
 
 DMA lowering is disabled in this initial profile. Build-dependent optimisations
 must extend the feature list and audit in the same commit; source-only changes

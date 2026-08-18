@@ -78,7 +78,7 @@ namespace monad::vm::interpreter
         -> JumpdestMap
     {
         static_assert(end_padding_size >= PUSH32 - PUSH0);
-        auto jumpdests = JumpdestMap(code.size(), false);
+        auto jumpdests = JumpdestMap(code.size());
 
         // No EIP-8024 case: a valid immediate is never JUMPDEST or PUSH.
         // Skip PUSH data: its bytes cannot be jump destinations.
@@ -87,7 +87,7 @@ namespace monad::vm::interpreter
         while (p < end) {
             auto const op = *p;
             if (op == EvmOpCode::JUMPDEST) {
-                jumpdests[static_cast<size_t>(p - code.data())] = true;
+                jumpdests.set(static_cast<size_t>(p - code.data()));
             }
             p += advance[op];
         }

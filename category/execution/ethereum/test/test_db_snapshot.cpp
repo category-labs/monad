@@ -17,6 +17,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/keccak.h>
+#include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/db_snapshot_filesystem.h>
@@ -33,13 +34,21 @@
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/trie.hpp>
+#include <category/vm/code.hpp>
 
 #include <test_resource_data.h>
 
 #include <ankerl/unordered_dense.h>
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <ios>
+#include <sstream>
+#include <string>
+#include <utility>
 
 namespace monad::mpt::test
 {
@@ -104,6 +113,110 @@ namespace
             std::filesystem::remove_all(path, ec);
         }
     };
+
+    constexpr std::array STREAM_FILES{
+        std::pair{"eth_header", MONAD_SNAPSHOT_ETH_HEADER},
+        std::pair{"account", MONAD_SNAPSHOT_ACCOUNT},
+        std::pair{"storage", MONAD_SNAPSHOT_STORAGE},
+        std::pair{"code", MONAD_SNAPSHOT_CODE}};
+    static_assert(STREAM_FILES.size() == MONAD_SNAPSHOT_FILES_PER_SHARD);
+
+    monad::byte_string read_file(std::filesystem::path const &path)
+    {
+        std::ifstream in{path, std::ios::binary};
+        MONAD_ASSERT(in.is_open());
+        std::stringstream buffer;
+        buffer << in.rdbuf();
+        auto const bytes = buffer.str();
+        return monad::byte_string{
+            reinterpret_cast<unsigned char const *>(bytes.data()),
+            bytes.size()};
+    }
+
+    void write_file(
+        std::filesystem::path const &path, monad::byte_string_view const bytes)
+    {
+        std::ofstream out{path, std::ios::binary | std::ios::trunc};
+        MONAD_ASSERT(out.is_open());
+        out.write(
+            reinterpret_cast<char const *>(bytes.data()),
+            static_cast<std::streamsize>(bytes.size()));
+        out.close();
+        MONAD_ASSERT(out.good());
+    }
+
+    // Assert the header is well formed and of `kind`, then remove it, leaving
+    // the stream in the layout one predating headers would have. A missing or
+    // malformed header fails here rather than corrupting the stripped stream.
+    monad::byte_string_view strip_stream_header(
+        monad::byte_string_view view, monad_snapshot_type const kind)
+    {
+        using namespace monad;
+        MONAD_ASSERT(view.size() >= sizeof(monad_snapshot_stream_header));
+        auto const header =
+            unaligned_load<monad_snapshot_stream_header>(view.data());
+        MONAD_ASSERT(header.magic == MONAD_SNAPSHOT_STREAM_MAGIC);
+        MONAD_ASSERT(header.version == MONAD_SNAPSHOT_STREAM_VERSION);
+        MONAD_ASSERT(header.kind == kind);
+        MONAD_ASSERT(header.reserved == 0);
+        MONAD_ASSERT(header.guard == MONAD_SNAPSHOT_STREAM_GUARD);
+        view.remove_prefix(sizeof(header));
+        return view;
+    }
+
+    // Rewrite a snapshot in the layout that predates stream headers.
+    void strip_stream_headers(std::filesystem::path const &version_dir)
+    {
+        for (auto const &dir :
+             std::filesystem::directory_iterator{version_dir}) {
+            for (auto const &[name, kind] : STREAM_FILES) {
+                auto const path = dir.path() / name;
+                auto const framed = read_file(path);
+                if (framed.empty()) {
+                    continue;
+                }
+                write_file(path, strip_stream_header(framed, kind));
+            }
+        }
+    }
+
+    // Load a snapshot directory the way monad_db_snapshot_load_filesystem does,
+    // but without verifying checksums, so a test can rewrite the streams first.
+    void load_snapshot(
+        std::string const &dbname, std::filesystem::path const &root,
+        uint64_t const block, bool const load_to_secondary)
+    {
+        char const *dbname_paths[] = {dbname.c_str()};
+        auto *const loader = monad_db_snapshot_loader_create(
+            block,
+            dbname_paths,
+            1,
+            static_cast<unsigned>(-1),
+            load_to_secondary);
+        for (auto const &dir : std::filesystem::directory_iterator{
+                 root / std::to_string(block)}) {
+            uint64_t const shard = std::stoull(dir.path().stem());
+            auto const eth_header = read_file(dir.path() / "eth_header");
+            auto const account = read_file(dir.path() / "account");
+            auto const storage = read_file(dir.path() / "storage");
+            auto const code = read_file(dir.path() / "code");
+            auto const ptr = [](monad::byte_string const &b) {
+                return b.empty() ? nullptr : b.data();
+            };
+            monad_db_snapshot_loader_load(
+                loader,
+                shard,
+                ptr(eth_header),
+                eth_header.size(),
+                ptr(account),
+                account.size(),
+                ptr(storage),
+                storage.size(),
+                ptr(code),
+                code.size());
+        }
+        monad_db_snapshot_loader_destroy(loader);
+    }
 }
 
 TEST(DbBinarySnapshot, Basic)
@@ -616,6 +729,262 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
         LeafCounter counter;
         ASSERT_TRUE(db.traverse_blocking(state_cursor.value(), counter, BLOCK));
         EXPECT_EQ(counter.count, ADDRS.size() * 2);
+    }
+}
+
+namespace
+{
+    constexpr uint64_t PAGE_BLOCK = 1;
+    // Raw slot keys 0x00-0x7f share page 0, 0x80-0xff page 1, and so on, so
+    // every account spans four pages, two of which hold more than one slot.
+    constexpr std::array<uint16_t, 8> PAGE_SLOTS{
+        0x0000, 0x0001, 0x0002, 0x007f, 0x0080, 0x0081, 0x0100, 0x01ff};
+    constexpr size_t PAGES_PER_ACCOUNT = 4;
+    std::array<monad::Address, 4> const PAGE_ADDRS{
+        monad::Address{1},
+        monad::Address{2},
+        monad::Address{3},
+        monad::Address{4}};
+
+    monad::bytes32_t page_slot_key(uint16_t const raw)
+    {
+        monad::bytes32_t key{};
+        key.bytes[30] = static_cast<uint8_t>(raw >> 8);
+        key.bytes[31] = static_cast<uint8_t>(raw & 0xff);
+        return key;
+    }
+
+    monad::bytes32_t
+    page_slot_value(monad::Address const &addr, uint16_t const raw)
+    {
+        monad::bytes32_t value{};
+        value.bytes[29] = addr.bytes[19];
+        value.bytes[30] = static_cast<uint8_t>(raw >> 8);
+        value.bytes[31] = static_cast<uint8_t>((raw & 0xff) ^ 0xa5);
+        return value;
+    }
+
+    monad::byte_string page_code(monad::Address const &addr)
+    {
+        return monad::byte_string(64, addr.bytes[19]);
+    }
+
+    // Populate the page-encoded secondary timeline of `dbname` and return its
+    // state root.
+    monad::bytes32_t build_page_source(std::string const &dbname)
+    {
+        using namespace monad;
+        using namespace monad::mpt;
+
+        mpt::Db db1{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.dbname_paths = {dbname}}};
+        // Activate before any TrieDb exists (requires worker_thread_use_count
+        // == 1).
+        mpt::Db db2 = db1.activate_secondary_timeline(
+            std::make_unique<monad::MonadOnDiskMachine>());
+        load_header({}, db2, BlockHeader{.number = 0});
+        db2.update_finalized_version(0);
+
+        StateDeltas deltas;
+        Code code_delta;
+        for (auto const &addr : PAGE_ADDRS) {
+            StorageDeltas storage;
+            for (auto const raw : PAGE_SLOTS) {
+                storage.emplace(
+                    page_slot_key(raw),
+                    StorageDelta{bytes32_t{}, page_slot_value(addr, raw)});
+            }
+            auto const code = page_code(addr);
+            bytes32_t const code_hash = to_bytes(keccak256(code));
+            code_delta.emplace(code_hash, vm::make_shared_intercode(code));
+            deltas.emplace(
+                addr,
+                StateDelta{
+                    .account =
+                        {std::nullopt,
+                         Account{.balance = 1, .code_hash = code_hash}},
+                    .storage = storage});
+        }
+        TrieDb tdb2{db2};
+        MONAD_ASSERT(tdb2.is_page_encoded());
+        PageCommitBuilder builder(PAGE_BLOCK, tdb2);
+        builder.add_state_deltas(deltas).add_code(code_delta);
+        BlockHeader const header{.number = PAGE_BLOCK};
+        tdb2.commit(
+            bytes32_t{PAGE_BLOCK},
+            builder,
+            header,
+            deltas,
+            [&](BlockHeader &h) {
+                h.receipts_root = tdb2.receipts_root();
+                h.state_root = tdb2.state_root();
+                h.withdrawals_root = tdb2.withdrawals_root();
+                h.transactions_root = tdb2.transactions_root();
+            });
+        tdb2.finalize(PAGE_BLOCK, bytes32_t{PAGE_BLOCK});
+        return tdb2.state_root();
+    }
+
+    void dump_page_source(
+        std::string const &dbname, std::filesystem::path const &root)
+    {
+        auto *const context =
+            monad_db_snapshot_filesystem_write_user_context_create(
+                root.c_str(), PAGE_BLOCK);
+        char const *paths[] = {dbname.c_str()};
+        EXPECT_TRUE(monad_db_dump_snapshot(
+            paths,
+            1,
+            static_cast<unsigned>(-1),
+            PAGE_BLOCK,
+            monad_db_snapshot_write_filesystem,
+            context,
+            2048,
+            1,
+            0,
+            /*dump_from_secondary=*/true));
+        monad_db_snapshot_filesystem_write_user_context_destroy(context);
+    }
+
+    void activate_page_secondary(std::string const &dbname)
+    {
+        using namespace monad;
+        using namespace monad::mpt;
+        mpt::Db primary{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.dbname_paths = {dbname}}};
+        [[maybe_unused]] auto const secondary =
+            primary.activate_secondary_timeline(
+                std::make_unique<monad::MonadOnDiskMachine>());
+        MONAD_ASSERT(primary.timeline_active(timeline_id::secondary));
+    }
+
+    void verify_page_restore(
+        std::string const &dbname, monad::bytes32_t const &expected_root)
+    {
+        using namespace monad;
+        using namespace monad::mpt;
+
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.append = true, .dbname_paths = {dbname}}};
+        {
+            auto db2 = db.open_secondary_timeline(
+                std::make_unique<monad::MonadOnDiskMachine>());
+            ASSERT_TRUE(db2.has_value());
+            db = std::move(db2.value());
+        }
+        TrieDb tdb{db};
+        ASSERT_TRUE(tdb.is_page_encoded());
+        tdb.set_block_and_prefix(PAGE_BLOCK);
+        EXPECT_EQ(tdb.state_root(), expected_root);
+
+        Incarnation const inc{0, 0};
+        for (auto const &addr : PAGE_ADDRS) {
+            ASSERT_TRUE(tdb.read_account(addr).has_value());
+            for (auto const raw : PAGE_SLOTS) {
+                EXPECT_EQ(
+                    tdb.read_storage(addr, inc, page_slot_key(raw)),
+                    page_slot_value(addr, raw))
+                    << "addr=" << static_cast<int>(addr.bytes[19]) << " slot=0x"
+                    << std::hex << raw;
+            }
+        }
+
+        auto const state_cursor =
+            db.find(concat(finalized_nibbles, STATE_NIBBLE), PAGE_BLOCK);
+        ASSERT_TRUE(state_cursor.has_value());
+        LeafCounter counter;
+        ASSERT_TRUE(
+            db.traverse_blocking(state_cursor.value(), counter, PAGE_BLOCK));
+        EXPECT_EQ(counter.count, PAGE_ADDRS.size() * PAGES_PER_ACCOUNT);
+    }
+}
+
+// Every stream a shard writes opens with a header naming its version and kind.
+TEST(DbBinarySnapshot, SnapshotStreamHeaders)
+{
+    TempDb const src_db;
+    TempDir const snapshot_dir;
+
+    build_page_source(src_db.path);
+    dump_page_source(src_db.path, snapshot_dir.path);
+
+    std::array<size_t, MONAD_SNAPSHOT_FILES_PER_SHARD> headers_checked{};
+    for (auto const &dir : std::filesystem::directory_iterator{
+             snapshot_dir.path / std::to_string(PAGE_BLOCK)}) {
+        for (auto const &[name, kind] : STREAM_FILES) {
+            auto const stream = read_file(dir.path() / name);
+            if (stream.empty()) {
+                continue;
+            }
+            // Asserts the header is well formed and of this stream's kind.
+            EXPECT_LT(strip_stream_header(stream, kind).size(), stream.size());
+            ++headers_checked.at(kind);
+        }
+    }
+    for (auto const &[name, kind] : STREAM_FILES) {
+        EXPECT_GT(headers_checked.at(kind), 0u) << name;
+    }
+}
+
+// A snapshot with no stream headers at all — the layout dumped before they
+// existed — still restores into either encoding.
+TEST(DbBinarySnapshot, HeaderlessSnapshotRestores)
+{
+    using namespace monad;
+    using namespace monad::mpt;
+
+    TempDb const src_db;
+    TempDb const page_db;
+    TempDb const slot_db;
+    TempDir const snapshot_dir;
+
+    bytes32_t const source_root = build_page_source(src_db.path);
+    dump_page_source(src_db.path, snapshot_dir.path);
+    strip_stream_headers(snapshot_dir.path / std::to_string(PAGE_BLOCK));
+
+    activate_page_secondary(page_db.path);
+    load_snapshot(
+        page_db.path,
+        snapshot_dir.path,
+        PAGE_BLOCK,
+        /*load_to_secondary=*/true);
+    verify_page_restore(page_db.path, source_root);
+
+    {
+        mpt::Db dest_init{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.dbname_paths = {slot_db.path}}};
+        monad::mpt::test::DbAccessor::aux(dest_init)
+            .metadata_ctx()
+            .set_state_machine_kind(
+                timeline_id::primary, state_machine_kind::ethereum);
+    }
+    load_snapshot(
+        slot_db.path,
+        snapshot_dir.path,
+        PAGE_BLOCK,
+        /*load_to_secondary=*/false);
+    {
+        AsyncIOContext io_context{
+            ReadOnlyOnDiskDbConfig{.dbname_paths = {slot_db.path}}};
+        mpt::Db db{io_context};
+        TrieDb tdb{db};
+        ASSERT_FALSE(tdb.is_page_encoded());
+        tdb.set_block_and_prefix(PAGE_BLOCK);
+        Incarnation const inc{0, 0};
+        for (auto const &addr : PAGE_ADDRS) {
+            ASSERT_TRUE(tdb.read_account(addr).has_value());
+            for (auto const raw : PAGE_SLOTS) {
+                EXPECT_EQ(
+                    tdb.read_storage(addr, inc, page_slot_key(raw)),
+                    page_slot_value(addr, raw))
+                    << "addr=" << static_cast<int>(addr.bytes[19]) << " slot=0x"
+                    << std::hex << raw;
+            }
+        }
     }
 }
 

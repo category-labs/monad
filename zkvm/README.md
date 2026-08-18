@@ -77,7 +77,8 @@ nix build --option sandbox true --option sandbox-fallback false '.?submodules=1#
 
 It pins the source and toolchains and checks the allocator assumptions and
 linked ELF. Keep the manifest with the artifact. It requires an x86_64 Linux
-builder. Reproducibility must still be checked by independent rebuilds.
+builder. The ELF audit also requires the ZisK JUMPDEST syscall.
+Reproducibility must still be checked by independent rebuilds.
 
 For incremental development on x86_64 Linux, use the [Nix development shell](../nix/README.md#development-shell):
 

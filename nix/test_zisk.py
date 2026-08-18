@@ -76,6 +76,11 @@ class ZiskChecks(unittest.TestCase):
         with self.assertRaises(ValueError):
             check.check_allocator(self.repo)
 
+    def test_jumpdest_is_required(self):
+        check.check_jumpdest("80000010: 81c52073 csrs 0x81c,a0\n")
+        with self.assertRaises(ValueError):
+            check.check_jumpdest("80000010: 00000013 nop\n")
+
     def test_ret_encoding(self):
         check.check_return("80000000: 00008067 ret\n")
         for code in ("80000000: 00100073 ebreak\n", "", "80000000: 00008067 ret\n80000004: 00000013 nop\n"):
@@ -89,14 +94,15 @@ class ZiskChecks(unittest.TestCase):
         with self.assertRaises(ValueError):
             check.check_elf(elf, commit, "riscv-", "another-build")
         attrs = 'Tag_RISCV_arch: "rv64i2p1_m2p0_a2p1_zba1p0_zbb1p0_zbs1p0_zbkb1p0"'
+        jumpdest = "80000010: 81c52073 csrs 0x81c,a0\n"
         nm = "80000000 00000004 T free\n"
-        with patch.object(check.subprocess, "check_output", side_effect=[attrs, nm, "80000000: 00008067 ret\n"]):
+        with patch.object(check.subprocess, "check_output", side_effect=[jumpdest, attrs, nm, "80000000: 00008067 ret\n"]):
             check.check_elf(elf, commit, "riscv-")
         with self.assertRaises(ValueError):
             check.check_elf(elf, "b" * 40, "riscv-")
-        with patch.object(check.subprocess, "check_output", return_value=attrs.replace("_zba1p0", "")), self.assertRaises(ValueError):
+        with patch.object(check.subprocess, "check_output", side_effect=[jumpdest, attrs.replace("_zba1p0", "")]), self.assertRaises(ValueError):
             check.check_elf(elf, commit, "riscv-")
-        with patch.object(check.subprocess, "check_output", side_effect=[attrs, nm, "80000000: 00100073 ebreak\n"]), self.assertRaises(ValueError):
+        with patch.object(check.subprocess, "check_output", side_effect=[jumpdest, attrs, nm, "80000000: 00100073 ebreak\n"]), self.assertRaises(ValueError):
             check.check_elf(elf, commit, "riscv-")
 
 

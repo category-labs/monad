@@ -499,8 +499,8 @@ try {
                 // TODO: Remove this check once dual-db is deprecated.
                 // Live monad requires a page-encoded timeline, either as
                 // primary (Phase C) or secondary (Phase A/B dual-db).
-                // TODO: Enable assertion for mainnet when dual-db is enabled
-                if (chain_config == CHAIN_CONFIG_MONAD_TESTNET) {
+                if (chain_config == CHAIN_CONFIG_MONAD_TESTNET ||
+                    chain_config == CHAIN_CONFIG_MONAD_MAINNET) {
                     bool const primary_is_page = db.is_page_encoded();
                     bool const secondary_active = raw_db.timeline_active(
                         monad::mpt::timeline_id::secondary);

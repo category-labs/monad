@@ -31,7 +31,8 @@ namespace monad::vm::interpreter
     {
         // PUSHN needs at least 30 leading bytes for a single 32-byte read
         // before the instruction pointer, masking out unrelated bytes.
-        // Round up to 32 to preserve 8-byte alignment for guest Keccak loads.
+        // Round up to 32 to preserve 8-byte alignment for guest Keccak loads
+        // and ZisK's JUMPDEST precompile.
         static constexpr size_t start_padding_size = 32;
 
         // 32 for a truncated PUSH32, 1 for a STOP so that we don't have to
@@ -63,6 +64,16 @@ namespace monad::vm::interpreter
             {
                 // Read bit i % 64 from word i / 64.
                 return (words_[i >> 6] >> (i & 63)) & 1;
+            }
+
+            size_t word_count() const noexcept
+            {
+                return words_.size();
+            }
+
+            uint64_t *words() noexcept
+            {
+                return words_.data();
             }
         };
 

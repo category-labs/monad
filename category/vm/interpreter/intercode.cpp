@@ -16,6 +16,7 @@
 #include <category/core/monad_exception.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/interpreter/intercode.hpp>
+#include <category/vm/interpreter/jumpdest_scan.hpp>
 
 #include <algorithm>
 #include <array>
@@ -80,6 +81,11 @@ namespace monad::vm::interpreter
         static_assert(end_padding_size >= PUSH32 - PUSH0);
         auto jumpdests = JumpdestMap(code.size());
 
+        if (accelerated_find_jumpdests(code, jumpdests)) {
+            return jumpdests;
+        }
+
+        // Portable scan, when no backend accelerator handles the code.
         // No EIP-8024 case: a valid immediate is never JUMPDEST or PUSH.
         // Skip PUSH data: its bytes cannot be jump destinations.
         uint8_t const *p = code.data();

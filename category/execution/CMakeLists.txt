@@ -351,7 +351,7 @@ target_link_libraries(
   PRIVATE monad_crypto
   PRIVATE PkgConfig::brotli
   PRIVATE PkgConfig::crypto++
-  PUBLIC secp256k1
+  PRIVATE secp256k1
   PUBLIC ethash::keccak
   PUBLIC evmc
   PUBLIC immer

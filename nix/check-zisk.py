@@ -135,6 +135,11 @@ def check_return(disassembly):
         fail("expected a single RISC-V ret instruction")
 
 
+def check_jumpdest(disassembly):
+    if not re.search(r"\bcsrs\s+0x81c,", disassembly):
+        fail("ELF does not contain the ZisK JUMPDEST syscall")
+
+
 def check_elf(elf, commit, prefix, build_id="none"):
     marker = b"monad-zkvm;commit=" + commit.encode() + b";build=" + build_id.encode() + b"\0"
     if not re.fullmatch(r"[0-9a-f]{40}", commit) or marker not in elf.read_bytes():
@@ -143,6 +148,7 @@ def check_elf(elf, commit, prefix, build_id="none"):
     def tool(name, *args):
         return subprocess.check_output([prefix + name, *args, str(elf)], text=True)
 
+    check_jumpdest(tool("objdump", "-d"))
     attributes = tool("readelf", "-A")
     for extension in ("zba", "zbb", "zbs", "zbkb"):
         if not re.search(r"_" + extension + r"[0-9]", attributes):

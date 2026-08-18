@@ -97,8 +97,11 @@ class ProfileTests(unittest.TestCase):
         self.compiler.write_bytes(b"test compiler")
         self.nm = self.root / "riscv64-unknown-elf-nm"
         self.readelf = self.root / "riscv64-unknown-elf-readelf"
+        self.objdump = self.root / "riscv64-unknown-elf-objdump"
         self.nm.touch()
         self.readelf.touch()
+        self.objdump.touch()
+        self.disassembly = "   10000:\t81c52073\tcsrs\t0x81c,a0\n"
         self.cargo = self.root / "cargo-zisk"
         self.elf = self.root / "guest.elf"
         self.manifest = self.root / "manifest.json"
@@ -173,6 +176,8 @@ class ProfileTests(unittest.TestCase):
             return f"cargo-zisk {audit.RUNTIME_VERSION} test"
         if args == (str(self.readelf), "-A", str(self.elf)):
             return "rv64ima_zicsr_zbb_zbs_zbkb"
+        if args == (str(self.objdump), "-d", str(self.elf)):
+            return self.disassembly
         raise AssertionError(args)
 
     def run_audit(self):
@@ -249,6 +254,11 @@ class ProfileTests(unittest.TestCase):
         with self.assertRaisesRegex(
             SystemExit, "state.cpp compile command does not enable"
         ):
+            self.run_audit()
+
+    def test_jumpdest_syscall_is_required(self):
+        self.disassembly = "   10000:\t00000013\tnop\n"
+        with self.assertRaisesRegex(SystemExit, "does not contain the ZisK JUMPDEST syscall"):
             self.run_audit()
 
 

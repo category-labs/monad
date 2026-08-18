@@ -28,6 +28,7 @@ EXPECTED_FEATURES = [
     "varcode-cache",
     "no-dirty-accounts",
     "no-merge-constraints",
+    "jumpdest-precompile",
 ]
 EXPECTED_MARCH = "rv64ima_zicsr_zbb_zbs_zbkb"
 EXPECTED_MTUNE = "size"
@@ -283,7 +284,7 @@ def main() -> int:
         fail("generated profile has the wrong runtime revision")
     features = str(profile.get("features_csv", "")).split(",")
     if features != EXPECTED_FEATURES:
-        fail(f"unexpected feature set: {features!r}")
+        fail(f"unexpected official feature set: {features!r}")
 
     cache = build_dir / "CMakeCache.txt"
     if not cache.is_file():
@@ -378,6 +379,14 @@ def main() -> int:
         if extension not in attributes:
             fail(f"ELF attributes omit {extension}")
 
+    objdump = compiler.with_name(compiler.name.replace("g++", "objdump"))
+    if not objdump.is_file():
+        fail(f"objdump not found beside compiler: {objdump}")
+    disassembly = run(str(objdump), "-d", str(elf))
+    jumpdest_syscalls = len(re.findall(r"\bcsrs\s+0x81c,", disassembly))
+    if jumpdest_syscalls == 0:
+        fail("ELF does not contain the ZisK JUMPDEST syscall")
+
     signature = str(profile.get("build_signature", ""))
     if len(signature) != 64:
         fail("generated profile has an invalid build signature")
@@ -399,6 +408,7 @@ def main() -> int:
         "evidence": {
             "elf_marker": marker.decode(),
             "elf_attributes": ["zbb", "zbs", "zbkb"],
+            "jumpdest_syscalls": jumpdest_syscalls,
             "cargo_lock_sha256": sha256(repo / "zkvm/zisk/Cargo.lock"),
             "cmake_profile_sha256": sha256(profile_path),
         },

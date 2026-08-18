@@ -56,7 +56,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     set(_monad_zkvm_official_features "baseline" "zisk-dma" "keccakf-memo"
                                       "wide-memory-size" "varcode-cache"
                                       "no-dirty-accounts"
-                                      "no-merge-constraints")
+                                      "no-merge-constraints"
+                                      "jumpdest-precompile")
     set(_monad_zkvm_runtime_version "1.3.1-alpha")
     set(_monad_zkvm_runtime_revision
         "306a9c934ba4947b1d586d69b67120f8b4c41466")

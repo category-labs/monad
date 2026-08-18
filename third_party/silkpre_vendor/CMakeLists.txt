@@ -33,7 +33,7 @@ target_sources(monad_crypto PRIVATE
 )
 
 # ecdsa needs libsecp256k1 and ethash
-target_link_libraries(monad_crypto PUBLIC PkgConfig::secp256k1 ethash::keccak)
+target_link_libraries(monad_crypto PUBLIC secp256k1 ethash::keccak)
 
 # Consumers include the headers via `<silkpre_vendor/sha256.h>` etc.
 target_include_directories(monad_crypto PUBLIC src/)

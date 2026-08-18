@@ -199,6 +199,11 @@ public:
         return triedb_.print_stats();
     }
 
+    virtual void begin_block_stats() override
+    {
+        triedb_.begin_block_stats();
+    }
+
     virtual uint64_t get_block_number() const override
     {
         return triedb_.get_block_number();

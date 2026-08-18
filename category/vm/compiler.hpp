@@ -216,6 +216,16 @@ namespace monad::vm
                 varcode_cache_.size(), varcode_cache_.approx_weight());
         }
 
+        CacheStatsSnapshot varcode_cache_block_stats() const noexcept
+        {
+            return varcode_cache_.block_stats();
+        }
+
+        void begin_varcode_cache_block_stats() noexcept
+        {
+            varcode_cache_.begin_block_stats();
+        }
+
         // For testing: wait for compile job queue to become empty.
         void debug_wait_for_empty_queue();
 

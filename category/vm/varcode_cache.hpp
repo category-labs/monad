@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/bytes.hpp>
+#include <category/core/lru/cache_stats.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/utils/lru_weight_cache.hpp>
 
@@ -88,8 +89,24 @@ namespace monad::vm
             return weight_cache_.size();
         }
 
+        CacheStatsSnapshot stats() const noexcept
+        {
+            return weight_cache_.stats();
+        }
+
+        CacheStatsSnapshot block_stats() const noexcept
+        {
+            return block_window_.since(weight_cache_.stats());
+        }
+
+        void begin_block_stats() noexcept
+        {
+            block_window_.reset(weight_cache_.stats());
+        }
+
     private:
         WeightCache weight_cache_;
         uint32_t warm_cache_kb_;
+        CacheStatsWindow block_window_;
     };
 }

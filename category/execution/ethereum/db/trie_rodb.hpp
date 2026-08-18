@@ -206,6 +206,9 @@ public:
     {
         return block_number_;
     }
+
+    // Reports no stats.
+    virtual void begin_block_stats() override {}
 };
 
 MONAD_NAMESPACE_END

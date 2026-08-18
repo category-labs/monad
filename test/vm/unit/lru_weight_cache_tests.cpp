@@ -318,3 +318,70 @@ TEST_F(LruWeightCacheTest, is_consistent)
         current_weight_ = 0;
     }
 }
+
+TEST(LruWeightCacheStats, counts_hits_misses_and_evictions)
+{
+    WeightCache cache{10};
+
+    // Each accessor is scoped: it holds a reader lock on its element, and
+    // erase() of that element blocks until every accessor on it is released.
+    {
+        WeightCache::ConstAccessor acc;
+        EXPECT_FALSE(cache.find(acc, 1));
+    }
+    cache.insert(1, Value{0x111}, 4);
+    cache.insert(2, Value{0x222}, 4);
+    {
+        WeightCache::ConstAccessor acc;
+        ASSERT_TRUE(cache.find(acc, 1));
+    }
+    EXPECT_EQ(cache.stats().evictions, 0u);
+
+    // Total weight would be 12 against a max of 10, forcing an eviction.
+    cache.insert(3, Value{0x333}, 4);
+
+    auto const stats = cache.stats();
+    EXPECT_EQ(stats.hits, 1u);
+    EXPECT_EQ(stats.misses, 1u);
+    EXPECT_EQ(stats.evictions, 1u);
+}
+
+// DbCache::on_finalize clears this cache wholesale on a truncated proposal.
+// The counters must survive, or the block window would subtract a baseline
+// larger than the current total.
+TEST(LruWeightCacheStats, clear_does_not_disturb_the_counters)
+{
+    WeightCache cache{100};
+
+    {
+        WeightCache::ConstAccessor acc;
+        EXPECT_FALSE(cache.find(acc, 1));
+    }
+    cache.insert(1, Value{0x111}, 4);
+    {
+        WeightCache::ConstAccessor acc;
+        ASSERT_TRUE(cache.find(acc, 1));
+    }
+
+    cache.clear();
+
+    auto const stats = cache.stats();
+    EXPECT_EQ(stats.hits, 1u);
+    EXPECT_EQ(stats.misses, 1u);
+}
+
+TEST(LruWeightCacheStats, stats_are_not_reset_by_reading_them)
+{
+    WeightCache cache{100};
+    WeightCache::ConstAccessor acc;
+
+    cache.insert(1, Value{0x111}, 4);
+    ASSERT_TRUE(cache.find(acc, 1));
+
+    auto const first = cache.stats();
+    auto const second = cache.stats();
+    EXPECT_EQ(first.hits, 1u);
+    EXPECT_EQ(second.hits, first.hits);
+    EXPECT_EQ(second.misses, first.misses);
+    EXPECT_EQ(second.evictions, first.evictions);
+}

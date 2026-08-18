@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/assert.h>
+#include <category/core/lru/cache_stats.hpp>
 
 #include <tbb/concurrent_hash_map.h>
 
@@ -49,6 +50,7 @@ namespace monad::vm::utils
         std::atomic<int64_t> weight_;
         LruList lru_;
         HashMap hmap_;
+        CacheStats stats_;
 
     public:
         using ConstAccessor = HashMap::const_accessor;
@@ -69,10 +71,17 @@ namespace monad::vm::utils
         bool find(ConstAccessor &acc, Key const &key)
         {
             if (!hmap_.find(acc, key)) {
+                stats_.record_miss();
                 return false;
             }
+            stats_.record_hit();
             try_update_lru(&*acc);
             return true;
+        }
+
+        CacheStatsSnapshot stats() const noexcept
+        {
+            return stats_.snapshot();
         }
 
         /// Insert `value` with `weight` under `key`. Overwrites if there is
@@ -179,6 +188,7 @@ namespace monad::vm::utils
                         break;
                     }
                     int64_t const n = evict(target);
+                    stats_.record_eviction();
                     weight_.fetch_sub(n, std::memory_order_acq_rel);
                     evicted_weight += n;
                 }

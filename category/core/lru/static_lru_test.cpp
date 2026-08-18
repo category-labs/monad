@@ -141,3 +141,53 @@ TEST(static_lru_test, clear)
     lru.insert(5, "world");
     EXPECT_EQ(lru.size(), 1);
 }
+
+TEST(static_lru_test, counts_hits_misses_and_evictions)
+{
+    using LruCache = monad::static_lru_cache<int, int>;
+    LruCache lru(2);
+    LruCache::ConstAccessor acc;
+
+    EXPECT_FALSE(lru.find(acc, 1));
+    lru.insert(1, 0x111);
+    lru.insert(2, 0x222);
+    ASSERT_TRUE(lru.find(acc, 1));
+    EXPECT_EQ(lru.stats().evictions, 0u);
+
+    // Capacity is 2, so this reuses the LRU tail.
+    lru.insert(3, 0x333);
+
+    auto const stats = lru.stats();
+    EXPECT_EQ(stats.hits, 1u);
+    EXPECT_EQ(stats.misses, 1u);
+    EXPECT_EQ(stats.evictions, 1u);
+}
+
+// find() is used as an existence predicate in a few places that are not
+// lookups; those must not move the hit rate.
+TEST(static_lru_test, contains_does_not_count_as_a_lookup)
+{
+    using LruCache = monad::static_lru_cache<int, int>;
+    LruCache lru(2);
+
+    lru.insert(1, 0x111);
+
+    EXPECT_TRUE(lru.contains(1));
+    EXPECT_FALSE(lru.contains(2));
+
+    auto const stats = lru.stats();
+    EXPECT_EQ(stats.hits, 0u);
+    EXPECT_EQ(stats.misses, 0u);
+}
+
+TEST(static_lru_test, overwriting_an_existing_key_does_not_evict)
+{
+    using LruCache = monad::static_lru_cache<int, int>;
+    LruCache lru(2);
+
+    lru.insert(1, 0x111);
+    lru.insert(1, 0x222);
+
+    EXPECT_EQ(lru.size(), 1);
+    EXPECT_EQ(lru.stats().evictions, 0u);
+}

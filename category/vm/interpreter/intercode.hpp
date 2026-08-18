@@ -33,7 +33,12 @@ namespace monad::vm::interpreter
         // PUSHN opcodes by reading data from _before_ the instruction
         // pointer with a single 32-byte read, then cleaning up any
         // over-read in the result value.
-        static constexpr size_t start_padding_size = 30;
+        // 32 and not 30, which is what the read above needs: the ZisK
+        // JUMPDEST precompile requires an 8-byte-aligned bytecode pointer, and
+        // operator new is 16-byte aligned, so a 32-byte offset lands aligned
+        // while 30 lands at 6 mod 8 every time. Two bytes per contract buys the
+        // precompile; more front padding is harmless for the read.
+        static constexpr size_t start_padding_size = 32;
 
         // 32 for a truncated PUSH32, 1 for a STOP so that we don't have to
         // worry about going off the end.
@@ -71,6 +76,10 @@ namespace monad::vm::interpreter
                 return (words_[i >> 6] >> (i & 63)) & 1;
             }
 
+            uint64_t *words() noexcept
+            {
+                return words_.data();
+            }
         };
 
         explicit Intercode(std::span<uint8_t const> const);

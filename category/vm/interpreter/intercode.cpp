@@ -31,7 +31,8 @@ namespace monad::vm::interpreter
         : padded_code_(pad(code))
         , code_size_(
               code_size_t::unsafe_from(static_cast<uint32_t>(code.size())))
-        , jumpdest_map_(find_jumpdests(code))
+        , jumpdest_map_(find_jumpdests(
+              std::span<uint8_t const>{padded_code_, code.size()}))
     {
     }
 
@@ -82,6 +83,39 @@ namespace monad::vm::interpreter
     {
         auto jumpdests = JumpdestMap(code.size());
 
+#ifdef MONAD_ZKVM_ZISK
+        // ZisK proves a JUMPDEST bitmap directly: csrs on the syscall port with
+        // the bytecode pointer, then a dummy add carrying destination and size.
+        // Two instructions replace six per code byte.
+        //
+        // Its preconditions are the caller's to meet, and breaking one leaves
+        // the program unprovable rather than unsound: both pointers 8-byte
+        // aligned, the bitmap at least size/64 words (it is, by construction
+        // above), and size > 0. The alignment is CHECKED and not assumed --
+        // padded_code_ is aligned by the padding constant and vector<uint64_t>
+        // by its allocator, but a change to either would otherwise turn a
+        // provable guest into an unprovable one with nothing to point at.
+        auto const aligned = (reinterpret_cast<uintptr_t>(code.data()) % 8) == 0 &&
+                             (reinterpret_cast<uintptr_t>(jumpdests.words()) % 8) == 0;
+        if (aligned && !code.empty()) {
+            uint64_t *const dst = jumpdests.words();
+            uint8_t const *const src = code.data();
+            size_t const size = code.size();
+            // csrs needs zicsr, which the guest's -march=rv64ima does not
+            // include. Enable it for these two instructions rather than
+            // globally: a wider -march would change codegen everywhere and
+            // make this lever unmeasurable.
+            asm volatile(".option push\n\t"
+                         ".option arch, +zicsr\n\t"
+                         "csrs 0x81c, %0\n\t"
+                         "add x0, %1, %2\n\t"
+                         ".option pop"
+                         :
+                         : "r"(src), "r"(dst), "r"(size)
+                         : "memory");
+            return jumpdests;
+        }
+#endif
 
         // Raw pointer, hoisted end: the span's operator[] and the re-read of
         // code.size() per iteration are pure overhead in a loop this hot.

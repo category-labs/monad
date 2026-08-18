@@ -40,7 +40,43 @@ namespace monad::vm::interpreter
         static constexpr size_t end_padding_size = 32 + 1;
 
     public:
-        using JumpdestMap = std::vector<bool>;
+        // A bit per code byte, held in explicit 64-bit words.
+        //
+        // std::vector<bool> is bit-packed as well, but its layout is
+        // unspecified: no guaranteed alignment, bit order within a word, or
+        // absence of padding. Nothing outside the class can legitimately be
+        // pointed at its storage, and its operator[] returns a proxy whose
+        // codegen is the library's business rather than ours. Explicit words
+        // make is_jumpdest a shift and a test, and make the buffer something a
+        // precompile could be handed.
+        class JumpdestMap
+        {
+            std::vector<uint64_t> words_;
+
+        public:
+            JumpdestMap() = default;
+
+            explicit JumpdestMap(size_t const bits)
+                : words_((bits + 63) / 64, 0)
+            {
+            }
+
+            void set(size_t const i) noexcept
+            {
+                // Word i / 64 contains the bit for byte i. Within that word,
+                // i % 64 selects the bit; OR sets it without changing the
+                // other 63 JUMPDEST flags.
+                words_[i >> 6] |= uint64_t{1} << (i & 63);
+            }
+
+            bool test(size_t const i) const noexcept
+            {
+                // Select word i / 64, shift bit i % 64 down to position zero,
+                // then keep that single bit: 1 means byte i is a JUMPDEST.
+                return (words_[i >> 6] >> (i & 63)) & 1;
+            }
+
+        };
 
         explicit Intercode(std::span<uint8_t const> const);
 
@@ -73,7 +109,7 @@ namespace monad::vm::interpreter
 
         bool is_jumpdest(size_t const pc) const noexcept
         {
-            return pc < *code_size_ && jumpdest_map_[pc];
+            return pc < *code_size_ && jumpdest_map_.test(pc);
         }
 
         [[gnu::always_inline]]

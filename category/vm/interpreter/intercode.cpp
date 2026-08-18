@@ -59,13 +59,13 @@ namespace monad::vm::interpreter
     auto Intercode::find_jumpdests(std::span<uint8_t const> const code)
         -> JumpdestMap
     {
-        auto jumpdests = JumpdestMap(code.size(), false);
+        auto jumpdests = JumpdestMap(code.size());
 
         for (size_t i = 0; i < code.size(); ++i) {
             auto const op = code[i];
 
             if (op == EvmOpCode::JUMPDEST) {
-                jumpdests[i] = true;
+                jumpdests.set(i);
             }
 
             if (is_push_opcode(op)) {

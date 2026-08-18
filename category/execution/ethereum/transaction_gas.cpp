@@ -68,6 +68,17 @@ inline constexpr auto g_access_and_storage(Transaction const &tx) noexcept
     return g;
 }
 
+// EIP-7981
+// Without EIP-7976, the 64 per-byte cost specified by EIP-7981 is 40 per-byte
+inline constexpr uint64_t g_access_list_data(Transaction const &tx) noexcept
+{
+    uint64_t g = tx.access_list.size() * 20u;
+    for (auto const &i : tx.access_list) {
+        g += i.keys.size() * 32u;
+    }
+    return g * 40u;
+}
+
 // EIP-7702
 inline constexpr auto g_authorization(Transaction const &tx) noexcept
 {
@@ -124,17 +135,28 @@ uint64_t intrinsic_gas(Transaction const &tx) noexcept
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         gas += g_authorization(tx);
     }
+    // EIP-7981: increase access-list cost (Amsterdam)
+    if constexpr (traits::eip_7981_active()) {
+        gas += g_access_list_data(tx);
+    }
 
     return gas;
 }
 
 EXPLICIT_TRAITS(intrinsic_gas);
 
+template <Traits traits>
 uint64_t floor_data_gas(Transaction const &tx) noexcept
 {
     auto const [zeros, nonzeros] = tokens_in_calldata(tx);
-    return 21'000 + (zeros * 10u + nonzeros * 40u);
+    uint64_t gas = 21'000 + (zeros * 10u + nonzeros * 40u);
+    if constexpr (traits::eip_7981_active()) {
+        gas += g_access_list_data(tx);
+    }
+    return gas;
 }
+
+EXPLICIT_TRAITS(floor_data_gas);
 
 inline constexpr uint256_t priority_fee_per_gas(
     Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept

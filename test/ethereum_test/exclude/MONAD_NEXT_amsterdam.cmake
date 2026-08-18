@@ -15,7 +15,12 @@
 
 # The MONAD_NEXT Amsterdam spec-test fixtures (EIP-7708, EIP-7843, EIP-8024)
 # expect a block header carrying the SLOTNUM field, which the execution layer
-# does not yet emit; every fixture therefore fails the genesis block-hash
-# check. Exclude the whole suite for now and drop entries here to re-enable
-# individual tests as support lands.
-set(MONAD_NEXT_amsterdam_excluded_tests "BlockchainTests.*")
+# does not yet emit.
+# Drop entries here to re-enable individual tests as support lands.
+set(MONAD_NEXT_amsterdam_excluded_tests
+  "BlockchainTests.for_monad_next/amsterdam/eip7843_slotnum/*"
+  "BlockchainTests.for_monad_next/amsterdam/eip7708_eth_transfer_logs/*"
+  "BlockchainTests.for_monad_next/amsterdam/eip8024_dupn_swapn_exchange/*"
+  # Test contains a EIP-4844 blob which is disabled on Monad
+  "BlockchainTests.for_monad_next/amsterdam/eip7981_increase_access_list_cost/transaction_validity/transactions_without_access_list.json"
+)

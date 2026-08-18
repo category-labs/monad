@@ -39,12 +39,14 @@
 
 #include <chrono>
 #include <cstddef>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <variant>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -65,7 +67,7 @@ int main(int argc, char *argv[])
     std::optional<size_t> txn_index = std::nullopt;
     std::string record_exec_events_path;
     std::unique_ptr<OwnedEventRing> exec_event_ring;
-    std::optional<std::filesystem::path> blockchain_tests_path;
+    std::vector<std::filesystem::path> blockchain_tests_paths;
     std::optional<std::filesystem::path> transaction_tests_path;
     bool trace_calls = false;
     unsigned sleep_seconds = 0;
@@ -92,8 +94,9 @@ int main(int argc, char *argv[])
     app.add_flag("--trace_calls", trace_calls, "Enable call tracing");
     app.add_option(
            "--blockchain-tests",
-           blockchain_tests_path,
-           "Path to blockchain tests, overrides the hard-coded tests path.")
+           blockchain_tests_paths,
+           "Path to blockchain tests, overrides the hard-coded tests path. May "
+           "be given multiple times to register several test directories.")
         ->check(CLI::ExistingPath);
     app.add_option(
            "--transaction-tests",
@@ -129,10 +132,10 @@ int main(int argc, char *argv[])
 
     std::this_thread::sleep_for(std::chrono::seconds{sleep_seconds});
 
-    if (blockchain_tests_path || transaction_tests_path) {
-        if (blockchain_tests_path) {
+    if (!blockchain_tests_paths.empty() || transaction_tests_path) {
+        for (auto const &blockchain_tests_path : blockchain_tests_paths) {
             test::register_blockchain_tests_path(
-                *blockchain_tests_path,
+                blockchain_tests_path,
                 revision,
                 vm_mode,
                 trace_calls,

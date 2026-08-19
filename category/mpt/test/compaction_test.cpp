@@ -74,3 +74,64 @@ TEST_F(CompactionTest, first_chunk_is_compacted)
     // TODO DO COMPACTION
     // TODO CHECK POOL'S FIRST CHUNK WAS DEFINITELY RELEASED
 }
+
+TEST_F(CompactionTest, last_upsert_stats_isolates_the_latest_upsert)
+{
+    auto &aux = state()->aux;
+    // The fixture has already run many upserts, so the lifetime totals start
+    // well above zero, which is what makes the isolation checks meaningful.
+    ASSERT_GT(aux.stats_snapshot().nodes_created_or_updated, 0u);
+
+    auto const erase_keys = [&](size_t const first, size_t const count) {
+        std::vector<Update> updates;
+        updates.reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+            updates.push_back(
+                make_update(state()->keys[first + i].first, UpdateList{}));
+        }
+        UpdateList ls;
+        for (auto &update : updates) {
+            ls.push_front(update);
+        }
+        // compaction=false also pins that the per-upsert delta advances on
+        // upserts that never reach the compaction code.
+        state()->root = aux.do_update(
+            std::move(state()->root),
+            state()->sm,
+            std::move(ls),
+            state()->version++,
+            /*compaction=*/false,
+            /*can_write_to_fast=*/true,
+            /*write_root=*/true,
+            timeline_id::primary);
+    };
+
+    auto const lifetime_before = aux.stats_snapshot();
+    erase_keys(0, 4);
+    auto const lifetime_first = aux.stats_snapshot();
+    auto const delta_first = aux.last_upsert_stats();
+    erase_keys(4, 4);
+    auto const lifetime_second = aux.stats_snapshot();
+    auto const delta_second = aux.last_upsert_stats();
+
+    // Each delta is exactly the lifetime growth across its own upsert.
+    EXPECT_EQ(
+        lifetime_first.nodes_created_or_updated -
+            lifetime_before.nodes_created_or_updated,
+        delta_first.nodes_created_or_updated);
+    EXPECT_EQ(
+        lifetime_second.nodes_created_or_updated -
+            lifetime_first.nodes_created_or_updated,
+        delta_second.nodes_created_or_updated);
+
+    // The lifetime totals only ever grow, and a delta stays strictly below
+    // them: a reintroduced reset breaks the first property, handing a consumer
+    // the lifetime totals instead of the delta breaks the second.
+    EXPECT_GE(
+        lifetime_second.nodes_created_or_updated,
+        lifetime_first.nodes_created_or_updated);
+    EXPECT_GT(delta_second.nodes_created_or_updated, 0u);
+    EXPECT_LT(
+        delta_second.nodes_created_or_updated,
+        lifetime_second.nodes_created_or_updated);
+}

@@ -18,19 +18,17 @@
 #include <category/mpt/config.hpp>
 
 #include <cstdint>
-#include <new>
 #include <type_traits>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-// Turn on to collect stats
-#define MONAD_MPT_COLLECT_STATS 1
-
 namespace detail
 {
+    // Lifetime totals, never reset. Every field must be monotonically
+    // increasing: delta_since() subtracts fieldwise to recover what a single
+    // upsert contributed.
     struct TrieUpdateCollectedStats
     {
-#ifdef MONAD_MPT_COLLECT_STATS
         // counters
         uint64_t nodes_created_or_updated{0};
         // reads stats
@@ -52,28 +50,20 @@ namespace detail
         // Sum of the following three equals the current block slow ring
         // growth
         uint64_t compacted_bytes_in_fast{0}; // copied from fast to slow
+        // Doubles as the GC-efficiency input to advance_compact_offsets, which
+        // makes it load-bearing state and not just observability.
         uint64_t compacted_bytes_in_slow{0}; // copied from slow to slow
         uint64_t bytes_copied_slow_to_fast_for_slow{0};
 
         // expire stats
         uint64_t nodes_updated_expire{0};
         uint64_t nreads_expire{0};
-#else
-        uint64_t compacted_bytes_in_slow{0};
-#endif
 
-        void reset()
-        {
-            this->~TrieUpdateCollectedStats();
-            new (this) TrieUpdateCollectedStats();
-        }
+        TrieUpdateCollectedStats
+        delta_since(TrieUpdateCollectedStats const &base) const noexcept;
     };
 
-#ifdef MONAD_MPT_COLLECT_STATS
     static_assert(sizeof(TrieUpdateCollectedStats) == 160);
-#else
-    static_assert(sizeof(TrieUpdateCollectedStats) == 8);
-#endif
     static_assert(alignof(TrieUpdateCollectedStats) == 8);
     static_assert(std::is_trivially_copyable_v<TrieUpdateCollectedStats>);
 }

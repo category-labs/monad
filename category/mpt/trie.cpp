@@ -186,7 +186,6 @@ Node::SharedPtr upsert(
     Node::SharedPtr old, UpdateList &&updates, bool const write_root,
     timeline_id const tid)
 {
-    aux.reset_stats();
     auto sentinel = make_tnode(1 /*mask*/);
     ChildData &entry = sentinel->children[0];
     sentinel->children[0] = ChildData{.branch = 0};

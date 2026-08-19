@@ -306,10 +306,8 @@ TEST_P(VMFileTest, RegressionFile)
 {
     auto const [entry, rev] = GetParam();
 
-    // TODO: this test is disabled for MONAD_SEVEN onward until evmone has a
-    // monad revision and can execute with the same gas costs as MONAD_SEVEN
-    if (rev >= std::variant<monad_eth_revision, monad_revision>{MONAD_SEVEN}) {
-        return;
+    if (std::holds_alternative<monad_revision>(rev)) {
+        GTEST_SKIP() << "evmone only executes evm revisions";
     }
     auto file = std::ifstream{entry.path(), std::ifstream::binary};
 
@@ -406,10 +404,11 @@ TYPED_TEST(VMTraitsTest, MissingDischargeInJumpiKeepFallthroughStack)
         0x60, 0x08, 0x86, 0x90, 0x1c, 0x90, 0x50, 0x80, 0x60, 0x04, 0x1a, 0x90,
         0x50, 0x5f, 0x60, 0x10};
 
-    // Generally evmone only works for evm revisions, so skip monad versions:
-    if constexpr (!TestFixture::is_monad_trait()) {
-        TestFixture::execute_and_compare(1'000'000, bytecode, {});
+    if constexpr (TestFixture::is_monad_trait()) {
+        GTEST_SKIP() << "evmone only executes evm revisions";
     }
+
+    TestFixture::execute_and_compare(1'000'000, bytecode, {});
 }
 
 TYPED_TEST(VMTraitsTest, WrongGasCheckConditionalJump)
@@ -431,6 +430,10 @@ TYPED_TEST(VMTraitsTest, WrongGasCheckConditionalJump)
         0x26, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    if constexpr (TestFixture::is_monad_trait()) {
+        GTEST_SKIP() << "evmone only executes evm revisions";
+    }
 
     TestFixture::execute_and_compare(1'000'000, bytecode, calldata);
 }
@@ -458,12 +461,8 @@ TYPED_TEST(VMTraitsTest, MissingRemoveStackOffsetInFallthroughStack)
                                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
-    // TODO: this test is disabled for MONAD_SEVEN onward until evmone has a
-    // monad revision and can execute with the same gas costs as MONAD_SEVEN
     if constexpr (TestFixture::is_monad_trait()) {
-        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-            return;
-        }
+        GTEST_SKIP() << "evmone only executes evm revisions";
     }
 
     TestFixture::execute_and_compare(1'000'000, bytecode, calldata);

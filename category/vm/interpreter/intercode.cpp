@@ -90,14 +90,18 @@ namespace monad::vm::interpreter
         //
         // Its preconditions are the caller's to meet, and breaking one leaves
         // the program unprovable rather than unsound: both pointers 8-byte
-        // aligned, the bitmap at least size/64 words (it is, by construction
-        // above), and size > 0. The alignment is CHECKED and not assumed --
-        // padded_code_ is aligned by the padding constant and vector<uint64_t>
-        // by its allocator, but a change to either would otherwise turn a
-        // provable guest into an unprovable one with nothing to point at.
+        // aligned, the bitmap at least size/64 words, and size > 0. All three
+        // are CHECKED and none assumed -- padded_code_ is aligned by the
+        // padding constant and vector<uint64_t> by its allocator, and the map
+        // is constructed from this same code.size() two lines above, so each
+        // holds today. Any of them ceasing to hold turns a provable guest into
+        // an unprovable one with nothing to point at, which is precisely the
+        // failure that leaves no evidence: the machine writes whole 64-bit
+        // words, so a bitmap short of size/64 is written past its end.
         auto const aligned = (reinterpret_cast<uintptr_t>(code.data()) % 8) == 0 &&
                              (reinterpret_cast<uintptr_t>(jumpdests.words()) % 8) == 0;
-        if (aligned && !code.empty()) {
+        auto const covered = jumpdests.word_count() >= (code.size() + 63) / 64;
+        if (aligned && covered && !code.empty()) {
             uint64_t *const dst = jumpdests.words();
             uint8_t const *const src = code.data();
             size_t const size = code.size();

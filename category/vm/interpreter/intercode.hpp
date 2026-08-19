@@ -76,6 +76,8 @@ namespace monad::vm::interpreter
                 return (words_[i >> 6] >> (i & 63)) & 1;
             }
 
+            size_t word_count() const noexcept { return words_.size(); }
+
             uint64_t *words() noexcept
             {
                 return words_.data();

@@ -80,6 +80,22 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         # been established, and the same flag there would be a guess.
         string(APPEND CMAKE_C_FLAGS " -mtune=generic-ooo")
         string(APPEND CMAKE_CXX_FLAGS " -mtune=generic-ooo")
+
+        # ZisK 1.1 transpiles the RISC-V B extension; 1.0 did not. Zbb and Zbs
+        # are wired unconditionally, so widening -march lets gcc emit rev8,
+        # cpop, clz, andn and the single-bit ops instead of open-coding them --
+        # 2454 rev8 and 1047 bseti sites in the linked guest. Zba, Zbc, Zbkc
+        # and Zbkx sit behind cargo features the published emulator is built
+        # without: a guest carrying sh2add aborts the transpiler, so they stay
+        # out until the shipped binary enables them.
+        #
+        # -march here rather than in the shared riscv64-elf toolchain: the
+        # widening is only sound for a runtime known to implement these, and
+        # ZisK is the only backend established to. 504 of 504 corpus blocks
+        # give the recorded post-state root with this on.
+        string(APPEND CMAKE_C_FLAGS " -march=rv64ima_zbb_zbs")
+        string(APPEND CMAKE_CXX_FLAGS " -march=rv64ima_zbb_zbs")
+
     endif()
 
     # Repo + third-party paths.

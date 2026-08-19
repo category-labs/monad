@@ -130,6 +130,9 @@ extern "C" void monad_zkvm_execute_witness(void)
     monad::bytes32_t pre_state_root{};
     {
         bool checked_pre_state_root = false;
+        bool have_prev = false;
+        monad::bytes32_t prev_hash{};
+        uint64_t prev_number = 0;
         monad::byte_string_view headers = witness.value().encoded_headers;
         while (!headers.empty()) {
             auto const payload = monad::rlp::parse_string_metadata(headers);
@@ -138,10 +141,23 @@ extern "C" void monad_zkvm_execute_witness(void)
             auto const header = monad::rlp::decode_block_header(header_view);
             MONAD_ASSERT(header.has_value());
             MONAD_ASSERT(header_view.empty());
-            block_hash_buffer.set(
-                header.value().number,
-                monad::to_bytes(monad::keccak256(payload.value())));
+            monad::bytes32_t const hash =
+                monad::to_bytes(monad::keccak256(payload.value()));
+            // Each header must name the one before it, and the run must be
+            // contiguous. Without this the buffer is keyed on the number a
+            // header declares about itself, so every hash BLOCKHASH returns
+            // for an ancestor would be the prover's to choose.
+            if (have_prev) {
+                MONAD_ASSERT(header.value().number == prev_number + 1);
+                MONAD_ASSERT(header.value().parent_hash == prev_hash);
+            }
+            block_hash_buffer.set(header.value().number, hash);
             if (header.value().number + 1 == block.header.number) {
+                // The newest ancestor is this block's parent, and block.header
+                // is pinned by the published block hash. Anchoring the run
+                // here is what ties the whole chain of them to the real chain;
+                // the state-root check below binds only the trie.
+                MONAD_ASSERT(hash == block.header.parent_hash);
                 pre_state_root = pdb.state_root();
                 // The witness parent must agree with the trie it delivers --
                 // an in-guest consistency check. The BINDING to the real
@@ -151,6 +167,9 @@ extern "C" void monad_zkvm_execute_witness(void)
                 MONAD_ASSERT(pre_state_root == header.value().state_root);
                 checked_pre_state_root = true;
             }
+            prev_hash = hash;
+            prev_number = header.value().number;
+            have_prev = true;
         }
         MONAD_ASSERT(checked_pre_state_root);
     }
@@ -190,8 +209,10 @@ extern "C" void monad_zkvm_execute_witness(void)
     // canonical hash at this height. The first alone proves only that SOME
     // state yields this post-root; the second binds the witness to the real
     // pre-state; the third binds the execution to the real block -- and,
-    // with it, the ancestor headers walked above, whose chain the BLOCKHASH
-    // buffer serves.
+    // with it, the ancestor headers walked above: the newest of them is
+    // asserted to hash to block.header.parent_hash and each older one to be
+    // named by its successor, so pinning this header pins the whole run the
+    // BLOCKHASH buffer serves.
     write_output(state_root.bytes, sizeof(state_root.bytes));
     write_output(pre_state_root.bytes, sizeof(pre_state_root.bytes));
     write_output(block_hash.bytes, sizeof(block_hash.bytes));

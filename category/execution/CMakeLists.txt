@@ -136,6 +136,8 @@ add_library(
   "ethereum/block_reward.hpp"
   "ethereum/create_contract_address.cpp"
   "ethereum/create_contract_address.hpp"
+  "ethereum/deterministic_factory_contract.cpp"
+  "ethereum/deterministic_factory_contract.hpp"
   "ethereum/dispatch_transaction.cpp"
   "ethereum/dispatch_transaction.hpp"
   "ethereum/evmc_host.cpp"

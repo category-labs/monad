@@ -111,12 +111,6 @@ namespace mpt_witness
         return v; // rv64im is little-endian
     }
 
-    inline uint16_t rd_u16(unsigned char const *const p)
-    {
-        uint16_t v;
-        std::memcpy(&v, p, 2);
-        return v;
-    }
 
     // ── node writers ────────────────────────────────────────────────────────
     // Append one node's bytes to `out`. Children are referenced by NodeId, so a

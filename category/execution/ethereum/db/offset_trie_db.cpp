@@ -369,18 +369,13 @@ namespace mpt_witness
     // ── mutation — typed byte builders (§4 layout) ───────────────────────────
     namespace
     {
-        // Append `v` little-endian, matching rd_u32/rd_u16 on rv64im/x86.
+        // Append `v` little-endian, matching rd_u32 on rv64im/x86.
         void append_u32(byte_string &b, uint32_t const v)
         {
             static_assert(std::endian::native == std::endian::little);
             b.append(reinterpret_cast<unsigned char const *>(&v), sizeof(v));
         }
 
-        void append_u16(byte_string &b, uint16_t const v)
-        {
-            static_assert(std::endian::native == std::endian::little);
-            b.append(reinterpret_cast<unsigned char const *>(&v), sizeof(v));
-        }
 
         // Append a path as nodes store it: a 1-byte nibble count then
         // ceil(nlen/2) packed nibbles, left-aligned (nibble 0 in the high

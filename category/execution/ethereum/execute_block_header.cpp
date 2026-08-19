@@ -20,6 +20,7 @@
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/deterministic_factory_contract.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
@@ -69,6 +70,8 @@ void execute_block_header(
 
     deploy_block_hash_history_contract<traits>(state);
     set_block_hash_history<traits>(state, header);
+
+    deploy_deterministic_factory_contract<traits>(state);
 
     if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
         set_beacon_root(state, header);

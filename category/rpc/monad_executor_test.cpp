@@ -8335,6 +8335,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_beacon_roots)
             rlp_finalized_id.size(),
             simulate_gas_limit,
             simulate_max_calls,
+            call_tracer_max_size,
             state_overrides,
             block_overrides,
             false,

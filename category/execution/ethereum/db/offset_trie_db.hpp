@@ -27,6 +27,10 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/account_rlp.hpp>
+// The account leaf is decomposed, so reading a field decodes it here.
+#include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
+#include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/mpt/merkle/compact_encode.hpp>
@@ -58,6 +62,11 @@ namespace mpt_witness
     };
 
     inline constexpr uint32_t HEADER_LEN = 8; // magic(4) root_off(4)
+    // 0xa0 | 32 B: how a code hash sits in an account leaf.
+    inline constexpr size_t HASH_RLP_LEN = 33;
+    // nonce | balance sit behind a ONE-BYTE length, which caps that run:
+    // RLP(uint64) is at most 9 B and RLP(uint256) at most 33 B.
+    inline constexpr size_t MAX_NONCE_BALANCE_RLP_LEN = 42;
     // Splits the NodeId space by the high bit: blob offsets live below it,
     // fresh overlay ids at/above it. The TrieStore constructor rejects blobs
     // larger than this, so a blob offset can never reach the overlay half (no
@@ -117,9 +126,9 @@ namespace mpt_witness
     void append_ext(byte_string &out, mpt::NibblesView path, NodeId child);
     void
     append_storage(byte_string &out, mpt::NibblesView path, bytes32_t const &);
-    void append_acct_raw(
-        byte_string &out, mpt::NibblesView path, byte_string_view acct_rlp,
-        NodeId storage);
+    void append_acct(
+        byte_string &out, NodeId storage, Account const &acct,
+        mpt::NibblesView path);
     // No put_digest counterpart: mutation never creates a Digest, they only
     // ever arrive in the pre-state blob from the producer.
     void append_digest(byte_string &out, bytes32_t const &hash);
@@ -156,11 +165,56 @@ namespace mpt_witness
         unsigned char const *end() const;
     };
 
-    // path nibbles live at p_+2 for EXT / LEAF_* tags: length prefix is one
-    // byte at p_+1, packed nibbles follow.
+    // ── THE NODE LAYOUT, IN ONE PLACE ───────────────────────────────────────
+    // tag(1), then a fixed-width run the tag decides, then the path for the tags
+    // that carry one. fixed_end() is the ONLY function that knows where a run
+    // ends: the extents, the accessors and the emitters all derive from it, so
+    // the writer and the reader cannot disagree about where a field sits.
+    //
+    // They did disagree, and that was the whole bug. The zkVM guest keeps a
+    // node's child id immediately after the tag so child()/value() is a
+    // constant-offset read; this side emitted the path first. The magic, the
+    // 8-byte header and the RLP envelope all matched, so every structural check
+    // passed while the guest parsed one node, landed mid-field and aborted --
+    // exit 0, a plausible step count, and 256 zero bytes where its public values
+    // belong.
+    inline unsigned char const *payload(unsigned char const *const p)
+    {
+        return p + 1;
+    }
+
+    // One past the tag's fixed-width run: where the path starts for the tags
+    // that have one, and the end of the node for the tags that do not.
+    inline unsigned char const *fixed_end(unsigned char const *const p)
+    {
+        switch (Tag(*p)) {
+        case BRANCH: // 16 child offsets
+            return payload(p) + 16 * sizeof(uint32_t);
+        case EXT: // child offset
+            return payload(p) + sizeof(uint32_t);
+        case LEAF_STORAGE: // 32-byte value
+            return payload(p) + 32;
+        case LEAF_ACCT: { // storage offset, code-hash RLP, nonce | balance run
+            unsigned char const *const len_p =
+                payload(p) + sizeof(uint32_t) + HASH_RLP_LEN;
+            return len_p + 1 + *len_p;
+        }
+        case DIGEST: // 32-byte hash
+            return payload(p) + 32;
+        }
+        MONAD_ABORT("offset trie: invalid node tag");
+    }
+
+    inline bool has_path(unsigned char const *const p)
+    {
+        Tag const t = Tag(*p);
+        return t == EXT || t == LEAF_ACCT || t == LEAF_STORAGE;
+    }
+
+    // The path: a nibble count then ceil(nlen/2) packed nibbles, at fixed_end().
     inline unsigned path_nlen(unsigned char const *const p)
     {
-        return p[1];
+        return *fixed_end(p);
     }
 
     inline unsigned path_bytes(unsigned char const *const p)
@@ -170,32 +224,19 @@ namespace mpt_witness
 
     inline mpt::NibblesView path_view(unsigned char const *const p)
     {
-        return mpt::NibblesView{0u, path_nlen(p), p + 2};
+        return mpt::NibblesView{0u, path_nlen(p), fixed_end(p) + 1};
     }
 
     inline byte_string_view byte_string_path_view(unsigned char const *const p)
     {
-        return byte_string_view{p + 2, path_bytes(p)};
+        return byte_string_view{fixed_end(p) + 1, path_bytes(p)};
     }
 
     inline unsigned char const *NodeViewBase::end() const
     {
-        switch (tag()) {
-        case BRANCH: // tag + 16 child offsets
-            return p_ + 1 + 64;
-        case EXT: // path + child offset
-            return byte_string_path_view(p_).end() + 4;
-        case LEAF_ACCT: { // path + acc_len(u16) + acct_rlp + storage offset
-            unsigned char const *const acc_len_p =
-                byte_string_path_view(p_).end();
-            return acc_len_p + 2 + rd_u16(acc_len_p) + 4;
-        }
-        case LEAF_STORAGE: // path + 32-byte value
-            return byte_string_path_view(p_).end() + 32;
-        case DIGEST: // tag + 32-byte hash
-            return p_ + 1 + 32;
-        }
-        MONAD_ABORT("offset trie: invalid node tag");
+        // Derived, not a second switch: one layout, one place. The copy that used
+        // to live here was the other half of the disagreement above.
+        return has_path(p_) ? fixed_end(p_) + 1 + path_bytes(p_) : fixed_end(p_);
     }
 
     class BranchView : public NodeViewBase
@@ -236,7 +277,7 @@ namespace mpt_witness
 
         NodeId child() const
         {
-            return NodeId{rd_u32(byte_string_path_view(p_).end())};
+            return NodeId{rd_u32(payload(p_))};
         }
     };
 
@@ -253,29 +294,46 @@ namespace mpt_witness
             return path_view(p_);
         }
 
-        // stored Ethereum account RLP (for hashing / decode)
-        byte_string_view account_rlp() const
+        NodeId storage() const // NULL_ID if no storage subtree materialized
         {
-            unsigned char const *const acc_len_p =
-                byte_string_path_view(p_).end();
-            unsigned const acc_len = rd_u16(acc_len_p);
-            return byte_string_view{acc_len_p + 2, acc_len};
+            return NodeId{rd_u32(payload(p_))};
+        }
+
+        // The leaf is DECOMPOSED: it holds the code hash, the nonce and the
+        // balance, and no storage root -- storage() is the root. So there is no
+        // account RLP to hand back, and nothing re-encodes one to read a field.
+        byte_string_view code_hash_rlp() const
+        {
+            return byte_string_view{
+                payload(p_) + sizeof(uint32_t), HASH_RLP_LEN};
+        }
+
+        byte_string_view nonce_balance_rlp() const
+        {
+            unsigned char const *const len_p =
+                payload(p_) + sizeof(uint32_t) + HASH_RLP_LEN;
+            size_t const len = len_p[0];
+            MONAD_ASSERT(len >= 2 && len <= MAX_NONCE_BALANCE_RLP_LEN);
+            return byte_string_view{len_p + 1, len};
         }
 
         // lazily RLP-decode the account (fields for read_account)
         Account account() const
         {
-            byte_string_view enc = account_rlp();
-            bytes32_t
-                storage_root; // discarded; storage is traversed via storage()
-            auto res = rlp::decode_account(storage_root, enc);
-            MONAD_ASSERT(res.has_value());
-            return res.value();
-        }
-
-        NodeId storage() const // NULL_ID if no storage subtree materialized
-        {
-            return NodeId{rd_u32(account_rlp().end())};
+            Account acct;
+            byte_string_view code_hash = code_hash_rlp();
+            auto const hash = rlp::decode_bytes32(code_hash);
+            MONAD_ASSERT(hash.has_value());
+            acct.code_hash = hash.value();
+            byte_string_view nonce_balance = nonce_balance_rlp();
+            auto const nonce = rlp::decode_unsigned<uint64_t>(nonce_balance);
+            MONAD_ASSERT(nonce.has_value());
+            acct.nonce = nonce.value();
+            auto const balance = rlp::decode_unsigned<uint256_t>(nonce_balance);
+            MONAD_ASSERT(balance.has_value());
+            acct.balance = balance.value();
+            MONAD_ASSERT(nonce_balance.empty());
+            return acct;
         }
     };
 
@@ -295,7 +353,7 @@ namespace mpt_witness
         bytes32_t value() const
         {
             bytes32_t v;
-            std::memcpy(v.bytes, byte_string_path_view(p_).end(), 32);
+            std::memcpy(v.bytes, payload(p_), 32);
             return v;
         }
     };
@@ -388,9 +446,9 @@ namespace mpt_witness
         NodeId put_branch(NodeId, std::array<NodeId, 16> const &);
         NodeId put_ext(NodeId, mpt::NibblesView, NodeId);
         NodeId put_storage(NodeId, mpt::NibblesView, bytes32_t const &);
-        NodeId put_acct(
-            NodeId, mpt::NibblesView, Account const &, bytes32_t const &,
-            NodeId);
+        // No storage root parameter: the leaf takes it from its storage edge,
+        // which is why a decomposed leaf never stores one.
+        NodeId put_acct(NodeId, mpt::NibblesView, Account const &, NodeId);
         std::pair<NodeId, mpt::Nibbles>
         upsert_node(NodeId const id, mpt::NibblesView const key);
 
@@ -481,9 +539,11 @@ namespace mpt_witness
         // Like put_acct but takes the account's already-encoded RLP verbatim,
         // preserving the stored storage_root exactly (used when re-pathing an
         // account leaf on collapse/merge, where re-deriving it is impossible).
-        NodeId put_acct_raw(
-            NodeId id, mpt::NibblesView path, byte_string_view acct_rlp,
-            NodeId storage);
+        // Re-pathing an account leaf: everything up to the path is copied
+        // verbatim, so it neither decodes nor re-encodes the account. Only
+        // possible because the path comes LAST.
+        NodeId clone_acct(
+            NodeId id, byte_string_view prefix, mpt::NibblesView new_path);
 
         // Account-trie recursion behind upsert_account / erase_account —
         // mirrors upsert_storage / erase_storage but over account leaves.

@@ -373,10 +373,15 @@ public:
             else if (node.number_of_children() == 1) {
                 storage = sole_child_id(frame);
             }
-            byte_string const acct_rlp = AccountLeafProcessor::process(node);
+            // The leaf is DECOMPOSED, so what travels is the account's fields
+            // and not its encoding: the reader takes the storage root from the
+            // `storage` edge above and keeps only code hash, nonce and balance.
+            byte_string_view acct_view = node.value();
+            auto const acct = decode_account_db_ignore_address(acct_view);
+            MONAD_ASSERT(acct.has_value());
             return emit([&] {
-                mpt_witness::append_acct_raw(
-                    out_, frame.path, acct_rlp, storage);
+                mpt_witness::append_acct(
+                    out_, storage, acct.value(), frame.path);
             });
         }
         // Walking account storage trie

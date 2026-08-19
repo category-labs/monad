@@ -298,11 +298,43 @@ namespace mpt_witness
                     return wrap(dest);
                 },
                 [&](AcctLeafView l) -> std::span<unsigned char> {
-                    // value = the stored account RLP, wrapped as a string
-                    auto const account_rlp = l.account_rlp();
-                    size_t const account_len = rlp::string_length(account_rlp);
-                    rlp::encode_string(dest.last(account_len), account_rlp);
-                    dest = dest.shrink(account_len);
+                    // The leaf's value is the account's canonical RLP, which the
+                    // node no longer holds whole: rebuild it into dest's tail --
+                    // last field first, like everything else here -- splicing the
+                    // storage subtree's own hash between the stored code hash and
+                    // the nonce | balance run. Reading that root through hash() is
+                    // what ties an account to its storage: a leaf can only claim
+                    // the root its subtree actually hashes to, and NULL_ID
+                    // resolves to no storage at all.
+                    bytes32_t const storage_root = hash(l.storage());
+                    byte_string_view const code_hash = l.code_hash_rlp();
+                    std::memcpy(
+                        dest.last(HASH_RLP_LEN).data(),
+                        code_hash.data(),
+                        HASH_RLP_LEN);
+                    dest = dest.shrink(HASH_RLP_LEN);
+                    rlp::encode_string(
+                        dest.last(HASH_RLP_LEN),
+                        byte_string_view{storage_root.bytes, 32});
+                    dest = dest.shrink(HASH_RLP_LEN);
+                    byte_string_view const nonce_balance = l.nonce_balance_rlp();
+                    std::memcpy(
+                        dest.last(nonce_balance.size()).data(),
+                        nonce_balance.data(),
+                        nonce_balance.size());
+                    dest = dest.shrink(nonce_balance.size());
+                    // What stands in the buffer is now exactly the account's
+                    // payload; wrap closes it as the account list.
+                    dest = wrap(dest);
+                    // That list is in turn the leaf's value string. Its payload is
+                    // 68..108 bytes plus the 2-byte list header, so the string
+                    // header is always 0xB7 + 1 followed by one length byte.
+                    size_t const account_len = dest.rlp_size();
+                    MONAD_DEBUG_ASSERT(account_len > 55 && account_len <= 0xFF);
+                    dest.last(1).data()[0] = static_cast<unsigned char>(account_len);
+                    dest = dest.shrink(1);
+                    dest.last(1).data()[0] = 0xB8;
+                    dest = dest.shrink(1);
                     dest = put_path(dest, l.path(), /*terminating=*/true);
                     return wrap(dest);
                 },
@@ -386,32 +418,58 @@ namespace mpt_witness
         }
     }
 
+    // THE WRITER CHECKS ITSELF WITH THE READER. Both halves take their field
+    // positions from fixed_end(), and this is what proves they agree on every
+    // node actually written: the reader's own extent has to land exactly on the
+    // bytes the emitter produced. A layout change reaching only one half fails
+    // here, in debug, instead of shipping a blob the guest silently aborts on.
+    void check_round_trip(byte_string const &out, size_t const start)
+    {
+        MONAD_DEBUG_ASSERT(
+            NodeViewBase{out.data() + start}.end() == out.data() + out.size());
+    }
+
     void append_ext(
         byte_string &out, mpt::NibblesView const path, NodeId const child)
     {
+        size_t const start = out.size();
         out.push_back(EXT);
-        append_path(out, path);
         append_u32(out, static_cast<uint32_t>(child));
+        append_path(out, path);
+        check_round_trip(out, start);
     }
 
     void append_storage(
         byte_string &out, mpt::NibblesView const path, bytes32_t const &value)
     {
+        size_t const start = out.size();
         out.push_back(LEAF_STORAGE);
-        append_path(out, path);
         out.append(value.bytes, 32);
+        append_path(out, path);
+        check_round_trip(out, start);
     }
 
-    void append_acct_raw(
-        byte_string &out, mpt::NibblesView const path,
-        byte_string_view const acct_rlp, NodeId const storage)
+    // Decomposed, not verbatim: the reader takes the storage root from the
+    // storage edge, so the leaf carries only code hash, nonce and balance.
+    void append_acct(
+        byte_string &out, NodeId const storage, Account const &acct,
+        mpt::NibblesView const path)
     {
-        MONAD_ASSERT(acct_rlp.size() <= std::numeric_limits<uint16_t>::max());
+        size_t const start = out.size();
         out.push_back(LEAF_ACCT);
-        append_path(out, path);
-        append_u16(out, static_cast<uint16_t>(acct_rlp.size()));
-        out.append(acct_rlp.data(), acct_rlp.size());
         append_u32(out, static_cast<uint32_t>(storage));
+        out.append(rlp::encode_bytes32(acct.code_hash));
+        // The length is only known once nonce | balance are encoded, and the
+        // appends below may reallocate, so hold the slot by index.
+        size_t const len_index = out.size();
+        out.push_back(0);
+        out.append(rlp::encode_unsigned(acct.nonce));
+        out.append(rlp::encode_unsigned(acct.balance));
+        size_t const len = out.size() - len_index - 1;
+        MONAD_ASSERT(len >= 2 && len <= MAX_NONCE_BALANCE_RLP_LEN);
+        out[len_index] = static_cast<unsigned char>(len);
+        append_path(out, path);
+        check_round_trip(out, start);
     }
 
     void append_digest(byte_string &out, bytes32_t const &hash)
@@ -463,21 +521,26 @@ namespace mpt_witness
         return put_node(id, std::move(node));
     }
 
-    NodeId TrieStore::put_acct_raw(
-        NodeId const id, mpt::NibblesView const path,
-        byte_string_view const acct_rlp, NodeId const storage)
+    NodeId TrieStore::put_acct(
+        NodeId const id, mpt::NibblesView const path, Account const &acct,
+        NodeId const storage)
     {
         byte_string node;
-        append_acct_raw(node, path, acct_rlp, storage);
+        append_acct(node, storage, acct, path);
         return put_node(id, std::move(node));
     }
 
-    NodeId TrieStore::put_acct(
-        NodeId const id, mpt::NibblesView const path, Account const &acct,
-        bytes32_t const &storage_root, NodeId const storage)
+    // Re-pathing: the prefix is every byte up to the path, which the caller took
+    // while its view was still good. Neither decodes nor re-encodes the account,
+    // and it only works because the path comes last.
+    NodeId TrieStore::clone_acct(
+        NodeId const id, byte_string_view const prefix,
+        mpt::NibblesView const new_path)
     {
-        return put_acct_raw(
-            id, path, rlp::encode_account(acct, storage_root), storage);
+        byte_string node{prefix};
+        append_path(node, new_path);
+        check_round_trip(node, 0);
+        return put_node(id, std::move(node));
     }
 
     Tag TrieStore::fold_ext_node_path_maybe(
@@ -502,11 +565,12 @@ namespace mpt_witness
                     return LEAF_STORAGE;
                 },
                 [&](AcctLeafView l) {
-                    put_acct_raw(
+                    clone_acct(
                         ext_parent,
-                        mpt::concat(prefix, l.path()),
-                        l.account_rlp(),
-                        l.storage());
+                        byte_string_view{
+                            l.bytes(),
+                            static_cast<size_t>(fixed_end(l.bytes()) - l.bytes())},
+                        mpt::concat(prefix, l.path()));
                     return LEAF_ACCT;
                 },
                 [&](DigestView) -> Tag {
@@ -565,10 +629,12 @@ namespace mpt_witness
                     });
                 },
                 [&](AcctLeafView l) -> std::pair<NodeId, mpt::Nibbles> {
-                    byte_string const rlp{l.account_rlp()};
-                    NodeId const st = l.storage();
+                    // Copied NOW: put_node can reallocate the overlay and leave
+                    // the view dangling.
+                    byte_string const prefix{
+                        l.bytes(), fixed_end(l.bytes())};
                     return split_leaf(l.path(), [&](mpt::NibblesView const np) {
-                        return put_acct_raw(NULL_ID, np, rlp, st);
+                        return clone_acct(NULL_ID, prefix, np);
                     });
                 },
                 [&](ExtView e) -> std::pair<NodeId, mpt::Nibbles> {
@@ -819,14 +885,10 @@ void OffsetTrieDb::commit(
             }
         }
 
-        // Bake the freshly computed storage root into the account leaf.
-        bytes32_t const storage_root = store_.hash(storage);
+        // No storage root to bake in: the leaf takes it from the `storage`
+        // edge itself, which is why a decomposed leaf never stores one.
         store_.put_acct(
-            leaf,
-            mpt::NibblesView{leaf_path},
-            *new_account,
-            storage_root,
-            storage);
+            leaf, mpt::NibblesView{leaf_path}, *new_account, storage);
     }
 
     // Pass 2: deletions — accounts absent in the post-state but present before.

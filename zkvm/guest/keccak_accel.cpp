@@ -32,12 +32,27 @@
 #include <cstdint>
 #include <cstring>
 
+// An unaligned 8-byte load. The memcpy is the portable spelling of one; gcc
+// folds it into a single instruction.
+[[gnu::always_inline]] static inline uint64_t
+load64(unsigned char const *const p)
+{
+    uint64_t v;
+    __builtin_memcpy(&v, p, sizeof v);
+    return v;
+}
+
 extern "C"
 {
 
 // ziskos's raw precompile entry (no_mangle, extern "C"), the same door
 // zisklib's own wrapper uses.
 void syscall_keccak_f(uint64_t (*state)[25]);
+
+static inline void keccak_permute(uint64_t (*state)[25])
+{
+    syscall_keccak_f(state);
+}
 
 void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32])
 {
@@ -46,6 +61,26 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
 
     uint64_t st[25] = {};
     auto const *p = static_cast<unsigned char const *>(in);
+
+#ifdef MONAD_ZKVM_ZISK
+    // ZisK executes an unaligned load directly (the MemAlign state machine),
+    // so the sponge needs no alignment case at all: one loop, one load per
+    // lane, whatever `in` is aligned to.
+    //
+    // load64 is one `ld` here because the guest is built -mtune=generic-ooo;
+    // under the default tuning it would be byte-staged and this loop would be
+    // far worse than the branch it replaces.
+    while (len >= RATE) {
+        for (size_t i = 0; i < WORDS; ++i) {
+            st[i] ^= load64(p + 8 * i);
+        }
+        keccak_permute(&st);
+        p += RATE;
+        len -= RATE;
+    }
+#else
+    // SP1 is rv32im and its handling of unaligned access has not been
+    // established, so it keeps the alignment split.
     uintptr_t const mis = reinterpret_cast<uintptr_t>(p) & 7;
 
     if (mis == 0) {
@@ -54,7 +89,7 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
             for (size_t i = 0; i < WORDS; ++i) {
                 st[i] ^= w[i];
             }
-            syscall_keccak_f(&st);
+            keccak_permute(&st);
             p += RATE;
             len -= RATE;
         }
@@ -75,7 +110,7 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
                 st[i] ^= (lo >> rs) | (hi << ls);
                 lo = hi;
             }
-            syscall_keccak_f(&st);
+            keccak_permute(&st);
             p += RATE;
             len -= RATE;
         }
@@ -86,11 +121,12 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
             for (size_t i = 0; i < WORDS; ++i) {
                 st[i] ^= w[i];
             }
-            syscall_keccak_f(&st);
+            keccak_permute(&st);
             p += RATE;
             len -= RATE;
         }
     }
+#endif
 
     // Final block: remainder plus pad10*1 with the 0x01 domain byte.
     alignas(8) unsigned char last[RATE] = {};
@@ -103,7 +139,7 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
     for (size_t i = 0; i < WORDS; ++i) {
         st[i] ^= w[i];
     }
-    syscall_keccak_f(&st);
+    keccak_permute(&st);
 
     std::memcpy(out, st, 32);
 }

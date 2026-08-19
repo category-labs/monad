@@ -76,6 +76,56 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
 
     uint64_t st[25] = {};
     auto const *p = static_cast<unsigned char const *>(in);
+
+#ifdef MONAD_ZKVM_ZISK
+    // ZisK executes an unaligned load directly (the MemAlign state machine),
+    // so the sponge needs no alignment case at all: one loop, one load per
+    // lane, whatever `in` is aligned to.
+    //
+    // This is also strictly safer than the shift-combine it replaces. That
+    // path read w[i+1] for i = 16, i.e. up to 7 bytes past p + RATE, which is
+    // why it carried a `len > RATE + 7` guard and a buffered trailing block.
+    // bits::load64(p + 8*i) reads exactly [p + 8i, p + 8i + 8) — the rate
+    // block and nothing else — so both the guard and the trailing case go.
+    //
+    // Measured on r4-jd-blockhash, block 25551991: 30,171 calls, 60,377 full
+    // rate blocks, 22,603 of them (37 %) on a misaligned input. Compiled both
+    // ways at -O3 -mtune=generic-ooo, the 17-lane block unrolls to 91
+    // instructions here against 153 for the shift-combine.
+    //
+    // Per misaligned block: 62 instructions saved (4,216 cells of MAIN)
+    // against 17 lanes that go from an aligned read to a boundary-crossing
+    // one, 159 against 16 (2,431 cells of MEMORY). Net 1,785 per block,
+    // 40.3 M, +0.20 % of COST.
+    //
+    // An 8-byte read that crosses an 8-byte boundary is 159, not the 106 an
+    // earlier pass here used: 106 is the price of a *sub-word* access, which
+    // is what the model charges anything that is not 8 bytes wide at an
+    // 8-aligned address. Both figures are measured (ziskemu, one inline-asm
+    // access per loop iteration); the constant names in emu_costs.rs do not
+    // say which is which. That error is why this comment first read +0.30 %.
+    //
+    // Staging each block through an aligned buffer would be better still —
+    // 8,371 per block against 9,469 here and 11,270 for the shift-combine —
+    // but only if the copy reaches ZisK's dma_memcpy. gcc inlines a 136-byte
+    // std::memcpy into 17 unaligned ld/sd pairs instead, which lands at
+    // 11,543, worse than everything. Getting the call would mean hiding the
+    // constant size from the optimiser; not worth the fragility for 0.12 %.
+    //
+    // load64 is one `ld` here because the guest is built -mtune=generic-ooo;
+    // under the default tuning it would be byte-staged and this loop would be
+    // far worse than the branch it replaces. The two changes are coupled.
+    while (len >= RATE) {
+        for (size_t i = 0; i < WORDS; ++i) {
+            st[i] ^= monad::bits::load64(p + 8 * i);
+        }
+        keccak_permute(&st);
+        p += RATE;
+        len -= RATE;
+    }
+#else
+    // SP1 is rv32im and its handling of unaligned access has not been
+    // established, so it keeps the alignment split.
     uintptr_t const mis = reinterpret_cast<uintptr_t>(p) & 7;
 
     if (mis == 0) {
@@ -121,6 +171,7 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
             len -= RATE;
         }
     }
+#endif
 
     // Final block: remainder plus pad10*1 with the 0x01 domain byte.
     alignas(8) unsigned char last[RATE] = {};

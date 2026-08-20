@@ -63,14 +63,39 @@ struct NoopCallTracer final : public CallTracerBase
 
 class CallTracer final : public CallTracerBase
 {
+    struct CallFramesStack
+    {
+        std::vector<CallFrame> &frames_;
+        std::stack<size_t> last_{};
+        std::stack<size_t> positions_{};
+        size_t dropped_subtree_depth_{0};
+
+        explicit CallFramesStack(std::vector<CallFrame> &);
+
+        void record_dropped_subtree_enter();
+        void record_dropped_subtree_child_enter();
+        void advance_position();
+        bool consume_dropped_exit();
+
+        CallFrame &top_frame();
+        CallFrame &pop_frame();
+        CallFrame &push_frame(CallFrame &&);
+        CallFrame &push_selfdestruct_frame(CallFrame &&);
+
+        bool has_active_frame() const;
+        bool in_dropped_subtree() const;
+        size_t dropped_subtree_depth() const;
+        size_t position() const;
+
+        void reset();
+    };
+
     std::vector<CallFrame> &frames_;
-    std::stack<size_t> last_{};
-    std::stack<size_t> positions_{};
+    CallFramesStack frames_stack_;
     Transaction const &tx_;
     size_t const max_size_;
     size_t size_{0};
     bool truncated_{false};
-    size_t dropped_subtree_depth_{0};
 
     bool fits(size_t additional_size) const;
     size_t log_size(Receipt::Log const &) const;

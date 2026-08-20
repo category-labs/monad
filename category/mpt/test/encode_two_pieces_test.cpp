@@ -37,7 +37,7 @@ TEST(EncodeTwoPieces, Leaf)
 
     byte_string const value = {'h', 'e', 'l', 'l', 'o'};
     auto const encoded = encode_two_pieces(
-        NibblesView{path}, byte_string_view{value}, /*has_value=*/true);
+        NibblesView{path}, byte_string_view{value}, /*is_leaf=*/true);
 
     byte_string const expected = {
         0xc9, 0x82, 0x31, 0x23, 0x85, 'h', 'e', 'l', 'l', 'o'};
@@ -57,7 +57,7 @@ TEST(EncodeTwoPieces, ExtensionShortChildRef)
 
     byte_string const second = {0xc3, 0x01, 0x02, 0x03};
     auto const encoded = encode_two_pieces(
-        NibblesView{path}, byte_string_view{second}, /*has_value=*/false);
+        NibblesView{path}, byte_string_view{second}, /*is_leaf=*/false);
 
     byte_string const expected = {
         0xc7, 0x82, 0x00, 0xab, 0xc3, 0x01, 0x02, 0x03};

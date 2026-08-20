@@ -698,6 +698,66 @@ TYPED_TEST(TrieTest, variable_length_trie)
     }
 }
 
+// A node with both children and a value (one key a proper prefix of another)
+// must be encoded as an extension, not a leaf. Expected root is the Ethereum
+// canonical MPT vector "branch-value-update" from
+// third_party/ethereum-tests/TrieTests/trietest.json. Not reachable in
+// production state roots: variable-length trie in production is keyed by
+// a prefix-free set (self-delimiting RLP indices).
+TYPED_TEST(TrieTest, leaf_on_branch_canonical_root)
+{
+    this->sm = std::make_unique<StateMachineAlwaysVarLen>();
+
+    auto const abc = 0x616263_bytes; // "abc"
+    auto const abcd = 0x61626364_bytes; // "abcd"
+
+    this->root = upsert_updates(
+        this->aux,
+        *this->sm,
+        std::move(this->root),
+        make_update(abc, abc),
+        make_update(abcd, abcd));
+
+    EXPECT_EQ(
+        this->root_hash(),
+        0x7a320748f780ad9ad5b0837302075ce0eeba6c26e3d8562c67ccc0f1b273298a_bytes);
+}
+
+// Same as leaf_on_branch_canonical_root, but under a key prefix so the
+// leaf-on-branch node goes through the single-child case code path in
+// RootVarLenMerkleCompute::compute_node_data_len.
+TYPED_TEST(TrieTest, leaf_on_branch_canonical_root_with_prefix)
+{
+    auto const prefix = 0x00_bytes;
+    this->sm = std::make_unique<StateMachineVarLenTrieWithPrefix<2>>();
+
+    auto const abc = 0x616263_bytes; // "abc"
+    auto const abcd = 0x61626364_bytes; // "abcd"
+
+    UpdateList updates;
+    Update u1 = make_update(abc, abc);
+    Update u2 = make_update(abcd, abcd);
+    updates.push_front(u1);
+    updates.push_front(u2);
+
+    auto u_prefix = make_update(prefix, monad::byte_string_view{});
+    u_prefix.next = std::move(updates);
+    UpdateList ul_prefix;
+    ul_prefix.push_front(u_prefix);
+    this->root = upsert(
+        this->aux,
+        0,
+        *this->sm,
+        {},
+        std::move(ul_prefix),
+        /*write_root=*/true,
+        timeline_id::primary);
+
+    EXPECT_EQ(
+        this->root->data(),
+        0x7a320748f780ad9ad5b0837302075ce0eeba6c26e3d8562c67ccc0f1b273298a_bytes);
+}
+
 TYPED_TEST(TrieTest, variable_length_trie_with_prefix)
 {
     constexpr uint64_t version = 0;

@@ -220,7 +220,7 @@ struct MonadRunloopImpl
     BlockHashBufferFinalized block_hash_buffer;
     fiber::PriorityPool priority_pool;
     uint64_t block_num;
-    bool is_first_run;
+    uint64_t start_block_num;
 
     MonadRunloopImpl(
         uint64_t chain_id, char const *ledger_path, char const *db_path);
@@ -252,7 +252,6 @@ MonadRunloopImpl::MonadRunloopImpl(
     , vm{}
     , block_hash_buffer{}
     , priority_pool{nthreads, nfibers}
-    , is_first_run{true}
 {
     MONAD_ASSERT(triedb.is_page_encoded() == false);
     MONAD_ASSERT(secondary_triedb.is_page_encoded() == true);
@@ -268,6 +267,7 @@ MonadRunloopImpl::MonadRunloopImpl(
 
     uint64_t const init_block_num = triedb.get_block_number();
     block_num = init_block_num + 1;
+    start_block_num = block_num;
 
     LOG_INFO("Init block number = {}", init_block_num);
 
@@ -307,23 +307,23 @@ uint256_t to_uint256(MonadRunloopWord const *const x)
 class RunloopOverrideMethods : public RunloopMonadOverrideMethods
 {
 private:
-    bool is_first_run_;
+    uint64_t start_block_num_;
     AccountOverrideMap &account_override_;
     MonadRunloopTrieDb &runloop_db_;
 
 public:
     RunloopOverrideMethods(
-        bool is_first_run, AccountOverrideMap &account_override,
+        uint64_t const start_block_num, AccountOverrideMap &account_override,
         MonadRunloopTrieDb &runloop_db)
-        : is_first_run_{is_first_run}
+        : start_block_num_{start_block_num}
         , account_override_{account_override}
         , runloop_db_{runloop_db}
     {
     }
 
-    virtual bool is_first_run() const override
+    virtual uint64_t start_block_num() const override
     {
-        return is_first_run_;
+        return start_block_num_;
     }
 
     virtual void preprocess_state_deltas(
@@ -395,7 +395,9 @@ try {
     auto const block_num_before = runloop->block_num;
 
     RunloopOverrideMethods override_methods{
-        runloop->is_first_run, runloop->account_override, runloop->runloop_db};
+        runloop->start_block_num,
+        runloop->account_override,
+        runloop->runloop_db};
     RunloopMonadOverride runloop_override{&override_methods};
 
     sig_atomic_t const stop = 0;
@@ -414,8 +416,6 @@ try {
         /* exec_recorder = */ nullptr,
         &runloop->secondary_runloop_db,
         runloop_override);
-
-    runloop->is_first_run = false;
 
     auto const block_num_after = runloop->block_num;
 

@@ -17,13 +17,15 @@
 
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 
+#include <cstdint>
+
 MONAD_NAMESPACE_BEGIN
 
 struct RunloopMonadOverrideMethods
 {
     virtual ~RunloopMonadOverrideMethods() {}
 
-    virtual bool is_first_run() const = 0;
+    virtual uint64_t start_block_num() const = 0;
     virtual void
     preprocess_state_deltas(std::unique_ptr<StateDeltas> *) const = 0;
 };
@@ -41,14 +43,15 @@ public:
     {
     }
 
-    // Return `true` to indicate the first invocation of the monad runloop
-    // after opening the database.
-    bool is_first_run() const
+    // Return the block number of the first block to be executed after opening
+    // the database. The given `runloop_start` block number argument is
+    // considered to be the first when `override_methods_` is `nullptr`.
+    uint64_t start_block_num(uint64_t const runloop_start) const
     {
         if (MONAD_LIKELY(override_methods_ == nullptr)) {
-            return true;
+            return runloop_start;
         }
-        return override_methods_->is_first_run();
+        return override_methods_->start_block_num();
     }
 
     // Overrides the state deltas when `override_methods_` is not `nullptr`.

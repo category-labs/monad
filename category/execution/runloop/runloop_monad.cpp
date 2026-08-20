@@ -511,7 +511,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     Db *secondary_db, RunloopMonadOverride const runloop_override)
 {
     constexpr auto SLEEP_TIME = std::chrono::microseconds(100);
-    bool is_first_block = runloop_override.is_first_run();
+    uint64_t const start_block_num =
+        runloop_override.start_block_num(block_num);
     uint256_t const chain_id = chain.get_chain_id();
     BlockHashChain block_hash_chain(block_hash_buffer);
 
@@ -657,7 +658,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              &priority_pool,
              &last_finalized_block_number,
              chain_id,
-             &is_first_block,
+             start_block_num,
              enable_tracing,
              &block_cache,
              exec_recorder,
@@ -720,7 +721,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     db,
                     vm,
                     priority_pool,
-                    is_first_block,
+                    block_number == start_block_num,
                     enable_tracing,
                     block_cache,
                     exec_recorder,
@@ -731,8 +732,6 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             BOOST_OUTCOME_TRY(
                 BlockExecOutput const exec_output,
                 record_block_result(exec_recorder, propose_dispatch()));
-
-            is_first_block = false;
 
             db.update_proposed_metadata(header.seqno, block_id);
             if (secondary_db != nullptr) {

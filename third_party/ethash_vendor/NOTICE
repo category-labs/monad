@@ -1,0 +1,36 @@
+This directory contains code vendored from the ethash project
+(https://github.com/chfast/ethash), licensed under the Apache License
+v2.0. See LICENSE for the full license text.
+
+keccak.h is derived from ethash's lib/keccak/keccak.c,
+Copyright 2018 Pawel Bylica, whose sponge in turn builds on the "simple"
+Keccak implementation by Ronny Van Keer included in "Reference and
+optimized code in C" (https://keccak.team/archives.html, CC0-1.0 /
+Public Domain).
+
+The vendored copy is reduced to the sponge alone:
+
+  - The Keccak-f[1600] permutation is not included. It is declared as
+    monad_keccakf1600() and left for the consumer to define, so that a
+    target with a hardware or proof-system Keccak primitive can supply
+    it. The zkVM guest does exactly that in
+    zkvm/category/crypto/keccakf1600.h.
+  - keccak() is specialised to a 256-bit digest; the bit-width parameter
+    and the 512-bit and fixed-size-input entry points are dropped.
+  - The sponge is exposed as monad_keccak256(), matching the signature
+    of category/crypto/keccak.h, so that it drops in as an alternative
+    definition of monad_crypto's keccak256. It therefore writes into a
+    caller-supplied byte buffer rather than returning a union
+    ethash_hash256, and the vendored header declares no types.
+  - The sponge lives in the header as an always_inline static, rather
+    than in a translation unit, so that it constant-folds at the call
+    sites that hash a fixed-length key.
+  - The load_le() and to_le64() helpers become prefixed static inline
+    functions, so that the header exports no macros; upstream's fallback
+    macro for compilers lacking __builtin_memcpy is dropped with them.
+  - The ALWAYS_INLINE macro from ethash's lib/support/attributes.h is
+    dropped rather than vendoring that header for a single use.
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.

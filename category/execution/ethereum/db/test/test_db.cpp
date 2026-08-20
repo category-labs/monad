@@ -32,7 +32,6 @@
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
 
-#include <ethash/keccak.hpp>
 #include <nlohmann/json.hpp>
 
 #include <gmock/gmock.h>

@@ -131,7 +131,8 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     // emit a 32-byte ref where the trie inlines it.
                     if (rem.rlp_size() >= 32) {
                         bytes32_t h;
-                        keccak256(rem.rlp_data(), rem.rlp_size(), h.bytes);
+                        monad_keccak256(
+                            rem.rlp_data(), rem.rlp_size(), h.bytes);
                         hashes_.emplace(NodeId{node_offset}, h);
                     }
                 }});
@@ -210,7 +211,7 @@ bytes32_t OffsetTrie::hash(NodeId const id)
                 node_rlp_span const rem = encode_rlp(node, node_rlp_span{buf});
                 bytes32_t h;
                 // RLP occupies the tail: [rem.end(), buf_end).
-                keccak256(rem.rlp_data(), rem.rlp_size(), h.bytes);
+                monad_keccak256(rem.rlp_data(), rem.rlp_size(), h.bytes);
 
                 hashes_.emplace(id, h);
                 return h;
@@ -242,7 +243,7 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
         MONAD_ABORT("offset trie: unprimed hash-referenced node (bad offset)");
     }
     bytes32_t h;
-    keccak256(child_rlp, child_rlp_len, h.bytes);
+    monad_keccak256(child_rlp, child_rlp_len, h.bytes);
     hashes_.emplace(id, h);
     rlp::encode_string(dest.last(33), byte_string_view{h.bytes, 32});
     return dest.shrink(33);

@@ -27,9 +27,9 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
-#include <category/core/keccak.h>
 #include <category/core/log.hpp>
 #include <category/core/small_prng.hpp>
+#include <category/crypto/keccak.h>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -238,12 +238,12 @@ void prepare_keccak(
                 if (!seen.contains(j)) {
                     seen.insert(j);
                     keccak_keys[i].resize(32);
-                    keccak256(
+                    monad_keccak256(
                         (unsigned char const *)&j, 4, keccak_keys[i].data());
 
                     val = (i + key_offset) * 2;
                     keccak_values[i].resize(32);
-                    keccak256(
+                    monad_keccak256(
                         (unsigned char const *)&val,
                         8,
                         keccak_values[i].data());
@@ -271,10 +271,12 @@ void prepare_keccak(
             while (keys_per_slice.find(key) != keys_per_slice.end());
             keys_per_slice.insert(key);
             keccak_keys[i].resize(32);
-            keccak256((unsigned char const *)&key, 8, keccak_keys[i].data());
+            monad_keccak256(
+                (unsigned char const *)&key, 8, keccak_keys[i].data());
             val = key * 2;
             keccak_values[i].resize(32);
-            keccak256((unsigned char const *)&val, 8, keccak_values[i].data());
+            monad_keccak256(
+                (unsigned char const *)&val, 8, keccak_values[i].data());
         }
     }
     else {
@@ -282,10 +284,12 @@ void prepare_keccak(
         for (size_t i = 0; i < nkeys; ++i) {
             key = (i + key_offset) % MAX_NUM_KEYS;
             keccak_keys[i].resize(32);
-            keccak256((unsigned char const *)&key, 8, keccak_keys[i].data());
+            monad_keccak256(
+                (unsigned char const *)&key, 8, keccak_keys[i].data());
             val = key * 2;
             keccak_values[i].resize(32);
-            keccak256((unsigned char const *)&val, 8, keccak_values[i].data());
+            monad_keccak256(
+                (unsigned char const *)&val, 8, keccak_values[i].data());
         }
     }
 }
@@ -781,7 +785,7 @@ int main(int const argc, char *argv[])
                             if (!done) {
                                 size_t key_src =
                                     (rand() % (n_slices * SLICE_LEN));
-                                keccak256(
+                                monad_keccak256(
                                     (unsigned char const *)&key_src,
                                     8,
                                     key.data());
@@ -873,7 +877,7 @@ int main(int const argc, char *argv[])
                         key.resize(32);
                         while (!signal_done) {
                             size_t key_src = (rand() % (n_slices * SLICE_LEN));
-                            keccak256(
+                            monad_keccak256(
                                 (unsigned char const *)&key_src, 8, key.data());
 
                             ::boost::fibers::promise<
@@ -952,7 +956,7 @@ int main(int const argc, char *argv[])
                         while (0 ==
                                signal_done.load(std::memory_order_relaxed)) {
                             size_t key_src = (rand() % (n_slices * SLICE_LEN));
-                            keccak256(
+                            monad_keccak256(
                                 (unsigned char const *)&key_src, 8, key.data());
 
                             ::boost::fibers::promise<

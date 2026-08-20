@@ -17,13 +17,11 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/hash256.hpp>
 
 #include <blake3.h>
-#include <ethash/hash_types.hpp>
 
 MONAD_NAMESPACE_BEGIN
-
-using hash256 = ethash::hash256;
 
 inline hash256 blake3(byte_string_view const bytes)
 {

@@ -15,7 +15,7 @@
 
 // Modified 2026 by Category Labs: renamed silkpre prefixes to monad
 
-#include <silkpre_vendor/blake2b.h>
+#include <category/crypto/silkpre_vendor/blake2b.h>
 
 #include <stdint.h>
 #include <string.h>

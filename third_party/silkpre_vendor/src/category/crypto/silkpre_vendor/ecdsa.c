@@ -18,11 +18,12 @@
 //   - Rename to use monad prefixes
 //   - Remove secp256k1_ecdh and related functions
 
-#include <silkpre_vendor/ecdsa.h>
+#include <category/crypto/hash256.h>
+#include <category/crypto/keccak.h>
+#include <category/crypto/silkpre_vendor/ecdsa.h>
 
 #include <string.h>
 
-#include <ethash/keccak.h>
 #include <secp256k1_recovery.h>
 
 //! \brief Tries recover public key used for message signing.
@@ -53,7 +54,8 @@ static bool public_key_to_address(uint8_t out[20], const uint8_t public_key[65])
         return false;
     }
     // Ignore first byte of public key
-    const union ethash_hash256 key_hash = ethash_keccak256(public_key + 1, 64);
+    struct monad_hash256 key_hash;
+    monad_keccak256(public_key + 1, 64, key_hash.bytes);
     memcpy(out, &key_hash.bytes[12], 20);
     return true;
 }

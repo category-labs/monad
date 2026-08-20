@@ -20,6 +20,10 @@
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/crypto/silkpre_vendor/blake2b.h>
+#include <category/crypto/silkpre_vendor/ecdsa.h>
+#include <category/crypto/silkpre_vendor/rmd160.h>
+#include <category/crypto/silkpre_vendor/sha256.h>
 #include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
@@ -37,11 +41,6 @@
 #include <common/ret.h>
 
 #include <evmc/evmc.h>
-
-#include <silkpre_vendor/blake2b.h>
-#include <silkpre_vendor/ecdsa.h>
-#include <silkpre_vendor/rmd160.h>
-#include <silkpre_vendor/sha256.h>
 
 #include <setup/settings.h>
 #include <setup/setup.h>

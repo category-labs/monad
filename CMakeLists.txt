@@ -100,6 +100,11 @@ add_subdirectory("third_party/concurrentqueue")
 add_subdirectory("third_party/cthash")
 
 # ethash
+# No monad code uses ethash: hashing goes through category/core/keccak.hpp and
+# the digest type is monad::hash256 (category/core/hash256.hpp). It is still
+# configured because two third-party libraries link ethash::keccak privately —
+# silkpre, and evmone under MONAD_COMPILER_TESTING/BENCHMARKS. Retiring the
+# submodule means finishing the silkpre -> silkpre_vendor migration.
 set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")
 # ethash carries clang::no_sanitize attributes that GCC ignores and warns about.
@@ -185,9 +190,6 @@ set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK)
 target_compile_options(
   ff
   PRIVATE -Wno-unused-parameter -Wno-unused-const-variable -Wno-uninitialized)
-
-# silkpre_vendor (vendored sha256, rmd160, blake2f, ecrecover)
-add_subdirectory("third_party/silkpre_vendor")
 
 # tbb
 find_package(TBB REQUIRED)
@@ -290,6 +292,8 @@ endif()
 # ##############################################################################
 
 add_subdirectory("category/async")
+# crypto before core: monad_core links monad_crypto for keccak256()
+add_subdirectory("category/crypto")
 add_subdirectory("category/core")
 add_subdirectory("category/mpt")
 add_subdirectory("category/event")

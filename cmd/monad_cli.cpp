@@ -20,10 +20,10 @@
 #include <category/core/cli/help_formatter.hpp>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
-#include <category/core/keccak.h>
 #include <category/core/keccak.hpp>
 #include <category/core/log.hpp>
 #include <category/core/result.hpp>
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/fmt/account_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT

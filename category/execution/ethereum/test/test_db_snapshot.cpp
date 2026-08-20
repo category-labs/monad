@@ -16,7 +16,7 @@
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
-#include <category/core/keccak.h>
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/db_snapshot_filesystem.h>

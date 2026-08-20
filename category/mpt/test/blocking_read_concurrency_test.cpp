@@ -20,8 +20,8 @@
 #include <category/core/assert.h>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
-#include <category/core/keccak.h>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/crypto/keccak.h>
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/nibbles_view.hpp>

@@ -95,8 +95,6 @@ add_library(
   "hex.hpp"
   "int.hpp"
   "is_specialization_of.hpp"
-  "keccak.c"
-  "keccak.h"
   "keccak.hpp"
   "likely.h"
   "log.cpp"
@@ -205,14 +203,6 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
             "procfs/statm.h")
 endif()
 
-target_include_directories(monad_core PRIVATE "${THIRD_PARTY_DIR}/openssl")
-if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
-  target_sources(monad_core PRIVATE "keccak_impl.S")
-else()
-  target_sources(monad_core
-                 PRIVATE "third_party/openssl/crypto/sha/keccak1600.c")
-endif()
-
 monad_compile_options(monad_core)
 target_include_directories(monad_core PUBLIC ${CATEGORY_MAIN_DIR})
 
@@ -235,7 +225,7 @@ target_link_libraries(monad_core PUBLIC Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC CLI11::CLI11)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)
-target_link_libraries(monad_core PUBLIC ethash::keccak)
+target_link_libraries(monad_core PUBLIC monad_crypto)
 target_link_libraries(monad_core PUBLIC evmc)
 target_link_libraries(monad_core PUBLIC quill)
 target_link_libraries(monad_core PUBLIC unordered_dense)

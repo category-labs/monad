@@ -18,8 +18,8 @@
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
-#include <category/core/keccak.h>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/crypto/keccak.h>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/traverse.hpp>
@@ -139,7 +139,7 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
         for (unsigned n = 0; n < BATCH_SIZE; ++n) {
             byte_string kv(KECCAK256_SIZE, 0);
             MONAD_ASSERT(kv.size() == KECCAK256_SIZE);
-            keccak256((unsigned char const *)&i, 8, kv.data());
+            monad_keccak256((unsigned char const *)&i, 8, kv.data());
             key_values.emplace_back(kv);
 
             updates.push_front(updates_alloc.emplace_back(Update{
@@ -189,7 +189,7 @@ TEST_F(OnDiskMerkleTrieGTest, recursively_verify_versions)
         for (unsigned n = 0; n < ERASE_BATCH_SIZE; ++n) {
             byte_string kv(KECCAK256_SIZE, 0);
             MONAD_ASSERT(kv.size() == KECCAK256_SIZE);
-            keccak256((unsigned char const *)&i, 8, kv.data());
+            monad_keccak256((unsigned char const *)&i, 8, kv.data());
             key_values.emplace_back(kv);
 
             updates.push_front(updates_alloc.emplace_back(Update{

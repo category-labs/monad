@@ -351,7 +351,7 @@ target_link_libraries(
   PRIVATE monad_crypto
   PRIVATE PkgConfig::brotli
   PRIVATE PkgConfig::crypto++
-  PRIVATE PkgConfig::secp256k1
+  PRIVATE secp256k1
   PUBLIC ethash::keccak
   PUBLIC evmc
   PUBLIC immer
@@ -372,7 +372,7 @@ target_link_libraries(
   PUBLIC monad_trie
   PUBLIC evmc
   PUBLIC magic_enum::magic_enum
-  PRIVATE PkgConfig::secp256k1
+  PUBLIC secp256k1
   PUBLIC quill::quill)
 monad_compile_options(monad_execution_native)
 

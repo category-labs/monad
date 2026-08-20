@@ -21,6 +21,7 @@
 #include <category/core/assert.h>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 

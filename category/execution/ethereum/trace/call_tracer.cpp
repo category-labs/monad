@@ -117,16 +117,117 @@ CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
 {
 }
 
+CallTracer::CallFramesStack::CallFramesStack(std::vector<CallFrame> &frames)
+    : frames_(frames)
+{
+    positions_.push(0);
+}
+
+void CallTracer::CallFramesStack::record_dropped_subtree_enter()
+{
+    if (!last_.empty()) {
+        advance_position();
+    }
+    dropped_subtree_depth_ = 1;
+}
+
+void CallTracer::CallFramesStack::record_dropped_subtree_child_enter()
+{
+    MONAD_ASSERT(dropped_subtree_depth_ > 0);
+    dropped_subtree_depth_++;
+}
+
+void CallTracer::CallFramesStack::advance_position()
+{
+    MONAD_ASSERT(!positions_.empty());
+    positions_.top()++;
+}
+
+bool CallTracer::CallFramesStack::consume_dropped_exit()
+{
+    if (dropped_subtree_depth_ == 0) {
+        return false;
+    }
+
+    dropped_subtree_depth_--;
+    return true;
+}
+
+CallFrame &CallTracer::CallFramesStack::top_frame()
+{
+    MONAD_ASSERT(!last_.empty());
+    return frames_.at(last_.top());
+}
+
+CallFrame &CallTracer::CallFramesStack::pop_frame()
+{
+    MONAD_ASSERT(!frames_.empty());
+    MONAD_ASSERT(!last_.empty());
+    MONAD_ASSERT(!positions_.empty());
+
+    auto &frame = frames_.at(last_.top());
+    last_.pop();
+    positions_.pop();
+    return frame;
+}
+
+CallFrame &CallTracer::CallFramesStack::push_frame(CallFrame &&frame)
+{
+    advance_position();
+    positions_.push(0);
+    frames_.emplace_back(std::move(frame));
+    last_.push(frames_.size() - 1);
+    return frames_.back();
+}
+
+CallFrame &
+CallTracer::CallFramesStack::push_selfdestruct_frame(CallFrame &&frame)
+{
+    MONAD_ASSERT(!last_.empty());
+    advance_position();
+    frames_.emplace_back(std::move(frame));
+    return frames_.back();
+}
+
+bool CallTracer::CallFramesStack::has_active_frame() const
+{
+    return !last_.empty();
+}
+
+bool CallTracer::CallFramesStack::in_dropped_subtree() const
+{
+    return dropped_subtree_depth_ > 0;
+}
+
+size_t CallTracer::CallFramesStack::dropped_subtree_depth() const
+{
+    return dropped_subtree_depth_;
+}
+
+size_t CallTracer::CallFramesStack::position() const
+{
+    MONAD_ASSERT(!positions_.empty());
+    return positions_.top();
+}
+
+void CallTracer::CallFramesStack::reset()
+{
+    last_ = std::stack<size_t>{};
+    positions_ = std::stack<size_t>{};
+    positions_.push(0);
+    dropped_subtree_depth_ = 0;
+}
+
 CallTracer::CallTracer(
     Transaction const &tx, std::vector<CallFrame> &frames,
     size_t const max_size)
     : frames_(frames)
+    , frames_stack_(frames_)
     , tx_(tx)
     , max_size_(max_size)
     , size_(0)
 {
     frames_.reserve(128);
-    positions_.push(0);
 }
 
 bool CallTracer::fits(size_t const additional_size) const
@@ -149,18 +250,13 @@ size_t CallTracer::log_size(Receipt::Log const &log) const
 
 void CallTracer::on_enter(evmc_message const &msg)
 {
-    MONAD_ASSERT(!positions_.empty());
-
-    if (dropped_subtree_depth_ > 0) {
-        dropped_subtree_depth_++;
+    if (frames_stack_.in_dropped_subtree()) {
+        frames_stack_.record_dropped_subtree_child_enter();
         return;
     }
 
     if (truncated_) {
-        if (!last_.empty()) {
-            positions_.top()++;
-        }
-        dropped_subtree_depth_ = 1;
+        frames_stack_.record_dropped_subtree_enter();
         return;
     }
 
@@ -168,19 +264,13 @@ void CallTracer::on_enter(evmc_message const &msg)
 
     if (!fits(frame_size)) {
         truncated_ = true;
-        if (!last_.empty()) {
-            positions_.top()++;
-        }
-        dropped_subtree_depth_ = 1;
+        frames_stack_.record_dropped_subtree_enter();
         return;
     }
 
     byte_string const input = msg.input_data == nullptr
                                   ? byte_string{}
                                   : byte_string{msg.input_data, msg.input_size};
-
-    positions_.top()++;
-    positions_.push(0);
 
     auto const depth = static_cast<uint64_t>(msg.depth);
 
@@ -198,7 +288,7 @@ void CallTracer::on_enter(evmc_message const &msg)
         to = msg.code_address;
     }
 
-    frames_.emplace_back(CallFrame{
+    frames_stack_.push_frame(CallFrame{
         .type =
             [kind = msg.kind] {
                 switch (kind) {
@@ -232,22 +322,16 @@ void CallTracer::on_enter(evmc_message const &msg)
         .logs = std::vector<CallFrame::Log>{},
     });
 
-    last_.push(frames_.size() - 1);
     size_ += frame_size;
 }
 
 void CallTracer::on_exit(evmc::Result const &res)
 {
-    if (dropped_subtree_depth_ > 0) {
-        dropped_subtree_depth_--;
+    if (frames_stack_.consume_dropped_exit()) {
         return;
     }
 
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(!last_.empty());
-    MONAD_ASSERT(!positions_.empty());
-
-    auto &frame = frames_.at(last_.top());
+    CallFrame &frame = frames_stack_.pop_frame();
 
     MONAD_ASSERT(frame.gas >= static_cast<uint64_t>(res.gas_left));
     frame.gas_used = frame.gas - static_cast<uint64_t>(res.gas_left);
@@ -272,21 +356,14 @@ void CallTracer::on_exit(evmc::Result const &res)
                        ? std::nullopt
                        : std::optional{res.create_address};
     }
-
-    last_.pop();
-    positions_.pop();
 }
 
 void CallTracer::on_log(Receipt::Log log)
 {
-    if (dropped_subtree_depth_ > 0) {
+    if (frames_stack_.in_dropped_subtree()) {
         truncated_ = true;
         return;
     }
-
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(!last_.empty());
-    MONAD_ASSERT(!positions_.empty());
 
     auto const entry_size = log_size(log);
     if (!fits(entry_size)) {
@@ -294,10 +371,10 @@ void CallTracer::on_log(Receipt::Log log)
         return;
     }
 
-    auto &frame = frames_.at(last_.top());
+    auto &frame = frames_stack_.top_frame();
     MONAD_ASSERT(frame.logs.has_value());
 
-    frame.logs->emplace_back(std::move(log), positions_.top());
+    frame.logs->emplace_back(std::move(log), frames_stack_.position());
     size_ += entry_size;
 }
 
@@ -305,25 +382,20 @@ void CallTracer::on_self_destruct(
     Address const &from, Address const &to,
     uint256_t const &transferred_balance)
 {
-    if (dropped_subtree_depth_ > 0) {
+    if (frames_stack_.in_dropped_subtree()) {
         truncated_ = true;
         return;
     }
-
-    MONAD_ASSERT(!last_.empty());
-    MONAD_ASSERT(!positions_.empty());
 
     if (!fits(sizeof(CallFrame))) {
         truncated_ = true;
-        positions_.top()++;
+        frames_stack_.advance_position();
         return;
     }
 
-    positions_.top()++;
+    auto &parent = frames_stack_.top_frame();
 
-    auto const &parent = frames_.at(last_.top());
-
-    frames_.emplace_back(CallFrame{
+    frames_stack_.push_selfdestruct_frame(CallFrame{
         .type = CallType::SELFDESTRUCT,
         .flags = 0,
         .from = from,
@@ -343,8 +415,8 @@ void CallTracer::on_self_destruct(
 
 void CallTracer::on_finish(uint64_t const gas_used)
 {
-    MONAD_ASSERT(dropped_subtree_depth_ == 0);
-    MONAD_ASSERT(last_.empty());
+    MONAD_ASSERT(frames_stack_.dropped_subtree_depth() == 0);
+    MONAD_ASSERT(!frames_stack_.has_active_frame());
 
     if (frames_.empty()) {
         return;
@@ -356,13 +428,9 @@ void CallTracer::on_finish(uint64_t const gas_used)
 void CallTracer::reset()
 {
     frames_.clear();
-    last_ = std::stack<size_t>{};
-
-    positions_ = std::stack<size_t>{};
-    positions_.push(0);
+    frames_stack_.reset();
     size_ = 0;
     truncated_ = false;
-    dropped_subtree_depth_ = 0;
 }
 
 std::span<CallFrame const> CallTracer::get_call_frames() const

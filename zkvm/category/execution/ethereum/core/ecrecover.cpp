@@ -60,14 +60,10 @@ recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
         return std::nullopt;
     }
 
-    zkvm_bytes_32 key_hash;
-    if (zkvm_keccak256(pubkey.data, sizeof(pubkey.data), &key_hash) !=
-        ZKVM_EOK) {
-        return std::nullopt;
-    }
+    auto const key_hash = keccak256(pubkey.data);
 
     Address result;
-    std::memcpy(result.bytes, key_hash.data + 12, sizeof(result.bytes));
+    std::memcpy(result.bytes, key_hash.bytes + 12, sizeof(result.bytes));
     return result;
 }
 

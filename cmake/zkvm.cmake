@@ -43,6 +43,11 @@ function(monad_riscv_compile_options target)
     target_include_directories(${target}
         PRIVATE "${THIRD_PARTY_DIR}/zkevm-standards/standards")
 
+    # The vendored ethash keccak sponge, which the zkVM shadow of
+    # category/crypto/keccak.h pulls in — so every TU that hashes needs it.
+    target_include_directories(${target}
+        PUBLIC "${THIRD_PARTY_DIR}/ethash_vendor/src")
+
     # NDEBUG: bare-metal zkVM has no libc, so __assert_func is missing.
     # _GLIBCXX_HAVE_ALIGNED_ALLOC: tells libstdc++ that our libc shim
     # (zkvm/core/libc.cpp) provides aligned_alloc; without it,

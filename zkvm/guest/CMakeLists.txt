@@ -59,12 +59,16 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
 
-    # The SP1 and ZisK ripemd160 accelerators place the digest at opposite
-    # ends of their 32-byte output word, so the precompile shim normalises
-    # them differently (zkvm/category/execution/ethereum/precompiles_impl.hpp).
-    # Expose the backend as a compile definition for that per-backend branch.
+    # Expose the backend as a compile definition, for the places where the two
+    # diverge: the ripemd160 accelerators place the digest at opposite ends of
+    # their 32-byte output word, so the precompile shim normalises them
+    # differently (zkvm/category/execution/ethereum/precompiles_impl.hpp), and
+    # the Keccak-f[1600] precompile is reached by a different entry on each
+    # (zkvm/category/crypto/keccakf1600.h).
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "sp1")
         add_compile_definitions(MONAD_ZKVM_SP1)
+    elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        add_compile_definitions(MONAD_ZKVM_ZISK)
     endif()
 
     # Repo + third-party paths.

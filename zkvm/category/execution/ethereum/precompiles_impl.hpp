@@ -21,6 +21,7 @@
 #include <category/core/assert.h>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 
@@ -236,13 +237,10 @@ inline bool init_trusted_setup()
         return {out.data(), 0};
     }
 
-    zkvm_bytes_32 key_hash;
-    if (zkvm_keccak256(pubkey.data, 64, &key_hash) != ZKVM_EOK) {
-        return {out.data(), 0};
-    }
+    auto const key_hash = keccak256(pubkey.data);
 
     std::memset(out.data(), 0, out.size());
-    std::memcpy(out.data() + 12, key_hash.data + 12, 20);
+    std::memcpy(out.data() + 12, key_hash.bytes + 12, 20);
     return {out.data(), 32};
 }
 

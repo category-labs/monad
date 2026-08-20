@@ -21,7 +21,7 @@
 #include <category/execution/ethereum/core/ecrecover.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 
-#include <silkpre_vendor/ecdsa.h>
+#include <category/crypto/silkpre_vendor/ecdsa.h>
 
 #include <secp256k1.h>
 

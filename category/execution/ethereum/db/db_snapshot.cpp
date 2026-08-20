@@ -42,7 +42,7 @@ struct monad_db_snapshot_loader
     monad::mpt::Db db;
     monad::mpt::Node::SharedPtr root;
     std::array<monad::byte_string, 256> eth_headers;
-    std::deque<monad::hash256> hash_alloc;
+    std::deque<monad_hash256> hash_alloc;
     std::deque<monad::mpt::Update> update_alloc;
     std::deque<monad::byte_string> bytes_alloc;
     std::array<

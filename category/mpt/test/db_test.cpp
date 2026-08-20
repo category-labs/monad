@@ -24,11 +24,11 @@
 #include <category/core/bytes.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/hex.hpp>
-#include <category/core/keccak.h>
 #include <category/core/result.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/crypto/keccak.h>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
@@ -317,7 +317,7 @@ namespace
     monad::byte_string keccak_int_to_string(size_t const n)
     {
         monad::byte_string ret(KECCAK256_SIZE, 0);
-        keccak256((unsigned char const *)&n, 8, ret.data());
+        monad_keccak256((unsigned char const *)&n, 8, ret.data());
         return ret;
     }
 
@@ -2099,7 +2099,7 @@ TEST(DbTest, auto_expire_large_set)
                       static_cast<uint64_t>(rand());
             }
             while (!seen.insert(raw).second);
-            keccak256((unsigned char const *)&raw, 8, key.data());
+            monad_keccak256((unsigned char const *)&raw, 8, key.data());
         }
         uint64_t const index = keys_per_block * block_id;
         root = upsert_updates_flat_list(

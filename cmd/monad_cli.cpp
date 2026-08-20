@@ -20,10 +20,10 @@
 #include <category/core/cli/help_formatter.hpp>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
-#include <category/core/keccak.h>
 #include <category/core/keccak.hpp>
 #include <category/core/log.hpp>
 #include <category/core/result.hpp>
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/fmt/account_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
@@ -133,7 +133,7 @@ template <class T>
              std::same_as<T, std::string_view>
 auto to_triedb_key(T input, bool already_hashed = false)
 {
-    using res = std::invoke_result_t<hash256 (*)(T), T>;
+    using res = std::invoke_result_t<monad_hash256 (*)(T), T>;
     return already_hashed ? byte_string{input.data(), input.size()}
                           : byte_string{keccak256(input).bytes, sizeof(res)};
 }

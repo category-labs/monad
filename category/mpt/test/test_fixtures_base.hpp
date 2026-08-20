@@ -411,7 +411,7 @@ namespace monad::test
                 auto const len =
                     this->sm->get_compute().compute(res.data(), *this->root);
                 if (len < KECCAK256_SIZE) {
-                    keccak256(res.data(), len, res.data());
+                    monad_keccak256(res.data(), len, res.data());
                 }
                 return res;
             }

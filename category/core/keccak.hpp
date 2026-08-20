@@ -16,25 +16,20 @@
 #pragma once
 
 #include <category/core/byte_string.hpp>
-#include <category/core/keccak.h>
-
-#include <ethash/hash_types.hpp>
+#include <category/crypto/hash256.h>
+#include <category/crypto/keccak.h>
 
 MONAD_NAMESPACE_BEGIN
 
-using ::keccak256;
-
-using hash256 = ethash::hash256;
-
-inline hash256 keccak256(byte_string_view const bytes)
+inline monad_hash256 keccak256(byte_string_view const bytes)
 {
-    hash256 hash;
-    keccak256(bytes.data(), bytes.size(), hash.bytes);
+    monad_hash256 hash;
+    monad_keccak256(bytes.data(), bytes.size(), hash.bytes);
     return hash;
 }
 
 template <size_t N>
-inline hash256 keccak256(unsigned char const (&a)[N])
+inline monad_hash256 keccak256(unsigned char const (&a)[N])
 {
     return keccak256(to_byte_string_view(a));
 }

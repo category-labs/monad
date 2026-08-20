@@ -157,7 +157,7 @@ void monad_statesync_client_context::commit()
                                   StorageDeltas const &slot_deltas,
                                   std::deque<mpt::Update> &alloc,
                                   std::deque<byte_string> &bytes_alloc,
-                                  std::deque<hash256> &hash_alloc) {
+                                  std::deque<monad_hash256> &hash_alloc) {
         UpdateList storage;
         for (auto const &[key, val] : slot_deltas) {
             storage.push_front(alloc.emplace_back(Update{
@@ -184,7 +184,7 @@ void monad_statesync_client_context::commit()
                                   StorageDeltas const &slot_deltas,
                                   std::deque<mpt::Update> &alloc,
                                   std::deque<byte_string> &bytes_alloc,
-                                  std::deque<hash256> &hash_alloc) {
+                                  std::deque<monad_hash256> &hash_alloc) {
         UpdateList storage;
         // Per-account page granularity: keyed by page_key, value is the
         // mutable storage_page_t being merged. Each first-touch of a page
@@ -230,7 +230,7 @@ void monad_statesync_client_context::commit()
                                 auto build_storage) {
         std::deque<mpt::Update> alloc;
         std::deque<byte_string> bytes_alloc;
-        std::deque<hash256> hash_alloc;
+        std::deque<monad_hash256> hash_alloc;
 
         UpdateList accounts;
         for (auto const &[addr, delta] : deltas) {
@@ -310,7 +310,7 @@ void monad_statesync_client_context::commit()
                 StorageDeltas const &slot_deltas,
                 std::deque<mpt::Update> &alloc,
                 std::deque<byte_string> &bytes_alloc,
-                std::deque<hash256> &hash_alloc) {
+                std::deque<monad_hash256> &hash_alloc) {
                 return build_slot_storage(
                     slot_deltas, alloc, bytes_alloc, hash_alloc);
             });
@@ -323,7 +323,7 @@ void monad_statesync_client_context::commit()
                 StorageDeltas const &slot_deltas,
                 std::deque<mpt::Update> &alloc,
                 std::deque<byte_string> &bytes_alloc,
-                std::deque<hash256> &hash_alloc) {
+                std::deque<monad_hash256> &hash_alloc) {
                 return build_page_storage(
                     tdb, addr, slot_deltas, alloc, bytes_alloc, hash_alloc);
             });
@@ -340,7 +340,7 @@ void monad_statesync_client_context::commit()
                 StorageDeltas const &slot_deltas,
                 std::deque<mpt::Update> &alloc,
                 std::deque<byte_string> &bytes_alloc,
-                std::deque<hash256> &hash_alloc) {
+                std::deque<monad_hash256> &hash_alloc) {
                 return build_page_storage(
                     *secondary_tdb,
                     addr,

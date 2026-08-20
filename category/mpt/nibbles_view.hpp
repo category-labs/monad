@@ -200,7 +200,7 @@ public:
     }
 
     // NOLINTNEXTLINE(google-explicit-constructor)
-    constexpr NibblesView(hash256 const &h) noexcept
+    constexpr NibblesView(monad_hash256 const &h) noexcept
         : NibblesView(0, 2 * sizeof(h.bytes), h.bytes)
     {
     }

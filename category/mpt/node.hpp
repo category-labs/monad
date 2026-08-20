@@ -17,11 +17,11 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/endian.hpp> // NOLINT
-#include <category/core/keccak.h>
 #include <category/core/math.hpp>
 #include <category/core/mem/allocators.hpp>
 #include <category/core/rlp/encode.hpp>
 #include <category/core/runtime/unaligned.hpp>
+#include <category/crypto/keccak.h>
 #include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/util.hpp>
 

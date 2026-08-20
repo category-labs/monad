@@ -38,7 +38,7 @@ class CommitBuilder
 protected:
     std::deque<mpt::Update> update_alloc_;
     std::deque<byte_string> bytes_alloc_;
-    std::deque<hash256> hash_alloc_;
+    std::deque<monad_hash256> hash_alloc_;
     mpt::UpdateList updates_;
     uint64_t block_number_;
     // Per-block post-state assembled by `add_state_deltas`.

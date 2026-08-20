@@ -36,7 +36,7 @@
 \********************************************************************/
 
 /*  header files */
-#include <silkpre_vendor/rmd160.h>
+#include <category/crypto/silkpre_vendor/rmd160.h>
 
 #include <string.h>
 

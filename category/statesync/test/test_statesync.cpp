@@ -52,7 +52,6 @@
 #include <category/vm/evm/traits.hpp>
 #include <test_resource_data.h>
 
-#include <ethash/keccak.hpp>
 #include <gtest/gtest.h>
 
 #include <deque>

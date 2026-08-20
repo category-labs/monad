@@ -20,10 +20,10 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/hex.hpp>
-#include <category/core/keccak.h>
 #include <category/core/keccak.hpp>
 #include <category/core/log.hpp>
 #include <category/core/small_prng.hpp>
+#include <category/crypto/keccak.h>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>

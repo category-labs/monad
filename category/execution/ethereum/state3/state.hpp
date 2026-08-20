@@ -131,6 +131,8 @@ public:
 
     bool account_is_dead(Address const &);
 
+    bool account_has_code_or_nonce(Address const &);
+
     uint64_t get_nonce(Address const &);
 
     uint256_t get_balance(Address const &);

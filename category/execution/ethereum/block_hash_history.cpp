@@ -54,7 +54,8 @@ void deploy_block_hash_history_contract(State &state)
     }
 
     // happy path: deploy contract if it doesn't exist
-    if (MONAD_UNLIKELY(!state.account_exists(BLOCK_HISTORY_ADDRESS))) {
+    if (MONAD_UNLIKELY(
+            !state.account_has_code_or_nonce(BLOCK_HISTORY_ADDRESS))) {
         state.create_contract(BLOCK_HISTORY_ADDRESS);
         state.set_code(BLOCK_HISTORY_ADDRESS, BLOCK_HISTORY_CODE);
         MONAD_ASSERT(
@@ -95,7 +96,9 @@ void set_block_hash_history(State &state, BlockHeader const &header)
         return;
     }
 
-    if (MONAD_LIKELY(state.account_exists(BLOCK_HISTORY_ADDRESS))) {
+    if (MONAD_LIKELY(
+            state.get_code_hash(BLOCK_HISTORY_ADDRESS) ==
+            BLOCK_HISTORY_CODE_HASH)) {
         uint64_t const parent_number = header.number - 1;
         uint256_t const index{parent_number % BLOCK_HISTORY_LENGTH};
         bytes32_t const key{store_be_as<bytes32_t>(index)};
@@ -110,7 +113,9 @@ EXPLICIT_TRAITS(set_block_hash_history);
 // of this function guarantees that it is always valid.
 bytes32_t get_block_hash_history(State &state, uint64_t const block_number)
 {
-    if (MONAD_UNLIKELY(!state.account_exists(BLOCK_HISTORY_ADDRESS))) {
+    if (MONAD_UNLIKELY(
+            state.get_code_hash(BLOCK_HISTORY_ADDRESS) !=
+            BLOCK_HISTORY_CODE_HASH)) {
         return bytes32_t{};
     }
 

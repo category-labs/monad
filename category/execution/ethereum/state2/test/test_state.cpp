@@ -54,7 +54,9 @@
 #include <random>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
+#include <vector>
 
 using namespace monad;
 using namespace monad::test;
@@ -659,8 +661,9 @@ TYPED_TEST(
     // EIP-8246's *other* burn path, and the one the whole rest of this suite
     // misses: value sent to an account already marked for selfdestruction.
     // Pre-8246 finalization deleted the account and the credit went with it;
-    // that is the second burn the EIP names alongside destruct-to-self, and
-    // the one EIP-7708's finalization Burn log reported.
+    // that is the second burn the EIP names alongside destruct-to-self, and the
+    // one an earlier draft of EIP-7708 reported with a Burn log, before that
+    // draft took 8246 as a prerequisite and dropped the log.
     //
     // Note the beneficiary is not the destructing account, so rule 1 is not
     // involved at all. This passes only because rule 2 keys on the balance

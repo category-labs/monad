@@ -82,6 +82,7 @@ namespace monad
         { T::eip_5656_active() } -> std::same_as<bool>;
         { T::eip_7685_active() } -> std::same_as<bool>;
         { T::eip_7691_active() } -> std::same_as<bool>;
+        { T::eip_7708_active() } -> std::same_as<bool>;
         { T::eip_7823_active() } -> std::same_as<bool>;
         { T::eip_7843_active() } -> std::same_as<bool>;
         { T::eip_7883_active() } -> std::same_as<bool>;
@@ -162,6 +163,11 @@ namespace monad
         static consteval bool eip_7691_active() noexcept
         {
             return Rev >= MONAD_ETH_PRAGUE;
+        }
+
+        static consteval bool eip_7708_active() noexcept
+        {
+            return Rev >= MONAD_ETH_AMSTERDAM;
         }
 
         static consteval bool eip_7823_active() noexcept
@@ -356,6 +362,11 @@ namespace monad
         static consteval bool eip_7691_active() noexcept
         {
             return false;
+        }
+
+        static consteval bool eip_7708_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_AMSTERDAM;
         }
 
         static consteval bool eip_7823_active() noexcept

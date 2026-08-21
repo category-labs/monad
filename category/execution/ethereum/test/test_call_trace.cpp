@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
@@ -206,6 +207,24 @@ TYPED_TEST(TraitsTest, execute_success)
         .depth = 0,
         .logs = std::vector<CallFrame::Log>{},
     };
+
+    if constexpr (TestFixture::Trait::eip_7708_active()) {
+        // EIP-7708: the top-level value transfer emits a Transfer log on the
+        // consensus path (no trace_transfers needed), from SYSTEM_ADDRESS.
+        expected.logs->push_back(
+            {{
+                 .data =
+                     byte_string{store_be_as<bytes32_t>(uint256_t{0x10000})},
+                 .topics =
+                     std::vector{
+                         0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
+                         abi_encode_address(sender),
+                         abi_encode_address(ADDR_B),
+                     },
+                 .address = SYSTEM_ADDRESS,
+             },
+             0});
+    }
 
     EXPECT_EQ(call_frames[0], expected);
 }
@@ -695,6 +714,47 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
     EXPECT_EQ(call_frames[3].value, 0u); // First contract had zero balance
 }
 
+namespace
+{
+    // A traced eth_simulate emits one transfer log per value movement before
+    // EIP-7708 -- the ERC-7528 synthetic at SIMULATE_NATIVE_TOKEN_LOG_ADDRESS.
+    // With 7708 active the consensus log at SYSTEM_ADDRESS is emitted first and
+    // the synthetic follows, so every transfer produces two entries whose only
+    // difference is the emitting address.
+    //
+    // Burns are deliberately absent here: EvmcHost stores them without a
+    // matching on_log, because destroying value has no call frame.
+    template <class Traits>
+    std::vector<CallFrame::Log>
+    expected_transfer_logs(std::vector<CallFrame::Log> const &synthetics)
+    {
+        std::vector<CallFrame::Log> expected;
+        for (auto const &synthetic : synthetics) {
+            if constexpr (Traits::eip_7708_active()) {
+                CallFrame::Log consensus = synthetic;
+                consensus.log.address = SYSTEM_ADDRESS;
+                expected.push_back(consensus);
+            }
+            expected.push_back(synthetic);
+        }
+        return expected;
+    }
+
+    // Index of the nth ERC-7528 synthetic within a frame's log vector.
+    template <class Traits>
+    constexpr size_t synthetic_log_index(size_t const n)
+    {
+        return Traits::eip_7708_active() ? 2 * n + 1 : n;
+    }
+
+    // Number of traced log entries produced by n value transfers.
+    template <class Traits>
+    constexpr size_t transfer_log_count(size_t const n)
+    {
+        return Traits::eip_7708_active() ? 2 * n : n;
+    }
+}
+
 TYPED_TEST(TraitsTest, simulate_v1_trace)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -775,7 +835,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
         .gas_used = 21'000,
         .status = EVMC_SUCCESS,
         .depth = 0,
-        .logs = std::vector<CallFrame::Log>{{
+        .logs = expected_transfer_logs<typename TestFixture::Trait>({{
             {
                 .data =
                     byte_string{store_be_as<bytes32_t, uint256_t>(1'000'000)},
@@ -785,10 +845,10 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
                         0x0000000000000000000000000000000000000000000000000000000000000100_bytes32,
                         0x0000000000000000000000000000000000000000000000000000000000000101_bytes32,
                     },
-                .address = 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address,
+                .address = SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
             },
             0,
-        }},
+        }}),
     };
 
     EXPECT_EQ(call_frames[0], expected);
@@ -878,9 +938,11 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
     EXPECT_EQ(call_frames[1].type, CallType::SELFDESTRUCT);
     EXPECT_EQ(call_frames[1].value, 1000u);
 
-    // The synthetic Transfer log appears in the parent CALL frame
+    // The synthetic Transfer log appears in the parent CALL frame, preceded by
+    // the consensus log once EIP-7708 is active.
+    using Trait = typename TestFixture::Trait;
     ASSERT_TRUE(call_frames[0].logs.has_value());
-    ASSERT_EQ(call_frames[0].logs->size(), 1);
+    ASSERT_EQ(call_frames[0].logs->size(), transfer_log_count<Trait>(1));
 
     CallFrame::Log const expected_log{
         {
@@ -891,12 +953,15 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
                     0x0000000000000000000000000000000000000000000000000000000000000101_bytes32,
                     0x0000000000000000000000000000000000000000000000000000000000000102_bytes32,
                 },
-            .address = 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address,
+            .address = SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
         },
         1, // position: after the selfdestruct sub-frame
     };
 
-    EXPECT_EQ(call_frames[0].logs->at(0), expected_log);
+    EXPECT_EQ(
+        *call_frames[0].logs, expected_transfer_logs<Trait>({expected_log}));
+    EXPECT_EQ(
+        call_frames[0].logs->at(synthetic_log_index<Trait>(0)), expected_log);
 }
 
 TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
@@ -1123,13 +1188,15 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
 
+    using Trait = typename TestFixture::Trait;
+
     ASSERT_EQ(call_frames.size(), 5);
     ASSERT_TRUE(call_frames[0].logs.has_value());
     ASSERT_EQ(call_frames[0].logs->size(), 0);
     EXPECT_EQ(call_frames[0].type, CallType::CALL);
 
     ASSERT_TRUE(call_frames[1].logs.has_value());
-    ASSERT_EQ(call_frames[1].logs->size(), 1);
+    ASSERT_EQ(call_frames[1].logs->size(), transfer_log_count<Trait>(1));
     EXPECT_EQ(call_frames[1].type, CallType::CALL);
 
     ASSERT_TRUE(call_frames[2].logs.has_value());
@@ -1137,7 +1204,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     EXPECT_EQ(call_frames[2].type, CallType::SELFDESTRUCT);
 
     ASSERT_TRUE(call_frames[3].logs.has_value());
-    ASSERT_EQ(call_frames[3].logs->size(), 2);
+    ASSERT_EQ(call_frames[3].logs->size(), transfer_log_count<Trait>(2));
     EXPECT_EQ(call_frames[3].type, CallType::CALL);
 
     ASSERT_TRUE(call_frames[4].logs.has_value());
@@ -1162,8 +1229,10 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
                      "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
-        EXPECT_EQ(call_frames[1].logs->at(0).log.topics, expected_topics);
-        EXPECT_EQ(call_frames[1].logs->at(0).log.data, expected_data);
+        auto const &log =
+            call_frames[1].logs->at(synthetic_log_index<Trait>(0));
+        EXPECT_EQ(log.log.topics, expected_topics);
+        EXPECT_EQ(log.log.data, expected_data);
     }
 
     std::vector<CallFrame::Log> const &logs = *call_frames[3].logs;
@@ -1182,8 +1251,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
                      "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
-        EXPECT_EQ(logs[0].log.topics, expected_topics);
-        EXPECT_EQ(logs[0].log.data, expected_data);
+        EXPECT_EQ(
+            logs[synthetic_log_index<Trait>(0)].log.topics, expected_topics);
+        EXPECT_EQ(logs[synthetic_log_index<Trait>(0)].log.data, expected_data);
     }
     // call_frames[3].logs[1] should contain a Transfer event from
     // `SELFDESTRUCT_CONTRACT_ADDR` to `INTERMEDIARY_CONTRACT_ADDR` with value
@@ -1200,8 +1270,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
                      "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
-        EXPECT_EQ(logs[1].log.topics, expected_topics);
-        EXPECT_EQ(logs[1].log.data, expected_data);
+        EXPECT_EQ(
+            logs[synthetic_log_index<Trait>(1)].log.topics, expected_topics);
+        EXPECT_EQ(logs[synthetic_log_index<Trait>(1)].log.data, expected_data);
     }
 }
 
@@ -1381,6 +1452,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
 {
     static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BYZANTIUM);
 
+    using Trait = typename TestFixture::Trait;
+
     // This test checks that no events are emitted for self-transfers.
     // Furthermore, it checks that:
     // * CALL: emits an event with value to non-self
@@ -1523,21 +1596,24 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
             ASSERT_TRUE(call_frames[1].logs.has_value());
             EXPECT_EQ(call_frames[1].type, CallType::CALL);
             ASSERT_TRUE(call_frames[1].logs.has_value());
-            ASSERT_EQ(call_frames[1].logs->size(), 1);
+            ASSERT_EQ(
+                call_frames[1].logs->size(), transfer_log_count<Trait>(1));
 
             std::vector<bytes32_t> expected_topics{
                 abi_encode_event_signature("Transfer(address,address,uint256)"),
                 abi_encode_address(ADDR_A),
                 abi_encode_address(ADDR_B)};
 
-            EXPECT_EQ(call_frames[1].logs->at(0).log.topics, expected_topics);
+            auto const &synthetic =
+                call_frames[1].logs->at(synthetic_log_index<Trait>(0));
+            EXPECT_EQ(synthetic.log.topics, expected_topics);
 
             byte_string const expected_data =
                 from_hex("0x0000000000000000000000000000000000000000000000000"
                          "000000000000001")
                     .value();
 
-            EXPECT_EQ(call_frames[1].logs->at(0).log.data, expected_data);
+            EXPECT_EQ(synthetic.log.data, expected_data);
         }
         else { // CALLCODE, DELEGATECALL, or STATICCALL
             ASSERT_EQ(call_frames.size(), 2);
@@ -1564,4 +1640,220 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
             EXPECT_EQ(call_frames[1].logs->size(), 0);
         }
     }
+}
+
+namespace
+{
+    // `emitter` defaults to the EIP-7708 consensus log's SYSTEM_ADDRESS; pass
+    // SIMULATE_NATIVE_TOKEN_LOG_ADDRESS for the eth_simulate synthetic, which
+    // is otherwise byte-identical.
+    Receipt::Log eip7708_transfer_log(
+        Address const &from, Address const &to, uint256_t const &value,
+        Address const &emitter = SYSTEM_ADDRESS)
+    {
+        return {
+            .data = byte_string{store_be_as<bytes32_t>(value)},
+            .topics =
+                std::vector{
+                    0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
+                    abi_encode_address(from),
+                    abi_encode_address(to),
+                },
+            .address = emitter};
+    }
+
+}
+
+// Pinned to a single revision: the bodies static_assert eip_7708_active(), so
+// they cannot run over the shared matrix, which also covers pre-Amsterdam
+// revisions.
+template <typename T>
+struct Eip7708ActiveTest : public TraitsTest<T>
+{
+    using traits = typename TraitsTest<T>::Trait;
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    State state{block_state, Incarnation{0, 0}};
+    std::vector<CallFrame> call_frames;
+
+    void commit(StateDeltas const &deltas)
+    {
+        commit_sequential(tdb, deltas, Code{}, BlockHeader{});
+    }
+
+    // Runs `tx` from `sender`, which doubles as the block beneficiary.
+    // `log_native_transfers` is eth_simulate's traceTransfers.
+    evmc::Result
+    run(Transaction const &tx, Address const &sender,
+        bool const log_native_transfers = false)
+    {
+        evmc_tx_context const tx_context{};
+        BlockHashBufferFinalized buffer{};
+        CallTracer call_tracer{tx, call_frames};
+        auto const chain_ctx = ChainContext<traits>::debug_empty();
+        constexpr std::span<std::optional<Address> const> authorities_empty{};
+        uint256_t base_fee{0};
+        trace::StateTracer noop_state_tracer = std::monostate{};
+        EvmcHost<traits> host{
+            call_tracer,
+            noop_state_tracer,
+            tx_context,
+            buffer,
+            state,
+            tx,
+            base_fee,
+            0,
+            chain_ctx,
+            log_native_transfers};
+
+        return ExecuteTransactionNoValidation<traits>(
+            EthereumMainnet{},
+            tx,
+            sender,
+            authorities_empty,
+            BlockHeader{.beneficiary = sender})(state, host);
+    }
+
+    // The consensus-side logs (state_.store_log), as opposed to the
+    // call_tracer_.on_log copies that land in call_frames.
+    // ExecuteTransactionNoValidation stops short of the receipt copy.
+    auto const &logs()
+    {
+        return state.logs();
+    }
+};
+
+TYPED_TEST_SUITE(
+    Eip7708ActiveTest,
+    ::detail::MonadEvmRevisionTypesSince<MONAD_ETH_AMSTERDAM>,
+    ::detail::RevisionTestNameGenerator);
+
+// Mirrors TraitsTest.execute_success but pinned to EvmTraits<AMSTERDAM>: the
+// top-level value transfer must emit a Transfer log from SYSTEM_ADDRESS.
+// Asserts both artifacts emit_native_transfer_event produces -- the call frame
+// covers on_log, logs() covers store_log -- since checking the call frame alone
+// would still pass with store_log deleted.
+TYPED_TEST(Eip7708ActiveTest, value_transfer_emits_consensus_transfer_log)
+{
+    using traits = typename TestFixture::Trait;
+
+    static_assert(traits::eip_7708_active());
+
+    static constexpr uint256_t transfer_value{0x10000};
+
+    this->commit(StateDeltas(
+        {{ADDR_A,
+          StateDelta{
+              .account =
+                  {std::nullopt,
+                   Account{
+                       .balance = 0x200000,
+                       .code_hash = NULL_HASH,
+                       .nonce = 0x0}}}},
+         {ADDR_B,
+          StateDelta{
+              .account = {
+                  std::nullopt,
+                  Account{.balance = 0, .code_hash = NULL_HASH}}}}}));
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 0x100000,
+        .value = transfer_value,
+        .to = ADDR_B,
+    };
+
+    auto const result = this->run(tx, ADDR_A);
+    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(this->call_frames.size(), 1u);
+
+    CallFrame const expected{
+        .type = CallType::CALL,
+        .flags = 0,
+        .from = ADDR_A,
+        .to = ADDR_B,
+        .value = transfer_value,
+        .gas = 0x100000,
+        .gas_used = 0x5208,
+        .status = EVMC_SUCCESS,
+        .depth = 0,
+        .logs =
+            std::vector<CallFrame::Log>{
+                {eip7708_transfer_log(ADDR_A, ADDR_B, transfer_value), 0}},
+    };
+
+    EXPECT_EQ(this->call_frames[0], expected);
+
+    ASSERT_EQ(this->logs().size(), 1u);
+    EXPECT_EQ(
+        this->logs()[0], eip7708_transfer_log(ADDR_A, ADDR_B, transfer_value));
+}
+
+// With the rule active and traceTransfers set, one transfer yields two logs:
+// the consensus one from SYSTEM_ADDRESS, then the byte-identical ERC-7528
+// synthetic. The synthetic is not suppressed by the consensus log's presence,
+// matching geth's traceTransfers.
+TYPED_TEST(Eip7708ActiveTest, trace_transfers_emits_consensus_and_synthetic)
+{
+    using traits = typename TestFixture::Trait;
+
+    static_assert(traits::eip_7708_active());
+
+    static constexpr uint256_t transfer_value{0x10000};
+
+    this->commit(StateDeltas(
+        {{ADDR_A,
+          StateDelta{
+              .account =
+                  {std::nullopt,
+                   Account{
+                       .balance = 0x200000,
+                       .code_hash = NULL_HASH,
+                       .nonce = 0x0}}}},
+         {ADDR_B,
+          StateDelta{
+              .account = {
+                  std::nullopt,
+                  Account{.balance = 0, .code_hash = NULL_HASH}}}}}));
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 0x100000,
+        .value = transfer_value,
+        .to = ADDR_B,
+    };
+
+    auto const result = this->run(tx, ADDR_A, /* log_native_transfers */ true);
+    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(this->call_frames.size(), 1u);
+
+    auto const consensus_log =
+        eip7708_transfer_log(ADDR_A, ADDR_B, transfer_value);
+    auto const synthetic_log = eip7708_transfer_log(
+        ADDR_A, ADDR_B, transfer_value, SIMULATE_NATIVE_TOKEN_LOG_ADDRESS);
+
+    CallFrame const expected{
+        .type = CallType::CALL,
+        .flags = 0,
+        .from = ADDR_A,
+        .to = ADDR_B,
+        .value = transfer_value,
+        .gas = 0x100000,
+        .gas_used = 0x5208,
+        .status = EVMC_SUCCESS,
+        .depth = 0,
+        .logs =
+            std::vector<CallFrame::Log>{{consensus_log, 0}, {synthetic_log, 0}},
+    };
+
+    EXPECT_EQ(this->call_frames[0], expected);
+
+    // Consensus side too: order here is what a receipt would carry, so
+    // discarding the ERC-7528 entry must leave exactly the real-block sequence.
+    ASSERT_EQ(this->logs().size(), 2u);
+    EXPECT_EQ(this->logs()[0], consensus_log);
+    EXPECT_EQ(this->logs()[1], synthetic_log);
 }

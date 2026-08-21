@@ -141,4 +141,7 @@ struct monad_statesync_server_context final : public monad::Db
         std::function<void(monad::BlockHeader &)>) override;
 
     virtual uint64_t get_block_number() const override;
+
+    // Reports no stats; reads here share the execution TrieDb's counters.
+    virtual void begin_block_stats() override {}
 };

@@ -404,6 +404,17 @@ BlockHeader TrieDb::read_eth_header()
     return std::move(decode_res.value());
 }
 
+void TrieDb::begin_block_stats()
+{
+    n_account_no_value_.store(0, std::memory_order_release);
+    n_account_value_.store(0, std::memory_order_release);
+    n_storage_no_value_.store(0, std::memory_order_release);
+    n_storage_value_.store(0, std::memory_order_release);
+    if (cache_) {
+        cache_->begin_block_stats();
+    }
+}
+
 std::string TrieDb::print_stats()
 {
     std::string ret;
@@ -413,10 +424,6 @@ std::string TrieDb::print_stats()
         n_account_value_.load(std::memory_order_acquire),
         n_storage_no_value_.load(std::memory_order_acquire),
         n_storage_value_.load(std::memory_order_acquire));
-    n_account_no_value_.store(0, std::memory_order_release);
-    n_account_value_.store(0, std::memory_order_release);
-    n_storage_no_value_.store(0, std::memory_order_release);
-    n_storage_value_.store(0, std::memory_order_release);
     if (cache_) {
         ret += ",ac=" + cache_->accounts_stats() +
                ",sc=" + cache_->storage_stats();

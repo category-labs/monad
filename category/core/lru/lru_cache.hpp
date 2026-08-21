@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/assert.h>
+#include <category/core/lru/cache_stats.hpp>
 #include <category/core/mem/batch_mem_pool.hpp>
 #include <category/core/synchronization/spin_lock.hpp>
 
@@ -52,23 +53,7 @@ class LruCache
     Mutex mutex_;
     HashMap hmap_;
     Pool pool_;
-
-/// STATS MACROS
-#ifdef MONAD_LRU_CACHE_STATS
-    #define STATS_EVENT_EVICT() stats_.event_evict()
-    #define STATS_EVENT_FIND_HIT() stats_.event_find_hit()
-    #define STATS_EVENT_FIND_MISS() stats_.event_find_miss()
-    #define STATS_EVENT_INSERT_FOUND() stats_.event_insert_found()
-    #define STATS_EVENT_INSERT_NEW() stats_.event_insert_new()
-    #define STATS_EVENT_UPDATE_LRU() stats_.event_update_lru()
-#else
-    #define STATS_EVENT_EVICT()
-    #define STATS_EVENT_FIND_HIT()
-    #define STATS_EVENT_FIND_MISS()
-    #define STATS_EVENT_INSERT_FOUND()
-    #define STATS_EVENT_INSERT_NEW()
-    #define STATS_EVENT_UPDATE_LRU()
-#endif
+    CacheStats stats_;
 
 public:
     using ConstAccessor = HashMap::const_accessor;
@@ -92,10 +77,10 @@ public:
     bool find(ConstAccessor &acc, Key const &key)
     {
         if (!hmap_.find(acc, key)) {
-            STATS_EVENT_FIND_MISS();
+            stats_.record_miss();
             return false;
         }
-        STATS_EVENT_FIND_HIT();
+        stats_.record_hit();
         ListNode *const node = acc->second.node_;
         try_update_lru(node);
         return true;
@@ -106,7 +91,6 @@ public:
         Accessor acc;
         HashMapKeyValue const hmkv(key, HashMapValue(value, nullptr));
         if (!hmap_.insert(acc, hmkv)) {
-            STATS_EVENT_INSERT_FOUND();
             acc->second.value_ = value;
             ListNode *const node = acc->second.node_;
             try_update_lru(node);
@@ -136,7 +120,6 @@ private:
     {
         if (node->check_lru_time()) {
             std::unique_lock const l(mutex_);
-            STATS_EVENT_UPDATE_LRU();
             lru_.update_lru(node);
         }
     }
@@ -147,7 +130,6 @@ private:
         bool const evicted = (sz >= max_size_) && evict();
         {
             std::unique_lock const l(mutex_);
-            STATS_EVENT_INSERT_NEW();
             lru_.push_front(node);
         }
         if (!evicted) {
@@ -171,12 +153,12 @@ private:
         ListNode *target;
         {
             std::unique_lock const l(mutex_);
-            STATS_EVENT_EVICT();
             target = lru_.evict();
         }
         if (!target) {
             return false;
         }
+        stats_.record_eviction();
         Accessor acc;
         bool const found = hmap_.find(acc, target->key_);
         MONAD_ASSERT(found);
@@ -306,96 +288,11 @@ private:
         }
     }; /// HashMapValue
 
-/// STATS
-#undef STATS_EVENT_EVICT
-#undef STATS_EVENT_FIND_HIT
-#undef STATS_EVENT_FIND_MISS
-#undef STATS_EVENT_INSERT_FOUND
-#undef STATS_EVENT_INSERT_NEW
-#undef STATS_EVENT_UPDATE_LRU
-
 public:
-    std::string print_stats()
+    CacheStatsSnapshot stats() const noexcept
     {
-        std::string str =
-            std::format("{:8}", size_.load(std::memory_order_acquire));
-#ifdef MONAD_LRU_CACHE_STATS
-        str += " / " + stats_.print_stats();
-#endif
-        return str;
+        return stats_.snapshot();
     }
-
-private:
-#ifdef MONAD_LRU_CACHE_STATS
-    /// CacheStats
-    struct CacheStats
-    {
-        std::atomic<uint64_t> n_find_hit_{0};
-        std::atomic<uint64_t> n_find_miss_{0};
-        std::atomic<uint64_t> n_insert_found_{0};
-        uint64_t n_insert_new_{0};
-        uint64_t n_evict_{0};
-        uint64_t n_update_lru_{0};
-
-        void event_find_hit()
-        {
-            n_find_hit_.fetch_add(1, std::memory_order_release);
-        }
-
-        void event_find_miss()
-        {
-            n_find_miss_.fetch_add(1, std::memory_order_release);
-        }
-
-        void event_insert_found()
-        {
-            n_insert_found_.fetch_add(1, std::memory_order_release);
-        }
-
-        void event_insert_new()
-        {
-            ++n_insert_new_;
-        }
-
-        void event_evict()
-        {
-            ++n_evict_;
-        }
-
-        void event_update_lru()
-        {
-            ++n_update_lru_;
-        }
-
-        void clear_stats()
-        {
-            // Not called concurrently with cache operations.
-            n_find_hit_.store(0, std::memory_order_release);
-            n_find_miss_.store(0, std::memory_order_release);
-            n_insert_found_.store(0, std::memory_order_release);
-            n_insert_new_ = 0;
-            n_evict_ = 0;
-            n_update_lru_ = 0;
-        }
-
-        std::string print_stats()
-        {
-            std::string str = std::format(
-                "{:6} {:6} - {:6} {:6} - {:6} - {:6}",
-                n_find_hit_.load(std::memory_order_acquire),
-                n_find_miss_.load(std::memory_order_acquire),
-                n_insert_found_.load(std::memory_order_acquire),
-                n_insert_new_,
-                n_evict_,
-                n_update_lru_);
-            clear_stats();
-            return str;
-        }
-    }; /// CacheStats
-
-    CacheStats stats_;
-#endif /// MONAD_LRU_CACHE_STATS
-
 }; /// LruCache
 
 MONAD_NAMESPACE_END

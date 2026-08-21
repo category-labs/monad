@@ -157,6 +157,28 @@ namespace monad::vm
             return compiler_.find_varcode(code_hash);
         }
 
+        void begin_block_stats() noexcept
+        {
+            compiler_.begin_varcode_cache_block_stats();
+        }
+
+        // The block window, not the cumulative totals. Always emitted;
+        // print_compiler_stats() is empty unless
+        // utils::collect_monad_compiler_stats.
+        std::string print_varcode_cache_stats() const
+        {
+            auto const s = compiler_.varcode_cache_block_stats();
+            uint64_t const lookups = s.hits + s.misses;
+            return std::format(
+                ",vc={:5.1f}%,vch={},vcm={},vce={}",
+                lookups == 0 ? 0.0
+                             : 100.0 * static_cast<double>(s.hits) /
+                                   static_cast<double>(lookups),
+                s.hits,
+                s.misses,
+                s.evictions);
+        }
+
         SharedVarcode try_insert_varcode(
             bytes32_t const &code_hash, SharedIntercode const &icode)
         {

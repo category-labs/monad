@@ -138,10 +138,7 @@ namespace
             // to write new data.
             auto const virtual_offset_after = aux.physical_to_virtual(offset);
             if (virtual_offset_after == virtual_offset) {
-                {
-                    NodeCache::ConstAccessor acc;
-                    MONAD_ASSERT(node_cache.find(acc, virtual_offset) == false);
-                }
+                MONAD_ASSERT(!node_cache.contains(virtual_offset));
                 std::shared_ptr<Node> const node =
                     detail::deserialize_node_from_receiver_result(
                         std::move(buffer_), buffer_off, io_state);

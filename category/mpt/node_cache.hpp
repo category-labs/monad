@@ -44,6 +44,7 @@ class NodeCache final
         while (used_bytes_ > max_bytes_ && !active_list_.empty()) {
             auto const list_it = std::prev(active_list_.end());
             auto &node_to_erase = *list_it;
+            stats_.record_eviction();
             map_.erase(list_it->key);
             used_bytes_ -= list_it->val.second;
             // move to empty list
@@ -60,9 +61,19 @@ public:
     using Base::ConstAccessor;
     using Base::list_node;
 
-    using Base::clear;
+    using Base::contains;
     using Base::find;
     using Base::size;
+    using Base::stats;
+
+    // Bytes of cached nodes, against the max_bytes the cache was built with.
+    // Read alongside size() to tell which of the two bounds is binding: the
+    // slot count is max_bytes / AVERAGE_NODE_SIZE, so a cache whose nodes run
+    // larger than that average evicts on bytes with slots to spare.
+    size_t used_bytes() const noexcept
+    {
+        return used_bytes_;
+    }
 
     explicit NodeCache(size_t const max_bytes)
         : Base(
@@ -75,21 +86,23 @@ public:
 
     ~NodeCache() = default;
 
-    Map::iterator insert(
+    void insert(
         virtual_chunk_offset_t const &virt_offset,
         std::shared_ptr<Node> const &sp) noexcept
     {
         MONAD_ASSERT(virt_offset != virtual_chunk_offset_t::invalid_value());
 
-        used_bytes_ += sp->get_mem_size();
-        evict_until_under_limit();
-
-        auto const [it, erased_value] =
-            Base::insert(virt_offset, {sp, sp->get_mem_size()});
+        auto const size = sp->get_mem_size();
+        auto const [_, erased_value] = Base::insert(virt_offset, {sp, size});
+        // Charge the net change. An overwrite replaces an entry already
+        // accounted for, so only the difference needs room; charging the full
+        // size before inserting would evict entries to make room this insert
+        // does not need.
+        used_bytes_ += size;
         if (erased_value.has_value()) {
             used_bytes_ -= erased_value->second;
         }
-        return it;
+        evict_until_under_limit();
     }
 };
 

@@ -217,6 +217,9 @@ namespace
         case BlobBaseFee:
             emit.blobbasefee();
             break;
+        case SlotNum:
+            emit.slotnum();
+            break;
         case Pop:
             emit.pop();
             break;

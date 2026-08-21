@@ -21,9 +21,9 @@
 
 #include <evmc/evmc.h>
 #include <evmc/helpers.h>
+
 #include <gtest/gtest.h>
 
-#include <format>
 #include <type_traits>
 #include <utility>
 
@@ -172,12 +172,9 @@ namespace detail
         decltype(make_monad_revision_types_before<Before>(
             std::make_index_sequence<MONAD_NEXT + 1>{}));
 
-    // Skip the unsupported early forks, any fork past LATEST_SUPPORTED_EVM_FORK
-    // whose behavior is not yet implemented (e.g. AMSTERDAM), and the
-    // MONAD_ETH_MAX_REVISION / EXPERIMENTAL sentinel. Generate revisions in the
-    // closed range [EARLIEST_SUPPORTED_EVM_FORK, LATEST_SUPPORTED_EVM_FORK].
-    // TODO(amsterdam): AMSTERDAM rejoins this matrix automatically once
-    // LATEST_SUPPORTED_EVM_FORK is bumped to include it.
+    // Skip the unsupported early forks and the MONAD_ETH_MAX_REVISION /
+    // EXPERIMENTAL sentinel. Generate revisions in the closed range
+    // [EARLIEST_SUPPORTED_EVM_FORK, LATEST_SUPPORTED_EVM_FORK].
     using EvmRevisionTypes = decltype(make_evm_revision_types(
         std::make_index_sequence<
             monad::constants::LATEST_SUPPORTED_EVM_FORK + 1 -

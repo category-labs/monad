@@ -466,7 +466,7 @@ Result<std::vector<Receipt>> execute_and_record(
         /*chain_id*/ 1,
         block.header,
         block.header.parent_hash,
-        block.header.number,
+        block.header.slot_number.value_or(block.header.number),
         0,
         uint128_t{block.header.timestamp} * uint128_t{1'000'000'000UL},
         size(block.transactions),

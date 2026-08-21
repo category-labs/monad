@@ -391,7 +391,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
 
     // EIP-7623
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
-        auto const floor_gas = floor_data_gas(tx_);
+        auto const floor_gas = floor_data_gas<traits>(tx_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;
             state.subtract_from_balance(sender_, gas_cost * delta);

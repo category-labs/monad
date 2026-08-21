@@ -17,14 +17,8 @@
 
 #include <category/core/config.hpp>
 
-// TODO unstable paths between versions
-#if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
-    #include <boost/outcome/experimental/status-code/status-code/config.hpp>
-    #include <boost/outcome/experimental/status-code/status-code/quick_status_code_from_enum.hpp>
-#else
-    #include <boost/outcome/experimental/status-code/config.hpp>
-    #include <boost/outcome/experimental/status-code/quick_status_code_from_enum.hpp>
-#endif
+#include <boost/outcome/experimental/status-code/config.hpp>
+#include <boost/outcome/experimental/status-code/quick_status_code_from_enum.hpp>
 
 #include <initializer_list>
 

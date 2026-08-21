@@ -111,6 +111,7 @@ Result<byte_string> system_call(
 
     // TODO(dhil): Use a non-empty trace context here for state tracing.
     Transaction const empty_tx{};
+    TxTraceContext const trace_context{};
     EvmcHost<traits> host{
         state_tracer,
         tx_context,
@@ -120,7 +121,7 @@ Result<byte_string> system_call(
         header.base_fee_per_gas,
         0,
         chain_ctx,
-        TxTraceContext{}};
+        trace_context};
 
     // We intentionally invoke the VM directly: system calls must not go
     // through the regular call path which does state push/pop -- a revert

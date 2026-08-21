@@ -117,9 +117,10 @@ struct ReserveBalanceEvm : public ReserveBalanceTest
         senders,
         authorities};
 
+    TxTraceContext const host_trace_context{};
     trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<MonadTraits<MONAD_NEXT>> h{
-                noop_state_tracer,
+        noop_state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -127,7 +128,7 @@ struct ReserveBalanceEvm : public ReserveBalanceTest
         0,
         0,
         chain_ctx,
-        TxTraceContext{}};
+        host_trace_context};
 };
 
 void add_revert_if_true(std::vector<uint8_t> &code)
@@ -575,8 +576,8 @@ void run_check_call_precompile_test(
     State &state, evmc_message const &msg, evmc_status_code expected_status,
     std::string_view expected_message = "")
 {
-    auto const result = check_call_precompile<traits>(
-        state, TxTraceContext{}, msg);
+    auto const result =
+        check_call_precompile<traits>(state, TxTraceContext{}, msg);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->status_code, expected_status);
@@ -621,9 +622,10 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
         senders,
         authorities};
 
+    TxTraceContext const host_trace_context{};
     trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<MonadTraits<MONAD_NEXT>> h{
-                noop_state_tracer,
+        noop_state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -631,7 +633,7 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
         0,
         0,
         chain_ctx,
-        TxTraceContext{}};
+        host_trace_context};
 };
 
 DEFINE_MONAD_TRAITS_FIXTURE(MonadPrecompileTest);

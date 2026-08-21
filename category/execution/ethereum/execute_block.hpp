@@ -22,7 +22,6 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/dispatch_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
-#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -36,6 +35,7 @@ MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
 class BlockState;
+class BlockTraceContext;
 class ExecutionEventRecorder;
 class State;
 struct Block;

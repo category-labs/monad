@@ -22,7 +22,6 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
-#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <boost/fiber/future/promise.hpp>
@@ -38,6 +37,7 @@ class BlockHashBuffer;
 class BlockState;
 class ExecutionEventRecorder;
 class State;
+class TxTraceContext;
 struct BlockHeader;
 struct BlockMetrics;
 struct Chain;

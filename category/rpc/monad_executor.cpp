@@ -203,7 +203,7 @@ namespace
         std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
         vm::VM &vm, BlockHashBuffer const &buffer,
         monad_state_override const &state_overrides,
-        TxTraceContext const trace_context, trace::StateTracer &state_tracer)
+        TxTraceContext const &trace_context, trace::StateTracer &state_tracer)
     {
         Transaction enriched_txn{txn};
 

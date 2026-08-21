@@ -33,7 +33,6 @@ MONAD_NAMESPACE_BEGIN
 
 class State;
 class TxTraceContext;
-struct CallTracerBase;
 
 bool init_trusted_setup();
 

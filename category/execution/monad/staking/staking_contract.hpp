@@ -53,7 +53,7 @@ class StakingContract
     TxTraceContext const tx_trace_context_;
 
 public:
-    StakingContract(State &, TxTraceContext const);
+    StakingContract(State &, TxTraceContext const &);
 
     struct WithdrawalRequest
     {

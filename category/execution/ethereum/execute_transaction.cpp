@@ -410,6 +410,11 @@ Receipt ExecuteTransaction<traits>::execute_final(
     }
 
     // finalize state, Eqn. 77-79
+    //
+    // Runs after the coinbase award above, which under EIP-8246 decides the
+    // outcome for a beneficiary destructed in this transaction: the award is
+    // what leaves it holding a balance and preserved, rather than empty and
+    // deleted by EIP-161.
     state.destruct_suicides<traits>();
     state.destruct_touched_dead();
 

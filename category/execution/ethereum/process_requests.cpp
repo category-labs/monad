@@ -31,7 +31,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <silkpre_vendor/sha256.h>
+#include <category/crypto/silkpre_vendor/sha256.h>
 
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>

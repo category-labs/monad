@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -17,14 +17,11 @@
 
 #include <category/core/config.hpp>
 
-#include <category/core/address.hpp>
-#include <category/core/bytes.hpp>
-#include <category/core/hash256.hpp>
+#include <category/crypto/hash256.h>
 
 MONAD_NAMESPACE_BEGIN
 
-Address create_contract_address(Address const &from, uint64_t nonce);
-Address create2_contract_address(
-    Address const &from, bytes32_t const &zeta, hash256 const &code_hash);
+// The 32-byte digest produced by keccak256() and blake3().
+using hash256 = ::monad_hash256;
 
 MONAD_NAMESPACE_END

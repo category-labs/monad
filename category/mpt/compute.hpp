@@ -42,7 +42,7 @@ namespace detail
         {
             MONAD_ASSERT(len <= KECCAK256_SIZE);
             if (len < KECCAK256_SIZE) {
-                keccak256(buffer, len, buffer);
+                monad_keccak256(buffer, len, buffer);
                 len = KECCAK256_SIZE;
             }
         }

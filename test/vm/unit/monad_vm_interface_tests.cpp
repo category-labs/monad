@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/int.hpp>
+#include <category/core/keccak.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/host.hpp>
@@ -26,8 +27,6 @@
 #include <test/vm/utils/test_message.hpp>
 
 #include <asmjit/core/jitruntime.h>
-
-#include <ethash/keccak.hpp>
 
 #include <evmc/evmc.hpp>
 #include <evmc/mocked_host.hpp>
@@ -58,7 +57,7 @@ namespace
             static_cast<uint8_t>(bytes),
             RETURN};
         auto hash = std::bit_cast<bytes32_t>(
-            ethash::keccak256(bytecode.data(), bytecode.size()));
+            keccak256({bytecode.data(), bytecode.size()}));
         return {bytecode, hash};
     }
 
@@ -76,7 +75,7 @@ namespace
         bytecode[3] = static_cast<uint8_t>(dest >> 8);
         bytecode[4] = static_cast<uint8_t>(dest);
         auto hash = std::bit_cast<bytes32_t>(
-            ethash::keccak256(bytecode.data(), bytecode.size()));
+            keccak256({bytecode.data(), bytecode.size()}));
         return {bytecode, hash};
     }
 
@@ -222,7 +221,7 @@ TEST(MonadVmInterface, VarcodeCacheEmptyCode)
     uint8_t *const p = nullptr;
     std::span<uint8_t const> empty_code{p, 0};
     auto code_hash = std::bit_cast<bytes32_t>(
-        ethash::keccak256(empty_code.data(), empty_code.size()));
+        keccak256({empty_code.data(), empty_code.size()}));
 
     auto vcode0 = cache.try_set(code_hash, make_shared_intercode(empty_code));
 
@@ -729,7 +728,7 @@ TEST(MonadVmInterface, execute)
             0, [&](Host &, evmc_message const &) { return evmc::Result{}; }};
         std::vector<uint8_t> bytecode{};
         auto hash = std::bit_cast<bytes32_t>(
-            ethash::keccak256(bytecode.data(), bytecode.size()));
+            keccak256({bytecode.data(), bytecode.size()}));
         auto icode = make_shared_intercode(bytecode);
         auto vcode = vm.try_insert_varcode(hash, icode);
         auto result =
@@ -740,8 +739,8 @@ TEST(MonadVmInterface, execute)
 
     std::vector<uint8_t> bytecode = {
         PUSH0, PUSH0, PUSH0, PUSH0, PUSH0, ADDRESS, GAS, CALL};
-    auto hash = std::bit_cast<bytes32_t>(
-        ethash::keccak256(bytecode.data(), bytecode.size()));
+    auto hash =
+        std::bit_cast<bytes32_t>(keccak256({bytecode.data(), bytecode.size()}));
     auto icode = make_shared_intercode(bytecode);
 
     for (size_t const depth : std::initializer_list<size_t>{0, 1, 2, 1023}) {

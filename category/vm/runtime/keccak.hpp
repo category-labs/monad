@@ -16,12 +16,11 @@
 #pragma once
 
 #include <category/core/int.hpp>
+#include <category/core/keccak.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/types.hpp>
-
-#include <ethash/keccak.hpp>
 
 namespace monad::vm::runtime
 {
@@ -42,7 +41,7 @@ namespace monad::vm::runtime
             ctx->deduct_gas(word_size * bin<6>);
         }
 
-        auto const hash = ethash::keccak256(ctx->memory.data + *offset, *size);
+        auto const hash = keccak256({ctx->memory.data + *offset, *size});
         *result_ptr = load_be<uint256_t>(hash);
     }
 }

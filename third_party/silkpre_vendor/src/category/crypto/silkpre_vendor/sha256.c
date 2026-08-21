@@ -26,7 +26,7 @@
 // https://github.com/noloader/SHA-Intrinsics (Author: Jeffrey Walton)
 // https://github.com/Mysticial/FeatureDetector (Author: Alexander Yee)
 
-#include <silkpre_vendor/sha256.h>
+#include <category/crypto/silkpre_vendor/sha256.h>
 
 #include <string.h>
 

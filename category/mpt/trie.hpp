@@ -232,6 +232,13 @@ class UpdateAux
     bool alternate_slow_fast_writer_{false};
     bool can_write_to_fast_{true};
 
+    // Lifetime totals, never reset. The per-upsert figures that the stats log
+    // and the slow-ring speed control consume are the difference between
+    // consecutive snapshots.
+    detail::TrieUpdateCollectedStats stats_;
+    detail::TrieUpdateCollectedStats prev_upsert_stats_;
+    detail::TrieUpdateCollectedStats last_upsert_stats_;
+
 public:
     // Allocate the first cnv chunk for db metadata copies
     static constexpr unsigned cnv_chunks_for_db_metadata = 1;
@@ -252,8 +259,6 @@ public:
     MONAD_ASYNC_NAMESPACE::AsyncIO *io{nullptr};
     node_writer_unique_ptr_type node_writer_fast{};
     node_writer_unique_ptr_type node_writer_slow{};
-
-    detail::TrieUpdateCollectedStats stats;
 
     // in-memory
     UpdateAux() = default;
@@ -281,8 +286,19 @@ public:
     void move_trie_version_forward(
         uint64_t src, uint64_t dest, timeline_id tid = timeline_id::primary);
 
+    // Lifetime totals, monotonically increasing across every upsert.
+    detail::TrieUpdateCollectedStats stats_snapshot() const noexcept
+    {
+        return stats_;
+    }
+
+    // What the most recent upsert alone contributed.
+    detail::TrieUpdateCollectedStats last_upsert_stats() const noexcept
+    {
+        return last_upsert_stats_;
+    }
+
     // collect and print trie update stats
-    void reset_stats();
     void collect_expire_stats(bool is_read);
     void collect_number_nodes_created_stats();
     void collect_compaction_read_stats(
@@ -292,7 +308,9 @@ public:
         virtual_chunk_offset_t node_offset, uint32_t node_disk_size,
         timeline_id tid);
 
-    void print_update_stats(uint64_t version, timeline_id tid);
+    void print_update_stats(
+        uint64_t version, timeline_id tid,
+        detail::TrieUpdateCollectedStats const &upsert_stats);
 
     using chunk_list = DbMetadataContext::chunk_list;
 
@@ -378,7 +396,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAux) == 120 + sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAux) == 120 + 3 * sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAux) == 8);
 
 template <receiver Receiver>

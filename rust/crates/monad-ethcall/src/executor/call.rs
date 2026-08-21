@@ -70,6 +70,7 @@ pub struct EthCallRequest<'a> {
     pub block_id: Option<[u8; 32]>,
     pub state_override_set: &'a StateOverrideSet,
     pub tracer: MonadTracer,
+    pub call_tracer_max_size: usize,
     pub gas_specified: bool,
 }
 
@@ -84,6 +85,7 @@ impl MonadExecutor {
             block_id,
             state_override_set,
             tracer,
+            call_tracer_max_size,
             gas_specified,
         } = request;
 
@@ -213,6 +215,7 @@ impl MonadExecutor {
                 Some(eth_call_submit_callback),
                 Box::into_raw(sender_ctx) as *mut std::ffi::c_void,
                 tracer.into(),
+                call_tracer_max_size,
                 gas_specified,
             )
         };

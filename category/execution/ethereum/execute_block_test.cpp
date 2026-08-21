@@ -229,6 +229,15 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
         block.value().header.requests_hash = EMPTY_REQUESTS_HASH;
     }
 
+    if constexpr (TestFixture::Trait::eip_7928_active()) {
+        block.value().header.block_access_list_hash = bytes32_t{};
+    }
+
+    if constexpr (TestFixture::Trait::eip_7843_active()) {
+        block.value().header.block_access_list_hash = bytes32_t{};
+        block.value().header.slot_number = 0;
+    }
+
     BlockHashBufferFinalized block_hash_buffer;
     block_hash_buffer.set(
         block.value().header.number - 1, block.value().header.parent_hash);
@@ -397,6 +406,15 @@ TYPED_TEST(TraitsTest, assertion_exception)
         block.value().header.requests_hash = EMPTY_REQUESTS_HASH;
     }
 
+    if constexpr (TestFixture::Trait::eip_7928_active()) {
+        block.value().header.block_access_list_hash = bytes32_t{};
+    }
+
+    if constexpr (TestFixture::Trait::eip_7843_active()) {
+        block.value().header.block_access_list_hash = bytes32_t{};
+        block.value().header.slot_number = 0;
+    }
+
     BlockHashBufferFinalized block_hash_buffer;
     block_hash_buffer.set(
         block.value().header.number - 1, block.value().header.parent_hash);
@@ -553,6 +571,15 @@ TYPED_TEST(TraitsTest, call_frames_refund)
 
     if constexpr (TestFixture::Trait::eip_7685_active()) {
         block.value().header.requests_hash = EMPTY_REQUESTS_HASH;
+    }
+
+    if constexpr (TestFixture::Trait::eip_7928_active()) {
+        block.value().header.block_access_list_hash = bytes32_t{};
+    }
+
+    if constexpr (TestFixture::Trait::eip_7843_active()) {
+        block.value().header.block_access_list_hash = bytes32_t{};
+        block.value().header.slot_number = 0;
     }
 
     BlockHashBufferFinalized block_hash_buffer;

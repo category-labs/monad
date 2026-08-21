@@ -193,6 +193,23 @@ void triedb_storage_stats_read(
     out->disk_used_bytes = stats.disk_used_bytes;
 }
 
+bool triedb_node_cache_stats_read(
+    TriedbRoInner *const db, triedb_node_cache_stats *const out)
+{
+    if (out == nullptr || db == nullptr) {
+        return false;
+    }
+    *out = {};
+    auto const &cache = db->async_ctx.node_cache;
+    auto const stats = cache.stats();
+    out->hits = stats.hits;
+    out->misses = stats.misses;
+    out->evictions = stats.evictions;
+    out->used_bytes = static_cast<uint64_t>(cache.used_bytes());
+    out->entries = static_cast<uint64_t>(cache.size());
+    return true;
+}
+
 void triedb_compute_page_key(
     uint8_t const *const slot_key, uint8_t *const out_page_key)
 {

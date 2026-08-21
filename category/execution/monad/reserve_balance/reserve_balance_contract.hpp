@@ -35,7 +35,7 @@ class ReserveBalanceContract
     [[maybe_unused]] TxTraceContext const trace_ctx_;
 
 public:
-    ReserveBalanceContract(State &state, TxTraceContext trace_ctx);
+    ReserveBalanceContract(State &state, TxTraceContext const &trace_ctx);
 
     using PrecompileFunc = Result<byte_string> (ReserveBalanceContract::*)(
         byte_string_view, Address const &, uint256_be_t const &);

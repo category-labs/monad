@@ -46,8 +46,7 @@ public:
         Chain const &, uint64_t i, Transaction const &, Address const &,
         BlockHeader const &, BlockState &, BlockMetrics &,
         boost::fibers::promise<void> &prev, trace::StateTracer &,
-        ExecutionEventRecorder *,
-        TxTraceContext const &);
+        ExecutionEventRecorder *, TxTraceContext const &);
 
     Result<Receipt> operator()();
 

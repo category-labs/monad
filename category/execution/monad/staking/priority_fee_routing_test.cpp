@@ -90,7 +90,7 @@ TYPED_TEST(MonadTraitsTest, mip11_fork)
         bs,
         metrics,
         prev,
-                state_tracer,
+        state_tracer,
         chain_ctx,
         /*exec_recorder*/ nullptr,
         tx_trace_context)();

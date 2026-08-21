@@ -97,9 +97,8 @@ public:
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
         boost::fibers::promise<void> &prev, trace::StateTracer &,
         ChainContext<traits> const &chain_ctx,
-    ExecutionEventRecorder *exec_recorder,
-    TxTraceContext const &tx_trace_context,
-    bool trace_transfers = false);
+        ExecutionEventRecorder *exec_recorder,
+        TxTraceContext const &tx_trace_context, bool trace_transfers = false);
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

@@ -179,10 +179,10 @@ Result<void> process_ethereum_block(
             state_tracers,
             system_call_state_tracer,
             chain_ctx,
-                exec_recorder,
+            exec_recorder,
             false,
             block_trace_context));
-            record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
+    record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();

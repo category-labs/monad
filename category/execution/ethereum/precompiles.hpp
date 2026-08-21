@@ -19,7 +19,6 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -30,6 +29,8 @@
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
+
+class TxTraceContext;
 
 bool init_trusted_setup();
 
@@ -45,8 +46,8 @@ template <Traits traits>
 std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &);
 
 template <Traits traits>
-std::optional<evmc::Result> check_call_precompile(
-    State &, TxTraceContext const, evmc_message const &);
+std::optional<evmc::Result>
+check_call_precompile(State &, TxTraceContext const &, evmc_message const &);
 
 using precompiled_gas_cost_fn = std::optional<uint64_t>(byte_string_view);
 

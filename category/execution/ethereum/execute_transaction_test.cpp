@@ -119,7 +119,7 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         bs,
         metrics,
         prev,
-                noop_state_tracer,
+        noop_state_tracer,
         chain_ctx,
         /*exec_recorder=*/nullptr,
         trace_context)();
@@ -233,7 +233,7 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
         bs,
         metrics,
         prev,
-                noop_state_tracer,
+        noop_state_tracer,
         chain_ctx,
         /*exec_recorder=*/nullptr,
         trace_context)();
@@ -384,7 +384,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
             bs,
             metrics,
             prev,
-                        noop_state_tracer,
+            noop_state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
             trace_context)();
@@ -447,7 +447,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
             bs,
             metrics,
             prev,
-                        noop_state_tracer,
+            noop_state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
             trace_context)();
@@ -556,7 +556,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
             bs,
             metrics,
             prev,
-                        noop_state_tracer,
+            noop_state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
             trace_context)();
@@ -651,7 +651,7 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
         bs,
         metrics,
         prev,
-                noop_state_tracer,
+        noop_state_tracer,
         chain_ctx,
         /*exec_recorder=*/nullptr,
         trace_context)();

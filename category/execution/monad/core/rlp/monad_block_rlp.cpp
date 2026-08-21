@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 
+#include <cstdint>
 #include <vector>
 
 MONAD_RLP_ANONYMOUS_NAMESPACE_BEGIN
@@ -56,6 +57,14 @@ Result<BlockHeader> decode_execution_inputs(byte_string_view &enc)
     // (MONAD_FOUR and onwards).
     if (payload.size() > 0) {
         BOOST_OUTCOME_TRY(header.requests_hash, decode_bytes32(payload));
+    }
+
+    // Likewise, the following fields are for MONAD_ETH_AMSTERDAM
+    if (!payload.empty()) {
+        BOOST_OUTCOME_TRY(
+            header.block_access_list_hash, decode_bytes32(payload));
+        BOOST_OUTCOME_TRY(
+            header.slot_number, decode_unsigned<uint64_t>(payload));
     }
 
     if (MONAD_UNLIKELY(!payload.empty())) {

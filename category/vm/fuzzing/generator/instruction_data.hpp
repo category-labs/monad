@@ -45,6 +45,9 @@ namespace monad::vm::fuzzing
     //   RETURNDATACOPY  (generate_returndatacopy)
     //   PUSH0 - PUSH32  (generate_push)
     //   CREATE, CREATE2 (generate_create)
+    //
+    // TODO(amsterdam): SLOTNUM is Amsterdam-only and unimplemented by
+    // by pinned evmone.
 
     constexpr auto call_non_terminators = std::array{
         CALL,

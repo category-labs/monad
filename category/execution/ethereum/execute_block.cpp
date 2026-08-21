@@ -332,6 +332,14 @@ Result<std::vector<Receipt>> execute_block(
         }
     }
 
+    if constexpr (traits::eip_7928_active()) {
+        MONAD_ASSERT_THROW(
+            block.header.block_access_list_hash.has_value(),
+            "block header must have block access list hash when EIP-7928 is "
+            "active");
+        // TODO(EIP-7928) compute and validate hash
+    }
+
     apply_block_reward<traits>(state, block);
 
     // TODO: move to execute_monad_block

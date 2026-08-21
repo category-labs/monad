@@ -46,6 +46,7 @@ enum class MonadBlockError
     DuplicateSystemTransaction,
     UnknownSystemTransaction,
     InvalidRewardValue,
+    SlotNumberMismatch,
 };
 
 template <class MonadConsensusBlockHeader>

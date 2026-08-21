@@ -86,6 +86,7 @@ namespace monad::vm::compiler
         BaseFee = 0x48,
         BlobHash = 0x49,
         BlobBaseFee = 0x4A,
+        SlotNum = 0x4B,
         Pop = 0x50,
         MLoad = 0x51,
         MStore = 0x52,
@@ -361,6 +362,8 @@ namespace monad::vm::compiler
             return "BLOBHASH";
         case BlobBaseFee:
             return "BLOBBASEFEE";
+        case SlotNum:
+            return "SLOTNUM";
         case Pop:
             return "POP";
         case MLoad:

@@ -1885,3 +1885,20 @@ TEST(ProtocolValidation, upserts_reject_trailing_bytes)
     }
     std::filesystem::remove(dbname);
 }
+
+TEST(StatesyncVersion, wire_encoding)
+{
+    EXPECT_EQ(MONAD_STATESYNC_VERSION_V2, 0x00010002u);
+}
+
+TEST(StatesyncVersion, compatibility_range)
+{
+    EXPECT_EQ(monad_statesync_version(), MONAD_STATESYNC_VERSION);
+    EXPECT_TRUE(monad_statesync_client_compatible(MONAD_STATESYNC_VERSION_MIN));
+    EXPECT_TRUE(monad_statesync_client_compatible(MONAD_STATESYNC_VERSION_V2));
+    // 0x00010001 is v1, which peers no longer speak.
+    EXPECT_FALSE(
+        monad_statesync_client_compatible(MONAD_STATESYNC_VERSION_MIN - 1));
+    EXPECT_FALSE(
+        monad_statesync_client_compatible(MONAD_STATESYNC_VERSION + 1));
+}

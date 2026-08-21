@@ -805,6 +805,73 @@ TEST_F(StateSyncFixture, sync_one_account)
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 }
 
+TEST_F(StateSyncFixture, retry_after_failed_root_validation)
+{
+    constexpr auto N = 1'000'000;
+    bytes32_t parent_hash{NULL_HASH};
+    load_header(
+        sdb.load_root_for_version(N - 257),
+        sdb,
+        BlockHeader{.number = N - 257});
+    for (size_t i = N - 256; i < N; ++i) {
+        stdb.set_block_and_prefix(i - 1);
+        commit_sequential(
+            stdb,
+            StateDeltas({}),
+            {},
+            BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+    commit_sequential(
+        stdb,
+        StateDeltas(
+            {{ADDR_A,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 100}},
+                  .storage = {}}}}),
+        Code{},
+        BlockHeader{.number = N});
+    init();
+    BlockHeader const tgrt{
+        .parent_hash = parent_hash,
+        .state_root = stdb.state_root(),
+        .number = N};
+    handle_target(cctx, tgrt);
+    // A syntactically valid account the server never sent corrupts the synced
+    // state: the sync completes normally but the root comparison in finalize
+    // must fail against the honest target.
+    auto const corrupt = encode_account_db(
+        0x00000000000000000000000000000000cafebabe_address,
+        Account{.balance = 42});
+    EXPECT_TRUE(monad_statesync_client_handle_upsert(
+        cctx, 0, SYNC_TYPE_UPSERT_ACCOUNT, corrupt.data(), corrupt.size()));
+    run();
+    EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
+    EXPECT_FALSE(monad_statesync_client_finalize(cctx));
+
+    monad_statesync_client_context_destroy(cctx);
+    cctx = nullptr;
+    monad_statesync_server_destroy(server);
+    server = nullptr;
+
+    // The failed validation must not have recorded the corrupt target as
+    // finalized: that is the baseline a restarted client rewinds to.
+    {
+        mpt::Db cdb{
+            std::make_unique<OnDiskMachine>(),
+            mpt::OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+        EXPECT_EQ(cdb.get_latest_finalized_version(), INVALID_BLOCK_NUM);
+    }
+
+    // A restarted client syncing the same honest target must succeed rather
+    // than inherit the corrupt state as its sync baseline.
+    init();
+    handle_target(cctx, tgrt);
+    run();
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}
+
 // Pre-fork dual-timeline server -> dual-timeline client
 TEST_F(StateSyncFixture, pre_fork_dual_timeline_server_to_dual_db_client)
 {

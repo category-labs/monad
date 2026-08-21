@@ -145,7 +145,7 @@ Result<void> process_monad_block(
         chain.get_chain_id(),
         block.header,
         block.header.parent_hash,
-        block.header.number,
+        block.header.slot_number.value_or(block.header.number),
         0,
         block.header.timestamp * 1'000'000'000UL,
         block.transactions.size(),

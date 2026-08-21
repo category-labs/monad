@@ -22,6 +22,7 @@
 
 #include <ankerl/unordered_dense.h>
 
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <vector>
@@ -31,17 +32,15 @@ MONAD_NAMESPACE_BEGIN
 template <size_t age, size_t K>
 concept valid_chain_context_buffer_age = (age < K);
 
-template <Traits traits>
-class ChainContextBuffer;
-
 /**
  * Circular buffer of combined senders and EIP-7702 authorities for the last
  * K blocks. Use advance(senders, authorities) to obtain the context needed
  * for each block's reserve balance checks in eth_simulatev1.
+ *
+ * Each call to advance selects the traits of the block being simulated,
+ * for simulations that cross a fork boundary.
  */
-template <Traits traits>
-    requires(is_monad_trait_v<traits>)
-class ChainContextBuffer<traits>
+class ChainContextBuffer
 {
     static constexpr size_t K = 3;
 
@@ -50,6 +49,7 @@ public:
     /// discarding the oldest currently stored context, then returns a
     /// ChainContext for the given traits type. The arguments must outlive
     /// this buffer.
+    template <Traits traits>
     ChainContext<traits> advance(
         std::vector<Address> const &senders,
         std::vector<std::vector<std::optional<Address>>> const &authorities);
@@ -65,20 +65,6 @@ private:
     std::vector<Address> const *current_senders_{};
     std::vector<std::vector<std::optional<Address>>> const
         *current_authorities_{};
-};
-
-/**
- * Dummy buffer for EVM trait specializations that do not need chain context
- * for reserve balance checks.
- */
-template <Traits traits>
-    requires(is_evm_trait_v<traits>)
-class ChainContextBuffer<traits>
-{
-public:
-    ChainContext<traits> advance(
-        std::vector<Address> const &,
-        std::vector<std::vector<std::optional<Address>>> const &);
 };
 
 MONAD_NAMESPACE_END

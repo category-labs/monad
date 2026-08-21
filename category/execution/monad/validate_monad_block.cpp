@@ -71,6 +71,13 @@ static_validate_consensus_header(MonadConsensusBlockHeader const &header)
         }
     }
 
+    if (header.execution_inputs.slot_number.has_value() &&
+        MONAD_UNLIKELY(
+            header.execution_inputs.slot_number.value() !=
+            header.block_round)) {
+        return MonadBlockError::SlotNumberMismatch;
+    }
+
     return outcome::success();
 }
 
@@ -162,6 +169,7 @@ quick_status_code_from_enum<monad::MonadBlockError>::value_mappings()
         {MonadBlockError::Success, "success", {errc::success}},
         {MonadBlockError::TimestampMismatch, "timestamp mismatch", {}},
         {MonadBlockError::BaseFeeMismatch, "base fee mismatch", {}},
+        {MonadBlockError::SlotNumberMismatch, "slot number mismatch", {}},
         {MonadBlockError::SystemTransactionNotFirstInBlock,
          "system transaction not first in block",
          {}},

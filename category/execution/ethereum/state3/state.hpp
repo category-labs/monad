@@ -39,6 +39,8 @@
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 

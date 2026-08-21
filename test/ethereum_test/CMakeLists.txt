@@ -113,20 +113,11 @@ add_monad_test(FORK MONAD_TEN)
 
 # MONAD_NEXT Amsterdam spec tests, from a separate fixtures release.
 include(${CMAKE_CURRENT_SOURCE_DIR}/exclude/MONAD_NEXT_amsterdam.cmake)
-# An empty include-list would make the filter degenerate to ":-...", which gtest
-# reads as "run everything" -- silently turning 3 intended tests into the whole
-# 617-test suite, most of it failing. Fail configure instead.
-if(NOT MONAD_NEXT_amsterdam_included_tests)
-  message(FATAL_ERROR
-          "MONAD_NEXT_amsterdam_included_tests is empty; the gtest filter would "
-          "run the entire suite rather than the intended subset.")
-endif()
-list(JOIN MONAD_NEXT_amsterdam_included_tests ":" TESTS_INCLUDED)
 list(JOIN MONAD_NEXT_amsterdam_excluded_tests ":" TESTS_EXCLUDED)
 add_test(NAME MONAD_NEXT_amsterdam_monad_ethereum_test
          COMMAND monad-ethereum-test --fork MONAD_NEXT
                  --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadAmsterdamSpecTestFixtures/blockchain_tests
-                 --gtest_filter=${TESTS_INCLUDED}:-${TESTS_EXCLUDED})
+                 --gtest_filter=-:${TESTS_EXCLUDED})
 
 add_ethereum_test(FORK berlin)
 add_ethereum_test(FORK london)

@@ -16,13 +16,17 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/log.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_protocol.hpp>
+
+#include <utility>
 
 using namespace monad;
 using namespace monad::mpt;
@@ -47,6 +51,12 @@ void account_update(
         if (hash != NULL_HASH) {
             ctx.seen_code.emplace(hash);
         }
+    }
+    else {
+        // Deleting the account voids its pending storage, in branches below
+        // that do not commit. Coverage granted against those slots must not
+        // outlive them, or a later partial page would be built from scratch.
+        ctx.covered_pages.erase(addr);
     }
 
     auto const it = ctx.deltas.find(addr);
@@ -77,10 +87,15 @@ void account_update(
             MONAD_ASSERT(ctx.deltas.emplace(addr, std::nullopt).second);
         }
     }
-    // incarnation
+    // The account was deleted earlier in this batch and is now recreated.
+    // Flush the deletion first so the new one starts from an empty subtrie;
+    // after the flush this batch holds nothing for the address.
     else if (acct.has_value() && !it->second.has_value()) {
         ctx.commit();
-        account_update(ctx, addr, acct);
+        MONAD_ASSERT(
+            ctx.deltas
+                .emplace(addr, std::make_pair(acct.value(), StorageDeltas{}))
+                .second);
     }
     else if (acct.has_value()) {
         std::get<Account>(it->second.value()) = acct.value();
@@ -126,10 +141,15 @@ void storage_update(
             if (it->second.has_value()) {
                 std::get<StorageDeltas>(it->second.value())[key] = val;
             }
-            // incarnation
+            // Storage for an account this batch has pending deletion. Flush
+            // the deletion first; the account is then gone from the trie, so
+            // the slot waits in `buffered` for the record that recreates it.
             else if (val != bytes32_t{}) {
                 ctx.commit();
-                storage_update(ctx, addr, key, val);
+                MONAD_ASSERT(!ctx.tdb.read_account(addr).has_value());
+                MONAD_ASSERT(
+                    ctx.buffered.emplace(addr, StorageDeltas{{key, val}})
+                        .second);
             }
         }
         else {
@@ -177,10 +197,11 @@ void StatesyncProtocolV1::send_request(
             .target = tgrt,
             .from = from,
             .until = from >= (tgrt * 99 / 100) ? tgrt : tgrt * 99 / 100,
-            .old_target = old_target});
+            .old_target = old_target,
+            .version = version_});
 }
 
-bool StatesyncProtocolV1::handle_upsert(
+bool StatesyncProtocolV1::apply_upsert(
     monad_statesync_client_context *const ctx, monad_sync_type const type,
     unsigned char const *const val, uint64_t const size) const
 {
@@ -228,7 +249,9 @@ bool StatesyncProtocolV1::handle_upsert(
         storage_update(*ctx, unaligned_load<Address>(val), res.value(), {});
     }
     else {
-        MONAD_ASSERT(type == SYNC_TYPE_UPSERT_HEADER);
+        if (type != SYNC_TYPE_UPSERT_HEADER) {
+            return false;
+        }
         auto const res = rlp::decode_block_header(raw);
         if (res.has_error() || !raw.empty()) {
             return false;
@@ -236,10 +259,68 @@ bool StatesyncProtocolV1::handle_upsert(
         ctx->hdrs[res.value().number % ctx->hdrs.size()] = res.value();
     }
 
-    if ((++ctx->n_upserts % (1 << 20)) == 0) {
+    return true;
+}
+
+bool StatesyncProtocolV1::handle_upsert(
+    monad_statesync_client_context *const ctx, monad_sync_type const type,
+    unsigned char const *const val, uint64_t const size) const
+{
+    if (!apply_upsert(ctx, type, val, size)) {
+        // Rejecting a record aborts the node: bft asserts on this return value
+        // and its release profile aborts on panic. This log is the only place
+        // the offending record is named.
+        LOG_ERROR(
+            "statesync client rejected upsert type={} size={}",
+            std::to_underlying(type),
+            size);
+        return false;
+    }
+    MONAD_ASSERT(ctx->upserts_per_commit != 0);
+    // Threshold rather than modulo: a page record advances the counter by more
+    // than one, so an exact multiple cannot be relied on.
+    if (++ctx->n_upserts >= ctx->upserts_per_commit) {
         ctx->commit();
     }
+    return true;
+}
 
+bool StatesyncProtocolPagePassthrough::apply_upsert(
+    monad_statesync_client_context *const ctx, monad_sync_type const type,
+    unsigned char const *const val, uint64_t const size) const
+{
+    if (type != SYNC_TYPE_UPSERT_STORAGE_PAGE) {
+        return StatesyncProtocolV1::apply_upsert(ctx, type, val, size);
+    }
+    if (size < sizeof(Address)) {
+        return false;
+    }
+    byte_string_view leaf{val, size};
+    leaf.remove_prefix(sizeof(Address));
+    auto const decoded = decode_storage_page_leaf(leaf);
+    if (decoded.has_error()) {
+        LOG_ERROR("statesync client could not decode storage page leaf");
+        return false;
+    }
+    auto const &page = decoded.value().page;
+    // An empty page would grant coverage while contributing no slot. A
+    // slot-granular delete arriving for that page in the same commit window
+    // would then build it from empty and delete the whole page entry, losing
+    // every slot the client holds on disk for it.
+    if (page.is_empty()) {
+        LOG_ERROR("statesync client rejected empty storage page record");
+        return false;
+    }
+    auto const addr = unaligned_load<Address>(val);
+    for (auto const [slot_key, slot_val] : decoded.value().slots()) {
+        storage_update(*ctx, addr, slot_key, slot_val);
+    }
+    // Granted after the loop: storage_update can commit on an incarnation
+    // conflict, and that commit clears coverage.
+    ctx->covered_pages[addr].emplace(decoded.value().page_key);
+    // handle_upsert counts this record once; the page's remaining slots are
+    // deltas the commit window has to bound too.
+    ctx->n_upserts += page.size() - 1;
     return true;
 }
 

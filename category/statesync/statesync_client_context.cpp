@@ -174,10 +174,12 @@ void monad_statesync_client_context::commit()
         return storage;
     };
 
-    // Build a page-encoded storage UpdateList for Db2. Slots are grouped by
-    // page_key and merged onto any existing page contents read from the
-    // secondary trie. A page that ends up empty becomes a delete on the
-    // page entry.
+    // Build a page-encoded storage UpdateList for paged_db (the primary
+    // trie when it is page-encoded, or the page-encoded secondary). Slots
+    // are grouped by page_key; a page starts from paged_db's existing
+    // contents and is merged into, unless the whole page arrived on the
+    // wire, in which case it is built from scratch. A page that ends up
+    // empty becomes a delete on the page entry.
     auto build_page_storage = [this](
                                   TrieDb &paged_db,
                                   Address const &addr,
@@ -187,23 +189,31 @@ void monad_statesync_client_context::commit()
                                   std::deque<hash256> &hash_alloc) {
         UpdateList storage;
         // Per-account page granularity: keyed by page_key, value is the
-        // mutable storage_page_t being merged. Each first-touch of a page
-        // reads the current page from the secondary trie so subsequent slot
-        // writes at the same page_key compose into one update.
+        // mutable storage_page_t being composed. Each first-touch of a page
+        // establishes its starting point -- read-and-merge from paged_db,
+        // or empty when the page is covered -- so subsequent slot writes at
+        // the same page_key compose into one update.
         ankerl::unordered_dense::segmented_map<
             bytes32_t,
             storage_page_t,
             BytesHashCompare<bytes32_t>>
             pages;
+        auto const cov = covered_pages.find(addr);
+        auto const *const covered =
+            cov == covered_pages.end() ? nullptr : &cov->second;
         for (auto const &[slot_key, slot_val] : slot_deltas) {
             auto const pg_key = compute_page_key(slot_key);
             auto const slot_off = compute_slot_offset(slot_key);
             auto [it, inserted] = pages.try_emplace(pg_key);
             if (inserted) {
-                // Incarnation isn't tracked in statesync deltas; TrieDb
-                // ignores it for storage reads, so a fixed value is fine.
-                it->second =
-                    paged_db.read_storage_page(addr, Incarnation{0, 0}, pg_key);
+                // A covered page arrived complete, so there is nothing to
+                // merge into. Incarnation isn't tracked in statesync deltas;
+                // TrieDb ignores it for storage reads, so a fixed value is
+                // fine.
+                it->second = covered != nullptr && covered->contains(pg_key)
+                                 ? storage_page_t{}
+                                 : paged_db.read_storage_page(
+                                       addr, Incarnation{0, 0}, pg_key);
             }
             it->second.set(slot_off, slot_val);
         }
@@ -353,4 +363,6 @@ void monad_statesync_client_context::commit()
 
     code.clear();
     deltas.clear();
+    covered_pages.clear();
+    n_upserts = 0;
 }

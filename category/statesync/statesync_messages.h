@@ -36,6 +36,9 @@ enum monad_sync_type : uint8_t
     SYNC_TYPE_UPSERT_ACCOUNT_DELETE = 6,
     SYNC_TYPE_UPSERT_STORAGE_DELETE = 7,
     SYNC_TYPE_UPSERT_HEADER = 8,
+    // One page-encoded storage leaf: the 20-byte address followed by the page
+    // leaf verbatim, exactly as the server holds it, page key included.
+    SYNC_TYPE_UPSERT_STORAGE_PAGE = 9,
 };
 
 static_assert(sizeof(enum monad_sync_type) == 1);
@@ -49,9 +52,16 @@ struct monad_sync_request
     uint64_t from;
     uint64_t until;
     uint64_t old_target;
+    // protocol version the requester speaks; the server serves the newest wire
+    // this permits. Authoritative only on requests arriving at a server, where
+    // bft sets it from the requesting peer's negotiated version. On a request
+    // the local client generates, bft substitutes its own version before the
+    // request reaches the network, so the value set here reaches only an
+    // in-process server.
+    uint32_t version;
 };
 
-static_assert(sizeof(struct monad_sync_request) == 48);
+static_assert(sizeof(struct monad_sync_request) == 56);
 static_assert(alignof(struct monad_sync_request) == 8);
 
 struct monad_sync_done

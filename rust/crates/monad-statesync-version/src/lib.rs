@@ -23,6 +23,7 @@ pub use self::bindings::{
     monad_statesync_protocol_version_MONAD_STATESYNC_VERSION_MIN as MONAD_STATESYNC_VERSION_MIN,
     monad_statesync_version_num_MONAD_STATESYNC_MAJOR as MONAD_STATESYNC_MAJOR,
     monad_statesync_version_num_MONAD_STATESYNC_MINOR_V2 as MONAD_STATESYNC_MINOR_V2,
+    monad_statesync_version_num_MONAD_STATESYNC_MINOR_V3 as MONAD_STATESYNC_MINOR_V3,
 };
 
 #[allow(dead_code, non_camel_case_types, non_upper_case_globals)]

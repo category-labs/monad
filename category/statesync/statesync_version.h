@@ -31,6 +31,9 @@ enum monad_statesync_version_num : uint16_t
     // Client acknowledges each response. Minors 0 and 1 predate that and are no
     // longer spoken; nothing deployed still runs them.
     MONAD_STATESYNC_MINOR_V2 = 2,
+    // A page-encoded server sends each storage page leaf verbatim as one
+    // record, so the client need not read the page back to merge into it.
+    MONAD_STATESYNC_MINOR_V3 = 3,
 };
 
 // A version as monad-bft's StateSyncVersion encodes it: major << 16 | minor.
@@ -38,9 +41,12 @@ enum monad_statesync_protocol_version : uint32_t
 {
     MONAD_STATESYNC_VERSION_V2 =
         MONAD_STATESYNC_MAJOR << 16 | MONAD_STATESYNC_MINOR_V2,
+    MONAD_STATESYNC_VERSION_V3 =
+        MONAD_STATESYNC_MAJOR << 16 | MONAD_STATESYNC_MINOR_V3,
 
     MONAD_STATESYNC_VERSION_MIN = MONAD_STATESYNC_VERSION_V2,
-    MONAD_STATESYNC_VERSION = MONAD_STATESYNC_VERSION_V2,
+    MONAD_STATESYNC_VERSION_PAGE_PASSTHROUGH = MONAD_STATESYNC_VERSION_V3,
+    MONAD_STATESYNC_VERSION = MONAD_STATESYNC_VERSION_V3,
 };
 
 uint32_t monad_statesync_version();

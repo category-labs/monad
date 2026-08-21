@@ -297,6 +297,11 @@ namespace monad::vm::interpreter
         runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
         int64_t, uint8_t const *);
 
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void slotnum(
+        runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
+        int64_t, uint8_t const *);
+
     // Memory & Storage
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void mload(

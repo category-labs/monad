@@ -944,6 +944,13 @@ namespace
         .input_bits = 257,
         .multiplier_bits = 256}>;
     static_assert(bit_shift_mulmod_const_reciprocal::BIT_SHIFT == 1);
+
+    // The maximum pre-shift has residue zero, while SHIFT has residue one.
+    using wrapped_alignment_addmod_reciprocal =
+        barrett::addmod_reciprocal_for_range<64, 128>;
+    static_assert(wrapped_alignment_addmod_reciprocal::PRE_PRODUCT_SHIFT == 1);
+    static_assert(
+        wrapped_alignment_addmod_reciprocal::POST_PRODUCT_BIT_SHIFT == 0);
 }
 
 TEST(uint256_barrett, full_range_reciprocal_division_by_one)
@@ -969,6 +976,11 @@ TEST(uint256_barrett, full_range_reciprocal_division_by_one)
         EXPECT_EQ(to_intx(q), expect.quot);
         EXPECT_EQ(to_intx(r), expect.rem);
     }
+}
+
+TEST(uint256_barrett, wrapped_pre_product_shift_alignment)
+{
+    test_addmod_alias<wrapped_alignment_addmod_reciprocal>();
 }
 
 TEST(uint256_barrett, nonzero_bit_shift_multiplier_numerator)

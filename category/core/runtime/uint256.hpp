@@ -195,7 +195,7 @@ public:
     }
 
     [[gnu::always_inline]]
-    inline m256i to_avx() const noexcept
+    m256i to_avx() const noexcept
     {
         m256i result;
         std::memcpy(&result, &words_, sizeof(result));
@@ -299,10 +299,9 @@ public:
         // If we do not force the result here, clang replaces the sub/sbb
         // chain with a long series of comparisons and flag logic which is
         // worse
-        force(diff[0]);
-        force(diff[1]);
-        force(diff[2]);
-        force(diff[3]);
+        keep_live(diff[1]);
+        keep_live(diff[2]);
+        keep_live(diff[3]);
         return carry;
     }
 
@@ -579,6 +578,10 @@ template <size_t N>
 [[gnu::always_inline]] constexpr uint32_t
 count_significant_words(std::array<uint64_t, N> const &x) noexcept
 {
+// Clang emits an indexed residual loop when forced to unroll this loop.
+#if !defined(__clang__)
+    #pragma GCC unroll(N)
+#endif
     for (size_t i = N; i > 0; --i) {
         if (x[i - 1] != 0) {
             return static_cast<uint32_t>(i);
@@ -589,7 +592,7 @@ count_significant_words(std::array<uint64_t, N> const &x) noexcept
 
 template <size_t N>
 [[gnu::always_inline]]
-inline constexpr size_t bit_width(std::array<uint64_t, N> const &x) noexcept
+constexpr size_t bit_width(std::array<uint64_t, N> const &x) noexcept
 {
     auto const significant_words = count_significant_words(x);
     if (significant_words == 0) {
@@ -657,7 +660,7 @@ truncating_mul(uint256_t const &x, uint256_t const &y) noexcept
 
 template <size_t M, size_t N>
 MONAD_NO_VECTORIZE [[gnu::always_inline]]
-inline constexpr words_t<M + N>
+constexpr words_t<M + N>
 wide_mul(words_t<M> const &x, words_t<N> const &y) noexcept
 {
     return truncating_mul<M + N>(x, y);
@@ -849,13 +852,19 @@ udivrem(words_t<M> const &u, words_t<N> const &v) noexcept
     if (m < n) {
         div_result<words_t<M>, words_t<N>> result;
         result.quot = {0};
+        result.rem = {0};
         if consteval {
-            for (size_t i = 0; i < N; i++) {
+            for (size_t i = 0; i < std::min(M, N); i++) {
                 result.rem[i] = u[i];
             }
         }
         else {
-            std::memcpy(&result.rem, &u, sizeof(result.rem));
+            if constexpr (M <= N) {
+                std::memcpy(&result.rem, &u, sizeof(u));
+            }
+            else {
+                std::memcpy(&result.rem, &u, sizeof(result.rem));
+            }
         }
         return result;
     }
@@ -894,10 +903,10 @@ udivrem(words_t<M> const &u, words_t<N> const &v) noexcept
     knuth_div(m, &u_norm[0], n, &v_norm[0], &result.quot[0]);
 
 #pragma GCC unroll(N)
-    for (size_t i = 0; i < N - 1; i++) {
+    for (size_t i = 0; i < n - 1; i++) {
         result.rem[i] = shrd(u_norm[i + 1], u_norm[i], normalize_shift);
     }
-    result.rem[N - 1] = u_norm[N - 1] >> normalize_shift;
+    result.rem[n - 1] = u_norm[n - 1] >> normalize_shift;
 
     return result;
 }
@@ -972,7 +981,7 @@ operator%(uint256_t const &x, uint256_t const &y) noexcept
  */
 template <size_t M, size_t N>
 [[gnu::always_inline]]
-inline constexpr result_with_carry<words_t<std::max(M, N)>>
+constexpr result_with_carry<words_t<std::max(M, N)>>
 subb_zx(words_t<M> const &lhs, words_t<N> const &rhs) noexcept
 {
     words_t<std::max(M, N)> result;
@@ -1014,9 +1023,9 @@ subb_zx(words_t<M> const &lhs, words_t<N> const &rhs) noexcept
  */
 template <size_t R, size_t M, size_t N>
 [[gnu::always_inline]]
-inline constexpr result_with_carry<words_t<R>>
+constexpr result_with_carry<words_t<R>>
 subb_truncating(words_t<M> const &lhs, words_t<N> const &rhs) noexcept
-    requires(0 <= R && R <= std::max(M, N))
+    requires(R <= std::min(M, N))
 {
     words_t<R> result;
     bool borrow = false;
@@ -1031,7 +1040,7 @@ subb_truncating(words_t<M> const &lhs, words_t<N> const &rhs) noexcept
 
 template <size_t M>
 [[gnu::always_inline]]
-inline constexpr result_with_carry<words_t<M>>
+constexpr result_with_carry<words_t<M>>
 subb(words_t<M> const &lhs, words_t<M> const &rhs) noexcept
 {
     return subb_truncating<M>(lhs, rhs);
@@ -1039,11 +1048,12 @@ subb(words_t<M> const &lhs, words_t<M> const &rhs) noexcept
 
 template <size_t N>
 [[gnu::always_inline]]
-inline constexpr result_with_carry<words_t<N>>
+constexpr result_with_carry<words_t<N>>
 addc(words_t<N> const &lhs, words_t<N> const &rhs) noexcept
 {
     words_t<N> result;
     bool carry = false;
+#pragma GCC unroll(N)
     for (size_t i = 0; i < N; i++) {
         auto [wi, bi] = addc(lhs[i], rhs[i], carry);
         result[i] = wi;
@@ -1180,16 +1190,10 @@ inline uint256_t from_bytes(size_t const n, uint8_t const *src)
     return from_bytes(n, n, src);
 }
 
-constexpr size_t countl_zero(uint256_t const &x)
+[[gnu::always_inline]]
+constexpr size_t countl_zero(uint256_t const &x) noexcept
 {
-    size_t cnt = 0;
-    for (size_t i = 0; i < uint256_t::num_words; i++) {
-        cnt += static_cast<size_t>(std::countl_zero(x[3 - i]));
-        if (cnt != ((i + 1U) * 64U)) {
-            return cnt;
-        }
-    }
-    return cnt;
+    return uint256_t::num_bits - bit_width(x.as_words());
 }
 
 consteval uint256_t pow2(size_t n)
@@ -1280,10 +1284,9 @@ namespace std
 
 MONAD_NAMESPACE_BEGIN
 
-inline constexpr size_t bit_width(uint256_t const &x)
+constexpr size_t bit_width(uint256_t const &x) noexcept
 {
-    return static_cast<size_t>(std::numeric_limits<uint256_t>::digits) -
-           countl_zero(x);
+    return bit_width(x.as_words());
 }
 
 [[gnu::always_inline]]
@@ -1384,7 +1387,14 @@ namespace barrett
             uint256_t{Params.min_denominator} > 0 &&
             uint256_t{Params.min_denominator} <=
                 uint256_t{Params.max_denominator} &&
-            Params.input_bits > 0)
+            Params.input_bits > 0 &&
+            (Params.multiplier_bits == 0 ||
+             Params.multiplier_bits == uint256_t::num_bits) &&
+            (Params.input_bits >=
+                 bit_width(uint256_t{Params.min_denominator}) ||
+             Params.multiplier_bits >=
+                 bit_width(uint256_t{Params.min_denominator}) -
+                     Params.input_bits))
     struct reciprocal
     {
         // Smallest amount of words to represent `bits` bits
@@ -1449,7 +1459,8 @@ namespace barrett
                 }
             }
             else {
-                // Currently unused, provided here for completeness
+                // Unused by the exported aliases, but supported by generic
+                // reciprocals.
                 num[WORD_SHIFT] = y[0] << BIT_SHIFT;
                 for (size_t i = 1; i < MULTIPLIER_WORDS; i++) {
                     num[i + WORD_SHIFT] = shld(y[i], y[i - 1], BIT_SHIFT);
@@ -1472,9 +1483,8 @@ namespace barrett
                 for (auto &w : max_mult) {
                     w = std::numeric_limits<uint64_t>::max();
                 }
-                max_q =
-                    udivrem(numerator(max_mult), MIN_DENOMINATOR.as_words())
-                        .quot;
+                max_q = udivrem(numerator(max_mult), MIN_DENOMINATOR.as_words())
+                            .quot;
             }
             else {
                 // The largest possible reciprocal that we need to fit is
@@ -1487,18 +1497,9 @@ namespace barrett
         static constexpr size_t RECIPROCAL_WORDS = min_words(RECIPROCAL_BITS);
 
         [[gnu::always_inline]]
-        static inline constexpr bool
-        valid_denominator(uint256_t const &d) noexcept
+        static constexpr bool valid_denominator(uint256_t const &d) noexcept
         {
             return MIN_DENOMINATOR <= d && d <= MAX_DENOMINATOR;
-        }
-
-        [[gnu::always_inline]]
-        static inline constexpr bool
-        valid_multiplier(uint256_t const &y) noexcept
-            requires(MULTIPLIER_WORDS > 0)
-        {
-            return bit_width(y.as_words()) <= MULTIPLIER_BITS;
         }
 
         /**
@@ -1530,9 +1531,9 @@ namespace barrett
          *   5. q_hat <= r*x/2^S < q_hat + 1 (by def. of floor)
          *   6. q - 1 < q_hat + 1 (by 4 and 5)
          *   7. q_hat <= q        (by 4 and 5)
-         * Finally we have q_hat <= q < q_hat+2 as desired
+         * Finally we have q - 1 <= q_hat <= q as desired
          */
-        inline explicit(true) reciprocal(uint256_t const &d) noexcept
+        explicit(true) reciprocal(uint256_t const &d) noexcept
             requires(MULTIPLIER_WORDS == 0)
             : reciprocal_{}
             , denominator_{}
@@ -1581,9 +1582,9 @@ namespace barrett
          *   5. q_hat <= r*x/2^S < q_hat + 1 (by def. of floor)
          *   6. q - 1 < q_hat + 1 (by 4 and 5)
          *   7. q_hat <= q        (by 4 and 5)
-         * Finally we have q_hat <= q < q_hat+2 as desired
+         * Finally we have q - 1 <= q_hat <= q as desired
          */
-        inline explicit(true)
+        explicit(true)
             reciprocal(uint256_t const &y, uint256_t const &d) noexcept
             requires(MULTIPLIER_WORDS != 0)
             : reciprocal_{}
@@ -1591,11 +1592,6 @@ namespace barrett
             , multiplier_{}
         {
             MONAD_DEBUG_ASSERT(valid_denominator(d));
-            static_assert(
-                MULTIPLIER_BITS <= uint256_t::num_bits,
-                "Barrett multiplier reciprocals accept only uint256_t "
-                "multipliers");
-            MONAD_ASSERT(valid_multiplier(y));
             auto quot = udivrem(numerator(y.as_words()), d.as_words()).quot;
             std::memcpy(&reciprocal_, &quot, sizeof(reciprocal_));
             for (size_t i = RECIPROCAL_WORDS;
@@ -1609,9 +1605,6 @@ namespace barrett
                 MONAD_DEBUG_ASSERT(!d[i]);
             }
             std::memcpy(&multiplier_, &y.as_words(), sizeof(multiplier_));
-            for (size_t i = MULTIPLIER_WORDS; i < uint256_t::num_words; i++) {
-                MONAD_DEBUG_ASSERT(!y[i]);
-            }
         }
 
         /**
@@ -1639,8 +1632,8 @@ namespace barrett
                 // mulmod_const reciprocals
                 return 0;
             }
-            // We want PRE_PRODUCT_SHIFT to be the largest number k
-            // satisfying
+            // When one exists, we want PRE_PRODUCT_SHIFT to be the largest
+            // number k satisfying
             //   1. (2^k-1) < MIN_DENOMINATOR
             //     * This ensures for any input x, the "truncated" quotient
             //         q_approx = ((x >> k) << k) / MIN_DENOMINATOR
@@ -1650,13 +1643,13 @@ namespace barrett
             //   2. (SHIFT - k) == 0 mod 64
             //     * This ensures that the pre-product shift does not add
             //       any extra shr steps
-            size_t max_pre_product_shift = MIN_DENOMINATOR_BITS - 1;
-            size_t const max_pre_product_shift_64 = max_pre_product_shift % 64;
-            size_t const shift_64 = BIT_SHIFT;
-            if (max_pre_product_shift_64 > shift_64) {
-                max_pre_product_shift -= (max_pre_product_shift_64 - shift_64);
+            size_t const max_pre_product_shift = MIN_DENOMINATOR_BITS - 1;
+            if (max_pre_product_shift < BIT_SHIFT) {
+                // No aligned pre-shift exists; disable pre-shifting.
+                return 0;
             }
-            return max_pre_product_shift;
+            return max_pre_product_shift -
+                   (max_pre_product_shift - BIT_SHIFT) % 64;
         }();
         static constexpr size_t PRE_PRODUCT_WORD_SHIFT = PRE_PRODUCT_SHIFT / 64;
         static constexpr size_t PRE_PRODUCT_BIT_SHIFT = PRE_PRODUCT_SHIFT % 64;
@@ -1717,8 +1710,8 @@ namespace barrett
          * subtracted. This is bounded by three times the denominator and
          * fits in MAX_DENOMINATOR_BITS + 2 bits.
          */
-        static constexpr size_t MAX_R_HAT_BITS = std::min(
-            INPUT_BITS + MULTIPLIER_BITS, MAX_DENOMINATOR_BITS + 2UL);
+        static constexpr size_t MAX_R_HAT_BITS =
+            std::min(INPUT_BITS + MULTIPLIER_BITS, MAX_DENOMINATOR_BITS + 2UL);
         static constexpr size_t MAX_R_HAT_WORDS = min_words(MAX_R_HAT_BITS);
 
         /**
@@ -1741,13 +1734,13 @@ namespace barrett
 
         template <size_t R>
         MONAD_NO_VECTORIZE [[gnu::always_inline]]
-        static inline void copy(
+        static void copy(
             words_t<R> const &src,
             std::span<uint64_t, uint256_t::num_words> dst) noexcept
         {
 #pragma GCC unroll(uint256_t::num_words)
-            for (size_t i = 0; i < std::min(R, uint256_t::num_words); i++) {
-                dst[i] = src[i];
+            for (size_t i = 0; i < uint256_t::num_words; i++) {
+                dst[i] = i < R ? src[i] : 0;
             }
         }
 
@@ -1769,8 +1762,7 @@ namespace barrett
          */
         template <bool need_quotient>
         MONAD_NO_VECTORIZE [[gnu::always_inline]]
-        inline words_t<
-            need_quotient ? MAX_QUOTIENT_WORDS : RELEVANT_QUOTIENT_WORDS>
+        words_t<need_quotient ? MAX_QUOTIENT_WORDS : RELEVANT_QUOTIENT_WORDS>
         estimate_q(words_t<INPUT_WORDS> const &x) const noexcept
         {
             auto const x_shift = rshift<INPUT_BITS, PRE_PRODUCT_SHIFT>(x);
@@ -1784,9 +1776,15 @@ namespace barrett
             return q_hat;
         }
 
+        /**
+         * Compute the remainder, and optionally the quotient when need_quotient
+         * is true.  quot receives the low 256 quotient bits, so it may truncate
+         * the quotient when MAX_QUOTIENT_WORDS > 4.  The udivrem wrapper
+         * restricts its inputs so the full quotient fits.
+         */
         template <bool need_quotient = false>
         MONAD_NO_VECTORIZE [[gnu::always_inline]]
-        inline void reduce(
+        void reduce(
             words_t<INPUT_WORDS> const &x,
             std::span<uint64_t, need_quotient ? uint256_t::num_words : 0> quot,
             std::span<uint64_t, uint256_t::num_words> rem) const noexcept
@@ -1901,7 +1899,7 @@ namespace barrett
     /**
      * Ranges for reciprocal intervals. These are chosen to minimize
      * the word count of the reciprocal bits in each, reducing the
-     * the cost of the input-by-reciprocal multiplication which is
+     * cost of the input-by-reciprocal multiplication which is
      * the main overhead.
      */
     constexpr size_t RECIPROCAL_INTERVAL_RANGES[3]{65, 129, 193};
@@ -2044,9 +2042,9 @@ namespace barrett
 
     template <BarrettParams Params>
     [[gnu::always_inline]]
-    MONAD_NO_VECTORIZE inline div_result<uint256_t> udivrem(
-        uint256_t const &u, barrett::reciprocal<Params> const &rec) noexcept
-        requires(Params.input_bits == 256)
+    MONAD_NO_VECTORIZE inline div_result<uint256_t>
+    udivrem(uint256_t const &u, barrett::reciprocal<Params> const &rec) noexcept
+        requires(Params.input_bits == 256 && Params.multiplier_bits == 0)
     {
         div_result<uint256_t> result{.quot = {0}, .rem = {0}};
         auto quot{
@@ -2059,10 +2057,10 @@ namespace barrett
 
     template <BarrettParams Params>
     [[gnu::always_inline]]
-    MONAD_NO_VECTORIZE inline constexpr div_result<uint256_t> sdivrem(
+    MONAD_NO_VECTORIZE inline div_result<uint256_t> sdivrem(
         uint256_t const &x, bool const denominator_neg,
         barrett::reciprocal<Params> const &rec) noexcept
-        requires(Params.input_bits == 256)
+        requires(Params.input_bits == 256 && Params.multiplier_bits == 0)
     {
         auto const sign_bit = uint64_t{1} << 63;
         bool const x_neg = x[uint256_t::num_words - 1] & sign_bit;
@@ -2083,7 +2081,9 @@ namespace barrett
     inline uint256_t addmod(
         uint256_t const &x, uint256_t const &y,
         barrett::reciprocal<Params> const &rec) noexcept
-        requires(Params.input_bits >= 257)
+        requires(
+            Params.input_bits == 257 && Params.multiplier_bits == 0 &&
+            barrett::reciprocal<Params>::POST_PRODUCT_BIT_SHIFT == 0)
     {
         // When denominator_ >= 2^192 and x, y < denominator_, we could
         // implement the same optimization as we do for division-based
@@ -2104,8 +2104,8 @@ namespace barrett
     MONAD_NO_VECTORIZE [[gnu::always_inline]]
     inline uint256_t mulmod(
         uint256_t const &x, uint256_t const &y,
-        barrett::reciprocal<Params> const &rec)
-        requires(Params.input_bits >= 512)
+        barrett::reciprocal<Params> const &rec) noexcept
+        requires(Params.input_bits == 512 && Params.multiplier_bits == 0)
     {
         uint256_t remainder{0};
         auto xy = wide_mul(x.as_words(), y.as_words());
@@ -2117,9 +2117,11 @@ namespace barrett
 
     template <BarrettParams Params>
     MONAD_NO_VECTORIZE [[gnu::always_inline]]
-    inline uint256_t
-    mulmod_const(uint256_t const &x, barrett::reciprocal<Params> const &rec)
-        requires(Params.input_bits >= 256 && Params.multiplier_bits >= 256)
+    inline uint256_t mulmod_const(
+        uint256_t const &x, barrett::reciprocal<Params> const &rec) noexcept
+        requires(
+            Params.input_bits == 256 &&
+            Params.multiplier_bits == uint256_t::num_bits)
     {
         uint256_t remainder{0};
         auto rem{

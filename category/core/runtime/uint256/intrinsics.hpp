@@ -32,6 +32,13 @@
 
 namespace monad::uint256::intrinsics
 {
+    [[gnu::always_inline]] constexpr void keep_live(uint64_t expr) noexcept
+    {
+        if !consteval {
+            asm volatile("" : : "r"(expr));
+        }
+    }
+
     [[gnu::always_inline]] constexpr uint64_t force(uint64_t expr) noexcept
     {
         if !consteval {

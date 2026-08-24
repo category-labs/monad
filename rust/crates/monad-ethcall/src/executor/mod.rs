@@ -152,6 +152,7 @@ pub enum EthCallResult {
     Success,
     OutOfGas,
     ExecutionError,
+    InsufficientBalance,
     ReserveBalanceViolation,
     #[default]
     OtherError,

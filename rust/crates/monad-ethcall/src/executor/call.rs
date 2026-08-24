@@ -290,7 +290,7 @@ impl MonadExecutor {
                 }
             }
             _ => match result.message() {
-                Ok(message) => Err(EthCallError::Other { message }),
+                Ok(message) => Err(classify_rejection(message)),
                 Err(MessageError::NullPointerError) => {
                     // This means execution reverted, not a validation error
                     if tracer_cval == ffi::monad_tracer_config_NOOP_TRACER {
@@ -329,6 +329,43 @@ impl MonadExecutor {
                     Err(EthCallError::InternalError)
                 }
             },
+        }
+    }
+}
+
+fn classify_rejection(message: String) -> EthCallError {
+    match message.as_str() {
+        "insufficient balance" | "insufficient balance for fee" => EthCallError::Failure {
+            error_code: EthCallResult::InsufficientBalance,
+            gas_used: 0,
+            gas_refund: 0,
+            message,
+            data: None,
+        },
+        _ => EthCallError::Other { message },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_classify_rejection_insufficient_balance() {
+        for message in ["insufficient balance", "insufficient balance for fee"] {
+            match classify_rejection(message.to_string()) {
+                EthCallError::Failure {
+                    error_code: EthCallResult::InsufficientBalance,
+                    message: m,
+                    ..
+                } => assert_eq!(m, message),
+                other => panic!("expected InsufficientBalance failure, got {other:?}"),
+            }
+        }
+
+        match classify_rejection("bad nonce".to_string()) {
+            EthCallError::Other { message } => assert_eq!(message, "bad nonce"),
+            other => panic!("expected Other, got {other:?}"),
         }
     }
 }

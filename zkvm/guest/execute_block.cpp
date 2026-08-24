@@ -252,6 +252,7 @@ Result<bytes32_t> execute_block_zkvm(
                 block_hash_buffer,
                 block.header,
                 state_tracer,
+                TxTraceContext{},
                 chain_ctx,
                 receipts));
         MONAD_ASSERT(block.header.requests_hash.has_value());

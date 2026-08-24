@@ -98,7 +98,7 @@ namespace trace
         std::span<CallFrame const> *call_frames;
     };
 
-    using CallTraceSignature = Signature<
+    using CallTraceSignature = monad::Signature<
         Enter, Exit, Log, SelfDestruct, Finish, CallReset, GetCallFrames>;
 }
 

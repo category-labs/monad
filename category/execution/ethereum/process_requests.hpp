@@ -31,6 +31,7 @@ class BlockHashBuffer;
 struct Receipt;
 class State;
 struct BlockHeader;
+class TxTraceContext;
 
 struct BlockRequest
 {
@@ -48,7 +49,7 @@ Result<byte_string> extract_deposit_requests(std::span<Receipt const> receipts);
 template <Traits traits>
 Result<bytes32_t> process_requests(
     Chain const &, State &, BlockHashBuffer const &, BlockHeader const &,
-    trace::StateTracer &, ChainContext<traits> const &,
+    trace::StateTracer &, TxTraceContext const &, ChainContext<traits> const &,
     std::span<Receipt const>);
 
 MONAD_NAMESPACE_END

@@ -15,9 +15,7 @@
 
 #pragma once
 
-#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/vm/code.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <variant>
@@ -29,16 +27,6 @@ class State;
 namespace trace
 {
     using StateTracer = std::monostate;
-
-    [[gnu::always_inline]] inline bool is_code_tracer(StateTracer const &)
-    {
-        return false;
-    }
-
-    [[gnu::always_inline]] inline void
-    on_read_code(StateTracer &, bytes32_t const &, vm::SharedIntercode const &)
-    {
-    }
 
     [[gnu::always_inline]] inline void on_frame_reject(StateTracer &, State &)
     {

@@ -26,6 +26,8 @@
 #include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/commands/state_trace.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -53,7 +55,8 @@ template <Traits traits>
 Result<byte_string> system_call(
     Chain const &chain, State &state, BlockHashBuffer const &block_hash_buffer,
     BlockHeader const &header, Address const &contract_address,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx)
+    trace::StateTracer &state_tracer, TxTraceContext const &trace_context,
+    ChainContext<traits> const &chain_ctx)
 {
     // Per EIP-7002/EIP-7251: if there is no code at the predeploy address,
     // the block MUST be marked invalid.
@@ -62,7 +65,7 @@ Result<byte_string> system_call(
         return BlockError::SystemCallMissingCode;
     }
     auto const code = state.read_code(hash);
-    trace::on_read_code(state_tracer, hash, code->intercode());
+    trace::emit<trace::ReadCode>(trace_context, hash, code->intercode());
     auto const blob_schedule = chain.get_blob_schedule(header.timestamp);
 
     evmc_tx_context const tx_context = {
@@ -107,7 +110,6 @@ Result<byte_string> system_call(
 
     state.access_account(contract_address);
 
-    // TODO(dhil): Use a non-empty trace context here for state tracing.
     Transaction const empty_tx{};
     TxTraceContext const trace_ctx{};
     EvmcHost<traits> host{
@@ -251,7 +253,7 @@ template <Traits traits>
 Result<bytes32_t> process_requests(
     Chain const &chain, State &state, BlockHashBuffer const &block_hash_buffer,
     BlockHeader const &header, trace::StateTracer &state_tracer,
-    ChainContext<traits> const &chain_ctx,
+    TxTraceContext const &trace_context, ChainContext<traits> const &chain_ctx,
     std::span<Receipt const> const receipts)
 {
     BOOST_OUTCOME_TRY(auto deposit_output, extract_deposit_requests(receipts));
@@ -268,6 +270,7 @@ Result<bytes32_t> process_requests(
             header,
             WITHDRAWAL_REQUEST_ADDRESS,
             state_tracer,
+            trace_context,
             chain_ctx));
 
     // EIP-7251
@@ -282,6 +285,7 @@ Result<bytes32_t> process_requests(
             header,
             CONSOLIDATION_REQUEST_ADDRESS,
             state_tracer,
+            trace_context,
             chain_ctx));
 
     return compute_requests_hash(std::array<BlockRequest, 3>{{

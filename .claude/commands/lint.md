@@ -39,8 +39,8 @@ Linting requires a specific build configuration to match CI. All of these must b
    This produces `build/utils/clang-tidy-auto-const/libConstCorrectnessChecks.so`, which `check-clang-tidy.sh` automatically loads if present. Without this plugin, the custom `misc-auto-const-correctness` check won't run and lint results will differ from CI.
 
 3. **Run clang-tidy:**
-   - **Check only** (no `--fix`): `scripts/check-clang-tidy.sh -p build`
-   - **Fix mode** (`--fix`): `scripts/apply-clang-tidy-fixes.sh build` — this requires a clean git working tree (no uncommitted changes) and will error otherwise.
+   - **Check only** (no `--fix`): `scripts/check-clang-tidy.sh`
+   - **Fix mode** (`--fix`): `scripts/check-clang-tidy.sh -- -fix -format` — this requires a clean git working tree (no uncommitted changes) and will error otherwise.
 
 4. **Run trait instantiation check:**
    ```bash

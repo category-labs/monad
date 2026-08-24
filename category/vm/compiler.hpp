@@ -94,7 +94,7 @@ namespace monad::vm
                         bytecode_size);
                     break;
                 }
-                auto compile_time =
+                auto const compile_time =
                     std::chrono::duration_cast<std::chrono::microseconds>(
                         compile_end - compile_start)
                         .count();

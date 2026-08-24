@@ -343,8 +343,7 @@ namespace trace
                 },
                 [&state](AccessListTracer &access_list) {
                     access_list.encode<traits>(state);
-                },
-                [](CodeTracer &) {}},
+                }},
             tracer);
     }
 

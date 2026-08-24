@@ -345,6 +345,7 @@ Result<std::vector<Receipt>> execute_block(
                 block_hash_buffer,
                 block.header,
                 system_call_state_tracer,
+                TxTraceContext{},
                 chain_ctx,
                 retvals));
         if (MONAD_UNLIKELY(

@@ -34,10 +34,10 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    trace::StateTracer &state_tracer)
+    TxTraceContext const &trace_context)
 {
     auto res =
-        validate_ethereum_transaction<traits>(tx, sender, state, state_tracer);
+        validate_ethereum_transaction<traits>(tx, sender, state, trace_context);
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {
         if (res.has_error() &&
             res.error() != TransactionError::InsufficientBalance) {

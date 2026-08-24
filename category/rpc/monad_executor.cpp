@@ -255,7 +255,7 @@ namespace
             // be EOA for validation
             state.set_code(sender, {});
             BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
-                enriched_txn, sender, state, state_tracer));
+                enriched_txn, sender, state, trace_context));
         }
 
         auto const senders = std::vector{sender};
@@ -1577,13 +1577,12 @@ struct monad_executor
                     TrieRODb tdb{db};
                     std::vector<CallFrame> call_frames;
                     nlohmann::json state_trace;
-                    std::optional<CallTracer> call_tracer{};
+                    CallTracer call_tracer{
+                        transaction, call_frames, call_tracer_max_size};
                     std::optional<trace::TypeErasedTracer> erased_tracer{};
                     if (tracer_config == CALL_TRACER) {
-                        call_tracer.emplace(
-                            transaction, call_frames, call_tracer_max_size);
                         erased_tracer.emplace(
-                            trace::TypeErasedTracer::erase(*call_tracer));
+                            trace::TypeErasedTracer::erase(call_tracer));
                     }
                     auto const trace_context = [&]() -> TxTraceContext {
                         if (tracer_config != CALL_TRACER) {
@@ -1693,8 +1692,7 @@ struct monad_executor
                         return;
                     }
                     if (tracer_config == CALL_TRACER) {
-                        MONAD_ASSERT(call_tracer.has_value());
-                        call_tracer->check_size_limit();
+                        call_tracer.check_size_limit();
                     }
                     call_complete(
                         transaction,

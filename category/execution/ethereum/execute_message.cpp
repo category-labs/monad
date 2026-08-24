@@ -29,6 +29,9 @@
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/commands/call_trace.hpp>
+#include <category/execution/ethereum/trace/commands/state_trace.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -288,7 +291,7 @@ evmc::Result execute_create_message(
                 host->base_fee_per_gas_.value_or(0),
                 host->i_,
                 state,
-                host->state_tracer_,
+                trace_ctx,
                 host->chain_ctx_)) {
             result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
         }
@@ -340,7 +343,7 @@ evmc::Result execute_call_message(
     else {
         auto const hash = state.get_code_hash(msg.code_address);
         auto const code = state.read_code(hash);
-        trace::on_read_code(host->state_tracer_, hash, code->intercode());
+        trace::emit<trace::ReadCode>(trace_ctx, hash, code->intercode());
         result = state.vm().execute<traits>(*host, &msg, hash, code);
     }
 
@@ -351,7 +354,7 @@ evmc::Result execute_call_message(
                 host->base_fee_per_gas_.value_or(0),
                 host->i_,
                 state,
-                host->state_tracer_,
+                trace_ctx,
                 host->chain_ctx_)) {
             result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
             result.gas_refund = 0;

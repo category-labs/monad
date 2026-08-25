@@ -73,6 +73,26 @@ class State
 
     std::deque<Set<Address>> dirty_;
 
+    // Cache the last account lookup. Inserts preserve the pointer;
+    // pop_reject clears it before erasing entries.
+    //
+    // An increasing epoch tracks dirty-set registration: version_ alone
+    // cannot distinguish successive frames at the same depth.
+    //
+    // Align the address for the word loads used by ZisK comparisons.
+    alignas(8) Address current_memo_address_{};
+    VersionStack<AccountState> *current_memo_state_{nullptr};
+    std::uint64_t current_memo_epoch_{0};
+    std::uint64_t frame_epoch_{1};
+
+#ifdef MONAD_ZKVM_ZISK
+    // Cache the last original-account lookup to avoid hashing its address
+    // again. Segmented storage keeps pointers stable on insert; original_ never
+    // erases.
+    alignas(8) Address original_memo_address_{};
+    OriginalAccountState *original_memo_state_{nullptr};
+#endif
+
     bool const relaxed_validation_{false};
     ReserveBalance rb_;
 

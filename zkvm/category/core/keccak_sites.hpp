@@ -53,6 +53,14 @@ namespace monad::keccak_sites
         CODE_INDEX,        // ffi: keccak(code) to key the code index
         BODY_ROOTS,        // body_roots: tx / receipts / withdrawals tries
         HEADER_HASH,       // ffi: keccak(header rlp) for the block hash and the ancestor walk
+        // State-access sites. Counted only — a permutation count is meaningless here, so
+        // their perms slots stay zero. The 256-byte output budget is what caps the list:
+        // 96 bytes of roots + 2 * 18 * 4 = 240.
+        ACCT_LOOKUP,        // State::current_account_state entered
+        ACCT_FIND_MISS,     // ... and the current_ map missed, so the original_ path ran
+        DIRTY_EMPLACE,      // the per-frame dirty-set insert ran
+        STOR_LOOKUP,        // State::get_storage entered
+        ACCT_MEMO_HIT,      // ... the one-entry memo answered the lookup
         N_SITES
     };
 
@@ -66,6 +74,12 @@ namespace monad::keccak_sites
     // u32, not u64: ZisK's output buffer is 256 bytes and the three roots already
     // take 96, so 2 * N_SITES u64 would not fit. Per-block counts are ~1e5.
     inline std::uint32_t counters[2 * N_SITES]{};
+
+    // Count a site with no notion of length — the state-access sites.
+    inline void bump(Site const s) noexcept
+    {
+        ++counters[s];
+    }
 
     inline void hit(Site const s, std::size_t const len) noexcept
     {
@@ -86,3 +100,4 @@ namespace monad::keccak_sites
 }
 
 #define MONAD_KECCAK_SITE(s, len) ::monad::keccak_sites::hit(::monad::keccak_sites::s, (len))
+#define MONAD_GUEST_SITE(s) ::monad::keccak_sites::bump(::monad::keccak_sites::s)

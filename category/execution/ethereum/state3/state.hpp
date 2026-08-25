@@ -81,6 +81,22 @@ class State
 
     std::deque<Set<Address>> dirty_;
 
+    // One-entry memo for current_account_state(). Measured over 200 mainnet blocks
+    // (25815000-25815199), 20,066 calls per block: 64.9% repeat the previous address, and 70.0% of
+    // the dirty-set inserts it made were already present. Those two operations cost 2.65M and 2.43M
+    // steps per block. Same shape as the single-entry sroot_ cache in PartialTrieDb.
+    //
+    // memo_val_ points into current_, whose segmented buckets do not move on insert; the ONE place
+    // that can move an element is the erase loop in pop_reject(), which clears the memo.
+    //
+    // The epoch is what makes skipping the dirty-set insert safe, and version_ could not: frame
+    // indices recur (push->1, pop->0, push->1), so a version_ stamp would skip an insert that the
+    // second frame 1 genuinely needs. The epoch only ever increases.
+    Address memo_addr_{};
+    VersionStack<AccountState> *memo_val_{nullptr};
+    std::uint64_t memo_epoch_{0};
+    std::uint64_t frame_epoch_{1};
+
     bool const relaxed_validation_{false};
     ReserveBalance rb_;
 

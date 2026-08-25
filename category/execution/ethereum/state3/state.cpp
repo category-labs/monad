@@ -48,6 +48,12 @@
 #include <utility>
 #include <vector>
 
+#ifdef MONAD_ZKVM_KECCAK_SITES
+#include <category/core/keccak_sites.hpp>
+#else
+#define MONAD_GUEST_SITE(s) ((void)0)
+#endif
+
 MONAD_NAMESPACE_BEGIN
 
 OriginalAccountState &State::original_account_state(Address const &address)
@@ -74,16 +80,40 @@ AccountState const &State::recent_account_state(Address const &address)
 
 AccountState &State::current_account_state(Address const &address)
 {
+    MONAD_GUEST_SITE(ACCT_LOOKUP);
+
+    // Repeat access to the same account is the common case (64.9% measured), and both the map
+    // lookup and the dirty-set insert are then already done. The insert is idempotent, so skipping
+    // it leaves the frame's dirty set identical -- provided the epoch says we are still in the
+    // frame that recorded it.
+    if (memo_val_ != nullptr &&
+        __builtin_memcmp(address.bytes, memo_addr_.bytes, sizeof(address.bytes)) == 0) {
+        MONAD_GUEST_SITE(ACCT_MEMO_HIT);
+        if (memo_epoch_ != frame_epoch_) {
+            if (!dirty_.empty()) {
+                MONAD_GUEST_SITE(DIRTY_EMPLACE);
+                dirty_.back().emplace(address);
+            }
+            memo_epoch_ = frame_epoch_;
+        }
+        return memo_val_->current(version_);
+    }
+
     // current
     auto it = current_.find(address);
     if (MONAD_UNLIKELY(it == current_.end())) {
+        MONAD_GUEST_SITE(ACCT_FIND_MISS);
         // original
         auto const &account_state = original_account_state(address);
         it = current_.try_emplace(address, account_state, version_).first;
     }
     if (!dirty_.empty()) {
+        MONAD_GUEST_SITE(DIRTY_EMPLACE);
         dirty_.back().emplace(address);
     }
+    memo_addr_ = address;
+    memo_val_ = &it->second;
+    memo_epoch_ = frame_epoch_;
     return it->second.current(version_);
 }
 
@@ -129,6 +159,8 @@ void State::push()
 {
     MONAD_ASSERT(dirty_.size() == version_);
 
+    ++frame_epoch_;
+
     ++version_;
     dirty_.emplace_back();
     log_marks_.push_back(logs_.size());
@@ -138,6 +170,8 @@ void State::pop_accept()
 {
     MONAD_ASSERT(version_);
     MONAD_ASSERT(dirty_.size() == version_);
+
+    ++frame_epoch_;
 
     auto accounts = std::move(dirty_.back());
     dirty_.pop_back();
@@ -161,6 +195,8 @@ void State::pop_reject()
     MONAD_ASSERT(version_);
     MONAD_ASSERT(dirty_.size() == version_);
 
+    ++frame_epoch_;
+
     std::vector<Address> removals;
     auto accounts = std::move(dirty_.back());
     dirty_.pop_back();
@@ -175,6 +211,10 @@ void State::pop_reject()
     // Rejected: drop exactly what this frame appended.
     logs_.resize(log_marks_.back());
     log_marks_.pop_back();
+
+    // erase() moves the last element into the hole, so any pointer into current_ may now be
+    // stale. This is the only mutation of current_ that can move one.
+    memo_val_ = nullptr;
 
     while (removals.size()) {
         current_.erase(removals.back());
@@ -266,6 +306,7 @@ bool State::is_current_incarnation(Address const &address)
 
 bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
 {
+    MONAD_GUEST_SITE(STOR_LOOKUP);
     auto const it = current_.find(address);
     if (it == current_.end()) {
         auto const it2 = original_.find(address);

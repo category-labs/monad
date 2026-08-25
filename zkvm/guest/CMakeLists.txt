@@ -118,6 +118,13 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
 
+    # Optional counters after the 32-byte block hash, disabled by default.
+    # Layout and site order: zkvm/category/core/keccak_sites.hpp.
+    option(MONAD_ZKVM_KECCAK_SITES "count keccak calls per call site" OFF)
+    if(MONAD_ZKVM_KECCAK_SITES)
+        add_compile_definitions(MONAD_ZKVM_KECCAK_SITES)
+    endif()
+
     # Select backend-specific precompile handling: RIPEMD160 output layout
     # and the Keccak-f entry point.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "sp1")

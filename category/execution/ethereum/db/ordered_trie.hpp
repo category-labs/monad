@@ -21,6 +21,10 @@
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
+#ifdef MONAD_ZKVM_KECCAK_SITES
+    #include <category/core/keccak_sites.hpp>
+#endif
+
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
@@ -91,6 +95,9 @@ bytes32_t ordered_trie_root(R const &items)
         return root;
     }
     // The root is always hashed, even when its RLP is short enough to inline.
+#ifdef MONAD_ZKVM_KECCAK_SITES
+    MONAD_KECCAK_SITE(BODY_ROOTS, ref_len);
+#endif
     return to_bytes(
         keccak256({root.bytes + sizeof(root.bytes) - ref_len, ref_len}));
 }

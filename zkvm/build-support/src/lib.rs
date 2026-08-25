@@ -133,6 +133,10 @@ impl Backend {
                     profile, "ON",
                     "MONAD_ZKVM_OFFICIAL_PROFILE must be ON or unset"
                 );
+                assert!(
+                    env::var("MONAD_ZKVM_CMAKE_DEFINES").is_err(),
+                    "MONAD_ZKVM_CMAKE_DEFINES cannot be combined with the official profile"
+                );
                 cfg.define("MONAD_ZKVM_OFFICIAL_PROFILE", "ON")
                     .define("MONAD_ZKVM_GIT_COMMIT", official_build_commit(&repo_root));
             }
@@ -140,6 +144,15 @@ impl Backend {
             Err(_) => {
                 if let Ok(commit) = env::var("MONAD_ZKVM_GIT_COMMIT") {
                     cfg.define("MONAD_ZKVM_GIT_COMMIT", commit);
+                }
+                // Development-only overrides: "NAME=VALUE;FLAG" (FLAG means ON).
+                // Cargo does not track this variable; rebuild cleanly after
+                // changing or removing it.
+                if let Ok(defs) = env::var("MONAD_ZKVM_CMAKE_DEFINES") {
+                    for kv in defs.split(';').filter(|s| !s.trim().is_empty()) {
+                        let (k, v) = kv.split_once('=').unwrap_or((kv, "ON"));
+                        cfg.define(k.trim(), v.trim());
+                    }
                 }
             }
         }

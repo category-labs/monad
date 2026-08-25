@@ -153,6 +153,15 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # differently (zkvm/category/execution/ethereum/precompiles_impl.hpp), and
     # the Keccak-f[1600] precompile is reached by a different entry on each
     # (zkvm/guest/keccak_accel.cpp).
+
+    # Diagnostic counters after the 32-byte block hash; disabled by default.
+    # Layout: little-endian u32 call counts, then permutation counts,
+    # in the site order defined by zkvm/category/core/keccak_sites.hpp.
+    option(MONAD_ZKVM_KECCAK_SITES "count keccak calls per call site" OFF)
+    if(MONAD_ZKVM_KECCAK_SITES)
+        add_compile_definitions(MONAD_ZKVM_KECCAK_SITES)
+    endif()
+
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "sp1")
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")

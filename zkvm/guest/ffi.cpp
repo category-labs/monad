@@ -59,6 +59,11 @@
 #include <span>
 #include <utility>
 #include <vector>
+#ifdef MONAD_ZKVM_KECCAK_SITES
+#include <category/core/keccak_sites.hpp>
+#else
+#define MONAD_KECCAK_SITE(s, len) ((void)0)
+#endif
 
 #ifdef MONAD_ZKVM_OFFICIAL_PROFILE
 // Kept by zkvm/zisk/align.ld. The audit requires the exact commit, build
@@ -123,6 +128,7 @@ extern "C" void monad_zkvm_execute_witness(void)
         while (!codes.empty()) {
             auto const bytes = monad::rlp::parse_string_metadata(codes);
             MONAD_ASSERT(bytes.has_value());
+            MONAD_KECCAK_SITE(CODE_INDEX, bytes.value().size());
             // Hash the intercode's copy, not the witness bytes.
             //
             // Bytecode is the guest's longest keccak input -- 72 rate blocks a
@@ -203,6 +209,7 @@ extern "C" void monad_zkvm_execute_witness(void)
             auto const header = monad::rlp::decode_block_header(header_view);
             MONAD_ASSERT(header.has_value());
             MONAD_ASSERT(header_view.empty());
+            MONAD_KECCAK_SITE(HEADER_HASH, payload.value().size());
             monad::bytes32_t const hash =
                 monad::to_bytes(monad::keccak256(payload.value()));
             // Each header must name the one before it, and the run must be
@@ -262,10 +269,15 @@ extern "C" void monad_zkvm_execute_witness(void)
     sealed_header.state_root = state_root;
     monad::byte_string const header_rlp =
         monad::rlp::encode_block_header(sealed_header);
+    MONAD_KECCAK_SITE(HEADER_HASH, header_rlp.size());
     monad_hash256 const block_hash = monad::keccak256(header_rlp);
 
     // Public value: the block hash alone is sufficient as the computed root is
     // sealed into the header it hashes; it also binds the execution to the
     // real block and, with it, the ancestor headers walked above.
     write_output(block_hash.bytes, sizeof(block_hash.bytes));
+#ifdef MONAD_ZKVM_KECCAK_SITES
+    // Append diagnostic counters after the unchanged 32-byte block hash.
+    write_output(monad::keccak_sites::bytes(), monad::keccak_sites::size());
+#endif
 }

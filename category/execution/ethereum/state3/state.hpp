@@ -72,6 +72,16 @@ class State
 
     std::deque<Set<Address>> dirty_;
 
+    // Cache the last account lookup. Inserts preserve the pointer;
+    // pop_reject clears it before erasing entries.
+    //
+    // An increasing epoch tracks dirty-set registration: version_ alone
+    // cannot distinguish successive frames at the same depth.
+    Address memo_addr_{};
+    VersionStack<AccountState> *memo_val_{nullptr};
+    std::uint64_t memo_epoch_{0};
+    std::uint64_t frame_epoch_{1};
+
     bool const relaxed_validation_{false};
     ReserveBalance rb_;
 

@@ -72,6 +72,20 @@ class State
 
     std::deque<Set<Address>> dirty_;
 
+    // Inserts preserve this pointer; rollback clears it before erasing rows.
+    // A monotonic epoch tracks dirty registration across reused frame depths.
+    // Align cached addresses for ZisK word comparisons.
+    alignas(8) Address current_memo_address_{};
+    VersionStack<AccountState> *current_memo_state_{nullptr};
+    std::uint64_t current_memo_epoch_{0};
+    std::uint64_t frame_epoch_{1};
+
+#ifdef MONAD_ZKVM_ZISK
+    // Original rows are never erased; inserts preserve the cached pointer.
+    alignas(8) Address original_memo_address_{};
+    OriginalAccountState *original_memo_state_{nullptr};
+#endif
+
     bool const relaxed_validation_{false};
     ReserveBalance rb_;
 

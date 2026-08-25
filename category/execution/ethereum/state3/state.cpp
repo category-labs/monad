@@ -65,12 +65,21 @@ namespace
 
 OriginalAccountState &State::original_account_state(Address const &address)
 {
+#ifdef MONAD_ZKVM_ZISK
+    if (original_memo_state_ != nullptr && address == original_memo_address_) {
+        return *original_memo_state_;
+    }
+#endif
     auto it = original_.find(address);
     if (it == original_.end()) {
         // block state
         auto const account = block_state_.read_account(address);
         it = original_.try_emplace(address, account).first;
     }
+#ifdef MONAD_ZKVM_ZISK
+    original_memo_address_ = address;
+    original_memo_state_ = &it->second;
+#endif
     return it->second;
 }
 
@@ -87,6 +96,21 @@ AccountState const &State::recent_account_state(Address const &address)
 
 AccountState &State::current_account_state(Address const &address)
 {
+    // Reuse the cached account; register it as dirty again if the frame
+    // epoch changed.
+    if (current_memo_state_ != nullptr && __builtin_memcmp(
+                                              address.bytes,
+                                              current_memo_address_.bytes,
+                                              sizeof(address.bytes)) == 0) {
+        if (current_memo_epoch_ != frame_epoch_) {
+            if (!dirty_.empty()) {
+                dirty_.back().emplace(address);
+            }
+            current_memo_epoch_ = frame_epoch_;
+        }
+        return current_memo_state_->current(version_);
+    }
+
     // current
     auto it = current_.find(address);
     if (MONAD_UNLIKELY(it == current_.end())) {
@@ -97,6 +121,9 @@ AccountState &State::current_account_state(Address const &address)
     if (!dirty_.empty()) {
         dirty_.back().emplace(address);
     }
+    current_memo_address_ = address;
+    current_memo_state_ = &it->second;
+    current_memo_epoch_ = frame_epoch_;
     return it->second.current(version_);
 }
 
@@ -142,6 +169,8 @@ void State::push()
 {
     MONAD_ASSERT(dirty_.size() == version_);
 
+    ++frame_epoch_;
+
     ++version_;
     dirty_.emplace_back();
     log_marks_.push_back(bytes_of(logs_));
@@ -151,6 +180,8 @@ void State::pop_accept()
 {
     MONAD_ASSERT(version_);
     MONAD_ASSERT(dirty_.size() == version_);
+
+    ++frame_epoch_;
 
     auto const accounts = std::move(dirty_.back());
     dirty_.pop_back();
@@ -174,6 +205,8 @@ void State::pop_reject()
     MONAD_ASSERT(version_);
     MONAD_ASSERT(dirty_.size() == version_);
 
+    ++frame_epoch_;
+
     std::vector<Address> removals;
     auto const accounts = std::move(dirty_.back());
     dirty_.pop_back();
@@ -188,6 +221,11 @@ void State::pop_reject()
     // Rejected: drop exactly what this frame appended.
     logs_.resize(log_marks_.back() / sizeof(Receipt::Log));
     log_marks_.pop_back();
+
+    // erase() moves the last element into the hole, so any pointer into
+    // current_ may now be stale. This is the only mutation of current_ that can
+    // move one.
+    current_memo_state_ = nullptr;
 
     while (removals.size()) {
         current_.erase(removals.back());

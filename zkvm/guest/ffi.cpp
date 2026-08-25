@@ -209,18 +209,41 @@ extern "C" void monad_zkvm_execute_witness(void)
     monad::bytes32_t const &state_root = root_result.value();
 
     // The hash of the block that was executed, from the canonical header
-    // encoding -- the same bytes a node hashes to identify the block.
+    // encoding -- with the state root THIS RUN COMPUTED sealed into it, not the
+    // one the witness supplied.
+    //
+    // That is what makes a single published value sufficient. The header commits
+    // to every root it carries, so pinning its hash against the canonical chain
+    // pins the state root through it: a computed root that differs by one bit
+    // gives a different header, a different hash, and a rejected proof. The
+    // parent is bound the same way -- parent_hash is a field of this header, and
+    // the ancestor walk above asserts the supplied parent hashes to it and that
+    // its state_root is the pre-state trie's own root.
+    //
+    // Encoding the witness's header instead would have left the verifier to
+    // notice that the two disagree, which is a check nobody has written.
+    auto sealed_header = block.header;
+    sealed_header.state_root = state_root;
     monad::byte_string const header_rlp =
-        monad::rlp::encode_block_header(block.header);
+        monad::rlp::encode_block_header(sealed_header);
     monad::bytes32_t block_hash;
     keccak256(header_rlp.data(), header_rlp.size(), block_hash.bytes);
 
     // Public values, in order: post-state root, pre-state root, block hash.
-    // The verifier must check ALL THREE against the chain: post == this
-    // block's state_root, pre == the parent's state_root, hash == the
-    // canonical hash at this height. The first alone proves only that SOME
-    // state yields this post-root; the second binds the witness to the real
-    // pre-state; the third binds the execution to the real block -- and,
+    //
+    // The THIRD ALONE is sufficient now that the computed root is sealed into
+    // the header it hashes: checking it against the canonical hash at this
+    // height binds the state root, the parent, and every other field the header
+    // carries, in one comparison that cannot be half-applied. The first two are
+    // published because they are useful to a caller and to the corpus gate, not
+    // because the verifier needs them.
+    //
+    // Before the sealing above, all three had to be checked, and the check that
+    // mattered most -- that the published post-root is the one the header
+    // claims -- lived only in this comment. Kept here for the record: the first
+    // alone proves only that SOME state yields this post-root; the second binds
+    // the witness to the real pre-state; the third binds the execution to the
+    // real block -- and,
     // with it, the ancestor headers walked above: the newest of them is
     // asserted to hash to block.header.parent_hash and each older one to be
     // named by its successor, so pinning this header pins the whole run the

@@ -93,8 +93,14 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         # widening is only sound for a runtime known to implement these, and
         # ZisK is the only backend established to. 504 of 504 corpus blocks
         # give the recorded post-state root with this on.
-        string(APPEND CMAKE_C_FLAGS " -march=rv64ima_zbb_zbs")
-        string(APPEND CMAKE_CXX_FLAGS " -march=rv64ima_zbb_zbs")
+        # Zbkb rides along with Zbb and Zbs. The shipped emulator transpiles it — the reference
+        # C++ guest (0xPolygonHermez/ziskethone) enables it and reproduces its block hashes under
+        # ziskemu 1.1.0-alpha — so the reason Zba, Zbc, Zbkc and Zbkx stay out does not apply to
+        # it. Measured over 200 mainnet blocks it is worth 0.1% (-0.08% steps, -0.06% COST). Kept
+        # because the guest should carry every extension the runtime is known to implement, not
+        # because it pays.
+        string(APPEND CMAKE_C_FLAGS " -march=rv64ima_zbb_zbs_zbkb")
+        string(APPEND CMAKE_CXX_FLAGS " -march=rv64ima_zbb_zbs_zbkb")
 
     endif()
 

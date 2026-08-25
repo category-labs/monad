@@ -50,7 +50,7 @@ namespace
 }
 
 // Intrinsic gas related functions
-inline constexpr auto g_txn_create(Transaction const &tx) noexcept
+constexpr auto g_txn_create(Transaction const &tx) noexcept
 {
     if (!tx.to.has_value()) {
         return 32'000u;
@@ -59,7 +59,7 @@ inline constexpr auto g_txn_create(Transaction const &tx) noexcept
 }
 
 // EIP-2930
-inline constexpr auto g_access_and_storage(Transaction const &tx) noexcept
+constexpr auto g_access_and_storage(Transaction const &tx) noexcept
 {
     uint64_t g = tx.access_list.size() * 2'400u;
     for (auto const &i : tx.access_list) {
@@ -70,7 +70,7 @@ inline constexpr auto g_access_and_storage(Transaction const &tx) noexcept
 
 // EIP-7981
 // Without EIP-7976, the 64 per-byte cost specified by EIP-7981 is 40 per-byte
-inline constexpr uint64_t g_access_list_data(Transaction const &tx) noexcept
+constexpr uint64_t g_access_list_data(Transaction const &tx) noexcept
 {
     uint64_t g = tx.access_list.size() * 20u;
     for (auto const &i : tx.access_list) {
@@ -80,13 +80,13 @@ inline constexpr uint64_t g_access_list_data(Transaction const &tx) noexcept
 }
 
 // EIP-7702
-inline constexpr auto g_authorization(Transaction const &tx) noexcept
+constexpr auto g_authorization(Transaction const &tx) noexcept
 {
     constexpr uint64_t per_empty_account_cost = 25'000u;
     return per_empty_account_cost * tx.authorization_list.size();
 }
 
-inline constexpr uint64_t g_extra_cost_init(Transaction const &tx) noexcept
+constexpr uint64_t g_extra_cost_init(Transaction const &tx) noexcept
 {
     if (!tx.to.has_value()) {
         return ((tx.data.length() + 31u) / 32u) * 2u;
@@ -158,7 +158,7 @@ uint64_t floor_data_gas(Transaction const &tx) noexcept
 
 EXPLICIT_TRAITS(floor_data_gas);
 
-inline constexpr uint256_t priority_fee_per_gas(
+constexpr uint256_t priority_fee_per_gas(
     Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 {
     MONAD_ASSERT(tx.max_fee_per_gas >= base_fee_per_gas);

@@ -270,8 +270,7 @@ struct compact_offset_pair
 static_assert(sizeof(compact_offset_pair) == 8);
 static_assert(alignof(compact_offset_pair) == 4);
 
-inline constexpr unsigned
-bitmask_index(uint16_t const mask, unsigned const i) noexcept
+constexpr unsigned bitmask_index(uint16_t const mask, unsigned const i) noexcept
 {
     MONAD_ASSERT(i < 16);
     MONAD_ASSERT(mask & (1u << i));

@@ -70,19 +70,19 @@ namespace monad
     namespace detail
     {
         template <class T, bool v = noexcept(std::declval<T>()())>
-        inline constexpr bool is_nothrow_invocable_(int) noexcept
+        constexpr bool is_nothrow_invocable_(int) noexcept
         {
             return v;
         }
 
         template <class T>
-        inline constexpr bool is_nothrow_invocable_(...) noexcept
+        constexpr bool is_nothrow_invocable_(...) noexcept
         {
             return false;
         }
 
         template <class T>
-        inline constexpr bool is_nothrow_invocable() noexcept
+        constexpr bool is_nothrow_invocable() noexcept
         {
             return is_nothrow_invocable_<typename std::decay<T>::type>(5);
         }
@@ -198,7 +198,7 @@ namespace monad
         = true
     #endif
         >
-    inline constexpr auto make_scope_exit(T &&v)
+    constexpr auto make_scope_exit(T &&v)
     {
         return scope_exit<typename std::decay<T>::type>(static_cast<T &&>(v));
     }
@@ -212,7 +212,7 @@ namespace monad
         = true
     #endif
         >
-    inline constexpr auto make_scope_fail(T &&v)
+    constexpr auto make_scope_fail(T &&v)
     {
         return scope_fail<typename std::decay<T>::type>(static_cast<T &&>(v));
     }
@@ -223,7 +223,7 @@ namespace monad
         typename = decltype(std::declval<T>()())
     #endif
         >
-    inline constexpr auto make_scope_success(T &&v)
+    constexpr auto make_scope_success(T &&v)
     {
         return scope_success<typename std::decay<T>::type>(
             static_cast<T &&>(v));

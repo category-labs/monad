@@ -146,7 +146,7 @@ public:
     operator=(sender_errc_with_payload_code_domain_ &&) = default;
     ~sender_errc_with_payload_code_domain_() = default;
 
-    static inline constexpr sender_errc_with_payload_code_domain_ const &get();
+    static constexpr sender_errc_with_payload_code_domain_ const &get();
 
     virtual string_ref name() const noexcept override
     {
@@ -245,7 +245,7 @@ protected:
 constexpr sender_errc_with_payload_code_domain_
     sender_errc_with_payload_code_domain;
 
-inline constexpr sender_errc_with_payload_code_domain_ const &
+constexpr sender_errc_with_payload_code_domain_ const &
 sender_errc_with_payload_code_domain_::get()
 {
     return sender_errc_with_payload_code_domain;
@@ -359,7 +359,7 @@ inline nested_sender_errc_with_payload_code make_status_code(
 // quick_status_code_from_enum one (the latter is specialized on cv-unqualified
 // `sender_errc`), causing infinite constexpr recursion through ADL back into
 // this function.
-inline constexpr BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::
+constexpr BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::
     quick_status_code_from_enum_code<sender_errc>
     make_status_code(sender_errc c)
 {

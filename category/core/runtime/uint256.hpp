@@ -86,7 +86,7 @@ using m256i = words_t<4>;
 struct uint256_t;
 
 [[gnu::always_inline]]
-constexpr inline result_with_carry<uint64_t>
+constexpr result_with_carry<uint64_t>
 addc(uint64_t const lhs, uint64_t const rhs, bool const carry_in) noexcept
 {
     if consteval {
@@ -97,7 +97,7 @@ addc(uint64_t const lhs, uint64_t const rhs, bool const carry_in) noexcept
     }
 }
 
-[[gnu::always_inline]] constexpr inline result_with_carry<uint64_t>
+[[gnu::always_inline]] constexpr result_with_carry<uint64_t>
 subb(uint64_t const lhs, uint64_t const rhs, bool const borrow_in) noexcept
 {
     if consteval {
@@ -109,7 +109,7 @@ subb(uint64_t const lhs, uint64_t const rhs, bool const borrow_in) noexcept
 }
 
 [[gnu::always_inline]]
-inline constexpr uint64_t
+constexpr uint64_t
 shld(uint64_t const high, uint64_t const low, uint8_t const shift) noexcept
 {
     if consteval {
@@ -121,7 +121,7 @@ shld(uint64_t const high, uint64_t const low, uint8_t const shift) noexcept
 }
 
 [[gnu::always_inline]]
-inline constexpr uint64_t
+constexpr uint64_t
 shrd(uint64_t const high, uint64_t const low, uint8_t const shift) noexcept
 {
     if consteval {
@@ -133,7 +133,7 @@ shrd(uint64_t const high, uint64_t const low, uint8_t const shift) noexcept
 }
 
 [[gnu::always_inline]]
-constexpr inline div_result<uint64_t>
+constexpr div_result<uint64_t>
 div(uint64_t u_hi, uint64_t u_lo, uint64_t const v) noexcept
 {
     MONAD_DEBUG_ASSERT(u_hi < v);
@@ -145,7 +145,7 @@ div(uint64_t u_hi, uint64_t u_lo, uint64_t const v) noexcept
     }
 }
 
-inline constexpr uint256_t byteswap(uint256_t const &x) noexcept;
+constexpr uint256_t byteswap(uint256_t const &x) noexcept;
 
 struct uint256_t
 {
@@ -201,7 +201,7 @@ public:
     }
 
     [[gnu::always_inline]]
-    inline constexpr explicit operator bool() const noexcept
+    constexpr explicit operator bool() const noexcept
     {
         using namespace monad::uint256::intrinsics;
 
@@ -214,44 +214,44 @@ public:
 
     template <typename Int>
     [[gnu::always_inline]]
-    inline constexpr explicit operator Int() const noexcept
+    constexpr explicit operator Int() const noexcept
         requires(std::is_integral_v<Int> && sizeof(Int) <= sizeof(word_type))
     {
         return static_cast<Int>(words_[0]);
     }
 
     [[gnu::always_inline]]
-    inline constexpr uint64_t &operator[](size_t i) noexcept
+    constexpr uint64_t &operator[](size_t i) noexcept
     {
         return words_[i];
     }
 
     [[gnu::always_inline]]
-    inline constexpr uint64_t const &operator[](size_t i) const noexcept
+    constexpr uint64_t const &operator[](size_t i) const noexcept
     {
         return words_[i];
     }
 
     [[gnu::always_inline]]
-    inline constexpr std::array<uint64_t, 4> &as_words() noexcept
+    constexpr std::array<uint64_t, 4> &as_words() noexcept
     {
         return words_;
     }
 
     [[gnu::always_inline]]
-    inline constexpr std::array<uint64_t, 4> const &as_words() const noexcept
+    constexpr std::array<uint64_t, 4> const &as_words() const noexcept
     {
         return words_;
     }
 
-    friend inline constexpr uint256_t
+    friend constexpr uint256_t
     operator/(uint256_t const &x, uint256_t const &y) noexcept;
 
-    friend inline constexpr uint256_t
+    friend constexpr uint256_t
     operator%(uint256_t const &x, uint256_t const &y) noexcept;
 
     [[gnu::always_inline]]
-    friend inline constexpr result_with_carry<uint256_t>
+    friend constexpr result_with_carry<uint256_t>
     subb(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
         auto [w0, b0] = subb(lhs[0], rhs[0], false);
@@ -262,7 +262,7 @@ public:
     }
 
     [[gnu::always_inline]]
-    friend inline constexpr result_with_carry<uint256_t>
+    friend constexpr result_with_carry<uint256_t>
     addc(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
         auto [w0, c0] = addc(lhs[0], rhs[0], false);
@@ -273,7 +273,7 @@ public:
     }
 
     [[gnu::always_inline]]
-    friend inline constexpr uint256_t
+    friend constexpr uint256_t
     operator+(uint256_t const &lhs, uint256_t const &rhs) noexcept
 
     {
@@ -281,35 +281,35 @@ public:
     }
 
     [[gnu::always_inline]]
-    friend inline constexpr uint256_t
+    friend constexpr uint256_t
     operator-(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
         return subb(lhs, rhs).value;
     }
 
     [[gnu::always_inline]]
-    friend inline constexpr bool
+    friend constexpr bool
     operator<(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
         return subb(lhs, rhs).carry;
     }
 
     [[gnu::always_inline]]
-    friend inline constexpr bool
+    friend constexpr bool
     operator<=(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
         return !(lhs > rhs);
     }
 
     [[gnu::always_inline]]
-    friend inline constexpr bool
+    friend constexpr bool
     operator>(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
         return rhs < lhs;
     }
 
     [[gnu::always_inline]]
-    friend inline constexpr bool
+    friend constexpr bool
     operator>=(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
         return !(lhs < rhs);
@@ -318,7 +318,7 @@ public:
     // NOLINTBEGIN(bugprone-macro-parentheses)
 
 #define BITWISE_BINOP(return_ty, op_name)                                      \
-    [[gnu::always_inline]] friend inline constexpr return_ty operator op_name( \
+    [[gnu::always_inline]] friend constexpr return_ty operator op_name(        \
         uint256_t const &x, uint256_t const &y) noexcept                       \
     {                                                                          \
         return uint256_t{                                                      \
@@ -334,7 +334,7 @@ public:
 
     // NOLINTEND(bugprone-macro-parentheses)
 
-    [[gnu::always_inline]] friend inline constexpr bool
+    [[gnu::always_inline]] friend constexpr bool
     operator==(uint256_t const &x, uint256_t const &y) noexcept
     {
         using namespace monad::uint256::intrinsics;
@@ -346,20 +346,19 @@ public:
         return !(force(e0 | e1) | force(e2 | e3));
     }
 
-    [[gnu::always_inline]] inline constexpr uint256_t operator-() const noexcept
+    [[gnu::always_inline]] constexpr uint256_t operator-() const noexcept
     {
         return 0 - *this;
     }
 
-    [[gnu::always_inline]] inline constexpr uint256_t operator~() const noexcept
+    [[gnu::always_inline]] constexpr uint256_t operator~() const noexcept
     {
         return uint256_t{~words_[0], ~words_[1], ~words_[2], ~words_[3]};
     }
 
     template <typename T>
     [[gnu::always_inline]]
-    friend inline constexpr uint256_t
-    operator<<(uint256_t const &x, T shift0) noexcept
+    friend constexpr uint256_t operator<<(uint256_t const &x, T shift0) noexcept
         requires std::is_convertible_v<T, uint64_t> &&
                  (sizeof(T) <= sizeof(uint64_t))
     {
@@ -404,12 +403,12 @@ public:
     }
 
     [[gnu::always_inline]]
-    inline constexpr uint256_t &operator<<=(uint256_t const &shift0) noexcept
+    constexpr uint256_t &operator<<=(uint256_t const &shift0) noexcept
     {
         return *this = *this << shift0;
     }
 
-    [[gnu::always_inline]] friend inline constexpr uint256_t
+    [[gnu::always_inline]] friend constexpr uint256_t
     operator<<(uint256_t const &x, uint256_t const &shift) noexcept
     {
         if (MONAD_UNLIKELY(shift[3] | shift[2] | shift[1])) {
@@ -426,7 +425,7 @@ public:
 
     template <RightShiftType type>
     [[gnu::always_inline]]
-    friend inline constexpr uint256_t
+    friend constexpr uint256_t
     shift_right(uint256_t const &x, uint256_t shift0) noexcept
     {
         uint64_t fill;
@@ -480,14 +479,14 @@ public:
         }
     }
 
-    [[gnu::always_inline]] friend inline constexpr uint256_t
+    [[gnu::always_inline]] friend constexpr uint256_t
     operator>>(uint256_t const &x, uint256_t const &shift) noexcept
     {
         return shift_right<RightShiftType::Logical>(x, shift);
     }
 
     [[gnu::always_inline]]
-    inline constexpr uint256_t &operator>>=(uint256_t const &shift) noexcept
+    constexpr uint256_t &operator>>=(uint256_t const &shift) noexcept
     {
         return *this = *this >> shift;
     }
@@ -496,9 +495,9 @@ public:
     // These are not optimized and should never be used in
     // performance-critical code.
     inline std::string to_string(int const base0) const;
-    static inline constexpr uint256_t from_string(char const *s);
+    static constexpr uint256_t from_string(char const *s);
 
-    [[gnu::always_inline]] static inline constexpr uint256_t
+    [[gnu::always_inline]] static constexpr uint256_t
     from_string(std::string const &s)
     {
         return from_string(s.c_str());
@@ -564,7 +563,7 @@ constexpr size_t popcount(uint256_t const &x)
 }
 
 template <size_t N>
-[[gnu::always_inline]] inline constexpr uint32_t
+[[gnu::always_inline]] constexpr uint32_t
 count_significant_words(std::array<uint64_t, N> const &x) noexcept
 {
     for (size_t i = N; i > 0; --i) {
@@ -576,7 +575,7 @@ count_significant_words(std::array<uint64_t, N> const &x) noexcept
 }
 
 [[gnu::always_inline]]
-inline constexpr uint32_t count_significant_bytes(uint256_t const &x) noexcept
+constexpr uint32_t count_significant_bytes(uint256_t const &x) noexcept
 {
     auto const significant_words = count_significant_words(x.as_words());
     if (significant_words == 0) {
@@ -591,7 +590,7 @@ inline constexpr uint32_t count_significant_bytes(uint256_t const &x) noexcept
 }
 
 [[gnu::always_inline]]
-inline constexpr void mulx(
+constexpr void mulx(
     uint64_t const x, uint64_t const y, uint64_t &r_hi, uint64_t &r_lo) noexcept
 {
     if consteval {
@@ -609,7 +608,7 @@ inline constexpr void mulx(
  */
 template <size_t R, size_t M, size_t N>
 MONAD_NO_VECTORIZE [[gnu::always_inline]]
-inline constexpr words_t<R>
+constexpr words_t<R>
 truncating_mul(words_t<M> const &x, words_t<N> const &y) noexcept
     requires(0 < R && 0 < M && 0 < N && R <= M + N)
 {
@@ -622,7 +621,7 @@ truncating_mul(words_t<M> const &x, words_t<N> const &y) noexcept
 }
 
 MONAD_NO_VECTORIZE [[gnu::always_inline]]
-inline constexpr uint256_t
+constexpr uint256_t
 truncating_mul(uint256_t const &x, uint256_t const &y) noexcept
 {
     return uint256_t{
@@ -631,55 +630,55 @@ truncating_mul(uint256_t const &x, uint256_t const &y) noexcept
 
 MONAD_NO_VECTORIZE
 [[gnu::noinline]]
-inline constexpr uint256_t
+constexpr uint256_t
 operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept
 {
     return truncating_mul(lhs, rhs);
 }
 
-[[gnu::always_inline]] inline constexpr uint256_t &
+[[gnu::always_inline]] constexpr uint256_t &
 operator+=(uint256_t &lhs, uint256_t const &rhs) noexcept
 {
     return lhs = lhs + rhs;
 }
 
-[[gnu::always_inline]] inline constexpr uint256_t &
+[[gnu::always_inline]] constexpr uint256_t &
 operator-=(uint256_t &lhs, uint256_t const &rhs) noexcept
 {
     return lhs = lhs - rhs;
 }
 
-[[gnu::always_inline]] inline constexpr uint256_t &
+[[gnu::always_inline]] constexpr uint256_t &
 operator*=(uint256_t &lhs, uint256_t const &rhs) noexcept
 {
     return lhs = lhs * rhs;
 }
 
-[[gnu::always_inline]] inline constexpr uint256_t &
+[[gnu::always_inline]] constexpr uint256_t &
 operator/=(uint256_t &lhs, uint256_t const &rhs) noexcept
 {
     return lhs = lhs / rhs;
 }
 
-[[gnu::always_inline]] inline constexpr uint256_t &
+[[gnu::always_inline]] constexpr uint256_t &
 operator%=(uint256_t &lhs, uint256_t const &rhs) noexcept
 {
     return lhs = lhs % rhs;
 }
 
-[[gnu::always_inline]] inline constexpr uint256_t &
+[[gnu::always_inline]] constexpr uint256_t &
 operator^=(uint256_t &lhs, uint256_t const &rhs) noexcept
 {
     return lhs = lhs ^ rhs;
 }
 
-[[gnu::always_inline]] inline constexpr uint256_t &
+[[gnu::always_inline]] constexpr uint256_t &
 operator|=(uint256_t &lhs, uint256_t const &rhs) noexcept
 {
     return lhs = lhs | rhs;
 }
 
-[[gnu::always_inline]] inline constexpr uint256_t &
+[[gnu::always_inline]] constexpr uint256_t &
 operator&=(uint256_t &lhs, uint256_t const &rhs) noexcept
 {
     return lhs = lhs & rhs;
@@ -804,7 +803,7 @@ knuth_div(size_t m, uint64_t *u, size_t n, uint64_t const *v, uint64_t *quot)
 }
 
 template <size_t M, size_t N>
-inline constexpr div_result<words_t<M>, words_t<N>>
+constexpr div_result<words_t<M>, words_t<N>>
 udivrem(words_t<M> const &u, words_t<N> const &v) noexcept
 {
     auto const m = count_significant_words(u);
@@ -865,14 +864,14 @@ udivrem(words_t<M> const &u, words_t<N> const &v) noexcept
     return result;
 }
 
-[[gnu::always_inline]] constexpr inline div_result<uint256_t>
+[[gnu::always_inline]] constexpr div_result<uint256_t>
 udivrem(uint256_t const &u, uint256_t const &v) noexcept
 {
     auto const r = udivrem(u.as_words(), v.as_words());
     return {.quot = uint256_t{r.quot}, .rem = uint256_t{r.rem}};
 }
 
-inline constexpr uint256_t
+constexpr uint256_t
 addmod(uint256_t const &x, uint256_t const &y, uint256_t const &mod) noexcept
 {
     // Fast path when mod >= 2^192 and x, y < 2*mod
@@ -912,7 +911,7 @@ addmod(uint256_t const &x, uint256_t const &y, uint256_t const &mod) noexcept
 
 MONAD_NO_VECTORIZE
 [[gnu::noinline]]
-inline constexpr uint256_t
+constexpr uint256_t
 mulmod(uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
 {
     auto const prod =
@@ -920,20 +919,20 @@ mulmod(uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
     return uint256_t{udivrem(prod, mod.as_words()).rem};
 }
 
-[[gnu::always_inline]] inline constexpr uint256_t
+[[gnu::always_inline]] constexpr uint256_t
 operator/(uint256_t const &x, uint256_t const &y) noexcept
 {
     return udivrem(x, y).quot;
 }
 
-[[gnu::always_inline]] inline constexpr uint256_t
+[[gnu::always_inline]] constexpr uint256_t
 operator%(uint256_t const &x, uint256_t const &y) noexcept
 {
     return udivrem(x, y).rem;
 }
 
 [[gnu::always_inline]]
-inline constexpr div_result<uint256_t>
+constexpr div_result<uint256_t>
 sdivrem(uint256_t const &x, uint256_t const &y) noexcept
 {
     auto const sign_bit = uint64_t{1} << 63;
@@ -953,7 +952,7 @@ sdivrem(uint256_t const &x, uint256_t const &y) noexcept
 }
 
 [[gnu::always_inline]]
-inline constexpr bool slt(uint256_t const &x, uint256_t const &y) noexcept
+constexpr bool slt(uint256_t const &x, uint256_t const &y) noexcept
 {
     auto const x_neg = x[uint256_t::num_words - 1] >> 63;
     auto const y_neg = y[uint256_t::num_words - 1] >> 63;
@@ -965,7 +964,7 @@ inline constexpr bool slt(uint256_t const &x, uint256_t const &y) noexcept
 }
 
 MONAD_NO_VECTORIZE
-[[gnu::noinline]] inline constexpr uint256_t
+[[gnu::noinline]] constexpr uint256_t
 exp(uint256_t base, uint256_t const &exponent) noexcept
 {
     uint256_t result{1};
@@ -1006,8 +1005,7 @@ inline uint256_t byte(uint256_t const &byte_index_256, uint256_t const &x)
     return ret;
 }
 
-[[gnu::always_inline]] inline constexpr uint256_t
-byteswap(uint256_t const &x) noexcept
+[[gnu::always_inline]] constexpr uint256_t byteswap(uint256_t const &x) noexcept
 {
     return uint256_t{
         std::byteswap(x[3]),
@@ -1061,7 +1059,7 @@ inline uint256_t from_bytes(size_t const n, uint8_t const *src)
     return from_bytes(n, n, src);
 }
 
-inline constexpr size_t countl_zero(uint256_t const &x)
+constexpr size_t countl_zero(uint256_t const &x)
 {
     size_t cnt = 0;
     for (size_t i = 0; i < uint256_t::num_words; i++) {
@@ -1168,7 +1166,7 @@ inline size_t bit_width(uint256_t const &x)
 }
 
 [[gnu::always_inline]]
-inline constexpr uint8_t from_dec(char const chr)
+constexpr uint8_t from_dec(char const chr)
 {
     if (chr >= '0' && chr <= '9') {
         return static_cast<uint8_t>(chr - '0');
@@ -1177,7 +1175,7 @@ inline constexpr uint8_t from_dec(char const chr)
 }
 
 [[gnu::always_inline]]
-inline constexpr uint8_t from_hex(char const chr)
+constexpr uint8_t from_hex(char const chr)
 {
     char const chr_lower = static_cast<char>(chr | 0b00100000);
     if (chr_lower >= 'a' && chr_lower <= 'f') {
@@ -1207,7 +1205,7 @@ inline std::string uint256_t::to_string(int const base0 = 10) const
     return buffer;
 }
 
-inline constexpr uint256_t uint256_t::from_string(char const *const str)
+constexpr uint256_t uint256_t::from_string(char const *const str)
 {
     MONAD_ASSERT(str != nullptr);
     static constexpr uint256_t MAX_MULTIPLIABLE_BY_10 =

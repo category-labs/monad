@@ -28,8 +28,7 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-inline constexpr unsigned
-compact_encode_len(unsigned const si, unsigned const ei)
+constexpr unsigned compact_encode_len(unsigned const si, unsigned const ei)
 {
     MONAD_ASSERT(ei >= si);
     return (ei - si) / 2 + 1;

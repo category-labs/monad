@@ -99,7 +99,7 @@ namespace monad::vm::compiler::basic_blocks
     /**
      * Base gas usage for a given terminator.
      */
-    inline constexpr uint16_t terminator_static_gas(Terminator const t)
+    constexpr uint16_t terminator_static_gas(Terminator const t)
     {
         using enum Terminator;
         switch (t) {

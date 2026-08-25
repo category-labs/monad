@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <cassert>
 #include <cerrno>
 #include <cstddef>
@@ -35,6 +36,7 @@
 #include <filesystem>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <utility>
 #include <variant>
@@ -58,6 +60,841 @@ MONAD_ASYNC_NAMESPACE_BEGIN
 // such pools were always carved with this many conventional chunks.
 static constexpr uint32_t legacy_default_num_cnv_chunks = 3;
 
+uint64_t storage_pool::compute_unique_hash_(
+    device_t::type_t_ const type, uint64_t const dev_no,
+    file_offset_t const size)
+{
+    auto hash = fnv1a_hash<uint32_t>::begin();
+    fnv1a_hash<uint32_t>::add(hash, uint32_t(type));
+    fnv1a_hash<uint32_t>::add(hash, uint32_t(dev_no));
+    fnv1a_hash<uint32_t>::add(hash, uint32_t(dev_no >> 32));
+    fnv1a_hash<uint32_t>::add(hash, uint32_t(size));
+    return hash;
+}
+
+storage_pool::device_info_ storage_pool::read_device_identity_(
+    int const fd, std::filesystem::path const &source)
+{
+    struct stat stat;
+    memset(&stat, 0, sizeof(stat));
+    MONAD_ASSERT_PRINTF(
+        -1 != ::fstat(fd, &stat),
+        "fstat failed due to %s",
+        std::strerror(errno));
+    device_info_ ret{};
+    uint64_t dev_no = 0;
+    uint64_t rdev = 0;
+    if ((stat.st_mode & S_IFMT) == S_IFBLK) {
+        ret.type = device_t::type_t_::block_device;
+        MONAD_ASSERT_PRINTF(
+            !ioctl(fd, _IOR(0x12, 114, size_t) /*BLKGETSIZE64*/, &ret.size),
+            "ioctl failed due to %s",
+            std::strerror(errno));
+        rdev = static_cast<uint64_t>(stat.st_rdev);
+        unsigned int logical_block_size = 0;
+        // Asserted, not tolerated: absent would read as "not a block device"
+        // at the addressability check, so a failure here would let a 4Kn
+        // device join a database that requires 512 byte addressing.
+        MONAD_ASSERT_PRINTF(
+            0 == ioctl(fd, _IO(0x12, 104) /*BLKSSZGET*/, &logical_block_size),
+            "ioctl failed due to %s",
+            std::strerror(errno));
+        ret.logical_block_size = logical_block_size;
+    }
+    else if ((stat.st_mode & S_IFMT) == S_IFREG) {
+        ret.type = device_t::type_t_::file;
+        dev_no = stat.st_ino;
+        ret.size = static_cast<file_offset_t>(stat.st_size);
+    }
+    else {
+        MONAD_ABORT_PRINTF(
+            "Storage pool source %s has unknown file entry type = %u",
+            source.string().c_str(),
+            stat.st_mode & S_IFMT);
+    }
+    MONAD_ASSERT_PRINTF(
+        ret.size >= CPU_PAGE_SIZE,
+        "Storage pool source %s must be at least 4Kb long",
+        source.string().c_str());
+    ret.unique_hash = compute_unique_hash_(ret.type, dev_no, ret.size);
+    ret.identity = device_identity_{
+        .dev = static_cast<uint64_t>(stat.st_dev),
+        .ino = static_cast<uint64_t>(stat.st_ino),
+        .rdev = rdev,
+        .hash_dev_no = dev_no};
+    return ret;
+}
+
+storage_pool::device_info_
+storage_pool::read_device_info_(std::filesystem::path const &source)
+{
+    int const fd = ::open(source.c_str(), O_RDONLY | O_CLOEXEC);
+    MONAD_ASSERT_PRINTF(
+        fd != -1,
+        "open of %s failed due to %s",
+        source.string().c_str(),
+        std::strerror(errno));
+    auto const unfd = make_scope_exit([fd]() noexcept { ::close(fd); });
+    device_info_ ret = read_device_identity_(fd, source);
+
+    auto *const buffer = reinterpret_cast<std::byte *>(
+        aligned_alloc(DISK_PAGE_SIZE, DISK_PAGE_SIZE * 2));
+    MONAD_ASSERT(buffer != nullptr);
+    auto const unbuffer = make_scope_exit([&]() noexcept { ::free(buffer); });
+    auto const offset = round_down_align<DISK_PAGE_BITS>(
+        ret.size - sizeof(device_t::metadata_t));
+    auto const bytesread = ::pread(
+        fd,
+        buffer,
+        static_cast<size_t>(ret.size - offset),
+        static_cast<off_t>(offset));
+    MONAD_ASSERT_PRINTF(
+        bytesread != -1, "pread failed due to %s", std::strerror(errno));
+    // The footer is located from the byte count, so a short read would point
+    // it at the wrong bytes -- and at zero bytes, before the buffer entirely.
+    // What those bytes say is whether this device belongs to a pool.
+    MONAD_ASSERT_PRINTF(
+        static_cast<file_offset_t>(bytesread) == ret.size - offset,
+        "read %zd of %llu bytes of %s's pool footer",
+        bytesread,
+        static_cast<unsigned long long>(ret.size - offset),
+        source.string().c_str());
+    auto const *const footer = start_lifetime_as<device_t::metadata_t>(
+        buffer + bytesread - sizeof(device_t::metadata_t));
+    if (memcmp(footer->magic, "MND0", 4) == 0) {
+        ret.pool_metadata = device_pool_metadata_{
+            .chunk_capacity = footer->chunk_capacity,
+            .num_cnv_chunks = footer->num_cnv_chunks == 0
+                                  ? legacy_default_num_cnv_chunks
+                                  : footer->num_cnv_chunks,
+            .config_hash = footer->config_hash,
+            .chunks = footer->chunks(ret.size)};
+    }
+    return ret;
+}
+
+bool storage_pool::has_pool_metadata(std::filesystem::path const &source)
+{
+    return read_device_info_(source).pool_metadata.has_value();
+}
+
+void storage_pool::refuse_duplicate_sources_(
+    std::span<std::filesystem::path const> const sources)
+{
+    std::vector<device_info_> identities;
+    identities.reserve(sources.size());
+    for (auto const &source : sources) {
+        int const fd = ::open(source.c_str(), O_RDONLY | O_CLOEXEC);
+        MONAD_ASSERT_PRINTF(
+            fd != -1,
+            "open of %s failed due to %s",
+            source.string().c_str(),
+            std::strerror(errno));
+        auto const unfd = make_scope_exit([fd]() noexcept { ::close(fd); });
+        identities.push_back(read_device_identity_(fd, source));
+    }
+    for (size_t i = 0; i < identities.size(); i++) {
+        for (size_t j = i + 1; j < identities.size(); j++) {
+            MONAD_ASSERT_PRINTF(
+                !same_device_identity_(identities[i], identities[j]),
+                "Storage pool source %s and %s name the same underlying "
+                "device; each device may be given only once.",
+                sources[i].string().c_str(),
+                sources[j].string().c_str());
+        }
+    }
+}
+
+storage_pool::rescan_preview storage_pool::preview_rescan(
+    std::span<std::filesystem::path const> const sources,
+    std::optional<file_offset_t> const recorded_size,
+    std::optional<db_metadata_budget> const &budget)
+{
+    MONAD_ASSERT(!sources.empty());
+    refuse_duplicate_sources_(sources);
+    std::vector<device_info_> infos;
+    infos.reserve(sources.size());
+    for (auto const &source : sources) {
+        infos.push_back(read_device_info_(source));
+    }
+    auto const plan =
+        validate_devices_to_add_(sources, infos, recorded_size, budget);
+    rescan_preview ret{};
+    ret.existing = plan.members;
+    ret.first_initialised = plan.members;
+    if (plan.grown.has_value()) {
+        ret.grown_previous_size = plan.grown->previous_size;
+        ret.grown_previous_chunks = plan.grown->previous_chunks;
+        ret.first_initialised = plan.grown->index + 1;
+    }
+    return ret;
+}
+
+uint32_t
+storage_pool::compute_config_hash_(std::span<device_info_ const> const devices)
+{
+    auto hash = fnv1a_hash<uint32_t>::begin();
+    for (auto const &device : devices) {
+        fnv1a_hash<uint32_t>::add(hash, uint32_t(device.unique_hash));
+        fnv1a_hash<uint32_t>::add(hash, uint32_t(device.unique_hash >> 32));
+    }
+    for (auto const &device : devices) {
+        auto const &metadata = device.pool_metadata.value();
+        fnv1a_hash<uint32_t>::add(hash, static_cast<uint32_t>(metadata.chunks));
+        fnv1a_hash<uint32_t>::add(hash, metadata.chunk_capacity);
+    }
+    return uint32_t(hash);
+}
+
+storage_pool::device_info_ storage_pool::device_info_of_(device_t const &device)
+{
+    MONAD_ASSERT(
+        device.is_file() || device.is_block_device(),
+        "zonefs support isn't implemented yet");
+    device_info_ ret{};
+    ret.type = device.type_;
+    ret.unique_hash = device.unique_hash_;
+    ret.size = device.size_of_file_;
+    // A live device always carries its footer; only the path it was opened
+    // from is no longer available.
+    ret.pool_metadata = device_pool_metadata_{
+        .chunk_capacity = device.metadata_->chunk_capacity,
+        .num_cnv_chunks = static_cast<uint32_t>(device.cnv_chunks()),
+        .config_hash = device.metadata_->config_hash,
+        .chunks = device.chunks()};
+    return ret;
+}
+
+bool storage_pool::same_device_identity_(
+    device_info_ const &a, device_info_ const &b)
+{
+    MONAD_ASSERT(a.identity.has_value() && b.identity.has_value());
+    auto const &x = *a.identity;
+    auto const &y = *b.identity;
+    if (x.dev == y.dev && x.ino == y.ino) {
+        return true;
+    }
+    // Two distinct special files can still name the same underlying block
+    // device.
+    return a.type == device_t::type_t_::block_device &&
+           b.type == device_t::type_t_::block_device && x.rdev == y.rdev;
+}
+
+// A device grown in place after joining a pool (LVM extend, or a backing
+// file resized larger) strands its footer mid-device, so read_device_info_
+// finds no MND0 at the new end and cannot tell it from a blank device. Chunks
+// are written append-only from their own offset 0, so a chunk holding any data
+// always has a non-zero first page; checking every chunk's first page, rather
+// than trusting the absent footer, is what separates the two.
+static bool device_is_blank(
+    std::filesystem::path const &source, uint32_t const chunk_capacity,
+    size_t const chunks)
+{
+    int const fd = ::open(source.c_str(), O_RDONLY | O_CLOEXEC);
+    MONAD_ASSERT_PRINTF(
+        fd != -1,
+        "open of %s failed due to %s",
+        source.string().c_str(),
+        std::strerror(errno));
+    auto const unfd = make_scope_exit([fd]() noexcept { ::close(fd); });
+    auto *const buffer = reinterpret_cast<std::byte *>(
+        aligned_alloc(DISK_PAGE_SIZE, CPU_PAGE_SIZE));
+    MONAD_ASSERT(buffer != nullptr);
+    auto const unbuffer = make_scope_exit([&]() noexcept { ::free(buffer); });
+    for (size_t i = 0; i < chunks; i++) {
+        auto const offset = file_offset_t(i) * chunk_capacity;
+        auto const bytesread =
+            ::pread(fd, buffer, CPU_PAGE_SIZE, static_cast<off_t>(offset));
+        MONAD_ASSERT_PRINTF(
+            bytesread != -1, "pread failed due to %s", std::strerror(errno));
+        // A short read must never be treated as a blank page: this cannot
+        // happen for a real device, since chunks is derived from the
+        // device's own size, so every probed offset is well inside it.
+        MONAD_ASSERT_PRINTF(
+            bytesread == CPU_PAGE_SIZE,
+            "Storage pool source %s could not be fully read at offset %llu "
+            "while checking it is blank; refusing to treat it as blank.",
+            source.string().c_str(),
+            static_cast<unsigned long long>(offset));
+        if (!std::all_of(buffer, buffer + bytesread, [](std::byte const b) {
+                return b == std::byte{0};
+            })) {
+            return false;
+        }
+    }
+    return true;
+}
+
+auto storage_pool::read_footer_for_size_(int const fd, file_offset_t const size)
+    -> std::optional<device_t::metadata_t>
+{
+    if (size < sizeof(device_t::metadata_t)) {
+        return std::nullopt;
+    }
+    device_t::metadata_t footer{};
+    auto const bytesread = ::pread(
+        fd, &footer, sizeof(footer), static_cast<off_t>(size - sizeof(footer)));
+    MONAD_ASSERT_PRINTF(
+        bytesread != -1, "pread failed due to %s", std::strerror(errno));
+    if (static_cast<size_t>(bytesread) != sizeof(footer) ||
+        memcmp(footer.magic, "MND0", 4) != 0) {
+        return std::nullopt;
+    }
+    return footer;
+}
+
+storage_pool::device_info_ storage_pool::device_info_at_previous_size_(
+    device_info_ const &now, grown_device_ const &grown)
+{
+    device_info_ ret = now;
+    ret.size = grown.previous_size;
+    ret.pool_metadata = device_pool_metadata_{
+        .chunk_capacity = grown.chunk_capacity,
+        .num_cnv_chunks = grown.num_cnv_chunks,
+        // The stranded footer's own config_hash is what the caller compares
+        // against, so it is deliberately not carried over here.
+        .config_hash = 0,
+        .chunks = grown.previous_chunks};
+    ret.unique_hash = compute_unique_hash_(
+        now.type, now.identity.value().hash_dev_no, grown.previous_size);
+    return ret;
+}
+
+auto storage_pool::validate_grown_device_(
+    std::filesystem::path const &source, device_info_ const &current,
+    std::span<device_info_ const> const members,
+    std::optional<file_offset_t> const recorded_size, bool &footer_found)
+    -> std::optional<grown_device_>
+{
+    footer_found = false;
+    if (!recorded_size.has_value() || *recorded_size >= current.size ||
+        *recorded_size < CPU_PAGE_SIZE) {
+        return std::nullopt;
+    }
+    int const fd = ::open(source.c_str(), O_RDONLY | O_CLOEXEC);
+    MONAD_ASSERT_PRINTF(
+        fd != -1,
+        "open of %s failed due to %s",
+        source.string().c_str(),
+        std::strerror(errno));
+    auto const unfd = make_scope_exit([fd]() noexcept { ::close(fd); });
+    auto const footer = read_footer_for_size_(fd, *recorded_size);
+    if (!footer.has_value()) {
+        return std::nullopt;
+    }
+    footer_found = true;
+    auto const capacity = footer->chunk_capacity;
+    if (capacity == 0 || (capacity & (capacity - 1)) != 0) {
+        return std::nullopt;
+    }
+    auto const cnv_chunks = footer->num_cnv_chunks == 0
+                                ? legacy_default_num_cnv_chunks
+                                : footer->num_cnv_chunks;
+    if (!members.empty()) {
+        auto const &first = members[0].pool_metadata.value();
+        if (capacity != first.chunk_capacity ||
+            cnv_chunks != first.num_cnv_chunks) {
+            return std::nullopt;
+        }
+    }
+    auto const previous_chunks = footer->chunks(*recorded_size);
+    if (previous_chunks < cnv_chunks + 1u) {
+        return std::nullopt;
+    }
+    grown_device_ const candidate{
+        .index = members.size(),
+        .previous_size = *recorded_size,
+        .previous_chunks = previous_chunks,
+        .chunk_capacity = capacity,
+        .num_cnv_chunks = cnv_chunks};
+    // The recorded size implies a whole pre-grow device set, and the hash that
+    // set must produce is the one the stranded footer itself stores.
+    // unique_hash folds each device's size, so the recomputed hash depends on
+    // the recorded size to the byte: this pins the previous size rather than
+    // merely narrowing it, and four bytes spelling MND0 in trie data cannot
+    // pass it. The footer predates the grow and this operation never rewrites
+    // it, so it stays a fixed point to check against even across an
+    // interrupted run.
+    std::vector<device_info_> before(members.begin(), members.end());
+    before.push_back(device_info_at_previous_size_(current, candidate));
+    if (compute_config_hash_(before) != footer->config_hash) {
+        return std::nullopt;
+    }
+    return candidate;
+}
+
+auto storage_pool::validate_devices_to_add_(
+    std::span<std::filesystem::path const> const sources,
+    std::span<device_info_ const> const infos,
+    std::optional<file_offset_t> const recorded_size,
+    std::optional<db_metadata_budget> const &budget) -> add_devices_plan_
+{
+    MONAD_ASSERT(sources.size() == infos.size());
+    size_t prefix = 0;
+    while (prefix < infos.size() && infos[prefix].pool_metadata.has_value()) {
+        prefix++;
+    }
+
+    // A device extended in place presents no footer at its new end, so the
+    // footer test alone cannot tell it from a blank one, and it can only sit
+    // where the first footerless source does. Telling the two apart costs
+    // I/O, so it waits until every arithmetic check below has had its chance
+    // to refuse the set for free -- except when device 0 is itself the
+    // footerless source, since then nothing else knows the pool's geometry and
+    // none of those checks can run at all.
+    std::optional<grown_device_> grown;
+    bool tail_probed_blank = false;
+    auto const classify_tail = [&] {
+        // The recorded size settles the tail for one 64 byte read, where the
+        // blankness probe below costs a page per chunk, so it goes first. It
+        // also decides the one case the probe cannot: a device the pool already
+        // owns can be empty as well as extended, since new chunks splice onto
+        // the tail of the free list and one added recently stays cold for a
+        // long time, and every chunk on it then reads as blank exactly like a
+        // device being joined.
+        bool footer_at_recorded_size = false;
+        grown = validate_grown_device_(
+            sources[prefix],
+            infos[prefix],
+            infos.subspan(0, prefix),
+            recorded_size,
+            footer_at_recorded_size);
+        if (grown.has_value()) {
+            return;
+        }
+        device_t::metadata_t probe{};
+        // A grown device carries its own geometry in the footer the extend
+        // stranded, so the probe only needs a stride to sample chunk starts
+        // with. The pool's capacity is that stride whenever it is known; when
+        // device 0 is itself the footerless source nothing knows it yet, and
+        // the smallest capacity a pool can have divides every real one, so it
+        // steps over no chunk that holds data.
+        probe.chunk_capacity = infos[0].pool_metadata.has_value()
+                                   ? infos[0].pool_metadata->chunk_capacity
+                                   : min_chunk_capacity;
+        tail_probed_blank = device_is_blank(
+            sources[prefix],
+            probe.chunk_capacity,
+            probe.chunks(infos[prefix].size));
+        if (tail_probed_blank) {
+            // Reading as blank is not enough to initialise it: a footer at the
+            // recorded size means this database has owned this device, so
+            // whatever stopped that footer validating, joining it as new would
+            // destroy the bytes-used array stranded with it.
+            MONAD_ASSERT_PRINTF(
+                !footer_at_recorded_size,
+                "Storage pool source %s reads as blank, but pool metadata is "
+                "stranded at the %llu bytes the database recorded for it and "
+                "does not describe this pool. This database has owned this "
+                "device, so it will not be re-initialised as a new one. "
+                "Restore the device the database was last opened with, or "
+                "clear this one (with blkdiscard, for example) to offer it as "
+                "a genuinely new device.",
+                sources[prefix].string().c_str(),
+                static_cast<unsigned long long>(*recorded_size));
+            return;
+        }
+        // A device with data but no footer at its end was extended in place.
+        // Deciding that here keeps the diagnosis right: the recorded size
+        // fails against a pre-grow set which is not the one the operator
+        // described, so reporting that failure would name a foreign device
+        // rather than a misplaced one.
+        for (size_t n = prefix + 1; n < infos.size(); n++) {
+            MONAD_ASSERT_PRINTF(
+                !infos[n].pool_metadata.has_value(),
+                "Storage pool source %s is not blank and carries no pool "
+                "metadata at its end, so it was extended in place, but %s "
+                "after it still belongs to the pool. Only the last device the "
+                "pool already owns may be extended: growing an earlier one "
+                "renumbers every chunk on the devices behind it.",
+                sources[prefix].string().c_str(),
+                sources[n].string().c_str());
+        }
+        MONAD_ASSERT_PRINTF(
+            recorded_size.has_value(),
+            "Storage pool source %s is not blank and carries no pool metadata "
+            "at its end. If it was extended in place, the database holds no "
+            "record of the size it had beforehand, which is the only thing "
+            "that can locate the metadata the extend stranded; that size is "
+            "recorded on every writable open, so a database last written by a "
+            "release which did not record it must be opened writable once "
+            "before its devices are extended. Return the device to its former "
+            "size to reopen the database, or restore from a monad-mpt "
+            "--archive. If the device is instead meant to join as a new one, "
+            "clear it first (with blkdiscard, for example).",
+            sources[prefix].string().c_str());
+        MONAD_ASSERT_PRINTF(
+            !footer_at_recorded_size,
+            "Storage pool source %s was extended in place from the %llu bytes "
+            "the database recorded for it, but the pool metadata stranded "
+            "there describes a different pool, so this is not the device the "
+            "database was last opened with. Restore the original device, or "
+            "clear this one (with blkdiscard, for example) to offer it as a "
+            "new device.",
+            sources[prefix].string().c_str(),
+            static_cast<unsigned long long>(*recorded_size));
+        MONAD_ABORT_PRINTF(
+            "Storage pool source %s is not blank and carries no pool metadata "
+            "at its end, nor any at the %llu bytes the database recorded for "
+            "it. If it was extended in place, it is not the device the "
+            "database was last opened with; if it is meant to join as a new "
+            "device, clear it first (with blkdiscard, for example).",
+            sources[prefix].string().c_str(),
+            static_cast<unsigned long long>(*recorded_size));
+    };
+    if (prefix == 0) {
+        classify_tail();
+        MONAD_ASSERT_PRINTF(
+            grown.has_value(),
+            "Storage pool source %s carries no pool metadata, so it cannot be "
+            "the first source of an existing pool. The first source holds the "
+            "database metadata and must be one the pool was created with.",
+            sources[0].string().c_str());
+    }
+
+    uint32_t const chunk_capacity = infos[0].pool_metadata.has_value()
+                                        ? infos[0].pool_metadata->chunk_capacity
+                                        : grown->chunk_capacity;
+    uint32_t const cnv_chunks = infos[0].pool_metadata.has_value()
+                                    ? infos[0].pool_metadata->num_cnv_chunks
+                                    : grown->num_cnv_chunks;
+    MONAD_ASSERT_PRINTF(
+        chunk_capacity != 0 && (chunk_capacity & (chunk_capacity - 1)) == 0,
+        "Storage pool source %s stores chunk capacity %u, which is not a "
+        "power of two, so its pool metadata is corrupt.",
+        sources[0].string().c_str(),
+        chunk_capacity);
+
+    // Each source as it will be once make_device_ has carved the joining ones
+    // at the pool's geometry and the grown one has taken its new size, which
+    // is what the pool's new config_hash covers. Both are counted the same
+    // way, so this does not depend on the classification above.
+    std::vector<device_info_> joined(infos.begin(), infos.end());
+    size_t total_seq_chunks = 0;
+    for (size_t n = 0; n < joined.size(); n++) {
+        if (n >= prefix) {
+            device_t::metadata_t probe{};
+            probe.chunk_capacity = chunk_capacity;
+            joined[n].pool_metadata = device_pool_metadata_{
+                .chunk_capacity = chunk_capacity,
+                .num_cnv_chunks = cnv_chunks,
+                .config_hash = 0,
+                .chunks = probe.chunks(infos[n].size)};
+            MONAD_ASSERT_PRINTF(
+                joined[n].pool_metadata->chunks >= cnv_chunks + 1,
+                "Storage pool source %s would have only %zu chunks once joined "
+                "at the pool's chunk capacity; the minimum allowed is %u. Use "
+                "a larger device.",
+                sources[n].string().c_str(),
+                joined[n].pool_metadata->chunks,
+                cnv_chunks + 1);
+        }
+        else {
+            MONAD_ASSERT_PRINTF(
+                joined[n].pool_metadata->chunks >= cnv_chunks + 1,
+                "Storage pool source %s has only %zu chunks, fewer than the "
+                "%u this pool needs per device (%u conventional plus at least "
+                "one sequential), so its pool metadata is corrupt.",
+                sources[n].string().c_str(),
+                joined[n].pool_metadata->chunks,
+                cnv_chunks + 1,
+                cnv_chunks);
+        }
+        total_seq_chunks += joined[n].pool_metadata->chunks - cnv_chunks;
+    }
+
+    // Both budgets are checked here so an over-large device set is refused
+    // before a footer is written; the layer that owns the metadata layout
+    // cannot do it for itself, because by the time it opens the footers are
+    // already committed.
+    //
+    // chunk_info_count is a 20 bit field, and its top value is the sentinel
+    // the database's free list terminates on, so a count of 0x100000 would
+    // both overflow the field and produce an id indistinguishable from an
+    // absent link.
+    MONAD_ASSERT_PRINTF(
+        total_seq_chunks <= chunk_offset_t::max_id,
+        "Adding these devices would give the pool %zu sequential chunks, "
+        "beyond the %llu the 20 bit chunk id space allows. Use fewer or "
+        "smaller devices.",
+        total_seq_chunks,
+        static_cast<unsigned long long>(chunk_offset_t::max_id));
+    size_t const metadata_bytes_needed =
+        budget.has_value()
+            ? budget->header_bytes + total_seq_chunks * budget->bytes_per_chunk
+            : 0;
+    size_t const metadata_bytes_available = chunk_capacity / 2;
+    MONAD_ASSERT_PRINTF(
+        !budget.has_value() ||
+            metadata_bytes_available >= metadata_bytes_needed,
+        "Adding these devices would give the pool %zu sequential chunks, "
+        "needing %zu bytes of database metadata, but conventional chunk 0 on "
+        "%s only provides %zu. This pool's chunk capacity is too small to "
+        "describe that many chunks; use fewer or smaller devices.",
+        total_seq_chunks,
+        metadata_bytes_needed,
+        sources[0].string().c_str(),
+        metadata_bytes_available);
+
+    // The set this operation produces, and so the hash every device ends up
+    // carrying. It does not depend on how the tail source is classified: a
+    // grown device and a joining one are both carved at the pool's geometry
+    // and both hash at their current size.
+    uint32_t const target_hash = compute_config_hash_(joined);
+
+    if (prefix > 0 && prefix < infos.size()) {
+        classify_tail();
+    }
+    size_t const joining = prefix + (grown.has_value() ? 1 : 0);
+
+    for (size_t n = joining; n < infos.size(); n++) {
+        MONAD_ASSERT_PRINTF(
+            !infos[n].pool_metadata.has_value(),
+            "Storage pool source %s already carries storage pool metadata but "
+            "follows source %s, which does not. Devices being added must come "
+            "last and must be blank: clear the final 4Kb of %s (with "
+            "blkdiscard, for example) before adding it.",
+            sources[n].string().c_str(),
+            sources[prefix].string().c_str(),
+            sources[n].string().c_str());
+        // The one moment a joining device's addressability can be checked;
+        // update_aux.cpp only ever reads the ioctls from device 0. A device
+        // which grew was already a member, so it is not re-checked: its
+        // block size changing under the pool is out of scope.
+        MONAD_ASSERT_PRINTF(
+            !infos[n].logical_block_size.has_value() ||
+                *infos[n].logical_block_size == 512,
+            "Storage pool source %s is addressable in %u byte units, but this "
+            "database requires 512 byte addressable storage.",
+            sources[n].string().c_str(),
+            infos[n].logical_block_size.value_or(0));
+    }
+
+    // The relocation writes the grown device's new metadata region before the
+    // old one is superseded, so the two must not overlap: writing the new
+    // bytes-used array over the old one would destroy the only record of how
+    // full each existing chunk is while the new footer is not yet durable.
+    // Refusing a growth too small to clear the old region turns that crash
+    // window into an input check, and rejects nothing useful, since a growth
+    // that small yields no new chunks anyway.
+    if (grown.has_value()) {
+        auto const &g = *grown;
+        size_t const region =
+            sizeof(device_t::metadata_t) +
+            joined[g.index].pool_metadata->chunks * sizeof(uint32_t);
+        MONAD_ASSERT_PRINTF(
+            infos[g.index].size >= g.previous_size + region,
+            "Storage pool source %s grew from %llu to %llu bytes, but its new "
+            "metadata occupies %zu bytes and would overwrite the metadata "
+            "being recovered. Extend it by at least %llu more bytes and "
+            "re-run.",
+            sources[g.index].string().c_str(),
+            static_cast<unsigned long long>(g.previous_size),
+            static_cast<unsigned long long>(infos[g.index].size),
+            region,
+            static_cast<unsigned long long>(
+                g.previous_size + region - infos[g.index].size));
+    }
+
+    // A source storing the hash of the *whole* set is one an earlier
+    // interrupted run already joined, so accepting it makes re-running the
+    // same list finish an add interrupted after the footers were stamped.
+    // Where a device grew, the relocation stamps that same hash on the intact
+    // members before it commits, so a member carrying it may equally be a
+    // grow interrupted before its own commit; either way re-running is the
+    // recovery. The hash proves membership of a set with this geometry, not
+    // identity: unique_hash folds a literal zero for a block device's device
+    // number, so same-sized block devices are indistinguishable to it.
+    std::vector<device_info_> before(
+        infos.begin(), infos.begin() + static_cast<ptrdiff_t>(prefix));
+    if (grown.has_value()) {
+        before.push_back(
+            device_info_at_previous_size_(infos[grown->index], *grown));
+    }
+    uint32_t const prefix_hash = compute_config_hash_(before);
+    for (size_t n = 0; n < prefix; n++) {
+        MONAD_ASSERT_PRINTF(
+            infos[n].pool_metadata->config_hash != 0,
+            "Storage pool source %s carries a pool footer but no pool identity "
+            "(config hash zero), so an earlier operation initialised it and "
+            "stopped before joining it to a pool. If it is one of the devices "
+            "being added, clear its final 4Kb (with blkdiscard, for example) "
+            "and re-run the same command.",
+            sources[n].string().c_str());
+        MONAD_ASSERT_PRINTF(
+            infos[n].pool_metadata->config_hash == prefix_hash ||
+                infos[n].pool_metadata->config_hash == target_hash,
+            "Storage pool source %s stores config hash %u, which is neither "
+            "the hash of the sources listed as already belonging to the pool "
+            "(%u) nor the hash of the pool this operation would produce (%u). "
+            "The existing sources must be listed first, in the exact order the "
+            "pool was created with, followed by the sources being added. A "
+            "source which belongs to a different pool must have its final 4Kb "
+            "cleared (with blkdiscard, for example) before it can be added to "
+            "this one.",
+            sources[n].string().c_str(),
+            infos[n].pool_metadata->config_hash,
+            prefix_hash,
+            target_hash);
+        MONAD_ASSERT_PRINTF(
+            infos[n].pool_metadata->chunk_capacity == chunk_capacity,
+            "Storage pool source %s has chunk capacity %u but source %s has "
+            "%u; the pool is inconsistent.",
+            sources[n].string().c_str(),
+            infos[n].pool_metadata->chunk_capacity,
+            sources[0].string().c_str(),
+            chunk_capacity);
+    }
+
+    // Last, because it is the only remaining check that costs real I/O: every
+    // cheaper arithmetic check above has already had the chance to refuse
+    // this device set first. The source classify_tail already probed is not
+    // probed again.
+    for (size_t n = joining; n < joined.size(); n++) {
+        if (n == prefix && tail_probed_blank) {
+            continue;
+        }
+        MONAD_ASSERT_PRINTF(
+            device_is_blank(
+                sources[n], chunk_capacity, joined[n].pool_metadata->chunks),
+            "Storage pool source %s is not blank. It may already have been "
+            "part of a storage pool, or it may have been resized in place so "
+            "its pool metadata no longer sits at the end of the device. If "
+            "you are certain you want to use it, clear it first (with "
+            "blkdiscard, for example).",
+            sources[n].string().c_str());
+    }
+    return add_devices_plan_{
+        .members = prefix,
+        .grown = grown,
+        .target_hash = target_hash,
+        .chunk_capacity = chunk_capacity,
+        .num_cnv_chunks = cnv_chunks};
+}
+
+void storage_pool::stamp_config_hash_(
+    std::filesystem::path const &source, file_offset_t const size,
+    uint32_t const hash)
+{
+    int const fd = ::open(source.c_str(), O_RDWR | O_CLOEXEC);
+    MONAD_ASSERT_PRINTF(
+        fd != -1,
+        "open of %s failed due to %s",
+        source.string().c_str(),
+        std::strerror(errno));
+    auto const unfd = make_scope_exit([fd]() noexcept { ::close(fd); });
+    auto footer = read_footer_for_size_(fd, size);
+    MONAD_ASSERT_PRINTF(
+        footer.has_value(),
+        "Storage pool source %s no longer carries a pool footer",
+        source.string().c_str());
+    if (footer->config_hash == hash) {
+        // The read came through the page cache, so a match is not proof of
+        // durability -- and making the members durable before the grown
+        // device's footer commits is this function's whole purpose.
+        MONAD_ASSERT_PRINTF(
+            0 == ::fdatasync(fd),
+            "fdatasync failed due to %s",
+            std::strerror(errno));
+        return;
+    }
+    footer->config_hash = hash;
+    MONAD_ASSERT_PRINTF(
+        ::pwrite(
+            fd,
+            &*footer,
+            sizeof(*footer),
+            static_cast<off_t>(size - sizeof(*footer))) ==
+            ssize_t(sizeof(*footer)),
+        "pwrite failed due to %s",
+        std::strerror(errno));
+    MONAD_ASSERT_PRINTF(
+        0 == ::fdatasync(fd),
+        "fdatasync failed due to %s",
+        std::strerror(errno));
+}
+
+void storage_pool::relocate_device_metadata_(
+    std::filesystem::path const &source, file_offset_t const current_size,
+    grown_device_ const &grown, uint32_t const new_config_hash)
+{
+    int const fd = ::open(source.c_str(), O_RDWR | O_CLOEXEC);
+    MONAD_ASSERT_PRINTF(
+        fd != -1,
+        "open of %s failed due to %s",
+        source.string().c_str(),
+        std::strerror(errno));
+    auto const unfd = make_scope_exit([fd]() noexcept { ::close(fd); });
+
+    device_t::metadata_t footer{};
+    footer.chunk_capacity = grown.chunk_capacity;
+    footer.num_cnv_chunks = grown.num_cnv_chunks;
+    footer.config_hash = new_config_hash;
+    // chunks() carries a correction which drops the last chunk when the
+    // metadata region would otherwise collide with it, so it must be called
+    // rather than reimplemented.
+    auto const new_chunks = footer.chunks(current_size);
+    MONAD_ASSERT(new_chunks >= grown.previous_chunks);
+    auto const array_bytes = new_chunks * sizeof(uint32_t);
+    auto const array_base = current_size - sizeof(footer) - array_bytes;
+    MONAD_ASSERT(array_base >= grown.previous_size);
+
+    // The array is anchored to the footer and indexed upward from its base,
+    // so a larger chunk count shifts every existing entry as well as the
+    // array as a whole. It is therefore rebuilt and written whole; a
+    // byte-for-byte copy of the old region would land every entry at the
+    // wrong index.
+    std::vector<uint32_t> bytes_used(new_chunks, 0);
+    auto const old_array_bytes = grown.previous_chunks * sizeof(uint32_t);
+    auto const old_array_base =
+        grown.previous_size - sizeof(footer) - old_array_bytes;
+    auto const bytesread = ::pread(
+        fd,
+        bytes_used.data(),
+        old_array_bytes,
+        static_cast<off_t>(old_array_base));
+    MONAD_ASSERT_PRINTF(
+        bytesread != -1, "pread failed due to %s", std::strerror(errno));
+    MONAD_ASSERT_PRINTF(
+        static_cast<size_t>(bytesread) == old_array_bytes,
+        "read %zd of %zu bytes of the stranded per-chunk bytes-used array "
+        "on %s",
+        bytesread,
+        old_array_bytes,
+        source.string().c_str());
+
+    MONAD_ASSERT_PRINTF(
+        ::pwrite(
+            fd,
+            bytes_used.data(),
+            array_bytes,
+            static_cast<off_t>(array_base)) == ssize_t(array_bytes),
+        "pwrite failed due to %s",
+        std::strerror(errno));
+    MONAD_ASSERT_PRINTF(
+        0 == ::fdatasync(fd),
+        "fdatasync failed due to %s",
+        std::strerror(errno));
+
+    // The footer at the new end is what makes the device valid, so it commits
+    // the relocation. A crash before it is durable leaves the device still
+    // classified as grown, and re-running simply redoes the whole operation.
+    memcpy(footer.magic, "MND0", sizeof(footer.magic));
+    MONAD_ASSERT_PRINTF(
+        ::pwrite(
+            fd,
+            &footer,
+            sizeof(footer),
+            static_cast<off_t>(current_size - sizeof(footer))) ==
+            ssize_t(sizeof(footer)),
+        "pwrite failed due to %s",
+        std::strerror(errno));
+    MONAD_ASSERT_PRINTF(
+        0 == ::fdatasync(fd),
+        "fdatasync failed due to %s",
+        std::strerror(errno));
+}
+
 std::filesystem::path storage_pool::device_t::current_path() const
 {
     std::filesystem::path::string_type ret;
@@ -77,6 +914,37 @@ std::filesystem::path storage_pool::device_t::current_path() const
         ret.clear();
     }
     return ret;
+}
+
+std::pair<void *, size_t>
+storage_pool::device_t::metadata_mapping_() const noexcept
+{
+    auto const total_size = metadata_->total_size(size_of_file_);
+    auto const offset =
+        round_down_align<CPU_PAGE_BITS>(size_of_file_ - total_size);
+    auto const mapped_bytes =
+        round_up_align<CPU_PAGE_BITS>(size_of_file_ - offset);
+    auto const metadata_from_base =
+        static_cast<size_t>(size_of_file_ - offset) - sizeof(metadata_t);
+    return {
+        reinterpret_cast<std::byte *>(metadata_) - metadata_from_base,
+        static_cast<size_t>(mapped_bytes)};
+}
+
+void storage_pool::device_t::flush_metadata_() const
+{
+    auto const mapping = metadata_mapping_();
+    MONAD_ASSERT_PRINTF(
+        0 == ::msync(mapping.first, mapping.second, MS_SYNC),
+        "msync failed due to %s",
+        std::strerror(errno));
+    // msync covers the mapped stores; the fd also carries the footer written
+    // before the mapping existed, and any file size change made to initialise
+    // the device.
+    MONAD_ASSERT_PRINTF(
+        0 == ::fdatasync(readwritefd_),
+        "fdatasync failed due to %s",
+        std::strerror(errno));
 }
 
 size_t storage_pool::device_t::chunks() const
@@ -343,12 +1211,8 @@ storage_pool::device_t storage_pool::make_device_(
 {
     int readwritefd = fd;
     uint64_t const chunk_capacity = 1ULL << flags.chunk_capacity;
-    auto unique_hash = fnv1a_hash<uint32_t>::begin();
-    if (auto const *dev_no = std::get_if<0>(&dev_no_or_dev)) {
-        fnv1a_hash<uint32_t>::add(unique_hash, uint32_t(type));
-        fnv1a_hash<uint32_t>::add(unique_hash, uint32_t(*dev_no));
-        fnv1a_hash<uint32_t>::add(unique_hash, uint32_t(*dev_no >> 32));
-    }
+    uint64_t unique_hash = 0;
+    auto const *const dev_no = std::get_if<0>(&dev_no_or_dev);
     if (!path.empty()) {
         readwritefd = ::open(
             path.c_str(),
@@ -388,8 +1252,12 @@ storage_pool::device_t storage_pool::make_device_(
             "storage pool",
             path.string().c_str());
     }
-    fnv1a_hash<uint32_t>::add(unique_hash, uint32_t(stat.st_size));
+    if (dev_no != nullptr) {
+        unique_hash = compute_unique_hash_(
+            type, *dev_no, static_cast<file_offset_t>(stat.st_size));
+    }
     size_t total_size = 0;
+    bool freshly_initialised = false;
     {
         auto *const buffer = reinterpret_cast<std::byte *>(
             aligned_alloc(DISK_PAGE_SIZE, DISK_PAGE_SIZE * 2));
@@ -410,6 +1278,7 @@ storage_pool::device_t storage_pool::make_device_(
             buffer + bytesread - sizeof(device_t::metadata_t));
         if (memcmp(metadata_footer->magic, "MND0", 4) != 0 ||
             op == mode::truncate) {
+            freshly_initialised = true;
             // Uninitialised
             if (op == mode::open_existing) {
                 MONAD_ABORT_PRINTF(
@@ -519,17 +1388,18 @@ storage_pool::device_t storage_pool::make_device_(
         type,
         unique_hash,
         static_cast<size_t>(stat.st_size),
-        metadata);
+        metadata,
+        freshly_initialised);
 }
 
-void storage_pool::fill_chunks_(creation_flags const &flags)
+void storage_pool::fill_chunks_(mode const op, creation_flags const &flags)
 {
-    auto hashshouldbe = fnv1a_hash<uint32_t>::begin();
+    std::vector<device_info_> infos;
+    infos.reserve(devices_.size());
     for (auto const &device : devices_) {
-        fnv1a_hash<uint32_t>::add(hashshouldbe, uint32_t(device.unique_hash_));
-        fnv1a_hash<uint32_t>::add(
-            hashshouldbe, uint32_t(device.unique_hash_ >> 32));
+        infos.push_back(device_info_of_(device));
     }
+    uint32_t const hashshouldbe = compute_config_hash_(infos);
     uint32_t const cnv_chunks_count =
         static_cast<uint32_t>(devices_[0].cnv_chunks());
     std::vector<size_t> chunks;
@@ -548,20 +1418,23 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
             // Take off cnv_chunks_count for the cnv chunks
             chunks.push_back(devicechunks - cnv_chunks_count);
             total += devicechunks - cnv_chunks_count;
-            fnv1a_hash<uint32_t>::add(
-                hashshouldbe, static_cast<uint32_t>(devicechunks));
-            fnv1a_hash<uint32_t>::add(
-                hashshouldbe, device.metadata_->chunk_capacity);
         }
         else {
             MONAD_ABORT("zonefs support isn't implemented yet");
         }
     }
     for (auto const &device : devices_) {
-        if (device.metadata_->config_hash == 0) {
-            device.metadata_->config_hash = uint32_t(hashshouldbe);
+        if (op == mode::add_devices) {
+            // The prefix was validated against its own hash before anything
+            // was written; the whole set now adopts the new hash. Devices
+            // joined by an earlier interrupted run already carry it.
+            device.metadata_->config_hash = hashshouldbe;
+            continue;
         }
-        else if (device.metadata_->config_hash != uint32_t(hashshouldbe)) {
+        if (device.metadata_->config_hash == 0) {
+            device.metadata_->config_hash = hashshouldbe;
+        }
+        else if (device.metadata_->config_hash != hashshouldbe) {
             if (!flags.disable_mismatching_storage_pool_check) {
                 MONAD_ABORT_PRINTF(
                     "Storage pool source %s was initialised with a "
@@ -584,6 +1457,16 @@ void storage_pool::fill_chunks_(creation_flags const &flags)
                     "no longer needed and has been disabled.",
                     device.current_path().c_str());
             }
+        }
+    }
+    if (op == mode::add_devices) {
+        MONAD_ASSERT(!is_read_only_);
+        // The footers and their new config_hash must reach the storage before
+        // DbMetadataContext makes the grown chunk_info[] durable, or a power
+        // loss can leave the database describing chunks the devices do not
+        // carry.
+        for (auto const &device : devices_) {
+            device.flush_metadata_();
         }
     }
     auto const zone_id = [this](int const chunk_type) {
@@ -660,6 +1543,7 @@ storage_pool::storage_pool(
     , is_read_only_allow_dirty_(false)
     , is_migration_allowed_(false)
     , is_newly_truncated_(false)
+    , is_adding_devices_(false)
 {
     devices_.reserve(src->devices_.size());
     creation_flags flags;
@@ -705,19 +1589,87 @@ storage_pool::storage_pool(
             MONAD_ABORT();
         }());
     }
-    fill_chunks_(flags);
+    fill_chunks_(mode::open_existing, flags);
 }
 
 storage_pool::storage_pool(
-    std::span<std::filesystem::path const> const sources, mode const mode,
+    std::span<std::filesystem::path const> const sources, mode const mode_,
     creation_flags const flags)
     : is_read_only_(flags.open_read_only || flags.open_read_only_allow_dirty)
     , is_read_only_allow_dirty_(flags.open_read_only_allow_dirty)
     , is_migration_allowed_(flags.allow_migration)
-    , is_newly_truncated_(mode == mode::truncate)
+    // mode::add_devices must never set this, however much of the device set it
+    // initialises: DbMetadataContext zeroes both metadata magics when it is
+    // set, which would destroy the database it is meant to be growing.
+    , is_newly_truncated_(mode_ == mode::truncate)
+    , is_adding_devices_(mode_ == mode::add_devices)
 {
+    MONAD_ASSERT(!sources.empty());
+    refuse_duplicate_sources_(sources);
+    // Classify and validate before writing anything, the interleaving refusal
+    // included. Diagnosing a bad prefix after make_device_ had already stamped
+    // a footer onto the joining device would make every retry fail as "already
+    // carries pool metadata", so one mistyped path would wedge the operation
+    // permanently.
+    size_t existing_devices = sources.size();
+    add_devices_plan_ plan{};
+    std::vector<device_info_> infos;
+    if (mode_ == mode::add_devices) {
+        MONAD_ASSERT(
+            !flags.interleave_chunks_evenly,
+            "Devices cannot be added to an evenly interleaved pool: chunk ids "
+            "are assigned round-robin across devices, so appending a device "
+            "renumbers every existing chunk.");
+        MONAD_ASSERT(
+            !flags.open_read_only && !flags.open_read_only_allow_dirty,
+            "mode::add_devices initialises joining devices and relocates the "
+            "metadata of a grown one, so it cannot be opened read only.");
+        infos.reserve(sources.size());
+        for (auto const &source : sources) {
+            infos.push_back(read_device_info_(source));
+        }
+        plan = validate_devices_to_add_(
+            sources,
+            infos,
+            flags.recorded_size_of_grown_device,
+            flags.metadata_budget);
+        existing_devices = plan.members;
+        if (plan.grown.has_value()) {
+            // Every intact member must already agree on the hash of the set
+            // this operation produces before the grown device's footer lands,
+            // or a crash in between would leave the grown device holding a
+            // hash no other device shares and the pool unopenable. Once that
+            // footer is durable the whole set agrees, which is the state the
+            // append path already knows how to finish.
+            for (size_t n = 0; n < plan.members; n++) {
+                stamp_config_hash_(sources[n], infos[n].size, plan.target_hash);
+            }
+            auto const index = plan.grown->index;
+            relocate_device_metadata_(
+                sources[index],
+                infos[index].size,
+                *plan.grown,
+                plan.target_hash);
+            existing_devices = index + 1;
+        }
+    }
+
     devices_.reserve(sources.size());
-    for (auto const &source : sources) {
+    creation_flags device_flags = flags;
+    for (size_t n = 0; n < sources.size(); n++) {
+        auto const &source = sources[n];
+        auto const device_mode = [&] {
+            if (mode_ != mode::add_devices) {
+                return mode_;
+            }
+            return n < existing_devices ? mode::open_existing : mode::truncate;
+        }();
+        if (mode_ == mode::add_devices && n == existing_devices) {
+            // Joining devices take the pool's geometry, never the caller's.
+            device_flags.set_chunk_capacity(
+                static_cast<uint32_t>(std::countr_zero(plan.chunk_capacity)));
+            device_flags.num_cnv_chunks = plan.num_cnv_chunks;
+        }
         devices_.push_back([&] {
             int const fd = ::open(source.c_str(), O_PATH | O_CLOEXEC);
             MONAD_ASSERT_PRINTF(
@@ -738,21 +1690,21 @@ storage_pool::storage_pool(
                 std::strerror(errno));
             if ((stat.st_mode & S_IFMT) == S_IFBLK) {
                 return make_device_(
-                    mode,
+                    device_mode,
                     device_t::type_t_::block_device,
                     source.c_str(),
                     fd,
                     0ULL,
-                    flags);
+                    device_flags);
             }
             if ((stat.st_mode & S_IFMT) == S_IFREG) {
                 return make_device_(
-                    mode,
+                    device_mode,
                     device_t::type_t_::file,
                     source.c_str(),
                     fd,
                     stat.st_ino,
-                    flags);
+                    device_flags);
             }
             MONAD_ABORT_PRINTF(
                 "Storage pool source %s has unknown file entry type = %u",
@@ -760,7 +1712,7 @@ storage_pool::storage_pool(
                 stat.st_mode & S_IFMT);
         }());
     }
-    fill_chunks_(flags);
+    fill_chunks_(mode_, flags);
 }
 
 storage_pool::storage_pool(use_anonymous_inode_tag, creation_flags const flags)
@@ -776,6 +1728,7 @@ storage_pool::storage_pool(
     , is_read_only_allow_dirty_(flags.open_read_only_allow_dirty)
     , is_migration_allowed_(flags.allow_migration)
     , is_newly_truncated_(false)
+    , is_adding_devices_(false)
 {
     int const fd = make_temporary_inode();
     auto unfd = make_scope_exit([fd]() noexcept { ::close(fd); });
@@ -784,7 +1737,7 @@ storage_pool::storage_pool(
     devices_.push_back(make_device_(
         mode::truncate, device_t::type_t_::file, {}, fd, uint64_t(0), flags));
     unfd.release();
-    fill_chunks_(flags);
+    fill_chunks_(mode::truncate, flags);
 }
 
 storage_pool::~storage_pool()
@@ -812,13 +1765,8 @@ storage_pool::~storage_pool()
     cleanupchunks_(seq);
     for (auto const &device : devices_) {
         if (device.metadata_ != nullptr) {
-            auto const total_size =
-                device.metadata_->total_size(device.size_of_file_);
-            ::munmap(
-                reinterpret_cast<void *>(round_down_align<CPU_PAGE_BITS>(
-                    (uintptr_t)device.metadata_ + sizeof(device_t::metadata_t) -
-                    total_size)),
-                total_size);
+            auto const mapping = device.metadata_mapping_();
+            ::munmap(mapping.first, mapping.second);
         }
         if (device.readwritefd_ != -1) {
             (void)::fsync(device.readwritefd_);

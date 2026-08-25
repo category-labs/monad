@@ -16,8 +16,10 @@
 #pragma once
 
 #include <category/mpt/config.hpp>
+#include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 
+#include <cstddef>
 #include <cstdint>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -58,6 +60,17 @@ namespace test
         static auto const &storage(ring const &r) noexcept
         {
             return r.storage_;
+        }
+    };
+
+    // Test-only access to the device-add growth internals. Offline,
+    // single-threaded use only.
+    struct AddDevicesTestAccess
+    {
+        static void
+        check_chunk_info_fits(size_t const target, size_t const mmap_size)
+        {
+            DbMetadataContext::check_chunk_info_fits_(target, mmap_size);
         }
     };
 }

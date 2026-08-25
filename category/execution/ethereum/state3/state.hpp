@@ -73,6 +73,22 @@ class State
 
     std::deque<Set<Address>> dirty_;
 
+    // Cache the last account lookup. Inserts preserve the pointer;
+    // pop_reject clears it before erasing entries.
+    //
+    // An increasing epoch tracks dirty-set registration: version_ alone
+    // cannot distinguish successive frames at the same depth.
+    //
+    // alignas(8) because the key is READ as two 8-byte words and an Address
+    // is 20 bytes: the pair of loads must not straddle a word boundary, which
+    // ZisK charges 191 cells for against 16 for an aligned read. Holds the
+    // property explicitly rather than leaving it to the layout of the members
+    // above, which has already moved twice.
+    alignas(8) Address memo_addr_{};
+    VersionStack<AccountState> *memo_val_{nullptr};
+    std::uint64_t memo_epoch_{0};
+    std::uint64_t frame_epoch_{1};
+
     bool const relaxed_validation_{false};
     ReserveBalance rb_;
 

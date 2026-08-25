@@ -26,16 +26,25 @@
 
 MONAD_NAMESPACE_BEGIN
 
-bool CodeTraceRunner::operator()(trace::state_trace::ReadCode const &op)
+void CodeTraceRunner::operator()(trace::state_trace::ReadCode const &op)
+{
+    MONAD_ASSERT_THROW(op.code_hash != NULL_HASH, "Got null code hash");
+    MONAD_ASSERT_THROW(op.code, "Got null intercode object");
+    codes.emplace(op.code_hash, op.code);
+}
+
+bool CodeTraceRunner::operator()(trace::state_trace::MaybeReadCode const &op)
 {
     bytes32_t const &code_hash = op.state.get_code_hash(op.address);
     if (code_hash == NULL_HASH) {
-        return false;
+        return true;
     }
+
     auto const vcode = op.state.read_code(code_hash);
-    MONAD_ASSERT_THROW(vcode, "Got null intercode object");
-    codes.emplace(code_hash, vcode->intercode());
-    return true;
+    trace::state_trace::ReadCode const delegated_op{
+        code_hash, vcode->intercode()};
+    (*this)(delegated_op);
+    return false;
 }
 
 MONAD_NAMESPACE_END

@@ -1430,12 +1430,11 @@ struct monad_executor
                     TrieRODb tdb{db};
                     std::vector<CallFrame> call_frames;
                     nlohmann::json state_trace;
+                    CallTraceRunner call_trace_runner{transaction, call_frames};
                     std::optional<trace::TypeErasedRunner> erased_runner{};
                     if (tracer_config == CALL_TRACER) {
-                        CallTraceRunner call_trace_runner{
-                            transaction, call_frames};
-                        erased_runner =
-                            trace::TypeErasedRunner::erase(call_trace_runner);
+                        erased_runner.emplace(
+                            trace::TypeErasedRunner::erase(call_trace_runner));
                     }
                     auto const trace_context = [&]() -> TxTraceContext {
                         if (tracer_config != CALL_TRACER) {

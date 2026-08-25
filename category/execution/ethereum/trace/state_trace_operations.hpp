@@ -15,12 +15,14 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/trace/trace_traits.hpp>
+#include <category/vm/code.hpp>
 
 MONAD_NAMESPACE_BEGIN
 class State;
-struct Address;
+struct bytes32_t;
 MONAD_NAMESPACE_END
 
 namespace monad::trace::state_trace
@@ -49,15 +51,29 @@ namespace monad::trace::state_trace
     {
     };
 
-    struct ReadCode
+    struct MaybeReadCode
     {
         using return_type = bool;
         monad::State &state;
-        monad::Address const &address;
+        monad::Address address;
 
-        ReadCode(monad::State &state, monad::Address const &address)
+        MaybeReadCode(monad::State &state, monad::Address const &address)
             : state{state}
             , address{address}
+        {
+        }
+    };
+
+    struct ReadCode
+    {
+        monad::bytes32_t const &code_hash;
+        monad::vm::SharedIntercode const &code;
+
+        ReadCode(
+            monad::bytes32_t const &code_hash,
+            monad::vm::SharedIntercode const &code)
+            : code_hash{code_hash}
+            , code{code}
         {
         }
     };

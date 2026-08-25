@@ -104,7 +104,7 @@ namespace
             trace::StateTracer noop_state_tracer = std::monostate{};
             TxTraceContext const trace_context{};
             EvmcHost<Trait> host{
-                                noop_state_tracer,
+                noop_state_tracer,
                 tx_context,
                 buffer,
                 state,

@@ -27,63 +27,6 @@
 
 MONAD_NAMESPACE_BEGIN
 
-template <typename... Ts>
-using Signature = std::tuple<Ts...>;
-
-// Type-checking machinery
-template <typename R>
-concept CheckSignature =
-    requires { typename std::remove_cvref_t<R>::Signature; };
-
-template <typename R>
-struct HasSignature
-{
-    static constexpr bool has_signature = CheckSignature<R>;
-
-    static consteval bool check()
-    {
-        // TODO(dhil): Tweak the error message.
-        static_assert(
-            has_signature,
-            "Runner must define 'using Signature = Signature<...>;' to conform "
-            "with the structure of a runner");
-        return has_signature;
-    }
-};
-
-template <typename R, typename Op>
-concept HandlesOp = requires(std::remove_cvref_t<R> &runner, Op const &op) {
-    { std::invoke(runner, op) } -> std::same_as<void>;
-};
-
-template <typename R, typename Signature>
-struct HandleOpsImpl;
-
-template <typename R, typename... Ops>
-struct HandleOpsImpl<R, Signature<Ops...>>
-{
-    static constexpr bool handle_ops = (HandlesOp<R, Ops> && ...);
-};
-
-template <typename R>
-struct HandleOps
-{
-    static constexpr bool handle_ops = HandleOpsImpl<
-        R, typename std::remove_cvref_t<R>::Signature>::handle_ops;
-
-    static consteval bool check()
-    {
-        static_assert(
-            handle_ops,
-            "Runner must implement a `void operator()(Op const&)` "
-            "for every operation type in the Signature");
-        return handle_ops;
-    }
-};
-
-template <typename R>
-concept Runner = HasSignature<R>::check() && HandleOps<R>::check();
-
 // TODO(dhil): Clean up the return type computing machinery.
 
 template <typename Op, typename = void>
@@ -116,5 +59,62 @@ template <typename Op>
 using return_type_t = typename answer_type<Op>::return_type;
 template <typename Op>
 using answer_type_t = typename answer_type<Op>::full_answer_type;
+
+template <typename... Ts>
+using Signature = std::tuple<Ts...>;
+
+// Type-checking machinery
+template <typename R>
+concept CheckSignature =
+    requires { typename std::remove_cvref_t<R>::Signature; };
+
+template <typename R>
+struct HasSignature
+{
+    static constexpr bool has_signature = CheckSignature<R>;
+
+    static consteval bool check()
+    {
+        // TODO(dhil): Tweak the error message.
+        static_assert(
+            has_signature,
+            "Runner must define 'using Signature = Signature<...>;' to conform "
+            "with the structure of a runner");
+        return has_signature;
+    }
+};
+
+template <typename R, typename Op>
+concept HandlesOp = requires(std::remove_cvref_t<R> &runner, Op const &op) {
+    { std::invoke(runner, op) } -> std::same_as<return_type_t<Op>>;
+};
+
+template <typename R, typename Signature>
+struct HandleOpsImpl;
+
+template <typename R, typename... Ops>
+struct HandleOpsImpl<R, Signature<Ops...>>
+{
+    static constexpr bool handle_ops = (HandlesOp<R, Ops> && ...);
+};
+
+template <typename R>
+struct HandleOps
+{
+    static constexpr bool handle_ops = HandleOpsImpl<
+        R, typename std::remove_cvref_t<R>::Signature>::handle_ops;
+
+    static consteval bool check()
+    {
+        static_assert(
+            handle_ops,
+            "Runner must implement a `void operator()(Op const&)` "
+            "for every operation type in the Signature");
+        return handle_ops;
+    }
+};
+
+template <typename R>
+concept Runner = HasSignature<R>::check() && HandleOps<R>::check();
 
 MONAD_NAMESPACE_END

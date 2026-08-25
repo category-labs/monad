@@ -43,6 +43,7 @@
 MONAD_NAMESPACE_BEGIN
 
 class BlockState;
+class TxTraceContext;
 
 class State
 {
@@ -77,7 +78,7 @@ class State
         requires is_monad_trait_v<traits>
     friend void init_reserve_balance_context(
         State &, Address const &, Transaction const &,
-        std::optional<uint256_t> const &, uint64_t, trace::StateTracer &,
+        std::optional<uint256_t> const &, uint64_t, TxTraceContext const &,
         ChainContext<traits> const &);
 
 public:

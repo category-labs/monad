@@ -26,7 +26,7 @@
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/call_trace_operations.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
@@ -268,7 +268,8 @@ struct EvmcHost final : public EvmcHostBase
                              .build();
 
             state_.store_log(event);
-            tx_trace_context_.run<trace::call_trace::Log>(std::move(event));
+            trace::emit<trace::call_trace::Log>(
+                tx_trace_context_, std::move(event));
         }
     }
 };

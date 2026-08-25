@@ -24,6 +24,8 @@
 #include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/state_trace_operations.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/reserve_balance.h>
@@ -54,7 +56,7 @@ template <Traits traits>
 bool dipped_into_reserve(
     Address const &sender, Transaction const &tx,
     uint256_t const &base_fee_per_gas, uint64_t const i,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &ctx,
+    TxTraceContext const &trace_ctx, ChainContext<traits> const &ctx,
     State &state)
 {
     MONAD_ASSERT(i < ctx.senders.size());
@@ -87,7 +89,8 @@ bool dipped_into_reserve(
         if (effective_code_hash != NULL_HASH) {
             vm::SharedIntercode const intercode =
                 state.read_code(effective_code_hash)->intercode();
-            trace::on_read_code(state_tracer, effective_code_hash, intercode);
+            trace::emit<trace::state_trace::ReadCode>(
+                trace_ctx, effective_code_hash, intercode);
             effective_is_delegated = monad::vm::evm::is_delegated(
                 {intercode->code(), intercode->size()});
             if (!effective_is_delegated) {
@@ -138,7 +141,7 @@ bool dipped_into_reserve(
 }
 
 bool is_delegated(
-    State &state, bytes32_t const &code_hash, trace::StateTracer &state_tracer)
+    State &state, bytes32_t const &code_hash, TxTraceContext const &trace_ctx)
 {
     if (MONAD_UNLIKELY(code_hash == NULL_HASH)) {
         return false;
@@ -147,7 +150,7 @@ bool is_delegated(
     auto const vcode = state.read_code(code_hash);
     MONAD_ASSERT(vcode);
     auto const &icode = vcode->intercode();
-    trace::on_read_code(state_tracer, code_hash, icode);
+    trace::emit<trace::state_trace::ReadCode>(trace_ctx, code_hash, icode);
     return vm::evm::is_delegated({icode->code(), icode->size()});
 }
 
@@ -202,8 +205,8 @@ bool ReserveBalance::subject_account(Address const &address)
     if (effective_code_hash == NULL_HASH) {
         return true;
     }
-    MONAD_ASSERT(state_tracer_ != nullptr);
-    return is_delegated(*state_, effective_code_hash, *state_tracer_);
+
+    return is_delegated(*state_, effective_code_hash, trace_ctx_);
 }
 
 uint256_t ReserveBalance::pretx_reserve(Address const &address)
@@ -324,9 +327,9 @@ template <Traits traits>
 void ReserveBalance::init_from_tx(
     Address const &sender, Transaction const &tx,
     std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &ctx)
+    TxTraceContext const &trace_ctx, ChainContext<traits> const &ctx)
 {
-    state_tracer_ = &state_tracer;
+    trace_ctx_ = trace_ctx;
 
     constexpr bool tracking_disabled = []() {
         if constexpr (!is_monad_trait_v<traits>) {
@@ -359,7 +362,7 @@ void ReserveBalance::init_from_tx(
             ? state_->get_code_hash(sender)
             : state_->original_account_state(sender).get_code_hash();
     bool const sender_can_dip = can_sender_dip_into_reserve<traits>(
-        sender, i, is_delegated(*state_, sender_code_hash, state_tracer), ctx);
+        sender, i, is_delegated(*state_, sender_code_hash, trace_ctx), ctx);
     tracking_enabled_ = true;
     sender_ = sender;
     sender_gas_fees_ = uint256_t{tx.gas_limit} *
@@ -379,10 +382,10 @@ template <Traits traits>
 void init_reserve_balance_context(
     State &state, Address const &sender, Transaction const &tx,
     std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &ctx)
+    TxTraceContext const &trace_ctx, ChainContext<traits> const &ctx)
 {
     state.rb_.init_from_tx<traits>(
-        sender, tx, base_fee_per_gas, i, state_tracer, ctx);
+        sender, tx, base_fee_per_gas, i, trace_ctx, ctx);
 }
 
 EXPLICIT_MONAD_TRAITS(init_reserve_balance_context);
@@ -391,11 +394,11 @@ template <Traits traits>
 bool revert_transaction(
     Address const &sender, Transaction const &tx,
     uint256_t const &base_fee_per_gas, uint64_t const i, State &state,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &ctx)
+    TxTraceContext const &trace_ctx, ChainContext<traits> const &ctx)
 {
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {
         return dipped_into_reserve<traits>(
-            sender, tx, base_fee_per_gas, i, state_tracer, ctx, state);
+            sender, tx, base_fee_per_gas, i, trace_ctx, ctx, state);
     }
     else if constexpr (traits::monad_rev() >= MONAD_ZERO) {
         return false;

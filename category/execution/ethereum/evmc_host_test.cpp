@@ -161,7 +161,7 @@ TYPED_TEST(TraitsTest, emit_log)
     trace::StateTracer noop_state_tracer = std::monostate{};
     TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> host{
-                noop_state_tracer,
+        noop_state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -197,7 +197,7 @@ TYPED_TEST(TraitsTest, access_precompile)
     trace::StateTracer noop_state_tracer = std::monostate{};
     TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> host{
-                noop_state_tracer,
+        noop_state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,

@@ -27,12 +27,16 @@ MONAD_NAMESPACE_BEGIN
 class CodeTraceRunner
 {
 public:
+    using Signature = monad::Signature<
+        trace::state_trace::ReadCode, trace::state_trace::MaybeReadCode>;
+
     template <typename Key, typename Elem>
     using Map = ankerl::unordered_dense::segmented_map<Key, Elem>;
 
     Map<bytes32_t, vm::SharedIntercode> codes{};
 
-    bool operator()(trace::state_trace::ReadCode const &op);
+    bool operator()(trace::state_trace::MaybeReadCode const &);
+    void operator()(trace::state_trace::ReadCode const &);
 };
 
 MONAD_NAMESPACE_END

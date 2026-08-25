@@ -48,7 +48,7 @@ namespace monad::trace
             using Signature =
                 typename std::remove_cvref_t<decltype(r)>::Signature;
             TypeErasedRunner erased_runner{};
-            erased_runner.dispatch_ = [runner = std::forward<decltype(r)>(r)](
+            erased_runner.dispatch_ = [runner = std::addressof(r)](
                                           std::type_index const &op_type,
                                           void const *raw_op,
                                           void *result) mutable -> bool {
@@ -72,7 +72,7 @@ namespace monad::trace
                             if constexpr (std::same_as<
                                               return_type_t<Op>,
                                               void>) {
-                                std::invoke(runner, op);
+                                std::invoke(*runner, op);
                             }
                             else {
                                 // TODO(dhil): Similarly, this assertion is
@@ -80,7 +80,7 @@ namespace monad::trace
                                 MONAD_ASSERT(result);
                                 auto &answer =
                                     *static_cast<answer_type_t<Op> *>(result);
-                                answer.emplace(std::invoke(runner, op));
+                                answer.emplace(std::invoke(*runner, op));
                             }
                             return true;
                         }
@@ -126,6 +126,12 @@ public:
 
     explicit TxTraceContext(
         std::span<monad::trace::TypeErasedRunner const> const runners);
+
+    TxTraceContext(TxTraceContext const &) = default;
+    TxTraceContext(TxTraceContext &&) = default;
+
+    TxTraceContext &operator=(TxTraceContext const &) = default;
+    TxTraceContext &operator=(TxTraceContext &&) = default;
 
     // // Performs a syntactic trace operation which is interpreted by _all_
     // // suitable runners in this context.
@@ -180,7 +186,7 @@ private:
     void dispatch(
         std::type_index const &op_type, void const *op, void *result) const;
 
-    std::span<monad::trace::TypeErasedRunner const> const runners_;
+    std::span<monad::trace::TypeErasedRunner const> runners_;
 };
 
 static_assert(sizeof(TxTraceContext) == 16);

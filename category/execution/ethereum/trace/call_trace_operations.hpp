@@ -89,6 +89,12 @@ namespace monad::trace::call_trace
         std::span<CallFrame const> *call_frames;
     };
 
-    using Signature =
-        Signature<Enter, Exit, Log, SelfDestruct, Finish, Reset, GetCallFrames>;
+    using Signature = monad::Signature<
+        Enter,
+        Exit,
+        Log,
+        SelfDestruct,
+        Finish,
+        Reset,
+        GetCallFrames>;
 }

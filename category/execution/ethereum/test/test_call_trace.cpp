@@ -1503,7 +1503,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
         TxTraceContextWithRunner trace_context{tx, call_frames};
 
         EvmcHost<typename TestFixture::Trait> host{
-        noop_state_tracer,
+            noop_state_tracer,
             tx_context,
             buffer,
             s,

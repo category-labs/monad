@@ -238,7 +238,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
             tx_,
             header_.base_fee_per_gas,
             host.i_,
-            host.state_tracer_,
+            host.get_tx_trace_context(),
             host.chain_ctx_);
     }
 

@@ -345,15 +345,13 @@ void run_dipped_into_reserve_test(
         msg.gas = int64_t{GAS_LIMIT}, msg.recipient = ENTRYPOINT;
         msg.sender = BUNDLER;
 
-        // TODO(dhil): Make `init_reserve_balance_context` take a
-        // `TxTraceContext`.
         init_reserve_balance_context<traits>(
             state,
             msg.sender,
             tx,
             host.base_fee_per_gas_,
             host.i_,
-            host.state_tracer_,
+            host.get_tx_trace_context(),
             host.chain_ctx_);
 
         auto const &code_hash =
@@ -402,7 +400,7 @@ TEST_F(ReserveBalanceEvm, precompile_fallback)
             empty_tx,
             h.base_fee_per_gas_,
             h.i_,
-            h.state_tracer_,
+            h.get_tx_trace_context(),
             h.chain_ctx_);
 
         auto const result = h.call(m);
@@ -435,7 +433,7 @@ TEST_F(ReserveBalanceEvm, precompile_fallback)
             empty_tx,
             h.base_fee_per_gas_,
             h.i_,
-            h.state_tracer_,
+            h.get_tx_trace_context(),
             h.chain_ctx_);
 
         auto const result = h.call(m);
@@ -467,7 +465,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_present)
         empty_tx,
         h.base_fee_per_gas_,
         h.i_,
-        h.state_tracer_,
+        h.get_tx_trace_context(),
         h.chain_ctx_);
 
     auto const result = h.call(m);
@@ -498,7 +496,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_oog)
         empty_tx,
         h.base_fee_per_gas_,
         h.i_,
-        h.state_tracer_,
+        h.get_tx_trace_context(),
         h.chain_ctx_);
 
     auto const result = h.call(m);
@@ -529,7 +527,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_with_argument)
         empty_tx,
         h.base_fee_per_gas_,
         h.i_,
-        h.state_tracer_,
+        h.get_tx_trace_context(),
         h.chain_ctx_);
 
     auto const result = h.call(m);
@@ -848,7 +846,7 @@ TYPED_TEST(
             this->empty_tx,
             this->h.base_fee_per_gas_,
             this->h.i_,
-            this->h.state_tracer_,
+            this->h.get_tx_trace_context(),
             this->h.chain_ctx_);
 
         std::array<uint8_t, 32> expected_message{};

@@ -47,6 +47,9 @@ namespace detail
                 std::copy(node.begin(), node.end(), ref_dest.last(size).data());
             }
             else {
+#ifdef MONAD_ZKVM_KECCAK_SITES
+                MONAD_KECCAK_SITE(BODY_ROOTS, node.size());
+#endif
                 monad_keccak256(node.data(), node.size(), ref_dest.data());
             }
             return size;

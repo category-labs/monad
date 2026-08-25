@@ -57,6 +57,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#ifdef MONAD_ZKVM_KECCAK_SITES
+#include <category/core/keccak_sites.hpp>
+#else
+#define MONAD_KECCAK_SITE(s, len) ((void)0)
+#endif
 
 namespace
 {
@@ -102,6 +107,7 @@ extern "C" void monad_zkvm_execute_witness(void)
         while (!codes.empty()) {
             auto const bytes = monad::rlp::parse_string_metadata(codes);
             MONAD_ASSERT(bytes.has_value());
+            MONAD_KECCAK_SITE(CODE_INDEX, bytes.value().size());
             code_index.emplace(
                 monad::to_bytes(monad::keccak256(bytes.value())),
                 monad::vm::make_shared_intercode(bytes.value()));
@@ -150,6 +156,7 @@ extern "C" void monad_zkvm_execute_witness(void)
             auto const header = monad::rlp::decode_block_header(header_view);
             MONAD_ASSERT(header.has_value());
             MONAD_ASSERT(header_view.empty());
+            MONAD_KECCAK_SITE(HEADER_HASH, payload.value().size());
             monad::bytes32_t const hash =
                 monad::to_bytes(monad::keccak256(payload.value()));
             // Each header must name the one before it, and the run must be
@@ -227,6 +234,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     monad::byte_string const header_rlp =
         monad::rlp::encode_block_header(sealed_header);
     monad::bytes32_t block_hash;
+    MONAD_KECCAK_SITE(HEADER_HASH, header_rlp.size());
     keccak256(header_rlp.data(), header_rlp.size(), block_hash.bytes);
 
     // Public values, in order: post-state root, pre-state root, block hash.
@@ -251,4 +259,11 @@ extern "C" void monad_zkvm_execute_witness(void)
     write_output(state_root.bytes, sizeof(state_root.bytes));
     write_output(pre_state_root.bytes, sizeof(pre_state_root.bytes));
     write_output(block_hash.bytes, sizeof(block_hash.bytes));
+#ifdef MONAD_ZKVM_KECCAK_SITES
+    // Diagnostic tail, AFTER the three public values so their offsets are unchanged and the
+    // verifier reads them exactly as before. A run that reports its keccak breakdown is therefore
+    // still a run whose roots are checked -- which is the whole point of putting the counters here
+    // rather than in a printf the guest cannot do.
+    write_output(monad::keccak_sites::bytes(), monad::keccak_sites::size());
+#endif
 }

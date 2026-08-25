@@ -39,6 +39,11 @@
 #include <span>
 #include <utility>
 #include <vector>
+#ifdef MONAD_ZKVM_KECCAK_SITES
+#include <category/core/keccak_sites.hpp>
+#else
+#define MONAD_KECCAK_SITE(s, len) ((void)0)
+#endif
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -139,6 +144,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     // emit a 32-byte ref where the trie inlines it.
                     if (rem.rlp_size() >= 32) {
                         bytes32_t h;
+                        MONAD_KECCAK_SITE(TRIE_PRIME, rem.rlp_size());
                         keccak256(rem.rlp_data(), rem.rlp_size(), h.bytes);
                         hashes_.emplace(NodeId{node_offset}, h);
                     }
@@ -223,6 +229,7 @@ bytes32_t OffsetTrie::hash(NodeId const id)
                 node_rlp_span const rem = encode_rlp(node, node_rlp_span{buf});
                 bytes32_t h;
                 // RLP occupies the tail: [rem.end(), buf_end).
+                MONAD_KECCAK_SITE(TRIE_PRIME, rem.rlp_size());
                 keccak256(rem.rlp_data(), rem.rlp_size(), h.bytes);
 
                 hashes_.emplace(id, h);
@@ -255,6 +262,7 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
         MONAD_ABORT("offset trie: unprimed hash-referenced node (bad offset)");
     }
     bytes32_t h;
+    MONAD_KECCAK_SITE(TRIE_ENCODE, child_rlp_len);
     keccak256(child_rlp, child_rlp_len, h.bytes);
     hashes_.emplace(id, h);
     return write_hash_ref(dest, h.bytes);

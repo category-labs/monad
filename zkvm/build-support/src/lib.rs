@@ -107,6 +107,19 @@ impl Backend {
         });
         cfg.define("CMAKE_PREFIX_PATH", &prefix_path);
 
+        // Diagnostic escape hatch. The guest CMake carries a few options that exist only to answer
+        // a measurement question (MONAD_ZKVM_KECCAK_SITES, for one) and must stay OFF in anything
+        // shipped. Rather than patch the default and risk it being committed, pass them in:
+        //   MONAD_ZKVM_CMAKE_DEFINES="MONAD_ZKVM_KECCAK_SITES=ON;OTHER=..." cargo-zisk build ...
+        // Bare names default to ON. emit_rerun_directives does not watch this, so change it and
+        // the build dir has to be removed anyway -- which a diagnostic build should do regardless.
+        if let Ok(defs) = env::var("MONAD_ZKVM_CMAKE_DEFINES") {
+            for kv in defs.split(';').filter(|s| !s.trim().is_empty()) {
+                let (k, v) = kv.split_once('=').unwrap_or((kv, "ON"));
+                cfg.define(k.trim(), v.trim());
+            }
+        }
+
         if let Self::Sp1 = self {
             cfg.define("CMAKE_C_FLAGS_INIT", SP1_C_FLAGS)
                 .define("CMAKE_CXX_FLAGS_INIT", SP1_CXX_FLAGS)

@@ -31,6 +31,18 @@
 #include <utility>
 #include <vector>
 
+#if defined(__has_cpp_attribute)
+    #if __has_cpp_attribute(clang::lifetimebound)
+        #define MONAD_LIFETIMEBOUND [[clang::lifetimebound]]
+    #elif __has_cpp_attribute(gnu::lifetimebound)
+        #define MONAD_LIFETIMEBOUND [[gnu::lifetimebound]]
+    #else
+        #define MONAD_LIFETIMEBOUND
+    #endif
+#else
+    #define MONAD_LIFETIMEBOUND
+#endif
+
 namespace monad::trace
 {
     // This is an implementation detail of the tracing framework. This structure
@@ -43,7 +55,7 @@ namespace monad::trace
 
         template <typename R>
             requires Runner<R>
-        static TypeErasedRunner erase(R &r)
+        static TypeErasedRunner erase(R &r MONAD_LIFETIMEBOUND)
         {
             using Signature =
                 typename std::remove_cvref_t<decltype(r)>::Signature;
@@ -125,7 +137,8 @@ public:
     }
 
     explicit TxTraceContext(
-        std::span<monad::trace::TypeErasedRunner const> const runners);
+        std::span<monad::trace::TypeErasedRunner const> const runners
+            MONAD_LIFETIMEBOUND);
 
     TxTraceContext(TxTraceContext const &) = default;
     TxTraceContext(TxTraceContext &&) = default;
@@ -198,7 +211,8 @@ class BlockTraceContext
 public:
     template <typename R>
         requires Runner<R>
-    BlockTraceContext(size_t num_txs, std::span<R> const runners)
+    BlockTraceContext(
+        size_t num_txs, std::span<R> const runners MONAD_LIFETIMEBOUND)
         : num_txs_(num_txs)
         , runners_{nullptr}
     {
@@ -209,7 +223,8 @@ public:
 
     template <typename R>
         requires Runner<R>
-    BlockTraceContext &with_runners(std::span<R> const runners)
+    BlockTraceContext &
+    with_runners(std::span<R> const runners MONAD_LIFETIMEBOUND)
     {
         using namespace monad::trace;
         // TODO(dhil): This requirement is stricter than it need be, as we can
@@ -261,3 +276,5 @@ namespace monad::trace
         return tr_ctx.template run<Op>(std::forward<Args>(args)...);
     }
 }
+
+#undef MONAD_LIFETIMEBOUND

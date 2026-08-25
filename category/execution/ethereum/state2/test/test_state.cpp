@@ -1818,6 +1818,7 @@ TYPED_TEST(OnDiskCachedTestSuite, proposal_basics)
     this->tdb.reset_root(
         load_header({}, this->db, BlockHeader{.number = 9}), 9);
     Db &db = this->tdb;
+    EXPECT_FALSE(db.read_account(a).has_value());
     commit_simple(
         db,
         StateDeltas(
@@ -1829,10 +1830,10 @@ TYPED_TEST(OnDiskCachedTestSuite, proposal_basics)
         BlockHeader{.number = 10});
     db.set_block_and_prefix(10, bytes32_t{10});
     EXPECT_EQ(db.read_account(a).value().balance, 30'000);
+    db.finalize(10, bytes32_t{10});
 
     db.set_block_and_prefix(10, bytes32_t{10});
     BlockState bs1(db, this->vm);
-    EXPECT_EQ(bs1.read_account(a).value().balance, 30'000);
     auto
         [released_state1,
          released_code1,

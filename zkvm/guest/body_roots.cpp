@@ -28,6 +28,12 @@
 #include <cstddef>
 #include <cstdint>
 
+#ifdef MONAD_ZKVM_KECCAK_SITES
+#include <category/core/keccak_sites.hpp>
+#else
+#define MONAD_KECCAK_SITE(s, len) ((void)0)
+#endif
+
 MONAD_NAMESPACE_BEGIN
 
 namespace
@@ -108,6 +114,7 @@ namespace
         if (child.size() < 32) {
             return child;
         }
+        MONAD_KECCAK_SITE(BODY_ROOTS, child.size());
         auto const h = to_bytes(keccak256(child));
         byte_string out;
         out.reserve(33);
@@ -223,6 +230,7 @@ bytes32_t ordered_trie_root(std::span<byte_string_view const> const items)
         return a.nib < b.nib;
     });
     byte_string const root = node_rlp(it, 0, it.size(), 0);
+    MONAD_KECCAK_SITE(BODY_ROOTS, root.size());
     return to_bytes(keccak256(root));
 }
 

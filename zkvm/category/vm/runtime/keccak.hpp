@@ -28,6 +28,11 @@
 #include <category/vm/runtime/types.hpp>
 
 #include <cstdint>
+#ifdef MONAD_ZKVM_KECCAK_SITES
+#include <category/core/keccak_sites.hpp>
+#else
+#define MONAD_KECCAK_SITE(s, len) ((void)0)
+#endif
 
 namespace monad::vm::runtime
 {
@@ -48,6 +53,7 @@ namespace monad::vm::runtime
             ctx->deduct_gas(word_size * bin<6>);
         }
 
+        MONAD_KECCAK_SITE(SHA3_OPCODE, *size);
         std::uint8_t hash[KECCAK256_SIZE];
         keccak256(ctx->memory.data + *offset, *size, hash);
         *result_ptr = load_be<uint256_t>(hash);

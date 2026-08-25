@@ -63,6 +63,19 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # ends of their 32-byte output word, so the precompile shim normalises
     # them differently (zkvm/category/execution/ethereum/precompiles_impl.hpp).
     # Expose the backend as a compile definition for that per-backend branch.
+    # Diagnostic: per-site keccak counters appended to the public values. Off by default, so the
+    # shipped guest carries neither the counter array nor the increments. Enable with
+    #   -DMONAD_ZKVM_KECCAK_SITES=ON
+    # then read the tail after the three 32-byte roots: N_SITES little-endian u32 call counts
+    # followed by as many permutation counts, in the order given by
+    # zkvm/category/core/keccak_sites.hpp. The roots stay at offsets 0/32/64, so ev.sh is unaffected and a
+    # reporting run is still a verified run. Exists because ziskemu's call-path grouping misplaced
+    # 96 % of the block's duplicate hashes (FINDINGS 134); a counter on the hashing line cannot.
+    option(MONAD_ZKVM_KECCAK_SITES "count keccak calls per call site" OFF)
+    if(MONAD_ZKVM_KECCAK_SITES)
+        add_compile_definitions(MONAD_ZKVM_KECCAK_SITES)
+    endif()
+
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "sp1")
         add_compile_definitions(MONAD_ZKVM_SP1)
     endif()

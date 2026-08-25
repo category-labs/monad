@@ -22,6 +22,12 @@
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/types.hpp>
 
+#ifdef MONAD_ZKVM_KECCAK_SITES
+#include <category/core/keccak_sites.hpp>
+#else
+#define MONAD_KECCAK_SITE(s, len) ((void)0)
+#endif
+
 namespace monad::vm::runtime
 {
     template <Traits traits>
@@ -41,6 +47,7 @@ namespace monad::vm::runtime
             ctx->deduct_gas(word_size * bin<6>);
         }
 
+        MONAD_KECCAK_SITE(SHA3_OPCODE, *size);
         auto const hash = keccak256({ctx->memory.data + *offset, *size});
         *result_ptr = load_be<uint256_t>(hash);
     }

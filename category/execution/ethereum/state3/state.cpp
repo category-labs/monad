@@ -69,6 +69,9 @@ OriginalAccountState &State::original_account_state(Address const &address)
 
 AccountState const &State::recent_account_state(Address const &address)
 {
+    if (AccountState *const m = memoised(address); m != nullptr) {
+        return *m;
+    }
     // current
     auto const it = current_.find(address);
     if (it != current_.end()) {
@@ -587,8 +590,14 @@ bool State::is_current_incarnation(Address const &address)
 bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
 {
     MONAD_GUEST_SITE(STOR_LOOKUP);
-    auto const it = current_.find(address);
-    if (it == current_.end()) {
+    AccountState *cur = memoised(address);
+    if (cur == nullptr) {
+        auto const it = current_.find(address);
+        if (it != current_.end()) {
+            cur = &it->second;
+        }
+    }
+    if (cur == nullptr) {
         auto const it2 = original_.find(address);
         MONAD_ASSERT(it2 != original_.end());
         auto &account_state = it2->second;
@@ -606,7 +615,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         }
     }
     else {
-        auto const &account_state = it->second;
+        auto const &account_state = *cur;
         auto const &account = account_state.account_;
         MONAD_ASSERT(account.has_value());
         auto const &storage = account_state.storage_;

@@ -224,9 +224,9 @@ void record_account_events(
         .modified_balance = modified_balance,
         .modified_nonce = modified_nonce,
         .storage_key_count =
-            static_cast<uint32_t>(size(account_info.prestate->prestate_storage_)),
+            static_cast<uint32_t>(account_info.prestate->prestate_storage_.size()),
         .transient_count = static_cast<uint32_t>(
-            size(account_info.prestate->transient_storage_))};
+            account_info.prestate->transient_storage_.size())};
     exec_recorder->commit(account_access);
 
     auto const *const post_state_storage_map =

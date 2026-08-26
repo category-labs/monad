@@ -351,7 +351,10 @@ namespace trace
     EXPLICIT_TRAITS(run_tracer);
 
     // Json serialization
-    json storage_to_json(AccountState::StorageMap const &storage)
+    // Templated on the container: an original row's slots live in the append-only PrestateStorage,
+    // a current row's in the overlay type. Both iterate as key/value pairs, which is all this needs.
+    template <typename StorageMapT>
+    json storage_to_json(StorageMapT const &storage)
     {
         json res = json::object();
         for (auto const &[key, value] : storage) {

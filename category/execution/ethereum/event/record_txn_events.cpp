@@ -31,7 +31,6 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 
@@ -278,7 +277,7 @@ void record_account_access_events_internal(
         AccountState const *current_state = nullptr;
         if (auto const i = current_state_map.find(address);
             i != end(current_state_map)) {
-            current_state = std::addressof(i->second.recent());
+            current_state = std::addressof(i->second);
         }
         record_account_events(
             exec_recorder,

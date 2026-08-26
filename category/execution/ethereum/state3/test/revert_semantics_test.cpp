@@ -19,20 +19,27 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/vm.hpp>
 
-#include <cstdio>
-#include <map>
+#include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/vm/evm/traits.hpp>
+
+#include <functional>
+
+#include <cstdint>
 
 using namespace monad;
 
 namespace
 {
-    int failures = 0;
+    // Bit N is set when case N failed. No printing: this runs in the guest, which has no
+    // stdio, and a bitmask is what a caller on either target can read.
+    std::uint32_t failures = 0;
+    unsigned current_case = 0;
 
-    void check(bool ok, char const *what)
+    void check(bool const ok, char const *)
     {
         if (!ok) {
-            std::printf("  FAIL  %s\n", what);
-            ++failures;
+            failures |= (std::uint32_t{1} << current_case);
         }
     }
 
@@ -53,25 +60,49 @@ namespace
     // A pre-state of two accounts and one slot. Everything else answers empty.
     struct StubDb final : Db
     {
-        std::map<unsigned char, Account> accounts;
-        std::map<std::pair<unsigned char, unsigned char>, bytes32_t> storage;
+        // Flat, not std::map: the guest's libstdc++ stubs carry no red-black tree helpers,
+        // because nothing in the guest uses std::map. Eight of each is more than any case needs.
+        struct AccEntry { unsigned char id; Account acct; bool set; };
+        struct StoEntry { unsigned char id, slot; bytes32_t val; bool set; };
+        AccEntry accounts[8]{};
+        StoEntry storage[8]{};
+
+        void put_account(unsigned char const id, Account const &a)
+        {
+            for (auto &e : accounts) {
+                if (!e.set) { e = {id, a, true}; return; }
+            }
+        }
+
+        void put_storage(unsigned char const id, unsigned char const slot,
+                         bytes32_t const &v)
+        {
+            for (auto &e : storage) {
+                if (!e.set) { e = {id, slot, v, true}; return; }
+            }
+        }
 
         bool is_page_encoded() const override { return false; }
 
         std::optional<Account> read_account(Address const &a) override
         {
-            auto const it = accounts.find(a.bytes[19]);
-            if (it == accounts.end()) {
-                return std::nullopt;
+            for (auto const &e : accounts) {
+                if (e.set && e.id == a.bytes[19]) {
+                    return e.acct;
+                }
             }
-            return it->second;
+            return std::nullopt;
         }
 
         bytes32_t read_storage(
             Address const &a, Incarnation, bytes32_t const &k) override
         {
-            auto const it = storage.find({a.bytes[19], k.bytes[31]});
-            return it == storage.end() ? bytes32_t{} : it->second;
+            for (auto const &e : storage) {
+                if (e.set && e.id == a.bytes[19] && e.slot == k.bytes[31]) {
+                    return e.val;
+                }
+            }
+            return bytes32_t{};
         }
 
         storage_page_t read_storage_page(
@@ -92,13 +123,22 @@ namespace
         void update_voted_metadata(uint64_t, bytes32_t const &) override {}
         void update_proposed_metadata(uint64_t, bytes32_t const &) override {}
         uint64_t get_block_number() const override { return 0; }
+
+        void commit(
+            bytes32_t const &, CommitBuilder &, BlockHeader const &,
+            StateDeltas const &,
+            std::function<void(BlockHeader &)>) override
+        {
+        }
     };
 }
 
-int main()
+// Returns a bitmask: bit N set means case N failed, 0 means every case passed.
+extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
 {
-    std::printf("revert semantics\n");
+    failures = 0;
 
+    current_case = 1;
     // ---- 1. parent writes, child ACCEPTS, parent REJECTS.
     // The record the child left behind carries the pre-PARENT value, so the parent's own write
     // must disappear too. This is the case the corpus covers 89,826 times; asserted here because
@@ -106,7 +146,7 @@ int main()
     // -- is the one thing that makes leaving records to the parent correct.
     {
         StubDb db;
-        db.accounts[1] = Account{.nonce = 7};
+        db.put_account(1, Account{.nonce = 7});
         vm::VM vm;
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
@@ -120,10 +160,11 @@ int main()
         check(st.get_nonce(addr(1)) == 7, "1: parent reject undoes BOTH writes");
     }
 
+    current_case = 2;
     // ---- 2. parent writes, child REJECTS, parent ACCEPTS.
     {
         StubDb db;
-        db.accounts[1] = Account{.nonce = 7};
+        db.put_account(1, Account{.nonce = 7});
         vm::VM vm;
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
@@ -137,10 +178,11 @@ int main()
         check(st.get_nonce(addr(1)) == 8, "2: parent accept keeps it");
     }
 
+    current_case = 3;
     // ---- 3. the same field written twice in one frame, then rejected.
     {
         StubDb db;
-        db.accounts[1] = Account{.nonce = 7};
+        db.put_account(1, Account{.nonce = 7});
         vm::VM vm;
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
@@ -152,6 +194,7 @@ int main()
         check(st.get_nonce(addr(1)) == 7, "3: three writes in one frame revert to the pre-frame value");
     }
 
+    current_case = 4;
     // ---- 4. a row CREATED in the frame, then rejected: it must be gone, not merely restored.
     {
         StubDb db;                          // account 2 does not exist
@@ -166,32 +209,34 @@ int main()
         check(!st.account_exists(addr(2)), "4: reject erases a row the frame created");
     }
 
+    current_case = 5;
     // ---- 5. SELFDESTRUCT then revert. Zero occurrences in the corpus.
     {
         StubDb db;
-        db.accounts[1] = Account{.nonce = 1, .balance = 500};
-        db.accounts[3] = Account{.nonce = 0};
+        db.put_account(1, Account{.balance = 500, .nonce = 1});
+        db.put_account(3, Account{.nonce = 0});
         vm::VM vm;
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
         st.push();
-        st.selfdestruct<EvmTraits<EVMC_SHANGHAI>>(addr(1), addr(3));
+        st.selfdestruct<EvmTraits<MONAD_ETH_SHANGHAI>>(addr(1), addr(3));
         check(st.is_destructed(addr(1)), "5: destructed inside the frame");
         st.pop_reject();
         check(!st.is_destructed(addr(1)), "5: reject clears the destruct flag");
         check(st.get_balance(addr(1)) == 500, "5: and gives the balance back");
     }
 
+    current_case = 6;
     // ---- 6. storage and transient storage.
     {
         StubDb db;
-        db.accounts[1] = Account{.nonce = 1};
-        db.storage[{1, 5}] = key(42);
+        db.put_account(1, Account{.nonce = 1});
+        db.put_storage(1, 5, key(42));
         vm::VM vm;
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
         st.push();
-        st.set_storage<EvmTraits<EVMC_SHANGHAI>>(addr(1), key(5), key(99));
+        st.set_storage(addr(1), key(5), key(99));
         st.set_transient_storage(addr(1), key(6), key(77));
         check(st.get_storage(addr(1), key(5)) == key(99), "6: storage written");
         check(st.get_transient_storage(addr(1), key(6)) == key(77), "6: transient written");
@@ -200,32 +245,28 @@ int main()
         check(st.get_transient_storage(addr(1), key(6)) == bytes32_t{}, "6: transient reverts to empty");
     }
 
+    current_case = 7;
     // ---- 7. EIP-2929: a key warmed in a frame that reverts must be cold again.
     {
         StubDb db;
-        db.accounts[1] = Account{.nonce = 1};
+        db.put_account(1, Account{.nonce = 1});
         vm::VM vm;
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
         st.push();
         check(st.access_account(addr(1)) == EVMC_ACCESS_COLD, "7: account cold first");
         check(st.access_account(addr(1)) == EVMC_ACCESS_WARM, "7: then warm");
-        check(st.access_storage<EvmTraits<EVMC_SHANGHAI>>(addr(1), key(5)) == EVMC_ACCESS_COLD,
+        check(st.access_storage<EvmTraits<MONAD_ETH_SHANGHAI>>(addr(1), key(5)) == EVMC_ACCESS_COLD,
               "7: slot cold first");
-        check(st.access_storage<EvmTraits<EVMC_SHANGHAI>>(addr(1), key(5)) == EVMC_ACCESS_WARM,
+        check(st.access_storage<EvmTraits<MONAD_ETH_SHANGHAI>>(addr(1), key(5)) == EVMC_ACCESS_WARM,
               "7: then warm");
         st.pop_reject();
         st.push();
         check(st.access_account(addr(1)) == EVMC_ACCESS_COLD, "7: account COLD again after reject");
-        check(st.access_storage<EvmTraits<EVMC_SHANGHAI>>(addr(1), key(5)) == EVMC_ACCESS_COLD,
+        check(st.access_storage<EvmTraits<MONAD_ETH_SHANGHAI>>(addr(1), key(5)) == EVMC_ACCESS_COLD,
               "7: slot COLD again after reject");
         st.pop_accept();
     }
 
-    if (failures == 0) {
-        std::printf("  all cases pass\n");
-        return 0;
-    }
-    std::printf("  %d failed\n", failures);
-    return 1;
+    return failures;
 }

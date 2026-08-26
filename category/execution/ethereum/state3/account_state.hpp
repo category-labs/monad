@@ -113,6 +113,8 @@ public:
     }
 };
 
+class OriginalAccountState;
+
 class AccountState : public AccountSubstate
 {
 public: // TODO
@@ -135,6 +137,17 @@ public:
     StorageMap storage_{};
     StorageMap transient_storage_{};
     PageTracker page_tracker_{};
+
+    // The row in original_ this one was created from, or null on an original row. A storage read
+    // that misses the overlay needs the pre-state row, and finding it by address hashed the same
+    // 20 bytes a second time: get_storage runs 5,184 times a block at 187 steps, and two of those
+    // lookups are the same lookup.
+    //
+    // Safe to hold because original_ is a segmented map that is only ever inserted into -- one
+    // try_emplace, no erase, no clear -- so an element never moves for the life of the block.
+    // current_ IS erased, in pop_reject, but that erases the row holding the pointer, not its
+    // target.
+    OriginalAccountState *orig_{nullptr};
 
     evmc_storage_status zero_out_key(
         bytes32_t const &key, bytes32_t const &original_value,
@@ -226,7 +239,7 @@ public:
 //
 // 16 wider than the two persistent handles it replaced, not 32: the second vector lands in padding
 // the row already carried, so the number is not the arithmetic and has to be read off the compiler.
-static_assert(sizeof(AccountState) == 184);
+static_assert(sizeof(AccountState) == 192);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

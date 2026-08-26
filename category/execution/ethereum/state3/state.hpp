@@ -304,6 +304,19 @@ public:
     OriginalAccountState &original_account_state(Address const &);
 
 private:
+    // Reads may reuse the memo but never populate it: only the mutation path
+    // registers dirty accounts and sets the corresponding epoch.
+    [[nodiscard]] AccountState *cached_current_account(Address const &address)
+    {
+        if (current_memo_state_ != nullptr && __builtin_memcmp(
+                                                  address.bytes,
+                                                  current_memo_address_.bytes,
+                                                  sizeof(address.bytes)) == 0) {
+            return current_memo_state_;
+        }
+        return nullptr;
+    }
+
     AccountState const &recent_account_state(Address const &);
 
     // Return the visible state and its original row without looking up

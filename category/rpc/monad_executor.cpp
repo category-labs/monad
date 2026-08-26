@@ -49,12 +49,15 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/access_list_tracer.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/commands/call_trace.hpp>
+#include <category/execution/ethereum/trace/commands/state_trace.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/trace_context.hpp>
@@ -205,6 +208,22 @@ namespace
     }
 
     template <Traits traits>
+    AccessListTracer make_access_list_tracer(
+        nlohmann::json &state_trace, Address const &sender,
+        Address const &beneficiary, std::optional<Address> const &to,
+        std::span<std::optional<Address> const> const authorities)
+    {
+        return AccessListTracer{
+            state_trace,
+            sender,
+            beneficiary,
+            to,
+            authorities,
+            traits::mip_8_active(),
+            &is_precompile<traits>};
+    }
+
+    template <Traits traits>
     Result<evmc::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, bytes32_t const &block_id,
@@ -320,6 +339,7 @@ namespace
 
         execution_result.gas_refund = static_cast<int64_t>(gas_refund);
 
+        trace::emit<trace::PostState>(trace_context, state);
         trace::run_tracer<traits>(state_tracer, state);
 
         return execution_result;
@@ -786,7 +806,6 @@ namespace
         }
 
         auto block_metrics = BlockMetrics{};
-        trace::StateTracer system_call_state_tracer{std::monostate{}};
         auto const chain_context =
             context_buffer.advance<traits>(senders, authorities);
 
@@ -1579,12 +1598,53 @@ struct monad_executor
                     CallTracer call_tracer{
                         transaction, call_frames, call_tracer_max_size};
                     std::optional<trace::TypeErasedTracer> erased_tracer{};
+                    std::optional<AccessListTracer> access_list_tracer{};
                     if (tracer_config == CALL_TRACER) {
                         erased_tracer.emplace(
                             trace::TypeErasedTracer::erase(call_tracer));
                     }
+                    else if (tracer_config == ACCESS_LIST_TRACER) {
+                        auto const authorities_span =
+                            std::span<std::optional<Address> const>{
+                                authorities};
+                        if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
+                            chain_config == CHAIN_CONFIG_HIVE_NET) {
+                            monad_eth_revision const rev = chain->get_revision(
+                                block_header.number, block_header.timestamp);
+                            access_list_tracer.emplace(
+                                [&]() -> AccessListTracer {
+                                    SWITCH_EVM_TRAITS(
+                                        make_access_list_tracer,
+                                        state_trace,
+                                        sender,
+                                        block_header.beneficiary,
+                                        transaction.to,
+                                        authorities_span);
+                                    MONAD_ASSERT(false);
+                                }());
+                        }
+                        else {
+                            auto const rev =
+                                dynamic_cast<MonadChain *>(chain.get())
+                                    ->get_monad_revision(
+                                        block_header.timestamp);
+                            access_list_tracer.emplace(
+                                [&]() -> AccessListTracer {
+                                    SWITCH_MONAD_TRAITS(
+                                        make_access_list_tracer,
+                                        state_trace,
+                                        sender,
+                                        block_header.beneficiary,
+                                        transaction.to,
+                                        authorities_span);
+                                    MONAD_ASSERT(false);
+                                }());
+                        }
+                        erased_tracer.emplace(trace::TypeErasedTracer::erase(
+                            *access_list_tracer));
+                    }
                     auto const trace_context = [&]() -> TxTraceContext {
-                        if (tracer_config != CALL_TRACER) {
+                        if (!erased_tracer.has_value()) {
                             return TxTraceContext{};
                         }
                         MONAD_ASSERT(erased_tracer.has_value());
@@ -1596,19 +1656,13 @@ struct monad_executor
                         switch (tracer_config) {
                         case NOOP_TRACER:
                         case CALL_TRACER:
+                        case ACCESS_LIST_TRACER:
                             return std::monostate{};
                         case PRESTATE_TRACER:
                             return trace::PrestateTracer{
                                 state_trace, block_header.beneficiary};
                         case STATEDIFF_TRACER:
                             return trace::StateDiffTracer{state_trace};
-                        case ACCESS_LIST_TRACER:
-                            return trace::AccessListTracer{
-                                state_trace,
-                                sender,
-                                block_header.beneficiary,
-                                transaction.to,
-                                authorities};
                         }
                         MONAD_ASSERT(false);
                     }();

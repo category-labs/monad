@@ -428,6 +428,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
     }
 
     trace::emit<trace::Finish>(tx_trace_context_, receipt.gas_used);
+    trace::emit<trace::PostState>(tx_trace_context_, state);
     trace::run_tracer<traits>(state_tracer_, state);
     std::span<CallFrame const> call_frames{};
     trace::emit<trace::GetCallFrames>(tx_trace_context_, &call_frames);

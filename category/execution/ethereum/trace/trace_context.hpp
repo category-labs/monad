@@ -235,6 +235,33 @@ public:
         return *this;
     }
 
+    template <typename R>
+        requires Tracer<R>
+    BlockTraceContext &with_system_tracer(R &tracer MONAD_LIFETIMEBOUND)
+    {
+        using namespace monad::trace;
+
+        if (!!system_call_tracer_) {
+            struct SystemCallTracerAlreadyInstalled : public std::exception
+            {
+                char const *what() const noexcept override
+                {
+                    return "BlockTraceContext already has a system call tracer "
+                           "installed";
+                }
+            };
+
+            throw SystemCallTracerAlreadyInstalled();
+        }
+        system_call_tracer_ =
+            std::make_unique<TypeErasedTracer>(TypeErasedTracer::erase(tracer));
+
+        return *this;
+    }
+
+    // Returns the system call tracing context.
+    TxTraceContext system_call_context() const;
+
     // Returns a tracing context for the ith transaction.
     TxTraceContext slice(size_t i) const;
 
@@ -247,9 +274,10 @@ public:
 private:
     size_t const num_txs_;
     std::unique_ptr<std::vector<monad::trace::TypeErasedTracer>[]> tracers_;
+    std::unique_ptr<monad::trace::TypeErasedTracer> system_call_tracer_;
 };
 
-static_assert(sizeof(BlockTraceContext) == 16);
+static_assert(sizeof(BlockTraceContext) == 24);
 
 namespace trace
 {

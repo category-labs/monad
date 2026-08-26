@@ -303,7 +303,6 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
         block.value().transactions.size());
     std::vector<CallTracer> call_tracers;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
-    trace::StateTracer system_call_state_tracer{std::monostate{}};
     call_tracers.reserve(block.value().transactions.size());
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
         call_tracers.emplace_back(
@@ -348,7 +347,6 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
             pool.fiber_group(),
             metrics,
             state_tracers,
-            system_call_state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
             false,
@@ -485,7 +483,6 @@ TYPED_TEST(TraitsTest, assertion_exception)
         block.value().transactions.size());
     std::vector<CallTracer> call_tracers;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
-    trace::StateTracer system_call_state_tracer{std::monostate{}};
     call_tracers.reserve(block.value().transactions.size());
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
         call_tracers.emplace_back(
@@ -530,7 +527,6 @@ TYPED_TEST(TraitsTest, assertion_exception)
             pool.fiber_group(),
             metrics,
             state_tracers,
-            system_call_state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
             false,
@@ -742,7 +738,6 @@ TYPED_TEST(TraitsTest, call_frames_refund)
         block.value().transactions.size());
     std::vector<CallTracer> call_tracers;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
-    trace::StateTracer system_call_state_tracer{std::monostate{}};
     call_tracers.reserve(block.value().transactions.size());
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
         call_tracers.emplace_back(
@@ -787,7 +782,6 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             pool.fiber_group(),
             metrics,
             state_tracers,
-            system_call_state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
             false,

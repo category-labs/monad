@@ -55,12 +55,12 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    TxTraceContext const &trace_context);
+    TxTraceContext const &trace_ctx);
 
 template <Traits traits>
 [[gnu::always_inline]] inline Result<void> validate_ethereum_transaction(
     Transaction const &tx, Address const &sender, State &state,
-    TxTraceContext const &trace_context)
+    TxTraceContext const &trace_ctx)
 {
     using BOOST_OUTCOME_V2_NAMESPACE::success;
 
@@ -105,7 +105,7 @@ template <Traits traits>
         // EIP-7702
         auto const icode = state.read_code(code_hash)->intercode();
         if (code_hash != NULL_HASH) {
-            trace::emit<trace::ReadCode>(trace_context, code_hash, icode);
+            trace::emit<trace::ReadCode>(trace_ctx, code_hash, icode);
         }
         sender_is_eoa = sender_is_eoa ||
                         vm::evm::is_delegated({icode->code(), icode->size()});

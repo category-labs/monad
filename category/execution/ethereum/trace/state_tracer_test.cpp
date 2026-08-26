@@ -2242,7 +2242,6 @@ TYPED_TEST(TraitsTest, code_tracer_records_system_contract_code)
         EthereumMainnet const chain;
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
-        trace::StateTracer state_tracer{std::monostate{}};
         CodeTracer code_tracer{};
         TypeErasedTracer const erased_tracer =
             TypeErasedTracer::erase(code_tracer);
@@ -2254,7 +2253,6 @@ TYPED_TEST(TraitsTest, code_tracer_records_system_contract_code)
             state,
             block_hash_buffer,
             header,
-            state_tracer,
             trace_context,
             chain_ctx,
             std::span<Receipt const>{});
@@ -2393,9 +2391,9 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
         BlockState bs{tdb, vm};
         State state{bs, Incarnation{0, 0}};
 
-        // One authorization entry whose authority is ADDR_B. The authorities
-        // span shadows recovered addresses; we set it to ADDR_B directly,
-        // sidestepping signature recovery.
+        constexpr auto EMPTY_AUTHORITY =
+            0x0300000000000000000000000000000000000000_address;
+        // Supply recovered authorities directly to avoid signature recovery.
         AuthorizationEntry auth{};
         auth.sc.chain_id = 0; // 0 always matches host_chain_id in step 1
         auth.nonce = 0;
@@ -2407,8 +2405,12 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
             .type = TransactionType::eip7702,
         };
         tx.authorization_list.push_back(auth);
+        AuthorizationEntry empty_auth = auth;
+        empty_auth.address = {};
+        tx.authorization_list.push_back(empty_auth);
 
-        std::vector<std::optional<Address>> const authorities = {ADDR_B};
+        std::vector<std::optional<Address>> const authorities = {
+            ADDR_B, EMPTY_AUTHORITY};
         BlockHashBufferFinalized const block_hash_buffer;
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
@@ -2434,7 +2436,10 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
             EthereumMainnet{}, tx, ADDR_A, authorities, BlockHeader{}}(
             state, host);
 
+        EXPECT_EQ(state.get_code_hash(EMPTY_AUTHORITY), NULL_HASH);
+        EXPECT_EQ(state.get_nonce(EMPTY_AUTHORITY), 1);
         auto const &codes = code_tracer.codes;
+        EXPECT_FALSE(codes.contains(NULL_HASH));
         auto const it = codes.find(B_CODE_HASH);
         ASSERT_TRUE(it != codes.end())
             << "authority code not recorded by process_authorizations";

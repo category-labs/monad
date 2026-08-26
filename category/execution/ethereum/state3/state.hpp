@@ -226,6 +226,18 @@ public:
     OriginalAccountState &original_account_state(Address const &);
 
 private:
+    // Reads may reuse the memo but never populate it: only the mutation path
+    // registers dirty accounts and sets the corresponding epoch.
+    [[nodiscard]] AccountState *memoised(Address const &address)
+    {
+        if (memo_val_ != nullptr &&
+            __builtin_memcmp(
+                address.bytes, memo_addr_.bytes, sizeof(address.bytes)) == 0) {
+            return memo_val_;
+        }
+        return nullptr;
+    }
+
     AccountState const &recent_account_state(Address const &);
 
     // Resolve the visible account state and its original row with one address

@@ -154,7 +154,9 @@ public:
     }
 };
 
-static_assert(sizeof(AccountState) == 160);
+// Guard against size growth: each account is copied into the undo log
+// on its first mutable access per frame.
+static_assert(sizeof(AccountState) == 168);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

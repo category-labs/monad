@@ -63,7 +63,6 @@ Result<std::vector<Receipt>> execute_block(
     std::span<std::vector<std::optional<Address>> const> authorities,
     BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
     std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
-    trace::StateTracer &system_call_state_tracer,
     ChainContext<traits> const &chain_ctx, ExecutionEventRecorder *,
     bool trace_transfers, BlockTraceContext const &block_trace_context);
 

@@ -1890,7 +1890,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer = trace::CodeTracer{};
+    trace::StateTracer state_tracer = std::monostate{};
     CodeTraceRunner code_trace_runner{};
     TypeErasedRunner const erased_runner =
         TypeErasedRunner::erase(code_trace_runner);
@@ -1942,7 +1942,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer = trace::CodeTracer{};
+    trace::StateTracer state_tracer = std::monostate{};
     CodeTraceRunner code_trace_runner{};
     TypeErasedRunner const erased_runner =
         TypeErasedRunner::erase(code_trace_runner);
@@ -2004,7 +2004,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer = trace::CodeTracer{};
+    trace::StateTracer state_tracer = std::monostate{};
     CodeTraceRunner code_trace_runner{};
     TypeErasedRunner const erased_runner =
         TypeErasedRunner::erase(code_trace_runner);
@@ -2082,19 +2082,23 @@ TYPED_TEST(TraitsTest, code_tracer_records_system_contract_code)
         EthereumMainnet const chain;
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
-        trace::StateTracer state_tracer = trace::CodeTracer{};
+        CodeTraceRunner code_trace_runner{};
+        TypeErasedRunner const erased_runner =
+            TypeErasedRunner::erase(code_trace_runner);
+        std::span<TypeErasedRunner const> const runners{&erased_runner, 1};
+        TxTraceContext const trace_context{runners};
 
         auto const result = process_requests<typename TestFixture::Trait>(
             chain,
             state,
             block_hash_buffer,
             header,
-            state_tracer,
+            trace_context,
             chain_ctx,
             std::span<Receipt const>{});
         ASSERT_TRUE(result.has_value());
 
-        auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+        auto const &codes = code_trace_runner.codes;
         auto const it = codes.find(SYSTEM_STUB_CODE_HASH);
         ASSERT_TRUE(it != codes.end())
             << "system contract code not recorded by system_call";
@@ -2136,11 +2140,15 @@ TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
         State state{bs, Incarnation{0, 0}};
 
         Transaction const tx{.gas_limit = 60'500};
-        trace::StateTracer state_tracer = trace::CodeTracer{};
+        CodeTraceRunner code_trace_runner{};
+        TypeErasedRunner const erased_runner =
+            TypeErasedRunner::erase(code_trace_runner);
+        std::span<TypeErasedRunner const> const runners{&erased_runner, 1};
+        TxTraceContext const trace_context{runners};
         (void)validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, ADDR_A, state, state_tracer);
+            tx, ADDR_A, state, trace_context);
 
-        auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+        auto const &codes = code_trace_runner.codes;
         auto const it = codes.find(C_CODE_HASH);
         ASSERT_TRUE(it != codes.end())
             << "sender code not recorded by validate_ethereum_transaction";
@@ -2212,7 +2220,7 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
         uint256_t const base_fee{0};
-        trace::StateTracer state_tracer = trace::CodeTracer{};
+        trace::StateTracer state_tracer = std::monostate{};
         CodeTraceRunner code_trace_runner{};
         TypeErasedRunner const erased_runner =
             TypeErasedRunner::erase(code_trace_runner);

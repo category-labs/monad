@@ -22,7 +22,8 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/state_trace_operations.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/vm/code.hpp>
@@ -54,12 +55,12 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    trace::StateTracer &state_tracer);
+    TxTraceContext const &trace_ctx);
 
 template <Traits traits>
 [[gnu::always_inline]] inline Result<void> validate_ethereum_transaction(
     Transaction const &tx, Address const &sender, State &state,
-    trace::StateTracer &state_tracer)
+    TxTraceContext const &trace_ctx)
 {
     using BOOST_OUTCOME_V2_NAMESPACE::success;
 
@@ -103,7 +104,7 @@ template <Traits traits>
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         // EIP-7702
         auto const icode = state.read_code(code_hash)->intercode();
-        trace::on_read_code(state_tracer, code_hash, icode);
+        trace::emit<trace::state_trace::ReadCode>(trace_ctx, code_hash, icode);
         sender_is_eoa = sender_is_eoa ||
                         vm::evm::is_delegated({icode->code(), icode->size()});
     }

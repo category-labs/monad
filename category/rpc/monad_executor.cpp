@@ -246,7 +246,7 @@ namespace
             // be EOA for validation
             state.set_code(sender, {});
             BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
-                enriched_txn, sender, state, state_tracer));
+                enriched_txn, sender, state, trace_context));
         }
 
         auto const senders = std::vector{sender};
@@ -876,7 +876,6 @@ namespace
                 auto block_metrics = BlockMetrics{};
                 auto state_tracers =
                     std::vector<std::unique_ptr<trace::StateTracer>>{};
-                trace::StateTracer system_call_state_tracer{std::monostate{}};
 
                 static std::vector<Address> empty_senders{};
                 static std::vector<std::vector<std::optional<Address>>>
@@ -899,7 +898,6 @@ namespace
                         tx_exec_pool,
                         block_metrics,
                         state_tracers,
-                        system_call_state_tracer,
                         chain_context,
                         /*exec_recorder=*/nullptr,
                         emit_native_transfer_logs,
@@ -990,7 +988,6 @@ namespace
             auto state_tracers =
                 std::vector<std::unique_ptr<trace::StateTracer>>{};
             state_tracers.reserve(calls[block_idx].size());
-            trace::StateTracer system_call_state_tracer{std::monostate{}};
 
             for (Transaction const &tx : calls[block_idx]) {
                 call_frames.emplace_back();
@@ -1026,7 +1023,6 @@ namespace
                     tx_exec_pool,
                     block_metrics,
                     state_tracers,
-                    system_call_state_tracer,
                     chain_context,
                     /*exec_recorder=*/nullptr,
                     emit_native_transfer_logs,

@@ -135,23 +135,7 @@ namespace trace
     };
 
     using StateTracer = std::variant<
-        std::monostate, PrestateTracer, StateDiffTracer, AccessListTracer,
-        CodeTracer>;
-
-    [[gnu::always_inline]] inline bool is_code_tracer(StateTracer const &tracer)
-    {
-        return std::holds_alternative<CodeTracer>(tracer);
-    }
-
-    inline void on_read_code(
-        StateTracer &tracer, bytes32_t const &code_hash,
-        vm::SharedIntercode const &intercode)
-    {
-        if (auto *t = std::get_if<CodeTracer>(&tracer);
-            t && code_hash != NULL_HASH) {
-            t->codes.emplace(code_hash, intercode);
-        }
-    }
+        std::monostate, PrestateTracer, StateDiffTracer, AccessListTracer>;
 
     // State-tracer lifecycle hook for a failed frame. Call immediately before
     // State::pop_reject(), while rejected-frame access metadata is still

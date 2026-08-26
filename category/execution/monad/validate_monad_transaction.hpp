@@ -41,6 +41,7 @@ MONAD_NAMESPACE_BEGIN
 
 struct Transaction;
 class State;
+class TxTraceContext;
 
 enum class MonadTransactionError
 {
@@ -55,7 +56,7 @@ Result<void> validate_transaction(
     Transaction const &, Address const &sender, State &,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> authorities,
-    trace::StateTracer &state_tracer);
+    TxTraceContext const &trace_ctx);
 
 MONAD_NAMESPACE_END
 

@@ -235,7 +235,6 @@ Result<BlockExecOutput> propose_block(
     std::vector<CallTraceRunner> call_trace_runners;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(
         block.transactions.size());
-    trace::StateTracer system_call_state_tracer{std::monostate{}};
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         if (enable_tracing) {
             call_trace_runners.emplace_back(
@@ -318,7 +317,6 @@ Result<BlockExecOutput> propose_block(
             priority_pool.fiber_group(),
             block_metrics,
             state_tracers,
-            system_call_state_tracer,
             chain_context,
             exec_recorder,
             false,

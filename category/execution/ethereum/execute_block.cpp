@@ -272,7 +272,6 @@ Result<std::vector<Receipt>> execute_block(
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::FiberGroup &priority_pool, BlockMetrics &block_metrics,
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
-    trace::StateTracer &system_call_state_tracer,
     ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *const exec_recorder, bool const trace_transfers,
     BlockTraceContext const &block_trace_context)
@@ -316,6 +315,8 @@ Result<std::vector<Receipt>> execute_block(
         MONAD_ASSERT_THROW(
             block.header.requests_hash.has_value(),
             "block header must have requests hash when EIP-7685 is active");
+        TxTraceContext const system_trace_ctx =
+            block_trace_context.system_call_context();
         BOOST_OUTCOME_TRY(
             auto const computed_requests_hash,
             process_requests<traits>(
@@ -323,7 +324,7 @@ Result<std::vector<Receipt>> execute_block(
                 state,
                 block_hash_buffer,
                 block.header,
-                system_call_state_tracer,
+                system_trace_ctx,
                 chain_ctx,
                 retvals));
         if (MONAD_UNLIKELY(

@@ -248,6 +248,33 @@ public:
         return *this;
     }
 
+    template <typename R>
+        requires Runner<R>
+    BlockTraceContext &with_system_runner(R &runner MONAD_LIFETIMEBOUND)
+    {
+        using namespace monad::trace;
+
+        if (!!system_call_runner_) {
+            struct SystemCallRunnerAlreadyInstalled : public std::exception
+            {
+                char const *what() const noexcept override
+                {
+                    return "BlockTraceContext already has a system call runner "
+                           "installed";
+                }
+            };
+
+            throw SystemCallRunnerAlreadyInstalled();
+        }
+        system_call_runner_ =
+            std::make_unique<TypeErasedRunner>(TypeErasedRunner::erase(runner));
+
+        return *this;
+    }
+
+    // Returns the system call tracing context.
+    TxTraceContext system_call_context() const;
+
     // Returns a tracing context for the ith transaction.
     TxTraceContext slice(size_t i) const;
 
@@ -260,9 +287,10 @@ public:
 private:
     size_t const num_txs_;
     std::unique_ptr<std::vector<monad::trace::TypeErasedRunner>[]> runners_;
+    std::unique_ptr<monad::trace::TypeErasedRunner> system_call_runner_;
 };
 
-static_assert(sizeof(BlockTraceContext) == 16);
+static_assert(sizeof(BlockTraceContext) == 24);
 
 MONAD_NAMESPACE_END
 

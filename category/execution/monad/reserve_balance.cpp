@@ -289,7 +289,7 @@ void ReserveBalance::on_debit(Address const &address)
     update_violation_status(address);
 }
 
-void ReserveBalance::on_pop_reject(FailedSet const &accounts)
+void ReserveBalance::on_pop_reject(std::span<Address const> const accounts)
 {
     if (!tracking_enabled_) {
         return;

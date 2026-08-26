@@ -31,6 +31,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <span>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -76,7 +77,8 @@ public:
     void on_credit(Address const &);
     void on_debit(Address const &);
 
-    void on_pop_reject(FailedSet const &accounts);
+    // Iterated, never searched: a span keeps this free of the caller's container choice.
+    void on_pop_reject(std::span<Address const> accounts);
 
     void on_set_code(Address const &address, byte_string_view code);
 

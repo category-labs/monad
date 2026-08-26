@@ -207,22 +207,24 @@ configure_file(cmake/test_resource_data.h.in test/test_resource_data.h @ONLY)
 set(TOP_CURRENT_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 function(monad_add_test target)
   cmake_parse_arguments(AT "NO_CUSTOM_MAIN" "" "PROPERTIES" ${ARGN})
+  # Exactly one main provider per branch: gtest's main for NO_CUSTOM_MAIN,
+  # otherwise monad_gtest_main. Linking both would make the resolution of
+  # main order-dependent between the two archives.
   if(AT_NO_CUSTOM_MAIN)
     add_executable(${target} ${AT_UNPARSED_ARGUMENTS})
+    target_link_libraries(${target} GTest::Main)
   else()
-    add_executable(
-      ${target}
-      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/test/unit/common/src/test/main.cpp"
-      ${AT_UNPARSED_ARGUMENTS})
+    add_executable(${target} ${AT_UNPARSED_ARGUMENTS})
     target_include_directories(
       ${target}
       PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/test/unit/common/include")
+    target_link_libraries(${target} monad_gtest_main)
   endif()
   monad_compile_options(${target})
   target_compile_options(${target} PUBLIC "-Wno-missing-field-initializers"
   )# TODO
   target_include_directories(${target} PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
-  target_link_libraries(${target} monad_execution GTest::GTest GTest::Main)
+  target_link_libraries(${target} monad_execution GTest::GTest)
   gtest_discover_tests(
     ${target} DISCOVERY_MODE PRE_TEST
     PROPERTIES ENVIRONMENT ASAN_OPTIONS=abort_on_error=1 ENVIRONMENT

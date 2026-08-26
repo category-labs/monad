@@ -152,6 +152,10 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
+        // The row must exist in current_ BEFORE the frame opens. A mutator that creates it inside
+        // the frame gets a Created record, and Created erases the whole row on reject -- which
+        // restores the value by accident and makes the narrow record below untestable.
+        st.set_nonce(addr(1), st.get_nonce(addr(1)));
         st.push();
         st.set_nonce(addr(1), 8);           // parent
         st.push();
@@ -188,6 +192,10 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
+        // The row must exist in current_ BEFORE the frame opens. A mutator that creates it inside
+        // the frame gets a Created record, and Created erases the whole row on reject -- which
+        // restores the value by accident and makes the narrow record below untestable.
+        st.set_nonce(addr(1), st.get_nonce(addr(1)));
         st.push();
         st.set_nonce(addr(1), 8);
         st.set_nonce(addr(1), 9);
@@ -209,6 +217,12 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         check(st.account_exists(addr(2)), "4: present after the write");
         st.pop_reject();
         check(!st.account_exists(addr(2)), "4: reject erases a row the frame created");
+        // account_exists() cannot tell "the row is gone" from "the row is still listed with an empty
+        // account", and the typed records restore the second on their own -- so without this the
+        // case passes with no Created record at all. The distinction is not academic: BlockState
+        // commits every row current_ lists, so a row left behind enters the commit set.
+        check(st.current().find(addr(2)) == st.current().end(),
+              "4: and the ROW itself is gone from current_, not merely emptied");
     }
 
     current_case = 5;
@@ -220,6 +234,10 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
+        // The row must exist in current_ BEFORE the frame opens. A mutator that creates it inside
+        // the frame gets a Created record, and Created erases the whole row on reject -- which
+        // restores the value by accident and makes the narrow record below untestable.
+        st.set_nonce(addr(1), st.get_nonce(addr(1)));
         st.push();
         st.selfdestruct<EvmTraits<MONAD_ETH_SHANGHAI>>(addr(1), addr(3));
         check(st.is_destructed(addr(1)), "5: destructed inside the frame");
@@ -237,6 +255,10 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
+        // The row must exist in current_ BEFORE the frame opens. A mutator that creates it inside
+        // the frame gets a Created record, and Created erases the whole row on reject -- which
+        // restores the value by accident and makes the narrow record below untestable.
+        st.set_nonce(addr(1), st.get_nonce(addr(1)));
         st.push();
         st.set_storage(addr(1), key(5), key(99));
         st.set_transient_storage(addr(1), key(6), key(77));
@@ -255,6 +277,10 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
+        // The row must exist in current_ BEFORE the frame opens. A mutator that creates it inside
+        // the frame gets a Created record, and Created erases the whole row on reject -- which
+        // restores the value by accident and makes the narrow record below untestable.
+        st.set_nonce(addr(1), st.get_nonce(addr(1)));
         st.push();
         check(st.access_account(addr(1)) == EVMC_ACCESS_COLD, "7: account cold first");
         check(st.access_account(addr(1)) == EVMC_ACCESS_WARM, "7: then warm");
@@ -304,6 +330,10 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
+        // The row must exist in current_ BEFORE the frame opens. A mutator that creates it inside
+        // the frame gets a Created record, and Created erases the whole row on reject -- which
+        // restores the value by accident and makes the narrow record below untestable.
+        st.set_nonce(addr(1), st.get_nonce(addr(1)));
         st.push();
         st.set_storage(addr(1), key(5), key(1));
         st.set_storage(addr(1), key(5), key(2));
@@ -325,6 +355,10 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
+        // The row must exist in current_ BEFORE the frame opens. A mutator that creates it inside
+        // the frame gets a Created record, and Created erases the whole row on reject -- which
+        // restores the value by accident and makes the narrow record below untestable.
+        st.set_nonce(addr(1), st.get_nonce(addr(1)));
         st.push();
         st.set_storage(addr(1), key(5), key(7));    // parent
         st.push();
@@ -351,6 +385,10 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
         check(!st.is_touched(addr(1)), "11: not touched to begin with");
+        // The row must exist in current_ BEFORE the frame opens. A mutator that creates it inside
+        // the frame gets a Created record, and Created erases the whole row on reject -- which
+        // restores the value by accident and makes the narrow record below untestable.
+        st.access_account(addr(1));
         st.push();
         st.add_to_balance(addr(1), 50);
         st.push();
@@ -372,6 +410,10 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
+        // The row must exist in current_ BEFORE the frame opens. A mutator that creates it inside
+        // the frame gets a Created record, and Created erases the whole row on reject -- which
+        // restores the value by accident and makes the narrow record below untestable.
+        st.access_account(addr(1));
         st.push();
         unsigned char const code[] = {0x60, 0x00, 0x60, 0x00, 0xf3};
         st.set_code(addr(1), byte_string_view{code, sizeof(code)});
@@ -391,12 +433,67 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         BlockState bs{db, vm};
         State st{bs, Incarnation{0, 0}};
         check(!st.account_exists(addr(9)), "13: absent to begin with");
+        // The row must exist in current_ BEFORE the frame opens. A mutator that creates it inside
+        // the frame gets a Created record, and Created erases the whole row on reject -- which
+        // restores the value by accident and makes the narrow record below untestable.
+        // access_account leaves account_ absent, which is what this case needs.
+        st.access_account(addr(9));
         st.push();
         st.set_nonce(addr(9), 5);
         check(st.account_exists(addr(9)), "13: the mutator materialised it");
         check(st.get_nonce(addr(9)) == 5, "13: and wrote the field");
         st.pop_reject();
         check(!st.account_exists(addr(9)), "13: reject leaves NO account, not an empty one");
+    }
+
+    current_case = 14;
+    // ---- 14. PageTracker: update_page in a frame that reverts.
+    // Nothing else reaches this. access_page and update_page sit behind
+    // `if constexpr (traits::mip_8_active())`, which is false on the Ethereum traits, so neither the
+    // corpus nor any other case here exercises the Pages record. State::update_page is not
+    // templated, so this calls it directly and the record is tested on its own terms.
+    {
+        StubDb db;
+        db.put_account(1, Account{.nonce = 1});
+        vm::VM vm;
+        BlockState bs{db, vm};
+        State st{bs, Incarnation{0, 0}};
+        // The row must exist in current_ BEFORE the frame opens. A mutator that creates it inside
+        // the frame gets a Created record, and Created erases the whole row on reject -- which
+        // restores the value by accident and makes the narrow record below untestable.
+        st.access_account(addr(1));
+        st.push();
+        auto const first = st.update_page(addr(1), key(5), EVMC_STORAGE_ADDED);
+        st.pop_reject();
+        st.push();
+        auto const again = st.update_page(addr(1), key(5), EVMC_STORAGE_ADDED);
+        check(again.first_page_write == first.first_page_write &&
+                  again.grew_state == first.grew_state,
+              "14: after a reject the page map is as it was, so the same update answers the same");
+        st.pop_accept();
+    }
+
+    current_case = 15;
+    // ---- 15. incarnation changed on an account that ALREADY exists, then rejected.
+    // Case 13 covers the other half of AccountWhole -- an account appearing. This is the half where
+    // the account was already there and only its incarnation moved, which no narrow record can say.
+    {
+        StubDb db;
+        db.put_account(1, Account{.balance = 5, .code_hash = NULL_HASH, .nonce = 0});
+        vm::VM vm;
+        BlockState bs{db, vm};
+        State st{bs, Incarnation{1, 0}};
+        check(!st.is_current_incarnation(addr(1)), "15: a foreign incarnation to begin with");
+        // The row must exist in current_ BEFORE the frame opens. A mutator that creates it inside
+        // the frame gets a Created record, and Created erases the whole row on reject -- which
+        // restores the value by accident and makes the narrow record below untestable.
+        st.access_account(addr(1));
+        st.push();
+        st.set_to_state_incarnation(addr(1));
+        check(st.is_current_incarnation(addr(1)), "15: moved to this state's incarnation");
+        st.pop_reject();
+        check(!st.is_current_incarnation(addr(1)), "15: reject puts the old incarnation back");
+        check(st.get_balance(addr(1)) == 5, "15: and leaves the rest of the account alone");
     }
 
     return failures;

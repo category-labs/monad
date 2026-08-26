@@ -62,9 +62,9 @@ class DirtyAccounts
     std::vector<Address> v_{};
 
 public:
-    // Returns whether the address was NEW to this frame. The caller needs that answer to know
-    // whether to journal the row, and the scan that answers it is the same scan the insert
-    // already does -- asking separately would walk the list twice.
+    // Returns whether the address was NEW to this frame. Nothing reads that any more -- it used to
+    // drive the row snapshot, which typed records replaced -- so the scan now only keeps the list
+    // free of duplicates for pop_accept's merge and for the reserve-balance hook.
     bool emplace(Address const &a)
     {
         for (auto const &x : v_) {

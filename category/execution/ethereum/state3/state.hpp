@@ -38,11 +38,58 @@
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <span>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 class BlockState;
+
+// Per-frame dirty accounts, deduplicated by linear scan for typically small
+// lists. Uniqueness ensures accept/reject processes each account only once.
+class DirtyAccounts
+{
+    std::vector<Address> addresses_{};
+
+public:
+    void emplace(Address const &address)
+    {
+        for (auto const &existing_address : addresses_) {
+            if (__builtin_memcmp(
+                    existing_address.bytes,
+                    address.bytes,
+                    sizeof(address.bytes)) == 0) {
+                return;
+            }
+        }
+        addresses_.push_back(address);
+    }
+
+    std::vector<Address>::const_iterator begin() const
+    {
+        return addresses_.begin();
+    }
+
+    std::vector<Address>::const_iterator end() const
+    {
+        return addresses_.end();
+    }
+
+    std::size_t size() const
+    {
+        return addresses_.size();
+    }
+
+    bool empty() const
+    {
+        return addresses_.empty();
+    }
+
+    std::span<Address const> span() const
+    {
+        return addresses_;
+    }
+};
 
 class State
 {
@@ -71,7 +118,7 @@ class State
 
     unsigned version_{0};
 
-    std::deque<Set<Address>> dirty_;
+    std::deque<DirtyAccounts> dirty_;
 
     // Cache the last account lookup. Inserts preserve the pointer;
     // pop_reject clears it before erasing entries.
@@ -147,7 +194,7 @@ public:
     // the currently pushed frame. Intended for observers that must inspect
     // frame-local metadata immediately before pop_accept() or pop_reject();
     // callers must not retain references beyond the frame pop.
-    Set<Address> const &current_frame_dirty_accounts() const;
+    DirtyAccounts const &current_frame_dirty_accounts() const;
 
     ////////////////////////////////////////
 

@@ -147,7 +147,7 @@ State::Map<bytes32_t, vm::SharedVarcode> const &State::code() const
     return code_;
 }
 
-State::Set<Address> const &State::current_frame_dirty_accounts() const
+DirtyAccounts const &State::current_frame_dirty_accounts() const
 {
     MONAD_ASSERT(version_);
     MONAD_ASSERT(dirty_.size() == version_);
@@ -221,7 +221,7 @@ void State::pop_reject()
         removals.pop_back();
     }
 
-    rb_.on_pop_reject(accounts);
+    rb_.on_pop_reject(accounts.span());
 
     --version_;
 }

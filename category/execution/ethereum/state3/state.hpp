@@ -37,12 +37,48 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <span>
 #include <vector>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
 class BlockState;
+
+// A call frame's dirty-account list.
+//
+// MEASURED over 200 mainnet blocks (25815000-25815199): 2.25 accounts at the moment of insert
+// (insert-weighted) and 2.54 by the time the frame closes, across 2,798 frames and 7,099 inserts
+// per block. There is no tail to guard against -- weighting by insert LOWERS the mean, so the
+// large frames one would worry about do not exist here.
+//
+// A hash set charged 189 steps per insert -- a 20-byte hash plus a probe -- to deduplicate two
+// entries. A linear scan over the same two is a pair of 20-byte compares.
+//
+// Deduplication is NOT optional, and this is the whole reason the type is a set and not a vector:
+// pop_accept() and pop_reject() call VersionStack::pop_accept / pop_reject once per listed
+// address, so a repeated entry would apply the version transition twice.
+class DirtyAccounts
+{
+    std::vector<Address> v_{};
+
+public:
+    void emplace(Address const &a)
+    {
+        for (auto const &x : v_) {
+            if (__builtin_memcmp(x.bytes, a.bytes, sizeof(a.bytes)) == 0) {
+                return;
+            }
+        }
+        v_.push_back(a);
+    }
+
+    std::vector<Address>::const_iterator begin() const { return v_.begin(); }
+    std::vector<Address>::const_iterator end() const { return v_.end(); }
+    std::size_t size() const { return v_.size(); }
+    bool empty() const { return v_.empty(); }
+    std::span<Address const> span() const { return v_; }
+};
 
 class State
 {
@@ -79,7 +115,7 @@ class State
 
     unsigned version_{0};
 
-    std::deque<Set<Address>> dirty_;
+    std::deque<DirtyAccounts> dirty_;
 
     // One-entry memo for current_account_state(). Measured over 200 mainnet blocks
     // (25815000-25815199), 20,066 calls per block: 64.9% repeat the previous address, and 70.0% of
@@ -145,7 +181,7 @@ public:
     // the currently pushed frame. Intended for observers that must inspect
     // frame-local metadata immediately before pop_accept() or pop_reject();
     // callers must not retain references beyond the frame pop.
-    Set<Address> const &current_frame_dirty_accounts() const;
+    DirtyAccounts const &current_frame_dirty_accounts() const;
 
     ////////////////////////////////////////
 

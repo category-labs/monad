@@ -20,19 +20,19 @@
 
 #include <evmc/evmc.h>
 
-// TODO immer known to trigger incorrect warning
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#include <immer/set.hpp>
-#pragma GCC diagnostic pop
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 // YP 6.1
 class AccountSubstate
 {
-    using Set =
-        immer::set<bytes32_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
+    // A_K held an immer::set. Persistence was not wanted for its own sake: it was what made
+    // VersionStack's per-frame copy of this row O(1). The undo log replaced that copy, and the
+    // set is small enough that the log's own copy of the row stays cheap -- 4,459 warm slots
+    // across 1,392 accounts a block, so ~3 keys each. At that size a linear scan of 32-byte keys
+    // beats hashing one, and the container is a vector.
+    using Set = std::vector<bytes32_t>;
 
     bool destructed_{false}; // A_s
     bool touched_{false}; // A_t
@@ -59,7 +59,7 @@ public:
     }
 
     // A_K
-    Set get_accessed_storage() const
+    Set const &get_accessed_storage() const
     {
         return accessed_storage_;
     }
@@ -92,14 +92,18 @@ public:
     // A_K
     evmc_access_status access_storage(bytes32_t const &key)
     {
-        if (accessed_storage_.count(key) == 0) {
-            accessed_storage_ = accessed_storage_.insert(key);
-            return EVMC_ACCESS_COLD;
+        for (auto const &k : accessed_storage_) {
+            if (__builtin_memcmp(k.bytes, key.bytes, sizeof(key.bytes)) == 0) {
+                return EVMC_ACCESS_WARM;
+            }
         }
-        return EVMC_ACCESS_WARM;
+        accessed_storage_.push_back(key);
+        return EVMC_ACCESS_COLD;
     }
 };
 
-static_assert(sizeof(AccountSubstate) == 24);
+// 24 while A_K was an 8-byte persistent handle; a vector is 24 on its own. The number is here to
+// catch growth nobody intended, so it moves with a change that was intended.
+static_assert(sizeof(AccountSubstate) == 32);
 
 MONAD_NAMESPACE_END

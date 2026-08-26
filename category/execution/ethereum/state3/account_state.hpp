@@ -155,7 +155,10 @@ public:
     }
 };
 
-static_assert(sizeof(AccountState) == 160);
+// 160 while A_K was a persistent handle; a vector is 8 bytes wider. Kept exact so unintended
+// growth still fails the build -- this row is copied into the undo log once per frame per account,
+// so its size is a cost, not a detail.
+static_assert(sizeof(AccountState) == 168);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

@@ -161,7 +161,9 @@ bool BlockState::can_merge(State &state) const
         Address const &address = kv.first;
         OriginalAccountState const &account_state = kv.second;
         auto const &account = account_state.account_;
-        auto const &storage = account_state.storage_;
+        // Validate cached original slot values; the inherited storage_ is
+        // empty.
+        auto const &storage = account_state.prestate_storage_;
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_->find(it, address));
         if (account != it->second.account.second) {

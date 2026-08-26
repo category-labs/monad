@@ -238,6 +238,16 @@ public:
 private:
     AccountState const &recent_account_state(Address const &);
 
+    // Resolve the visible account state and its original row with one address
+    // lookup.
+    struct RowPair
+    {
+        AccountState const *recent;
+        OriginalAccountState *orig;
+    };
+
+    RowPair rows_for_read(Address const &);
+
     AccountState &current_account_state(Address const &);
 
     // Whether SELFDESTRUCT to the account itself destroys the balance.

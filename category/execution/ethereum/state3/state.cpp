@@ -124,8 +124,16 @@ AccountState &State::current_account_state(Address const &address)
     if (MONAD_UNLIKELY(it == current_.end())) {
         MONAD_GUEST_SITE(ACCT_FIND_MISS);
         // original
-        auto const &account_state = original_account_state(address);
+        auto &account_state = original_account_state(address);
+#if defined(MONAD_ZKVM_ZISK)
+        // Only account_ is populated in the original's AccountState base.
+        // Construct empty containers directly; original slots stay in
+        // prestate_storage_ and remain accessible through orig_.
+        it = current_.try_emplace(address, account_state.account_).first;
+#else
         it = current_.try_emplace(address, account_state).first;
+#endif
+        it->second.orig_ = &account_state;
         created = true;
         // Record creation separately from dirty tracking.
         journal_created(address);
@@ -619,9 +627,8 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         if (auto const *const it2 = storage.find(key); it2) {
             return *it2;
         }
-        auto const it2 = original_.find(address);
-        MONAD_ASSERT(it2 != original_.end());
-        auto &original_account_state = it2->second;
+        MONAD_ASSERT(account_state.orig_ != nullptr);
+        auto &original_account_state = *account_state.orig_;
         auto const &original_account = original_account_state.account_;
         if (!original_account.has_value() ||
             account.value().incarnation !=
@@ -724,7 +731,8 @@ monad_storage_status State::set_storage(
     MONAD_ASSERT(account_state.account_);
     // original
     {
-        auto &orig_account_state = original_account_state(address);
+        MONAD_ASSERT(account_state.orig_ != nullptr);
+        auto &orig_account_state = *account_state.orig_;
         auto &storage = orig_account_state.prestate_storage_;
         if (auto const *const it = storage.find(key); it) {
             original_value = *it;

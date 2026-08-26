@@ -55,8 +55,7 @@ template <Traits traits>
 Result<byte_string> system_call(
     Chain const &chain, State &state, BlockHashBuffer const &block_hash_buffer,
     BlockHeader const &header, Address const &contract_address,
-    trace::StateTracer &state_tracer, TxTraceContext const &trace_context,
-    ChainContext<traits> const &chain_ctx)
+    TxTraceContext const &trace_ctx, ChainContext<traits> const &chain_ctx)
 {
     // Per EIP-7002/EIP-7251: if there is no code at the predeploy address,
     // the block MUST be marked invalid.
@@ -65,7 +64,7 @@ Result<byte_string> system_call(
         return BlockError::SystemCallMissingCode;
     }
     auto const code = state.read_code(hash);
-    trace::emit<trace::ReadCode>(trace_context, hash, code->intercode());
+    trace::emit<trace::ReadCode>(trace_ctx, hash, code->intercode());
     auto const blob_schedule = chain.get_blob_schedule(header.timestamp);
 
     evmc_tx_context const tx_context = {
@@ -110,10 +109,11 @@ Result<byte_string> system_call(
 
     state.access_account(contract_address);
 
+    trace::StateTracer noop_state_tracer = std::monostate{};
+
     Transaction const empty_tx{};
-    TxTraceContext const trace_ctx{};
     EvmcHost<traits> host{
-        state_tracer,
+        noop_state_tracer,
         tx_context,
         block_hash_buffer,
         state,
@@ -252,8 +252,8 @@ bytes32_t compute_requests_hash(std::span<BlockRequest const> const requests)
 template <Traits traits>
 Result<bytes32_t> process_requests(
     Chain const &chain, State &state, BlockHashBuffer const &block_hash_buffer,
-    BlockHeader const &header, trace::StateTracer &state_tracer,
-    TxTraceContext const &trace_context, ChainContext<traits> const &chain_ctx,
+    BlockHeader const &header, TxTraceContext const &trace_ctx,
+    ChainContext<traits> const &chain_ctx,
     std::span<Receipt const> const receipts)
 {
     BOOST_OUTCOME_TRY(auto deposit_output, extract_deposit_requests(receipts));
@@ -269,8 +269,7 @@ Result<bytes32_t> process_requests(
             block_hash_buffer,
             header,
             WITHDRAWAL_REQUEST_ADDRESS,
-            state_tracer,
-            trace_context,
+            trace_ctx,
             chain_ctx));
 
     // EIP-7251
@@ -284,8 +283,7 @@ Result<bytes32_t> process_requests(
             block_hash_buffer,
             header,
             CONSOLIDATION_REQUEST_ADDRESS,
-            state_tracer,
-            trace_context,
+            trace_ctx,
             chain_ctx));
 
     return compute_requests_hash(std::array<BlockRequest, 3>{{

@@ -800,7 +800,6 @@ namespace
             tx_exec_pool,
             block_metrics,
             state_tracers,
-            system_call_state_tracer,
             chain_context,
             /*exec_recorder=*/nullptr,
             emit_native_transfer_logs,

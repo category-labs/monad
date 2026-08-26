@@ -86,4 +86,15 @@ TxTraceContext BlockTraceContext::slice(size_t i) const
     return TxTraceContext{tracers_[i]};
 }
 
+TxTraceContext BlockTraceContext::system_call_context() const
+{
+    if (!system_call_tracer_) {
+        return empty_tx_trace_context;
+    }
+
+    std::span<monad::trace::TypeErasedTracer const> const tracers{
+        system_call_tracer_.get(), 1};
+    return TxTraceContext{tracers};
+}
+
 MONAD_NAMESPACE_END

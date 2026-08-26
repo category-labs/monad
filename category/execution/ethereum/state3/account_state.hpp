@@ -162,12 +162,52 @@ static_assert(sizeof(AccountState) == 168);
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the
 // original and current balances can be adjusted
+// Cache original slot values on first read; entries are never overwritten
+// or rolled back. Append-only storage preserves indices, though vector
+// reallocation may invalidate pointers. Lookup uses a linear scan.
+class PrestateStorage
+{
+    // [(slot identifier, original value)]
+    std::vector<std::pair<bytes32_t, bytes32_t>> v_{};
+
+public:
+    bytes32_t const *find(bytes32_t const &k) const
+    {
+        for (auto const &e : v_) {
+            if (__builtin_memcmp(e.first.bytes, k.bytes, sizeof(k.bytes)) == 0) {
+                return &e.second;
+            }
+        }
+        return nullptr;
+    }
+
+    void insert(bytes32_t const &k, bytes32_t const &v)
+    {
+        v_.emplace_back(k, v);
+    }
+
+    bool empty() const
+    {
+        return v_.empty();
+    }
+
+    std::size_t size() const
+    {
+        return v_.size();
+    }
+    auto begin() const { return v_.begin(); }
+    auto end() const { return v_.end(); }
+};
+
 class OriginalAccountState final : public AccountState
 {
     bool validate_exact_balance_{false};
     uint256_t min_balance_{0};
 
 public:
+    // Original slot values; replaces the inherited storage_, left unused here.
+    PrestateStorage prestate_storage_{};
+
     explicit OriginalAccountState(std::optional<Account> &&account)
         : AccountState(std::move(account))
     {

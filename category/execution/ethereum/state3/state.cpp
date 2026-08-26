@@ -28,7 +28,6 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
-#include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -72,7 +71,7 @@ AccountState const &State::recent_account_state(Address const &address)
     // current
     auto const it = current_.find(address);
     if (it != current_.end()) {
-        return it->second.recent();
+        return it->second;
     }
     // original
     return original_account_state(address);
@@ -92,29 +91,48 @@ AccountState &State::current_account_state(Address const &address)
         if (memo_epoch_ != frame_epoch_) {
             if (!dirty_.empty()) {
                 MONAD_GUEST_SITE(DIRTY_EMPLACE);
-                dirty_.back().emplace(address);
+                // Same decision as the slow path, and it must journal for the same reason: a
+                // memo hit is still this frame's first touch of that row when the epoch moved.
+                if (dirty_.back().emplace(address)) {
+                    journal_first_touch(address, *memo_val_, false);
+                }
             }
             memo_epoch_ = frame_epoch_;
         }
-        return memo_val_->current(version_);
+        return *memo_val_;
     }
 
     // current
     auto it = current_.find(address);
+    bool created = false;
     if (MONAD_UNLIKELY(it == current_.end())) {
         MONAD_GUEST_SITE(ACCT_FIND_MISS);
         // original
         auto const &account_state = original_account_state(address);
-        it = current_.try_emplace(address, account_state, version_).first;
+        it = current_.try_emplace(address, account_state).first;
+        created = true;
     }
     if (!dirty_.empty()) {
         MONAD_GUEST_SITE(DIRTY_EMPLACE);
-        dirty_.back().emplace(address);
+        if (dirty_.back().emplace(address)) {
+            journal_first_touch(address, it->second, created);
+        }
     }
     memo_addr_ = address;
     memo_val_ = &it->second;
     memo_epoch_ = frame_epoch_;
-    return it->second.current(version_);
+    return it->second;
+}
+
+// One undo record per (frame, row). `dirty_` already answers "is this row new to this frame", so
+// the insert's own return value is the trigger: journal exactly when it reports the address as
+// newly listed. A row this frame CREATED cannot be restored -- there was nothing before it -- so
+// its record says erase.
+void State::journal_first_touch(
+    Address const &address, AccountState const &row, bool const created)
+{
+    undo_.push_back(
+        Undo{address, created ? std::nullopt : std::optional<AccountState>{row}});
 }
 
 std::optional<Account> &State::current_account(Address const &address)
@@ -137,7 +155,7 @@ State::Map<Address, OriginalAccountState> const &State::original() const
     return original_;
 }
 
-State::Map<Address, VersionStack<AccountState>> const &State::current() const
+State::Map<Address, AccountState> const &State::current() const
 {
     return current_;
 }
@@ -163,6 +181,7 @@ void State::push()
 
     ++version_;
     dirty_.emplace_back();
+    undo_marks_.push_back(undo_.size());
     log_marks_.push_back(logs_.size());
 }
 
@@ -175,13 +194,23 @@ void State::pop_accept()
 
     auto accounts = std::move(dirty_.back());
     dirty_.pop_back();
+    // Accepted: the rows keep the values this frame gave them. What the parent needs is the
+    // knowledge that they changed -- so its dirty list gains them, and this frame's undo records
+    // simply stay in the log under the parent's mark. Replayed backwards they restore the
+    // pre-PARENT value, because a row this frame was the first to touch was, by construction,
+    // untouched by the parent too.
     for (auto const &dirty_address : accounts) {
-        auto const it = current_.find(dirty_address);
-        MONAD_ASSERT(it != current_.end());
-        it->second.pop_accept(version_);
         if (!dirty_.empty()) {
             dirty_.back().emplace(dirty_address);
         }
+    }
+    undo_marks_.pop_back();
+    // With no mark left there is nothing that could roll back past this point, so the records are
+    // dead. Dropping them is not housekeeping: without it the log grows by one 160-byte record per
+    // account per frame for the whole block, and the invariant at the end of the block -- that an
+    // empty log means every frame closed -- would never hold.
+    if (undo_marks_.empty()) {
+        undo_.clear();
     }
 
     // Accepted: the frame's logs stay where they are, only its watermark goes.
@@ -197,28 +226,35 @@ void State::pop_reject()
 
     ++frame_epoch_;
 
-    std::vector<Address> removals;
     auto accounts = std::move(dirty_.back());
     dirty_.pop_back();
-    for (auto const &dirty_address : accounts) {
-        auto const it = current_.find(dirty_address);
-        MONAD_ASSERT(it != current_.end());
-        if (it->second.pop_reject(version_)) {
-            removals.push_back(it->first);
-        }
-    }
 
     // Rejected: drop exactly what this frame appended.
     logs_.resize(log_marks_.back());
     log_marks_.pop_back();
 
-    // erase() moves the last element into the hole, so any pointer into current_ may now be
-    // stale. This is the only mutation of current_ that can move one.
+    // erase() moves the last element into the hole, and a restore rewrites a row in place, so any
+    // pointer into current_ is stale from here on.
     memo_val_ = nullptr;
 
-    while (removals.size()) {
-        current_.erase(removals.back());
-        removals.pop_back();
+    // Replay BACKWARDS: a row touched by this frame and by one nested inside it carries two
+    // records, and the older value has to land last.
+    size_t const mark = undo_marks_.back();
+    undo_marks_.pop_back();
+    while (undo_.size() > mark) {
+        Undo &u = undo_.back();
+        if (!u.prev) {
+            current_.erase(u.addr);
+        }
+        else {
+            auto const it = current_.find(u.addr);
+            MONAD_ASSERT(it != current_.end());
+            it->second = std::move(*u.prev);
+        }
+        undo_.pop_back();
+    }
+    if (undo_marks_.empty()) {
+        undo_.clear();
     }
 
     rb_.on_pop_reject(accounts.span());
@@ -326,7 +362,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         }
     }
     else {
-        auto const &account_state = it->second.recent();
+        auto const &account_state = it->second;
         auto const &account = account_state.account_;
         MONAD_ASSERT(account.has_value());
         auto const &storage = account_state.storage_;
@@ -364,7 +400,7 @@ State::get_transient_storage(Address const &address, bytes32_t const &key)
 bool State::is_touched(Address const &address)
 {
     auto const it = current_.find(address);
-    return it != current_.end() && it->second.recent().is_touched();
+    return it != current_.end() && it->second.is_touched();
 }
 
 void State::set_nonce(Address const &address, uint64_t const nonce)
@@ -516,10 +552,7 @@ void State::destruct_suicides()
     MONAD_ASSERT(!version_);
 
     for (auto &it : current_) {
-        auto &stack = it.second;
-        MONAD_ASSERT(stack.size() == 1);
-        MONAD_ASSERT(stack.version() == 0);
-        auto &account_state = stack.current(0);
+        auto &account_state = it.second;
         if (account_state.is_destructed()) {
             auto &account = account_state.account_;
             if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
@@ -540,12 +573,13 @@ EXPLICIT_TRAITS_MEMBER(State::destruct_suicides);
 void State::destruct_touched_dead()
 {
     MONAD_ASSERT(!version_);
+    // Every frame closed: asserted once on the journal rather than once per row on a
+    // version stack that no longer exists. Stronger, too -- an unbalanced push leaves a
+    // mark behind even when no row was touched.
+    MONAD_ASSERT(undo_.empty() && undo_marks_.empty());
 
     for (auto &it : current_) {
-        auto &stack = it.second;
-        MONAD_ASSERT(stack.size() == 1);
-        MONAD_ASSERT(stack.version() == 0);
-        auto &account_state = stack.current(0);
+        auto &account_state = it.second;
         if (MONAD_LIKELY(!account_state.is_touched())) {
             continue;
         }
@@ -720,8 +754,7 @@ bool State::try_fix_account_mismatch(
     // adjust balances
     auto const current_it = current_.find(address);
     if (current_it != current_.end()) {
-        MONAD_ASSERT(current_it->second.size() == 1);
-        auto &recent_state = current_it->second.recent();
+        auto &recent_state = current_it->second;
         auto &recent = recent_state.account_;
         if (!recent) {
             return false;

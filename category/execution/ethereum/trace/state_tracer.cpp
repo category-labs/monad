@@ -81,7 +81,7 @@ namespace trace
         }
 
         OriginalAccountState const &original_state = orig_it->second;
-        AccountState const &current_state = curr_it->second.recent();
+        AccountState const &current_state = curr_it->second;
 
         // If the original state has no account, then the beneficiary was
         // created during the block and if the current state has an account,
@@ -108,7 +108,7 @@ namespace trace
         Account const &original =
             get_account_for_trace(orig_it->second).value();
         Account const &current =
-            get_account_for_trace(curr_it->second.recent()).value();
+            get_account_for_trace(curr_it->second).value();
 
         // If `original` and `current` are the same and *have* empty storages,
         // then it must be that the beneficiary did not participate in the block
@@ -164,7 +164,7 @@ namespace trace
             MONAD_ASSERT(it != original.end());
 
             // Possible diff.
-            auto const &current_account_state = current_stack.recent();
+            auto const &current_account_state = current_stack;
             auto const &current_account =
                 get_account_for_trace(current_account_state);
             auto const &current_storage = current_account_state.storage_;
@@ -225,7 +225,7 @@ namespace trace
     void AccessListTracer::capture_accesses(State const &state)
     {
         for (auto const &[address, current_stack] : state.current()) {
-            capture_accesses(address, current_stack.recent());
+            capture_accesses(address, current_stack);
         }
     }
 
@@ -235,7 +235,7 @@ namespace trace
         for (auto const &address : state.current_frame_dirty_accounts()) {
             auto const it = current.find(address);
             MONAD_ASSERT(it != current.end());
-            capture_accesses(address, it->second.recent());
+            capture_accesses(address, it->second);
         }
     }
 

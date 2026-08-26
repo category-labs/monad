@@ -196,10 +196,9 @@ void BlockState::merge(State const &state)
     ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
 
     auto const &current = state.current();
-    for (auto const &[address, stack] : current) {
-        MONAD_ASSERT(stack.size() == 1);
-        MONAD_ASSERT(stack.version() == 0);
-        auto const &account_state = stack.recent();
+    for (auto const &[address, account_state] : current) {
+        // The "no frame is open" invariant these lines asserted per row is now asserted once, on
+        // the undo log, inside State -- the only place that can see it.
         auto const &account = account_state.account_;
         if (account.has_value()) {
             code_hashes.insert(account.value().code_hash);
@@ -216,8 +215,7 @@ void BlockState::merge(State const &state)
     }
 
     MONAD_ASSERT(state_);
-    for (auto const &[address, stack] : current) {
-        auto const &account_state = stack.recent();
+    for (auto const &[address, account_state] : current) {
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
         StateDeltas::accessor it{};

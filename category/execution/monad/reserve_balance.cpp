@@ -71,7 +71,7 @@ bool dipped_into_reserve(
         bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
         bytes32_t const effective_code_hash =
             (traits::monad_rev() >= MONAD_EIGHT)
-                ? cur_account.recent().get_code_hash()
+                ? cur_account.get_code_hash()
                 : orig_code_hash;
         bool effective_is_delegated = false;
 

@@ -23,7 +23,6 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
-#include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -46,20 +45,22 @@ MONAD_NAMESPACE_BEGIN
 class BlockState;
 
 // Per-frame dirty accounts, deduplicated by linear scan for typically small
-// lists. Uniqueness ensures accept/reject processes each account only once.
+// lists. Only the first insertion triggers an undo record for that account.
 class DirtyAccounts
 {
     std::vector<Address> v_{};
 
 public:
-    void emplace(Address const &a)
+    // Returns true on first insertion, so the caller can journal the account.
+    bool emplace(Address const &a)
     {
         for (auto const &x : v_) {
             if (__builtin_memcmp(x.bytes, a.bytes, sizeof(a.bytes)) == 0) {
-                return;
+                return false;
             }
         }
         v_.push_back(a);
+        return true;
     }
 
     std::vector<Address>::const_iterator begin() const { return v_.begin(); }
@@ -83,7 +84,21 @@ class State
 
     Map<Address, OriginalAccountState> original_{};
 
-    Map<Address, VersionStack<AccountState>> current_{};
+    // Accounts are mutated in place and restored from the undo log on rollback.
+    Map<Address, AccountState> current_{};
+
+    // Save each account on first touch per frame. A frame marks the log size:
+    // rejection replays backwards to its mark; acceptance keeps records for
+    // parent rollback. Use addresses because map erasure can move entries.
+    struct Undo
+    {
+        Address addr;
+        // Previous state, or nullopt to erase an entry created in current_.
+        std::optional<AccountState> prev;
+    };
+
+    std::vector<Undo> undo_{};
+    std::vector<size_t> undo_marks_{};
 
     // Logs are append-only. Each frame saves the current size so reverting
     // can discard its logs without persistent-vector snapshots.
@@ -103,7 +118,7 @@ class State
     // An increasing epoch tracks dirty-set registration: version_ alone
     // cannot distinguish successive frames at the same depth.
     Address memo_addr_{};
-    VersionStack<AccountState> *memo_val_{nullptr};
+    AccountState *memo_val_{nullptr};
     std::uint64_t memo_epoch_{0};
     std::uint64_t frame_epoch_{1};
 
@@ -141,7 +156,7 @@ public:
 
     Map<Address, OriginalAccountState> const &original() const;
 
-    Map<Address, VersionStack<AccountState>> const &current() const;
+    Map<Address, AccountState> const &current() const;
 
     Map<bytes32_t, vm::SharedVarcode> const &code() const;
 
@@ -156,6 +171,10 @@ public:
     // frame-local metadata immediately before pop_accept() or pop_reject();
     // callers must not retain references beyond the frame pop.
     DirtyAccounts const &current_frame_dirty_accounts() const;
+
+    // Save undo state when an account first enters the frame's dirty list.
+    void journal_first_touch(
+        Address const &address, AccountState const &row, bool created);
 
     ////////////////////////////////////////
 

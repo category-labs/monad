@@ -145,6 +145,9 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
 template <Traits traits>
 void reject_frame(EvmcHost<traits> &host, State &state)
 {
+    auto const &trace_ctx = host.get_tx_trace_context();
+    trace::emit<trace::state_trace::RejectFrame>(trace_ctx, state);
+
     // Successful frames remain in State and are captured when the state tracer
     // is encoded. Failed frames are about to be rolled back, so the state
     // tracer lifecycle hook runs before pop_reject().

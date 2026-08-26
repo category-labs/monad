@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
+#include <category/execution/ethereum/trace/state_trace_operations.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp>
@@ -125,6 +126,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
         state.set_original_nonce(sender_, tx_.nonce);
 
         tx_trace_context_.run<trace::call_trace::Reset>();
+        tx_trace_context_.run<trace::state_trace::Reset>();
         trace::reset(state_tracer_);
 
         auto result = execute(state);
@@ -150,6 +152,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
 
         tx_trace_context_.run<trace::call_trace::Reset>();
+        tx_trace_context_.run<trace::state_trace::Reset>();
         trace::reset(state_tracer_);
 
         auto result = execute(state);
@@ -214,6 +217,7 @@ Receipt ExecuteSystemTransaction<traits>::execute_final(State &state)
         receipt.add_log(std::move(log));
     }
     tx_trace_context_.run<trace::call_trace::Finish>(receipt.gas_used);
+    tx_trace_context_.run<trace::state_trace::State>(state);
     trace::run_tracer<traits>(state_tracer_, state);
     std::span<CallFrame const> call_frames{};
     tx_trace_context_.run<trace::call_trace::GetCallFrames>(&call_frames);

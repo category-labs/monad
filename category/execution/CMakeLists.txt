@@ -158,6 +158,8 @@ add_library(
   "ethereum/trace/call_trace_operations.hpp"
   "ethereum/trace/call_tracer.cpp"
   "ethereum/trace/call_tracer.hpp"
+  "ethereum/trace/access_list_tracer.cpp"
+  "ethereum/trace/access_list_tracer.hpp"
   "ethereum/trace/code_tracer.cpp"
   "ethereum/trace/code_tracer.hpp"
   "ethereum/trace/event_trace.cpp"

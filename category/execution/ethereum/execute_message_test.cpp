@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/access_list_tracer.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/trace_context.hpp>
@@ -259,15 +260,25 @@ TYPED_TEST(TraitsTest, create_revert_preserves_access_list_trace)
 
     nlohmann::json trace_storage;
     auto const authorities = std::vector<std::optional<Address>>{};
-    trace::StateTracer state_tracer = trace::AccessListTracer{
-        trace_storage, from, Address{}, std::nullopt, authorities};
+    trace::StateTracer state_tracer = std::monostate{};
+    AccessListTracer access_list_trace_runner{
+        trace_storage,
+        from,
+        Address{},
+        std::nullopt,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    trace::TypeErasedRunner const erased_runner =
+        trace::TypeErasedRunner::erase(access_list_trace_runner);
+    std::span<trace::TypeErasedRunner const> const runners{&erased_runner, 1};
 
     BlockHashBufferFinalized const block_hash_buffer;
     Transaction tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
-    TxTraceContext const trace_context{};
+    TxTraceContext const trace_context{runners};
     EvmcHost<typename TestFixture::Trait> h{
         state_tracer,
         EMPTY_TX_CONTEXT,
@@ -299,7 +310,7 @@ TYPED_TEST(TraitsTest, create_revert_preserves_access_list_trace)
     ASSERT_EQ(result.status_code, EVMC_REVERT);
     EXPECT_FALSE(s.account_exists(contract_address));
 
-    trace::run_tracer<typename TestFixture::Trait>(state_tracer, s);
+    trace_context.run<trace::state_trace::State>(s);
 
     auto const expected = nlohmann::json::array({nlohmann::json::object({
         {"address", std::string{"0x"} + to_hex(contract_address)},

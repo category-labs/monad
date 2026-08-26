@@ -29,7 +29,6 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
-#include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -41,7 +40,6 @@
 #include <cstdint>
 #include <format>
 #include <optional>
-#include <span>
 #include <string>
 #include <utility>
 #include <variant>
@@ -193,140 +191,15 @@ namespace trace
         state_deltas_to_json(state_deltas, state, storage_);
     }
 
-    AccessListTracer::AccessListTracer(
-        nlohmann::json &storage, Address const &sender,
-        Address const &beneficiary, std::optional<Address> const &to,
-        std::span<std::optional<Address> const> const authorities)
-        : storage_(storage)
-    {
-        excluded_addresses_.insert(sender);
-        excluded_addresses_.insert(beneficiary);
-
-        if (to.has_value()) {
-            excluded_addresses_.insert(*to);
-        }
-
-        for (auto const &authority : authorities) {
-            if (authority.has_value()) {
-                excluded_addresses_.insert(*authority);
-            }
-        }
-    }
-
-    void AccessListTracer::capture_accesses(
-        Address const &address, AccountState const &account_state)
-    {
-        auto &storage_keys = accesses_[address];
-        for (auto const &key : account_state.get_accessed_storage()) {
-            storage_keys.insert(key);
-        }
-    }
-
-    void AccessListTracer::capture_accesses(State const &state)
-    {
-        for (auto const &[address, current_stack] : state.current()) {
-            capture_accesses(address, current_stack.recent());
-        }
-    }
-
-    void AccessListTracer::capture_rejected_frame_accesses(State const &state)
-    {
-        auto const &current = state.current();
-        for (auto const &address : state.current_frame_dirty_accounts()) {
-            auto const it = current.find(address);
-            MONAD_ASSERT(it != current.end());
-            capture_accesses(address, it->second.recent());
-        }
-    }
-
-    void AccessListTracer::reset()
-    {
-        accesses_.clear();
-    }
-
-    template <Traits traits>
-    void AccessListTracer::encode(State &state)
-    {
-        // Merge accepted-frame accesses still visible in State with any
-        // failed-frame accesses captured before rollback.
-        capture_accesses(state);
-
-        struct AccessListEntry
-        {
-            Address address;
-            std::vector<bytes32_t> storage_keys;
-        };
-
-        std::vector<AccessListEntry> entries;
-        entries.reserve(accesses_.size());
-        for (auto const &[address, storage_keys] : accesses_) {
-            auto &entry = entries.emplace_back();
-            entry.address = address;
-            // Match go-ethereum's access-list tracer output order: storage
-            // keys are sorted within each address, then entries are sorted by
-            // address below.
-            entry.storage_keys.assign(storage_keys.begin(), storage_keys.end());
-            std::ranges::sort(entry.storage_keys);
-            if constexpr (traits::mip_8_active()) {
-                // Under page-gas (MIP-8), warming one slot warms all 128 slots
-                // on its page, so keep only one representative per page. The
-                // keys are already sorted ascending, so each page's slots are
-                // contiguous and unique() retains the first (= minimum) of
-                // each run -- avoiding charging users for redundant entries.
-                auto const dups = std::ranges::unique(
-                    entry.storage_keys, {}, compute_page_key);
-                entry.storage_keys.erase(dups.begin(), dups.end());
-            }
-        }
-        std::ranges::sort(entries, {}, &AccessListEntry::address);
-
-        auto access_list = json::array();
-        for (auto const &[address, storage_keys] : entries) {
-            // If an address is excluded because it's always considered warm, we
-            // still want to include it in the access list if it's had storage
-            // keys set by this transaction.
-            if (storage_keys.empty() &&
-                should_exclude_address<traits>(address)) {
-                continue;
-            }
-
-            auto keys = json::array();
-            for (auto const &key : storage_keys) {
-                keys.push_back(bytes_to_hex(key.bytes));
-            }
-
-            access_list.push_back(json::object({
-                {"address", bytes_to_hex(address.bytes)},
-                {"storageKeys", std::move(keys)},
-            }));
-        }
-
-        storage_ = std::move(access_list);
-    }
-
-    EXPLICIT_TRAITS_MEMBER(AccessListTracer::encode);
-
-    template <Traits traits>
-    bool AccessListTracer::should_exclude_address(Address const &addr) const
-    {
-        return excluded_addresses_.contains(addr) ||
-               is_precompile<traits>(addr);
-    }
-
-    EXPLICIT_TRAITS_MEMBER(AccessListTracer::should_exclude_address);
-
     void on_frame_reject(StateTracer &tracer, State &state)
     {
-        if (auto *access_list = std::get_if<AccessListTracer>(&tracer)) {
-            access_list->capture_rejected_frame_accesses(state);
-        }
+        static_cast<void>(tracer);
+        static_cast<void>(state);
     }
 
     void reset(StateTracer &tracer)
     {
-        if (auto *access_list = std::get_if<AccessListTracer>(&tracer)) {
-            access_list->reset();
-        }
+        static_cast<void>(tracer);
     }
 
     template <Traits traits>
@@ -340,9 +213,6 @@ namespace trace
                 },
                 [&state](StateDiffTracer &statediff) {
                     statediff.encode(statediff.trace(state), state);
-                },
-                [&state](AccessListTracer &access_list) {
-                    access_list.encode<traits>(state);
                 },
                 [](CodeTracer &) {}},
             tracer);

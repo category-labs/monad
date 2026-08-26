@@ -26,7 +26,6 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include <memory>
-#include <span>
 #include <variant>
 
 MONAD_NAMESPACE_BEGIN
@@ -38,9 +37,6 @@ namespace trace
 {
     template <typename Key, typename Elem>
     using Map = ankerl::unordered_dense::segmented_map<Key, Elem>;
-
-    template <class Key>
-    using Set = ankerl::unordered_dense::set<Key>;
 
     struct PrestateTracer
     {
@@ -89,39 +85,6 @@ namespace trace
         nlohmann::json &storage_;
     };
 
-    struct AccessListTracer
-    {
-        AccessListTracer(
-            nlohmann::json &storage, Address const &sender,
-            Address const &beneficiary, std::optional<Address> const &to,
-            std::span<std::optional<Address> const> authorities);
-
-        template <Traits traits>
-        void encode(State &);
-
-        void reset();
-
-        // Capture rollback-sensitive accesses from the frame that is about to
-        // be rejected. Must be called while that State frame is still pushed.
-        void capture_rejected_frame_accesses(State const &);
-
-    private:
-        // Merge one account's access metadata into tracer-owned storage.
-        void
-        capture_accesses(Address const &, AccountState const &account_state);
-
-        // Capture accepted-frame accesses that are still visible in State at
-        // final encoding time.
-        void capture_accesses(State const &);
-
-        nlohmann::json &storage_;
-        Set<Address> excluded_addresses_{};
-        Map<Address, Set<bytes32_t>> accesses_{};
-
-        template <Traits traits>
-        bool should_exclude_address(Address const &) const;
-    };
-
     /// Records every code preimage read during execution, keyed by
     /// code_hash. Used by witness generation to assemble the codes section
     /// of the post-block witness. Insertions happen from the EVM host's
@@ -134,8 +97,8 @@ namespace trace
         Map<bytes32_t, vm::SharedIntercode> codes{};
     };
 
-    using StateTracer = std::variant<
-        std::monostate, PrestateTracer, StateDiffTracer, AccessListTracer>;
+    using StateTracer =
+        std::variant<std::monostate, PrestateTracer, StateDiffTracer>;
 
     // State-tracer lifecycle hook for a failed frame. Call immediately before
     // State::pop_reject(), while rejected-frame access metadata is still

@@ -281,6 +281,17 @@ public:
 private:
     AccountState const &recent_account_state(Address const &);
 
+    // The row a read should see, and the original row behind it, resolved in ONE address lookup.
+    // Callers needing both used to ask twice -- and three times when there was no current row,
+    // because recent_account_state goes to original_ itself and the caller then asked again.
+    struct RowPair
+    {
+        AccountState const *recent;
+        OriginalAccountState *orig;
+    };
+
+    RowPair rows_for_read(Address const &);
+
     AccountState &current_account_state(Address const &);
 
     std::optional<Account> const &recent_account(Address const &);

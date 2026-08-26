@@ -537,6 +537,18 @@ vm::VM &State::vm()
     return block_state_.vm();
 }
 
+State::AccountReadRows State::rows_for_read(Address const &address)
+{
+    auto const it = current_.find(address);
+    if (it != current_.end()) {
+        MONAD_ASSERT(it->second.original_state_ != nullptr);
+        return {&it->second, it->second.original_state_};
+    }
+    // Without a current row, reads see the original state.
+    auto &original = original_account_state(address);
+    return {&original, &original};
+}
+
 std::optional<Account> const &State::recent_account(Address const &address)
 {
     return recent_account_state(address).account_;
@@ -584,8 +596,9 @@ uint64_t State::get_nonce(Address const &address)
 
 uint256_t State::get_balance(Address const &address)
 {
-    auto const &account = recent_account(address);
-    original_account_state(address).set_validate_exact_balance();
+    auto const [visible, original] = rows_for_read(address);
+    original->set_validate_exact_balance();
+    auto const &account = visible->account_;
     if (MONAD_LIKELY(account.has_value())) {
         return account.value().balance;
     }
@@ -1162,10 +1175,11 @@ bool State::try_fix_account_mismatch(
 bool State::record_balance_constraint_for_debit(
     Address const &address, uint256_t const &debit)
 {
-    auto const &account = recent_account(address);
+    auto const [visible, original] = rows_for_read(address);
+    auto const &account = visible->account_;
     uint256_t const balance = account.has_value() ? account->balance : 0;
 
-    auto &original_state = original_account_state(address);
+    auto &original_state = *original;
     // RELAXED MERGE
     // if current balance  >= `debit`, then:
     // 1. compute the amount that current balance exceeds `debit`

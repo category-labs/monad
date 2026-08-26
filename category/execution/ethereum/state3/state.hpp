@@ -306,6 +306,16 @@ public:
 private:
     AccountState const &recent_account_state(Address const &);
 
+    // Return the visible state and its original row without looking up
+    // the original again when a current row already exists.
+    struct AccountReadRows
+    {
+        AccountState const *visible;
+        OriginalAccountState *original;
+    };
+
+    AccountReadRows rows_for_read(Address const &);
+
     AccountState &current_account_state(Address const &);
 
     // Whether SELFDESTRUCT to the account itself destroys the balance.

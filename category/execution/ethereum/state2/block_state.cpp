@@ -161,7 +161,10 @@ bool BlockState::can_merge(State &state) const
         Address const &address = kv.first;
         OriginalAccountState const &account_state = kv.second;
         auto const &account = account_state.account_;
-        auto const &storage = account_state.storage_;
+        // The ORIGINAL row's slot cache lives in prestate_storage_ now, not in the base's
+        // storage_ -- which is empty on an original row. Reading the base here would make
+        // the loop below iterate nothing and this check pass unconditionally.
+        auto const &storage = account_state.prestate_storage_;
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_->find(it, address));
         if (account != it->second.account.second) {

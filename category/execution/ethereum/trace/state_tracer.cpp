@@ -118,7 +118,7 @@ namespace trace
             // NOTE(dhil): We piggyback on the fact that the `storage_`
             // is lazily populated, i.e. a slot binding appears only if
             // the slot has been read or written to during execution.
-            original_state.storage_.empty() && current_state.storage_.empty()) {
+            original_state.prestate_storage_.empty() && current_state.storage_.empty()) {
             return false;
         }
 
@@ -171,7 +171,7 @@ namespace trace
             auto const &original_account_state = it->second;
             auto const &original_account =
                 get_account_for_trace(original_account_state);
-            auto const &original_storage = original_account_state.storage_;
+            auto const &original_storage = original_account_state.prestate_storage_;
 
             // Nothing to do if the account has been created and destructed
             // during the same tx.
@@ -390,7 +390,7 @@ namespace trace
         OriginalAccountState const &as, State &state)
     {
         auto const &account = get_account_for_trace(as);
-        auto const &storage = as.storage_;
+        auto const &storage = as.prestate_storage_;
         json res = account_to_json(account, state);
         if (!storage.empty() && account.has_value()) {
             json storage_result = storage_to_json(storage);

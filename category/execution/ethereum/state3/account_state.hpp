@@ -163,12 +163,51 @@ static_assert(sizeof(AccountState) == 168);
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the
 // original and current balances can be adjusted
+// The ORIGINAL row's slot cache: pre-state values the block has read. Monotone by construction --
+// inserted once per slot on first read, never overwritten, and never rolled back, because
+// original_ sits outside revert semantics entirely (find and try_emplace are the only operations
+// on it, and set_original_nonce / set_min_balance are deliberately not journalled). That is what
+// lets it flatten with NO journal at all, ahead of the current overlay which needs one.
+//
+// Unsorted with a linear scan, not sorted: insertion is append-only and never moves an existing
+// entry, so an index into it stays valid -- which is what the row work above this will want. A
+// sorted vector would memmove ~1 kB per insert to save a handful of compares.
+class PrestateStorage
+{
+    std::vector<std::pair<bytes32_t, bytes32_t>> v_{};
+
+public:
+    bytes32_t const *find(bytes32_t const &k) const
+    {
+        for (auto const &e : v_) {
+            if (__builtin_memcmp(e.first.bytes, k.bytes, sizeof(k.bytes)) == 0) {
+                return &e.second;
+            }
+        }
+        return nullptr;
+    }
+
+    void insert(bytes32_t const &k, bytes32_t const &v)
+    {
+        v_.emplace_back(k, v);
+    }
+
+    bool empty() const { return v_.empty(); }
+    auto begin() const { return v_.begin(); }
+    auto end() const { return v_.end(); }
+};
+
 class OriginalAccountState final : public AccountState
 {
     bool validate_exact_balance_{false};
     uint256_t min_balance_{0};
 
 public:
+    // The base's storage_ is unused for an original row: this replaces it. The base member goes
+    // when the current overlay flattens too; until then it is 8 bytes of an immer handle nobody
+    // touches on this row.
+    PrestateStorage prestate_storage_{};
+
     explicit OriginalAccountState(std::optional<Account> &&account)
         : AccountState(std::move(account))
     {

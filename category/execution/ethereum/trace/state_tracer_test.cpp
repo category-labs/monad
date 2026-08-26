@@ -24,10 +24,12 @@
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/access_list_tracer.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/code_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
@@ -657,7 +659,7 @@ TYPED_TEST(TraitsTest, access_list_empty)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     AccessListTracer tracer{storage, addr1, addr2, std::nullopt, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    tracer(trace::PostState{s});
 
     EXPECT_EQ(storage, nlohmann::json::parse("[]"));
 }
@@ -680,7 +682,7 @@ TYPED_TEST(TraitsTest, access_list_state_view_excludes_rejected_frame)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     AccessListTracer tracer{storage, addr1, addr2, std::nullopt, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    tracer(trace::PostState{s});
 
     // Rejected frames must not leak accessed storage back into State. RPC
     // access-list observability needs to be handled by tracer-specific capture.
@@ -700,15 +702,15 @@ TYPED_TEST(TraitsTest, access_list_records_rejected_frame_storage)
 
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
-    StateTracer tracer =
+    AccessListTracer tracer =
         AccessListTracer{storage, addr1, addr2, std::nullopt, authorities};
 
     s.push();
     s.access_storage<typename TestFixture::Trait>(addr4, key4);
-    on_frame_reject(tracer, s);
+    tracer(trace::RejectFrame{s});
     s.pop_reject();
 
-    run_tracer<typename TestFixture::Trait>(tracer, s);
+    tracer(trace::PostState{s});
 
     auto const json_str = R"(
         [
@@ -737,15 +739,15 @@ TYPED_TEST(TraitsTest, access_list_records_rejected_frame_regular_account)
 
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
-    StateTracer tracer =
+    AccessListTracer tracer =
         AccessListTracer{storage, addr1, addr2, std::nullopt, authorities};
 
     s.push();
     s.access_account(addr4);
-    on_frame_reject(tracer, s);
+    tracer(trace::RejectFrame{s});
     s.pop_reject();
 
-    run_tracer<typename TestFixture::Trait>(tracer, s);
+    tracer(trace::PostState{s});
 
     auto const json_str = R"(
         [
@@ -785,7 +787,7 @@ TYPED_TEST(TraitsTest, access_list_write)
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr5};
     AccessListTracer tracer{storage, addr1, addr4, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    tracer(trace::PostState{s});
 
     auto const json_str = R"(
         [
@@ -830,8 +832,15 @@ TYPED_TEST(TraitsTest, access_list_regular_account)
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
-        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        AccessListTracer tracer{
+            storage,
+            addr1,
+            addr2,
+            to,
+            authorities,
+            TestFixture::Trait::mip_8_active(),
+            &is_precompile<typename TestFixture::Trait>};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
             [
@@ -859,8 +868,15 @@ TYPED_TEST(TraitsTest, access_list_regular_account)
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
-        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        AccessListTracer tracer{
+            storage,
+            addr1,
+            addr2,
+            to,
+            authorities,
+            TestFixture::Trait::mip_8_active(),
+            &is_precompile<typename TestFixture::Trait>};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
             [
@@ -898,8 +914,15 @@ TYPED_TEST(TraitsTest, access_list_sender)
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
-        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        AccessListTracer tracer{
+            storage,
+            addr1,
+            addr2,
+            to,
+            authorities,
+            TestFixture::Trait::mip_8_active(),
+            &is_precompile<typename TestFixture::Trait>};
+        tracer(trace::PostState{s});
 
         EXPECT_EQ(storage, nlohmann::json::parse("[]"));
     }
@@ -917,8 +940,15 @@ TYPED_TEST(TraitsTest, access_list_sender)
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
-        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        AccessListTracer tracer{
+            storage,
+            addr1,
+            addr2,
+            to,
+            authorities,
+            TestFixture::Trait::mip_8_active(),
+            &is_precompile<typename TestFixture::Trait>};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
             [
@@ -956,8 +986,15 @@ TYPED_TEST(TraitsTest, access_list_beneficiary)
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
-        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        AccessListTracer tracer{
+            storage,
+            addr1,
+            addr2,
+            to,
+            authorities,
+            TestFixture::Trait::mip_8_active(),
+            &is_precompile<typename TestFixture::Trait>};
+        tracer(trace::PostState{s});
 
         EXPECT_EQ(storage, nlohmann::json::parse("[]"));
     }
@@ -976,7 +1013,7 @@ TYPED_TEST(TraitsTest, access_list_beneficiary)
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
             [
@@ -1015,7 +1052,7 @@ TYPED_TEST(TraitsTest, access_list_recipient)
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        tracer(trace::PostState{s});
 
         EXPECT_EQ(storage, nlohmann::json::parse("[]"));
     }
@@ -1034,7 +1071,7 @@ TYPED_TEST(TraitsTest, access_list_recipient)
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
             [
@@ -1076,7 +1113,7 @@ TYPED_TEST(TraitsTest, access_list_authorities)
             std::vector<std::optional<Address>>{addr4, addr5};
         auto const to = std::optional<Address>{addr3};
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        tracer(trace::PostState{s});
 
         EXPECT_EQ(storage, nlohmann::json::parse("[]"));
     }
@@ -1099,7 +1136,7 @@ TYPED_TEST(TraitsTest, access_list_authorities)
             std::vector<std::optional<Address>>{addr4, addr5};
         auto const to = std::optional<Address>{addr3};
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
             [
@@ -1166,8 +1203,15 @@ TYPED_TEST(TraitsTest, access_list_precompiles)
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
-        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        AccessListTracer tracer{
+            storage,
+            addr1,
+            addr2,
+            to,
+            authorities,
+            TestFixture::Trait::mip_8_active(),
+            &is_precompile<typename TestFixture::Trait>};
+        tracer(trace::PostState{s});
 
         EXPECT_EQ(storage, nlohmann::json::parse(json_string));
     }
@@ -2585,8 +2629,15 @@ TYPED_TEST(MonadTraitsTest, access_list_page_dedup_same_page)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr3};
-    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    AccessListTracer tracer{
+        storage,
+        addr1,
+        addr2,
+        to,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    tracer(trace::PostState{s});
 
     auto const json_str = R"([
         {
@@ -2630,8 +2681,15 @@ TYPED_TEST(MonadTraitsTest, access_list_page_dedup_same_page_three_slots)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr3};
-    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    AccessListTracer tracer{
+        storage,
+        addr1,
+        addr2,
+        to,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    tracer(trace::PostState{s});
 
     auto const json_str = R"([
         {
@@ -2675,8 +2733,15 @@ TYPED_TEST(MonadTraitsTest, access_list_mip8_passthrough_two_addresses)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr3};
-    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    AccessListTracer tracer{
+        storage,
+        addr1,
+        addr2,
+        to,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    tracer(trace::PostState{s});
 
     // Sort outer array by address for deterministic comparison
     std::sort(storage.begin(), storage.end(), [](auto const &a, auto const &b) {
@@ -2730,8 +2795,15 @@ TYPED_TEST(MonadTraitsTest, access_list_page_dedup_one_addr_two_pages)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr3};
-    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    AccessListTracer tracer{
+        storage,
+        addr1,
+        addr2,
+        to,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    tracer(trace::PostState{s});
 
     ASSERT_EQ(storage.size(), 1U);
     EXPECT_EQ(
@@ -2775,8 +2847,15 @@ TYPED_TEST(MonadTraitsTest, access_list_page_dedup_old_revision)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr3};
-    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    AccessListTracer tracer{
+        storage,
+        addr1,
+        addr2,
+        to,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    tracer(trace::PostState{s});
 
     ASSERT_EQ(storage.size(), 1U);
     EXPECT_EQ(
@@ -2823,8 +2902,15 @@ TYPED_TEST(MonadTraitsTest, access_list_page_dedup_page_boundary)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr3};
-    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    AccessListTracer tracer{
+        storage,
+        addr1,
+        addr2,
+        to,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    tracer(trace::PostState{s});
 
     ASSERT_EQ(storage.size(), 1U);
     EXPECT_EQ(
@@ -2874,8 +2960,15 @@ TYPED_TEST(MonadTraitsTest, access_list_page_dedup_multi_byte_page_boundary)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr3};
-    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    AccessListTracer tracer{
+        storage,
+        addr1,
+        addr2,
+        to,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    tracer(trace::PostState{s});
 
     ASSERT_EQ(storage.size(), 1U);
     EXPECT_EQ(

@@ -362,6 +362,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "record_txn_events.cpp"
         "trace/event_trace.cpp"
         "trace/call_frame.cpp"
+        "trace/access_list_tracer.cpp"
         "trace/call_tracer.cpp"
         "trace/state_tracer.cpp"
         "trace/rlp/call_frame_rlp.cpp"

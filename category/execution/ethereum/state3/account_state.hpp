@@ -107,6 +107,8 @@ public:
     }
 };
 
+class OriginalAccountState;
+
 class AccountState : public AccountSubstate
 {
 public: // TODO
@@ -129,6 +131,11 @@ public:
     StorageMap storage_{};
     StorageMap transient_storage_{};
     PageTracker page_tracker_{};
+
+    // Original row for overlay misses, avoiding another address lookup;
+    // null on original rows. Insertions into original_ preserve pointers,
+    // and no entries are erased during their use.
+    OriginalAccountState *original_state_{nullptr};
 
     monad_storage_status zero_out_key(
         bytes32_t const &key, bytes32_t const &original_value,
@@ -215,7 +222,7 @@ public:
 };
 
 // Guard against unintended growth of the per-account state.
-static_assert(sizeof(AccountState) == 184);
+static_assert(sizeof(AccountState) == 192);
 
 // Cache original slot values on first read; entries are never overwritten
 // or rolled back. Append-only storage preserves indices, though vector

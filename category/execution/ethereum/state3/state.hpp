@@ -128,7 +128,18 @@ class State
         // row: there is nothing to restore, so the record says erase, and an optional says that
         // rather than a 160-byte AccountState nobody reads.
         std::optional<AccountState> prev;
+#ifdef MONAD_ZKVM_KECCAK_SITES
+        // Diagnostic: this record was left behind by a frame that was ACCEPTED, so replaying it
+        // means a parent revert is undoing work an accepted child did -- the nested combination
+        // a mainnet corpus exercises only by accident.
+        bool promoted{false};
+#endif
     };
+    // Records the row's pre-frame value so pop_reject can put it back. Called exactly where the
+    // dirty-set insert reports the row as new to the frame.
+    void journal_first_touch(
+        Address const &address, AccountState const &row, bool created);
+
     std::vector<Undo> undo_{};
     std::vector<size_t> undo_marks_{};
 
@@ -218,11 +229,6 @@ public:
     // frame-local metadata immediately before pop_accept() or pop_reject();
     // callers must not retain references beyond the frame pop.
     DirtyAccounts const &current_frame_dirty_accounts() const;
-
-    // Records the row's pre-frame value so pop_reject can put it back. Called exactly where the
-    // dirty-set insert reports the row as new to the frame.
-    void journal_first_touch(
-        Address const &address, AccountState const &row, bool created);
 
     ////////////////////////////////////////
 

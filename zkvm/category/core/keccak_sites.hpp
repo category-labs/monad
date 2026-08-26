@@ -61,6 +61,8 @@ namespace monad::keccak_sites
         DIRTY_EMPLACE,      // the per-frame dirty-set insert ran
         STOR_LOOKUP,        // State::get_storage entered
         ACCT_MEMO_HIT,      // ... the one-entry memo answered the lookup
+        POP_REJECT,         // State::pop_reject entered
+        POP_ACCEPT,         // State::pop_accept entered
         N_SITES
     };
 
@@ -75,10 +77,26 @@ namespace monad::keccak_sites
     // take 96, so 2 * N_SITES u64 would not fit. Per-block counts are ~1e5.
     inline std::uint32_t counters[2 * N_SITES]{};
 
+    // Second-slot map for the revert-coverage probe. The state sites have no permutation count,
+    // so the slot is free, and the 256-byte output budget has no room for a site each. Read only
+    // with the matching decoder -- these pairings are not meaningful anywhere else:
+    //
+    //   POP_REJECT      count = rejects            slot2 = records replayed
+    //   POP_ACCEPT      count = accepts            slot2 = summed frame depth at accept
+    //   ACCT_FIND_MISS  count = map misses         slot2 = replayed records that ERASED a row
+    //   STOR_LOOKUP     count = get_storage        slot2 = replayed records a child had PROMOTED
+    //   ACCT_MEMO_HIT   count = memo hits          slot2 = rejects where the row was destructed
+    //   DIRTY_EMPLACE   count = dirty inserts      slot2 = summed frame depth at reject
+    //
     // Count a site with no notion of length — the state-access sites.
     inline void bump(Site const s) noexcept
     {
         ++counters[s];
+    }
+
+    inline void add2(Site const s, std::size_t const v) noexcept
+    {
+        counters[N_SITES + s] += static_cast<std::uint32_t>(v);
     }
 
     inline void hit(Site const s, std::size_t const len) noexcept
@@ -101,3 +119,4 @@ namespace monad::keccak_sites
 
 #define MONAD_KECCAK_SITE(s, len) ::monad::keccak_sites::hit(::monad::keccak_sites::s, (len))
 #define MONAD_GUEST_SITE(s) ::monad::keccak_sites::bump(::monad::keccak_sites::s)
+#define MONAD_GUEST_ADD2(s, v) ::monad::keccak_sites::add2(::monad::keccak_sites::s, (v))

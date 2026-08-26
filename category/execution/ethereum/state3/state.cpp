@@ -51,6 +51,7 @@
 #include <category/core/keccak_sites.hpp>
 #else
 #define MONAD_GUEST_SITE(s) ((void)0)
+#define MONAD_GUEST_ADD2(s, v) ((void)0)
 #endif
 
 MONAD_NAMESPACE_BEGIN
@@ -191,6 +192,16 @@ void State::pop_accept()
     MONAD_ASSERT(dirty_.size() == version_);
 
     ++frame_epoch_;
+    MONAD_GUEST_SITE(POP_ACCEPT);
+    MONAD_GUEST_ADD2(POP_ACCEPT, version_);
+#ifdef MONAD_ZKVM_KECCAK_SITES
+    // Everything this frame leaves behind now belongs to the parent's mark.
+    if (undo_marks_.size() > 1) {
+        for (size_t i = undo_marks_.back(); i < undo_.size(); ++i) {
+            undo_[i].promoted = true;
+        }
+    }
+#endif
 
     auto accounts = std::move(dirty_.back());
     dirty_.pop_back();
@@ -225,6 +236,8 @@ void State::pop_reject()
     MONAD_ASSERT(dirty_.size() == version_);
 
     ++frame_epoch_;
+    MONAD_GUEST_SITE(POP_REJECT);
+    MONAD_GUEST_ADD2(DIRTY_EMPLACE, version_);
 
     auto accounts = std::move(dirty_.back());
     dirty_.pop_back();
@@ -243,12 +256,25 @@ void State::pop_reject()
     undo_marks_.pop_back();
     while (undo_.size() > mark) {
         Undo &u = undo_.back();
+        MONAD_GUEST_ADD2(POP_REJECT, 1);
+#ifdef MONAD_ZKVM_KECCAK_SITES
+        if (u.promoted) {
+            MONAD_GUEST_ADD2(STOR_LOOKUP, 1);
+        }
+#endif
         if (!u.prev) {
+            MONAD_GUEST_ADD2(ACCT_FIND_MISS, 1);
             current_.erase(u.addr);
         }
         else {
             auto const it = current_.find(u.addr);
             MONAD_ASSERT(it != current_.end());
+#ifdef MONAD_ZKVM_KECCAK_SITES
+            // The value being discarded: did this frame destruct the account?
+            if (it->second.is_destructed() && !u.prev->is_destructed()) {
+                MONAD_GUEST_ADD2(ACCT_MEMO_HIT, 1);
+            }
+#endif
             it->second = std::move(*u.prev);
         }
         undo_.pop_back();

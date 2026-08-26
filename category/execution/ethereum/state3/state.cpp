@@ -92,11 +92,9 @@ AccountState &State::current_account_state(Address const &address)
         if (memo_epoch_ != frame_epoch_) {
             if (!dirty_.empty()) {
                 MONAD_GUEST_SITE(DIRTY_EMPLACE);
-                // Same decision as the slow path, and it must journal for the same reason: a
-                // memo hit is still this frame's first touch of that row when the epoch moved.
-                if (dirty_.back().emplace(address)) {
-                    journal_first_touch(address, *memo_val_, false);
-                }
+                // Dirty tracking only. A memo hit is a row that already exists, and an existing row
+                // needs no record on first touch now that each mutation journals itself.
+                dirty_.back().emplace(address);
             }
             memo_epoch_ = frame_epoch_;
         }
@@ -112,48 +110,109 @@ AccountState &State::current_account_state(Address const &address)
         auto const &account_state = original_account_state(address);
         it = current_.try_emplace(address, account_state).first;
         created = true;
+        // Journalled here rather than off the dirty-set insert: the record says "this row did not
+        // exist", which is a fact about creating it, not about the frame's bookkeeping.
+        journal_created(address);
     }
     if (!dirty_.empty()) {
         MONAD_GUEST_SITE(DIRTY_EMPLACE);
-        if (dirty_.back().emplace(address)) {
-            journal_first_touch(address, it->second, created);
-        }
+        dirty_.back().emplace(address);
     }
+    (void)created;
     memo_addr_ = address;
     memo_val_ = &it->second;
     memo_epoch_ = frame_epoch_;
     return it->second;
 }
 
-// One undo record per (frame, row). `dirty_` already answers "is this row new to this frame", so
-// the insert's own return value is the trigger: journal exactly when it reports the address as
-// newly listed. A row this frame CREATED cannot be restored -- there was nothing before it -- so
-// its record says erase.
-void State::journal_first_touch(
-    Address const &address, AccountState const &row, bool const created)
+// One record per MUTATION, carrying only what that mutation overwrote. Every helper is a no-op
+// when no frame is open: outside a frame nothing can roll back, and journalling there would grow
+// the log for the whole block.
+void State::journal_created(Address const &address)
 {
-    if (created) {
-        undo_.push_back(Undo{address, Undo::Kind::Created, 0});
+    if (!journalling()) {
+        return;
+    }
+    undo_.push_back(Undo{address, Undo::Kind::Created, 0});
+}
+
+void State::journal_account(Address const &address, AccountState const &row)
+{
+    if (!journalling()) {
         return;
     }
     undo_.push_back(Undo{
         address,
-        Undo::Kind::Row,
-        static_cast<std::uint32_t>(undo_rows_.size())});
-    undo_rows_.push_back(RowUndo{
-        row.account_,
-        static_cast<AccountSubstate const &>(row),
-        row.transient_storage_,
-        row.page_tracker_});
+        Undo::Kind::AccountWhole,
+        static_cast<std::uint32_t>(undo_accts_.size())});
+    undo_accts_.push_back(row.account_);
 }
 
-// The row record deliberately does not carry storage_, so every write to a slot needs its own.
-// Gated on there being an open frame: a write in the block prologue has nothing that could reject
-// it, and journalling it would grow the log for the whole block.
+void State::journal_balance(Address const &address, uint256_t const &prev)
+{
+    if (!journalling()) {
+        return;
+    }
+    bytes32_t w;
+    // Raw bytes, saved and restored verbatim. Nothing reads them as a number in between, so this
+    // is a copy and not a conversion.
+    static_assert(sizeof(w.bytes) == sizeof(prev));
+    __builtin_memcpy(w.bytes, &prev, sizeof(w.bytes));
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::Balance,
+        static_cast<std::uint32_t>(undo_words_.size())});
+    undo_words_.push_back(w);
+}
+
+void State::journal_code_hash(Address const &address, bytes32_t const &prev)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::CodeHash,
+        static_cast<std::uint32_t>(undo_words_.size())});
+    undo_words_.push_back(prev);
+}
+
+void State::journal_nonce(Address const &address, std::uint64_t const prev)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::Nonce,
+        static_cast<std::uint32_t>(undo_u64_.size())});
+    undo_u64_.push_back(prev);
+}
+
+void State::journal_flag(Address const &address, Undo::Kind const which)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.push_back(Undo{address, which, 0});
+}
+
+void State::journal_warm_slot(Address const &address, bytes32_t const &key)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::WarmSlot,
+        static_cast<std::uint32_t>(undo_words_.size())});
+    undo_words_.push_back(key);
+}
+
 void State::journal_slot(
     Address const &address, AccountState const &row, bytes32_t const &key)
 {
-    if (undo_marks_.empty()) {
+    if (!journalling()) {
         return;
     }
     bytes32_t const *const prev = row.storage_.find(key);
@@ -163,6 +222,33 @@ void State::journal_slot(
         static_cast<std::uint32_t>(undo_slots_.size())});
     undo_slots_.push_back(
         SlotUndo{key, prev ? *prev : bytes32_t{}, prev != nullptr});
+}
+
+void State::journal_transient(
+    Address const &address, AccountState const &row, bytes32_t const &key)
+{
+    if (!journalling()) {
+        return;
+    }
+    bytes32_t const *const prev = row.transient_storage_.find(key);
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::Transient,
+        static_cast<std::uint32_t>(undo_slots_.size())});
+    undo_slots_.push_back(
+        SlotUndo{key, prev ? *prev : bytes32_t{}, prev != nullptr});
+}
+
+void State::journal_pages(Address const &address, AccountState const &row)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::Pages,
+        static_cast<std::uint32_t>(undo_pages_.size())});
+    undo_pages_.push_back(row.page_tracker_);
 }
 
 std::optional<Account> &State::current_account(Address const &address)
@@ -211,8 +297,13 @@ void State::push()
 
     ++version_;
     dirty_.emplace_back();
-    undo_marks_.push_back(
-        UndoMark{undo_.size(), undo_rows_.size(), undo_slots_.size()});
+    undo_marks_.push_back(UndoMark{
+        undo_.size(),
+        undo_accts_.size(),
+        undo_words_.size(),
+        undo_u64_.size(),
+        undo_slots_.size(),
+        undo_pages_.size()});
     log_marks_.push_back(logs_.size());
 }
 
@@ -252,8 +343,11 @@ void State::pop_accept()
     // empty log means every frame closed -- would never hold.
     if (undo_marks_.empty()) {
         undo_.clear();
-        undo_rows_.clear();
+        undo_accts_.clear();
+        undo_words_.clear();
+        undo_u64_.clear();
         undo_slots_.clear();
+        undo_pages_.clear();
     }
 
     // Accepted: the frame's logs stay where they are, only its watermark goes.
@@ -294,56 +388,103 @@ void State::pop_reject()
             MONAD_GUEST_ADD2(STOR_LOOKUP, 1);
         }
 #endif
-        switch (u.kind) {
-        case Undo::Kind::Created:
+        if (u.kind == Undo::Kind::Created) {
             MONAD_GUEST_ADD2(ACCT_FIND_MISS, 1);
             current_.erase(u.addr);
+            undo_.pop_back();
+            continue;
+        }
+        // Every other kind edits a row in place, and the row is still here: a Created record for
+        // the same address is always EARLIER in the log than any mutation of it, and replay runs
+        // backwards, so the erase has not happened yet.
+        auto const it = current_.find(u.addr);
+        MONAD_ASSERT(it != current_.end());
+        AccountState &row = it->second;
+        switch (u.kind) {
+        case Undo::Kind::Created:
+            break; // handled above
+
+        case Undo::Kind::AccountWhole:
+            row.account_ = std::move(undo_accts_[u.aux]);
             break;
 
-        case Undo::Kind::Row: {
-            auto const it = current_.find(u.addr);
-            MONAD_ASSERT(it != current_.end());
-            RowUndo &r = undo_rows_[u.aux];
-#ifdef MONAD_ZKVM_KECCAK_SITES
-            // The value being discarded: did this frame destruct the account?
-            if (it->second.is_destructed() && !r.substate.is_destructed()) {
-                MONAD_GUEST_ADD2(ACCT_MEMO_HIT, 1);
-            }
-#endif
-            AccountState &row = it->second;
-            row.account_ = std::move(r.account);
-            static_cast<AccountSubstate &>(row) = std::move(r.substate);
-            row.transient_storage_ = std::move(r.transient);
-            row.page_tracker_ = std::move(r.page_tracker);
-            // storage_ is deliberately untouched: the Slot records restore it, and they are later
-            // in the log than this one, so they have already replayed by now.
+        case Undo::Kind::Balance:
+            // The account exists: the only paths that clear it run outside every frame
+            // (destruct_suicides and destruct_touched_dead both assert !version_), so nothing can
+            // have removed it between this mutation and its replay.
+            MONAD_ASSERT(row.account_.has_value());
+            __builtin_memcpy(
+                &row.account_->balance,
+                undo_words_[u.aux].bytes,
+                sizeof(undo_words_[u.aux].bytes));
             break;
-        }
+
+        case Undo::Kind::CodeHash:
+            MONAD_ASSERT(row.account_.has_value());
+            row.account_->code_hash = undo_words_[u.aux];
+            break;
+
+        case Undo::Kind::Nonce:
+            MONAD_ASSERT(row.account_.has_value());
+            row.account_->nonce = undo_u64_[u.aux];
+            break;
+
+        case Undo::Kind::FlagTouched:
+            row.undo_touched();
+            break;
+
+        case Undo::Kind::FlagDestructed:
+            row.undo_destructed();
+            break;
+
+        case Undo::Kind::FlagAccessed:
+            row.undo_accessed();
+            break;
+
+        case Undo::Kind::WarmSlot:
+            row.undo_warm_slot(undo_words_[u.aux]);
+            break;
 
         case Undo::Kind::Slot: {
-            // The row is still here. A Slot record is always later in the log than the Created
-            // record for the same address -- a slot cannot be written before its row exists -- and
-            // replay runs backwards, so the erase has not happened yet.
-            auto const it = current_.find(u.addr);
-            MONAD_ASSERT(it != current_.end());
             SlotUndo const &sl = undo_slots_[u.aux];
             if (sl.had_value) {
-                it->second.storage_.upsert(sl.key, sl.value);
+                row.storage_.upsert(sl.key, sl.value);
             }
             else {
-                it->second.storage_.erase(sl.key);
+                row.storage_.erase(sl.key);
             }
             break;
         }
+
+        case Undo::Kind::Transient: {
+            SlotUndo const &sl = undo_slots_[u.aux];
+            if (sl.had_value) {
+                row.transient_storage_.upsert(sl.key, sl.value);
+            }
+            else {
+                row.transient_storage_.erase(sl.key);
+            }
+            break;
+        }
+
+        case Undo::Kind::Pages:
+            row.page_tracker_ = std::move(undo_pages_[u.aux]);
+            break;
         }
         undo_.pop_back();
     }
-    undo_rows_.resize(mark.rows);
+    undo_accts_.resize(mark.accts);
+    undo_words_.resize(mark.words);
+    undo_u64_.resize(mark.u64);
     undo_slots_.resize(mark.slots);
+    undo_pages_.resize(mark.pages);
     if (undo_marks_.empty()) {
         undo_.clear();
-        undo_rows_.clear();
+        undo_accts_.clear();
+        undo_words_.clear();
+        undo_u64_.clear();
         undo_slots_.clear();
+        undo_pages_.clear();
     }
 
     rb_.on_pop_reject(accounts.span());
@@ -494,9 +635,14 @@ bool State::is_touched(Address const &address)
 
 void State::set_nonce(Address const &address, uint64_t const nonce)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
+        journal_account(address, account_state);
         account = Account{.incarnation = incarnation_};
+    }
+    else {
+        journal_nonce(address, account->nonce);
     }
     account.value().nonce = nonce;
 }
@@ -506,6 +652,7 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
+        journal_account(address, account_state);
         account = Account{.incarnation = incarnation_};
     }
 
@@ -514,8 +661,11 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
             account.value().balance,
         "balance overflow");
 
+    journal_balance(address, account.value().balance);
     account.value().balance += delta;
-    account_state.touch();
+    if (account_state.touch()) {
+        journal_flag(address, Undo::Kind::FlagTouched);
+    }
     rb_.on_credit(address);
 }
 
@@ -525,13 +675,17 @@ void State::subtract_from_balance(
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
+        journal_account(address, account_state);
         account = Account{.incarnation = incarnation_};
     }
 
     MONAD_ASSERT_THROW(delta <= account.value().balance, "balance underflow");
 
+    journal_balance(address, account.value().balance);
     account.value().balance -= delta;
-    account_state.touch();
+    if (account_state.touch()) {
+        journal_flag(address, Undo::Kind::FlagTouched);
+    }
     rb_.on_debit(address);
 }
 
@@ -568,19 +722,27 @@ evmc_storage_status State::set_storage(
 void State::set_transient_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
-    current_account_state(address).set_transient_storage(key, value);
+    auto &account_state = current_account_state(address);
+    journal_transient(address, account_state, key);
+    account_state.set_transient_storage(key, value);
 }
 
 void State::touch(Address const &address)
 {
     auto &account_state = current_account_state(address);
-    account_state.touch();
+    if (account_state.touch()) {
+        journal_flag(address, Undo::Kind::FlagTouched);
+    }
 }
 
 evmc_access_status State::access_account(Address const &address)
 {
     auto &account_state = current_account_state(address);
-    return account_state.access();
+    auto const status = account_state.access();
+    if (status == EVMC_ACCESS_COLD) {
+        journal_flag(address, Undo::Kind::FlagAccessed);
+    }
+    return status;
 }
 
 template <Traits traits>
@@ -589,7 +751,11 @@ State::access_storage(Address const &address, bytes32_t const &key)
 {
     auto &account_state = current_account_state(address);
     auto const slot_status = account_state.access_storage(key);
+    if (slot_status == EVMC_ACCESS_COLD) {
+        journal_warm_slot(address, key);
+    }
     if constexpr (traits::mip_8_active()) {
+        journal_pages(address, account_state);
         return account_state.page_tracker_.access_page(key);
     }
     return slot_status;
@@ -602,6 +768,7 @@ vm::Host::PageStorageStatus State::update_page(
     evmc_storage_status const status)
 {
     auto &account_state = current_account_state(address);
+    journal_pages(address, account_state);
     return account_state.page_tracker_.update_page(key, status);
 }
 
@@ -628,6 +795,9 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
     }
 
     bool const inserted = account_state.destruct();
+    if (inserted) {
+        journal_flag(address, Undo::Kind::FlagDestructed);
+    }
     // Recompute reserve-balance status after setting the destructed flag.
     rb_.on_debit(address);
     return {inserted, balance};
@@ -667,7 +837,8 @@ void State::destruct_touched_dead()
     // version stack that no longer exists. Stronger, too -- an unbalanced push leaves a
     // mark behind even when no row was touched.
     MONAD_ASSERT(
-        undo_.empty() && undo_rows_.empty() && undo_slots_.empty() &&
+        undo_.empty() && undo_accts_.empty() && undo_words_.empty() &&
+        undo_u64_.empty() && undo_slots_.empty() && undo_pages_.empty() &&
         undo_marks_.empty());
 
     for (auto &it : current_) {
@@ -744,13 +915,18 @@ void State::set_code(Address const &address, byte_string_view const code)
 
     auto const code_hash = to_bytes(keccak256(code));
     code_[code_hash] = vm().try_insert_varcode_raw(code_hash, code);
+    journal_code_hash(address, account.value().code_hash);
     account.value().code_hash = code_hash;
     rb_.on_set_code(address, code);
 }
 
 void State::create_contract(Address const &address)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
+    // Incarnation has no narrow record of its own: it changes on contract creation only, which is
+    // rare enough that the whole-account record is cheaper than a kind nobody else uses.
+    journal_account(address, account_state);
     if (MONAD_UNLIKELY(account.has_value())) {
         // EIP-684
         MONAD_ASSERT(account->nonce == 0);
@@ -777,7 +953,11 @@ void State::create_contract(Address const &address)
  */
 void State::create_account_no_rollback(Address const &address)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
+    // "no rollback" names the incarnation trick that keeps this account out of SELFDESTRUCT, not an
+    // exemption from the journal: a frame that rejects has always undone this.
+    journal_account(address, account_state);
     MONAD_ASSERT(!account.has_value());
     account = Account{
         .incarnation = Incarnation{
@@ -798,7 +978,9 @@ void State::store_log(Receipt::Log const &log)
 
 void State::set_to_state_incarnation(Address const &address)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
+    journal_account(address, account_state);
     if (MONAD_UNLIKELY(!account.has_value())) {
         account = Account{.incarnation = incarnation_};
     }

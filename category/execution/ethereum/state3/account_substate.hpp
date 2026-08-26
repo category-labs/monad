@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 
@@ -72,10 +73,13 @@ public:
         return inserted;
     }
 
-    // A_t
-    void touch()
+    // A_t. Returns whether this call is what set it: the journal records a transition, not a
+    // write, so a second touch() in the same frame must add no entry.
+    bool touch()
     {
+        bool const inserted = !touched_;
         touched_ = true;
+        return inserted;
     }
 
     // A_a
@@ -99,6 +103,36 @@ public:
         }
         accessed_storage_.push_back(key);
         return EVMC_ACCESS_COLD;
+    }
+
+    // Undo operations, for the journal only. Each reverses exactly one journalled transition.
+    void undo_touched()
+    {
+        touched_ = false;
+    }
+
+    void undo_destructed()
+    {
+        destructed_ = false;
+    }
+
+    void undo_accessed()
+    {
+        accessed_ = false;
+    }
+
+    // A_K is append-only apart from this, so within one row the journal's records for it are in
+    // append order, and a backwards replay always removes the last one. The assert states that
+    // invariant rather than trusting it -- an erase from the middle would leave the remaining
+    // records pointing at the wrong entries.
+    void undo_warm_slot(bytes32_t const &key)
+    {
+        MONAD_ASSERT(!accessed_storage_.empty());
+        MONAD_ASSERT(
+            __builtin_memcmp(
+                accessed_storage_.back().bytes, key.bytes, sizeof(key.bytes)) ==
+            0);
+        accessed_storage_.pop_back();
     }
 };
 

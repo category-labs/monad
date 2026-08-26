@@ -114,90 +114,114 @@ class State
     //   pop_reject()  replays the records above that mark, backwards
     //   pop_accept()  drops the mark, leaving the records to the parent frame
     //
-    // A record covers either a ROW or a single SLOT. The row record is pushed exactly where the
-    // dirty-set insert reports the row as new to the frame -- once per frame per account, the rate
-    // the version stack copied at -- and carries everything but the row's slots. Slots get their
-    // own records because a row's slot count is unbounded while the number a frame writes is not.
-    // Duplicates are harmless either way: replayed backwards, the oldest value lands last.
+    // A record covers ONE mutation, and carries only what that mutation overwrote. The row-wide
+    // snapshot it replaces cost 201 steps per first touch (1.43 M a block, measured) to copy 184
+    // bytes plus two vector allocations, most of which the frame never went on to change.
     //
-    // ONE log for both kinds, with the payloads in side vectors that `aux` indexes. One log and not
-    // one per kind because the order between kinds is load-bearing: a row created and then written
-    // must have its slots restored BEFORE the row is erased, and a single backwards replay is what
-    // guarantees that. The payloads sit outside the log so a slot record does not carry a row it
-    // never reads.
+    // ONE log for every kind, with payloads in side vectors that `aux` indexes. One log and not one
+    // per kind because the order BETWEEN kinds is load-bearing: a row created and then written must
+    // have its slots and fields restored before the row is erased, and a single backwards replay is
+    // what guarantees that.
     //
-    // Keyed by Address rather than by pointer: erase() moves a row, and a revert is rare enough
-    // that a map lookup per record costs nothing next to being wrong.
+    // Every real mutation is journalled -- not the frame's first change of each field. Deduplicating
+    // would need per-field state per frame, and nested frames make that subtle; duplicates are
+    // already correct, because replayed backwards the oldest value lands last. If the entry volume
+    // ever costs more than the copying it saved, the profile will say so.
+    //
+    // Keyed by Address rather than by pointer: erase() moves a row, and a revert is rare enough that
+    // a map lookup per record costs nothing next to being wrong.
     struct Undo
     {
         enum class Kind : unsigned char
         {
-            // The frame CREATED the row. There is nothing to restore, so the record says erase.
+            // The frame CREATED the row. Nothing to restore, so the record says erase.
             Created,
-            // undo_rows_[aux] is the row as it was, MINUS its slots.
-            Row,
-            // undo_slots_[aux] is one slot as it was.
+            // undo_accts_[aux]: account_ as it was. For the transitions the narrow kinds below
+            // cannot express -- appearing, being cleared, a new incarnation -- all of them rare.
+            AccountWhole,
+            // undo_words_[aux]: the raw bytes of the previous balance. Stored and restored verbatim,
+            // never interpreted, so no endian conversion is involved.
+            Balance,
+            // undo_words_[aux]
+            CodeHash,
+            // undo_u64_[aux]
+            Nonce,
+            // The flag was false. Pushed only on a real transition, so a second touch() in the same
+            // frame adds nothing.
+            FlagTouched,
+            FlagDestructed,
+            FlagAccessed,
+            // undo_words_[aux]: the warm-slot key that was appended. Replaces copying the whole
+            // A_K vector: a frame warms a few of the keys a row holds.
+            WarmSlot,
+            // undo_slots_[aux]
             Slot,
+            Transient,
+            // undo_pages_[aux]: the page map's handle. Unreachable on the Ethereum traits
+            // (mip_8_active() is false there), so this is correctness for the Monad traits at no
+            // cost here.
+            Pages,
         };
 
         Address addr;
         Kind kind;
         std::uint32_t aux;
 #ifdef MONAD_ZKVM_KECCAK_SITES
-        // Diagnostic: this record was left behind by a frame that was ACCEPTED, so replaying it
-        // means a parent revert is undoing work an accepted child did -- the nested combination
-        // a mainnet corpus exercises only by accident.
+        // Diagnostic: left behind by a frame that was ACCEPTED, so replaying it means a parent
+        // revert is undoing work an accepted child did -- the nested combination a mainnet corpus
+        // exercises only by accident.
         bool promoted{false};
 #endif
-    };
-
-    // A row apart from its slots. storage_ is the one member that left, because a snapshot of it
-    // would cost in proportion to how many slots the row HOLDS while a Slot record costs in
-    // proportion to how many the frame WRITES -- and the rows a frame touches are the big ones.
-    // That skew is measured: the mean map size seen by an operation is 29.84 entries, well above
-    // the mean over rows, so snapshotting would land on the wrong side of it every time.
-    // transient_storage_ stays -- it is empty on all but a handful of rows. page_tracker_ stays
-    // because it is still a persistent handle, so it rides along for 8 bytes.
-    struct RowUndo
-    {
-        std::optional<Account> account;
-        AccountSubstate substate;
-        AccountState::StorageMap transient;
-        PageTracker page_tracker;
     };
 
     struct SlotUndo
     {
         bytes32_t key;
         bytes32_t value;
-        // False when the slot was absent from the overlay. Restoring then means removing it again,
-        // not writing back the pre-state value: BlockState commits every slot the overlay lists,
-        // so a slot left behind by a reverted write would join the commit set.
+        // False when the slot was absent. Restoring then means removing it again, not writing the
+        // pre-state value back: BlockState commits every slot the overlay lists, so a slot left
+        // behind by a reverted write would join the commit set.
         bool had_value;
     };
 
-    // Records the row's pre-frame value so pop_reject can put it back. Called exactly where the
-    // dirty-set insert reports the row as new to the frame.
-    void journal_first_touch(
-        Address const &address, AccountState const &row, bool created);
+    // Pushed where the dirty-set insert reports the row as new to the frame, and now ONLY for a row
+    // the frame created: an existing row needs no snapshot, because each mutation journals itself.
+    void journal_created(Address const &address);
 
-    // Records one slot's pre-frame value. Unlike the row record this fires on EVERY write rather
-    // than the frame's first: "first write to this slot in this frame" would need a per-slot set to
-    // answer, and duplicates are already harmless -- replayed backwards, the oldest lands last.
-    // ~1,900 storage writes a block, so the log costs on the order of 100 kB.
+    void journal_account(Address const &address, AccountState const &row);
+    void journal_balance(Address const &address, uint256_t const &prev);
+    void journal_code_hash(Address const &address, bytes32_t const &prev);
+    void journal_nonce(Address const &address, std::uint64_t prev);
+    void journal_flag(Address const &address, Undo::Kind which);
+    void journal_warm_slot(Address const &address, bytes32_t const &key);
     void journal_slot(
         Address const &address, AccountState const &row, bytes32_t const &key);
+    void journal_transient(
+        Address const &address, AccountState const &row, bytes32_t const &key);
+    void journal_pages(Address const &address, AccountState const &row);
+
+    // True when a frame is open, i.e. when anything could still roll back.
+    [[nodiscard]] bool journalling() const
+    {
+        return !undo_marks_.empty();
+    }
 
     std::vector<Undo> undo_{};
-    std::vector<RowUndo> undo_rows_{};
+    std::vector<std::optional<Account>> undo_accts_{};
+    std::vector<bytes32_t> undo_words_{};
+    std::vector<std::uint64_t> undo_u64_{};
     std::vector<SlotUndo> undo_slots_{};
+    std::vector<PageTracker> undo_pages_{};
 
-    // Each open frame's watermark in all three vectors.
+    // Each open frame's watermark in all six vectors.
     struct UndoMark
     {
         size_t log;
-        size_t rows;
+        size_t accts;
+        size_t words;
+        size_t u64;
         size_t slots;
+        size_t pages;
     };
 
     std::vector<UndoMark> undo_marks_{};

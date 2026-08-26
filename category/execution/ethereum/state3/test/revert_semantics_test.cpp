@@ -13,6 +13,8 @@
 //     replays them out of order. It becomes discriminating the moment records go per-field.
 //
 // A stub Db serves a fixed pre-state, so every assertion is about the journal and nothing else.
+#include <category/core/byte_string.hpp>
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -336,6 +338,65 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
               "10: parent reject undoes BOTH writes to the shared slot");
         check(st.get_storage(addr(1), key(6)) == bytes32_t{},
               "10: and removes the slot only the child added");
+    }
+
+    current_case = 11;
+    // ---- 11. balance, nested, and the `touched` flag it sets.
+    // Balance has its own narrow record now, and add_to_balance also flips `touched`; the flag is
+    // journalled only on a real transition, so a frame that touches twice must still restore once.
+    {
+        StubDb db;
+        db.put_account(1, Account{.balance = 1000, .nonce = 1});
+        vm::VM vm;
+        BlockState bs{db, vm};
+        State st{bs, Incarnation{0, 0}};
+        check(!st.is_touched(addr(1)), "11: not touched to begin with");
+        st.push();
+        st.add_to_balance(addr(1), 50);
+        st.push();
+        st.subtract_from_balance(addr(1), 300);
+        st.add_to_balance(addr(1), 7);
+        check(st.get_balance(addr(1)) == 757, "11: nested arithmetic applies");
+        st.pop_reject();
+        check(st.get_balance(addr(1)) == 1050, "11: child reject restores the parent's balance");
+        st.pop_reject();
+        check(st.get_balance(addr(1)) == 1000, "11: parent reject restores the db balance");
+        check(!st.is_touched(addr(1)), "11: and `touched` is false again");
+    }
+
+    current_case = 12;
+    // ---- 12. code_hash: set_code in a frame that reverts.
+    {
+        StubDb db;
+        db.put_account(1, Account{.balance = 1, .code_hash = NULL_HASH, .nonce = 1});
+        vm::VM vm;
+        BlockState bs{db, vm};
+        State st{bs, Incarnation{0, 0}};
+        st.push();
+        unsigned char const code[] = {0x60, 0x00, 0x60, 0x00, 0xf3};
+        st.set_code(addr(1), byte_string_view{code, sizeof(code)});
+        check(st.get_code_hash(addr(1)) != NULL_HASH, "12: code hash changed");
+        st.pop_reject();
+        check(st.get_code_hash(addr(1)) == NULL_HASH, "12: reject restores the code hash");
+    }
+
+    current_case = 13;
+    // ---- 13. a mutation on an account that does NOT exist, then rejected.
+    // The mutators materialise an Account before writing, so the record has to say "there was no
+    // account" -- not merely restore a field of one.
+    {
+        StubDb db;
+        db.put_account(1, Account{.nonce = 1});
+        vm::VM vm;
+        BlockState bs{db, vm};
+        State st{bs, Incarnation{0, 0}};
+        check(!st.account_exists(addr(9)), "13: absent to begin with");
+        st.push();
+        st.set_nonce(addr(9), 5);
+        check(st.account_exists(addr(9)), "13: the mutator materialised it");
+        check(st.get_nonce(addr(9)) == 5, "13: and wrote the field");
+        st.pop_reject();
+        check(!st.account_exists(addr(9)), "13: reject leaves NO account, not an empty one");
     }
 
     return failures;

@@ -268,5 +268,75 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         st.pop_accept();
     }
 
+    current_case = 8;
+    // ---- 8. a slot ALREADY in the overlay, overwritten in a frame that reverts.
+    // Case 6 covers the other branch: a slot absent from the overlay, whose record says "remove it
+    // again". This one says "put the old value back", and the two are the whole of what a slot
+    // record can mean.
+    {
+        StubDb db;
+        db.put_account(1, Account{.nonce = 1});
+        db.put_storage(1, 5, key(42));
+        vm::VM vm;
+        BlockState bs{db, vm};
+        State st{bs, Incarnation{0, 0}};
+        st.push();
+        st.set_storage(addr(1), key(5), key(99));   // now in the overlay
+        st.push();
+        st.set_storage(addr(1), key(5), key(123));
+        st.pop_reject();
+        check(st.get_storage(addr(1), key(5)) == key(99),
+              "8: reject restores the overlay value, not the db value");
+        st.pop_accept();
+        check(st.get_storage(addr(1), key(5)) == key(99), "8: and the accept keeps it");
+    }
+
+    current_case = 9;
+    // ---- 9. several writes to the SAME slot inside one frame.
+    // A slot is journalled on every write, not on the frame's first, so this frame leaves three
+    // records for one slot. Replayed backwards the oldest has to land last.
+    {
+        StubDb db;
+        db.put_account(1, Account{.nonce = 1});
+        db.put_storage(1, 5, key(42));
+        vm::VM vm;
+        BlockState bs{db, vm};
+        State st{bs, Incarnation{0, 0}};
+        st.push();
+        st.set_storage(addr(1), key(5), key(1));
+        st.set_storage(addr(1), key(5), key(2));
+        st.set_storage(addr(1), key(5), key(3));
+        check(st.get_storage(addr(1), key(5)) == key(3), "9: last write wins");
+        st.pop_reject();
+        check(st.get_storage(addr(1), key(5)) == key(42),
+              "9: reject goes back to the db value, not to an intermediate one");
+    }
+
+    current_case = 10;
+    // ---- 10. child writes a slot and is ACCEPTED, parent REJECTS.
+    // The slot equivalent of case 1: the child's records stay in the log under the parent's mark,
+    // so the parent's reject has to undo the accepted child's slot write too.
+    {
+        StubDb db;
+        db.put_account(1, Account{.nonce = 1});
+        db.put_storage(1, 5, key(42));
+        vm::VM vm;
+        BlockState bs{db, vm};
+        State st{bs, Incarnation{0, 0}};
+        st.push();
+        st.set_storage(addr(1), key(5), key(7));    // parent
+        st.push();
+        st.set_storage(addr(1), key(5), key(8));    // child
+        st.set_storage(addr(1), key(6), key(9));    // a slot only the child touches
+        st.pop_accept();
+        check(st.get_storage(addr(1), key(5)) == key(8), "10: accepted child's write survives");
+        check(st.get_storage(addr(1), key(6)) == key(9), "10: and its new slot too");
+        st.pop_reject();
+        check(st.get_storage(addr(1), key(5)) == key(42),
+              "10: parent reject undoes BOTH writes to the shared slot");
+        check(st.get_storage(addr(1), key(6)) == bytes32_t{},
+              "10: and removes the slot only the child added");
+    }
+
     return failures;
 }

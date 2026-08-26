@@ -101,11 +101,11 @@ class State
     // VersionStack<AccountState> -- a deque of (version, AccountState) with copy-on-write per
     // frame -- is now a single row plus the undo log below.
     //
-    // The version stack's copy was O(1) only because every container inside AccountState was
-    // PERSISTENT: immer for storage, transient storage, the warm-slot set and the page map. That
-    // is what made those containers unavoidable, and it is what cost 2.1 M steps a block in
-    // per-access hashing and tree descent. A journal buys the same rollback without asking the
-    // containers to be persistent.
+    // A journal, not a version stack. Rollback used to require every container on a row to be
+    // PERSISTENT -- and persistence cost 2.1 M steps a block in per-access hashing and tree
+    // descent. The journal buys the same rollback without asking anything of the containers, so
+    // the row's slots, transient slots and warm-slot set are all flat now. Only the page map is
+    // still immer.
     Map<Address, AccountState> current_{};
 
     // Undo log. A frame is a MARK, not a copy.
@@ -114,20 +114,35 @@ class State
     //   pop_reject()  replays the records above that mark, backwards
     //   pop_accept()  drops the mark, leaving the records to the parent frame
     //
-    // One record per (frame, row): pushed exactly where the dirty-set insert reports the row as
-    // new to this frame, which is the same once-per-frame-per-account rate the version stack
-    // copied at. Duplicates across nested frames are harmless -- replayed backwards, the oldest
-    // value lands last.
+    // A record covers either a ROW or a single SLOT. The row record is pushed exactly where the
+    // dirty-set insert reports the row as new to the frame -- once per frame per account, the rate
+    // the version stack copied at -- and carries everything but the row's slots. Slots get their
+    // own records because a row's slot count is unbounded while the number a frame writes is not.
+    // Duplicates are harmless either way: replayed backwards, the oldest value lands last.
+    //
+    // ONE log for both kinds, with the payloads in side vectors that `aux` indexes. One log and not
+    // one per kind because the order between kinds is load-bearing: a row created and then written
+    // must have its slots restored BEFORE the row is erased, and a single backwards replay is what
+    // guarantees that. The payloads sit outside the log so a slot record does not carry a row it
+    // never reads.
     //
     // Keyed by Address rather than by pointer: erase() moves a row, and a revert is rare enough
     // that a map lookup per record costs nothing next to being wrong.
     struct Undo
     {
+        enum class Kind : unsigned char
+        {
+            // The frame CREATED the row. There is nothing to restore, so the record says erase.
+            Created,
+            // undo_rows_[aux] is the row as it was, MINUS its slots.
+            Row,
+            // undo_slots_[aux] is one slot as it was.
+            Slot,
+        };
+
         Address addr;
-        // The row's value before this frame first changed it. Empty when the frame CREATED the
-        // row: there is nothing to restore, so the record says erase, and an optional says that
-        // rather than a 160-byte AccountState nobody reads.
-        std::optional<AccountState> prev;
+        Kind kind;
+        std::uint32_t aux;
 #ifdef MONAD_ZKVM_KECCAK_SITES
         // Diagnostic: this record was left behind by a frame that was ACCEPTED, so replaying it
         // means a parent revert is undoing work an accepted child did -- the nested combination
@@ -135,13 +150,57 @@ class State
         bool promoted{false};
 #endif
     };
+
+    // A row apart from its slots. storage_ is the one member that left, because a snapshot of it
+    // would cost in proportion to how many slots the row HOLDS while a Slot record costs in
+    // proportion to how many the frame WRITES -- and the rows a frame touches are the big ones.
+    // That skew is measured: the mean map size seen by an operation is 29.84 entries, well above
+    // the mean over rows, so snapshotting would land on the wrong side of it every time.
+    // transient_storage_ stays -- it is empty on all but a handful of rows. page_tracker_ stays
+    // because it is still a persistent handle, so it rides along for 8 bytes.
+    struct RowUndo
+    {
+        std::optional<Account> account;
+        AccountSubstate substate;
+        AccountState::StorageMap transient;
+        PageTracker page_tracker;
+    };
+
+    struct SlotUndo
+    {
+        bytes32_t key;
+        bytes32_t value;
+        // False when the slot was absent from the overlay. Restoring then means removing it again,
+        // not writing back the pre-state value: BlockState commits every slot the overlay lists,
+        // so a slot left behind by a reverted write would join the commit set.
+        bool had_value;
+    };
+
     // Records the row's pre-frame value so pop_reject can put it back. Called exactly where the
     // dirty-set insert reports the row as new to the frame.
     void journal_first_touch(
         Address const &address, AccountState const &row, bool created);
 
+    // Records one slot's pre-frame value. Unlike the row record this fires on EVERY write rather
+    // than the frame's first: "first write to this slot in this frame" would need a per-slot set to
+    // answer, and duplicates are already harmless -- replayed backwards, the oldest lands last.
+    // ~1,900 storage writes a block, so the log costs on the order of 100 kB.
+    void journal_slot(
+        Address const &address, AccountState const &row, bytes32_t const &key);
+
     std::vector<Undo> undo_{};
-    std::vector<size_t> undo_marks_{};
+    std::vector<RowUndo> undo_rows_{};
+    std::vector<SlotUndo> undo_slots_{};
+
+    // Each open frame's watermark in all three vectors.
+    struct UndoMark
+    {
+        size_t log;
+        size_t rows;
+        size_t slots;
+    };
+
+    std::vector<UndoMark> undo_marks_{};
 
     // Logs are append-only within a transaction, and a rejected frame discards
     // exactly the ones it appended -- so a flat vector plus one watermark per

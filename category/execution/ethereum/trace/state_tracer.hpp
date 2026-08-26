@@ -84,8 +84,9 @@ namespace trace
         void encode(StateDeltas const &, State &);
 
     private:
+        // The original row's slots live in its own append-only cache, not in the overlay type.
         StorageDeltas generate_storage_deltas(
-            AccountState::StorageMap const &, AccountState::StorageMap const &);
+            PrestateStorage const &, AccountState::StorageMap const &);
         nlohmann::json &storage_;
     };
 

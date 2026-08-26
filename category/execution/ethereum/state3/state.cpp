@@ -132,8 +132,37 @@ AccountState &State::current_account_state(Address const &address)
 void State::journal_first_touch(
     Address const &address, AccountState const &row, bool const created)
 {
-    undo_.push_back(
-        Undo{address, created ? std::nullopt : std::optional<AccountState>{row}});
+    if (created) {
+        undo_.push_back(Undo{address, Undo::Kind::Created, 0});
+        return;
+    }
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::Row,
+        static_cast<std::uint32_t>(undo_rows_.size())});
+    undo_rows_.push_back(RowUndo{
+        row.account_,
+        static_cast<AccountSubstate const &>(row),
+        row.transient_storage_,
+        row.page_tracker_});
+}
+
+// The row record deliberately does not carry storage_, so every write to a slot needs its own.
+// Gated on there being an open frame: a write in the block prologue has nothing that could reject
+// it, and journalling it would grow the log for the whole block.
+void State::journal_slot(
+    Address const &address, AccountState const &row, bytes32_t const &key)
+{
+    if (undo_marks_.empty()) {
+        return;
+    }
+    bytes32_t const *const prev = row.storage_.find(key);
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::Slot,
+        static_cast<std::uint32_t>(undo_slots_.size())});
+    undo_slots_.push_back(
+        SlotUndo{key, prev ? *prev : bytes32_t{}, prev != nullptr});
 }
 
 std::optional<Account> &State::current_account(Address const &address)
@@ -182,7 +211,8 @@ void State::push()
 
     ++version_;
     dirty_.emplace_back();
-    undo_marks_.push_back(undo_.size());
+    undo_marks_.push_back(
+        UndoMark{undo_.size(), undo_rows_.size(), undo_slots_.size()});
     log_marks_.push_back(logs_.size());
 }
 
@@ -197,7 +227,7 @@ void State::pop_accept()
 #ifdef MONAD_ZKVM_KECCAK_SITES
     // Everything this frame leaves behind now belongs to the parent's mark.
     if (undo_marks_.size() > 1) {
-        for (size_t i = undo_marks_.back(); i < undo_.size(); ++i) {
+        for (size_t i = undo_marks_.back().log; i < undo_.size(); ++i) {
             undo_[i].promoted = true;
         }
     }
@@ -222,6 +252,8 @@ void State::pop_accept()
     // empty log means every frame closed -- would never hold.
     if (undo_marks_.empty()) {
         undo_.clear();
+        undo_rows_.clear();
+        undo_slots_.clear();
     }
 
     // Accepted: the frame's logs stay where they are, only its watermark goes.
@@ -252,9 +284,9 @@ void State::pop_reject()
 
     // Replay BACKWARDS: a row touched by this frame and by one nested inside it carries two
     // records, and the older value has to land last.
-    size_t const mark = undo_marks_.back();
+    UndoMark const mark = undo_marks_.back();
     undo_marks_.pop_back();
-    while (undo_.size() > mark) {
+    while (undo_.size() > mark.log) {
         Undo &u = undo_.back();
         MONAD_GUEST_ADD2(POP_REJECT, 1);
 #ifdef MONAD_ZKVM_KECCAK_SITES
@@ -262,25 +294,56 @@ void State::pop_reject()
             MONAD_GUEST_ADD2(STOR_LOOKUP, 1);
         }
 #endif
-        if (!u.prev) {
+        switch (u.kind) {
+        case Undo::Kind::Created:
             MONAD_GUEST_ADD2(ACCT_FIND_MISS, 1);
             current_.erase(u.addr);
-        }
-        else {
+            break;
+
+        case Undo::Kind::Row: {
             auto const it = current_.find(u.addr);
             MONAD_ASSERT(it != current_.end());
+            RowUndo &r = undo_rows_[u.aux];
 #ifdef MONAD_ZKVM_KECCAK_SITES
             // The value being discarded: did this frame destruct the account?
-            if (it->second.is_destructed() && !u.prev->is_destructed()) {
+            if (it->second.is_destructed() && !r.substate.is_destructed()) {
                 MONAD_GUEST_ADD2(ACCT_MEMO_HIT, 1);
             }
 #endif
-            it->second = std::move(*u.prev);
+            AccountState &row = it->second;
+            row.account_ = std::move(r.account);
+            static_cast<AccountSubstate &>(row) = std::move(r.substate);
+            row.transient_storage_ = std::move(r.transient);
+            row.page_tracker_ = std::move(r.page_tracker);
+            // storage_ is deliberately untouched: the Slot records restore it, and they are later
+            // in the log than this one, so they have already replayed by now.
+            break;
+        }
+
+        case Undo::Kind::Slot: {
+            // The row is still here. A Slot record is always later in the log than the Created
+            // record for the same address -- a slot cannot be written before its row exists -- and
+            // replay runs backwards, so the erase has not happened yet.
+            auto const it = current_.find(u.addr);
+            MONAD_ASSERT(it != current_.end());
+            SlotUndo const &sl = undo_slots_[u.aux];
+            if (sl.had_value) {
+                it->second.storage_.upsert(sl.key, sl.value);
+            }
+            else {
+                it->second.storage_.erase(sl.key);
+            }
+            break;
+        }
         }
         undo_.pop_back();
     }
+    undo_rows_.resize(mark.rows);
+    undo_slots_.resize(mark.slots);
     if (undo_marks_.empty()) {
         undo_.clear();
+        undo_rows_.clear();
+        undo_slots_.clear();
     }
 
     rb_.on_pop_reject(accounts.span());
@@ -495,6 +558,7 @@ evmc_storage_status State::set_storage(
     }
     // state
     {
+        journal_slot(address, account_state, key);
         auto const result =
             account_state.set_storage(key, value, original_value);
         return result;
@@ -602,7 +666,9 @@ void State::destruct_touched_dead()
     // Every frame closed: asserted once on the journal rather than once per row on a
     // version stack that no longer exists. Stronger, too -- an unbalanced push leaves a
     // mark behind even when no row was touched.
-    MONAD_ASSERT(undo_.empty() && undo_marks_.empty());
+    MONAD_ASSERT(
+        undo_.empty() && undo_rows_.empty() && undo_slots_.empty() &&
+        undo_marks_.empty());
 
     for (auto &it : current_) {
         auto &account_state = it.second;

@@ -26,15 +26,10 @@
 
 #include <evmc/evmc.h>
 
-// TODO immer known to trigger incorrect warning
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#include <immer/map.hpp>
-#pragma GCC diagnostic pop
-
 #include <cstdint>
 #include <optional>
 #include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -47,11 +42,81 @@ namespace trace
     struct StateDiffTracer;
 }
 
+// The slots a row holds. This was immer::map. A persistent map bought an O(1) copy of the row when
+// a frame opened; the undo log does not need that copy -- it journals the slots a frame actually
+// WRITES, and a frame writes two of the thirty a row holds.
+//
+// Unsorted, and deliberately: insertion appends, so it never moves an existing entry and an index
+// into this vector stays valid. Sorting it would memmove the tail on every insert to save a handful
+// of 32-byte compares. Same reasoning, and the same measurement, that put a vector under A_K.
+class FlatStorage
+{
+    std::vector<std::pair<bytes32_t, bytes32_t>> v_{};
+
+public:
+    [[nodiscard]] bytes32_t const *find(bytes32_t const &key) const
+    {
+        for (auto const &e : v_) {
+            if (__builtin_memcmp(e.first.bytes, key.bytes, sizeof(key.bytes)) ==
+                0) {
+                return &e.second;
+            }
+        }
+        return nullptr;
+    }
+
+    void upsert(bytes32_t const &key, bytes32_t const &value)
+    {
+        for (auto &e : v_) {
+            if (__builtin_memcmp(e.first.bytes, key.bytes, sizeof(key.bytes)) ==
+                0) {
+                e.second = value;
+                return;
+            }
+        }
+        v_.emplace_back(key, value);
+    }
+
+    // Removing a slot restores "absent", which is not the same as present-and-equal-to-pre-state:
+    // BlockState commits every slot the overlay lists, so a slot left behind by a reverted write
+    // would join the commit set.
+    void erase(bytes32_t const &key)
+    {
+        for (auto &e : v_) {
+            if (__builtin_memcmp(e.first.bytes, key.bytes, sizeof(key.bytes)) ==
+                0) {
+                e = v_.back();
+                v_.pop_back();
+                return;
+            }
+        }
+    }
+
+    [[nodiscard]] bool empty() const
+    {
+        return v_.empty();
+    }
+
+    [[nodiscard]] std::size_t size() const
+    {
+        return v_.size();
+    }
+
+    [[nodiscard]] auto begin() const
+    {
+        return v_.begin();
+    }
+
+    [[nodiscard]] auto end() const
+    {
+        return v_.end();
+    }
+};
+
 class AccountState : public AccountSubstate
 {
 public: // TODO
-    using StorageMap = immer::map<
-        bytes32_t, bytes32_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
+    using StorageMap = FlatStorage;
 
 protected:
     std::optional<Account> account_{};
@@ -151,14 +216,17 @@ public:
 
     void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
     {
-        transient_storage_ = transient_storage_.insert({key, value});
+        transient_storage_.upsert(key, value);
     }
 };
 
-// 160 while A_K was a persistent handle; a vector is 8 bytes wider. Kept exact so unintended
-// growth still fails the build -- this row is copied into the undo log once per frame per account,
-// so its size is a cost, not a detail.
-static_assert(sizeof(AccountState) == 168);
+// Kept exact so unintended growth fails the build. The undo log copies this row once per frame per
+// account -- everything but its storage_, which is journalled per slot -- so its size is a cost, not
+// a detail.
+//
+// 16 wider than the two persistent handles it replaced, not 32: the second vector lands in padding
+// the row already carried, so the number is not the arithmetic and has to be read off the compiler.
+static_assert(sizeof(AccountState) == 184);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the
@@ -193,6 +261,7 @@ public:
     }
 
     bool empty() const { return v_.empty(); }
+    std::size_t size() const { return v_.size(); }
     auto begin() const { return v_.begin(); }
     auto end() const { return v_.end(); }
 };
@@ -203,9 +272,10 @@ class OriginalAccountState final : public AccountState
     uint256_t min_balance_{0};
 
 public:
-    // The base's storage_ is unused for an original row: this replaces it. The base member goes
-    // when the current overlay flattens too; until then it is 8 bytes of an immer handle nobody
-    // touches on this row.
+    // The base's storage_ is unused for an original row: this replaces it. Both are flat vectors
+    // now, so the two could be one member -- what keeps them apart is the contract. This one is
+    // append-only and never overwrites, which is why it needs no journal; the base's is a mutable
+    // overlay with erase(). Merging them would hand an original row operations it must never use.
     PrestateStorage prestate_storage_{};
 
     explicit OriginalAccountState(std::optional<Account> &&account)

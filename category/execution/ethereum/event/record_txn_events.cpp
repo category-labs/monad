@@ -142,12 +142,16 @@ ReservedEvent<T> reserve_event(
 
 // Records a MONAD_EXEC_STORAGE_ACCESS event for all reads and writes in the
 // AccountState prestate and modified maps
+// Templated on the prestate container: an account's original slots live in the append-only
+// PrestateStorage, its original transient slots in the overlay type. Both answer find() and
+// iterate as key/value pairs, which is all this needs.
+template <typename PrestateStorageMap>
 void record_storage_events(
     ExecutionEventRecorder *const exec_recorder,
     monad_exec_account_access_context const ctx,
     std::optional<uint32_t> const opt_txn_num, uint32_t const account_index,
     Address const *const address,
-    AccountState::StorageMap const *const prestate_storage,
+    PrestateStorageMap const *const prestate_storage,
     AccountState::StorageMap const *const modified_storage,
     bool const is_transient)
 {
@@ -220,7 +224,7 @@ void record_account_events(
         .modified_balance = modified_balance,
         .modified_nonce = modified_nonce,
         .storage_key_count =
-            static_cast<uint32_t>(size(account_info.prestate->storage_)),
+            static_cast<uint32_t>(size(account_info.prestate->prestate_storage_)),
         .transient_count = static_cast<uint32_t>(
             size(account_info.prestate->transient_storage_))};
     exec_recorder->commit(account_access);
@@ -235,7 +239,7 @@ void record_account_events(
         opt_txn_num,
         index,
         account_info.address,
-        &account_info.prestate->storage_,
+        &account_info.prestate->prestate_storage_,
         post_state_storage_map,
         false);
 

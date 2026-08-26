@@ -138,7 +138,7 @@ namespace trace
     }
 
     StorageDeltas StateDiffTracer::generate_storage_deltas(
-        AccountState::StorageMap const &original,
+        PrestateStorage const &original,
         AccountState::StorageMap const &current)
     {
         StorageDeltas deltas{};

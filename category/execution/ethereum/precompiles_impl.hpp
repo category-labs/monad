@@ -47,7 +47,6 @@
 #include <setup/settings.h>
 #include <setup/setup.h>
 
-#include <silkpre/ecdsa.h>
 #include <silkpre/precompile.h>
 
 #include <algorithm>
@@ -57,7 +56,6 @@
 #include <cstring>
 #include <gmp.h>
 #include <limits>
-#include <memory>
 #include <optional>
 #include <string_view>
 
@@ -130,8 +128,8 @@ static inline PrecompileResult silkpre_execute(byte_string_view const input)
 {
     std::memset(out.data(), 0, 12);
     thread_local secp256k1_context *context{
-        secp256k1_context_create(SILKPRE_SECP256K1_CONTEXT_FLAGS)};
-    if (!silkpre_recover_address(
+        secp256k1_context_create(MONAD_SECP256K1_CONTEXT_FLAGS)};
+    if (!monad_recover_address(
             &out[12], msg.data(), sig.data(), recid, context)) {
         return {out.data(), 0};
     }

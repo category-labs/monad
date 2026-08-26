@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_impl.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -28,7 +29,6 @@
 #include <evmc/helpers.h>
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -207,19 +207,16 @@ from_impl_result(PrecompileImplResult result, uint8_t *out)
 
 PrecompileResult ecrecover_execute(byte_string_view const input)
 {
-    static constexpr auto kSecp256k1n =
-        0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141_u256;
-
     std::basic_string<uint8_t> d(128, '\0');
-    if (input.size() != 0) {
-        std::memcpy(d.data(), input.data(), std::min(input.size(), 128ul));
+    if (!input.empty()) {
+        std::memcpy(d.data(), input.data(), std::min(input.size(), 128uz));
     }
 
     auto const v{load_be_unsafe<uint256_t>(&d[32])};
     auto const r{load_be_unsafe<uint256_t>(&d[64])};
     auto const s{load_be_unsafe<uint256_t>(&d[96])};
 
-    if (!r || !s || r >= kSecp256k1n || s >= kSecp256k1n) {
+    if (!Secp256k1Signature{r, s}.has_valid_range()) {
         return {EVMC_SUCCESS, nullptr, 0};
     }
 

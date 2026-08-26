@@ -19,19 +19,16 @@
 #include <category/core/config.hpp>
 #include <category/vm/evm/access_status.h>
 
-// TODO immer known to trigger incorrect warning
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#include <immer/set.hpp>
-#pragma GCC diagnostic pop
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 // YP 6.1
 class AccountSubstate
 {
-    using Set =
-        immer::set<bytes32_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
+    // Warm-slot sets are typically small: linear lookup avoids hashing,
+    // and copying the vector for undo remains cheap.
+    using Set = std::vector<bytes32_t>;
 
     bool destructed_{false}; // A_s
     bool touched_{false}; // A_t
@@ -58,7 +55,7 @@ public:
     }
 
     // A_K
-    Set get_accessed_storage() const
+    Set const &get_accessed_storage() const
     {
         return accessed_storage_;
     }
@@ -91,14 +88,17 @@ public:
     // A_K
     monad_access_status access_storage(bytes32_t const &key)
     {
-        if (accessed_storage_.count(key) == 0) {
-            accessed_storage_ = accessed_storage_.insert(key);
-            return MONAD_ACCESS_COLD;
+        for (auto const &k : accessed_storage_) {
+            if (__builtin_memcmp(k.bytes, key.bytes, sizeof(key.bytes)) == 0) {
+                return MONAD_ACCESS_WARM;
+            }
         }
-        return MONAD_ACCESS_WARM;
+        accessed_storage_.push_back(key);
+        return MONAD_ACCESS_COLD;
     }
 };
 
-static_assert(sizeof(AccountSubstate) == 24);
+// Guard against unintended growth of the per-account substate.
+static_assert(sizeof(AccountSubstate) == 32);
 
 MONAD_NAMESPACE_END

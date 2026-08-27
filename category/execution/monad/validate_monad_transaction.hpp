@@ -19,7 +19,6 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/monad/revision.h>
 
 #include <evmc/evmc.h>

@@ -57,7 +57,6 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -354,15 +353,11 @@ Result<BlockExecOutput> execute(
 
     call_frames.resize(block.transactions.size());
     std::vector<CallTraceRunner> call_trace_runners;
-    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(
-        block.transactions.size());
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
         if (enable_tracing) {
             call_trace_runners.emplace_back(
                 block.transactions[i], call_frames[i]);
         }
-        state_tracers[i] =
-            std::make_unique<trace::StateTracer>(std::monostate{});
     }
 
     senders_and_authorities_map[block.header.number] =
@@ -404,7 +399,6 @@ Result<BlockExecOutput> execute(
             block_hash_buffer,
             pool_->fiber_group(),
             metrics,
-            state_tracers,
             chain_context,
             exec_recorder,
             false,

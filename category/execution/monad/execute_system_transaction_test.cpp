@@ -23,7 +23,6 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/statediff_tracer.hpp>
 #include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
@@ -92,7 +91,6 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
         std::span<trace::TypeErasedRunner const> const runners{
             &erased_runner, 1};
         TxTraceContext const trace_context{runners};
-        trace::StateTracer state_tracer = std::monostate{};
 
         // Fulfil this promise such that ExecuteSystemTransaction doesn't wait
         // indefinitely.
@@ -109,7 +107,6 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 block_state,
                 block_metrics,
                 promise,
-                state_tracer,
                 /*exec_recorder=*/nullptr,
                 trace_context}();
 
@@ -135,7 +132,6 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
         std::span<trace::TypeErasedRunner const> const runners{
             &erased_runner, 1};
         TxTraceContext const trace_context{runners};
-        trace::StateTracer state_tracer = std::monostate{};
 
         boost::fibers::promise<void> promise;
         promise.set_value();
@@ -150,7 +146,6 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 block_state,
                 block_metrics,
                 promise,
-                state_tracer,
                 /*exec_recorder=*/nullptr,
                 trace_context}();
 
@@ -212,7 +207,6 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
         std::span<trace::TypeErasedRunner const> const runners{
             &erased_runner, 1};
         TxTraceContext const trace_context{runners};
-        trace::StateTracer state_tracer = std::monostate{};
 
         boost::fibers::promise<void> promise;
         promise.set_value();
@@ -227,7 +221,6 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 block_state,
                 block_metrics,
                 promise,
-                state_tracer,
                 /*exec_recorder=*/nullptr,
                 trace_context}();
 
@@ -260,7 +253,6 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
         std::span<trace::TypeErasedRunner const> const runners{
             &erased_runner, 1};
         TxTraceContext const trace_context{runners};
-        trace::StateTracer state_tracer = std::monostate{};
 
         boost::fibers::promise<void> promise;
         promise.set_value();
@@ -275,7 +267,6 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 block_state,
                 block_metrics,
                 promise,
-                state_tracer,
                 /*exec_recorder=*/nullptr,
                 trace_context}();
 
@@ -322,7 +313,6 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
     BlockMetrics block_metrics;
 
     BlockHeader const header{};
-    trace::StateTracer noop_state_tracer = std::monostate{};
 
     auto const tx = Transaction{.type = TransactionType::eip7702};
 
@@ -339,7 +329,6 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
             block_state,
             block_metrics,
             promise,
-            noop_state_tracer,
             /*exec_recorder=*/nullptr,
             TxTraceContext{}}();
 
@@ -359,7 +348,6 @@ TEST(SystemTransaction, static_validate_transaction_failure)
     BlockMetrics block_metrics;
 
     BlockHeader const header{.number = 0};
-    trace::StateTracer noop_state_tracer = std::monostate{};
 
     auto const tx = Transaction{
         .sc = SignatureAndChain{.chain_id = 1}, .to = staking::STAKING_CA};
@@ -377,7 +365,6 @@ TEST(SystemTransaction, static_validate_transaction_failure)
             block_state,
             block_metrics,
             promise,
-            noop_state_tracer,
             /*exec_recorder=*/nullptr,
             TxTraceContext{}}();
 

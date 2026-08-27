@@ -37,7 +37,6 @@
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -250,13 +249,10 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
     std::vector<CallTraceRunner> call_trace_runners;
-    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     call_trace_runners.reserve(block.value().transactions.size());
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
         call_trace_runners.emplace_back(
             block.value().transactions[i], call_frames[i]);
-        state_tracers.emplace_back(
-            std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
     auto const senders_and_authorities =
@@ -294,7 +290,6 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
             block_hash_buffer,
             pool.fiber_group(),
             metrics,
-            state_tracers,
             chain_ctx,
             /*exec_recorder=*/nullptr,
             false,
@@ -421,13 +416,10 @@ TYPED_TEST(TraitsTest, assertion_exception)
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
     std::vector<CallTraceRunner> call_trace_runners;
-    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     call_trace_runners.reserve(block.value().transactions.size());
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
         call_trace_runners.emplace_back(
             block.value().transactions[i], call_frames[i]);
-        state_tracers.emplace_back(
-            std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
     auto const senders_and_authorities =
@@ -465,7 +457,6 @@ TYPED_TEST(TraitsTest, assertion_exception)
             block_hash_buffer,
             pool.fiber_group(),
             metrics,
-            state_tracers,
             chain_ctx,
             /*exec_recorder=*/nullptr,
             false,
@@ -582,13 +573,10 @@ TYPED_TEST(TraitsTest, call_frames_refund)
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
     std::vector<CallTraceRunner> call_trace_runners;
-    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;
     call_trace_runners.reserve(block.value().transactions.size());
     for (size_t i = 0; i < block.value().transactions.size(); ++i) {
         call_trace_runners.emplace_back(
             block.value().transactions[i], call_frames[i]);
-        state_tracers.emplace_back(
-            std::make_unique<trace::StateTracer>(std::monostate{}));
     }
 
     auto const senders_and_authorities =
@@ -626,7 +614,6 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             block_hash_buffer,
             pool.fiber_group(),
             metrics,
-            state_tracers,
             chain_ctx,
             /*exec_recorder=*/nullptr,
             false,

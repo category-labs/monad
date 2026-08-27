@@ -30,7 +30,6 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/code_tracer.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/statediff_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
@@ -1881,10 +1880,10 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
 
 // CodeTracer coverage.
 //
-// Each test below constructs `StateTracer{CodeTracer{}}`, exercises exactly
-// one of the `on_read_code` recording sites in the execution layer, and
-// asserts that the recorded codes map contains the (code_hash, intercode)
-// pair that the site is responsible for. The sites are:
+// Each test below installs a `CodeTraceRunner` in `TxTraceContext`, exercises
+// exactly one of the `on_read_code` recording sites in the execution layer,
+// and asserts that the recorded codes map contains the (code_hash,
+// intercode) pair that the site is responsible for. The sites are:
 //
 //   1. EvmcHostBase::get_code_size  (EXTCODESIZE host hook)
 //   2. EvmcHostBase::copy_code       (EXTCODECOPY host hook)
@@ -1936,14 +1935,12 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer = std::monostate{};
     CodeTraceRunner code_trace_runner{};
     TypeErasedRunner const erased_runner =
         TypeErasedRunner::erase(code_trace_runner);
     std::span<TypeErasedRunner const> const runners{&erased_runner, 1};
     TxTraceContext const trace_context{runners};
     EvmcHost<typename TestFixture::Trait> host{
-        state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -1988,14 +1985,12 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer = std::monostate{};
     CodeTraceRunner code_trace_runner{};
     TypeErasedRunner const erased_runner =
         TypeErasedRunner::erase(code_trace_runner);
     std::span<TypeErasedRunner const> const runners{&erased_runner, 1};
     TxTraceContext const trace_context{runners};
     EvmcHost<typename TestFixture::Trait> host{
-        state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -2050,14 +2045,12 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer = std::monostate{};
     CodeTraceRunner code_trace_runner{};
     TypeErasedRunner const erased_runner =
         TypeErasedRunner::erase(code_trace_runner);
     std::span<TypeErasedRunner const> const runners{&erased_runner, 1};
     TxTraceContext const trace_context{runners};
     EvmcHost<typename TestFixture::Trait> host{
-        state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -2266,14 +2259,12 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
         uint256_t const base_fee{0};
-        trace::StateTracer state_tracer = std::monostate{};
         CodeTraceRunner code_trace_runner{};
         TypeErasedRunner const erased_runner =
             TypeErasedRunner::erase(code_trace_runner);
         std::span<TypeErasedRunner const> const runners{&erased_runner, 1};
         TxTraceContext const trace_context{runners};
         EvmcHost<typename TestFixture::Trait> host{
-            state_tracer,
             EMPTY_TX_CONTEXT,
             block_hash_buffer,
             state,

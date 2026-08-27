@@ -23,7 +23,6 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
@@ -74,7 +73,6 @@ TYPED_TEST(MonadTraitsTest, mip11_fork)
 
     boost::fibers::promise<void> prev{};
     prev.set_value();
-    trace::StateTracer state_tracer = std::monostate{};
     auto const chain_ctx = ChainContext<Trait>::debug_empty();
     TxTraceContext const trace_context{};
 
@@ -90,7 +88,6 @@ TYPED_TEST(MonadTraitsTest, mip11_fork)
         bs,
         metrics,
         prev,
-        state_tracer,
         chain_ctx,
         /*exec_recorder*/ nullptr,
         trace_context)();

@@ -57,10 +57,9 @@
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
-#include <category/execution/ethereum/trace/statediff_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/trace/state_trace_operations.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/statediff_tracer.hpp>
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
@@ -224,7 +223,7 @@ namespace
         std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
         vm::VM &vm, BlockHashBuffer const &buffer,
         monad_state_override const &state_overrides,
-        TxTraceContext const &trace_context, trace::StateTracer &state_tracer)
+        TxTraceContext const &trace_context)
     {
         Transaction enriched_txn{txn};
 
@@ -305,7 +304,6 @@ namespace
             chain.get_blob_schedule(header.timestamp));
 
         EvmcHost<traits> host{
-            state_tracer,
             tx_context,
             buffer,
             state,
@@ -333,7 +331,6 @@ namespace
         execution_result.gas_refund = static_cast<int64_t>(gas_refund);
 
         trace_context.run<trace::state_trace::State>(state);
-        trace::run_tracer<traits>(state_tracer, state);
 
         return execution_result;
     }
@@ -421,9 +418,6 @@ namespace
             block_state, header, /*exec_recorder=*/nullptr);
         BlockMetrics metrics{};
 
-        std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
-        state_tracers.reserve(transactions_size);
-
         BlockTraceContext block_trace_context{transactions_size};
 
         auto const chain_context = [&] {
@@ -455,8 +449,6 @@ namespace
             if (tracer_config == PRESTATE_TRACER) {
                 prestate_trace_runners.reserve(transactions_size);
                 for (size_t i = 0; i < transactions_size; ++i) {
-                    state_tracers.emplace_back(
-                        std::make_unique<trace::StateTracer>(std::monostate{}));
                     prestate_trace_runners.emplace_back(
                         traces[i], header.beneficiary);
                 }
@@ -467,16 +459,11 @@ namespace
                 MONAD_ASSERT(tracer_config == STATEDIFF_TRACER);
                 statediff_trace_runners.reserve(transactions_size);
                 for (size_t i = 0; i < transactions_size; ++i) {
-                    state_tracers.emplace_back(
-                        std::make_unique<trace::StateTracer>(std::monostate{}));
                     statediff_trace_runners.emplace_back(traces[i]);
                 }
                 block_trace_context.with_runners(
                     std::span<StateDiffTracer>{statediff_trace_runners});
             }
-
-            std::span<std::unique_ptr<trace::StateTracer>> const
-                state_tracers_view{state_tracers.data(), transactions_size};
 
             BOOST_OUTCOME_TRY(execute_block_transactions<traits>(
                 chain,
@@ -488,7 +475,6 @@ namespace
                 buffer,
                 tx_exec_pool,
                 metrics,
-                state_tracers_view,
                 chain_context,
                 /*exec_recorder=*/nullptr,
                 false,
@@ -519,8 +505,6 @@ namespace
                 prestate_trace_runners.reserve(transactions_size);
                 for (size_t i = 0; i < transactions_size; ++i) {
                     traces.emplace_back(trace_entry(i));
-                    state_tracers.emplace_back(
-                        std::make_unique<trace::StateTracer>(std::monostate{}));
                     prestate_trace_runners.emplace_back(
                         traces[i]["result"], header.beneficiary);
                 }
@@ -532,16 +516,11 @@ namespace
                 statediff_trace_runners.reserve(transactions_size);
                 for (size_t i = 0; i < transactions_size; ++i) {
                     traces.emplace_back(trace_entry(i));
-                    state_tracers.emplace_back(
-                        std::make_unique<trace::StateTracer>(std::monostate{}));
                     statediff_trace_runners.emplace_back(traces[i]["result"]);
                 }
                 block_trace_context.with_runners(
                     std::span<StateDiffTracer>{statediff_trace_runners});
             }
-
-            std::span<std::unique_ptr<trace::StateTracer>> const
-                state_tracers_view{state_tracers.data(), transactions_size};
 
             BOOST_OUTCOME_TRY(execute_block_transactions<traits>(
                 chain,
@@ -553,7 +532,6 @@ namespace
                 buffer,
                 tx_exec_pool,
                 metrics,
-                state_tracers_view,
                 chain_context,
                 /*exec_recorder=*/nullptr,
                 false,
@@ -923,8 +901,6 @@ namespace
                 };
 
                 auto block_metrics = BlockMetrics{};
-                auto state_tracers =
-                    std::vector<std::unique_ptr<trace::StateTracer>>{};
 
                 static std::vector<Address> empty_senders{};
                 static std::vector<std::vector<std::optional<Address>>>
@@ -946,7 +922,6 @@ namespace
                         block_hash_buffer,
                         tx_exec_pool,
                         block_metrics,
-                        state_tracers,
                         chain_context,
                         /*exec_recorder=*/nullptr,
                         emit_native_transfer_logs,
@@ -1034,15 +1009,10 @@ namespace
             call_frames.reserve(calls[block_idx].size());
             auto call_trace_runners = std::vector<CallTraceRunner>{};
             call_trace_runners.reserve(calls[block_idx].size());
-            auto state_tracers =
-                std::vector<std::unique_ptr<trace::StateTracer>>{};
-            state_tracers.reserve(calls[block_idx].size());
 
             for (Transaction const &tx : calls[block_idx]) {
                 call_frames.emplace_back();
                 call_trace_runners.emplace_back(tx, call_frames.back());
-                state_tracers.emplace_back(
-                    std::make_unique<trace::StateTracer>());
             }
 
             auto const chain_context = context_buffer.advance(
@@ -1071,7 +1041,6 @@ namespace
                     block_hash_buffer,
                     tx_exec_pool,
                     block_metrics,
-                    state_tracers,
                     chain_context,
                     /*exec_recorder=*/nullptr,
                     emit_native_transfer_logs,
@@ -1543,17 +1512,6 @@ struct monad_executor
                             call_trace_runners{&*erased_runner, 1};
                         return TxTraceContext{call_trace_runners};
                     }();
-                    auto state_tracer = [&]() -> trace::StateTracer {
-                        switch (tracer_config) {
-                        case NOOP_TRACER:
-                        case CALL_TRACER:
-                        case ACCESS_LIST_TRACER:
-                        case PRESTATE_TRACER:
-                        case STATEDIFF_TRACER:
-                            return std::monostate{};
-                        }
-                        MONAD_ASSERT(false);
-                    }();
 
                     auto const res = [&]() -> Result<evmc::Result> {
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
@@ -1573,8 +1531,7 @@ struct monad_executor
                                 vm_,
                                 block_hash_buffer,
                                 *state_overrides,
-                                trace_context,
-                                state_tracer);
+                                trace_context);
                             MONAD_ASSERT(false);
                         }
                         else {
@@ -1595,8 +1552,7 @@ struct monad_executor
                                 vm_,
                                 block_hash_buffer,
                                 *state_overrides,
-                                trace_context,
-                                state_tracer);
+                                trace_context);
                             MONAD_ASSERT(false);
                         }
                     }();

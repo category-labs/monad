@@ -169,8 +169,6 @@ add_library(
   "ethereum/trace/rlp/call_frame_rlp.cpp"
   "ethereum/trace/rlp/call_frame_rlp.hpp"
   "ethereum/trace/state_trace_operations.hpp"
-  "ethereum/trace/state_tracer.cpp"
-  "ethereum/trace/state_tracer.hpp"
   "ethereum/trace/statediff_tracer.cpp"
   "ethereum/trace/statediff_tracer.hpp"
   "ethereum/trace/tracer_config.h"

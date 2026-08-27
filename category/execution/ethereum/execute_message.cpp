@@ -148,11 +148,6 @@ void reject_frame(EvmcHost<traits> &host, State &state)
     auto const &trace_ctx = host.get_tx_trace_context();
     trace::emit<trace::state_trace::RejectFrame>(trace_ctx, state);
 
-    // Successful frames remain in State and are captured when the state tracer
-    // is encoded. Failed frames are about to be rolled back, so the state
-    // tracer lifecycle hook runs before pop_reject().
-    trace::on_frame_reject(host.state_tracer_, state);
-
     bool const ripemd_touched = state.is_touched(ripemd_address);
     state.pop_reject();
     if (MONAD_UNLIKELY(ripemd_touched)) {

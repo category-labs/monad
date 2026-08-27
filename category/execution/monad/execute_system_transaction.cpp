@@ -31,7 +31,6 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/trace/state_trace_operations.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
@@ -73,7 +72,6 @@ ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &header, BlockState &block_state,
     BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
-    trace::StateTracer &state_tracer,
     ExecutionEventRecorder *const exec_recorder,
     TxTraceContext const &tx_trace_context)
     : chain_{chain}
@@ -84,7 +82,6 @@ ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     , block_state_{block_state}
     , block_metrics_{block_metrics}
     , prev_{prev}
-    , state_tracer_{state_tracer}
     , exec_recorder_{exec_recorder}
     , tx_trace_context_{tx_trace_context}
 {
@@ -127,7 +124,6 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 
         tx_trace_context_.run<trace::call_trace::Reset>();
         tx_trace_context_.run<trace::state_trace::Reset>();
-        trace::reset(state_tracer_);
 
         auto result = execute(state);
 
@@ -153,7 +149,6 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 
         tx_trace_context_.run<trace::call_trace::Reset>();
         tx_trace_context_.run<trace::state_trace::Reset>();
-        trace::reset(state_tracer_);
 
         auto result = execute(state);
 
@@ -218,7 +213,6 @@ Receipt ExecuteSystemTransaction<traits>::execute_final(State &state)
     }
     tx_trace_context_.run<trace::call_trace::Finish>(receipt.gas_used);
     tx_trace_context_.run<trace::state_trace::State>(state);
-    trace::run_tracer<traits>(state_tracer_, state);
     std::span<CallFrame const> call_frames{};
     tx_trace_context_.run<trace::call_trace::GetCallFrames>(&call_frames);
     record_txn_output_events(

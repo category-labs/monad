@@ -37,7 +37,6 @@ class ExecuteSystemTransaction
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
     boost::fibers::promise<void> &prev_;
-    trace::StateTracer &state_tracer_;
     ExecutionEventRecorder *exec_recorder_;
     TxTraceContext tx_trace_context_;
 
@@ -45,7 +44,7 @@ public:
     ExecuteSystemTransaction(
         Chain const &, uint64_t i, Transaction const &, Address const &,
         BlockHeader const &, BlockState &, BlockMetrics &,
-        boost::fibers::promise<void> &prev, trace::StateTracer &,
+        boost::fibers::promise<void> &prev,
         ExecutionEventRecorder *, TxTraceContext const &);
 
     Result<Receipt> operator()();

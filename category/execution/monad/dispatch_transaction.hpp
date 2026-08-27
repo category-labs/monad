@@ -30,8 +30,7 @@ Result<Receipt> dispatch_transaction(
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, trace::StateTracer &,
-    ChainContext<traits> const &chain_ctx,
+    boost::fibers::promise<void> &prev, ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *exec_recorder,
     TxTraceContext const &tx_trace_context, bool trace_transfers);
 

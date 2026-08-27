@@ -33,7 +33,6 @@
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -118,9 +117,7 @@ struct ReserveBalanceEvm : public ReserveBalanceTest
         authorities};
 
     TxTraceContext const host_trace_context{};
-    trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<MonadTraits<MONAD_NEXT>> h{
-        noop_state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -326,11 +323,9 @@ void run_dipped_into_reserve_test(
 
     {
         State state{bs, Incarnation{1, 1}};
-        trace::StateTracer noop_state_tracer = std::monostate{};
         TxTraceContext const trace_ctx{};
 
         EvmcHost<traits> host{
-            noop_state_tracer,
             tx_context,
             block_hash_buffer,
             state,
@@ -621,9 +616,7 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
         authorities};
 
     TxTraceContext const host_trace_context{};
-    trace::StateTracer noop_state_tracer = std::monostate{};
     EvmcHost<MonadTraits<MONAD_NEXT>> h{
-        noop_state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,

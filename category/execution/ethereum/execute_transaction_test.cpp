@@ -29,7 +29,6 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
@@ -104,7 +103,6 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
 
     boost::fibers::promise<void> prev{};
     prev.set_value();
-    trace::StateTracer noop_state_tracer = std::monostate{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     TxTraceContext const trace_context{};
@@ -120,7 +118,6 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         bs,
         metrics,
         prev,
-        noop_state_tracer,
         chain_ctx,
         /*exec_recorder=*/nullptr,
         trace_context)();
@@ -213,7 +210,6 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
 
     BlockHeader const header{.beneficiary = bene};
     BlockHashBufferFinalized const block_hash_buffer;
-    trace::StateTracer noop_state_tracer = std::monostate{};
 
     boost::fibers::promise<void> prev{};
     prev.set_value();
@@ -233,7 +229,6 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
         bs,
         metrics,
         prev,
-        noop_state_tracer,
         chain_ctx,
         /*exec_recorder=*/nullptr,
         trace_context)();
@@ -367,7 +362,6 @@ TYPED_TEST(TraitsTest, refunds_delete)
 
         boost::fibers::promise<void> prev{};
         prev.set_value();
-        trace::StateTracer noop_state_tracer = std::monostate{};
 
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
@@ -384,7 +378,6 @@ TYPED_TEST(TraitsTest, refunds_delete)
             bs,
             metrics,
             prev,
-            noop_state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
             trace_context)();
@@ -430,7 +423,6 @@ TYPED_TEST(TraitsTest, refunds_delete)
 
         boost::fibers::promise<void> prev{};
         prev.set_value();
-        trace::StateTracer noop_state_tracer = std::monostate{};
 
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
@@ -447,7 +439,6 @@ TYPED_TEST(TraitsTest, refunds_delete)
             bs,
             metrics,
             prev,
-            noop_state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
             trace_context)();
@@ -539,7 +530,6 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
 
         boost::fibers::promise<void> prev{};
         prev.set_value();
-        trace::StateTracer noop_state_tracer = std::monostate{};
 
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
@@ -556,7 +546,6 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
             bs,
             metrics,
             prev,
-            noop_state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
             trace_context)();
@@ -626,7 +615,6 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
 
     boost::fibers::promise<void> prev{};
     prev.set_value();
-    trace::StateTracer noop_state_tracer = std::monostate{};
 
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
@@ -651,7 +639,6 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
         bs,
         metrics,
         prev,
-        noop_state_tracer,
         chain_ctx,
         /*exec_recorder=*/nullptr,
         trace_context)();

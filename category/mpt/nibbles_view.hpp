@@ -38,6 +38,9 @@ class NibblesView;
 class Node;
 
 constexpr bool operator==(NibblesView const &a, NibblesView const &b);
+// Number of matching leading nibbles, up to the shorter view's length.
+constexpr unsigned
+common_prefix_length(NibblesView const &a, NibblesView const &b);
 constexpr std::strong_ordering
 operator<=>(NibblesView const &a, NibblesView const &b);
 
@@ -259,10 +262,8 @@ public:
 
     bool starts_with(NibblesView const other) const
     {
-        if (nibble_size() < other.nibble_size()) {
-            return false;
-        }
-        return substr(0, other.nibble_size()) == other;
+        return nibble_size() >= other.nibble_size() &&
+               common_prefix_length(*this, other) == other.nibble_size();
     }
 
     [[nodiscard]] unsigned char get(unsigned const i) const
@@ -286,6 +287,61 @@ inline Nibbles::Nibbles(NibblesView const nibbles)
     }
 }
 
+// Compare 16 nibbles per big-endian word; leading zero bits in their XOR
+// locate the first mismatch. Odd starts also read the next byte's high nibble.
+// A full chunk is read only when at least 16 nibbles remain in both views.
+constexpr unsigned
+common_prefix_length(NibblesView const &a, NibblesView const &b)
+{
+    // Neither run can be compared past the shorter of the two.
+    unsigned const compared_nibbles =
+        a.nibble_size() < b.nibble_size() ? a.nibble_size() : b.nibble_size();
+    unsigned matched = 0;
+    if (!std::is_constant_evaluated()) {
+        auto const load_nibbles = [](unsigned char const *const data,
+                                     unsigned const first_nibble) {
+            // Load 16 nibbles; an odd start also needs the next high nibble.
+            std::uint64_t word;
+            std::memcpy(&word, data + first_nibble / 2, sizeof(word));
+            // Put the first nibble in the most significant bits.
+            std::uint64_t const big_endian_word = __builtin_bswap64(word);
+            return (first_nibble % 2 == 0)
+                       ? big_endian_word
+                       : ((big_endian_word << 4) |
+                          static_cast<std::uint64_t>(
+                              data[first_nibble / 2 + 8] >> 4));
+        };
+        while (compared_nibbles - matched >= 16) {
+            std::uint64_t const diff =
+                load_nibbles(a.data(), a.begin_nibble() + matched) ^
+                load_nibbles(b.data(), b.begin_nibble() + matched);
+            if (diff) {
+                // Four leading zero bits correspond to one matching nibble.
+                return matched +
+                       static_cast<unsigned>(__builtin_clzll(diff) / 4);
+            }
+            matched += 16;
+        }
+        // Re-read the last 16 nibbles when a shorter tail remains.
+        // matched != 0 guarantees a full word; the overlap already matched.
+        if (matched != 0 && matched != compared_nibbles) {
+            unsigned const tail_start = compared_nibbles - 16;
+            std::uint64_t const diff =
+                load_nibbles(a.data(), a.begin_nibble() + tail_start) ^
+                load_nibbles(b.data(), b.begin_nibble() + tail_start);
+            return diff ? tail_start +
+                              static_cast<unsigned>(__builtin_clzll(diff) / 4)
+                        : compared_nibbles;
+        }
+    }
+    for (; matched < compared_nibbles; ++matched) {
+        if (a.get(matched) != b.get(matched)) {
+            return matched;
+        }
+    }
+    return compared_nibbles;
+}
+
 constexpr bool operator==(NibblesView const &a, NibblesView const &b)
 {
     if (&a == &b) {
@@ -294,12 +350,7 @@ constexpr bool operator==(NibblesView const &a, NibblesView const &b)
     if (a.nibble_size() != b.nibble_size()) {
         return false;
     }
-    for (auto i = 0u; i < a.nibble_size(); ++i) {
-        if (a.get(i) != b.get(i)) {
-            return false;
-        }
-    }
-    return true;
+    return common_prefix_length(a, b) == a.nibble_size();
 }
 
 constexpr std::strong_ordering

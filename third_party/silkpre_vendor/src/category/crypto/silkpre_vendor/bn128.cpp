@@ -14,6 +14,11 @@
    limitations under the License.
 */
 
+// Modified 2026 by Category Labs:
+//   - alt_bn128 (EIP-196 / EIP-197) precompiles from silkpre/precompile.cpp
+//   - Rename to use monad prefixes
+//   - Return the result in a caller-provided buffer instead of SilkpreOutput
+
 #include <category/crypto/silkpre_vendor/bn128.hpp>
 
 #include <gmp.h>
@@ -26,13 +31,6 @@
 #include <libff/algebra/curves/alt_bn128/alt_bn128_pairing.hpp>
 #include <libff/algebra/curves/alt_bn128/alt_bn128_pp.hpp>
 #include <libff/common/profiling.hpp>
-
-static void right_pad(std::basic_string<uint8_t> &str,
-                      const size_t min_size) noexcept {
-    if (str.length() < min_size) {
-        str.resize(min_size, '\0');
-    }
-}
 
 // Utility functions for zkSNARK related precompiled contracts.
 // See Yellow Paper, Appendix E "Precompiled Contracts", as well as
@@ -134,10 +132,11 @@ decode_g2_element(const uint8_t bytes_be[128]) noexcept {
     return point;
 }
 
-static std::basic_string<uint8_t> encode_g1_element(libff::alt_bn128_G1 p) noexcept {
-    std::basic_string<uint8_t> out(64, '\0');
+static void encode_g1_element(libff::alt_bn128_G1 p,
+                              uint8_t out[64]) noexcept {
+    std::memset(out, 0, 64);
     if (p.is_zero()) {
-        return out;
+        return;
     }
 
     p.to_affine_coordinates();
@@ -151,60 +150,57 @@ static std::basic_string<uint8_t> encode_g1_element(libff::alt_bn128_G1 p) noexc
     std::memcpy(&out[0], y.data, 32);
     std::memcpy(&out[32], x.data, 32);
 
-    std::reverse(out.begin(), out.end());
-    return out;
+    std::reverse(out, out + 64);
 }
 
-SilkpreOutput silkpre_bn_add_run(const uint8_t* ptr, size_t len) {
-    std::basic_string<uint8_t> input(ptr, len);
-    right_pad(input, 128);
+bool monad_bn_add(uint8_t out[64], const uint8_t *ptr, size_t len) {
+    std::basic_string<uint8_t> input(128, '\0');
+    if (len != 0) {
+        std::memcpy(input.data(), ptr, std::min(len, 128uz));
+    }
 
     init_libff();
 
     std::optional<libff::alt_bn128_G1> x{decode_g1_element(input.data())};
     if (!x) {
-        return {nullptr, 0};
+        return false;
     }
 
     std::optional<libff::alt_bn128_G1> y{decode_g1_element(&input[64])};
     if (!y) {
-        return {nullptr, 0};
+        return false;
     }
 
     libff::alt_bn128_G1 sum{*x + *y};
-    const std::basic_string<uint8_t> res{encode_g1_element(sum)};
-
-    uint8_t* out{static_cast<uint8_t*>(std::malloc(res.length()))};
-    std::memcpy(out, res.data(), res.length());
-    return {out, res.length()};
+    encode_g1_element(sum, out);
+    return true;
 }
 
-SilkpreOutput silkpre_bn_mul_run(const uint8_t* ptr, size_t len) {
-    std::basic_string<uint8_t> input(ptr, len);
-    right_pad(input, 96);
+bool monad_bn_mul(uint8_t out[64], const uint8_t *ptr, size_t len) {
+    std::basic_string<uint8_t> input(96, '\0');
+    if (len != 0) {
+        std::memcpy(input.data(), ptr, std::min(len, 96uz));
+    }
 
     init_libff();
 
     std::optional<libff::alt_bn128_G1> x{decode_g1_element(input.data())};
     if (!x) {
-        return {nullptr, 0};
+        return false;
     }
 
     Scalar n{to_scalar(&input[64])};
 
     libff::alt_bn128_G1 product{n * *x};
-    const std::basic_string<uint8_t> res{encode_g1_element(product)};
-
-    uint8_t* out{static_cast<uint8_t*>(std::malloc(res.length()))};
-    std::memcpy(out, res.data(), res.length());
-    return {out, res.length()};
+    encode_g1_element(product, out);
+    return true;
 }
 
 static constexpr size_t kSnarkvStride{192};
 
-SilkpreOutput silkpre_snarkv_run(const uint8_t* input, size_t len) {
+bool monad_snarkv(uint8_t out[32], const uint8_t *input, size_t len) {
     if (len % kSnarkvStride != 0) {
-        return {nullptr, 0};
+        return false;
     }
     size_t k{len / kSnarkvStride};
 
@@ -215,26 +211,29 @@ SilkpreOutput silkpre_snarkv_run(const uint8_t* input, size_t len) {
     auto accumulator{one};
 
     for (size_t i{0}; i < k; ++i) {
-        std::optional<alt_bn128_G1> a{decode_g1_element(&input[i * kSnarkvStride])};
+        std::optional<alt_bn128_G1> a{
+            decode_g1_element(&input[i * kSnarkvStride])};
         if (!a) {
-            return {nullptr, 0};
+            return false;
         }
-        std::optional<alt_bn128_G2> b{decode_g2_element(&input[i * kSnarkvStride + 64])};
+        std::optional<alt_bn128_G2> b{
+            decode_g2_element(&input[i * kSnarkvStride + 64])};
         if (!b) {
-            return {nullptr, 0};
+            return false;
         }
 
         if (a->is_zero() || b->is_zero()) {
             continue;
         }
 
-        accumulator = accumulator * alt_bn128_miller_loop(alt_bn128_precompute_G1(*a), alt_bn128_precompute_G2(*b));
+        accumulator = accumulator * alt_bn128_miller_loop(
+                                        alt_bn128_precompute_G1(*a),
+                                        alt_bn128_precompute_G2(*b));
     }
 
-    uint8_t* out{static_cast<uint8_t*>(std::malloc(32))};
     std::memset(out, 0, 32);
     if (alt_bn128_final_exponentiation(accumulator) == one) {
         out[31] = 1;
     }
-    return {out, 32};
+    return true;
 }

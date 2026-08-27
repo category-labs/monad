@@ -57,7 +57,7 @@ target_sources(monad_crypto PRIVATE
 target_include_directories(monad_crypto PUBLIC "${SILKPRE_VENDOR_DIR}")
 
 # ecdsa needs libsecp256k1 and bn128 needs libff
-target_link_libraries(monad_crypto PUBLIC secp256k1 PRIVATE ff)
+target_link_libraries(monad_crypto PUBLIC secp256k1 PUBLIC ff)
 
 # Silence the warnings the vendored sources legitimately trip on; the upstream
 # silkpre build doesn't enforce them.

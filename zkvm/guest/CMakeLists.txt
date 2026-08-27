@@ -140,6 +140,43 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
         endif()
 
+        # Thread the interpreter's dispatch table base through the tail-call chain as a seventh
+        # argument, instead of re-materialising it at every opcode (GCC emits `auipc` plus an `ld`
+        # from a constant pool, 3,129,627 steps a block on r10-dma over the canonical 200, 3.21 % of
+        # the guest, doing no EVM work). Measured: steps -2.771 % median, 200 of 200 blocks
+        # improving, 200 of 200 post-state roots.
+        #
+        # An earlier variant pinned the base in s11 instead. It is 0.16 points faster and was
+        # dropped anyway: a nested interpreter entry overwrites the register, sound only because one
+        # block cannot nest an execution with different `traits`, and that invariant could not be
+        # validated with the corpora on hand. Threading the base as an argument has no invariant to
+        # validate. The s11 path survives in types.hpp behind the raw -DMONAD_VM_PINNED_TABLE so the
+        # published comparison can be re-run; it is deliberately NOT a build option, and landing
+        # should delete it.
+        #
+        # Guarded rather than global: under Clang the right answer is preserve_none, which the
+        # interpreter already asks for through MONAD_VM_INSTRUCTION_CALL and which removes the
+        # reload this option targets, so a Clang build must not silently take a second, weaker path.
+        option(MONAD_ZKVM_TABLE_ARG
+               "thread the interpreter dispatch table base as a seventh argument" OFF)
+        if(MONAD_ZKVM_TABLE_ARG)
+            if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "riscv")
+                message(FATAL_ERROR
+                    "MONAD_ZKVM_TABLE_ARG is measured on the RISC-V guest, where the seventh "
+                    "argument is passed in a register (a0-a7). On a target with fewer argument "
+                    "registers it can cost a stack slot per dispatch. Got "
+                    "CMAKE_SYSTEM_PROCESSOR='${CMAKE_SYSTEM_PROCESSOR}'.")
+            endif()
+            if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+                message(FATAL_ERROR
+                    "MONAD_ZKVM_TABLE_ARG is for the GCC guest only. Clang supports preserve_none, "
+                    "which the interpreter uses through MONAD_VM_INSTRUCTION_CALL and which removes "
+                    "the reload this option targets. Got "
+                    "CMAKE_CXX_COMPILER_ID='${CMAKE_CXX_COMPILER_ID}'.")
+            endif()
+            add_compile_definitions(MONAD_VM_TABLE_ARG)
+        endif()
+
     endif()
 
     # Repo + third-party paths.

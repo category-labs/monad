@@ -66,11 +66,41 @@
     #endif
 #endif
 
+/*
+ * The seventh argument is behind a flag, and it has to be one: without it the baseline this lever is
+ * measured against cannot be rebuilt from the same tree, and the A/B is reproducible only against
+ * the parent commit. Flag off is the pre-lever guest, byte for byte -- checked, not assumed.
+ *
+ * Measured on the canonical 200: steps -2.771 % median, COST -1.186 % median, every block improving,
+ * 200 of 200 post-state roots. GCC otherwise re-materialises the table base at every dispatch as
+ * `auipc` plus an `ld`, 3,129,627 steps a block doing no EVM work. RISC-V passes eight arguments in
+ * registers, so the seventh is free at the call.
+ */
+#if defined(MONAD_VM_TABLE_ARG)
+    #define MONAD_VM_TBL_TYPE , void const *
+    #define MONAD_VM_TBL_PARAM , void const *itbl
+    #define MONAD_VM_TBL_ARG , itbl
+    #define MONAD_VM_TABLE_REF (static_cast<InstrEval const *>(itbl))
+#else
+    #define MONAD_VM_TBL_TYPE
+    #define MONAD_VM_TBL_PARAM
+    #define MONAD_VM_TBL_ARG
+    #define MONAD_VM_TABLE_REF instruction_table<traits>
+#endif
+
 namespace monad::vm::interpreter
 {
+    // The seventh argument is the instruction table's own base, carried through
+    // the tail-call chain in a register instead of being re-materialised at
+    // every dispatch. Typed `void const *` because the table's type is written
+    // in terms of this one; the dispatch sites cast it back.
+    //
+    // Costed before it was written: JUMPDEST is the floor handler -- gas, then
+    // dispatch, nothing else -- and two of its ten instructions are the
+    // `auipc`/`ld` pair that loads the table pointer out of the GOT.
     using InstrEval = void MONAD_VM_INSTRUCTION_CALL (*)(
         runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
-        int64_t, uint8_t const *);
+        int64_t, uint8_t const * MONAD_VM_TBL_TYPE);
 
     using InstrTable = std::array<InstrEval, 256>;
 }

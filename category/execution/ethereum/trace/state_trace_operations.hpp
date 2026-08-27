@@ -29,9 +29,9 @@ namespace monad::trace::state_trace
 {
     struct State
     {
-        monad::State const &state;
+        monad::State &state;
 
-        State(monad::State const &state)
+        State(monad::State &state)
             : state{state}
         {
         }

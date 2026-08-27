@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/trace/access_list_tracer.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/code_tracer.hpp>
+#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
@@ -1243,8 +1244,8 @@ TEST(PrestateTracer, prestate_access_storage)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {
@@ -1307,8 +1308,8 @@ TEST(PrestateTracer, prestate_access_zero_storage)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {
@@ -1370,8 +1371,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
     {
         // Run pretracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {
@@ -1445,8 +1446,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {
@@ -1520,10 +1521,10 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
+        PrestateTracer tracer{trace, ADDR_A};
 
         // Run tracer
-        tracer.encode(s.original(), s);
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {
@@ -1592,8 +1593,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {
@@ -1661,8 +1662,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {
@@ -1739,8 +1740,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {
@@ -1805,8 +1806,8 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = "null";
 
@@ -1853,8 +1854,8 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = "null";
 

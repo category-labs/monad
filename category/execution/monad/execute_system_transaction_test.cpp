@@ -22,7 +22,9 @@
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp>
@@ -42,6 +44,7 @@
 #include <nlohmann/json.hpp>
 
 #include <cstdint>
+#include <span>
 
 #include <gtest/gtest.h>
 
@@ -82,8 +85,13 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
 
     {
         nlohmann::json trace;
-        trace::StateTracer prestate_tracer =
-            trace::PrestateTracer{trace, 0xdeadbeef_address};
+        PrestateTracer prestate_tracer{trace, 0xdeadbeef_address};
+        trace::TypeErasedRunner const erased_runner =
+            trace::TypeErasedRunner::erase(prestate_tracer);
+        std::span<trace::TypeErasedRunner const> const runners{
+            &erased_runner, 1};
+        TxTraceContext const trace_context{runners};
+        trace::StateTracer state_tracer = std::monostate{};
 
         // Fulfil this promise such that ExecuteSystemTransaction doesn't wait
         // indefinitely.
@@ -100,9 +108,9 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 block_state,
                 block_metrics,
                 promise,
-                prestate_tracer,
+                state_tracer,
                 /*exec_recorder=*/nullptr,
-                TxTraceContext{}}();
+                trace_context}();
 
         EXPECT_TRUE(result.has_value());
 
@@ -120,8 +128,13 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
 
     {
         nlohmann::json trace;
-        trace::StateTracer prestate_tracer =
-            trace::PrestateTracer{trace, 0xdeadbeef_address};
+        PrestateTracer prestate_tracer{trace, 0xdeadbeef_address};
+        trace::TypeErasedRunner const erased_runner =
+            trace::TypeErasedRunner::erase(prestate_tracer);
+        std::span<trace::TypeErasedRunner const> const runners{
+            &erased_runner, 1};
+        TxTraceContext const trace_context{runners};
+        trace::StateTracer state_tracer = std::monostate{};
 
         boost::fibers::promise<void> promise;
         promise.set_value();
@@ -136,9 +149,9 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 block_state,
                 block_metrics,
                 promise,
-                prestate_tracer,
+                state_tracer,
                 /*exec_recorder=*/nullptr,
-                TxTraceContext{}}();
+                trace_context}();
 
         EXPECT_TRUE(result.has_value());
 

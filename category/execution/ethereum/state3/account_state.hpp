@@ -43,7 +43,6 @@ class BlockState;
 
 namespace trace
 {
-    struct PrestateTracer;
     struct StateDiffTracer;
 }
 

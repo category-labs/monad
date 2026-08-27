@@ -17,11 +17,13 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/likely.h>
 #include <category/core/throw.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/contract/events.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
@@ -46,6 +48,14 @@ static_assert(sizeof(vm::Host) == 24);
 static_assert(alignof(vm::Host) == 8);
 
 class BlockHashBuffer;
+
+// Sender for the EIP-7002/EIP-7251 system calls; emitter for EIP-7708's logs.
+inline constexpr Address SYSTEM_ADDRESS =
+    0xfffffffffffffffffffffffffffffffffffffffe_address;
+
+// ERC-7528 pseudo-address: eth_simulate's traceTransfers emitter, any revision.
+inline constexpr Address SIMULATE_NATIVE_TOKEN_LOG_ADDRESS =
+    0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address;
 
 class EvmcHostBase : public vm::Host
 {
@@ -239,22 +249,40 @@ struct EvmcHost final : public EvmcHostBase
         return call_tracer_;
     }
 
+    // Not every ETH movement emits. The EIP excludes withdrawals (not attached
+    // to a transaction, so no natural emission point), priority fees and the
+    // base-fee burn (derivable from the header). Beyond the EIP, monad's
+    // staking contract moves, mints and burns ETH by direct balance mutation
+    // rather than a value transfer, so none of that emits either.
     void emit_native_transfer_event(
         Address const &from, Address const &to, uint256_t const &value)
     {
-        // Skip emitting native transfer events when no value is transferred or
-        // `from` and `to` are the same account (i.e. no net transfer of funds).
-        if (log_native_transfers_ && value > 0 && from != to) {
-            static constexpr Address native_token_address =
-                0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address;
-            static constexpr bytes32_t signature =
-                abi_encode_event_signature("Transfer(address,address,uint256)");
-            static_assert(
-                signature ==
-                bytes32_from_hex("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a"
-                                 "11628f55a4df523b3ef"));
+        // Pre-activation nothing is emitted unless eth_simulate asked for it,
+        // so short-circuit on the flag before comparing value and addresses.
+        if constexpr (!traits::eip_7708_active()) {
+            if (MONAD_LIKELY(!log_native_transfers_)) {
+                return;
+            }
+        }
 
-            auto event = EventBuilder(native_token_address, signature)
+        // Skip when no value moves, or from == to so there is no net transfer.
+        // EIP-7708 words its cases the same way: nonzero-value-transferring, to
+        // a different account. One predicate serves both log kinds below.
+        // Most messages carry no value, so this is the common exit; the hint
+        // keeps the event-building below off the per-message path.
+        if (MONAD_LIKELY(value == 0 || from == to)) {
+            return;
+        }
+
+        static constexpr bytes32_t signature =
+            abi_encode_event_signature("Transfer(address,address,uint256)");
+        static_assert(
+            signature ==
+            bytes32_from_hex("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a"
+                             "11628f55a4df523b3ef"));
+
+        auto const emit = [&](Address const &log_address) {
+            auto event = EventBuilder(log_address, signature)
                              .add_topic(abi_encode_address(from))
                              .add_topic(abi_encode_address(to))
                              .add_data(abi_encode_uint(u256_be{value}))
@@ -262,6 +290,19 @@ struct EvmcHost final : public EvmcHostBase
 
             state_.store_log(event);
             call_tracer_.on_log(std::move(event));
+        };
+
+        // Consensus artifact, so not conditioned on log_native_transfers_.
+        if constexpr (traits::eip_7708_active()) {
+            emit(SYSTEM_ADDRESS);
+        }
+
+        // eth_simulate's ERC-7528 synthetic, emitted alongside the consensus
+        // log rather than replaced by it -- geth returns both. Emitted second
+        // so the two stay in execution order; note that logIndex counts both,
+        // so a consumer dropping the 0xeeee... entries sees only even indices.
+        if (log_native_transfers_) {
+            emit(SIMULATE_NATIVE_TOKEN_LOG_ADDRESS);
         }
     }
 };

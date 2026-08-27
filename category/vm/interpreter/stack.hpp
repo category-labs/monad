@@ -29,6 +29,11 @@
 
 // Shared gas and stack checks; EXIT(status) selects how to leave on failure.
 #define MONAD_VM_CHECK_REQUIREMENTS(Instr, EXIT)                               \
+    MONAD_VM_CHECK_REQUIREMENTS_AT(Instr, 0, EXIT)
+
+// SHIFT is the net stack change from earlier fused opcodes; 0 checks the
+// stack at handler entry.
+#define MONAD_VM_CHECK_REQUIREMENTS_AT(Instr, SHIFT, EXIT)                     \
     do {                                                                       \
         static_assert(!compiler::has_operand_dependent_stack_effect(Instr));   \
         static constexpr auto info = compiler::opcode_table<traits>[Instr];    \
@@ -45,7 +50,8 @@
             break;                                                             \
         }                                                                      \
                                                                                \
-        auto const stack_size = stack_top.next_slot() - stack_bottom;          \
+        auto const stack_size =                                                \
+            (stack_top.next_slot() + (SHIFT)) - stack_bottom;                  \
         MONAD_DEBUG_ASSERT(stack_size <= 1024);                                \
                                                                                \
         if constexpr (info.min_stack > 0) {                                    \

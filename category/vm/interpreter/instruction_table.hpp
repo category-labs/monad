@@ -45,31 +45,42 @@
     #error "No compiler support for __has_attribute"
 #endif
 
-#define MONAD_VM_NEXT(OP)                                                      \
+// Evaluate NEXT_OPCODE after advancing instr_ptr; it may be *instr_ptr.
+#define MONAD_VM_DISPATCH(NBYTES, DELTA, NEXT_OPCODE)                          \
+    do {                                                                       \
+        instr_ptr += (NBYTES);                                                 \
+        if constexpr (debug_enabled) {                                         \
+            trace(analysis, gas_remaining, instr_ptr);                         \
+        }                                                                      \
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[(NEXT_OPCODE)](           \
+            ctx,                                                               \
+            analysis,                                                          \
+            stack_bottom,                                                      \
+            stack_top + (DELTA),                                               \
+            gas_remaining,                                                     \
+            instr_ptr MONAD_VM_TBL_ARG);                                       \
+    }                                                                          \
+    while (false)
+
+// Advance NBYTES and apply the sequence's net stack DELTA before dispatch.
+#define MONAD_VM_FUSED_NEXT(NBYTES, DELTA)                                     \
+    MONAD_VM_DISPATCH(NBYTES, DELTA, *instr_ptr)
+
+#define MONAD_VM_NEXT_IMPL(OP, NBYTES, NEXT_OPCODE)                            \
     do {                                                                       \
         static constexpr auto delta =                                          \
             compiler::opcode_table<traits>[(OP)].stack_increase -              \
             compiler::opcode_table<traits>[(OP)].min_stack;                    \
-                                                                               \
-        ++instr_ptr;                                                           \
-        if constexpr (debug_enabled) {                                         \
-            trace(analysis, gas_remaining, instr_ptr);                         \
-        }                                                                      \
-        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](              \
-            ctx,                                                               \
-            analysis,                                                          \
-            stack_bottom,                                                      \
-            stack_top + delta,                                                 \
-            gas_remaining,                                                     \
-            instr_ptr MONAD_VM_TBL_ARG);                                       \
+        MONAD_VM_DISPATCH(NBYTES, delta, NEXT_OPCODE);                         \
     }                                                                          \
     while (false);
+
+#define MONAD_VM_NEXT(OP) MONAD_VM_NEXT_IMPL(OP, 1, *instr_ptr)
 
 // Expand musttail in the handler to avoid return-address saves on the fast
 // path. The guest exits via longjmp, so it does not need the handler's stack
 // frame.
-#define MONAD_VM_CHECK(OP)                                                     \
-    MONAD_VM_CHECK_REQUIREMENTS(OP, MONAD_VM_MUST_TAIL return ctx.exit)
+#define MONAD_VM_CHECK(OP) MONAD_VM_CHECK_AT(OP, 0)
 
 // Keep checks in the handler so failures can tail-call Context::exit.
 // Variadic to accept runtime functions with multiple template arguments.
@@ -80,25 +91,13 @@
     }                                                                          \
     while (false)
 
+// Check OP after a net stack change of SHIFT from earlier fused opcodes.
+#define MONAD_VM_CHECK_AT(OP, SHIFT)                                           \
+    MONAD_VM_CHECK_REQUIREMENTS_AT(                                            \
+        OP, SHIFT, MONAD_VM_MUST_TAIL return ctx.exit)
+
 #define MONAD_VM_NEXT_PUSH(OP)                                                 \
-    do {                                                                       \
-        static constexpr auto delta =                                          \
-            compiler::opcode_table<traits>[(OP)].stack_increase -              \
-            compiler::opcode_table<traits>[(OP)].min_stack;                    \
-                                                                               \
-        instr_ptr += (((OP) - PUSH0) + 1);                                     \
-        if constexpr (debug_enabled) {                                         \
-            trace(analysis, gas_remaining, instr_ptr);                         \
-        }                                                                      \
-        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](              \
-            ctx,                                                               \
-            analysis,                                                          \
-            stack_bottom,                                                      \
-            stack_top + delta,                                                 \
-            gas_remaining,                                                     \
-            instr_ptr MONAD_VM_TBL_ARG);                                       \
-    }                                                                          \
-    while (false);
+    MONAD_VM_NEXT_IMPL(OP, ((OP) - PUSH0) + 1, *instr_ptr)
 
 namespace monad::vm::interpreter
 {
@@ -1265,6 +1264,50 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        // Use PUSH1's immediate directly for ADD/SHL/SHR/SAR.
+        // The result replaces the top; the pair's net stack change is zero.
+        // Check PUSH1 before its follower, including temporary stack growth.
+        // Code padding makes the lookahead safe.
+        if constexpr (N == 1) {
+            // A bitmap keeps the check cheap on every PUSH1; testing four
+            // opcodes separately regressed performance.
+            constexpr std::uint64_t monad_vm_fuse_mask =
+                (1ull << static_cast<unsigned>(ADD)) |
+                (1ull << static_cast<unsigned>(SHL)) |
+                (1ull << static_cast<unsigned>(SHR)) |
+                (1ull << static_cast<unsigned>(SAR));
+            // PUSH1 and DUP2 exceed the mask's range and still need stack
+            // writes, so their fusions are omitted.
+            auto const monad_vm_op2 = *(instr_ptr + 2);
+            // Pre-filtering the 4 instructions first gives better performance
+            if (monad_vm_op2 < 64 &&
+                ((monad_vm_fuse_mask >> monad_vm_op2) & 1)) {
+                MONAD_VM_CHECK(PUSH1);
+                uint256_t const monad_vm_imm{*(instr_ptr + 1)};
+                if (monad_vm_op2 == static_cast<std::uint8_t>(ADD)) {
+                    MONAD_VM_CHECK_AT(ADD, 1);
+                    *stack_top = monad_vm_imm + *stack_top;
+                }
+                else if (monad_vm_op2 == static_cast<std::uint8_t>(SHL)) {
+                    MONAD_VM_CHECK_AT(SHL, 1);
+                    *stack_top <<= monad_vm_imm;
+                }
+                else if (monad_vm_op2 == static_cast<std::uint8_t>(SHR)) {
+                    MONAD_VM_CHECK_AT(SHR, 1);
+                    *stack_top >>= monad_vm_imm;
+                }
+                else {
+                    MONAD_VM_CHECK_AT(SAR, 1);
+                    *stack_top = sar(monad_vm_imm, *stack_top);
+                }
+                // Advance instr_ptr by 3 bytes, keep the same size of the
+                // stack and call the next opcode handler.
+                // Triggers return.
+                MONAD_VM_FUSED_NEXT(3, 0);
+            }
+        }
+#endif
         MONAD_VM_CHECK(PUSH0 + N);
         push_impl<N, traits>::push(stack_top, instr_ptr);
 
@@ -1577,7 +1620,11 @@ namespace monad::vm::interpreter
 }
 
 #undef MONAD_VM_MUST_TAIL
+#undef MONAD_VM_DISPATCH
+#undef MONAD_VM_FUSED_NEXT
+#undef MONAD_VM_NEXT_IMPL
 #undef MONAD_VM_NEXT
 #undef MONAD_VM_NEXT_PUSH
 #undef MONAD_VM_CHECK
+#undef MONAD_VM_CHECK_AT
 #undef MONAD_VM_CHECKED_RUNTIME_CALL

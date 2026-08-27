@@ -45,6 +45,24 @@
     #error "No compiler support for __has_attribute"
 #endif
 
+// Dispatch after a fused sequence: NBYTES of code consumed and DELTA of net stack
+// movement, both counted over every opcode the handler just executed.
+#define MONAD_VM_FUSED_NEXT(NBYTES, DELTA)                                     \
+    do {                                                                       \
+        instr_ptr += (NBYTES);                                                 \
+        if constexpr (debug_enabled) {                                         \
+            trace(analysis, gas_remaining, instr_ptr);                         \
+        }                                                                      \
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](              \
+            ctx,                                                               \
+            analysis,                                                          \
+            stack_bottom,                                                      \
+            stack_top + (DELTA),                                               \
+            gas_remaining,                                                     \
+            instr_ptr MONAD_VM_TBL_ARG);                                       \
+    }                                                                          \
+    while (false)
+
 #define MONAD_VM_NEXT(OP)                                                      \
     do {                                                                       \
         static constexpr auto delta =                                          \
@@ -88,7 +106,12 @@
 //
 // Worth 4 instructions x 1,069,980 opcodes on block 25551991 = 4.3 M steps,
 // 3.3 % of the current guest.
-#define MONAD_VM_CHECK(OP)                                                     \
+#define MONAD_VM_CHECK(OP) MONAD_VM_CHECK_AT(OP, 0)
+
+// SHIFT is the stack movement of operands already executed in this handler: a fused
+// follower must be checked against the stack its predecessor leaves, not the one the
+// handler was entered with. SHIFT 0 is the ordinary single-opcode case.
+#define MONAD_VM_CHECK_AT(OP, SHIFT)                                           \
     do {                                                                       \
         static constexpr auto monad_vm_ci = compiler::opcode_table<traits>[(OP)]; \
                                                                                \
@@ -101,7 +124,8 @@
                                                                                \
         if constexpr (!(monad_vm_ci.min_stack == 0 &&                          \
                         monad_vm_ci.stack_increase == 0)) {                    \
-            auto const monad_vm_sz = stack_top - stack_bottom;                 \
+            auto const monad_vm_sz =                                           \
+                (stack_top + (SHIFT)) - stack_bottom;                          \
             MONAD_DEBUG_ASSERT(monad_vm_sz <= 1024);                           \
                                                                                \
             if constexpr (monad_vm_ci.min_stack > 0) {                         \
@@ -148,6 +172,53 @@ namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
     using enum compiler::EvmOpCode;
+
+#if defined(MONAD_VM_FUSE_JUMPDEST)
+    // A taken jump lands on a JUMPDEST by construction -- jump_impl has just
+    // validated it -- so the generic handler that follows can only charge its
+    // 1 gas and step over it. Charging that gas here and landing one past it
+    // removes a whole dispatch from every taken jump: 98,103 of the shipped
+    // ziskethone guest's absorbed handler entries a block are exactly this.
+    //
+    // Charged AFTER validation, never before, so a bad destination still exits
+    // Error without the JUMPDEST's gas having been taken. Reading code[jd + 1]
+    // is what the generic path does anyway once it dispatches.
+    [[gnu::always_inline]] inline uint8_t const *swallow_jumpdest(
+        runtime::Context &ctx, uint8_t const *landing, int64_t &gas_remaining)
+    {
+        gas_remaining -= 1;
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            ctx.exit(OutOfGas);
+        }
+        return landing + 1;
+    }
+#endif
+
+#if defined(MONAD_VM_FUSE_TESTJUMPI)
+    // The tail shared by "<test> PUSH2 JUMPI": jump to the 16-bit immediate at
+    // p[2..3] when taken, else fall past the five fused bytes. The test's
+    // result never becomes a stack word -- it is a register the branch reads,
+    // which is the round trip these triples exist to remove.
+    [[gnu::always_inline]] inline uint8_t const *fused_branch(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint8_t const *p, bool taken, int64_t &gas_remaining)
+    {
+        if (!taken) {
+            return p + 5;
+        }
+        auto const dst = static_cast<size_t>(
+            (static_cast<unsigned>(p[2]) << 8) | static_cast<unsigned>(p[3]));
+        if (MONAD_UNLIKELY(!analysis.is_jumpdest(dst))) {
+            ctx.exit(Error);
+        }
+        auto const *ip = analysis.code() + dst;
+    #if defined(MONAD_VM_FUSE_JUMPDEST)
+        ip = swallow_jumpdest(ctx, ip, gas_remaining);
+    #endif
+        return ip;
+    }
+#endif
+
 
     template <Traits traits>
     consteval InstrTable make_instruction_table()
@@ -719,6 +790,23 @@ namespace monad::vm::interpreter
        uint256_t const *stack_bottom, uint256_t *stack_top,
        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_VM_FUSE_TESTJUMPI)
+        // EQ PUSH2 <dst16> JUMPI -- "jump if equal". EQ pops two and pushes one,
+        // so the PUSH2 that follows can never overflow the stack; only EQ's own
+        // two-operand requirement needs checking.
+        if (*(instr_ptr + 1) == static_cast<std::uint8_t>(PUSH2) &&
+            *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
+            MONAD_VM_CHECK(EQ);
+            bool const monad_vm_taken = (*stack_top == *(stack_top - 1));
+            MONAD_VM_CHECK_AT(PUSH2, -1);
+            MONAD_VM_CHECK_AT(JUMPI, 0);
+            instr_ptr = fused_branch(
+                ctx, analysis, instr_ptr, monad_vm_taken, gas_remaining);
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                ctx, analysis, stack_bottom, stack_top - 2, gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+#endif
         MONAD_VM_CHECK(EQ);
         auto &&[a, b] = top_two(stack_top);
         b = (a == b);
@@ -732,6 +820,23 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_VM_FUSE_TESTJUMPI)
+        // ISZERO PUSH2 <dst16> JUMPI -- "jump if zero", the commonest branch shape
+        // a Solidity require() compiles to. Gate: two byte compares on every
+        // ISZERO, which the fused triple has to earn back.
+        if (*(instr_ptr + 1) == static_cast<std::uint8_t>(PUSH2) &&
+            *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
+            MONAD_VM_CHECK(ISZERO);
+            bool const monad_vm_taken = !*stack_top;
+            MONAD_VM_CHECK_AT(PUSH2, 0);
+            MONAD_VM_CHECK_AT(JUMPI, 1);
+            instr_ptr = fused_branch(
+                ctx, analysis, instr_ptr, monad_vm_taken, gas_remaining);
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                ctx, analysis, stack_bottom, stack_top - 1, gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+#endif
         MONAD_VM_CHECK(ISZERO);
         auto &a = *stack_top;
         a = !a;
@@ -1462,6 +1567,117 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_VM_FUSE_PUSH2JUMP)
+        // PUSH2 <dst16> JUMP / JUMPI: the destination is a 16-bit immediate, so it
+        // never becomes a 256-bit stack word that the jump then compares against
+        // size_t and pops. JUMP and JUMPI are 0x56 and 0x57, so the gate on every
+        // PUSH2 is a subtract and an unsigned compare.
+        //
+        // Order is the unfused order: PUSH2's gas and room, then the jump's gas
+        // and its operands, then destination validation -- a bad destination still
+        // exits Error with the jump's gas already charged, as it does today.
+        if constexpr (N == 2) {
+            auto const monad_vm_op2 = *(instr_ptr + 3);
+            if (static_cast<unsigned>(monad_vm_op2 -
+                                      static_cast<std::uint8_t>(JUMP)) <= 1u) {
+                MONAD_VM_CHECK(PUSH2);
+                auto const monad_vm_dst = static_cast<size_t>(
+                    (static_cast<unsigned>(*(instr_ptr + 1)) << 8) |
+                    static_cast<unsigned>(*(instr_ptr + 2)));
+                if (monad_vm_op2 == static_cast<std::uint8_t>(JUMP)) {
+                    MONAD_VM_CHECK_AT(JUMP, 1);
+                    if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) {
+                        ctx.exit(Error);
+                    }
+                    auto const *monad_vm_ip = analysis.code() + monad_vm_dst;
+    #if defined(MONAD_VM_FUSE_JUMPDEST)
+                    monad_vm_ip =
+                        swallow_jumpdest(ctx, monad_vm_ip, gas_remaining);
+    #endif
+                    instr_ptr = monad_vm_ip;
+                    MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                        ctx, analysis, stack_bottom, stack_top, gas_remaining,
+                        instr_ptr MONAD_VM_TBL_ARG);
+                }
+                MONAD_VM_CHECK_AT(JUMPI, 1);
+                // The condition is the word under the immediate, i.e. the stack top
+                // the handler was entered with.
+                if (*stack_top) {
+                    if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) {
+                        ctx.exit(Error);
+                    }
+                    auto const *monad_vm_ip = analysis.code() + monad_vm_dst;
+    #if defined(MONAD_VM_FUSE_JUMPDEST)
+                    monad_vm_ip =
+                        swallow_jumpdest(ctx, monad_vm_ip, gas_remaining);
+    #endif
+                    instr_ptr = monad_vm_ip;
+                    MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                        ctx, analysis, stack_bottom, stack_top - 1,
+                        gas_remaining, instr_ptr MONAD_VM_TBL_ARG);
+                }
+                MONAD_VM_FUSED_NEXT(4, -1);
+            }
+        }
+#endif
+#if defined(MONAD_VM_FUSE_PUSH1OP)
+        // PUSH1 <imm> followed by a binary operator whose other operand is the
+        // stack top: the immediate never reaches memory. Unfused it is written as
+        // a 256-bit word at stack_top + 1 and read straight back by the operator,
+        // which is the round trip this removes -- the saved dispatch is the
+        // smaller half.
+        //
+        // The operators below all take top_two(stack_top) as (a, b) and write b,
+        // so with the immediate standing in for a, the result lands in *stack_top
+        // and the pair's net stack movement is zero.
+        //
+        // Check order is the unfused order: PUSH1's gas and room for one more word
+        // first, then the operator's gas and its two-operand requirement against
+        // the stack PUSH1 leaves. Reading instr_ptr[2] is safe for the same reason
+        // the generic path may read it: the code is padded.
+        if constexpr (N == 1) {
+            // The gate runs on EVERY PUSH1 and pays off on the fraction that match,
+            // so its cost is the whole design. A chain of four byte compares was
+            // measured at +1.4 % -- eight instructions on every push to save a
+            // dispatch on one in seven. A bitmap is four: compare, shift, and,
+            // branch. ADD, SHL, SHR and SAR are opcodes 1, 27, 28 and 29, so a
+            // 64-bit mask covers them with room to spare.
+            constexpr std::uint64_t monad_vm_fuse_mask =
+                (1ull << static_cast<unsigned>(ADD)) |
+                (1ull << static_cast<unsigned>(SHL)) |
+                (1ull << static_cast<unsigned>(SHR)) |
+                (1ull << static_cast<unsigned>(SAR));
+            // PUSH1+PUSH1 and PUSH1+DUP2, which ziskethone also fuses, are left
+            // out: their followers are opcodes 0x60 and 0x81, outside a 64-bit
+            // mask, and widening the gate is what the chain-of-compares version
+            // measured at +1.4 % against this one's -0.9 %. Both write their
+            // operands to memory anyway, so they save a dispatch and not a round
+            // trip -- the smaller half of what the four below return.
+            auto const monad_vm_op2 = *(instr_ptr + 2);
+            if (monad_vm_op2 < 64 &&
+                ((monad_vm_fuse_mask >> monad_vm_op2) & 1)) {
+                MONAD_VM_CHECK(PUSH1);
+                uint256_t const monad_vm_imm{*(instr_ptr + 1)};
+                if (monad_vm_op2 == static_cast<std::uint8_t>(ADD)) {
+                    MONAD_VM_CHECK_AT(ADD, 1);
+                    *stack_top = monad_vm_imm + *stack_top;
+                }
+                else if (monad_vm_op2 == static_cast<std::uint8_t>(SHL)) {
+                    MONAD_VM_CHECK_AT(SHL, 1);
+                    *stack_top <<= monad_vm_imm;
+                }
+                else if (monad_vm_op2 == static_cast<std::uint8_t>(SHR)) {
+                    MONAD_VM_CHECK_AT(SHR, 1);
+                    *stack_top >>= monad_vm_imm;
+                }
+                else {
+                    MONAD_VM_CHECK_AT(SAR, 1);
+                    *stack_top = sar(monad_vm_imm, *stack_top);
+                }
+                MONAD_VM_FUSED_NEXT(3, 0);
+            }
+        }
+#endif
         push_impl<N, traits>::push(
             ctx, analysis, stack_bottom, stack_top, gas_remaining, instr_ptr);
 
@@ -1475,6 +1691,18 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(POP);
+#if defined(MONAD_VM_FUSE_POPPOP)
+        // Two pops move the stack pointer twice and dispatch twice; the second
+        // dispatch is all that is saved, so the peek has to be cheap -- one byte
+        // compare against a constant. Checks stay in order: this POP's gas and
+        // stack are already charged above, the next one's are charged against the
+        // stack this one leaves, so an out-of-gas on the second halts exactly
+        // where the unfused pair would.
+        if (*(instr_ptr + 1) == static_cast<std::uint8_t>(POP)) {
+            MONAD_VM_CHECK_AT(POP, -1);
+            MONAD_VM_FUSED_NEXT(2, -2);
+        }
+#endif
         MONAD_VM_NEXT(POP);
     }
 
@@ -1540,6 +1768,7 @@ namespace monad::vm::interpreter
 
             return analysis.code() + jd;
         }
+
     }
 
     template <Traits traits>
@@ -1550,7 +1779,10 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_CHECK(JUMP);
         auto const &target = pop(stack_top);
-        auto const *const new_ip = jump_impl(ctx, analysis, target);
+        auto const *new_ip = jump_impl(ctx, analysis, target);
+#if defined(MONAD_VM_FUSE_JUMPDEST)
+        new_ip = swallow_jumpdest(ctx, new_ip, gas_remaining);
+#endif
 
         if constexpr (debug_enabled) {
             trace(analysis, gas_remaining, new_ip);
@@ -1571,7 +1803,10 @@ namespace monad::vm::interpreter
         auto const &cond = pop(stack_top);
 
         if (cond) {
-            auto const *const new_ip = jump_impl(ctx, analysis, target);
+            auto const *new_ip = jump_impl(ctx, analysis, target);
+#if defined(MONAD_VM_FUSE_JUMPDEST)
+            new_ip = swallow_jumpdest(ctx, new_ip, gas_remaining);
+#endif
             if constexpr (debug_enabled) {
                 trace(analysis, gas_remaining, new_ip);
             }

@@ -195,6 +195,32 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             add_compile_definitions(MONAD_VM_TABLE_ARG)
         endif()
 
+        # Fused superinstructions: sequences that always run back to back pay two
+        # dispatches, two gas checks and a 256-bit stack round trip, and run here as
+        # one step. Measured on the canonical 200 on top of MONAD_ZKVM_TABLE_ARG:
+        # steps -4.498 % median, COST -2.131 %, every block improving, 200 of 200
+        # post-state roots.
+        #
+        # Enables the four fusions that measured positive. The per-fusion macros
+        # stay available as raw -D so one can be dropped to re-measure it:
+        # MONAD_VM_FUSE_JUMPDEST, _PUSH1OP, _PUSH2JUMP, _TESTJUMPI. POP+POP was
+        # measured and is deliberately absent -- its gate costs more than the one
+        # dispatch it saves.
+        option(MONAD_ZKVM_FUSE
+               "fuse hot opcode sequences into single interpreter steps" OFF)
+        if(MONAD_ZKVM_FUSE)
+            if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+                message(FATAL_ERROR
+                    "MONAD_ZKVM_FUSE is measured on the GCC guest only. Got "
+                    "CMAKE_CXX_COMPILER_ID='${CMAKE_CXX_COMPILER_ID}'.")
+            endif()
+            add_compile_definitions(
+                MONAD_VM_FUSE_JUMPDEST
+                MONAD_VM_FUSE_PUSH1OP
+                MONAD_VM_FUSE_PUSH2JUMP
+                MONAD_VM_FUSE_TESTJUMPI)
+        endif()
+
     endif()
 
     # Repo + third-party paths.

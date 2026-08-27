@@ -28,6 +28,7 @@
 #include <category/vm/runtime/types.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -89,6 +90,36 @@ namespace monad::vm
 
         virtual PageStorageStatus
         update_page(Address const &, bytes32_t const &key, StorageStatus) = 0;
+
+        /// Every frame's`runtime::Context` inherits the execution deadline and
+        /// exits with `StatusCode::Cancelled` once it has passed.
+        /// `time_point::max()` effectively stops it; default: no deadline.
+        /// CAVEAT: compiled code only observes the deadline at storage/call
+        /// ops, so pure-compute loops don't check the deadline; deadlines are
+        /// only reliable on an InterpreterOnly VM.
+        void set_execution_deadline(
+            std::chrono::steady_clock::time_point const deadline) noexcept
+        {
+            if (deadline == std::chrono::steady_clock::time_point::max()) {
+                deadline_ns_ = runtime::Context::no_deadline;
+                return;
+            }
+            deadline_ns_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               deadline.time_since_epoch())
+                               .count();
+        }
+
+        int64_t execution_deadline() const noexcept
+        {
+            return deadline_ns_;
+        }
+
+        /// True if any frame executed with this host was aborted because the
+        /// execution deadline passed.
+        bool execution_cancelled() const noexcept
+        {
+            return execution_cancelled_;
+        }
 
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.
@@ -164,7 +195,14 @@ namespace monad::vm
             return prev;
         }
 
+        void note_execution_cancelled() noexcept
+        {
+            execution_cancelled_ = true;
+        }
+
         runtime::Context *runtime_context_{nullptr};
         mutable std::exception_ptr active_exception_;
+        int64_t deadline_ns_{runtime::Context::no_deadline};
+        bool execution_cancelled_{false};
     };
 }

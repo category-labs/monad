@@ -120,7 +120,7 @@ namespace
         "failure to submit eth_call to thread pool: queue size exceeded";
     char const *const ETH_SIMULATE_EXCEED_QUEUE_SIZE_ERR_MSG =
         "failure to submit eth_simulateV1 to thread pool: queue size exceeded";
-    char const *const TIMEOUT_ERR_MSG =
+    char const *const QUEUE_TIMEOUT_ERR_MSG =
         "failure to execute eth_call: queuing time exceeded timeout threshold";
     char const *const PRESTATE_TRACER_SUPPORT_ERR_MSG =
         "only the prestate tracer and the statediff "
@@ -233,7 +233,8 @@ namespace
         vm::VM &vm, BlockHashBuffer const &buffer,
         monad_state_override const &state_overrides,
         CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
-        Simulation const &execution_mode)
+        Simulation const &execution_mode,
+        std::chrono::steady_clock::time_point const deadline)
     {
         Transaction enriched_txn{txn};
 
@@ -311,6 +312,7 @@ namespace
             header.base_fee_per_gas,
             0,
             chain_context};
+        host.set_execution_deadline(deadline);
         auto execution_result = ExecuteTransactionNoValidation<traits>{
             chain,
             enriched_txn,
@@ -318,6 +320,13 @@ namespace
             authorities,
             header,
         }(state, host);
+
+        // The VM aborted the call on the execution deadline. Reported as a
+        // distinct error rather than through the status code, which is
+        // CallStatus::Rejected and has other producers (e.g. precompiles).
+        if (MONAD_UNLIKELY(host.execution_cancelled())) {
+            return TransactionError::ExecutionTimeout;
+        }
 
         // compute gas_refund and gas_used
         auto const gas_refund = compute_gas_refund<traits>(
@@ -1280,14 +1289,16 @@ namespace
     {
         enum class Type
         {
-            low,
-            high
+            short_tx,
+            long_tx
         };
 
         Pool(Type const type, monad_executor_pool_config const &config)
             : type(type)
             , limit(config.queue_limit)
-            , timeout(std::chrono::seconds(config.timeout_sec))
+            , queue_timeout(std::chrono::milliseconds(config.queue_timeout_ms))
+            , execution_timeout(
+                  std::chrono::milliseconds(config.execution_timeout_ms))
             , pool(config.num_threads, config.num_fibers, true)
         {
         }
@@ -1321,8 +1332,14 @@ namespace
         // Maximum number of requests in the queue.
         unsigned limit;
 
-        // Timeout request if it failed to be scheduled in this time.
-        std::chrono::seconds timeout;
+        // Maximum time a call may wait in this pool's queue; enforced at
+        // pickup, before any execution work.
+        std::chrono::milliseconds queue_timeout;
+
+        // Execution time budget for a call in this pool, measured from
+        // pickup; an expired budget cancels execution at the next VM
+        // deadline check.
+        std::chrono::milliseconds execution_timeout;
 
         // Number of requests currently in the queue.
         std::atomic<unsigned> queued_count{0};
@@ -1343,7 +1360,7 @@ namespace
     struct Group
     {
         Group(
-            unsigned const queue_limit, std::chrono::seconds const timeout,
+            unsigned const queue_limit, std::chrono::milliseconds const timeout,
             std::unique_ptr<fiber::FiberGroup> group)
             : limit(queue_limit)
             , timeout(timeout)
@@ -1379,7 +1396,7 @@ namespace
         unsigned limit;
 
         // Timeout request if it failed to be scheduled in this time.
-        std::chrono::seconds timeout;
+        std::chrono::milliseconds timeout;
 
         // Number of requests currently in the queue.
         std::atomic<unsigned> queued_count{0};
@@ -1416,8 +1433,11 @@ struct monad_executor
     // out-of-gas errors can be misreported as generic failures.
     vm::VM vm_{vm::VM::InterpreterOnly};
 
-    Pool high_gas_pool_;
-    Pool low_gas_pool_;
+    // Every call starts in the short pool (short timeout); calls that time
+    // out there escalate to the long pool (long timeout), so the long pool
+    // must outlive the short pool.
+    Pool long_tx_pool_;
+    Pool short_tx_pool_;
 
     // Shared thread pool for trace operations (reduces thread count)
     fiber::FiberThreadPool trace_thread_pool_;
@@ -1461,8 +1481,8 @@ struct monad_executor
     }
 
     monad_executor(
-        monad_executor_pool_config const &low_pool_config,
-        monad_executor_pool_config const &high_pool_config,
+        monad_executor_pool_config const &short_tx_pool_config,
+        monad_executor_pool_config const &long_tx_pool_config,
         monad_executor_pool_config const &block_pool_config,
         unsigned const tx_exec_num_fibers, uint64_t const node_lru_max_mem,
         std::optional<std::string> const &triedb_path)
@@ -1472,16 +1492,16 @@ struct monad_executor
                         make_db_config(*triedb_path, node_lru_max_mem))
                   : nullptr}
         , secondary_db_{db_ ? db_->open_secondary_timeline() : nullptr}
-        , high_gas_pool_{Pool::Type::high, high_pool_config}
-        , low_gas_pool_{Pool::Type::low, low_pool_config}
+        , long_tx_pool_{Pool::Type::long_tx, long_tx_pool_config}
+        , short_tx_pool_{Pool::Type::short_tx, short_tx_pool_config}
         , trace_thread_pool_{block_pool_config.num_threads, true}
         , trace_tx_exec_group_{
               block_pool_config.queue_limit,
-              std::chrono::seconds(block_pool_config.timeout_sec),
+              std::chrono::milliseconds(block_pool_config.queue_timeout_ms),
               trace_thread_pool_.create_fiber_group(tx_exec_num_fibers)}
         , trace_block_group_{
               block_pool_config.queue_limit,
-              std::chrono::seconds(block_pool_config.timeout_sec),
+              std::chrono::milliseconds(block_pool_config.queue_timeout_ms),
               trace_thread_pool_.create_fiber_group(block_pool_config.num_fibers)}
     {
     }
@@ -1496,15 +1516,13 @@ struct monad_executor
         monad_state_override const *const overrides,
         void (*complete)(monad_executor_result *, void *user), void *const user,
         monad_tracer_config const tracer_config,
-        size_t const call_tracer_max_size, bool const gas_specified)
+        size_t const call_tracer_max_size)
     {
         monad_executor_result *const result = new monad_executor_result();
 
-        Pool *pool =
-            gas_specified && txn.gas_limit > MONAD_ETH_CALL_LOW_GAS_LIMIT
-                ? &high_gas_pool_
-                : &low_gas_pool_;
-
+        // All calls start in the short pool, calls that hit the short
+        // pool's execution timeout escalate to the long pool with its longer
+        // timeout.
         submit_eth_call_to_pool(
             chain_config,
             txn,
@@ -1517,11 +1535,10 @@ struct monad_executor
             user,
             tracer_config,
             call_tracer_max_size,
-            gas_specified,
             std::chrono::steady_clock::now(),
             call_seq_no_.fetch_add(1, std::memory_order_relaxed),
             result,
-            *pool);
+            short_tx_pool_);
     }
 
     void submit_eth_call_to_pool(
@@ -1531,7 +1548,7 @@ struct monad_executor
         monad_state_override const *const overrides,
         void (*complete)(monad_executor_result *, void *user), void *const user,
         monad_tracer_config const tracer_config,
-        size_t const call_tracer_max_size, bool const gas_specified,
+        size_t const call_tracer_max_size,
         std::chrono::steady_clock::time_point const call_begin,
         uint64_t const eth_call_seq_no, monad_executor_result *const result,
         Pool &active_pool)
@@ -1550,7 +1567,7 @@ struct monad_executor
              call_begin = call_begin,
              eth_call_seq_no = eth_call_seq_no,
              chain_config = chain_config,
-             orig_txn = txn,
+             transaction = txn,
              block_header = block_header,
              block_number = block_number,
              block_id = block_id,
@@ -1562,7 +1579,6 @@ struct monad_executor
              state_overrides = overrides,
              call_tracer_max_size = call_tracer_max_size,
              tracer_config = tracer_config,
-             gas_specified = gas_specified,
              execution_mode = Simulation{false},
              active_pool = &active_pool] {
                 active_pool->queued_count.fetch_sub(
@@ -1575,35 +1591,28 @@ struct monad_executor
                         1, std::memory_order_relaxed);
                 };
                 try {
-                    // check for timeout
-                    if (std::chrono::steady_clock::now() - call_begin >
-                        active_pool->timeout) {
+                    auto const pickup = std::chrono::steady_clock::now();
+
+                    if (MONAD_UNLIKELY(
+                            pickup - call_begin >=
+                            active_pool->queue_timeout)) {
                         result->status_code =
                             std::to_underlying(CallStatus::Rejected);
-                        result->message = strdup(TIMEOUT_ERR_MSG);
+                        result->message = strdup(QUEUE_TIMEOUT_ERR_MSG);
                         MONAD_ASSERT(result->message);
                         complete(result, user);
                         return;
                     }
 
+                    auto const deadline =
+                        pickup + active_pool->execution_timeout;
+
                     std::vector<std::optional<Address>> authorities(
-                        orig_txn.authorization_list.size());
-                    for (auto j = 0u; j < orig_txn.authorization_list.size();
+                        transaction.authorization_list.size());
+                    for (auto j = 0u; j < transaction.authorization_list.size();
                          ++j) {
-                        authorities[j] =
-                            recover_authority(orig_txn.authorization_list[j]);
-                    }
-
-                    auto transaction = orig_txn;
-
-                    bool const override_with_low_gas_retry_if_oog =
-                        active_pool->type == Pool::Type::low &&
-                        !gas_specified &&
-                        orig_txn.gas_limit > MONAD_ETH_CALL_LOW_GAS_LIMIT;
-
-                    if (override_with_low_gas_retry_if_oog) {
-                        // override with low gas limit
-                        transaction.gas_limit = MONAD_ETH_CALL_LOW_GAS_LIMIT;
+                        authorities[j] = recover_authority(
+                            transaction.authorization_list[j]);
                     }
 
                     auto const chain = make_chain(chain_config);
@@ -1662,7 +1671,8 @@ struct monad_executor
                                 *state_overrides,
                                 *call_tracer,
                                 state_tracer,
-                                execution_mode);
+                                execution_mode,
+                                deadline);
                             MONAD_ASSERT(false);
                         }
                         else {
@@ -1685,36 +1695,35 @@ struct monad_executor
                                 *state_overrides,
                                 *call_tracer,
                                 state_tracer,
-                                execution_mode);
+                                execution_mode,
+                                deadline);
                             MONAD_ASSERT(false);
                         }
                     }();
 
-                    if (override_with_low_gas_retry_if_oog &&
-                        ((res.has_value() &&
-                          (res.value().status_code == CallStatus::OutOfGas ||
-                           res.value().status_code == CallStatus::Revert)) ||
-                         (res.has_error() &&
-                          res.error() == TransactionError::
-                                             IntrinsicGasGreaterThanLimit))) {
-                        retry_in_high_pool(
-                            chain_config,
-                            orig_txn,
-                            block_header,
-                            sender,
-                            block_number,
-                            block_id,
-                            state_overrides,
-                            complete,
-                            user,
-                            tracer_config,
-                            call_tracer_max_size,
-                            call_begin,
-                            eth_call_seq_no,
-                            result);
-                        return;
-                    }
                     if (MONAD_UNLIKELY(res.has_error())) {
+                        // The VM aborted the call on the execution deadline
+                        // in the short pool, retry in the long execution pool.
+                        if (res.error() == TransactionError::ExecutionTimeout &&
+                            active_pool->type == Pool::Type::short_tx) {
+                            submit_eth_call_to_pool(
+                                chain_config,
+                                transaction,
+                                block_header,
+                                sender,
+                                block_number,
+                                block_id,
+                                state_overrides,
+                                complete,
+                                user,
+                                tracer_config,
+                                call_tracer_max_size,
+                                std::chrono::steady_clock::now(),
+                                eth_call_seq_no,
+                                result,
+                                long_tx_pool_);
+                            return;
+                        }
                         result->status_code =
                             std::to_underlying(CallStatus::Rejected);
                         result->message = strdup(res.error().message().c_str());
@@ -1801,41 +1810,6 @@ struct monad_executor
             result->encoded_trace_len = 0;
         }
         complete(result, user);
-    }
-
-    void retry_in_high_pool(
-        monad_chain_config const chain_config, Transaction const &orig_txn,
-        BlockHeader const &block_header, Address const &sender,
-        uint64_t const block_number, bytes32_t const &block_id,
-        monad_state_override const *const overrides,
-        void (*complete)(monad_executor_result *, void *user), void *const user,
-        monad_tracer_config const tracer_config,
-        size_t const call_tracer_max_size,
-        std::chrono::steady_clock::time_point const call_begin,
-        auto const eth_call_seq_no, monad_executor_result *const result)
-    {
-        // retry in high gas limit pool
-        MONAD_ASSERT_THROW(
-            orig_txn.gas_limit > MONAD_ETH_CALL_LOW_GAS_LIMIT,
-            "retry_in_high_pool called with low gas limit");
-
-        submit_eth_call_to_pool(
-            chain_config,
-            orig_txn,
-            block_header,
-            sender,
-            block_number,
-            block_id,
-            overrides,
-            complete,
-            user,
-            tracer_config,
-            call_tracer_max_size,
-            false /* gas_specified */,
-            call_begin,
-            eth_call_seq_no,
-            result,
-            high_gas_pool_);
     }
 
     void submit_eth_trace_block_or_transaction_to_pool(
@@ -2244,8 +2218,8 @@ struct monad_executor
 };
 
 monad_executor *monad_executor_create(
-    monad_executor_pool_config const low_pool_conf,
-    monad_executor_pool_config const high_pool_conf,
+    monad_executor_pool_config const short_tx_pool_conf,
+    monad_executor_pool_config const long_tx_pool_conf,
     monad_executor_pool_config const block_pool_conf,
     unsigned const tx_exec_num_fibers, uint64_t const node_lru_max_mem,
     char const *const dbpath)
@@ -2264,8 +2238,8 @@ monad_executor *monad_executor_create(
     MONAD_ASSERT(init_trusted_setup());
 
     monad_executor *const e = new monad_executor(
-        low_pool_conf,
-        high_pool_conf,
+        short_tx_pool_conf,
+        long_tx_pool_conf,
         block_pool_conf,
         tx_exec_num_fibers,
         node_lru_max_mem,
@@ -2290,7 +2264,7 @@ void monad_executor_eth_call_submit(
     size_t const rlp_block_id_len, monad_state_override const *const overrides,
     void (*complete)(monad_executor_result *result, void *user),
     void *const user, monad_tracer_config const tracer_config,
-    size_t const call_tracer_max_size, bool const gas_specified)
+    size_t const call_tracer_max_size)
 {
     MONAD_ASSERT(executor);
 
@@ -2332,16 +2306,15 @@ void monad_executor_eth_call_submit(
         complete,
         user,
         tracer_config,
-        call_tracer_max_size,
-        gas_specified);
+        call_tracer_max_size);
 }
 
 struct monad_executor_state monad_executor_get_state(monad_executor *const e)
 {
     MONAD_ASSERT(e);
     return monad_executor_state{
-        .low_gas_pool_state = e->low_gas_pool_.get_state(),
-        .high_gas_pool_state = e->high_gas_pool_.get_state(),
+        .short_tx_pool_state = e->short_tx_pool_.get_state(),
+        .long_tx_pool_state = e->long_tx_pool_.get_state(),
         .trace_block_pool_state = e->trace_block_group_.get_state(),
     };
 }

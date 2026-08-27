@@ -73,11 +73,17 @@ namespace monad::vm
         }
 
         auto rt_ctx = runtime::Context::from(host, msg, icode->code_span());
+        rt_ctx.deadline_ns = host.execution_deadline();
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
 
         auto result = execute_raw<traits>(rt_ctx, code_hash, vcode);
+
+        if (MONAD_UNLIKELY(
+                rt_ctx.result.status == runtime::StatusCode::Cancelled)) {
+            host.note_execution_cancelled();
+        }
 
         rt_ctx.return_to<traits>(prev_rt_ctx);
 
@@ -103,11 +109,17 @@ namespace monad::vm
         }
 
         auto rt_ctx = runtime::Context::from(host, msg, code);
+        rt_ctx.deadline_ns = host.execution_deadline();
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
 
         auto result = execute_bytecode_raw<traits>(rt_ctx, code);
+
+        if (MONAD_UNLIKELY(
+                rt_ctx.result.status == runtime::StatusCode::Cancelled)) {
+            host.note_execution_cancelled();
+        }
 
         rt_ctx.return_to<traits>(prev_rt_ctx);
 

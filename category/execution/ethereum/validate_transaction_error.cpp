@@ -61,7 +61,8 @@ quick_status_code_from_enum<monad::TransactionError>::value_mappings()
         {TransactionError::InvalidBlobHash, "invalid blob hash", {}},
         {TransactionError::EmptyAuthorizationList,
          "empty authorization list",
-         {}}};
+         {}},
+        {TransactionError::ExecutionTimeout, "execution timeout", {}}};
 
     return v;
 }

@@ -2334,6 +2334,16 @@ namespace monad::vm::compiler::native
         stack_.swap(stack_.top_index() - static_cast<int32_t>(swap_ix));
     }
 
+    // No discharge
+    void Emitter::exchange(uint8_t const n, uint8_t const m)
+    {
+        MONAD_ASSERT(n > 0);
+        MONAD_ASSERT(m > n);
+        stack_.exchange(
+            stack_.top_index() - static_cast<int32_t>(n),
+            stack_.top_index() - static_cast<int32_t>(m));
+    }
+
     // Discharge through `lt` overload
     void Emitter::lt()
     {

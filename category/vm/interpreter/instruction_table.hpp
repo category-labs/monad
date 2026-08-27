@@ -1275,7 +1275,7 @@ namespace monad::vm::interpreter
             // PUSH1 and DUP2 exceed the mask's range and still need stack
             // writes, so their fusions are omitted.
             auto const monad_vm_op2 = *(instr_ptr + 2);
-            // Pre-filtering the 4 instructions first gives better performance
+            // Filtering for these four opcodes first improves performance.
             if (monad_vm_op2 < 64 &&
                 ((monad_vm_fuse_mask >> monad_vm_op2) & 1)) {
                 MONAD_VM_CHECK(PUSH1);
@@ -1296,10 +1296,66 @@ namespace monad::vm::interpreter
                     MONAD_VM_CHECK_AT(SAR, 1);
                     *stack_top = sar(monad_vm_imm, *stack_top);
                 }
-                // Advance instr_ptr by 3 bytes, keep the same size of the
-                // stack and call the next opcode handler.
-                // Triggers return.
+                // Advance instr_ptr by 3 bytes, keep the stack size unchanged,
+                // and call the next opcode handler.
+                // Returns from the current handler.
                 MONAD_VM_FUSED_NEXT(3, 0);
+            }
+        }
+        // Use PUSH2's immediate directly as the JUMP/JUMPI destination.
+        // Check gas and stack in opcode order, then validate taken jumps.
+        if constexpr (N == 2) {
+            auto const monad_vm_op2 = *(instr_ptr + 3);
+            // Match JUMP and JUMPI with one range check: they are consecutive.
+            // size_t and not unsigned for the difference: a 32-bit subtract
+            // puts this on ZisK's generic binary machine on every PUSH2.
+            if (static_cast<size_t>(monad_vm_op2) - static_cast<size_t>(JUMP) <=
+                1u) {
+                MONAD_VM_CHECK(PUSH2);
+                // PUSH2's two-byte immediate gives the jump destination.
+                auto const monad_vm_dst = static_cast<size_t>(
+                    (static_cast<unsigned>(*(instr_ptr + 1)) << 8) |
+                    static_cast<unsigned>(*(instr_ptr + 2)));
+                if (monad_vm_op2 == static_cast<std::uint8_t>(JUMP)) {
+                    // Check gas and stack as if PUSH2 had added one item.
+                    MONAD_VM_CHECK_AT(JUMP, 1);
+                    if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) {
+                        ctx.exit(Error);
+                    }
+                    auto const *monad_vm_ip = analysis.code() + monad_vm_dst;
+                    monad_vm_ip =
+                        swallow_jumpdest(ctx, monad_vm_ip, gas_remaining);
+                    instr_ptr = monad_vm_ip;
+                    MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                        ctx,
+                        analysis,
+                        stack_bottom,
+                        stack_top,
+                        gas_remaining,
+                        instr_ptr MONAD_VM_TBL_ARG);
+                }
+                MONAD_VM_CHECK_AT(JUMPI, 1);
+                // The condition is the original top, below PUSH2's destination.
+                if (*stack_top) {
+                    if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) {
+                        ctx.exit(Error);
+                    }
+                    auto const *monad_vm_ip = analysis.code() + monad_vm_dst;
+                    monad_vm_ip =
+                        swallow_jumpdest(ctx, monad_vm_ip, gas_remaining);
+                    instr_ptr = monad_vm_ip;
+                    MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                        ctx,
+                        analysis,
+                        stack_bottom,
+                        stack_top - 1, // Consume JUMPI's condition.
+                        gas_remaining,
+                        instr_ptr MONAD_VM_TBL_ARG);
+                }
+                // Advance instr_ptr by 4 bytes, reduce the stack size by 1 to
+                // consume JUMPI's condition, and call the next opcode handler.
+                // Returns from the current handler.
+                MONAD_VM_FUSED_NEXT(4, -1);
             }
         }
 #endif

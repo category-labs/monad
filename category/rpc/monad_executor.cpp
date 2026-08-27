@@ -60,7 +60,7 @@
 #include <category/execution/ethereum/trace/commands/state_trace.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/statediff_tracer.hpp>
 #include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -232,7 +232,7 @@ namespace
         std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
         vm::VM &vm, BlockHashBuffer const &buffer,
         monad_state_override const &state_overrides,
-        TxTraceContext const &trace_context, trace::StateTracer &state_tracer)
+        TxTraceContext const &trace_context)
     {
         Transaction enriched_txn{txn};
 
@@ -313,7 +313,6 @@ namespace
             chain.get_blob_schedule(header.timestamp));
 
         EvmcHost<traits> host{
-            state_tracer,
             tx_context,
             buffer,
             state,
@@ -341,7 +340,6 @@ namespace
         execution_result.gas_refund = static_cast<int64_t>(gas_refund);
 
         trace::emit<trace::PostState>(trace_context, state);
-        trace::run_tracer<traits>(state_tracer, state);
 
         return execution_result;
     }
@@ -419,9 +417,6 @@ namespace
             block_state, header, /*exec_recorder=*/nullptr);
         BlockMetrics metrics{};
 
-        std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
-        state_tracers.reserve(transactions_size);
-
         BlockTraceContext block_trace_context{transactions_size};
 
         auto const chain_context = [&] {
@@ -443,34 +438,33 @@ namespace
 
         // Trace single transaction
         if (trace_transaction) {
-            // We allocate just one trace entry here as we only need to return
-            // the trace result of `transactions[transaction_index]`.
-            nlohmann::json trace{};
-            std::vector<nlohmann::json> prestate_traces{};
+            // Replay preceding transactions, returning only the requested
+            // trace.
+            std::vector<nlohmann::json> traces{};
+            traces.resize(transactions_size);
             std::vector<PrestateTracer> prestate_tracers{};
+            std::vector<StateDiffTracer> statediff_tracers{};
+
             if (tracer_config == PRESTATE_TRACER) {
-                prestate_traces.resize(transactions_size);
                 prestate_tracers.reserve(transactions_size);
                 for (size_t i = 0; i < transactions_size; ++i) {
-                    state_tracers.emplace_back(
-                        std::make_unique<trace::StateTracer>(std::monostate{}));
                     prestate_tracers.emplace_back(
-                        prestate_traces[i], header.beneficiary);
+                        traces[i], header.beneficiary);
                 }
                 block_trace_context.with_tracers(
                     std::span<PrestateTracer>{prestate_tracers});
             }
             else {
-                for (size_t i = 0; i < transactions_size - 1; ++i) {
-                    state_tracers.emplace_back(
-                        std::make_unique<trace::StateTracer>(std::monostate{}));
+                MONAD_ASSERT_THROW(
+                    tracer_config == STATEDIFF_TRACER,
+                    "expected statediff tracer");
+                statediff_tracers.reserve(transactions_size);
+                for (size_t i = 0; i < transactions_size; ++i) {
+                    statediff_tracers.emplace_back(traces[i]);
                 }
-                state_tracers.emplace_back(std::make_unique<trace::StateTracer>(
-                    trace::StateDiffTracer{trace}));
+                block_trace_context.with_tracers(
+                    std::span<StateDiffTracer>{statediff_tracers});
             }
-
-            std::span<std::unique_ptr<trace::StateTracer>> const
-                state_tracers_view{state_tracers.data(), transactions_size};
 
             BOOST_OUTCOME_TRY(execute_block_transactions<traits>(
                 chain,
@@ -482,16 +476,11 @@ namespace
                 buffer,
                 tx_exec_pool,
                 metrics,
-                state_tracers_view,
                 chain_context,
                 /*exec_recorder=*/nullptr,
                 false,
                 block_trace_context));
-            if (tracer_config == PRESTATE_TRACER) {
-                return Result<nlohmann::json>{
-                    std::move(prestate_traces.back())};
-            }
-            return Result<nlohmann::json>{std::move(trace)};
+            return Result<nlohmann::json>{std::move(traces.back())};
         }
         else {
             // Helper to create a trace log entry of the form:
@@ -511,31 +500,30 @@ namespace
             std::vector<nlohmann::json> traces{};
             traces.reserve(transactions_size);
             std::vector<PrestateTracer> prestate_tracers{};
+            std::vector<StateDiffTracer> statediff_tracers{};
+
             if (tracer_config == PRESTATE_TRACER) {
                 prestate_tracers.reserve(transactions_size);
-            }
-            for (size_t i = 0; i < transactions_size; ++i) {
-                traces.emplace_back(trace_entry(i));
-                if (tracer_config == PRESTATE_TRACER) {
-                    state_tracers.emplace_back(
-                        std::make_unique<trace::StateTracer>(std::monostate{}));
+                for (size_t i = 0; i < transactions_size; ++i) {
+                    traces.emplace_back(trace_entry(i));
                     prestate_tracers.emplace_back(
                         traces[i]["result"], header.beneficiary);
                 }
-                else {
-                    state_tracers.emplace_back(
-                        std::make_unique<trace::StateTracer>(
-                            trace::StateDiffTracer{traces[i]["result"]}));
-                }
-            }
-
-            if (tracer_config == PRESTATE_TRACER) {
                 block_trace_context.with_tracers(
                     std::span<PrestateTracer>{prestate_tracers});
             }
-
-            std::span<std::unique_ptr<trace::StateTracer>> const
-                state_tracers_view{state_tracers.data(), transactions_size};
+            else {
+                MONAD_ASSERT_THROW(
+                    tracer_config == STATEDIFF_TRACER,
+                    "expected statediff tracer");
+                statediff_tracers.reserve(transactions_size);
+                for (size_t i = 0; i < transactions_size; ++i) {
+                    traces.emplace_back(trace_entry(i));
+                    statediff_tracers.emplace_back(traces[i]["result"]);
+                }
+                block_trace_context.with_tracers(
+                    std::span<StateDiffTracer>{statediff_tracers});
+            }
 
             BOOST_OUTCOME_TRY(execute_block_transactions<traits>(
                 chain,
@@ -547,7 +535,6 @@ namespace
                 buffer,
                 tx_exec_pool,
                 metrics,
-                state_tracers_view,
                 chain_context,
                 /*exec_recorder=*/nullptr,
                 false,
@@ -815,9 +802,7 @@ namespace
         std::vector<Address> const &senders,
         std::vector<std::vector<std::optional<Address>>> const &authorities,
         BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
-        fiber::FiberGroup &tx_exec_pool,
-        std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
-        ChainContextBuffer &context_buffer,
+        fiber::FiberGroup &tx_exec_pool, ChainContextBuffer &context_buffer,
         bool const emit_native_transfer_logs,
         BlockTraceContext const &trace_ctx)
     {
@@ -842,7 +827,6 @@ namespace
             block_hash_buffer,
             tx_exec_pool,
             block_metrics,
-            state_tracers,
             chain_context,
             /*exec_recorder=*/nullptr,
             emit_native_transfer_logs,
@@ -855,9 +839,7 @@ namespace
         std::vector<Address> const &senders,
         std::vector<std::vector<std::optional<Address>>> const &authorities,
         BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
-        fiber::FiberGroup &tx_exec_pool,
-        std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
-        ChainContextBuffer &context_buffer,
+        fiber::FiberGroup &tx_exec_pool, ChainContextBuffer &context_buffer,
         bool const emit_native_transfer_logs,
         BlockTraceContext const &trace_ctx)
     {
@@ -877,7 +859,6 @@ namespace
                 block_state,
                 block_hash_buffer,
                 tx_exec_pool,
-                state_tracers,
                 context_buffer,
                 emit_native_transfer_logs,
                 trace_ctx);
@@ -895,7 +876,6 @@ namespace
                 block_state,
                 block_hash_buffer,
                 tx_exec_pool,
-                state_tracers,
                 context_buffer,
                 emit_native_transfer_logs,
                 trace_ctx);
@@ -1043,9 +1023,6 @@ namespace
                         },
                 };
 
-                auto state_tracers =
-                    std::vector<std::unique_ptr<trace::StateTracer>>{};
-
                 static std::vector<Address> const empty_senders{};
                 static std::vector<std::vector<std::optional<Address>>> const
                     empty_authorities{};
@@ -1063,7 +1040,6 @@ namespace
                         block_state,
                         block_hash_buffer,
                         tx_exec_pool,
-                        state_tracers,
                         context_buffer,
                         emit_native_transfer_logs,
                         block_trace_context));
@@ -1155,9 +1131,6 @@ namespace
             call_frames.reserve(calls[block_idx].size());
             auto call_tracers = std::vector<CallTracer>{};
             call_tracers.reserve(calls[block_idx].size());
-            auto state_tracers =
-                std::vector<std::unique_ptr<trace::StateTracer>>{};
-            state_tracers.reserve(calls[block_idx].size());
 
             size_t const remaining_size =
                 max_size > carried_size ? max_size - carried_size : 0;
@@ -1170,8 +1143,6 @@ namespace
                 call_frames.emplace_back();
                 call_tracers.emplace_back(
                     tx, call_frames.back(), call_tracer_max_size);
-                state_tracers.emplace_back(
-                    std::make_unique<trace::StateTracer>());
             }
 
             auto block = Block{
@@ -1197,7 +1168,6 @@ namespace
                     block_state,
                     block_hash_buffer,
                     tx_exec_pool,
-                    state_tracers,
                     context_buffer,
                     emit_native_transfer_logs,
                     block_trace_context));
@@ -1621,9 +1591,10 @@ struct monad_executor
                     nlohmann::json state_trace;
                     CallTracer call_tracer{
                         transaction, call_frames, call_tracer_max_size};
-                    std::optional<trace::TypeErasedTracer> erased_tracer{};
                     std::optional<AccessListTracer> access_list_tracer{};
                     std::optional<PrestateTracer> prestate_tracer{};
+                    std::optional<StateDiffTracer> statediff_tracer{};
+                    std::optional<trace::TypeErasedTracer> erased_tracer{};
                     if (tracer_config == CALL_TRACER) {
                         erased_tracer.emplace(
                             trace::TypeErasedTracer::erase(call_tracer));
@@ -1633,6 +1604,11 @@ struct monad_executor
                             state_trace, block_header.beneficiary);
                         erased_tracer.emplace(
                             trace::TypeErasedTracer::erase(*prestate_tracer));
+                    }
+                    else if (tracer_config == STATEDIFF_TRACER) {
+                        statediff_tracer.emplace(state_trace);
+                        erased_tracer.emplace(
+                            trace::TypeErasedTracer::erase(*statediff_tracer));
                     }
                     else if (tracer_config == ACCESS_LIST_TRACER) {
                         auto const authorities_span =
@@ -1683,19 +1659,6 @@ struct monad_executor
                             call_tracers{&*erased_tracer, 1};
                         return TxTraceContext{call_tracers};
                     }();
-                    auto state_tracer = [&]() -> trace::StateTracer {
-                        switch (tracer_config) {
-                        case NOOP_TRACER:
-                        case CALL_TRACER:
-                        case ACCESS_LIST_TRACER:
-                        case PRESTATE_TRACER:
-                            return std::monostate{};
-                        case STATEDIFF_TRACER:
-                            return trace::StateDiffTracer{state_trace};
-                        }
-                        MONAD_ASSERT(false);
-                    }();
-
                     auto const res = [&]() -> Result<evmc::Result> {
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
@@ -1714,8 +1677,7 @@ struct monad_executor
                                 vm_,
                                 block_hash_buffer,
                                 *state_overrides,
-                                trace_context,
-                                state_tracer);
+                                trace_context);
                             MONAD_ASSERT(false);
                         }
                         else {
@@ -1736,8 +1698,7 @@ struct monad_executor
                                 vm_,
                                 block_hash_buffer,
                                 *state_overrides,
-                                trace_context,
-                                state_tracer);
+                                trace_context);
                             MONAD_ASSERT(false);
                         }
                     }();

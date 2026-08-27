@@ -511,10 +511,8 @@ TYPED_TEST(TraitsTest, execute_success)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
-    trace::StateTracer noop_state_tracer = std::monostate{};
     TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -614,11 +612,9 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
-    trace::StateTracer noop_state_tracer = std::monostate{};
     TxTraceContextWithTracer trace_context{tx, call_frames};
 
     EvmcHost<typename TestFixture::Trait> host{
-        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -705,10 +701,8 @@ TYPED_TEST(TraitsTest, create_call_trace)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
-    trace::StateTracer noop_state_tracer = std::monostate{};
     TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -829,10 +823,8 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
-    trace::StateTracer noop_state_tracer = std::monostate{};
     TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -917,10 +909,8 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
-    trace::StateTracer noop_state_tracer = std::monostate{};
     TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -1015,10 +1005,8 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     uint256_t base_fee{0};
-    trace::StateTracer noop_state_tracer = std::monostate{};
     TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -1094,13 +1082,11 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
 
     uint256_t base_fee{0};
 
-    trace::StateTracer noop_state_tracer = std::monostate{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -1206,13 +1192,11 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
 
     uint256_t base_fee{0};
 
-    trace::StateTracer noop_state_tracer = std::monostate{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -1312,14 +1296,12 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
 
     uint256_t base_fee{0};
 
-    trace::StateTracer noop_state_tracer = std::monostate{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     TxTraceContextWithTracer trace_context{tx, call_frames};
 
     EvmcHost<typename TestFixture::Trait> host{
-        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -1456,14 +1438,12 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
 
     uint256_t base_fee{0};
 
-    trace::StateTracer noop_state_tracer = std::monostate{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     TxTraceContextWithTracer trace_context{tx, call_frames};
 
     EvmcHost<typename TestFixture::Trait> host{
-        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -1684,14 +1664,12 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
 
     uint256_t base_fee{0};
 
-    trace::StateTracer noop_state_tracer = std::monostate{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
     TxTraceContextWithTracer trace_context{tx, call_frames};
 
     EvmcHost<typename TestFixture::Trait> host{
-        noop_state_tracer,
         tx_context,
         buffer,
         s,
@@ -1857,14 +1835,12 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
 
         uint256_t base_fee{0};
 
-        trace::StateTracer noop_state_tracer = std::monostate{};
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
         constexpr std::span<std::optional<Address> const> authorities_empty{};
         TxTraceContextWithTracer trace_context{tx, call_frames};
 
         EvmcHost<typename TestFixture::Trait> host{
-            noop_state_tracer,
             tx_context,
             buffer,
             s,

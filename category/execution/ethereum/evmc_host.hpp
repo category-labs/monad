@@ -26,7 +26,6 @@
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/commands/call_trace.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/access_status.h>
@@ -61,11 +60,10 @@ protected:
 
 public:
     bool const log_native_transfers_;
-    trace::StateTracer &state_tracer_;
 
     EvmcHostBase(
-        trace::StateTracer &, evmc_tx_context const &, BlockHashBuffer const &,
-        State &, TxTraceContext const &tx_trace_context,
+        evmc_tx_context const &, BlockHashBuffer const &, State &,
+        TxTraceContext const &tx_trace_context,
         bool log_native_transfers) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
@@ -112,7 +110,7 @@ public:
     }
 };
 
-static_assert(sizeof(EvmcHostBase) == 80);
+static_assert(sizeof(EvmcHostBase) == 72);
 static_assert(alignof(EvmcHostBase) == 8);
 
 template <Traits traits>
@@ -124,14 +122,13 @@ struct EvmcHost final : public EvmcHostBase
     ChainContext<traits> const &chain_ctx_;
 
     EvmcHost(
-        trace::StateTracer &state_tracer, evmc_tx_context const &tx_context,
+        evmc_tx_context const &tx_context,
         BlockHashBuffer const &block_hash_buffer, State &state,
         Transaction const &tx, std::optional<uint256_t> const base_fee_per_gas,
         uint64_t const i, ChainContext<traits> const &chain_ctx,
         TxTraceContext const &tx_trace_context,
         bool const log_native_transfers = false) noexcept
-        : EvmcHostBase{state_tracer, tx_context, block_hash_buffer, state, tx_trace_context, log_native_transfers}
-
+        : EvmcHostBase{tx_context, block_hash_buffer, state, tx_trace_context, log_native_transfers}
         , tx_{tx}
         , base_fee_per_gas_{base_fee_per_gas}
         , i_{i}
@@ -279,10 +276,10 @@ struct EvmcHost final : public EvmcHostBase
 };
 
 static_assert(
-    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 144);
+    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 136);
 static_assert(
     alignof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 8);
-static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 144);
+static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

@@ -139,13 +139,6 @@ Result<void> process_ethereum_block(
 
     // Tracer initialization
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};
-    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(
-        block.transactions.size());
-    for (unsigned i = 0; i < block.transactions.size(); ++i) {
-        state_tracers[i] =
-            std::make_unique<trace::StateTracer>(std::monostate{});
-    }
-
     std::vector<CallTracer> call_tracers;
     BlockTraceContext block_trace_context(block.transactions.size());
     if (enable_tracing) {
@@ -175,7 +168,6 @@ Result<void> process_ethereum_block(
             block_hash_buffer,
             priority_pool.fiber_group(),
             block_metrics,
-            state_tracers,
             chain_ctx,
             exec_recorder,
             false,

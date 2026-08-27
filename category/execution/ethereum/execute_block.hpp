@@ -26,7 +26,6 @@
 
 #include <evmc/evmc.h>
 
-#include <memory>
 #include <optional>
 #include <span>
 #include <vector>
@@ -53,7 +52,6 @@ Result<std::vector<Receipt>> execute_block_transactions(
     std::span<Address const> senders,
     std::span<std::vector<std::optional<Address>> const> authorities,
     BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
-    std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
     ChainContext<traits> const &chain_ctx, ExecutionEventRecorder *,
     bool trace_transfers, BlockTraceContext const &block_trace_context);
 
@@ -62,7 +60,6 @@ Result<std::vector<Receipt>> execute_block(
     Chain const &, Block const &, std::span<Address const> senders,
     std::span<std::vector<std::optional<Address>> const> authorities,
     BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
-    std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
     ChainContext<traits> const &chain_ctx, ExecutionEventRecorder *,
     bool trace_transfers, BlockTraceContext const &block_trace_context);
 

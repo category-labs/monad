@@ -109,11 +109,8 @@ Result<byte_string> system_call(
 
     state.access_account(contract_address);
 
-    trace::StateTracer noop_state_tracer = std::monostate{};
-
     Transaction const empty_tx{};
     EvmcHost<traits> host{
-        noop_state_tracer,
         tx_context,
         block_hash_buffer,
         state,

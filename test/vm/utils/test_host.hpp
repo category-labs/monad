@@ -40,7 +40,6 @@ namespace monad::test
         ankerl::unordered_dense::segmented_set<Address>
             chain_context_senders_and_authorities_;
         ChainContext<traits> chain_context_;
-        trace::StateTracer noop_state_tracer_;
         TxTraceContext const tx_trace_context_;
         EvmcHost<traits> host_;
 
@@ -82,10 +81,8 @@ namespace monad::test
             , chain_context_senders_and_authorities_{combine_senders_and_authorities(
                   chain_context_senders_, chain_context_authorities_)}
             , chain_context_{make_chain_context()}
-            , noop_state_tracer_{std::monostate{}}
             , tx_trace_context_{}
             , host_{
-                  noop_state_tracer_,
                   tx_context_,
                   block_hash_buffer,
                   state,

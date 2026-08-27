@@ -35,7 +35,6 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/commands/state_trace.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
@@ -307,8 +306,7 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     std::span<std::optional<Address> const> const authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::future<void> &prev, trace::StateTracer &state_tracer,
-    ChainContext<traits> const &chain_ctx,
+    boost::fibers::future<void> &prev, ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *const exec_recorder,
     TxTraceContext const &tx_trace_context, bool const trace_transfers)
     : ExecuteTransactionNoValidation<
@@ -319,7 +317,6 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     , block_state_{block_state}
     , block_metrics_{block_metrics}
     , prev_{prev}
-    , state_tracer_{state_tracer}
     , exec_recorder_{exec_recorder}
     , trace_transfers_{trace_transfers}
     , tx_trace_context_{tx_trace_context}
@@ -356,7 +353,6 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         chain_.get_chain_id(),
         chain_.get_blob_schedule(header_.timestamp));
     EvmcHost<traits> host{
-        state_tracer_,
         tx_context,
         block_hash_buffer_,
         state,
@@ -425,7 +421,6 @@ Receipt ExecuteTransaction<traits>::execute_final(
 
     trace::emit<trace::Finish>(tx_trace_context_, receipt.gas_used);
     trace::emit<trace::PostState>(tx_trace_context_, state);
-    trace::run_tracer<traits>(state_tracer_, state);
     std::span<CallFrame const> call_frames{};
     trace::emit<trace::GetCallFrames>(tx_trace_context_, &call_frames);
     record_txn_output_events(
@@ -465,7 +460,6 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         // TODO(dhil): Consider adding .reset() methdo on the trace context.
         trace::emit<trace::CallReset>(tx_trace_context_);
         trace::emit<trace::StateReset>(tx_trace_context_);
-        trace::reset(state_tracer_);
 
         auto result = execute_impl2(state);
 
@@ -491,7 +485,6 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 
         trace::emit<trace::CallReset>(tx_trace_context_);
         trace::emit<trace::StateReset>(tx_trace_context_);
-        trace::reset(state_tracer_);
 
         auto result = execute_impl2(state);
 

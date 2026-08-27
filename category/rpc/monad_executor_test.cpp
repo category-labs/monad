@@ -52,7 +52,7 @@
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/statediff_tracer.hpp>
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
@@ -1881,7 +1881,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
         }
 
         EXPECT_EQ(
-            state_to_json(expected, s, header.beneficiary),
+            trace::state_to_json(expected, s, header.beneficiary),
             nlohmann::json::from_cbor(encoded_pre_state_trace));
     }
 
@@ -1933,7 +1933,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
         };
 
         EXPECT_EQ(
-            state_deltas_to_json(expected, s),
+            trace::state_deltas_to_json(expected, s),
             nlohmann::json::from_cbor(encoded_state_delta_trace));
     }
 

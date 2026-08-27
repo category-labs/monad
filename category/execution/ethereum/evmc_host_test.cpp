@@ -173,10 +173,8 @@ TYPED_TEST(TraitsTest, emit_log)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
-    trace::StateTracer noop_state_tracer = std::monostate{};
     TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> host{
-        noop_state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -209,10 +207,8 @@ TYPED_TEST(TraitsTest, access_precompile)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
-    trace::StateTracer noop_state_tracer = std::monostate{};
     TxTraceContext const trace_context{};
     EvmcHost<typename TestFixture::Trait> host{
-        noop_state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -283,10 +279,8 @@ TEST(EvmcHostTest, host_methods_rethrow_pruned_read)
         BlockHashBufferFinalized const block_hash_buffer;
         Transaction tx{};
         auto const chain_ctx = ChainContext<traits>::debug_empty();
-        trace::StateTracer noop_state_tracer = std::monostate{};
         TxTraceContext const trace_context{};
         EvmcHost<traits> host{
-            noop_state_tracer,
             EMPTY_TX_CONTEXT,
             block_hash_buffer,
             state,

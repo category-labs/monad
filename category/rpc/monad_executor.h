@@ -27,8 +27,6 @@ extern "C"
 {
 #endif
 
-static uint64_t const MONAD_ETH_CALL_LOW_GAS_LIMIT = 8'100'000;
-
 struct monad_executor;
 
 typedef struct monad_executor_result
@@ -57,8 +55,15 @@ struct monad_executor_pool_config
     // Number of fibers per thread.
     unsigned num_fibers;
 
-    // Timeout request if it failed to be scheduled in this time.
-    unsigned timeout_sec;
+    // For the eth_call pools: maximum time in milliseconds a call may wait
+    // in the queue. A call picked up after this much waiting is rejected
+    // without executing.
+    unsigned queue_timeout_ms;
+
+    // For the eth_call pools: execution time budget in milliseconds,
+    // measured from when the call starts executing; an expired budget
+    // cancels the running execution at the next VM deadline check.
+    unsigned execution_timeout_ms;
 
     // Maximum number of requests in the queue. Request is removed from the
     // queue when it starts executing.
@@ -85,14 +90,14 @@ struct monad_executor_pool_state
 
 struct monad_executor_state
 {
-    struct monad_executor_pool_state low_gas_pool_state;
-    struct monad_executor_pool_state high_gas_pool_state;
+    struct monad_executor_pool_state short_tx_pool_state;
+    struct monad_executor_pool_state long_tx_pool_state;
     struct monad_executor_pool_state trace_block_pool_state;
 };
 
 struct monad_executor *monad_executor_create(
-    struct monad_executor_pool_config low_pool_conf,
-    struct monad_executor_pool_config high_pool_conf,
+    struct monad_executor_pool_config short_tx_pool_conf,
+    struct monad_executor_pool_config long_tx_pool_conf,
     struct monad_executor_pool_config block_pool_conf,
     unsigned tx_exec_num_fibers, uint64_t node_lru_max_mem, char const *dbpath);
 
@@ -105,7 +110,7 @@ void monad_executor_eth_call_submit(
     uint8_t const *rlp_block_id, size_t rlp_block_id_len,
     struct monad_state_override const *,
     void (*complete)(monad_executor_result *, void *user), void *user,
-    enum monad_tracer_config, bool gas_specified);
+    enum monad_tracer_config);
 
 struct monad_executor_state monad_executor_get_state(struct monad_executor *);
 

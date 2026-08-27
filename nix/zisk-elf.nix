@@ -71,6 +71,7 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
     CXX_riscv64ima_zisk_zkvm_elf = "${bin}/riscv64-none-elf-g++";
     MONAD_ZKVM_ZISK_DMA = "ON";
     MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES = "ON";
+    MONAD_ZKVM_CMAKE_ARGS = "-DMONAD_ZKVM_KECCAKF_MEMO=ON";
     ZISK_ROOT_CRATE = "monad_zkvm_zisk";
     MONAD_ZKVM_GIT_COMMIT = rev;
   };

@@ -143,11 +143,12 @@ class ProfileTests(unittest.TestCase):
             f'source = "{audit.RUNTIME_SOURCE}"\n'
         )
         self.flags = valid_flags() + f' -include "{guest}/nodelete.hpp"'
+        features = ",".join(audit.EXPECTED_FEATURES)
         self.profile = {
             "schema": 2, "target": "zisk", "commit": self.commit,
             "runtime_version": audit.RUNTIME_VERSION,
             "runtime_revision": audit.RUNTIME_REVISION,
-            "features_csv": "baseline,zisk-dma", "build_signature": "b" * 64,
+            "features_csv": features, "build_signature": "b" * 64,
             "compiler": str(self.compiler), "compiler_id": "GNU",
             "compiler_version": "15.2.0",
             "compiler_sha256": audit.sha256(self.compiler),
@@ -156,7 +157,7 @@ class ProfileTests(unittest.TestCase):
         }
         marker = (
             f"{audit.PROFILE};runtime=ziskos-{audit.RUNTIME_VERSION};"
-            f"features=baseline,zisk-dma;commit={self.commit};signature={'b' * 64}"
+            f"features={features};commit={self.commit};signature={'b' * 64}"
         )
         self.elf.write_bytes(marker.encode())
         self.profile_path = self.write_profile(self.build_dir, self.profile)
@@ -230,6 +231,16 @@ class ProfileTests(unittest.TestCase):
                 with self.assertRaisesRegex(SystemExit, "no generated CMake profile"):
                     self.run_audit()
                 self.assertFalse(self.manifest.exists())
+
+    def test_unexpected_feature_set_is_rejected(self):
+        features = ",".join(audit.EXPECTED_FEATURES[:-1])
+        self.elf.write_bytes((
+            f"{audit.PROFILE};runtime=ziskos-{audit.RUNTIME_VERSION};"
+            f"features={features};commit={self.commit};signature={'b' * 64}"
+        ).encode())
+        self.profile_path.write_text(json.dumps(dict(self.profile, features_csv=features)))
+        with self.assertRaisesRegex(SystemExit, "feature set: "):
+            self.run_audit()
 
     def test_old_cargo_layout_is_not_selected(self):
         self.profile_path.unlink()

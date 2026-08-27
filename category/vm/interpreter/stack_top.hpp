@@ -70,6 +70,11 @@ namespace monad::vm::interpreter
             return result;
         }
 
+        constexpr StackTop operator-(std::ptrdiff_t const delta) const
+        {
+            return *this + (-delta);
+        }
+
         constexpr StackTop &operator--()
         {
             --ptr_;

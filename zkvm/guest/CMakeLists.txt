@@ -81,6 +81,18 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     endif()
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+
+        # Memoise Keccak-f through ZisK's executor-side index (fcall 24/25),
+        # zkvm/guest/keccak_accel.cpp. ~14 % of a block's permutations repeat
+        # a state, and the lookup costs the guest nothing the cost model
+        # charges for. OFF compiles the mechanism out — table, fcalls and
+        # branch — so it is a control arm and not a disabled predicate:
+        #   -DMONAD_ZKVM_KECCAKF_MEMO=OFF
+        # It costs 100 MiB of .bss, which is why it is a switch at all.
+        option(MONAD_ZKVM_KECCAKF_MEMO "memoise Keccak-f via the ZisK executor index" ON)
+        if(NOT MONAD_ZKVM_KECCAKF_MEMO)
+            add_compile_definitions(MONAD_ZKVM_KECCAKF_MEMO=0)
+        endif()
         # GCC's default tuning for this target is -mtune=rocket, whose cost
         # model says an unaligned access is slow, so a 4-byte load through a
         # 1-aligned pointer becomes nine instructions instead of one. The
@@ -138,6 +150,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         if(MONAD_ZKVM_ZISK_DMA)
             string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
             string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+            # Tells the keccak memo that a constant-size block move reaches the
+            # port INLINE here, so it should stop hiding the length from the
+            # optimiser to force an out-of-line call. Worth 20.2 M COST a block.
+            # Defined by the same branch that adds the flag: a source-side guess
+            # about which compiler is in use is exactly what would drift.
+            add_compile_definitions(MONAD_ZKVM_ZISK_DMA_LOWERING)
         endif()
 
         # Thread the interpreter's dispatch table base through the tail-call chain as a seventh

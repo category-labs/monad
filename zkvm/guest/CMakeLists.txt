@@ -112,8 +112,33 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         # it. Measured over 200 mainnet blocks it is worth 0.1% (-0.08% steps, -0.06% COST). Kept
         # because the guest should carry every extension the runtime is known to implement, not
         # because it pays.
-        string(APPEND CMAKE_C_FLAGS " -march=rv64ima_zbb_zbs_zbkb")
-        string(APPEND CMAKE_CXX_FLAGS " -march=rv64ima_zbb_zbs_zbkb")
+        # Zicsr carries no codegen of its own -- gcc never reaches for a CSR on
+        # its own account -- but the DMA lowering below emits `csrs 0x813,src`
+        # and the assembler rejects it without the extension named. Verified
+        # inert: with Zicsr and without the lowering the guest is identical to
+        # the build before it, step for step and cost for cost.
+        string(APPEND CMAKE_C_FLAGS " -march=rv64ima_zbb_zbs_zbkb_zicsr")
+        string(APPEND CMAKE_CXX_FLAGS " -march=rv64ima_zbb_zbs_zbkb_zicsr")
+
+        # Block memory operations through ZisK's DMA precompile, rather than a
+        # call into the ziskos mem* thunk or an inline load/store run.
+        #
+        # OFF because it needs a patched compiler: the backend lowering is not
+        # upstream gcc. Build one with
+        # profiling/experiments/zisk-dma-gcc15/build-gcc15.sh in zkvm-bench,
+        # point RISCV_TOOLCHAIN_DIR at it, and turn this on. A stock compiler
+        # rejects the flag outright rather than silently ignoring it, so a build
+        # that forgets the toolchain fails loudly.
+        #
+        # It reaches copies no source change can: evmc_bytes32 is uint8_t[32]
+        # with alignment 1, so a plain struct assignment cannot use word moves
+        # and gcc emits a libcall -- with a frame, and the arguments marshalled
+        # into a0/a1/a2. The marker takes the same copy in one instruction.
+        option(MONAD_ZKVM_ZISK_DMA "lower block mem* to the ZisK DMA precompile" OFF)
+        if(MONAD_ZKVM_ZISK_DMA)
+            string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
+            string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+        endif()
 
     endif()
 

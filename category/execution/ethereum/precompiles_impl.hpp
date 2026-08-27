@@ -24,6 +24,7 @@
 #include <category/core/likely.h>
 #include <category/core/thread_local.h>
 #include <category/crypto/silkpre_vendor/blake2b.h>
+#include <category/crypto/silkpre_vendor/bn128.hpp>
 #include <category/crypto/silkpre_vendor/ecdsa.h>
 #include <category/crypto/silkpre_vendor/rmd160.h>
 #include <category/crypto/silkpre_vendor/sha256.h>
@@ -47,8 +48,6 @@
 
 #include <setup/settings.h>
 #include <setup/setup.h>
-
-#include <silkpre/precompile.h>
 
 #include <algorithm>
 #include <bit>
@@ -111,18 +110,6 @@ bool init_trusted_setup()
     return g_trustedSetup.has_value();
 }
 
-// TODO: remove silkpre
-template <SilkpreRunFunction Func>
-static inline PrecompileResult silkpre_execute(byte_string_view const input)
-{
-    auto const [output, output_size] = Func(input.data(), input.size());
-    if (output == nullptr) {
-        MONAD_ASSERT(output_size == 0);
-        return PrecompileResult::failure();
-    }
-    return {EVMC_SUCCESS, output, output_size};
-}
-
 [[gnu::always_inline]] inline PrecompileImplResult ecrecover_impl(
     std::span<uint8_t const, 32> msg, std::span<uint8_t const, 64> sig,
     uint8_t recid, std::span<uint8_t, 32> const out)
@@ -162,29 +149,19 @@ ripemd160_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 [[gnu::always_inline]] inline PrecompileImplResult
 ecadd_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
 {
-    auto const [output, output_size] =
-        silkpre_bn_add_run(input.data(), input.size());
-    if (output == nullptr) {
-        MONAD_ASSERT(output_size == 0);
+    if (!monad_bn_add(out.data(), input.data(), input.size())) {
         return PrecompileImplResult::failure();
     }
-    std::memcpy(out.data(), output, output_size);
-    std::free(output);
-    return {out.data(), output_size};
+    return {out.data(), out.size()};
 }
 
 [[gnu::always_inline]] inline PrecompileImplResult
 ecmul_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
 {
-    auto const [output, output_size] =
-        silkpre_bn_mul_run(input.data(), input.size());
-    if (output == nullptr) {
-        MONAD_ASSERT(output_size == 0);
+    if (!monad_bn_mul(out.data(), input.data(), input.size())) {
         return PrecompileImplResult::failure();
     }
-    std::memcpy(out.data(), output, output_size);
-    std::free(output);
-    return {out.data(), output_size};
+    return {out.data(), out.size()};
 }
 
 [[gnu::always_inline]] inline PrecompileImplResult
@@ -245,15 +222,10 @@ identity_impl(byte_string_view const input, std::span<uint8_t> const out)
 [[gnu::always_inline]] inline PrecompileImplResult
 snarkv_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
-    auto const [output, output_size] =
-        silkpre_snarkv_run(input.data(), input.size());
-    if (output == nullptr) {
-        MONAD_ASSERT(output_size == 0);
+    if (!monad_snarkv(out.data(), input.data(), input.size())) {
         return PrecompileImplResult::failure();
     }
-    std::memcpy(out.data(), output, output_size);
-    std::free(output);
-    return {out.data(), output_size};
+    return {out.data(), out.size()};
 }
 
 [[gnu::always_inline]] inline PrecompileImplResult

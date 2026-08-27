@@ -14,24 +14,21 @@
    limitations under the License.
 */
 
-#ifndef SILKPRE_BN128_HPP_
-#define SILKPRE_BN128_HPP_
+// Modified 2026 by Category Labs:
+//   - alt_bn128 (EIP-196 / EIP-197) precompiles from silkpre/precompile.cpp
+//   - Rename to use monad prefixes
+//   - Return the result in a caller-provided buffer instead of SilkpreOutput
+
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
 
-typedef struct SilkpreOutput {
-    uint8_t* data;  // Has to be freed if not NULL!!!
-    size_t size;
-} SilkpreOutput;
-
 // EIP-196: Precompiled contract for addition on the elliptic curve alt_bn128
-SilkpreOutput silkpre_bn_add_run(const uint8_t* input, size_t len);
+bool monad_bn_add(uint8_t out[64], const uint8_t *input, size_t len);
 
 // EIP-196: Precompiled contract for multiplication on the elliptic curve alt_bn128
-SilkpreOutput silkpre_bn_mul_run(const uint8_t* input, size_t len);
+bool monad_bn_mul(uint8_t out[64], const uint8_t *input, size_t len);
 
 // EIP-197: Precompiled contracts for optimal ate pairing check on the elliptic curve alt_bn128
-SilkpreOutput silkpre_snarkv_run(const uint8_t* input, size_t len);
-
-#endif // SILKPRE_BN128_HPP_
+bool monad_snarkv(uint8_t out[32], const uint8_t *input, size_t len);

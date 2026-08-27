@@ -465,8 +465,34 @@ namespace
         b.push_back(static_cast<unsigned char>(nlen));
         size_t const start = b.size();
         b.resize(start + (nlen + 1) / 2, 0);
-        for (unsigned i = 0; i < nlen; ++i) {
-            set_nibble(b.data() + start, i, path.get(i));
+        if (nlen == 0) {
+            return;
+        }
+        // The destination is byte-aligned by construction -- nibble 0 goes to
+        // the high half of b[start] -- so what follows is a BYTE run, not a
+        // nibble run: a straight copy when the source also starts on a byte
+        // boundary, one uniform 4-bit shift when it does not. Same shape as
+        // compact_encode_raw, and the same reason: paths here run 56-59
+        // nibbles, so the nibble loop paid a shift and a read-modify-write 57
+        // times over.
+        unsigned char *const dst = b.data() + start;
+        unsigned char const *const src = path.data();
+        bool const odd_start = path.begin_nibble(); // the run starts mid-byte
+        unsigned const whole = nlen / 2; // destination bytes a copy can fill
+        if (!odd_start) {
+            std::memcpy(dst, src, whole);
+        }
+        else {
+            for (unsigned k = 0; k < whole; ++k) {
+                dst[k] = static_cast<unsigned char>(
+                    (src[k] << 4) | (src[k + 1] >> 4));
+            }
+        }
+        if (nlen % 2) {
+            // An odd count leaves one nibble in the high half of the last byte,
+            // whose low half has to stay zero -- so that byte cannot come from
+            // a byte copy.
+            set_nibble(dst, nlen - 1, path.get(nlen - 1));
         }
     }
 

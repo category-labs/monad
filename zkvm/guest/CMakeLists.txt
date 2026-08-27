@@ -56,7 +56,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # Git commit and the ELF digest already identify them.
     option(MONAD_ZKVM_OFFICIAL_PROFILE
            "build the audited, fail-closed official ZisK guest profile" OFF)
-    set(_monad_zkvm_official_features "baseline" "zisk-dma")
+    set(_monad_zkvm_official_features "baseline" "zisk-dma" "keccakf-memo")
     set(_monad_zkvm_runtime_version "1.2.0-alpha")
     set(_monad_zkvm_runtime_revision
         "fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3")
@@ -71,7 +71,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # listed here, and this forces it ON and refuses an explicit OFF, so the
     # signature cannot describe a guest that was built without it. A commit
     # adding a lever appends to both lists.
-    set(_monad_zkvm_required_levers MONAD_ZKVM_ZISK_DMA)
+    set(_monad_zkvm_required_levers MONAD_ZKVM_ZISK_DMA
+                                    MONAD_ZKVM_KECCAKF_MEMO)
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
         foreach(_lever ${_monad_zkvm_required_levers})
             if(DEFINED ${_lever} AND NOT ${_lever})
@@ -156,6 +157,18 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+
+        # Memoise Keccak-f through ZisK's executor-side index (fcall 24/25),
+        # zkvm/guest/keccak_accel.cpp. ~14 % of a block's permutations repeat
+        # a state, and the lookup costs the guest nothing the cost model
+        # charges for. OFF compiles the mechanism out — table, fcalls and
+        # branch — so it is a control arm and not a disabled predicate:
+        #   -DMONAD_ZKVM_KECCAKF_MEMO=OFF
+        # It costs 100 MiB of .bss, which is why it is a switch at all.
+        option(MONAD_ZKVM_KECCAKF_MEMO "memoise Keccak-f via the ZisK executor index" ON)
+        if(NOT MONAD_ZKVM_KECCAKF_MEMO)
+            add_compile_definitions(MONAD_ZKVM_KECCAKF_MEMO=0)
+        endif()
         # GCC's default tuning for this target is -mtune=rocket, whose cost
         # model says an unaligned access is slow, so a 4-byte load through a
         # 1-aligned pointer becomes nine instructions instead of one. The
@@ -200,6 +213,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         if(MONAD_ZKVM_ZISK_DMA)
             string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
             string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+            # Tells the keccak memo that a constant-size block move reaches the
+            # port INLINE here, so it should stop hiding the length from the
+            # optimiser to force an out-of-line call. Worth 20.2 M COST a block.
+            # Defined by the same branch that adds the flag: a source-side guess
+            # about which compiler is in use is exactly what would drift.
+            add_compile_definitions(MONAD_ZKVM_ZISK_DMA_LOWERING)
         endif()
     endif()
 

@@ -116,6 +116,26 @@ namespace monad::vm::interpreter
         }
         return landing + 1;
     }
+
+    // Complete <test> PUSH2 JUMPI using the test result directly.
+    // Jump to the validated destination encoded at p[2..3], or skip five bytes.
+    [[gnu::always_inline]] inline uint8_t const *fused_branch(
+        runtime::Context &ctx, Intercode const &analysis, uint8_t const *p,
+        bool taken, int64_t &gas_remaining)
+    {
+        // Condition is false; continue after the sequence.
+        if (!taken) {
+            return p + 5;
+        }
+        auto const dst = static_cast<size_t>(
+            (static_cast<unsigned>(p[2]) << 8) | static_cast<unsigned>(p[3]));
+        if (MONAD_UNLIKELY(!analysis.is_jumpdest(dst))) {
+            ctx.exit(Error);
+        }
+        auto const *ip = analysis.code() + dst;
+        ip = swallow_jumpdest(ctx, ip, gas_remaining);
+        return ip;
+    }
 #endif
 
     template <Traits traits>
@@ -626,6 +646,30 @@ namespace monad::vm::interpreter
        uint256_t const *stack_bottom, uint256_t *stack_top,
        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        // Fuse EQ PUSH2 <dst16> JUMPI. EQ frees a stack slot, so PUSH2
+        // cannot overflow once EQ's operands are validated.
+        if (*(instr_ptr + 1) == static_cast<std::uint8_t>(PUSH2) &&
+            *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
+            MONAD_VM_CHECK(EQ);
+            // EQ consumes two values and pushes one result: net stack change
+            // -1.
+            MONAD_VM_CHECK_AT(PUSH2, -1);
+            // PUSH2 adds one value, restoring the original stack height.
+            MONAD_VM_CHECK_AT(JUMPI, 0);
+            // Keep EQ's result in a C++ bool instead of the EVM stack.
+            bool const monad_vm_taken = (*stack_top == *(stack_top - 1));
+            instr_ptr = fused_branch(
+                ctx, analysis, instr_ptr, monad_vm_taken, gas_remaining);
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                ctx,
+                analysis,
+                stack_bottom,
+                stack_top - 2,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+#endif
         MONAD_VM_CHECK(EQ);
         auto &&[a, b] = top_two(stack_top);
         b = (a == b);
@@ -639,6 +683,25 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        // Fuse ISZERO PUSH2 <dst16> JUMPI without storing the test result.
+        if (*(instr_ptr + 1) == static_cast<std::uint8_t>(PUSH2) &&
+            *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
+            MONAD_VM_CHECK(ISZERO);
+            MONAD_VM_CHECK_AT(PUSH2, 0);
+            MONAD_VM_CHECK_AT(JUMPI, 1);
+            bool const monad_vm_taken = !*stack_top;
+            instr_ptr = fused_branch(
+                ctx, analysis, instr_ptr, monad_vm_taken, gas_remaining);
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                ctx,
+                analysis,
+                stack_bottom,
+                stack_top - 1,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+#endif
         MONAD_VM_CHECK(ISZERO);
         auto &a = *stack_top;
         a = !a;

@@ -29,7 +29,7 @@ codegen-units = 1
 panic = "abort"
 
 [dependencies]
-ziskos = { git = "https://github.com/0xPolygonHermez/zisk.git", tag = "v1.1.0-alpha" }
+ziskos = { git = "https://github.com/0xPolygonHermez/zisk.git", tag = "v1.2.0-alpha" }
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 sha2 = { version = "0.10", default-features = false }
 ripemd = { version = "0.1", default-features = false }

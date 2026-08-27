@@ -16,11 +16,16 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/core/config.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/trace_traits.hpp>
 
 #include <evmc/evmc.hpp>
+
+MONAD_NAMESPACE_BEGIN
+class State;
+MONAD_NAMESPACE_END
 
 namespace monad::trace::call_trace
 {
@@ -89,12 +94,25 @@ namespace monad::trace::call_trace
         std::span<CallFrame const> *call_frames;
     };
 
+    struct NativeTransfer
+    {
+        explicit NativeTransfer(
+            State &state, Address const &from, Address const &to,
+            uint256_t const &transferred_balance)
+            : state{state}
+            , transferred_balance{transferred_balance}
+            , from{from}
+            , to{to}
+        {
+        }
+
+        State &state;
+        uint256_t const &transferred_balance;
+        Address const from;
+        Address const to;
+    };
+
     using Signature = monad::Signature<
-        Enter,
-        Exit,
-        Log,
-        SelfDestruct,
-        Finish,
-        Reset,
-        GetCallFrames>;
+        Enter, Exit, Log, SelfDestruct, Finish, Reset, GetCallFrames,
+        NativeTransfer>;
 }

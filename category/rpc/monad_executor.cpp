@@ -1012,7 +1012,8 @@ namespace
 
             for (Transaction const &tx : calls[block_idx]) {
                 call_frames.emplace_back();
-                call_trace_runners.emplace_back(tx, call_frames.back());
+                call_trace_runners.emplace_back(
+                    tx, call_frames.back(), emit_native_transfer_logs);
             }
 
             auto const chain_context = context_buffer.advance(
@@ -1238,7 +1239,66 @@ namespace
     };
 }
 
+struct TraceBundle
+{
+    explicit TraceBundle(Transaction const &transaction)
+        : call_trace_runner(transaction, call_frames)
+    {
+    }
+
+    void set_call_tracer()
+    {
+        erased_runner.emplace(
+            trace::TypeErasedRunner::erase(call_trace_runner));
+    }
+
+    void set_prestate_tracer(Address const &beneficiary)
+    {
+        prestate_trace_runner.emplace(state_trace, beneficiary);
+        erased_runner.emplace(
+            trace::TypeErasedRunner::erase(*prestate_trace_runner));
+    }
+
+    void set_statediff_tracer()
+    {
+        statediff_trace_runner.emplace(state_trace);
+        erased_runner.emplace(
+            trace::TypeErasedRunner::erase(*statediff_trace_runner));
+    }
+
+    void set_access_list_tracer(AccessListTracer trace_runner)
+    {
+        access_list_trace_runner.emplace(std::move(trace_runner));
+        erased_runner.emplace(
+            trace::TypeErasedRunner::erase(*access_list_trace_runner));
+    }
+
+    std::vector<CallFrame> call_frames;
+    nlohmann::json state_trace;
+
+    monad::TxTraceContext as_trace_context() const
+    {
+        if (!erased_runner.has_value()) {
+            return monad::TxTraceContext{};
+        }
+
+        // TxTraceContext borrows this runner, so this bundle must outlive
+        // the context usage.
+        std::span<monad::trace::TypeErasedRunner const> const runners{
+            &*erased_runner, 1};
+        return monad::TxTraceContext{runners};
+    }
+
+private:
+    CallTraceRunner call_trace_runner;
+    std::optional<AccessListTracer> access_list_trace_runner{};
+    std::optional<PrestateTracer> prestate_trace_runner{};
+    std::optional<StateDiffTracer> statediff_trace_runner{};
+    std::optional<monad::trace::TypeErasedRunner> erased_runner{};
+};
+
 struct monad_executor
+
 {
     Pool low_gas_pool_;
     Pool high_gas_pool_;
@@ -1442,29 +1502,19 @@ struct monad_executor
 
                     LazyBlockHash block_hash_buffer{db, block_number};
                     TrieRODb tdb{db};
-                    std::vector<CallFrame> call_frames;
-                    nlohmann::json state_trace;
-                    CallTraceRunner call_trace_runner{transaction, call_frames};
-                    std::optional<AccessListTracer> access_list_trace_runner{};
-                    std::optional<PrestateTracer> prestate_trace_runner{};
-                    std::optional<StateDiffTracer> statediff_trace_runner{};
-                    std::optional<trace::TypeErasedRunner> erased_runner{};
-                    if (tracer_config == CALL_TRACER) {
-                        erased_runner.emplace(
-                            trace::TypeErasedRunner::erase(call_trace_runner));
-                    }
-                    else if (tracer_config == PRESTATE_TRACER) {
-                        prestate_trace_runner.emplace(
-                            state_trace, block_header.beneficiary);
-                        erased_runner.emplace(trace::TypeErasedRunner::erase(
-                            *prestate_trace_runner));
-                    }
-                    else if (tracer_config == STATEDIFF_TRACER) {
-                        statediff_trace_runner.emplace(state_trace);
-                        erased_runner.emplace(trace::TypeErasedRunner::erase(
-                            *statediff_trace_runner));
-                    }
-                    else if (tracer_config == ACCESS_LIST_TRACER) {
+                    TraceBundle trace_bundle{transaction};
+                    switch (tracer_config) {
+                    case CALL_TRACER:
+                        trace_bundle.set_call_tracer();
+                        break;
+                    case PRESTATE_TRACER:
+                        trace_bundle.set_prestate_tracer(
+                            block_header.beneficiary);
+                        break;
+                    case STATEDIFF_TRACER:
+                        trace_bundle.set_statediff_tracer();
+                        break;
+                    case ACCESS_LIST_TRACER: {
                         auto const authorities_span =
                             std::span<std::optional<Address> const>{
                                 authorities};
@@ -1472,11 +1522,11 @@ struct monad_executor
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
                             monad_eth_revision const rev = chain->get_revision(
                                 block_header.number, block_header.timestamp);
-                            access_list_trace_runner.emplace(
+                            trace_bundle.set_access_list_tracer(
                                 [&]() -> AccessListTracer {
                                     SWITCH_EVM_TRAITS(
                                         make_access_list_trace_runner,
-                                        state_trace,
+                                        trace_bundle.state_trace,
                                         sender,
                                         block_header.beneficiary,
                                         transaction.to,
@@ -1489,11 +1539,11 @@ struct monad_executor
                                 dynamic_cast<MonadChain *>(chain.get())
                                     ->get_monad_revision(
                                         block_header.timestamp);
-                            access_list_trace_runner.emplace(
+                            trace_bundle.set_access_list_tracer(
                                 [&]() -> AccessListTracer {
                                     SWITCH_MONAD_TRAITS(
                                         make_access_list_trace_runner,
-                                        state_trace,
+                                        trace_bundle.state_trace,
                                         sender,
                                         block_header.beneficiary,
                                         transaction.to,
@@ -1501,17 +1551,14 @@ struct monad_executor
                                     MONAD_ASSERT(false);
                                 }());
                         }
-                        erased_runner.emplace(trace::TypeErasedRunner::erase(
-                            *access_list_trace_runner));
+                        break;
                     }
-                    auto const trace_context = [&]() -> TxTraceContext {
-                        if (!erased_runner.has_value()) {
-                            return TxTraceContext{};
-                        }
-                        std::span<trace::TypeErasedRunner const> const
-                            call_trace_runners{&*erased_runner, 1};
-                        return TxTraceContext{call_trace_runners};
-                    }();
+                    default:
+                        break;
+                    }
+
+                    TxTraceContext const trace_context =
+                        trace_bundle.as_trace_context();
 
                     auto const res = [&]() -> Result<evmc::Result> {
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
@@ -1593,8 +1640,8 @@ struct monad_executor
                         result,
                         complete,
                         user,
-                        call_frames,
-                        state_trace);
+                        trace_bundle.call_frames,
+                        trace_bundle.state_trace);
                 }
                 catch (MonadException const &e) {
                     result->status_code = EVMC_INTERNAL_ERROR;

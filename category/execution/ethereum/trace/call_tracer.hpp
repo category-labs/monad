@@ -36,6 +36,9 @@ struct CallTraceRunner
     using Signature = monad::trace::call_trace::Signature;
 
     CallTraceRunner(Transaction const &, std::vector<CallFrame> &);
+    CallTraceRunner(
+        Transaction const &, std::vector<CallFrame> &,
+        bool log_native_transfers);
 
     void operator()(monad::trace::call_trace::Enter const &);
     void operator()(monad::trace::call_trace::Exit const &);
@@ -44,12 +47,14 @@ struct CallTraceRunner
     void operator()(monad::trace::call_trace::Finish const &);
     void operator()(monad::trace::call_trace::Reset const &);
     void operator()(monad::trace::call_trace::GetCallFrames const &);
+    void operator()(monad::trace::call_trace::NativeTransfer const &);
 
 private:
     std::vector<CallFrame> &frames_;
     std::stack<size_t> last_{};
     std::stack<size_t> positions_{};
     Transaction const &tx_;
+    bool log_native_transfers_{false};
 };
 
 MONAD_NAMESPACE_END

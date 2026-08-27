@@ -18,8 +18,12 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/execution/ethereum/core/contract/abi_encode.hpp>
+#include <category/execution/ethereum/core/contract/abi_signatures.hpp>
+#include <category/execution/ethereum/core/contract/events.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 
@@ -38,8 +42,16 @@ MONAD_NAMESPACE_BEGIN
 
 CallTraceRunner::CallTraceRunner(
     Transaction const &tx, std::vector<CallFrame> &frames)
+    : CallTraceRunner(tx, frames, false)
+{
+}
+
+CallTraceRunner::CallTraceRunner(
+    Transaction const &tx, std::vector<CallFrame> &frames,
+    bool log_native_transfers)
     : frames_(frames)
     , tx_(tx)
+    , log_native_transfers_(log_native_transfers)
 {
     frames_.reserve(128);
     positions_.push(0);
@@ -202,6 +214,35 @@ void CallTraceRunner::operator()(
     monad::trace::call_trace::GetCallFrames const &op)
 {
     *op.call_frames = frames_;
+}
+
+void CallTraceRunner::operator()(
+    monad::trace::call_trace::NativeTransfer const &op)
+{
+    // Skip emitting native transfer events when no value is transferred or
+    // `from` and `to` are the same account (i.e. no net transfer of funds).
+    if (log_native_transfers_ && op.transferred_balance > 0 &&
+        op.from != op.to) {
+        static constexpr Address native_token_address =
+            0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address;
+        static constexpr bytes32_t signature =
+            abi_encode_event_signature("Transfer(address,address,uint256)");
+        static_assert(
+            signature ==
+            bytes32_from_hex("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a"
+                             "11628f55a4df523b3ef"));
+
+        auto event =
+            EventBuilder(native_token_address, signature)
+                .add_topic(abi_encode_address(op.from))
+                .add_topic(abi_encode_address(op.to))
+                .add_data(abi_encode_uint(u256_be{op.transferred_balance}))
+                .build();
+
+        op.state.store_log(event);
+        trace::call_trace::Log log_op{std::move(event)};
+        (*this)(log_op);
+    }
 }
 
 MONAD_NAMESPACE_END

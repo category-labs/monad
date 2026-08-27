@@ -19,9 +19,6 @@
 #include <category/core/config.hpp>
 #include <category/core/throw.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
-#include <category/execution/ethereum/core/contract/abi_encode.hpp>
-#include <category/execution/ethereum/core/contract/abi_signatures.hpp>
-#include <category/execution/ethereum/core/contract/events.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
@@ -246,28 +243,8 @@ struct EvmcHost final : public EvmcHostBase
     void emit_native_transfer_event(
         Address const &from, Address const &to, uint256_t const &value)
     {
-        // Skip emitting native transfer events when no value is transferred or
-        // `from` and `to` are the same account (i.e. no net transfer of funds).
-        if (log_native_transfers_ && value > 0 && from != to) {
-            static constexpr Address native_token_address =
-                0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address;
-            static constexpr bytes32_t signature =
-                abi_encode_event_signature("Transfer(address,address,uint256)");
-            static_assert(
-                signature ==
-                bytes32_from_hex("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a"
-                                 "11628f55a4df523b3ef"));
-
-            auto event = EventBuilder(native_token_address, signature)
-                             .add_topic(abi_encode_address(from))
-                             .add_topic(abi_encode_address(to))
-                             .add_data(abi_encode_uint(u256_be{value}))
-                             .build();
-
-            state_.store_log(event);
-            trace::emit<trace::call_trace::Log>(
-                tx_trace_context_, std::move(event));
-        }
+        trace::emit<trace::call_trace::NativeTransfer>(
+            tx_trace_context_, state_, from, to, value);
     }
 };
 

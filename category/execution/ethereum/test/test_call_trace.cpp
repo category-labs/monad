@@ -73,8 +73,9 @@ namespace
     struct TxTraceContextWithRunner
     {
         explicit TxTraceContextWithRunner(
-            Transaction const &tx, std::vector<CallFrame> &call_frames)
-            : runner{tx, call_frames}
+            Transaction const &tx, std::vector<CallFrame> &call_frames,
+            bool trace_transfers = false)
+            : runner{tx, call_frames, trace_transfers}
             , erased_runner{trace::TypeErasedRunner::erase(runner)}
             , runners{&erased_runner, 1}
             , tx_trace_context{runners}
@@ -198,14 +199,7 @@ TYPED_TEST(TraitsTest, execute_success)
     uint256_t base_fee{0};
     TxTraceContextWithRunner trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context};
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -282,14 +276,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
     TxTraceContextWithRunner trace_context{tx, call_frames};
 
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context};
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -370,14 +357,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
     uint256_t base_fee{0};
     TxTraceContextWithRunner trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context};
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -492,14 +472,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
     uint256_t base_fee{0};
     TxTraceContextWithRunner trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context};
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -578,14 +551,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
     uint256_t base_fee{0};
     TxTraceContextWithRunner trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context};
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -674,14 +640,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
     uint256_t base_fee{0};
     TxTraceContextWithRunner trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context};
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -752,18 +711,10 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContextWithRunner trace_context{tx, call_frames};
+    TxTraceContextWithRunner trace_context{
+        tx, call_frames, true /* log native transfers */};
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context,
-        true, // log_native_transfers
-    };
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -859,18 +810,10 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContextWithRunner trace_context{tx, call_frames};
+    TxTraceContextWithRunner trace_context{
+        tx, call_frames, true /* log native transfers */};
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context,
-        true, // log_native_transfers
-    };
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -961,19 +904,11 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContextWithRunner trace_context{tx, call_frames};
+    TxTraceContextWithRunner trace_context{
+        tx, call_frames, true /* log native transfers */};
 
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context,
-        true, // log_native_transfers
-    };
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -1103,19 +1038,11 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContextWithRunner trace_context{tx, call_frames};
+    TxTraceContextWithRunner trace_context{
+        tx, call_frames, true /* log native transfers */};
 
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context,
-        true, // log_native_transfers
-    };
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -1317,7 +1244,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContextWithRunner trace_context{tx, call_frames};
+    TxTraceContextWithRunner trace_context{
+        tx, call_frames, true /* log native transfers */};
 
     EvmcHost<typename TestFixture::Trait> host{
         tx_context,
@@ -1328,7 +1256,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
         0,
         chain_ctx,
         trace_context,
-        true, // log_native_transfers
     };
 
     auto const result =
@@ -1477,19 +1404,11 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
         constexpr std::span<std::optional<Address> const> authorities_empty{};
-        TxTraceContextWithRunner trace_context{tx, call_frames};
+        TxTraceContextWithRunner trace_context{
+            tx, call_frames, true /* log native transfers */};
 
         EvmcHost<typename TestFixture::Trait> host{
-            tx_context,
-            buffer,
-            s,
-            tx,
-            base_fee,
-            0,
-            chain_ctx,
-            trace_context,
-            true, // log_native_transfers
-        };
+            tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
         auto const result =
             ExecuteTransactionNoValidation<typename TestFixture::Trait>(

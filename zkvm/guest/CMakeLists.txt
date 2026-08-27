@@ -56,7 +56,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # Git commit and the ELF digest already identify them.
     option(MONAD_ZKVM_OFFICIAL_PROFILE
            "build the audited, fail-closed official ZisK guest profile" OFF)
-    set(_monad_zkvm_official_features "baseline")
+    set(_monad_zkvm_official_features "baseline" "zisk-dma")
     set(_monad_zkvm_runtime_version "1.2.0-alpha")
     set(_monad_zkvm_runtime_revision
         "fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3")
@@ -71,7 +71,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # listed here, and this forces it ON and refuses an explicit OFF, so the
     # signature cannot describe a guest that was built without it. A commit
     # adding a lever appends to both lists.
-    set(_monad_zkvm_required_levers)
+    set(_monad_zkvm_required_levers MONAD_ZKVM_ZISK_DMA)
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
         foreach(_lever ${_monad_zkvm_required_levers})
             if(DEFINED ${_lever} AND NOT ${_lever})
@@ -137,6 +137,29 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         # leave two differently-built guests claiming one identity.
         string(APPEND CMAKE_C_FLAGS " -mtune=generic-ooo")
         string(APPEND CMAKE_CXX_FLAGS " -mtune=generic-ooo")
+
+        # Block memory operations through ZisK's DMA precompile, rather than a
+        # call into the ziskos mem* thunk or an inline load/store run.
+        #
+        # It reaches copies no source change can: evmc_bytes32 is uint8_t[32]
+        # with alignment 1, so a plain struct assignment cannot use word moves
+        # and gcc emits a libcall -- with a frame, and the arguments marshalled
+        # into a0/a1/a2. The marker takes the same copy in one instruction.
+        #
+        # It needs the patched compiler this repo carries: build one with
+        # zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh and point
+        # RISCV_TOOLCHAIN_DIR at it. A stock compiler rejects the flag outright
+        # rather than ignoring it, and the official profile probes the lowering
+        # besides, so a build that forgets the toolchain fails loudly.
+        #
+        # The lowering emits `csrs 0x813,src`, which the assembler rejects
+        # unless Zicsr is named -- _zisk_march above carries it.
+        option(MONAD_ZKVM_ZISK_DMA
+               "lower block mem* to the ZisK DMA precompile" OFF)
+        if(MONAD_ZKVM_ZISK_DMA)
+            string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
+            string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+        endif()
     endif()
 
     if(MONAD_ZKVM_OFFICIAL_PROFILE)

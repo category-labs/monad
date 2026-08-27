@@ -92,35 +92,43 @@ namespace monad::vm::interpreter
 #endif
 }
 
-#define MONAD_VM_NEXT_N(OP, ADV)                                               \
+// Evaluate NEXT_OPCODE after advancing instr_ptr; it may be *instr_ptr.
+#define MONAD_VM_DISPATCH(NBYTES, STACK_DELTA, NEXT_OPCODE)                    \
+    do {                                                                       \
+        instr_ptr += (NBYTES);                                                 \
+        if constexpr (debug_enabled) {                                         \
+            trace(analysis, gas_remaining, instr_ptr);                         \
+        }                                                                      \
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[(NEXT_OPCODE)](           \
+            ctx,                                                               \
+            analysis,                                                          \
+            stack_bottom,                                                      \
+            stack_top + (STACK_DELTA),                                         \
+            gas_remaining,                                                     \
+            instr_ptr MONAD_VM_TBL_ARG);                                       \
+    }                                                                          \
+    while (false)
+
+// Advance NBYTES through bytecode and STACK_DELTA slots on the EVM stack.
+#define MONAD_VM_FUSED_NEXT(NBYTES, STACK_DELTA)                               \
+    MONAD_VM_DISPATCH(NBYTES, STACK_DELTA, *instr_ptr)
+
+#define MONAD_VM_NEXT_IMPL(OP, NBYTES, NEXT_OPCODE)                            \
     do {                                                                       \
         static constexpr auto delta =                                          \
             compiler::opcode_table<traits>[(OP)].stack_outputs -               \
             compiler::opcode_table<traits>[(OP)].min_stack;                    \
-                                                                               \
-        instr_ptr += (ADV);                                                    \
-        if constexpr (debug_enabled) {                                         \
-            trace(analysis, gas_remaining, instr_ptr);                         \
-        }                                                                      \
-        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](              \
-            ctx,                                                               \
-            analysis,                                                          \
-            stack_bottom,                                                      \
-            stack_top + delta,                                                 \
-            gas_remaining,                                                     \
-            instr_ptr MONAD_VM_TBL_ARG);                                       \
+        MONAD_VM_DISPATCH(NBYTES, delta, NEXT_OPCODE);                         \
     }                                                                          \
     while (false);
 
-#define MONAD_VM_NEXT(OP) MONAD_VM_NEXT_N(OP, 1)
-#define MONAD_VM_NEXT_PUSH(OP) MONAD_VM_NEXT_N(OP, ((OP) - PUSH0) + 1)
-#define MONAD_VM_NEXT_IMM(OP) MONAD_VM_NEXT_N(OP, 2)
+#define MONAD_VM_NEXT(OP) MONAD_VM_NEXT_IMPL(OP, 1, *instr_ptr)
+#define MONAD_VM_NEXT_IMM(OP) MONAD_VM_NEXT_IMPL(OP, 2, *instr_ptr)
 
 // Expand musttail in the handler to avoid return-address saves on the fast
 // path. The guest exits via longjmp, so it does not need the handler's stack
 // frame.
-#define MONAD_VM_CHECK(OP)                                                     \
-    MONAD_VM_CHECK_REQUIREMENTS(OP, MONAD_VM_MUST_TAIL return ctx.exit)
+#define MONAD_VM_CHECK(OP) MONAD_VM_CHECK_AT(OP, 0)
 
 // Keep checks in the handler so failures can tail-call Context::exit.
 // Variadic to accept runtime functions with multiple template arguments.
@@ -130,6 +138,14 @@ namespace monad::vm::interpreter
         call_runtime(__VA_ARGS__, ctx, stack_top, gas_remaining);              \
     }                                                                          \
     while (false)
+
+// Check OP after a net stack change of SHIFT from earlier fused opcodes.
+#define MONAD_VM_CHECK_AT(OP, SHIFT)                                           \
+    MONAD_VM_CHECK_REQUIREMENTS_AT(                                            \
+        OP, SHIFT, MONAD_VM_MUST_TAIL return ctx.exit)
+
+#define MONAD_VM_NEXT_PUSH(OP)                                                 \
+    MONAD_VM_NEXT_IMPL(OP, ((OP) - PUSH0) + 1, *instr_ptr)
 
 namespace monad::vm::interpreter
 {
@@ -1721,9 +1737,12 @@ namespace monad::vm::interpreter
 }
 
 #undef MONAD_VM_MUST_TAIL
-#undef MONAD_VM_NEXT_N
+#undef MONAD_VM_DISPATCH
+#undef MONAD_VM_FUSED_NEXT
+#undef MONAD_VM_NEXT_IMPL
 #undef MONAD_VM_NEXT
 #undef MONAD_VM_NEXT_PUSH
 #undef MONAD_VM_NEXT_IMM
 #undef MONAD_VM_CHECK
+#undef MONAD_VM_CHECK_AT
 #undef MONAD_VM_CHECKED_RUNTIME_CALL

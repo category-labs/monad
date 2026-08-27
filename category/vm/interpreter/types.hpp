@@ -66,11 +66,29 @@
     #endif
 #endif
 
+// On ZisK, pass the table base in a seventh register argument to avoid
+// reloading it at each dispatch.
+// All dispatching handlers must use MONAD_VM_TBL_PARAM and MONAD_VM_TBL_ARG;
+// they expand to nothing on other targets.
+#if defined(MONAD_ZKVM_ZISK)
+    #define MONAD_VM_TBL_TYPE , void const *
+    #define MONAD_VM_TBL_PARAM , void const *itbl
+    #define MONAD_VM_TBL_ARG , itbl
+    #define MONAD_VM_TABLE_REF (static_cast<InstrEval const *>(itbl))
+#else
+    #define MONAD_VM_TBL_TYPE
+    #define MONAD_VM_TBL_PARAM
+    #define MONAD_VM_TBL_ARG
+    #define MONAD_VM_TABLE_REF instruction_table<traits>
+#endif
+
 namespace monad::vm::interpreter
 {
+    // Use void const * to avoid a recursive InstrEval type; dispatch casts it
+    // back to a pointer to table entries.
     using InstrEval = void MONAD_VM_INSTRUCTION_CALL (*)(
         runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
-        int64_t, uint8_t const *);
+        int64_t, uint8_t const *MONAD_VM_TBL_TYPE);
 
     using InstrTable = std::array<InstrEval, 256>;
 }

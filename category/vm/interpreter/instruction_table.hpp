@@ -58,13 +58,13 @@
         if constexpr (debug_enabled) {                                         \
             trace(analysis, gas_remaining, instr_ptr);                         \
         }                                                                      \
-        MONAD_VM_MUST_TAIL return instruction_table<traits>[*instr_ptr](       \
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](              \
             ctx,                                                               \
             analysis,                                                          \
             stack_bottom,                                                      \
             stack_top + delta,                                                 \
             gas_remaining,                                                     \
-            instr_ptr);                                                        \
+            instr_ptr MONAD_VM_TBL_ARG);                                       \
     }                                                                          \
     while (false);
 
@@ -412,7 +412,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     add(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(ADD);
         auto &&[a, b] = top_two(stack_top);
@@ -430,7 +430,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     mul(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(MUL, runtime::mul);
 
@@ -441,7 +441,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     sub(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(SUB);
         auto &&[a, b] = top_two(stack_top);
@@ -462,7 +462,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void udiv(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(DIV, runtime::udiv);
 
@@ -473,7 +473,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void sdiv(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(SDIV, runtime::sdiv);
 
@@ -484,7 +484,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void umod(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(MOD, runtime::umod);
 
@@ -495,7 +495,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void smod(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(SMOD, runtime::smod);
 
@@ -506,7 +506,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void addmod(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(ADDMOD, runtime::addmod);
 
@@ -517,7 +517,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void mulmod(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(MULMOD, runtime::mulmod);
 
@@ -528,7 +528,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     exp(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(EXP, runtime::exp<traits>);
 
@@ -539,7 +539,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void signextend(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(SIGNEXTEND);
         auto &&[b, x] = top_two(stack_top);
@@ -553,7 +553,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     lt(runtime::Context &ctx, Intercode const &analysis,
        uint256_t const *stack_bottom, StackTop stack_top, int64_t gas_remaining,
-       uint8_t const *instr_ptr)
+       uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(LT);
         auto &&[a, b] = top_two(stack_top);
@@ -566,7 +566,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     gt(runtime::Context &ctx, Intercode const &analysis,
        uint256_t const *stack_bottom, StackTop stack_top, int64_t gas_remaining,
-       uint8_t const *instr_ptr)
+       uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(GT);
         auto &&[a, b] = top_two(stack_top);
@@ -579,7 +579,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     slt(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(SLT);
         auto &&[a, b] = top_two(stack_top);
@@ -592,7 +592,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     sgt(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(SGT);
         auto &&[a, b] = top_two(stack_top);
@@ -605,7 +605,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     eq(runtime::Context &ctx, Intercode const &analysis,
        uint256_t const *stack_bottom, StackTop stack_top, int64_t gas_remaining,
-       uint8_t const *instr_ptr)
+       uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(EQ);
         auto &&[a, b] = top_two(stack_top);
@@ -618,7 +618,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void iszero(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(ISZERO);
         auto &a = *stack_top;
@@ -632,7 +632,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void and_(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(AND);
         auto &&[a, b] = top_two(stack_top);
@@ -645,7 +645,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     or_(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(OR);
         auto &&[a, b] = top_two(stack_top);
@@ -658,7 +658,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void xor_(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(XOR);
         auto &&[a, b] = top_two(stack_top);
@@ -671,7 +671,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void not_(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(NOT);
         auto &a = *stack_top;
@@ -684,7 +684,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void byte(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(BYTE);
         auto &&[i, x] = top_two(stack_top);
@@ -697,7 +697,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     shl(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(SHL);
         auto &&[shift, value] = top_two(stack_top);
@@ -710,7 +710,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     shr(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(SHR);
         auto &&[shift, value] = top_two(stack_top);
@@ -723,7 +723,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     sar(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(SAR);
         auto &&[shift, value] = top_two(stack_top);
@@ -736,7 +736,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     clz(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(CLZ);
         auto &a = *stack_top;
@@ -750,7 +750,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void sha3(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(SHA3, runtime::sha3<traits>);
 
@@ -761,7 +761,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void address(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(ADDRESS);
         push(stack_top, runtime::uint256_from_address(ctx.env.recipient));
@@ -773,7 +773,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void balance(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(BALANCE, runtime::balance<traits>);
 
@@ -784,7 +784,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void origin(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(ORIGIN);
         push(
@@ -798,7 +798,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void caller(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(CALLER);
         push(stack_top, runtime::uint256_from_address(ctx.env.sender));
@@ -810,7 +810,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void callvalue(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(CALLVALUE);
         push(stack_top, load_be<uint256_t>(ctx.env.value));
@@ -822,7 +822,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void calldataload(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(CALLDATALOAD, runtime::calldataload);
 
@@ -833,7 +833,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void calldatasize(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(CALLDATASIZE);
         push(stack_top, ctx.env.input_data_size);
@@ -845,7 +845,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void calldatacopy(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(
             CALLDATACOPY, runtime::calldatacopy<traits>);
@@ -857,7 +857,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void codesize(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(CODESIZE);
         push(stack_top, ctx.env.code_size);
@@ -869,7 +869,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void codecopy(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(CODECOPY, runtime::codecopy<traits>);
 
@@ -880,7 +880,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void gasprice(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(GASPRICE);
         push(stack_top, load_be<uint256_t>(ctx.env.tx_context->tx_gas_price));
@@ -892,7 +892,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void extcodesize(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(
             EXTCODESIZE, runtime::extcodesize<traits>);
@@ -904,7 +904,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void extcodecopy(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(
             EXTCODECOPY, runtime::extcodecopy<traits>);
@@ -916,7 +916,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void returndatasize(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(RETURNDATASIZE);
         push(stack_top, ctx.env.return_data_size);
@@ -928,7 +928,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void returndatacopy(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(
             RETURNDATACOPY, runtime::returndatacopy<traits>);
@@ -940,7 +940,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void extcodehash(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(
             EXTCODEHASH, runtime::extcodehash<traits>);
@@ -952,7 +952,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void blockhash(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(BLOCKHASH, runtime::blockhash);
 
@@ -963,7 +963,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void coinbase(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(COINBASE);
         push(
@@ -977,7 +977,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void timestamp(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(TIMESTAMP);
         push(stack_top, ctx.env.tx_context->block_timestamp);
@@ -989,7 +989,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void number(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(NUMBER);
         push(stack_top, ctx.env.tx_context->block_number);
@@ -1001,7 +1001,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void prevrandao(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(DIFFICULTY);
         push(
@@ -1015,7 +1015,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void gaslimit(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(GASLIMIT);
         push(stack_top, ctx.env.tx_context->block_gas_limit);
@@ -1027,7 +1027,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void chainid(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(CHAINID);
         push(stack_top, load_be<uint256_t>(ctx.env.tx_context->chain_id));
@@ -1039,7 +1039,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void selfbalance(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(SELFBALANCE, runtime::selfbalance);
 
@@ -1050,7 +1050,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void basefee(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(BASEFEE);
         push(stack_top, load_be<uint256_t>(ctx.env.tx_context->block_base_fee));
@@ -1062,7 +1062,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void blobhash(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(BLOBHASH, runtime::blobhash);
 
@@ -1073,7 +1073,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void blobbasefee(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(BLOBBASEFEE);
         push(stack_top, load_be<uint256_t>(ctx.env.tx_context->blob_base_fee));
@@ -1085,7 +1085,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void slotnum(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         check_requirements<SLOTNUM, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
@@ -1099,7 +1099,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void mload(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(MLOAD, runtime::mload<traits>);
 
@@ -1110,7 +1110,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void mstore(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(MSTORE, runtime::mstore<traits>);
 
@@ -1121,7 +1121,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void mstore8(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(MSTORE8, runtime::mstore8<traits>);
 
@@ -1132,7 +1132,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void mcopy(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(MCOPY, runtime::mcopy<traits>);
 
@@ -1143,7 +1143,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void sstore(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(SSTORE, runtime::sstore<traits>);
 
@@ -1154,7 +1154,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void sload(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(SLOAD, runtime::sload<traits>);
 
@@ -1165,7 +1165,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void tstore(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(TSTORE, runtime::tstore);
 
@@ -1176,7 +1176,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void tload(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(TLOAD, runtime::tload);
 
@@ -1188,7 +1188,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     pc(runtime::Context &ctx, Intercode const &analysis,
        uint256_t const *stack_bottom, StackTop stack_top, int64_t gas_remaining,
-       uint8_t const *instr_ptr)
+       uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(PC);
         push(stack_top, instr_ptr - analysis.code());
@@ -1200,7 +1200,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void msize(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(MSIZE);
         push(stack_top, ctx.memory.size);
@@ -1212,7 +1212,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     gas(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(GAS);
         push(stack_top, gas_remaining);
@@ -1226,7 +1226,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void push(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(PUSH0 + N);
         push_impl<N, traits>::push(stack_top, instr_ptr);
@@ -1238,7 +1238,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     pop(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(POP);
         MONAD_VM_NEXT(POP);
@@ -1249,7 +1249,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     dup(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(DUP1 + (N - 1));
 
@@ -1275,7 +1275,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void swap(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(SWAP1 + (N - 1));
 
@@ -1288,7 +1288,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void dupn(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         auto const ops = check_requirements_eip8024<DUPN, traits>(
             ctx, stack_bottom, stack_top, gas_remaining, instr_ptr[1]);
@@ -1302,7 +1302,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void swapn(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         auto const ops = check_requirements_eip8024<SWAPN, traits>(
             ctx, stack_bottom, stack_top, gas_remaining, instr_ptr[1]);
@@ -1316,7 +1316,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void exchange(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         auto const ops = check_requirements_eip8024<EXCHANGE, traits>(
             ctx, stack_bottom, stack_top, gas_remaining, instr_ptr[1]);
@@ -1350,7 +1350,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void jump(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *)
+        int64_t gas_remaining, uint8_t const *MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(JUMP);
         auto const &target = pop(stack_top);
@@ -1359,15 +1359,20 @@ namespace monad::vm::interpreter
         if constexpr (debug_enabled) {
             trace(analysis, gas_remaining, new_ip);
         }
-        MONAD_VM_MUST_TAIL return instruction_table<traits>[*new_ip](
-            ctx, analysis, stack_bottom, stack_top, gas_remaining, new_ip);
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*new_ip](
+            ctx,
+            analysis,
+            stack_bottom,
+            stack_top,
+            gas_remaining,
+            new_ip MONAD_VM_TBL_ARG);
     }
 
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void jumpi(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(JUMPI);
         auto const &target = pop(stack_top);
@@ -1378,21 +1383,26 @@ namespace monad::vm::interpreter
             if constexpr (debug_enabled) {
                 trace(analysis, gas_remaining, new_ip);
             }
-            MONAD_VM_MUST_TAIL return instruction_table<traits>[*new_ip](
-                ctx, analysis, stack_bottom, stack_top, gas_remaining, new_ip);
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*new_ip](
+                ctx,
+                analysis,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                new_ip MONAD_VM_TBL_ARG);
         }
         else {
             ++instr_ptr;
             if constexpr (debug_enabled) {
                 trace(analysis, gas_remaining, instr_ptr);
             }
-            MONAD_VM_MUST_TAIL return instruction_table<traits>[*instr_ptr](
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
                 ctx,
                 analysis,
                 stack_bottom,
                 stack_top,
                 gas_remaining,
-                instr_ptr);
+                instr_ptr MONAD_VM_TBL_ARG);
         }
     }
 
@@ -1400,7 +1410,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void jumpdest(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         fuzz_tstore_stack(
             ctx,
@@ -1418,7 +1428,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void
     log(runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         static constexpr auto impls = std::tuple{
             &runtime::log0<traits>,
@@ -1438,7 +1448,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void create(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(CREATE, runtime::create<traits>);
 
@@ -1449,7 +1459,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void call(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(CALL, runtime::call<traits>);
 
@@ -1460,7 +1470,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void callcode(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(CALLCODE, runtime::callcode<traits>);
 
@@ -1471,7 +1481,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void delegatecall(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(
             DELEGATECALL, runtime::delegatecall<traits>);
@@ -1483,7 +1493,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void create2(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(CREATE2, runtime::create2<traits>);
 
@@ -1494,7 +1504,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void staticcall(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(STATICCALL, runtime::staticcall<traits>);
 
@@ -1526,7 +1536,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void return_(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *)
+        int64_t gas_remaining, uint8_t const *MONAD_VM_TBL_TYPE)
     {
         fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.size());
         MONAD_VM_CHECK(RETURN);
@@ -1537,7 +1547,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void revert(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *)
+        int64_t gas_remaining, uint8_t const *MONAD_VM_TBL_TYPE)
     {
         MONAD_VM_CHECK(REVERT);
         return_impl(Revert, ctx, stack_top, gas_remaining);
@@ -1547,7 +1557,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void selfdestruct(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr)
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.size());
         MONAD_VM_CHECKED_RUNTIME_CALL(
@@ -1557,7 +1567,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL inline void stop(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *const stack_bottom, StackTop const stack_top,
-        int64_t const gas_remaining, uint8_t const *)
+        int64_t const gas_remaining, uint8_t const *MONAD_VM_TBL_TYPE)
     {
         fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.size());
         ctx.gas_remaining = gas_remaining;
@@ -1566,7 +1576,7 @@ namespace monad::vm::interpreter
 
     MONAD_VM_INSTRUCTION_CALL inline void invalid(
         runtime::Context &ctx, Intercode const &, uint256_t const *, StackTop,
-        int64_t const gas_remaining, uint8_t const *)
+        int64_t const gas_remaining, uint8_t const *MONAD_VM_TBL_TYPE)
     {
         ctx.gas_remaining = gas_remaining;
         ctx.exit(Error);

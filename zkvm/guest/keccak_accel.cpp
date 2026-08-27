@@ -53,9 +53,127 @@ void syscall_keccak_f(uint64_t (*state)[25]);
                  : "memory");
 }
 
+// Enabled by default; setting this to 0 removes the table and lookup path.
+#ifndef MONAD_ZKVM_KECCAKF_MEMO
+    #define MONAD_ZKVM_KECCAKF_MEMO 1
+#endif
+
+#if MONAD_ZKVM_KECCAKF_MEMO
+
+// Executor hints avoid a guest-side lookup over 200-byte states.
+// Hints are untrusted: accept only an index below keccakf_memo_used and an
+// exact input match. Cached outputs come from real permutations in this run.
+// Entries own both states, since callers reuse and mutate their buffers;
+// publish each entry only after both states are written.
+constexpr size_t KECCAKF_LANES = 25;
+constexpr size_t KECCAKF_STATE_BYTES = KECCAKF_LANES * sizeof(uint64_t);
+
+// Append-only table: 2^18 entries of 400 bytes use 100 MiB of .bss.
+// Entries are never evicted; a full table computes misses without caching them.
+struct alignas(8) KeccakfEntry
+{
+    uint64_t in[KECCAKF_LANES]; // the state before the permutation
+    uint64_t out[KECCAKF_LANES]; // and after it
+};
+
+static_assert(
+    sizeof(KeccakfEntry) == 2 * KECCAKF_STATE_BYTES,
+    "an entry is exactly the two states");
+
+constexpr size_t KECCAKF_MEMO_ENTRIES = size_t{1} << 18;
+
+static KeccakfEntry keccakf_memo[KECCAKF_MEMO_ENTRIES];
+static uint64_t keccakf_memo_used = 0;
+
+// Preserve constant lengths with -mzisk-dma for inline DMA lowering.
+// Otherwise hide the length to retain library calls instead of expanding
+// copies and comparisons into per-word operations.
+#ifdef MONAD_ZKVM_ZISK_DMA_LOWERING
+    #define MONAD_KECCAKF_LEN(n) (n)
+#else
+static inline size_t keccakf_opaque(size_t n)
+{
+    asm("" : "+r"(n));
+    return n;
+}
+    #define MONAD_KECCAKF_LEN(n) keccakf_opaque(n)
+#endif
+
+static inline bool keccakf_state_eq(uint64_t const *a, uint64_t const *b)
+{
+    return std::memcmp(a, b, MONAD_KECCAKF_LEN(KECCAKF_STATE_BYTES)) == 0;
+}
+
+static inline void keccakf_state_copy(uint64_t *dst, uint64_t const *src)
+{
+    std::memcpy(dst, src, MONAD_KECCAKF_LEN(KECCAKF_STATE_BYTES));
+}
+
+// Pass parameters via 0x8F0 (value) or 0x8F8 (25-word state), invoke the
+// fcall via 0x8C0, and read its result at 0xFFE. Pin parameters to a0:
+// ZisK treats a parameter push using x0 as a no-op.
+constexpr uint64_t KECCAKF_INDEX_NOT_FOUND = ~uint64_t{0};
+
+// File the input state of the NEXT permutation under `index`.
+static inline void fcall_set_keccakf_index(uint64_t const index)
+{
+    register unsigned long a0 asm("a0") = static_cast<unsigned long>(index);
+    asm volatile("csrs 0x8F0, %0\n\t" // one parameter, by value
+                 "csrwi 0x8C0, 24" // FCALL_SET_KECCAKF_CACHE_INDEX_ID
+                 :
+                 : "r"(a0)
+                 : "memory");
+}
+
+// The index `state` was filed under, or KECCAKF_INDEX_NOT_FOUND.
+static inline uint64_t fcall_get_keccakf_index(uint64_t const *const state)
+{
+    register unsigned long a0 asm("a0") =
+        reinterpret_cast<unsigned long>(state);
+    uint64_t index;
+    asm volatile("csrs 0x8F8, %[st]\n\t" // one parameter: 25 words at [st]
+                 "csrwi 0x8C0, 25\n\t" // FCALL_GET_KECCAKF_CACHE_INDEX_ID
+                 "csrr %[idx], 0xFFE" // fcall_get: the index
+                 : [idx] "=&r"(index)
+                 : [st] "r"(a0)
+                 : "memory");
+    return index;
+}
+
+#endif // MONAD_ZKVM_KECCAKF_MEMO
+
+// Reuse a validated result when available; otherwise run Keccak-f.
 static inline void keccak_permute(uint64_t (*state)[25])
 {
+#if MONAD_ZKVM_KECCAKF_MEMO
+    uint64_t *const s = &(*state)[0];
+    uint64_t const index = fcall_get_keccakf_index(s);
+
+    // Reject out-of-range hints, including NOT_FOUND, before reading the table.
+    if (index < keccakf_memo_used &&
+        keccakf_state_eq(keccakf_memo[index].in, s)) {
+        keccakf_state_copy(s, keccakf_memo[index].out);
+        return;
+    }
+
+    if (keccakf_memo_used == KECCAKF_MEMO_ENTRIES) {
+        // Full table: compute without caching another entry.
+        zisk_keccakf(state);
+        return;
+    }
+
+    // Register this slot for the next Keccak-f call; no other permutation
+    // may intervene between fcall_set_keccakf_index and zisk_keccakf.
+    KeccakfEntry &e = keccakf_memo[keccakf_memo_used];
+    keccakf_state_copy(e.in, s);
+    fcall_set_keccakf_index(keccakf_memo_used);
     zisk_keccakf(state);
+    keccakf_state_copy(e.out, s);
+    // Publish only after both input and output are stored.
+    ++keccakf_memo_used;
+#else
+    zisk_keccakf(state);
+#endif
 }
 
 void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32])

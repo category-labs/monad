@@ -53,7 +53,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # and ELF hash already identify them.
     option(MONAD_ZKVM_OFFICIAL_PROFILE
            "build the audited, fail-closed official ZisK guest profile" OFF)
-    set(_monad_zkvm_official_features "baseline" "zisk-dma")
+    set(_monad_zkvm_official_features "baseline" "zisk-dma" "keccakf-memo")
     set(_monad_zkvm_runtime_version "1.3.1-alpha")
     set(_monad_zkvm_runtime_revision
         "306a9c934ba4947b1d586d69b67120f8b4c41466")
@@ -65,7 +65,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # Enable options required by the official profile; reject explicit OFF values.
     # Add each new required option here and its feature to the list above.
-    set(_monad_zkvm_required_levers MONAD_ZKVM_ZISK_DMA)
+    set(_monad_zkvm_required_levers MONAD_ZKVM_ZISK_DMA
+                                    MONAD_ZKVM_KECCAKF_MEMO)
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
         foreach(_lever ${_monad_zkvm_required_levers})
             if(DEFINED ${_lever} AND NOT ${_lever})
@@ -123,6 +124,13 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+
+        # Cache Keccak-f states using an executor-supplied index.
+        # Uses 100 MiB of .bss; OFF removes the table and lookup path.
+        option(MONAD_ZKVM_KECCAKF_MEMO "memoise Keccak-f via the ZisK executor index" ON)
+        if(NOT MONAD_ZKVM_KECCAKF_MEMO)
+            add_compile_definitions(MONAD_ZKVM_KECCAKF_MEMO=0)
+        endif()
         # Expose the no-op operator delete declarations to every ZisK C++ file.
         string(APPEND CMAKE_CXX_FLAGS
                " -include ${CMAKE_CURRENT_SOURCE_DIR}/nodelete.hpp")
@@ -136,6 +144,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         if(MONAD_ZKVM_ZISK_DMA)
             string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
             string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+            # Let the memo use constant-size operations when GCC can lower
+            # them directly to DMA.
+            add_compile_definitions(MONAD_ZKVM_ZISK_DMA_LOWERING)
         endif()
     endif()
 

@@ -49,9 +49,18 @@ extern "C"
 // ziskos's raw Keccak-f[1600] precompile entry.
 void syscall_keccak_f(uint64_t state[25]);
 
+// The memo in zkvm/guest/keccak_accel.cpp reuses the output of an identical
+// earlier permutation. Out of line because the table it owns is 100 MiB of .bss
+// and this header is included by every sponge caller.
+void monad_keccakf1600_memo(uint64_t state[25]);
+
 [[gnu::always_inline]] static inline void monad_keccakf1600(uint64_t state[25])
 {
+#ifdef MONAD_ZKVM_KECCAKF_MEMO
+    monad_keccakf1600_memo(state);
+#else
     syscall_keccak_f(state);
+#endif
 }
 
 #else

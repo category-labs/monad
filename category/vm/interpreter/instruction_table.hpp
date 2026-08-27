@@ -1339,6 +1339,7 @@ namespace monad::vm::interpreter
     }
 
     // Stack
+
     template <size_t N, Traits traits>
         requires(N <= 32)
     MONAD_VM_INSTRUCTION_CALL void push(
@@ -1347,16 +1348,20 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
 #if defined(MONAD_ZKVM_ZISK)
-        // Use PUSH1's immediate directly for ADD/SHL.
+        // Use PUSH1's immediate directly for ADD/SHL/SHR/SAR.
         // The result replaces the top; the pair's net stack change is zero.
         // Check PUSH1 before its follower, including temporary stack growth.
         // Code padding makes the lookahead safe.
         if constexpr (N == 1) {
-            // Recognize supported followers with a bitmap.
+            // A bitmap keeps the check cheap on every PUSH1; testing four
+            // opcodes separately regressed performance.
             constexpr std::uint64_t monad_vm_fuse_mask =
                 (1ull << static_cast<unsigned>(ADD)) |
                 (1ull << static_cast<unsigned>(SHL));
+            // PUSH1 and DUP2 exceed the mask's range and still need stack
+            // writes, so their fusions are omitted.
             auto const next_opcode = *(instr_ptr + 2);
+            // Filtering for these two opcodes first improves performance.
             if (next_opcode < 64 && ((monad_vm_fuse_mask >> next_opcode) & 1)) {
                 MONAD_VM_CHECK(PUSH1);
                 uint256_t const immediate{*(instr_ptr + 1)};
@@ -1364,14 +1369,73 @@ namespace monad::vm::interpreter
                     MONAD_VM_CHECK_AT(ADD, 1);
                     *stack_top = immediate + *stack_top;
                 }
-                else {
+                else if (next_opcode == static_cast<std::uint8_t>(SHL)) {
                     MONAD_VM_CHECK_AT(SHL, 1);
                     *stack_top <<= immediate;
                 }
+
                 // Advance instr_ptr by 3 bytes, keep the stack size unchanged,
                 // and call the next opcode handler.
                 // Returns from the current handler.
                 MONAD_VM_FUSED_NEXT(3, 0);
+            }
+        }
+        // Use PUSH2's immediate directly as the JUMP/JUMPI destination.
+        // Check gas and stack in opcode order, then validate taken jumps.
+        if constexpr (N == 2) {
+            auto const next_opcode = *(instr_ptr + 3);
+            // Match JUMP and JUMPI with one range check: they are consecutive.
+            // size_t and not unsigned for the difference: a 32-bit subtract
+            // puts this on ZisK's generic binary machine on every PUSH2.
+            if (static_cast<size_t>(next_opcode) - static_cast<size_t>(JUMP) <=
+                1u) {
+                MONAD_VM_CHECK(PUSH2);
+                // PUSH2's two-byte immediate gives the jump destination.
+                auto const destination = static_cast<size_t>(
+                    (static_cast<unsigned>(*(instr_ptr + 1)) << 8) |
+                    static_cast<unsigned>(*(instr_ptr + 2)));
+                if (next_opcode == static_cast<std::uint8_t>(JUMP)) {
+                    // Check gas and stack as if PUSH2 had added one item.
+                    MONAD_VM_CHECK_AT(JUMP, 1);
+                    if (MONAD_UNLIKELY(!analysis.is_jumpdest(destination))) {
+                        ctx.exit(Error);
+                    }
+                    auto const *next_instruction =
+                        analysis.code() + destination;
+                    next_instruction =
+                        swallow_jumpdest(ctx, next_instruction, gas_remaining);
+                    instr_ptr = next_instruction;
+                    MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                        ctx,
+                        analysis,
+                        stack_bottom,
+                        stack_top,
+                        gas_remaining,
+                        instr_ptr MONAD_VM_TBL_ARG);
+                }
+                MONAD_VM_CHECK_AT(JUMPI, 1);
+                // The condition is the original top, below PUSH2's destination.
+                if (*stack_top) {
+                    if (MONAD_UNLIKELY(!analysis.is_jumpdest(destination))) {
+                        ctx.exit(Error);
+                    }
+                    auto const *next_instruction =
+                        analysis.code() + destination;
+                    next_instruction =
+                        swallow_jumpdest(ctx, next_instruction, gas_remaining);
+                    instr_ptr = next_instruction;
+                    MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                        ctx,
+                        analysis,
+                        stack_bottom,
+                        stack_top - 1, // Consume JUMPI's condition.
+                        gas_remaining,
+                        instr_ptr MONAD_VM_TBL_ARG);
+                }
+                // Advance instr_ptr by 4 bytes, reduce the stack size by 1 to
+                // consume JUMPI's condition, and call the next opcode handler.
+                // Returns from the current handler.
+                MONAD_VM_FUSED_NEXT(4, -1);
             }
         }
 #endif

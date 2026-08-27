@@ -67,12 +67,7 @@ namespace
         state.add_to_balance(to, value);
         TxTraceContext const trace_context{host.get_tx_trace_context()};
         emit_native_transfer_logs<traits>(
-            state,
-            trace_context,
-            msg.sender,
-            to,
-            value,
-            host.log_native_transfers_);
+            state, trace_context, msg.sender, to, value);
     }
 
 } // anonymous namespace
@@ -332,10 +327,7 @@ evmc::Result execute_call_message(
 
     evmc::Result result;
     if (auto maybe_result = check_call_precompile<traits>(
-            state,
-            msg,
-            host->get_tx_trace_context(),
-            host->log_native_transfers_);
+            state, msg, host->get_tx_trace_context());
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }

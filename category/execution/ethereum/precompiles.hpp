@@ -49,9 +49,8 @@ template <Traits traits>
 std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &);
 
 template <Traits traits>
-std::optional<evmc::Result> check_call_precompile(
-    State &, evmc_message const &, TxTraceContext const &,
-    bool log_native_transfers);
+std::optional<evmc::Result>
+check_call_precompile(State &, evmc_message const &, TxTraceContext const &);
 
 using precompiled_gas_cost_fn = std::optional<uint64_t>(byte_string_view);
 

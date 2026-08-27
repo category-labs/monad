@@ -80,6 +80,11 @@ struct CallTracer
     {
         *op.call_frames = std::span<CallFrame const>{};
     }
+
+    void operator()(monad::trace::NativeTransfer const &op)
+    {
+        (void)op;
+    }
 };
 
 MONAD_NAMESPACE_END

@@ -374,11 +374,9 @@ MONAD_STAKING_ANONYMOUS_NAMESPACE_END
 MONAD_STAKING_NAMESPACE_BEGIN
 
 StakingContract::StakingContract(
-    State &state, TxTraceContext const &tx_trace_context,
-    bool const log_native_transfers)
+    State &state, TxTraceContext const tx_trace_context)
     : state_{state}
     , tx_trace_context_{tx_trace_context}
-    , log_native_transfers_{log_native_transfers}
     , vars{state}
 {
 }
@@ -567,12 +565,7 @@ void StakingContract::send_tokens(Address const &to, uint256_t const &amount)
     state_.add_to_balance(to, amount);
     state_.subtract_from_balance(STAKING_CA, amount);
     emit_native_transfer_logs<traits>(
-        state_,
-        tx_trace_context_,
-        STAKING_CA,
-        to,
-        amount,
-        log_native_transfers_);
+        state_, tx_trace_context_, STAKING_CA, to, amount);
 }
 
 EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::send_tokens);

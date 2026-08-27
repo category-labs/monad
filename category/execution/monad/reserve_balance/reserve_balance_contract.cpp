@@ -66,7 +66,7 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 ReserveBalanceContract::ReserveBalanceContract(
-    State &state, TxTraceContext const &trace_ctx, bool)
+    State &state, TxTraceContext const &trace_ctx)
     : state_{state}
     , trace_ctx_{trace_ctx}
 {

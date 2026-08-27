@@ -5190,10 +5190,12 @@ TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
             .data = with_selector(
                 WITHDRAW_SELECTOR, craft_withdraw_input(val.id, withdrawal_id)),
         };
-        CallTracer call_tracer{tx, frames};
+
         boost::fibers::promise<void> prev_promise{};
         auto prev = prev_promise.get_future();
         prev_promise.set_value();
+        CallTracer call_tracer{
+            tx, frames, std::numeric_limits<size_t>::max(), trace_transfers};
         auto erased_tracer = trace::TypeErasedTracer::erase(call_tracer);
         std::span<trace::TypeErasedTracer const> const tracers{
             &erased_tracer, 1};
@@ -5212,8 +5214,7 @@ TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
             prev,
             chain_ctx,
             /*exec_recorder=*/nullptr,
-            trace_context,
-            trace_transfers)();
+            trace_context)();
     };
 
     // Simulated (traceTransfers) withdraw of the 50 MON request.

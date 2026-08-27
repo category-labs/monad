@@ -25,6 +25,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class State;
+
 namespace trace
 {
     struct Enter
@@ -98,8 +100,29 @@ namespace trace
         std::span<CallFrame const> *call_frames;
     };
 
+    struct NativeTransfer
+    {
+        explicit NativeTransfer(
+            State &state, Address const &system, Address const &from,
+            Address const &to, uint256_t const &transferred_balance)
+            : state{state}
+            , transferred_balance{transferred_balance}
+            , system{system}
+            , from{from}
+            , to{to}
+        {
+        }
+
+        State &state;
+        uint256_t const &transferred_balance;
+        Address const &system;
+        Address const &from;
+        Address const &to;
+    };
+
     using CallTraceSignature = monad::Signature<
-        Enter, Exit, Log, SelfDestruct, Finish, CallReset, GetCallFrames>;
+        Enter, Exit, Log, SelfDestruct, Finish, CallReset, GetCallFrames,
+        NativeTransfer>;
 }
 
 MONAD_NAMESPACE_END

@@ -50,13 +50,10 @@ using namespace monad::literals;
 class StakingContract
 {
     State &state_;
-    TxTraceContext const &tx_trace_context_;
-    bool const log_native_transfers_;
+    TxTraceContext const tx_trace_context_;
 
 public:
-    // The trace context must outlive the contract.
-    StakingContract(
-        State &, TxTraceContext const &, bool log_native_transfers = false);
+    StakingContract(State &, TxTraceContext const);
 
     struct WithdrawalRequest
     {

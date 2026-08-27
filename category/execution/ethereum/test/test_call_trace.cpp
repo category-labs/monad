@@ -87,8 +87,9 @@ namespace
     struct TxTraceContextWithTracer
     {
         explicit TxTraceContextWithTracer(
-            Transaction const &tx, std::vector<CallFrame> &call_frames)
-            : tracer{tx, call_frames}
+            Transaction const &tx, std::vector<CallFrame> &call_frames,
+            bool const log_native_transfers = false)
+            : tracer{tx, call_frames, std::numeric_limits<size_t>::max(), log_native_transfers}
             , erased_tracer{trace::TypeErasedTracer::erase(tracer)}
             , tracers{&erased_tracer, 1}
             , tx_trace_context{tracers}
@@ -1043,7 +1044,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContextWithTracer trace_context{tx, call_frames};
+    TxTraceContextWithTracer trace_context{tx, call_frames, true};
     EvmcHost<typename TestFixture::Trait> host{
         tx_context,
         buffer,
@@ -1153,7 +1154,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContextWithTracer trace_context{tx, call_frames};
+    TxTraceContextWithTracer trace_context{tx, call_frames, true};
     EvmcHost<typename TestFixture::Trait> host{
         tx_context,
         buffer,
@@ -1257,7 +1258,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContextWithTracer trace_context{tx, call_frames};
+    TxTraceContextWithTracer trace_context{tx, call_frames, true};
 
     EvmcHost<typename TestFixture::Trait> host{
         tx_context,
@@ -1399,7 +1400,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContextWithTracer trace_context{tx, call_frames};
+    TxTraceContextWithTracer trace_context{tx, call_frames, true};
 
     EvmcHost<typename TestFixture::Trait> host{
         tx_context,
@@ -1625,7 +1626,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     constexpr std::span<std::optional<Address> const> authorities_empty{};
-    TxTraceContextWithTracer trace_context{tx, call_frames};
+    TxTraceContextWithTracer trace_context{tx, call_frames, true};
 
     EvmcHost<typename TestFixture::Trait> host{
         tx_context,
@@ -1796,7 +1797,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
         constexpr std::span<std::optional<Address> const> authorities_empty{};
-        TxTraceContextWithTracer trace_context{tx, call_frames};
+        TxTraceContextWithTracer trace_context{tx, call_frames, true};
 
         EvmcHost<typename TestFixture::Trait> host{
             tx_context,

@@ -169,8 +169,7 @@ struct EvmcHost final : public EvmcHostBase
                 tx_trace_context_,
                 address,
                 beneficiary,
-                transferred_balance,
-                log_native_transfers_);
+                transferred_balance);
 
             return result;
         }

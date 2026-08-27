@@ -114,6 +114,8 @@ namespace
         {
             *op.call_frames = {};
         }
+
+        void operator()(trace::NativeTransfer const &) {}
     };
 
     auto const STRESS_TEST_CODE =

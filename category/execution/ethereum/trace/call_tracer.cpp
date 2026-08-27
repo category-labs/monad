@@ -24,6 +24,8 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/native_transfer_log.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/status_code.h>
@@ -76,7 +78,7 @@ namespace
 }
 
 CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
-    : CallTracer(tx, frames, std::numeric_limits<size_t>::max())
+    : CallTracer(tx, frames, std::numeric_limits<size_t>::max(), false)
 {
 }
 
@@ -182,11 +184,12 @@ void CallTracer::BoundedSize::reset() noexcept
 
 CallTracer::CallTracer(
     Transaction const &tx, std::vector<CallFrame> &frames,
-    size_t const max_size)
+    size_t const max_size, bool const log_native_transfers)
     : frames_(frames)
     , frames_stack_(frames_)
     , tx_(tx)
     , size_(max_size)
+    , log_native_transfers(log_native_transfers)
 {
     size_t const initial_capacity =
         std::min<size_t>(128, max_size / sizeof(CallFrame));
@@ -379,14 +382,28 @@ nlohmann::json CallTracer::to_json() const
     nlohmann::json value{};
 
     MONAD_ASSERT_THROW(!frames_.empty(), "Frames vector is empty");
-    MONAD_ASSERT_THROW(
-        frames_[0].depth == 0, "First frame depth is not zero");
+    MONAD_ASSERT_THROW(frames_[0].depth == 0, "First frame depth is not zero");
     size_t pos = 0;
     to_json_helper(frames_, value, pos);
 
     res[key] = value;
 
     return res;
+}
+
+void CallTracer::operator()(monad::trace::NativeTransfer const &op)
+{
+    // Skip emitting native transfer events when no value is transferred or
+    // `from` and `to` are the same account (i.e. no net transfer of funds).
+    if (log_native_transfers && op.transferred_balance > 0 &&
+        op.from != op.to) {
+        auto event = detail::make_native_transfer_log(
+            op.system, op.from, op.to, op.transferred_balance);
+
+        op.state.store_log(event);
+        trace::Log log_op{std::move(event)};
+        (*this)(log_op);
+    }
 }
 
 MONAD_NAMESPACE_END

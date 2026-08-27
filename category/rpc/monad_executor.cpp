@@ -1142,7 +1142,10 @@ namespace
             for (Transaction const &tx : calls[block_idx]) {
                 call_frames.emplace_back();
                 call_tracers.emplace_back(
-                    tx, call_frames.back(), call_tracer_max_size);
+                    tx,
+                    call_frames.back(),
+                    call_tracer_max_size,
+                    emit_native_transfer_logs);
             }
 
             auto block = Block{
@@ -1384,7 +1387,69 @@ namespace
     };
 }
 
+struct TraceBundle
+{
+    explicit TraceBundle(Transaction const &transaction, size_t max_size)
+        : call_tracer(transaction, call_frames, max_size, false)
+    {
+    }
+
+    void check_size_limit() const
+    {
+        call_tracer.check_size_limit();
+    }
+
+    void set_call_tracer()
+    {
+        erased_tracer.emplace(trace::TypeErasedTracer::erase(call_tracer));
+    }
+
+    void set_prestate_tracer(Address const &beneficiary)
+    {
+        prestate_tracer.emplace(state_trace, beneficiary);
+        erased_tracer.emplace(trace::TypeErasedTracer::erase(*prestate_tracer));
+    }
+
+    void set_statediff_tracer()
+    {
+        statediff_tracer.emplace(state_trace);
+        erased_tracer.emplace(
+            trace::TypeErasedTracer::erase(*statediff_tracer));
+    }
+
+    void set_access_list_tracer(AccessListTracer trace_runner)
+    {
+        access_list_tracer.emplace(std::move(trace_runner));
+        erased_tracer.emplace(
+            trace::TypeErasedTracer::erase(*access_list_tracer));
+    }
+
+    std::vector<CallFrame> call_frames;
+    nlohmann::json state_trace;
+
+    monad::TxTraceContext as_trace_context() const
+    {
+        if (!erased_tracer.has_value()) {
+            return monad::TxTraceContext{};
+        }
+
+        // TxTraceContext borrows this runner, so this bundle must outlive
+        // the context usage.
+        std::span<monad::trace::TypeErasedTracer const> const tracers{
+            &*erased_tracer, 1};
+        return monad::TxTraceContext{tracers};
+    }
+
+private:
+    CallTracer call_tracer;
+    std::optional<AccessListTracer> access_list_tracer{};
+    std::optional<PrestateTracer> prestate_tracer{};
+    std::optional<StateDiffTracer> statediff_tracer{};
+    std::optional<monad::trace::TypeErasedTracer> erased_tracer{};
+};
+
 struct monad_executor
+
 {
     Pool low_gas_pool_;
     Pool high_gas_pool_;
@@ -1587,30 +1652,19 @@ struct monad_executor
 
                     LazyBlockHash block_hash_buffer{db, block_number};
                     TrieRODb tdb{db};
-                    std::vector<CallFrame> call_frames;
-                    nlohmann::json state_trace;
-                    CallTracer call_tracer{
-                        transaction, call_frames, call_tracer_max_size};
-                    std::optional<AccessListTracer> access_list_tracer{};
-                    std::optional<PrestateTracer> prestate_tracer{};
-                    std::optional<StateDiffTracer> statediff_tracer{};
-                    std::optional<trace::TypeErasedTracer> erased_tracer{};
-                    if (tracer_config == CALL_TRACER) {
-                        erased_tracer.emplace(
-                            trace::TypeErasedTracer::erase(call_tracer));
-                    }
-                    else if (tracer_config == PRESTATE_TRACER) {
-                        prestate_tracer.emplace(
-                            state_trace, block_header.beneficiary);
-                        erased_tracer.emplace(
-                            trace::TypeErasedTracer::erase(*prestate_tracer));
-                    }
-                    else if (tracer_config == STATEDIFF_TRACER) {
-                        statediff_tracer.emplace(state_trace);
-                        erased_tracer.emplace(
-                            trace::TypeErasedTracer::erase(*statediff_tracer));
-                    }
-                    else if (tracer_config == ACCESS_LIST_TRACER) {
+                    TraceBundle trace_bundle{transaction, call_tracer_max_size};
+                    switch (tracer_config) {
+                    case CALL_TRACER:
+                        trace_bundle.set_call_tracer();
+                        break;
+                    case PRESTATE_TRACER:
+                        trace_bundle.set_prestate_tracer(
+                            block_header.beneficiary);
+                        break;
+                    case STATEDIFF_TRACER:
+                        trace_bundle.set_statediff_tracer();
+                        break;
+                    case ACCESS_LIST_TRACER: {
                         auto const authorities_span =
                             std::span<std::optional<Address> const>{
                                 authorities};
@@ -1618,11 +1672,11 @@ struct monad_executor
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
                             monad_eth_revision const rev = chain->get_revision(
                                 block_header.number, block_header.timestamp);
-                            access_list_tracer.emplace(
+                            trace_bundle.set_access_list_tracer(
                                 [&]() -> AccessListTracer {
                                     SWITCH_EVM_TRAITS(
                                         make_access_list_tracer,
-                                        state_trace,
+                                        trace_bundle.state_trace,
                                         sender,
                                         block_header.beneficiary,
                                         transaction.to,
@@ -1635,11 +1689,11 @@ struct monad_executor
                                 dynamic_cast<MonadChain *>(chain.get())
                                     ->get_monad_revision(
                                         block_header.timestamp);
-                            access_list_tracer.emplace(
+                            trace_bundle.set_access_list_tracer(
                                 [&]() -> AccessListTracer {
                                     SWITCH_MONAD_TRAITS(
                                         make_access_list_tracer,
-                                        state_trace,
+                                        trace_bundle.state_trace,
                                         sender,
                                         block_header.beneficiary,
                                         transaction.to,
@@ -1647,18 +1701,15 @@ struct monad_executor
                                     MONAD_ASSERT(false);
                                 }());
                         }
-                        erased_tracer.emplace(trace::TypeErasedTracer::erase(
-                            *access_list_tracer));
+                        break;
                     }
-                    auto const trace_context = [&]() -> TxTraceContext {
-                        if (!erased_tracer.has_value()) {
-                            return TxTraceContext{};
-                        }
-                        MONAD_ASSERT(erased_tracer.has_value());
-                        std::span<trace::TypeErasedTracer const> const
-                            call_tracers{&*erased_tracer, 1};
-                        return TxTraceContext{call_tracers};
-                    }();
+                    default:
+                        break;
+                    }
+
+                    TxTraceContext const trace_context =
+                        trace_bundle.as_trace_context();
+
                     auto const res = [&]() -> Result<evmc::Result> {
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
@@ -1735,7 +1786,7 @@ struct monad_executor
                         return;
                     }
                     if (tracer_config == CALL_TRACER) {
-                        call_tracer.check_size_limit();
+                        trace_bundle.check_size_limit();
                     }
                     call_complete(
                         transaction,
@@ -1743,8 +1794,8 @@ struct monad_executor
                         result,
                         complete,
                         user,
-                        call_frames,
-                        state_trace);
+                        trace_bundle.call_frames,
+                        trace_bundle.state_trace);
                 }
                 catch (MonadException const &e) {
                     result->status_code = EVMC_INTERNAL_ERROR;
@@ -1767,6 +1818,7 @@ struct monad_executor
         void (*complete)(monad_executor_result *, void *user), void *const user,
         std::vector<CallFrame> const &call_frames,
         nlohmann::json const &state_trace)
+
     {
         result->status_code = evmc_result.status_code;
         result->gas_used =

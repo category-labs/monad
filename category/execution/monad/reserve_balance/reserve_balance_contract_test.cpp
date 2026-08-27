@@ -569,7 +569,7 @@ void run_check_call_precompile_test(
 {
     TxTraceContext trace_ctx{};
     auto const result =
-        check_call_precompile<traits>(state, msg, trace_ctx, false);
+        check_call_precompile<traits>(state, msg, trace_ctx);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->status_code, expected_status);
@@ -650,7 +650,7 @@ TYPED_TEST(
     if constexpr (!TestFixture::Trait::mip_4_active()) {
         TxTraceContext trace_ctx{};
         auto const result = check_call_precompile<typename TestFixture::Trait>(
-            this->state, make_msg(), trace_ctx, false);
+            this->state, make_msg(), trace_ctx);
         EXPECT_FALSE(result.has_value());
         return;
     }

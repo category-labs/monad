@@ -336,8 +336,7 @@ namespace
 
                 TxTraceContext const trace_ctx{};
                 evmc::Result const result =
-                    check_call_precompile<traits>(s, input, trace_ctx, false)
-                        .value();
+                    check_call_precompile<traits>(s, input, trace_ctx).value();
 
                 if (auto const *expected_value =
                         std::get_if<byte_string>(&test_case.expected)) {

@@ -46,7 +46,9 @@ public:
     ~CallTracer() = default;
 
     CallTracer(Transaction const &, std::vector<CallFrame> &);
-    CallTracer(Transaction const &, std::vector<CallFrame> &, size_t max_size);
+    CallTracer(
+        Transaction const &, std::vector<CallFrame> &, size_t max_size,
+        bool log_native_transfers = false);
 
     /// Checks if the accumulated call trace size exceeds the maximum allowed
     /// size. Throws a MonadException if the size limit is exceeded.
@@ -70,6 +72,8 @@ public:
     void operator()(monad::trace::CallReset const &op);
 
     void operator()(monad::trace::GetCallFrames const &op);
+
+    void operator()(monad::trace::NativeTransfer const &op);
 
 private:
     struct CallFramesStack
@@ -110,6 +114,9 @@ private:
     CallFramesStack frames_stack_;
     Transaction const &tx_;
     BoundedSize size_;
+
+public:
+    bool log_native_transfers{false};
 };
 
 MONAD_NAMESPACE_END

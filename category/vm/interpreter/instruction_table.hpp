@@ -105,6 +105,20 @@ namespace monad::vm::interpreter
     using enum runtime::StatusCode;
     using enum compiler::EvmOpCode;
 
+#if defined(MONAD_ZKVM_ZISK)
+    // After validating the destination, charge JUMPDEST's gas and skip it.
+    // Invalid jumps must exit before this charge.
+    [[gnu::always_inline]] inline uint8_t const *swallow_jumpdest(
+        runtime::Context &ctx, uint8_t const *landing, int64_t &gas_remaining)
+    {
+        gas_remaining -= 1;
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            ctx.exit(OutOfGas);
+        }
+        return landing + 1;
+    }
+#endif
+
     template <Traits traits>
     consteval InstrTable make_instruction_table()
     {
@@ -1321,7 +1335,10 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_CHECK(JUMP);
         auto const &target = pop(stack_top);
-        auto const *const new_ip = jump_impl(ctx, analysis, target);
+        auto const *new_ip = jump_impl(ctx, analysis, target);
+#if defined(MONAD_ZKVM_ZISK)
+        new_ip = swallow_jumpdest(ctx, new_ip, gas_remaining);
+#endif
 
         if constexpr (debug_enabled) {
             trace(analysis, gas_remaining, new_ip);
@@ -1346,7 +1363,10 @@ namespace monad::vm::interpreter
         auto const &cond = pop(stack_top);
 
         if (cond) {
-            auto const *const new_ip = jump_impl(ctx, analysis, target);
+            auto const *new_ip = jump_impl(ctx, analysis, target);
+#if defined(MONAD_ZKVM_ZISK)
+            new_ip = swallow_jumpdest(ctx, new_ip, gas_remaining);
+#endif
             if constexpr (debug_enabled) {
                 trace(analysis, gas_remaining, new_ip);
             }

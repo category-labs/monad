@@ -86,6 +86,9 @@ impl Backend {
             }
         }
 
+        println!("cargo:rerun-if-env-changed=MONAD_ZKVM_CMAKE_ARGS");
+        defines.extend(extra_cmake_definitions());
+
         // Isolate configurations in Cargo's OUT_DIR; the commit stamp stays
         // out of the key so objects can be reused across commits. Immutable Nix
         // toolchain paths identify the compilers without hashing their contents.
@@ -297,6 +300,46 @@ fn locate_repo_root(manifest: &Path) -> PathBuf {
         .find(|p| p.join("zkvm/guest/CMakeLists.txt").exists())
         .expect("failed to locate monad repo root from build.rs CARGO_MANIFEST_DIR")
         .to_path_buf()
+}
+
+fn extra_cmake_definitions() -> Vec<(String, String)> {
+    let Ok(args) = env::var("MONAD_ZKVM_CMAKE_ARGS") else {
+        return Vec::new();
+    };
+    parse_cmake_definitions(&args)
+}
+
+fn parse_cmake_definitions(args: &str) -> Vec<(String, String)> {
+    let words = shlex::split(args).expect("invalid quoting in MONAD_ZKVM_CMAKE_ARGS");
+    words
+        .iter()
+        .map(|word| {
+            let def = word.strip_prefix("-D").unwrap_or_else(|| {
+                panic!("MONAD_ZKVM_CMAKE_ARGS takes -DNAME=VALUE words, got `{word}`")
+            });
+            let (name, value) = def.split_once('=').unwrap_or_else(|| {
+                panic!("MONAD_ZKVM_CMAKE_ARGS takes -DNAME=VALUE words, got `{word}`")
+            });
+            // -DNAME:TYPE=VALUE: cmake-rs takes the name alone.
+            let name = name.split(':').next().unwrap_or(name);
+            // Keep CMake and cmake-rs on the same selected toolchain.
+            assert!(
+                !matches!(
+                    name,
+                    "RISCV_TOOLCHAIN_DIR"
+                        | "RISCV_PREFIX"
+                        | "CMAKE_TOOLCHAIN_FILE"
+                        | "CMAKE_AR"
+                        | "CMAKE_RANLIB"
+                        | "CMAKE_LINKER"
+                ) && !["CMAKE_C_COMPILER", "CMAKE_CXX_COMPILER", "CMAKE_ASM_COMPILER"]
+                    .iter()
+                    .any(|prefix| name.starts_with(prefix)),
+                "{name} cannot be overridden with -D; select the toolchain with the RISCV_TOOLCHAIN_DIR environment variable"
+            );
+            (name.to_string(), value.to_string())
+        })
+        .collect()
 }
 
 fn emit_rerun_directives(repo_root: &Path) {

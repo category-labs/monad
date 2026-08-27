@@ -558,6 +558,7 @@ dependencies = [
  "cargo_metadata",
  "cc",
  "cmake",
+ "shlex",
  "sp1-build",
 ]
 

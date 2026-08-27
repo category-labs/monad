@@ -465,17 +465,6 @@ namespace
             set_nibble(b.data() + start, i, path.get(i));
         }
     }
-
-    unsigned common_prefix_length(NibblesView const a, NibblesView const b)
-    {
-        unsigned const n = std::min(a.nibble_size(), b.nibble_size());
-        for (unsigned i = 0; i < n; ++i) {
-            if (a.get(i) != b.get(i)) {
-                return i;
-            }
-        }
-        return n;
-    }
 }
 
 void append_branch(byte_string &out, std::array<NodeId, 16> const &children)

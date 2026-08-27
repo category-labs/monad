@@ -377,6 +377,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     endif()
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+        # Also enables the interpreter's dispatch table argument (types.hpp).
     endif()
 
     # Repo + third-party paths.

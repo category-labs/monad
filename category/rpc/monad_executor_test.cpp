@@ -47,6 +47,7 @@
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
+#include <category/execution/ethereum/trace/statediff_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/monad/chain/monad_chain.hpp>

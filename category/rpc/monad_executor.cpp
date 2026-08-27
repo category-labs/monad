@@ -57,6 +57,7 @@
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
+#include <category/execution/ethereum/trace/statediff_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/trace/state_trace_operations.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
@@ -446,28 +447,32 @@ namespace
         if (trace_transaction) {
             // We allocate just one trace entry here as we only need to return
             // the trace result of `transactions[transaction_index]`.
-            nlohmann::json trace{};
-            std::vector<nlohmann::json> prestate_traces{};
+            std::vector<nlohmann::json> traces{};
+            traces.resize(transactions_size);
             std::vector<PrestateTracer> prestate_trace_runners{};
+            std::vector<StateDiffTracer> statediff_trace_runners{};
+
             if (tracer_config == PRESTATE_TRACER) {
-                prestate_traces.resize(transactions_size);
                 prestate_trace_runners.reserve(transactions_size);
                 for (size_t i = 0; i < transactions_size; ++i) {
                     state_tracers.emplace_back(
                         std::make_unique<trace::StateTracer>(std::monostate{}));
                     prestate_trace_runners.emplace_back(
-                        prestate_traces[i], header.beneficiary);
+                        traces[i], header.beneficiary);
                 }
                 block_trace_context.with_runners(
                     std::span<PrestateTracer>{prestate_trace_runners});
             }
             else {
-                for (size_t i = 0; i < transactions_size - 1; ++i) {
+                MONAD_ASSERT(tracer_config == STATEDIFF_TRACER);
+                statediff_trace_runners.reserve(transactions_size);
+                for (size_t i = 0; i < transactions_size; ++i) {
                     state_tracers.emplace_back(
                         std::make_unique<trace::StateTracer>(std::monostate{}));
+                    statediff_trace_runners.emplace_back(traces[i]);
                 }
-                state_tracers.emplace_back(std::make_unique<trace::StateTracer>(
-                    trace::StateDiffTracer{trace}));
+                block_trace_context.with_runners(
+                    std::span<StateDiffTracer>{statediff_trace_runners});
             }
 
             std::span<std::unique_ptr<trace::StateTracer>> const
@@ -488,11 +493,7 @@ namespace
                 /*exec_recorder=*/nullptr,
                 false,
                 block_trace_context));
-            if (tracer_config == PRESTATE_TRACER) {
-                return Result<nlohmann::json>{
-                    std::move(prestate_traces.back())};
-            }
-            return Result<nlohmann::json>{std::move(trace)};
+            return Result<nlohmann::json>{std::move(traces.back())};
         }
         else {
             // Helper to create a trace log entry of the form:
@@ -512,27 +513,31 @@ namespace
             std::vector<nlohmann::json> traces{};
             traces.reserve(transactions_size);
             std::vector<PrestateTracer> prestate_trace_runners{};
+            std::vector<StateDiffTracer> statediff_trace_runners{};
+
             if (tracer_config == PRESTATE_TRACER) {
                 prestate_trace_runners.reserve(transactions_size);
-            }
-            for (size_t i = 0; i < transactions_size; ++i) {
-                traces.emplace_back(trace_entry(i));
-                if (tracer_config == PRESTATE_TRACER) {
+                for (size_t i = 0; i < transactions_size; ++i) {
+                    traces.emplace_back(trace_entry(i));
                     state_tracers.emplace_back(
                         std::make_unique<trace::StateTracer>(std::monostate{}));
                     prestate_trace_runners.emplace_back(
                         traces[i]["result"], header.beneficiary);
                 }
-                else {
-                    state_tracers.emplace_back(
-                        std::make_unique<trace::StateTracer>(
-                            trace::StateDiffTracer{traces[i]["result"]}));
-                }
-            }
-
-            if (tracer_config == PRESTATE_TRACER) {
                 block_trace_context.with_runners(
                     std::span<PrestateTracer>{prestate_trace_runners});
+            }
+            else {
+                MONAD_ASSERT(tracer_config == STATEDIFF_TRACER);
+                statediff_trace_runners.reserve(transactions_size);
+                for (size_t i = 0; i < transactions_size; ++i) {
+                    traces.emplace_back(trace_entry(i));
+                    state_tracers.emplace_back(
+                        std::make_unique<trace::StateTracer>(std::monostate{}));
+                    statediff_trace_runners.emplace_back(traces[i]["result"]);
+                }
+                block_trace_context.with_runners(
+                    std::span<StateDiffTracer>{statediff_trace_runners});
             }
 
             std::span<std::unique_ptr<trace::StateTracer>> const
@@ -1473,6 +1478,7 @@ struct monad_executor
                     CallTraceRunner call_trace_runner{transaction, call_frames};
                     std::optional<AccessListTracer> access_list_trace_runner{};
                     std::optional<PrestateTracer> prestate_trace_runner{};
+                    std::optional<StateDiffTracer> statediff_trace_runner{};
                     std::optional<trace::TypeErasedRunner> erased_runner{};
                     if (tracer_config == CALL_TRACER) {
                         erased_runner.emplace(
@@ -1483,6 +1489,11 @@ struct monad_executor
                             state_trace, block_header.beneficiary);
                         erased_runner.emplace(trace::TypeErasedRunner::erase(
                             *prestate_trace_runner));
+                    }
+                    else if (tracer_config == STATEDIFF_TRACER) {
+                        statediff_trace_runner.emplace(state_trace);
+                        erased_runner.emplace(trace::TypeErasedRunner::erase(
+                            *statediff_trace_runner));
                     }
                     else if (tracer_config == ACCESS_LIST_TRACER) {
                         auto const authorities_span =
@@ -1538,9 +1549,8 @@ struct monad_executor
                         case CALL_TRACER:
                         case ACCESS_LIST_TRACER:
                         case PRESTATE_TRACER:
-                            return std::monostate{};
                         case STATEDIFF_TRACER:
-                            return trace::StateDiffTracer{state_trace};
+                            return std::monostate{};
                         }
                         MONAD_ASSERT(false);
                     }();

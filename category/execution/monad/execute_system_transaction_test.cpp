@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/statediff_tracer.hpp>
 #include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
@@ -205,7 +206,13 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
 
     {
         nlohmann::json trace;
-        trace::StateTracer statediff_tracer = trace::StateDiffTracer{trace};
+        StateDiffTracer statediff_tracer{trace};
+        trace::TypeErasedRunner const erased_runner =
+            trace::TypeErasedRunner::erase(statediff_tracer);
+        std::span<trace::TypeErasedRunner const> const runners{
+            &erased_runner, 1};
+        TxTraceContext const trace_context{runners};
+        trace::StateTracer state_tracer = std::monostate{};
 
         boost::fibers::promise<void> promise;
         promise.set_value();
@@ -220,9 +227,9 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 block_state,
                 block_metrics,
                 promise,
-                statediff_tracer,
+                state_tracer,
                 /*exec_recorder=*/nullptr,
-                TxTraceContext{}}();
+                trace_context}();
 
         EXPECT_TRUE(result.has_value());
 
@@ -247,7 +254,13 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
 
     {
         nlohmann::json trace;
-        trace::StateTracer statediff_tracer = trace::StateDiffTracer{trace};
+        StateDiffTracer statediff_tracer{trace};
+        trace::TypeErasedRunner const erased_runner =
+            trace::TypeErasedRunner::erase(statediff_tracer);
+        std::span<trace::TypeErasedRunner const> const runners{
+            &erased_runner, 1};
+        TxTraceContext const trace_context{runners};
+        trace::StateTracer state_tracer = std::monostate{};
 
         boost::fibers::promise<void> promise;
         promise.set_value();
@@ -262,9 +275,9 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 block_state,
                 block_metrics,
                 promise,
-                statediff_tracer,
+                state_tracer,
                 /*exec_recorder=*/nullptr,
-                TxTraceContext{}}();
+                trace_context}();
 
         EXPECT_TRUE(result.has_value());
 

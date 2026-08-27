@@ -16,38 +16,17 @@
 #pragma once
 
 #include <category/core/config.hpp>
-#include <category/execution/ethereum/state2/state_deltas.hpp>
-#include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/vm/evm/traits.hpp>
-
-#include <nlohmann/json_fwd.hpp>
 
 #include <variant>
 
 MONAD_NAMESPACE_BEGIN
 
 class State;
-struct Transaction;
 
 namespace trace
 {
-    struct StateDiffTracer
-    {
-        explicit StateDiffTracer(nlohmann::json &storage)
-            : storage_(storage)
-        {
-        }
-
-        StateDeltas trace(State const &state);
-        void encode(StateDeltas const &, State &);
-
-    private:
-        StorageDeltas generate_storage_deltas(
-            AccountState::StorageMap const &, AccountState::StorageMap const &);
-        nlohmann::json &storage_;
-    };
-
-    using StateTracer = std::variant<std::monostate, StateDiffTracer>;
+    using StateTracer = std::monostate;
 
     // State-tracer lifecycle hook for a failed frame. Call immediately before
     // State::pop_reject(), while rejected-frame access metadata is still
@@ -61,9 +40,6 @@ namespace trace
     // accepted-frame state has been merged into the visible State view.
     template <Traits traits>
     void run_tracer(StateTracer &tracer, State &state);
-
-    nlohmann::json state_deltas_to_json(StateDeltas const &, State &);
-    void state_deltas_to_json(StateDeltas const &, State &, nlohmann::json &);
 }
 
 MONAD_NAMESPACE_END

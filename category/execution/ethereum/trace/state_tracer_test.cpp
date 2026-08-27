@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/trace/code_tracer.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/statediff_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -1264,8 +1265,8 @@ TEST(PrestateTracer, prestate_access_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::state_trace::State{s});
 
         // We only read the storage, so no changes are recorded in the
         // statediff.
@@ -1328,8 +1329,8 @@ TEST(PrestateTracer, prestate_access_zero_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::state_trace::State{s});
 
         // We only read the storage, so no changes are recorded in the
         // statediff.
@@ -1392,8 +1393,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {
@@ -1466,8 +1467,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {
@@ -1541,10 +1542,10 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
+        StateDiffTracer tracer{trace};
 
         // Run tracer
-        tracer.encode(tracer.trace(s), s);
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {
@@ -1611,8 +1612,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {
@@ -1680,8 +1681,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {
@@ -1760,8 +1761,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::state_trace::State{s});
 
         // We only read the storage, so no changes are recorded in the
         // statediff.
@@ -1817,8 +1818,8 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {
@@ -1865,8 +1866,8 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::state_trace::State{s});
 
         auto const json_str = R"(
         {

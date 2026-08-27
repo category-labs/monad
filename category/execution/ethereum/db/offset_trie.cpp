@@ -454,15 +454,31 @@ namespace
     // Append a path as nodes store it: a 1-byte nibble count then
     // ceil(nlen/2) packed nibbles, left-aligned (nibble 0 in the high
     // nibble of the first byte) — exactly what path_view reads back.
-    void append_path(byte_string &b, NibblesView const path)
+    void append_path(byte_string &buffer, NibblesView const path)
     {
-        unsigned const nlen = path.nibble_size();
-        MONAD_ASSERT(nlen <= MAX_PATH_NIBBLES);
-        b.push_back(static_cast<unsigned char>(nlen));
-        size_t const start = b.size();
-        b.resize(start + (nlen + 1) / 2, 0);
-        for (unsigned i = 0; i < nlen; ++i) {
-            set_nibble(b.data() + start, i, path.get(i));
+        unsigned const nibble_count = path.nibble_size();
+        MONAD_ASSERT(nibble_count <= MAX_PATH_NIBBLES);
+        buffer.push_back(static_cast<unsigned char>(nibble_count));
+        if (nibble_count == 0) {
+            return;
+        }
+        size_t const output_offset = buffer.size();
+        buffer.resize(output_offset + (nibble_count + 1) / 2, 0);
+        // The output starts at a byte boundary. Copy whole input bytes,
+        // or shift by four bits when the path starts in a low nibble.
+        unsigned char *const output = buffer.data() + output_offset;
+        unsigned char const *const source = path.data();
+        bool const odd_start = path.begin_nibble(); // the run starts mid-byte
+        unsigned const whole_bytes = nibble_count / 2;
+        if (!odd_start) {
+            std::memcpy(output, source, whole_bytes);
+        }
+        else {
+            mpt::shift_nibbles_left(output, source, whole_bytes);
+        }
+        if (nibble_count % 2) {
+            // Write the final high nibble; keep the low padding nibble zero.
+            set_nibble(output, nibble_count - 1, path.get(nibble_count - 1));
         }
     }
 }

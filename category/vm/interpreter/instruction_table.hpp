@@ -1349,6 +1349,28 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        // Use PUSH1's immediate directly for ADD.
+        // The result replaces the top; the pair's net stack change is zero.
+        // Check PUSH1 before its follower, including temporary stack growth.
+        // Code padding makes the lookahead safe.
+        if constexpr (N == 1) {
+            // Recognize supported followers with a bitmap.
+            constexpr std::uint64_t monad_vm_fuse_mask =
+                (1ull << static_cast<unsigned>(ADD));
+            auto const next_opcode = *(instr_ptr + 2);
+            if (next_opcode < 64 && ((monad_vm_fuse_mask >> next_opcode) & 1)) {
+                MONAD_VM_CHECK(PUSH1);
+                uint256_t const immediate{*(instr_ptr + 1)};
+                MONAD_VM_CHECK_AT(ADD, 1);
+                *stack_top = immediate + *stack_top;
+                // Advance instr_ptr by 3 bytes, keep the stack size unchanged,
+                // and call the next opcode handler.
+                // Returns from the current handler.
+                MONAD_VM_FUSED_NEXT(3, 0);
+            }
+        }
+#endif
         MONAD_VM_CHECK(PUSH0 + N);
         push_impl<N, traits>::push(stack_top, instr_ptr);
 

@@ -28,7 +28,7 @@
 # 2. Host x86: invoked from the root host CMakeLists.txt via
 #    add_subdirectory(zkvm/guest). MONAD_ZKVM_GUEST_TARGET is not set;
 #    this file builds the monad-zkvm-x86-test-runner executable from
-#    x86_test_runner.cpp + monad-zkvm-guest, linked against the host's
+#    x86/test_runner.cpp + monad-zkvm-guest, linked against the host's
 #    existing monad_execution target.
 
 cmake_minimum_required(VERSION 3.30)
@@ -88,11 +88,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
 
-    # Expose the backend as a compile definition for code that calls its
-    # precompiles directly (e.g. zkvm/category/crypto/keccak.h).
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
-        add_compile_definitions(MONAD_ZKVM_ZISK)
-
         # Lower eligible block memory operations, including struct copies,
         # directly to ZisK DMA. Requires Zicsr and the patched GCC.
         # Nix checks the emitted markers when building the toolchain.
@@ -530,39 +526,41 @@ else()
     # host's existing monad_execution target.
 
     add_executable(monad-zkvm-x86-test-runner
-        "${CMAKE_CURRENT_SOURCE_DIR}/x86_test_runner.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/x86/test_runner.cpp"
     )
     monad_compile_options(monad-zkvm-x86-test-runner)
     target_link_libraries(monad-zkvm-x86-test-runner
         PRIVATE monad-zkvm-guest monad_execution zkevm-standards)
 
+    # The sponge against an OpenSSL-based reference: the runner's entry points,
+    # and the memo under a simulated executor, honest and adversarial.
     monad_add_test(monad-zkvm-keccak-test
-        keccak_accel.cpp
-        test/keccak_accel_test.cpp
-        test/keccak_reference.c
+        x86/keccak.cpp
+        x86/test/keccak_accel_test.cpp
     )
-    target_compile_definitions(monad-zkvm-keccak-test
-        PRIVATE MONAD_ZKVM_KECCAK_TEST)
 
 endif()
 
 # ---- Guest sources, shared by both modes ----
 # Both modes share the witness pipeline; only guests carry an ELF build stamp.
 add_library(monad-zkvm-guest OBJECT
-    "${CMAKE_CURRENT_SOURCE_DIR}/keccak_accel.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_block.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/witness_block_hash_buffer.cpp"
 )
 monad_compile_options(monad-zkvm-guest)
 target_link_libraries(monad-zkvm-guest PRIVATE zkevm-standards)
+# Each backend's keccak.cpp instantiates keccak_accel.hpp with its Keccak-f.
 if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     target_sources(monad-zkvm-guest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/${MONAD_ZKVM_GUEST_TARGET}/keccak.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/build_identity.cpp")
     monad_riscv_compile_options(monad-zkvm-guest)
     target_link_libraries(monad-zkvm-guest
         PRIVATE monad-core monad_execution_ethereum)
 else()
+    target_sources(monad-zkvm-guest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/x86/keccak.cpp")
     target_link_libraries(monad-zkvm-guest PRIVATE monad_execution)
 endif()
 

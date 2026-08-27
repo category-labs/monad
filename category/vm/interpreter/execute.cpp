@@ -41,13 +41,17 @@ namespace monad::vm::interpreter
             if constexpr (debug_enabled) {
                 trace(*analysis, gas_remaining, instr_ptr);
             }
+            // Resolve the table once for the tail-call chain.
+#if defined(MONAD_ZKVM_ZISK)
+            auto const *const itbl = instruction_table<traits>.data();
+#endif
             instruction_table<traits>[*instr_ptr](
                 *ctx,
                 *analysis,
                 stack_bottom,
                 stack_top,
                 gas_remaining,
-                instr_ptr);
+                instr_ptr MONAD_VM_TBL_ARG);
         }
     }
 

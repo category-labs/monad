@@ -85,18 +85,6 @@ namespace trace
         nlohmann::json &storage_;
     };
 
-    /// Records every code preimage read during execution, keyed by
-    /// code_hash. Used by witness generation to assemble the codes section
-    /// of the post-block witness. Insertions happen from the EVM host's
-    /// code-read entry points; production execution uses `std::monostate`
-    /// instead, so the recording path has zero cost. A CodeTracer is only
-    /// ever accessed from a single thread, so a plain (non-concurrent) map
-    /// suffices.
-    struct CodeTracer
-    {
-        Map<bytes32_t, vm::SharedIntercode> codes{};
-    };
-
     using StateTracer =
         std::variant<std::monostate, PrestateTracer, StateDiffTracer>;
 

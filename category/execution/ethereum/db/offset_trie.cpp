@@ -729,17 +729,17 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
             [&](BranchView b) -> std::pair<NodeId, Nibbles> {
                 MONAD_ASSERT(key.nibble_size() > 0); // never ends at branch
                 unsigned const nib = key.get(0);
-                std::array<node_id_wire_t, 16> children = b.children();
-                NodeId const child = NodeId{children[nib]};
-                // Recurse into the slot: a NULL_ID child lets upsert_node
-                // allocate the leaf; an existing child keeps its stable id.
-                // Only rewrite the branch when a previously-empty slot
-                // fills.
-                auto const result = upsert_node(child, key.substr(1));
-                if (child == NULL_ID) {
-                    children[nib] = to_node_id_wire_t(result.first);
-                    put_branch(id, children);
+                NodeId const child = b.child(nib);
+                if (child != NULL_ID) {
+                    return upsert_node(child, key.substr(1));
                 }
+                // A previously-empty slot fills, so the branch is rewritten
+                // and its sixteen children are needed. Read them before
+                // recursing.
+                std::array<node_id_wire_t, 16> children = b.children();
+                auto const result = upsert_node(NULL_ID, key.substr(1));
+                children[nib] = to_node_id_wire_t(result.first);
+                put_branch(id, children);
                 return result;
             },
             [&](DigestView) -> std::pair<NodeId, Nibbles> {

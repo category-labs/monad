@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
@@ -364,7 +365,12 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         chain_ctx_,
         trace_transfers_};
 
-    return ExecuteTransactionNoValidation<traits>::operator()(state, host);
+    auto result =
+        ExecuteTransactionNoValidation<traits>::operator()(state, host);
+
+    MONAD_ASSERT_THROW(!host.execution_cancelled(), "transaction timeout");
+
+    return result;
 }
 
 template <Traits traits>

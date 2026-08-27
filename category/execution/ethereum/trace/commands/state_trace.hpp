@@ -29,9 +29,9 @@ namespace monad::trace
 {
     struct PostState
     {
-        monad::State const &state;
+        monad::State &state;
 
-        explicit PostState(monad::State const &state)
+        explicit PostState(monad::State &state)
             : state{state}
         {
         }

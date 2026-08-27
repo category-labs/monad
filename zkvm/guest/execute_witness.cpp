@@ -15,6 +15,7 @@
 
 #include <io-interface/zkvm_io.h>
 #include <zkvm/guest/execute_block.hpp>
+#include <zkvm/guest/keccak_accel.hpp>
 #include <zkvm/guest/witness_block_hash_buffer.hpp>
 
 #include <category/core/assert.h>
@@ -69,10 +70,12 @@ extern "C" void monad_zkvm_execute_witness(void)
             MONAD_ASSERT((reinterpret_cast<uintptr_t>(code->code()) & 7) == 0);
             MONAD_DEBUG_ASSERT(
                 std::ranges::equal(code->code_span(), bytes.value()));
-            code_index.emplace(
-                monad::to_bytes(
-                    monad::keccak256({code->code(), bytes.value().size()})),
-                code);
+            // Avoid memo lookup and insertion costs when hashing bytecode.
+            // Repeated states are safe to recompute.
+            monad::bytes32_t code_hash;
+            monad_keccak256_nomemo(
+                code->code(), bytes.value().size(), code_hash.bytes);
+            code_index.emplace(code_hash, code);
         }
     }
 

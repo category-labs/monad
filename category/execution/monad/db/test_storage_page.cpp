@@ -395,3 +395,26 @@ TEST(MonadDb, lowest_offset_across_bitmap_halves)
     // the lowest high-half bit rather than the highest.
     EXPECT_EQ(lowest_offset((bitmap_t{1} << 100) | (bitmap_t{1} << 70)), 70);
 }
+
+TEST(MonadDb, page_commit_last_access_zero_is_hash_identical)
+{
+    storage_page_t page{};
+    page.set(7, bytes32_t{0xAB});
+    storage_page_t with_zero = page;
+    with_zero.last_access = 0;
+    EXPECT_EQ(page_commit(with_zero), page_commit(page));
+}
+
+TEST(MonadDb, page_commit_sensitive_to_last_access)
+{
+    storage_page_t page{};
+    page.set(7, bytes32_t{0xAB});
+    auto const base = page_commit(page);
+    page.last_access = 1;
+    auto const c1 = page_commit(page);
+    page.last_access = 2;
+    auto const c2 = page_commit(page);
+    EXPECT_NE(base, c1);
+    EXPECT_NE(base, c2);
+    EXPECT_NE(c1, c2);
+}

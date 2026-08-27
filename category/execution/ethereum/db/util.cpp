@@ -436,8 +436,20 @@ namespace
         BOOST_OUTCOME_TRY(acct.nonce, rlp::decode_unsigned<uint64_t>(payload));
         BOOST_OUTCOME_TRY(
             acct.balance, rlp::decode_unsigned<uint256_t>(payload));
-        if (!payload.empty()) {
+        // code_hash is a 32-byte rlp string, so its header byte is 0x80 + 32;
+        // a canonical unsigned begins <= 0x88, so the two optionals can't
+        // be confused
+        constexpr uint8_t bytes32_rlp_header = 0x80 + 32;
+        if (!payload.empty() && payload[0] == bytes32_rlp_header) {
             BOOST_OUTCOME_TRY(acct.code_hash, rlp::decode_bytes32(payload));
+        }
+        if (!payload.empty()) {
+            BOOST_OUTCOME_TRY(
+                acct.last_access_block,
+                rlp::decode_unsigned<uint64_t>(payload));
+            if (MONAD_UNLIKELY(acct.last_access_block == 0)) {
+                return rlp::DecodeError::TypeUnexpected;
+            }
         }
         if (MONAD_UNLIKELY(!payload.empty())) {
             return rlp::DecodeError::InputTooLong;
@@ -688,6 +700,9 @@ byte_string encode_account_db(Address const &address, Account const &account)
     encoded_account += rlp::encode_unsigned(account.balance);
     if (account.code_hash != NULL_HASH) {
         encoded_account += rlp::encode_bytes32(account.code_hash);
+    }
+    if (account.last_access_block != 0) {
+        encoded_account += rlp::encode_unsigned(account.last_access_block);
     }
     return rlp::encode_list2(encoded_account);
 }

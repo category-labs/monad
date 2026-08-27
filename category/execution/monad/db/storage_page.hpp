@@ -120,6 +120,9 @@ struct storage_page_t
         return values_.size();
     }
 
+    // multi-block cache last access; 0 = never, suppressed from encodings
+    uint64_t last_access{0};
+
     // Approximate in-memory footprint in bytes, used as the LRU cache weight.
     size_t byte_size() const
     {

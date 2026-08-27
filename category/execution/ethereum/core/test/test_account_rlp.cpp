@@ -58,3 +58,35 @@ TEST(Rlp_Account, Encode)
     EXPECT_EQ(a.balance, decoded_account.value().balance);
     EXPECT_EQ(a.code_hash, decoded_account.value().code_hash);
 }
+
+TEST(Rlp_Account, EncodeLastAccess)
+{
+    static constexpr bytes32_t storage_root{
+        0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32};
+    Account const a{.balance = 1, .nonce = 2, .last_access_block = 3};
+
+    Account base = a;
+    base.last_access_block = 0;
+    EXPECT_NE(
+        encode_account(a, storage_root), encode_account(base, storage_root));
+
+    auto const encoded_account = encode_account(a, storage_root);
+    byte_string_view encoded_account_view{encoded_account};
+    bytes32_t decoded_storage_root{};
+    auto const decoded_account =
+        decode_account(decoded_storage_root, encoded_account_view);
+    ASSERT_FALSE(decoded_account.has_error());
+    EXPECT_EQ(encoded_account_view.size(), 0);
+    EXPECT_EQ(decoded_account.value(), a);
+}
+
+TEST(Rlp_Account, DecodeRejectsExplicitZeroLastAccess)
+{
+    static constexpr bytes32_t storage_root{};
+    Account a{.balance = 1, .last_access_block = 7};
+    auto encoded = encode_account(a, storage_root);
+    encoded.back() = 0x80; // last_access 7 -> explicit 0
+    byte_string_view view{encoded};
+    bytes32_t decoded_storage_root{};
+    EXPECT_TRUE(decode_account(decoded_storage_root, view).has_error());
+}

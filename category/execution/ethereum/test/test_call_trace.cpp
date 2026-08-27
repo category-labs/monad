@@ -513,14 +513,7 @@ TYPED_TEST(TraitsTest, execute_success)
     uint256_t base_fee{0};
     TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context};
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -615,14 +608,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
     TxTraceContextWithTracer trace_context{tx, call_frames};
 
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context};
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -703,14 +689,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
     uint256_t base_fee{0};
     TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context};
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -825,14 +804,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
     uint256_t base_fee{0};
     TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context};
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -911,14 +883,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
     uint256_t base_fee{0};
     TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context};
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(
@@ -1007,14 +972,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
     uint256_t base_fee{0};
     TxTraceContextWithTracer trace_context{tx, call_frames};
     EvmcHost<typename TestFixture::Trait> host{
-        tx_context,
-        buffer,
-        s,
-        tx,
-        base_fee,
-        0,
-        chain_ctx,
-        trace_context};
+        tx_context, buffer, s, tx, base_fee, 0, chain_ctx, trace_context};
 
     auto const result =
         ExecuteTransactionNoValidation<typename TestFixture::Trait>(

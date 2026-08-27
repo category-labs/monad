@@ -43,6 +43,12 @@ RUNTIME_SOURCE = (
     + RUNTIME_REVISION
 )
 EXPECTED_COMPILER = ("GNU", "15.2.0")
+EXPECTED_FEATURES = [
+    "baseline",
+    "zisk-dma",
+    "zisk-clean-byte-stores",
+    "keccakf-memo",
+]
 EXPECTED_MARCH = "rv64ima_zicsr_zba_zbb_zbs_zbkb"
 EXPECTED_MTUNE = "size"
 EXPECTED_INTERPRETER_MTUNE = "generic-ooo"
@@ -272,7 +278,7 @@ def main() -> int:
     if profile.get("runtime_revision") != RUNTIME_REVISION:
         fail("generated profile has the wrong runtime revision")
     features = str(profile.get("features_csv", "")).split(",")
-    if features != ["baseline", "zisk-dma", "zisk-clean-byte-stores"]:
+    if features != EXPECTED_FEATURES:
         fail(f"unexpected feature set: {features!r}")
 
     cache = build_dir / "CMakeCache.txt"

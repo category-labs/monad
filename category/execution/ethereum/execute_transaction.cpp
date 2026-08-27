@@ -364,7 +364,12 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         chain_ctx_,
         trace_transfers_};
 
-    return ExecuteTransactionNoValidation<traits>::operator()(state, host);
+    auto result =
+        ExecuteTransactionNoValidation<traits>::operator()(state, host);
+
+    MONAD_ASSERT(!host.execution_cancelled());
+
+    return result;
 }
 
 template <Traits traits>

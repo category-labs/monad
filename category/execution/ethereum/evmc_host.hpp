@@ -43,7 +43,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-static_assert(sizeof(vm::Host) == 24);
+static_assert(sizeof(vm::Host) == 40);
 static_assert(alignof(vm::Host) == 8);
 
 class BlockHashBuffer;
@@ -104,7 +104,7 @@ public:
         evmc::bytes32 const &value) noexcept override;
 };
 
-static_assert(sizeof(EvmcHostBase) == 72);
+static_assert(sizeof(EvmcHostBase) == 88);
 static_assert(alignof(EvmcHostBase) == 8);
 
 template <Traits traits>
@@ -284,10 +284,10 @@ struct EvmcHost final : public EvmcHostBase
 };
 
 static_assert(
-    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 136);
+    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 152);
 static_assert(
     alignof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 8);
-static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
+static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 152);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

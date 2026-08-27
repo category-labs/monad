@@ -542,14 +542,635 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_same_tx)
 
     State s{bs, Incarnation{1, 1}};
 
-    // Behavior doesn't change in cancun if in same txn
+    // The return value is the balance read before the guard, at every
+    // revision: it is what the call tracer records as the SELFDESTRUCT frame's
+    // value, and it does not track whether value actually moved. Pinned
+    // independently by simulate_v1_trace_multiple_selfdestructs_recursive,
+    // whose frame 2 is revision-independent for this reason.
     EXPECT_EQ(
         s.selfdestruct<typename TestFixture::Trait>(a, a),
         std::make_pair(true, 18'000));
-    EXPECT_EQ(s.get_balance(a), 0);
+
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        // EIP-8246: no burn, and the account is preserved holding the balance
+        // with its nonce and code cleared.
+        EXPECT_EQ(s.get_balance(a), 18'000);
+        s.destruct_suicides<typename TestFixture::Trait>();
+        EXPECT_TRUE(s.account_exists(a));
+        EXPECT_EQ(s.get_balance(a), 18'000);
+        EXPECT_EQ(s.get_nonce(a), 0);
+        EXPECT_EQ(s.get_code_hash(a), NULL_HASH);
+    }
+    else {
+        // Pre-8246 the balance is burned and the account deleted.
+        EXPECT_EQ(s.get_balance(a), 0);
+        s.destruct_suicides<typename TestFixture::Trait>();
+        EXPECT_FALSE(s.account_exists(a));
+    }
+}
+
+TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_same_tx_zero_balance)
+{
+    BlockState bs{this->tdb, this->vm};
+    State s{bs, Incarnation{1, 1}};
+
+    // EIP-8246 preserves only accounts that hold a balance. An empty one is
+    // still deleted by EIP-161, which is load-bearing rather than a spec
+    // nicety: BlockState::merge captures self_destruct_storage_reads_ only on
+    // the delete path, which self_destruct_storage_reads_capture_first_destruct
+    // and the three tests beside it pin.
+    s.create_contract(a);
+    EXPECT_EQ(
+        s.selfdestruct<typename TestFixture::Trait>(a, a),
+        std::make_pair(true, 0));
 
     s.destruct_suicides<typename TestFixture::Trait>();
     EXPECT_FALSE(s.account_exists(a));
+}
+
+TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_preserved_storage_zeroed)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
+        Code{},
+        BlockHeader{});
+    {
+        State s1{bs, Incarnation{1, 1}};
+
+        // Recreate the pre-existing account so it is same-transaction for
+        // EIP-6780, give it a slot, then destroy it to itself.
+        s1.create_contract(a);
+        s1.set_storage(a, key2, value2);
+        EXPECT_EQ(
+            s1.selfdestruct<typename TestFixture::Trait>(a, a),
+            std::make_pair(true, 18'000));
+        s1.destruct_suicides<typename TestFixture::Trait>();
+
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+    }
+    {
+        State s2{bs, Incarnation{1, 2}};
+        if constexpr (TestFixture::Trait::eip_8246_active()) {
+            // This is the test the zeroing pass exists for. Both slots must
+            // read as zero in a later transaction of the same block: key2
+            // because finalization set it to zero rather than erasing it (an
+            // erased entry would leave its pre-destruct value in the block
+            // delta for this read to find), key1 because create_contract
+            // bumped the incarnation.
+            EXPECT_TRUE(s2.account_exists(a));
+            EXPECT_EQ(s2.get_balance(a), 18'000);
+            EXPECT_EQ(s2.get_nonce(a), 0);
+            EXPECT_EQ(s2.get_code_hash(a), NULL_HASH);
+            EXPECT_EQ(s2.get_storage(a, key1), bytes32_t{});
+            EXPECT_EQ(s2.get_storage(a, key2), bytes32_t{});
+        }
+        else {
+            EXPECT_FALSE(s2.account_exists(a));
+        }
+    }
+}
+
+TYPED_TEST(
+    InMemoryStateTraitsTest, selfdestruct_credit_after_destruct_preserved)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 18'000,
+                           .incarnation = Incarnation{1, 1}}}}}}),
+        Code{},
+        BlockHeader{});
+
+    State s{bs, Incarnation{1, 1}};
+
+    // EIP-8246's *other* burn path, and the one the whole rest of this suite
+    // misses: value sent to an account already marked for selfdestruction.
+    // Pre-8246 finalization deleted the account and the credit went with it;
+    // that is the second burn the EIP names alongside destruct-to-self, and the
+    // one an earlier draft of EIP-7708 reported with a Burn log, before that
+    // draft took 8246 as a prerequisite and dropped the log.
+    //
+    // Note the beneficiary is not the destructing account, so rule 1 is not
+    // involved at all. This passes only because rule 2 keys on the balance
+    // rather than on who the beneficiary was -- an implementation keyed on
+    // `address == beneficiary` would satisfy every other test in this file and
+    // fail here.
+    EXPECT_EQ(
+        s.selfdestruct<typename TestFixture::Trait>(a, b),
+        std::make_pair(true, 18'000));
+    EXPECT_EQ(s.get_balance(a), 0);
+    EXPECT_EQ(s.get_balance(b), 18'000);
+
+    s.add_to_balance(a, 5'000);
+    s.destruct_suicides<typename TestFixture::Trait>();
+
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        ASSERT_TRUE(s.account_exists(a));
+        EXPECT_EQ(s.get_balance(a), 5'000);
+        EXPECT_EQ(s.get_nonce(a), 0);
+        EXPECT_EQ(s.get_code_hash(a), NULL_HASH);
+    }
+    else {
+        // The credit is destroyed with the account.
+        EXPECT_FALSE(s.account_exists(a));
+    }
+    EXPECT_EQ(s.get_balance(b), 18'000);
+}
+
+TYPED_TEST(
+    InMemoryStateTraitsTest, selfdestruct_preserved_clears_nonce_and_code)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}}}}}),
+        Code{},
+        BlockHeader{});
+
+    State s{bs, Incarnation{1, 1}};
+
+    // Build the account the way production does, so the assertions below are
+    // not vacuous: a real destructed contract reaches finalization with the
+    // nonce EIP-161 gave it at creation and the code hash of its deployed
+    // code. Starting from a nonce-0, NULL_HASH account would let rule 2 pass
+    // this test without clearing anything.
+    s.create_contract(a);
+    s.set_nonce(a, 1);
+    s.set_code(a, code1);
+    ASSERT_EQ(s.get_nonce(a), 1);
+    ASSERT_NE(s.get_code_hash(a), NULL_HASH);
+
+    s.selfdestruct<typename TestFixture::Trait>(a, a);
+    s.destruct_suicides<typename TestFixture::Trait>();
+
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        ASSERT_TRUE(s.account_exists(a));
+        EXPECT_EQ(s.get_balance(a), 18'000);
+        EXPECT_EQ(s.get_nonce(a), 0);
+        EXPECT_EQ(s.get_code_hash(a), NULL_HASH);
+    }
+    else {
+        EXPECT_FALSE(s.account_exists(a));
+    }
+}
+
+TYPED_TEST(
+    InMemoryStateTraitsTest, selfdestruct_preserved_read_only_slot_cleared)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 18'000,
+                           .incarnation = Incarnation{1, 1}}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
+        Code{},
+        BlockHeader{});
+    {
+        State s1{bs, Incarnation{1, 1}};
+
+        // key1 is only *read*, never written. That read goes through
+        // BlockState::read_storage, which puts it in the block delta, while
+        // get_storage inserts it into the original account state rather than
+        // the current one -- so finalization only clears it if the zeroing pass
+        // covers the original map too. key2 is written, covering the other map.
+        s1.access_storage<typename TestFixture::Trait>(a, key1);
+        ASSERT_EQ(s1.get_storage(a, key1), value1);
+        s1.set_storage(a, key2, value2);
+
+        s1.selfdestruct<typename TestFixture::Trait>(a, a);
+        s1.destruct_suicides<typename TestFixture::Trait>();
+
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+    }
+    {
+        State s2{bs, Incarnation{1, 2}};
+        if constexpr (TestFixture::Trait::eip_8246_active()) {
+            EXPECT_TRUE(s2.account_exists(a));
+            EXPECT_EQ(s2.get_balance(a), 18'000);
+            EXPECT_EQ(s2.get_storage(a, key1), bytes32_t{});
+            EXPECT_EQ(s2.get_storage(a, key2), bytes32_t{});
+        }
+        else {
+            EXPECT_FALSE(s2.account_exists(a));
+        }
+    }
+}
+
+TYPED_TEST(
+    InMemoryStateTraitsTest, selfdestruct_preserved_survives_touched_dead)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 18'000,
+                           .incarnation = Incarnation{1, 1}}}}}}),
+        Code{},
+        BlockHeader{});
+
+    State s{bs, Incarnation{1, 1}};
+
+    // b is zero-balance and built the way production builds one: nonce 1 from
+    // EIP-161, and real code. That matters, because an account with nonce 0
+    // and a NULL_HASH code hash is already empty, so destruct_touched_dead
+    // below would delete it whether or not destruct_suicides did -- and the
+    // assertion would pass with the EIP-161 arm deleted. With code and a
+    // nonzero nonce it is not dead, so only destruct_suicides can remove it.
+    s.create_contract(b);
+    s.set_nonce(b, 1);
+    s.set_code(b, code2);
+
+    // destruct_touched_dead short-circuits on !is_touched(), and under EIP-8246
+    // a destruct to self moves no value, so nothing on this path touches the
+    // account. Touch it explicitly or the call below is a no-op and proves
+    // nothing. In production transfer_balances touches it before execution.
+    s.touch(a);
+    s.touch(b);
+
+    s.selfdestruct<typename TestFixture::Trait>(a, a);
+    s.selfdestruct<typename TestFixture::Trait>(b, b);
+    s.destruct_suicides<typename TestFixture::Trait>();
+
+    // Assert b here, before destruct_touched_dead: EIP-161 deletes it inside
+    // destruct_suicides, and checking only after the next call would not
+    // distinguish the two passes.
+    EXPECT_FALSE(s.account_exists(b));
+
+    // execute_transaction runs this immediately after destruct_suicides, so a
+    // preserved account has to survive it: holding a balance it is not dead.
+    s.destruct_touched_dead();
+
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        EXPECT_TRUE(s.account_exists(a));
+        EXPECT_EQ(s.get_balance(a), 18'000);
+    }
+    else {
+        EXPECT_FALSE(s.account_exists(a));
+    }
+    EXPECT_FALSE(s.account_exists(b));
+}
+
+TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_preserved_merge_commit)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
+        Code{},
+        BlockHeader{});
+    {
+        State s1{bs, Incarnation{1, 1}};
+
+        s1.create_contract(a);
+        s1.set_storage(a, key2, value2);
+        s1.selfdestruct<typename TestFixture::Trait>(a, a);
+        s1.destruct_suicides<typename TestFixture::Trait>();
+
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+    }
+    {
+        auto [released_state, released_code, _] = std::move(bs).release();
+        commit_simple(
+            this->tdb,
+            *released_state,
+            released_code,
+            bytes32_t{1},
+            BlockHeader{.number = 1});
+        this->tdb.finalize(1, bytes32_t{1});
+        this->tdb.set_block_and_prefix(1);
+
+        // Through the trie this time, so it covers whichever commit builder
+        // the revision selects -- the page-encoded one is what runs at
+        // MONAD_NEXT, and only the typed form exercises it.
+        EXPECT_EQ(
+            this->tdb.read_storage(a, Incarnation{1, 1}, key1), bytes32_t{});
+        EXPECT_EQ(
+            this->tdb.read_storage(a, Incarnation{1, 1}, key2), bytes32_t{});
+        if constexpr (TestFixture::Trait::eip_8246_active()) {
+            ASSERT_TRUE(this->tdb.read_account(a).has_value());
+            EXPECT_EQ(this->tdb.read_account(a).value().balance, 18'000);
+            EXPECT_EQ(this->tdb.read_account(a).value().nonce, 0);
+            EXPECT_EQ(this->tdb.read_account(a).value().code_hash, NULL_HASH);
+        }
+        else {
+            EXPECT_FALSE(this->tdb.read_account(a).has_value());
+        }
+    }
+}
+
+// the preserved account pre-existed WITH trie storage and the destroying
+// transaction writes NOTHING. Nothing lands in either storage map, so the only
+// thing that can wipe the old subtree is the account update's reincarnation
+// flag -- which is only emitted at all because Account::operator== includes the
+// incarnation. If operator== ignored it, or if destruct_suicides assigned a
+// fresh Account instead of mutating in place, this commit would emit no update
+// and key1 would survive.
+TYPED_TEST(
+    InMemoryStateTraitsTest,
+    selfdestruct_preserved_prestate_storage_wiped_no_writes)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
+        Code{},
+        BlockHeader{});
+    {
+        State s1{bs, Incarnation{1, 1}};
+        s1.create_contract(a);
+        s1.selfdestruct<typename TestFixture::Trait>(a, a);
+        s1.destruct_suicides<typename TestFixture::Trait>();
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+    }
+    {
+        auto [released_state, released_code, _] = std::move(bs).release();
+        commit_simple(
+            this->tdb,
+            *released_state,
+            released_code,
+            bytes32_t{1},
+            BlockHeader{.number = 1});
+        this->tdb.finalize(1, bytes32_t{1});
+        this->tdb.set_block_and_prefix(1);
+
+        EXPECT_EQ(
+            this->tdb.read_storage(a, Incarnation{1, 1}, key1), bytes32_t{});
+        // The pre-destruct incarnation must not resolve either.
+        EXPECT_EQ(
+            this->tdb.read_storage(a, Incarnation{0, 0}, key1), bytes32_t{});
+        if constexpr (TestFixture::Trait::eip_8246_active()) {
+            ASSERT_TRUE(this->tdb.read_account(a).has_value());
+            EXPECT_EQ(this->tdb.read_account(a).value().balance, 18'000);
+            EXPECT_EQ(this->tdb.read_account(a).value().nonce, 0);
+            EXPECT_EQ(this->tdb.read_account(a).value().code_hash, NULL_HASH);
+        }
+        else {
+            EXPECT_FALSE(this->tdb.read_account(a).has_value());
+        }
+    }
+}
+
+// the merkle account of a preserved account must be byte-identical to that of
+// an ordinary balance-only account at the same address: nonce and code hash
+// really cleared, and the zeroed slot elided from the storage root rather than
+// committed as an empty leaf. The two dbs deliberately use different
+// incarnations, so this also pins the incarnation -- monad's storage-generation
+// key -- staying out of consensus state, which is encode_account's field list.
+TYPED_TEST(
+    InMemoryStateTraitsTest,
+    selfdestruct_preserved_state_root_matches_plain_account)
+{
+    if constexpr (!TestFixture::Trait::eip_8246_active()) {
+        GTEST_SKIP() << "account preservation requires EIP-8246";
+    }
+    else {
+        bytes32_t preserved_root{};
+        {
+            BlockState bs{this->tdb, this->vm};
+            State s1{bs, Incarnation{1, 1}};
+            s1.create_contract(a);
+            s1.set_nonce(a, 1);
+            s1.set_code(a, code1);
+            s1.set_storage(a, key1, value1);
+            s1.add_to_balance(a, 18'000);
+            s1.selfdestruct<typename TestFixture::Trait>(a, a);
+            s1.destruct_suicides<typename TestFixture::Trait>();
+            ASSERT_TRUE(bs.can_merge(s1));
+            bs.merge(s1);
+            auto [released_state, released_code, _] = std::move(bs).release();
+            commit_simple(
+                this->tdb,
+                *released_state,
+                released_code,
+                bytes32_t{1},
+                BlockHeader{.number = 1});
+            this->tdb.finalize(1, bytes32_t{1});
+            this->tdb.set_block_and_prefix(1);
+            preserved_root = this->tdb.state_root();
+        }
+        {
+            mpt::Db db2{TestFixture::make_machine()};
+            TrieDb tdb2{db2};
+            BlockState bs2{tdb2, this->vm};
+            State s2{bs2, Incarnation{1, 5}};
+            s2.add_to_balance(a, 18'000);
+            ASSERT_TRUE(bs2.can_merge(s2));
+            bs2.merge(s2);
+            auto [released_state, released_code, _] = std::move(bs2).release();
+            commit_simple(
+                tdb2,
+                *released_state,
+                released_code,
+                bytes32_t{1},
+                BlockHeader{.number = 1});
+            tdb2.finalize(1, bytes32_t{1});
+            tdb2.set_block_and_prefix(1);
+            EXPECT_EQ(preserved_root, tdb2.state_root());
+        }
+    }
+}
+
+// EIP-8246 makes preserved account recreation an ordinary event -- that is the
+// stated point of resetting the nonce. A later transaction in the SAME block
+// creates over the preserved account, and must not see the preserved account's
+// storage. The block delta still carries key2 from the first transaction at
+// this point.
+TYPED_TEST(
+    InMemoryStateTraitsTest,
+    selfdestruct_preserved_recreated_next_tx_same_block)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}}}}}),
+        Code{},
+        BlockHeader{});
+    {
+        State s1{bs, Incarnation{1, 1}};
+        s1.create_contract(a);
+        s1.set_nonce(a, 1);
+        s1.set_code(a, code1);
+        s1.set_storage(a, key2, value2);
+        s1.selfdestruct<typename TestFixture::Trait>(a, a);
+        s1.destruct_suicides<typename TestFixture::Trait>();
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+    }
+    if constexpr (!TestFixture::Trait::eip_8246_active()) {
+        GTEST_SKIP() << "account preservation requires EIP-8246";
+    }
+    else {
+        {
+            State s2{bs, Incarnation{1, 2}};
+            // The preserved account is nonce 0 / NULL_HASH, so EIP-684 lets a
+            // CREATE land here.
+            ASSERT_TRUE(s2.account_exists(a));
+            ASSERT_EQ(s2.get_nonce(a), 0);
+            ASSERT_EQ(s2.get_code_hash(a), NULL_HASH);
+            EXPECT_EQ(s2.get_storage(a, key2), bytes32_t{});
+
+            s2.create_contract(a);
+            EXPECT_EQ(s2.get_storage(a, key2), bytes32_t{});
+            s2.set_nonce(a, 1);
+            s2.set_code(a, code2);
+            s2.set_storage(a, key3, value3);
+            s2.selfdestruct<typename TestFixture::Trait>(a, a);
+            s2.destruct_suicides<typename TestFixture::Trait>();
+            EXPECT_TRUE(bs.can_merge(s2));
+            bs.merge(s2);
+        }
+        {
+            auto [released_state, released_code, _] = std::move(bs).release();
+            commit_simple(
+                this->tdb,
+                *released_state,
+                released_code,
+                bytes32_t{1},
+                BlockHeader{.number = 1});
+            this->tdb.finalize(1, bytes32_t{1});
+            this->tdb.set_block_and_prefix(1);
+
+            ASSERT_TRUE(this->tdb.read_account(a).has_value());
+            EXPECT_EQ(this->tdb.read_account(a).value().balance, 18'000);
+            EXPECT_EQ(this->tdb.read_account(a).value().nonce, 0);
+            EXPECT_EQ(this->tdb.read_account(a).value().code_hash, NULL_HASH);
+            auto const inc = this->tdb.read_account(a).value().incarnation;
+            EXPECT_EQ(this->tdb.read_storage(a, inc, key2), bytes32_t{});
+            EXPECT_EQ(this->tdb.read_storage(a, inc, key3), bytes32_t{});
+        }
+    }
+}
+
+// Two accounts destructing into each other move the same value twice within one
+// transaction. Under EIP-8246 the one left holding it survives as a
+// balance-only account and the drained one is deleted at zero balance; before
+// it, both go and the balance is burned.
+TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_mutual_conserves_supply)
+{
+    BlockState bs{this->tdb, this->vm};
+    State s{bs, Incarnation{1, 1}};
+
+    s.create_contract(a);
+    s.set_nonce(a, 1);
+    s.set_code(a, code1);
+    s.add_to_balance(a, 100);
+
+    s.create_contract(b);
+    s.set_nonce(b, 1);
+    s.set_code(b, code2);
+    s.add_to_balance(b, 200);
+
+    s.selfdestruct<typename TestFixture::Trait>(a, b);
+    EXPECT_EQ(s.get_balance(a), 0);
+    EXPECT_EQ(s.get_balance(b), 300);
+
+    s.selfdestruct<typename TestFixture::Trait>(b, a);
+    EXPECT_EQ(s.get_balance(a), 300);
+    EXPECT_EQ(s.get_balance(b), 0);
+
+    s.destruct_suicides<typename TestFixture::Trait>();
+    s.destruct_touched_dead();
+
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        ASSERT_TRUE(s.account_exists(a));
+        EXPECT_EQ(s.get_balance(a), 300);
+        EXPECT_EQ(s.get_nonce(a), 0);
+        EXPECT_EQ(s.get_code_hash(a), NULL_HASH);
+    }
+    else {
+        EXPECT_FALSE(s.account_exists(a));
+    }
+    EXPECT_FALSE(s.account_exists(b));
+}
+
+// The other preservation tests all stay inside one block. This one crosses a
+// real commit and finalize, then spends out of the preserved account in the
+// next block, which is where it has to behave like any ordinary balance-only
+// account.
+TYPED_TEST(
+    InMemoryStateTraitsTest, selfdestruct_preserved_visible_in_next_block)
+{
+    {
+        BlockState bs{this->tdb, this->vm};
+        State s1{bs, Incarnation{1, 1}};
+        s1.create_contract(a);
+        s1.set_nonce(a, 1);
+        s1.set_code(a, code1);
+        s1.set_storage(a, key1, value1);
+        s1.add_to_balance(a, 18'000);
+        s1.selfdestruct<typename TestFixture::Trait>(a, a);
+        s1.destruct_suicides<typename TestFixture::Trait>();
+        ASSERT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+        auto [released_state, released_code, _] = std::move(bs).release();
+        commit_simple(
+            this->tdb,
+            *released_state,
+            released_code,
+            bytes32_t{1},
+            BlockHeader{.number = 1});
+        this->tdb.finalize(1, bytes32_t{1});
+        this->tdb.set_block_and_prefix(1);
+    }
+
+    BlockState bs2{this->tdb, this->vm};
+    State s2{bs2, Incarnation{2, 1}};
+    if constexpr (!TestFixture::Trait::eip_8246_active()) {
+        EXPECT_FALSE(s2.account_exists(a));
+    }
+    else {
+        ASSERT_TRUE(s2.account_exists(a));
+        EXPECT_FALSE(s2.account_is_dead(a));
+        EXPECT_EQ(s2.get_balance(a), 18'000);
+        EXPECT_EQ(s2.get_nonce(a), 0);
+        EXPECT_EQ(s2.get_code_hash(a), NULL_HASH);
+        EXPECT_EQ(s2.get_storage(a, key1), bytes32_t{});
+        s2.subtract_from_balance(a, 18'000);
+        s2.add_to_balance(b, 18'000);
+        EXPECT_EQ(s2.get_balance(a), 0);
+        EXPECT_EQ(s2.get_balance(b), 18'000);
+    }
 }
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_incarnation)

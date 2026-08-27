@@ -53,7 +53,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # and ELF hash already identify them.
     option(MONAD_ZKVM_OFFICIAL_PROFILE
            "build the audited, fail-closed official ZisK guest profile" OFF)
-    set(_monad_zkvm_official_features "baseline")
+    set(_monad_zkvm_official_features "baseline" "zisk-dma")
     set(_monad_zkvm_runtime_version "1.3.1-alpha")
     set(_monad_zkvm_runtime_revision
         "306a9c934ba4947b1d586d69b67120f8b4c41466")
@@ -65,7 +65,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # Enable options required by the official profile; reject explicit OFF values.
     # Add each new required option here and its feature to the list above.
-    set(_monad_zkvm_required_levers)
+    set(_monad_zkvm_required_levers MONAD_ZKVM_ZISK_DMA)
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
         foreach(_lever ${_monad_zkvm_required_levers})
             if(DEFINED ${_lever} AND NOT ${_lever})
@@ -129,6 +129,17 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         # Set tuning before the official profile hashes the compiler flags.
         string(APPEND CMAKE_C_FLAGS " -mtune=generic-ooo")
         string(APPEND CMAKE_CXX_FLAGS " -mtune=generic-ooo")
+
+        # Lower eligible block memory operations, including struct copies,
+        # directly to ZisK DMA. Requires Zicsr and the patched compiler built by
+        # zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh.
+        # The official profile also probes the emitted code for a DMA marker.
+        option(MONAD_ZKVM_ZISK_DMA
+               "lower block mem* to the ZisK DMA precompile" OFF)
+        if(MONAD_ZKVM_ZISK_DMA)
+            string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
+            string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+        endif()
     endif()
 
     if(MONAD_ZKVM_OFFICIAL_PROFILE)

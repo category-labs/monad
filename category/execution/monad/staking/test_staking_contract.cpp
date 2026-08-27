@@ -5154,7 +5154,6 @@ TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
     BlockHeader const header{.number = 1};
     BlockHashBufferFinalized const block_hash_buffer;
     BlockMetrics metrics;
-    trace::StateTracer state_tracer = std::monostate{};
     // Reserve-balance tracking indexes the block's senders by tx position.
     std::vector<Address> const senders{auth, auth};
     std::vector<std::vector<std::optional<Address>>> const authorities{{}, {}};
@@ -5211,7 +5210,6 @@ TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
             this->bs,
             metrics,
             prev,
-            state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr,
             trace_context,
@@ -5311,7 +5309,6 @@ TYPED_TEST(StakeAllRevisions, delegate_value_is_logged_once)
     BlockHeader const header{.number = 1};
     BlockHashBufferFinalized const block_hash_buffer;
     BlockMetrics metrics;
-    trace::StateTracer state_tracer = std::monostate{};
     boost::fibers::promise<void> prev_promise{};
     auto prev = prev_promise.get_future();
     prev_promise.set_value();
@@ -5340,7 +5337,6 @@ TYPED_TEST(StakeAllRevisions, delegate_value_is_logged_once)
         this->bs,
         metrics,
         prev,
-        state_tracer,
         chain_ctx,
         /*exec_recorder=*/nullptr,
         trace_context)();

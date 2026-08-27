@@ -29,7 +29,6 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -127,12 +126,10 @@ namespace
                 header,
                 chain.get_chain_id(),
                 chain.get_blob_schedule(header.timestamp));
-            trace::StateTracer noop_state_tracer = std::monostate{};
             TxTraceContext const trace_context{};
             BlockHashBufferFinalized const buffer{};
             uint256_t base_fee{0};
             EvmcHost<Trait> host{
-                noop_state_tracer,
                 tx_context,
                 buffer,
                 state,

@@ -363,7 +363,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "trace/event_trace.cpp"
         "trace/call_frame.cpp"
         "trace/call_tracer.cpp"
-        "trace/state_tracer.cpp"
         "trace/rlp/call_frame_rlp.cpp"
         "genesis_state.cpp"
         "hive_net.cpp"

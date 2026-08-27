@@ -33,7 +33,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/code_tracer.hpp>
 #include <category/execution/ethereum/trace/prestate_tracer.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/statediff_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -1268,16 +1268,18 @@ TYPED_TEST(TraitsTest, statediff_selfdestruct_same_tx_preserved)
     BlockHeader const header{};
     BlockHashBufferFinalized const block_hash_buffer;
 
-    nlohmann::json diff;
-    StateTracer state_tracer = StateDiffTracer{diff};
-
     boost::fibers::promise<void> prev_promise{};
     auto prev = prev_promise.get_future();
     prev_promise.set_value();
 
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
-    TxTraceContext const trace_context{};
+    nlohmann::json diff;
+    StateDiffTracer statediff_tracer{diff};
+    TypeErasedTracer const erased_tracer =
+        TypeErasedTracer::erase(statediff_tracer);
+    std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
+    TxTraceContext const trace_context{tracers};
 
     auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         MonadTestnet{},
@@ -1290,7 +1292,6 @@ TYPED_TEST(TraitsTest, statediff_selfdestruct_same_tx_preserved)
         bs,
         metrics,
         prev,
-        state_tracer,
         chain_ctx,
         /*exec_recorder=*/nullptr,
         trace_context)();
@@ -1369,8 +1370,8 @@ TEST(PrestateTracer, prestate_access_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         // We only read the storage, so no changes are recorded in the
         // statediff.
@@ -1433,8 +1434,8 @@ TEST(PrestateTracer, prestate_access_zero_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         // We only read the storage, so no changes are recorded in the
         // statediff.
@@ -1497,8 +1498,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1571,8 +1572,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1646,10 +1647,10 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
+        StateDiffTracer tracer{trace};
 
         // Run tracer
-        tracer.encode(tracer.trace(s), s);
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1716,8 +1717,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1785,8 +1786,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1865,8 +1866,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         // We only read the storage, so no changes are recorded in the
         // statediff.
@@ -1922,8 +1923,8 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1970,8 +1971,8 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -2098,13 +2099,11 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer{std::monostate{}};
     CodeTracer code_tracer{};
     TypeErasedTracer const erased_tracer = TypeErasedTracer::erase(code_tracer);
     std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
     TxTraceContext const trace_context{tracers};
     EvmcHost<typename TestFixture::Trait> host{
-        state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -2149,13 +2148,11 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer{std::monostate{}};
     CodeTracer code_tracer{};
     TypeErasedTracer const erased_tracer = TypeErasedTracer::erase(code_tracer);
     std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
     TxTraceContext const trace_context{tracers};
     EvmcHost<typename TestFixture::Trait> host{
-        state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -2210,13 +2207,11 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer{std::monostate{}};
     CodeTracer code_tracer{};
     TypeErasedTracer const erased_tracer = TypeErasedTracer::erase(code_tracer);
     std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
     TxTraceContext const trace_context{tracers};
     EvmcHost<typename TestFixture::Trait> host{
-        state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
@@ -2460,14 +2455,12 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
         uint256_t const base_fee{0};
-        trace::StateTracer state_tracer{std::monostate{}};
         CodeTracer code_tracer{};
         TypeErasedTracer const erased_tracer =
             TypeErasedTracer::erase(code_tracer);
         std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
         TxTraceContext const trace_context{tracers};
         EvmcHost<typename TestFixture::Trait> host{
-            state_tracer,
             EMPTY_TX_CONTEXT,
             block_hash_buffer,
             state,

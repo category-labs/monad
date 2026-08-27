@@ -101,10 +101,8 @@ namespace
                 chain.get_blob_schedule(header.timestamp));
 
             uint256_t base_fee{0};
-            trace::StateTracer noop_state_tracer = std::monostate{};
             TxTraceContext const trace_context{};
             EvmcHost<Trait> host{
-                noop_state_tracer,
                 tx_context,
                 buffer,
                 state,

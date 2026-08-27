@@ -20,7 +20,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
@@ -82,7 +82,6 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
     boost::fibers::future<void> &prev_;
-    trace::StateTracer &state_tracer_;
     ExecutionEventRecorder *exec_recorder_;
     bool trace_transfers_;
     TxTraceContext const &tx_trace_context_;
@@ -95,7 +94,7 @@ public:
         Chain const &, uint64_t i, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
-        boost::fibers::future<void> &prev, trace::StateTracer &,
+        boost::fibers::future<void> &prev,
         ChainContext<traits> const &chain_ctx,
         ExecutionEventRecorder *exec_recorder,
         TxTraceContext const &tx_trace_context, bool trace_transfers = false);

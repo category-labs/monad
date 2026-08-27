@@ -53,7 +53,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # and ELF hash already identify them.
     option(MONAD_ZKVM_OFFICIAL_PROFILE
            "build the audited, fail-closed official ZisK guest profile" OFF)
-    set(_monad_zkvm_official_features "baseline" "zisk-dma")
+    set(_monad_zkvm_official_features "baseline" "zisk-dma" "keccakf-memo")
     set(_monad_zkvm_runtime_version "1.3.1-alpha")
     set(_monad_zkvm_runtime_revision
         "306a9c934ba4947b1d586d69b67120f8b4c41466")
@@ -65,7 +65,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # Enable options required by the official profile; reject explicit OFF values.
     # Add each new required option here and its feature to the list above.
-    set(_monad_zkvm_required_levers MONAD_ZKVM_ZISK_DMA)
+    set(_monad_zkvm_required_levers MONAD_ZKVM_ZISK_DMA
+                                    MONAD_ZKVM_KECCAKF_MEMO)
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
         foreach(_lever ${_monad_zkvm_required_levers})
             if(DEFINED ${_lever} AND NOT ${_lever})
@@ -123,6 +124,18 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+
+        # Memoise Keccak-f through ZisK's executor-side index (fcall 24/25),
+        # zkvm/guest/keccak_accel.cpp. ~14 % of a block's permutations repeat
+        # a state, and the lookup costs the guest nothing the cost model
+        # charges for. OFF compiles the mechanism out — table, fcalls and
+        # branch — so it is a control arm and not a disabled predicate:
+        #   -DMONAD_ZKVM_KECCAKF_MEMO=OFF
+        # It costs 100 MiB of .bss, which is why it is a switch at all.
+        option(MONAD_ZKVM_KECCAKF_MEMO "memoise Keccak-f via the ZisK executor index" ON)
+        if(NOT MONAD_ZKVM_KECCAKF_MEMO)
+            add_compile_definitions(MONAD_ZKVM_KECCAKF_MEMO=0)
+        endif()
         # Favor direct unaligned word accesses on ZisK over byte-wise loads.
         # SP1's handling of unaligned accesses has not been validated here.
         # Set tuning before the official profile hashes the compiler flags.
@@ -142,6 +155,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         if(MONAD_ZKVM_ZISK_DMA)
             string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
             string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+            # Tells the keccak memo that a constant-size block move reaches the
+            # port INLINE here, so it should stop hiding the length from the
+            # optimiser to force an out-of-line call. Worth 20.2 M COST a block.
+            # Defined by the same branch that adds the flag: a source-side guess
+            # about which compiler is in use is exactly what would drift.
+            add_compile_definitions(MONAD_ZKVM_ZISK_DMA_LOWERING)
         endif()
     endif()
 

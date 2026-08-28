@@ -86,6 +86,11 @@ namespace monad::mpt::test
         {
             return db.aux();
         }
+
+        static UpdateAux &aux(Db &db)
+        {
+            return db.aux();
+        }
     };
 }
 
@@ -836,6 +841,28 @@ TEST_F(OnDiskDbWithFileFixture, upsert_but_not_write_root)
     EXPECT_EQ(res2.value(), k2);
 }
 
+namespace
+{
+    void batch_upsert(
+        Db &db, Node::SharedPtr &root, uint64_t const version,
+        size_t const key_base, size_t const nkeys,
+        monad::byte_string const &value)
+    {
+        UpdateList ls;
+        std::deque<monad::byte_string> bytes_alloc;
+        std::deque<Update> updates_alloc;
+        for (size_t i = 0; i < nkeys; ++i) {
+            ls.push_front(updates_alloc.emplace_back(Update{
+                .key = bytes_alloc.emplace_back(
+                    keccak_int_to_string(key_base + i)),
+                .value = value,
+                .incarnation = false,
+                .next = UpdateList{}}));
+        }
+        root = db.upsert(std::move(root), std::move(ls), version);
+    }
+}
+
 TEST(DbTest, history_length_adjustment_never_under_min)
 {
     auto const dbname = create_temp_file(4);
@@ -846,33 +873,19 @@ TEST(DbTest, history_length_adjustment_never_under_min)
     Db db{std::make_unique<StateMachineAlwaysEmpty>(), config};
     Node::SharedPtr root{};
 
+    // new keys each version with large values, to trigger compaction and
+    // history length adjustment
     constexpr unsigned nkeys = 100;
     monad::byte_string const large_value(16 * 1024, 0xf);
 
-    auto batch_upsert_once = [&](uint64_t const version) {
-        // upsert new keys with large value to trigger compaction and history
-        // length adjustment
-        UpdateList ls;
-        std::deque<monad::byte_string> bytes_alloc;
-        std::deque<Update> updates_alloc;
-        for (size_t i = 0; i < nkeys; ++i) {
-            ls.push_front(updates_alloc.emplace_back(Update{
-                .key = bytes_alloc.emplace_back(
-                    keccak_int_to_string(version * nkeys + i)),
-                .value = large_value,
-                .incarnation = false,
-                .next = UpdateList{}}));
-        }
-        root = db.upsert(std::move(root), std::move(ls), version);
-    };
     uint64_t block_id = 0;
     while (db.get_history_length() != MIN_HISTORY_LENGTH) {
-        batch_upsert_once(block_id);
+        batch_upsert(db, root, block_id, block_id * nkeys, nkeys, large_value);
         ++block_id;
     }
     auto const disk_usage_before = test::DbAccessor::aux(db).disk_usage();
     while (test::DbAccessor::aux(db).disk_usage() == disk_usage_before) {
-        batch_upsert_once(block_id);
+        batch_upsert(db, root, block_id, block_id * nkeys, nkeys, large_value);
         ++block_id;
     }
     // Db stops adjusting down history length at MIN_HISTORY_LENGTH
@@ -897,28 +910,11 @@ TEST(DbTest, history_length_adjustment_reclaims_with_active_secondary)
     constexpr unsigned nkeys = 100;
     monad::byte_string const large_value(16 * 1024, 0xf);
 
-    auto batch_upsert = [&](Db &target,
-                            Node::SharedPtr &root,
-                            uint64_t const version,
-                            size_t const salt) {
-        UpdateList ls;
-        std::deque<monad::byte_string> bytes_alloc;
-        std::deque<Update> updates_alloc;
-        for (size_t i = 0; i < nkeys; ++i) {
-            ls.push_front(updates_alloc.emplace_back(Update{
-                .key = bytes_alloc.emplace_back(
-                    keccak_int_to_string(salt + version * nkeys + i)),
-                .value = large_value,
-                .incarnation = false,
-                .next = UpdateList{}}));
-        }
-        root = target.upsert(std::move(root), std::move(ls), version);
-    };
-
     Node::SharedPtr primary_root{};
     uint64_t version = 0;
     for (; version < 5; ++version) {
-        batch_upsert(db, primary_root, version, 0);
+        batch_upsert(
+            db, primary_root, version, version * nkeys, nkeys, large_value);
     }
 
     uint64_t const version_cap = version + 100000;
@@ -928,13 +924,20 @@ TEST(DbTest, history_length_adjustment_reclaims_with_active_secondary)
         // Secondary writes once at the fork then freezes, pinning fork-era
         // chunks while the primary races ahead.
         Node::SharedPtr secondary_root{};
-        batch_upsert(secondary_db, secondary_root, version, 0xD00D0000);
+        batch_upsert(
+            secondary_db,
+            secondary_root,
+            version,
+            0xD00D0000 + version * nkeys,
+            nkeys,
+            large_value);
 
         // After activation clamps history to the post-split capacity.
         uint64_t const start_history = db.get_history_length();
         while (db.get_history_length() == start_history &&
                version < version_cap) {
-            batch_upsert(db, primary_root, version, 0);
+            batch_upsert(
+                db, primary_root, version, version * nkeys, nkeys, large_value);
             ++version;
         }
         EXPECT_LT(db.get_history_length(), start_history)
@@ -966,30 +969,15 @@ TEST(DbTest, history_length_adjustment_trims_both_timelines)
         .chunk_capacity = 23}; // 8 MiB chunks, the smallest AsyncIO accepts
     Db db{std::make_unique<StateMachineAlwaysEmpty>(), config};
 
+    // fixed key set: repeated small upserts, so history grows much faster
+    // than data
     constexpr unsigned nkeys = 25;
     monad::byte_string const value(2 * 1024, 0xf);
-
-    auto batch_upsert = [&](Db &target,
-                            Node::SharedPtr &root,
-                            uint64_t const version,
-                            size_t const salt) {
-        UpdateList ls;
-        std::deque<monad::byte_string> bytes_alloc;
-        std::deque<Update> updates_alloc;
-        for (size_t i = 0; i < nkeys; ++i) {
-            ls.push_front(updates_alloc.emplace_back(Update{
-                .key = bytes_alloc.emplace_back(keccak_int_to_string(salt + i)),
-                .value = value,
-                .incarnation = false,
-                .next = UpdateList{}}));
-        }
-        root = target.upsert(std::move(root), std::move(ls), version);
-    };
 
     Node::SharedPtr primary_root{};
     uint64_t version = 0;
     for (; version < 5; ++version) {
-        batch_upsert(db, primary_root, version, 0);
+        batch_upsert(db, primary_root, version, 0, nkeys, value);
     }
 
     uint64_t const activation_version = version;
@@ -1002,8 +990,14 @@ TEST(DbTest, history_length_adjustment_trims_both_timelines)
         uint64_t const start_history = db.get_history_length();
         while (db.get_history_length() == start_history &&
                version < version_cap) {
-            batch_upsert(secondary_db, secondary_root, version, 0xD00D0000);
-            batch_upsert(db, primary_root, version, 0);
+            batch_upsert(
+                secondary_db,
+                secondary_root,
+                version,
+                0xD00D0000,
+                nkeys,
+                value);
+            batch_upsert(db, primary_root, version, 0, nkeys, value);
             ++version;
         }
         ASSERT_LT(db.get_history_length(), start_history)
@@ -1030,6 +1024,137 @@ TEST(DbTest, history_length_adjustment_trims_both_timelines)
     }
     db.deactivate_secondary_timeline();
     remove(dbname);
+}
+
+namespace
+{
+    struct DynamicHistoryTrimFixture : public ::testing::Test
+    {
+        std::filesystem::path const dbname{create_temp_file(4)};
+        OnDiskDbConfig const config{
+            .sq_thread_cpu{std::nullopt}, .dbname_paths = {dbname}};
+        Db db{std::make_unique<StateMachineAlwaysEmpty>(), config};
+        Node::SharedPtr primary_root{};
+        uint64_t version{0};
+
+        ~DynamicHistoryTrimFixture() override
+        {
+            std::filesystem::remove(dbname);
+        }
+
+        void upsert_one(Db &target, Node::SharedPtr &root, uint64_t const v)
+        {
+            monad::byte_string const value(64, 0xf);
+            batch_upsert(target, root, v, v, 1, value);
+        }
+
+        void write_primary_to(uint64_t const end)
+        {
+            for (; version < end; ++version) {
+                upsert_one(db, primary_root, version);
+            }
+        }
+
+        void dual_write_to(
+            Db &secondary_db, Node::SharedPtr &secondary_root,
+            uint64_t const end)
+        {
+            for (; version < end; ++version) {
+                upsert_one(secondary_db, secondary_root, version);
+                upsert_one(db, primary_root, version);
+            }
+        }
+    };
+}
+
+TEST_F(
+    DynamicHistoryTrimFixture,
+    plan_trim_clamps_to_keep_each_timelines_newest_version)
+{
+    write_primary_to(5);
+
+    auto const &aux = test::DbAccessor::aux(db);
+    {
+        auto const cut = aux.plan_trim(3, timeline_id::primary);
+        ASSERT_TRUE(cut.has_value());
+        EXPECT_EQ(cut->erase_up_to, 3u);
+        EXPECT_EQ(cut->oldest_surviving, 4u);
+        EXPECT_FALSE(aux.plan_trim(3, timeline_id::secondary).has_value());
+    }
+    {
+        // An overshooting candidate is clamped to keep the newest version.
+        auto const cut = aux.plan_trim(100, timeline_id::primary);
+        ASSERT_TRUE(cut.has_value());
+        EXPECT_EQ(cut->erase_up_to, 3u);
+        EXPECT_EQ(cut->oldest_surviving, 4u);
+    }
+
+    {
+        Db secondary_db = db.activate_secondary_timeline(
+            std::make_unique<StateMachineAlwaysEmpty>());
+        Node::SharedPtr secondary_root{};
+        dual_write_to(secondary_db, secondary_root, 10);
+
+        for (auto const tid : {timeline_id::primary, timeline_id::secondary}) {
+            auto const cut = aux.plan_trim(7, tid);
+            ASSERT_TRUE(cut.has_value());
+            EXPECT_EQ(cut->erase_up_to, 7u);
+            EXPECT_EQ(cut->oldest_surviving, 8u);
+        }
+
+        {
+            // Ring slots below activation are invalid in the secondary; the
+            // survivor scan must skip them, not stop at erase_up_to + 1.
+            auto const cut = aux.plan_trim(2, timeline_id::secondary);
+            ASSERT_TRUE(cut.has_value());
+            EXPECT_EQ(cut->erase_up_to, 2u);
+            EXPECT_EQ(cut->oldest_surviving, 5u);
+        }
+
+        // Freeze the secondary while the primary races ahead; the secondary's
+        // cut must clamp to keep its newest version instead of wiping it.
+        write_primary_to(20);
+        {
+            auto const cut = aux.plan_trim(15, timeline_id::primary);
+            ASSERT_TRUE(cut.has_value());
+            EXPECT_EQ(cut->erase_up_to, 15u);
+            EXPECT_EQ(cut->oldest_surviving, 16u);
+        }
+        {
+            auto const cut = aux.plan_trim(15, timeline_id::secondary);
+            ASSERT_TRUE(cut.has_value());
+            EXPECT_EQ(cut->erase_up_to, 8u);
+            EXPECT_EQ(cut->oldest_surviving, 9u);
+        }
+    }
+    db.deactivate_secondary_timeline();
+}
+
+TEST_F(DynamicHistoryTrimFixture, trim_keeps_lagging_secondarys_newest_version)
+{
+    // The clamp is only meaningful if the applied erase honors it: trimming
+    // past a lagging secondary's max must not wipe its newest version,
+    // which promotion/deactivation depend on.
+    write_primary_to(5);
+
+    {
+        Db secondary_db = db.activate_secondary_timeline(
+            std::make_unique<StateMachineAlwaysEmpty>());
+        Node::SharedPtr secondary_root{};
+        dual_write_to(secondary_db, secondary_root, 10);
+        write_primary_to(25);
+
+        auto &aux = test::DbAccessor::aux(db);
+        auto const &meta = aux.metadata_ctx();
+
+        aux.trim_all_timelines_up_to_and_including(14);
+
+        EXPECT_EQ(meta.db_history_min_valid_version(timeline_id::primary), 15u);
+        EXPECT_EQ(
+            meta.db_history_min_valid_version(timeline_id::secondary), 9u);
+        EXPECT_EQ(meta.db_history_max_version(timeline_id::secondary), 9u);
+    }
+    db.deactivate_secondary_timeline();
 }
 
 TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_as_version_expire)

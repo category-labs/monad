@@ -160,7 +160,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::FiberGroup &priority_pool, BlockMetrics &block_metrics,
     ChainContext<traits> const &chain_ctx,
-    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers,
+    ExecutionEventRecorder *const exec_recorder,
     BlockTraceContext const &block_trace_context)
 {
     MONAD_ASSERT(senders.size() == transactions.size());
@@ -191,8 +191,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
              &block_metrics,
              trace_ctx = block_trace_context.slice(i),
              &chain_ctx = chain_ctx,
-             exec_recorder = exec_recorder,
-             trace_transfers = trace_transfers] {
+             exec_recorder = exec_recorder] {
                 record_txn_marker_event(
                     exec_recorder, MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
                 try {
@@ -209,8 +208,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         promises[i],
                         chain_ctx,
                         exec_recorder,
-                        trace_ctx,
-                        trace_transfers);
+                        trace_ctx);
                     if (results[i]->has_error()) {
                         record_txn_error_event(
                             exec_recorder, i, results[i]->error());
@@ -266,7 +264,7 @@ Result<std::vector<Receipt>> execute_block(
     BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
     fiber::FiberGroup &priority_pool, BlockMetrics &block_metrics,
     ChainContext<traits> const &chain_ctx,
-    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers,
+    ExecutionEventRecorder *const exec_recorder,
     BlockTraceContext const &block_trace_context)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
@@ -292,7 +290,6 @@ Result<std::vector<Receipt>> execute_block(
             block_metrics,
             chain_ctx,
             exec_recorder,
-            trace_transfers,
             block_trace_context));
 
     State state{

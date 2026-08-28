@@ -82,7 +82,6 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     BlockMetrics &block_metrics_;
     boost::fibers::promise<void> &prev_;
     ExecutionEventRecorder *exec_recorder_;
-    bool trace_transfers_;
     TxTraceContext tx_trace_context_;
 
     Result<evmc::Result> execute_impl2(State &);
@@ -96,7 +95,7 @@ public:
         boost::fibers::promise<void> &prev,
         ChainContext<traits> const &chain_ctx,
         ExecutionEventRecorder *exec_recorder,
-        TxTraceContext const &tx_trace_context, bool trace_transfers = false);
+        TxTraceContext const &tx_trace_context);
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

@@ -28,7 +28,7 @@ Result<Receipt> dispatch_transaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *const exec_recorder,
-    TxTraceContext const &tx_trace_context, bool const trace_transfers)
+    TxTraceContext const &tx_trace_context)
 {
     return ExecuteTransaction<traits>{
         chain,
@@ -43,8 +43,7 @@ Result<Receipt> dispatch_transaction(
         prev,
         chain_ctx,
         exec_recorder,
-        tx_trace_context,
-        trace_transfers}();
+        tx_trace_context}();
 }
 
 EXPLICIT_EVM_TRAITS(dispatch_transaction)

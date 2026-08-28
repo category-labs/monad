@@ -30,7 +30,7 @@ Result<Receipt> dispatch_transaction(
     BlockState &block_state, BlockMetrics &block_metrics,
     boost::fibers::promise<void> &prev, ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *const exec_recorder,
-    TxTraceContext const &tx_trace_context, bool const trace_transfers)
+    TxTraceContext const &tx_trace_context)
 {
     if (traits::monad_rev() >= MONAD_FOUR && sender == SYSTEM_SENDER) {
         // System transactions is a concept used in Monad for consensus to
@@ -62,8 +62,7 @@ Result<Receipt> dispatch_transaction(
             prev,
             chain_ctx,
             exec_recorder,
-            tx_trace_context,
-            trace_transfers}();
+            tx_trace_context}();
     }
 }
 

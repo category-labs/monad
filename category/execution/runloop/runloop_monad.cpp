@@ -314,7 +314,6 @@ Result<BlockExecOutput> propose_block(
             block_metrics,
             chain_context,
             exec_recorder,
-            false,
             block_trace_context));
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 

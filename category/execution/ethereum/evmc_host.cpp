@@ -40,13 +40,10 @@ MONAD_NAMESPACE_BEGIN
 
 EvmcHostBase::EvmcHostBase(
     evmc_tx_context const &tx_context, BlockHashBuffer const &block_hash_buffer,
-    State &state,
-    TxTraceContext const &tx_trace_context,
-    bool const log_native_transfers) noexcept
+    State &state, TxTraceContext const &tx_trace_context) noexcept
     : block_hash_buffer_{block_hash_buffer}
     , tx_context_{tx_context}
     , state_{state}
-    , log_native_transfers_{log_native_transfers}
     , tx_trace_context_{tx_trace_context}
 {
 }

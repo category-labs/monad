@@ -477,7 +477,6 @@ namespace
                 metrics,
                 chain_context,
                 /*exec_recorder=*/nullptr,
-                false,
                 block_trace_context));
             return Result<nlohmann::json>{std::move(traces.back())};
         }
@@ -534,7 +533,6 @@ namespace
                 metrics,
                 chain_context,
                 /*exec_recorder=*/nullptr,
-                false,
                 block_trace_context));
 
             // Compose state traces
@@ -924,7 +922,6 @@ namespace
                         block_metrics,
                         chain_context,
                         /*exec_recorder=*/nullptr,
-                        emit_native_transfer_logs,
                         block_trace_context));
 
                 // NOTE(dhil): Synthetic blocks are free, so we don't update
@@ -1044,7 +1041,6 @@ namespace
                     block_metrics,
                     chain_context,
                     /*exec_recorder=*/nullptr,
-                    emit_native_transfer_logs,
                     block_trace_context));
 
             // Receipts have cumulative gas_used (YP eq. 22), so

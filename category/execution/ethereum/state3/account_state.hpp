@@ -51,9 +51,9 @@ class FlatStorage
 public:
     [[nodiscard]] bytes32_t const *find(bytes32_t const &key) const
     {
+        std::uint64_t const tail = key_tail(key);
         for (auto const &entry : entries_) {
-            if (__builtin_memcmp(
-                    entry.first.bytes, key.bytes, sizeof(key.bytes)) == 0) {
+            if (key_equals(key, tail, entry.first)) {
                 return &entry.second;
             }
         }
@@ -62,9 +62,9 @@ public:
 
     void upsert(bytes32_t const &key, bytes32_t const &value)
     {
+        std::uint64_t const tail = key_tail(key);
         for (auto &entry : entries_) {
-            if (__builtin_memcmp(
-                    entry.first.bytes, key.bytes, sizeof(key.bytes)) == 0) {
+            if (key_equals(key, tail, entry.first)) {
                 entry.second = value;
                 return;
             }
@@ -76,9 +76,9 @@ public:
     // here would still include the slot in the commit set.
     void erase(bytes32_t const &key)
     {
+        std::uint64_t const tail = key_tail(key);
         for (auto &entry : entries_) {
-            if (__builtin_memcmp(
-                    entry.first.bytes, key.bytes, sizeof(key.bytes)) == 0) {
+            if (key_equals(key, tail, entry.first)) {
                 entry = entries_.back();
                 entries_.pop_back();
                 return;
@@ -235,9 +235,9 @@ class PrestateStorage
 public:
     bytes32_t const *find(bytes32_t const &key) const
     {
+        std::uint64_t const tail = key_tail(key);
         for (auto const &entry : entries_) {
-            if (__builtin_memcmp(
-                    entry.first.bytes, key.bytes, sizeof(key.bytes)) == 0) {
+            if (key_equals(key, tail, entry.first)) {
                 return &entry.second;
             }
         }

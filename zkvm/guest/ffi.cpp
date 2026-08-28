@@ -57,6 +57,22 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+
+#ifdef MONAD_ZKVM_OFFICIAL_PROFILE
+#if !defined(MONAD_ZKVM_ZISK_DMA_LOWERING) || !defined(MONAD_VM_TABLE_ARG) || \
+    !defined(MONAD_ZKVM_KECCAKF_MEMO) || !MONAD_ZKVM_KECCAKF_MEMO ||          \
+    !defined(MONAD_VM_FUSE_JUMPDEST) || !defined(MONAD_VM_FUSE_PUSH1OP) ||    \
+    !defined(MONAD_VM_FUSE_PUSH2JUMP) || !defined(MONAD_VM_FUSE_TESTJUMPI)
+#error "official ZisK profile is missing a required compile-time feature"
+#endif
+// Kept by zkvm/zisk/align.ld. The post-link audit requires this exact marker,
+// so a manifest cannot be attached to an ELF built from a stale CMake cache.
+extern "C" [[gnu::used, gnu::section(".monad_zkvm_profile")]]
+unsigned char const monad_zkvm_official_profile[] =
+    "monad-zkvm-official-v1;dma=1;table_arg=1;keccakf_memo=1;fuse=1;commit="
+    MONAD_ZKVM_BUILD_COMMIT ";signature=" MONAD_ZKVM_BUILD_SIGNATURE;
+#endif
+
 #ifdef MONAD_ZKVM_KECCAK_SITES
 #include <category/core/keccak_sites.hpp>
 #else

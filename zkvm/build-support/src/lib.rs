@@ -379,6 +379,9 @@ fn locate_repo_root(manifest: &PathBuf) -> PathBuf {
 
 fn emit_rerun_directives(zkvm_dir: &Path, repo_root: &Path) {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=RISCV_TOOLCHAIN_DIR");
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_CMAKE_DEFINES");
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_GIT_COMMIT");
     // `rerun-if-changed=<dir>` watches only the directory's own mtime, which
     // doesn't update when files inside are edited. Walk and emit per-file
     // paths so edits to ffi.cpp / headers / cmake actually trigger a rebuild.

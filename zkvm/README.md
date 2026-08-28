@@ -61,6 +61,20 @@ Build and run the guest in the emulator. ZisK expects inputs to be
 length-prefixed: the first 8 bytes are the little-endian payload length,
 followed by the payload itself.
 
+Report and release artifacts must use the audited profile:
+
+```sh
+zkvm/zisk/build-official.sh
+```
+
+It selects the patched GCC 15.2 toolchain (override `RISCV_TOOLCHAIN_DIR` if
+needed), enables DMA lowering, dispatch-table threading, the Keccak-f memo and
+the measured fusions together, then audits the effective flags and linked ELF.
+Configuration fails if a required feature is explicitly disabled. A successful
+build writes `<elf>.build.json`; keep that manifest beside any ELF used in a
+published benchmark. Direct `cargo-zisk build` remains available for diagnostic
+A/B builds and is deliberately not an official artifact.
+
 ```sh
 # 1. Build the guest ELF.
 cd zkvm/zisk

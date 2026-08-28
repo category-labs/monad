@@ -47,6 +47,36 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "MONAD_COMPILER_TESTING is not supported in zkVM builds")
     endif()
 
+    # Fail-closed profile for a report/release ZisK artifact. Diagnostic A/B
+    # builds keep using the individual switches below; an official artifact
+    # enables this one switch and cannot silently omit a measured lever.
+    option(MONAD_ZKVM_OFFICIAL_PROFILE
+           "build the audited, fail-closed official ZisK guest profile" OFF)
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        if(NOT MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+            message(FATAL_ERROR
+                "MONAD_ZKVM_OFFICIAL_PROFILE is a ZisK-only build profile")
+        endif()
+        foreach(_required MONAD_ZKVM_ZISK_DMA MONAD_ZKVM_TABLE_ARG MONAD_ZKVM_FUSE)
+            if(DEFINED ${_required} AND NOT ${_required})
+                message(FATAL_ERROR
+                    "${_required}=OFF contradicts MONAD_ZKVM_OFFICIAL_PROFILE=ON")
+            endif()
+            set(${_required} ON CACHE BOOL "required by the official ZisK profile" FORCE)
+        endforeach()
+        if(DEFINED MONAD_ZKVM_KECCAKF_MEMO AND NOT MONAD_ZKVM_KECCAKF_MEMO)
+            message(FATAL_ERROR
+                "MONAD_ZKVM_KECCAKF_MEMO=OFF contradicts MONAD_ZKVM_OFFICIAL_PROFILE=ON")
+        endif()
+        set(MONAD_ZKVM_KECCAKF_MEMO ON CACHE BOOL
+            "required by the official ZisK profile" FORCE)
+        if(MONAD_ZKVM_KECCAK_SITES OR MONAD_ZKVM_SELFTEST)
+            message(FATAL_ERROR
+                "diagnostic counters/self-test are forbidden in the official ZisK profile")
+        endif()
+        add_compile_definitions(MONAD_ZKVM_OFFICIAL_PROFILE=1)
+    endif()
+
     # The riscv64-elf toolchain file specifies these as CMAKE_*_FLAGS_INIT,
     # but cmake-rs (driving this cmake invocation from build.rs) overrides
     # CMAKE_*_FLAGS with cc-rs's target-arch flags only — dropping the
@@ -90,7 +120,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         #   -DMONAD_ZKVM_KECCAKF_MEMO=OFF
         # It costs 100 MiB of .bss, which is why it is a switch at all.
         option(MONAD_ZKVM_KECCAKF_MEMO "memoise Keccak-f via the ZisK executor index" ON)
-        if(NOT MONAD_ZKVM_KECCAKF_MEMO)
+        if(MONAD_ZKVM_KECCAKF_MEMO)
+            add_compile_definitions(MONAD_ZKVM_KECCAKF_MEMO=1)
+        else()
             add_compile_definitions(MONAD_ZKVM_KECCAKF_MEMO=0)
         endif()
         # GCC's default tuning for this target is -mtune=rocket, whose cost
@@ -219,6 +251,50 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
                 MONAD_VM_FUSE_PUSH1OP
                 MONAD_VM_FUSE_PUSH2JUMP
                 MONAD_VM_FUSE_TESTJUMPI)
+        endif()
+
+        if(MONAD_ZKVM_OFFICIAL_PROFILE)
+            if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
+               NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "15.2.0")
+                message(FATAL_ERROR
+                    "official ZisK profile requires GCC 15.2.0; got "
+                    "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+            endif()
+            file(SHA256 "${CMAKE_CXX_COMPILER}" _official_cxx_sha256)
+            if(NOT DEFINED MONAD_ZKVM_GIT_COMMIT)
+                message(FATAL_ERROR
+                    "official ZisK profile requires MONAD_ZKVM_GIT_COMMIT")
+            endif()
+            string(LENGTH "${MONAD_ZKVM_GIT_COMMIT}" _official_git_commit_length)
+            if(NOT _official_git_commit_length EQUAL 40 OR
+               NOT MONAD_ZKVM_GIT_COMMIT MATCHES "^[0-9a-f]+$")
+                message(FATAL_ERROR
+                    "MONAD_ZKVM_GIT_COMMIT must be a full lowercase Git SHA")
+            endif()
+            set(_official_git_commit "${MONAD_ZKVM_GIT_COMMIT}")
+            string(SHA256 _official_build_signature
+                "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}")
+            add_compile_definitions(
+                MONAD_ZKVM_BUILD_COMMIT="${_official_git_commit}"
+                MONAD_ZKVM_BUILD_SIGNATURE="${_official_build_signature}")
+            file(WRITE "${CMAKE_BINARY_DIR}/monad-zkvm-official-profile.json"
+                "{\n"
+                "  \"schema\": 1,\n"
+                "  \"compiler\": \"${CMAKE_CXX_COMPILER}\",\n"
+                "  \"compiler_id\": \"${CMAKE_CXX_COMPILER_ID}\",\n"
+                "  \"compiler_version\": \"${CMAKE_CXX_COMPILER_VERSION}\",\n"
+                "  \"compiler_sha256\": \"${_official_cxx_sha256}\",\n"
+                "  \"commit\": \"${_official_git_commit}\",\n"
+                "  \"build_signature\": \"${_official_build_signature}\",\n"
+                "  \"c_flags\": \"${CMAKE_C_FLAGS}\",\n"
+                "  \"c_flags_release\": \"${CMAKE_C_FLAGS_RELEASE}\",\n"
+                "  \"cxx_flags\": \"${CMAKE_CXX_FLAGS}\",\n"
+                "  \"cxx_flags_release\": \"${CMAKE_CXX_FLAGS_RELEASE}\",\n"
+                "  \"dma\": true,\n"
+                "  \"table_arg\": true,\n"
+                "  \"keccakf_memo\": true,\n"
+                "  \"fuse\": true\n"
+                "}\n")
         endif()
 
     endif()

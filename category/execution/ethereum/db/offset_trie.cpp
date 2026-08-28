@@ -513,6 +513,51 @@ void append_storage(
     append_path(out, path);
 }
 
+namespace
+{
+    // Append `n` as an RLP string, straight into `out`.
+    //
+    // rlp::encode_unsigned builds two byte_strings on the way -- to_big_compact
+    // returns the significant bytes, encode_string2 returns those plus a
+    // header -- and append_acct calls it twice per account. Both temporaries
+    // are at most 33 bytes and die immediately; the value they carry is known
+    // before either is built.
+    //
+    // The scan is to_big_compact's, kept because it is the right one: find the
+    // top non-zero word by compares rather than byte-swapping the whole value
+    // and walking the leading zeros off one at a time. A uint256 field carries
+    // 24 zero bytes on average.
+    void append_unsigned_rlp(byte_string &out, uint256_t const &n)
+    {
+        size_t w = uint256_t::num_words;
+        while (w != 0 && n[w - 1] == 0) {
+            --w;
+        }
+        if (w == 0) {
+            out.push_back(0x80); // RLP of zero is the empty string
+            return;
+        }
+        unsigned const top = 8u - static_cast<unsigned>(
+                                     monad::bits::countl_zero(n[w - 1]) >> 3);
+        size_t const len = (w - 1) * 8 + top;
+        alignas(8) unsigned char be[uint256_t::num_bytes];
+        for (size_t i = 0; i < w; ++i) {
+            uint64_t const b = monad::bits::bswap64(n[i]);
+            std::memcpy(be + (w - 1 - i) * 8, &b, sizeof(b));
+        }
+        unsigned char const *const p = be + (w * 8 - len);
+        // Nonce and balance never reach 56 bytes, so the long form cannot arise
+        // and the header is always one byte.
+        if (len == 1 && p[0] <= 0x7f) {
+            out.push_back(p[0]);
+            return;
+        }
+        out.push_back(static_cast<unsigned char>(0x80 + len));
+        out.append(p, len);
+    }
+
+}
+
 void append_acct(
     byte_string &out, NodeId const storage, Account const &acct,
     NibblesView const path)
@@ -524,8 +569,8 @@ void append_acct(
     // appends below may reallocate, so hold slot by index
     size_t const len_index = out.size();
     out.push_back(0);
-    out.append(rlp::encode_unsigned(acct.nonce));
-    out.append(rlp::encode_unsigned(acct.balance));
+    append_unsigned_rlp(out, uint256_t{acct.nonce});
+    append_unsigned_rlp(out, acct.balance);
     size_t const len = out.size() - len_index - 1;
     MONAD_DEBUG_ASSERT(len >= 2 && len <= MAX_NONCE_BALANCE_RLP_LEN);
     out[len_index] = static_cast<unsigned char>(len);

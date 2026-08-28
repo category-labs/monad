@@ -285,6 +285,18 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
     // under the default tuning it would be byte-staged and this loop would be
     // far worse than the branch it replaces. The two changes are coupled.
     //
+    // Stage a misaligned multi-block input once, then absorb it aligned.
+    //
+    // 136 is a multiple of 8, so the whole sponge inherits the alignment of the
+    // first byte: a misaligned `in` makes every one of the 17 lanes of every
+    // block a boundary-crossing load at 159 against 16.
+    alignas(8) unsigned char staged[8 * RATE];
+    if ((reinterpret_cast<uintptr_t>(p) & 7) != 0 && len >= RATE &&
+        len <= sizeof(staged)) {
+        std::memcpy(staged, p, len);
+        p = staged;
+    }
+
     // The state is zero until something has been absorbed, so the first block
     // is a copy rather than a xor -- and -mzisk-dma lowers that 136-byte copy
     // to ZisK's block-move precompile. `first` tracks whether anything has

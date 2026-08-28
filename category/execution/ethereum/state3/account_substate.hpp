@@ -21,9 +21,61 @@
 
 #include <evmc/evmc.h>
 
+#include <cstdint>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
+
+// Comparing a 32-byte key inside a linear scan, in the order that decides.
+//
+// __builtin_memcmp compares in address order, and bytes32_t is big-endian: every slot index
+// below 2^64 -- which is every sequentially numbered state variable and array element -- is 24
+// zero bytes and then the value. So the entries that survive a scan's first word have words 1
+// and 2 zero on both sides, and those two words reject nothing. Measured over the whole guest
+// they reject 2.98 % of the entries reaching them, and none at all in get_storage or
+// access_storage.
+//
+// Only word 3 is hoisted out of the scan. Hoisting all four regresses -- measured +0.103 %
+// steps, +0.056 % COST over five blocks: the scans are about four entries long, so a four-load
+// prologue on every call costs more than the loop saves, and four values live across the loop
+// spill in these functions. One load pays for itself on the first entry it rejects.
+[[nodiscard]] inline std::uint64_t key_tail(bytes32_t const &k)
+{
+    std::uint64_t w;
+    __builtin_memcpy(&w, k.bytes + 24, 8);
+    // Without this the load sinks back into the scan -- key and entry have the same type, so a
+    // store to an entry could alias the key -- and once it is there GCC folds the four compares
+    // back into the memcmp it already knows, in address order. The constraint is empty and names
+    // no memory: it orders nothing, it only denies the optimiser the right to rematerialise this.
+    __asm__("" : "+r"(w));
+    return w;
+}
+
+// Word 0 first: it rejects 62 % on its own, and its key half is already a loop invariant the
+// compiler hoists by itself. Then word 3, from `tail`. Words 1 and 2 last, where they cost
+// nothing on the entries the first two have already rejected.
+[[nodiscard]] inline bool
+key_equals(bytes32_t const &k, std::uint64_t const tail, bytes32_t const &e)
+{
+    std::uint64_t a, b;
+    __builtin_memcpy(&a, e.bytes, 8);
+    __builtin_memcpy(&b, k.bytes, 8);
+    if (a != b) {
+        return false;
+    }
+    __builtin_memcpy(&a, e.bytes + 24, 8);
+    if (a != tail) {
+        return false;
+    }
+    __builtin_memcpy(&a, e.bytes + 8, 8);
+    __builtin_memcpy(&b, k.bytes + 8, 8);
+    if (a != b) {
+        return false;
+    }
+    __builtin_memcpy(&a, e.bytes + 16, 8);
+    __builtin_memcpy(&b, k.bytes + 16, 8);
+    return a == b;
+}
 
 // YP 6.1
 class AccountSubstate
@@ -96,8 +148,9 @@ public:
     // A_K
     evmc_access_status access_storage(bytes32_t const &key)
     {
+        std::uint64_t const tail = key_tail(key);
         for (auto const &k : accessed_storage_) {
-            if (__builtin_memcmp(k.bytes, key.bytes, sizeof(key.bytes)) == 0) {
+            if (key_equals(key, tail, k)) {
                 return EVMC_ACCESS_WARM;
             }
         }

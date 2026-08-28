@@ -1054,7 +1054,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
         0,
         chain_ctx,
         trace_context,
-        true, // log_native_transfers
     };
 
     auto const result =
@@ -1164,7 +1163,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
         0,
         chain_ctx,
         trace_context,
-        true, // log_native_transfers
     };
 
     auto const result =
@@ -1269,7 +1267,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
         0,
         chain_ctx,
         trace_context,
-        true, // log_native_transfers
     };
 
     auto const result =
@@ -1411,7 +1408,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
         0,
         chain_ctx,
         trace_context,
-        true, // log_native_transfers
     };
 
     auto const result =
@@ -1637,7 +1633,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
         0,
         chain_ctx,
         trace_context,
-        true, // log_native_transfers
     };
 
     auto const result =
@@ -1808,7 +1803,6 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
             0,
             chain_ctx,
             trace_context,
-            true, // log_native_transfers
         };
 
         auto const result =

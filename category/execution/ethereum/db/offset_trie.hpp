@@ -604,15 +604,15 @@ class OffsetTrie
     // A cached hash, and whether it is still the node's. The entry stays where
     // it is with its flag down, and the next hash of that id overwrites it in
     // place.
-    struct CachedHash
+    struct NodeCacheEntry
     {
-        bytes32_t h;
+        bytes32_t hash;
         // A word and not a bool. The flag is read on every hash lookup and
         // written on every insert, and ZisK charges a 1-byte read 41 cells and
         // a 1-byte write 66, against 16 and 18 for an aligned word. The width
         // is free: the padding below fixes the pair at 64 bytes either way.
-        uint64_t valid;
-        // Pad std::pair<NodeId, CachedHash> to 64 bytes so unordered_dense can
+        uint64_t hash_valid;
+        // Pad std::pair<NodeId, NodeCacheEntry> to 64 bytes so unordered_dense can
         // convert between entry indices and addresses using shifts instead of
         // multiplication or division by 48. Trades extra memory for cheaper
         // indexing.
@@ -621,9 +621,9 @@ class OffsetTrie
 
     // Asserted, because losing it is silent: the index arithmetic goes back to
     // a reciprocal multiply and nothing else changes -- just a slower guest.
-    static_assert(sizeof(std::pair<NodeId, CachedHash>) == 64);
+    static_assert(sizeof(std::pair<NodeId, NodeCacheEntry>) == 64);
 
-    ankerl::unordered_dense::map<NodeId, CachedHash, NodeIdHash> hashes_{};
+    ankerl::unordered_dense::map<NodeId, NodeCacheEntry, NodeIdHash> hashes_{};
 
     // The cached hash of `id`, or nullptr: absent and present-but-invalid are
     // the same answer. The pointer is into the table and dies at the next
@@ -631,7 +631,7 @@ class OffsetTrie
     [[nodiscard]] bytes32_t const *cached_hash(NodeId const id) const
     {
         auto const it = hashes_.find(id);
-        return (it != hashes_.end() && it->second.valid) ? &it->second.h
+        return (it != hashes_.end() && it->second.hash_valid) ? &it->second.hash
                                                          : nullptr;
     }
 
@@ -639,7 +639,7 @@ class OffsetTrie
     void drop_hash(NodeId const id)
     {
         if (auto const it = hashes_.find(id); it != hashes_.end()) {
-            it->second.valid = false;
+            it->second.hash_valid = false;
         }
     }
 

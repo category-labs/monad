@@ -28,6 +28,7 @@
 // libzkevm.a on SP1; the x86 test runner provides them against a --input
 // file).
 
+#include <cstring>
 #include <zkvm/core/zkvm_io.h>
 #include <zkvm/guest/execute_block_zkvm.hpp>
 
@@ -139,10 +140,37 @@ extern "C" void monad_zkvm_execute_witness(void)
         while (!codes.empty()) {
             auto const bytes = monad::rlp::parse_string_metadata(codes);
             MONAD_ASSERT(bytes.has_value());
+            // Hash the intercode's copy, not the witness bytes.
+            //
+            // Bytecode is the guest's longest keccak input -- 72 rate blocks a
+            // call on 25815100 -- and it sits at whatever offset the witness
+            // envelope left it at. 136 is a multiple of 8, so a misaligned
+            // start makes every lane of every block a boundary-crossing load,
+            // 159 against 17.
+            //
+            // Intercode already owns an 8-aligned verbatim copy: `pad` takes it
+            // from `new uint8_t[]` and returns it offset by a 32-byte prologue,
+            // so `code()` keeps the alignment operator new gives. Building it
+            // first and hashing from there costs no memory and no copy -- the
+            // copy exists either way.
+            auto const code = monad::vm::make_shared_intercode(bytes.value());
+            // The two properties this depends on, checked rather than trusted:
+            // the copy is 8-aligned, and it is the witness bytes unchanged.
+            // Intercode pads around the code, never inside it, so the first
+            // `size()` bytes at code() are verbatim -- but the padding is what
+            // makes the alignment hold, so an assert here is what would catch a
+            // change to it.
+            MONAD_ASSERT(
+                (reinterpret_cast<uintptr_t>(code->code()) & 7) == 0);
+            MONAD_DEBUG_ASSERT(
+                std::memcmp(
+                    code->code(), bytes.value().data(),
+                    bytes.value().size()) == 0);
             MONAD_KECCAK_SITE(CODE_INDEX, bytes.value().size());
             code_index.emplace(
-                monad::to_bytes(monad::keccak256(bytes.value())),
-                monad::vm::make_shared_intercode(bytes.value()));
+                monad::to_bytes(monad::keccak256(monad::byte_string_view{
+                    code->code(), bytes.value().size()})),
+                code);
         }
     }
 

@@ -179,6 +179,23 @@
     }                                                                          \
     while (false)
 
+// The fused fast path: test the whole sequence's requirements without mutating
+// anything, and only then charge the aggregate gas. Testing before mutating is
+// what lets the else-branch run the per-opcode checks against the state they
+// expect, so the fallback reports the same error, at the same opcode, with the
+// same gas remaining as it does today.
+//
+// The comparisons are the pointer form for the reason given on
+// MONAD_VM_CHECK_AT, and the two bounds are elided when the sequence cannot
+// underflow or cannot grow -- which for EQ PUSH2 JUMPI removes the overflow test
+// altogether, EQ having popped two before the PUSH2 pushes one.
+#define MONAD_VM_FUSED_OK(REQ)                                                 \
+    ((gas_remaining >= (REQ).gas) &&                                           \
+     ((REQ).min_required == 0 ||                                               \
+      (stack_top) >= (stack_bottom) + (REQ).min_required) &&                   \
+     ((REQ).max_growth == 0 ||                                                 \
+      (stack_top) <= (stack_bottom) + (1024 - (REQ).max_growth)))
+
 #define MONAD_VM_NEXT_PUSH(OP)                                                 \
     do {                                                                       \
         static constexpr auto delta =                                          \
@@ -203,6 +220,56 @@ namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
     using enum compiler::EvmOpCode;
+
+    // Aggregate requirements of a fused sequence, folded at compile time from the
+    // same table `MONAD_VM_CHECK_AT` reads, so the two can never disagree.
+    //
+    //   gas           the sequence's total static gas
+    //   min_required  entry height must be at least this, or some opcode underflows
+    //   max_growth    entry height plus this must be at most 1024, or some opcode
+    //                 overflows
+    //
+    // `min_required` is NOT derived from the net height change. SWAP16 moves the
+    // height by zero and still needs 17 items, so each opcode's own `min_stack` is
+    // folded against the running height. `max_growth` is the largest running height
+    // the sequence reaches, and pops precede pushes within an opcode, so the peak of
+    // an opcode is the larger of the heights either side of it.
+    struct FusedRequirements
+    {
+        int64_t gas;
+        int32_t min_required;
+        int32_t max_growth;
+
+        bool operator==(FusedRequirements const &) const = default;
+    };
+
+    // Declared and never defined, and deliberately not constexpr: calling it
+    // inside a constant expression is a compile error. That is how a
+    // dynamic-gas opcode is refused, the guest being built -fno-exceptions.
+    void fused_requirements_rejects_dynamic_gas();
+
+    template <Traits traits, compiler::EvmOpCode... Ops>
+    consteval FusedRequirements fused_requirements()
+    {
+        FusedRequirements r{0, 0, 0};
+        int32_t height = 0;
+        for (auto const op : {Ops...}) {
+            auto const ci = compiler::opcode_table<traits>[op];
+            // A dynamic-gas opcode cannot be covered by one up-front test: its real
+            // cost is not known here, so it has to stay a barrier and keep its own
+            // check. Refuse to fold it rather than under-charge the sequence.
+            if (ci.dynamic_gas) {
+                fused_requirements_rejects_dynamic_gas();
+            }
+            r.gas += ci.min_gas;
+            r.min_required =
+                std::max(r.min_required, static_cast<int32_t>(ci.min_stack) - height);
+            height = height - static_cast<int32_t>(ci.min_stack) +
+                     static_cast<int32_t>(ci.stack_increase);
+            r.max_growth = std::max(r.max_growth, height);
+        }
+        return r;
+    }
 
 #if defined(MONAD_VM_FUSE_JUMPDEST)
     // A taken jump lands on a JUMPDEST by construction -- jump_impl has just
@@ -827,15 +894,22 @@ namespace monad::vm::interpreter
         // two-operand requirement needs checking.
         if (*(instr_ptr + 1) == static_cast<std::uint8_t>(PUSH2) &&
             *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
-            MONAD_VM_CHECK(EQ);
+            static constexpr auto monad_vm_req =
+                fused_requirements<traits, EQ, PUSH2, JUMPI>();
+            if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) {
+                gas_remaining -= monad_vm_req.gas;
+            }
+            else {
+                MONAD_VM_CHECK(EQ);
+                // PUSH2's only stack test is overflow, and at SHIFT -1 it reads
+                // `height - 1 > 1023`, i.e. `height > 1024`. The height is at
+                // most 1024 on entry to any handler and EQ has already popped
+                // two, so it cannot hold. Charge the gas.
+                MONAD_DEBUG_ASSERT((stack_top - 1) - stack_bottom <= 1024);
+                MONAD_VM_CHARGE(PUSH2);
+                MONAD_VM_CHECK_AT(JUMPI, 0);
+            }
             bool const monad_vm_taken = (*stack_top == *(stack_top - 1));
-            // PUSH2's only stack test is overflow, and at SHIFT -1 it reads
-            // `height - 1 > 1023`, i.e. `height > 1024`. The height is at most
-            // 1024 on entry to any handler, so it cannot hold -- which is what
-            // the comment above the fusion gate already says. Charge the gas.
-            MONAD_DEBUG_ASSERT((stack_top - 1) - stack_bottom <= 1024);
-            MONAD_VM_CHARGE(PUSH2);
-            MONAD_VM_CHECK_AT(JUMPI, 0);
             instr_ptr = fused_branch(
                 ctx, analysis, instr_ptr, monad_vm_taken, gas_remaining);
             MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
@@ -862,10 +936,17 @@ namespace monad::vm::interpreter
         // ISZERO, which the fused triple has to earn back.
         if (*(instr_ptr + 1) == static_cast<std::uint8_t>(PUSH2) &&
             *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
-            MONAD_VM_CHECK(ISZERO);
+            static constexpr auto monad_vm_req =
+                fused_requirements<traits, ISZERO, PUSH2, JUMPI>();
+            if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) {
+                gas_remaining -= monad_vm_req.gas;
+            }
+            else {
+                MONAD_VM_CHECK(ISZERO);
+                MONAD_VM_CHECK_AT(PUSH2, 0);
+                MONAD_VM_CHECK_AT(JUMPI, 1);
+            }
             bool const monad_vm_taken = !*stack_top;
-            MONAD_VM_CHECK_AT(PUSH2, 0);
-            MONAD_VM_CHECK_AT(JUMPI, 1);
             instr_ptr = fused_branch(
                 ctx, analysis, instr_ptr, monad_vm_taken, gas_remaining);
             MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
@@ -1616,16 +1697,27 @@ namespace monad::vm::interpreter
             auto const monad_vm_op2 = *(instr_ptr + 3);
             if (static_cast<unsigned>(monad_vm_op2 -
                                       static_cast<std::uint8_t>(JUMP)) <= 1u) {
-                MONAD_VM_CHECK(PUSH2);
+                // Reading the destination immediate is pure, so it moves above
+                // the checks: the aggregate has to know which follower it is
+                // before it can test the sequence, and PUSH2 and JUMPI do not
+                // aggregate to the same requirements as PUSH2 and JUMP.
                 auto const monad_vm_dst = static_cast<size_t>(
                     (static_cast<unsigned>(*(instr_ptr + 1)) << 8) |
                     static_cast<unsigned>(*(instr_ptr + 2)));
                 if (monad_vm_op2 == static_cast<std::uint8_t>(JUMP)) {
-                    // JUMP needs one operand and the PUSH2 supplies it, so at
-                    // SHIFT 1 the test reads `height + 1 < 1`, i.e.
-                    // `height < 0`. Charge the gas and skip it.
-                    MONAD_DEBUG_ASSERT(stack_top >= stack_bottom);
-                    MONAD_VM_CHARGE(JUMP);
+                    static constexpr auto monad_vm_req =
+                        fused_requirements<traits, PUSH2, JUMP>();
+                    if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) {
+                        gas_remaining -= monad_vm_req.gas;
+                    }
+                    else {
+                        MONAD_VM_CHECK(PUSH2);
+                        // JUMP needs one operand and the PUSH2 supplies it, so
+                        // at SHIFT 1 the test reads `height + 1 < 1`, i.e.
+                        // `height < 0`. Charge the gas and skip it.
+                        MONAD_DEBUG_ASSERT(stack_top >= stack_bottom);
+                        MONAD_VM_CHARGE(JUMP);
+                    }
                     if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) {
                         ctx.exit(Error);
                     }
@@ -1639,7 +1731,15 @@ namespace monad::vm::interpreter
                         ctx, analysis, stack_bottom, stack_top, gas_remaining,
                         instr_ptr MONAD_VM_TBL_ARG);
                 }
-                MONAD_VM_CHECK_AT(JUMPI, 1);
+                static constexpr auto monad_vm_reqi =
+                    fused_requirements<traits, PUSH2, JUMPI>();
+                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_reqi))) {
+                    gas_remaining -= monad_vm_reqi.gas;
+                }
+                else {
+                    MONAD_VM_CHECK(PUSH2);
+                    MONAD_VM_CHECK_AT(JUMPI, 1);
+                }
                 // The condition is the word under the immediate, i.e. the stack top
                 // the handler was entered with.
                 if (*stack_top) {
@@ -1696,22 +1796,36 @@ namespace monad::vm::interpreter
             auto const monad_vm_op2 = *(instr_ptr + 2);
             if (monad_vm_op2 < 64 &&
                 ((monad_vm_fuse_mask >> monad_vm_op2) & 1)) {
-                MONAD_VM_CHECK(PUSH1);
+                // All four followers in the mask pop two, push one and cost 3,
+                // so one set of requirements covers the whole branch and the
+                // fallback needs one follower check rather than one per arm.
+                // The assertion is what keeps that true if the mask grows.
+                static constexpr auto monad_vm_req =
+                    fused_requirements<traits, PUSH1, ADD>();
+                static_assert(
+                    monad_vm_req == fused_requirements<traits, PUSH1, SHL>() &&
+                    monad_vm_req == fused_requirements<traits, PUSH1, SHR>() &&
+                    monad_vm_req == fused_requirements<traits, PUSH1, SAR>(),
+                    "PUSH1 fusion mask holds followers with unequal "
+                    "requirements; aggregate them per follower");
+                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) {
+                    gas_remaining -= monad_vm_req.gas;
+                }
+                else {
+                    MONAD_VM_CHECK(PUSH1);
+                    MONAD_VM_CHECK_AT(ADD, 1);
+                }
                 uint256_t const monad_vm_imm{*(instr_ptr + 1)};
                 if (monad_vm_op2 == static_cast<std::uint8_t>(ADD)) {
-                    MONAD_VM_CHECK_AT(ADD, 1);
                     *stack_top = monad_vm_imm + *stack_top;
                 }
                 else if (monad_vm_op2 == static_cast<std::uint8_t>(SHL)) {
-                    MONAD_VM_CHECK_AT(SHL, 1);
                     *stack_top <<= monad_vm_imm;
                 }
                 else if (monad_vm_op2 == static_cast<std::uint8_t>(SHR)) {
-                    MONAD_VM_CHECK_AT(SHR, 1);
                     *stack_top >>= monad_vm_imm;
                 }
                 else {
-                    MONAD_VM_CHECK_AT(SAR, 1);
                     *stack_top = sar(monad_vm_imm, *stack_top);
                 }
                 MONAD_VM_FUSED_NEXT(3, 0);

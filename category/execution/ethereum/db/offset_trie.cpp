@@ -19,6 +19,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
+#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/nibble.h>
 #include <category/core/rlp/encode.hpp>
@@ -527,6 +528,43 @@ void append_storage(
     append_path(out, path);
 }
 
+namespace
+{
+    // Append `n` as an RLP string, straight into `out`.
+    // The scan is to_big_compact's: find the top non-zero word by compares.
+    void append_unsigned_rlp(byte_string &out, uint256_t const &n)
+    {
+        size_t w = uint256_t::num_words;
+        while (w != 0 && n[w - 1] == 0) {
+            --w;
+        }
+        if (w == 0) {
+            out.push_back(zx(0x80)); // RLP of zero is the empty string
+            return;
+        }
+        // top = number of significant bytes in n's highest word
+        unsigned const top =
+            8u - static_cast<unsigned>(std::countl_zero(n[w - 1]) >> 3);
+        // len = total number of significant bytes in n
+        size_t const len = (w - 1) * 8 + top;
+        alignas(8) unsigned char be[uint256_t::num_bytes];
+        for (size_t i = 0; i < w; ++i) {
+            uint64_t const b = bswap(n[i]);
+            std::memcpy(be + (w - 1 - i) * 8, &b, sizeof(b));
+        }
+        unsigned char const *const p = be + (w * 8 - len);
+        // Nonce and balance never reach 56 bytes, so the long form cannot arise
+        // and the header is always one byte.
+        if (len == 1 && p[0] <= 0x7f) {
+            out.push_back(p[0]);
+            return;
+        }
+        out.push_back(static_cast<unsigned char>(0x80 + len));
+        out.append(p, len);
+    }
+
+}
+
 void append_acct(
     byte_string &out, NodeId const storage, Account const &acct,
     NibblesView const path)
@@ -538,8 +576,8 @@ void append_acct(
     // appends below may reallocate, so hold slot by index
     size_t const len_index = out.size();
     out.push_back(0);
-    out.append(rlp::encode_unsigned(acct.nonce));
-    out.append(rlp::encode_unsigned(acct.balance));
+    append_unsigned_rlp(out, uint256_t{acct.nonce});
+    append_unsigned_rlp(out, acct.balance);
     size_t const len = out.size() - len_index - 1;
     MONAD_DEBUG_ASSERT(len >= 2 && len <= MAX_NONCE_BALANCE_RLP_LEN);
     out[len_index] = static_cast<unsigned char>(len);

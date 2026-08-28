@@ -98,7 +98,9 @@ static_assert(
 
 constexpr size_t KECCAKF_MEMO_ENTRIES = size_t{1} << 18;
 
-static KeccakfEntry keccakf_memo[KECCAKF_MEMO_ENTRIES];
+// Extra scratch entry for uncached permutations when the table is full.
+// It is never published, so a hint cannot select it.
+static KeccakfEntry keccakf_memo[KECCAKF_MEMO_ENTRIES + 1];
 static uint64_t keccakf_memo_used = 0;
 
         // Preserve constant lengths with -mzisk-dma for inline DMA lowering.
@@ -157,6 +159,56 @@ static inline uint64_t fcall_get_keccakf_index(uint64_t const *const state)
     return index;
 }
 
+// Build a padded input (< KECCAK_RATE bytes) in the next memo entry.
+// Hints must name a published entry with an exact input match; this scratch
+// stays unpublished until both states are ready.
+// Its input starts zeroed: misses advance to fresh .bss, hits clear the
+// rate, and full-table calls clear all 200 bytes after permutation.
+static void keccak256_one_block(
+    void const *const input, size_t const input_length, uint8_t output[32])
+{
+    static_assert(
+        KECCAK_RATE - 1 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
+
+    // Keep the count local to avoid global reloads after asm memory clobbers.
+    uint64_t const entry_count = keccakf_memo_used;
+    KeccakfEntry &entry = keccakf_memo[entry_count];
+    uint64_t *const state = entry.in;
+
+    if (input_length) {
+        std::memcpy(state, input, input_length);
+    }
+    reinterpret_cast<unsigned char *>(state)[input_length] = 0x01;
+    state[16] |= uint64_t{0x80} << 56;
+
+    uint64_t const index = fcall_get_keccakf_index(state);
+    if (index < entry_count &&
+        keccakf_state_eq(keccakf_memo[index].in, state)) {
+        std::memcpy(output, keccakf_memo[index].out, 32);
+        // Clear 17 lanes (136 bytes) used by input and padding.
+        // No permutation ran here, so the other 64 bytes are still zero.
+        std::memset(state, 0, KECCAK_RATE);
+        return;
+    }
+
+    if (entry_count == KECCAKF_MEMO_ENTRIES) {
+        // Full table: permute the spare slot, then clear it for reuse.
+        zisk_keccakf(&entry.in);
+        std::memcpy(output, state, 32);
+        std::memset(state, 0, KECCAKF_STATE_BYTES);
+        return;
+    }
+
+    // Preserve `in`; copy only the rate to `out` for the permutation.
+    // Both capacities are zero: this is the first block and `out` is unused.
+    std::memcpy(entry.out, state, 17 * sizeof(uint64_t));
+    fcall_set_keccakf_index(entry_count);
+    zisk_keccakf(&entry.out);
+    // Publish only after both input and output are stored.
+    keccakf_memo_used = entry_count + 1;
+    std::memcpy(output, entry.out, 32);
+}
+
     #endif // MONAD_ZKVM_KECCAKF_MEMO
 
 // Reuse a validated result when available; otherwise run Keccak-f.
@@ -197,6 +249,14 @@ void monad_zkvm_keccak256_fast(
     void const *const input, size_t remaining_bytes, uint8_t output[32])
 {
     constexpr size_t RATE_WORDS = KECCAK_RATE / 8; // 17
+
+    #if MONAD_ZKVM_KECCAKF_MEMO
+    // Short inputs build their padded state directly in the memo.
+    if (remaining_bytes < KECCAK_RATE) {
+        keccak256_one_block(input, remaining_bytes, output);
+        return;
+    }
+    #endif
 
     // Keccak-f[1600] uses 25 lanes of 64 bits (200 bytes).
     // Keccak-256 absorbs into the first 17 lanes (136-byte rate);

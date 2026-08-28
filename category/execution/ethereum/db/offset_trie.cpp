@@ -19,6 +19,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
+#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/nibble.h>
 #include <category/core/rlp/encode.hpp>
@@ -662,6 +663,48 @@ void append_storage(
     append_path(out, path);
 }
 
+namespace
+{
+    // Append the integer directly, without allocating a temporary RLP string.
+    void append_unsigned_rlp(byte_string &out, uint256_t const &value)
+    {
+        size_t significant_words = uint256_t::num_words;
+        while (significant_words != 0 && value[significant_words - 1] == 0) {
+            --significant_words;
+        }
+        if (significant_words == 0) {
+            out.push_back(static_cast<unsigned char>(
+                0x80)); // RLP of zero is the empty string
+            return;
+        }
+        // Count significant bytes in the highest nonzero word.
+        unsigned const top_word_bytes =
+            8u - static_cast<unsigned>(
+                     std::countl_zero(value[significant_words - 1]) >> 3);
+        // Include all lower words.
+        size_t const byte_count = (significant_words - 1) * 8 + top_word_bytes;
+        alignas(8) unsigned char big_endian[uint256_t::num_bytes];
+        for (size_t i = 0; i < significant_words; ++i) {
+            uint64_t const big_endian_word = bswap(value[i]);
+            std::memcpy(
+                big_endian + (significant_words - 1 - i) * 8,
+                &big_endian_word,
+                sizeof(big_endian_word));
+        }
+        unsigned char const *const significant_bytes =
+            big_endian + (significant_words * 8 - byte_count);
+        // Values fit in 32 bytes: use either the single-byte form or a short
+        // string with a one-byte prefix.
+        if (byte_count == 1 && significant_bytes[0] <= 0x7f) {
+            out.push_back(significant_bytes[0]);
+            return;
+        }
+        out.push_back(static_cast<unsigned char>(0x80 + byte_count));
+        out.append(significant_bytes, byte_count);
+    }
+
+}
+
 void append_acct(
     byte_string &out, NodeId const storage, Account const &acct,
     NibblesView const path)
@@ -673,8 +716,8 @@ void append_acct(
     // appends below may reallocate, so hold slot by index
     size_t const len_index = out.size();
     out.push_back(0);
-    out.append(rlp::encode_unsigned(acct.nonce));
-    out.append(rlp::encode_unsigned(acct.balance));
+    append_unsigned_rlp(out, uint256_t{acct.nonce});
+    append_unsigned_rlp(out, acct.balance);
     size_t const len = out.size() - len_index - 1;
     MONAD_DEBUG_ASSERT(len >= 2 && len <= MAX_NONCE_BALANCE_RLP_LEN);
     out[len_index] = static_cast<unsigned char>(len);

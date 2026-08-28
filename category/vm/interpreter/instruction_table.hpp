@@ -124,12 +124,20 @@
                                                                                \
         if constexpr (!(monad_vm_ci.min_stack == 0 &&                          \
                         monad_vm_ci.stack_increase == 0)) {                    \
-            auto const monad_vm_sz =                                           \
-                (stack_top + (SHIFT)) - stack_bottom;                          \
-            MONAD_DEBUG_ASSERT(monad_vm_sz <= 1024);                           \
+            /* The height is only ever compared against compile-time bounds,   \
+             * so compare the POINTER against `stack_bottom + bound` instead   \
+             * of differencing first. Same comparisons, same branches, same    \
+             * instruction count -- but the difference is a `sub`, which ZisK  \
+             * prices through the generic binary machine at BINARY_COST = 60,  \
+             * where an add has its own path at BINARY_ADD_COST = 25 and       \
+             * measures 15.4 on average. 1,224,298 of these a block on         \
+             * 25815091, 0.981 per dispatch. */                                \
+            uint256_t const *const monad_vm_top = (stack_top) + (SHIFT);       \
+            MONAD_DEBUG_ASSERT(monad_vm_top - stack_bottom <= 1024);           \
                                                                                \
             if constexpr (monad_vm_ci.min_stack > 0) {                         \
-                if (MONAD_UNLIKELY(monad_vm_sz < monad_vm_ci.min_stack)) {     \
+                if (MONAD_UNLIKELY(                                            \
+                        monad_vm_top < stack_bottom + monad_vm_ci.min_stack)) {\
                     MONAD_VM_MUST_TAIL return ctx.exit(Error);                 \
                 }                                                              \
             }                                                                  \
@@ -139,7 +147,8 @@
                     monad_vm_ci.stack_increase - monad_vm_ci.min_stack;        \
                 static constexpr auto monad_vm_max = 1024 - monad_vm_delta;    \
                 if constexpr (monad_vm_max < 1024) {                           \
-                    if (MONAD_UNLIKELY(monad_vm_sz > monad_vm_max)) {          \
+                    if (MONAD_UNLIKELY(                                        \
+                            monad_vm_top > stack_bottom + monad_vm_max)) {     \
                         MONAD_VM_MUST_TAIL return ctx.exit(Error);             \
                     }                                                          \
                 }                                                              \

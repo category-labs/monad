@@ -157,6 +157,28 @@
     }                                                                          \
     while (false)
 
+// Charge an opcode's gas and skip its stack check.
+//
+// Legal ONLY where the stack condition `MONAD_VM_CHECK_AT` would test cannot
+// hold, and the caller must state the proof. This does not fail closed: getting
+// it wrong deletes a bounds check and the interpreter runs off the stack, so a
+// site that is merely believed safe belongs in MONAD_VM_CHECK_AT instead. Each
+// use below carries a MONAD_DEBUG_ASSERT of the invariant it leans on, which is
+// what a debug build has instead of the check.
+#define MONAD_VM_CHARGE(OP)                                                    \
+    do {                                                                       \
+        static constexpr auto monad_vm_ci =                                    \
+            compiler::opcode_table<traits>[(OP)];                              \
+                                                                               \
+        if constexpr (monad_vm_ci.min_gas > 0) {                               \
+            gas_remaining -= monad_vm_ci.min_gas;                              \
+            if (MONAD_UNLIKELY(gas_remaining < 0)) {                           \
+                MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);                  \
+            }                                                                  \
+        }                                                                      \
+    }                                                                          \
+    while (false)
+
 #define MONAD_VM_NEXT_PUSH(OP)                                                 \
     do {                                                                       \
         static constexpr auto delta =                                          \
@@ -807,7 +829,12 @@ namespace monad::vm::interpreter
             *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
             MONAD_VM_CHECK(EQ);
             bool const monad_vm_taken = (*stack_top == *(stack_top - 1));
-            MONAD_VM_CHECK_AT(PUSH2, -1);
+            // PUSH2's only stack test is overflow, and at SHIFT -1 it reads
+            // `height - 1 > 1023`, i.e. `height > 1024`. The height is at most
+            // 1024 on entry to any handler, so it cannot hold -- which is what
+            // the comment above the fusion gate already says. Charge the gas.
+            MONAD_DEBUG_ASSERT((stack_top - 1) - stack_bottom <= 1024);
+            MONAD_VM_CHARGE(PUSH2);
             MONAD_VM_CHECK_AT(JUMPI, 0);
             instr_ptr = fused_branch(
                 ctx, analysis, instr_ptr, monad_vm_taken, gas_remaining);
@@ -1594,7 +1621,11 @@ namespace monad::vm::interpreter
                     (static_cast<unsigned>(*(instr_ptr + 1)) << 8) |
                     static_cast<unsigned>(*(instr_ptr + 2)));
                 if (monad_vm_op2 == static_cast<std::uint8_t>(JUMP)) {
-                    MONAD_VM_CHECK_AT(JUMP, 1);
+                    // JUMP needs one operand and the PUSH2 supplies it, so at
+                    // SHIFT 1 the test reads `height + 1 < 1`, i.e.
+                    // `height < 0`. Charge the gas and skip it.
+                    MONAD_DEBUG_ASSERT(stack_top >= stack_bottom);
+                    MONAD_VM_CHARGE(JUMP);
                     if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) {
                         ctx.exit(Error);
                     }

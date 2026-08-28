@@ -315,6 +315,24 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
     // std::memcpy into 17 unaligned ld/sd pairs instead". That was true when it
     // was written. -mzisk-dma lowers block copies to the precompile now, so the
     // copy the note wanted is available and the fragility it feared is gone.
+    // Stage a misaligned multi-block input once, then absorb it aligned.
+    //
+    // 136 is a multiple of 8, so the whole sponge inherits the alignment of the
+    // first byte: a misaligned `in` makes every one of the 17 lanes of every
+    // block a boundary-crossing load at 159 against 17. Measured on 25815100,
+    // this wrapper holds 323,476 of the block's 565,979 costly accesses -- 57 %
+    // of them, a 0.30 % COST ceiling.
+    //
+    // Bounded by the scratch: trie nodes run 2.8 blocks and fit, bytecode does
+    // not and keeps the direct path. Copying per block instead would trade one
+    // staging copy for 53,294 of them.
+    alignas(8) unsigned char staged[8 * RATE];
+    if ((reinterpret_cast<uintptr_t>(p) & 7) != 0 && len >= RATE &&
+        len <= sizeof(staged)) {
+        std::memcpy(staged, p, len);
+        p = staged;
+    }
+
     bool first = true;
     while (len >= RATE) {
         if (first) {

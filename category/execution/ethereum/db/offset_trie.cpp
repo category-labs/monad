@@ -138,11 +138,11 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // remains, without scanning node_offsets again.
     size_t unclaimed = static_cast<size_t>(region_end - node.bytes());
 
-    // Reuse one CachedHash for the sweep: Keccak overwrites the hash directly,
+    // Reuse one NodeCacheEntry for the sweep: Keccak overwrites the hash directly,
     // avoiding per-node zeroing and an intermediate copy. All entries are
     // valid.
-    CachedHash ch{};
-    ch.valid = true;
+    NodeCacheEntry ch{};
+    ch.hash_valid = true;
 
     // Cache the size so possible aliasing with node_offsets stores does not
     // force GCC to reload it for each child.
@@ -221,7 +221,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     // emit a 32-byte ref where the trie inlines it.
                     if (rem.rlp_size() >= 32) {
                         monad_keccak256(
-                            rem.rlp_data(), rem.rlp_size(), ch.h.bytes);
+                            rem.rlp_data(), rem.rlp_size(), ch.hash.bytes);
                         hashes_.insert_or_assign(NodeId{node_offset}, ch);
                     }
                 }});
@@ -309,7 +309,7 @@ bytes32_t OffsetTrie::hash(NodeId const id)
                 // RLP occupies the tail: [rem.end(), buf_end).
                 monad_keccak256(rem.rlp_data(), rem.rlp_size(), h.bytes);
 
-                hashes_.insert_or_assign(id, CachedHash{h, true});
+                hashes_.insert_or_assign(id, NodeCacheEntry{h, true});
                 return h;
             }});
 }
@@ -340,7 +340,7 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
     }
     bytes32_t h;
     monad_keccak256(child_rlp, child_rlp_len, h.bytes);
-    hashes_.insert_or_assign(id, CachedHash{h, true});
+    hashes_.insert_or_assign(id, NodeCacheEntry{h, true});
     return encode_rlp(h, dest);
 }
 
@@ -771,12 +771,10 @@ NodeId OffsetTrie::put_node(NodeId const id, byte_string node)
 {
     if (id == NULL_ID) {
         NodeId const fresh = fresh_id();
-        overlay_filter_mark(fresh); // must precede/accompany every insert
         overlay_[fresh] = std::move(node);
         return fresh;
     }
     drop_hash(id); // bytes changed; the cached hash is stale
-    overlay_filter_mark(id);
     overlay_[id] = std::move(node);
     return id;
 }

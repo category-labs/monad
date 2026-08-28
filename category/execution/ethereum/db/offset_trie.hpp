@@ -618,15 +618,15 @@ class OffsetTrie
     // A cached hash, and whether it is still the node's. The entry stays where
     // it is with its flag down, and the next hash of that id overwrites it in
     // place.
-    struct CachedHash
+    struct NodeCacheEntry
     {
-        bytes32_t h;
+        bytes32_t hash;
         // A word and not a bool. The flag is read on every hash lookup and
         // written on every insert, and ZisK charges a 1-byte read 41 cells and
         // a 1-byte write 66, against 16 and 18 for an aligned word. The width
         // is free: the padding below fixes the pair at 64 bytes either way.
-        uint64_t valid;
-        // Pad std::pair<NodeId, CachedHash> to 64 bytes so unordered_dense can
+        uint64_t hash_valid;
+        // Pad std::pair<NodeId, NodeCacheEntry> to 64 bytes so unordered_dense can
         // convert between entry indices and addresses using shifts instead of
         // multiplication or division by 48. Trades extra memory for cheaper
         // indexing.
@@ -635,9 +635,9 @@ class OffsetTrie
 
     // Asserted, because losing it is silent: the index arithmetic goes back to
     // a reciprocal multiply and nothing else changes -- just a slower guest.
-    static_assert(sizeof(std::pair<NodeId, CachedHash>) == 64);
+    static_assert(sizeof(std::pair<NodeId, NodeCacheEntry>) == 64);
 
-    ankerl::unordered_dense::map<NodeId, CachedHash, NodeIdHash> hashes_{};
+    ankerl::unordered_dense::map<NodeId, NodeCacheEntry, NodeIdHash> hashes_{};
 
     // The cached hash of `id`, or nullptr: absent and present-but-invalid are
     // the same answer. The pointer is into the table and dies at the next
@@ -645,7 +645,7 @@ class OffsetTrie
     [[nodiscard]] bytes32_t const *cached_hash(NodeId const id) const
     {
         auto const it = hashes_.find(id);
-        return (it != hashes_.end() && it->second.valid) ? &it->second.h
+        return (it != hashes_.end() && it->second.hash_valid) ? &it->second.hash
                                                          : nullptr;
     }
 
@@ -653,57 +653,11 @@ class OffsetTrie
     void drop_hash(NodeId const id)
     {
         if (auto const it = hashes_.find(id); it != hashes_.end()) {
-            it->second.valid = false;
+            it->second.hash_valid = false;
         }
     }
 
     NodeId next_id_{OVERLAY_BASE}; // fresh-id counter (>= OVERLAY_BASE)
-
-    // Negative filter in front of overlay_.
-    // A Bloom filter, not a fingerprint table: insertion only ever *sets*
-    // bits, so a false negative — which would silently skip a real overlay
-    // entry — is impossible by construction. False positives fall through to
-    // the real find and cost only the filter.
-    //
-    // 32,768 bits = 4 KB. At ~1,341 entries that is load 0.041, and with a
-    // single probe the false positive rate is about the load: ~4 %. Sized to
-    // the shadow set, not to the blob: a bitmap over blob offsets would be
-    // ~940 KB on a 7.5 MB witness. overlay_ is written in exactly two places
-    // and never erased or cleared, so the filter never needs a bit unset.
-    static constexpr unsigned OVERLAY_FILTER_WORDS = 512; // 32,768 bits
-    std::array<uint64_t, OVERLAY_FILTER_WORDS> overlay_filter_{};
-
-    static constexpr unsigned overlay_filter_bit(NodeId const id)
-    {
-        // The top 15 bits of the Fibonacci hash: multiply by ⌊2^64/φ⌋,
-        // which carries the low bits of `id` upward, and keep 15 -- the
-        // filter's size.
-        //
-        // The multiplier has to be 64-bit. With a 32-bit one the product
-        // tops out near 2^54, so `>> 49` keeps about five usable bits and
-        // the filter stops filtering: measured at 100 % false positives.
-        return static_cast<unsigned>(
-            (static_cast<uint64_t>(id) * 0x9E3779B97F4A7C15ull) >> 49);
-    }
-
-    void overlay_filter_mark(NodeId const id)
-    {
-        unsigned const b = overlay_filter_bit(id);
-        // b >> 6 = b / 64 is the index of the word in overlay_filter;
-        // b & 63 = b % 64 is the index of the bit to set to one.
-        // |= uint64_t{1} << (b & 63) sets the bit to 1 in
-        // overlay_filter_[b >> 6].
-        overlay_filter_[b >> 6] |= uint64_t{1} << (b & 63);
-    }
-
-    [[nodiscard]] bool overlay_filter_may_contain(NodeId const id) const
-    {
-        unsigned const b = overlay_filter_bit(id);
-        // overlay_filter_[b >> 6] >> (b & 63) puts the targeted bit in
-        // position 0, & 1 returns 1 iff this bit is 1
-        return (overlay_filter_[b >> 6] >> (b & 63)) & 1;
-    }
-
 public:
     // Wrap the read-only node blob, structurally validate it, and prime the
     // hash cache (see prime()). Aborts if the blob is malformed.
@@ -756,12 +710,6 @@ public:
     // has materialised: it reads as empty.
     NodeViewBase get_current(NodeId const id) const
     {
-        // 97.7 % of these lookups find nothing; the filter answers those in
-        // ten instructions instead of forty-two. A negative is certain, so
-        // this cannot skip a live entry.
-        if (!overlay_filter_may_contain(id)) {
-            return is_overlay_id(id) ? empty() : get_original(id);
-        }
         auto const it = overlay_.find(id);
         if (it != overlay_.end()) {
             return NodeViewBase{it->second.data()};

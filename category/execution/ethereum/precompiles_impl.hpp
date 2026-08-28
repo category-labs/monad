@@ -22,6 +22,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/thread_local.h>
 #include <category/crypto/silkpre_vendor/blake2b.h>
 #include <category/crypto/silkpre_vendor/ecdsa.h>
 #include <category/crypto/silkpre_vendor/rmd160.h>
@@ -383,7 +384,8 @@ p256_verify_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
     Integer qx(input.data() + 96, 32);
     Integer qy(input.data() + 128, 32);
 
-    DL_GroupParameters_EC<ECP> params(ASN1::secp256r1());
+    MONAD_THREAD_LOCAL DL_GroupParameters_EC<ECP> const params(
+        ASN1::secp256r1());
     auto const &ec = params.GetCurve();
     auto const &n = params.GetSubgroupOrder();
     auto const p_mod = ec.FieldSize();
@@ -407,13 +409,14 @@ p256_verify_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
         return PrecompileImplResult::failure();
     }
 
-    // if qy^2 ≢ qx^3 + a*qx + b (mod p): return
-    if (!ec.VerifyPoint({qx, qy})) {
+    // if (qx, qy) == (0, 0): return
+    // (cheaper, check first)
+    if (qx.IsZero() && qy.IsZero()) {
         return PrecompileImplResult::failure();
     }
 
-    // if (qx, qy) == (0, 0): return
-    if (qx.IsZero() && qy.IsZero()) {
+    // if qy^2 ≢ qx^3 + a*qx + b (mod p): return
+    if (!ec.VerifyPoint({qx, qy})) {
         return PrecompileImplResult::failure();
     }
 

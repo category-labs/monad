@@ -83,8 +83,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     BlockMetrics &block_metrics_;
     boost::fibers::future<void> &prev_;
     ExecutionEventRecorder *exec_recorder_;
-    bool trace_transfers_;
-    TxTraceContext const &tx_trace_context_;
+    TxTraceContext tx_trace_context_;
 
     Result<evmc::Result> execute_impl2(State &);
     Receipt execute_final(State &, evmc::Result const &);
@@ -97,15 +96,14 @@ public:
         boost::fibers::future<void> &prev,
         ChainContext<traits> const &chain_ctx,
         ExecutionEventRecorder *exec_recorder,
-        TxTraceContext const &tx_trace_context, bool trace_transfers = false);
+        TxTraceContext const &tx_trace_context);
 
     ExecuteTransaction(
         Chain const &, uint64_t, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
         boost::fibers::future<void> &, ChainContext<traits> const &&,
-        ExecutionEventRecorder *, TxTraceContext const &&,
-        bool = false) = delete;
+        ExecutionEventRecorder *, TxTraceContext const &&) = delete;
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

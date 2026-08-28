@@ -53,7 +53,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
     std::span<std::vector<std::optional<Address>> const> authorities,
     BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
     ChainContext<traits> const &chain_ctx, ExecutionEventRecorder *,
-    bool trace_transfers, BlockTraceContext const &block_trace_context);
+    BlockTraceContext const &block_trace_context);
 
 template <Traits traits>
 Result<std::vector<Receipt>> execute_block(
@@ -61,7 +61,7 @@ Result<std::vector<Receipt>> execute_block(
     std::span<std::vector<std::optional<Address>> const> authorities,
     BlockState &, BlockHashBuffer const &, fiber::FiberGroup &, BlockMetrics &,
     ChainContext<traits> const &chain_ctx, ExecutionEventRecorder *,
-    bool trace_transfers, BlockTraceContext const &block_trace_context);
+    BlockTraceContext const &block_trace_context);
 
 std::vector<std::optional<Address>>
 recover_senders(std::span<Transaction const>, fiber::PriorityPool &);

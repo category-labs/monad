@@ -401,7 +401,6 @@ Result<BlockExecOutput> execute(
             metrics,
             chain_context,
             exec_recorder,
-            false,
             block_trace_context));
 
     block_state.log_debug();

@@ -478,7 +478,6 @@ namespace
                 metrics,
                 chain_context,
                 /*exec_recorder=*/nullptr,
-                false,
                 block_trace_context));
             return Result<nlohmann::json>{std::move(traces.back())};
         }
@@ -537,7 +536,6 @@ namespace
                 metrics,
                 chain_context,
                 /*exec_recorder=*/nullptr,
-                false,
                 block_trace_context));
 
             // Compose state traces
@@ -803,7 +801,6 @@ namespace
         std::vector<std::vector<std::optional<Address>>> const &authorities,
         BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
         fiber::FiberGroup &tx_exec_pool, ChainContextBuffer &context_buffer,
-        bool const emit_native_transfer_logs,
         BlockTraceContext const &trace_ctx)
     {
         if constexpr (traits::eip_7843_active()) {
@@ -829,7 +826,6 @@ namespace
             block_metrics,
             chain_context,
             /*exec_recorder=*/nullptr,
-            emit_native_transfer_logs,
             trace_ctx);
     }
 
@@ -840,7 +836,6 @@ namespace
         std::vector<std::vector<std::optional<Address>>> const &authorities,
         BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
         fiber::FiberGroup &tx_exec_pool, ChainContextBuffer &context_buffer,
-        bool const emit_native_transfer_logs,
         BlockTraceContext const &trace_ctx)
     {
         if constexpr (is_monad_trait_v<base_traits>) {
@@ -860,7 +855,6 @@ namespace
                 block_hash_buffer,
                 tx_exec_pool,
                 context_buffer,
-                emit_native_transfer_logs,
                 trace_ctx);
         }
         else {
@@ -877,7 +871,6 @@ namespace
                 block_hash_buffer,
                 tx_exec_pool,
                 context_buffer,
-                emit_native_transfer_logs,
                 trace_ctx);
         }
         MONAD_ASSERT(false);
@@ -895,7 +888,7 @@ namespace
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        bool emit_native_transfer_logs)
+        bool const emit_native_transfer_logs)
     {
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
@@ -1041,7 +1034,6 @@ namespace
                         block_hash_buffer,
                         tx_exec_pool,
                         context_buffer,
-                        emit_native_transfer_logs,
                         block_trace_context));
 
                 // NOTE(dhil): Synthetic blocks are free, so we don't update
@@ -1172,7 +1164,6 @@ namespace
                     block_hash_buffer,
                     tx_exec_pool,
                     context_buffer,
-                    emit_native_transfer_logs,
                     block_trace_context));
 
             for (auto const &call_tracer : call_tracers) {

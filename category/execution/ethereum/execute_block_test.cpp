@@ -345,7 +345,6 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
             metrics,
             chain_ctx,
             /*exec_recorder=*/nullptr,
-            false,
             block_trace_context);
     };
 
@@ -521,7 +520,6 @@ TYPED_TEST(TraitsTest, assertion_exception)
             metrics,
             chain_ctx,
             /*exec_recorder=*/nullptr,
-            false,
             block_trace_context);
     };
 
@@ -598,7 +596,6 @@ TYPED_TEST(TraitsTest, fibers_join_exception)
             block_metrics,
             chain_ctx,
             nullptr,
-            false,
             block_trace_context);
     });
 
@@ -767,7 +764,6 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             metrics,
             chain_ctx,
             /*exec_recorder=*/nullptr,
-            false,
             block_trace_context);
     };
 

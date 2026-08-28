@@ -307,9 +307,24 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
     // load64 is one `ld` here because the guest is built -mtune=generic-ooo;
     // under the default tuning it would be byte-staged and this loop would be
     // far worse than the branch it replaces. The two changes are coupled.
+    // The state is zero on entry, so absorbing into it is a copy and not a
+    // xor, for as long as nothing has been absorbed yet. `first` tracks that.
+    //
+    // The comment above weighed staging a block through a copy and rejected it:
+    // "only if the copy reaches ZisK's dma_memcpy. gcc inlines a 136-byte
+    // std::memcpy into 17 unaligned ld/sd pairs instead". That was true when it
+    // was written. -mzisk-dma lowers block copies to the precompile now, so the
+    // copy the note wanted is available and the fragility it feared is gone.
+    bool first = true;
     while (len >= RATE) {
-        for (size_t i = 0; i < WORDS; ++i) {
-            st[i] ^= monad::bits::load64(p + 8 * i);
+        if (first) {
+            std::memcpy(st, p, RATE);
+            first = false;
+        }
+        else {
+            for (size_t i = 0; i < WORDS; ++i) {
+                st[i] ^= monad::bits::load64(p + 8 * i);
+            }
         }
         keccak_permute(&st);
         p += RATE;
@@ -366,15 +381,29 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
 #endif
 
     // Final block: remainder plus pad10*1 with the 0x01 domain byte.
-    alignas(8) unsigned char last[RATE] = {};
-    if (len) {
-        std::memcpy(last, p, len);
+    if (first) {
+        // Nothing absorbed yet, so the padded block can be built in the state
+        // itself: no 136-byte scratch to zero, no copy into it, and no 17-lane
+        // xor to fold it in. This is the common shape -- a trie node, an
+        // address, a slot -- everything under one rate block.
+        if (len) {
+            std::memcpy(st, p, len);
+        }
+        auto *const b = reinterpret_cast<unsigned char *>(st);
+        b[len] = 0x01;
+        b[RATE - 1] |= 0x80;
     }
-    last[len] = 0x01;
-    last[RATE - 1] |= 0x80;
-    auto const *const w = reinterpret_cast<uint64_t const *>(last);
-    for (size_t i = 0; i < WORDS; ++i) {
-        st[i] ^= w[i];
+    else {
+        alignas(8) unsigned char last[RATE] = {};
+        if (len) {
+            std::memcpy(last, p, len);
+        }
+        last[len] = 0x01;
+        last[RATE - 1] |= 0x80;
+        auto const *const w = reinterpret_cast<uint64_t const *>(last);
+        for (size_t i = 0; i < WORDS; ++i) {
+            st[i] ^= w[i];
+        }
     }
     keccak_permute(&st);
 

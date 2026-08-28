@@ -133,7 +133,13 @@ static_assert(
 
 constexpr size_t KECCAKF_MEMO_ENTRIES = size_t{1} << 18;
 
-static KeccakfEntry keccakf_memo[KECCAKF_MEMO_ENTRIES];
+// One entry past capacity. `keccakf_memo[keccakf_memo_used]` is the scratch a
+// one-block digest builds its state in (keccak256_one_block below), and
+// `keccakf_memo_used` reaches KECCAKF_MEMO_ENTRIES when the table fills, so the
+// slot has to exist for the sponge to have somewhere to stand. It is never
+// filed and never in range: 512 B of .bss for one fewer bounds branch on the
+// hot path.
+static KeccakfEntry keccakf_memo[KECCAKF_MEMO_ENTRIES + 1];
 static uint64_t keccakf_memo_used = 0;
 
 // A 200-byte block op that reaches the DMA port instead of being expanded
@@ -211,6 +217,72 @@ static inline uint64_t fcall_get_keccakf_index(uint64_t const *const state)
     return index;
 }
 
+// A digest whose whole input fits in one rate block -- 33,123 of this guest's
+// 47,455 memoised calls on block 25815042 -- never needs the state to outlive
+// its single permutation. So it builds the padded block IN the slot the memo
+// would file it under, and the miss path's copy of the pre-state disappears:
+// the pre-state is already where the entry wants it. Two 200-byte port copies
+// become one on a miss and none on a hit, 1,232 cells either way.
+//
+// SOUNDNESS. Both of the memo's checks are here, unchanged and in the same
+// order, and neither trusts the executor: the hint must be below
+// `keccakf_memo_used`, and the entry it names must hold this state word for
+// word. The scratch is `keccakf_memo[keccakf_memo_used]`, which is not below
+// `keccakf_memo_used`, so it can never be served as its own hint; and
+// `keccakf_memo_used` still moves only after both halves of the entry are
+// written, so an index that arrives early is still out of range. A hit leaves
+// the scratch unpublished, for the next call to overwrite. `keccak_permute`'s
+// note on why an entry must own the bytes it compares against holds here too:
+// the entry owns them, the caller's buffer is never keyed on.
+//
+// Scratch must be zero on entry. Fresh .bss reads zero under ZisK's
+// memory AIR. Recording a miss advances to a fresh slot; a hit clears
+// the 136-byte rate. When full, the table reuses its spare slot and
+// clears all 200 bytes after the in-place permutation.
+static void keccak256_one_block(
+    void const *const in, size_t const len, uint8_t out[32])
+{
+    static_assert(135 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
+
+    KeccakfEntry &e = keccakf_memo[keccakf_memo_used];
+    uint64_t *const s = e.in;
+
+    if (len) {
+        std::memcpy(s, in, len);
+    }
+    reinterpret_cast<unsigned char *>(s)[len] = 0x01;
+    s[16] |= uint64_t{0x80} << 56;
+
+    uint64_t const index = fcall_get_keccakf_index(s);
+    if (index < keccakf_memo_used &&
+        keccakf_state_eq(keccakf_memo[index].in, s)) {
+        std::memcpy(out, keccakf_memo[index].out, 32);
+        // Clear 17 lanes (136 bytes) used by input and padding.
+        // No permutation ran here, so the other 64 bytes are still zero.
+        std::memset(s, 0, 17 * sizeof(uint64_t));
+        return;
+    }
+
+    if (keccakf_memo_used == KECCAKF_MEMO_ENTRIES) {
+        // Full table: permute the spare slot, then clear it for reuse.
+        syscall_keccak_f(&e.in);
+        std::memcpy(out, s, 32);
+        std::memset(s, 0, KECCAKF_STATE_BYTES);
+        return;
+    }
+
+    // `in` holds the pre-state already. Stage the copy the permutation will
+    // consume, then keep the request and the permutation adjacent for the
+    // reason `keccak_permute` gives.
+    keccakf_state_copy(e.out, s);
+    fcall_set_keccakf_index(keccakf_memo_used);
+    syscall_keccak_f(&e.out);
+    // Published last: this is what puts the entry in range, so it must not
+    // move until both halves are there.
+    ++keccakf_memo_used;
+    std::memcpy(out, e.out, 32);
+}
+
 #endif // MONAD_ZKVM_KECCAKF_MEMO
 
 // The only Keccak-f this guest runs. With the memo on it IS the permutation,
@@ -273,7 +345,28 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
     constexpr size_t RATE = 136;
     constexpr size_t WORDS = RATE / 8; // 17
 
+#if defined(MONAD_ZKVM_ZISK) && MONAD_ZKVM_KECCAKF_MEMO
+    // 69.8 % of this entry's calls are one rate block (33,123 of 47,455 on
+    // 25815042 -- a key, an address, a leaf or extension node's RLP). They
+    // have a cheaper shape than the general sponge; see keccak256_one_block.
+    if (len < RATE) {
+        keccak256_one_block(in, len, out);
+        return;
+    }
+#endif
+
+#ifdef MONAD_ZKVM_ZISK
+    // 200 bytes: rate in st[0..16], capacity in st[17..24].
+    uint64_t st[25];
+    // Skip 17 words (136 bytes) and zero only the 64-byte capacity.
+    std::memset(st + WORDS, 0, sizeof(st) - RATE);
+    if (len < RATE) {
+        // Short inputs leave bytes untouched; zero the rate before padding.
+        std::memset(st, 0, RATE);
+    }
+#else
     uint64_t st[25] = {};
+#endif
     auto const *p = static_cast<unsigned char const *>(in);
 
 #ifdef MONAD_ZKVM_ZISK
@@ -283,10 +376,21 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
     //
     // load64 is one `ld` here because the guest is built -mtune=generic-ooo;
     // under the default tuning it would be byte-staged and this loop would be
-    // far worse than the branch it replaces.
+    // far worse than the branch it replaces. The two changes are coupled.
+    //
+    // Copy the first block into the rate; XOR subsequent blocks.
+    // -mzisk-dma lowers the copy to ZisK's block-move precompile.
+    bool first = true;
     while (len >= RATE) {
-        for (size_t i = 0; i < WORDS; ++i) {
-            st[i] ^= load64(p + 8 * i);
+        if (first) {
+            // Initialize all 136 rate bytes before the first permutation.
+            std::memcpy(st, p, RATE);
+            first = false;
+        }
+        else {
+            for (size_t i = 0; i < WORDS; ++i) {
+                st[i] ^= load64(p + 8 * i);
+            }
         }
         keccak_permute(&st);
         p += RATE;
@@ -343,15 +447,29 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
 #endif
 
     // Final block: remainder plus pad10*1 with the 0x01 domain byte.
-    alignas(8) unsigned char last[RATE] = {};
-    if (len) {
-        std::memcpy(last, p, len);
+    if (first) {
+        // Nothing absorbed yet, so the padded block can be built in the state
+        // itself: no 136-byte scratch to zero, no copy into it, and no 17-lane
+        // xor to fold it in. This is the common shape -- a trie node, an
+        // address, a slot -- everything under one rate block.
+        if (len) {
+            std::memcpy(st, p, len);
+        }
+        auto *const b = reinterpret_cast<unsigned char *>(st);
+        b[len] = 0x01;
+        b[RATE - 1] |= 0x80;
     }
-    last[len] = 0x01;
-    last[RATE - 1] |= 0x80;
-    auto const *const w = reinterpret_cast<uint64_t const *>(last);
-    for (size_t i = 0; i < WORDS; ++i) {
-        st[i] ^= w[i];
+    else {
+        alignas(8) unsigned char last[RATE] = {};
+        if (len) {
+            std::memcpy(last, p, len);
+        }
+        last[len] = 0x01;
+        last[RATE - 1] |= 0x80;
+        auto const *const w = reinterpret_cast<uint64_t const *>(last);
+        for (size_t i = 0; i < WORDS; ++i) {
+            st[i] ^= w[i];
+        }
     }
     keccak_permute(&st);
 

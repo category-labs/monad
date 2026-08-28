@@ -424,7 +424,30 @@ class OffsetTrie
 {
     byte_string_view blob_;
     ankerl::unordered_dense::map<NodeId, byte_string, NodeIdHash> overlay_{};
-    ankerl::unordered_dense::map<NodeId, bytes32_t, NodeIdHash> hashes_{};
+    // A cached hash, and whether it is still the node's.
+    //
+    // Invalidation used to erase. `unordered_dense` is a flat map, so an erase
+    // walks the probe chain behind the slot and shifts it back -- work that
+    // exists only to keep a table dense that is about to be written again.
+    // An invalidation that merely has to be REMEMBERED needs no shift: the
+    // entry stays where it is with its flag down, and the next hash of that id
+    // overwrites it in place.
+    struct CachedHash
+    {
+        bytes32_t h;
+        bool valid;
+    };
+
+    ankerl::unordered_dense::map<NodeId, CachedHash, NodeIdHash> hashes_{};
+
+    // Invalidate without erasing. An id that was never cached needs nothing:
+    // a miss is a miss either way.
+    void drop_hash(NodeId const id)
+    {
+        if (auto const it = hashes_.find(id); it != hashes_.end()) {
+            it->second.valid = false;
+        }
+    }
     NodeId next_id_{OVERLAY_BASE}; // fresh-id counter (>= OVERLAY_BASE)
 
     // Negative filter in front of overlay_. Measured on r4-jd-blockhash,
@@ -651,8 +674,9 @@ private:
                     return write_hash_ref(dest, d.hash_view().data());
                 },
                 [&](auto) {
-                    if (auto const it = hashes_.find(id); it != hashes_.end()) {
-                        return write_hash_ref(dest, it->second.bytes);
+                    if (auto const it = hashes_.find(id);
+                        it != hashes_.end() && it->second.valid) {
+                        return write_hash_ref(dest, it->second.h.bytes);
                     }
                     return child_ref_compute<priming_pass>(id, node, dest);
                 }});

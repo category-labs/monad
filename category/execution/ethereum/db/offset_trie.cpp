@@ -156,7 +156,8 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                         bytes32_t h;
                         monad_keccak256(
                             rem.rlp_data(), rem.rlp_size(), h.bytes);
-                        hashes_.emplace(NodeId{node_offset}, h);
+                        hashes_.insert_or_assign(
+                            NodeId{node_offset}, CachedHash{h, true});
                     }
                 }});
 
@@ -231,8 +232,8 @@ bytes32_t OffsetTrie::hash(NodeId const id)
             [](NullView) { return NULL_ROOT; },
             [](DigestView d) { return d.hash(); },
             [&](auto) {
-                if (auto const it = hashes_.find(id); it != hashes_.end()) {
-                    return it->second;
+                if (auto const *const hit = cached_hash(id)) {
+                    return *hit;
                 }
 
                 unsigned char buf[MAX_NODE_RLP];
@@ -242,7 +243,7 @@ bytes32_t OffsetTrie::hash(NodeId const id)
                 // RLP occupies the tail: [rem.end(), buf_end).
                 monad_keccak256(rem.rlp_data(), rem.rlp_size(), h.bytes);
 
-                hashes_.emplace(id, h);
+                hashes_.insert_or_assign(id, CachedHash{h, true});
                 return h;
             }});
 }
@@ -273,7 +274,7 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
     }
     bytes32_t h;
     monad_keccak256(child_rlp, child_rlp_len, h.bytes);
-    hashes_.emplace(id, h);
+    hashes_.insert_or_assign(id, CachedHash{h, true});
     return encode_rlp(h, dest);
 }
 
@@ -566,7 +567,7 @@ NodeId OffsetTrie::put_node(NodeId const id, byte_string node)
         overlay_[fresh] = std::move(node);
         return fresh;
     }
-    hashes_.erase(id); // bytes changed; the cached hash is stale
+    drop_hash(id); // bytes changed; the cached hash is stale
     overlay_filter_mark(id);
     overlay_[id] = std::move(node);
     return id;
@@ -648,8 +649,8 @@ void OffsetTrie::fold_ext_node_path_maybe(
 std::pair<NodeId, Nibbles>
 OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
 {
-    hashes_.erase(id); // dirtied along the descent
-    // Leaf split/overwrite, shared by both leaf types. Only re-emitting if the
+    drop_hash(id); // dirtied along the descent
+    // Leaf split/overwrite, shared by both leaf types. Only re-emitting the
     // displaced old leaf differs (`reput_old`): a storage leaf keeps its
     // value, an account leaf its fields and storage edge. `reput_old` runs
     // ahead of every other put_* here, which is what lets it still read the
@@ -785,7 +786,7 @@ OffsetTrie::erase_node(NodeId const id, NibblesView const key)
                 }
                 // child survived; fold the ext path into it if it collapsed
                 // to a leaf/ext, but keep `id` of the ext node
-                hashes_.erase(id);
+                drop_hash(id);
                 NodeViewBase const child = get_current(child_id);
                 return match(
                     child,
@@ -810,7 +811,7 @@ OffsetTrie::erase_node(NodeId const id, NibblesView const key)
                 if (erase_child == OffsetTrie::EraseResult::Unmodified) {
                     return OffsetTrie::EraseResult::Unmodified;
                 }
-                hashes_.erase(id);
+                drop_hash(id);
                 if (erase_child == OffsetTrie::EraseResult::Erased) {
                     children[branch] = to_node_id_wire_t(NULL_ID);
                 }

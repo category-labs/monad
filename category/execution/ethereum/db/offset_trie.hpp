@@ -465,7 +465,36 @@ class OffsetTrie
 {
     byte_string_view blob_;
     ankerl::unordered_dense::map<NodeId, byte_string, NodeIdHash> overlay_{};
-    ankerl::unordered_dense::map<NodeId, bytes32_t, NodeIdHash> hashes_{};
+
+    // A cached hash, and whether it is still the node's. The entry stays where
+    // it is with its flag down, and the next hash of that id overwrites it in
+    // place.
+    struct CachedHash
+    {
+        bytes32_t h;
+        bool valid;
+    };
+
+    ankerl::unordered_dense::map<NodeId, CachedHash, NodeIdHash> hashes_{};
+
+    // The cached hash of `id`, or nullptr: absent and present-but-invalid are
+    // the same answer. The pointer is into the table and dies at the next
+    // insert.
+    [[nodiscard]] bytes32_t const *cached_hash(NodeId const id) const
+    {
+        auto const it = hashes_.find(id);
+        return (it != hashes_.end() && it->second.valid) ? &it->second.h
+                                                         : nullptr;
+    }
+
+    // Invalidate without erasing.
+    void drop_hash(NodeId const id)
+    {
+        if (auto const it = hashes_.find(id); it != hashes_.end()) {
+            it->second.valid = false;
+        }
+    }
+
     NodeId next_id_{OVERLAY_BASE}; // fresh-id counter (>= OVERLAY_BASE)
 
     // Negative filter in front of overlay_.
@@ -702,9 +731,8 @@ private:
                     return encode_rlp(d.hash_rlp(), dest);
                 },
                 [&](auto) {
-                    if (auto const it = hashes_.find(id); it != hashes_.end()) {
-                        bytes32_t const &hash = it->second;
-                        return encode_rlp(hash, dest);
+                    if (auto const *const hit = cached_hash(id)) {
+                        return encode_rlp(*hit, dest);
                     }
                     return child_ref_compute<priming_pass>(id, node, dest);
                 }});

@@ -89,6 +89,7 @@ namespace monad
         { T::mip_8_active() } -> std::same_as<bool>;
         { T::mip_11_active() } -> std::same_as<bool>;
         { T::mip_12_active() } -> std::same_as<bool>;
+        { T::multi_block_cache_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
         // If true, BLOBHASH/BLOBBASEFEE exist and return
         // stub data. Separate from eip_4844_active.
@@ -208,6 +209,11 @@ namespace monad
             return false;
         }
 
+        static consteval bool multi_block_cache_active() noexcept
+        {
+            return false;
+        }
+
         static consteval bool can_create_inside_delegated() noexcept
         {
             return true;
@@ -265,6 +271,12 @@ namespace monad
     constexpr bool mip_8_active(monad_revision const rev) noexcept
     {
         return rev >= MONAD_TEN;
+    }
+
+    // Runtime sibling to MonadTraits::multi_block_cache_active().
+    constexpr bool multi_block_cache_active(monad_revision const rev) noexcept
+    {
+        return rev >= MONAD_NEXT;
     }
 
     template <monad_revision Rev>
@@ -402,13 +414,34 @@ namespace monad
 
         // Pricing version 1 activates the changes in:
         // Monad specification §4: Opcode Gas Costs and Gas Refunds
+        // Pricing version 2 activates the multi-block cache access tier.
         static consteval uint8_t monad_pricing_version() noexcept
         {
+            if constexpr (Rev >= MONAD_NEXT) {
+                return 2;
+            }
+
             if constexpr (Rev >= MONAD_SEVEN) {
                 return 1;
             }
 
             return 0;
+        }
+
+        static consteval bool multi_block_cache_active() noexcept
+        {
+            static_assert(Rev < MONAD_NEXT || mip_8_active());
+            return monad_pricing_version() >= 2;
+        }
+
+        static consteval int64_t cached_account_cost() noexcept
+        {
+            return 1000;
+        }
+
+        static consteval int64_t cached_storage_cost() noexcept
+        {
+            return 1000;
         }
 
         static consteval int64_t base_sstore_cost() noexcept

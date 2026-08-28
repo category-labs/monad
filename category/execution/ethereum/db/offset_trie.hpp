@@ -519,7 +519,33 @@ class OffsetTrie
 {
     byte_string_view blob_;
     ankerl::unordered_dense::map<NodeId, byte_string, NodeIdHash> overlay_{};
-    ankerl::unordered_dense::map<NodeId, bytes32_t, NodeIdHash> hashes_{};
+
+    // Keep invalidated entries allocated; recomputation replaces their hash.
+    struct NodeCacheEntry
+    {
+        bytes32_t hash;
+        bool hash_valid;
+    };
+
+    ankerl::unordered_dense::map<NodeId, NodeCacheEntry, NodeIdHash> hashes_{};
+
+    // Return a valid cached hash, or nullptr. Inserting into the map may
+    // invalidate the returned pointer.
+    [[nodiscard]] bytes32_t const *cached_hash(NodeId const id) const
+    {
+        auto const it = hashes_.find(id);
+        return (it != hashes_.end() && it->second.hash_valid) ? &it->second.hash
+                                                              : nullptr;
+    }
+
+    // Invalidate without erasing.
+    void drop_hash(NodeId const id)
+    {
+        if (auto const it = hashes_.find(id); it != hashes_.end()) {
+            it->second.hash_valid = false;
+        }
+    }
+
     NodeId next_id_{OVERLAY_BASE}; // fresh-id counter (>= OVERLAY_BASE)
 public:
     // Wrap the read-only node blob, structurally validate it, and prime the
@@ -648,9 +674,8 @@ private:
                     return encode_rlp(d.hash_rlp(), dest);
                 },
                 [&](auto) {
-                    if (auto const it = hashes_.find(id); it != hashes_.end()) {
-                        bytes32_t const &hash = it->second;
-                        return encode_rlp(hash, dest);
+                    if (auto const *const hit = cached_hash(id)) {
+                        return encode_rlp(*hit, dest);
                     }
                     return child_ref_compute<priming_pass>(id, node, dest);
                 }});

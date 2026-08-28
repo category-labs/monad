@@ -45,16 +45,6 @@ ExternalProject_Add(
   INSTALL_COMMAND ""
   LOG_DOWNLOAD ON)
 
-ExternalProject_Add(
-  MonadEip7981SpecTestFixtures
-  URL "https://github.com/monad-developers/execution-specs/releases/download/tests-monad_eip7981@v0.1.0/fixtures_monad_eip7981.tar.gz"
-  URL_HASH "SHA256=d624ec9c38c945c48f43ffb229c0a963660b8506d5bf4fe8068e13df4fdf0b8d"
-  PREFIX ${CMAKE_BINARY_DIR}
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND ""
-  INSTALL_COMMAND ""
-  LOG_DOWNLOAD ON)
-
 add_executable(monad-ethereum-test)
 target_link_libraries(monad-ethereum-test PRIVATE GTest::gtest monad-test-utils)
 target_sources(
@@ -127,7 +117,6 @@ list(JOIN MONAD_NEXT_amsterdam_excluded_tests ":" TESTS_EXCLUDED)
 add_test(NAME MONAD_NEXT_amsterdam_monad_ethereum_test
          COMMAND monad-ethereum-test --fork MONAD_NEXT
                  --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadAmsterdamSpecTestFixtures/blockchain_tests
-                 --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadEip7981SpecTestFixtures/blockchain_tests
                  --gtest_filter=-:${TESTS_EXCLUDED})
 if(MONAD_NEXT_amsterdam_excluded_tests STREQUAL "BlockchainTests.*")
   set_tests_properties(MONAD_NEXT_amsterdam_monad_ethereum_test

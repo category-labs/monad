@@ -21,9 +21,48 @@
 
 #include <evmc/evmc.h>
 
+#include <cstdint>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
+
+// Preload the key's last word for linear scans. Small big-endian keys differ
+// there; preloading all four words measured worse.
+[[nodiscard]] inline std::uint64_t key_tail(bytes32_t const &k)
+{
+    std::uint64_t w;
+    __builtin_memcpy(&w, k.bytes + 24, 8);
+    // Keep the tail load outside the scan and prevent GCC from folding the
+    // comparisons back into an address-order memcmp. Not a memory barrier.
+    __asm__("" : "+r"(w));
+    return w;
+}
+
+// Compare search key k with entry key e; tail must be key_tail(k).
+// Check words 0 and 3 first to reject most mismatches early,
+// then words 1 and 2 to confirm equality.
+[[nodiscard]] inline bool
+key_equals(bytes32_t const &k, std::uint64_t const tail, bytes32_t const &e)
+{
+    std::uint64_t a, b;
+    __builtin_memcpy(&a, e.bytes, 8);
+    __builtin_memcpy(&b, k.bytes, 8);
+    if (a != b) {
+        return false;
+    }
+    __builtin_memcpy(&a, e.bytes + 24, 8);
+    if (a != tail) {
+        return false;
+    }
+    __builtin_memcpy(&a, e.bytes + 8, 8);
+    __builtin_memcpy(&b, k.bytes + 8, 8);
+    if (a != b) {
+        return false;
+    }
+    __builtin_memcpy(&a, e.bytes + 16, 8);
+    __builtin_memcpy(&b, k.bytes + 16, 8);
+    return a == b;
+}
 
 // YP 6.1
 class AccountSubstate
@@ -91,8 +130,9 @@ public:
     // A_K
     evmc_access_status access_storage(bytes32_t const &key)
     {
+        std::uint64_t const tail = key_tail(key);
         for (auto const &k : accessed_storage_) {
-            if (__builtin_memcmp(k.bytes, key.bytes, sizeof(key.bytes)) == 0) {
+            if (key_equals(key, tail, k)) {
                 return EVMC_ACCESS_WARM;
             }
         }

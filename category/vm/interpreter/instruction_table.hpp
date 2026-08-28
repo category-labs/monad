@@ -25,6 +25,7 @@
 #include <category/vm/interpreter/push.hpp>
 #include <category/vm/interpreter/stack.hpp>
 #include <category/vm/interpreter/types.hpp>
+#include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/runtime.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/utils/debug.hpp>
@@ -32,6 +33,7 @@
 #include <evmc/evmc.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 
@@ -95,6 +97,21 @@
 #define MONAD_VM_CHECK_AT(OP, SHIFT)                                           \
     MONAD_VM_CHECK_REQUIREMENTS_AT(                                            \
         OP, SHIFT, MONAD_VM_MUST_TAIL return ctx.exit)
+
+// Charge gas only. Each caller must justify why its stack checks cannot fail.
+#define MONAD_VM_CHARGE(OP)                                                    \
+    do {                                                                       \
+        static constexpr auto monad_vm_ci =                                    \
+            compiler::opcode_table<traits>[(OP)];                              \
+                                                                               \
+        if constexpr (monad_vm_ci.min_gas > 0) {                               \
+            gas_remaining -= monad_vm_ci.min_gas;                              \
+            if (MONAD_UNLIKELY(gas_remaining < 0)) {                           \
+                MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);                  \
+            }                                                                  \
+        }                                                                      \
+    }                                                                          \
+    while (false)
 
 #define MONAD_VM_NEXT_PUSH(OP)                                                 \
     MONAD_VM_NEXT_IMPL(OP, ((OP) - PUSH0) + 1, *instr_ptr)
@@ -652,9 +669,12 @@ namespace monad::vm::interpreter
         if (*(instr_ptr + 1) == static_cast<std::uint8_t>(PUSH2) &&
             *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
             MONAD_VM_CHECK(EQ);
-            // EQ consumes two values and pushes one result: net stack change
-            // -1.
-            MONAD_VM_CHECK_AT(PUSH2, -1);
+            // EQ frees a slot, so PUSH2 cannot overflow a valid stack.
+            MONAD_DEBUG_ASSERT(
+                (stack_top - 1) - stack_bottom <
+                static_cast<std::ptrdiff_t>(
+                    runtime::EvmStackAllocatorMeta::size));
+            MONAD_VM_CHARGE(PUSH2);
             // PUSH2 adds one value, restoring the original stack height.
             MONAD_VM_CHECK_AT(JUMPI, 0);
             // Keep EQ's result in a C++ bool instead of the EVM stack.
@@ -1385,8 +1405,9 @@ namespace monad::vm::interpreter
                     (static_cast<unsigned>(*(instr_ptr + 1)) << 8) |
                     static_cast<unsigned>(*(instr_ptr + 2)));
                 if (monad_vm_op2 == static_cast<std::uint8_t>(JUMP)) {
-                    // Check gas and stack as if PUSH2 had added one item.
-                    MONAD_VM_CHECK_AT(JUMP, 1);
+                    // PUSH2 supplies the operand required by JUMP.
+                    MONAD_DEBUG_ASSERT(stack_top >= stack_bottom);
+                    MONAD_VM_CHARGE(JUMP);
                     if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) {
                         ctx.exit(Error);
                     }
@@ -1746,4 +1767,5 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_NEXT_PUSH
 #undef MONAD_VM_CHECK
 #undef MONAD_VM_CHECK_AT
+#undef MONAD_VM_CHARGE
 #undef MONAD_VM_CHECKED_RUNTIME_CALL

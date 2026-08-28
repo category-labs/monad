@@ -23,6 +23,7 @@
     #include <cstring>
 
 constexpr size_t KECCAK_RATE = 136;
+constexpr size_t KECCAK_CAPACITY_BYTES = 64;
 
 // Load eight bytes without requiring pointer alignment.
 [[gnu::always_inline]] static inline uint64_t
@@ -63,14 +64,30 @@ void monad_zkvm_keccak256_fast(
     // Keccak-f[1600] uses 25 lanes of 64 bits (200 bytes).
     // Keccak-256 absorbs into the first 17 lanes (136-byte rate);
     // the remaining 8 lanes form the capacity.
-    uint64_t state[25] = {};
+    uint64_t state[25];
+    // Skip 17 words (136 bytes) and zero only the 64-byte capacity.
+    std::memset(state + RATE_WORDS, 0, KECCAK_CAPACITY_BYTES);
+    if (remaining_bytes < KECCAK_RATE) {
+        // Zero the rate before copying short inputs and adding padding.
+        // On ZisK 1.4, this aligned, fixed-size clear measured cheaper than
+        // clearing only the variable-length, potentially unaligned tail.
+        std::memset(state, 0, KECCAK_RATE);
+    }
     auto const *input_cursor = static_cast<unsigned char const *>(input);
 
-    // With -mtune=size, load64 becomes one ld, even for unaligned input.
-    // ZisK supports these loads directly, avoiding shifts and a block copy.
+    // Copy the first block into the uninitialized rate; XOR later blocks.
+    // With -mzisk-dma, the copy uses ZisK's block-move precompile.
+    bool is_first_block = true;
     while (remaining_bytes >= KECCAK_RATE) {
-        for (size_t i = 0; i < RATE_WORDS; ++i) {
-            state[i] ^= load64(input_cursor + 8 * i);
+        if (is_first_block) {
+            // Initialize all 136 rate bytes before the first permutation.
+            std::memcpy(state, input_cursor, KECCAK_RATE);
+            is_first_block = false;
+        }
+        else {
+            for (size_t i = 0; i < RATE_WORDS; ++i) {
+                state[i] ^= load64(input_cursor + 8 * i);
+            }
         }
         keccak_permute(&state);
         input_cursor += KECCAK_RATE;
@@ -78,16 +95,53 @@ void monad_zkvm_keccak256_fast(
     }
 
     // Final block: remainder plus pad10*1 with the 0x01 domain byte.
-    alignas(8) unsigned char final_block[KECCAK_RATE] = {};
-    if (remaining_bytes) {
-        std::memcpy(final_block, input_cursor, remaining_bytes);
+    if (is_first_block) {
+        // No full block was absorbed; pad directly in the zeroed state.
+        if (remaining_bytes) {
+            std::memcpy(state, input_cursor, remaining_bytes);
+        }
+        auto *const state_bytes = reinterpret_cast<unsigned char *>(state);
+        state_bytes[remaining_bytes] = 0x01;
+        // Set the final padding bit through aligned lane 16 (byte 135).
+        static_assert(KECCAK_RATE - 1 == 16 * 8 + 7);
+        state[16] |= uint64_t{0x80} << 56;
     }
-    final_block[remaining_bytes] = 0x01;
-    final_block[KECCAK_RATE - 1] |= 0x80;
-    auto const *const final_words =
-        reinterpret_cast<uint64_t const *>(final_block);
-    for (size_t i = 0; i < RATE_WORDS; ++i) {
-        state[i] ^= final_words[i];
+    else {
+        alignas(8) unsigned char final_block[KECCAK_RATE] = {};
+        if (remaining_bytes) {
+            std::memcpy(final_block, input_cursor, remaining_bytes);
+        }
+        final_block[remaining_bytes] = 0x01;
+        // Skip trailing zero lanes; fixed counts preserve loop unrolling.
+        // A runtime count measured worse.
+        if (remaining_bytes <= 31) {
+            for (size_t i = 0; i < 4; ++i) {
+                state[i] ^= load64(final_block + 8 * i);
+            }
+        }
+        else if (remaining_bytes <= 63) {
+            for (size_t i = 0; i < 8; ++i) {
+                state[i] ^= load64(final_block + 8 * i);
+            }
+        }
+        else if (remaining_bytes <= 95) {
+            for (size_t i = 0; i < 12; ++i) {
+                state[i] ^= load64(final_block + 8 * i);
+            }
+        }
+        else if (remaining_bytes <= 127) {
+            for (size_t i = 0; i < 16; ++i) {
+                state[i] ^= load64(final_block + 8 * i);
+            }
+        }
+        else {
+            for (size_t i = 0; i < RATE_WORDS; ++i) {
+                state[i] ^= load64(final_block + 8 * i);
+            }
+        }
+        // Fold the final padding bit directly into the state, avoiding
+        // a byte read-modify-write in final_block.
+        state[16] ^= uint64_t{0x80} << 56;
     }
     keccak_permute(&state);
 

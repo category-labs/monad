@@ -562,6 +562,47 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
     }
 }
 
+template <Traits traits>
+Result<Receipt> ExecuteTransaction<traits>::execute(SequentialExecutionToken)
+{
+    // The token only rules out merge conflicts. Validate before to_message
+    // subtracts intrinsic gas from the unsigned gas limit.
+    {
+        auto validation_result = static_validate_transaction<traits>(
+            tx_,
+            header_.base_fee_per_gas,
+            header_.excess_blob_gas,
+            transaction_chain_id(chain_),
+            transaction_blob_schedule(chain_, header_.timestamp),
+            calldata_tokens_);
+        if (validation_result.has_error()) {
+            return std::move(validation_result).as_failure();
+        }
+    }
+
+    TRACE_TXN_EVENT(StartExecution);
+
+    State state{block_state_, Incarnation{header_.number, i_ + 1}};
+    state.set_original_nonce(sender_, tx_.nonce);
+
+    call_tracer_.reset();
+    trace::reset(state_tracer_);
+
+    auto result = execute_impl2(state);
+
+#ifdef MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE
+    // Check before returning execution errors, as on the speculative path.
+    MONAD_ASSERT(block_state_.can_merge(state));
+#endif
+
+    if (result.has_error()) {
+        return std::move(result.error());
+    }
+    auto const receipt = execute_final(state, result.value());
+    block_state_.merge(state);
+    return receipt;
+}
+
 EXPLICIT_TRAITS_CLASS(ExecuteTransaction);
 
 MONAD_NAMESPACE_END

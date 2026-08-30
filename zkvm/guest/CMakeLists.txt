@@ -105,6 +105,13 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_VARCODE_CACHE)
     endif()
 
+    # Assert can_merge on the serialized path to check its scheduling invariant.
+    option(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE
+           "assert can_merge on the sequential merge path" OFF)
+    if(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
+        add_compile_definitions(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
+    endif()
+
     # Expose the backend as a compile definition, for the places where the two
     # diverge: the Keccak-f[1600] precompile is reached by a different entry on
     # each (zkvm/category/crypto/keccak.h).

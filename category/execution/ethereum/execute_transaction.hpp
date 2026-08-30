@@ -71,6 +71,30 @@ public:
     evmc::Result operator()(State &, EvmcHost<traits> &);
 };
 
+struct ZkvmSequentialExecutor;
+
+// Permission to skip the merge-conflict check, which only a caller that has already serialized
+// execution can hold.
+//
+// ExecuteTransaction's normal path runs a transaction BEFORE its predecessor has merged -- that
+// is what `prev_` is for -- so the pre-state it read may be stale by the time it wants to merge.
+// can_merge is what detects that, and the retry below it is what repairs it. A caller that runs
+// one transaction at a time and merges each before constructing the next State has no other
+// writer of block_state between this transaction's reads and its merge, so can_merge has nothing
+// to detect: not "does not fail on our corpus", but no mechanism by which it could.
+//
+// That is a property of the SCHEDULER, not of the chain or the revision, so it is a token and not
+// a trait -- ExecuteTransaction is explicitly instantiated for every traits set, and a second
+// template parameter would multiply all of them for a property none of them describe.
+//
+// The constructor is private and befriended to one type. A caller cannot opt out of the check by
+// writing a `true` at a call site; it has to be the type that owns a serialized loop.
+class SequentialExecutionToken
+{
+    SequentialExecutionToken() = default;
+    friend struct ZkvmSequentialExecutor;
+};
+
 template <Traits traits>
 class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
 {
@@ -106,6 +130,15 @@ public:
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();
+
+    // For a caller holding SequentialExecutionToken. Waits on no predecessor and runs no
+    // merge-conflict check, because neither can have anything to say; everything else --
+    // execution, finalisation, the merge itself -- is the same work in the same order.
+    //
+    // MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE restores the can_merge call as an assertion, so the
+    // token's claim can be falsified by a build rather than trusted. It is forbidden in the
+    // official profile, and absent from any build without it.
+    Result<Receipt> execute(SequentialExecutionToken);
 };
 
 MONAD_NAMESPACE_END

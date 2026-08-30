@@ -70,7 +70,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         endif()
         set(MONAD_ZKVM_KECCAKF_MEMO ON CACHE BOOL
             "required by the official ZisK profile" FORCE)
-        if(MONAD_ZKVM_KECCAK_SITES OR MONAD_ZKVM_SELFTEST)
+        if(MONAD_ZKVM_KECCAK_SITES OR MONAD_ZKVM_SELFTEST
+           OR MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
             message(FATAL_ERROR
                 "diagnostic counters/self-test are forbidden in the official ZisK profile")
         endif()
@@ -104,6 +105,18 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     option(MONAD_ZKVM_KECCAK_SITES "count keccak calls per call site" OFF)
     if(MONAD_ZKVM_KECCAK_SITES)
         add_compile_definitions(MONAD_ZKVM_KECCAK_SITES)
+    endif()
+
+    # Diagnostic: the guest's per-tx loop is serialized, so it runs transactions through
+    # ExecuteTransaction::execute(SequentialExecutionToken), which skips the merge-conflict check
+    # the node's speculative scheduler needs. This restores that check as an assertion on the
+    # same path, in the same place, so a corpus run either upholds the token's claim or aborts.
+    # The differential arm for any change to the guest's scheduling; forbidden in the official
+    # profile alongside the other diagnostics.
+    option(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE
+           "assert can_merge on the sequential merge path" OFF)
+    if(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
+        add_compile_definitions(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
     endif()
 
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "sp1")

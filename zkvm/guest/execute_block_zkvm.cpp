@@ -80,6 +80,19 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
+// The one holder of SequentialExecutionToken, named as a friend by the header that defines it.
+// It is a type rather than a flag so that the permission lives in exactly one place -- here,
+// beside the loop whose shape is the whole justification for it. Defining a second
+// ::monad::ZkvmSequentialExecutor anywhere else is an ODR violation, not a second key.
+struct ZkvmSequentialExecutor
+{
+    static SequentialExecutionToken token()
+    {
+        return SequentialExecutionToken{};
+    }
+};
+
+
 template <Traits traits>
 Result<bytes32_t> execute_block_zkvm(
     Chain const &chain, Block const &block,
@@ -118,9 +131,16 @@ Result<bytes32_t> execute_block_zkvm(
     execute_block_header<traits>(
         block_state, block.header, /*exec_recorder=*/nullptr);
 
-    // 3. Per-tx loop. ExecuteTransaction waits on `prev` to gate the merge
-    //    step on the previous tx finishing — we're sequential, so the zkVM
-    //    boost.fiber shadow makes the promise/future a no-op.
+    // 3. Per-tx loop, and it is serialized: exec() runs to completion, merging into
+    //    block_state, before the next iteration constructs its State. Nothing else writes
+    //    block_state. So the merge-conflict machinery ExecuteTransaction carries for the node's
+    //    speculative scheduler -- the wait on `prev`, can_merge, the retry -- has nothing to
+    //    detect here, and this loop says so by holding SequentialExecutionToken. Measured on
+    //    block 25815100: 231 of the guest's 233 can_merge calls are that gate, the retry path
+    //    runs zero times, and the check costs ~1,836 steps a transaction.
+    //
+    //    `prev` is still constructed because the constructor takes one; it is satisfied
+    //    immediately and the sequential path never waits on it.
     BlockMetrics metrics{}; // unused; constructor requires a reference
     NoopCallTracer call_tracer{};
     trace::StateTracer state_tracer{std::monostate{}};
@@ -145,7 +165,8 @@ Result<bytes32_t> execute_block_zkvm(
             state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr};
-        BOOST_OUTCOME_TRY(auto receipt, exec());
+        BOOST_OUTCOME_TRY(
+            auto receipt, exec.execute(ZkvmSequentialExecutor::token()));
         receipts.push_back(std::move(receipt));
     }
 

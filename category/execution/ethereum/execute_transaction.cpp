@@ -500,6 +500,54 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
     }
 }
 
+template <Traits traits>
+Result<Receipt> ExecuteTransaction<traits>::execute(SequentialExecutionToken)
+{
+    // The same check operator() opens with, in the same place. The token says
+    // nothing about a transaction's own validity -- only that no other writer
+    // can intervene between this one's reads and its merge -- so it licenses
+    // dropping the wait and can_merge, and nothing else. Without it,
+    // to_message computes gas_limit minus intrinsic gas on a uint64_t, and
+    // IntrinsicGasGreaterThanLimit is what stops that from wrapping.
+    {
+        auto validation_result = static_validate_transaction<traits>(
+            tx_,
+            header_.base_fee_per_gas,
+            header_.excess_blob_gas,
+            chain_.get_chain_id(),
+            chain_.get_blob_schedule(header_.timestamp),
+            tokens_);
+        if (validation_result.has_error()) {
+            return std::move(validation_result).as_failure();
+        }
+    }
+
+    TRACE_TXN_EVENT(StartExecution);
+
+    State state{block_state_, Incarnation{header_.number, i_ + 1}};
+    state.set_original_nonce(sender_, tx_.nonce);
+
+    call_tracer_.reset();
+    trace::reset(state_tracer_);
+
+    auto result = execute_impl2(state);
+
+#ifdef MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE
+    // What the token asserts, computed. An arm built with this on and run over the corpus is
+    // what turns "no mechanism could make this fail" into a statement that had the chance to be
+    // wrong. The order matters: can_merge is checked before the error return, exactly where
+    // operator() checks it, so a failing transaction is not a hole in the coverage.
+    MONAD_ASSERT(block_state_.can_merge(state));
+#endif
+
+    if (result.has_error()) {
+        return std::move(result.error());
+    }
+    auto const receipt = execute_final(state, result.value());
+    block_state_.merge(state);
+    return receipt;
+}
+
 EXPLICIT_TRAITS_CLASS(ExecuteTransaction);
 
 MONAD_NAMESPACE_END

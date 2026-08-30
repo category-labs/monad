@@ -156,6 +156,15 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
+// Only this serialized executor can construct the merge-check bypass token.
+struct ZkvmSequentialExecutor
+{
+    static SequentialExecutionToken token()
+    {
+        return SequentialExecutionToken{};
+    }
+};
+
 template <Traits traits>
     requires(is_evm_trait_v<traits>)
 Result<bytes32_t> execute_block_zkvm(
@@ -193,6 +202,9 @@ Result<bytes32_t> execute_block_zkvm(
 
     ChainContext<traits> const
         chain_ctx{}; // chain context is empty for evm traits
+    // Merge each transaction before starting the next, so no concurrent
+    // writer can invalidate its reads. Cache fills preserve original/current
+    // equality. The sequential path never waits on the constructor's prev.
     BlockMetrics metrics{}; // unused; constructor requires a reference
     NoopCallTracer call_tracer{};
     trace::StateTracer state_tracer{std::monostate{}};
@@ -228,7 +240,8 @@ Result<bytes32_t> execute_block_zkvm(
             state_tracer,
             chain_ctx,
             /*exec_recorder=*/nullptr};
-        BOOST_OUTCOME_TRY(auto receipt, exec());
+        BOOST_OUTCOME_TRY(
+            auto receipt, exec.execute(ZkvmSequentialExecutor::token()));
         block_gas_used += receipt.gas_used;
         receipts.push_back(std::move(receipt));
     }

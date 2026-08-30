@@ -132,8 +132,15 @@ Result<bytes32_t> execute_block_zkvm(
         block_state, block.header, /*exec_recorder=*/nullptr);
 
     // 3. Per-tx loop, and it is serialized: exec() runs to completion, merging into
-    //    block_state, before the next iteration constructs its State. Nothing else writes
-    //    block_state. So the merge-conflict machinery ExecuteTransaction carries for the node's
+    //    block_state, before the next iteration constructs its State.
+    //
+    //    Not "nothing else writes block_state" -- reads do. BlockState::read_account,
+    //    read_storage and read_code are non-const and emplace a row on a cache miss. What makes
+    //    this safe is what they write: `{result, result}`, current equal to original, the same
+    //    value this State recorded through them. Both sides of every comparison can_merge makes
+    //    come from that one emplace, so a non-concurrent mutation cannot make them disagree.
+    //
+    //    So the merge-conflict machinery ExecuteTransaction carries for the node's
     //    speculative scheduler -- the wait on `prev`, can_merge, the retry -- has nothing to
     //    detect here, and this loop says so by holding SequentialExecutionToken. Measured on
     //    block 25815100: 231 of the guest's 233 can_merge calls are that gate, the retry path

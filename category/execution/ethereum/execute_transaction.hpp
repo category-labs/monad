@@ -79,9 +79,14 @@ struct ZkvmSequentialExecutor;
 // ExecuteTransaction's normal path runs a transaction BEFORE its predecessor has merged -- that
 // is what `prev_` is for -- so the pre-state it read may be stale by the time it wants to merge.
 // can_merge is what detects that, and the retry below it is what repairs it. A caller that runs
-// one transaction at a time and merges each before constructing the next State has no other
-// writer of block_state between this transaction's reads and its merge, so can_merge has nothing
-// to detect: not "does not fail on our corpus", but no mechanism by which it could.
+// one transaction at a time and merges each before constructing the next State has no CONCURRENT
+// writer of block_state between this transaction's reads and its merge.
+//
+// The narrower statement, because the broader one is false: reads DO write block_state --
+// BlockState::read_account, read_storage and read_code are non-const and emplace `{result,
+// result}` on a cache miss. Both sides of every comparison can_merge makes come from that one
+// emplace, so a non-concurrent mutation cannot make them disagree. can_merge therefore has
+// nothing to detect: not "does not fail on our corpus", but no mechanism by which it could.
 //
 // That is a property of the SCHEDULER, not of the chain or the revision, so it is a token and not
 // a trait -- ExecuteTransaction is explicitly instantiated for every traits set, and a second

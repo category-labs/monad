@@ -87,6 +87,15 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         endforeach()
     endif()
 
+    # The official profile signs one binary. The assertion below is extra work
+    # on the merge path and aborts where the shipped guest returns, so a build
+    # carrying it is not the guest the signature describes.
+    if(MONAD_ZKVM_OFFICIAL_PROFILE AND MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
+        message(FATAL_ERROR
+            "MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE is forbidden in the official "
+            "ZisK profile")
+    endif()
+
     # The riscv64-elf toolchain file specifies these as CMAKE_*_FLAGS_INIT,
     # but cmake-rs (driving this cmake invocation from build.rs) overrides
     # CMAKE_*_FLAGS with cc-rs's target-arch flags only — dropping the
@@ -172,6 +181,18 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
            "cache varcodes by code hash in the guest's VM shadow" OFF)
     if(MONAD_ZKVM_VARCODE_CACHE)
         add_compile_definitions(MONAD_ZKVM_VARCODE_CACHE)
+    endif()
+
+    # Diagnostic: the guest's per-tx loop is serialized, so it runs transactions through
+    # ExecuteTransaction::execute(SequentialExecutionToken), which skips the merge-conflict check
+    # the node's speculative scheduler needs. This restores that check as an assertion on the
+    # same path, in the same place, so a corpus run either upholds the token's claim or aborts.
+    # The differential arm for any change to the guest's scheduling; forbidden in the official
+    # profile alongside the other diagnostics.
+    option(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE
+           "assert can_merge on the sequential merge path" OFF)
+    if(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
+        add_compile_definitions(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
     endif()
 
     # Expose the backend as a compile definition, for the places where the two

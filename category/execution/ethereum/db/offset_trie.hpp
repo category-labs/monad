@@ -145,6 +145,8 @@ using node_id_wire_t = uint32_t;
 
 inline constexpr size_t HASH_RLP_LEN = KECCAK256_SIZE + 1; // 0xa0 ‖ 32 B
 using hash_rlp_view = std::span<unsigned char const, HASH_RLP_LEN>;
+// Size of a digest node in the blob: its tag followed by 32 hash bytes.
+inline constexpr size_t DIGEST_NODE_LEN = KECCAK256_SIZE + 1;
 // Widest that run can get: 1 + 8 for the nonce, 1 + 32 for the balance. Both
 // are RLP-zeroless, so real accounts sit far below this.
 inline constexpr size_t MAX_NONCE_BALANCE_RLP_LEN = 42;

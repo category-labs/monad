@@ -148,11 +148,21 @@ class ProfileTests(unittest.TestCase):
         profile_path.write_text(json.dumps(profile))
         (directory / "CMakeCache.txt").write_text(
             "MONAD_ZKVM_OFFICIAL_PROFILE:BOOL=ON\nMONAD_ZKVM_GUEST_TARGET:STRING=zisk\n"
+            "MONAD_ZKVM_NO_DIRTY_ACCOUNTS:BOOL=ON\n"
         )
+        self.write_compile_commands(directory, "-DMONAD_ZKVM_NO_DIRTY_ACCOUNTS=1")
         flags_dir = directory / "CMakeFiles/monad-zkvm-guest-zisk.dir"
         flags_dir.mkdir(parents=True, exist_ok=True)
         (flags_dir / "flags.make").write_text("CXX_FLAGS = " + self.flags + "\n")
         return profile_path
+
+    def write_compile_commands(self, directory, define):
+        (directory / "compile_commands.json").write_text(json.dumps([
+            {"directory": str(self.repo), "file": source,
+             "command": f"g++ {define} -c {source}"}
+            for source in ("category/execution/ethereum/state3/state.cpp",
+                           "zkvm/guest/execute_witness.cpp")
+        ]))
 
     def run_tool(self, *args):
         if args[0] == "git" and "status" in args:
@@ -232,6 +242,13 @@ class ProfileTests(unittest.TestCase):
         flags = self.build_dir / "CMakeFiles/monad-zkvm-guest-zisk.dir/flags.make"
         flags.write_text("CXX_FLAGS = " + self.flags + " -mno-zisk-dma\n")
         with self.assertRaisesRegex(SystemExit, "guest compile command has -mzisk-dma"):
+            self.run_audit()
+
+    def test_dirty_account_lists_must_be_compiled_out(self):
+        self.write_compile_commands(self.build_dir, "-UMONAD_ZKVM_NO_DIRTY_ACCOUNTS")
+        with self.assertRaisesRegex(
+            SystemExit, "state.cpp compile command does not enable"
+        ):
             self.run_audit()
 
 

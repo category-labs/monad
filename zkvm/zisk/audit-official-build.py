@@ -26,6 +26,7 @@ EXPECTED_FEATURES = [
     "keccakf-memo",
     "wide-memory-size",
     "varcode-cache",
+    "no-dirty-accounts",
 ]
 EXPECTED_MARCH = "rv64ima_zicsr_zbb_zbs_zbkb"
 EXPECTED_MTUNE = "size"
@@ -170,6 +171,48 @@ def check_flags(flags: str, where: str) -> None:
             fail(f"{where} has {name}={actual.get(name)!r}, expected {value!r}")
 
 
+def check_dirty_accounts(build_dir: pathlib.Path, repo: pathlib.Path) -> None:
+    option = "MONAD_ZKVM_NO_DIRTY_ACCOUNTS"
+    if cache_values(build_dir / "CMakeCache.txt").get(option) != "ON":
+        fail(f"matching CMake cache did not enable {option}")
+    database = build_dir / "compile_commands.json"
+    if not database.is_file():
+        fail("compile_commands.json is missing; reconfigure the official build")
+    commands = json.loads(database.read_text())
+    required = {
+        (repo / "category/execution/ethereum/state3/state.cpp").resolve(),
+        (repo / "zkvm/guest/execute_witness.cpp").resolve(),
+    }
+    tracer = (repo / "category/execution/ethereum/trace/state_tracer.cpp").resolve()
+    seen = set()
+    for entry in commands:
+        source = (pathlib.Path(entry["directory"]) / entry["file"]).resolve()
+        if source == tracer:
+            fail("state_tracer.cpp is compiled despite disabled dirty-account lists")
+        if source not in required:
+            continue
+        args = entry.get("arguments")
+        if args is None:
+            args = shlex.split(entry["command"])
+        # Respect later -D/-U overrides, including their separated spellings.
+        enabled = False
+        tokens = iter(args)
+        for arg in tokens:
+            if arg in ("-D", "-U"):
+                arg += next(tokens, "")
+            if arg == "-U" + option:
+                enabled = False
+            elif arg.startswith("-D"):
+                name, _, value = arg[2:].partition("=")
+                if name == option:
+                    enabled = value in ("", "1")
+        if not enabled:
+            fail(f"{source.name} compile command does not enable {option}")
+        seen.add(source)
+    if seen != required:
+        fail("compile commands are missing State or the guest entry point")
+
+
 def check_runtime(repo: pathlib.Path) -> dict[str, str]:
     lock_path = repo / "zkvm/zisk/Cargo.lock"
     packages: list[dict[str, str]] = []
@@ -306,6 +349,10 @@ def main() -> int:
             "nodelete.hpp declares free a no-op and libc.cpp no longer "
             "defines it so"
         )
+    # Check generated build inputs, not a source filename in the CMake text.
+    # State separately asserts that reserve-balance tracking is inactive.
+    check_dirty_accounts(build_dir, repo)
+
     nm = compiler.with_name(compiler.name.replace("g++", "nm"))
     if not nm.exists():
         fail(f"nm not found beside compiler: {nm}")

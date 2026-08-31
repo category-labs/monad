@@ -125,6 +125,19 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
     endif()
 
+    # Skip merge constraints in the sequential guest; the host keeps them.
+    # Incompatible with CHECK_SEQUENTIAL_MERGE, which reads those constraints.
+    option(MONAD_ZKVM_NO_MERGE_CONSTRAINTS
+           "stop writing the merge constraints only can_merge reads" OFF)
+    if(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+        if(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
+            message(FATAL_ERROR
+                "MONAD_ZKVM_NO_MERGE_CONSTRAINTS removes what CHECK_SEQUENTIAL_MERGE's assertion "
+                "reads; enabling both would fail the assertion for the wrong reason")
+        endif()
+        add_compile_definitions(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+    endif()
+
     # Expose the backend as a compile definition, for the places where the two
     # diverge: the Keccak-f[1600] precompile is reached by a different entry on
     # each (zkvm/category/crypto/keccak.h).

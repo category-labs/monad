@@ -1817,7 +1817,20 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_CHECK(SWAP1 + (N - 1));
 
-        swap_slots(*stack_top, stack_top[-N]);
+#if defined(MONAD_ZKVM_ZISK)
+        // Reuse Context's scratch slot to avoid a local 32-byte stack frame.
+        {
+            uint256_t *const monad_t = &ctx.swap_scratch;
+            *monad_t = *stack_top;
+            *stack_top = stack_top[-static_cast<std::ptrdiff_t>(N)];
+            stack_top[-static_cast<std::ptrdiff_t>(N)] = *monad_t;
+        }
+#else
+        // Keep the temporary as uint256_t to avoid an AVX round trip.
+        uint256_t const top = *stack_top;
+        *stack_top = stack_top[-static_cast<std::ptrdiff_t>(N)];
+        stack_top[-static_cast<std::ptrdiff_t>(N)] = top;
+#endif
 
         MONAD_VM_NEXT(SWAP1 + (N - 1));
     }

@@ -456,8 +456,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # Rewrite it to integer in a derived copy of the header, and shadow the
     # submodule's on the include path -- 0.236 % of the block, submodule left
     # pristine. See the module for why this is not a submodule patch.
-    include("${CMAKE_CURRENT_SOURCE_DIR}/unordered_dense_no_float.cmake")
-    monad_zkvm_unordered_dense_no_float(unordered_dense "${THIRD_PARTY_DIR}"
+    include("${CMAKE_CURRENT_SOURCE_DIR}/unordered_dense_derive.cmake")
+    monad_zkvm_unordered_dense_derive(unordered_dense "${THIRD_PARTY_DIR}"
         "${CMAKE_CURRENT_BINARY_DIR}/unordered_dense-nofloat")
 
     # cthash — header-only constexpr hashing, used by abi_signatures.hpp

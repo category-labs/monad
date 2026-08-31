@@ -145,6 +145,22 @@ namespace std
         zkvm_halt(1);
     }
 
+    // The allocation-overflow arms of operator new[]: a bucket array whose
+    // element is 16 bytes rather than 8 makes `count * sizeof(T)` wide enough
+    // that gcc stops proving it cannot overflow and emits the check. Neither is
+    // reachable -- the guest's allocator halts on exhaustion long before a
+    // count that large -- and both halt for the same reason every stub here
+    // does.
+    [[noreturn]] void __throw_bad_alloc()
+    {
+        zkvm_halt(1);
+    }
+
+    [[noreturn]] void __throw_bad_array_new_length()
+    {
+        zkvm_halt(1);
+    }
+
     // Pulled in via std::function — its call operator's empty-target path
     // and rethrow_exception in <functional>'s move/copy plumbing.
     [[noreturn]] void __throw_bad_function_call()

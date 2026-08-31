@@ -13,7 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# ankerl::unordered_dense stores max_load_factor as a `float` and computes
+# Two derivations of the pinned ankerl::unordered_dense header, both guest-only.
+#
+# One. ankerl::unordered_dense stores max_load_factor as a `float` and computes
 # `num_buckets * 0.8f` on every rehash and every size query. The guest has no
 # FPU, so each one is a call to __floatundisf and __mulsf3. For the
 # power-of-two bucket counts this map uses, `(n * 4) / 5` is the same integer.
@@ -35,7 +37,7 @@
 # immer popcount hunk, went the same way for the same reason: see
 # zkvm/core/builtin_popcount.hpp.
 
-function(monad_zkvm_unordered_dense_no_float target third_party_dir out_dir)
+function(monad_zkvm_unordered_dense_derive target third_party_dir out_dir)
     set(_src "${third_party_dir}/unordered_dense/include/ankerl/unordered_dense.h")
     set(_out "${out_dir}/ankerl/unordered_dense.h")
 
@@ -76,13 +78,38 @@ function(monad_zkvm_unordered_dense_no_float target third_party_dir out_dir)
     set(_to_capacity
         "static_cast<value_idx_type>((static_cast<uint64_t>(m_num_buckets) * 4) / 5)")
 
-    foreach(_pair "_from_shifts;_to_shifts" "_from_capacity;_to_capacity")
+    # Two. bucket_type::standard holds its two fields as uint32_t, and ZisK
+    # charges a 4-byte read 122 cells and a 4-byte write 193, against 17 and 18
+    # for an aligned 8-byte one -- anything narrower than a word is a sub-word
+    # access there. A probe reads one field and place_and_shift_up reads and
+    # writes both per displacement, so a bucket costs hundreds of cells where a
+    # word would cost seventeen. The narrow fields also put value_idx_type's
+    # arithmetic on the 32-bit path, priced at 60 against a native add's 15.3,
+    # and make every widening a `sll 32` + `srl 32` pair at 56 apiece.
+    #
+    # Alignment is not the blocker and alignas(8) alone changes nothing: gcc
+    # interleaves the second field's load between the two stores, so it cannot
+    # merge them however aligned they are. Measured -- identical steps, COST and
+    # every memory row.
+    #
+    # Sixteen bytes a bucket rather than eight. Buckets run about 1.25x the
+    # element count, so the guest's largest map costs a few hundred kilobytes
+    # more against 42 MB of RAM in use. value_idx_type follows m_value_idx, and
+    # the bucket count stays bounded by calc_num_buckets' `1 << (64 - shifts)`
+    # rather than by max_bucket_count.
+    set(_from_bucket [==[    uint32_t m_dist_and_fingerprint; // upper 3 byte: distance to original bucket. lower byte: fingerprint from hash
+    uint32_t m_value_idx;            // index into the m_values vector.]==])
+    set(_to_bucket [==[    uint64_t m_dist_and_fingerprint; // upper 3 byte: distance to original bucket. lower byte: fingerprint from hash
+    uint64_t m_value_idx;            // index into the m_values vector.]==])
+
+    foreach(_pair "_from_shifts;_to_shifts" "_from_capacity;_to_capacity"
+                  "_from_bucket;_to_bucket")
         list(GET _pair 0 _from_var)
         list(GET _pair 1 _to_var)
         string(FIND "${_text}" "${${_from_var}}" _found)
         if(_found EQUAL -1)
             message(FATAL_ERROR
-                "unordered_dense float site not found:\n  ${${_from_var}}\n"
+                "unordered_dense rewrite site not found:\n  ${${_from_var}}\n"
                 "The header changed under ${CMAKE_CURRENT_LIST_FILE}. Re-derive "
                 "the substitution against the new pinned revision.")
         endif()

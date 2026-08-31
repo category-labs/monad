@@ -368,11 +368,12 @@ public:
 // 16 wider than the two persistent handles it replaced, not 32: the second vector lands in padding
 // the row already carried, so the number is not the arithmetic and has to be read off the compiler.
 #ifdef MONAD_ZKVM_ZISK
-// 208 in the guest: each of the two FlatStorage members carries one pointer to its slot index. The
+// 216 in the guest: each of the two FlatStorage members carries one pointer to its slot index, and
+// AccountSubstate one more for A_K's. The
 // row's storage_ is journalled per slot rather than copied, so the growth is footprint and not copy
 // time, and it buys the tail described on FlatStorage -- 3.0 M scan iterations on the worst of 200
 // blocks against 63,760 on a median one.
-static_assert(sizeof(AccountState) == 208);
+static_assert(sizeof(AccountState) == 216);
 #else
 static_assert(sizeof(AccountState) == 192);
 #endif

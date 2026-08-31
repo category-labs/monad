@@ -92,12 +92,103 @@ class AccountSubstate
     bool accessed_{false}; // A_a
     Set accessed_storage_{}; // A_K
 
+#ifdef MONAD_ZKVM_ZISK
+    // The note above holds at ~3 keys, and the note on key_tail measured the scan at about four
+    // entries -- on median blocks. The corpus is not median: over 200 mainnet blocks, 27 of them cost
+    // more than 5 % above a competing guest, and on the worst of those access_storage alone is 5.8 %
+    // of the block's steps against 0.63 % on a median one. A_K accumulates every slot an account
+    // touches for a whole block, so on a storage-heavy contract the scan is the cost, and it is
+    // quadratic in the slots touched.
+    //
+    // Same shape as the index on FlatStorage, and deliberately so: open addressing on the `key_tail`
+    // the caller already computed, positions rather than iterators, one pointer so this row grows by
+    // eight rather than by a vector, and a copy leaves the index behind. Below the threshold nothing
+    // changes and the vector the note describes is still what runs. A_K is append-only apart from
+    // undo_warm_slot, which pops the back and drops the index rather than patching a probe run.
+    static constexpr std::size_t index_from = 16;
+
+    struct Index
+    {
+        std::vector<std::uint32_t> slot; // position + 1, 0 empty
+        std::size_t mask;                // slot.size() - 1
+    };
+
+    std::unique_ptr<Index> aidx_{};
+
+    void aidx_insert(std::size_t const pos)
+    {
+        std::size_t h =
+            static_cast<std::size_t>(key_tail(accessed_storage_[pos])) &
+            aidx_->mask;
+        while (aidx_->slot[h] != 0) {
+            h = (h + 1) & aidx_->mask;
+        }
+        aidx_->slot[h] = static_cast<std::uint32_t>(pos + 1);
+    }
+
+    void aidx_rebuild()
+    {
+        std::size_t cap = 32;
+        while (cap < accessed_storage_.size() * 2) {
+            cap *= 2;
+        }
+        if (!aidx_) {
+            aidx_ = std::make_unique<Index>();
+        }
+        aidx_->slot.assign(cap, 0);
+        aidx_->mask = cap - 1;
+        for (std::size_t i = 0; i < accessed_storage_.size(); ++i) {
+            aidx_insert(i);
+        }
+    }
+
+    [[nodiscard]] bool
+    aidx_has(bytes32_t const &key, std::uint64_t const tail) const
+    {
+        std::size_t h = static_cast<std::size_t>(tail) & aidx_->mask;
+        for (;;) {
+            std::uint32_t const p = aidx_->slot[h];
+            if (p == 0) {
+                return false;
+            }
+            if (key_equals(key, tail, accessed_storage_[p - 1])) {
+                return true;
+            }
+            h = (h + 1) & aidx_->mask;
+        }
+    }
+#endif
+
 public:
     AccountSubstate() = default;
+#ifdef MONAD_ZKVM_ZISK
+    // The index is a cache derived from A_K, so a copy starts without one.
+    AccountSubstate(AccountSubstate const &o)
+        : destructed_(o.destructed_)
+        , touched_(o.touched_)
+        , accessed_(o.accessed_)
+        , accessed_storage_(o.accessed_storage_)
+    {
+    }
+
+    AccountSubstate &operator=(AccountSubstate const &o)
+    {
+        destructed_ = o.destructed_;
+        touched_ = o.touched_;
+        accessed_ = o.accessed_;
+        accessed_storage_ = o.accessed_storage_;
+        aidx_.reset();
+        return *this;
+    }
+
+    AccountSubstate(AccountSubstate &&) noexcept = default;
+    AccountSubstate &operator=(AccountSubstate &&) noexcept = default;
+#else
     AccountSubstate(AccountSubstate &&) noexcept = default;
     AccountSubstate(AccountSubstate const &) = default;
     AccountSubstate &operator=(AccountSubstate &&) noexcept = default;
     AccountSubstate &operator=(AccountSubstate const &) = default;
+#endif
 
     // A_s
     bool is_destructed() const
@@ -149,12 +240,32 @@ public:
     evmc_access_status access_storage(bytes32_t const &key)
     {
         std::uint64_t const tail = key_tail(key);
+#ifdef MONAD_ZKVM_ZISK
+        if (aidx_) {
+            if (aidx_has(key, tail)) {
+                return EVMC_ACCESS_WARM;
+            }
+            accessed_storage_.push_back(key);
+            if (aidx_->slot.size() < accessed_storage_.size() * 2) {
+                aidx_rebuild();
+            }
+            else {
+                aidx_insert(accessed_storage_.size() - 1);
+            }
+            return EVMC_ACCESS_COLD;
+        }
+#endif
         for (auto const &k : accessed_storage_) {
             if (key_equals(key, tail, k)) {
                 return EVMC_ACCESS_WARM;
             }
         }
         accessed_storage_.push_back(key);
+#ifdef MONAD_ZKVM_ZISK
+        if (accessed_storage_.size() >= index_from) {
+            aidx_rebuild();
+        }
+#endif
         return EVMC_ACCESS_COLD;
     }
 
@@ -186,11 +297,18 @@ public:
                 accessed_storage_.back().bytes, key.bytes, sizeof(key.bytes)) ==
             0);
         accessed_storage_.pop_back();
+#ifdef MONAD_ZKVM_ZISK
+        aidx_.reset();
+#endif
     }
 };
 
 // 24 while A_K was an 8-byte persistent handle; a vector is 24 on its own. The number is here to
 // catch growth nobody intended, so it moves with a change that was intended.
+#ifdef MONAD_ZKVM_ZISK
+static_assert(sizeof(AccountSubstate) == 40);
+#else
 static_assert(sizeof(AccountSubstate) == 32);
+#endif
 
 MONAD_NAMESPACE_END

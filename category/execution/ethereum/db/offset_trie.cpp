@@ -82,7 +82,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // encountering that tag in the blob data aborts as an invalid tag. However,
     // we have to check the very first node isn't EMPTY (provided it exists).
     MONAD_ASSERT(node.bytes() == region_end || node.tag() != EMPTY);
-    std::vector<uint64_t> node_offsets((blob_.size() + 63) / 64, 0);
+    // One BYTE per blob offset, not one bit. The bitmap cost a read-modify-write to set -- shift,
+    // scale, add, load, bset, store -- and the same shape to test; a byte array is an add and a store
+    // to set, an add and a load to test. Six instructions become three on each side, on every node
+    // and every child of every node.
+    //
+    // No alignment assumption: indexed by the raw offset, so it holds whatever the blob's node sizes
+    // produce. The price is the zeroing, and it is not close -- the extra bytes are one memset, which
+    // ZisK charges per 8-byte word on the aligned path, against six instructions saved per lookup at
+    // 68 COST a step.
+    std::vector<unsigned char> node_offsets(blob_.size(), 0);
 
     // `child_offset < blob_.size()` followed from `child_offset < node_offset` and was dead. The walk
     // runs while node.bytes() < region_end, so node_offset < blob_.size() throughout; the one call
@@ -94,7 +103,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         MONAD_ASSERT(
             c == NULL_ID ||
             (child_offset < node_offset &&
-             ((node_offsets[child_offset >> 6] >> (child_offset & 63)) & 1)));
+             node_offsets[child_offset] != 0));
     };
 
     while (node.bytes() < region_end) {
@@ -155,7 +164,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     }
                 }});
 
-        node_offsets[node_offset >> 6] |= 1ull << (node_offset & 63);
+        node_offsets[node_offset] = 1;
         node = NodeViewBase{base + next_offset};
         node_offset = next_offset;
     }

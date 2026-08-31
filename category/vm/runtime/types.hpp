@@ -279,6 +279,10 @@ namespace monad::vm::runtime
         uint256_t const *stack_limit = nullptr;
 
 #if defined(MONAD_ZKVM_ZISK)
+        // Shared temporary for SWAP1-16: no nested SWAP can occur between
+        // saving and restoring it. Keep last to preserve assembly offsets.
+        uint256_t swap_scratch;
+
         // Reuse ADD parameters; execute initializes carry-in to 0.
         // Keep last to preserve the assembly offsets.
         ZiskAdd256Params add256_params{nullptr, nullptr, 0, nullptr};

@@ -55,7 +55,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
            "build the audited, fail-closed official ZisK guest profile" OFF)
     set(_monad_zkvm_official_features "baseline" "zisk-dma" "keccakf-memo"
                                       "wide-memory-size" "varcode-cache"
-                                      "no-dirty-accounts")
+                                      "no-dirty-accounts"
+                                      "no-merge-constraints")
     set(_monad_zkvm_runtime_version "1.3.1-alpha")
     set(_monad_zkvm_runtime_revision
         "306a9c934ba4947b1d586d69b67120f8b4c41466")
@@ -67,11 +68,15 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # Enable options required by the official profile; reject explicit OFF values.
     # Add each new required option here and its feature to the list above.
+    # NO_DIRTY_ACCOUNTS and NO_MERGE_CONSTRAINTS both remove work whose only
+    # readers are outside the guest -- the state tracer this file excludes, and
+    # the can_merge the sequential path does not call.
     set(_monad_zkvm_required_levers MONAD_ZKVM_ZISK_DMA
                                     MONAD_ZKVM_KECCAKF_MEMO
                                     MONAD_ZKVM_WIDE_MEMORY_SIZE
                                     MONAD_ZKVM_VARCODE_CACHE
-                                    MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+                                    MONAD_ZKVM_NO_DIRTY_ACCOUNTS
+                                    MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
         # Audit the effective source list and per-source definitions.
         set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL
@@ -91,7 +96,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # The official profile signs one binary. The assertion below is extra work
     # on the merge path and aborts where the shipped guest returns, so a build
-    # carrying it is not the guest the signature describes.
+    # carrying it is not the guest the signature describes. Forbidding it here
+    # is also what keeps it from colliding with the NO_MERGE_CONSTRAINTS forced
+    # on just above, whose writes that assertion's can_merge would read.
     if(MONAD_ZKVM_OFFICIAL_PROFILE AND MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
         message(FATAL_ERROR
             "MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE is forbidden in the official "
@@ -177,6 +184,19 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
            "assert can_merge on the sequential merge path" OFF)
     if(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
         add_compile_definitions(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
+    endif()
+
+    # Skip merge constraints in the sequential guest; the host keeps them.
+    # Incompatible with CHECK_SEQUENTIAL_MERGE, which reads those constraints.
+    option(MONAD_ZKVM_NO_MERGE_CONSTRAINTS
+           "stop writing the merge constraints only can_merge reads" OFF)
+    if(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+        if(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
+            message(FATAL_ERROR
+                "MONAD_ZKVM_NO_MERGE_CONSTRAINTS removes what CHECK_SEQUENTIAL_MERGE's assertion "
+                "reads; enabling both would fail the assertion for the wrong reason")
+        endif()
+        add_compile_definitions(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
     endif()
 
     # Expose the backend as a compile definition, for the places where the two

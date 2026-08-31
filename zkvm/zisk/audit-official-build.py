@@ -27,6 +27,7 @@ EXPECTED_FEATURES = [
     "wide-memory-size",
     "varcode-cache",
     "no-dirty-accounts",
+    "no-merge-constraints",
 ]
 EXPECTED_MARCH = "rv64ima_zicsr_zbb_zbs_zbkb"
 EXPECTED_MTUNE = "size"

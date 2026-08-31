@@ -612,9 +612,14 @@ uint64_t State::get_nonce(Address const &address)
 
 uint256_t State::get_balance(Address const &address)
 {
+#if defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+    // Sequential execution needs no merge constraint or original-row lookup.
+    auto const &account = recent_account(address);
+#else
     auto const [recent, orig] = rows_for_read(address);
     orig->set_validate_exact_balance();
     auto const &account = recent->account_;
+#endif
     if (MONAD_LIKELY(account.has_value())) {
         return account.value().balance;
     }
@@ -1155,6 +1160,16 @@ bool State::try_fix_account_mismatch(
 bool State::record_balance_constraint_for_debit(
     Address const &address, uint256_t const &debit)
 {
+#if defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+    // Keep the balance check; sequential execution needs no merge constraints.
+    // Any balance covers a zero debit; skip the account lookup.
+    if (debit == 0) {
+        return true;
+    }
+    auto const &account = recent_account(address);
+    uint256_t const balance = account.has_value() ? account->balance : 0;
+    return balance >= debit;
+#else
     auto const [recent, orig] = rows_for_read(address);
     auto const &account = recent->account_;
     uint256_t const balance = account.has_value() ? account->balance : 0;
@@ -1183,6 +1198,7 @@ bool State::record_balance_constraint_for_debit(
     // original balance used during this execution exactly
     original_state.set_validate_exact_balance();
     return false;
+#endif
 }
 
 MONAD_NAMESPACE_END

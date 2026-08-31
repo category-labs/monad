@@ -45,8 +45,11 @@ MONAD_NAMESPACE_BEGIN
 
 class BlockState;
 
-// Per-frame dirty accounts, deduplicated by linear scan for typically small
-// lists.
+// Dirty-account tracking is unavailable in this guest configuration.
+#if defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+class DirtyAccounts;
+#else
+// Per-frame dirty accounts, deduplicated by linear scan for small lists.
 class DirtyAccounts
 {
     std::vector<Address> v_{};
@@ -72,6 +75,8 @@ public:
     bool empty() const { return v_.empty(); }
     std::span<Address const> span() const { return v_; }
 };
+
+#endif
 
 class State
 {
@@ -195,13 +200,12 @@ class State
 
     unsigned version_{0};
 
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     std::deque<DirtyAccounts> dirty_;
+#endif
 
     // Cache the last account lookup. Inserts preserve the pointer;
     // pop_reject clears it before erasing entries.
-    //
-    // An increasing epoch tracks dirty-set registration: version_ alone
-    // cannot distinguish successive frames at the same depth.
     //
     // alignas(8) because the key is READ as two 8-byte words and an Address
     // is 20 bytes: the pair of loads must not straddle a word boundary, which
@@ -210,8 +214,12 @@ class State
     // above, which has already moved twice.
     alignas(8) Address memo_addr_{};
     AccountState *memo_val_{nullptr};
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+    // Track dirty-set registration across frame changes. Unlike version_,
+    // this counter distinguishes successive frames at the same depth.
     std::uint64_t memo_epoch_{0};
     std::uint64_t frame_epoch_{1};
+#endif
 
 #ifdef MONAD_ZKVM_ZISK
     // Cache the last original-account lookup to avoid hashing its address again.
@@ -290,7 +298,9 @@ public:
     // the currently pushed frame. Intended for observers that must inspect
     // frame-local metadata immediately before pop_accept() or pop_reject();
     // callers must not retain references beyond the frame pop.
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     DirtyAccounts const &current_frame_dirty_accounts() const;
+#endif
 
     ////////////////////////////////////////
 

@@ -292,6 +292,10 @@ namespace monad::vm::runtime
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
 
+        // One-past stack limit, cached by interpreter::execute.
+        // Keep after members whose offsets are used by assembly.
+        uint256_t const *stack_limit = nullptr;
+
 #if defined(MONAD_ZKVM_ZISK)
         // Shared temporary for SWAP1-16: no nested SWAP can occur between
         // saving and restoring it. Keep last to preserve assembly offsets.

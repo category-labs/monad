@@ -58,29 +58,30 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     string(APPEND CMAKE_CXX_FLAGS
         " -mcmodel=medany -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti")
 
-    # Match the guest ISA and keep the inherited compiler tuning here.
-    # Override Nix's frame-pointer default for consistency with local GCC.
+    # ZisK supports Zba/Zbb/Zbs/Zbkb.
+    # The fixed-address guest needs no PIC/GOT indirections.
+    # -mtune=size favors direct unaligned word accesses over byte-wise loads.
+    #
+    # Append after cmake-rs's flags: the last -march wins.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         set(_zisk_march "-march=rv64ima_zicsr_zba_zbb_zbs_zbkb -mabi=lp64")
-        string(JOIN " " _zisk_opt
-            "-fno-pic"
-            "-fomit-frame-pointer"
-            "-mtune=size"
-            "-funroll-loops"
-            "--param=max-inline-insns-single=1600"
-            "--param=max-inline-insns-auto=533"
-            "--param=inline-unit-growth=266"
-            "--param=max-inline-recursive-depth=6"
-            "--param=max-completely-peeled-insns=400"
-            "--param=large-function-growth=280"
-            "--param=large-unit-insns=30000"
-            "-fno-schedule-insns"
-            "-fno-schedule-insns2"
-            "-fno-jump-tables")
-        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} ${_zisk_opt}")
-        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} ${_zisk_opt}")
+        # Override the Nix GCC wrapper's default frame pointers on both build paths.
+        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} -fno-pic -mtune=size -fomit-frame-pointer")
+        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} -fno-pic -mtune=size -fomit-frame-pointer")
         string(APPEND CMAKE_ASM_FLAGS " ${_zisk_march}")
     endif()
+
+    # Tune C++ inlining for both guests to reduce call overhead.
+    # Allow more overall growth while limiting individual inlining candidates.
+    # Unroll eligible loops to reduce comparisons and branches.
+    string(APPEND CMAKE_CXX_FLAGS
+        " --param inline-unit-growth=800"
+        " --param large-function-growth=1500"
+        " --param max-inline-insns-auto=200"
+        " --param max-inline-insns-single=800"
+        " --param inline-min-speedup=1"
+        " -finline-functions"
+        " -funroll-loops")
 
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
 

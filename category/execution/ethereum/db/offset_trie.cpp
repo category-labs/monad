@@ -367,26 +367,44 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                     return w != 0 && w < OVERLAY_BASE &&
                            get_original(NodeId{w}).tag() == Tag::DIGEST;
                 };
-                for (int i = 15; i >= 0; --i) {
+                // size_t and not int for the slot index, because ZisK prices
+                // 32-bit arithmetic through the generic binary machine: add_w
+                // costs 60 where a native add costs 15.3, and sub and eq cost
+                // 60 apiece. An int counter puts the descent, the `i - lo + 1`
+                // and the bound test on the 32-bit path; a 64-bit one does not.
+                //
+                // Measured on block 25815100: add_w 737,917 -> 528,853, sub
+                // 919,511 -> 810,479, eq 1,861,640 -> 1,775,148, against add
+                // 12,355,033 -> 12,500,960. 46.3 M cells, and over 200 blocks
+                // -0.44 % steps and -0.33 % COST.
+                //
+                // Not the widening it looks like: `i - lo + 1` reaching a
+                // size_t emits no zero-extension either way, since both bounds
+                // are known to the compiler. What the type changes is the
+                // arithmetic, not the conversion.
+                //
+                // The descent puts its decrement in the test, which is what an
+                // unsigned counter needs, and leaves `i = lo` below meaning
+                // exactly what it meant with the trailing `--i`.
+                for (size_t i = 16; i-- > 0;) {
                     if (!digest_at(raw[i])) {
                         dest = child_ref<priming_pass>(NodeId{raw[i]}, dest);
                         continue;
                     }
-                    int lo = i;
+                    size_t lo = i;
                     while (lo > 0 && digest_at(raw[lo - 1]) &&
                            uint64_t{raw[lo]} ==
                                uint64_t{raw[lo - 1]} + DIGEST_NODE_LEN) {
                         --lo;
                     }
-                    size_t const run =
-                        static_cast<size_t>(i - lo + 1) * HASH_RLP_LEN;
+                    size_t const run = (i - lo + 1) * HASH_RLP_LEN;
                     unsigned char *const out = dest.last(run).data();
                     std::memcpy(out, blob_.data() + raw[lo], run);
                     for (size_t k = 0; k < run; k += HASH_RLP_LEN) {
                         out[k] = 0xa0;
                     }
                     dest = dest.shrink(run);
-                    i = lo; // the loop's --i steps past the run
+                    i = lo; // the test's decrement steps past the run
                 }
                 return wrap(dest);
             },

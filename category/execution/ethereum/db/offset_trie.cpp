@@ -109,6 +109,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         // node.bytes() < region_end, so node_offset is an offset into the
         // blob and never one past its end.
         MONAD_DEBUG_ASSERT(node_offset < blob_.size());
+        if (node.tag() == DIGEST) {
+            unsigned char const *const digest_end =
+                node.bytes() + DIGEST_NODE_LEN;
+            MONAD_ASSERT(digest_end <= region_end);
+            node_offsets[node_offset] = 1;
+            node_offset = static_cast<uint64_t>(digest_end - base);
+            node = NodeViewBase{digest_end};
+            continue;
+        }
+
         // checked_end asserts that the current node does not reach past the end
         // of the region
         auto next_offset =

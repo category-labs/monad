@@ -88,6 +88,40 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     string(APPEND CMAKE_CXX_FLAGS
         " -mcmodel=medany -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti")
 
+    # Let the inliner grow the program. GCC's -O3 defaults are tuned for a binary that has to fit a
+    # cache and share a machine; a zkVM guest pays per executed instruction and nothing at all for
+    # size, so the trade the defaults make is the wrong one here.
+    #
+    # This is the largest single lever measured on the axis, and it changes no source. Outside the
+    # interpreter -- which is at parity -- we execute 44.7 M steps a block against ziskethone's
+    # 33.7 M, 85 % of the whole COST gap, in 1.64x as many function calls at 0.81x their steps per
+    # call; our ELF carries 2,540 live symbols against their 613. That is call granularity, spread
+    # across everything, and the inliner is the only tool that reaches all of it at once.
+    #
+    # Measured on the canonical 200 blocks, each point its own A/B:
+    #   unit-growth 250  / auto 90  / min-speedup 5 : -0.65 % steps, -0.33 % COST, 2,432 symbols
+    #   unit-growth 800  / auto 200 / min-speedup 1 : -1.65 % steps, -0.85 % COST, 2,394 symbols
+    #   unit-growth 3000 / auto 500 / min-speedup 0 : -1.82 % steps, -0.97 % COST, 2,351 symbols
+    # The curve saturates: the third point buys 0.12 points more for four times the parameters and
+    # 33 % more binary. The second is taken. ROM usage is not the constraint at either -- 7.9 %
+    # against the default build's 6.8 %, of a budget the default already uses a fifteenth of.
+    #
+    # A unity build was tried first and REGRESSED, +1.35 % COST, which is why the mechanism is stated
+    # as "let it grow" and not "let it see more": batching translation units exhausts the same budget
+    # instead of widening it, and the symbol count did not move (2,540 -> 2,545) while the ratio got
+    # worse. Do not re-try it without raising these first.
+    #
+    # These land in CMAKE_CXX_FLAGS deliberately: the official profile signs
+    # SHA256(compiler, CMAKE_{C,CXX}_FLAGS[_RELEASE]), so a codegen change that did not enter that
+    # string would leave two different guests claiming one identity.
+    string(APPEND CMAKE_CXX_FLAGS
+        " --param inline-unit-growth=800"
+        " --param large-function-growth=1500"
+        " --param max-inline-insns-auto=200"
+        " --param max-inline-insns-single=800"
+        " --param inline-min-speedup=1"
+        " -finline-functions")
+
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
 
     # The SP1 and ZisK ripemd160 accelerators place the digest at opposite

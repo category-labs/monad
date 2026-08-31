@@ -24,6 +24,7 @@ EXPECTED_FEATURES = [
     "baseline",
     "zisk-dma",
     "keccakf-memo",
+    "wide-memory-size",
 ]
 EXPECTED_MARCH = "rv64ima_zicsr_zba_zbb_zbs_zbkb"
 EXPECTED_MTUNE = "size"

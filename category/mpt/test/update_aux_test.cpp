@@ -2332,6 +2332,85 @@ TEST(update_aux_test, rewind_discards_speculative_on_both_timelines)
     aux.deactivate_secondary_timeline();
 }
 
+namespace
+{
+    // Shared setup for the rewind tests below: anonymous on-disk pool,
+    // io rings, and buffers.
+    struct RewindTestPool
+    {
+        monad::async::storage_pool pool{
+            monad::async::use_anonymous_inode_tag{}};
+        monad::io::Ring ring1;
+        monad::io::Ring ring2;
+        monad::io::Buffers testbuf =
+            monad::io::make_buffers_for_segregated_read_write(
+                ring1, ring2, 2, 4,
+                monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+                monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+        monad::async::AsyncIO io{pool, testbuf};
+    };
+
+    // Seed primary versions 0..primary_max and activate the secondary.
+    void seed_primary_and_activate_secondary(
+        monad::async::storage_pool &pool, UpdateAux &aux,
+        uint64_t const primary_max)
+    {
+        for (uint64_t v = 0; v <= primary_max; ++v) {
+            primary_write(pool, aux, v);
+        }
+        aux.activate_secondary_timeline();
+    }
+}
+
+// Rewinding to a version before the secondary's first valid version leaves
+// nothing on the secondary timeline: its ring must report empty
+// (INVALID_BLOCK_NUM) rather than a max_version with no root.
+TEST(update_aux_test, rewind_below_secondary_range_empties_secondary)
+{
+    RewindTestPool t;
+    UpdateAux aux{t.io, AUX_TEST_HISTORY_LENGTH};
+    auto const &mctx = aux.metadata_ctx();
+    // Secondary activates late: its first root lands at version 8.
+    seed_primary_and_activate_secondary(t.pool, aux, 9);
+    secondary_write(t.pool, aux, 8);
+    secondary_write(t.pool, aux, 9);
+
+    aux.rewind_to_version(5);
+
+    EXPECT_EQ(mctx.db_history_max_version(timeline_id::primary), 5u);
+    // Secondary had no version <= 5, so its timeline is now empty.
+    EXPECT_TRUE(mctx.timeline_active(timeline_id::secondary));
+    EXPECT_EQ(
+        mctx.db_history_max_version(timeline_id::secondary), INVALID_BLOCK_NUM);
+    EXPECT_EQ(
+        mctx.db_history_min_valid_version(timeline_id::secondary),
+        INVALID_BLOCK_NUM);
+    EXPECT_FALSE(mctx.version_is_valid_ondisk(5, timeline_id::secondary));
+}
+
+// Rewinding into a gap in the secondary's history (versions with no root
+// between valid ones) is refused: it would leave the secondary reporting
+// a max_version whose slot holds no root.
+TEST(update_aux_test, rewind_into_secondary_gap_aborts)
+{
+    RewindTestPool t;
+    UpdateAux aux{t.io, AUX_TEST_HISTORY_LENGTH};
+    auto &mctx = aux.metadata_ctx();
+    seed_primary_and_activate_secondary(t.pool, aux, 9);
+    secondary_write(t.pool, aux, 0);
+    secondary_write(t.pool, aux, 1);
+    // Manufacture a gap: secondary skips versions 2..7, next root lands
+    // at version 8 (as move_trie_version_forward would leave behind).
+    auto const off = fake_root_write(t.pool, aux);
+    mctx.fast_forward_next_version(8, timeline_id::secondary);
+    mctx.append_root_offset(off, timeline_id::secondary);
+    EXPECT_EQ(mctx.db_history_max_version(timeline_id::secondary), 8u);
+    mctx.set_latest_finalized_version(5);
+
+    ASSERT_DEATH(
+        aux.rewind_to_version(5), "rewind_to_version target has no root");
+}
+
 // Both timelines must persist across an UpdateAux re-init (simulates a
 // node restart that triggers rewind_to_latest_finalized internally).
 TEST(update_aux_test, rewind_state_survives_reopen)

@@ -88,6 +88,15 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
 
+    # Widen memory sizes and offsets to reduce ZisK's sub-word operation costs.
+    # Guest-only: context.S and the x86 JIT require the original 32-bit layout.
+    # types.hpp rejects this option on x86.
+    option(MONAD_ZKVM_WIDE_MEMORY_SIZE
+           "64-bit Memory::size and ::capacity, which x86 cannot take" OFF)
+    if(MONAD_ZKVM_WIDE_MEMORY_SIZE)
+        add_compile_definitions(MONAD_ZKVM_WIDE_MEMORY_SIZE)
+    endif()
+
     # Expose the backend as a compile definition, for the places where the two
     # diverge: the Keccak-f[1600] precompile is reached by a different entry on
     # each (zkvm/category/crypto/keccak.h).

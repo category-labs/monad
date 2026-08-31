@@ -38,7 +38,7 @@ stdenv.mkDerivation (finalAttrs: {
     cargoDeps
     ;
   env = buildEnv.env // {
-    MONAD_ZKVM_CMAKE_ARGS = "-DMONAD_ZKVM_KECCAKF_MEMO=ON";
+    MONAD_ZKVM_CMAKE_ARGS = "-DMONAD_ZKVM_WIDE_MEMORY_SIZE=ON -DMONAD_ZKVM_KECCAKF_MEMO=ON";
   };
   strictDeps = true;
   # Preserve the guest ELF exactly as linked.

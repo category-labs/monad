@@ -22,6 +22,9 @@
 #include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/core/likely.h>
+#endif
 #include <category/vm/evm/traits.hpp>
 
 #include <bit>
@@ -40,6 +43,36 @@ struct CallTracerBase;
 bool init_trusted_setup();
 
 inline constexpr Address ripemd_address{3};
+
+// Ethereum and Monad precompiles have 18 leading zero bytes.
+// A matching address still needs to be resolved.
+[[gnu::always_inline]] inline bool
+may_be_precompile(monad_address const &address) noexcept
+{
+#if defined(MONAD_ZKVM_ZISK)
+    // Reject ordinary addresses before loading the remaining prefix bytes.
+    std::uint64_t first_word;
+    __builtin_memcpy(&first_word, address.bytes, 8);
+    if (MONAD_LIKELY(first_word != 0)) {
+        return false;
+    }
+    std::uint64_t second_word;
+    std::uint16_t prefix_tail;
+    __builtin_memcpy(&second_word, address.bytes + 8, 8);
+    __builtin_memcpy(&prefix_tail, address.bytes + 16, 2);
+    return (second_word | static_cast<std::uint64_t>(prefix_tail)) == 0;
+#else
+    // Test all 18 prefix bytes in three loads.
+    std::uint64_t first_word;
+    std::uint64_t second_word;
+    std::uint16_t prefix_tail;
+    __builtin_memcpy(&first_word, address.bytes, 8);
+    __builtin_memcpy(&second_word, address.bytes + 8, 8);
+    __builtin_memcpy(&prefix_tail, address.bytes + 16, 2);
+    return (first_word | second_word |
+            static_cast<std::uint64_t>(prefix_tail)) == 0;
+#endif
+}
 
 template <Traits traits>
 bool is_eth_precompile(Address const &);

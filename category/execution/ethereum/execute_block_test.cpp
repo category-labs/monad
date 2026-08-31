@@ -313,7 +313,7 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
     auto const &transactions = block.value().transactions;
     BlockHeader const header{.number = 1};
     bytes32_t const block_id{header.number};
-    auto [state, code, _] = std::move(bs).release();
+    auto [state, code, _, access_] = std::move(bs).release();
     commit_simple(
         tdb,
         *state,
@@ -639,7 +639,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
     auto const &transactions = block.value().transactions;
     BlockHeader const header = block.value().header;
     bytes32_t const block_id{header.number};
-    auto [state, code, _] = std::move(bs).release();
+    auto [state, code, _, access_] = std::move(bs).release();
     commit_simple(
         tdb,
         *state,

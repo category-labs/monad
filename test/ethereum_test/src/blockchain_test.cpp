@@ -410,7 +410,7 @@ Result<BlockExecOutput> execute(
             exec_recorder));
 
     block_state.log_debug();
-    auto [state, code, _] = std::move(block_state).release();
+    auto [state, code, _, access] = std::move(block_state).release();
 
     MONAD_ASSERT(db.is_page_encoded() == traits::mip_8_active());
     auto builder = make_commit_builder(block.header.number, db);

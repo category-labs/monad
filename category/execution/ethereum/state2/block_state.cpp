@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
@@ -47,11 +48,13 @@
 
 MONAD_NAMESPACE_BEGIN
 
-BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
+BlockState::BlockState(
+    Db &db, vm::VM &monad_vm, Db *const secondary_db, bool const track_access)
     : db_{db}
     , secondary_db_{secondary_db}
     , vm_{monad_vm}
     , state_(std::make_unique<StateDeltas>())
+    , track_access_{track_access}
 {
 }
 
@@ -193,6 +196,18 @@ bool BlockState::can_merge(State &state) const
 
 void BlockState::merge(State const &state)
 {
+    if (track_access_) {
+        // union of the merged transaction's read+write set, at page
+        // granularity; original_ is never rolled back so reverted-frame
+        // accesses are included
+        for (auto const &[address, account_state] : state.original()) {
+            auto &pages = access_[address];
+            for (auto const &[key, value] : account_state.storage_) {
+                pages.insert(compute_page_key(key));
+            }
+        }
+    }
+
     ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
 
     auto const &current = state.current();
@@ -255,7 +270,8 @@ BlockState::ReleasedState BlockState::release() &&
     return {
         std::move(state_),
         std::move(code_),
-        std::move(self_destruct_storage_reads_)};
+        std::move(self_destruct_storage_reads_),
+        std::move(access_)};
 }
 
 void BlockState::log_debug()

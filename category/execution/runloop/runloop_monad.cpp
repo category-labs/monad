@@ -303,7 +303,8 @@ Result<BlockExecOutput> propose_block(
     BlockExecOutput exec_output;
     BlockMetrics block_metrics;
 
-    BlockState block_state(db, vm, secondary_db);
+    BlockState block_state(
+        db, vm, secondary_db, traits::multi_block_cache_active());
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const results,
@@ -326,7 +327,7 @@ Result<BlockExecOutput> propose_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
-    auto [state, code, _] = std::move(block_state).release();
+    auto [state, code, _, access] = std::move(block_state).release();
     MONAD_ASSERT(state);
 
     // Allow overriding the state deltas for testing purposes:
@@ -339,7 +340,8 @@ Result<BlockExecOutput> propose_block(
         .senders = senders,
         .call_frames = call_frames,
         .ommers = block.ommers,
-        .withdrawals = block.withdrawals};
+        .withdrawals = block.withdrawals,
+        .access = &access};
     commit_block<traits>(db, secondary_db, block_id, block.header, *state, anc);
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(

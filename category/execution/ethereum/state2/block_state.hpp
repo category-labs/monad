@@ -38,6 +38,11 @@ class State;
 using SelfDestructStorageReads = ankerl::unordered_dense::segmented_map<
     Address, ankerl::unordered_dense::segmented_set<bytes32_t>>;
 
+/// Accounts and storage pages touched (read or written) by merged
+/// transactions; the deterministic access set for multi-block cache pricing.
+using BlockAccessSets = ankerl::unordered_dense::segmented_map<
+    Address, ankerl::unordered_dense::segmented_set<bytes32_t>>;
+
 class BlockState final
 {
     Db &db_;
@@ -60,9 +65,13 @@ class BlockState final
     /// incarnation (which, by definition, has no pre-state storage), so
     /// the slots they wipe are not pre-state reads and must not be added.
     SelfDestructStorageReads self_destruct_storage_reads_;
+    bool const track_access_;
+    BlockAccessSets access_;
 
 public:
-    BlockState(Db &, vm::VM &, Db *secondary_db = nullptr);
+    BlockState(
+        Db &, vm::VM &, Db *secondary_db = nullptr,
+        bool track_access = false);
 
     vm::VM &vm()
     {
@@ -84,6 +93,7 @@ public:
         std::unique_ptr<StateDeltas> state;
         Code code;
         SelfDestructStorageReads self_destruct_storage_reads;
+        BlockAccessSets access;
     };
 
     ReleasedState release() &&;

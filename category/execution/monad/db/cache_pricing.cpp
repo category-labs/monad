@@ -1,0 +1,65 @@
+// Copyright (C) 2026 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
+
+MONAD_NAMESPACE_BEGIN
+
+byte_string
+cache_pricing_bucket_key(PricingKind const kind, uint64_t const block)
+{
+    byte_string key(9, 0);
+    key[0] = static_cast<unsigned char>(kind);
+    for (unsigned i = 0; i < 8; ++i) {
+        key[1 + i] = static_cast<unsigned char>(block >> (56 - 8 * i));
+    }
+    return key;
+}
+
+namespace
+{
+    uint64_t cutoff(Db &db, PricingKind const kind, uint64_t const block,
+                    uint64_t const capacity)
+    {
+        uint64_t const floor =
+            block > CACHE_PRICING_WINDOW ? block - CACHE_PRICING_WINDOW : 0;
+        uint64_t sum = 0;
+        for (uint64_t b = block; b-- > floor;) {
+            sum += (kind == PricingKind::account
+                        ? db.read_account_pricing_bucket(b)
+                        : db.read_storage_pricing_bucket(b))
+                       .value_or(0);
+            if (sum > capacity) {
+                return b;
+            }
+        }
+        return floor == 0 ? 0 : floor - 1;
+    }
+}
+
+PricingCutoffs compute_pricing_cutoffs(Db &db, uint64_t const block)
+{
+    return {
+        .account = cutoff(
+            db, PricingKind::account, block, CACHE_PRICING_ACCOUNT_CAPACITY),
+        .storage = cutoff(
+            db,
+            PricingKind::storage,
+            block,
+            CACHE_PRICING_STORAGE_SLOT_CAPACITY)};
+}
+
+MONAD_NAMESPACE_END

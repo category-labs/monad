@@ -210,6 +210,33 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
     return vm::make_shared_intercode(res.value().node->value());
 }
 
+std::optional<uint64_t> TrieDb::read_account_pricing_bucket(uint64_t const block)
+{
+    return read_pricing_bucket(PricingKind::account, block);
+}
+
+std::optional<uint64_t> TrieDb::read_storage_pricing_bucket(uint64_t const block)
+{
+    return read_pricing_bucket(PricingKind::storage, block);
+}
+
+std::optional<uint64_t>
+TrieDb::read_pricing_bucket(PricingKind const kind, uint64_t const block)
+{
+    auto const key = cache_pricing_bucket_key(kind, block);
+    auto const res = db_.find(
+        curr_root_,
+        concat(prefix_, CACHE_PRICING_NIBBLE, NibblesView{key}),
+        block_number_);
+    if (res.has_error()) {
+        return std::nullopt;
+    }
+    auto encoded = res.value().node->value();
+    auto const weight = rlp::decode_unsigned<uint64_t>(encoded);
+    MONAD_ASSERT(!weight.has_error());
+    return weight.value();
+}
+
 void TrieDb::commit(
     bytes32_t const &block_id, CommitBuilder &builder,
     BlockHeader const &header, StateDeltas const & /*state_deltas*/,

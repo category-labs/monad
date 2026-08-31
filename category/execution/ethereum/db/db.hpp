@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/code.hpp>
 
@@ -74,6 +75,20 @@ struct Db
         bytes32_t const &block_id, CommitBuilder &builder,
         BlockHeader const &header, StateDeltas const &state_deltas,
         std::function<void(BlockHeader &)> populate_header_fn) = 0;
+
+    // Multi-block cache pricing histogram buckets at the current prefix;
+    // nullopt when absent or unsupported.
+    virtual std::optional<uint64_t>
+    read_account_pricing_bucket(uint64_t /*block*/)
+    {
+        return std::nullopt;
+    }
+
+    virtual std::optional<uint64_t>
+    read_storage_pricing_bucket(uint64_t /*block*/)
+    {
+        return std::nullopt;
+    }
 
     virtual std::string print_stats()
     {

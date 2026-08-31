@@ -540,7 +540,7 @@ void MachineBase::down(unsigned char const nibble)
     if (MONAD_UNLIKELY(depth == prefix_length)) {
         MONAD_ASSERT(table == TableType::Prefix);
         MONAD_ASSERT_PRINTF(
-            nibble <= CALL_FRAME_NIBBLE,
+            nibble <= CACHE_PRICING_NIBBLE,
             "Invalid nibble %u",
             static_cast<unsigned>(nibble));
         table = static_cast<TableType>(nibble + 1);

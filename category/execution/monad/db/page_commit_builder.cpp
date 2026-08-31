@@ -13,13 +13,16 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/core/keccak.hpp>
+#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/update.hpp>
@@ -31,19 +34,37 @@ MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
 
-PageCommitBuilder::PageCommitBuilder(uint64_t const block_number, monad::Db &db)
+PageCommitBuilder::PageCommitBuilder(
+    uint64_t const block_number, monad::Db &db,
+    BlockAccessSets const *const access)
     : CommitBuilder{block_number}
     , db_{db}
+    , access_{access}
 {
 }
 
-std::unique_ptr<CommitBuilder>
-make_commit_builder(uint64_t const block_number, monad::Db &db)
+std::unique_ptr<CommitBuilder> make_commit_builder(
+    uint64_t const block_number, monad::Db &db,
+    BlockAccessSets const *const access)
 {
     if (db.is_page_encoded()) {
-        return std::make_unique<PageCommitBuilder>(block_number, db);
+        return std::make_unique<PageCommitBuilder>(block_number, db, access);
     }
     return std::make_unique<CommitBuilder>(block_number);
+}
+
+void PageCommitBuilder::bump_account(
+    std::optional<Account> const &pre, Account &post)
+{
+    if (cache_pricing_bump_due(post.last_access_block, block_number_)) {
+        post.last_access_block = block_number_;
+    }
+    if (pre.has_value() && pre->last_access_block != 0) {
+        bucket_deltas_[{PricingKind::account, pre->last_access_block}] -= 1;
+    }
+    if (post.last_access_block != 0) {
+        bucket_deltas_[{PricingKind::account, post.last_access_block}] += 1;
+    }
 }
 
 CommitBuilder &
@@ -53,7 +74,32 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
     for (auto const &[addr, delta] : state_deltas) {
         UpdateList storage_updates;
         std::optional<byte_string_view> value;
-        auto const &account = delta.account.second;
+        // mutable copy: last_access bumps are applied at commit time only
+        std::optional<Account> account = delta.account.second;
+        // bump only addresses in the deterministic access set; StateDeltas
+        // itself contains reads from aborted speculative attempts
+        ankerl::unordered_dense::segmented_set<bytes32_t> const *touched_pages =
+            nullptr;
+        if (access_ != nullptr) {
+            if (auto const it = access_->find(addr); it != access_->end()) {
+                touched_pages = &it->second;
+            }
+        }
+        if (access_ != nullptr) {
+            if (account.has_value()) {
+                if (touched_pages != nullptr) {
+                    bump_account(delta.account.first, *account);
+                }
+            }
+            else if (
+                delta.account.first.has_value() &&
+                delta.account.first->last_access_block != 0) {
+                // deleted account leaves the histogram
+                bucket_deltas_
+                    [{PricingKind::account,
+                      delta.account.first->last_access_block}] -= 1;
+            }
+        }
         proposal_post_state_.accounts[addr] = account;
         // reincarnated account starts with empty storage.
         bool const reincarnated =
@@ -71,6 +117,13 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 storage_page_t,
                 BytesHashCompare<bytes32_t>>
                 pages;
+            // (page_key -> pre-state (last_access, occupied slots)) for
+            // histogram deltas
+            ankerl::unordered_dense::segmented_map<
+                bytes32_t,
+                std::pair<uint64_t, uint64_t>,
+                BytesHashCompare<bytes32_t>>
+                pre_pages;
 
             for (auto const &[key, slot_delta] : delta.storage) {
                 if (slot_delta.first != slot_delta.second) {
@@ -84,13 +137,51 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                             reincarnated
                                 ? storage_page_t{}
                                 : db_.read_storage_page(addr, inc, pg_key);
+                        pre_pages[pg_key] = {
+                            it->second.last_access, it->second.size()};
                     }
                     it->second.set(slot_off, slot_delta.second);
                 }
             }
 
-            for (auto const &[page_key, page] : pages) {
+            // read-only touched pages whose last_access is due for a bump
+            // become full-page rewrites
+            bool const pre_storage_valid = !reincarnated &&
+                                           delta.account.first.has_value();
+            if (touched_pages != nullptr && pre_storage_valid) {
+                for (auto const &pg_key : *touched_pages) {
+                    if (pages.contains(pg_key)) {
+                        continue;
+                    }
+                    storage_page_t page =
+                        db_.read_storage_page(addr, inc, pg_key);
+                    if (page.is_empty()) {
+                        continue;
+                    }
+                    if (!cache_pricing_bump_due(
+                            page.last_access, block_number_)) {
+                        continue;
+                    }
+                    pre_pages[pg_key] = {page.last_access, page.size()};
+                    pages.try_emplace(pg_key, std::move(page));
+                }
+            }
+
+            for (auto &[page_key, page] : pages) {
                 bool const is_empty = page.is_empty();
+                if (touched_pages != nullptr &&
+                    cache_pricing_bump_due(page.last_access, block_number_)) {
+                    page.last_access = block_number_;
+                }
+                auto const [pre_ts, pre_size] = pre_pages.at(page_key);
+                if (pre_ts != 0) {
+                    bucket_deltas_[{PricingKind::storage, pre_ts}] -=
+                        static_cast<int64_t>(pre_size);
+                }
+                if (!is_empty && page.last_access != 0) {
+                    bucket_deltas_[{PricingKind::storage, page.last_access}] +=
+                        static_cast<int64_t>(page.size());
+                }
                 // Record the post-commit page for the proposal cache. An empty
                 // page is still stored (entry present, all slots zero); the
                 // trie gets a deletion (nullopt) since it holds no empty leaf.
@@ -130,7 +221,68 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         .next = std::move(account_updates),
         .version = static_cast<int64_t>(block_number_)}));
 
+    if (access_ != nullptr) {
+        add_pricing_updates();
+    }
+
     return *this;
+}
+
+void PageCommitBuilder::add_pricing_updates()
+{
+    auto const read_bucket = [this](PricingKind const kind, uint64_t const b) {
+        return kind == PricingKind::account ? db_.read_account_pricing_bucket(b)
+                                            : db_.read_storage_pricing_bucket(b);
+    };
+    // prune the bucket falling out of the window: increments only happen at
+    // the bucket's own block, so bucket b is dead after block b + W
+    if (block_number_ > CACHE_PRICING_WINDOW) {
+        for (auto const kind : {PricingKind::account, PricingKind::storage}) {
+            uint64_t const b = block_number_ - CACHE_PRICING_WINDOW - 1;
+            if (read_bucket(kind, b).has_value()) {
+                bucket_deltas_.try_emplace({kind, b}, 0);
+            }
+        }
+    }
+
+    uint64_t const window_floor = block_number_ > CACHE_PRICING_WINDOW
+                                      ? block_number_ - CACHE_PRICING_WINDOW
+                                      : 0;
+    UpdateList bucket_updates;
+    for (auto const &[bucket, delta] : bucket_deltas_) {
+        auto const [kind, block] = bucket;
+        bool const pruned = block < window_floor;
+        if (delta == 0 && !pruned) {
+            continue;
+        }
+        int64_t const current =
+            static_cast<int64_t>(read_bucket(kind, block).value_or(0));
+        if (pruned && current == 0) {
+            continue;
+        }
+        int64_t const weight = pruned ? 0 : current + delta;
+        MONAD_ASSERT(weight >= 0);
+        bucket_updates.push_front(update_alloc_.emplace_back(Update{
+            .key = NibblesView{bytes_alloc_.emplace_back(
+                cache_pricing_bucket_key(kind, block))},
+            .value = weight > 0 ? std::make_optional<byte_string_view>(
+                                      bytes_alloc_.emplace_back(
+                                          rlp::encode_unsigned(
+                                              static_cast<uint64_t>(weight))))
+                                : std::nullopt,
+            .incarnation = false,
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(block_number_)}));
+    }
+    if (bucket_updates.empty()) {
+        return;
+    }
+    updates_.push_front(update_alloc_.emplace_back(Update{
+        .key = cache_pricing_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(bucket_updates),
+        .version = static_cast<int64_t>(block_number_)}));
 }
 
 MONAD_NAMESPACE_END

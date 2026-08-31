@@ -68,9 +68,12 @@ void commit_block(
         h.ommers_hash = compute_ommers_hash(anc.ommers);
     };
 
+    BlockAccessSets const *const access =
+        traits::multi_block_cache_active() ? anc.access : nullptr;
+
     if (secondary_db == nullptr) {
         MONAD_ASSERT(primary_db.is_page_encoded() == traits::mip_8_active());
-        auto builder = make_commit_builder(header.number, primary_db);
+        auto builder = make_commit_builder(header.number, primary_db, access);
         builder->add_state_deltas(state);
         add_common_deltas(*builder);
         canonical_db = &primary_db;
@@ -88,7 +91,7 @@ void commit_block(
     builder->add_state_deltas(state);
     add_common_deltas(*builder);
 
-    auto builder2 = make_commit_builder(header.number, *secondary_db);
+    auto builder2 = make_commit_builder(header.number, *secondary_db, access);
     builder2->add_state_deltas(state);
     add_common_deltas(*builder2);
 

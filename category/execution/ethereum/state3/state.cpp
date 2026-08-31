@@ -131,12 +131,13 @@ AccountState const &State::recent_account_state(Address const &address)
 
 AccountState &State::current_account_state(Address const &address)
 {
-    // Reuse the cached account; register it as dirty again if the frame
-    // epoch changed.
+    // Reuse the cached account. When dirty tracking is enabled, register
+    // it again if the frame epoch changed.
     if (current_memo_state_ != nullptr && __builtin_memcmp(
                                               address.bytes,
                                               current_memo_address_.bytes,
                                               sizeof(address.bytes)) == 0) {
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
         if (current_memo_epoch_ != frame_epoch_) {
             if (!dirty_.empty()) {
                 // Track the account only; each mutation records its own undo
@@ -145,6 +146,7 @@ AccountState &State::current_account_state(Address const &address)
             }
             current_memo_epoch_ = frame_epoch_;
         }
+#endif
         return *current_memo_state_;
     }
 
@@ -167,13 +169,17 @@ AccountState &State::current_account_state(Address const &address)
         // Record creation separately from dirty tracking.
         journal_created(address);
     }
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     if (!dirty_.empty()) {
         dirty_.back().emplace(address);
     }
+#endif
     (void)created;
     current_memo_address_ = address;
     current_memo_state_ = &it->second;
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     current_memo_epoch_ = frame_epoch_;
+#endif
     return it->second;
 }
 
@@ -363,6 +369,7 @@ State::Map<bytes32_t, vm::SharedVarcode> const &State::code() const
     return code_;
 }
 
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
 DirtyAccounts const &State::current_frame_dirty_accounts() const
 {
     MONAD_ASSERT(version_);
@@ -370,15 +377,26 @@ DirtyAccounts const &State::current_frame_dirty_accounts() const
 
     return dirty_.back();
 }
+#endif
 
 void State::push()
 {
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     MONAD_ASSERT(dirty_.size() == version_);
+#else
+    MONAD_ASSERT(undo_marks_.size() == version_);
+    MONAD_ASSERT(
+        !rb_.tracking_enabled(), "reserve tracking requires dirty accounts");
+#endif
 
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     ++frame_epoch_;
+#endif
 
     ++version_;
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     dirty_.emplace_back();
+#endif
     // Construct the mark in place to avoid copying a temporary.
 #if defined(MONAD_ZKVM_ZISK)
     // Save byte offsets; convert to element counts only when rolling back.
@@ -404,8 +422,15 @@ void State::push()
 void State::pop_accept()
 {
     MONAD_ASSERT(version_);
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     MONAD_ASSERT(dirty_.size() == version_);
+#else
+    MONAD_ASSERT(undo_marks_.size() == version_);
+    MONAD_ASSERT(
+        !rb_.tracking_enabled(), "reserve tracking requires dirty accounts");
+#endif
 
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     ++frame_epoch_;
 
     auto const accounts = std::move(dirty_.back());
@@ -417,6 +442,7 @@ void State::pop_accept()
             dirty_.back().emplace(dirty_address);
         }
     }
+#endif
     undo_marks_.pop_back();
     // No open frame can roll back these records; release them.
     if (undo_marks_.empty()) {
@@ -437,12 +463,20 @@ void State::pop_accept()
 void State::pop_reject()
 {
     MONAD_ASSERT(version_);
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     MONAD_ASSERT(dirty_.size() == version_);
+#else
+    MONAD_ASSERT(undo_marks_.size() == version_);
+    MONAD_ASSERT(
+        !rb_.tracking_enabled(), "reserve tracking requires dirty accounts");
+#endif
 
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     ++frame_epoch_;
 
     auto const accounts = std::move(dirty_.back());
     dirty_.pop_back();
+#endif
 
     // Rejected: drop exactly what this frame appended.
     logs_.resize(log_marks_.back() / sizeof(Receipt::Log));
@@ -566,7 +600,9 @@ void State::pop_reject()
         undo_pages_.clear();
     }
 
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     rb_.on_pop_reject(accounts.span());
+#endif
 
     --version_;
 }

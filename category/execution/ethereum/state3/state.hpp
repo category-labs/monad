@@ -44,8 +44,11 @@ MONAD_NAMESPACE_BEGIN
 
 class BlockState;
 
-// Per-frame dirty accounts, deduplicated by linear scan for typically small
-// lists.
+#if defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+// This configuration omits dirty-account tracking.
+class DirtyAccounts;
+#else
+// Per-frame dirty accounts, deduplicated by linear scan for small lists.
 class DirtyAccounts
 {
     std::vector<Address> addresses_{};
@@ -91,6 +94,8 @@ public:
         return addresses_;
     }
 };
+
+#endif
 
 class State
 {
@@ -211,15 +216,19 @@ class State
     // on ZisK.
     size_t version_{0};
 
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     std::deque<DirtyAccounts> dirty_;
+#endif
 
     // Inserts preserve this pointer; rollback clears it before erasing rows.
-    // A monotonic epoch tracks dirty registration across reused frame depths.
     // Align cached addresses for ZisK word comparisons.
     alignas(8) Address current_memo_address_{};
     AccountState *current_memo_state_{nullptr};
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+    // A monotonic epoch tracks dirty registration across reused frame depths.
     std::uint64_t current_memo_epoch_{0};
     std::uint64_t frame_epoch_{1};
+#endif
 
 #ifdef MONAD_ZKVM_ZISK
     // Original rows are never erased; inserts preserve the cached pointer.
@@ -294,7 +303,9 @@ public:
     // the currently pushed frame. Intended for observers that must inspect
     // frame-local metadata immediately before pop_accept() or pop_reject();
     // callers must not retain references beyond the frame pop.
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     DirtyAccounts const &current_frame_dirty_accounts() const;
+#endif
 
     ////////////////////////////////////////
 

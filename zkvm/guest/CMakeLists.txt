@@ -105,6 +105,14 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_VARCODE_CACHE)
     endif()
 
+    # Omit dirty-account tracking when neither tracing nor reserve-balance
+    # tracking needs it. State rejects active reserve tracking in this mode.
+    option(MONAD_ZKVM_NO_DIRTY_ACCOUNTS
+           "omit dirty-account lists and forbid consumers that require them" OFF)
+    if(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+        add_compile_definitions(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+    endif()
+
     # Assert can_merge on the serialized path to check its scheduling invariant.
     option(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE
            "assert can_merge on the sequential merge path" OFF)

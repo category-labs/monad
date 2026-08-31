@@ -33,6 +33,11 @@
 #include <variant>
 #include <vector>
 
+#if defined(MONAD_ZKVM_WIDE_MEMORY_SIZE) && defined(__x86_64__)
+    #error "MONAD_ZKVM_WIDE_MEMORY_SIZE is a guest-only layout: it moves \
+the Memory fields that context.S and the x86 emitter read at fixed offsets."
+#endif
+
 namespace monad::vm::runtime
 {
     enum class StatusCode : uint64_t
@@ -92,12 +97,33 @@ namespace monad::vm::runtime
         }
     };
 
+    // 64-bit under MONAD_ZKVM_WIDE_MEMORY_SIZE, 32-bit everywhere else.
+    //
+    // Every memory-touching opcode reads `size`, and ZisK charges a 4-byte read
+    // 122 cells against 17 for an aligned 8-byte one: anything narrower than a
+    // word, even at a word-aligned address, is a sub-word access there. And
+    // adding 32 to an offset is an `add_w` at 60 rather than a native add at
+    // 15.3. On block 25815100 mstore and mload alone read the field 47,194 and
+    // 37,868 times.
+    //
+    // Only the guest can take it. The native compiler emits a 32-bit read of
+    // this field at a fixed offset -- emitter.cpp, via
+    // context_offset_memory_size -- and context.S addresses the same offsets by
+    // hand. The guest drops every .S and never builds the x86 emitter, so the
+    // contract below is x86's alone, and the #error at the top of this file
+    // makes a leak a build failure rather than a silent half-word read.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+    using memory_size_t = uint64_t;
+#else
+    using memory_size_t = uint32_t;
+#endif
+
     struct Memory
     {
         // Size of the memory region for current call frame:
-        uint32_t size;
+        memory_size_t size;
         // Capacity of the memory region for current call frame:
-        uint32_t capacity;
+        memory_size_t capacity;
         // Start of memory region for current call frame:
         uint8_t *data;
         // Current accumulated memory cost for current call frame:
@@ -194,7 +220,7 @@ namespace monad::vm::runtime
             // to fail:
             MONAD_ASSERT(x <= Bin<30>::upper);
 
-            return Bin<30>::unsafe_from(static_cast<uint32_t>(x));
+            return Bin<30>::unsafe_from(static_cast<Bin<30>::rep>(x));
         }
 
         [[gnu::always_inline]]
@@ -350,7 +376,8 @@ namespace monad::vm::runtime
                     !is_bounded_by_bits<Memory::offset_bits>(offset))) {
                 exit(StatusCode::OutOfGas);
             }
-            return Memory::Offset::unsafe_from(static_cast<uint32_t>(offset));
+            return Memory::Offset::unsafe_from(
+                static_cast<Memory::Offset::rep>(offset));
         }
 
         template <Traits traits>
@@ -398,14 +425,30 @@ namespace monad::vm::runtime
         copy_result_data();
     };
 
+    // memory_size_t and Bin's representation are two independent #ifdefs; the
+    // widening only pays if they agree, and nothing else checks that.
+    static_assert(std::is_same_v<memory_size_t, Memory::Offset::rep>);
+
     // Update context.S accordingly if these offsets change:
     static_assert(offsetof(Context, gas_remaining) == 16);
     static_assert(offsetof(Context, memory) == 264);
+    // The fields are packed in declaration order with no padding. That is the
+    // invariant, and it holds at either representation -- on x86 it evaluates
+    // to size 0, capacity 4, data 8, cost 16, data_handle 24, which is what
+    // context.S and the x86 emitter address by hand.
     static_assert(offsetof(Memory, size) == 0);
-    static_assert(offsetof(Memory, capacity) == 4);
-    static_assert(offsetof(Memory, data) == 8);
-    static_assert(offsetof(Memory, cost) == 16);
-    static_assert(offsetof(Memory, data_handle) == 24);
+    static_assert(
+        offsetof(Memory, capacity) ==
+        offsetof(Memory, size) + sizeof(Memory::size));
+    static_assert(
+        offsetof(Memory, data) ==
+        offsetof(Memory, capacity) + sizeof(Memory::capacity));
+    static_assert(
+        offsetof(Memory, cost) ==
+        offsetof(Memory, data) + sizeof(Memory::data));
+    static_assert(
+        offsetof(Memory, data_handle) ==
+        offsetof(Memory, cost) + sizeof(Memory::cost));
 
     constexpr auto context_offset_gas_remaining =
         offsetof(Context, gas_remaining);

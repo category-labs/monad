@@ -56,7 +56,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # Git commit and the ELF digest already identify them.
     option(MONAD_ZKVM_OFFICIAL_PROFILE
            "build the audited, fail-closed official ZisK guest profile" OFF)
-    set(_monad_zkvm_official_features "baseline" "zisk-dma" "keccakf-memo")
+    set(_monad_zkvm_official_features "baseline" "zisk-dma" "keccakf-memo"
+                                      "wide-memory-size")
     set(_monad_zkvm_runtime_version "1.2.0-alpha")
     set(_monad_zkvm_runtime_revision
         "fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3")
@@ -72,7 +73,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # signature cannot describe a guest that was built without it. A commit
     # adding a lever appends to both lists.
     set(_monad_zkvm_required_levers MONAD_ZKVM_ZISK_DMA
-                                    MONAD_ZKVM_KECCAKF_MEMO)
+                                    MONAD_ZKVM_KECCAKF_MEMO
+                                    MONAD_ZKVM_WIDE_MEMORY_SIZE)
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
         foreach(_lever ${_monad_zkvm_required_levers})
             if(DEFINED ${_lever} AND NOT ${_lever})
@@ -146,6 +148,20 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         " -funroll-loops")
 
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
+
+    # Lever: Memory::size and ::capacity are uint32_t, and every memory-touching opcode reads
+    # size. ZisK charges a 4-byte read 122 cells against 17 for an aligned 8-byte one, and makes
+    # `*offset + 32` an add_w at 60 rather than a native add at 15.3.
+    #
+    # Declared only here, and only in this branch, because the layout is the guest's alone: the
+    # native x86 compiler emits a 32-bit read of the field at a fixed offset and context.S
+    # addresses the same offsets by hand. The guest drops every .S and never builds that emitter.
+    # types.hpp turns a leak into a build failure rather than a silent half-word read.
+    option(MONAD_ZKVM_WIDE_MEMORY_SIZE
+           "64-bit Memory::size and ::capacity, which x86 cannot take" OFF)
+    if(MONAD_ZKVM_WIDE_MEMORY_SIZE)
+        add_compile_definitions(MONAD_ZKVM_WIDE_MEMORY_SIZE)
+    endif()
 
     # Expose the backend as a compile definition, for the places where the two
     # diverge: the ripemd160 accelerators place the digest at opposite ends of

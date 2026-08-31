@@ -61,22 +61,6 @@ NodeId OffsetTrie::read_root(byte_string_view const blob)
     return root;
 }
 
-namespace
-{
-    // Set (val = true) or clear (val = false) the bit for byte offset `off`
-    template <bool val>
-    void set_offset_value(std::span<uint64_t> const offsets, uint64_t const off)
-    {
-        uint64_t const bit = uint64_t{1} << (off & 63);
-        if constexpr (val) {
-            offsets[off >> 6] |= bit;
-        }
-        else {
-            offsets[off >> 6] &= ~bit;
-        }
-    }
-}
-
 OffsetTrie::OffsetTrie(byte_string_view const blob)
     : blob_(blob)
     , root{read_root(blob_)}
@@ -93,26 +77,38 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // encountering that tag in the blob data aborts as an invalid tag. However,
     // we have to check the very first node isn't EMPTY (provided it exists).
     MONAD_ASSERT(node.bytes() == region_end || node.tag() != EMPTY);
-    std::vector<uint64_t> node_offsets((blob_.size() + 63) / 64, 0);
+    // One BYTE per blob offset, not one bit. The bitmap cost a
+    // read-modify-write to set -- shift, scale, add, load, bset, store -- and
+    // the same shape to test; a byte array is an add and a store to set, an add
+    // and a load to test. Six instructions become three on each side.
+    //
+    // No alignment assumption: indexed by the raw offset, so it holds whatever
+    // the blob's node sizes produce. The price is the zeroing, and it is not
+    // close -- the extra bytes are one memset, which ZisK charges per 8-byte
+    // word on the aligned path, against six instructions saved per lookup at 68
+    // COST a step.
+    std::vector<unsigned char> node_offsets(blob_.size(), 0);
 
-    // A node's bit is set when the walk reaches it and cleared when a parent
+    // A node's byte is set when the walk reaches it and cleared when a parent
     // claims it as a child.
-    // A child whose bit is clear is either previously unseen/invalid or already
-    // claimed by a different parent.
+    // A child whose byte is clear is either previously unseen/invalid or
+    // already claimed by a different parent.
     auto const is_valid_offset = [&](NodeId c) {
         if (c == NULL_ID) {
             return;
         }
         uint64_t child_offset = static_cast<uint64_t>(c);
         MONAD_ASSERT(
-            child_offset < blob_.size() &&
-            (node_offsets[child_offset >> 6] &
-             (uint64_t{1} << (child_offset & 63))));
-        set_offset_value<false>(node_offsets, child_offset);
+            child_offset < blob_.size() && node_offsets[child_offset] != 0);
+        node_offsets[child_offset] = 0;
     };
     unsigned char rlp_buf[MAX_NODE_RLP];
 
     while (node.bytes() < region_end) {
+        // In range by the loop's own condition: the walk runs while
+        // node.bytes() < region_end, so node_offset is an offset into the
+        // blob and never one past its end.
+        MONAD_DEBUG_ASSERT(node_offset < blob_.size());
         // checked_end asserts that the current node does not reach past the end
         // of the region
         auto next_offset =
@@ -162,17 +158,45 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     }
                 }});
 
-        set_offset_value<true>(node_offsets, node_offset);
+        node_offsets[node_offset] = 1;
         node = NodeViewBase{base + next_offset};
         node_offset = next_offset;
     }
     MONAD_ASSERT(node.bytes() == region_end); // nodes tile exactly
     is_valid_offset(root);
 
-    // Every node was claimed exactly once, a leftover bit is a node not
+    // Every node was claimed exactly once, a leftover byte is a node not
     // reachable from root.
-    MONAD_ASSERT(std::ranges::all_of(
-        node_offsets, [](uint64_t const w) { return w == 0; }));
+    auto const all_zero = [](std::span<unsigned char const> bytes) {
+        auto const load_word = [](unsigned char const *p) {
+            uint64_t word;
+            std::memcpy(&word, p, sizeof(word));
+            return word;
+        };
+        // Check 64 bytes per turn instead of branching on every marker. OR
+        // preserves any non-zero byte; memcpy does not require word alignment.
+        // Both loops guard the full read, leaving at most seven trailing bytes.
+        while (bytes.size() >= 64) {
+            auto const *p = bytes.data();
+            uint64_t const combined = load_word(p) | load_word(p + 8) |
+                                      load_word(p + 16) | load_word(p + 24) |
+                                      load_word(p + 32) | load_word(p + 40) |
+                                      load_word(p + 48) | load_word(p + 56);
+            if (combined != 0) {
+                return false;
+            }
+            bytes = bytes.subspan(64);
+        }
+        while (bytes.size() >= sizeof(uint64_t)) {
+            if (load_word(bytes.data()) != 0) {
+                return false;
+            }
+            bytes = bytes.subspan(sizeof(uint64_t));
+        }
+        return std::ranges::all_of(
+            bytes, [](unsigned char const b) { return b == 0; });
+    };
+    MONAD_ASSERT(all_zero(node_offsets));
 }
 
 NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const

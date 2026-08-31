@@ -26,12 +26,13 @@
 
 namespace monad::vm::runtime
 {
+    // The load itself, at an offset already resolved and already covered by
+    // memory.size. Split out so that the fast path and the out-of-line twin it
+    // tail-calls when memory has to grow share one copy of it.
     template <Traits traits>
-    inline void
-    mload(Context *ctx, uint256_t *result_ptr, uint256_t const *offset_ptr)
+    [[gnu::always_inline]] inline void
+    mload_at(Context *ctx, uint256_t *result_ptr, Memory::Offset const offset)
     {
-        auto const offset = ctx->get_memory_offset(*offset_ptr);
-        ctx->expand_memory<traits>(offset + bin<32>);
 #if defined(MONAD_ZKVM_SP1)
         // Same story in the load direction (~20 k per block).
         {
@@ -49,6 +50,15 @@ namespace monad::vm::runtime
 #else
         *result_ptr = load_be_unsafe<uint256_t>(ctx->memory.data + *offset);
 #endif
+    }
+
+    template <Traits traits>
+    inline void
+    mload(Context *ctx, uint256_t *result_ptr, uint256_t const *offset_ptr)
+    {
+        auto const offset = ctx->get_memory_offset(*offset_ptr);
+        ctx->expand_memory<traits>(offset + bin<32>);
+        mload_at<traits>(ctx, result_ptr, offset);
     }
 
     template <Traits traits>

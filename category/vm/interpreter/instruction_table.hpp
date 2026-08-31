@@ -1510,20 +1510,58 @@ namespace monad::vm::interpreter
     }
 
     // Memory & Storage
+
+    // MLOAD ends in a tail dispatch, so `ra` is live across the whole handler,
+    // and two things on its path clobber it. The gas and stack exits are one,
+    // and MONAD_VM_CHECK already answers those. The other is memory expansion,
+    // a cold call that RETURNS: it rejoins the fast path, so the epilogue sits
+    // on the joined path and no separate prologue can be placed.
+    // Shrink-wrapping cannot fire and GCC spills the live arguments
+    // unconditionally instead -- on block 25815100, six stack accesses and two
+    // stack-pointer adjustments on each of 37,868 MLOADs.
+    //
+    // The twin takes the rest of the instruction with it, so the cold path no
+    // longer rejoins. It must not repeat MONAD_VM_CHECK: the gas is charged and
+    // the stack tested by the caller that tail-called it.
+    //
+    // Only the load direction. The same split on MSTORE is a regression:
+    // `memory.size < *offset + 32` is the ordinary memory-growth test, not the
+    // rare one, and MSTORE takes it on 19,626 of 47,194 executions -- it writes
+    // where nothing has been written yet. MLOAD takes it 195 times, reading
+    // what is already there. The rare event on the store side is capacity
+    // growth, further in than this branch reaches.
+    template <Traits traits>
+    [[gnu::noinline, gnu::cold]] MONAD_VM_INSTRUCTION_CALL void mload_grow(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        call_runtime(runtime::mload<traits>, ctx, stack_top, gas_remaining);
+
+        MONAD_VM_NEXT(MLOAD);
+    }
+
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void mload(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<MLOAD, traits>(
-            runtime::mload<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECK(MLOAD);
+
+        ctx.gas_remaining = gas_remaining;
+        auto const offset = ctx.get_memory_offset(*stack_top);
+        if (MONAD_UNLIKELY(ctx.memory.size < *offset + 32)) {
+            MONAD_VM_MUST_TAIL return mload_grow<traits>(
+                ctx,
+                analysis,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        runtime::mload_at<traits>(&ctx, stack_top, offset);
+        gas_remaining = ctx.gas_remaining;
 
         MONAD_VM_NEXT(MLOAD);
     }

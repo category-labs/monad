@@ -53,10 +53,114 @@ class FlatStorage
 {
     std::vector<std::pair<bytes32_t, bytes32_t>> v_{};
 
+#ifdef MONAD_ZKVM_ZISK
+    // A scan is O(row), and a row is small until it is not. Measured over 200 mainnet blocks: on a
+    // median block the scan visits about one entry a call and the vector is exactly right, but the
+    // corpus is bimodal -- 27 of the 200 blocks cost more than 5 % above a competing guest, and on
+    // the worst of them get_storage, access_storage and set_storage run 3.0 M scan iterations
+    // against a median block's 63,760, 15.2 % of the block's steps against 1.6 %. That is the whole
+    // of the tail: the shape of the deficit is identical on both blocks, only its scale differs.
+    //
+    // So keep the vector, and index it only once a row is big enough for the scan to lose. Open
+    // addressing on the `key_tail` the callers already compute -- a keccak-derived slot key needs no
+    // further mixing, and a small-integer key carries its value in the same tail -- so a probe is a
+    // mask, a load and a compare. Positions and not iterators, because a position survives the
+    // append that the comment above relies on; `erase` is the one operation that moves an entry, and
+    // it drops the index rather than patching it, being rare.
+    // The gate a lookup pays is a null test on that pointer -- not
+    // `v_.size() < index_from`, which is a pointer subtraction at 60 cells and a compare at 60 on
+    // every find of every row, indexed or not. Measured: that test alone cost +0.08 % on a median
+    // block, as much as the whole tail gain is worth there. Crossing the threshold is decided in
+    // upsert, which runs a third as often and already knows the size it just changed.
+    // One pointer and not two members, because every row pays the footprint and only a big row uses
+    // it: AccountState is size-asserted, the undo log allocates one per frame per account, and two
+    // FlatStorage members double whatever is added. A null pointer is the gate and an absent index.
+    static constexpr std::size_t index_from = 16;
+
+    struct Index
+    {
+        std::vector<std::uint32_t> slot; // position + 1, 0 empty
+        std::size_t mask;                // slot.size() - 1
+    };
+
+    mutable std::unique_ptr<Index> idx_{};
+
+    void insert_index(std::size_t const pos) const
+    {
+        std::size_t h = static_cast<std::size_t>(key_tail(v_[pos].first)) & idx_->mask;
+        while (idx_->slot[h] != 0) {
+            h = (h + 1) & idx_->mask;
+        }
+        idx_->slot[h] = static_cast<std::uint32_t>(pos + 1);
+    }
+
+    void rebuild_index() const
+    {
+        std::size_t cap = 32;
+        while (cap < v_.size() * 2) {
+            cap *= 2;
+        }
+        if (!idx_) {
+            idx_ = std::make_unique<Index>();
+        }
+        idx_->slot.assign(cap, 0);
+        idx_->mask = cap - 1;
+        for (std::size_t i = 0; i < v_.size(); ++i) {
+            insert_index(i);
+        }
+    }
+
+    [[nodiscard]] std::uint32_t
+    lookup(bytes32_t const &key, std::uint64_t const tail) const
+    {
+        std::size_t h = static_cast<std::size_t>(tail) & idx_->mask;
+        for (;;) {
+            std::uint32_t const p = idx_->slot[h];
+            if (p == 0) {
+                return 0;
+            }
+            if (key_equals(key, tail, v_[p - 1].first)) {
+                return p;
+            }
+            h = (h + 1) & idx_->mask;
+        }
+    }
+
+    void drop_index()
+    {
+        idx_.reset();
+    }
+#endif
+
 public:
+#ifdef MONAD_ZKVM_ZISK
+    // The index is a cache derived from v_, so a copy does not carry it: the row the undo log takes
+    // per frame per account starts unindexed and builds one only if it is used enough to want one.
+    // Copying it instead would copy a table the copy may never probe.
+    FlatStorage() = default;
+    FlatStorage(FlatStorage const &o)
+        : v_(o.v_)
+    {
+    }
+    FlatStorage &operator=(FlatStorage const &o)
+    {
+        v_ = o.v_;
+        idx_.reset();
+        return *this;
+    }
+    FlatStorage(FlatStorage &&) = default;
+    FlatStorage &operator=(FlatStorage &&) = default;
+#endif
+
     [[nodiscard]] bytes32_t const *find(bytes32_t const &key) const
     {
         std::uint64_t const tail = key_tail(key);
+#ifdef MONAD_ZKVM_ZISK
+        if (idx_) {
+            std::uint32_t const p = lookup(key, tail);
+            return p ? &v_[p - 1].second : nullptr;
+        }
+#endif
         for (auto const &e : v_) {
             if (key_equals(key, tail, e.first)) {
                 return &e.second;
@@ -68,6 +172,22 @@ public:
     void upsert(bytes32_t const &key, bytes32_t const &value)
     {
         std::uint64_t const tail = key_tail(key);
+#ifdef MONAD_ZKVM_ZISK
+        if (idx_) {
+            if (std::uint32_t const p = lookup(key, tail); p != 0) {
+                v_[p - 1].second = value;
+                return;
+            }
+            v_.emplace_back(key, value);
+            if (idx_->slot.size() < v_.size() * 2) {
+                rebuild_index();
+            }
+            else {
+                insert_index(v_.size() - 1);
+            }
+            return;
+        }
+#endif
         for (auto &e : v_) {
             if (key_equals(key, tail, e.first)) {
                 e.second = value;
@@ -75,6 +195,11 @@ public:
             }
         }
         v_.emplace_back(key, value);
+#ifdef MONAD_ZKVM_ZISK
+        if (v_.size() >= index_from) {
+            rebuild_index();
+        }
+#endif
     }
 
     // Removing a slot restores "absent", which is not the same as present-and-equal-to-pre-state:
@@ -87,6 +212,9 @@ public:
             if (key_equals(key, tail, e.first)) {
                 e = v_.back();
                 v_.pop_back();
+#ifdef MONAD_ZKVM_ZISK
+                drop_index();
+#endif
                 return;
             }
         }
@@ -239,7 +367,15 @@ public:
 //
 // 16 wider than the two persistent handles it replaced, not 32: the second vector lands in padding
 // the row already carried, so the number is not the arithmetic and has to be read off the compiler.
+#ifdef MONAD_ZKVM_ZISK
+// 208 in the guest: each of the two FlatStorage members carries one pointer to its slot index. The
+// row's storage_ is journalled per slot rather than copied, so the growth is footprint and not copy
+// time, and it buys the tail described on FlatStorage -- 3.0 M scan iterations on the worst of 200
+// blocks against 63,760 on a median one.
+static_assert(sizeof(AccountState) == 208);
+#else
 static_assert(sizeof(AccountState) == 192);
+#endif
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

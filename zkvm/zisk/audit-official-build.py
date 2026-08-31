@@ -150,7 +150,7 @@ def main() -> int:
     if profile.get("runtime_revision") != RUNTIME_REVISION:
         fail("generated profile has the wrong runtime revision")
     features = str(profile.get("features_csv", "")).split(",")
-    if features != ["baseline", "zisk-dma", "keccakf-memo"]:
+    if features != ["baseline", "zisk-dma", "keccakf-memo", "wide-memory-size"]:
         fail(f"unexpected feature set: {features!r}")
 
     cache = build_dir / "CMakeCache.txt"

@@ -58,6 +58,9 @@ namespace monad::vm::interpreter
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t *const stack_ptr)
     {
+        // Cache the last valid stack slot: stack_bottom + 1024.
+        ctx.stack_limit = reinterpret_cast<uint256_t *>(stack_ptr) + 1023;
+
 #if defined(MONAD_ZKVM_ZISK)
         // The carry-ins are fixed; zisk_add256 sets the pointers on every call.
         ctx.add256_params.cin = 0;

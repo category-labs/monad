@@ -274,6 +274,10 @@ namespace monad::vm::runtime
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
 
+        // Last valid stack slot, cached by interpreter::execute.
+        // Keep after members whose offsets are used by assembly.
+        uint256_t const *stack_limit = nullptr;
+
 #if defined(MONAD_ZKVM_ZISK)
         // Reuse ADD parameters; execute initializes carry-in to 0.
         // Keep last to preserve the assembly offsets.

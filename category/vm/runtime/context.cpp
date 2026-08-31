@@ -39,8 +39,21 @@
 
 using namespace monad::vm::runtime;
 
+// Bin is an ordinary C++ type everywhere else: the compiler sees both sides of
+// a call and picks the convention itself, whatever the width. Not here.
+// monad_vm_runtime_increase_capacity below is also called from x86 machine code
+// that the JIT emitter assembles at run time, and that code hard-codes the
+// convention -- a four-byte Bin<30> travels in a 32-bit register. No compiler
+// checks that, so sizeof(Bin) is an ABI fact and the assert pins it. The guest
+// builds no emitter, so nothing hand-written depends on the width there, and
+// that is what lets it widen the representation.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+static_assert(sizeof(Bin<31>) == sizeof(Bin<31>::rep));
+static_assert(alignof(Bin<31>) == alignof(Bin<31>::rep));
+#else
 static_assert(sizeof(Bin<31>) == sizeof(uint32_t));
 static_assert(alignof(Bin<31>) == alignof(uint32_t));
+#endif
 static_assert(std::is_standard_layout_v<Bin<31>>);
 
 extern "C" void monad_vm_runtime_increase_capacity(

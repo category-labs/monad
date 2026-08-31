@@ -549,9 +549,17 @@ uint64_t State::get_nonce(Address const &address)
 
 uint256_t State::get_balance(Address const &address)
 {
+#if defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+    // Reading a balance is a read. The only reason this went through rows_for_read -- which resolves
+    // the ORIGINAL row as well as the recent one -- was to stamp a merge constraint on it, and the
+    // sole reader of those constraints is can_merge, which the sequential path does not call.
+    // get_nonce, three functions up, already reads through the cheap accessor.
+    auto const &account = recent_account(address);
+#else
     auto const [recent, orig] = rows_for_read(address);
     orig->set_validate_exact_balance();
     auto const &account = recent->account_;
+#endif
     if (MONAD_LIKELY(account.has_value())) {
         return account.value().balance;
     }
@@ -1077,6 +1085,15 @@ bool State::try_fix_account_mismatch(
 bool State::record_balance_constraint_for_debit(
     Address const &address, uint256_t const &debit)
 {
+#if defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+    // What the caller uses is the RETURN VALUE -- whether the sender can cover the debit -- and that
+    // is semantic and unchanged. Everything else in this function writes a constraint for can_merge
+    // to read later: the original-row resolution, the uint256 subtraction, set_min_balance and
+    // set_validate_exact_balance. On the sequential path can_merge never runs, so none of it is read.
+    auto const &account = recent_account(address);
+    uint256_t const balance = account.has_value() ? account->balance : 0;
+    return balance >= debit;
+#else
     auto const [recent, orig] = rows_for_read(address);
     auto const &account = recent->account_;
     uint256_t const balance = account.has_value() ? account->balance : 0;
@@ -1105,6 +1122,7 @@ bool State::record_balance_constraint_for_debit(
     // original balance used during this execution exactly
     original_state.set_validate_exact_balance();
     return false;
+#endif
 }
 
 MONAD_NAMESPACE_END

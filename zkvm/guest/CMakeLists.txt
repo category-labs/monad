@@ -164,6 +164,25 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
     endif()
 
+    # Lever: stop writing the merge constraints, whose only reader is can_merge.
+    # State::get_balance resolved the ORIGINAL row purely to stamp one, where get_nonce reads through
+    # the cheap accessor; record_balance_constraint_for_debit does the same plus a uint256 subtraction,
+    # and its caller uses only the return value -- the sender-has-balance predicate, which is semantic
+    # and stays. Declared only here, so the host keeps the constraints its scheduler needs.
+    #
+    # Mutually exclusive with CHECK_SEQUENTIAL_MERGE by construction: that flag restores can_merge as
+    # an assertion, and an assertion reading constraints nobody wrote would fail for the wrong reason.
+    option(MONAD_ZKVM_NO_MERGE_CONSTRAINTS
+           "stop writing the merge constraints only can_merge reads" OFF)
+    if(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+        if(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
+            message(FATAL_ERROR
+                "MONAD_ZKVM_NO_MERGE_CONSTRAINTS removes what CHECK_SEQUENTIAL_MERGE's assertion "
+                "reads; enabling both would fail the assertion for the wrong reason")
+        endif()
+        add_compile_definitions(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+    endif()
+
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "sp1")
         add_compile_definitions(MONAD_ZKVM_SP1)
     endif()

@@ -369,35 +369,33 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                     return uint64_t{a} + HASH_RLP_LEN == uint64_t{b};
                 };
 
-                for (int i = 15; i >= 0; --i) {
-                    if (!digest_at(children[static_cast<size_t>(i)])) {
-                        dest = child_ref<priming_pass>(
-                            NodeId{children[static_cast<size_t>(i)]}, dest);
+                // 64-bit, though the slots are in [0, 15]: ZisK prices add_w,
+                // sub and eq at 60 cells against ~15 for a native add, so an
+                // int counter would run the whole loop at the higher rate.
+                for (size_t i = 16; i-- > 0;) {
+                    if (!digest_at(children[i])) {
+                        dest =
+                            child_ref<priming_pass>(NodeId{children[i]}, dest);
                         continue;
                     }
                     // copy any contiguous digests directly into dest, since a
                     // digest node is already a valid RLP string
                     static_assert(DIGEST == 0x80 + KECCAK256_SIZE);
-                    int lo = i;
+                    size_t lo = i;
                     while (lo > 0 &&
-                           consecutive_digest(
-                               children[static_cast<size_t>(lo - 1)],
-                               children[static_cast<size_t>(lo)]) &&
-                           digest_at(children[static_cast<size_t>(lo - 1)])) {
+                           consecutive_digest(children[lo - 1], children[lo]) &&
+                           digest_at(children[lo - 1])) {
                         --lo;
                     }
-                    size_t const digests_length =
-                        static_cast<size_t>(i - lo + 1) * HASH_RLP_LEN;
+                    size_t const digests_length = (i - lo + 1) * HASH_RLP_LEN;
 
                     unsigned char *const digests =
                         dest.last(digests_length).data();
                     std::memcpy(
-                        digests,
-                        blob_.data() + children[static_cast<size_t>(lo)],
-                        digests_length);
+                        digests, blob_.data() + children[lo], digests_length);
 
                     dest = dest.shrink(digests_length);
-                    i = lo;
+                    i = lo; // the test's decrement steps past the run
                 }
                 return wrap(dest);
             },

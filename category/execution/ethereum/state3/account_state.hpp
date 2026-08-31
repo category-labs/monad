@@ -394,10 +394,94 @@ class PrestateStorage
 {
     std::vector<std::pair<bytes32_t, bytes32_t>> v_{};
 
+#ifdef MONAD_ZKVM_ZISK
+    // The third of these, and the one the other two leave behind: State::get_storage probes the
+    // current overlay first and falls through to here for every slot the block has read but not
+    // written, which on a storage-heavy contract is most of them. After the overlay and A_K were
+    // indexed, get_storage was still 4.92 % of the worst block's steps against 0.77 % of a median
+    // one -- this scan is what remained.
+    //
+    // The simplest of the three: append-only with no erase at all, so the index is never dropped
+    // and insert never has to look for what it is adding. Otherwise the same -- open addressing on
+    // the `key_tail` the caller already computed, positions rather than iterators, one pointer, and
+    // a copy leaves it behind. Below the threshold the scan the comment above describes is what
+    // runs, unchanged.
+    static constexpr std::size_t index_from = 16;
+
+    struct Index
+    {
+        std::vector<std::uint32_t> slot; // position + 1, 0 empty
+        std::size_t mask;                // slot.size() - 1
+    };
+
+    std::unique_ptr<Index> idx_{};
+
+    void idx_insert(std::size_t const pos)
+    {
+        std::size_t h =
+            static_cast<std::size_t>(key_tail(v_[pos].first)) & idx_->mask;
+        while (idx_->slot[h] != 0) {
+            h = (h + 1) & idx_->mask;
+        }
+        idx_->slot[h] = static_cast<std::uint32_t>(pos + 1);
+    }
+
+    void idx_rebuild()
+    {
+        std::size_t cap = 32;
+        while (cap < v_.size() * 2) {
+            cap *= 2;
+        }
+        if (!idx_) {
+            idx_ = std::make_unique<Index>();
+        }
+        idx_->slot.assign(cap, 0);
+        idx_->mask = cap - 1;
+        for (std::size_t i = 0; i < v_.size(); ++i) {
+            idx_insert(i);
+        }
+    }
+#endif
+
 public:
+#ifdef MONAD_ZKVM_ZISK
+    // The index is a cache derived from v_, so a copy starts without one.
+    PrestateStorage() = default;
+
+    PrestateStorage(PrestateStorage const &o)
+        : v_(o.v_)
+    {
+    }
+
+    PrestateStorage &operator=(PrestateStorage const &o)
+    {
+        v_ = o.v_;
+        idx_.reset();
+        return *this;
+    }
+
+    PrestateStorage(PrestateStorage &&) = default;
+    PrestateStorage &operator=(PrestateStorage &&) = default;
+#endif
+
     bytes32_t const *find(bytes32_t const &k) const
     {
         std::uint64_t const tail = key_tail(k);
+#ifdef MONAD_ZKVM_ZISK
+        if (idx_) {
+            std::size_t h = static_cast<std::size_t>(tail) & idx_->mask;
+            for (;;) {
+                std::uint32_t const p = idx_->slot[h];
+                if (p == 0) {
+                    return nullptr;
+                }
+                if (key_equals(k, tail, v_[p - 1].first)) {
+                    return &v_[p - 1].second;
+                }
+                h = (h + 1) & idx_->mask;
+            }
+        }
+#endif
         for (auto const &e : v_) {
             if (key_equals(k, tail, e.first)) {
                 return &e.second;
@@ -409,6 +493,19 @@ public:
     void insert(bytes32_t const &k, bytes32_t const &v)
     {
         v_.emplace_back(k, v);
+#ifdef MONAD_ZKVM_ZISK
+        if (idx_) {
+            if (idx_->slot.size() < v_.size() * 2) {
+                idx_rebuild();
+            }
+            else {
+                idx_insert(v_.size() - 1);
+            }
+        }
+        else if (v_.size() >= index_from) {
+            idx_rebuild();
+        }
+#endif
     }
 
     bool empty() const { return v_.empty(); }

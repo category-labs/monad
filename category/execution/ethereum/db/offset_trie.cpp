@@ -485,35 +485,37 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                     return uint64_t{a} + HASH_RLP_LEN == uint64_t{b};
                 };
 
-                for (int i = 15; i >= 0; --i) {
-                    if (!digest_at(children[static_cast<size_t>(i)])) {
+                // Use native 64-bit arithmetic for the reverse child scan on
+                // ZisK.
+                for (size_t child_index = 16; child_index-- > 0;) {
+                    if (!digest_at(children[child_index])) {
                         dest = child_ref<priming_pass>(
-                            NodeId{children[static_cast<size_t>(i)]}, dest);
+                            NodeId{children[child_index]}, dest);
                         continue;
                     }
                     // copy any contiguous digests directly into dest, since a
                     // digest node is already a valid RLP string
                     static_assert(DIGEST == 0x80 + KECCAK256_SIZE);
-                    int lo = i;
-                    while (lo > 0 &&
+                    size_t run_start = child_index;
+                    while (run_start > 0 &&
                            consecutive_digest(
-                               children[static_cast<size_t>(lo - 1)],
-                               children[static_cast<size_t>(lo)]) &&
-                           digest_at(children[static_cast<size_t>(lo - 1)])) {
-                        --lo;
+                               children[run_start - 1], children[run_start]) &&
+                           digest_at(children[run_start - 1])) {
+                        --run_start;
                     }
                     size_t const digests_length =
-                        static_cast<size_t>(i - lo + 1) * HASH_RLP_LEN;
+                        (child_index - run_start + 1) * HASH_RLP_LEN;
 
                     unsigned char *const digests =
                         dest.last(digests_length).data();
                     std::memcpy(
                         digests,
-                        blob_.data() + children[static_cast<size_t>(lo)],
+                        blob_.data() + children[run_start],
                         digests_length);
 
                     dest = dest.shrink(digests_length);
-                    i = lo;
+                    child_index =
+                        run_start; // the test's decrement steps past the run
                 }
                 return wrap(dest);
             },

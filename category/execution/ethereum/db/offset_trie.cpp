@@ -61,22 +61,6 @@ NodeId OffsetTrie::read_root(byte_string_view const blob)
     return root;
 }
 
-namespace
-{
-    // Set (val = true) or clear (val = false) the bit for byte offset `off`
-    template <bool val>
-    void set_offset_value(std::span<uint64_t> const offsets, uint64_t const off)
-    {
-        uint64_t const bit = uint64_t{1} << (off & 63);
-        if constexpr (val) {
-            offsets[off >> 6] |= bit;
-        }
-        else {
-            offsets[off >> 6] &= ~bit;
-        }
-    }
-}
-
 OffsetTrie::OffsetTrie(byte_string_view const blob)
     : blob_(blob)
     , root{read_root(blob_)}
@@ -93,26 +77,40 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // encountering that tag in the blob data aborts as an invalid tag. However,
     // we have to check the very first node isn't EMPTY (provided it exists).
     MONAD_ASSERT(node.bytes() == region_end || node.tag() != EMPTY);
-    std::vector<uint64_t> node_offsets((blob_.size() + 63) / 64, 0);
+    // One byte per blob offset avoids bit extraction and read-modify-write
+    // updates. This uses more memory than a bitmap.
+    std::vector<unsigned char> node_marks(blob_.size(), 0);
 
-    // A node's bit is set when the walk reaches it and cleared when a parent
+    // A node's byte is set when the walk reaches it and cleared when a parent
     // claims it as a child.
-    // A child whose bit is clear is either previously unseen/invalid or already
-    // claimed by a different parent.
-    auto const is_valid_offset = [&](NodeId c) {
-        if (c == NULL_ID) {
+    // A child whose byte is clear is either previously unseen/invalid or
+    // already claimed by a different parent.
+    //
+    // Count unread bytes plus DIGEST_NODE_LEN per marked, unclaimed node.
+    // Reading a node replaces its encoded length with DIGEST_NODE_LEN;
+    // claiming it subtracts DIGEST_NODE_LEN. DIGEST nodes need no adjustment.
+    // Once the region is fully read and root claimed, zero means no orphan
+    // remains, without scanning the marks again.
+    size_t unclaimed_bytes = static_cast<size_t>(region_end - node.bytes());
+    // Cache the size so possible aliasing with mark stores does not
+    // force GCC to reload it for each child.
+    size_t const blob_size = blob_.size();
+    auto const claim_child = [&](NodeId child) {
+        if (child == NULL_ID) {
             return;
         }
-        uint64_t child_offset = static_cast<uint64_t>(c);
-        MONAD_ASSERT(
-            child_offset < blob_.size() &&
-            (node_offsets[child_offset >> 6] &
-             (uint64_t{1} << (child_offset & 63))));
-        set_offset_value<false>(node_offsets, child_offset);
+        uint64_t child_offset = static_cast<uint64_t>(child);
+        MONAD_ASSERT(child_offset < blob_size && node_marks[child_offset] != 0);
+        node_marks[child_offset] = 0;
+        unclaimed_bytes -= DIGEST_NODE_LEN;
     };
     unsigned char rlp_buf[MAX_NODE_RLP];
 
     while (node.bytes() < region_end) {
+        // In range by the loop's own condition: the walk runs while
+        // node.bytes() < region_end, so node_offset is an offset into the
+        // blob and never one past its end.
+        MONAD_DEBUG_ASSERT(node_offset < blob_.size());
         // checked_end asserts that the current node does not reach past the end
         // of the region
         auto next_offset =
@@ -131,14 +129,13 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     uint64_t pair;
                     for (unsigned i = 0; i < 8; ++i) {
                         std::memcpy(&pair, p + i * sizeof(pair), sizeof(pair));
-                        is_valid_offset(
-                            NodeId{static_cast<node_id_wire_t>(pair)});
-                        is_valid_offset(
+                        claim_child(NodeId{static_cast<node_id_wire_t>(pair)});
+                        claim_child(
                             NodeId{static_cast<node_id_wire_t>(pair >> 32)});
                     }
                 },
-                [&](ExtView e) { is_valid_offset(e.child()); },
-                [&](AccountLeafView a) { is_valid_offset(a.storage()); },
+                [&](ExtView e) { claim_child(e.child()); },
+                [&](AccountLeafView a) { claim_child(a.storage()); },
                 [](auto) {}});
 
         match(
@@ -162,17 +159,17 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     }
                 }});
 
-        set_offset_value<true>(node_offsets, node_offset);
+        node_marks[node_offset] = 1;
+        unclaimed_bytes =
+            unclaimed_bytes + DIGEST_NODE_LEN - (next_offset - node_offset);
         node = NodeViewBase{base + next_offset};
         node_offset = next_offset;
     }
     MONAD_ASSERT(node.bytes() == region_end); // nodes tile exactly
-    is_valid_offset(root);
+    claim_child(root);
 
-    // Every node was claimed exactly once, a leftover bit is a node not
-    // reachable from root.
-    MONAD_ASSERT(std::ranges::all_of(
-        node_offsets, [](uint64_t const w) { return w == 0; }));
+    // Any remaining count indicates a node unreachable from root.
+    MONAD_ASSERT(unclaimed_bytes == 0);
 }
 
 #if defined(MONAD_ZKVM_ZISK)
@@ -422,9 +419,8 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
         std::memcpy(dest.last(child_rlp_len).data(), child_rlp, child_rlp_len);
         return dest.shrink(child_rlp_len);
     }
-    // A pre-state (blob) node this large is hash-referenced, so prime()
-    // cached it bottom-up before any parent could reference it. Reaching
-    // here on a cache miss means the parent held a forward/garbage offset.
+    // Priming caches hash-referenced children before their parents. A miss
+    // here indicates an invalid witness, not a reason to recurse.
     if constexpr (priming_pass) {
         MONAD_ABORT("offset trie: unprimed hash-referenced node (bad offset)");
     }

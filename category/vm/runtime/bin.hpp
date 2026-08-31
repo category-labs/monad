@@ -23,14 +23,30 @@
 
 namespace monad::vm::runtime
 {
-    /// Binary `N`-bit integer type with underlying type `uint32_t`
+    /// Binary `N`-bit integer type. The representation is `uint32_t` normally, and
+    /// `uint64_t` on the guest under MONAD_ZKVM_WIDE_MEMORY_SIZE -- storing a
+    /// provably 32-bit value in 64 bits, because there a sub-word access
+    /// costs more cells than the four bytes are worth. See `rep`.
     template <size_t N>
         requires(N <= 32)
     class Bin
     {
     public:
+        // The representation. 64-bit under MONAD_ZKVM_WIDE_MEMORY_SIZE, where
+        // it has to travel with Memory::size: a 64-bit `size` compared against
+        // a 32-bit offset makes the offset side a zero-extension at every
+        // comparison, and it is `operator*` returning narrow that causes it --
+        // one `srl 32` on every MLOAD, MSTORE and SHA3 at 56 cells apiece.
+        // Widening the storage alone does not help, because the accessor
+        // narrows the value straight back.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+        using rep = uint64_t;
+#else
+        using rep = uint32_t;
+#endif
+
         [[gnu::always_inline]]
-        static constexpr Bin unsafe_from(uint32_t const x) noexcept
+        static constexpr Bin unsafe_from(rep const x) noexcept
         {
             return Bin(x);
         }
@@ -67,20 +83,20 @@ namespace monad::vm::runtime
         }
 
         [[gnu::always_inline]]
-        constexpr uint32_t operator*() const noexcept
+        constexpr rep operator*() const noexcept
         {
             return value_;
         }
 
     private:
         [[gnu::always_inline]]
-        constexpr explicit Bin(uint32_t const x) noexcept
+        constexpr explicit Bin(rep const x) noexcept
             : value_{x}
         {
             MONAD_DEBUG_ASSERT(x < (1ULL << N));
         }
 
-        uint32_t value_;
+        rep value_;
     };
 
     template <uint32_t x>

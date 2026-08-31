@@ -76,7 +76,10 @@ namespace monad::vm::runtime
                 ? std::min(static_cast<uint32_t>(offset_word), len)
                 : len;
 
-        auto const copy_size = std::min(*size, len - start);
+        // Both operands at the width Bin carries: `len` and `start` are
+        // uint32_t, and the accessor is wider where the guest widens it.
+        auto const copy_size = std::min(
+            *size, static_cast<decltype(*size)>(len - start));
         auto *dest_ptr = ctx->memory.data + *dest_offset;
         std::copy_n(source + start, copy_size, dest_ptr);
         std::fill_n(dest_ptr + copy_size, *size - copy_size, 0);

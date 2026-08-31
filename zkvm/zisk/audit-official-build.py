@@ -27,6 +27,7 @@ import hashlib
 import json
 import pathlib
 import re
+import shlex
 import subprocess
 
 
@@ -46,13 +47,12 @@ REQUIRED_FLAGS = (
     "-fno-pic",
     "-mzisk-dma",
     "-funroll-loops",
-    "--param=max-inline-insns-single=1600",
-    "--param=max-inline-insns-auto=533",
-    "--param=inline-unit-growth=266",
-    "--param=max-inline-recursive-depth=6",
-    "--param=max-completely-peeled-insns=400",
-    "--param=large-function-growth=280",
-    "--param=large-unit-insns=30000",
+    "--param=inline-unit-growth=800",
+    "--param=large-function-growth=1500",
+    "--param=max-inline-insns-auto=200",
+    "--param=max-inline-insns-single=800",
+    "--param=inline-min-speedup=1",
+    "-finline-functions",
 )
 
 
@@ -82,21 +82,47 @@ def cache_values(path: pathlib.Path) -> dict[str, str]:
     return values
 
 
-def last_flag_value(flags: str, name: str) -> str | None:
-    matches = re.findall(rf"(?:^|\s){re.escape(name)}=([^\s]+)", flags)
-    return matches[-1] if matches else None
+def flag_values(flags: str) -> dict[str, str | bool]:
+    """Normalise GCC options, retaining the last value of each setting."""
+    # flags.make also contains defines, includes and comments; inspect CXX_FLAGS.
+    make_flags = re.search(r"^CXX_FLAGS\s*=[ \t]*(.*)$", flags, re.MULTILINE)
+    if make_flags:
+        flags = make_flags.group(1)
+    elif re.search(r"^(?:C|CXX)_(?:FLAGS|DEFINES|INCLUDES)\s*=", flags, re.MULTILINE):
+        fail("guest flags.make omits CXX_FLAGS")
+    try:
+        tokens = iter(shlex.split(flags, comments=True))
+    except ValueError as exc:
+        fail(f"cannot parse compiler flags: {exc}")
+    values: dict[str, str | bool] = {}
+    for token in tokens:
+        if token == "--param":
+            token = "--param=" + next(tokens, "")
+        if token.startswith("--param="):
+            name, separator, value = token[len("--param=") :].partition("=")
+            if not name or not separator or not value:
+                fail(f"malformed compiler parameter: {token}")
+            values[f"--param={name}"] = value
+        elif token.startswith("-O"):
+            values["-O"] = token[2:] or "1"
+        else:
+            name, separator, value = token.partition("=")
+            if name in ("-fPIC", "-fno-PIC"):
+                name = name.lower()
+            if name.startswith(("-fno-", "-mno-")):
+                values[name[:2] + name[5:]] = False
+            else:
+                values[name] = value if separator else True
+    return values
 
 
 def check_flags(flags: str, where: str) -> None:
-    for flag in REQUIRED_FLAGS:
-        if flag not in flags.split():
-            fail(f"{where} omits {flag}")
-    march = last_flag_value(flags, "-march")
-    if march != EXPECTED_MARCH:
-        fail(f"{where} ends with -march={march!s}, expected {EXPECTED_MARCH}")
-    mtune = last_flag_value(flags, "-mtune")
-    if mtune != EXPECTED_MTUNE:
-        fail(f"{where} ends with -mtune={mtune!s}, expected {EXPECTED_MTUNE}")
+    actual = flag_values(flags)
+    expected = flag_values(" ".join(REQUIRED_FLAGS))
+    expected.update({"-march": EXPECTED_MARCH, "-mtune": EXPECTED_MTUNE})
+    for name, value in expected.items():
+        if actual.get(name) != value:
+            fail(f"{where} has {name}={actual.get(name)!r}, expected {value!r}")
 
 
 def check_runtime(repo: pathlib.Path) -> dict[str, str]:

@@ -90,8 +90,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # ZisK settings adapted from Polygon's ziskethone guest
     # (github.com/0xPolygonHermez/ziskethone, cpp-guest/zisk:
     # toolchain.cmake and CMakeLists.txt).
-    # Zbb/Zbs/Zbkb are supported by ZisK >= v1.2.0-alpha. Unrolling and inlining
-    # reduce loop/call overhead; upstream rejected LTO for exceeding ZisK's RAM.
+    # Zbb/Zbs/Zbkb are supported by ZisK >= v1.2.0-alpha. Unrolling reduces
+    # loop overhead; upstream rejected LTO for exceeding ZisK's RAM.
     # The fixed-address guest needs no PIC/GOT indirections.
     #
     # Append after cmake-rs's flags: the last -march wins.
@@ -99,18 +99,22 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         set(_zisk_march "-march=rv64ima_zicsr_zbb_zbs_zbkb -mabi=lp64")
         string(JOIN " " _zisk_opt
             "-fno-pic"
-            "-funroll-loops"
-            "--param=max-inline-insns-single=1600"
-            "--param=max-inline-insns-auto=533"
-            "--param=inline-unit-growth=266"
-            "--param=max-inline-recursive-depth=6"
-            "--param=max-completely-peeled-insns=400"
-            "--param=large-function-growth=280"
-            "--param=large-unit-insns=30000")
+            "-funroll-loops")
         string(APPEND CMAKE_C_FLAGS " ${_zisk_march} ${_zisk_opt}")
         string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} ${_zisk_opt}")
         string(APPEND CMAKE_ASM_FLAGS " ${_zisk_march}")
     endif()
+
+    # Tune C++ inlining for both guests to reduce call overhead.
+    # Allow more overall growth while limiting individual inlining candidates.
+    # Keep these options in CMAKE_CXX_FLAGS so the official profile hashes them.
+    string(APPEND CMAKE_CXX_FLAGS
+        " --param inline-unit-growth=800"
+        " --param large-function-growth=1500"
+        " --param max-inline-insns-auto=200"
+        " --param max-inline-insns-single=800"
+        " --param inline-min-speedup=1"
+        " -finline-functions")
 
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
 

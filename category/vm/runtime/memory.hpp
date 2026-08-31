@@ -25,13 +25,22 @@
 
 namespace monad::vm::runtime
 {
+    // Load 32 bytes at a validated offset; [offset, offset + 32) must already
+    // be within memory.size.
+    template <Traits traits>
+    [[gnu::always_inline]] inline void
+    mload_at(Context *ctx, uint256_t *result_ptr, Memory::Offset const offset)
+    {
+        *result_ptr = load_be_unsafe<uint256_t>(ctx->memory.data + *offset);
+    }
+
     template <Traits traits>
     inline void
     mload(Context *ctx, uint256_t *result_ptr, uint256_t const *offset_ptr)
     {
         auto const offset = ctx->get_memory_offset(*offset_ptr);
         ctx->expand_memory<traits>(offset + bin<32>);
-        *result_ptr = load_be_unsafe<uint256_t>(ctx->memory.data + *offset);
+        mload_at<traits>(ctx, result_ptr, offset);
     }
 
     template <Traits traits>

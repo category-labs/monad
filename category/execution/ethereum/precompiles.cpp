@@ -69,44 +69,87 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
 
-#define CASE(addr, gas_cost, execute)                                          \
-    do {                                                                       \
-        if (MONAD_UNLIKELY(Address{(addr)} == address)) {                      \
-            return PrecompiledContract{fmap_optional<(gas_cost)>, (execute)};  \
-        }                                                                      \
-    }                                                                          \
-    while (false)
+    if (MONAD_LIKELY(!may_be_precompile(address))) {
+        return std::nullopt;
+    }
+    // Decode the final two bytes as a big-endian id.
+    unsigned const id = (static_cast<unsigned>(address.bytes[18]) << 8) |
+                        static_cast<unsigned>(address.bytes[19]);
 
+#define CASE(gas_cost, execute)                                                \
+    return PrecompiledContract                                                 \
+    {                                                                          \
+        fmap_optional<(gas_cost)>, (execute)                                   \
+    }
+
+    switch (id) {
     // Ethereum precompiles
-    CASE(0x01, ecrecover_gas_cost<traits>, ecrecover_execute);
-    CASE(0x02, sha256_gas_cost, sha256_execute);
-    CASE(0x03, ripemd160_gas_cost, ripemd160_execute);
-    CASE(0x04, identity_gas_cost, identity_execute);
-
-    CASE(0x05, expmod_gas_cost<traits>, expmod_execute);
-    CASE(0x06, ecadd_gas_cost<traits>, ecadd_execute);
-    CASE(0x07, ecmul_gas_cost<traits>, ecmul_execute);
-    CASE(0x08, snarkv_gas_cost<traits>, snarkv_execute);
-
-    CASE(0x09, blake2bf_gas_cost<traits>, blake2bf_execute);
-
-    if constexpr (traits::eip_4844_precompile_active()) {
-        CASE(0x0A, point_evaluation_gas_cost<traits>, point_evaluation_execute);
-    }
-
-    if constexpr (traits::eip_2537_active()) {
-        CASE(0x0B, bls12_g1_add_gas_cost, bls12_g1_add_execute);
-        CASE(0x0C, bls12_g1_msm_gas_cost, bls12_g1_msm_execute);
-        CASE(0x0D, bls12_g2_add_gas_cost, bls12_g2_add_execute);
-        CASE(0x0E, bls12_g2_msm_gas_cost, bls12_g2_msm_execute);
-        CASE(0x0F, bls12_pairing_check_gas_cost, bls12_pairing_check_execute);
-        CASE(0x10, bls12_map_fp_to_g1_gas_cost, bls12_map_fp_to_g1_execute);
-        CASE(0x11, bls12_map_fp2_to_g2_gas_cost, bls12_map_fp2_to_g2_execute);
-    }
-
+    case 0x01:
+        CASE(ecrecover_gas_cost<traits>, ecrecover_execute);
+    case 0x02:
+        CASE(sha256_gas_cost, sha256_execute);
+    case 0x03:
+        CASE(ripemd160_gas_cost, ripemd160_execute);
+    case 0x04:
+        CASE(identity_gas_cost, identity_execute);
+    case 0x05:
+        CASE(expmod_gas_cost<traits>, expmod_execute);
+    case 0x06:
+        CASE(ecadd_gas_cost<traits>, ecadd_execute);
+    case 0x07:
+        CASE(ecmul_gas_cost<traits>, ecmul_execute);
+    case 0x08:
+        CASE(snarkv_gas_cost<traits>, snarkv_execute);
+    case 0x09:
+        CASE(blake2bf_gas_cost<traits>, blake2bf_execute);
+    case 0x0A:
+        if constexpr (traits::eip_4844_precompile_active()) {
+            CASE(point_evaluation_gas_cost<traits>, point_evaluation_execute);
+        }
+        break;
+    case 0x0B:
+        if constexpr (traits::eip_2537_active()) {
+            CASE(bls12_g1_add_gas_cost, bls12_g1_add_execute);
+        }
+        break;
+    case 0x0C:
+        if constexpr (traits::eip_2537_active()) {
+            CASE(bls12_g1_msm_gas_cost, bls12_g1_msm_execute);
+        }
+        break;
+    case 0x0D:
+        if constexpr (traits::eip_2537_active()) {
+            CASE(bls12_g2_add_gas_cost, bls12_g2_add_execute);
+        }
+        break;
+    case 0x0E:
+        if constexpr (traits::eip_2537_active()) {
+            CASE(bls12_g2_msm_gas_cost, bls12_g2_msm_execute);
+        }
+        break;
+    case 0x0F:
+        if constexpr (traits::eip_2537_active()) {
+            CASE(bls12_pairing_check_gas_cost, bls12_pairing_check_execute);
+        }
+        break;
+    case 0x10:
+        if constexpr (traits::eip_2537_active()) {
+            CASE(bls12_map_fp_to_g1_gas_cost, bls12_map_fp_to_g1_execute);
+        }
+        break;
+    case 0x11:
+        if constexpr (traits::eip_2537_active()) {
+            CASE(bls12_map_fp2_to_g2_gas_cost, bls12_map_fp2_to_g2_execute);
+        }
+        break;
     // Rollup precompiles
-    if constexpr (traits::eip_7951_active()) {
-        CASE(0x0100, p256_verify_gas_cost, p256_verify_execute);
+    case 0x0100:
+        if constexpr (traits::eip_7951_active()) {
+            CASE(p256_verify_gas_cost, p256_verify_execute);
+        }
+        break;
+    default:
+        break;
     }
 
 #undef CASE

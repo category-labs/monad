@@ -44,6 +44,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <random>
 #include <span>
 #include <string>
 #include <string_view>
@@ -742,4 +743,129 @@ TYPED_TEST(TraitsTest, modexp_truncated_input)
 
     do_geth_tests<typename TestFixture::Trait>(
         "modexp_truncated_input", test_cases, 0x05_address);
+}
+
+namespace
+{
+    // Independent address list for comparison with the prefix-based resolver.
+    struct PrecompileCase
+    {
+        unsigned id;
+        bool active;
+    };
+
+    template <Traits traits>
+    std::array<PrecompileCase, 18> precompile_ids()
+    {
+        bool const point_evaluation_active =
+            traits::eip_4844_precompile_active();
+        bool const bls_active = traits::eip_2537_active();
+        bool const p256_active = traits::eip_7951_active();
+
+        return {{
+            {0x01, true}, // ecrecover
+            {0x02, true}, // sha256
+            {0x03, true}, // ripemd160
+            {0x04, true}, // identity
+            {0x05, true}, // expmod
+            {0x06, true}, // ecadd
+            {0x07, true}, // ecmul
+            {0x08, true}, // snarkv
+            {0x09, true}, // blake2bf
+            {0x0A, point_evaluation_active}, // point_evaluation
+            {0x0B, bls_active}, // bls12_g1_add
+            {0x0C, bls_active}, // bls12_g1_msm
+            {0x0D, bls_active}, // bls12_g2_add
+            {0x0E, bls_active}, // bls12_g2_msm
+            {0x0F, bls_active}, // bls12_pairing_check
+            {0x10, bls_active}, // bls12_map_fp_to_g1
+            {0x11, bls_active}, // bls12_map_fp2_to_g2
+            {0x0100, p256_active}, // p256_verify
+        }};
+    }
+
+    // Reference lookup compares complete constructed addresses.
+    template <Traits traits>
+    bool reference_is_precompile(Address const &address)
+    {
+        for (auto const &entry : precompile_ids<traits>()) {
+            if (entry.active &&
+                address == Address{static_cast<uint64_t>(entry.id)}) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    constexpr Address address_with_id(unsigned const id)
+    {
+        Address address{};
+        address.bytes[18] = static_cast<uint8_t>(id >> 8);
+        address.bytes[19] = static_cast<uint8_t>(id);
+        return address;
+    }
+
+    template <Traits traits>
+    void check_resolution(
+        Address const &address, char const *const case_label,
+        unsigned const case_index, unsigned &failures)
+    {
+        bool const expected = reference_is_precompile<traits>(address);
+        bool const resolved = is_eth_precompile<traits>(address);
+
+        if (resolved != expected && failures++ < 8) {
+            ADD_FAILURE() << case_label << " " << case_index << ": 0x"
+                          << to_hex(address) << " resolved "
+                          << (resolved ? "yes" : "no") << ", expected "
+                          << (expected ? "yes" : "no");
+        }
+    }
+}
+
+TEST(Precompiles, address_id_layout)
+{
+    // Verify the constructor layout independently of address_with_id.
+    for (unsigned id = 0; id <= 0xFFFF; ++id) {
+        ASSERT_EQ(Address{static_cast<uint64_t>(id)}, address_with_id(id))
+            << "id " << id;
+    }
+}
+
+TYPED_TEST(TraitsTest, precompile_address_set)
+{
+    using Trait = typename TestFixture::Trait;
+
+    // Check membership; per-precompile tests above check execution targets.
+    unsigned failures = 0;
+
+    // Sweep every 16-bit ID, including unsupported values.
+    for (unsigned id = 0; id <= 0xFFFF; ++id) {
+        check_resolution<Trait>(address_with_id(id), "id", id, failures);
+    }
+
+    // Each leading byte must be checked, not just the two-byte ID.
+    for (auto const &entry : precompile_ids<Trait>()) {
+        for (unsigned i = 0; i < 18; ++i) {
+            for (uint8_t const byte :
+                 {uint8_t{0x01}, uint8_t{0x80}, uint8_t{0xFF}}) {
+                Address address = address_with_id(entry.id);
+                address.bytes[i] = byte;
+                check_resolution<Trait>(
+                    address, "perturbed", entry.id, failures);
+            }
+        }
+    }
+
+    // Ordinary addresses. The seed is fixed, so a failure is reproducible.
+    std::mt19937_64 rng{0x9E3779B97F4A7C15ULL};
+    for (unsigned case_index = 0; case_index < 4096; ++case_index) {
+        Address address{};
+        for (uint8_t &byte : address.bytes) {
+            byte = static_cast<uint8_t>(rng() & 0xFF);
+        }
+        check_resolution<Trait>(address, "random", case_index, failures);
+    }
+
+    EXPECT_EQ(failures, 0u);
 }

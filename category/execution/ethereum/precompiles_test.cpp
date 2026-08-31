@@ -29,12 +29,14 @@
 
 #include <nlohmann/json.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <random>
 #include <string_view>
 #include <variant>
 #include <vector>
@@ -748,4 +750,145 @@ TYPED_TEST(TraitsTest, modexp_truncated_input)
 
     do_geth_tests<typename TestFixture::Trait>(
         "modexp_truncated_input", test_cases, 0x05_address);
+}
+
+namespace
+{
+    // Every precompile lives at an address of eighteen zero bytes followed by a
+    // two-byte id, because Address(uint64_t) writes bytes[19 - i] and every id
+    // is below 2^16. resolve_precompile is built on that shape: it rejects an
+    // address whose first eighteen bytes are not all zero before comparing it
+    // to anything. The shape is written out here as data, so the check below
+    // does not share a line of reasoning with the switch it checks.
+    struct precompile_id
+    {
+        unsigned id;
+        bool active;
+    };
+
+    template <Traits traits>
+    std::array<precompile_id, 18> precompile_ids()
+    {
+        bool const cancun = traits::evm_rev() >= MONAD_ETH_CANCUN;
+        bool const prague = traits::evm_rev() >= MONAD_ETH_PRAGUE;
+        bool const p256 = traits::eip_7951_active();
+
+        return {{
+            {0x01, true}, // ecrecover
+            {0x02, true}, // sha256
+            {0x03, true}, // ripemd160
+            {0x04, true}, // identity
+            {0x05, true}, // expmod
+            {0x06, true}, // ecadd
+            {0x07, true}, // ecmul
+            {0x08, true}, // snarkv
+            {0x09, true}, // blake2bf
+            {0x0A, cancun}, // point_evaluation
+            {0x0B, prague}, // bls12_g1_add
+            {0x0C, prague}, // bls12_g1_msm
+            {0x0D, prague}, // bls12_g2_add
+            {0x0E, prague}, // bls12_g2_msm
+            {0x0F, prague}, // bls12_pairing_check
+            {0x10, prague}, // bls12_map_fp_to_g1
+            {0x11, prague}, // bls12_map_fp2_to_g2
+            {0x0100, p256}, // p256_verify
+        }};
+    }
+
+    // The reference: an address is a precompile when it equals one of the
+    // constructed addresses, compared over all twenty bytes. This is the
+    // question resolve_precompile answers, asked the expensive way.
+    template <Traits traits>
+    bool address_is_precompile(Address const &address)
+    {
+        for (auto const &entry : precompile_ids<traits>()) {
+            if (entry.active &&
+                address == Address{static_cast<uint64_t>(entry.id)}) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    constexpr Address address_with_id(unsigned const id)
+    {
+        Address address{};
+        address.bytes[18] = static_cast<uint8_t>(id >> 8);
+        address.bytes[19] = static_cast<uint8_t>(id);
+        return address;
+    }
+
+    template <Traits traits>
+    void check_resolution(
+        Address const &address, char const *const what, unsigned const k,
+        unsigned &failures)
+    {
+        bool const expected = address_is_precompile<traits>(address);
+        bool const resolved = is_eth_precompile<traits>(address);
+
+        if (resolved != expected && failures++ < 8) {
+            ADD_FAILURE() << what << " " << k << ": 0x" << to_hex(address)
+                          << " resolved " << (resolved ? "yes" : "no")
+                          << ", expected " << (expected ? "yes" : "no");
+        }
+    }
+}
+
+TEST(Precompiles, address_id_layout)
+{
+    // The premise the eighteen-byte rejection rests on. If Address(uint64_t)
+    // ever stops writing the id into the last two bytes, the rejection stops
+    // being equivalent to the comparison it replaces, and every case below
+    // goes on passing.
+    for (unsigned id = 0; id <= 0xFFFF; ++id) {
+        ASSERT_EQ(Address{static_cast<uint64_t>(id)}, address_with_id(id))
+            << "id " << id;
+    }
+}
+
+TYPED_TEST(TraitsTest, precompile_address_set)
+{
+    using Trait = typename TestFixture::Trait;
+
+    // Which addresses resolve at all -- the question the eighteen-byte
+    // rejection decides. Which contract each one resolves to is pinned by the
+    // per-precompile tests above, each of which calls at its own address.
+    unsigned failures = 0;
+
+    // Every two-byte id, not only the eighteen in use. The id is assembled
+    // from two separately read bytes, so a wrong shift or a sign-extended byte
+    // shows up somewhere in this range even though it cannot show up in the
+    // ids a precompile actually has.
+    for (unsigned id = 0; id <= 0xFFFF; ++id) {
+        check_resolution<Trait>(address_with_id(id), "id", id, failures);
+    }
+
+    // A precompile address with one of its eighteen leading bytes disturbed:
+    // what the rejection exists to catch. The sweep above never leaves those
+    // bytes nonzero, so this is the only part of the test that fails when the
+    // rejection covers seventeen bytes instead of eighteen.
+    for (auto const &entry : precompile_ids<Trait>()) {
+        for (unsigned i = 0; i < 18; ++i) {
+            for (uint8_t const byte :
+                 {uint8_t{0x01}, uint8_t{0x80}, uint8_t{0xFF}}) {
+                Address address = address_with_id(entry.id);
+                address.bytes[i] = byte;
+                check_resolution<Trait>(
+                    address, "perturbed", entry.id, failures);
+            }
+        }
+    }
+
+    // Ordinary addresses. The seed is fixed, so a failure is reproducible.
+    std::mt19937_64 rng{0x9E3779B97F4A7C15ULL};
+    for (unsigned k = 0; k < 4096; ++k) {
+        Address address{};
+        for (uint8_t &byte : address.bytes) {
+            byte = static_cast<uint8_t>(rng() & 0xFF);
+        }
+        check_resolution<Trait>(address, "random", k, failures);
+    }
+
+    EXPECT_EQ(failures, 0u);
 }

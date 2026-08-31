@@ -19,9 +19,9 @@
 // innermost frames, its leaf resolves to `Context::exit` on this guest, and it therefore
 // attributed 96 % of the block's duplicate hashes to "EVM execution" when in fact the guest's own
 // key hashing -- read_account / read_storage, which ARE called from inside execution -- supplies a
-// larger share than the SHA3 opcode does. A memo on that opcode was built and capped at 13 % of the
-// duplicates, which is what falsified the attribution (FINDINGS 134). Counters at the call sites
-// cannot be misattributed: each one is incremented by the line that hashes.
+// larger share than the SHA3 opcode does. A memo on that opcode reaches only 13 % of the duplicates,
+// which is what settles the attribution. Counters at the call sites cannot be misattributed: each one
+// is incremented by the line that hashes.
 //
 // Same method as the JUMPDEST question, which it settled: counters in the public output, roots still
 // checked, so a run that reports is also a run that is verified.

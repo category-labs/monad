@@ -142,8 +142,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # then read the tail after the three 32-byte roots: N_SITES little-endian u32 call counts
     # followed by as many permutation counts, in the order given by
     # zkvm/category/core/keccak_sites.hpp. The roots stay at offsets 0/32/64, so ev.sh is unaffected and a
-    # reporting run is still a verified run. Exists because ziskemu's call-path grouping misplaced
-    # 96 % of the block's duplicate hashes (FINDINGS 134); a counter on the hashing line cannot.
+    # reporting run is still a verified run. Exists because ziskemu's call-path grouping misplaces
+    # 96 % of the block's duplicate hashes; a counter on the hashing line cannot.
     # Lever: the per-frame dirty-account list is write-only in the guest, so compile it away.
     # pop_reject moves it out and never reads it; pop_accept reads it only to fill the parent's copy
     # of the same list; and its one external reader, trace/state_tracer.cpp, is in this file's own
@@ -182,8 +182,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # an assertion, and an assertion reading constraints nobody wrote would fail for the wrong reason.
     # Lever: give the guest's VM shadow the varcode cache the host has. The shadow's find_varcode
     # returns nullopt unconditionally, so every read of an existing contract rebuilds a Varcode and
-    # its control block out of an intercode BlockState::code_ already holds. Nothing is re-decoded --
-    # see FINDINGS 85, which mistook the stub for a scanning gap.
+    # its control block out of an intercode BlockState::code_ already holds. The bytecode itself is
+    # not re-decoded: what repeats is the wrapper, not the analysis.
     option(MONAD_ZKVM_VARCODE_CACHE
            "cache varcodes by code hash in the guest's VM shadow" OFF)
     if(MONAD_ZKVM_VARCODE_CACHE)

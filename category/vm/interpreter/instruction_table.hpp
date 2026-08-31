@@ -1956,9 +1956,9 @@ namespace monad::vm::interpreter
         // one is frame-slot to frame-slot inside our own stack, the AVX conversion having
         // materialised two 32-byte slots instead of one.
         //
-        // NOT the lane exchange the SP1 arm uses: that was measured on ZisK at +0.9-1.8 % steps and
-        // is refuted (FINDINGS 161). Four 8-byte pairs cost more here than one 32-byte DMA copy,
-        // which is exactly the opposite of the rv32 case above.
+        // NOT the lane exchange the SP1 arm uses: on ZisK that measures +0.9-1.8 % steps. Four
+        // 8-byte pairs cost more here than one 32-byte DMA copy, which is exactly the opposite of
+        // the rv32 case above.
         uint256_t const top = *stack_top;
         *stack_top = *(stack_top - N);
         *(stack_top - N) = top;

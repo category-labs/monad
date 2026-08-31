@@ -24,8 +24,8 @@
 // helpers construct a fresh Varcode each call.
 //
 // That last part is measurably wrong, and MONAD_ZKVM_VARCODE_CACHE fixes it. Nothing is re-DECODED --
-// BlockState::code_ holds the SharedIntercode, so an intercode is built once per contract per block
-// (FINDINGS 85 records mistaking this stub for a scanning gap; the scan is not the cost). What
+// BlockState::code_ holds the SharedIntercode, so an intercode is built once per contract per block,
+// and the scan is not the cost. What
 // repeats is the allocation: State::read_code fills State::code_ only from set_code, so every read of
 // an existing contract falls through to BlockState::read_code, misses find_varcode, and builds a
 // fresh Varcode and shared_ptr control block out of an intercode it already had.

@@ -476,7 +476,12 @@ class OffsetTrie
     struct CachedHash
     {
         bytes32_t h;
-        bool valid;
+        // A word and not a bool. The flag is read on every hash lookup and
+        // written on every insert, and ZisK charges a 1-byte read 41 cells and
+        // a 1-byte write 66, against 16 and 18 for an aligned word.
+        // The pair's alignment pads it to 48 bytes either way, so the width is
+        // free.
+        uint64_t valid;
     };
 
     ankerl::unordered_dense::map<NodeId, CachedHash, NodeIdHash> hashes_{};

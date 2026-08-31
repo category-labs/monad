@@ -63,7 +63,9 @@ class DbCache final
     using StorageCache = vm::utils::LruWeightCache<
         StorageKey, storage_page_t, StorageKeyHashCompare>;
 
-    static constexpr uint32_t STORAGE_CACHE_MAX_BYTES = 256u * 1024 * 1024;
+    // sized so the priced-cached window (CACHE_PRICING_STORAGE_SLOT_CAPACITY
+    // slots, worst case single-slot pages) stays resident
+    static constexpr uint32_t STORAGE_CACHE_MAX_BYTES = 1024u * 1024 * 1024;
 
     AccountsCache accounts_{10'000'000};
     StorageCache storage_{STORAGE_CACHE_MAX_BYTES};

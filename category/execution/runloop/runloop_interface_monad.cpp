@@ -258,7 +258,7 @@ MonadRunloopImpl::MonadRunloopImpl(
     , raw_db{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{.append = true, .compaction = true, .rewind_to_latest_finalized = true, .rd_buffers = 8192, .wr_buffers = 32, .uring_entries = 128, .sq_thread_cpu = sq_thread_cpu, .dbname_paths = {fs::path{db_path}}}}
     , secondary_raw_db{get_secondary_raw_db(raw_db)}
     , triedb{raw_db, /*enable_multiblock_cache=*/true}
-    , secondary_triedb{secondary_raw_db}
+    , secondary_triedb{secondary_raw_db, /*enable_multiblock_cache=*/true}
     , runloop_db{triedb, account_override}
     , secondary_runloop_db{secondary_triedb, account_override}
     , vm{}

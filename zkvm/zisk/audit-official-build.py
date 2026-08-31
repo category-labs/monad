@@ -194,7 +194,7 @@ def main() -> int:
         fail("generated profile has the wrong runtime revision")
     features = str(profile.get("features_csv", "")).split(",")
     expected = ["baseline", "zisk-dma", "keccakf-memo", "wide-memory-size",
-                "varcode-cache", "no-dirty-accounts"]
+                "varcode-cache", "no-dirty-accounts", "no-merge-constraints"]
     if features != expected:
         fail(f"unexpected feature set: {features!r}")
 

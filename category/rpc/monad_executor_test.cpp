@@ -412,7 +412,7 @@ TEST_F(EthCallFixture, insufficient_balance)
         true);
     f.get();
 
-    EXPECT_TRUE(ctx.result->status_code == EVMC_REJECTED);
+    EXPECT_TRUE(ctx.result->status_code == EVMC_INSUFFICIENT_BALANCE);
     EXPECT_TRUE(std::strcmp(ctx.result->message, "insufficient balance") == 0);
     EXPECT_TRUE(ctx.result->encoded_trace_len == 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);

@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::f32::consts::E;
+
 use alloy_consensus::{Header, Transaction as _, TxEnvelope};
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::Address;
@@ -22,7 +24,8 @@ use tracing::warn;
 
 use super::{
     decode_revert_message, EthCallResult, MessageError, MonadExecutor, MonadExecutorResult,
-    ETH_CALL_SUCCESS, EVMC_MONAD_RESERVE_BALANCE_VIOLATION, EVMC_OUT_OF_GAS,
+    ETH_CALL_SUCCESS, EVMC_INSUFFICIENT_BALANCE, EVMC_MONAD_RESERVE_BALANCE_VIOLATION,
+    EVMC_OUT_OF_GAS,
 };
 use crate::{
     ffi,
@@ -77,6 +80,10 @@ pub enum EthCallError {
     },
     GasLimitTooHigh,
     InternalError,
+    InsufficientBalance {
+        gas_used: u64,
+        gas_refund: u64,
+    },
     Other {
         message: String,
     },
@@ -278,6 +285,20 @@ impl MonadExecutor {
             EVMC_MONAD_RESERVE_BALANCE_VIOLATION => {
                 if tracer_cval == ffi::monad_tracer_config_NOOP_TRACER {
                     Err(EthCallError::ReserveBalanceViolation {
+                        gas_used: result.gas_used(),
+                        gas_refund: result.gas_refund(),
+                    })
+                } else {
+                    let trace = result.encoded_trace().map_err(|_| {
+                        warn!("execution error `eth_call` failed: encoded trace pointer is null");
+                        EthCallError::InternalError
+                    })?;
+                    Err(EthCallError::Trace { trace })
+                }
+            }
+            EVMC_INSUFFICIENT_BALANCE => {
+                if tracer_cval == ffi::monad_tracer_config_NOOP_TRACER {
+                    Err(EthCallError::InsufficientBalance {
                         gas_used: result.gas_used(),
                         gas_refund: result.gas_refund(),
                     })

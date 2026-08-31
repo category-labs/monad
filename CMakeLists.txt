@@ -292,6 +292,10 @@ endif()
 # libs
 # ##############################################################################
 
+include(cmake/boost_outcome_status_code_overlay.cmake)
+monad_configure_boost_outcome_status_code_overlay(
+  MONAD_BOOST_OUTCOME_STATUS_CODE_OVERLAY_DIR)
+
 add_subdirectory("category/async")
 # crypto before core: monad_core links monad_crypto for keccak256()
 add_subdirectory("category/crypto")

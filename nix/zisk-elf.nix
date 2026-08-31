@@ -38,7 +38,7 @@ stdenv.mkDerivation (finalAttrs: {
     cargoDeps
     ;
   env = buildEnv.env // {
-    MONAD_ZKVM_CMAKE_ARGS = "-DMONAD_ZKVM_VARCODE_CACHE=ON -DMONAD_ZKVM_WIDE_MEMORY_SIZE=ON -DMONAD_ZKVM_KECCAKF_MEMO=ON";
+    MONAD_ZKVM_CMAKE_ARGS = "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMONAD_ZKVM_NO_DIRTY_ACCOUNTS=ON -DMONAD_ZKVM_VARCODE_CACHE=ON -DMONAD_ZKVM_WIDE_MEMORY_SIZE=ON -DMONAD_ZKVM_KECCAKF_MEMO=ON";
   };
   strictDeps = true;
   # Preserve the guest ELF exactly as linked.
@@ -54,6 +54,9 @@ stdenv.mkDerivation (finalAttrs: {
     export CARGO_BUILD_JOBS=$NIX_BUILD_CORES NUM_JOBS=$NIX_BUILD_CORES
     export MONAD_ZKVM_BUILD_ID=''${out##*/}
     ${zisk-rust-toolchain}/bin/cargo build --release --frozen --target ${target} --target-dir target/elf --bin monad-zkvm-zisk
+    mapfile -t guest_build_dirs < <(find target/elf -path '*/out/guest-build/zisk-*/build/compile_commands.json' -printf '%h\n')
+    test "''${#guest_build_dirs[@]}" -eq 1
+    python3 ${./check-zisk.py} --repo ../.. --build-dir "''${guest_build_dirs[0]}"
     runHook postBuild
   '';
 

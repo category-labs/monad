@@ -105,6 +105,14 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_VARCODE_CACHE)
     endif()
 
+    # Omit dirty-account tracking when neither tracing nor reserve-balance
+    # tracking needs it. State rejects active reserve tracking in this mode.
+    option(MONAD_ZKVM_NO_DIRTY_ACCOUNTS
+           "omit dirty-account lists and forbid consumers that require them" OFF)
+    if(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+        add_compile_definitions(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+    endif()
+
     # Diagnostic: the guest's per-tx loop is serialized, so it runs transactions through
     # ExecuteTransaction::execute(SequentialExecutionToken), which skips the merge-conflict check
     # the node's speculative scheduler needs. This restores that check as an assertion on the

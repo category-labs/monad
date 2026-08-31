@@ -274,6 +274,10 @@ namespace monad::vm::runtime
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
 
+        // Last valid stack slot, cached by interpreter::execute.
+        // Keep after members whose offsets are used by assembly.
+        uint256_t const *stack_limit = nullptr;
+
         [[gnu::always_inline]]
         constexpr void deduct_gas(int64_t const gas) noexcept
         {

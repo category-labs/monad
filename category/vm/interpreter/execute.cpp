@@ -59,6 +59,8 @@ namespace monad::vm::interpreter
     void execute(
         runtime::Context &ctx, Intercode const &analysis, uint8_t *stack_ptr)
     {
+        // Cache the last valid stack slot: stack_bottom + 1024.
+        ctx.stack_limit = reinterpret_cast<uint256_t *>(stack_ptr) + 1023;
         trampoline(
             ctx,
             analysis,

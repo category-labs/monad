@@ -269,6 +269,36 @@ TEST(OffsetTrieDeathTest, TruncatedAccountLeafAborts)
     EXPECT_DEATH((void)OffsetTrie{blob}, "");
 }
 
+TEST(OffsetTrieDeathTest, TruncatedDigestAbortsBeforeAdvancing)
+{
+    for (bool const has_preceding_digest : {false, true}) {
+        for (size_t truncated_size = 1; truncated_size < DIGEST_NODE_LEN;
+             ++truncated_size) {
+            SCOPED_TRACE(has_preceding_digest);
+            SCOPED_TRACE(truncated_size);
+            BlobBuilder builder;
+            if (has_preceding_digest) {
+                builder.digest(bytes32_t{});
+            }
+            uint32_t const root = builder.digest(bytes32_t{});
+            builder.buf.resize(root + truncated_size);
+            byte_string const blob = builder.finalize(root);
+            EXPECT_DEATH((void)OffsetTrie{blob}, "DIGEST_NODE_LEN");
+        }
+    }
+}
+
+TEST(OffsetTrie, DigestRootAtEndOfBlob)
+{
+    BlobBuilder builder;
+    bytes32_t hash{};
+    hash.bytes[31] = 1;
+    uint32_t const root = builder.digest(hash);
+    byte_string const blob = builder.finalize(root);
+    OffsetTrie trie{blob};
+    EXPECT_EQ(trie.state_root(), hash);
+}
+
 // The encoder never dedupes identical subtries, so a node reached from two
 // parents is malformed. Priming clears a child's bit when a parent claims it,
 // leaving the second claim to find it already clear.

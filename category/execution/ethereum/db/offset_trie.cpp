@@ -80,6 +80,9 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // One byte per blob offset avoids bit extraction and read-modify-write
     // updates. This uses more memory than a bitmap.
     std::vector<unsigned char> node_marks(blob_.size(), 0);
+    // Follow the current node with a mark pointer. Digest nodes can advance
+    // it directly without recomputing their offset from the blob base.
+    unsigned char *current_node_mark = node_marks.data() + node_offset;
 
     // Reserve before priming to avoid rehashing. The measured corpus has
     // about one cached hash per 430 blob bytes; /256 leaves spare capacity.
@@ -115,6 +118,19 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         // node.bytes() < region_end, so node_offset is an offset into the
         // blob and never one past its end.
         MONAD_DEBUG_ASSERT(node_offset < blob_.size());
+        if (node.tag() == DIGEST) {
+            // Check the extent before advancing either pointer past the node.
+            MONAD_ASSERT(
+                static_cast<size_t>(region_end - node.bytes()) >=
+                DIGEST_NODE_LEN);
+            *current_node_mark = 1;
+            current_node_mark += DIGEST_NODE_LEN;
+            node = NodeViewBase{node.bytes() + DIGEST_NODE_LEN};
+            continue;
+        }
+        // Only nondigest nodes need their offset for hashing and marking.
+        node_offset = static_cast<uint64_t>(node.bytes() - base);
+
         // checked_end asserts that the current node does not reach past the end
         // of the region
         auto next_offset =
@@ -167,7 +183,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         unclaimed_bytes =
             unclaimed_bytes + DIGEST_NODE_LEN - (next_offset - node_offset);
         node = NodeViewBase{base + next_offset};
-        node_offset = next_offset;
+        current_node_mark = node_marks.data() + next_offset;
     }
     MONAD_ASSERT(node.bytes() == region_end); // nodes tile exactly
     claim_child(root);

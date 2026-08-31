@@ -40,6 +40,31 @@ namespace monad::vm
             evmc::address const &, evmc::bytes32 const &,
             evmc_storage_status) noexcept = 0;
 
+        // Multi-block cache access tier: refines the binary evmc access
+        // status with a middle "cached" tier for first accesses to state
+        // whose last_access is within the priced window. Defaults preserve
+        // the binary semantics for hosts that don't price the cache.
+        enum class AccessTier : uint8_t
+        {
+            cold,
+            cached,
+            warm,
+        };
+
+        virtual AccessTier access_account_tier(evmc::address const &a) noexcept
+        {
+            return access_account(a) == EVMC_ACCESS_COLD ? AccessTier::cold
+                                                         : AccessTier::warm;
+        }
+
+        virtual AccessTier access_storage_tier(
+            evmc::address const &a, evmc::bytes32 const &key) noexcept
+        {
+            return access_storage(a, key) == EVMC_ACCESS_COLD
+                       ? AccessTier::cold
+                       : AccessTier::warm;
+        }
+
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.
         void capture_current_exception() const noexcept

@@ -234,6 +234,38 @@ struct EvmcHost final : public EvmcHostBase
         stack_unwind();
     }
 
+    virtual vm::Host::AccessTier
+    access_account_tier(evmc::address const &address) noexcept override
+    {
+        MONAD_TRY
+        {
+            if (is_precompile<traits>(address)) {
+                return vm::Host::AccessTier::warm;
+            }
+            return state_.access_account_tier(address);
+        }
+        MONAD_CATCH(...)
+        {
+            capture_current_exception();
+        }
+        stack_unwind();
+    }
+
+    virtual vm::Host::AccessTier access_storage_tier(
+        evmc::address const &address,
+        evmc::bytes32 const &key) noexcept override
+    {
+        MONAD_TRY
+        {
+            return state_.access_storage_tier<traits>(address, key);
+        }
+        MONAD_CATCH(...)
+        {
+            capture_current_exception();
+        }
+        stack_unwind();
+    }
+
     CallTracerBase &get_call_tracer() noexcept
     {
         return call_tracer_;

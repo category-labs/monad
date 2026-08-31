@@ -23,7 +23,9 @@
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/db/cache_pricing.hpp>
@@ -33,6 +35,7 @@
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
 
 #include <gtest/gtest.h>
 
@@ -201,4 +204,80 @@ TEST(CachePricing, no_access_no_change)
     tdb.set_block_and_prefix(1, bytes32_t{uint64_t{1}});
     EXPECT_EQ(tdb.read_account(ADDR_A)->last_access_block, 0);
     EXPECT_EQ(tdb.read_account_pricing_bucket(1), std::nullopt);
+}
+
+TEST(CachePricing, access_tiers)
+{
+    mpt::Db db{std::make_unique<MonadOnDiskMachine>(), mpt::OnDiskDbConfig{}};
+    TrieDb tdb{db};
+
+    GenesisState const GENESIS_STATE = MonadTestnet{}.get_genesis_state();
+    load_genesis_state(GENESIS_STATE, tdb);
+
+    auto const page_key = compute_page_key(slot_0);
+    BlockAccessSets access;
+    access[ADDR_A].insert(page_key);
+
+    Account const created{.nonce = 1};
+    {
+        StorageDeltas storage;
+        storage.emplace(
+            slot_0, StorageDelta{bytes32_t{}, bytes32_t{uint64_t{0xa1}}});
+        StateDeltas deltas;
+        deltas.emplace(
+            ADDR_A,
+            StateDelta{
+                .account = {std::nullopt, created},
+                .storage = std::move(storage)});
+        drive_commit(tdb, 1, 0, bytes32_t{}, deltas, access);
+    }
+    tdb.set_block_and_prefix(1, bytes32_t{uint64_t{1}});
+
+    vm::VM vm;
+
+    // no cutoffs: pre-fork behavior, first access is cold
+    {
+        BlockState bs{tdb, vm};
+        State s{bs, Incarnation{2, 1}};
+        EXPECT_EQ(
+            s.access_account_tier(ADDR_A), vm::Host::AccessTier::cold);
+    }
+
+    // cutoff 0: everything with a nonzero last_access is cached
+    {
+        BlockState bs{tdb, vm};
+        bs.set_pricing_cutoffs(0, 0);
+        State s{bs, Incarnation{2, 1}};
+        EXPECT_EQ(
+            s.access_account_tier(ADDR_A), vm::Host::AccessTier::cached);
+        // repeat access in the same tx is warm
+        EXPECT_EQ(s.access_account_tier(ADDR_A), vm::Host::AccessTier::warm);
+        // slot_1 shares the page with slot_0: page-granular cached
+        EXPECT_EQ(
+            s.access_storage_tier<MbcFork>(ADDR_A, slot_1),
+            vm::Host::AccessTier::cached);
+        EXPECT_EQ(
+            s.access_storage_tier<MbcFork>(ADDR_A, slot_0),
+            vm::Host::AccessTier::warm);
+        // untouched page of the same account is cold
+        constexpr auto slot_far = bytes32_t{uint64_t{0x80}};
+        EXPECT_EQ(
+            s.access_storage_tier<MbcFork>(ADDR_A, slot_far),
+            vm::Host::AccessTier::cold);
+        // absent account is cold
+        constexpr auto addr_b =
+            0x00000000000000000000000000000000000000bb_address;
+        EXPECT_EQ(s.access_account_tier(addr_b), vm::Host::AccessTier::cold);
+    }
+
+    // cutoff at the access block: boundary excluded, cold
+    {
+        BlockState bs{tdb, vm};
+        bs.set_pricing_cutoffs(1, 1);
+        State s{bs, Incarnation{2, 1}};
+        EXPECT_EQ(s.access_account_tier(ADDR_A), vm::Host::AccessTier::cold);
+        EXPECT_EQ(
+            s.access_storage_tier<MbcFork>(ADDR_A, slot_0),
+            vm::Host::AccessTier::cold);
+    }
 }

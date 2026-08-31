@@ -24,6 +24,8 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/vm/code.hpp>
 
+#include <ankerl/unordered_dense.h>
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <oneapi/tbb/concurrent_hash_map.h>
@@ -58,9 +60,13 @@ struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
+    // multi-block cache: per-block memo of page cached-status (pure function
+    // of pre-state and the block's cutoff, so any racer computes the same
+    // value); mutated under a StateDeltas accessor lock
+    ankerl::unordered_dense::segmented_map<bytes32_t, bool> cached_pages{};
 };
 
-static_assert(sizeof(StateDelta) == 768);
+static_assert(sizeof(StateDelta) == 832);
 static_assert(alignof(StateDelta) == 8);
 
 using StateDeltas = oneapi::tbb::concurrent_hash_map<

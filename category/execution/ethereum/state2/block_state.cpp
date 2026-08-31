@@ -156,6 +156,49 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
     }
 }
 
+bool BlockState::account_is_cached(Address const &address)
+{
+    if (!account_cutoff_.has_value()) {
+        return false;
+    }
+    StateDeltas::const_accessor it{};
+    MONAD_ASSERT(state_);
+    MONAD_ASSERT(state_->find(it, address));
+    auto const &pre = it->second.account.first;
+    return pre.has_value() && pre->last_access_block > *account_cutoff_;
+}
+
+bool BlockState::storage_page_is_cached(
+    Address const &address, Incarnation const incarnation,
+    bytes32_t const &page_key)
+{
+    if (!storage_cutoff_.has_value()) {
+        return false;
+    }
+    MONAD_ASSERT(state_);
+    {
+        StateDeltas::const_accessor it{};
+        MONAD_ASSERT(state_->find(it, address));
+        auto const &pre = it->second.account.first;
+        // fresh incarnation has no pre-state pages
+        if (!pre.has_value() || incarnation != pre->incarnation) {
+            return false;
+        }
+        if (auto const mit = it->second.cached_pages.find(page_key);
+            mit != it->second.cached_pages.end()) {
+            return mit->second;
+        }
+    }
+    auto const page = db_.read_storage_page(address, incarnation, page_key);
+    bool const cached = page.last_access > *storage_cutoff_;
+    {
+        StateDeltas::accessor it{};
+        MONAD_ASSERT(state_->find(it, address));
+        it->second.cached_pages.try_emplace(page_key, cached);
+    }
+    return cached;
+}
+
 bool BlockState::can_merge(State &state) const
 {
     MONAD_ASSERT(state_);

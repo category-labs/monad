@@ -130,6 +130,18 @@ public:
         return triedb_.read_code(code_hash);
     }
 
+    virtual std::optional<uint64_t>
+    read_account_pricing_bucket(uint64_t const block) override
+    {
+        return triedb_.read_account_pricing_bucket(block);
+    }
+
+    virtual std::optional<uint64_t>
+    read_storage_pricing_bucket(uint64_t const block) override
+    {
+        return triedb_.read_storage_pricing_bucket(block);
+    }
+
     virtual void set_block_and_prefix(
         uint64_t const block_number,
         bytes32_t const &block_id = bytes32_t{}) override

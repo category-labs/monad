@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -436,6 +437,46 @@ State::access_storage(Address const &address, bytes32_t const &key)
 }
 
 EXPLICIT_TRAITS_MEMBER(State::access_storage);
+
+vm::Host::AccessTier State::access_account_tier(Address const &address)
+{
+    auto &account_state = current_account_state(address);
+    if (account_state.access() == EVMC_ACCESS_WARM) {
+        return vm::Host::AccessTier::warm;
+    }
+    return block_state_.account_is_cached(address)
+               ? vm::Host::AccessTier::cached
+               : vm::Host::AccessTier::cold;
+}
+
+template <Traits traits>
+vm::Host::AccessTier
+State::access_storage_tier(Address const &address, bytes32_t const &key)
+{
+    if constexpr (!traits::multi_block_cache_active()) {
+        return access_storage<traits>(address, key) == EVMC_ACCESS_COLD
+                   ? vm::Host::AccessTier::cold
+                   : vm::Host::AccessTier::warm;
+    }
+    else {
+        auto &account_state = current_account_state(address);
+        account_state.access_storage(key);
+        if (account_state.page_tracker_.access_page(key) == EVMC_ACCESS_WARM) {
+            return vm::Host::AccessTier::warm;
+        }
+        if (!account_state.account_.has_value()) {
+            return vm::Host::AccessTier::cold;
+        }
+        return block_state_.storage_page_is_cached(
+                   address,
+                   account_state.account_->incarnation,
+                   compute_page_key(key))
+                   ? vm::Host::AccessTier::cached
+                   : vm::Host::AccessTier::cold;
+    }
+}
+
+EXPLICIT_TRAITS_MEMBER(State::access_storage_tier);
 
 vm::Host::PageStorageStatus State::update_page(
     Address const &address, bytes32_t const &key,

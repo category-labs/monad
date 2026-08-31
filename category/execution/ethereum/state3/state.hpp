@@ -172,6 +172,12 @@ public:
     template <Traits traits>
     evmc_access_status access_storage(Address const &, bytes32_t const &key);
 
+    vm::Host::AccessTier access_account_tier(Address const &);
+
+    template <Traits traits>
+    vm::Host::AccessTier
+    access_storage_tier(Address const &, bytes32_t const &key);
+
     vm::Host::PageStorageStatus update_page(
         Address const &, bytes32_t const &key, evmc_storage_status status);
 

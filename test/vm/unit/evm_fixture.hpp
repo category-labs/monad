@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include "category/vm/evm/traits.hpp"
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
@@ -79,6 +80,12 @@ namespace monad::vm::compiler::test
         static consteval bool is_evm_trait() noexcept
         {
             return monad::is_evm_trait_v<Trait>;
+        }
+
+        static consteval bool supports_reference_rev() noexcept
+        {
+            return Trait::evm_rev() <=
+                   monad::constants::LATEST_REFERENCE_REVISION;
         }
 
         static constexpr runtime::Memory::Version get_memory_version()

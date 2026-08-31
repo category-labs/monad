@@ -157,6 +157,22 @@ Result<void> static_validate_header(BlockHeader const &header)
         }
     }
 
+    // EIP-7843 (requires EIP-7928)
+    if constexpr (!traits::eip_7843_active()) {
+        if (MONAD_UNLIKELY(
+                header.block_access_list_hash.has_value() ||
+                header.slot_number.has_value())) {
+            return BlockError::FieldBeforeFork;
+        }
+    }
+    else {
+        if (MONAD_UNLIKELY(
+                !header.block_access_list_hash.has_value() ||
+                !header.slot_number.has_value())) {
+            return BlockError::MissingField;
+        }
+    }
+
     return success();
 }
 

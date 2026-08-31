@@ -408,6 +408,10 @@ TYPED_TEST(VMTraitsTest, MissingDischargeInJumpiKeepFallthroughStack)
         GTEST_SKIP() << "evmone only executes evm revisions";
     }
 
+    if constexpr (!TestFixture::supports_reference_rev()) {
+        GTEST_SKIP() << "evmone does not support this revision";
+    }
+
     TestFixture::execute_and_compare(1'000'000, bytecode, {});
 }
 
@@ -433,6 +437,10 @@ TYPED_TEST(VMTraitsTest, WrongGasCheckConditionalJump)
 
     if constexpr (TestFixture::is_monad_trait()) {
         GTEST_SKIP() << "evmone only executes evm revisions";
+    }
+
+    if constexpr (!TestFixture::supports_reference_rev()) {
+        GTEST_SKIP() << "evmone does not support this revision";
     }
 
     TestFixture::execute_and_compare(1'000'000, bytecode, calldata);
@@ -463,6 +471,10 @@ TYPED_TEST(VMTraitsTest, MissingRemoveStackOffsetInFallthroughStack)
 
     if constexpr (TestFixture::is_monad_trait()) {
         GTEST_SKIP() << "evmone only executes evm revisions";
+    }
+
+    if constexpr (!TestFixture::supports_reference_rev()) {
+        GTEST_SKIP() << "evmone does not support this revision";
     }
 
     TestFixture::execute_and_compare(1'000'000, bytecode, calldata);
@@ -749,11 +761,10 @@ namespace
     monad_evm_revisions()
     {
         std::vector<std::variant<monad_eth_revision, monad_revision>> result;
-        // Only run regression tests for forks whose behavior is implemented;
-        // later forks (e.g. AMSTERDAM) exist in the enum but are not yet wired
-        // up. TODO(amsterdam): bump LATEST_SUPPORTED_EVM_FORK to include it.
+        // Only run regression tests for forks whose behavior is implemented
+        // and have a corresponding reference implementation,
         for (auto evm_rev = 0;
-             evm_rev <= monad::constants::LATEST_SUPPORTED_EVM_FORK;
+             evm_rev <= monad::constants::LATEST_REFERENCE_REVISION;
              ++evm_rev) {
             result.push_back(static_cast<monad_eth_revision>(evm_rev));
         }

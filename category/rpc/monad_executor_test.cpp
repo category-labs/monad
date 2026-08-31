@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -33,10 +34,12 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -128,6 +131,21 @@ namespace
     {
         std::vector<uint8_t> v{bs.begin(), bs.end()};
         return v;
+    }
+
+    BlockHeader
+    slotnum_header(uint64_t const number, uint64_t const slot_number)
+    {
+        return BlockHeader{
+            .number = number,
+            .base_fee_per_gas = 0,
+            .withdrawals_root = bytes32_t{},
+            .blob_gas_used = 0,
+            .excess_blob_gas = 0,
+            .parent_beacon_block_root = bytes32_t{},
+            .requests_hash = bytes32_t{},
+            .block_access_list_hash = bytes32_t{},
+            .slot_number = slot_number};
     }
 
     // Machine selects the db state machine: OnDiskMachine = slot-encoded,
@@ -277,7 +295,26 @@ namespace
                 gas_specified ? tx.gas_limit : MONAD_ETH_CALL_LOW_GAS_LIMIT,
             .status = EVMC_SUCCESS,
             .depth = 0,
-            .logs = std::vector<CallFrame::Log>{},
+            // CHAIN_CONFIG_MONAD_DEVNET activates MONAD_NEXT from genesis, so
+            // EIP-7708 is live here and this value transfer emits a consensus
+            // Transfer log from SYSTEM_ADDRESS. That is not eth_simulateV1's
+            // synthetic log, which is the separate emit_native_transfer_logs
+            // flag and is off for eth_call. The log reaches the call trace
+            // because EvmcHost::emit_native_transfer_event pairs store_log
+            // with call_tracer_.on_log, as the LOG opcodes do.
+            .logs =
+                std::vector<CallFrame::Log>{
+                    {Receipt::Log{
+                         .data = byte_string{store_be_as<bytes32_t>(
+                             uint256_t{0x10000})},
+                         .topics =
+                             std::vector{
+                                 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
+                                 abi_encode_address(from),
+                                 abi_encode_address(ADDR_B),
+                             },
+                         .address = SYSTEM_ADDRESS},
+                     0}},
         };
 
         byte_string_view view(rlp_call_frames);
@@ -474,6 +511,98 @@ TEST_F(EthCallFixture, on_proposed_block)
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 21000);
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, eth_call_slot_number)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, StateDeltas({}), {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr auto contract_address =
+        0x00000000000000000000000000000000aaaaaaaa_address;
+
+    using namespace monad::vm::utils;
+    auto eb = evm_as::amsterdam();
+    eb.slotnum().push0().mstore().return_(0, 32);
+    std::vector<uint8_t> compiled{};
+    ASSERT_TRUE(evm_as::validate(eb));
+    evm_as::compile(eb, compiled);
+
+    byte_string const contract_code{compiled.data(), compiled.size()};
+    auto const contract_code_hash = to_bytes(keccak256(contract_code));
+    auto const contract_icode = vm::make_shared_intercode(contract_code);
+
+    // eth_call reads round/slot_number from the header passed over FFI
+    uint64_t const round = 1234;
+    BlockHeader const header = slotnum_header(256, round);
+
+    commit_simple(
+        tdb,
+        StateDeltas(
+            {{contract_address,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0, .code_hash = contract_code_hash}}}}}),
+        Code{{contract_code_hash, contract_icode}},
+        bytes32_t{256},
+        header,
+        {},
+        {},
+        {},
+        {},
+        {},
+        std::vector<Withdrawal>{});
+    tdb.set_block_and_prefix(header.number, bytes32_t{256});
+
+    Transaction const tx{
+        .gas_limit = 100000u,
+        .to = contract_address,
+        .type = TransactionType::eip1559};
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(sender)));
+    auto const rlp_block_id = to_vec(rlp::encode_bytes32(bytes32_t{256}));
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        256,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        NOOP_TRACER,
+        true);
+    f.get();
+
+    ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->output_data_len, sizeof(bytes32_t));
+
+    bytes32_t result;
+    std::memcpy(result.bytes, ctx.result->output_data, sizeof(bytes32_t));
+    EXPECT_EQ(result, store_be_as<bytes32_t>(uint256_t{round}));
 
     monad_state_override_destroy(state_override);
     monad_executor_destroy(executor);
@@ -2154,6 +2283,126 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
             nlohmann::json::parse(expected),
             nlohmann::json::from_cbor(encoded_state_diff_trace));
     }
+
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, trace_block_slot_number)
+{
+    static constexpr Address ADDR_A =
+        0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address;
+
+    using namespace monad::vm::utils;
+    auto eb = evm_as::amsterdam();
+    eb.slotnum().push0().sstore();
+    std::vector<uint8_t> compiled{};
+    ASSERT_TRUE(evm_as::validate(eb));
+    evm_as::compile(eb, compiled);
+
+    byte_string const contract_code{compiled.data(), compiled.size()};
+    auto const contract_code_hash = to_bytes(keccak256(contract_code));
+    auto const contract_icode = vm::make_shared_intercode(contract_code);
+
+    commit_sequential(
+        tdb,
+        StateDeltas(
+            {{ADDR_A,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0, .code_hash = contract_code_hash}}}}}),
+        Code{{contract_code_hash, contract_icode}},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 255; ++i) {
+        commit_sequential(tdb, StateDeltas({}), {}, BlockHeader{.number = i});
+    }
+
+    MonadDevnet const devnet;
+    Transaction tx;
+    tx.gas_limit = 100000u;
+    tx.nonce = 1;
+    tx.to = ADDR_A;
+    tx.sc = SignatureAndChain{{1, 1, 1}, devnet.get_chain_id()};
+
+    auto const sender = recover_sender(tx);
+    ASSERT_TRUE(sender.has_value());
+
+    commit_sequential(
+        tdb,
+        StateDeltas(
+            {{*sender,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = std::numeric_limits<uint256_t>::max(),
+                           .nonce = tx.nonce}}}}}),
+        {},
+        BlockHeader{.number = 255});
+
+    uint64_t const round = 1234;
+    BlockHeader const header = slotnum_header(256, round);
+    std::vector<Receipt> const receipts = {
+        Receipt{.status = EVMC_SUCCESS, .gas_used = 20000u}};
+    std::vector<std::vector<CallFrame>> const call_frames = {{}};
+    std::vector<Transaction> const transactions = {tx};
+    std::vector<Address> const senders = {*sender};
+
+    commit_sequential(
+        tdb,
+        StateDeltas({}),
+        {},
+        header,
+        receipts,
+        call_frames,
+        senders,
+        transactions,
+        {},
+        std::vector<Withdrawal>{});
+
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp::encode_bytes32(bytes32_t{256}));
+    auto const rlp_parent_id = to_vec(rlp::encode_bytes32(bytes32_t{255}));
+    auto const rlp_grandparent_id = to_vec(rlp::encode_bytes32(bytes32_t{254}));
+
+    auto *executor = create_executor(dbname.string());
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_run_transactions(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_header.data(),
+        rlp_header.size(),
+        256,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_parent_id.data(),
+        rlp_parent_id.size(),
+        rlp_grandparent_id.data(),
+        rlp_grandparent_id.size(),
+        -1,
+        complete_callback,
+        (void *)&ctx,
+        STATEDIFF_TRACER);
+    f.get();
+
+    ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+
+    std::vector<uint8_t> const encoded_trace(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+    auto const trace_json = nlohmann::json::from_cbor(encoded_trace);
+
+    ASSERT_EQ(trace_json.size(), 1);
+    auto const &storage =
+        trace_json[0]["result"]["post"]
+                  ["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]["storage"];
+    ASSERT_EQ(storage.size(), 1);
+    auto const stored =
+        from_hex<bytes32_t>(storage.begin().value().get<std::string>()).value();
+    EXPECT_EQ(stored, store_be_as<bytes32_t>(uint256_t{round}));
 
     monad_executor_destroy(executor);
 }
@@ -5019,6 +5268,119 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
     monad_executor_destroy(executor);
 }
 
+TEST_F(EthCallFixture, eth_simulate_slot_number)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address contract_address =
+        0x00000000000000000000000000000000aaaaaaaa_address;
+
+    auto eb = evm_as::amsterdam();
+    eb.slotnum().push0().mstore().return_(0, 32);
+    std::vector<uint8_t> compiled{};
+    ASSERT_TRUE(evm_as::validate(eb));
+    evm_as::compile(eb, compiled);
+
+    byte_string const contract_code{compiled.data(), compiled.size()};
+    auto const contract_code_hash = to_bytes(keccak256(contract_code));
+    auto const contract_icode = vm::make_shared_intercode(contract_code);
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {{sender,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{.balance = uint256_t{1'000'000}, .nonce = 0}}}},
+             {contract_address,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0, .code_hash = contract_code_hash}}}}}},
+        Code{{contract_code_hash, contract_icode}},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    auto *const state_override = monad_state_override_vec_create(1);
+    auto *const block_override = monad_block_override_vec_create(1);
+
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+
+    Transaction const tx{
+        .gas_limit = 200'000'000,
+        .to = contract_address,
+    };
+    auto const encoded_tx = rlp::encode_transaction(tx);
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_string2(byte_string_view(encoded_tx)))));
+
+    uint64_t const round = 4321;
+    BlockHeader header = slotnum_header(1, round);
+    header.gas_limit = 200'000'000;
+
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1, // block_number
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        state_override,
+        block_override,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 1);
+    ASSERT_EQ(output[0]["calls"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+
+    // The simulated block is the next block, so it reports the base round
+    // advanced by one -- not 0, and not the base round itself, which no real
+    // child block could carry: consensus assigns one round per block, so rounds
+    // strictly increase.
+    EXPECT_EQ(
+        output[0]["calls"][0]["returnData"],
+        std::format("0x{:064x}", round + 1));
+
+    monad_block_override_vec_destroy(block_override);
+    monad_state_override_vec_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
 // Similar to `eth_simulate_v1_simple_transfer`, but we simulate more than one
 // block with transfers.
 TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
@@ -6644,10 +7006,44 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
         std::format("0x{}", to_hex(expected_bytes));
     EXPECT_EQ(output[1]["calls"][0]["returnData"], expected_return_data);
 
-    ASSERT_EQ(output[1]["calls"][0]["logs"].size(), 1);
-    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["data"], expected_return_data);
-    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["topics"].size(), 0);
-    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["blockNumber"], "0x3");
+    // EIP-7708: both value transfers now emit consensus Transfer logs from
+    // SYSTEM_ADDRESS, so the contract's own LOG0 is bracketed by one for the
+    // top-level transfer (sender -> deployed, 10 MON) and one for the internal
+    // call the contract makes (deployed -> beneficiary, 5 MON).
+    auto const topic_hex = [](bytes32_t const &b) {
+        return std::format("0x{}", to_hex(b));
+    };
+    auto const *const transfer_topic0 =
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+    auto const *const system_address =
+        "0xfffffffffffffffffffffffffffffffffffffffe";
+    auto const expected_full =
+        std::format("0x{}", to_hex(store_be_as<bytes32_t>(WEI_PER_MON * 10)));
+
+    ASSERT_EQ(output[1]["calls"][0]["logs"].size(), 3);
+
+    auto const &transfer_in = output[1]["calls"][0]["logs"][0];
+    EXPECT_EQ(transfer_in["address"], system_address);
+    EXPECT_EQ(transfer_in["data"], expected_full);
+    ASSERT_EQ(transfer_in["topics"].size(), 3);
+    EXPECT_EQ(transfer_in["topics"][0], transfer_topic0);
+    EXPECT_EQ(transfer_in["topics"][1], topic_hex(abi_encode_address(sender)));
+    EXPECT_EQ(
+        transfer_in["topics"][2], topic_hex(abi_encode_address(deployed)));
+
+    EXPECT_EQ(output[1]["calls"][0]["logs"][1]["data"], expected_return_data);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][1]["topics"].size(), 0);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][1]["blockNumber"], "0x3");
+
+    auto const &transfer_out = output[1]["calls"][0]["logs"][2];
+    EXPECT_EQ(transfer_out["address"], system_address);
+    EXPECT_EQ(transfer_out["data"], expected_return_data);
+    ASSERT_EQ(transfer_out["topics"].size(), 3);
+    EXPECT_EQ(transfer_out["topics"][0], transfer_topic0);
+    EXPECT_EQ(
+        transfer_out["topics"][1], topic_hex(abi_encode_address(deployed)));
+    EXPECT_EQ(
+        transfer_out["topics"][2], topic_hex(abi_encode_address(beneficiary)));
 
     // Third simulated block: balance checker confirms beneficiary received 5
     // MON.
@@ -6660,14 +7056,18 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
     monad_executor_destroy(executor);
 }
 
-// Test that native transfer logs are emitted when emit_native_transfer_logs is
-// true. A "forwarder" contract receives value from the sender and forwards
-// half of it to a "sink" contract. With native transfer logging enabled, we
-// expect two Transfer events emitted from the synthetic native-token address
-// (0xeeee...eeee):
+// Test that native transfer logs appear in eth_simulate output. A "forwarder"
+// contract receives value from the sender and forwards half of it to a "sink"
+// contract, producing two Transfer events:
 //
 //   1. sender    -> forwarder  (10 MON)    top-level value transfer
 //   2. forwarder -> sink       (5 MON)     internal CALL value transfer
+//
+// EIP-7708 is active on this chain, so each transfer produces two logs: the
+// consensus one from SYSTEM_ADDRESS, emitted regardless of the flag, and the
+// ERC-7528 synthetic the flag has always produced. Not deduplicated against
+// each other, matching geth -- hence four expected logs, two transfers times
+// two emitters.
 TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
 {
     using namespace monad::vm::utils;
@@ -6820,9 +7220,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
     ASSERT_EQ(output[0]["calls"].size(), 1);
     EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
 
-    // Native transfer log constants.
-    static constexpr Address native_token =
-        0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address;
+    // Native transfer log constants. The two emitters interleave in execution
+    // order, so dropping the ERC-7528 entries leaves the real-block sequence.
     static constexpr bytes32_t transfer_sig =
         0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32;
 
@@ -6833,27 +7232,50 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
     };
 
     auto const &logs = output[0]["calls"][0]["logs"];
-    ASSERT_EQ(logs.size(), 2);
+    ASSERT_EQ(logs.size(), 4);
 
-    // Log 0: sender -> forwarder (10 MON)
+    auto const ten_mon = store_be_as<bytes32_t>(uint256_t{10} * WEI_PER_MON);
+    auto const five_mon = store_be_as<bytes32_t>(uint256_t{5} * WEI_PER_MON);
+
+    // Log 0: sender -> forwarder (10 MON), consensus
     EXPECT_EQ(logs[0]["logIndex"], "0x0");
-    EXPECT_EQ(logs[0]["address"], std::format("0x{}", to_hex(native_token)));
+    EXPECT_EQ(logs[0]["address"], std::format("0x{}", to_hex(SYSTEM_ADDRESS)));
     ASSERT_EQ(logs[0]["topics"].size(), 3);
     EXPECT_EQ(logs[0]["topics"][0], std::format("0x{}", to_hex(transfer_sig)));
     EXPECT_EQ(logs[0]["topics"][1], format_address_topic(sender));
     EXPECT_EQ(logs[0]["topics"][2], format_address_topic(forwarder_addr));
-    auto const ten_mon = store_be_as<bytes32_t>(uint256_t{10} * WEI_PER_MON);
     EXPECT_EQ(logs[0]["data"], std::format("0x{}", to_hex(ten_mon)));
 
-    // Log 1: forwarder -> sink (5 MON)
+    // Log 1: same transfer, eth_simulate synthetic
     EXPECT_EQ(logs[1]["logIndex"], "0x1");
-    EXPECT_EQ(logs[1]["address"], std::format("0x{}", to_hex(native_token)));
+    EXPECT_EQ(
+        logs[1]["address"],
+        std::format("0x{}", to_hex(SIMULATE_NATIVE_TOKEN_LOG_ADDRESS)));
     ASSERT_EQ(logs[1]["topics"].size(), 3);
     EXPECT_EQ(logs[1]["topics"][0], std::format("0x{}", to_hex(transfer_sig)));
-    EXPECT_EQ(logs[1]["topics"][1], format_address_topic(forwarder_addr));
-    EXPECT_EQ(logs[1]["topics"][2], format_address_topic(sink));
-    auto const five_mon = store_be_as<bytes32_t>(uint256_t{5} * WEI_PER_MON);
-    EXPECT_EQ(logs[1]["data"], std::format("0x{}", to_hex(five_mon)));
+    EXPECT_EQ(logs[1]["topics"][1], format_address_topic(sender));
+    EXPECT_EQ(logs[1]["topics"][2], format_address_topic(forwarder_addr));
+    EXPECT_EQ(logs[1]["data"], std::format("0x{}", to_hex(ten_mon)));
+
+    // Log 2: forwarder -> sink (5 MON), consensus
+    EXPECT_EQ(logs[2]["logIndex"], "0x2");
+    EXPECT_EQ(logs[2]["address"], std::format("0x{}", to_hex(SYSTEM_ADDRESS)));
+    ASSERT_EQ(logs[2]["topics"].size(), 3);
+    EXPECT_EQ(logs[2]["topics"][0], std::format("0x{}", to_hex(transfer_sig)));
+    EXPECT_EQ(logs[2]["topics"][1], format_address_topic(forwarder_addr));
+    EXPECT_EQ(logs[2]["topics"][2], format_address_topic(sink));
+    EXPECT_EQ(logs[2]["data"], std::format("0x{}", to_hex(five_mon)));
+
+    // Log 3: same transfer, eth_simulate synthetic
+    EXPECT_EQ(logs[3]["logIndex"], "0x3");
+    EXPECT_EQ(
+        logs[3]["address"],
+        std::format("0x{}", to_hex(SIMULATE_NATIVE_TOKEN_LOG_ADDRESS)));
+    ASSERT_EQ(logs[3]["topics"].size(), 3);
+    EXPECT_EQ(logs[3]["topics"][0], std::format("0x{}", to_hex(transfer_sig)));
+    EXPECT_EQ(logs[3]["topics"][1], format_address_topic(forwarder_addr));
+    EXPECT_EQ(logs[3]["topics"][2], format_address_topic(sink));
+    EXPECT_EQ(logs[3]["data"], std::format("0x{}", to_hex(five_mon)));
 
     monad_block_override_vec_destroy(bo);
     monad_state_override_vec_destroy(so);

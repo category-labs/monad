@@ -23,6 +23,7 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -217,6 +218,9 @@ namespace
         case BlobBaseFee:
             emit.blobbasefee();
             break;
+        case SlotNum:
+            emit.slotnum();
+            break;
         case Pop:
             emit.pop();
             break;
@@ -262,6 +266,17 @@ namespace
         case Swap:
             emit.swap(instr.index());
             break;
+        case DupN:
+            emit.dup(eip8024_decode_single(instr.index()));
+            break;
+        case SwapN:
+            emit.swap(eip8024_decode_single(instr.index()));
+            break;
+        case Exchange: {
+            auto const [n, m] = eip8024_decode_pair(instr.index());
+            emit.exchange(n, m);
+            break;
+        }
         case Log:
             switch (instr.index()) {
             case 0:

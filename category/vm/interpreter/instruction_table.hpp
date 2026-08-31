@@ -145,10 +145,25 @@
             if constexpr (monad_vm_ci.stack_increase > 0) {                    \
                 static constexpr auto monad_vm_delta =                         \
                     monad_vm_ci.stack_increase - monad_vm_ci.min_stack;        \
-                static constexpr auto monad_vm_max = 1024 - monad_vm_delta;    \
-                if constexpr (monad_vm_max < 1024) {                           \
+                /* `top > bottom + (1024 - d)` and `top >= bottom + (1025 -    \
+                 * d)` are the same predicate, and the second is one           \
+                 * instruction cheaper at the delta that matters. Every        \
+                 * opcode in category/vm/evm/opcodes.hpp with a positive       \
+                 * delta has it EXACTLY 1 -- 65 of them, none larger -- so     \
+                 * the constant is 1024 slots = 32768 bytes at every emitted   \
+                 * site, and 32768 is `lui rd,0x8` on its own. The 1023 form   \
+                 * needs `lui` + `addi -32`. evmone's bound is already in      \
+                 * this form, which is why its check is three instructions     \
+                 * and ours was four.                                          \
+                 *                                                             \
+                 * `stack_bottom + 1024` is `&stack_ptr[1023]`, the last slot  \
+                 * of the 1024-element buffer, so no out-of-bounds pointer is  \
+                 * formed. Nothing is elided: the same comparison decides. */  \
+                static constexpr auto monad_vm_limit =                         \
+                    1025 - monad_vm_delta;                                     \
+                if constexpr (monad_vm_limit <= 1024) {                        \
                     if (MONAD_UNLIKELY(                                        \
-                            monad_vm_top > stack_bottom + monad_vm_max)) {     \
+                            monad_vm_top >= stack_bottom + monad_vm_limit)) {  \
                         MONAD_VM_MUST_TAIL return ctx.exit(Error);             \
                     }                                                          \
                 }                                                              \
@@ -194,7 +209,7 @@
      ((REQ).min_required == 0 ||                                               \
       (stack_top) >= (stack_bottom) + (REQ).min_required) &&                   \
      ((REQ).max_growth == 0 ||                                                 \
-      (stack_top) <= (stack_bottom) + (1024 - (REQ).max_growth)))
+      (stack_top) < (stack_bottom) + (1025 - (REQ).max_growth)))
 
 #define MONAD_VM_NEXT_PUSH(OP)                                                 \
     do {                                                                       \

@@ -33,6 +33,11 @@
 #include <variant>
 #include <vector>
 
+#if defined(MONAD_ZKVM_WIDE_MEMORY_SIZE) && defined(__x86_64__)
+    #error "MONAD_ZKVM_WIDE_MEMORY_SIZE is a guest-only layout: it moves \
+the Memory fields that context.S and the x86 emitter read at fixed offsets."
+#endif
+
 namespace monad::vm::runtime
 {
     enum class StatusCode : uint64_t
@@ -92,12 +97,21 @@ namespace monad::vm::runtime
         }
     };
 
+    // Wider size/capacity fields reduce ZisK's sub-word access costs.
+    // The x86 JIT and context.S require the 32-bit layout, enforced by the
+    // #error above.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+    using memory_size_t = uint64_t;
+#else
+    using memory_size_t = uint32_t;
+#endif
+
     struct Memory
     {
         // Size of the memory region for current call frame:
-        uint32_t size;
+        memory_size_t size;
         // Capacity of the memory region for current call frame:
-        uint32_t capacity;
+        memory_size_t capacity;
         // Start of memory region for current call frame:
         uint8_t *data;
         // Current accumulated memory cost for current call frame:
@@ -194,7 +208,7 @@ namespace monad::vm::runtime
             // to fail:
             MONAD_ASSERT(x <= Bin<30>::upper);
 
-            return Bin<30>::unsafe_from(static_cast<uint32_t>(x));
+            return Bin<30>::unsafe_from(static_cast<Bin<30>::rep>(x));
         }
 
         [[gnu::always_inline]]
@@ -350,7 +364,8 @@ namespace monad::vm::runtime
                     !is_bounded_by_bits<Memory::offset_bits>(offset))) {
                 exit(StatusCode::OutOfGas);
             }
-            return Memory::Offset::unsafe_from(static_cast<uint32_t>(offset));
+            return Memory::Offset::unsafe_from(
+                static_cast<Memory::Offset::rep>(offset));
         }
 
         template <Traits traits>
@@ -398,14 +413,27 @@ namespace monad::vm::runtime
         copy_result_data();
     };
 
+    // Keep memory sizes and offsets at the same representation width.
+    static_assert(std::is_same_v<memory_size_t, Memory::Offset::rep>);
+
     // Update context.S accordingly if these offsets change:
     static_assert(offsetof(Context, gas_remaining) == 16);
     static_assert(offsetof(Context, memory) == 264);
+    // Preserve contiguous fields in both layouts, retaining the offsets
+    // used by context.S and the JIT on x86.
     static_assert(offsetof(Memory, size) == 0);
-    static_assert(offsetof(Memory, capacity) == 4);
-    static_assert(offsetof(Memory, data) == 8);
-    static_assert(offsetof(Memory, cost) == 16);
-    static_assert(offsetof(Memory, data_handle) == 24);
+    static_assert(
+        offsetof(Memory, capacity) ==
+        offsetof(Memory, size) + sizeof(Memory::size));
+    static_assert(
+        offsetof(Memory, data) ==
+        offsetof(Memory, capacity) + sizeof(Memory::capacity));
+    static_assert(
+        offsetof(Memory, cost) ==
+        offsetof(Memory, data) + sizeof(Memory::data));
+    static_assert(
+        offsetof(Memory, data_handle) ==
+        offsetof(Memory, cost) + sizeof(Memory::cost));
 
     constexpr auto context_offset_gas_remaining =
         offsetof(Context, gas_remaining);

@@ -23,14 +23,23 @@
 
 namespace monad::vm::runtime
 {
-    /// Binary `N`-bit integer type with underlying type `uint32_t`
+    /// N-bit integer (N <= 32), stored in 64 bits with
+    /// MONAD_ZKVM_WIDE_MEMORY_SIZE and 32 bits otherwise.
     template <size_t N>
         requires(N <= 32)
     class Bin
     {
     public:
+        // Keep storage, constructors and accessors as wide as Memory::size
+        // to avoid repeated zero-extension during offset comparisons.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+        using rep = uint64_t;
+#else
+        using rep = uint32_t;
+#endif
+
         [[gnu::always_inline]]
-        static constexpr Bin unsafe_from(uint32_t const x) noexcept
+        static constexpr Bin unsafe_from(rep const x) noexcept
         {
             return Bin(x);
         }
@@ -67,20 +76,20 @@ namespace monad::vm::runtime
         }
 
         [[gnu::always_inline]]
-        constexpr uint32_t operator*() const noexcept
+        constexpr rep operator*() const noexcept
         {
             return value_;
         }
 
     private:
         [[gnu::always_inline]]
-        constexpr explicit Bin(uint32_t const x) noexcept
+        constexpr explicit Bin(rep const x) noexcept
             : value_{x}
         {
             MONAD_DEBUG_ASSERT(x < (1ULL << N));
         }
 
-        uint32_t value_;
+        rep value_;
     };
 
     template <uint32_t x>

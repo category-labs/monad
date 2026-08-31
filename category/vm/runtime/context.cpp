@@ -39,8 +39,15 @@
 
 using namespace monad::vm::runtime;
 
+// The x86 JIT calls monad_vm_runtime_increase_capacity with a 32-bit Bin
+// argument. Preserve that ABI; the guest has no JIT and may use a wider Bin.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+static_assert(sizeof(Bin<31>) == sizeof(Bin<31>::rep));
+static_assert(alignof(Bin<31>) == alignof(Bin<31>::rep));
+#else
 static_assert(sizeof(Bin<31>) == sizeof(uint32_t));
 static_assert(alignof(Bin<31>) == alignof(uint32_t));
+#endif
 static_assert(std::is_standard_layout_v<Bin<31>>);
 
 extern "C" void monad_vm_runtime_increase_capacity(

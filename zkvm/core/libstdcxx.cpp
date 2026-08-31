@@ -108,7 +108,19 @@ namespace std
         zkvm_halt(1);
     }
 
-    // Pulled in via std::function
+    // Wider buckets make array allocation emit these failure paths.
+    // Halt instead of throwing: the guest does not support exceptions.
+    [[noreturn]] void __throw_bad_alloc()
+    {
+        zkvm_halt(1);
+    }
+
+    [[noreturn]] void __throw_bad_array_new_length()
+    {
+        zkvm_halt(1);
+    }
+
+    // Exception paths referenced by std::function.
     [[noreturn]] void __throw_bad_function_call()
     {
         zkvm_halt(1);

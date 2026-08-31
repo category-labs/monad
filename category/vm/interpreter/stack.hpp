@@ -46,11 +46,13 @@
             break;                                                             \
         }                                                                      \
                                                                                \
-        auto const stack_size = (stack_top + (SHIFT)) - stack_bottom;          \
-        MONAD_DEBUG_ASSERT(stack_size <= 1024);                                \
+        /* Compare against pointer bounds: addition costs less than            \
+         * subtracting pointers on ZisK. */                                    \
+        uint256_t const *const stack_at = (stack_top) + (SHIFT);               \
+        MONAD_DEBUG_ASSERT(stack_at - stack_bottom <= 1024);                   \
                                                                                \
         if constexpr (info.min_stack > 0) {                                    \
-            if (MONAD_UNLIKELY(stack_size < info.min_stack)) {                 \
+            if (MONAD_UNLIKELY(stack_at < stack_bottom + info.min_stack)) {    \
                 EXIT(Error);                                                   \
             }                                                                  \
         }                                                                      \
@@ -58,15 +60,19 @@
         if constexpr (info.stack_increase > 0) {                               \
             static constexpr auto delta =                                      \
                 info.stack_increase - info.min_stack;                          \
-            static constexpr auto max_safe_size = 1024 - delta;                \
+            /* Reuse the cached limit to avoid rebuilding it or subtracting    \
+             * pointers. For growing opcodes, delta == 1, so the adjustment    \
+             * limit - 1024 is zero. */                                        \
+            static constexpr auto limit = 1025 - delta;                        \
                                                                                \
             /* We only need to emit the overflow check if this instruction     \
              * could actually cause an overflow; if the instruction could only \
              * leave the stack with >1024 elements if it _began_ with >1024,   \
              * then we assume that the input stack was valid and elide the     \
              * check. */                                                       \
-            if constexpr (max_safe_size < 1024) {                              \
-                if (MONAD_UNLIKELY(stack_size > max_safe_size)) {              \
+            if constexpr (limit <= 1024) {                                     \
+                if (MONAD_UNLIKELY(                                            \
+                        stack_at >= ctx.stack_limit + (limit - 1024))) {       \
                     EXIT(Error);                                               \
                 }                                                              \
             }                                                                  \

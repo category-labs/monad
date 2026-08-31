@@ -1911,9 +1911,19 @@ namespace monad::vm::interpreter
             b[i] = t;
         }
 #else
-        auto const top = stack_top->to_avx();
+        // A plain temporary, not the AVX type. Exchanging two 32-byte words needs three copies --
+        // save, move down, restore -- and that is what this emits. The round trip through to_avx()
+        // and back emitted FOUR: measured on block 25815100, every one of the sixteen swap<N>
+        // instantiations ran exactly 4.00 dma_xmemcpy an entry against dup<N>'s 1.00, and the extra
+        // one is frame-slot to frame-slot inside our own stack, the AVX conversion having
+        // materialised two 32-byte slots instead of one.
+        //
+        // NOT the lane exchange the SP1 arm uses: that was measured on ZisK at +0.9-1.8 % steps and
+        // is refuted (FINDINGS 161). Four 8-byte pairs cost more here than one 32-byte DMA copy,
+        // which is exactly the opposite of the rv32 case above.
+        uint256_t const top = *stack_top;
         *stack_top = *(stack_top - N);
-        *(stack_top - N) = uint256_t{top};
+        *(stack_top - N) = top;
 #endif
 
         MONAD_VM_NEXT(SWAP1 + (N - 1));

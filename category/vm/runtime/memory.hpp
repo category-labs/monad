@@ -25,12 +25,12 @@
 
 namespace monad::vm::runtime
 {
+    // Load 32 bytes at a validated offset; [offset, offset + 32) must already
+    // be within memory.size.
     template <Traits traits>
-    inline void
-    mload(Context *ctx, uint256_t *result_ptr, uint256_t const *offset_ptr)
+    [[gnu::always_inline]] inline void
+    mload_at(Context *ctx, uint256_t *result_ptr, Memory::Offset const offset)
     {
-        auto const offset = ctx->get_memory_offset(*offset_ptr);
-        ctx->expand_memory<traits>(offset + bin<32>);
 #if defined(MONAD_ZKVM_ZISK)
         // Load four words directly to avoid a 32-byte DMA copy to the stack.
         // Big-endian order puts the first word in the highest result limb.
@@ -49,6 +49,15 @@ namespace monad::vm::runtime
 #else
         *result_ptr = load_be_unsafe<uint256_t>(ctx->memory.data + *offset);
 #endif
+    }
+
+    template <Traits traits>
+    inline void
+    mload(Context *ctx, uint256_t *result_ptr, uint256_t const *offset_ptr)
+    {
+        auto const offset = ctx->get_memory_offset(*offset_ptr);
+        ctx->expand_memory<traits>(offset + bin<32>);
+        mload_at<traits>(ctx, result_ptr, offset);
     }
 
     template <Traits traits>

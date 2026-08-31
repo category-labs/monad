@@ -59,6 +59,9 @@ namespace monad::vm::interpreter
     void execute(
         runtime::Context &ctx, Intercode const &analysis, uint8_t *stack_ptr)
     {
+        // Cache the last valid stack slot: stack_bottom + 1024.
+        ctx.stack_limit = reinterpret_cast<uint256_t *>(stack_ptr) + 1023;
+
 #if defined(MONAD_ZKVM_ZISK)
         // Set fixed parameters once per execution and rebind the output pointer
         // to this Context's buffer, even if the Context was copied.

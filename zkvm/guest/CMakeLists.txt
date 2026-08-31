@@ -57,7 +57,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             message(FATAL_ERROR
                 "MONAD_ZKVM_OFFICIAL_PROFILE is a ZisK-only build profile")
         endif()
-        foreach(_required MONAD_ZKVM_ZISK_DMA MONAD_ZKVM_TABLE_ARG MONAD_ZKVM_FUSE)
+        # NO_DIRTY_ACCOUNTS and NO_MERGE_CONSTRAINTS are here rather than left to the caller for
+        # the same reason as the rest: an official artifact must not be able to silently omit a
+        # measured lever. Both remove work whose only readers are outside the guest -- the state
+        # tracer this file excludes, and the can_merge the sequential path does not call.
+        foreach(_required MONAD_ZKVM_ZISK_DMA MONAD_ZKVM_TABLE_ARG MONAD_ZKVM_FUSE
+                          MONAD_ZKVM_NO_DIRTY_ACCOUNTS MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
             if(DEFINED ${_required} AND NOT ${_required})
                 message(FATAL_ERROR
                     "${_required}=OFF contradicts MONAD_ZKVM_OFFICIAL_PROFILE=ON")
@@ -70,6 +75,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         endif()
         set(MONAD_ZKVM_KECCAKF_MEMO ON CACHE BOOL
             "required by the official ZisK profile" FORCE)
+        # CHECK_SEQUENTIAL_MERGE is already forbidden here, which is also what keeps it from
+        # colliding with the NO_MERGE_CONSTRAINTS forced on just above.
         if(MONAD_ZKVM_KECCAK_SITES OR MONAD_ZKVM_SELFTEST
            OR MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
             message(FATAL_ERROR

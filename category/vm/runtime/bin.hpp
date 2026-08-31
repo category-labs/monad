@@ -29,8 +29,21 @@ namespace monad::vm::runtime
     class Bin
     {
     public:
+        // The representation. 64-bit under MONAD_ZKVM_WIDE_MEMORY_SIZE, where it
+        // has to travel with Memory::size: a 64-bit `size` compared against a
+        // 32-bit offset makes the offset side a zero-extension at every
+        // comparison, and it is `operator*` returning narrow that causes it --
+        // one `srl 32` on every MLOAD, MSTORE and SHA3 at 56 cells apiece.
+        // Widening the storage alone does not help, because the accessor
+        // narrows the value straight back.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+        using rep = uint64_t;
+#else
+        using rep = uint32_t;
+#endif
+
         [[gnu::always_inline]]
-        static constexpr Bin unsafe_from(uint32_t const x) noexcept
+        static constexpr Bin unsafe_from(rep const x) noexcept
         {
             return Bin(x);
         }
@@ -67,20 +80,20 @@ namespace monad::vm::runtime
         }
 
         [[gnu::always_inline]]
-        constexpr uint32_t operator*() const noexcept
+        constexpr rep operator*() const noexcept
         {
             return value_;
         }
 
     private:
         [[gnu::always_inline]]
-        constexpr explicit Bin(uint32_t const x) noexcept
+        constexpr explicit Bin(rep const x) noexcept
             : value_{x}
         {
             MONAD_DEBUG_ASSERT(x < (1ULL << N));
         }
 
-        uint32_t value_;
+        rep value_;
     };
 
     template <uint32_t x>

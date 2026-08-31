@@ -39,8 +39,17 @@
 
 using namespace monad::vm::runtime;
 
+// The size is an ABI fact: monad_vm_runtime_increase_capacity below is called
+// from generated x86 code, which passes Bin<30> by value as a 32-bit register
+// argument. The guest emits no such code, and widens the representation to keep
+// its memory-size arithmetic native.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+static_assert(sizeof(Bin<31>) == sizeof(uint64_t));
+static_assert(alignof(Bin<31>) == alignof(uint64_t));
+#else
 static_assert(sizeof(Bin<31>) == sizeof(uint32_t));
 static_assert(alignof(Bin<31>) == alignof(uint32_t));
+#endif
 static_assert(std::is_standard_layout_v<Bin<31>>);
 
 extern "C" void monad_vm_runtime_increase_capacity(

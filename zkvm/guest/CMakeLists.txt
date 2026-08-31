@@ -63,7 +63,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         # tracer this file excludes, and the can_merge the sequential path does not call.
         foreach(_required MONAD_ZKVM_ZISK_DMA MONAD_ZKVM_TABLE_ARG MONAD_ZKVM_FUSE
                           MONAD_ZKVM_NO_DIRTY_ACCOUNTS MONAD_ZKVM_NO_MERGE_CONSTRAINTS
-                          MONAD_ZKVM_VARCODE_CACHE)
+                          MONAD_ZKVM_VARCODE_CACHE MONAD_ZKVM_WIDE_MEMORY_SIZE)
             if(DEFINED ${_required} AND NOT ${_required})
                 message(FATAL_ERROR
                     "${_required}=OFF contradicts MONAD_ZKVM_OFFICIAL_PROFILE=ON")
@@ -188,6 +188,20 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
            "cache varcodes by code hash in the guest's VM shadow" OFF)
     if(MONAD_ZKVM_VARCODE_CACHE)
         add_compile_definitions(MONAD_ZKVM_VARCODE_CACHE)
+    endif()
+
+    # Lever: Memory::size and ::capacity are uint32_t, and every memory-touching opcode reads
+    # size. ZisK charges a 4-byte read 122 cells against 17 for an aligned 8-byte one, and makes
+    # `*offset + 32` an add_w at 60 rather than a native add at 15.3.
+    #
+    # Declared only here, and only in this branch, because the layout is the guest's alone: the
+    # native x86 compiler emits a 32-bit read of the field at a fixed offset and context.S
+    # addresses the same offsets by hand. The guest drops every .S and never builds that emitter.
+    # types.hpp turns a leak into a build failure rather than a silent half-word read.
+    option(MONAD_ZKVM_WIDE_MEMORY_SIZE
+           "64-bit Memory::size and ::capacity, which x86 cannot take" OFF)
+    if(MONAD_ZKVM_WIDE_MEMORY_SIZE)
+        add_compile_definitions(MONAD_ZKVM_WIDE_MEMORY_SIZE)
     endif()
 
     option(MONAD_ZKVM_NO_MERGE_CONSTRAINTS

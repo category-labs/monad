@@ -39,6 +39,21 @@ bool init_trusted_setup();
 
 inline constexpr Address ripemd_address{3};
 
+// Ethereum and Monad precompiles have 18 leading zero bytes.
+// A matching address still needs to be resolved.
+[[gnu::always_inline]] inline bool
+may_be_precompile(evmc_address const &address) noexcept
+{
+    // Read the 18 bytes in 3 chunks, and test them all at the same time with |
+    std::uint64_t w0;
+    std::uint64_t w1;
+    std::uint16_t w2;
+    __builtin_memcpy(&w0, address.bytes, 8);
+    __builtin_memcpy(&w1, address.bytes + 8, 8);
+    __builtin_memcpy(&w2, address.bytes + 16, 2);
+    return (w0 | w1 | static_cast<std::uint64_t>(w2)) == 0;
+}
+
 template <Traits traits>
 bool is_eth_precompile(Address const &);
 

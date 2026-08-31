@@ -8,6 +8,7 @@ import hashlib
 import json
 import pathlib
 import re
+import shlex
 import subprocess
 
 
@@ -82,6 +83,48 @@ def check_flags(flags: str, where: str) -> None:
         fail(f"{where} ends with -mtune={mtune!s}, expected {EXPECTED_MTUNE}")
 
 
+def check_dirty_accounts(build_dir: pathlib.Path, repo: pathlib.Path) -> None:
+    option = "MONAD_ZKVM_NO_DIRTY_ACCOUNTS"
+    if cache_values(build_dir / "CMakeCache.txt").get(option) != "ON":
+        fail(f"matching CMake cache did not enable {option}")
+    database = build_dir / "compile_commands.json"
+    if not database.is_file():
+        fail("compile_commands.json is missing; reconfigure the official build")
+    commands = json.loads(database.read_text())
+    required = {
+        (repo / "category/execution/ethereum/state3/state.cpp").resolve(),
+        (repo / "zkvm/guest/execute_witness.cpp").resolve(),
+    }
+    tracer = (repo / "category/execution/ethereum/trace/state_tracer.cpp").resolve()
+    seen = set()
+    for entry in commands:
+        source = (pathlib.Path(entry["directory"]) / entry["file"]).resolve()
+        if source == tracer:
+            fail("state_tracer.cpp is compiled despite disabled dirty-account lists")
+        if source not in required:
+            continue
+        args = entry.get("arguments")
+        if args is None:
+            args = shlex.split(entry["command"])
+        # Respect later -D/-U overrides, including their separated spellings.
+        enabled = False
+        tokens = iter(args)
+        for arg in tokens:
+            if arg in ("-D", "-U"):
+                arg += next(tokens, "")
+            if arg == "-U" + option:
+                enabled = False
+            elif arg.startswith("-D"):
+                name, _, value = arg[2:].partition("=")
+                if name == option:
+                    enabled = value in ("", "1")
+        if not enabled:
+            fail(f"{source.name} compile command does not enable {option}")
+        seen.add(source)
+    if seen != required:
+        fail("compile commands are missing State or the guest entry point")
+
+
 def check_runtime(repo: pathlib.Path) -> dict[str, str]:
     lock_path = repo / "zkvm/zisk/Cargo.lock"
     packages: list[dict[str, str]] = []
@@ -151,7 +194,7 @@ def main() -> int:
         fail("generated profile has the wrong runtime revision")
     features = str(profile.get("features_csv", "")).split(",")
     expected = ["baseline", "zisk-dma", "keccakf-memo", "wide-memory-size",
-                "varcode-cache"]
+                "varcode-cache", "no-dirty-accounts"]
     if features != expected:
         fail(f"unexpected feature set: {features!r}")
 
@@ -180,7 +223,8 @@ def main() -> int:
     guest_flags = list(build_dir.glob("**/monad-zkvm-guest-zisk.dir/flags.make"))
     if len(guest_flags) != 1:
         fail(f"expected one guest flags.make, found {len(guest_flags)}")
-    check_flags(guest_flags[0].read_text(errors="replace"), "guest compile command")
+    guest_text = guest_flags[0].read_text(errors="replace")
+    check_flags(guest_text, "guest compile command")
 
     # nodelete.hpp asserts at every call site that the operator delete family does
     # nothing, so an official artifact must not hold a version of them that does
@@ -204,6 +248,10 @@ def main() -> int:
                 "nodelete.hpp declares this a no-op and libstdcxx.cpp no longer "
                 f"defines it so: {sig}"
             )
+    # Check generated build inputs, not a source filename in the CMake text.
+    # State separately asserts that reserve-balance tracking is inactive.
+    check_dirty_accounts(build_dir, repo)
+
     nm = compiler.with_name(compiler.name.replace("g++", "nm"))
     if not nm.exists():
         fail(f"nm not found beside compiler: {nm}")

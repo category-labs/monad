@@ -409,7 +409,13 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
         }
         auto *const b = reinterpret_cast<unsigned char *>(st);
         b[len] = 0x01;
-        b[RATE - 1] |= 0x80;
+        // The high pad bit lands at byte RATE-1 = 135, which is byte 7 of lane
+        // 16 -- a constant position, so the lane takes it whole. A byte
+        // read-modify-write is 193 cells against 35 for the aligned pair, and
+        // this runs once per call. `len` is not constant and stays a byte
+        // store: a variable lane index costs the shift it would save.
+        static_assert(RATE - 1 == 16 * 8 + 7);
+        st[16] |= uint64_t{0x80} << 56;
     }
     else {
         alignas(8) unsigned char last[RATE] = {};

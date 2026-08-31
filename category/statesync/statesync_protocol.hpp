@@ -34,7 +34,7 @@ struct StatesyncProtocol
         unsigned char const *, uint64_t) const = 0;
 };
 
-struct StatesyncProtocolV1 : StatesyncProtocol
+struct StatesyncProtocolV1_2 : StatesyncProtocol
 {
     virtual void send_request(
         monad_statesync_client_context *, uint64_t prefix) const override;

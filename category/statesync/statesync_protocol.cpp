@@ -161,7 +161,7 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-void StatesyncProtocolV1::send_request(
+void StatesyncProtocolV1_2::send_request(
     monad_statesync_client_context *const ctx, uint64_t const prefix) const
 {
     auto const tgrt = ctx->tgrt.number;
@@ -180,7 +180,7 @@ void StatesyncProtocolV1::send_request(
             .old_target = old_target});
 }
 
-bool StatesyncProtocolV1::handle_upsert(
+bool StatesyncProtocolV1_2::handle_upsert(
     monad_statesync_client_context *const ctx, monad_sync_type const type,
     unsigned char const *const val, uint64_t const size) const
 {

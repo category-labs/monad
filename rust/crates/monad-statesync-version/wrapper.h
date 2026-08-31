@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -14,14 +14,3 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/statesync/statesync_version.h>
-
-uint32_t monad_statesync_version()
-{
-    return MONAD_STATESYNC_VERSION;
-}
-
-bool monad_statesync_client_compatible(uint32_t const version)
-{
-    return version >= MONAD_STATESYNC_VERSION_MIN &&
-           version <= MONAD_STATESYNC_VERSION;
-}

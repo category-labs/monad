@@ -58,7 +58,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     option(MONAD_ZKVM_OFFICIAL_PROFILE
            "require the reference ZisK compiler and build options" OFF)
     set(_monad_zkvm_official_features
-        "baseline" "zisk-dma" "zisk-clean-byte-stores" "keccakf-memo")
+        "baseline" "zisk-dma" "zisk-clean-byte-stores" "keccakf-memo"
+        "wide-memory-size")
     set(_monad_zkvm_runtime_version "1.3.2-alpha")
     set(_monad_zkvm_runtime_revision
         "1e22630bb7e143c30705a1603ed87cfd3da8c6ec")
@@ -72,7 +73,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # Add each new required option here and its feature to the list above.
     set(_monad_zkvm_required_options
         MONAD_ZKVM_ZISK_DMA MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES
-        MONAD_ZKVM_KECCAKF_MEMO)
+        MONAD_ZKVM_KECCAKF_MEMO MONAD_ZKVM_WIDE_MEMORY_SIZE)
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
         foreach(_option ${_monad_zkvm_required_options})
             if(DEFINED ${_option} AND NOT ${_option})
@@ -123,6 +124,15 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         " -funroll-loops")
 
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
+
+    # Widen memory sizes and offsets to reduce ZisK's sub-word operation costs.
+    # Guest-only: context.S and the x86 JIT require the original 32-bit layout.
+    # types.hpp rejects this option on x86.
+    option(MONAD_ZKVM_WIDE_MEMORY_SIZE
+           "64-bit Memory::size and ::capacity, which x86 cannot take" OFF)
+    if(MONAD_ZKVM_WIDE_MEMORY_SIZE)
+        add_compile_definitions(MONAD_ZKVM_WIDE_MEMORY_SIZE)
+    endif()
 
     # Expose the backend as a compile definition, for the places where the two
     # diverge: the Keccak-f[1600] precompile is reached by a different entry on

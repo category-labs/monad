@@ -48,6 +48,7 @@ EXPECTED_FEATURES = [
     "zisk-dma",
     "zisk-clean-byte-stores",
     "keccakf-memo",
+    "wide-memory-size",
 ]
 EXPECTED_MARCH = "rv64ima_zicsr_zba_zbb_zbs_zbkb"
 EXPECTED_MTUNE = "size"

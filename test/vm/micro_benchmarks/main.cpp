@@ -19,6 +19,7 @@
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -340,7 +341,7 @@ static void init_execute_state(
     auto icode = make_shared_intercode(raw_code);
     Code code{{code_hash, std::move(icode)}};
 
-    static constexpr uint256_t BALANCE = exp(uint256_t{10}, uint256_t{18});
+    static constexpr uint256_t BALANCE = 1_ether;
     Account code_account{
         .balance = BALANCE,
         .code_hash = code_hash,

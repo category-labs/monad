@@ -18,6 +18,7 @@
 #include <category/core/address.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
+#include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/monad/staking/config.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -37,8 +38,8 @@ inline constexpr Address STAKING_CA{0x1000};
 inline constexpr Address PRIORITY_FEE_DIST_ADDRESS{
     0xfee5fee5fee5fee5fee5fee5fee5fee5fee5fee5_address};
 
-// 1e18 constant
-inline constexpr uint256_t MON{1000000000000000000_u256};
+// MON has the same 18-decimal denomination as ether
+inline constexpr uint256_t MON{ETHER};
 
 // accumulator precision
 inline constexpr uint256_t UNIT_BIAS{
@@ -49,7 +50,7 @@ namespace limits
 {
     constexpr uint256_t dust_threshold()
     {
-        return 1000000000; // 1e9
+        return 1_gwei;
     }
 
     constexpr uint256_t max_commission()

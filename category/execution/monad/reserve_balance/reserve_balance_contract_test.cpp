@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
@@ -213,7 +214,7 @@ void add_revert_check(std::vector<uint8_t> &code)
 
 void add_spend_code(uint64_t const value_mon, std::vector<uint8_t> &code)
 {
-    uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
+    uint256_t const value = uint256_t{value_mon} * ETHER;
     auto const *v = as_bytes(value);
     code.append_range(std::initializer_list<uint8_t>{
         PUSH0, PUSH0, PUSH0, PUSH0, PUSH32, v[31], v[30], v[29], v[28], v[27],
@@ -244,7 +245,7 @@ void run_dipped_into_reserve_test(
     uint64_t const initial_balance_mon, uint64_t const value_mon,
     Outcome outcome)
 {
-    static constexpr uint256_t GAS_FEE = 4 * 1000000000000000000ULL;
+    static constexpr uint256_t GAS_FEE = 4_ether;
     static constexpr uint256_t BASE_FEE_PER_GAS = 10;
     static constexpr uint256_t GAS_LIMIT = GAS_FEE / BASE_FEE_PER_GAS;
     static constexpr Address BUNDLER{0xbbbbbbbb};
@@ -276,7 +277,7 @@ void run_dipped_into_reserve_test(
     {
         State state{bs, Incarnation{0, 0}};
         uint256_t const initial_balance =
-            uint256_t{initial_balance_mon} * 1000000000000000000ULL;
+            uint256_t{initial_balance_mon} * ETHER;
         state.add_to_balance(EOA, initial_balance);
 
         // set EOA to delegate to SCW

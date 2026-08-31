@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/core/fmt/transaction_fmt.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/dispatch_transaction.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
@@ -78,8 +79,7 @@ void process_withdrawal(
     if (withdrawals.has_value()) {
         for (auto const &withdrawal : withdrawals.value()) {
             state.add_to_balance(
-                withdrawal.recipient,
-                uint256_t{withdrawal.amount} * uint256_t{1'000'000'000u});
+                withdrawal.recipient, uint256_t{withdrawal.amount} * GWEI);
         }
     }
 }

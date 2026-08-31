@@ -33,6 +33,7 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
@@ -2464,8 +2465,8 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
     uint64_t const initial_balance_mon = 10;
     uint64_t const gas_fee_mon = 2;
     uint64_t const value_mon = 1;
-    uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
-    uint256_t const gas_fee = uint256_t{gas_fee_mon} * 1000000000000000000ULL;
+    uint256_t const value = uint256_t{value_mon} * ETHER;
+    uint256_t const gas_fee = uint256_t{gas_fee_mon} * ETHER;
     uint256_t const gas_limit_ = gas_fee / BASE_FEE_PER_GAS;
     ASSERT_TRUE((gas_fee % BASE_FEE_PER_GAS) == 0);
     ASSERT_TRUE(gas_limit_ <= std::numeric_limits<uint64_t>::max());
@@ -2492,8 +2493,7 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
 
     Address const sender = recover_sender(tx).value();
     Account const sender_acc{
-        .balance = uint256_t{initial_balance_mon} * 1000000000000000000ULL,
-        .nonce = 1};
+        .balance = uint256_t{initial_balance_mon} * ETHER, .nonce = 1};
     {
         // Initial state.
         StateDeltas deltas{
@@ -4010,7 +4010,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance)
                  .account =
                      {std::nullopt,
                       Account{
-                          .balance = uint256_t{1'000'000'000'000'000'000} * 100,
+                          .balance = 100_ether,
                           .code_hash = NULL_HASH,
                           .nonce = 0}}}},
             {delegated_eoa,
@@ -4018,7 +4018,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance)
                  .account =
                      {std::nullopt,
                       Account{
-                          .balance = uint256_t{1'000'000'000'000'000'000} * 7,
+                          .balance = 7_ether,
                           .code_hash = delegated_eoa_code_hash,
                           .nonce = 0}}}},
             {contract,
@@ -4044,7 +4044,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance)
 
     Transaction const tx{
         .gas_limit = 200000u,
-        .value = uint256_t{1'000'000'000'000'000'000} * 3,
+        .value = 3_ether,
         .to = delegated_eoa,
     };
 
@@ -4110,7 +4110,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_emptying)
                  .account =
                      {std::nullopt,
                       Account{
-                          .balance = uint256_t{1'000'000'000'000'000'000} * 12,
+                          .balance = 12_ether,
                           .code_hash = NULL_HASH,
                           .nonce = 0}}}},
             {recipient,
@@ -4125,7 +4125,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_emptying)
 
     Transaction const tx{
         .gas_limit = 200000u,
-        .value = uint256_t{1'000'000'000'000'000'000} * 5,
+        .value = 5_ether,
         .to = recipient,
     };
 
@@ -4210,7 +4210,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_assertion)
                  .account =
                      {std::nullopt,
                       Account{
-                          .balance = uint256_t{1'000'000'000'000'000'000} * 12,
+                          .balance = 12_ether,
                           .code_hash = delegated_eoa_code_hash,
                           .nonce = 0}}}},
             {contract,
@@ -5035,10 +5035,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{100} *
-                                     uint256_t{1'000'000'000'000'000'000ULL},
-                          .nonce = 0}}}},
+                      Account{.balance = 100_ether, .nonce = 0}}}},
             {recipient,
              StateDelta{
                  .account =
@@ -5134,9 +5131,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
     // should remain unchanged.
     auto sender_account = tdb.read_account(sender);
     ASSERT_TRUE(sender_account.has_value());
-    EXPECT_EQ(
-        sender_account->balance,
-        uint256_t{100} * uint256_t{1'000'000'000'000'000'000ULL});
+    EXPECT_EQ(sender_account->balance, 100_ether);
 
     monad_block_override_vec_destroy(block_overrides);
     monad_state_override_vec_destroy(state_overrides);
@@ -5159,7 +5154,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_single_call_block_255)
     // One simple EIP-1559 transfer: send 1 ETH to 0xdeadbeef...
     Transaction const tx{
         .gas_limit = 200'000'000,
-        .value = uint256_t{1'000'000'000'000'000'000ULL}, // 1 ETH
+        .value = 1_ether,
         .to = 0xdeadbeef00000000000000000000000000000000_address,
         .type = TransactionType::eip1559,
     };
@@ -5286,7 +5281,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_synthetic_gap)
     // One simple EIP-1559 transfer: send 1 ETH to 0xdeadbeef...
     Transaction const tx{
         .gas_limit = 200'000'000,
-        .value = uint256_t{1'000'000'000'000'000'000ULL}, // 1 ETH
+        .value = 1_ether,
         .to = 0xdeadbeef00000000000000000000000000000000_address,
         .type = TransactionType::eip1559,
     };
@@ -5484,7 +5479,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
 
     Transaction const tx{
         .gas_limit = 200'000'000,
-        .value = uint256_t{1'000'000'000'000'000'000ULL},
+        .value = 1_ether,
         .to = 0xdeadbeef00000000000000000000000000000000_address,
         .type = TransactionType::eip1559,
     };
@@ -5600,8 +5595,6 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
 //          sender_a, cannot dip)
 TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
 {
-    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
-
     static constexpr Address sender_a =
         0x00000000000000000000000000000000deadbeef_address;
     static constexpr Address sender_b =
@@ -5615,17 +5608,12 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
             {sender_a,
              StateDelta{
                  .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = uint256_t{11} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                     {std::nullopt, Account{.balance = 11_ether, .nonce = 0}}}},
             {sender_b,
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{100} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                      Account{.balance = 100_ether, .nonce = 0}}}},
             {recipient,
              StateDelta{
                  .account =
@@ -5650,7 +5638,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
     // tx0: sender_a sends 2 MON (dips into reserve, allowed as first tx)
     Transaction const tx_dip{
         .gas_limit = 200'000'000,
-        .value = uint256_t{2} * WEI_PER_MON,
+        .value = 2_ether,
         .to = recipient,
     };
     // tx1: sender_b sends 1 wei (plenty of balance, no dipping)
@@ -5663,7 +5651,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
     // reverts)
     Transaction const tx_repeat{
         .gas_limit = 200'000'000,
-        .value = uint256_t{1} * WEI_PER_MON,
+        .value = 1_ether,
         .to = recipient,
     };
 
@@ -5762,8 +5750,6 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
 //              parent/grandparent contexts)
 TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
 {
-    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
-
     // sender_x is the address recovered from the known test AuthorizationEntry
     // (see test_transaction.cpp). Using this address lets us also test the
     // authority path without needing to generate new ECDSA signatures.
@@ -5782,7 +5768,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
                  .account =
                      {std::nullopt,
                       Account{
-                          .balance = uint256_t{11} * WEI_PER_MON,
+                          .balance = 11_ether,
                           // Nonce starts at 1 so the EIP-7702 auth entry
                           // (nonce=0) won't match during execution, preventing
                           // the delegation designation from being set on
@@ -5794,9 +5780,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{100} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                      Account{.balance = 100_ether, .nonce = 0}}}},
             {recipient,
              StateDelta{
                  .account =
@@ -5826,7 +5810,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
 
         Transaction const tx_dip{
             .gas_limit = 200'000'000,
-            .value = uint256_t{2} * WEI_PER_MON,
+            .value = 2_ether,
             .to = recipient,
         };
         auto const encoded_tx_dip =
@@ -5954,7 +5938,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
         };
         Transaction const tx_dip{
             .gas_limit = 200'000'000,
-            .value = uint256_t{2} * WEI_PER_MON,
+            .value = 2_ether,
             .to = recipient,
         };
 
@@ -6288,8 +6272,6 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
 //            refund)
 TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
 {
-    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
-
     static constexpr Address account_a =
         0x00000000000000000000000000000000aaaaaa01_address;
     static constexpr Address account_b =
@@ -6304,16 +6286,12 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{100} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                      Account{.balance = 100_ether, .nonce = 0}}}},
             {account_b,
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{100} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                      Account{.balance = 100_ether, .nonce = 0}}}},
             {recipient,
              StateDelta{
                  .account =
@@ -6330,12 +6308,12 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
     // Transactions.
     Transaction const tx_a_sends_60{
         .gas_limit = 200'000'000,
-        .value = uint256_t{60} * WEI_PER_MON,
+        .value = 60_ether,
         .to = recipient,
     };
     Transaction const tx_b_refunds_a{
         .gas_limit = 200'000'000,
-        .value = uint256_t{50} * WEI_PER_MON,
+        .value = 50_ether,
         .to = account_a,
     };
 
@@ -6444,8 +6422,6 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
 {
     using namespace monad::vm::utils;
 
-    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
-
     static constexpr Address sender =
         0x00000000000000000000000000000000deadbeef_address;
     static constexpr Address beneficiary =
@@ -6510,9 +6486,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{100} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                      Account{.balance = 100_ether, .nonce = 0}}}},
             {beneficiary,
              StateDelta{
                  .account =
@@ -6536,7 +6510,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
     // Block 2: call deployed contract with 10 MON.
     Transaction const call_tx{
         .gas_limit = 200'000'000,
-        .value = uint256_t{10} * WEI_PER_MON,
+        .value = 10_ether,
         .to = deployed,
     };
 
@@ -6638,7 +6612,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
     ASSERT_EQ(output[1]["calls"].size(), 1);
     EXPECT_EQ(output[1]["calls"][0]["status"], "0x1");
 
-    auto const expected_half = uint256_t{5} * WEI_PER_MON;
+    auto const expected_half = 5_ether;
     auto const expected_bytes = store_be_as<bytes32_t>(expected_half);
     auto const expected_return_data =
         std::format("0x{}", to_hex(expected_bytes));
@@ -6671,8 +6645,6 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
 TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
 {
     using namespace monad::vm::utils;
-
-    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
 
     static constexpr Address sender =
         0x00000000000000000000000000000000deadbeef_address;
@@ -6731,9 +6703,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{100} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                      Account{.balance = 100_ether, .nonce = 0}}}},
             {sink,
              StateDelta{
                  .account =
@@ -6765,7 +6735,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
     // Single tx: sender calls forwarder with 10 MON.
     Transaction const tx{
         .gas_limit = 200'000'000,
-        .value = uint256_t{10} * WEI_PER_MON,
+        .value = 10_ether,
         .to = forwarder_addr,
     };
 
@@ -6842,7 +6812,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
     EXPECT_EQ(logs[0]["topics"][0], std::format("0x{}", to_hex(transfer_sig)));
     EXPECT_EQ(logs[0]["topics"][1], format_address_topic(sender));
     EXPECT_EQ(logs[0]["topics"][2], format_address_topic(forwarder_addr));
-    auto const ten_mon = store_be_as<bytes32_t>(uint256_t{10} * WEI_PER_MON);
+    auto const ten_mon = store_be_as<bytes32_t>(10_ether);
     EXPECT_EQ(logs[0]["data"], std::format("0x{}", to_hex(ten_mon)));
 
     // Log 1: forwarder -> sink (5 MON)
@@ -6852,7 +6822,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
     EXPECT_EQ(logs[1]["topics"][0], std::format("0x{}", to_hex(transfer_sig)));
     EXPECT_EQ(logs[1]["topics"][1], format_address_topic(forwarder_addr));
     EXPECT_EQ(logs[1]["topics"][2], format_address_topic(sink));
-    auto const five_mon = store_be_as<bytes32_t>(uint256_t{5} * WEI_PER_MON);
+    auto const five_mon = store_be_as<bytes32_t>(5_ether);
     EXPECT_EQ(logs[1]["data"], std::format("0x{}", to_hex(five_mon)));
 
     monad_block_override_vec_destroy(bo);
@@ -6864,8 +6834,6 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
 TYPED_TEST(EthCallEncodingFixture, eth_simulate_v1_time_travel)
 {
     using namespace monad::vm::utils;
-
-    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
 
     static constexpr Address sender =
         0x00000000000000000000000000000000deadbeef_address;
@@ -6891,9 +6859,7 @@ TYPED_TEST(EthCallEncodingFixture, eth_simulate_v1_time_travel)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{100} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                      Account{.balance = 100_ether, .nonce = 0}}}},
             {time_contract,
              StateDelta{
                  .account =
@@ -6989,8 +6955,6 @@ TYPED_TEST(EthCallEncodingFixture, eth_simulate_v1_time_travel)
 // during an eth_simulateV1 call.
 TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
 {
-    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
-
     static constexpr Address sender =
         0x00000000000000000000000000000000deadbeef_address;
     static constexpr Address blockhash_contract =
@@ -7023,9 +6987,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{100} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                      Account{.balance = 100_ether, .nonce = 0}}}},
             {blockhash_contract,
              StateDelta{
                  .account =
@@ -7147,8 +7109,6 @@ TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
 // execute successfully when encoded in mixed envelope formats.
 TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
 {
-    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
-
     static constexpr Address sender =
         0x00000000000000000000000000000000deadbeef_address;
     static constexpr Address recipient =
@@ -7161,9 +7121,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{100} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                      Account{.balance = 100_ether, .nonce = 0}}}},
             {recipient,
              StateDelta{
                  .account =
@@ -7253,9 +7211,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
 
     auto sender_account = tdb.read_account(sender);
     ASSERT_TRUE(sender_account.has_value());
-    EXPECT_EQ(
-        sender_account->balance,
-        uint256_t{100} * uint256_t{1'000'000'000'000'000'000ULL});
+    EXPECT_EQ(sender_account->balance, 100_ether);
 
     monad_block_override_vec_destroy(block_overrides);
     monad_state_override_vec_destroy(state_overrides);
@@ -7266,8 +7222,6 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
 // type-1 (EIP-2930) and type-2 (EIP-1559) both execute successfully.
 TEST_F(EthCallFixture, eth_simulate_v1_typed_transactions_2930_and_1559)
 {
-    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
-
     static constexpr Address sender =
         0x00000000000000000000000000000000deadbeef_address;
     static constexpr Address recipient =
@@ -7280,9 +7234,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transactions_2930_and_1559)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{100} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                      Account{.balance = 100_ether, .nonce = 0}}}},
             {recipient,
              StateDelta{
                  .account =
@@ -7371,9 +7323,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transactions_2930_and_1559)
 
     auto sender_account = tdb.read_account(sender);
     ASSERT_TRUE(sender_account.has_value());
-    EXPECT_EQ(
-        sender_account->balance,
-        uint256_t{100} * uint256_t{1'000'000'000'000'000'000ULL});
+    EXPECT_EQ(sender_account->balance, 100_ether);
 
     monad_block_override_vec_destroy(block_overrides);
     monad_state_override_vec_destroy(state_overrides);
@@ -7384,8 +7334,6 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transactions_2930_and_1559)
 // checks that it executes successfully.
 TEST_F(EthCallFixture, eth_simulate_v1_typed_transaction_7702)
 {
-    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
-
     static constexpr Address sender =
         0x00000000000000000000000000000000deadbeef_address;
     static constexpr Address recipient =
@@ -7398,9 +7346,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transaction_7702)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{100} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                      Account{.balance = 100_ether, .nonce = 0}}}},
             {recipient,
              StateDelta{
                  .account =
@@ -7502,9 +7448,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transaction_7702)
 
     auto sender_account = tdb.read_account(sender);
     ASSERT_TRUE(sender_account.has_value());
-    EXPECT_EQ(
-        sender_account->balance,
-        uint256_t{100} * uint256_t{1'000'000'000'000'000'000ULL});
+    EXPECT_EQ(sender_account->balance, 100_ether);
 
     monad_block_override_vec_destroy(block_overrides);
     monad_state_override_vec_destroy(state_overrides);
@@ -7515,8 +7459,6 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transaction_7702)
 // supported format: legacy, EIP-2930, EIP-1559, and EIP-7702.
 TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
 {
-    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
-
     static constexpr Address sender =
         0x00000000000000000000000000000000deadbeef_address;
     static constexpr Address recipient =
@@ -7529,9 +7471,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{100} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                      Account{.balance = 100_ether, .nonce = 0}}}},
             {recipient,
              StateDelta{
                  .account =
@@ -7665,9 +7605,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
 
     auto sender_account = tdb.read_account(sender);
     ASSERT_TRUE(sender_account.has_value());
-    EXPECT_EQ(
-        sender_account->balance,
-        uint256_t{100} * uint256_t{1'000'000'000'000'000'000ULL});
+    EXPECT_EQ(sender_account->balance, 100_ether);
 
     monad_block_override_vec_destroy(block_overrides);
     monad_state_override_vec_destroy(state_overrides);
@@ -7681,8 +7619,6 @@ TEST_F(
     EthCallFixture,
     eth_simulate_v1_typed_transactions_2930_and_1559_across_blocks)
 {
-    static constexpr auto WEI_PER_MON = uint256_t{1'000'000'000'000'000'000ULL};
-
     static constexpr Address sender =
         0x00000000000000000000000000000000deadbeef_address;
     static constexpr Address recipient =
@@ -7695,9 +7631,7 @@ TEST_F(
              StateDelta{
                  .account =
                      {std::nullopt,
-                      Account{
-                          .balance = uint256_t{100} * WEI_PER_MON,
-                          .nonce = 0}}}},
+                      Account{.balance = 100_ether, .nonce = 0}}}},
             {recipient,
              StateDelta{
                  .account =
@@ -7787,9 +7721,7 @@ TEST_F(
 
     auto sender_account = tdb.read_account(sender);
     ASSERT_TRUE(sender_account.has_value());
-    EXPECT_EQ(
-        sender_account->balance,
-        uint256_t{100} * uint256_t{1'000'000'000'000'000'000ULL});
+    EXPECT_EQ(sender_account->balance, 100_ether);
 
     monad_block_override_vec_destroy(block_overrides);
     monad_state_override_vec_destroy(state_overrides);

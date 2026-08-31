@@ -54,7 +54,7 @@ TYPED_TEST(MonadTraitsTest, mip11_fork)
 
     {
         State state{bs, Incarnation{0, 0}};
-        state.add_to_balance(from, 1'000'000'000'000'000'000);
+        state.add_to_balance(from, 1_ether);
         bs.merge(state);
     }
 

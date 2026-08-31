@@ -116,15 +116,13 @@
 // Check without changing state; charge the total gas only on success.
 // On failure, per-opcode checks preserve error order and gas accounting.
 // Unneeded stack bounds compile away.
+// Reuse the cached stack limit; the adjustment folds to zero for growth 1.
 #define MONAD_VM_FUSED_OK(REQ)                                                 \
     ((gas_remaining >= (REQ).gas) &&                                           \
      ((REQ).min_required == 0 ||                                               \
       (stack_top) >= (stack_bottom) + (REQ).min_required) &&                   \
      ((REQ).max_growth == 0 ||                                                 \
-      (stack_top) <=                                                           \
-          (stack_bottom) + (static_cast<std::ptrdiff_t>(                       \
-                                runtime::EvmStackAllocatorMeta::size) -        \
-                            (REQ).max_growth)))
+      (stack_top) < ctx.stack_limit + (1 - (REQ).max_growth)))
 
 // Dispatch using OP2, the opcode already read at instr_ptr[1].
 // EQ/ISZERO's stack writes prevent GCC from reusing that load itself;

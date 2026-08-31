@@ -54,7 +54,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     option(MONAD_ZKVM_OFFICIAL_PROFILE
            "build the audited, fail-closed official ZisK guest profile" OFF)
     set(_monad_zkvm_official_features "baseline" "zisk-dma" "keccakf-memo"
-                                      "wide-memory-size" "varcode-cache")
+                                      "wide-memory-size" "varcode-cache"
+                                      "no-dirty-accounts")
     set(_monad_zkvm_runtime_version "1.3.1-alpha")
     set(_monad_zkvm_runtime_revision
         "306a9c934ba4947b1d586d69b67120f8b4c41466")
@@ -69,12 +70,19 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     set(_monad_zkvm_required_levers MONAD_ZKVM_ZISK_DMA
                                     MONAD_ZKVM_KECCAKF_MEMO
                                     MONAD_ZKVM_WIDE_MEMORY_SIZE
-                                    MONAD_ZKVM_VARCODE_CACHE)
+                                    MONAD_ZKVM_VARCODE_CACHE
+                                    MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        # Audit the effective source list and per-source definitions.
+        set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL
+            "required by the official build audit" FORCE)
         foreach(_lever ${_monad_zkvm_required_levers})
             if(DEFINED ${_lever} AND NOT ${_lever})
                 message(FATAL_ERROR
-                    "${_lever}=OFF contradicts MONAD_ZKVM_OFFICIAL_PROFILE=ON")
+                    "${_lever}=OFF contradicts MONAD_ZKVM_OFFICIAL_PROFILE=ON: "
+                    "this lever is required by the official feature set. "
+                    "For an ablation, disable the official profile and "
+                    "configure the other levers explicitly.")
             endif()
             set(${_lever} ON CACHE BOOL
                 "required by the official ZisK profile" FORCE)
@@ -152,6 +160,14 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
            "cache varcodes by code hash in the guest's VM shadow" OFF)
     if(MONAD_ZKVM_VARCODE_CACHE)
         add_compile_definitions(MONAD_ZKVM_VARCODE_CACHE)
+    endif()
+
+    # Omit dirty-account tracking when neither tracing nor reserve-balance
+    # tracking needs it. State rejects active reserve tracking in this mode.
+    option(MONAD_ZKVM_NO_DIRTY_ACCOUNTS
+           "omit dirty-account lists and forbid consumers that require them" OFF)
+    if(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+        add_compile_definitions(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     endif()
 
     # Diagnostic: the guest's per-tx loop is serialized, so it runs transactions through

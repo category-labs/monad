@@ -524,8 +524,16 @@ class OffsetTrie
     struct NodeCacheEntry
     {
         bytes32_t hash;
-        bool hash_valid;
+        // Word-sized flags avoid costly byte accesses on ZisK without
+        // enlarging the padded map entry.
+        uint64_t hash_valid;
+        // Make the map entry 64 bytes so index arithmetic uses shifts
+        // instead of multiplication or division by 48.
+        [[maybe_unused]] uint64_t padding[2];
     };
+
+    // Preserve the power-of-two map entry size used for cheap indexing.
+    static_assert(sizeof(std::pair<NodeId, NodeCacheEntry>) == 64);
 
     ankerl::unordered_dense::map<NodeId, NodeCacheEntry, NodeIdHash> hashes_{};
 

@@ -100,6 +100,28 @@ class ZiskChecks(unittest.TestCase):
             check.check_elf(elf, commit, "riscv-")
 
 
+class DirtyAccountsChecks(unittest.TestCase):
+    def test_effective_definitions_and_excluded_tracer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "CMakeCache.txt").write_text("MONAD_ZKVM_NO_DIRTY_ACCOUNTS:BOOL=ON\n")
+            sources = ["category/execution/ethereum/state3/state.cpp", "zkvm/guest/execute_witness.cpp"]
+            def commands(flags, tracer=False):
+                entries = [{"directory": tmp, "file": src, "arguments": ["g++", *flags]} for src in sources]
+                if tracer:
+                    entries.append({"directory": tmp, "file": "category/execution/ethereum/trace/state_tracer.cpp", "arguments": []})
+                (root / "compile_commands.json").write_text(json.dumps(entries))
+            commands(["-DMONAD_ZKVM_NO_DIRTY_ACCOUNTS=1"])
+            check.check_dirty_accounts(root, root)
+            for flags in (["-DMONAD_ZKVM_NO_DIRTY_ACCOUNTS", "-UMONAD_ZKVM_NO_DIRTY_ACCOUNTS"], ["-D", "MONAD_ZKVM_NO_DIRTY_ACCOUNTS=0"]):
+                commands(flags)
+                with self.assertRaises(ValueError):
+                    check.check_dirty_accounts(root, root)
+            commands(["-DMONAD_ZKVM_NO_DIRTY_ACCOUNTS"], tracer=True)
+            with self.assertRaises(ValueError):
+                check.check_dirty_accounts(root, root)
+
+
 class RustWrapperChecks(unittest.TestCase):
     def test_normalizes_root_metadata_and_build_paths(self):
         wrapper = REPO / "nix/zisk-rustc-wrapper.sh"

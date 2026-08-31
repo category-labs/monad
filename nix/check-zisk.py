@@ -26,6 +26,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shlex
 import subprocess
 
 
@@ -161,6 +162,58 @@ def check_elf(elf, commit, prefix, build_id="none"):
             ))
 
 
+def cache_values(path):
+    values = {}
+    for line in path.read_text().splitlines():
+        match = re.match(r"([^:#/][^:]*):[^=]+=(.*)", line)
+        if match:
+            values[match[1]] = match[2]
+    return values
+
+
+def check_dirty_accounts(build_dir: Path, repo: Path) -> None:
+    option = "MONAD_ZKVM_NO_DIRTY_ACCOUNTS"
+    if cache_values(build_dir / "CMakeCache.txt").get(option) != "ON":
+        fail(f"matching CMake cache did not enable {option}")
+    database = build_dir / "compile_commands.json"
+    if not database.is_file():
+        fail("compile_commands.json is missing; reconfigure the official build")
+    commands = json.loads(database.read_text())
+    required = {
+        (repo / "category/execution/ethereum/state3/state.cpp").resolve(),
+        (repo / "zkvm/guest/execute_witness.cpp").resolve(),
+    }
+    tracer = (repo / "category/execution/ethereum/trace/state_tracer.cpp").resolve()
+    seen = set()
+    for entry in commands:
+        source = (Path(entry["directory"]) / entry["file"]).resolve()
+        if source == tracer:
+            fail("state_tracer.cpp is compiled despite disabled dirty-account lists")
+        if source not in required:
+            continue
+        args = entry.get("arguments")
+        if args is None:
+            args = shlex.split(entry["command"])
+        # Respect later -D/-U overrides, including their separated spellings.
+        enabled = False
+        tokens = iter(args)
+        for arg in tokens:
+            if arg in ("-D", "-U"):
+                arg += next(tokens, "")
+            if arg == "-U" + option:
+                enabled = False
+            elif arg.startswith("-D"):
+                name, _, value = arg[2:].partition("=")
+                if name == option:
+                    enabled = value in ("", "1")
+        if not enabled:
+            fail(f"{source.name} compile command does not enable {option}")
+        seen.add(source)
+    if seen != required:
+        fail("compile commands are missing State or the guest entry point")
+
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True, type=Path)
@@ -169,6 +222,7 @@ def main():
     parser.add_argument("--inputs", type=Path)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--build-id", default="none")
+    parser.add_argument("--build-dir", type=Path)
     args = parser.parse_args()
     if any((args.elf, args.binutils_prefix, args.inputs, args.manifest)) and not all(
         (args.elf, args.binutils_prefix, args.inputs, args.manifest)
@@ -176,6 +230,8 @@ def main():
         parser.error("ELF checking requires --elf, --binutils-prefix, --inputs and --manifest")
     try:
         check_allocator(args.repo)
+        if args.build_dir:
+            check_dirty_accounts(args.build_dir, args.repo)
         if args.elf:
             inputs = json.loads(args.inputs.read_text())
             check_elf(args.elf, inputs["commit"], args.binutils_prefix, args.build_id)

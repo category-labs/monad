@@ -84,11 +84,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     MONAD_ASSERT(node.bytes() == region_end || node.tag() != EMPTY);
     std::vector<uint64_t> node_offsets((blob_.size() + 63) / 64, 0);
 
+    // `child_offset < blob_.size()` followed from `child_offset < node_offset` and was dead. The walk
+    // runs while node.bytes() < region_end, so node_offset < blob_.size() throughout; the one call
+    // after the loop passes node_offset == blob_.size(), where the first test IS the second. One
+    // compare and its branch, on every child of every node in the blob.
     auto const is_valid_offset = [&](NodeId c) {
         uint64_t child_offset = static_cast<uint64_t>(c);
+        MONAD_DEBUG_ASSERT(node_offset <= blob_.size());
         MONAD_ASSERT(
             c == NULL_ID ||
-            (child_offset < node_offset && child_offset < blob_.size() &&
+            (child_offset < node_offset &&
              ((node_offsets[child_offset >> 6] >> (child_offset & 63)) & 1)));
     };
 

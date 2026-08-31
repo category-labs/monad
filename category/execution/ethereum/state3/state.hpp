@@ -54,9 +54,39 @@ class BlockState;
 // A hash set charged 189 steps per insert -- a 20-byte hash plus a probe -- to deduplicate two
 // entries. A linear scan over the same two is a pair of 20-byte compares.
 //
-// Deduplication is NOT optional, and this is the whole reason the type is a set and not a vector:
-// the undo log carries one record per listed address, so a repeated entry would journal the row
-// twice and pop_reject would restore an intermediate value as if it were the pre-frame one.
+// Deduplication is not optional WHILE THE LIST IS READ: a repeated entry would be handed to
+// pop_accept's merge twice. It has nothing to do with the undo log any more -- that carries typed
+// records keyed by row and replays backwards on its own, which is why pop_reject moves this list out
+// and never looks at it. The claim three lines up that pop_reject depends on the deduplication was
+// left behind by the change that introduced typed records; it is not true today.
+//
+// Under MONAD_ZKVM_NO_DIRTY_ACCOUNTS the list is write-only and compiles away. What reads it:
+// pop_accept, to hand the addresses to the PARENT's copy of the same list -- self-referential, so it
+// disappears with the list -- and State::current_frame_dirty_accounts, whose only caller is
+// trace/state_tracer.cpp, which zkvm/guest/CMakeLists.txt excludes from the guest. Neither the
+// accessor nor StateTracer has a symbol in the shipped ELF. pop_reject reads nothing.
+//
+// The flag is declared only in the guest's CMakeLists, so the host keeps the list and its tracer.
+#if defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+
+class DirtyAccounts
+{
+    static constexpr Address const *nothing_ = nullptr;
+
+public:
+    // Kept: emplace's return value said whether the address was new to the frame, and nothing has
+    // read that since typed records replaced the row snapshot.
+    bool emplace(Address const &) { return true; }
+
+    Address const *begin() const { return nothing_; }
+    Address const *end() const { return nothing_; }
+    std::size_t size() const { return 0; }
+    bool empty() const { return true; }
+    std::span<Address const> span() const { return {}; }
+};
+
+#else
+
 class DirtyAccounts
 {
     std::vector<Address> v_{};
@@ -82,6 +112,8 @@ public:
     bool empty() const { return v_.empty(); }
     std::span<Address const> span() const { return v_; }
 };
+
+#endif
 
 class State
 {

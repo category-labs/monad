@@ -136,6 +136,17 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # zkvm/category/core/keccak_sites.hpp. The roots stay at offsets 0/32/64, so ev.sh is unaffected and a
     # reporting run is still a verified run. Exists because ziskemu's call-path grouping misplaced
     # 96 % of the block's duplicate hashes (FINDINGS 134); a counter on the hashing line cannot.
+    # Lever: the per-frame dirty-account list is write-only in the guest, so compile it away.
+    # pop_reject moves it out and never reads it; pop_accept reads it only to fill the parent's copy
+    # of the same list; and its one external reader, trace/state_tracer.cpp, is in this file's own
+    # exclusion list, with no symbol for it or for StateTracer in the shipped ELF. Declared only
+    # here, so the host build keeps both the list and the tracer that uses it.
+    option(MONAD_ZKVM_NO_DIRTY_ACCOUNTS
+           "compile away the per-frame dirty-account list, which the guest never reads" OFF)
+    if(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+        add_compile_definitions(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+    endif()
+
     option(MONAD_ZKVM_KECCAK_SITES "count keccak calls per call site" OFF)
     if(MONAD_ZKVM_KECCAK_SITES)
         add_compile_definitions(MONAD_ZKVM_KECCAK_SITES)

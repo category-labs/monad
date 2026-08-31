@@ -13,9 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# Compute 80% bucket-capacity thresholds with integers to avoid soft-float
-# calls in the guest. From 2^24 buckets, thresholds can differ from float rounding.
-# Generate a guest-only header in the build tree; leave the submodule unchanged.
+# Generate a guest-only header with integer capacity thresholds and 64-bit
+# bucket fields; leave the submodule unchanged. Integer thresholds avoid
+# soft-float calls but can differ from float rounding from 2^24 buckets onward.
 
 function(monad_zkvm_unordered_dense_derive target third_party_dir out_dir)
     set(_src "${third_party_dir}/unordered_dense/include/ankerl/unordered_dense.h")
@@ -51,13 +51,23 @@ function(monad_zkvm_unordered_dense_derive target third_party_dir out_dir)
     set(_to_capacity
         "static_cast<value_idx_type>((static_cast<uint64_t>(m_num_buckets) * 4) / 5)")
 
-    foreach(_pair "_from_shifts;_to_shifts" "_from_capacity;_to_capacity")
+    # ZisK charges less for aligned 64-bit accesses and native index arithmetic
+    # than for 32-bit operations. Buckets grow from 8 to 16 bytes, and
+    # value_idx_type widens with m_value_idx. alignas(8) alone gave no measured
+    # gain: it did not widen the individual loads and stores.
+    set(_from_bucket [==[    uint32_t m_dist_and_fingerprint; // upper 3 byte: distance to original bucket. lower byte: fingerprint from hash
+    uint32_t m_value_idx;            // index into the m_values vector.]==])
+    set(_to_bucket [==[    uint64_t m_dist_and_fingerprint; // upper bits: probe distance; low byte: hash fingerprint
+    uint64_t m_value_idx;            // index into the m_values vector.]==])
+
+    foreach(_pair "_from_shifts;_to_shifts" "_from_capacity;_to_capacity"
+                  "_from_bucket;_to_bucket")
         list(GET _pair 0 _from_var)
         list(GET _pair 1 _to_var)
         string(FIND "${_text}" "${${_from_var}}" _found)
         if(_found EQUAL -1)
             message(FATAL_ERROR
-                "unordered_dense float site not found:\n  ${${_from_var}}\n"
+                "unordered_dense rewrite site not found:\n  ${${_from_var}}\n"
                 "The header changed under ${CMAKE_CURRENT_LIST_FILE}. Re-derive "
                 "the substitution against the new pinned revision.")
         endif()

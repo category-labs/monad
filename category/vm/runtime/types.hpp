@@ -278,6 +278,12 @@ namespace monad::vm::runtime
         // Keep after members whose offsets are used by assembly.
         uint256_t const *stack_limit = nullptr;
 
+#if defined(MONAD_ZKVM_ZISK)
+        // Shared temporary for SWAP1-16: no nested SWAP can occur between
+        // saving and restoring it. Keep last to preserve assembly offsets.
+        uint256_t swap_scratch;
+#endif
+
         [[gnu::always_inline]]
         constexpr void deduct_gas(int64_t const gas) noexcept
         {

@@ -156,6 +156,10 @@ namespace monad::vm::interpreter
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t *const stack_ptr)
     {
+        // Cache the one-past stack limit for comparisons with
+        // StackTop::next_slot().
+        ctx.stack_limit = stack_ptr + runtime::EvmStackAllocatorMeta::size;
+
 #if defined(MONAD_ZKVM_ZISK)
         // The carry-ins are fixed; zisk_add256 sets the pointers on every call.
         ctx.add256_params.cin = 0;

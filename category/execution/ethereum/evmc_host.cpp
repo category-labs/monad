@@ -197,6 +197,11 @@ void EvmcHostBase::emit_log(
     MONAD_TRY
     {
         Receipt::Log log{.data = {data, data_size}, .address = address};
+        // Reserved: a LOG4 pushes four topics into an empty vector, which
+        // reallocates at one, two and four and copies the run forward each
+        // time -- three allocations and six topic copies for a count that is
+        // an argument.
+        log.topics.reserve(num_topics);
         for (auto i = 0u; i < num_topics; ++i) {
             log.topics.push_back({topics[i]});
         }

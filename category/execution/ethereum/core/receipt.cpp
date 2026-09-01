@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 
 #include <cstdint>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -49,6 +50,16 @@ void Receipt::add_log(Receipt::Log const &log)
 {
     logs.push_back(log);
     populate_bloom(bloom, log);
+}
+
+// Both callers hand a log over for good and write std::move at the call.
+// Without this overload that move binds to the const& above and becomes a deep
+// copy of the data and of the topics -- two allocations and the whole payload
+// copied, for a log the caller has already given up.
+void Receipt::add_log(Receipt::Log &&log)
+{
+    populate_bloom(bloom, log);
+    logs.push_back(std::move(log));
 }
 
 MONAD_NAMESPACE_END

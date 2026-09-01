@@ -43,6 +43,7 @@ struct Receipt
     std::vector<Log> logs{}; // R_l
 
     void add_log(Receipt::Log const &);
+    void add_log(Receipt::Log &&);
 
     friend bool operator==(Receipt const &, Receipt const &) = default;
 };

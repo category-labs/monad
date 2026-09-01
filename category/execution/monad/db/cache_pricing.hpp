@@ -57,12 +57,16 @@ enum class PricingKind : uint8_t
     storage = 1,
 };
 
-constexpr bool
+// experiment knob: MONAD_MBC_C overrides the hysteresis interval (the
+// consensus version is the compile-time constant)
+uint64_t cache_pricing_update_interval();
+
+inline bool
 cache_pricing_bump_due(uint64_t const last_access, uint64_t const block)
 {
     // 0 = never accessed, always due
     return last_access == 0 ||
-           block - last_access >= CACHE_PRICING_UPDATE_INTERVAL;
+           block - last_access >= cache_pricing_update_interval();
 }
 
 // Histogram leaf key under CACHE_PRICING_NIBBLE: kind byte + block big endian.

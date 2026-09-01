@@ -17,8 +17,19 @@
 #include <category/execution/monad/db/cache_pricing.hpp>
 
 #include <algorithm>
+#include <cstdlib>
 
 MONAD_NAMESPACE_BEGIN
+
+uint64_t cache_pricing_update_interval()
+{
+    static uint64_t const interval = [] {
+        char const *const env = std::getenv("MONAD_MBC_C");
+        return env != nullptr ? std::strtoull(env, nullptr, 10)
+                              : CACHE_PRICING_UPDATE_INTERVAL;
+    }();
+    return interval;
+}
 
 byte_string
 cache_pricing_bucket_key(PricingKind const kind, uint64_t const block)

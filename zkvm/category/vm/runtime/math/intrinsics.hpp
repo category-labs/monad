@@ -55,17 +55,28 @@ namespace monad::vm::runtime
         // and its words are the little-endian limb order the syscall wants, so
         // staging them into locals buys nothing and costs eight loads and twelve
         // stores a call.
-        alignas(8) static constexpr uint64_t zero[4] = {0, 0, 0, 0};
-        alignas(8) uint64_t lo[4];
-        alignas(8) uint64_t hi[4];
         static_assert(alignof(uint256_t) >= 8);
         static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
-        ZiskArith256Params p{
-            reinterpret_cast<uint64_t const *>(a_ptr),
-            reinterpret_cast<uint64_t const *>(b_ptr),
-            zero,
-            lo,
-            hi};
+        // The params block is built once, not per call. Three of its five
+        // fields never change -- the zero addend and the two result buffers --
+        // and the syscall needs the block's address, so a stack-local one
+        // stores all five every time. Static, they are two stores.
+        //
+        // Safe because this is the only writer (the guest is single-threaded)
+        // and nothing runs between filling the block and reading the result,
+        // so no call can be in flight while another fills it.
+        alignas(8) static constexpr uint64_t zero[4] = {0, 0, 0, 0};
+        alignas(8) static uint64_t lo[4];
+        alignas(8) static uint64_t hi[4];
+        // The two nullptrs are what keep the initialiser constant, and that is
+        // the point of writing a and b separately instead of in the braces.
+        // Braced with a_ptr and b_ptr the initialiser depends on the arguments,
+        // so the static is initialised on first use and gcc guards it: not just
+        // the one-time __cxa_guard_acquire, but a guard byte loaded, an acquire
+        // `fence r,rw` and a branch on EVERY entry.
+        static ZiskArith256Params p{nullptr, nullptr, zero, lo, hi};
+        p.a = reinterpret_cast<uint64_t const *>(a_ptr);
+        p.b = reinterpret_cast<uint64_t const *>(b_ptr);
         syscall_arith256(&p);
         // Through a local and not straight into result_ptr: the interface allows
         // result to be one of the operands, and the precompile's write order is

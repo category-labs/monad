@@ -133,7 +133,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_ZISK)
 
         # Cache Keccak-f states using an executor-supplied index.
-        # Uses 100 MiB of .bss; OFF removes the table and lookup path.
+        # Uses 128 MiB of .bss; OFF removes the table and lookup path.
         option(MONAD_ZKVM_KECCAKF_MEMO "memoise Keccak-f via the ZisK executor index" ON)
         if(NOT MONAD_ZKVM_KECCAKF_MEMO)
             add_compile_definitions(MONAD_ZKVM_KECCAKF_MEMO=0)

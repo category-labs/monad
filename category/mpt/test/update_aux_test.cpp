@@ -514,9 +514,12 @@ TEST(update_aux_test, migrates_monad007_layout_to_monad008)
     uint32_t const test_cnv_chunk_id_1 = 2;
     uint32_t const test_free_list_begin = 5;
     uint32_t const test_free_list_end = 7;
-    uint32_t const test_chunk_count = static_cast<uint32_t>(
-        pool.chunks(monad::async::storage_pool::seq) +
-        pool.chunks(monad::async::storage_pool::cnv));
+    // chunk_info[] indexes sequential chunks only (see
+    // DbMetadataContext::reconcile_chunk_count_), so the synthetic buffer's
+    // chunk_info_count must match the pool's seq chunk count exactly, not
+    // seq + cnv.
+    uint32_t const test_chunk_count =
+        static_cast<uint32_t>(pool.chunks(monad::async::storage_pool::seq));
 
     auto &cnv_chunk = pool.chunk(monad::async::storage_pool::cnv, 0);
     auto const [write_fd, base_offset] = cnv_chunk.write_fd(0);

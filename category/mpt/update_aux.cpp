@@ -476,9 +476,14 @@ void UpdateAux::init(AsyncIO &io_, std::optional<uint64_t> const history_len)
             }
         }
     }
-    // If the pool has changed since we configured the metadata, this will
-    // fail
-    MONAD_ASSERT(metadata_ctx_->main()->chunk_info_count == io->chunk_count());
+    // If the pool has changed since we configured the metadata, this will fail
+    MONAD_ASSERT_PRINTF(
+        metadata_ctx_->main()->chunk_info_count == io->chunk_count(),
+        "DB metadata describes %u sequential chunks but the storage pool "
+        "provides %zu. If storage was added, by attaching a device or by "
+        "extending one in place, run 'monad-mpt --rescan-devices'.",
+        unsigned(metadata_ctx_->main()->chunk_info_count),
+        io->chunk_count());
 }
 
 void UpdateAux::reset_node_writers()

@@ -682,6 +682,17 @@ wide_mul(words_t<M> const &x, words_t<N> const &y) noexcept
 }
 
 #ifdef MONAD_ZKVM_ZISK
+// ZisK's 256-bit multiply-add (CSR 0x801): dh·2^256 + dl = a·b + c, four
+// little-endian 64-bit limbs each.
+struct ZiskArith256Params
+{
+    uint64_t const *a;
+    uint64_t const *b;
+    uint64_t const *c;
+    uint64_t *dl;
+    uint64_t *dh;
+};
+
 // ZisK ABI for d = (a * b + c) mod module. Each operand has four 64-bit
 // limbs, least significant first. Callers must handle module == 0.
 struct ZiskArith256ModParams

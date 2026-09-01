@@ -198,6 +198,16 @@ public:
                 return;
             }
         }
+        // Floored on the first insert. This is the path that takes it: the
+        // indexed one above only runs once idx_ exists, by which point the
+        // capacity is past the floor. A container that starts empty pays every
+        // doubling in full here -- operator delete is a no-op and the
+        // allocator never reuses a block -- and most touched accounts hold a
+        // handful of slots, so a floor is cheaper than sizing at construction
+        // for the accounts that hold none.
+        if (MONAD_UNLIKELY(v_.capacity() == 0)) {
+            v_.reserve(8);
+        }
         v_.emplace_back(key, value);
 #ifdef MONAD_ZKVM_ZISK
         if (v_.size() >= index_from) {
@@ -504,6 +514,9 @@ public:
 
     void insert(bytes32_t const &k, bytes32_t const &v)
     {
+        if (MONAD_UNLIKELY(v_.capacity() == 0)) {
+            v_.reserve(8);
+        }
         v_.emplace_back(k, v);
 #ifdef MONAD_ZKVM_ZISK
         if (idx_) {

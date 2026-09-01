@@ -102,6 +102,10 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // below is deliberately below that: over-reserving costs arena, which this
     // guest has, and under-reserving costs the rehash this is here to avoid.
     hashes_.reserve(blob_.size() / 256);
+    // Same reasoning for the overlay: it takes one entry per node the commit
+    // creates and starts empty, and a rehash recomputes every hash it holds.
+    // A floor rather than an estimate -- the count is not known here.
+    overlay_.reserve(1024);
 
     // `child_offset < blob_.size()` followed from `child_offset < node_offset` and was dead. The walk
     // runs while node.bytes() < region_end, so node_offset < blob_.size() throughout; the one call

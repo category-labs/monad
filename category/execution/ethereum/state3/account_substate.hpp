@@ -268,6 +268,14 @@ public:
                 return EVMC_ACCESS_WARM;
             }
         }
+        // Floored on the first insert. This is the path that takes it: the
+        // indexed one above only runs once aidx_ exists, by which point the
+        // capacity is past the floor anyway. A container that starts empty
+        // pays every doubling in full here -- operator delete is a no-op and
+        // the allocator never reuses a block.
+        if (MONAD_UNLIKELY(accessed_storage_.capacity() == 0)) {
+            accessed_storage_.reserve(8);
+        }
         accessed_storage_.push_back(key);
 #ifdef MONAD_ZKVM_ZISK
         if (accessed_storage_.size() >= index_from) {

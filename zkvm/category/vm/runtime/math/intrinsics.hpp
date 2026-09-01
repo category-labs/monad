@@ -20,12 +20,66 @@
 
 #include <category/core/runtime/uint256.hpp>
 
+#ifdef MONAD_ZKVM_ZISK
+namespace monad::vm::runtime
+{
+    // ZisK's arith256 precompile computes `a * b + c = dh | dl` in one step, and
+    // the EVM's MUL is exactly its low half with c = 0. The C++ operator is Comba
+    // over four limbs instead: measured on block 25552051, 138,035 MULs at 82.0
+    // steps each -- ten hardware multiplies at 97 cells, twenty adds and six carry
+    // propagations apiece -- against the precompile's 1,440 cells and one call.
+    //
+    // The same door the SP1 arm already uses for MUL through sys_bigint. ZisK's was
+    // reached only by div_rem256_c, for the division check, and by MULMOD through
+    // arith256_mod: on that block arith256 ran 11,507 times against the MUL
+    // opcode's 138,035.
+    //
+    // Here and not in uint256_t::operator*, which is also the multiply behind gas
+    // and memory-expansion arithmetic where one operand is a small constant and the
+    // software path folds away. This routes the EVM opcode and nothing else.
+    struct ZiskArith256Params
+    {
+        uint64_t const *a;
+        uint64_t const *b;
+        uint64_t const *c;
+        uint64_t *dl;
+        uint64_t *dh;
+    };
+
+    extern "C" void syscall_arith256(ZiskArith256Params *params);
+}
+#endif
+
 namespace monad::vm::runtime
 {
     inline void
     mul(uint256_t *result_ptr, uint256_t const *a_ptr,
         uint256_t const *b_ptr) noexcept
     {
+#ifdef MONAD_ZKVM_ZISK
+        // The operands are read where they lie. A uint256_t is at least 8-aligned
+        // and its words are the little-endian limb order the syscall wants, so
+        // staging them into locals buys nothing and costs eight loads and twelve
+        // stores a call -- measured at 582 cells of MEMORY per MUL, which was most
+        // of what the precompile saved.
+        alignas(8) static constexpr uint64_t zero[4] = {0, 0, 0, 0};
+        alignas(8) uint64_t lo[4];
+        alignas(8) uint64_t hi[4];
+        static_assert(alignof(uint256_t) >= 8);
+        static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
+        ZiskArith256Params p{
+            reinterpret_cast<uint64_t const *>(a_ptr),
+            reinterpret_cast<uint64_t const *>(b_ptr),
+            zero,
+            lo,
+            hi};
+        syscall_arith256(&p);
+        // Through a local and not straight into result_ptr: the interface allows
+        // result to be one of the operands, and the precompile's write order is
+        // not ours to assume.
+        *result_ptr = uint256_t{lo[0], lo[1], lo[2], lo[3]};
+#else
         *result_ptr = *a_ptr * *b_ptr;
+#endif
     }
 }

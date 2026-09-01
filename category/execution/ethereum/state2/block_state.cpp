@@ -92,11 +92,31 @@ bytes32_t BlockState::read_storage(
     Address const &address, Incarnation const incarnation, bytes32_t const &key)
 {
     bool read_storage = false;
+#ifdef MONAD_ZKVM_ZISK
+    // One lookup, held across the database read, rather than a const accessor
+    // for the delta and a second, mutable one for the insert.
+    //
+    // Sound on the guest for three reasons and none of them holds on the node.
+    // An accessor here is a plain iterator into a segmented map, whose elements
+    // do not move on insert. `db_` is a PartialTrieDb, which reads the witness
+    // trie and has no path back to state_. And the guest is single-threaded, so
+    // nothing else can touch the row while the iterator is live.
+    //
+    // On the node an accessor is a TBB lock and the release between the halves
+    // is the point: holding a WRITE lock across db_.read_storage() would
+    // serialise every thread that touches this address. That is why this is a
+    // divergence and not a rewrite.
+    StateDeltas::accessor it{};
+    MONAD_ASSERT(state_);
+    MONAD_ASSERT(state_->find(it, address));
+#endif
     // block state
     {
+#ifndef MONAD_ZKVM_ZISK
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_);
         MONAD_ASSERT(state_->find(it, address));
+#endif
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return {};
@@ -122,8 +142,13 @@ bytes32_t BlockState::read_storage(
                 !secondary_db_ || secondary_db_->read_storage(
                                       address, incarnation, key) == result);
         }
+#ifndef MONAD_ZKVM_ZISK
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
+#endif
+        // Re-checked on the guest too, on the accessor already held: the
+        // database read cannot have changed the row, so this cannot fire there,
+        // and keeping it makes the two builds take the same branches.
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return result;

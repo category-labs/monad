@@ -1717,6 +1717,41 @@ namespace monad::vm::interpreter
                 }
                 MONAD_VM_FUSED_NEXT(3, 0);
             }
+            // PUSH1 <a> PUSH1 <b>. Measured on block 25815042: of the 231,204
+            // dispatches the unfused PUSH1 path makes, 72,270 -- 31.3 %, and the
+            // largest handler-to-handler transition anywhere in the guest -- go
+            // straight back to PUSH1. It is one of the two pairs the note above
+            // leaves out, and the reason given there is the 64-bit mask: PUSH1 is
+            // 0x60, outside it. So this does not widen the mask. It sits on the
+            // mask's MISS path, where a byte compare against a constant costs the
+            // two instructions POP+POP pays for the same shape, and only the
+            // 231,204 that did not already fuse see it.
+            //
+            // Its own aggregate, not the one the four above share: two pushes need
+            // room for two and 6 gas, where PUSH1+<binop> needs one operand and 3.
+            // Order is the unfused order -- this PUSH1's gas and room, then the
+            // second's against the stack this one leaves -- so an out-of-gas on the
+            // second halts exactly where the unfused pair would.
+            //
+            // instr_ptr[3] is the second immediate, and reading it past the end of
+            // the code is what the generic path already relies on: the code is
+            // padded with zeros, and a truncated PUSH1 pushes zero either way.
+            if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH1)) {
+                static constexpr auto monad_vm_reqp =
+                    fused_requirements<traits, PUSH1, PUSH1>();
+                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_reqp))) {
+                    gas_remaining -= monad_vm_reqp.gas;
+                }
+                else {
+                    MONAD_VM_CHECK(PUSH1);
+                    MONAD_VM_CHECK_AT(PUSH1, 1);
+                }
+                interpreter::push(
+                    stack_top, uint256_t{*(instr_ptr + 1)});
+                interpreter::push(
+                    stack_top + 1, uint256_t{*(instr_ptr + 3)});
+                MONAD_VM_FUSED_NEXT(4, 2);
+            }
         }
 #endif
         MONAD_VM_CHECK(PUSH0 + N);

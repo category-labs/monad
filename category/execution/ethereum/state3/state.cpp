@@ -265,6 +265,20 @@ State::State(
     , relaxed_validation_{relaxed_validation}
     , rb_{this}
 {
+    // Reserve initial capacity to avoid repeated growth for each transaction.
+    // The guest's bump allocator does not reclaim old allocations.
+    // Containers can still grow beyond this floor.
+    constexpr size_t FLOOR = 16;
+    original_.reserve(FLOOR);
+    current_.reserve(FLOOR);
+    undo_.reserve(FLOOR);
+    undo_accts_.reserve(FLOOR);
+    undo_words_.reserve(FLOOR);
+    undo_u64_.reserve(FLOOR);
+    undo_slots_.reserve(FLOOR);
+    undo_marks_.reserve(FLOOR);
+    logs_.reserve(FLOOR);
+    log_marks_.reserve(FLOOR);
 }
 
 State::Map<Address, OriginalAccountState> const &State::original() const

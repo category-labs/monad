@@ -32,6 +32,10 @@
 
 MONAD_NAMESPACE_BEGIN
 
+#ifdef MONAD_ZKVM_ZISK
+struct StateDelta;
+#endif
+
 class State;
 class BlockState;
 
@@ -344,6 +348,12 @@ public:
     // Original slot values; replaces the inherited storage_, left unused here.
     PrestateStorage prestate_storage_{};
 
+#ifdef MONAD_ZKVM_ZISK
+    // Reuse the block entry for slot reads and merge, without an address lookup.
+    // Block entries are never moved or erased.
+    StateDelta *delta_{nullptr};
+#endif
+
     explicit OriginalAccountState(std::optional<Account> &&account)
         : AccountState(std::move(account))
     {
@@ -353,6 +363,11 @@ public:
         : AccountState{account}
     {
     }
+
+#ifdef MONAD_ZKVM_ZISK
+    // Copy the block's current account and retain a pointer to its delta.
+    explicit OriginalAccountState(StateDelta &delta);
+#endif
 
     [[nodiscard]] bool validate_exact_balance() const
     {

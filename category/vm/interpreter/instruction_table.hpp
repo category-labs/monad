@@ -116,7 +116,70 @@
 inline constexpr std::uint8_t MONAD_VM_QUICK_PUSH1 = 0x0C;
 inline constexpr std::uint8_t MONAD_VM_QUICK_PUSH1OP = 0x0D;
 inline constexpr std::uint8_t MONAD_VM_QUICK_PUSH1PUSH1 = 0x0E;
+inline constexpr std::uint8_t MONAD_VM_QUICK_PUSH2JJ = 0x21;
+inline constexpr std::uint8_t MONAD_VM_QUICK_PUSH2 = 0x22;
 #endif
+
+// A preprocessor directive cannot live inside a macro definition, and the body
+// below is a macro, so the conditional part is lifted out here. Getting this
+// wrong is quiet: the `#if` inside the replacement list left both the gated arm
+// and the quickened handler with no fused body at all, gcc did not stop the
+// build, and the arm measured +1.11 % steps with PUSH2+JUMP simply not firing.
+#if defined(MONAD_VM_FUSE_JUMPDEST)
+    #define MONAD_VM_SWALLOW_JUMPDEST(IP)                                      \
+        ((IP) = swallow_jumpdest(ctx, (IP), gas_remaining))
+#else
+    #define MONAD_VM_SWALLOW_JUMPDEST(IP) ((void)0)
+#endif
+
+// The fused PUSH2+JUMP / PUSH2+JUMPI body, as a macro so the quickened handler
+// and the gated arm cannot drift apart -- the same reason the PUSH1 bodies are.
+#define MONAD_VM_PUSH2JJ_BODY()                                                \
+    auto const monad_vm_dst = static_cast<size_t>( \
+        (static_cast<unsigned>(*(instr_ptr + 1)) << 8) | \
+        static_cast<unsigned>(*(instr_ptr + 2))); \
+    if (monad_vm_op2 == static_cast<std::uint8_t>(JUMP)) { \
+        static constexpr auto monad_vm_req = \
+            fused_requirements<traits, PUSH2, JUMP>(); \
+        if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) { \
+            gas_remaining -= monad_vm_req.gas; \
+        } \
+        else { \
+            MONAD_VM_CHECK(PUSH2); \
+            MONAD_DEBUG_ASSERT(stack_top >= stack_bottom); \
+            MONAD_VM_CHARGE(JUMP); \
+        } \
+        if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) { \
+            ctx.exit(Error); \
+        } \
+        auto const *monad_vm_ip = analysis.code() + monad_vm_dst; \
+        MONAD_VM_SWALLOW_JUMPDEST(monad_vm_ip); \
+        instr_ptr = monad_vm_ip; \
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr]( \
+            ctx, analysis, stack_bottom, stack_top, gas_remaining, \
+            instr_ptr MONAD_VM_TBL_ARG); \
+    } \
+    static constexpr auto monad_vm_reqi = \
+        fused_requirements<traits, PUSH2, JUMPI>(); \
+    if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_reqi))) { \
+        gas_remaining -= monad_vm_reqi.gas; \
+    } \
+    else { \
+        MONAD_VM_CHECK(PUSH2); \
+        MONAD_VM_CHECK_AT(JUMPI, 1); \
+    } \
+    if (*stack_top) { \
+        if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) { \
+            ctx.exit(Error); \
+        } \
+        auto const *monad_vm_ip = analysis.code() + monad_vm_dst; \
+        MONAD_VM_SWALLOW_JUMPDEST(monad_vm_ip); \
+        instr_ptr = monad_vm_ip; \
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr]( \
+            ctx, analysis, stack_bottom, stack_top - 1, \
+            gas_remaining, instr_ptr MONAD_VM_TBL_ARG); \
+    } \
+    MONAD_VM_FUSED_NEXT(4, -1);
 
 // The fused PUSH1+<binop> body, as a macro so the quickened handler below and the
 // gated arm in push<1> cannot drift apart. MONAD_VM_FUSED_NEXT returns, and a
@@ -476,8 +539,13 @@ namespace monad::vm::interpreter
             invalid, //
 
             sha3<traits>, // 0x20,
+#if defined(MONAD_VM_QUICKEN)
+            push2jj_quick<traits>, // 0x21, synthetic
+            push2_quick<traits>, // 0x22, synthetic
+#else
             invalid, //
             invalid, //
+#endif
             invalid, //
             invalid,
             //
@@ -1652,66 +1720,10 @@ namespace monad::vm::interpreter
             if (static_cast<size_t>(monad_vm_op2) -
                     static_cast<size_t>(JUMP) <=
                 1u) {
-                // Reading the destination immediate is pure, so it moves above
-                // the checks: the aggregate has to know which follower it is
-                // before it can test the sequence, and PUSH2 and JUMPI do not
-                // aggregate to the same requirements as PUSH2 and JUMP.
-                auto const monad_vm_dst = static_cast<size_t>(
-                    (static_cast<unsigned>(*(instr_ptr + 1)) << 8) |
-                    static_cast<unsigned>(*(instr_ptr + 2)));
-                if (monad_vm_op2 == static_cast<std::uint8_t>(JUMP)) {
-                    static constexpr auto monad_vm_req =
-                        fused_requirements<traits, PUSH2, JUMP>();
-                    if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) {
-                        gas_remaining -= monad_vm_req.gas;
-                    }
-                    else {
-                        MONAD_VM_CHECK(PUSH2);
-                        // JUMP needs one operand and the PUSH2 supplies it, so
-                        // at SHIFT 1 the test reads `height + 1 < 1`, i.e.
-                        // `height < 0`. Charge the gas and skip it.
-                        MONAD_DEBUG_ASSERT(stack_top >= stack_bottom);
-                        MONAD_VM_CHARGE(JUMP);
-                    }
-                    if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) {
-                        ctx.exit(Error);
-                    }
-                    auto const *monad_vm_ip = analysis.code() + monad_vm_dst;
-    #if defined(MONAD_VM_FUSE_JUMPDEST)
-                    monad_vm_ip =
-                        swallow_jumpdest(ctx, monad_vm_ip, gas_remaining);
-    #endif
-                    instr_ptr = monad_vm_ip;
-                    MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
-                        ctx, analysis, stack_bottom, stack_top, gas_remaining,
-                        instr_ptr MONAD_VM_TBL_ARG);
-                }
-                static constexpr auto monad_vm_reqi =
-                    fused_requirements<traits, PUSH2, JUMPI>();
-                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_reqi))) {
-                    gas_remaining -= monad_vm_reqi.gas;
-                }
-                else {
-                    MONAD_VM_CHECK(PUSH2);
-                    MONAD_VM_CHECK_AT(JUMPI, 1);
-                }
-                // The condition is the word under the immediate, i.e. the stack top
-                // the handler was entered with.
-                if (*stack_top) {
-                    if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) {
-                        ctx.exit(Error);
-                    }
-                    auto const *monad_vm_ip = analysis.code() + monad_vm_dst;
-    #if defined(MONAD_VM_FUSE_JUMPDEST)
-                    monad_vm_ip =
-                        swallow_jumpdest(ctx, monad_vm_ip, gas_remaining);
-    #endif
-                    instr_ptr = monad_vm_ip;
-                    MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
-                        ctx, analysis, stack_bottom, stack_top - 1,
-                        gas_remaining, instr_ptr MONAD_VM_TBL_ARG);
-                }
-                MONAD_VM_FUSED_NEXT(4, -1);
+#if defined(MONAD_VM_QUICKEN)
+                const_cast<uint8_t *>(instr_ptr)[0] = MONAD_VM_QUICK_PUSH2JJ;
+#endif
+                MONAD_VM_PUSH2JJ_BODY();
             }
         }
 #endif
@@ -1813,6 +1825,9 @@ namespace monad::vm::interpreter
         if constexpr (N == 1) {
             const_cast<uint8_t *>(instr_ptr)[0] = MONAD_VM_QUICK_PUSH1;
         }
+        else if constexpr (N == 2) {
+            const_cast<uint8_t *>(instr_ptr)[0] = MONAD_VM_QUICK_PUSH2;
+        }
 #endif
         MONAD_VM_CHECK(PUSH0 + N);
         push_impl<N, traits>::push(stack_top, instr_ptr);
@@ -1847,6 +1862,32 @@ namespace monad::vm::interpreter
     {
         auto const monad_vm_op2 = *(instr_ptr + 2);
         MONAD_VM_PUSH1OP_BODY();
+    }
+
+    // A PUSH2 already known to be followed by JUMP or JUMPI. The range test that
+    // established it is gone; which of the two it is still has to be read, and
+    // that is the work rather than the decision.
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void push2jj_quick(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const monad_vm_op2 = *(instr_ptr + 3);
+        MONAD_VM_PUSH2JJ_BODY();
+    }
+
+    // A PUSH2 already known to be followed by neither.
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void push2_quick(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        MONAD_VM_CHECK(PUSH2);
+        push_impl<2, traits>::push(stack_top, instr_ptr);
+
+        MONAD_VM_NEXT_PUSH(PUSH2);
     }
 
     // A PUSH1 already known to be followed by another. Nothing of the gate is

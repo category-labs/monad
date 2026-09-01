@@ -376,6 +376,16 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void push1push1_quick(
         runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
         int64_t, uint8_t const * MONAD_VM_TBL_TYPE);
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void push2jj_quick(
+        runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
+        int64_t, uint8_t const * MONAD_VM_TBL_TYPE);
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void push2_quick(
+        runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
+        int64_t, uint8_t const * MONAD_VM_TBL_TYPE);
 #endif
 
     template <Traits traits>

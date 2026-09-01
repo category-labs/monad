@@ -779,7 +779,9 @@ void OffsetTrie::fold_ext_node_path_maybe(
         });
 }
 
-std::pair<NodeId, Nibbles>
+// Returned paths borrow a suffix of the caller's key, which must outlive them.
+// The extension path remains an owning copy: writes may replace its storage.
+std::pair<NodeId, NibblesView>
 OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
 {
 #if defined(MONAD_ZKVM_ZISK)
@@ -797,14 +799,14 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
     // displaced leaf's bytes.
     auto const split_leaf =
         [&](NibblesView const path,
-            auto const &reput_old) -> std::pair<NodeId, Nibbles> {
+            auto const &reput_old) -> std::pair<NodeId, NibblesView> {
     // exact match -> overwrite (reuse id + its path)
 #if defined(MONAD_ZKVM_ZISK)
         if (leaf_path_equals(path, key, whole_key)) {
 #else
         if (path == key) {
 #endif
-            return {id, Nibbles{key}};
+            return {id, key};
         }
         // old leaf + new key meet at a fresh branch, wrapped in an
         // extension for their shared prefix.
@@ -822,32 +824,34 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
         else {
             put_branch(id, children);
         }
-        return {leaf, Nibbles{key.substr(cp + 1)}};
+        return {leaf, key.substr(cp + 1)};
     };
 
     return match(
         get_current(id),
         Cases{
-            [&](NullView) -> std::pair<NodeId, Nibbles> {
+            [&](NullView) -> std::pair<NodeId, NibblesView> {
                 // Empty slot (or an empty trie's root): a fresh leaf
                 // holding the whole remaining key, which the caller
                 // materialises.
-                return {fresh_id(), Nibbles{key}};
+                return {fresh_id(), key};
             },
-            [&](StorageLeafView l) -> std::pair<NodeId, Nibbles> {
+            [&](StorageLeafView l) -> std::pair<NodeId, NibblesView> {
                 bytes32_t const v = l.value();
-                return split_leaf(l.path(), [&](NibblesView const np) {
-                    return put_storage(NULL_ID, np, v);
-                });
+                return split_leaf(
+                    l.path(), [&](NibblesView const remaining_path) {
+                        return put_storage(NULL_ID, remaining_path, v);
+                    });
             },
-            [&](AccountLeafView l) -> std::pair<NodeId, Nibbles> {
-                return split_leaf(l.path(), [&, l](NibblesView const np) {
-                    return clone_acct(NULL_ID, l, np);
-                });
+            [&](AccountLeafView l) -> std::pair<NodeId, NibblesView> {
+                return split_leaf(
+                    l.path(), [&, l](NibblesView const remaining_path) {
+                        return clone_acct(NULL_ID, l, remaining_path);
+                    });
             },
-            [&](ExtView e) -> std::pair<NodeId, Nibbles> {
-                Nibbles const p{e.path()};
-                NibblesView const path{p};
+            [&](ExtView e) -> std::pair<NodeId, NibblesView> {
+                Nibbles const owned_path{e.path()};
+                NibblesView const path{owned_path};
                 NodeId child = e.child();
                 unsigned const cp = common_prefix_length(path, key);
                 if (cp == path.nibble_size()) { // full prefix -> descend
@@ -870,9 +874,9 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
                 else {
                     put_branch(id, children);
                 }
-                return {leaf, Nibbles{key.substr(cp + 1)}};
+                return {leaf, key.substr(cp + 1)};
             },
-            [&](BranchView b) -> std::pair<NodeId, Nibbles> {
+            [&](BranchView b) -> std::pair<NodeId, NibblesView> {
                 MONAD_ASSERT(key.nibble_size() > 0); // never ends at branch
                 unsigned const nib = key.get(0);
                 std::array<node_id_wire_t, 16> children = b.children();
@@ -888,7 +892,7 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
                 }
                 return result;
             },
-            [&](DigestView) -> std::pair<NodeId, Nibbles> {
+            [&](DigestView) -> std::pair<NodeId, NibblesView> {
                 MONAD_ABORT("incomplete witness: upsert hit a Digest");
             },
         });

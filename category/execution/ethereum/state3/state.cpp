@@ -321,7 +321,7 @@ void State::push()
 
     ++version_;
     dirty_.emplace_back();
-    // Construct the mark in place to avoid copying a temporary.
+    // Construct the mark in place to avoid copying a 64-byte temporary.
 #if defined(MONAD_ZKVM_ZISK)
     // Save byte offsets; convert to element counts only when rolling back.
     undo_marks_.emplace_back(

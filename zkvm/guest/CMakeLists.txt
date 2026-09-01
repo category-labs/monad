@@ -360,8 +360,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
                 MONAD_VM_FUSE_JUMPDEST
                 MONAD_VM_FUSE_PUSH1OP
                 MONAD_VM_FUSE_PUSH2JUMP
-                MONAD_VM_FUSE_TESTJUMPI
-                MONAD_VM_QUICKEN)
+                MONAD_VM_FUSE_TESTJUMPI)
         endif()
 
         if(MONAD_ZKVM_OFFICIAL_PROFILE)

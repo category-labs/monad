@@ -115,6 +115,10 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         ::operator new((blob_.size() / 4 + 1) * sizeof(byte_string *)));
     new_nodes_ = static_cast<byte_string **>(
         ::operator new(FRESH_HASH_SLOTS * sizeof(byte_string *)));
+#else
+    // Reserve initial overlay capacity to avoid early rehashes.
+    // The number of nodes created during commit is not known yet.
+    overlay_.reserve(1024);
 #endif
 
     // A node's byte is set when the walk reaches it and cleared when a parent

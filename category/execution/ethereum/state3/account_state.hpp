@@ -95,6 +95,17 @@ public:
                 return;
             }
         }
+        // Reserve on first insertion to avoid early reallocations without
+        // allocating for unused storage. The indexed path already has
+        // an allocated vector.
+        if (MONAD_UNLIKELY(entries_.capacity() == 0)) {
+#ifdef MONAD_ZKVM_ZISK
+            // Reserve more slots on ZisK to avoid early growth and copies.
+            entries_.reserve(32);
+#else
+            entries_.reserve(8);
+#endif
+        }
         entries_.emplace_back(key, value);
 #ifdef MONAD_ZKVM_ZISK
         slot_index_.on_insert(entries_);
@@ -300,6 +311,14 @@ public:
 #endif
     void insert(bytes32_t const &key, bytes32_t const &value)
     {
+        if (MONAD_UNLIKELY(entries_.capacity() == 0)) {
+#ifdef MONAD_ZKVM_ZISK
+            // Reserve more slots on ZisK to avoid early growth and copies.
+            entries_.reserve(32);
+#else
+            entries_.reserve(8);
+#endif
+        }
         entries_.emplace_back(key, value);
 #ifdef MONAD_ZKVM_ZISK
         slot_index_.on_insert(entries_);

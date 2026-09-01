@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/address.hpp>
@@ -32,6 +33,7 @@
 #include <boost/outcome/try.hpp>
 
 #include <cstddef>
+#include <cstring>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -59,25 +61,25 @@ namespace
         return size > 55 ? 1 + compact_len(size) : 1;
     }
 
-    void append_length(byte_string &out, unsigned char const base,
+    void append_length(unsigned char *&p, unsigned char const base,
         size_t const size)
     {
         size_t const n = compact_len(size);
-        out.push_back(static_cast<unsigned char>(base + n));
+        *p++ = static_cast<unsigned char>(base + n);
         for (size_t i = n; i-- > 0;) {
-            out.push_back(static_cast<unsigned char>(size >> (i * 8)));
+            *p++ = static_cast<unsigned char>(size >> (i * 8));
         }
     }
 
     // encode_list2's header, written into an existing buffer instead of at
     // the front of a fresh one.
-    void append_list_header(byte_string &out, size_t const size)
+    void append_list_header(unsigned char *&p, size_t const size)
     {
         if (MONAD_LIKELY(size <= 55)) {
-            out.push_back(static_cast<unsigned char>(0xc0 + size));
+            *p++ = static_cast<unsigned char>(0xc0 + size);
             return;
         }
-        append_length(out, 0xf7, size);
+        append_length(p, 0xf7, size);
     }
 
     size_t string_len(byte_string_view const s)
@@ -89,19 +91,20 @@ namespace
     }
 
     // encode_string2, appended rather than returned.
-    void append_string(byte_string &out, byte_string_view const s)
+    void append_string(unsigned char *&p, byte_string_view const s)
     {
         if (s.size() == 1 && s[0] <= 0x7f) {
-            out.push_back(s[0]);
+            *p++ = s[0];
             return;
         }
         if (MONAD_LIKELY(s.size() <= 55)) {
-            out.push_back(static_cast<unsigned char>(0x80 + s.size()));
+            *p++ = static_cast<unsigned char>(0x80 + s.size());
         }
         else {
-            append_length(out, 0xb7, s.size());
+            append_length(p, 0xb7, s.size());
         }
-        out += s;
+        std::memcpy(p, s.data(), s.size());
+        p += s.size();
     }
 
     size_t log_payload_len(Receipt::Log const &log)
@@ -125,7 +128,7 @@ namespace
     // An address is always 20 bytes and a topic always 32, so both headers are
     // constants -- 0x80 + 20 and 0x80 + 32 -- never in the long form and never
     // in the single-byte form.
-    void append_log(byte_string &out, Receipt::Log const &log)
+    void append_log(unsigned char *&p, Receipt::Log const &log)
     {
         static_assert(sizeof(bytes32_t) == 32);
         static_assert(sizeof(Address) == 20);
@@ -135,15 +138,17 @@ namespace
         size_t const topics_payload =
             log.topics.size() * (1 + sizeof(bytes32_t));
 
-        append_list_header(out, log_payload_len(log));
-        out.push_back(address_header);
-        out.append(log.address.bytes, sizeof(log.address.bytes));
-        append_list_header(out, topics_payload);
+        append_list_header(p, log_payload_len(log));
+        *p++ = address_header;
+        std::memcpy(p, log.address.bytes, sizeof(log.address.bytes));
+        p += sizeof(log.address.bytes);
+        append_list_header(p, topics_payload);
         for (auto const &i : log.topics) {
-            out.push_back(topic_header);
-            out.append(i.bytes, sizeof(i.bytes));
+            *p++ = topic_header;
+            std::memcpy(p, i.bytes, sizeof(i.bytes));
+            p += sizeof(i.bytes);
         }
-        append_string(out, log.data);
+        append_string(p, log.data);
     }
 }
 
@@ -164,8 +169,13 @@ byte_string encode_topics(std::vector<bytes32_t> const &topics)
 byte_string encode_log(Receipt::Log const &log)
 {
     byte_string result{};
-    result.reserve(log_len(log));
-    append_log(result, log);
+    result.resize_and_overwrite(
+        log_len(log), [&log](unsigned char *const buf, size_t const n) {
+            unsigned char *p = buf;
+            append_log(p, log);
+            MONAD_ASSERT(p == buf + n);
+            return n;
+        });
     return result;
 }
 
@@ -201,20 +211,36 @@ byte_string encode_receipt(Receipt const &receipt)
         receipt.type == TransactionType::eip4844 ||
         receipt.type == TransactionType::eip7702;
 
+    // Sized once and written through a cursor. Every length above is exact,
+    // so there is no capacity test and no size store per byte -- and
+    // resize_and_overwrite rather than resize, because resize would zero every
+    // byte first and each one is about to be written anyway.
+    //
+    // The assert is what keeps the arithmetic honest: land anywhere but the
+    // end and the block fails here rather than at the receipts root.
     byte_string result{};
-    result.reserve(
-        static_cast<size_t>(typed) + list_header_len(payload) + payload);
-    if (typed) {
-        result.push_back(static_cast<unsigned char>(receipt.type));
-    }
-    append_list_header(result, payload);
-    result += status;
-    result += gas_used;
-    result += bloom;
-    append_list_header(result, logs_payload);
-    for (auto const &i : receipt.logs) {
-        append_log(result, i);
-    }
+    result.resize_and_overwrite(
+        static_cast<size_t>(typed) + list_header_len(payload) + payload,
+        [&](unsigned char *const buf, size_t const n) {
+            unsigned char *p = buf;
+            if (typed) {
+                *p++ = static_cast<unsigned char>(receipt.type);
+            }
+            append_list_header(p, payload);
+            auto const put = [&p](byte_string const &b) {
+                std::memcpy(p, b.data(), b.size());
+                p += b.size();
+            };
+            put(status);
+            put(gas_used);
+            put(bloom);
+            append_list_header(p, logs_payload);
+            for (auto const &i : receipt.logs) {
+                append_log(p, i);
+            }
+            MONAD_ASSERT(p == buf + n);
+            return n;
+        });
     return result;
 }
 

@@ -13,9 +13,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+// Guest replacement for category/vm/vm.hpp: interpreter execution and
+// message-memory allocation, without the host's JIT and threading dependencies.
+//
+// MONAD_ZKVM_VARCODE_CACHE also caches Varcode wrappers and shared_ptr control
+// blocks by code hash. BlockState::code_ already caches decoded intercodes.
+
 #pragma once
 
 #include <category/core/bytes.hpp>
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+    #include <ankerl/unordered_dense.h>
+#endif
 #include <category/vm/code.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
@@ -29,7 +38,6 @@
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
-#include <optional>
 #include <span>
 
 namespace monad::vm
@@ -38,6 +46,10 @@ namespace monad::vm
     {
         runtime::EvmStackAllocator stack_allocator_;
         MemoryPool memory_pool_;
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+        // Share one wrapper per code hash for the VM's lifetime.
+        ankerl::unordered_dense::map<bytes32_t, SharedVarcode> varcode_{};
+#endif
 
     public:
         VM()
@@ -46,9 +58,44 @@ namespace monad::vm
         {
         }
 
-        std::optional<SharedVarcode> find_varcode(bytes32_t const &)
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+        // Point to the cached shared_ptr, or null, avoiding a temporary copy.
+        // The caller copies it before any insertion can invalidate the pointer.
+        SharedVarcode const *find_varcode(bytes32_t const &code_hash)
         {
-            return std::nullopt;
+            auto const it = varcode_.find(code_hash);
+            if (it == varcode_.end()) {
+                return nullptr;
+            }
+            return &it->second;
+        }
+
+        SharedVarcode try_insert_varcode(
+            bytes32_t const &code_hash, SharedIntercode const &icode)
+        {
+            auto const [it, inserted] =
+                varcode_.try_emplace(code_hash, nullptr);
+            if (inserted) {
+                it->second = std::make_shared<Varcode>(icode);
+            }
+            return it->second;
+        }
+
+        SharedVarcode try_insert_varcode_raw(
+            bytes32_t const &code_hash, std::span<uint8_t const> const code)
+        {
+            auto const [it, inserted] =
+                varcode_.try_emplace(code_hash, nullptr);
+            if (inserted) {
+                it->second =
+                    std::make_shared<Varcode>(make_shared_intercode(code));
+            }
+            return it->second;
+        }
+#else
+        SharedVarcode const *find_varcode(bytes32_t const &)
+        {
+            return nullptr;
         }
 
         SharedVarcode
@@ -62,6 +109,7 @@ namespace monad::vm
         {
             return std::make_shared<Varcode>(make_shared_intercode(code));
         }
+#endif
 
         MemoryPool::Ref message_memory_ref()
         {

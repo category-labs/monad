@@ -59,7 +59,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
            "require the reference ZisK compiler and build options" OFF)
     set(_monad_zkvm_official_features
         "baseline" "zisk-dma" "zisk-clean-byte-stores" "keccakf-memo"
-        "wide-memory-size")
+        "wide-memory-size" "varcode-cache")
     set(_monad_zkvm_runtime_version "1.3.2-alpha")
     set(_monad_zkvm_runtime_revision
         "1e22630bb7e143c30705a1603ed87cfd3da8c6ec")
@@ -73,7 +73,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # Add each new required option here and its feature to the list above.
     set(_monad_zkvm_required_options
         MONAD_ZKVM_ZISK_DMA MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES
-        MONAD_ZKVM_KECCAKF_MEMO MONAD_ZKVM_WIDE_MEMORY_SIZE)
+        MONAD_ZKVM_KECCAKF_MEMO MONAD_ZKVM_WIDE_MEMORY_SIZE
+        MONAD_ZKVM_VARCODE_CACHE)
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
         foreach(_option ${_monad_zkvm_required_options})
             if(DEFINED ${_option} AND NOT ${_option})
@@ -132,6 +133,14 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
            "64-bit Memory::size and ::capacity, which x86 cannot take" OFF)
     if(MONAD_ZKVM_WIDE_MEMORY_SIZE)
         add_compile_definitions(MONAD_ZKVM_WIDE_MEMORY_SIZE)
+    endif()
+
+    # Cache Varcode wrappers and shared_ptr control blocks by code hash.
+    # BlockState already caches decoded intercodes.
+    option(MONAD_ZKVM_VARCODE_CACHE
+           "cache varcodes by code hash in the guest's VM shadow" OFF)
+    if(MONAD_ZKVM_VARCODE_CACHE)
+        add_compile_definitions(MONAD_ZKVM_VARCODE_CACHE)
     endif()
 
     # Expose the backend as a compile definition, for the places where the two

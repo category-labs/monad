@@ -57,6 +57,7 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
+class DbStatsPublisher;
 class Node;
 
 struct write_operation_io_receiver
@@ -238,6 +239,8 @@ class UpdateAux
     detail::TrieUpdateCollectedStats stats_;
     detail::TrieUpdateCollectedStats prev_upsert_stats_;
     detail::TrieUpdateCollectedStats last_upsert_stats_;
+    // Not owned; outlives this aux when set.
+    DbStatsPublisher *stats_publisher_{nullptr};
 
 public:
     // Allocate the first cnv chunk for db metadata copies
@@ -296,6 +299,11 @@ public:
     detail::TrieUpdateCollectedStats last_upsert_stats() const noexcept
     {
         return last_upsert_stats_;
+    }
+
+    void set_stats_publisher(DbStatsPublisher *const publisher) noexcept
+    {
+        stats_publisher_ = publisher;
     }
 
     // collect and print trie update stats
@@ -396,7 +404,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAux) == 120 + 3 * sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAux) == 128 + 3 * sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAux) == 8);
 
 template <receiver Receiver>

@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/monad/dkg/dkg_contract.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/bls.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
@@ -1707,6 +1708,10 @@ Result<void> StakingContract::syscall_on_epoch_change(
 
     vars.in_epoch_delay_period.clear();
     vars.epoch.store(next_epoch);
+    if (MONAD_UNLIKELY(
+            !dkg::on_staking_epoch_change(state_, next_epoch.native()))) {
+        return StakingError::InvalidEpochChange;
+    }
 
     return outcome::success();
 }
@@ -1868,7 +1873,15 @@ Result<void> StakingContract::syscall_snapshot(
         slot_to_replace.store(swapped_id);
     }
 
+    uint64_t const current_epoch = vars.epoch.load().native();
+    if (MONAD_UNLIKELY(current_epoch == std::numeric_limits<uint64_t>::max())) {
+        return StakingError::InvalidEpochChange;
+    }
     vars.in_epoch_delay_period.store(true);
+    if (MONAD_UNLIKELY(
+            !dkg::on_staking_snapshot(state_, current_epoch + 1))) {
+        return StakingError::InvalidInput;
+    }
 
     return outcome::success();
 }

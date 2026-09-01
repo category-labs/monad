@@ -319,8 +319,8 @@ evmc::Result execute_call_message(
     }
 
     evmc::Result result;
-    if (auto maybe_result =
-            check_call_precompile<traits>(state, call_tracer, msg);
+    if (auto maybe_result = check_call_precompile_with_context<traits>(
+            state, call_tracer, msg, *host->get_tx_context());
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }

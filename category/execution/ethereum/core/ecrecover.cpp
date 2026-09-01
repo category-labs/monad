@@ -31,8 +31,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
-std::optional<Address>
-recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
+std::optional<Address> recover_address_from_digest(
+    Secp256k1Signature const &sig, bytes32_t const &encoding_hash)
 {
     if (sig.y_parity > 1) {
         return std::nullopt;
@@ -41,8 +41,6 @@ recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
     if (sig.has_upper_s()) {
         return std::nullopt;
     }
-
-    auto const encoding_hash = keccak256(encoding);
 
     uint8_t signature[sizeof(sig.r) * 2];
     store_be(signature, sig.r);
@@ -66,6 +64,12 @@ recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
     }
 
     return result;
+}
+
+std::optional<Address>
+recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
+{
+    return recover_address_from_digest(sig, to_bytes(keccak256(encoding)));
 }
 
 MONAD_NAMESPACE_END

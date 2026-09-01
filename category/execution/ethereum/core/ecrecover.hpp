@@ -17,6 +17,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 
 #include <optional>
@@ -34,5 +35,9 @@ struct Secp256k1Signature;
 /// ecrecover via syscall.
 std::optional<Address>
 recover_address(Secp256k1Signature const &, byte_string_view encoding);
+
+/// Recover from an already-hashed 32-byte protocol transcript.
+std::optional<Address>
+recover_address_from_digest(Secp256k1Signature const &, bytes32_t const &);
 
 MONAD_NAMESPACE_END

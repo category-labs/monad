@@ -34,7 +34,8 @@ template <Traits traits>
 bool is_precompile(Address const &);
 
 template <Traits traits>
-std::optional<evmc::Result>
-check_call_precompile(State &, CallTracerBase &, evmc_message const &msg);
+std::optional<evmc::Result> check_call_precompile_with_context(
+    State &, CallTracerBase &, evmc_message const &msg,
+    evmc_tx_context const &);
 
 MONAD_NAMESPACE_END

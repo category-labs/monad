@@ -4432,15 +4432,15 @@ TEST_F(StakeLatest, get_validator_id_by_signing_address)
 
     AbiEncoder encoder;
     encoder.add_address(result.value().sign_address);
-    auto const output = contract.precompile_get_validator_id(
-        encoder.encode_final(), {}, {});
+    auto const output =
+        contract.precompile_get_validator_id(encoder.encode_final(), {}, {});
     ASSERT_FALSE(output.has_error());
     EXPECT_EQ(output.value(), byte_string{abi_encode_uint(result.value().id)});
 
     AbiEncoder unknown;
     unknown.add_address(0xbad0_address);
-    auto const missing = contract.precompile_get_validator_id(
-        unknown.encode_final(), {}, {});
+    auto const missing =
+        contract.precompile_get_validator_id(unknown.encode_final(), {}, {});
     ASSERT_FALSE(missing.has_error());
     EXPECT_EQ(missing.value(), byte_string{abi_encode_uint(u64_be{0})});
 }

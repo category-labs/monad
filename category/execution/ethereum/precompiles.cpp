@@ -188,4 +188,14 @@ check_call_precompile(State &, CallTracerBase &, evmc_message const &msg)
 
 EXPLICIT_EVM_TRAITS(check_call_precompile);
 
+template <Traits traits>
+std::optional<evmc::Result> check_call_precompile_with_context(
+    State &state, CallTracerBase &call_tracer, evmc_message const &msg,
+    evmc_tx_context const &)
+{
+    return check_call_precompile<traits>(state, call_tracer, msg);
+}
+
+EXPLICIT_EVM_TRAITS(check_call_precompile_with_context);
+
 MONAD_NAMESPACE_END

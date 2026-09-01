@@ -23,7 +23,9 @@ MONAD_STAKING_NAMESPACE_BEGIN
 static_assert(
     selector::REWARD == abi_encode_selector("syscallReward(address)"));
 
-static_assert(selector::SNAPSHOT == abi_encode_selector("syscallSnapshot()"));
+static_assert(
+    selector::SNAPSHOT ==
+    abi_encode_selector("syscallSnapshot()"));
 
 static_assert(
     selector::ON_EPOCH_CHANGE ==

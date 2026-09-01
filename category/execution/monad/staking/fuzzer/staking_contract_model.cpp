@@ -344,8 +344,11 @@ namespace monad::staking::test
 
     Result<void> StakingContractModel::syscall_snapshot()
     {
+        byte_string input;
+        input += abi_encode_uint(u64_be{0});
+        input += abi_encode_uint(u64_be{200});
         pre_call(uint256_be_t{});
-        auto res = contract_.syscall_snapshot({}, 0);
+        auto res = contract_.syscall_snapshot(input, 0);
         post_call(res);
         return res;
     }

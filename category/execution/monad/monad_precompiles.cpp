@@ -16,6 +16,8 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/tx_context.hpp>
+#include <category/execution/monad/dkg/dkg_contract.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
@@ -23,6 +25,50 @@
 #include <category/vm/evm/explicit_traits.hpp>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+template <Traits traits>
+std::optional<evmc::Result> check_call_dkg_precompile(
+    State &state, CallTracerBase &call_tracer, evmc_message const &msg,
+    evmc_tx_context const &tx_context)
+{
+    if (msg.code_address != dkg::DKG_CA) {
+        return std::nullopt;
+    }
+    if (MONAD_UNLIKELY(msg.kind != EVMC_CALL) ||
+        MONAD_UNLIKELY(msg.flags != 0 && msg.flags != EVMC_STATIC)) {
+        return evmc::Result{evmc_status_code::EVMC_REJECTED};
+    }
+
+    byte_string_view input{msg.input_data, msg.input_size};
+    auto const dispatch =
+        dkg::DkgContract::template precompile_dispatch<traits>(input);
+    if (MONAD_UNLIKELY((msg.flags & EVMC_STATIC) != 0 && !dispatch.read_only)) {
+        return evmc::Result{evmc_status_code::EVMC_STATIC_MODE_VIOLATION};
+    }
+    if (MONAD_UNLIKELY(std::cmp_less(msg.gas, dispatch.gas_cost))) {
+        return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
+    }
+
+    dkg::DkgContract contract{
+        state, call_tracer, static_cast<uint64_t>(tx_context.block_number)};
+    auto const result =
+        (contract.*dispatch.method)(input, msg.sender, msg.value);
+    if (MONAD_LIKELY(result.has_value())) {
+        return evmc::Result(
+            EVMC_SUCCESS,
+            msg.gas - static_cast<int64_t>(dispatch.gas_cost),
+            0,
+            result.value().data(),
+            result.value().size());
+    }
+    auto const message = result.error().message();
+    return evmc::Result(
+        EVMC_REVERT,
+        0,
+        0,
+        reinterpret_cast<uint8_t const *>(message.data()),
+        message.size());
+}
 
 template <Traits traits, typename Contract, Address contract_address>
 std::optional<evmc::Result> check_call_monad_precompile(
@@ -76,7 +122,9 @@ bool is_precompile(Address const &address)
     // in.
     return is_eth_precompile<traits>(address) ||
            (address == staking::STAKING_CA) ||
-           (traits::monad_rev() >= MONAD_NINE && address == RESERVE_BALANCE_CA);
+           (traits::monad_rev() >= MONAD_NINE &&
+            address == RESERVE_BALANCE_CA) ||
+           (traits::monad_rev() >= MONAD_NEXT && address == dkg::DKG_CA);
 }
 
 EXPLICIT_MONAD_TRAITS(is_precompile);
@@ -84,6 +132,15 @@ EXPLICIT_MONAD_TRAITS(is_precompile);
 template <Traits traits>
 std::optional<evmc::Result> check_call_precompile(
     State &state, CallTracerBase &call_tracer, evmc_message const &msg)
+{
+    return check_call_precompile_with_context<traits>(
+        state, call_tracer, msg, EMPTY_TX_CONTEXT);
+}
+
+template <Traits traits>
+std::optional<evmc::Result> check_call_precompile_with_context(
+    State &state, CallTracerBase &call_tracer, evmc_message const &msg,
+    evmc_tx_context const &tx_context)
 {
     if (auto maybe_result = check_call_eth_precompile<traits>(msg)) {
         return maybe_result;
@@ -111,11 +168,19 @@ std::optional<evmc::Result> check_call_precompile(
         ReserveBalanceContract,
         RESERVE_BALANCE_CA);
 
+    if constexpr (traits::monad_rev() >= MONAD_NEXT) {
+        if (auto maybe_result = check_call_dkg_precompile<traits>(
+                state, call_tracer, msg, tx_context)) {
+            return maybe_result;
+        }
+    }
+
     return std::nullopt;
 
 #undef CASE
 }
 
 EXPLICIT_MONAD_TRAITS(check_call_precompile);
+EXPLICIT_MONAD_TRAITS(check_call_precompile_with_context);
 
 MONAD_NAMESPACE_END

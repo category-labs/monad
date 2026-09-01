@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/execution/monad/dkg/execute_block_prelude.hpp>
 #include <category/execution/monad/staking/execute_block_prelude.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -74,6 +75,7 @@ void execute_block_header(BlockState &block_state, BlockHeader const &header)
     // TODO: move to execute_monad_block eventually
     if constexpr (is_monad_trait_v<traits>) {
         staking::execute_block_prelude<traits>(state);
+        dkg::execute_block_prelude<traits>(state);
     }
 
     MONAD_ASSERT(block_state.can_merge(state));

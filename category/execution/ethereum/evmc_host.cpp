@@ -197,11 +197,20 @@ void EvmcHostBase::emit_log(
     MONAD_TRY
     {
         Receipt::Log log{.data = {data, data_size}, .address = address};
+        // Reserved: a LOG4 pushes four topics into an empty vector, which
+        // reallocates at one, two and four and copies the run forward each
+        // time -- 3 allocations and 7 topic copies vs 1 allocation and 4
+        // copies with the reserve.
+        log.topics.reserve(num_topics);
         for (auto i = 0u; i < num_topics; ++i) {
             log.topics.push_back({topics[i]});
         }
-        state_.store_log(log);
-        call_tracer_.on_log(std::move(log));
+        // The tracer first, so the state can take the log rather than copy
+        // it. Both are pure sinks and the order between them is free; one of
+        // the two has to own its own copy and the other does not, and the
+        // guest's tracer is the one that wants nothing.
+        call_tracer_.on_log(log);
+        state_.store_log(std::move(log));
         return;
     }
     MONAD_CATCH(...)

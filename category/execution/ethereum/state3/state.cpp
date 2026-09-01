@@ -637,6 +637,12 @@ void State::store_log(Receipt::Log const &log)
     logs = logs.push_back(log);
 }
 
+void State::store_log(Receipt::Log &&log)
+{
+    auto &logs = logs_.current(version_);
+    logs = logs.push_back(std::move(log));
+}
+
 void State::set_to_state_incarnation(Address const &address)
 {
     auto &account = current_account(address);

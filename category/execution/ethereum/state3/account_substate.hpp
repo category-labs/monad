@@ -109,6 +109,12 @@ public:
                 return MONAD_ACCESS_WARM;
             }
         }
+        // Reserve on first insertion to avoid early reallocations without
+        // allocating for unused storage. The indexed path already has
+        // sufficient capacity.
+        if (MONAD_UNLIKELY(accessed_storage_.capacity() == 0)) {
+            accessed_storage_.reserve(8);
+        }
         accessed_storage_.push_back(key);
         aidx_.on_insert(accessed_storage_);
         return MONAD_ACCESS_COLD;

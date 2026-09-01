@@ -672,13 +672,24 @@ extern "C" void syscall_arith256_mod(ZiskArith256ModParams *params);
     uint256_t const &a, uint256_t const &b, uint256_t const &c,
     uint256_t const &mod) noexcept
 {
-    alignas(8) uint64_t const A[4] = {a[0], a[1], a[2], a[3]};
-    alignas(8) uint64_t const B[4] = {b[0], b[1], b[2], b[3]};
-    alignas(8) uint64_t const C[4] = {c[0], c[1], c[2], c[3]};
-    alignas(8) uint64_t const M[4] = {mod[0], mod[1], mod[2], mod[3]};
+    // The operands are read where they lie. A uint256_t is at least 8-aligned
+    // and its words are the little-endian limb order the syscall wants, so
+    // staging the four of them into locals buys nothing and costs sixteen
+    // loads and sixteen stores a call. Same reasoning, and the same measured
+    // shape, as the MUL door in vm/runtime/math/intrinsics.hpp.
+    static_assert(alignof(uint256_t) >= 8);
+    static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
     alignas(8) uint64_t D[4];
-    ZiskArith256ModParams p{A, B, C, M, D};
+    ZiskArith256ModParams p{
+        reinterpret_cast<uint64_t const *>(&a),
+        reinterpret_cast<uint64_t const *>(&b),
+        reinterpret_cast<uint64_t const *>(&c),
+        reinterpret_cast<uint64_t const *>(&mod),
+        D};
     syscall_arith256_mod(&p);
+    // Through a local and not straight into the return slot: the precompile's
+    // write order is not ours to assume, and a caller may pass an operand it
+    // also assigns to.
     return uint256_t{D[0], D[1], D[2], D[3]};
 }
 #endif

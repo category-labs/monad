@@ -91,6 +91,12 @@ public:
                 return;
             }
         }
+        // Reserve on first insertion to avoid early reallocations without
+        // allocating for unused storage. The indexed path already has
+        // sufficient capacity.
+        if (MONAD_UNLIKELY(v_.capacity() == 0)) {
+            v_.reserve(8);
+        }
         v_.emplace_back(key, value);
 #ifdef MONAD_ZKVM_ZISK
         idx_.on_insert(v_);
@@ -293,6 +299,9 @@ public:
 
     void insert(bytes32_t const &k, bytes32_t const &v)
     {
+        if (MONAD_UNLIKELY(v_.capacity() == 0)) {
+            v_.reserve(8);
+        }
         v_.emplace_back(k, v);
 #ifdef MONAD_ZKVM_ZISK
         idx_.on_insert(v_);

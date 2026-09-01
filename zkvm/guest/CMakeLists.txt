@@ -97,6 +97,14 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_WIDE_MEMORY_SIZE)
     endif()
 
+    # Cache Varcode wrappers and shared_ptr control blocks by code hash.
+    # BlockState already caches decoded intercodes.
+    option(MONAD_ZKVM_VARCODE_CACHE
+           "cache varcodes by code hash in the guest's VM shadow" OFF)
+    if(MONAD_ZKVM_VARCODE_CACHE)
+        add_compile_definitions(MONAD_ZKVM_VARCODE_CACHE)
+    endif()
+
     # Expose the backend as a compile definition, for the places where the two
     # diverge: the Keccak-f[1600] precompile is reached by a different entry on
     # each (zkvm/category/crypto/keccak.h).

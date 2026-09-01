@@ -108,6 +108,25 @@
 // 3.3 % of the current guest.
 #define MONAD_VM_CHECK(OP) MONAD_VM_CHECK_AT(OP, 0)
 
+// The same checks, then the runtime call -- as a macro for the reason above.
+//
+// checked_runtime_call() was a function, so its check_requirements() could not
+// tail-call the exit and every handler routed through it carried the frame. That
+// is invisible on the ones that go on to make a real call (SLOAD, CALL, LOG),
+// which need the frame regardless; it is four instructions of dead weight on the
+// ones whose runtime function inlines away, leaving Context::exit as the only
+// call left in the handler: MUL, DIV, MOD, SDIV, SMOD, ADDMOD, MULMOD, EXP,
+// CALLDATALOAD, TLOAD and TSTORE.
+//
+// Variadic in F so a runtime function with template arguments of its own keeps
+// its commas.
+#define MONAD_VM_CHECKED_RUNTIME_CALL(OP, ...)                                 \
+    do {                                                                       \
+        MONAD_VM_CHECK(OP);                                                    \
+        call_runtime(__VA_ARGS__, ctx, stack_top, gas_remaining);               \
+    }                                                                          \
+    while (false)
+
 // SHIFT is the stack movement of operands already executed in this handler: a fused
 // follower must be checked against the stack its predecessor leaves, not the one the
 // handler was entered with. SHIFT 0 is the ordinary single-opcode case.
@@ -633,17 +652,6 @@ namespace monad::vm::interpreter
     constexpr InstrTable instruction_table = make_instruction_table<traits>();
 
     // Instruction implementations
-    template <uint8_t Opcode, Traits traits, typename... FnArgs>
-    [[gnu::always_inline]] inline void checked_runtime_call(
-        void (*f)(FnArgs...), runtime::Context &ctx, Intercode const &analysis,
-        uint256_t const *stack_bottom, uint256_t *stack_top,
-        int64_t &gas_remaining, uint8_t const *)
-    {
-        check_requirements<Opcode, traits>(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining);
-        call_runtime(f, ctx, stack_top, gas_remaining);
-    }
-
 #ifdef MONAD_COMPILER_TESTING
     [[gnu::always_inline]]
     inline void fuzz_tstore_stack(
@@ -689,14 +697,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<MUL, traits>(
-            runtime::mul,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(MUL, runtime::mul);
 
         MONAD_VM_NEXT(MUL);
     }
@@ -720,14 +721,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<DIV, traits>(
-            runtime::udiv,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(DIV, runtime::udiv);
 
         MONAD_VM_NEXT(DIV);
     }
@@ -738,14 +732,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<SDIV, traits>(
-            runtime::sdiv,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(SDIV, runtime::sdiv);
 
         MONAD_VM_NEXT(SDIV);
     }
@@ -756,14 +743,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<MOD, traits>(
-            runtime::umod,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(MOD, runtime::umod);
 
         MONAD_VM_NEXT(MOD);
     }
@@ -774,14 +754,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<SMOD, traits>(
-            runtime::smod,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(SMOD, runtime::smod);
 
         MONAD_VM_NEXT(SMOD);
     }
@@ -792,14 +765,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<ADDMOD, traits>(
-            runtime::addmod,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(ADDMOD, runtime::addmod);
 
         MONAD_VM_NEXT(ADDMOD);
     }
@@ -810,14 +776,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<MULMOD, traits>(
-            runtime::mulmod,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(MULMOD, runtime::mulmod);
 
         MONAD_VM_NEXT(MULMOD);
     }
@@ -828,14 +787,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<EXP, traits>(
-            runtime::exp<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(EXP, runtime::exp<traits>);
 
         MONAD_VM_NEXT(EXP);
     }
@@ -1110,14 +1062,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<SHA3, traits>(
-            runtime::sha3<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(SHA3, runtime::sha3<traits>);
 
         MONAD_VM_NEXT(SHA3);
     }
@@ -1140,14 +1085,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<BALANCE, traits>(
-            runtime::balance<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(BALANCE, runtime::balance<traits>);
 
         MONAD_VM_NEXT(BALANCE);
     }
@@ -1196,14 +1134,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<CALLDATALOAD, traits>(
-            runtime::calldataload,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(CALLDATALOAD, runtime::calldataload);
 
         MONAD_VM_NEXT(CALLDATALOAD);
     }
@@ -1226,14 +1157,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<CALLDATACOPY, traits>(
-            runtime::calldatacopy<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(CALLDATACOPY, runtime::calldatacopy<traits>);
 
         MONAD_VM_NEXT(CALLDATACOPY);
     }
@@ -1256,14 +1180,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<CODECOPY, traits>(
-            runtime::codecopy<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(CODECOPY, runtime::codecopy<traits>);
 
         MONAD_VM_NEXT(CODECOPY);
     }
@@ -1286,14 +1203,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<EXTCODESIZE, traits>(
-            runtime::extcodesize<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(EXTCODESIZE, runtime::extcodesize<traits>);
 
         MONAD_VM_NEXT(EXTCODESIZE);
     }
@@ -1304,14 +1214,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<EXTCODECOPY, traits>(
-            runtime::extcodecopy<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(EXTCODECOPY, runtime::extcodecopy<traits>);
 
         MONAD_VM_NEXT(EXTCODECOPY);
     }
@@ -1334,14 +1237,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<RETURNDATACOPY, traits>(
-            runtime::returndatacopy<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(RETURNDATACOPY, runtime::returndatacopy<traits>);
 
         MONAD_VM_NEXT(RETURNDATACOPY);
     }
@@ -1352,14 +1248,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<EXTCODEHASH, traits>(
-            runtime::extcodehash<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(EXTCODEHASH, runtime::extcodehash<traits>);
 
         MONAD_VM_NEXT(EXTCODEHASH);
     }
@@ -1370,14 +1259,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<BLOCKHASH, traits>(
-            runtime::blockhash,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(BLOCKHASH, runtime::blockhash);
 
         MONAD_VM_NEXT(BLOCKHASH);
     }
@@ -1464,14 +1346,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<SELFBALANCE, traits>(
-            runtime::selfbalance,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(SELFBALANCE, runtime::selfbalance);
 
         MONAD_VM_NEXT(SELFBALANCE);
     }
@@ -1494,14 +1369,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<BLOBHASH, traits>(
-            runtime::blobhash,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(BLOBHASH, runtime::blobhash);
 
         MONAD_VM_NEXT(BLOBHASH);
     }
@@ -1581,14 +1449,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<MSTORE, traits>(
-            runtime::mstore<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(MSTORE, runtime::mstore<traits>);
 
         MONAD_VM_NEXT(MSTORE);
     }
@@ -1599,14 +1460,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<MSTORE8, traits>(
-            runtime::mstore8<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(MSTORE8, runtime::mstore8<traits>);
 
         MONAD_VM_NEXT(MSTORE8);
     }
@@ -1617,14 +1471,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<MCOPY, traits>(
-            runtime::mcopy<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(MCOPY, runtime::mcopy<traits>);
 
         MONAD_VM_NEXT(MCOPY);
     }
@@ -1635,14 +1482,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<SSTORE, traits>(
-            runtime::sstore<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(SSTORE, runtime::sstore<traits>);
 
         MONAD_VM_NEXT(SSTORE);
     }
@@ -1653,14 +1493,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<SLOAD, traits>(
-            runtime::sload<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(SLOAD, runtime::sload<traits>);
 
         MONAD_VM_NEXT(SLOAD);
     }
@@ -1671,14 +1504,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<TSTORE, traits>(
-            runtime::tstore,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(TSTORE, runtime::tstore);
 
         MONAD_VM_NEXT(TSTORE);
     }
@@ -1689,14 +1515,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<TLOAD, traits>(
-            runtime::tload,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(TLOAD, runtime::tload);
 
         MONAD_VM_NEXT(TLOAD);
     }
@@ -1894,8 +1713,8 @@ namespace monad::vm::interpreter
             }
         }
 #endif
-        push_impl<N, traits>::push(
-            ctx, analysis, stack_bottom, stack_top, gas_remaining, instr_ptr);
+        MONAD_VM_CHECK(PUSH0 + N);
+        push_impl<N, traits>::push(stack_top, instr_ptr);
 
         MONAD_VM_NEXT_PUSH(PUSH0 + N);
     }
@@ -2087,14 +1906,7 @@ namespace monad::vm::interpreter
             &runtime::log4<traits>,
         };
 
-        checked_runtime_call<LOG0 + N, traits>(
-            std::get<N>(impls),
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(LOG0 + N, std::get<N>(impls));
 
         MONAD_VM_NEXT(LOG0 + N);
     }
@@ -2106,14 +1918,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<CREATE, traits>(
-            runtime::create<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(CREATE, runtime::create<traits>);
 
         MONAD_VM_NEXT(CREATE);
     }
@@ -2124,14 +1929,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<CALL, traits>(
-            runtime::call<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(CALL, runtime::call<traits>);
 
         MONAD_VM_NEXT(CALL);
     }
@@ -2142,14 +1940,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<CALLCODE, traits>(
-            runtime::callcode<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(CALLCODE, runtime::callcode<traits>);
 
         MONAD_VM_NEXT(CALLCODE);
     }
@@ -2160,14 +1951,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<DELEGATECALL, traits>(
-            runtime::delegatecall<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(DELEGATECALL, runtime::delegatecall<traits>);
 
         MONAD_VM_NEXT(DELEGATECALL);
     }
@@ -2178,14 +1962,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<CREATE2, traits>(
-            runtime::create2<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(CREATE2, runtime::create2<traits>);
 
         MONAD_VM_NEXT(CREATE2);
     }
@@ -2196,14 +1973,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        checked_runtime_call<STATICCALL, traits>(
-            runtime::staticcall<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(STATICCALL, runtime::staticcall<traits>);
 
         MONAD_VM_NEXT(STATICCALL);
     }
@@ -2257,14 +2027,7 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.size());
-        checked_runtime_call<SELFDESTRUCT, traits>(
-            runtime::selfdestruct<traits>,
-            ctx,
-            analysis,
-            stack_bottom,
-            stack_top,
-            gas_remaining,
-            instr_ptr);
+        MONAD_VM_CHECKED_RUNTIME_CALL(SELFDESTRUCT, runtime::selfdestruct<traits>);
     }
 
     MONAD_VM_INSTRUCTION_CALL inline void stop(

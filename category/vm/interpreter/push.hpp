@@ -75,18 +75,17 @@ namespace monad::vm::interpreter
             return load_be_k<8>(ptr);
         }
 
-        template <size_t N, Traits traits>
+        // The caller checks. The gas and stack checks live in the handler, where
+        // MONAD_VM_CHECK can tail-call Context::exit; reached from here they
+        // could not, and the handler paid a stack frame for a call it never
+        // makes -- see MONAD_VM_CHECK_AT in instruction_table.hpp.
+        template <size_t N>
             requires(!detail::use_avx2_push(N))
         [[gnu::always_inline]] inline void generic_push(
-            runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, uint256_t *const stack_top,
-            int64_t &gas_remaining, uint8_t const *const instr_ptr)
+            uint256_t *const stack_top, uint8_t const *const instr_ptr)
         {
             static constexpr auto whole_words = N / 8;
             static constexpr auto leading_part = N % 8;
-
-            check_requirements<PUSH0 + N, traits>(
-                ctx, analysis, stack_bottom, stack_top, gas_remaining);
 
             auto const leading_word = [instr_ptr] {
                 if constexpr (leading_part == 0) {
@@ -143,18 +142,14 @@ namespace monad::vm::interpreter
             }
         }
 
-        template <size_t N, Traits traits>
+        // The caller checks; see generic_push above.
+        template <size_t N>
             requires(detail::use_avx2_push(N))
         [[gnu::always_inline]] inline void avx2_push(
-            runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, uint256_t *const stack_top,
-            int64_t &gas_remaining, uint8_t const *const instr_ptr)
+            uint256_t *const stack_top, uint8_t const *const instr_ptr)
         {
             static constexpr auto whole_words = N / 8;
             static constexpr auto leading_part = N % 8;
-
-            check_requirements<PUSH0 + N, traits>(
-                ctx, analysis, stack_bottom, stack_top, gas_remaining);
 
             static constexpr int64_t m = ~(
                 std::numeric_limits<int64_t>::max() >> (63 - leading_part * 8));
@@ -195,31 +190,19 @@ namespace monad::vm::interpreter
     template <size_t N, Traits traits>
     struct push_impl
     {
-        [[gnu::always_inline]] static inline void push(
-            runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, uint256_t *const stack_top,
-            int64_t &gas_remaining, uint8_t const *const instr_ptr)
+        [[gnu::always_inline]] static inline void
+        push(uint256_t *const stack_top, uint8_t const *const instr_ptr)
         {
-            detail::generic_push<N, traits>(
-                ctx,
-                analysis,
-                stack_bottom,
-                stack_top,
-                gas_remaining,
-                instr_ptr);
+            detail::generic_push<N>(stack_top, instr_ptr);
         }
     };
 
     template <Traits traits>
     struct push_impl<0, traits>
     {
-        [[gnu::always_inline]] static inline void push(
-            runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, uint256_t *const stack_top,
-            int64_t &gas_remaining, uint8_t const *)
+        [[gnu::always_inline]] static inline void
+        push(uint256_t *const stack_top, uint8_t const *)
         {
-            check_requirements<PUSH0, traits>(
-                ctx, analysis, stack_bottom, stack_top, gas_remaining);
             interpreter::push(stack_top, 0);
         }
     };
@@ -228,18 +211,10 @@ namespace monad::vm::interpreter
         requires(detail::use_avx2_push(N))
     struct push_impl<N, traits>
     {
-        [[gnu::always_inline]] static inline void push(
-            runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, uint256_t *const stack_top,
-            int64_t &gas_remaining, uint8_t const *const instr_ptr)
+        [[gnu::always_inline]] static inline void
+        push(uint256_t *const stack_top, uint8_t const *const instr_ptr)
         {
-            detail::avx2_push<N, traits>(
-                ctx,
-                analysis,
-                stack_bottom,
-                stack_top,
-                gas_remaining,
-                instr_ptr);
+            detail::avx2_push<N>(stack_top, instr_ptr);
         }
     };
 }

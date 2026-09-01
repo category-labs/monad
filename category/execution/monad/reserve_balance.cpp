@@ -21,6 +21,7 @@
 #include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
@@ -453,10 +454,9 @@ template <Traits traits>
 uint256_t get_max_reserve(Address const &)
 {
     // TODO: implement precompile (support reading from orig)
-    constexpr uint256_t WEI_PER_MON{1000000000000000000};
     return uint256_t{
                monad_default_max_reserve_balance_mon(traits::monad_rev())} *
-           WEI_PER_MON;
+           ETHER;
 }
 
 EXPLICIT_MONAD_TRAITS(get_max_reserve);

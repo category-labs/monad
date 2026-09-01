@@ -305,7 +305,7 @@ scripts/check-clang-tidy.sh
 
 Automatic fixes can be applied to a clean working tree with:
 ```console
-scripts/apply-clang-tidy-fixes.sh build run-clang-tidy-19
+scripts/check-clang-tidy.sh -- -fix -format
 ```
 
 To run the formatter, call:

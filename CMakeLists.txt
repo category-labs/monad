@@ -68,7 +68,6 @@ find_package(Boost REQUIRED COMPONENTS context filesystem json CONFIG)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
-pkg_check_modules(secp256k1 REQUIRED IMPORTED_TARGET libsecp256k1)
 pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
 
 # ankerl
@@ -100,6 +99,11 @@ add_subdirectory("third_party/concurrentqueue")
 add_subdirectory("third_party/cthash")
 
 # ethash
+# No monad code uses ethash: hashing goes through category/crypto/keccak.h and
+# the digest type is monad_hash256 (category/crypto/hash256.h). It is still
+# configured because two third-party libraries link ethash::keccak privately —
+# silkpre, and evmone under MONAD_COMPILER_TESTING/BENCHMARKS. Retiring the
+# submodule means finishing the silkpre -> silkpre_vendor migration.
 set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")
 # ethash carries clang::no_sanitize attributes that GCC ignores and warns about.
@@ -186,9 +190,6 @@ target_compile_options(
   ff
   PRIVATE -Wno-unused-parameter -Wno-unused-const-variable -Wno-uninitialized)
 
-# silkpre_vendor (vendored sha256, rmd160, blake2f, ecrecover)
-add_subdirectory("third_party/silkpre_vendor")
-
 # tbb
 find_package(TBB REQUIRED)
 
@@ -206,22 +207,24 @@ configure_file(cmake/test_resource_data.h.in test/test_resource_data.h @ONLY)
 set(TOP_CURRENT_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 function(monad_add_test target)
   cmake_parse_arguments(AT "NO_CUSTOM_MAIN" "" "PROPERTIES" ${ARGN})
+  # Exactly one main provider per branch: gtest's main for NO_CUSTOM_MAIN,
+  # otherwise monad_gtest_main. Linking both would make the resolution of
+  # main order-dependent between the two archives.
   if(AT_NO_CUSTOM_MAIN)
     add_executable(${target} ${AT_UNPARSED_ARGUMENTS})
+    target_link_libraries(${target} GTest::Main)
   else()
-    add_executable(
-      ${target}
-      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/test/unit/common/src/test/main.cpp"
-      ${AT_UNPARSED_ARGUMENTS})
+    add_executable(${target} ${AT_UNPARSED_ARGUMENTS})
     target_include_directories(
       ${target}
       PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/test/unit/common/include")
+    target_link_libraries(${target} monad_gtest_main)
   endif()
   monad_compile_options(${target})
   target_compile_options(${target} PUBLIC "-Wno-missing-field-initializers"
   )# TODO
   target_include_directories(${target} PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
-  target_link_libraries(${target} monad_execution GTest::GTest GTest::Main)
+  target_link_libraries(${target} monad_execution GTest::GTest)
   gtest_discover_tests(
     ${target} DISCOVERY_MODE PRE_TEST
     PROPERTIES ENVIRONMENT ASAN_OPTIONS=abort_on_error=1 ENVIRONMENT
@@ -290,6 +293,8 @@ endif()
 # ##############################################################################
 
 add_subdirectory("category/async")
+# crypto before core: monad_core links monad_crypto for keccak256()
+add_subdirectory("category/crypto")
 add_subdirectory("category/core")
 add_subdirectory("category/mpt")
 add_subdirectory("category/event")
@@ -309,6 +314,7 @@ target_link_libraries(
          monad_execution_ethereum
          monad_execution_native
          monad_execution_runloop
+         monad_precompiles
          monad_rpc
          monad_statesync
          monad-vm

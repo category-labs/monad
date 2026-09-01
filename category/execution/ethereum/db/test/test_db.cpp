@@ -32,7 +32,6 @@
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
 
-#include <ethash/keccak.hpp>
 #include <nlohmann/json.hpp>
 
 #include <gmock/gmock.h>
@@ -496,7 +495,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
     receipts.push_back(std::move(rct));
 
     std::vector<Transaction> transactions;
-    std::vector<hash256> tx_hash;
+    std::vector<monad_hash256> tx_hash;
     static constexpr auto price{20'000'000'000};
     static constexpr auto value{0xde0b6b3a7640000_u256};
     static constexpr auto r{
@@ -588,7 +587,7 @@ TYPED_TEST(DBTest, commit_receipts_transactions)
             EXPECT_EQ(sender, senders[i]) << i;
         }
     };
-    auto verify_tx_hash = [&](hash256 const &tx_hash,
+    auto verify_tx_hash = [&](monad_hash256 const &tx_hash,
                               uint64_t const block_id,
                               unsigned const tx_idx) {
         auto const find_res = this->db.find(

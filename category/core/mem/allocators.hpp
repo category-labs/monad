@@ -198,7 +198,7 @@ namespace allocators
     //! aware `unique_ptr`.
     template <allocator Alloc, Alloc &(*GetAllocator)(), class... Args>
         requires(std::is_constructible_v<typename Alloc::value_type, Args...>)
-    inline constexpr std::unique_ptr<
+    constexpr std::unique_ptr<
         typename Alloc::value_type,
         unique_ptr_allocator_deleter<Alloc, GetAllocator>>
     allocate_unique(Args &&...args)
@@ -240,7 +240,7 @@ namespace allocators
             std::is_constructible_v<
                 typename decltype(GetAllocator())::type_allocator::value_type,
                 Args...>)
-    inline constexpr std::unique_ptr<
+    constexpr std::unique_ptr<
         typename decltype(GetAllocator())::type_allocator::value_type,
         unique_ptr_aliasing_allocator_deleter<GetAllocator, GetSize>>
     allocate_aliasing_unique(size_t const storagebytes, Args &&...args)

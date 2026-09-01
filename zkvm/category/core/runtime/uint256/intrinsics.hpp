@@ -18,7 +18,6 @@
 #include <category/core/runtime/uint256/portable.hpp>
 #include <category/core/runtime/uint256/types.hpp>
 
-#include <cstddef>
 #include <cstdint>
 
 // zkVM (RISC-V) replacement for the AVX2/BMI2 x86 intrinsics. RISC-V has no
@@ -36,7 +35,7 @@ namespace monad::uint256::intrinsics
     using portable::subb;
     using portable::truncating_mul;
 
-    [[gnu::always_inline]] constexpr inline uint64_t
+    [[gnu::always_inline]] constexpr uint64_t
     force(uint64_t const expr) noexcept
     {
         return expr;

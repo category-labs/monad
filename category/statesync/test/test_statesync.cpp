@@ -52,7 +52,6 @@
 #include <category/vm/evm/traits.hpp>
 #include <test_resource_data.h>
 
-#include <ethash/keccak.hpp>
 #include <gtest/gtest.h>
 
 #include <deque>
@@ -1804,7 +1803,7 @@ TEST_F(StateSyncFixture, validation_old_target_greater_than_target)
 
 TEST(ProtocolValidation, storage_deletion_rejects_oversized_key)
 {
-    StatesyncProtocolV1 proto;
+    StatesyncProtocolV1_2 proto;
 
     Address a{0xdeadbeef};
     byte_string oversized_key(33, 0xff);
@@ -1819,7 +1818,7 @@ TEST(ProtocolValidation, storage_deletion_rejects_oversized_key)
 
 TEST(ProtocolValidation, upserts_reject_trailing_bytes)
 {
-    StatesyncProtocolV1 proto;
+    StatesyncProtocolV1_2 proto;
 
     auto const dbname = tmp_dbname();
     {
@@ -1884,4 +1883,21 @@ TEST(ProtocolValidation, upserts_reject_trailing_bytes)
             header_buf.size()));
     }
     std::filesystem::remove(dbname);
+}
+
+TEST(StatesyncVersion, wire_encoding)
+{
+    EXPECT_EQ(MONAD_STATESYNC_VERSION_1_2, 0x00010002u);
+}
+
+TEST(StatesyncVersion, compatibility_range)
+{
+    EXPECT_EQ(monad_statesync_version(), MONAD_STATESYNC_VERSION);
+    EXPECT_TRUE(monad_statesync_client_compatible(MONAD_STATESYNC_VERSION_MIN));
+    EXPECT_TRUE(monad_statesync_client_compatible(MONAD_STATESYNC_VERSION_1_2));
+    // 0x00010001 is v1, which peers no longer speak.
+    EXPECT_FALSE(
+        monad_statesync_client_compatible(MONAD_STATESYNC_VERSION_MIN - 1));
+    EXPECT_FALSE(
+        monad_statesync_client_compatible(MONAD_STATESYNC_VERSION + 1));
 }

@@ -22,8 +22,6 @@
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 
-#include <ethash/hash_types.hpp>
-
 #include <cstdint>
 #include <cstring>
 
@@ -48,13 +46,12 @@ Address create_contract_address(Address const &from, uint64_t const nonce)
 
 // EIP-1014 YP Sec 7: Eq 87, bottom
 Address create2_contract_address(
-    Address const &from, bytes32_t const &zeta,
-    ethash::hash256 const &code_hash)
+    Address const &from, bytes32_t const &zeta, monad_hash256 const &code_hash)
 {
     byte_string const b = byte_string{0xff} +
                           byte_string{from.bytes, sizeof(Address)} +
                           byte_string{zeta.bytes, sizeof(bytes32_t)} +
-                          byte_string{code_hash.bytes, sizeof(ethash::hash256)};
+                          byte_string{code_hash.bytes, sizeof(monad_hash256)};
     return hash_and_clip(b);
 }
 

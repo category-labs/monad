@@ -101,7 +101,7 @@ constexpr bytes32_t to_bytes(uint256_t const &n) noexcept
     return std::bit_cast<bytes32_t>(n);
 }
 
-constexpr bytes32_t to_bytes(hash256 const &n) noexcept
+constexpr bytes32_t to_bytes(monad_hash256 const &n) noexcept
 {
     return std::bit_cast<bytes32_t>(n);
 }

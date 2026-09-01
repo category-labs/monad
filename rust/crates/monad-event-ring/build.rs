@@ -19,6 +19,11 @@ fn main() {
         link_libs.push("monad_event_os_compat");
     }
 
+    println!(
+        "cargo:rerun-if-changed={}",
+        monad_build::repository_root().join("category").display()
+    );
+
     monad_build::MonadCMake::new(
         monad_build::repository_root().join("category/event"),
         monad_build::MonadCMakeLinkage::Static,

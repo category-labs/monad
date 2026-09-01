@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
@@ -184,9 +185,8 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
     BlockMetrics metrics;
 
     {
-        constexpr uint256_t WEI_PER_MON{1000000000000000000};
         State state{bs, Incarnation{0, 0}};
-        state.add_to_balance(from, 20 * WEI_PER_MON);
+        state.add_to_balance(from, 20_ether);
         state.set_nonce(from, 25);
         bs.merge(state);
     }

@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -199,7 +200,7 @@ void run_revert_transaction_test(
     {
         State state{bs, Incarnation{0, 0}};
         uint256_t const initial_balance =
-            uint256_t{initial_balance_mon} * 1000000000000000000ULL;
+            uint256_t{initial_balance_mon} * ETHER;
         state.add_to_balance(SENDER, initial_balance);
         if (prevent_dip_bitset & (1 << IsDelegated)) {
             byte_string const code{
@@ -213,7 +214,7 @@ void run_revert_transaction_test(
         bs.merge(state);
     }
 
-    uint256_t const gas_fee = uint256_t{gas_fee_mon} * 1000000000000000000ULL;
+    uint256_t const gas_fee = uint256_t{gas_fee_mon} * ETHER;
     uint256_t const gas_limit = gas_fee / BASE_FEE_PER_GAS;
     MONAD_ASSERT(
         (gas_fee % BASE_FEE_PER_GAS) == 0 &&
@@ -282,7 +283,7 @@ void run_revert_transaction_test(
             noop_state_tracer,
             chain_context);
         state.subtract_from_balance(SENDER, gas_fee);
-        uint256_t const value = uint256_t{value_mon} * 1000000000000000000ULL;
+        uint256_t const value = uint256_t{value_mon} * ETHER;
         state.subtract_from_balance(SENDER, value);
         bool should_revert = revert_transaction<traits>(
             SENDER,
@@ -395,9 +396,6 @@ TYPED_TEST(
 
     static constexpr Address SENDER{1};
     static constexpr uint256_t BASE_FEE_PER_GAS = 10;
-    auto const to_wei = [](uint64_t mon) {
-        return uint256_t{mon} * 1000000000000000000ULL;
-    };
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
@@ -406,12 +404,12 @@ TYPED_TEST(
 
     {
         State init_state{bs, Incarnation{0, 0}};
-        init_state.add_to_balance(SENDER, to_wei(20));
+        init_state.add_to_balance(SENDER, 20_ether);
         MONAD_ASSERT(bs.can_merge(init_state));
         bs.merge(init_state);
     }
 
-    uint256_t const sender_gas_fee = to_wei(11); // reserve is capped at 10 MON
+    uint256_t const sender_gas_fee = 11_ether; // reserve is capped at 10 MON
     uint256_t const gas_limit_u256 = sender_gas_fee / BASE_FEE_PER_GAS;
     MONAD_ASSERT(
         (sender_gas_fee % BASE_FEE_PER_GAS) == 0 &&
@@ -471,10 +469,6 @@ TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
     constexpr Address sender{1};
     constexpr uint256_t base_fee_per_gas = 10;
 
-    auto const to_wei = [](uint64_t mon) {
-        return uint256_t{mon} * staking::MON;
-    };
-
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
     vm::VM vm;
@@ -482,13 +476,13 @@ TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
 
     {
         State state{bs, Incarnation{0, 0}};
-        state.add_to_balance(sender, to_wei(20));
-        state.add_to_balance(staking::STAKING_CA, to_wei(10));
+        state.add_to_balance(sender, 20_ether);
+        state.add_to_balance(staking::STAKING_CA, 10_ether);
         MONAD_ASSERT(bs.can_merge(state));
         bs.merge(state);
     }
 
-    uint256_t const sender_gas_fee = to_wei(1);
+    uint256_t const sender_gas_fee = 1_ether;
     uint256_t const gas_limit_u256 = sender_gas_fee / base_fee_per_gas;
     MONAD_ASSERT(
         (sender_gas_fee % base_fee_per_gas) == 0 &&
@@ -520,7 +514,7 @@ TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
         noop_state_tracer,
         chain_context);
     state.subtract_from_balance(sender, sender_gas_fee);
-    state.subtract_from_balance(staking::STAKING_CA, to_wei(1));
+    state.subtract_from_balance(staking::STAKING_CA, 1_ether);
 
     EXPECT_FALSE(revert_transaction<traits>(
         sender,
@@ -609,9 +603,6 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
     static constexpr Address SENDER{1};
     static constexpr Address NEW_CONTRACT{2};
     static constexpr uint64_t BASE_FEE_PER_GAS = 10;
-    auto const to_wei = [](uint64_t mon) {
-        return uint256_t{mon} * 1000000000000000000ULL;
-    };
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
@@ -620,8 +611,8 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
 
     {
         State init_state{bs, Incarnation{0, 0}};
-        init_state.add_to_balance(SENDER, to_wei(20));
-        init_state.add_to_balance(NEW_CONTRACT, to_wei(3));
+        init_state.add_to_balance(SENDER, 20_ether);
+        init_state.add_to_balance(NEW_CONTRACT, 3_ether);
         MONAD_ASSERT(bs.can_merge(init_state));
         bs.merge(init_state);
     }
@@ -656,7 +647,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
         init_reserve_balance_context<traits>(
             state, SENDER, tx, BASE_FEE_PER_GAS, 0, noop_state_tracer, context);
         state.subtract_from_balance(SENDER, gas_cost);
-        state.subtract_from_balance(NEW_CONTRACT, to_wei(3));
+        state.subtract_from_balance(NEW_CONTRACT, 3_ether);
         byte_string const contract_code{0x60, 0x00};
         state.set_code(NEW_CONTRACT, contract_code);
     };
@@ -688,9 +679,6 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_empty_code_hash)
     static constexpr Address SENDER{1};
     static constexpr Address NEW_CONTRACT{2};
     static constexpr uint64_t BASE_FEE_PER_GAS = 10;
-    auto const to_wei = [](uint64_t mon) {
-        return uint256_t{mon} * 1000000000000000000ULL;
-    };
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
@@ -699,8 +687,8 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_empty_code_hash)
 
     {
         State init_state{bs, Incarnation{0, 0}};
-        init_state.add_to_balance(SENDER, to_wei(20));
-        init_state.add_to_balance(NEW_CONTRACT, to_wei(3));
+        init_state.add_to_balance(SENDER, 20_ether);
+        init_state.add_to_balance(NEW_CONTRACT, 3_ether);
         MONAD_ASSERT(bs.can_merge(init_state));
         bs.merge(init_state);
     }
@@ -735,7 +723,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_empty_code_hash)
     init_reserve_balance_context<traits>(
         state, SENDER, tx, BASE_FEE_PER_GAS, 0, noop_state_tracer, context);
     state.subtract_from_balance(SENDER, gas_cost);
-    state.subtract_from_balance(NEW_CONTRACT, to_wei(3));
+    state.subtract_from_balance(NEW_CONTRACT, 3_ether);
     state.set_code(NEW_CONTRACT, {});
 
     bool const should_revert = revert_transaction<traits>(
@@ -759,9 +747,6 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
     constexpr Address NEW_CONTRACT{2};
     constexpr Address BENEFICIARY{3};
     constexpr uint64_t BASE_FEE_PER_GAS = 10;
-    auto const to_wei = [](uint64_t mon) {
-        return uint256_t{mon} * 1000000000000000000ULL;
-    };
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
@@ -770,8 +755,8 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
 
     {
         State init_state{bs, Incarnation{0, 0}};
-        init_state.add_to_balance(SENDER, to_wei(20));
-        init_state.add_to_balance(NEW_CONTRACT, to_wei(3));
+        init_state.add_to_balance(SENDER, 20_ether);
+        init_state.add_to_balance(NEW_CONTRACT, 3_ether);
         MONAD_ASSERT(bs.can_merge(init_state));
         bs.merge(init_state);
     }
@@ -814,9 +799,9 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
     auto const [inserted, initial_balance] =
         state.selfdestruct<traits>(NEW_CONTRACT, BENEFICIARY);
     EXPECT_TRUE(inserted);
-    EXPECT_EQ(initial_balance, to_wei(3));
+    EXPECT_EQ(initial_balance, 3_ether);
     EXPECT_EQ(state.get_balance(NEW_CONTRACT), 0);
-    EXPECT_EQ(state.get_balance(BENEFICIARY), to_wei(3));
+    EXPECT_EQ(state.get_balance(BENEFICIARY), 3_ether);
 
     bool const should_revert = revert_transaction<traits>(
         SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context);

@@ -99,13 +99,7 @@ void monad_statesync_client_handle_new_peer(
     auto &ptr = ctx->protocol.at(prefix);
     // TODO: handle switching peers
     MONAD_ASSERT(!ptr);
-    switch (version) {
-    case 1:
-        ptr = std::make_unique<StatesyncProtocolV1>();
-        break;
-    default:
-        MONAD_ASSERT(false);
-    };
+    ptr = std::make_unique<StatesyncProtocolV1_2>();
 }
 
 void monad_statesync_client_handle_target(

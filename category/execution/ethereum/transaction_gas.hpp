@@ -37,6 +37,7 @@ uint64_t g_data(Transaction const &) noexcept;
 template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &) noexcept;
 
+template <Traits traits>
 uint64_t floor_data_gas(Transaction const &) noexcept;
 
 template <Traits traits>
@@ -68,7 +69,7 @@ inline constexpr uint64_t GAS_PER_BLOB = 131'072;
 inline constexpr uint64_t BLOB_BASE_COST = 8192;
 
 template <Traits traits>
-inline constexpr BlobSchedule default_blob_schedule() noexcept
+constexpr BlobSchedule default_blob_schedule() noexcept
 {
     // EIP-7691 increases the blob count where active.
     if constexpr (traits::eip_7691_active()) {
@@ -79,13 +80,13 @@ inline constexpr BlobSchedule default_blob_schedule() noexcept
     }
 }
 
-inline constexpr uint64_t
+constexpr uint64_t
 max_blob_gas_per_block(BlobSchedule const &blob_schedule) noexcept
 {
     return blob_schedule.max_blobs_per_block * GAS_PER_BLOB;
 }
 
-inline constexpr uint64_t
+constexpr uint64_t
 target_blob_gas_per_block(BlobSchedule const &blob_schedule) noexcept
 {
     return blob_schedule.target_blobs_per_block * GAS_PER_BLOB;

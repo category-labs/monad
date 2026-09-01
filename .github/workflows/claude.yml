@@ -99,5 +99,5 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
-            --model claude-opus-4-7 --max-turns 100 --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash,Read,Glob,Grep"
+            --model claude-fable-5 --effort medium --max-turns 100 --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash,Read,Glob,Grep"
           prompt: ${{ steps.build-prompt.outputs.prompt }}

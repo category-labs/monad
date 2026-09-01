@@ -65,3 +65,6 @@
 [submodule "third_party/fiber"]
 	path = third_party/fiber
 	url = https://github.com/category-labs/fiber.git
+[submodule "third_party/zkevm-standards"]
+	path = third_party/zkevm-standards
+	url = https://github.com/eth-act/zkevm-standards.git

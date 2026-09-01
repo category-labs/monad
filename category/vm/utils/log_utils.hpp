@@ -30,9 +30,11 @@ namespace monad::vm::utils
 
         void update(T const new_value) noexcept
         {
-            auto count = count_.load(std::memory_order_acquire);
-            auto running_avg = running_avg_.load(std::memory_order_acquire);
-            auto new_avg = (running_avg * count + new_value) / (count + 1);
+            auto const count = count_.load(std::memory_order_acquire);
+            auto const running_avg =
+                running_avg_.load(std::memory_order_acquire);
+            auto const new_avg =
+                (running_avg * count + new_value) / (count + 1);
             running_avg_.store(new_avg, std::memory_order_release);
             count_.fetch_add(1, std::memory_order_release);
         }
@@ -53,9 +55,10 @@ namespace monad::vm::utils
 
         void update(T const new_value) noexcept
         {
-            auto count = count_.load(std::memory_order_acquire);
-            auto running_avg = running_avg_.load(std::memory_order_acquire);
-            auto new_avg =
+            auto const count = count_.load(std::memory_order_acquire);
+            auto const running_avg =
+                running_avg_.load(std::memory_order_acquire);
+            auto const new_avg =
                 (running_avg * count + std::log2(new_value)) / (count + 1);
             running_avg_.store(new_avg, std::memory_order_release);
             count_.fetch_add(1, std::memory_order_release);

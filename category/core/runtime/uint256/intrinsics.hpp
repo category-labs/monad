@@ -32,8 +32,7 @@
 
 namespace monad::uint256::intrinsics
 {
-    [[gnu::always_inline]] constexpr inline uint64_t
-    force(uint64_t expr) noexcept
+    [[gnu::always_inline]] constexpr uint64_t force(uint64_t expr) noexcept
     {
         if !consteval {
             asm("" : "+r"(expr));

@@ -125,7 +125,7 @@ public:
     // Returns a left-aligned Nibbles containing a subrange of nibbles starting
     // at `pos` and up to `count` nibbles (or to the end if count == npos).
     // The returned Nibbles is always left-aligned (begin_nibble_ == 0).
-    inline constexpr Nibbles substr(unsigned pos, unsigned count = npos) const;
+    constexpr Nibbles substr(unsigned pos, unsigned count = npos) const;
 
     [[nodiscard]] unsigned char get(unsigned const i) const
     {
@@ -200,7 +200,7 @@ public:
     }
 
     // NOLINTNEXTLINE(google-explicit-constructor)
-    constexpr NibblesView(hash256 const &h) noexcept
+    constexpr NibblesView(monad_hash256 const &h) noexcept
         : NibblesView(0, 2 * sizeof(h.bytes), h.bytes)
     {
     }
@@ -345,7 +345,7 @@ constexpr Nibbles concat(Args... args)
     return ret;
 }
 
-inline constexpr Nibbles
+constexpr Nibbles
 Nibbles::substr(unsigned const pos, unsigned const count) const
 {
     auto const ret = concat(NibblesView(*this).substr(pos, count));

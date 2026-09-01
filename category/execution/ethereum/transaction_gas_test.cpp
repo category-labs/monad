@@ -119,6 +119,12 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
     static constexpr auto cost_per_access_list_address = 2'400;
     static constexpr auto cost_per_access_list_key = 1'900;
 
+    // EIP-7981
+    static constexpr uint64_t cost_per_access_list_data_address =
+        TestFixture::Trait::eip_7981_active() ? 20u * 40u : 0u;
+    static constexpr uint64_t cost_per_access_list_data_key =
+        TestFixture::Trait::eip_7981_active() ? 32u * 40u : 0u;
+
     {
         Transaction t{};
         t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
@@ -131,15 +137,61 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
         EXPECT_EQ(
             intrinsic_gas<typename TestFixture::Trait>(t),
             21'000 + cost_per_access_list_address +
-                2 * cost_per_access_list_key);
+                2 * cost_per_access_list_key +
+                cost_per_access_list_data_address +
+                2 * cost_per_access_list_data_key);
 
         t.data.push_back(0x00);
         t.data.push_back(0xff);
         EXPECT_EQ(
             intrinsic_gas<typename TestFixture::Trait>(t),
             21'000 + cost_per_access_list_address +
-                2 * cost_per_access_list_key + zero_token_cost +
+                2 * cost_per_access_list_key +
+                cost_per_access_list_data_address +
+                2 * cost_per_access_list_data_key + zero_token_cost +
                 non_zero_token_cost);
+    }
+}
+
+TYPED_TEST(TraitsTest, floor_data_gas)
+{
+    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+
+    // EIP-7623
+    static constexpr uint64_t zero_floor_token_cost = 10u;
+    static constexpr uint64_t non_zero_floor_token_cost = 40u;
+
+    // EIP-7981
+    static constexpr uint64_t cost_per_access_list_data_address =
+        TestFixture::Trait::eip_7981_active() ? 20u * 40u : 0u;
+    static constexpr uint64_t cost_per_access_list_data_key =
+        TestFixture::Trait::eip_7981_active() ? 32u * 40u : 0u;
+
+    {
+        Transaction t{};
+        t.data.push_back(0x00);
+        t.data.push_back(0xff);
+        EXPECT_EQ(
+            floor_data_gas<typename TestFixture::Trait>(t),
+            21'000 + zero_floor_token_cost + non_zero_floor_token_cost);
+    }
+
+    {
+        Transaction t{};
+        t.to = 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
+
+        static constexpr auto key1{
+            0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
+        static constexpr auto key2{
+            0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
+        t.access_list.push_back({*t.to, {key1, key2}});
+        t.data.push_back(0x00);
+        t.data.push_back(0xff);
+        EXPECT_EQ(
+            floor_data_gas<typename TestFixture::Trait>(t),
+            21'000 + zero_floor_token_cost + non_zero_floor_token_cost +
+                cost_per_access_list_data_address +
+                2 * cost_per_access_list_data_key);
     }
 }
 

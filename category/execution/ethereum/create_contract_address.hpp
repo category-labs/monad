@@ -19,14 +19,12 @@
 
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
-
-#include <ethash/hash_types.hpp>
+#include <category/crypto/hash256.h>
 
 MONAD_NAMESPACE_BEGIN
 
 Address create_contract_address(Address const &from, uint64_t nonce);
 Address create2_contract_address(
-    Address const &from, bytes32_t const &zeta,
-    ethash::hash256 const &code_hash);
+    Address const &from, bytes32_t const &zeta, monad_hash256 const &code_hash);
 
 MONAD_NAMESPACE_END

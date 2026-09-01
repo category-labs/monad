@@ -19,6 +19,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/int.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -270,8 +271,7 @@ struct compact_offset_pair
 static_assert(sizeof(compact_offset_pair) == 8);
 static_assert(alignof(compact_offset_pair) == 4);
 
-inline constexpr unsigned
-bitmask_index(uint16_t const mask, unsigned const i) noexcept
+constexpr unsigned bitmask_index(uint16_t const mask, unsigned const i) noexcept
 {
     MONAD_ASSERT(i < 16);
     MONAD_ASSERT(mask & (1u << i));
@@ -286,19 +286,14 @@ inline byte_string serialize_as_big_endian(UnsignedInteger n)
 {
     MONAD_ASSERT(N <= sizeof(UnsignedInteger));
 
-    // std::byteswap is C++23 only, using GCC intrinsic instead
     if constexpr (std::endian::native != std::endian::big) {
-        if constexpr (sizeof(UnsignedInteger) <= 2) {
-            n = __builtin_bswap16(n);
-        }
-        else if constexpr (sizeof(UnsignedInteger) == 4) {
-            n = __builtin_bswap32(n);
-        }
-        else if constexpr (sizeof(UnsignedInteger) == 8) {
-            n = __builtin_bswap64(n);
+        // Wider than a word: swap and slice the low 8 bytes, which is all N can
+        // select given the assert above.
+        if constexpr (sizeof(UnsignedInteger) > 8) {
+            return serialize_as_big_endian<N>(static_cast<uint64_t>(n));
         }
         else {
-            return serialize_as_big_endian<N>(static_cast<uint64_t>(n));
+            n = bswap(n);
         }
     }
     auto arr =

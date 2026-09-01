@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/keccak.h>
+#include <category/crypto/keccak.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -26,7 +26,7 @@ SHA3_absorb(uint64_t A[5][5], unsigned char const *inp, size_t len, size_t r);
 extern void
 SHA3_squeeze(uint64_t A[5][5], unsigned char *out, size_t len, size_t r);
 
-void keccak256(
+void monad_keccak256(
     void const *const in, size_t const len, uint8_t out[KECCAK256_SIZE])
 {
     uint64_t A[5][5];

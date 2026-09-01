@@ -35,7 +35,6 @@
 #include <boost/outcome/success_failure.hpp>
 
 #include <cstdint>
-#include <initializer_list>
 #include <limits>
 #include <optional>
 
@@ -136,7 +135,7 @@ Result<void> static_validate_transaction(
 
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         // EIP-7623
-        if (MONAD_UNLIKELY(floor_data_gas(tx) > tx.gas_limit)) {
+        if (MONAD_UNLIKELY(floor_data_gas<traits>(tx) > tx.gas_limit)) {
             return TransactionError::IntrinsicGasGreaterThanLimit;
         }
 

@@ -45,15 +45,15 @@ namespace monad::vm::runtime
 
         uint64_t t2;
         std::memcpy(&t2, bytes, 8);
-        t2 = std::byteswap(t2);
+        t2 = bswap(t2);
 
         uint64_t t1;
         std::memcpy(&t1, bytes + 8, 8);
-        t1 = std::byteswap(t1);
+        t1 = bswap(t1);
 
         uint32_t t0;
         std::memcpy(&t0, bytes + 16, 4);
-        t0 = std::byteswap(t0);
+        t0 = bswap(t0);
 
         Address ret;
         std::memcpy(ret.bytes, &t0, 4);
@@ -67,15 +67,15 @@ namespace monad::vm::runtime
     {
         uint32_t t2;
         std::memcpy(&t2, addr.bytes, 4);
-        t2 = std::byteswap(t2);
+        t2 = bswap(t2);
 
         uint64_t t1;
         std::memcpy(&t1, addr.bytes + 4, 8);
-        t1 = std::byteswap(t1);
+        t1 = bswap(t1);
 
         uint64_t t0;
         std::memcpy(&t0, addr.bytes + 12, 8);
-        t0 = std::byteswap(t0);
+        t0 = bswap(t0);
 
         alignas(uint256_t) uint8_t ret[32];
         std::memcpy(ret, &t0, 8);

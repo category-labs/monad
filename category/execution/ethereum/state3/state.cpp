@@ -212,6 +212,17 @@ bool State::account_is_dead(Address const &address)
     return is_dead(recent_account(address));
 }
 
+bool State::account_has_code_or_nonce(Address const &address)
+{
+    auto const &account = recent_account(address);
+    if (!account.has_value()) {
+        return false;
+    }
+
+    auto const &account_val = account.value();
+    return account_val.nonce > 0 || account_val.code_hash != NULL_HASH;
+}
+
 uint64_t State::get_nonce(Address const &address)
 {
     auto const &account = recent_account(address);

@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/runtime/bit.hpp>
 #include <category/core/runtime/uint128.hpp>
 #include <category/core/runtime/uint256.hpp>
 
@@ -92,7 +93,7 @@ uint8_t const *as_bytes(T const &&) = delete;
 // buffers — they handle the surrounding memcpy / bit_cast. Use bswap
 // directly when the value is already in a register.
 template <typename T>
-[[nodiscard, gnu::always_inline]] inline constexpr T bswap(T const x) noexcept
+[[nodiscard, gnu::always_inline]] constexpr T bswap(T const x) noexcept
 {
     if constexpr (std::same_as<T, uint256_t>) {
         return byteswap(x);
@@ -101,7 +102,7 @@ template <typename T>
         return byteswap(x);
     }
     else if constexpr (std::unsigned_integral<T>) {
-        return std::byteswap(x);
+        return bit::byteswap(x);
     }
     else {
         static_assert(sizeof(T) == 0, "bswap not supported for this type");
@@ -129,8 +130,7 @@ load_be_unsafe(uint8_t const *src) noexcept
 
 // Load a little-endian encoded integer from a struct with a .bytes member.
 template <typename T, FixedBytes Src>
-[[nodiscard, gnu::always_inline]] inline constexpr T
-load_le(Src const &src) noexcept
+[[nodiscard, gnu::always_inline]] constexpr T load_le(Src const &src) noexcept
 {
     static_assert(sizeof(Src::bytes) == sizeof(T));
     return std::bit_cast<T>(src);
@@ -138,15 +138,14 @@ load_le(Src const &src) noexcept
 
 // Load a big-endian encoded integer from a struct with a .bytes member.
 template <typename T, FixedBytes Src>
-[[nodiscard, gnu::always_inline]] inline constexpr T
-load_be(Src const &src) noexcept
+[[nodiscard, gnu::always_inline]] constexpr T load_be(Src const &src) noexcept
 {
     return bswap(load_le<T>(src));
 }
 
 // Load a little-endian encoded integer from a sized byte array.
 template <typename T, size_t N>
-[[nodiscard, gnu::always_inline]] inline constexpr T
+[[nodiscard, gnu::always_inline]] constexpr T
 load_le(uint8_t const (&src)[N]) noexcept
 {
     static_assert(N == sizeof(T));
@@ -155,7 +154,7 @@ load_le(uint8_t const (&src)[N]) noexcept
 
 // Load a big-endian encoded integer from a sized byte array.
 template <typename T, size_t N>
-[[nodiscard, gnu::always_inline]] inline constexpr T
+[[nodiscard, gnu::always_inline]] constexpr T
 load_be(uint8_t const (&src)[N]) noexcept
 {
     return bswap(load_le<T>(src));
@@ -186,7 +185,7 @@ template <typename T>
 // (which must have a .bytes member of matching size).
 template <FixedBytes DstT, typename SrcT>
     requires(sizeof(SrcT) >= 8)
-[[nodiscard, gnu::always_inline]] inline constexpr DstT
+[[nodiscard, gnu::always_inline]] constexpr DstT
 store_be_as(SrcT const x) noexcept
 {
     static_assert(sizeof(DstT::bytes) == sizeof(SrcT));

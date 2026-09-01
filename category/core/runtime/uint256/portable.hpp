@@ -30,7 +30,7 @@ namespace monad::uint256::portable
 {
 
     [[gnu::always_inline]]
-    constexpr inline result_with_carry<uint64_t>
+    constexpr result_with_carry<uint64_t>
     addc(uint64_t const lhs, uint64_t const rhs, bool const carry_in) noexcept
     {
         uint64_t const sum = lhs + rhs;
@@ -40,7 +40,7 @@ namespace monad::uint256::portable
         return result_with_carry{.value = sum_carry, .carry = carry_out};
     }
 
-    [[gnu::always_inline]] constexpr inline result_with_carry<uint64_t>
+    [[gnu::always_inline]] constexpr result_with_carry<uint64_t>
     subb(uint64_t const lhs, uint64_t const rhs, bool const borrow_in) noexcept
     {
         uint64_t const sub = lhs - rhs;
@@ -51,21 +51,21 @@ namespace monad::uint256::portable
     }
 
     [[gnu::always_inline]]
-    inline constexpr uint64_t
+    constexpr uint64_t
     shld(uint64_t const high, uint64_t const low, uint8_t const shift) noexcept
     {
         return (high << shift) | ((low >> 1) >> (63 - shift));
     }
 
     [[gnu::always_inline]]
-    inline constexpr uint64_t
+    constexpr uint64_t
     shrd(uint64_t const high, uint64_t const low, uint8_t const shift) noexcept
     {
         return (low >> shift) | ((high << 1) << (63 - shift));
     }
 
     [[gnu::always_inline]]
-    constexpr inline div_result<uint64_t>
+    constexpr div_result<uint64_t>
     div(uint64_t u_hi, uint64_t u_lo, uint64_t const v) noexcept
     {
         using u128 = unsigned __int128;
@@ -76,7 +76,7 @@ namespace monad::uint256::portable
     }
 
     [[gnu::always_inline]]
-    inline constexpr void mulx(
+    constexpr void mulx(
         uint64_t const x, uint64_t const y, uint64_t &r_hi,
         uint64_t &r_lo) noexcept
     {
@@ -88,7 +88,7 @@ namespace monad::uint256::portable
 
     template <size_t R, size_t M, size_t N>
     [[gnu::always_inline]]
-    inline constexpr words_t<R>
+    constexpr words_t<R>
     truncating_mul(words_t<M> const &x, words_t<N> const &y) noexcept
         requires(0 < R && R <= M + N)
     {

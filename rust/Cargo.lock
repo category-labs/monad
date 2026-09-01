@@ -1537,6 +1537,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "monad-statesync-version"
+version = "0.1.0"
+dependencies = [
+ "monad-build",
+]
+
+[[package]]
 name = "monad-triedb"
 version = "0.1.0"
 dependencies = [

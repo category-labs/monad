@@ -83,13 +83,16 @@ FROM base AS code_quality
 
 COPY . src
 
-RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake -S . -B build           \
-  -DMONAD_COMPILER_BENCHMARKS=On  \
-  -DMONAD_COMPILER_TESTING=On     \
-  -DCMAKE_BUILD_TYPE=Debug        \
-  -DCMAKE_C_COMPILER=clang-19     \
-  -DCMAKE_CXX_COMPILER=clang++-19 \
-  -DUTILS_CLANG_TIDY_AUTO_CONST=On
+RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake -S . -B build  \
+  -DCMAKE_BUILD_TYPE=Debug             \
+  -DCMAKE_C_COMPILER=clang-19          \
+  -DCMAKE_CXX_COMPILER=clang++-19      \
+  -DUTILS_CLANG_TIDY_AUTO_CONST=On     \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=TRUE \
+  -DMONAD_COMPILER_BENCHMARKS=On       \
+  -DMONAD_COMPILER_TESTING=On          \
+  -DMONAD_COMPILER_STATS=On            \
+  -DMONAD_COMPILER_HOT_PATH_STATS=On
 
 RUN cd src && cmake --build build -t ConstCorrectnessChecks
 RUN cd src && ./scripts/check-clang-tidy.sh

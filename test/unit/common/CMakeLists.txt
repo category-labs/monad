@@ -25,3 +25,12 @@ target_include_directories(
 set_target_properties(monad_unit_test_common PROPERTIES LINKER_LANGUAGE CXX)
 target_link_libraries(monad_unit_test_common PUBLIC monad_execution_native)
 monad_compile_options(monad_unit_test_common)
+
+# The shared gtest main for monad_add_test executables, compiled once here
+# instead of once per test target.
+add_library(monad_gtest_main STATIC
+            ${PROJECT_SOURCE_DIR}/test/unit/common/src/test/main.cpp)
+target_include_directories(monad_gtest_main
+                           PRIVATE ${PROJECT_SOURCE_DIR}/test/unit/common/include)
+target_link_libraries(monad_gtest_main PUBLIC monad_execution GTest::GTest)
+monad_compile_options(monad_gtest_main)

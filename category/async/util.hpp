@@ -29,14 +29,14 @@ concept safely_roundable_type =
     std::unsigned_integral<T> && (__CHAR_BIT__ * sizeof(T)) > bits;
 
 template <unsigned bits, safely_roundable_type<bits> T>
-inline constexpr T round_up_align(T const x) noexcept
+constexpr T round_up_align(T const x) noexcept
 {
     constexpr T mask = (T(1) << bits) - 1;
     return (x + mask) & ~mask;
 }
 
 template <unsigned bits>
-inline constexpr chunk_offset_t round_up_align(chunk_offset_t x) noexcept
+constexpr chunk_offset_t round_up_align(chunk_offset_t x) noexcept
 {
     constexpr file_offset_t mask = (file_offset_t(1) << bits) - 1;
     x.offset = (x.offset + mask) & ~mask;
@@ -44,14 +44,14 @@ inline constexpr chunk_offset_t round_up_align(chunk_offset_t x) noexcept
 }
 
 template <unsigned bits, safely_roundable_type<bits> T>
-inline constexpr T round_down_align(T const x) noexcept
+constexpr T round_down_align(T const x) noexcept
 {
     constexpr T mask = ~((T(1) << bits) - 1);
     return x & mask;
 }
 
 template <unsigned bits>
-inline constexpr chunk_offset_t round_down_align(chunk_offset_t x) noexcept
+constexpr chunk_offset_t round_down_align(chunk_offset_t x) noexcept
 {
     constexpr file_offset_t mask = ~((file_offset_t(1) << bits) - 1);
     x.offset = x.offset & mask & chunk_offset_t::max_offset;

@@ -231,8 +231,7 @@ evmc::Result execute_create_message(
     state.access_account(contract_address);
 
     // Prevent overwriting contracts - EIP-684
-    if (state.get_nonce(contract_address) != 0 ||
-        state.get_code_hash(contract_address) != NULL_HASH) {
+    if (state.account_has_code_or_nonce(contract_address)) {
         evmc::Result result{EVMC_INVALID_INSTRUCTION};
         call_tracer.on_exit(result);
         return result;

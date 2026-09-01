@@ -50,7 +50,7 @@ namespace
 }
 
 // Intrinsic gas related functions
-inline constexpr auto g_txn_create(Transaction const &tx) noexcept
+constexpr auto g_txn_create(Transaction const &tx) noexcept
 {
     if (!tx.to.has_value()) {
         return 32'000u;
@@ -59,7 +59,7 @@ inline constexpr auto g_txn_create(Transaction const &tx) noexcept
 }
 
 // EIP-2930
-inline constexpr auto g_access_and_storage(Transaction const &tx) noexcept
+constexpr auto g_access_and_storage(Transaction const &tx) noexcept
 {
     uint64_t g = tx.access_list.size() * 2'400u;
     for (auto const &i : tx.access_list) {
@@ -68,14 +68,25 @@ inline constexpr auto g_access_and_storage(Transaction const &tx) noexcept
     return g;
 }
 
+// EIP-7981
+// Without EIP-7976, the 64 per-byte cost specified by EIP-7981 is 40 per-byte
+constexpr uint64_t g_access_list_data(Transaction const &tx) noexcept
+{
+    uint64_t g = tx.access_list.size() * 20u;
+    for (auto const &i : tx.access_list) {
+        g += i.keys.size() * 32u;
+    }
+    return g * 40u;
+}
+
 // EIP-7702
-inline constexpr auto g_authorization(Transaction const &tx) noexcept
+constexpr auto g_authorization(Transaction const &tx) noexcept
 {
     constexpr uint64_t per_empty_account_cost = 25'000u;
     return per_empty_account_cost * tx.authorization_list.size();
 }
 
-inline constexpr uint64_t g_extra_cost_init(Transaction const &tx) noexcept
+constexpr uint64_t g_extra_cost_init(Transaction const &tx) noexcept
 {
     if (!tx.to.has_value()) {
         return ((tx.data.length() + 31u) / 32u) * 2u;
@@ -124,19 +135,30 @@ uint64_t intrinsic_gas(Transaction const &tx) noexcept
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         gas += g_authorization(tx);
     }
+    // EIP-7981: increase access-list cost (Amsterdam)
+    if constexpr (traits::eip_7981_active()) {
+        gas += g_access_list_data(tx);
+    }
 
     return gas;
 }
 
 EXPLICIT_TRAITS(intrinsic_gas);
 
+template <Traits traits>
 uint64_t floor_data_gas(Transaction const &tx) noexcept
 {
     auto const [zeros, nonzeros] = tokens_in_calldata(tx);
-    return 21'000 + (zeros * 10u + nonzeros * 40u);
+    uint64_t gas = 21'000 + (zeros * 10u + nonzeros * 40u);
+    if constexpr (traits::eip_7981_active()) {
+        gas += g_access_list_data(tx);
+    }
+    return gas;
 }
 
-inline constexpr uint256_t priority_fee_per_gas(
+EXPLICIT_TRAITS(floor_data_gas);
+
+constexpr uint256_t priority_fee_per_gas(
     Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 {
     MONAD_ASSERT(tx.max_fee_per_gas >= base_fee_per_gas);

@@ -14,11 +14,10 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
 
 #include <evmc/evmc.hpp>
-
-#include <ethash/keccak.hpp>
 
 #include <gtest/gtest.h>
 
@@ -52,7 +51,7 @@ TEST(Execution, create2_contract_address)
         0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef, 0xde,
         0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef};
 
-    auto const zero_hash = ethash::keccak256(&zero[0], 1);
+    auto const zero_hash = keccak256(zero);
     EXPECT_EQ(
         create2_contract_address(
             0x0000000000000000000000000000000000000000_address,
@@ -74,7 +73,7 @@ TEST(Execution, create2_contract_address)
             zero_hash),
         0xD04116cDd17beBE565EB2422F2497E06cC1C9833_address);
 
-    auto const deadbeef_hash = ethash::keccak256(&deadbeef[0], 4);
+    auto const deadbeef_hash = keccak256(deadbeef);
     EXPECT_EQ(
         create2_contract_address(
             0x0000000000000000000000000000000000000000_address,
@@ -89,8 +88,7 @@ TEST(Execution, create2_contract_address)
             deadbeef_hash),
         0x60f3f640a8508fC6a86d45DF051962668E1e8AC7_address);
 
-    auto const deadcattle_hash =
-        ethash::keccak256(deadcattle.data(), deadcattle.size());
+    auto const deadcattle_hash = keccak256(deadcattle);
     EXPECT_EQ(
         create2_contract_address(
             0x00000000000000000000000000000000deadbeef_address,
@@ -98,7 +96,7 @@ TEST(Execution, create2_contract_address)
             deadcattle_hash),
         0x1d8bfDC5D46DC4f61D6b6115972536eBE6A8854C_address);
 
-    auto const null_hash = ethash::keccak256(nullptr, 0);
+    auto const null_hash = keccak256(byte_string_view{});
     EXPECT_EQ(
         create2_contract_address(
             0x0000000000000000000000000000000000000000_address,

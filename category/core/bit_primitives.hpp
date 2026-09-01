@@ -20,22 +20,22 @@
 
 // Bit primitives that must not become out-of-line calls in the zkVM guest.
 //
-// The guest targets riscv64ima. That base ISA has no rev8, cpop, clz or ctz — those live in the
-// Zbb extension — so `std::byteswap`, `std::popcount` and `std::countl_zero` all lower to libgcc
-// helpers, and the guest pays a call plus a multi-instruction body every time. Measured on the
-// shipped guest, per block:
+// The guest builds `-march=rv64ima_zbb_zbs_zbkb_zicsr` — the guest's own CMakeLists appends it last,
+// so it is what every arm is built with whatever MARCH the driver sets. Under Zbb gcc emits rev8,
+// cpop and clz inline, and none of `__bswapdi2`, `__popcountdi2`, `__clzdi2` or `__ctzdi2` appears in
+// the linked ELF: `-ffunction-sections` plus gc-sections drops the definitions in zkvm/core/libc.cpp
+// along with the bodies below that back them.
 //
-//     __bswapdi2       19.95 M steps   7.16 %   26-instruction body
-//     __popcountdi2     1.29 M steps   0.46 %   29-instruction body
-//     __clzdi2          1.18 M steps   0.42 %   45-instruction body
+// They stay because the base ISA is what the flag widens, not what the guest requires. Without Zbb
+// `std::byteswap`, `std::popcount` and `std::countl_zero` all lower to libgcc helpers — a call plus a
+// multi-instruction body every time, measured at 19.95 M steps (7.16 %), 1.29 M (0.46 %) and 1.18 M
+// (0.42 %) per block on such a build — and these replacements are the fallback that keeps that off the
+// hot path. The reth guest spends 0.01 % in ABI helpers in total: Rust's intrinsics stay inline either
+// way, so the asymmetry is a property of the toolchain, not of either client.
 //
-// The reth guest spends 0.01 % in ABI helpers in total: Rust's intrinsics stay inline. The
-// asymmetry is a property of the toolchain and the target, not of either client.
-//
-// These replacements are bit-identical to the standard functions (each verified against the
-// builtin over tens of millions of random inputs plus edge cases) and emit no call. They are not
-// as good as the instruction would be — see the note on popcount — so the right long-term fix is
-// for the backend to accept Zbb, at which point every one of these collapses to one instruction.
+// They are bit-identical to the standard functions (each verified against the builtin over tens of
+// millions of random inputs plus edge cases) and emit no call. Where Zbb is on, the single instruction
+// beats all of them, and gcc reaches it without going through here.
 namespace monad::bits
 {
     [[gnu::always_inline]] inline uint64_t load64(unsigned char const *const p) noexcept
@@ -140,12 +140,13 @@ namespace monad::bits
     }
 
     // ── population count ────────────────────────────────────────────────────────────────────
-    // ~~MEASURED CAVEAT: this one barely pays — 4.2 steps per call, 0.09 %.~~ That was true while
-    // the four constants were immediates: materialising them cost about what libgcc's 29-instruction
-    // helper did, so only the call was saved. Fetched (imm64 above) the body is 19 instructions, and
-    // against the helper's 30 that is 684 COST per call — 41,909 calls, 28.7 M, 0.14 % of the block.
-    // Still the strongest argument for asking the backend for `cpop`: one instruction would beat all
-    // of this.
+    // On a build without Zbb this is the whole of __popcountdi2 (see zkvm/core/libc.cpp) and it is
+    // worth having: fetched from .rodata by imm64 above the body is 19 instructions against libgcc's
+    // 30, 684 COST per call over 41,909 calls, 28.7 M, 0.14 % of a block. Immediates instead of
+    // fetched constants cost about what libgcc does, so only the call is saved — 4.2 steps, 0.09 %.
+    //
+    // Under Zbb `cpop` is one instruction and beats all of it, which is what the guest gets; nothing
+    // in the shipped ELF reaches this body.
     alignas(8) inline constexpr uint64_t POPC_K[4] = {
         0x5555555555555555ull, 0x3333333333333333ull,
         0x0F0F0F0F0F0F0F0Full, 0x0101010101010101ull};

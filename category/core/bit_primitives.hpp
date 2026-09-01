@@ -335,8 +335,26 @@ namespace monad::bits
 #endif
     }
 
+    // One multiply, not fmix64's two. The section comment above states the
+    // design this restores -- fold the words, multiply by the golden-ratio
+    // constant, and keep the final xor-shift, which is NOT optional because
+    // immer's HAMT indexes on the LOW bits and a bare multiply leaves those
+    // nearly unmixed. fmix64 spends a second multiply, at 97 cells against 15
+    // for an add, on entropy the first one has already spread.
+    //
+    // Unlike hash_bytes20 this keeps a mixing step: an address goes only to
+    // unordered_dense, which buckets on the high bits, while a 32-byte word
+    // reaches the page map as well.
     [[gnu::always_inline]] inline uint64_t hash_bytes32(unsigned char const *const p) noexcept
     {
-        return fmix64(load64(p) ^ load64(p + 8) ^ load64(p + 16) ^ load64(p + 24));
+        uint64_t const fold =
+            load64(p) ^ load64(p + 8) ^ load64(p + 16) ^ load64(p + 24);
+#if defined(MONAD_ZKVM_ZISK)
+        alignas(8) static constexpr uint64_t GOLDEN = 0x9E3779B97F4A7C15ull;
+        uint64_t const h = fold * imm64(GOLDEN);
+        return h ^ (h >> 29);
+#else
+        return fmix64(fold);
+#endif
     }
 }

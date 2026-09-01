@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <bit>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
@@ -81,13 +82,15 @@ class FlatStorage
     {
         std::vector<std::uint32_t> slot; // position + 1, 0 empty
         std::size_t mask;                // slot.size() - 1
+        unsigned shift;                  // 64 - log2(slot.size())
     };
 
     mutable std::unique_ptr<Index> idx_{};
 
     void insert_index(std::size_t const pos) const
     {
-        std::size_t h = static_cast<std::size_t>(key_tail(v_[pos].first)) & idx_->mask;
+        std::size_t h =
+            static_cast<std::size_t>(key_tail(v_[pos].first) >> idx_->shift);
         while (idx_->slot[h] != 0) {
             h = (h + 1) & idx_->mask;
         }
@@ -105,6 +108,7 @@ class FlatStorage
         }
         idx_->slot.assign(cap, 0);
         idx_->mask = cap - 1;
+        idx_->shift = 64u - static_cast<unsigned>(std::bit_width(cap) - 1);
         for (std::size_t i = 0; i < v_.size(); ++i) {
             insert_index(i);
         }
@@ -113,7 +117,7 @@ class FlatStorage
     [[nodiscard]] std::uint32_t
     lookup(bytes32_t const &key, std::uint64_t const tail) const
     {
-        std::size_t h = static_cast<std::size_t>(tail) & idx_->mask;
+        std::size_t h = static_cast<std::size_t>(tail >> idx_->shift);
         for (;;) {
             std::uint32_t const p = idx_->slot[h];
             if (p == 0) {
@@ -412,14 +416,21 @@ class PrestateStorage
     {
         std::vector<std::uint32_t> slot; // position + 1, 0 empty
         std::size_t mask;                // slot.size() - 1
+        unsigned shift;                  // 64 - log2(slot.size())
     };
 
     std::unique_ptr<Index> idx_{};
 
     void idx_insert(std::size_t const pos)
     {
-        std::size_t h =
-            static_cast<std::size_t>(key_tail(v_[pos].first)) & idx_->mask;
+        // The home bucket is the HIGH bits, not `tail & mask`. key_tail reads bytes 24..31 with a
+        // native-endian load and bytes32_t is big-endian, so a small-integer slot key -- the most
+        // common shape there is -- puts its value in the high bytes of that word and leaves the low
+        // bits zero. Masking the low bits sends every such key to bucket 0 and the probe degenerates
+        // into the scan it replaced, with the index's cost on top: measured on block 25552422,
+        // 560,346 probe steps and +3.7 % on the block. A keccak-derived key is uniform either way.
+        std::size_t h = static_cast<std::size_t>(
+            key_tail(v_[pos].first) >> idx_->shift);
         while (idx_->slot[h] != 0) {
             h = (h + 1) & idx_->mask;
         }
@@ -437,6 +448,7 @@ class PrestateStorage
         }
         idx_->slot.assign(cap, 0);
         idx_->mask = cap - 1;
+        idx_->shift = 64u - static_cast<unsigned>(std::bit_width(cap) - 1);
         for (std::size_t i = 0; i < v_.size(); ++i) {
             idx_insert(i);
         }
@@ -469,7 +481,7 @@ public:
         std::uint64_t const tail = key_tail(k);
 #ifdef MONAD_ZKVM_ZISK
         if (idx_) {
-            std::size_t h = static_cast<std::size_t>(tail) & idx_->mask;
+            std::size_t h = static_cast<std::size_t>(tail >> idx_->shift);
             for (;;) {
                 std::uint32_t const p = idx_->slot[h];
                 if (p == 0) {

@@ -182,7 +182,8 @@ inline mpt::Nibbles const proposal_nibbles = mpt::concat(PROPOSAL_NIBBLE);
 inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
 
 byte_string encode_account_db(Address const &, Account const &);
-byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);
+byte_string encode_storage_db(
+    bytes32_t const &, bytes32_t const &, uint64_t last_access = 0);
 
 // ── Monad Page Storage ──────────────────────────────
 //

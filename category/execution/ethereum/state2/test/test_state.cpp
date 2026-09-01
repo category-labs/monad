@@ -31,7 +31,6 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/util.hpp>
@@ -663,7 +662,8 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_commit_incarnation)
         bs.merge(s2);
     }
     {
-        auto [released_state, released_code, _, access_] = std::move(bs).release();
+        auto [released_state, released_code, _, access_] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -718,7 +718,8 @@ TYPED_TEST(
         bs.merge(s2);
     }
     {
-        auto [released_state, released_code, _, access_] = std::move(bs).release();
+        auto [released_state, released_code, _, access_] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -786,7 +787,8 @@ TYPED_TEST(
         bs.merge(s2);
     }
     {
-        auto [released_state, released_code, _, access_] = std::move(bs).release();
+        auto [released_state, released_code, _, access_] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -1625,7 +1627,8 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
             as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
-        auto [released_state, released_code, _, access_] = std::move(bs).release();
+        auto [released_state, released_code, _, access_] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -1652,7 +1655,8 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         cs.destruct_suicides<typename TestFixture::Trait>();
         EXPECT_TRUE(bs.can_merge(cs));
         bs.merge(cs);
-        auto [released_state, released_code, _, access_] = std::move(bs).release();
+        auto [released_state, released_code, _, access_] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -1735,7 +1739,8 @@ TYPED_TEST(OnDiskTestSuite, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 8 on top of block 10 round 5
-        auto [released_state, released_code, _, access_] = std::move(bs).release();
+        auto [released_state, released_code, _, access_] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -1763,7 +1768,8 @@ TYPED_TEST(OnDiskTestSuite, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 6 on top of block 10 round 5
-        auto [released_state, released_code, _, access_] = std::move(bs).release();
+        auto [released_state, released_code, _, access_] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -1793,7 +1799,8 @@ TYPED_TEST(OnDiskTestSuite, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 7 on top of block 10 round 5
-        auto [released_state, released_code, _, access_] = std::move(bs).release();
+        auto [released_state, released_code, _, access_] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -1941,8 +1948,7 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
         [released_state_111,
          released_code_111,
          _released_self_destruct_storage_reads_111,
-         _released_access_111] =
-            std::move(bs_111).release();
+         _released_access_111] = std::move(bs_111).release();
     commit_simple(
         db,
         *released_state_111,
@@ -1977,8 +1983,7 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
         [released_state_121,
          released_code_121,
          _released_self_destruct_storage_reads_121,
-         _released_access_121] =
-            std::move(bs_121).release();
+         _released_access_121] = std::move(bs_121).release();
     commit_simple(
         db,
         *released_state_121,
@@ -2013,8 +2018,7 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
         [released_state_112,
          released_code_112,
          _released_self_destruct_storage_reads_112,
-         _released_access_112] =
-            std::move(bs_112).release();
+         _released_access_112] = std::move(bs_112).release();
     commit_simple(
         db,
         *released_state_112,
@@ -2037,8 +2041,7 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
         [released_state_122,
          released_code_122,
          _released_self_destruct_storage_reads_122,
-         _released_access_122] =
-            std::move(bs_122).release();
+         _released_access_122] = std::move(bs_122).release();
     commit_simple(
         db,
         *released_state_122,
@@ -2064,8 +2067,7 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
         [released_state_131,
          released_code_131,
          _released_self_destruct_storage_reads_131,
-         _released_access_131] =
-            std::move(bs_131).release();
+         _released_access_131] = std::move(bs_131).release();
     commit_simple(
         db,
         *released_state_131,
@@ -2089,8 +2091,7 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
         [released_state_132,
          released_code_132,
          _released_self_destruct_storage_reads_132,
-         _released_access_132] =
-            std::move(bs_132).release();
+         _released_access_132] = std::move(bs_132).release();
     commit_simple(
         db,
         *released_state_132,
@@ -2556,7 +2557,7 @@ TEST_F(InMemoryStateTest, merge_access_sets)
     auto const released = std::move(bs).release();
     auto const &access = released.access;
     ASSERT_TRUE(access.contains(a));
-    EXPECT_TRUE(access.at(a).contains(compute_page_key(key1)));
+    EXPECT_TRUE(access.at(a).contains(key1));
     ASSERT_TRUE(access.contains(b));
     EXPECT_TRUE(access.at(b).empty());
 }

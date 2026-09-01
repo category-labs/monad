@@ -31,7 +31,6 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
@@ -169,12 +168,12 @@ bool BlockState::account_is_cached(Address const &address)
 }
 
 bool BlockState::storage_page_is_cached(
-    Address const &address, Incarnation const incarnation,
-    bytes32_t const &page_key)
+    Address const &address, Incarnation const incarnation, bytes32_t const &key)
 {
     if (!storage_cutoff_.has_value()) {
         return false;
     }
+    bytes32_t const lookup_key = db_.storage_lookup_key(key);
     MONAD_ASSERT(state_);
     {
         StateDeltas::const_accessor it{};
@@ -184,17 +183,17 @@ bool BlockState::storage_page_is_cached(
         if (!pre.has_value() || incarnation != pre->incarnation) {
             return false;
         }
-        if (auto const mit = it->second.cached_pages.find(page_key);
+        if (auto const mit = it->second.cached_pages.find(lookup_key);
             mit != it->second.cached_pages.end()) {
             return mit->second;
         }
     }
-    auto const page = db_.read_storage_page(address, incarnation, page_key);
+    auto const page = db_.read_storage_page(address, incarnation, lookup_key);
     bool const cached = page.last_access > *storage_cutoff_;
     {
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
-        it->second.cached_pages.try_emplace(page_key, cached);
+        it->second.cached_pages.try_emplace(lookup_key, cached);
     }
     return cached;
 }
@@ -240,13 +239,12 @@ bool BlockState::can_merge(State &state) const
 void BlockState::merge(State const &state)
 {
     if (track_access_) {
-        // union of the merged transaction's read+write set, at page
-        // granularity; original_ is never rolled back so reverted-frame
-        // accesses are included
+        // union of the merged transaction's read+write set; original_ is
+        // never rolled back so reverted-frame accesses are included
         for (auto const &[address, account_state] : state.original()) {
-            auto &pages = access_[address];
+            auto &slots = access_[address];
             for (auto const &[key, value] : account_state.storage_) {
-                pages.insert(compute_page_key(key));
+                slots.insert(key);
             }
         }
     }

@@ -30,7 +30,6 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
-#include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -478,9 +477,7 @@ State::access_storage_tier(Address const &address, bytes32_t const &key)
             return vm::Host::AccessTier::cold;
         }
         return block_state_.storage_page_is_cached(
-                   address,
-                   account_state.account_->incarnation,
-                   compute_page_key(key))
+                   address, account_state.account_->incarnation, key)
                    ? vm::Host::AccessTier::cached
                    : vm::Host::AccessTier::cold;
     }

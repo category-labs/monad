@@ -152,9 +152,8 @@ storage_page_t TrieDb::read_storage_page(
     Address const &addr, Incarnation const incarnation,
     bytes32_t const &page_key)
 {
-    if (!page_encoded_) {
-        MONAD_ABORT("read_storage_page is only valid on a page-encoded TrieDb");
-    }
+    // page_key is the storage lookup key: a page key when page-encoded, a
+    // slot key otherwise (the returned page is a single-slot container)
     storage_page_t result;
     auto const status =
         cache_
@@ -210,12 +209,14 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
     return vm::make_shared_intercode(res.value().node->value());
 }
 
-std::optional<uint64_t> TrieDb::read_account_pricing_bucket(uint64_t const block)
+std::optional<uint64_t>
+TrieDb::read_account_pricing_bucket(uint64_t const block)
 {
     return read_pricing_bucket(PricingKind::account, block);
 }
 
-std::optional<uint64_t> TrieDb::read_storage_pricing_bucket(uint64_t const block)
+std::optional<uint64_t>
+TrieDb::read_storage_pricing_bucket(uint64_t const block)
 {
     return read_pricing_bucket(PricingKind::storage, block);
 }

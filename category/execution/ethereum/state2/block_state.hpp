@@ -38,11 +38,6 @@ class State;
 using SelfDestructStorageReads = ankerl::unordered_dense::segmented_map<
     Address, ankerl::unordered_dense::segmented_set<bytes32_t>>;
 
-/// Accounts and storage pages touched (read or written) by merged
-/// transactions; the deterministic access set for multi-block cache pricing.
-using BlockAccessSets = ankerl::unordered_dense::segmented_map<
-    Address, ankerl::unordered_dense::segmented_set<bytes32_t>>;
-
 class BlockState final
 {
     Db &db_;
@@ -97,8 +92,8 @@ public:
     // block's cutoffs. The address must already be materialized in the block
     // state (callers go through State::current_account_state first).
     bool account_is_cached(Address const &);
-    bool storage_page_is_cached(
-        Address const &, Incarnation, bytes32_t const &page_key);
+    bool
+    storage_page_is_cached(Address const &, Incarnation, bytes32_t const &key);
 
     bool can_merge(State &) const;
 

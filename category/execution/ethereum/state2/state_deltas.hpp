@@ -72,6 +72,12 @@ static_assert(alignof(StateDelta) == 8);
 using StateDeltas = oneapi::tbb::concurrent_hash_map<
     Address, StateDelta, BytesHashCompare<Address>>;
 
+/// Accounts and storage slots touched (read or written) by merged
+/// transactions; the deterministic access set for multi-block cache pricing.
+/// Slot keys are raw; commit builders map them to their storage encoding.
+using BlockAccessSets = ankerl::unordered_dense::segmented_map<
+    Address, ankerl::unordered_dense::segmented_set<bytes32_t>>;
+
 static_assert(sizeof(StateDeltas) == 576);
 static_assert(alignof(StateDeltas) == 8);
 

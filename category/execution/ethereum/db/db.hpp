@@ -95,7 +95,6 @@ struct Db
         return {};
     }
 
-protected:
     bytes32_t storage_lookup_key(bytes32_t const &key) const
     {
         return is_page_encoded() ? compute_page_key(key) : key;

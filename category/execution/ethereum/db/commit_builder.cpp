@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -34,6 +35,7 @@
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
@@ -62,9 +64,27 @@ namespace
     }
 }
 
-CommitBuilder::CommitBuilder(uint64_t const block_number)
+CommitBuilder::CommitBuilder(
+    uint64_t const block_number, monad::Db *const db,
+    BlockAccessSets const *const access)
     : block_number_{block_number}
+    , db_{db}
+    , access_{access}
 {
+}
+
+void CommitBuilder::bump_account(
+    std::optional<Account> const &pre, Account &post)
+{
+    if (cache_pricing_bump_due(post.last_access_block, block_number_)) {
+        post.last_access_block = block_number_;
+    }
+    if (pre.has_value() && pre->last_access_block != 0) {
+        bucket_deltas_[{PricingKind::account, pre->last_access_block}] -= 1;
+    }
+    if (post.last_access_block != 0) {
+        bucket_deltas_[{PricingKind::account, post.last_access_block}] += 1;
+    }
 }
 
 CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
@@ -73,27 +93,119 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
     for (auto const &[addr, delta] : state_deltas) {
         UpdateList storage_updates;
         std::optional<byte_string_view> value;
-        auto const &account = delta.account.second;
+        // mutable copy: last_access bumps are applied at commit time only
+        std::optional<Account> account = delta.account.second;
+        // bump only addresses in the deterministic access set; StateDeltas
+        // itself contains reads from aborted speculative attempts
+        ankerl::unordered_dense::segmented_set<bytes32_t> const *touched =
+            nullptr;
+        if (access_ != nullptr) {
+            if (auto const it = access_->find(addr); it != access_->end()) {
+                touched = &it->second;
+            }
+            if (account.has_value()) {
+                if (touched != nullptr) {
+                    bump_account(delta.account.first, *account);
+                }
+            }
+            else if (
+                delta.account.first.has_value() &&
+                delta.account.first->last_access_block != 0) {
+                // deleted account leaves the histogram
+                bucket_deltas_[{
+                    PricingKind::account,
+                    delta.account.first->last_access_block}] -= 1;
+            }
+        }
         proposal_post_state_.accounts[addr] = account;
         if (account.has_value()) {
             auto const inc = account->incarnation;
-            for (auto const &[key, delta] : delta.storage) {
-                if (delta.first != delta.second) {
+            bool const pre_storage_valid =
+                delta.account.first.has_value() &&
+                delta.account.first->incarnation == inc;
+            ankerl::unordered_dense::segmented_set<bytes32_t> written;
+            auto const slot_pre_ts = [&](bytes32_t const &key) {
+                return pre_storage_valid
+                           ? db_->read_storage_page(addr, inc, key).last_access
+                           : 0;
+            };
+            for (auto const &[key, slot_delta] : delta.storage) {
+                if (slot_delta.first != slot_delta.second) {
+                    bool const deleted = slot_delta.second == bytes32_t{};
+                    uint64_t last_access = 0;
+                    if (touched != nullptr) {
+                        written.insert(key);
+                        uint64_t const pre_ts = slot_pre_ts(key);
+                        if (pre_ts != 0) {
+                            bucket_deltas_[{PricingKind::storage, pre_ts}] -= 1;
+                        }
+                        if (!deleted) {
+                            last_access =
+                                cache_pricing_bump_due(pre_ts, block_number_)
+                                    ? block_number_
+                                    : pre_ts;
+                            if (last_access != 0) {
+                                bucket_deltas_[{
+                                    PricingKind::storage, last_access}] += 1;
+                            }
+                        }
+                    }
                     storage_updates.push_front(
                         update_alloc_.emplace_back(Update{
                             .key = hash_alloc_.emplace_back(
                                 keccak256({key.bytes, sizeof(key.bytes)})),
-                            .value = delta.second == bytes32_t{}
+                            .value = deleted
                                          ? std::nullopt
                                          : std::make_optional<byte_string_view>(
                                                bytes_alloc_.emplace_back(
                                                    encode_storage_db(
-                                                       key, delta.second))),
+                                                       key,
+                                                       slot_delta.second,
+                                                       last_access))),
+                            .incarnation = false,
+                            .next = UpdateList{},
+                            .version = static_cast<int64_t>(block_number_)}));
+                    storage_page_t page{slot_delta.second};
+                    page.last_access = last_access;
+                    proposal_post_state_.storage[StorageKey{addr, inc, key}] =
+                        page;
+                }
+            }
+
+            // read-only touched slots whose last_access is due for a bump
+            // become leaf rewrites
+            if (touched != nullptr && pre_storage_valid) {
+                for (auto const &key : *touched) {
+                    if (written.contains(key)) {
+                        continue;
+                    }
+                    storage_page_t page =
+                        db_->read_storage_page(addr, inc, key);
+                    if (page.is_empty()) {
+                        continue;
+                    }
+                    if (!cache_pricing_bump_due(
+                            page.last_access, block_number_)) {
+                        continue;
+                    }
+                    if (page.last_access != 0) {
+                        bucket_deltas_[{
+                            PricingKind::storage, page.last_access}] -= 1;
+                    }
+                    page.last_access = block_number_;
+                    bucket_deltas_[{PricingKind::storage, block_number_}] += 1;
+                    storage_updates.push_front(
+                        update_alloc_.emplace_back(Update{
+                            .key = hash_alloc_.emplace_back(
+                                keccak256({key.bytes, sizeof(key.bytes)})),
+                            .value =
+                                bytes_alloc_.emplace_back(encode_storage_db(
+                                    key, page[0], page.last_access)),
                             .incarnation = false,
                             .next = UpdateList{},
                             .version = static_cast<int64_t>(block_number_)}));
                     proposal_post_state_.storage[StorageKey{addr, inc, key}] =
-                        storage_page_t{delta.second};
+                        page;
                 }
             }
             value = bytes_alloc_.emplace_back(
@@ -121,7 +233,69 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         .next = std::move(account_updates),
         .version = static_cast<int64_t>(block_number_)}));
 
+    if (access_ != nullptr) {
+        add_pricing_updates();
+    }
+
     return *this;
+}
+
+void CommitBuilder::add_pricing_updates()
+{
+    auto const read_bucket = [this](PricingKind const kind, uint64_t const b) {
+        return kind == PricingKind::account
+                   ? db_->read_account_pricing_bucket(b)
+                   : db_->read_storage_pricing_bucket(b);
+    };
+    // prune the bucket falling out of the window: increments only happen at
+    // the bucket's own block, so bucket b is dead after block b + W
+    if (block_number_ > CACHE_PRICING_WINDOW) {
+        for (auto const kind : {PricingKind::account, PricingKind::storage}) {
+            uint64_t const b = block_number_ - CACHE_PRICING_WINDOW - 1;
+            if (read_bucket(kind, b).has_value()) {
+                bucket_deltas_.try_emplace({kind, b}, 0);
+            }
+        }
+    }
+
+    uint64_t const window_floor = block_number_ > CACHE_PRICING_WINDOW
+                                      ? block_number_ - CACHE_PRICING_WINDOW
+                                      : 0;
+    UpdateList bucket_updates;
+    for (auto const &[bucket, delta] : bucket_deltas_) {
+        auto const [kind, block] = bucket;
+        bool const pruned = block < window_floor;
+        if (delta == 0 && !pruned) {
+            continue;
+        }
+        int64_t const current =
+            static_cast<int64_t>(read_bucket(kind, block).value_or(0));
+        if (pruned && current == 0) {
+            continue;
+        }
+        int64_t const weight = pruned ? 0 : current + delta;
+        MONAD_ASSERT(weight >= 0);
+        bucket_updates.push_front(update_alloc_.emplace_back(Update{
+            .key = NibblesView{bytes_alloc_.emplace_back(
+                cache_pricing_bucket_key(kind, block))},
+            .value = weight > 0
+                         ? std::make_optional<byte_string_view>(
+                               bytes_alloc_.emplace_back(rlp::encode_unsigned(
+                                   static_cast<uint64_t>(weight))))
+                         : std::nullopt,
+            .incarnation = false,
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(block_number_)}));
+    }
+    if (bucket_updates.empty()) {
+        return;
+    }
+    updates_.push_front(update_alloc_.emplace_back(Update{
+        .key = cache_pricing_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(bucket_updates),
+        .version = static_cast<int64_t>(block_number_)}));
 }
 
 CommitBuilder &CommitBuilder::add_code(Code const &code)

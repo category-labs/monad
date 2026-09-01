@@ -65,9 +65,9 @@ namespace
     std::optional<std::vector<Withdrawal>> const empty_withdrawals{};
 
     void drive_commit(
-        TrieDb &tdb, uint64_t const block_number,
-        uint64_t const parent_number, bytes32_t const &parent_id,
-        StateDeltas const &deltas, BlockAccessSets const &access)
+        TrieDb &tdb, uint64_t const block_number, uint64_t const parent_number,
+        bytes32_t const &parent_id, StateDeltas const &deltas,
+        BlockAccessSets const &access)
     {
         tdb.set_block_and_prefix(parent_number, parent_id);
         BlockHeader const header{.number = block_number};
@@ -109,7 +109,8 @@ TEST(CachePricing, last_access_bump_and_histogram)
     ASSERT_EQ(page_key, compute_page_key(slot_1));
 
     BlockAccessSets access;
-    access[ADDR_A].insert(page_key);
+    access[ADDR_A].insert(slot_0);
+    access[ADDR_A].insert(slot_1);
 
     // block 1: create account, write two slots on one page
     Account const created{.nonce = 1};
@@ -169,11 +170,9 @@ TEST(CachePricing, last_access_bump_and_histogram)
         tdb.read_storage_page(ADDR_A, acct2->incarnation, page_key);
     EXPECT_EQ(page2.last_access, bump_block);
     EXPECT_EQ(page2[0], bytes32_t{uint64_t{0xa1}});
-    EXPECT_EQ(
-        tdb.read_account_pricing_bucket(1), std::nullopt);
+    EXPECT_EQ(tdb.read_account_pricing_bucket(1), std::nullopt);
     EXPECT_EQ(tdb.read_account_pricing_bucket(bump_block), 1);
-    EXPECT_EQ(
-        tdb.read_storage_pricing_bucket(1), std::nullopt);
+    EXPECT_EQ(tdb.read_storage_pricing_bucket(1), std::nullopt);
     EXPECT_EQ(tdb.read_storage_pricing_bucket(bump_block), 2);
 
     // young chain, weight below capacity: everything in the window is cached
@@ -214,9 +213,8 @@ TEST(CachePricing, access_tiers)
     GenesisState const GENESIS_STATE = MonadTestnet{}.get_genesis_state();
     load_genesis_state(GENESIS_STATE, tdb);
 
-    auto const page_key = compute_page_key(slot_0);
     BlockAccessSets access;
-    access[ADDR_A].insert(page_key);
+    access[ADDR_A].insert(slot_0);
 
     Account const created{.nonce = 1};
     {
@@ -239,8 +237,7 @@ TEST(CachePricing, access_tiers)
     {
         BlockState bs{tdb, vm};
         State s{bs, Incarnation{2, 1}};
-        EXPECT_EQ(
-            s.access_account_tier(ADDR_A), vm::Host::AccessTier::cold);
+        EXPECT_EQ(s.access_account_tier(ADDR_A), vm::Host::AccessTier::cold);
     }
 
     // cutoff 0: everything with a nonzero last_access is cached
@@ -248,8 +245,7 @@ TEST(CachePricing, access_tiers)
         BlockState bs{tdb, vm};
         bs.set_pricing_cutoffs(0, 0);
         State s{bs, Incarnation{2, 1}};
-        EXPECT_EQ(
-            s.access_account_tier(ADDR_A), vm::Host::AccessTier::cached);
+        EXPECT_EQ(s.access_account_tier(ADDR_A), vm::Host::AccessTier::cached);
         // repeat access in the same tx is warm
         EXPECT_EQ(s.access_account_tier(ADDR_A), vm::Host::AccessTier::warm);
         // slot_1 shares the page with slot_0: page-granular cached
@@ -280,4 +276,69 @@ TEST(CachePricing, access_tiers)
             s.access_storage_tier<MbcFork>(ADDR_A, slot_0),
             vm::Host::AccessTier::cold);
     }
+}
+
+TEST(CachePricing, slot_encoded_last_access)
+{
+    mpt::Db db{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{}};
+    TrieDb tdb{db};
+    ASSERT_FALSE(tdb.is_page_encoded());
+
+    GenesisState const GENESIS_STATE = MonadTestnet{}.get_genesis_state();
+    load_genesis_state(GENESIS_STATE, tdb);
+
+    BlockAccessSets access;
+    access[ADDR_A].insert(slot_0);
+
+    auto const drive = [&](uint64_t const block_number,
+                           uint64_t const parent_number,
+                           StateDeltas const &deltas) {
+        tdb.set_block_and_prefix(parent_number, bytes32_t{parent_number});
+        auto const builder = make_commit_builder(block_number, tdb, &access);
+        builder->add_state_deltas(deltas);
+        BlockHeader const header{.number = block_number};
+        tdb.commit(
+            bytes32_t{block_number}, *builder, header, deltas, [](auto &) {});
+        tdb.finalize(block_number, bytes32_t{block_number});
+    };
+
+    Account const created{.nonce = 1};
+    {
+        StorageDeltas storage;
+        storage.emplace(
+            slot_0, StorageDelta{bytes32_t{}, bytes32_t{uint64_t{0xa1}}});
+        StateDeltas deltas;
+        deltas.emplace(
+            ADDR_A,
+            StateDelta{
+                .account = {std::nullopt, created},
+                .storage = std::move(storage)});
+        drive(1, 0, deltas);
+    }
+
+    tdb.set_block_and_prefix(1, bytes32_t{uint64_t{1}});
+    auto const acct1 = tdb.read_account(ADDR_A);
+    ASSERT_TRUE(acct1.has_value());
+    EXPECT_EQ(acct1->last_access_block, 1);
+    EXPECT_EQ(
+        tdb.read_storage(ADDR_A, acct1->incarnation, slot_0),
+        bytes32_t{uint64_t{0xa1}});
+    auto const leaf = tdb.read_storage_page(ADDR_A, acct1->incarnation, slot_0);
+    EXPECT_EQ(leaf.last_access, 1);
+    EXPECT_EQ(tdb.read_account_pricing_bucket(1), 1);
+    EXPECT_EQ(tdb.read_storage_pricing_bucket(1), 1);
+
+    // read-only touch within C: no bump
+    {
+        StateDeltas deltas;
+        deltas.emplace(
+            ADDR_A, StateDelta{.account = {acct1, acct1}, .storage = {}});
+        drive(2, 1, deltas);
+    }
+    tdb.set_block_and_prefix(2, bytes32_t{uint64_t{2}});
+    EXPECT_EQ(tdb.read_account(ADDR_A)->last_access_block, 1);
+    EXPECT_EQ(
+        tdb.read_storage_page(ADDR_A, acct1->incarnation, slot_0).last_access,
+        1);
+    EXPECT_EQ(tdb.read_storage_pricing_bucket(2), std::nullopt);
 }

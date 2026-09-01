@@ -53,6 +53,12 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
     , vm_{monad_vm}
     , state_(std::make_unique<StateDeltas>())
 {
+#ifdef MONAD_ZKVM_ZISK
+    // Reserve initial capacity to avoid early rehashes.
+    // Host TBB maps have no reserve().
+    state_->reserve(1024);
+    code_.reserve(256);
+#endif
 }
 
 std::optional<Account> BlockState::read_account(Address const &address)
@@ -195,23 +201,20 @@ bool BlockState::can_merge(State &state) const
 
 void BlockState::merge(State const &state)
 {
-    ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
-
+    // Merge code directly: code_.emplace ignores duplicate keys, avoiding
+    // a separate set of distinct code hashes for each transaction.
     auto const &current = state.current();
+    auto const &code = state.code();
     for (auto const &[address, account_state] : current) {
         auto const &account = account_state.account_;
         if (account.has_value()) {
-            code_hashes.insert(account.value().code_hash);
+            auto const it = code.find(account.value().code_hash);
+            if (it != code.end()) {
+                code_.emplace(
+                    account.value().code_hash,
+                    it->second->intercode()); // TODO try_emplace
+            }
         }
-    }
-
-    auto const &code = state.code();
-    for (auto const &code_hash : code_hashes) {
-        auto const it = code.find(code_hash);
-        if (it == code.end()) {
-            continue;
-        }
-        code_.emplace(code_hash, it->second->intercode()); // TODO try_emplace
     }
 
     MONAD_ASSERT(state_);
@@ -228,6 +231,13 @@ void BlockState::merge(State const &state)
                     it2->second.second = value;
                 }
                 else {
+#ifdef MONAD_ZKVM_ZISK
+                    // Reserve on first insertion to avoid early rehashes.
+                    // Host TBB maps have no reserve().
+                    if (MONAD_UNLIKELY(it->second.storage.empty())) {
+                        it->second.storage.reserve(8);
+                    }
+#endif
                     it->second.storage.emplace(
                         key, std::make_pair(bytes32_t{}, value));
                 }

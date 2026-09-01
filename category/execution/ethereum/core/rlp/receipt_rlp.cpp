@@ -15,6 +15,7 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/address.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/core/rlp/config.hpp>
@@ -38,20 +39,118 @@
 MONAD_RLP_NAMESPACE_BEGIN
 
 // Encode
+
+namespace
+{
+    // Significant byte count of `size`, i.e. the length to_big_compact gives
+    // it. Only ever called with size > 55, so it is never zero.
+    size_t compact_len(size_t size)
+    {
+        size_t n = 0;
+        while (size != 0) {
+            ++n;
+            size >>= 8;
+        }
+        return n;
+    }
+
+    size_t list_header_len(size_t const size)
+    {
+        return size > 55 ? 1 + compact_len(size) : 1;
+    }
+
+    void append_length(byte_string &out, unsigned char const base,
+        size_t const size)
+    {
+        size_t const n = compact_len(size);
+        out.push_back(static_cast<unsigned char>(base + n));
+        for (size_t i = n; i-- > 0;) {
+            out.push_back(static_cast<unsigned char>(size >> (i * 8)));
+        }
+    }
+
+    // encode_list2's header, written into an existing buffer instead of at
+    // the front of a fresh one.
+    void append_list_header(byte_string &out, size_t const size)
+    {
+        if (MONAD_LIKELY(size <= 55)) {
+            out.push_back(static_cast<unsigned char>(0xc0 + size));
+            return;
+        }
+        append_length(out, 0xf7, size);
+    }
+
+    size_t string_len(byte_string_view const s)
+    {
+        if (s.size() == 1 && s[0] <= 0x7f) {
+            return 1;
+        }
+        return (s.size() > 55 ? 1 + compact_len(s.size()) : 1) + s.size();
+    }
+
+    // encode_string2, appended rather than returned.
+    void append_string(byte_string &out, byte_string_view const s)
+    {
+        if (s.size() == 1 && s[0] <= 0x7f) {
+            out.push_back(s[0]);
+            return;
+        }
+        if (MONAD_LIKELY(s.size() <= 55)) {
+            out.push_back(static_cast<unsigned char>(0x80 + s.size()));
+        }
+        else {
+            append_length(out, 0xb7, s.size());
+        }
+        out += s;
+    }
+
+    size_t log_payload_len(Receipt::Log const &log)
+    {
+        size_t const topics_payload =
+            log.topics.size() * (1 + sizeof(bytes32_t));
+        return (1 + sizeof(Address)) + list_header_len(topics_payload) +
+            topics_payload + string_len(log.data);
+    }
+
+    size_t log_len(Receipt::Log const &log)
+    {
+        size_t const payload = log_payload_len(log);
+        return list_header_len(payload) + payload;
+    }
+
+    // A log, appended in place. The nested encoding is written directly into
+    // the caller's buffer: every length below is known before a byte is
+    // emitted, so no part of it has to be built in a temporary first.
+    //
+    // An address is always 20 bytes and a topic always 32, so both headers are
+    // constants -- 0x80 + 20 and 0x80 + 32 -- never in the long form and never
+    // in the single-byte form.
+    void append_log(byte_string &out, Receipt::Log const &log)
+    {
+        static_assert(sizeof(bytes32_t) == 32);
+        static_assert(sizeof(Address) == 20);
+        constexpr unsigned char address_header = 0x80 + sizeof(Address);
+        constexpr unsigned char topic_header = 0x80 + sizeof(bytes32_t);
+
+        size_t const topics_payload =
+            log.topics.size() * (1 + sizeof(bytes32_t));
+
+        append_list_header(out, log_payload_len(log));
+        out.push_back(address_header);
+        out.append(log.address.bytes, sizeof(log.address.bytes));
+        append_list_header(out, topics_payload);
+        for (auto const &i : log.topics) {
+            out.push_back(topic_header);
+            out.append(i.bytes, sizeof(i.bytes));
+        }
+        append_string(out, log.data);
+    }
+}
+
 byte_string encode_topics(std::vector<bytes32_t> const &topics)
 {
-    // Appended in place rather than through encode_bytes32's return value. A
-    // topic is always exactly 32 bytes, so its RLP is always the one-byte
-    // header 0x80 + 32 followed by the bytes -- the length is never in the
-    // long form and never in the single-byte form -- and building a 33-byte
-    // byte_string per topic only to copy it in costs an allocation and two
-    // copies for a header that is a constant.
-    //
-    // The guest allocates 47,705 times a block, and this path with encode_log,
-    // emit_log and the receipt encoding around it holds 47 % of them; the
-    // allocator is a bump pointer and still costs about 1,210 cells a call.
     static_assert(sizeof(bytes32_t) == 32);
-    constexpr unsigned char topic_header = 0x80 + 32;
+    constexpr unsigned char topic_header = 0x80 + sizeof(bytes32_t);
 
     byte_string result{};
     result.reserve(topics.size() * (1 + sizeof(bytes32_t)));
@@ -64,10 +163,10 @@ byte_string encode_topics(std::vector<bytes32_t> const &topics)
 
 byte_string encode_log(Receipt::Log const &log)
 {
-    return encode_list2(
-        encode_address(log.address),
-        encode_topics(log.topics),
-        encode_string2(log.data));
+    byte_string result{};
+    result.reserve(log_len(log));
+    append_log(result, log);
+    return result;
 }
 
 byte_string encode_bloom(Receipt::Bloom const &bloom)
@@ -77,25 +176,46 @@ byte_string encode_bloom(Receipt::Bloom const &bloom)
 
 byte_string encode_receipt(Receipt const &receipt)
 {
-    byte_string log_result{};
-
+    // Assembled in a single buffer. The logs are the bulk of a receipt, and
+    // composing this through encode_list2 copies them end to end three times
+    // over -- once to close the log list, once into the receipt's own list,
+    // and once more to put the type byte in front -- each copy through a
+    // fresh allocation, because encode_list2 takes its arguments by reference
+    // and so cannot write a header ahead of a payload it does not own. Every
+    // length here is known before a byte is emitted, so the type byte and
+    // both headers go down first and every log byte is written exactly once.
+    size_t logs_payload = 0;
     for (auto const &i : receipt.logs) {
-        log_result += encode_log(i);
+        logs_payload += log_len(i);
     }
 
-    auto const receipt_bytes = encode_list2(
-        encode_unsigned(receipt.status),
-        encode_unsigned(receipt.gas_used),
-        encode_bloom(receipt.bloom),
-        encode_list2(log_result));
+    auto const status = encode_unsigned(receipt.status);
+    auto const gas_used = encode_unsigned(receipt.gas_used);
+    auto const bloom = encode_bloom(receipt.bloom);
 
-    if (receipt.type == TransactionType::eip1559 ||
+    size_t const payload = status.size() + gas_used.size() + bloom.size() +
+        list_header_len(logs_payload) + logs_payload;
+
+    bool const typed = receipt.type == TransactionType::eip1559 ||
         receipt.type == TransactionType::eip2930 ||
         receipt.type == TransactionType::eip4844 ||
-        receipt.type == TransactionType::eip7702) {
-        return static_cast<unsigned char>(receipt.type) + receipt_bytes;
+        receipt.type == TransactionType::eip7702;
+
+    byte_string result{};
+    result.reserve(
+        static_cast<size_t>(typed) + list_header_len(payload) + payload);
+    if (typed) {
+        result.push_back(static_cast<unsigned char>(receipt.type));
     }
-    return receipt_bytes;
+    append_list_header(result, payload);
+    result += status;
+    result += gas_used;
+    result += bloom;
+    append_list_header(result, logs_payload);
+    for (auto const &i : receipt.logs) {
+        append_log(result, i);
+    }
+    return result;
 }
 
 // Decode

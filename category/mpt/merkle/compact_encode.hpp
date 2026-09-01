@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/assert.h>
+#include <category/core/bit_primitives.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/result.hpp>
 #include <category/core/rlp/decode_error.hpp>
@@ -23,6 +24,7 @@
 #include <category/mpt/nibbles_view.hpp>
 
 #include <cassert>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <type_traits>
@@ -75,7 +77,26 @@ constexpr void compact_encode_raw(
         std::memcpy(res + 1, src, m / 2);
     }
     else {
-        for (unsigned k = 0; k < m / 2; ++k) {
+        // A 4-bit left shift of the byte run, which is a funnel shift eight
+        // output bytes at a time rather than two loads, two shifts, an or and
+        // a byte store apiece. Leaf paths here are the unconsumed tail of a
+        // hashed key and so run near the full 32 bytes, which is what makes
+        // the wide form worth having.
+        //
+        // The reads stay inside the byte loop's own bounds: the group needs
+        // src[k..k+7] and src[k+8], and k + 8 <= n, while the byte loop reads
+        // src[n] itself on its last turn.
+        unsigned const n = m / 2;
+        unsigned k = 0;
+        for (; k + 8 <= n; k += 8) {
+            std::uint64_t w;
+            std::memcpy(&w, src + k, sizeof(w));
+            std::uint64_t const be = bits::bswap64(
+                (bits::bswap64(w) << 4) |
+                (static_cast<std::uint64_t>(src[k + 8]) >> 4));
+            std::memcpy(res + 1 + k, &be, sizeof(be));
+        }
+        for (; k < n; ++k) {
             res[1 + k] = static_cast<unsigned char>(
                 (src[k] << 4) | (src[k + 1] >> 4));
         }

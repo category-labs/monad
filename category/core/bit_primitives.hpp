@@ -304,9 +304,27 @@ namespace monad::bits
         return h;
     }
 
+    // The fold covers all twenty bytes: the second and third loads overlap on
+    // bytes 12-15, but at opposite ends of their words, so nothing cancels.
+    //
+    // On the guest the fold is the whole hash. Its only caller hashes an
+    // Address, and an address is the low twenty bytes of a keccak digest --
+    // of a public key, of (sender, nonce), or of a CREATE2 preimage -- so
+    // every bit of it is already uniform and an avalanche has nothing left to
+    // spread. fmix64 is ten instructions and two of them are multiplies, which
+    // ZisK prices at 97 cells against 15 for an add.
+    //
+    // Distribution is the only thing at risk, and it is not a correctness
+    // risk: the map compares keys, so a worse hash shows up as probes and
+    // never as a wrong answer.
     [[gnu::always_inline]] inline uint64_t hash_bytes20(unsigned char const *const p) noexcept
     {
-        return fmix64(load64(p) ^ load64(p + 8) ^ load64(p + 12));
+        uint64_t const fold = load64(p) ^ load64(p + 8) ^ load64(p + 12);
+#if defined(MONAD_ZKVM_ZISK)
+        return fold;
+#else
+        return fmix64(fold);
+#endif
     }
 
     [[gnu::always_inline]] inline uint64_t hash_bytes32(unsigned char const *const p) noexcept

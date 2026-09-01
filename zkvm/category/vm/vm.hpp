@@ -56,6 +56,11 @@ namespace monad::vm
             : stack_allocator_{}
             , memory_pool_{8 * 1024 * 1024}
         {
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+            // Reserve initial capacity to avoid early rehashes when a block
+            // accesses many distinct code hashes.
+            varcode_.reserve(1024);
+#endif
         }
 
 #if defined(MONAD_ZKVM_VARCODE_CACHE)

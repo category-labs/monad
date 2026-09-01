@@ -18,6 +18,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -73,6 +74,7 @@ class SlotIndex
     {
         std::vector<std::uint32_t> slots; // Position + 1; 0 means empty.
         std::size_t mask{};
+        unsigned shift{}; // 64 - log2(slots.size()).
     };
 
     std::unique_ptr<Table> table_{};
@@ -91,7 +93,11 @@ class SlotIndex
     [[gnu::always_inline]] inline void
     insert(std::size_t const pos, bytes32_t const &key)
     {
-        std::size_t h = static_cast<std::size_t>(key_tail(key)) & table_->mask;
+        // On little-endian targets, key_tail places small big-endian slot
+        // numbers in the high bits. Use those bits to avoid clustering them
+        // in bucket 0; keccak-derived keys are uniform either way.
+        std::size_t h =
+            static_cast<std::size_t>(key_tail(key) >> table_->shift);
         // on_insert keeps the table at most half full, so probing terminates.
         while (table_->slots[h] != 0) {
             h = (h + 1) & table_->mask;
@@ -112,6 +118,7 @@ class SlotIndex
         }
         table_->slots.assign(cap, 0);
         table_->mask = cap - 1;
+        table_->shift = 64u - static_cast<unsigned>(std::bit_width(cap) - 1);
         for (std::size_t i = 0; i < size; ++i) {
             insert(i, key_of(entries[i]));
         }
@@ -166,7 +173,7 @@ public:
         bytes32_t const &key, std::uint64_t const tail,
         std::vector<Entry> const &entries) const
     {
-        std::size_t h = static_cast<std::size_t>(tail) & table_->mask;
+        std::size_t h = static_cast<std::size_t>(tail >> table_->shift);
         for (;;) {
             std::uint32_t const p = table_->slots[h];
             if (p == 0 || key_equals(key, tail, key_of(entries[p - 1]))) {

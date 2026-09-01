@@ -760,7 +760,13 @@ void OffsetTrie::fold_ext_node_path_maybe(
         });
 }
 
-std::pair<NodeId, Nibbles>
+// The path comes back as a VIEW, not an owning Nibbles. Every path returned
+// below is a suffix of `key`, which is the caller's -- in commit() a keccak256
+// local that outlives the put_* it hands the path to -- so the copy the owning
+// type forced was an allocation and a path copy per upsert for nothing. The
+// owning `p` in the ExtView arm stays: that one views the overlay, which the
+// put_*s below it move.
+std::pair<NodeId, NibblesView>
 OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
 {
     drop_hash(id); // dirtied along the descent
@@ -771,9 +777,9 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
     // displaced leaf's bytes.
     auto const split_leaf =
         [&](NibblesView const path,
-            auto const &reput_old) -> std::pair<NodeId, Nibbles> {
+            auto const &reput_old) -> std::pair<NodeId, NibblesView> {
         if (path == key) { // exact match -> overwrite (reuse id + its path)
-            return {id, Nibbles{key}};
+            return {id, key};
         }
         // old leaf + new key meet at a fresh branch, wrapped in an
         // extension for their shared prefix.
@@ -790,30 +796,30 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
         else {
             put_branch(id, children);
         }
-        return {leaf, Nibbles{key.substr(cp + 1)}};
+        return {leaf, key.substr(cp + 1)};
     };
 
     return match(
         get_current(id),
         Cases{
-            [&](NullView) -> std::pair<NodeId, Nibbles> {
+            [&](NullView) -> std::pair<NodeId, NibblesView> {
                 // Empty slot (or an empty trie's root): a fresh leaf
                 // holding the whole remaining key, which the caller
                 // materialises.
-                return {fresh_id(), Nibbles{key}};
+                return {fresh_id(), key};
             },
-            [&](StorageLeafView l) -> std::pair<NodeId, Nibbles> {
+            [&](StorageLeafView l) -> std::pair<NodeId, NibblesView> {
                 bytes32_t const v = l.value();
                 return split_leaf(l.path(), [&](NibblesView const np) {
                     return put_storage(NULL_ID, np, v);
                 });
             },
-            [&](AccountLeafView l) -> std::pair<NodeId, Nibbles> {
+            [&](AccountLeafView l) -> std::pair<NodeId, NibblesView> {
                 return split_leaf(l.path(), [&, l](NibblesView const np) {
                     return clone_acct(NULL_ID, l, np);
                 });
             },
-            [&](ExtView e) -> std::pair<NodeId, Nibbles> {
+            [&](ExtView e) -> std::pair<NodeId, NibblesView> {
                 Nibbles const p{e.path()};
                 NibblesView const path{p};
                 NodeId const child = e.child();
@@ -837,9 +843,9 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
                 else {
                     put_branch(id, children);
                 }
-                return {leaf, Nibbles{key.substr(cp + 1)}};
+                return {leaf, key.substr(cp + 1)};
             },
-            [&](BranchView b) -> std::pair<NodeId, Nibbles> {
+            [&](BranchView b) -> std::pair<NodeId, NibblesView> {
                 MONAD_ASSERT(key.nibble_size() > 0); // never ends at branch
                 unsigned const nib = key.get(0);
                 NodeId const child = b.child(nib);
@@ -862,7 +868,7 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
                 put_branch(id, children);
                 return result;
             },
-            [&](DigestView) -> std::pair<NodeId, Nibbles> {
+            [&](DigestView) -> std::pair<NodeId, NibblesView> {
                 MONAD_ABORT("incomplete witness: upsert hit a Digest");
             },
         });

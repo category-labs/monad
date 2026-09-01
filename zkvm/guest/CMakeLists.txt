@@ -57,7 +57,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     option(MONAD_ZKVM_OFFICIAL_PROFILE
            "build the audited, fail-closed official ZisK guest profile" OFF)
     set(_monad_zkvm_official_features "baseline" "zisk-dma" "keccakf-memo"
-                                      "wide-memory-size")
+                                      "wide-memory-size" "varcode-cache")
     set(_monad_zkvm_runtime_version "1.2.0-alpha")
     set(_monad_zkvm_runtime_revision
         "fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3")
@@ -74,7 +74,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # adding a lever appends to both lists.
     set(_monad_zkvm_required_levers MONAD_ZKVM_ZISK_DMA
                                     MONAD_ZKVM_KECCAKF_MEMO
-                                    MONAD_ZKVM_WIDE_MEMORY_SIZE)
+                                    MONAD_ZKVM_WIDE_MEMORY_SIZE
+                                    MONAD_ZKVM_VARCODE_CACHE)
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
         foreach(_lever ${_monad_zkvm_required_levers})
             if(DEFINED ${_lever} AND NOT ${_lever})
@@ -161,6 +162,16 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
            "64-bit Memory::size and ::capacity, which x86 cannot take" OFF)
     if(MONAD_ZKVM_WIDE_MEMORY_SIZE)
         add_compile_definitions(MONAD_ZKVM_WIDE_MEMORY_SIZE)
+    endif()
+
+    # Lever: give the guest's VM shadow the varcode cache the host has. The
+    # shadow's find_varcode returns nullopt unconditionally, so every read of an
+    # existing contract rebuilds a Varcode and its control block out of an
+    # intercode BlockState::code_ already holds. Nothing is re-decoded.
+    option(MONAD_ZKVM_VARCODE_CACHE
+           "cache varcodes by code hash in the guest's VM shadow" OFF)
+    if(MONAD_ZKVM_VARCODE_CACHE)
+        add_compile_definitions(MONAD_ZKVM_VARCODE_CACHE)
     endif()
 
     # Expose the backend as a compile definition, for the places where the two

@@ -64,7 +64,9 @@ class BlockState;
 // pop_accept, to hand the addresses to the PARENT's copy of the same list -- self-referential, so it
 // disappears with the list -- and State::current_frame_dirty_accounts, whose only caller is
 // trace/state_tracer.cpp, which zkvm/guest/CMakeLists.txt excludes from the guest. Neither the
-// accessor nor StateTracer has a symbol in the shipped ELF. pop_reject reads nothing.
+// accessor nor StateTracer has a symbol in the shipped ELF. pop_reject DOES read it, through
+// rb_.on_pop_reject(accounts.span()) -- an earlier version of this comment said it read nothing --
+// but under the flag that span is empty, so the call stands and does nothing.
 //
 // The flag is declared only in the guest's CMakeLists, so the host keeps the list and its tracer.
 #if defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
@@ -277,7 +279,59 @@ class State
 
     unsigned version_{0};
 
+#if defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+    // No container at all. DirtyAccounts is empty under this flag (above), so a
+    // stack of them holds nothing -- and the only two facts the code ever read
+    // from the stack are its depth and whether it is empty, which version_
+    // already carries. The asserts that pinned dirty_.size() to version_ are
+    // what say so. Every operation below is therefore exactly a no-op here, and
+    // what disappears with them is a deque's chunk map and index arithmetic on
+    // 20,433 account lookups and 3,028 frame pushes a block.
+    static void dirty_mark(Address const &) {}
+
+    static void dirty_push() {}
+
+    static DirtyAccounts dirty_take()
+    {
+        return {};
+    }
+
+    static void dirty_promote_to_parent() {}
+#else
     std::deque<DirtyAccounts> dirty_;
+
+    void dirty_mark(Address const &address)
+    {
+        if (!dirty_.empty()) {
+            MONAD_GUEST_SITE(DIRTY_EMPLACE);
+            dirty_.back().emplace(address);
+        }
+    }
+
+    void dirty_push()
+    {
+        dirty_.emplace_back();
+    }
+
+    DirtyAccounts dirty_take()
+    {
+        auto accounts = std::move(dirty_.back());
+        dirty_.pop_back();
+        return accounts;
+    }
+
+    // Accepted: the parent's list gains what this frame touched.
+    void dirty_promote_to_parent()
+    {
+        auto const accounts = std::move(dirty_.back());
+        dirty_.pop_back();
+        for (auto const &address : accounts) {
+            if (!dirty_.empty()) {
+                dirty_.back().emplace(address);
+            }
+        }
+    }
+#endif
 
     // One-entry memo for current_account_state(). Measured over 200 mainnet blocks
     // (25815000-25815199), 20,066 calls per block: 64.9% repeat the previous address, and 70.0% of
@@ -370,7 +424,12 @@ public:
     // the currently pushed frame. Intended for observers that must inspect
     // frame-local metadata immediately before pop_accept() or pop_reject();
     // callers must not retain references beyond the frame pop.
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+    // Guarded rather than stubbed: its only caller is trace/state_tracer.cpp,
+    // which the guest's CMakeLists excludes, so a reference from the guest
+    // should fail the build and not return an empty answer.
     DirtyAccounts const &current_frame_dirty_accounts() const;
+#endif
 
     ////////////////////////////////////////
 

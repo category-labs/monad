@@ -93,12 +93,9 @@ AccountState &State::current_account_state(Address const &address)
         __builtin_memcmp(address.bytes, memo_addr_.bytes, sizeof(address.bytes)) == 0) {
         MONAD_GUEST_SITE(ACCT_MEMO_HIT);
         if (memo_epoch_ != frame_epoch_) {
-            if (!dirty_.empty()) {
-                MONAD_GUEST_SITE(DIRTY_EMPLACE);
-                // Dirty tracking only. A memo hit is a row that already exists, and an existing row
-                // needs no record on first touch now that each mutation journals itself.
-                dirty_.back().emplace(address);
-            }
+            // Dirty tracking only. A memo hit is a row that already exists, and an existing row
+            // needs no record on first touch now that each mutation journals itself.
+            dirty_mark(address);
             memo_epoch_ = frame_epoch_;
         }
         return *memo_val_;
@@ -118,10 +115,7 @@ AccountState &State::current_account_state(Address const &address)
         // exist", which is a fact about creating it, not about the frame's bookkeeping.
         journal_created(address);
     }
-    if (!dirty_.empty()) {
-        MONAD_GUEST_SITE(DIRTY_EMPLACE);
-        dirty_.back().emplace(address);
-    }
+    dirty_mark(address);
     (void)created;
     memo_addr_ = address;
     memo_val_ = &it->second;
@@ -304,22 +298,21 @@ State::Map<bytes32_t, vm::SharedVarcode> const &State::code() const
     return code_;
 }
 
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
 DirtyAccounts const &State::current_frame_dirty_accounts() const
 {
     MONAD_ASSERT(version_);
-    MONAD_ASSERT(dirty_.size() == version_);
 
     return dirty_.back();
 }
+#endif
 
 void State::push()
 {
-    MONAD_ASSERT(dirty_.size() == version_);
-
     ++frame_epoch_;
 
     ++version_;
-    dirty_.emplace_back();
+    dirty_push();
     undo_marks_.push_back(UndoMark{
         undo_.size(),
         undo_accts_.size(),
@@ -333,7 +326,6 @@ void State::push()
 void State::pop_accept()
 {
     MONAD_ASSERT(version_);
-    MONAD_ASSERT(dirty_.size() == version_);
 
     ++frame_epoch_;
     MONAD_GUEST_SITE(POP_ACCEPT);
@@ -347,18 +339,12 @@ void State::pop_accept()
     }
 #endif
 
-    auto accounts = std::move(dirty_.back());
-    dirty_.pop_back();
     // Accepted: the rows keep the values this frame gave them. What the parent needs is the
     // knowledge that they changed -- so its dirty list gains them, and this frame's undo records
     // simply stay in the log under the parent's mark. Replayed backwards they restore the
     // pre-PARENT value, because a row this frame was the first to touch was, by construction,
     // untouched by the parent too.
-    for (auto const &dirty_address : accounts) {
-        if (!dirty_.empty()) {
-            dirty_.back().emplace(dirty_address);
-        }
-    }
+    dirty_promote_to_parent();
     undo_marks_.pop_back();
     // With no mark left there is nothing that could roll back past this point, so the records are
     // dead. Dropping them is not housekeeping: without it the log grows by one 160-byte record per
@@ -382,14 +368,12 @@ void State::pop_accept()
 void State::pop_reject()
 {
     MONAD_ASSERT(version_);
-    MONAD_ASSERT(dirty_.size() == version_);
 
     ++frame_epoch_;
     MONAD_GUEST_SITE(POP_REJECT);
     MONAD_GUEST_ADD2(DIRTY_EMPLACE, version_);
 
-    auto accounts = std::move(dirty_.back());
-    dirty_.pop_back();
+    auto const accounts = dirty_take();
 
     // Rejected: drop exactly what this frame appended.
     logs_.resize(log_marks_.back());

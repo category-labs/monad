@@ -114,7 +114,61 @@
 // interpreter writes it into its own private copy of the code, and nothing
 // outside the interpreter reads that copy's bytes.
 inline constexpr std::uint8_t MONAD_VM_QUICK_PUSH1 = 0x0C;
+inline constexpr std::uint8_t MONAD_VM_QUICK_PUSH1OP = 0x0D;
+inline constexpr std::uint8_t MONAD_VM_QUICK_PUSH1PUSH1 = 0x0E;
 #endif
+
+// The fused PUSH1+<binop> body, as a macro so the quickened handler below and the
+// gated arm in push<1> cannot drift apart. MONAD_VM_FUSED_NEXT returns, and a
+// musttail has to be lexically in the handler, which is why this is not a
+// function -- the same reason MONAD_VM_NEXT is a macro.
+#define MONAD_VM_PUSH1OP_BODY()                                                \
+    static constexpr auto monad_vm_req = \
+        fused_requirements<traits, PUSH1, ADD>(); \
+    static_assert( \
+        monad_vm_req == fused_requirements<traits, PUSH1, SHL>() && \
+        monad_vm_req == fused_requirements<traits, PUSH1, SHR>() && \
+        monad_vm_req == fused_requirements<traits, PUSH1, SAR>(), \
+        "PUSH1 fusion mask holds followers with unequal " \
+        "requirements; aggregate them per follower"); \
+    if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) { \
+        gas_remaining -= monad_vm_req.gas; \
+    } \
+    else { \
+        MONAD_VM_CHECK(PUSH1); \
+        MONAD_VM_CHECK_AT(ADD, 1); \
+    } \
+    uint256_t const monad_vm_imm{*(instr_ptr + 1)}; \
+    if (monad_vm_op2 == static_cast<std::uint8_t>(ADD)) { \
+        *stack_top = monad_vm_imm + *stack_top; \
+    } \
+    else if (monad_vm_op2 == static_cast<std::uint8_t>(SHL)) { \
+        *stack_top <<= monad_vm_imm; \
+    } \
+    else if (monad_vm_op2 == static_cast<std::uint8_t>(SHR)) { \
+        *stack_top >>= monad_vm_imm; \
+    } \
+    else { \
+        *stack_top = sar(monad_vm_imm, *stack_top); \
+    } \
+    MONAD_VM_FUSED_NEXT(3, 0);
+
+// The fused PUSH1+PUSH1 body, same reason.
+#define MONAD_VM_PUSH1PUSH1_BODY()                                             \
+    static constexpr auto monad_vm_reqp = \
+        fused_requirements<traits, PUSH1, PUSH1>(); \
+    if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_reqp))) { \
+        gas_remaining -= monad_vm_reqp.gas; \
+    } \
+    else { \
+        MONAD_VM_CHECK(PUSH1); \
+        MONAD_VM_CHECK_AT(PUSH1, 1); \
+    } \
+    interpreter::push( \
+        stack_top, uint256_t{*(instr_ptr + 1)}); \
+    interpreter::push( \
+        stack_top + 1, uint256_t{*(instr_ptr + 3)}); \
+    MONAD_VM_FUSED_NEXT(4, 2);
 
 // The same checks, then the runtime call -- as a macro for the reason above.
 //
@@ -395,11 +449,13 @@ namespace monad::vm::interpreter
             signextend<traits>, // 0x0B,
 #if defined(MONAD_VM_QUICKEN)
             push1_quick<traits>, // 0x0C, synthetic: see MONAD_VM_QUICK_PUSH1
+            push1op_quick<traits>, // 0x0D, synthetic
+            push1push1_quick<traits>, // 0x0E, synthetic
 #else
             invalid, //
+            invalid, //
+            invalid, //
 #endif
-            invalid, //
-            invalid, //
             invalid, //
 
             lt<traits>, // 0x10,
@@ -1699,35 +1755,10 @@ namespace monad::vm::interpreter
                 // so one set of requirements covers the whole branch and the
                 // fallback needs one follower check rather than one per arm.
                 // The assertion is what keeps that true if the mask grows.
-                static constexpr auto monad_vm_req =
-                    fused_requirements<traits, PUSH1, ADD>();
-                static_assert(
-                    monad_vm_req == fused_requirements<traits, PUSH1, SHL>() &&
-                    monad_vm_req == fused_requirements<traits, PUSH1, SHR>() &&
-                    monad_vm_req == fused_requirements<traits, PUSH1, SAR>(),
-                    "PUSH1 fusion mask holds followers with unequal "
-                    "requirements; aggregate them per follower");
-                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) {
-                    gas_remaining -= monad_vm_req.gas;
-                }
-                else {
-                    MONAD_VM_CHECK(PUSH1);
-                    MONAD_VM_CHECK_AT(ADD, 1);
-                }
-                uint256_t const monad_vm_imm{*(instr_ptr + 1)};
-                if (monad_vm_op2 == static_cast<std::uint8_t>(ADD)) {
-                    *stack_top = monad_vm_imm + *stack_top;
-                }
-                else if (monad_vm_op2 == static_cast<std::uint8_t>(SHL)) {
-                    *stack_top <<= monad_vm_imm;
-                }
-                else if (monad_vm_op2 == static_cast<std::uint8_t>(SHR)) {
-                    *stack_top >>= monad_vm_imm;
-                }
-                else {
-                    *stack_top = sar(monad_vm_imm, *stack_top);
-                }
-                MONAD_VM_FUSED_NEXT(3, 0);
+#if defined(MONAD_VM_QUICKEN)
+                const_cast<uint8_t *>(instr_ptr)[0] = MONAD_VM_QUICK_PUSH1OP;
+#endif
+                MONAD_VM_PUSH1OP_BODY();
             }
             // PUSH1 <a> PUSH1 <b>. Measured on block 25815042: of the 231,204
             // dispatches the unfused PUSH1 path makes, 72,270 -- 31.3 %, and the
@@ -1749,20 +1780,10 @@ namespace monad::vm::interpreter
             // the code is what the generic path already relies on: the code is
             // padded with zeros, and a truncated PUSH1 pushes zero either way.
             if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH1)) {
-                static constexpr auto monad_vm_reqp =
-                    fused_requirements<traits, PUSH1, PUSH1>();
-                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_reqp))) {
-                    gas_remaining -= monad_vm_reqp.gas;
-                }
-                else {
-                    MONAD_VM_CHECK(PUSH1);
-                    MONAD_VM_CHECK_AT(PUSH1, 1);
-                }
-                interpreter::push(
-                    stack_top, uint256_t{*(instr_ptr + 1)});
-                interpreter::push(
-                    stack_top + 1, uint256_t{*(instr_ptr + 3)});
-                MONAD_VM_FUSED_NEXT(4, 2);
+#if defined(MONAD_VM_QUICKEN)
+                const_cast<uint8_t *>(instr_ptr)[0] = MONAD_VM_QUICK_PUSH1PUSH1;
+#endif
+                MONAD_VM_PUSH1PUSH1_BODY();
             }
         }
 #endif
@@ -1812,6 +1833,31 @@ namespace monad::vm::interpreter
         push_impl<1, traits>::push(stack_top, instr_ptr);
 
         MONAD_VM_NEXT_PUSH(PUSH1);
+    }
+
+    // A PUSH1 already known to be followed by one of ADD, SHL, SHR or SAR. The
+    // mask test that established it -- compare, shift, extract, branch, and the
+    // two instructions that rebuild the mask constant -- does not run again;
+    // only the choice among the four remains, which is the work itself.
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void push1op_quick(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const monad_vm_op2 = *(instr_ptr + 2);
+        MONAD_VM_PUSH1OP_BODY();
+    }
+
+    // A PUSH1 already known to be followed by another. Nothing of the gate is
+    // left: the follower opcode is not even read.
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void push1push1_quick(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        MONAD_VM_PUSH1PUSH1_BODY();
     }
 #endif
 

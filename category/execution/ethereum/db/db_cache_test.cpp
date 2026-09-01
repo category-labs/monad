@@ -171,3 +171,117 @@ TEST(DbCacheTest, finalization_write_overwrites_readthrough_entry)
         cache.try_read_storage(ADDR, INC, KEY, 0, slot), CacheReadStatus::Hit);
     EXPECT_EQ(slot, VALUE2);
 }
+
+TEST(DbCacheTest, proposal_overlay_hits_are_not_counted_against_the_lru)
+{
+    DbCache cache;
+    cache.update_proposal_state(
+        make_post_state(ADDR, KEY, VALUE1), 1, bytes32_t{1});
+    cache.set_block_and_prefix(1, bytes32_t{1});
+
+    std::optional<Account> account;
+    EXPECT_EQ(cache.try_read_account(ADDR, account), CacheReadStatus::Hit);
+
+    auto const stats = cache.stats();
+    EXPECT_EQ(stats.accounts.hits, 0u);
+    EXPECT_EQ(stats.accounts.misses, 0u);
+}
+
+namespace
+{
+    // Never written by any proposal, so reads of it fall through to the LRU.
+    constexpr auto UNWRITTEN_ADDR =
+        0x00000000000000000000000000000000000000cc_address;
+    constexpr auto UNWRITTEN_KEY =
+        0x00000000000000000000000000000000000000000000000000000000000000cc_bytes32;
+
+    // Proposals 1 and 2 write ADDR/KEY and are finalized, promoting them into
+    // the LRUs; proposal 3 is the block being read from and writes neither,
+    // so a read of ADDR/KEY walks clean to the finalized base and the LRU
+    // answers.
+    void seed_finalized_lru(DbCache &cache)
+    {
+        cache.update_proposal_state(
+            make_post_state(ADDR, KEY, VALUE1), 1, bytes32_t{1});
+        cache.update_proposal_state(
+            make_post_state(ADDR, KEY, VALUE2), 2, bytes32_t{2});
+        cache.update_proposal_state(
+            make_post_state(OTHER_ADDR, OTHER_KEY, VALUE1), 3, bytes32_t{3});
+        cache.on_finalize(1, bytes32_t{1});
+        cache.on_finalize(2, bytes32_t{2});
+        cache.set_block_and_prefix(3, bytes32_t{3});
+    }
+}
+
+TEST(DbCacheTest, counts_lru_account_hits_and_misses)
+{
+    DbCache cache;
+    seed_finalized_lru(cache);
+
+    std::optional<Account> account;
+    EXPECT_EQ(cache.try_read_account(ADDR, account), CacheReadStatus::Hit);
+    EXPECT_EQ(
+        cache.try_read_account(UNWRITTEN_ADDR, account),
+        CacheReadStatus::MissResolved);
+
+    auto const stats = cache.stats();
+    EXPECT_EQ(stats.accounts.hits, 1u);
+    EXPECT_EQ(stats.accounts.misses, 1u);
+}
+
+// Both views must be available at once from the same cache.
+TEST(DbCacheTest, block_stats_count_only_what_happened_since_the_snapshot)
+{
+    DbCache cache;
+    seed_finalized_lru(cache);
+
+    std::optional<Account> account;
+    ASSERT_EQ(cache.try_read_account(ADDR, account), CacheReadStatus::Hit);
+
+    cache.begin_block_stats();
+    ASSERT_EQ(cache.try_read_account(ADDR, account), CacheReadStatus::Hit);
+
+    EXPECT_EQ(cache.stats().accounts.hits, 2u);
+    EXPECT_EQ(cache.block_stats().accounts.hits, 1u);
+}
+
+TEST(DbCacheTest, consecutive_blocks_do_not_accumulate_in_block_stats)
+{
+    DbCache cache;
+    seed_finalized_lru(cache);
+
+    std::optional<Account> account;
+    bytes32_t slot;
+
+    cache.begin_block_stats();
+    ASSERT_EQ(cache.try_read_account(ADDR, account), CacheReadStatus::Hit);
+    ASSERT_EQ(
+        cache.try_read_storage(ADDR, INC, KEY, 0, slot), CacheReadStatus::Hit);
+    EXPECT_EQ(cache.block_stats().accounts.hits, 1u);
+    EXPECT_EQ(cache.block_stats().storage.hits, 1u);
+
+    // A second block with no reads at all must report zero, not the first
+    // block's totals.
+    cache.begin_block_stats();
+    EXPECT_EQ(cache.block_stats().accounts.hits, 0u);
+    EXPECT_EQ(cache.block_stats().storage.hits, 0u);
+    EXPECT_EQ(cache.stats().accounts.hits, 1u);
+    EXPECT_EQ(cache.stats().storage.hits, 1u);
+}
+
+TEST(DbCacheTest, counts_lru_storage_hits_and_misses)
+{
+    DbCache cache;
+    seed_finalized_lru(cache);
+
+    bytes32_t slot;
+    EXPECT_EQ(
+        cache.try_read_storage(ADDR, INC, KEY, 0, slot), CacheReadStatus::Hit);
+    EXPECT_EQ(
+        cache.try_read_storage(ADDR, INC, UNWRITTEN_KEY, 0, slot),
+        CacheReadStatus::MissResolved);
+
+    auto const stats = cache.stats();
+    EXPECT_EQ(stats.storage.hits, 1u);
+    EXPECT_EQ(stats.storage.misses, 1u);
+}

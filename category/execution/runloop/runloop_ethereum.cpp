@@ -99,6 +99,8 @@ Result<void> process_ethereum_block(
 
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
+    db.begin_block_stats();
+    vm.begin_block_stats();
 
     record_block_start(
         exec_recorder,
@@ -238,7 +240,7 @@ Result<void> process_ethereum_block(
         "__exec_block,bl={:8},ts={}"
         ",tx={:5},rt={:4},rtp={:5.2f}%"
         ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
-        ",gas={:9},gpse={:4},gps={:3}{}{}{}",
+        ",gas={:9},gpse={:4},gps={:3}{}{}{}{}",
         block.header.number,
         std::chrono::duration_cast<std::chrono::milliseconds>(
             block_start.time_since_epoch())
@@ -262,7 +264,8 @@ Result<void> process_ethereum_block(
             (uint64_t)std::max(1L, block_time.count()),
         db.print_stats(),
         vm.print_and_reset_block_counts(),
-        vm.print_compiler_stats());
+        vm.print_compiler_stats(),
+        vm.print_varcode_cache_stats());
 
     return outcome_e::success();
 }

@@ -100,6 +100,7 @@ public:
     virtual bytes32_t transactions_root() override;
     virtual std::optional<bytes32_t> withdrawals_root() override;
     virtual std::string print_stats() override;
+    virtual void begin_block_stats() override;
     virtual uint64_t get_block_number() const override;
 
     nlohmann::json to_json(size_t concurrency_limit = 4096);

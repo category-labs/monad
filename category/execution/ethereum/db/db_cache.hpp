@@ -19,6 +19,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
+#include <category/core/lru/cache_stats.hpp>
 #include <category/core/lru/lru_cache.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
@@ -46,6 +47,15 @@ enum class CacheReadStatus
                    // -> can't prove finalized-consistent -> don't cache miss
 };
 
+// Counters for the two LRU caches. Reads answered by the proposal overlay, and
+// reads that abort on a truncated chain, never reach the LRUs and count as
+// neither hit nor miss.
+struct DbCacheStats
+{
+    CacheStatsSnapshot accounts;
+    CacheStatsSnapshot storage;
+};
+
 // Encoding-agnostic LRU + proposal cache for accounts and storage leaves.
 // Storage values are held as storage_page_t, keyed by the trie key the
 // caller passes: slot_key (single slot at index 0) for slot encoding, or
@@ -68,6 +78,8 @@ class DbCache final
     AccountsCache accounts_{10'000'000};
     StorageCache storage_{STORAGE_CACHE_MAX_BYTES};
     Proposals proposals_;
+    CacheStatsWindow accounts_window_;
+    CacheStatsWindow storage_window_;
 
 public:
     DbCache() = default;
@@ -187,18 +199,55 @@ public:
         }
     }
 
-    std::string accounts_stats()
+    // Cumulative since construction.
+    DbCacheStats stats() const
     {
-        return accounts_.print_stats();
+        return {.accounts = accounts_.stats(), .storage = storage_.stats()};
     }
 
-    std::string storage_stats()
+    // Since the last begin_block_stats(), for the per-block log line.
+    DbCacheStats block_stats() const
+    {
+        return {
+            .accounts = accounts_window_.since(accounts_.stats()),
+            .storage = storage_window_.since(storage_.stats())};
+    }
+
+    void begin_block_stats()
+    {
+        accounts_window_.reset(accounts_.stats());
+        storage_window_.reset(storage_.stats());
+    }
+
+    std::string accounts_stats() const
     {
         return std::format(
-            "{:8} / {:10}", storage_.size(), storage_.approx_weight());
+            "{:8} {}", accounts_.size(), format_stats(block_stats().accounts));
+    }
+
+    std::string storage_stats() const
+    {
+        return std::format(
+            "{:8} / {:10} {}",
+            storage_.size(),
+            storage_.approx_weight(),
+            format_stats(block_stats().storage));
     }
 
 private:
+    static std::string format_stats(CacheStatsSnapshot const &s)
+    {
+        uint64_t const lookups = s.hits + s.misses;
+        return std::format(
+            "{:5.1f}% {:10} {:10} {:8}",
+            lookups == 0 ? 0.0
+                         : 100.0 * static_cast<double>(s.hits) /
+                               static_cast<double>(lookups),
+            s.hits,
+            s.misses,
+            s.evictions);
+    }
+
     void insert_in_lru_caches(ProposalPostState const &post_state)
     {
         for (auto const &[addr, acct] : post_state.accounts) {

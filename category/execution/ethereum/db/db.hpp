@@ -80,6 +80,12 @@ struct Db
         return {};
     }
 
+    // Starts the window that print_stats() reports over. Call once per block,
+    // before execution. Pure so that an implementation reporting stats cannot
+    // forget it and silently report since-construction totals on a per-block
+    // line; implementations with no stats define it empty.
+    virtual void begin_block_stats() = 0;
+
 protected:
     bytes32_t storage_lookup_key(bytes32_t const &key) const
     {

@@ -62,6 +62,29 @@ typedef struct triedb_storage_stats
 
 void triedb_storage_stats_read(TriedbRoInner *, triedb_storage_stats *out);
 
+// Trie-node LRU counters for this handle. Totals since the handle was opened;
+// reading does not reset them. `used_bytes` is against the node_lru_max_mem
+// the handle was opened with, and `entries` against the slot count derived
+// from it — compare the two to see which bound is binding.
+//
+// Covers triedb_async_read and the traverse calls only. triedb_read is a
+// blocking path that consults no cache, so a caller using it exclusively sees
+// zeros here — which is not the same as an unused cache.
+//
+// Returns false without writing `out` if no counters are available; all-zero
+// is a legitimate reading for an idle cache, so it cannot double as an error.
+typedef struct triedb_node_cache_stats
+{
+    uint64_t hits;
+    uint64_t misses;
+    uint64_t evictions;
+    uint64_t used_bytes;
+    uint64_t entries;
+} triedb_node_cache_stats;
+
+bool triedb_node_cache_stats_read(
+    TriedbRoInner *, triedb_node_cache_stats *out);
+
 // Compute the storage page key for a 32-byte slot key on a page-encoded db:
 // page_key = slot >> 7. Writes the 32-byte big-endian page key (the key the
 // storage trie is looked up by) to out_page_key.

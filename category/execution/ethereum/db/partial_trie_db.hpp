@@ -107,6 +107,9 @@ public:
         return block_number_;
     }
 
+    // Reports no stats.
+    void begin_block_stats() override {}
+
     void set_block_and_prefix(
         uint64_t const block_number, bytes32_t const &) override
     {

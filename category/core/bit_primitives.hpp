@@ -189,12 +189,20 @@ namespace monad::bits
         return ~((((x & k7f) + k7f) | x) | k7f);
     }
 
-    // Number of 0x00 bytes in x: gather the 0x01 flags into the top byte.
+    // Number of 0x00 bytes in x. The mask carries one 0x01 flag per zero byte,
+    // so the count is its population -- one instruction where the target has
+    // `cpop`, against the gather-into-the-top-byte multiply, which ZisK prices
+    // at 97 cells against 56 for the bit-manipulation ops.
     [[gnu::always_inline]] inline constexpr unsigned
     count_zero_bytes(uint64_t const x) noexcept
     {
+#if defined(__riscv_zbb) || defined(__x86_64__) || defined(__aarch64__)
+        return static_cast<unsigned>(
+            __builtin_popcountll(zero_byte_mask(x) >> 7));
+#else
         constexpr uint64_t k01 = 0x0101010101010101ull;
         return static_cast<unsigned>(((zero_byte_mask(x) >> 7) * k01) >> 56);
+#endif
     }
 
     // Fixed-size 32-byte copy for KNOWN-aligned sources and arbitrary

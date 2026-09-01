@@ -93,6 +93,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // 68 COST a step.
     std::vector<unsigned char> node_offsets(blob_.size(), 0);
 
+    // Sized before the sweep fills it. unordered_dense rehashes on growth, and
+    // a rehash recomputes the hash of every entry it already holds and moves it
+    // -- so a map that doubles its way to fifteen thousand entries hashes them
+    // about twice over. Nine nodes in ten carry the DIGEST tag and are never
+    // hashed, and of the rest only those whose canonical RLP reaches 32 bytes
+    // are, which on the corpus is one entry per 430 blob bytes. The divisor
+    // below is deliberately below that: over-reserving costs arena, which this
+    // guest has, and under-reserving costs the rehash this is here to avoid.
+    hashes_.reserve(blob_.size() / 256);
+
     // `child_offset < blob_.size()` followed from `child_offset < node_offset` and was dead. The walk
     // runs while node.bytes() < region_end, so node_offset < blob_.size() throughout; the one call
     // after the loop passes node_offset == blob_.size(), where the first test IS the second. One

@@ -125,7 +125,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
             if (result.has_error()) {
                 return std::move(result.error());
             }
-            auto const receipt = execute_final(state);
+            auto receipt = execute_final(state);
             block_state_.merge(state);
             return receipt;
         }
@@ -145,7 +145,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
         if (result.has_error()) {
             return std::move(result.error());
         }
-        auto const receipt = execute_final(state);
+        auto receipt = execute_final(state);
         block_state_.merge(state);
         return receipt;
     }
@@ -197,6 +197,10 @@ Receipt ExecuteSystemTransaction<traits>::execute_final(State &state)
 {
     // always return success because these transactions can't revert.
     Receipt receipt{.status = 1u, .gas_used = 0, .type = tx_.type};
+    // Reserved: add_log grows the vector one push at a time otherwise, and
+    // with a bump allocator every intermediate capacity is allocated, copied
+    // forward and abandoned.
+    receipt.logs.reserve(state.logs().size());
     for (auto const &log : state.logs()) {
         receipt.add_log(log);
     }

@@ -47,6 +47,10 @@ inline constexpr uint64_t CACHE_PRICING_STORAGE_SLOT_CAPACITY = 5'000'000;
 // entry with last_access <= N - W is unconditionally cold.
 inline constexpr uint64_t CACHE_PRICING_WINDOW = 1'000'000;
 
+// bucket key holding the oldest live bucket block, bounding the cutoff walk;
+// real buckets are keyed by last_access, which is never zero
+inline constexpr uint64_t CACHE_PRICING_META_BUCKET = 0;
+
 enum class PricingKind : uint8_t
 {
     account = 0,

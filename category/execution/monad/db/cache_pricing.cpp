@@ -16,6 +16,8 @@
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/monad/db/cache_pricing.hpp>
 
+#include <algorithm>
+
 MONAD_NAMESPACE_BEGIN
 
 byte_string
@@ -31,17 +33,27 @@ cache_pricing_bucket_key(PricingKind const kind, uint64_t const block)
 
 namespace
 {
-    uint64_t cutoff(Db &db, PricingKind const kind, uint64_t const block,
-                    uint64_t const capacity)
+    uint64_t cutoff(
+        Db &db, PricingKind const kind, uint64_t const block,
+        uint64_t const capacity)
     {
-        uint64_t const floor =
+        auto const read = [&](uint64_t const b) {
+            return kind == PricingKind::account
+                       ? db.read_account_pricing_bucket(b)
+                       : db.read_storage_pricing_bucket(b);
+        };
+        // bucket 0 holds the oldest live bucket block (real buckets are >= 1);
+        // absent means no bucket has ever been written
+        auto const oldest = read(CACHE_PRICING_META_BUCKET);
+        if (!oldest.has_value()) {
+            return block == 0 ? 0 : block - 1;
+        }
+        uint64_t const window_floor =
             block > CACHE_PRICING_WINDOW ? block - CACHE_PRICING_WINDOW : 0;
+        uint64_t const floor = std::max(window_floor, *oldest);
         uint64_t sum = 0;
         for (uint64_t b = block; b-- > floor;) {
-            sum += (kind == PricingKind::account
-                        ? db.read_account_pricing_bucket(b)
-                        : db.read_storage_pricing_bucket(b))
-                       .value_or(0);
+            sum += read(b).value_or(0);
             if (sum > capacity) {
                 return b;
             }

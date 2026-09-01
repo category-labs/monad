@@ -252,9 +252,30 @@ void CommitBuilder::add_pricing_updates()
     if (block_number_ > CACHE_PRICING_WINDOW) {
         for (auto const kind : {PricingKind::account, PricingKind::storage}) {
             uint64_t const b = block_number_ - CACHE_PRICING_WINDOW - 1;
-            if (read_bucket(kind, b).has_value()) {
+            if (b != CACHE_PRICING_META_BUCKET &&
+                read_bucket(kind, b).has_value()) {
                 bucket_deltas_.try_emplace({kind, b}, 0);
             }
+        }
+    }
+
+    // maintain the oldest-live-bucket marker that bounds the cutoff walk
+    for (auto const kind : {PricingKind::account, PricingKind::storage}) {
+        uint64_t min_new = std::numeric_limits<uint64_t>::max();
+        for (auto const &[bucket, delta] : bucket_deltas_) {
+            if (bucket.first == kind && delta > 0) {
+                min_new = std::min(min_new, bucket.second);
+                break; // bucket_deltas_ is ordered by (kind, block)
+            }
+        }
+        if (min_new == std::numeric_limits<uint64_t>::max()) {
+            continue;
+        }
+        auto const meta = read_bucket(kind, CACHE_PRICING_META_BUCKET);
+        if (!meta.has_value() || min_new < *meta) {
+            bucket_deltas_[{kind, CACHE_PRICING_META_BUCKET}] =
+                static_cast<int64_t>(min_new) -
+                static_cast<int64_t>(meta.value_or(0));
         }
     }
 
@@ -264,7 +285,8 @@ void CommitBuilder::add_pricing_updates()
     UpdateList bucket_updates;
     for (auto const &[bucket, delta] : bucket_deltas_) {
         auto const [kind, block] = bucket;
-        bool const pruned = block < window_floor;
+        bool const pruned =
+            block != CACHE_PRICING_META_BUCKET && block < window_floor;
         if (delta == 0 && !pruned) {
             continue;
         }

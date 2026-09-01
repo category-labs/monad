@@ -114,15 +114,22 @@ constexpr size_t KECCAKF_STATE_BYTES = KECCAKF_LANES * sizeof(uint64_t);
 // guest 512 MB and this guest's measured peak is 42.5 MB on 25815091, so the
 // table fits with room. Above capacity it stops growing, which costs proving
 // speed and never correctness.
+// Padded to a power of two. Two states are 400 bytes, and 400 is not a shift:
+// indexing the table costs a `mul` per permutation for `[index].in` and
+// another for `[used]`, 108,946 executions a block at 97 cells each where a
+// `slli` is 56. The padding is never read or written -- `keccakf_state_eq` and
+// `keccakf_state_copy` both work in lanes -- and costs 28 MiB of .bss on a
+// table that already holds 100 of a 512 MB budget.
 struct alignas(8) KeccakfEntry
 {
     uint64_t in[KECCAKF_LANES]; // the state before the permutation
     uint64_t out[KECCAKF_LANES]; // and after it
+    uint64_t pad[64 - 2 * KECCAKF_LANES];
 };
 
 static_assert(
-    sizeof(KeccakfEntry) == 2 * KECCAKF_STATE_BYTES,
-    "an entry is exactly the two states");
+    sizeof(KeccakfEntry) == 512 && sizeof(KeccakfEntry) > 2 * KECCAKF_STATE_BYTES,
+    "an entry is the two states, padded to a shift");
 
 constexpr size_t KECCAKF_MEMO_ENTRIES = size_t{1} << 18;
 

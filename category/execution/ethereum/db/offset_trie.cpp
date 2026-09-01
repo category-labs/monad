@@ -88,6 +88,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // word on the aligned path, against six instructions saved per lookup at 68
     // COST a step.
     std::vector<unsigned char> node_offsets(blob_.size(), 0);
+    // Carried as a pointer, not indexed. The DIGEST arm below is nine nodes in
+    // ten and its only use of the offset is this one subscript, so an index
+    // costs the scale-and-add on every one of them
+    // -- `add` then `sb` -- plus its own increment. A pointer is the store and
+    // the increment, and the offset itself is then only wanted on the general
+    // path, where it is one `sub` per node.
+    //
+    // Invariant, established here and maintained by both arms:
+    //     seen == node_offsets.data() + (node.bytes() - base)
+    unsigned char *seen = node_offsets.data() + node_offset;
 
     // Sized before the sweep fills it. unordered_dense rehashes on growth, and
     // a rehash recomputes the hash of every entry it already holds and moves it
@@ -120,14 +130,21 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         // blob and never one past its end.
         MONAD_DEBUG_ASSERT(node_offset < blob_.size());
         if (node.tag() == DIGEST) {
-            unsigned char const *const digest_end =
-                node.bytes() + DIGEST_NODE_LEN;
-            MONAD_ASSERT(digest_end <= region_end);
-            node_offsets[node_offset] = 1;
-            node_offset = static_cast<uint64_t>(digest_end - base);
-            node = NodeViewBase{digest_end};
+            // No extent check here: it would be the loop's own test one node
+            // early. A digest that reaches past the region leaves the loop with
+            // `node.bytes() > region_end`, which the assert after the loop --
+            // nodes tile exactly -- already rejects, and the only thing this
+            // arm does before then is set a byte at an offset the loop
+            // condition has already put inside the blob. One compare and its
+            // branch, on nine nodes in ten of the whole blob.
+            *seen = 1;
+            seen += DIGEST_NODE_LEN;
+            node = NodeViewBase{node.bytes() + DIGEST_NODE_LEN};
             continue;
         }
+        // Wanted from here down -- by the hash key and by the marking below
+        // -- and nowhere in the arm above.
+        node_offset = static_cast<uint64_t>(node.bytes() - base);
 
         // checked_end asserts that the current node does not reach past the end
         // of the region
@@ -180,7 +197,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
 
         node_offsets[node_offset] = 1;
         node = NodeViewBase{base + next_offset};
-        node_offset = next_offset;
+        seen = node_offsets.data() + next_offset;
     }
     MONAD_ASSERT(node.bytes() == region_end); // nodes tile exactly
     is_valid_offset(root);

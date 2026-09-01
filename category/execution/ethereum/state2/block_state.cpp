@@ -87,11 +87,21 @@ bytes32_t BlockState::read_storage(
     Address const &address, Incarnation const incarnation, bytes32_t const &key)
 {
     bool read_storage = false;
+#ifdef MONAD_ZKVM_ZISK
+    // Reuse the accessor across the database read: the guest is single-threaded,
+    // map insertions preserve elements, and the read does not modify state_.
+    // The host releases its TBB lock before reading the database.
+    StateDeltas::accessor it{};
+    MONAD_ASSERT(state_);
+    MONAD_ASSERT(state_->find(it, address));
+#endif
     // block state
     {
+#ifndef MONAD_ZKVM_ZISK
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_);
         MONAD_ASSERT(state_->find(it, address));
+#endif
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return {};
@@ -117,8 +127,11 @@ bytes32_t BlockState::read_storage(
                 !secondary_db_ || secondary_db_->read_storage(
                                       address, incarnation, key) == result);
         }
+#ifndef MONAD_ZKVM_ZISK
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
+#endif
+        // Keep the post-read account check on both host and guest.
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return result;

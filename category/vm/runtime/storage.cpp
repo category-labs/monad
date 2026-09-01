@@ -98,10 +98,10 @@ namespace monad::vm::runtime
             ctx->deduct_gas(gas_used);
         }
         else {
-            auto const access_status = ctx->host->access_storage(
-                ctx->context, &ctx->env.recipient, &key);
-            if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
+            if (auto const cost =
+                    storage_access_cost<traits>(ctx, ctx->env.recipient, key);
+                cost != 0) {
+                ctx->deduct_gas(cost + min_gas);
             }
 
             auto const storage_status = ctx->host->set_storage(

@@ -29,8 +29,8 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
-#include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -460,8 +460,18 @@ State::access_storage_tier(Address const &address, bytes32_t const &key)
     }
     else {
         auto &account_state = current_account_state(address);
-        account_state.access_storage(key);
-        if (account_state.page_tracker_.access_page(key) == EVMC_ACCESS_WARM) {
+        auto const slot_status = account_state.access_storage(key);
+        // monad prices warmth at page granularity (mip-8), ethereum at slot
+        // granularity (eip-2929); the cached/cold split is page-based in both
+        auto const warm_status = [&] {
+            if constexpr (traits::mip_8_active()) {
+                return account_state.page_tracker_.access_page(key);
+            }
+            else {
+                return slot_status;
+            }
+        }();
+        if (warm_status == EVMC_ACCESS_WARM) {
             return vm::Host::AccessTier::warm;
         }
         if (!account_state.account_.has_value()) {

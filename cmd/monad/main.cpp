@@ -53,6 +53,7 @@
 #include <category/statesync/statesync_server_network.hpp>
 #include <category/statesync/statesync_thread.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/runtime/access.hpp>
 #include <category/vm/vm.hpp>
 
 #include <CLI/CLI.hpp>
@@ -412,7 +413,10 @@ try {
     BlockHashBufferFinalized block_hash_buffer;
     bool initialized_headers_from_triedb = false;
 
-    if (!db_in_memory) {
+    // ethereum replay preloads from the block db: with the multi-block cache
+    // experiment the triedb headers carry diverged state roots, and BLOCKHASH
+    // must keep returning the historical hashes
+    if (!db_in_memory && chain_config != CHAIN_CONFIG_ETHEREUM_MAINNET) {
         mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
             .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths = dbname_paths}};
         mpt::Db rodb{io_ctx};
@@ -574,6 +578,13 @@ try {
                  std::max(1UL, static_cast<uint64_t>(elapsed.count()))),
             vm.print_compiler_stats(),
             vm.print_total_counts());
+        auto const &shadow = vm::runtime::g_cache_shadow_stats;
+        LOG_INFO(
+            "multi-block cache shadow: cached_accounts = {}, cached_storage "
+            "= {}, saved_gas = {}",
+            shadow.cached_accounts.load(),
+            shadow.cached_storage.load(),
+            shadow.saved_gas.load());
     }
 
     sync_server.reset();

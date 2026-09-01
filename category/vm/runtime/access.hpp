@@ -26,8 +26,22 @@
 
 #include <evmc/evmc.hpp>
 
+#include <atomic>
+
 namespace monad::vm::runtime
 {
+    // Shadow measurement (evm traits experiment): accesses the multi-block
+    // cache would have priced "cached" are counted here while the original
+    // cold cost is still charged, keeping the execution trace identical.
+    struct CacheShadowStats
+    {
+        std::atomic<uint64_t> cached_accounts{0};
+        std::atomic<uint64_t> cached_storage{0};
+        std::atomic<uint64_t> saved_gas{0};
+    };
+
+    inline CacheShadowStats g_cache_shadow_stats;
+
     template <Traits traits>
     [[gnu::always_inline]] inline int64_t
     account_access_cost(Context *ctx, evmc::address const &address) noexcept
@@ -38,7 +52,19 @@ namespace monad::vm::runtime
             case Host::AccessTier::cold:
                 return traits::cold_account_cost();
             case Host::AccessTier::cached:
-                return traits::cached_account_cost();
+                if constexpr (is_evm_trait_v<traits>) {
+                    g_cache_shadow_stats.cached_accounts.fetch_add(
+                        1, std::memory_order_relaxed);
+                    g_cache_shadow_stats.saved_gas.fetch_add(
+                        static_cast<uint64_t>(
+                            traits::cold_account_cost() -
+                            traits::cached_account_cost()),
+                        std::memory_order_relaxed);
+                    return traits::cold_account_cost();
+                }
+                else {
+                    return traits::cached_account_cost();
+                }
             case Host::AccessTier::warm:
                 return 0;
             }
@@ -63,7 +89,19 @@ namespace monad::vm::runtime
             case Host::AccessTier::cold:
                 return traits::cold_storage_cost();
             case Host::AccessTier::cached:
-                return traits::cached_storage_cost();
+                if constexpr (is_evm_trait_v<traits>) {
+                    g_cache_shadow_stats.cached_storage.fetch_add(
+                        1, std::memory_order_relaxed);
+                    g_cache_shadow_stats.saved_gas.fetch_add(
+                        static_cast<uint64_t>(
+                            traits::cold_storage_cost() -
+                            traits::cached_storage_cost()),
+                        std::memory_order_relaxed);
+                    return traits::cold_storage_cost();
+                }
+                else {
+                    return traits::cached_storage_cost();
+                }
             case Host::AccessTier::warm:
                 return 0;
             }

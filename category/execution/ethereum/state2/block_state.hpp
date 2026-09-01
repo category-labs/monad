@@ -74,8 +74,7 @@ class BlockState final
 
 public:
     BlockState(
-        Db &, vm::VM &, Db *secondary_db = nullptr,
-        bool track_access = false);
+        Db &, vm::VM &, Db *secondary_db = nullptr, bool track_access = false);
 
     vm::VM &vm()
     {

@@ -209,9 +209,22 @@ namespace monad
             return false;
         }
 
+        // Experiment: active from CANCUN so ethereum replay exercises the
+        // multi-block cache; harmless without the replay's runtime opt-ins
+        // (no cutoffs and no access set = pre-fork behavior).
         static consteval bool multi_block_cache_active() noexcept
         {
-            return false;
+            return Rev >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval int64_t cached_account_cost() noexcept
+        {
+            return 1000;
+        }
+
+        static consteval int64_t cached_storage_cost() noexcept
+        {
+            return 1000;
         }
 
         static consteval bool can_create_inside_delegated() noexcept

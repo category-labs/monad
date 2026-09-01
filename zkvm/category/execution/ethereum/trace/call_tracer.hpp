@@ -36,7 +36,8 @@ struct CallTracerBase
 
     void on_exit(vm::Result const &) noexcept {}
 
-    void on_log(Receipt::Log) noexcept {}
+    // Borrow the log: this no-op tracer must not copy it.
+    void on_log(Receipt::Log const &) noexcept {}
 
     void on_self_destruct(
         Address const &, Address const &, uint256_t const &) noexcept

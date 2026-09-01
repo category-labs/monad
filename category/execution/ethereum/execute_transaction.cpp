@@ -480,6 +480,10 @@ Receipt ExecuteTransaction<traits>::execute_final(
         .status = result.status_code == CallStatus::Success ? 1u : 0u,
         .gas_used = gas_used,
         .type = tx_.type};
+    // Reserved: add_log grows the vector one push at a time otherwise, and
+    // with a bump allocator every intermediate capacity is allocated, copied
+    // forward and abandoned.
+    receipt.logs.reserve(state.logs().size());
     for (auto const &log : state.logs()) {
         receipt.add_log(log);
     }
@@ -535,7 +539,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             if (result.has_error()) {
                 return std::move(result.error());
             }
-            auto const receipt = execute_final(state, result.value());
+            auto receipt = execute_final(state, result.value());
             block_state_.merge(state);
             return receipt;
         }
@@ -556,7 +560,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         if (result.has_error()) {
             return std::move(result.error());
         }
-        auto const receipt = execute_final(state, result.value());
+        auto receipt = execute_final(state, result.value());
         block_state_.merge(state);
         return receipt;
     }
@@ -598,7 +602,8 @@ Result<Receipt> ExecuteTransaction<traits>::execute(SequentialExecutionToken)
     if (result.has_error()) {
         return std::move(result.error());
     }
-    auto const receipt = execute_final(state, result.value());
+    // Non-const lets return move the receipt into Result<Receipt>.
+    auto receipt = execute_final(state, result.value());
     block_state_.merge(state);
     return receipt;
 }

@@ -135,6 +135,9 @@ extern "C" void monad_zkvm_execute_witness(void)
     // 2. Build the code index from the witness bytecodes (keccak-keyed), the
     //    same content PartialTrieDb serves read_code from.
     monad::CodeIndex code_index;
+    // Floored: about four hundred bytecodes a block, inserted one at a time
+    // into a map that starts empty, and a rehash recomputes every key it holds.
+    code_index.reserve(512);
     {
         monad::byte_string_view codes = witness.value().encoded_codes;
         while (!codes.empty()) {

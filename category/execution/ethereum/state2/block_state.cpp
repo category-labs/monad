@@ -53,6 +53,17 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
     , vm_{monad_vm}
     , state_(std::make_unique<StateDeltas>())
 {
+#ifdef MONAD_ZKVM_ZISK
+    // Both maps take one entry per account or code the block touches and start
+    // empty. Floors, not estimates: they skip the first several doublings,
+    // which is where nearly all the growth events are, and a block that goes
+    // past them pays one rehash.
+    //
+    // Guest only: on the node these are TBB concurrent_hash_maps, which size
+    // through rehash() and have no reserve().
+    state_->reserve(1024);
+    code_.reserve(256);
+#endif
 }
 
 std::optional<Account> BlockState::read_account(Address const &address)
@@ -196,25 +207,30 @@ bool BlockState::can_merge(State &state) const
 
 void BlockState::merge(State const &state)
 {
-    ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
-
+    // One pass, no dedup set. A set was built here to visit each distinct code
+    // hash once, but code_.emplace already does nothing when the key is
+    // present, so a duplicate costs one more find and one more no-op emplace --
+    // against a whole hash set built from empty on every merge, 233 times a
+    // block, hashing a 32-byte key per insert to deduplicate the handful of
+    // accounts a transaction touches.
+    //
+    // The "no frame is open" invariant the removed loop asserted per row is
+    // asserted once, on the undo log, inside State -- the only place that can
+    // see it.
     auto const &current = state.current();
-    for (auto const &[address, account_state] : current) {
-        // The "no frame is open" invariant these lines asserted per row is now asserted once, on
-        // the undo log, inside State -- the only place that can see it.
-        auto const &account = account_state.account_;
-        if (account.has_value()) {
-            code_hashes.insert(account.value().code_hash);
-        }
-    }
-
     auto const &code = state.code();
-    for (auto const &code_hash : code_hashes) {
-        auto const it = code.find(code_hash);
+    for (auto const &[address, account_state] : current) {
+        auto const &account = account_state.account_;
+        if (!account.has_value()) {
+            continue;
+        }
+        auto const it = code.find(account.value().code_hash);
         if (it == code.end()) {
             continue;
         }
-        code_.emplace(code_hash, it->second->intercode()); // TODO try_emplace
+        code_.emplace(
+            account.value().code_hash,
+            it->second->intercode()); // TODO try_emplace
     }
 
     MONAD_ASSERT(state_);
@@ -231,6 +247,19 @@ void BlockState::merge(State const &state)
                     it2->second.second = value;
                 }
                 else {
+#ifdef MONAD_ZKVM_ZISK
+                    // Floored on the first insert: this map starts empty for
+                    // every account the block touches, and with a bump
+                    // allocator each doubling is allocated, copied forward and
+                    // abandoned -- and a rehash recomputes every key it holds.
+                    //
+                    // Guest only: on the node StorageDeltas is a TBB
+                    // concurrent_hash_map, which sizes through rehash() and has
+                    // no reserve().
+                    if (MONAD_UNLIKELY(it->second.storage.empty())) {
+                        it->second.storage.reserve(8);
+                    }
+#endif
                     it->second.storage.emplace(
                         key, std::make_pair(bytes32_t{}, value));
                 }

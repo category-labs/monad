@@ -48,8 +48,8 @@ namespace detail
                          .add_data(abi_encode_uint(u256_be{value}))
                          .build();
 
-        state.store_log(event);
-        call_tracer.on_log(std::move(event));
+        call_tracer.on_log(event);
+        state.store_log(std::move(event));
     }
 }
 

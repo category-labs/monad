@@ -13,9 +13,37 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+// zkVM shadow of category/vm/vm.hpp (Decision 5 of the zippy-sifakis plan).
+//
+// The host VM holds `Compiler compiler_` by value, which transitively pulls
+// in TBB, asmjit, and threading primitives — none of which link in the
+// bare-metal RISC-V build. This shadow keeps only the surface that the
+// witness-execution path actually uses: an interpreter-only execute path
+// and the MemoryPool for message-buffer allocation. Under
+// MONAD_ZKVM_VARCODE_CACHE it keeps the varcode cache as well, one
+// unordered_dense map keyed by code hash; without it, find_varcode returns
+// nullopt and the try_insert_varcode helpers build a fresh Varcode per call.
+//
+// That cache saves an allocation, not a decode: BlockState::code_ holds the
+// SharedIntercode, so bytecode is decoded once per contract per block either
+// way. What repeats is the wrapper around it -- State::read_code fills
+// State::code_ only from set_code, so every read of an existing contract
+// falls through to BlockState::read_code, misses find_varcode, and builds a
+// fresh Varcode and shared_ptr control block around an intercode it already
+// had. The VM outlives the block, so one map keyed by code hash removes that.
+//
+// Drops vs. the host VM, by callsite audit: Mode/all_modes/mode_to_string
+// are only referenced by drivers and tests; CompilerConfig / compiler_config()
+// is read only by the host's execute_raw which we replace; the *_raw
+// templates and stat printers are private implementation details with no
+// external callers.
+
 #pragma once
 
 #include <category/core/bytes.hpp>
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+    #include <ankerl/unordered_dense.h>
+#endif
 #include <category/vm/code.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
@@ -38,6 +66,11 @@ namespace monad::vm
     {
         runtime::EvmStackAllocator stack_allocator_;
         MemoryPool memory_pool_;
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+        // One entry per distinct contract the block touches -- the bound
+        // BlockState::code_ already lives with for intercodes.
+        ankerl::unordered_dense::map<bytes32_t, SharedVarcode> varcode_{};
+#endif
 
     public:
         VM()
@@ -46,6 +79,39 @@ namespace monad::vm
         {
         }
 
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+        std::optional<SharedVarcode> find_varcode(bytes32_t const &code_hash)
+        {
+            auto const it = varcode_.find(code_hash);
+            if (it == varcode_.end()) {
+                return std::nullopt;
+            }
+            return it->second;
+        }
+
+        SharedVarcode try_insert_varcode(
+            bytes32_t const &code_hash, SharedIntercode const &icode)
+        {
+            auto const [it, inserted] =
+                varcode_.try_emplace(code_hash, nullptr);
+            if (inserted) {
+                it->second = std::make_shared<Varcode>(icode);
+            }
+            return it->second;
+        }
+
+        SharedVarcode try_insert_varcode_raw(
+            bytes32_t const &code_hash, std::span<uint8_t const> const code)
+        {
+            auto const [it, inserted] =
+                varcode_.try_emplace(code_hash, nullptr);
+            if (inserted) {
+                it->second =
+                    std::make_shared<Varcode>(make_shared_intercode(code));
+            }
+            return it->second;
+        }
+#else
         std::optional<SharedVarcode> find_varcode(bytes32_t const &)
         {
             return std::nullopt;
@@ -62,6 +128,7 @@ namespace monad::vm
         {
             return std::make_shared<Varcode>(make_shared_intercode(code));
         }
+#endif
 
         MemoryPool::Ref message_memory_ref()
         {

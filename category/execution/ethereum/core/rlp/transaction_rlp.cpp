@@ -107,6 +107,11 @@ byte_string encode_legacy_base(Transaction const &txn)
 byte_string encode_eip2718_base(Transaction const &txn)
 {
     byte_string encoding{};
+    // Reserved: nine appends into a string that starts empty, so it doubles
+    // its way up and every intermediate capacity is allocated, copied forward
+    // and abandoned. The calldata is the large term and the rest is bounded by
+    // a handful of 33-byte fields; an under-estimate costs one reallocation.
+    encoding.reserve(192 + txn.data.size());
 
     encoding += encode_unsigned(txn.sc.chain_id.value_or(0));
     encoding += encode_unsigned(txn.nonce);

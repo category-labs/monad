@@ -41,6 +41,31 @@ compact_encode_len(unsigned const si, unsigned const ei)
 
 // Transform the nibbles to its compact encoding
 // https://ethereum.org/en/developers/docs/data-structures-and-encoding/patricia-merkle-trie/
+// Copy `n` bytes of a packed-nibble run one nibble to the left: out[k] gets the
+// low nibble of src[k] in its high half and the high nibble of src[k+1] in its
+// low half. That is a 4-bit left shift of the byte stream, so it is one funnel
+// shift per eight output bytes rather than two loads, two shifts, an or and a
+// byte store apiece.
+//
+// Reads exactly what the byte form reads: a group needs src[k..k+7] and
+// src[k+8] with k + 8 <= n, and the byte form reads src[n] on its last turn.
+inline void shift_nibbles_left(
+    unsigned char *const out, unsigned char const *const src, unsigned const n)
+{
+    unsigned k = 0;
+    for (; k + 8 <= n; k += 8) {
+        std::uint64_t w;
+        std::memcpy(&w, src + k, sizeof(w));
+        std::uint64_t const be = bits::bswap64(
+            (bits::bswap64(w) << 4) |
+            (static_cast<std::uint64_t>(src[k + 8]) >> 4));
+        std::memcpy(out + k, &be, sizeof(be));
+    }
+    for (; k < n; ++k) {
+        out[k] = static_cast<unsigned char>((src[k] << 4) | (src[k + 1] >> 4));
+    }
+}
+
 constexpr void compact_encode_raw(
     unsigned char *const res, NibblesView const nibbles, bool const terminating)
 {
@@ -77,29 +102,10 @@ constexpr void compact_encode_raw(
         std::memcpy(res + 1, src, m / 2);
     }
     else {
-        // A 4-bit left shift of the byte run, which is a funnel shift eight
-        // output bytes at a time rather than two loads, two shifts, an or and
-        // a byte store apiece. Leaf paths here are the unconsumed tail of a
-        // hashed key and so run near the full 32 bytes, which is what makes
-        // the wide form worth having.
-        //
-        // The reads stay inside the byte loop's own bounds: the group needs
-        // src[k..k+7] and src[k+8], and k + 8 <= n, while the byte loop reads
-        // src[n] itself on its last turn.
-        unsigned const n = m / 2;
-        unsigned k = 0;
-        for (; k + 8 <= n; k += 8) {
-            std::uint64_t w;
-            std::memcpy(&w, src + k, sizeof(w));
-            std::uint64_t const be = bits::bswap64(
-                (bits::bswap64(w) << 4) |
-                (static_cast<std::uint64_t>(src[k + 8]) >> 4));
-            std::memcpy(res + 1 + k, &be, sizeof(be));
-        }
-        for (; k < n; ++k) {
-            res[1 + k] = static_cast<unsigned char>(
-                (src[k] << 4) | (src[k + 1] >> 4));
-        }
+        // Leaf paths here are the unconsumed tail of a hashed key and so run
+        // near the full 32 bytes, which is what makes the wide form worth
+        // having.
+        shift_nibbles_left(res + 1, src, m / 2);
     }
 }
 

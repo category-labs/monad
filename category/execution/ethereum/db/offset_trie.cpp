@@ -524,10 +524,7 @@ namespace
             std::memcpy(dst, src, whole);
         }
         else {
-            for (unsigned k = 0; k < whole; ++k) {
-                dst[k] = static_cast<unsigned char>(
-                    (src[k] << 4) | (src[k + 1] >> 4));
-            }
+            mpt::shift_nibbles_left(dst, src, whole);
         }
         if (nlen % 2) {
             // An odd count leaves one nibble in the high half of the last byte, whose low half has
@@ -618,7 +615,13 @@ void append_acct(
 {
     out.push_back(LEAF_ACCT);
     append_node_id(out, storage);
-    out.append(rlp::encode_bytes32(acct.code_hash));
+    // A code hash is always 32 bytes, so its RLP is always the one-byte header
+    // 0x80 + 32 and then the bytes -- never the long form, never the
+    // single-byte form -- and a 33-byte temporary for a constant header costs
+    // an allocation and two copies per account.
+    static_assert(sizeof(acct.code_hash) == 32);
+    out.push_back(0x80 + 32);
+    out.append(acct.code_hash.bytes, sizeof(acct.code_hash.bytes));
     // The length is only known once nonce ‖ balance are encoded, and the
     // appends below may reallocate, so hold slot by index
     size_t const len_index = out.size();
@@ -670,6 +673,7 @@ NodeId
 OffsetTrie::put_ext(NodeId const id, NibblesView const path, NodeId const child)
 {
     byte_string node;
+    node.reserve(1 + sizeof(node_id_wire) + MAX_STORED_PATH_LEN);
     append_ext(node, path, child);
     return put_node(id, std::move(node));
 }
@@ -678,6 +682,7 @@ NodeId OffsetTrie::put_storage(
     NodeId const id, NibblesView const path, bytes32_t const &value)
 {
     byte_string node;
+    node.reserve(1 + 32 + MAX_STORED_PATH_LEN);
     append_storage(node, path, value);
     return put_node(id, std::move(node));
 }
@@ -698,6 +703,9 @@ NodeId OffsetTrie::put_acct(
 {
     // No storage root to pass: the leaf's hash takes it from `storage` itself.
     byte_string node;
+    node.reserve(
+        1 + sizeof(node_id_wire) + 33 + 1 + MAX_NONCE_BALANCE_RLP_LEN +
+        MAX_STORED_PATH_LEN);
     append_acct(node, storage, acct, path);
     return put_node(id, std::move(node));
 }

@@ -86,6 +86,12 @@ inline constexpr size_t DIGEST_NODE_LEN = 33;
 // are RLP-zeroless, so real accounts sit far below this.
 inline constexpr size_t MAX_NONCE_BALANCE_RLP_LEN = 42;
 
+// A path as a node stores it: the 1-byte nibble count then ceil(nlen/2) packed
+// nibbles. A key is 64 nibbles, so a whole one is 33 bytes. Used only to size a
+// node buffer up front, where an under-estimate would cost a reallocation and
+// nothing else.
+inline constexpr size_t MAX_STORED_PATH_LEN = 1 + 64 / 2;
+
 // Splits the NodeId space by the wire field's high bit: blob offsets live
 // below it, fresh overlay ids at/above it. The OffsetTrie constructor rejects
 // blobs larger than this, so a blob offset can never reach the overlay half

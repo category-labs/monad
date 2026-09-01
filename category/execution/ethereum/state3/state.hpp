@@ -200,6 +200,12 @@ class State
         Address addr;
         Kind kind;
         std::uint32_t aux;
+        // Padded to 32, and the size is the point rather than the alignment.
+        // `vector::size()` is a pointer difference divided by the element size,
+        // and a size that is not a power of two makes that division a multiply
+        // -- 97 cells where a shift is 56, on `undo_.size()` in every journal_*
+        // and in push, about 17,000 times a block. 20 + 1 + 4 lands at 28.
+        std::uint32_t pad_{0};
 #ifdef MONAD_ZKVM_KECCAK_SITES
         // Diagnostic: left behind by a frame that was ACCEPTED, so replaying it means a parent
         // revert is undoing work an accepted child did -- the nested combination a mainnet corpus
@@ -207,6 +213,10 @@ class State
         bool promoted{false};
 #endif
     };
+
+#ifndef MONAD_ZKVM_KECCAK_SITES
+    static_assert(sizeof(Undo) == 32);
+#endif
 
     struct SlotUndo
     {
@@ -216,7 +226,12 @@ class State
         // pre-state value back: BlockState commits every slot the overlay lists, so a slot left
         // behind by a reverted write would join the commit set.
         bool had_value;
+        // Same reason as Undo::pad_: 32 + 32 + 1 is 65, and an odd element size
+        // makes size() a bare multiply.
+        unsigned char pad_[63]{};
     };
+
+    static_assert(sizeof(SlotUndo) == 128);
 
     // Pushed where the dirty-set insert reports the row as new to the frame, and now ONLY for a row
     // the frame created: an existing row needs no snapshot, because each mutation journals itself.
@@ -257,7 +272,11 @@ class State
         size_t u64;
         size_t slots;
         size_t pages;
+        // Same reason as Undo::pad_: six words land at 48, which is 16 x 3.
+        size_t pad_[2]{};
     };
+
+    static_assert(sizeof(UndoMark) == 64);
 
     std::vector<UndoMark> undo_marks_{};
 

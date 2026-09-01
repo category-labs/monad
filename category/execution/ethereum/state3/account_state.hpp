@@ -353,16 +353,13 @@ public:
         return {};
     }
 
+    // `prev` is the caller's probe of this slot -- null when absent -- so this
+    // does not repeat it.
     evmc_storage_status set_storage(
         bytes32_t const &key, bytes32_t const &value,
-        bytes32_t const &original_value)
+        bytes32_t const &original_value, bytes32_t const *const prev)
     {
-        bytes32_t current_value = original_value;
-        {
-            if (auto const *const it = storage_.find(key); it) {
-                current_value = *it;
-            }
-        }
+        bytes32_t const current_value = prev ? *prev : original_value;
         if (value == bytes32_t{}) {
             return zero_out_key(key, original_value, current_value);
         }

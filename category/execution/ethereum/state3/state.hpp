@@ -229,7 +229,8 @@ class State
     void journal_flag(Address const &address, Undo::Kind which);
     void journal_warm_slot(Address const &address, bytes32_t const &key);
     void journal_slot(
-        Address const &address, AccountState const &row, bytes32_t const &key);
+        Address const &address, bytes32_t const &key,
+        bytes32_t const *prev);
     void journal_transient(
         Address const &address, AccountState const &row, bytes32_t const &key);
     void journal_pages(Address const &address, AccountState const &row);

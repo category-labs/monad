@@ -207,13 +207,16 @@ void State::journal_warm_slot(Address const &address, bytes32_t const &key)
     undo_words_.push_back(key);
 }
 
+// `prev` is the caller's probe of this row's slot, not one of our own: the
+// journal record, the status computation and the write all wanted it, and each
+// used to look it up again.
 void State::journal_slot(
-    Address const &address, AccountState const &row, bytes32_t const &key)
+    Address const &address, bytes32_t const &key,
+    bytes32_t const *const prev)
 {
     if (!journalling()) {
         return;
     }
-    bytes32_t const *const prev = row.storage_.find(key);
     undo_.push_back(Undo{
         address,
         Undo::Kind::Slot,
@@ -728,6 +731,12 @@ evmc_storage_status State::set_storage(
     bytes32_t original_value;
     auto &account_state = current_account_state(address);
     MONAD_ASSERT(account_state.account_);
+    // One probe of this row's slot for the three readers that each made their
+    // own: the journal record needs the previous value, the status computation
+    // needs it as `current_value`, and both used to find it again. The block
+    // below touches the ORIGINAL row's prestate_storage_, a different
+    // container, so this pointer stays good across it.
+    bytes32_t const *const prev = account_state.storage_.find(key);
     // original
     {
         MONAD_ASSERT(account_state.orig_ != nullptr);
@@ -746,9 +755,9 @@ evmc_storage_status State::set_storage(
     }
     // state
     {
-        journal_slot(address, account_state, key);
+        journal_slot(address, key, prev);
         auto const result =
-            account_state.set_storage(key, value, original_value);
+            account_state.set_storage(key, value, original_value, prev);
         return result;
     }
 }

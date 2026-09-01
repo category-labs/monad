@@ -141,7 +141,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         " --param max-inline-insns-auto=200"
         " --param max-inline-insns-single=800"
         " --param inline-min-speedup=1"
-        " -finline-functions")
+        " -finline-functions"
+        " -funroll-loops")
 
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
 

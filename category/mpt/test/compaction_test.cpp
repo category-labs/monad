@@ -17,18 +17,25 @@
 #include "test_fixtures_gtest.hpp"
 
 #include <category/async/config.hpp>
+#include <category/async/detail/scope_polyfill.hpp>
+#include <category/async/util.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/config.hpp>
+#include <category/mpt/db_stats_shm.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
 
 #include <cstddef>
+#include <filesystem>
 #include <iostream>
 #include <ostream>
+#include <string>
 #include <utility>
 #include <vector>
+
+#include <unistd.h>
 
 using namespace MONAD_ASYNC_NAMESPACE;
 using namespace MONAD_MPT_NAMESPACE;
@@ -134,4 +141,51 @@ TEST_F(CompactionTest, last_upsert_stats_isolates_the_latest_upsert)
     EXPECT_LT(
         delta_second.nodes_created_or_updated,
         lifetime_second.nodes_created_or_updated);
+}
+
+TEST_F(CompactionTest, an_upsert_publishes_lifetime_totals_to_the_sidecar)
+{
+    auto const path =
+        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+        ("monad_db_stats_compaction_" + std::to_string(::getpid()));
+    std::filesystem::remove(path);
+    auto const remove_sidecar = monad::make_scope_exit(
+        [&]() noexcept { std::filesystem::remove(path); });
+
+    auto publisher = DbStatsPublisher::create(path);
+    ASSERT_TRUE(publisher.has_value());
+    auto &aux = state()->aux;
+    aux.set_stats_publisher(&publisher.value());
+    // The fixture's aux outlives this test body; the publisher does not.
+    auto const clear_publisher = monad::make_scope_exit(
+        [&]() noexcept { aux.set_stats_publisher(nullptr); });
+
+    auto erase = make_update(state()->keys[0].first, UpdateList{});
+    UpdateList ls;
+    ls.push_front(erase);
+    // compaction=false: the sidecar has to be written by every upsert, not
+    // only by those that reach the compaction code.
+    state()->root = aux.do_update(
+        std::move(state()->root),
+        state()->sm,
+        std::move(ls),
+        state()->version++,
+        /*compaction=*/false,
+        /*can_write_to_fast=*/true,
+        /*write_root=*/true,
+        timeline_id::primary);
+
+    auto const reader = DbStatsReader::open(path);
+    ASSERT_TRUE(reader.has_value());
+    auto const published = reader->read_update_stats();
+    ASSERT_TRUE(published.has_value());
+    // Lifetime totals rather than the per-upsert delta: a scraper sampling on
+    // its own schedule needs counters that outlive the upsert that produced
+    // them.
+    EXPECT_EQ(
+        published->nodes_created_or_updated,
+        aux.stats_snapshot().nodes_created_or_updated);
+    EXPECT_GT(
+        published->nodes_created_or_updated,
+        aux.last_upsert_stats().nodes_created_or_updated);
 }

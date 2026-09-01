@@ -33,6 +33,7 @@
 #include <category/mpt/config.hpp>
 #include <category/mpt/db_error.hpp>
 #include <category/mpt/db_metadata_context.hpp>
+#include <category/mpt/db_stats_shm.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -438,6 +439,8 @@ private:
     {
         OnDiskDbServiceThread *parent;
         AsyncIOContext async_io;
+        // Declared before aux so it outlives the aux that points at it.
+        std::optional<DbStatsPublisher> stats_publisher;
         UpdateAux aux;
         std::atomic<bool> sleeping{false}, done{false};
 
@@ -454,8 +457,15 @@ private:
             OnDiskDbServiceThread *const parent, OnDiskDbConfig const &options)
             : parent(parent)
             , async_io(options)
+            , stats_publisher(
+                  options.stats_file_path.has_value()
+                      ? DbStatsPublisher::create(*options.stats_file_path)
+                      : std::nullopt)
             , aux{async_io.io, options.fixed_history_length}
         {
+            if (stats_publisher.has_value()) {
+                aux.set_stats_publisher(&stats_publisher.value());
+            }
             if (options.rewind_to_latest_finalized) {
                 auto const latest_block_id =
                     aux.metadata_ctx().get_latest_finalized_version();

@@ -30,6 +30,7 @@ target_compile_definitions(cli_tool_test
 add_trie_test(TARGET compact_encode_test SOURCES "compact_encode_test.cpp")
 add_trie_test(TARGET compaction_test SOURCES "compaction_test.cpp")
 add_trie_test(TARGET db_metadata_test SOURCES "db_metadata_test.cpp")
+add_trie_test(TARGET db_stats_shm_test SOURCES "db_stats_shm_test.cpp")
 add_trie_test(TARGET update_aux_test SOURCES "update_aux_test.cpp")
 add_trie_test(TARGET db_test SOURCES "db_test.cpp")
 add_trie_test(TARGET encode_branch_test SOURCES "encode_branch_test.cpp")

@@ -16,9 +16,11 @@
 #include "test_fixtures_base.hpp"
 
 #include <category/async/concepts.hpp>
+#include <category/async/config.hpp>
 #include <category/async/connected_operation.hpp>
 #include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/erased_connected_operation.hpp>
+#include <category/async/util.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
@@ -32,6 +34,7 @@
 #include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
+#include <category/mpt/db_stats_shm.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -67,11 +70,14 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <string>
 #include <thread>
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
+
+#include <unistd.h>
 
 #include <stdlib.h>
 
@@ -3203,4 +3209,68 @@ TEST_F(OnDiskDbWithFileFixture, timeline_lifecycle_dual_upsert)
         (void)moved_out;
     }
     db.deactivate_secondary_timeline();
+}
+
+TEST(OnDiskDb, every_upsert_publishes_to_the_configured_stats_sidecar)
+{
+    auto const path = MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+                      ("monad_db_stats_ondisk_" + std::to_string(::getpid()));
+    std::filesystem::remove(path);
+    auto const remove_sidecar = monad::make_scope_exit(
+        [&]() noexcept { std::filesystem::remove(path); });
+
+    Db db{
+        std::make_unique<StateMachineAlwaysMerkle>(),
+        OnDiskDbConfig{
+            .fixed_history_length = MPT_TEST_HISTORY_LENGTH,
+            .stats_file_path = path}};
+    auto const reader = DbStatsReader::open(path);
+    ASSERT_TRUE(reader.has_value());
+
+    auto const upsert_and_read = [&](uint64_t const version,
+                                     Node::SharedPtr root) {
+        auto [bytes_alloc, updates_alloc] =
+            prepare_random_updates(10, static_cast<unsigned>(version) * 10);
+        UpdateList ls;
+        for (auto &u : updates_alloc) {
+            ls.push_front(u);
+        }
+        root = db.upsert(std::move(root), std::move(ls), version);
+        auto const published = reader->read_update_stats();
+        EXPECT_TRUE(published.has_value());
+        return std::make_pair(
+            std::move(root),
+            published ? published->nodes_created_or_updated : 0);
+    };
+
+    auto [root, after_first] = upsert_and_read(0, Node::SharedPtr{});
+    ASSERT_NE(root, nullptr);
+    auto const [root2, after_second] = upsert_and_read(1, std::move(root));
+
+    // Growth across two upserts, not just a non-zero reading: a publish that
+    // only ran on the first upsert, or that wrote a constant, passes the
+    // weaker check.
+    EXPECT_GE(after_first, 10u);
+    EXPECT_GT(after_second, after_first);
+}
+
+TEST(OnDiskDb, opens_when_the_stats_sidecar_cannot_be_created)
+{
+    // The sidecar is observability; a path the db cannot write must cost the
+    // operator their metrics and nothing else.
+    Db db{
+        std::make_unique<StateMachineAlwaysMerkle>(),
+        OnDiskDbConfig{
+            .fixed_history_length = MPT_TEST_HISTORY_LENGTH,
+            .stats_file_path = "/nonexistent-directory/monad_db_stats"}};
+
+    auto [bytes_alloc, updates_alloc] = prepare_random_updates(10);
+    UpdateList ls;
+    for (auto &u : updates_alloc) {
+        ls.push_front(u);
+    }
+    auto const root = db.upsert({}, std::move(ls), 0);
+    EXPECT_NE(root, nullptr);
+    EXPECT_FALSE(DbStatsReader::open("/nonexistent-directory/monad_db_stats")
+                     .has_value());
 }

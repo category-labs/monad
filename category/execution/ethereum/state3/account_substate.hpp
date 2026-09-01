@@ -113,6 +113,17 @@ public:
                 return MONAD_ACCESS_WARM;
             }
         }
+        // Reserve on first insertion to avoid early reallocations without
+        // allocating for unused storage. The indexed path already has
+        // sufficient capacity.
+        if (MONAD_UNLIKELY(accessed_storage_.capacity() == 0)) {
+#ifdef MONAD_ZKVM_ZISK
+            // Reserve more slots on ZisK to avoid early growth and copies.
+            accessed_storage_.reserve(32);
+#else
+            accessed_storage_.reserve(8);
+#endif
+        }
         accessed_storage_.push_back(key);
 #ifdef MONAD_ZKVM_ZISK
         aidx_.on_insert(accessed_storage_);

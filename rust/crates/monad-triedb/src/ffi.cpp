@@ -22,6 +22,8 @@
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/monad/staking/read_valset.hpp>
 #include <category/mpt/db.hpp>
+#include <category/mpt/db_stats_shm.hpp>
+#include <category/mpt/detail/collected_stats.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
@@ -210,6 +212,95 @@ uint8_t triedb_migration_phase(TriedbRoInner *const db)
         return secondary_active ? promoted : page_encoded;
     }
     return secondary_active ? dual_timeline : legacy;
+}
+
+struct TriedbStatsReader
+{
+    monad::mpt::DbStatsReader reader;
+};
+
+int triedb_stats_open(
+    char const *const path, TriedbStatsReader **const stats_reader)
+{
+    if (path == nullptr || stats_reader == nullptr ||
+        *stats_reader != nullptr) {
+        return -1;
+    }
+
+    // Nothing may unwind into Rust across this extern "C" boundary: every
+    // allocating call belongs inside the try, non-std throws included.
+    try {
+        auto reader = monad::mpt::DbStatsReader::open(path);
+        if (!reader.has_value()) {
+            return -2;
+        }
+        *stats_reader = new TriedbStatsReader{std::move(*reader)};
+    }
+    catch (std::exception const &e) {
+        std::cerr << e.what();
+        return -3;
+    }
+    catch (...) {
+        std::cerr << "triedb_stats_open: unknown exception";
+        return -3;
+    }
+    return 0;
+}
+
+void triedb_stats_close(TriedbStatsReader *const stats_reader)
+{
+    delete stats_reader;
+}
+
+bool triedb_update_stats_read(
+    TriedbStatsReader *const stats_reader, triedb_update_stats *const out)
+{
+    static_assert(
+        sizeof(triedb_update_stats) ==
+        sizeof(monad::mpt::detail::TrieUpdateCollectedStats));
+
+    if (stats_reader == nullptr || out == nullptr) {
+        return false;
+    }
+
+    auto const stats = stats_reader->reader.read_update_stats();
+    if (!stats.has_value()) {
+        return false;
+    }
+
+    out->nodes_created_or_updated = stats->nodes_created_or_updated;
+    out->nreads_compaction = stats->nreads_compaction;
+    out->nreads_before_compact_offset_fast =
+        stats->nreads_before_compact_offset[0];
+    out->nreads_before_compact_offset_slow =
+        stats->nreads_before_compact_offset[1];
+    out->nreads_after_compact_offset_fast =
+        stats->nreads_after_compact_offset[0];
+    out->nreads_after_compact_offset_slow =
+        stats->nreads_after_compact_offset[1];
+    out->bytes_read_before_compact_offset_fast =
+        stats->bytes_read_before_compact_offset[0];
+    out->bytes_read_before_compact_offset_slow =
+        stats->bytes_read_before_compact_offset[1];
+    out->bytes_read_after_compact_offset_fast =
+        stats->bytes_read_after_compact_offset[0];
+    out->bytes_read_after_compact_offset_slow =
+        stats->bytes_read_after_compact_offset[1];
+    out->compacted_nodes_in_fast = stats->compacted_nodes_in_fast;
+    out->compacted_nodes_in_slow = stats->compacted_nodes_in_slow;
+    out->nodes_copied_fast_to_fast_for_fast =
+        stats->nodes_copied_fast_to_fast_for_fast;
+    out->nodes_copied_fast_to_fast_for_slow =
+        stats->nodes_copied_fast_to_fast_for_slow;
+    out->nodes_copied_slow_to_fast_for_slow =
+        stats->nodes_copied_slow_to_fast_for_slow;
+    out->compacted_bytes_in_fast = stats->compacted_bytes_in_fast;
+    out->compacted_bytes_in_slow = stats->compacted_bytes_in_slow;
+    out->bytes_copied_slow_to_fast_for_slow =
+        stats->bytes_copied_slow_to_fast_for_slow;
+    out->nodes_updated_expire = stats->nodes_updated_expire;
+    out->nreads_expire = stats->nreads_expire;
+    return true;
 }
 
 void triedb_storage_stats_read(

@@ -62,7 +62,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         # measured lever. Both remove work whose only readers are outside the guest -- the state
         # tracer this file excludes, and the can_merge the sequential path does not call.
         foreach(_required MONAD_ZKVM_ZISK_DMA MONAD_ZKVM_TABLE_ARG MONAD_ZKVM_FUSE
-                          MONAD_ZKVM_NO_DIRTY_ACCOUNTS MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+                          MONAD_ZKVM_NO_DIRTY_ACCOUNTS MONAD_ZKVM_NO_MERGE_CONSTRAINTS
+                          MONAD_ZKVM_VARCODE_CACHE)
             if(DEFINED ${_required} AND NOT ${_required})
                 message(FATAL_ERROR
                     "${_required}=OFF contradicts MONAD_ZKVM_OFFICIAL_PROFILE=ON")
@@ -179,6 +180,16 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     #
     # Mutually exclusive with CHECK_SEQUENTIAL_MERGE by construction: that flag restores can_merge as
     # an assertion, and an assertion reading constraints nobody wrote would fail for the wrong reason.
+    # Lever: give the guest's VM shadow the varcode cache the host has. The shadow's find_varcode
+    # returns nullopt unconditionally, so every read of an existing contract rebuilds a Varcode and
+    # its control block out of an intercode BlockState::code_ already holds. Nothing is re-decoded --
+    # see FINDINGS 85, which mistook the stub for a scanning gap.
+    option(MONAD_ZKVM_VARCODE_CACHE
+           "cache varcodes by code hash in the guest's VM shadow" OFF)
+    if(MONAD_ZKVM_VARCODE_CACHE)
+        add_compile_definitions(MONAD_ZKVM_VARCODE_CACHE)
+    endif()
+
     option(MONAD_ZKVM_NO_MERGE_CONSTRAINTS
            "stop writing the merge constraints only can_merge reads" OFF)
     if(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)

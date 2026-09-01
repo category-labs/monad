@@ -21,9 +21,18 @@
 // witness-execution path actually uses: an interpreter-only execute path
 // and the MemoryPool for message-buffer allocation. The varcode cache is
 // dropped entirely; find_varcode returns nullopt and the try_insert_varcode
-// helpers construct a fresh Varcode each call. A single block's working
-// set is tiny enough that re-decoding bytecode per lookup is fine, and not
-// sharing across the block keeps the shadow free of any hash-map dep.
+// helpers construct a fresh Varcode each call.
+//
+// That last part is measurably wrong, and MONAD_ZKVM_VARCODE_CACHE fixes it. Nothing is re-DECODED --
+// BlockState::code_ holds the SharedIntercode, so an intercode is built once per contract per block
+// (FINDINGS 85 records mistaking this stub for a scanning gap; the scan is not the cost). What
+// repeats is the allocation: State::read_code fills State::code_ only from set_code, so every read of
+// an existing contract falls through to BlockState::read_code, misses find_varcode, and builds a
+// fresh Varcode and shared_ptr control block out of an intercode it already had.
+//
+// The VM outlives the block, so one map keyed by code hash removes that per-call allocation. The
+// "keeps the shadow free of any hash-map dep" argument does not hold either: unordered_dense is
+// already a link dependency of the guest target.
 //
 // Drops vs. the host VM, by callsite audit: Mode/all_modes/mode_to_string
 // are only referenced by drivers and tests; CompilerConfig / compiler_config()
@@ -34,6 +43,9 @@
 #pragma once
 
 #include <category/core/bytes.hpp>
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+    #include <ankerl/unordered_dense.h>
+#endif
 #include <category/vm/code.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
@@ -56,6 +68,11 @@ namespace monad::vm
     {
         runtime::EvmStackAllocator stack_allocator_;
         MemoryPool memory_pool_;
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+        // One entry per distinct contract the block touches -- the same bound BlockState::code_
+        // already lives with for intercodes, so this adds no new lifetime question.
+        ankerl::unordered_dense::map<bytes32_t, SharedVarcode> varcode_{};
+#endif
 
     public:
         VM()
@@ -64,6 +81,37 @@ namespace monad::vm
         {
         }
 
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+        std::optional<SharedVarcode> find_varcode(bytes32_t const &code_hash)
+        {
+            auto const it = varcode_.find(code_hash);
+            if (it == varcode_.end()) {
+                return std::nullopt;
+            }
+            return it->second;
+        }
+
+        SharedVarcode try_insert_varcode(
+            bytes32_t const &code_hash, SharedIntercode const &icode)
+        {
+            auto const [it, inserted] = varcode_.try_emplace(code_hash, nullptr);
+            if (inserted) {
+                it->second = std::make_shared<Varcode>(icode);
+            }
+            return it->second;
+        }
+
+        SharedVarcode try_insert_varcode_raw(
+            bytes32_t const &code_hash, std::span<uint8_t const> const code)
+        {
+            auto const [it, inserted] = varcode_.try_emplace(code_hash, nullptr);
+            if (inserted) {
+                it->second =
+                    std::make_shared<Varcode>(make_shared_intercode(code));
+            }
+            return it->second;
+        }
+#else
         std::optional<SharedVarcode> find_varcode(bytes32_t const &)
         {
             return std::nullopt;
@@ -80,6 +128,7 @@ namespace monad::vm
         {
             return std::make_shared<Varcode>(make_shared_intercode(code));
         }
+#endif
 
         MemoryPool::Ref message_memory_ref()
         {

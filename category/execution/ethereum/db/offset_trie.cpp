@@ -92,6 +92,14 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // ZisK charges per 8-byte word on the aligned path, against six instructions saved per lookup at
     // 68 COST a step.
     std::vector<unsigned char> node_offsets(blob_.size(), 0);
+    // Carried as a pointer, not indexed. The DIGEST arm below is nine nodes in ten and its only use
+    // of the offset is this one subscript, so an index costs the scale-and-add on every one of them
+    // -- `add` then `sb` -- plus its own increment. A pointer is the store and the increment, and the
+    // offset itself is then only wanted on the general path, where it is one `sub` per node.
+    //
+    // Invariant, established here and maintained by both arms:
+    //     seen == node_offsets.data() + (node.bytes() - base)
+    unsigned char *seen = node_offsets.data() + node_offset;
 
     // Sized before the sweep fills it. unordered_dense rehashes on growth, and
     // a rehash recomputes the hash of every entry it already holds and moves it
@@ -109,7 +117,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
 
     // `child_offset < blob_.size()` followed from `child_offset < node_offset` and was dead. The walk
     // runs while node.bytes() < region_end, so node_offset < blob_.size() throughout; the one call
-    // after the loop passes node_offset == blob_.size(), where the first test IS the second. One
+    // after the loop sets node_offset = blob_.size() first, where the first test IS the second. One
     // compare and its branch, on every child of every node in the blob.
     auto const is_valid_offset = [&](NodeId c) {
         uint64_t child_offset = static_cast<uint64_t>(c);
@@ -134,22 +142,21 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         //
         // Measured over three blocks: 89.57 %, 90.72 % and 89.61 % of blob nodes carry this tag.
         if (node.tag() == DIGEST) {
-            unsigned char const *const digest_end =
-                node.bytes() + DIGEST_NODE_LEN;
-            MONAD_ASSERT(digest_end <= region_end);
-            node_offsets[node_offset] = 1;
-            // Advanced, not recomputed. `node.bytes() == base + node_offset`
-            // holds at the top of every iteration -- the walk establishes it
-            // and both arms maintain it -- so the new offset is the old one
-            // plus this node's length. Recomputing it from the pointer is a
-            // `sub`, which ZisK prices at 60 cells where the `addi` it
-            // replaces is 15.3, on nine nodes in ten of the whole blob.
-            MONAD_DEBUG_ASSERT(
-                node.bytes() == base + node_offset);
-            node_offset += DIGEST_NODE_LEN;
-            node = NodeViewBase{digest_end};
+            // No extent check here: it would be the loop's own test one node
+            // early. A digest that reaches past the region leaves the loop with
+            // `node.bytes() > region_end`, which the assert after the loop --
+            // nodes tile exactly -- already rejects, and the only thing this arm
+            // does before then is set a byte at an offset the loop condition has
+            // already put inside the blob. One compare and its branch, on nine
+            // nodes in ten of the whole blob.
+            *seen = 1;
+            seen += DIGEST_NODE_LEN;
+            node = NodeViewBase{node.bytes() + DIGEST_NODE_LEN};
             continue;
         }
+        // Wanted from here down -- by is_valid_offset, by the hash key and by
+        // the marking below -- and nowhere in the arm above.
+        node_offset = static_cast<uint64_t>(node.bytes() - base);
 
         // checked_end asserts that the current node does not reach past the end
         // of the region
@@ -210,9 +217,14 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
 
         node_offsets[node_offset] = 1;
         node = NodeViewBase{base + next_offset};
-        node_offset = next_offset;
+        seen = node_offsets.data() + next_offset;
     }
     MONAD_ASSERT(node.bytes() == region_end); // nodes tile exactly
+    // Stated, not carried out of the loop: the root may sit anywhere in the
+    // blob, so the bound this one call wants is the whole region. The loop
+    // leaves node_offset at the last node the general path took, and nine
+    // nodes in ten are not that path.
+    node_offset = blob_.size();
     is_valid_offset(root);
 }
 

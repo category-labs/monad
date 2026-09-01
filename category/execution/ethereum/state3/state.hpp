@@ -148,8 +148,12 @@ class State
 
         Address address;
         Kind kind;
-        std::uint32_t payload_index;
+        // A full-width payload index avoids zero-extension and keeps Undo
+        // at 32 bytes, so vector::size() can use a shift to count elements.
+        std::uint64_t payload_index;
     };
+
+    static_assert(sizeof(Undo) == 32);
 
     struct SlotUndo
     {
@@ -158,7 +162,11 @@ class State
         // If absent before the write, erase the slot on rollback; keeping it
         // would incorrectly include it in the commit set.
         bool had_value;
+        // Power-of-two size for cheaper vector::size(), as in Undo.
+        unsigned char pad_[63]{};
     };
+
+    static_assert(sizeof(SlotUndo) == 128);
 
     // Record a new current_ entry so rollback can erase it.
     void journal_created(Address const &address);
@@ -200,7 +208,11 @@ class State
         size_t nonce_position;
         size_t slot_position;
         size_t page_position;
+        // Power-of-two size for cheaper vector::size(), as in Undo.
+        size_t pad_[2]{};
     };
+
+    static_assert(sizeof(UndoMark) == 64);
 
     std::vector<UndoMark> undo_marks_{};
 

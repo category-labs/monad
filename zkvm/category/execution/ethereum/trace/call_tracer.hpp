@@ -47,7 +47,9 @@ struct CallTracerBase
 
     void on_exit(evmc::Result const &) noexcept {}
 
-    void on_log(Receipt::Log) noexcept {}
+    // By reference, not by value: the guest's tracer keeps nothing, and a
+    // by-value parameter would still have the log copied into it.
+    void on_log(Receipt::Log const &) noexcept {}
 
     void on_self_destruct(
         Address const &, Address const &, uint256_t const &) noexcept

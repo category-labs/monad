@@ -476,6 +476,7 @@ public:
     std::vector<Receipt::Log> const &logs();
 
     void store_log(Receipt::Log const &);
+    void store_log(Receipt::Log &&);
 
     ////////////////////////////////////////
 

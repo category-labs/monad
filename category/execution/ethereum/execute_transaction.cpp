@@ -419,8 +419,12 @@ Receipt ExecuteTransaction<traits>::execute_final(
         .status = result.status_code == EVMC_SUCCESS ? 1u : 0u,
         .gas_used = gas_used,
         .type = tx_.type};
+    // Reserved: add_log grows the vector one push at a time otherwise, and
+    // with a bump allocator every intermediate capacity is allocated, copied
+    // forward and abandoned.
+    receipt.logs.reserve(state.logs().size());
     for (auto const &log : state.logs()) {
-        receipt.add_log(std::move(log));
+        receipt.add_log(log);
     }
 
     call_tracer_.on_finish(receipt.gas_used);

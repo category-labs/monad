@@ -260,8 +260,8 @@ struct EvmcHost final : public EvmcHostBase
                              .add_data(abi_encode_uint(u256_be{value}))
                              .build();
 
-            state_.store_log(event);
-            call_tracer_.on_log(std::move(event));
+            call_tracer_.on_log(event);
+            state_.store_log(std::move(event));
         }
     }
 };

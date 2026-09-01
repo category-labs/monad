@@ -205,8 +205,12 @@ void EvmcHostBase::emit_log(
         for (auto i = 0u; i < num_topics; ++i) {
             log.topics.push_back({topics[i]});
         }
-        state_.store_log(log);
-        call_tracer_.on_log(std::move(log));
+        // The tracer first, so the state can take the log rather than copy
+        // it. Both are pure sinks and the order between them is free; one of
+        // the two has to own its own copy and the other does not, and the
+        // guest's tracer is the one that wants nothing.
+        call_tracer_.on_log(log);
+        state_.store_log(std::move(log));
         return;
     }
     MONAD_CATCH(...)

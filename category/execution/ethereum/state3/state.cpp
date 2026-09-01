@@ -1007,6 +1007,11 @@ void State::store_log(Receipt::Log const &log)
     logs_.push_back(log);
 }
 
+void State::store_log(Receipt::Log &&log)
+{
+    logs_.push_back(std::move(log));
+}
+
 void State::set_to_state_incarnation(Address const &address)
 {
     auto &account_state = current_account_state(address);

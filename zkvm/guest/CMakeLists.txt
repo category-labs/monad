@@ -87,26 +87,20 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     string(APPEND CMAKE_CXX_FLAGS
         " -mcmodel=medany -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti")
 
-    # ZisK settings adapted from Polygon's ziskethone guest
-    # (github.com/0xPolygonHermez/ziskethone, cpp-guest/zisk:
-    # toolchain.cmake and CMakeLists.txt).
-    # Zbb/Zbs/Zbkb are supported by ZisK >= v1.2.0-alpha. Unrolling reduces
-    # loop overhead; upstream rejected LTO for exceeding ZisK's RAM.
+    # ZisK supports Zbb/Zbs/Zbkb since v1.2.0-alpha.
     # The fixed-address guest needs no PIC/GOT indirections.
     #
     # Append after cmake-rs's flags: the last -march wins.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         set(_zisk_march "-march=rv64ima_zicsr_zbb_zbs_zbkb -mabi=lp64")
-        string(JOIN " " _zisk_opt
-            "-fno-pic"
-            "-funroll-loops")
-        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} ${_zisk_opt}")
-        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} ${_zisk_opt}")
+        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} -fno-pic")
+        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} -fno-pic")
         string(APPEND CMAKE_ASM_FLAGS " ${_zisk_march}")
     endif()
 
     # Tune C++ inlining for both guests to reduce call overhead.
     # Allow more overall growth while limiting individual inlining candidates.
+    # Unroll eligible loops to reduce comparisons and branches.
     # Keep these options in CMAKE_CXX_FLAGS so the official profile hashes them.
     string(APPEND CMAKE_CXX_FLAGS
         " --param inline-unit-growth=800"
@@ -114,7 +108,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         " --param max-inline-insns-auto=200"
         " --param max-inline-insns-single=800"
         " --param inline-min-speedup=1"
-        " -finline-functions")
+        " -finline-functions"
+        " -funroll-loops")
 
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
 

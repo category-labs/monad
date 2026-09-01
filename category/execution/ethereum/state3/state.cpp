@@ -295,6 +295,31 @@ State::State(
     , relaxed_validation_{relaxed_validation}
     , rb_{this}
 {
+    // Reserve initial capacity to avoid repeated growth for each transaction.
+    // The guest's bump allocator does not reclaim old allocations.
+    // Containers can still grow beyond this floor.
+    constexpr size_t INITIAL_CAPACITY = 16;
+    original_.reserve(INITIAL_CAPACITY);
+    current_.reserve(INITIAL_CAPACITY);
+#ifdef MONAD_ZKVM_ZISK
+    // Reserve more room for slot-related undo records to avoid early growth
+    // and copies. reserve() allocates capacity without constructing entries.
+    constexpr size_t INITIAL_SLOT_CAPACITY = 64;
+    undo_.reserve(INITIAL_SLOT_CAPACITY);
+    undo_accounts_.reserve(INITIAL_CAPACITY);
+    undo_words_.reserve(INITIAL_SLOT_CAPACITY);
+    undo_u64_.reserve(INITIAL_CAPACITY);
+    undo_slots_.reserve(INITIAL_SLOT_CAPACITY);
+#else
+    undo_.reserve(INITIAL_CAPACITY);
+    undo_accounts_.reserve(INITIAL_CAPACITY);
+    undo_words_.reserve(INITIAL_CAPACITY);
+    undo_u64_.reserve(INITIAL_CAPACITY);
+    undo_slots_.reserve(INITIAL_CAPACITY);
+#endif
+    undo_marks_.reserve(INITIAL_CAPACITY);
+    logs_.reserve(INITIAL_CAPACITY);
+    log_marks_.reserve(INITIAL_CAPACITY);
 }
 
 State::Map<Address, OriginalAccountState> const &State::original() const

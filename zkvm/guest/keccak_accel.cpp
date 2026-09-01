@@ -68,17 +68,20 @@ void syscall_keccak_f(uint64_t (*state)[25]);
 constexpr size_t KECCAKF_LANES = 25;
 constexpr size_t KECCAKF_STATE_BYTES = KECCAKF_LANES * sizeof(uint64_t);
 
-// Append-only table: 2^18 entries of 400 bytes use 100 MiB of .bss.
+// Append-only table: 2^18 entries of 512 bytes use 128 MiB of .bss.
 // Entries are never evicted; a full table computes misses without caching them.
+// Two 200-byte states are padded to 512 bytes so indexing is a shift, not a
+// multiply; the padding is never read or written.
 struct alignas(8) KeccakfEntry
 {
     uint64_t in[KECCAKF_LANES]; // the state before the permutation
     uint64_t out[KECCAKF_LANES]; // and after it
+    uint64_t pad[64 - 2 * KECCAKF_LANES];
 };
 
 static_assert(
-    sizeof(KeccakfEntry) == 2 * KECCAKF_STATE_BYTES,
-    "an entry is exactly the two states");
+    sizeof(KeccakfEntry) == 512 && sizeof(KeccakfEntry) > 2 * KECCAKF_STATE_BYTES,
+    "an entry is the two states, padded to a shift");
 
 constexpr size_t KECCAKF_MEMO_ENTRIES = size_t{1} << 18;
 

@@ -138,7 +138,15 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                 node.bytes() + DIGEST_NODE_LEN;
             MONAD_ASSERT(digest_end <= region_end);
             node_offsets[node_offset] = 1;
-            node_offset = static_cast<uint64_t>(digest_end - base);
+            // Advanced, not recomputed. `node.bytes() == base + node_offset`
+            // holds at the top of every iteration -- the walk establishes it
+            // and both arms maintain it -- so the new offset is the old one
+            // plus this node's length. Recomputing it from the pointer is a
+            // `sub`, which ZisK prices at 60 cells where the `addi` it
+            // replaces is 15.3, on nine nodes in ten of the whole blob.
+            MONAD_DEBUG_ASSERT(
+                node.bytes() == base + node_offset);
+            node_offset += DIGEST_NODE_LEN;
             node = NodeViewBase{digest_end};
             continue;
         }

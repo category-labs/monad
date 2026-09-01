@@ -28,6 +28,8 @@
 #include <category/execution/monad/state2/proposal_state.hpp>
 #include <category/vm/utils/lru_weight_cache.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <format>
 #include <memory>
@@ -67,8 +69,12 @@ class DbCache final
     // slots, worst case single-slot pages) stays resident
     static constexpr uint32_t STORAGE_CACHE_MAX_BYTES = 1024u * 1024 * 1024;
 
-    AccountsCache accounts_{10'000'000};
-    StorageCache storage_{STORAGE_CACHE_MAX_BYTES};
+    // current block number: advances the LRU promotion epoch so cache
+    // recency tracks block progress like the consensus last_access does
+    std::atomic<uint64_t> block_{0};
+    AccountsCache accounts_{10'000'000, &block_};
+    StorageCache storage_{
+        STORAGE_CACHE_MAX_BYTES, std::chrono::milliseconds{200}, &block_};
     Proposals proposals_;
 
 public:
@@ -163,6 +169,7 @@ public:
     void
     set_block_and_prefix(uint64_t const block_number, bytes32_t const &block_id)
     {
+        block_.store(block_number, std::memory_order_relaxed);
         proposals_.set_block_and_prefix(block_number, block_id);
     }
 

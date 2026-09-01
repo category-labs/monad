@@ -56,10 +56,11 @@ namespace monad::vm::utils
         explicit LruWeightCache(
             uint32_t const max_weight,
             std::chrono::nanoseconds const lru_update_duration =
-                std::chrono::milliseconds{200})
+                std::chrono::milliseconds{200},
+            std::atomic<uint64_t> const *const epoch = nullptr)
             : max_weight_(max_weight)
             , weight_(0)
-            , lru_{lru_update_duration.count()}
+            , lru_{lru_update_duration.count(), epoch}
         {
         }
 
@@ -187,7 +188,7 @@ namespace monad::vm::utils
 
         void try_update_lru(ListNode const *const node)
         {
-            if (node->second.check_lru_time()) {
+            if (node->second.check_lru_time(lru_.now())) {
                 lru_.update_lru(node);
             }
         }
@@ -234,18 +235,17 @@ namespace monad::vm::utils
                 return prev_ != nullptr;
             }
 
-            void update_lru_time(int64_t const update_period) const
+            void update_lru_time(int64_t const next_allowed) const
             {
-                lru_time_.store(
-                    cur_time() + update_period, std::memory_order_release);
+                lru_time_.store(next_allowed, std::memory_order_release);
             }
 
-            bool check_lru_time() const
+            bool check_lru_time(int64_t const now) const
             {
-                return cur_time() >= lru_time_.load(std::memory_order_acquire);
+                return now >= lru_time_.load(std::memory_order_acquire);
             }
 
-            static int64_t cur_time()
+            static int64_t wall_clock()
             {
                 return std::chrono::duration_cast<std::chrono::nanoseconds>(
                            std::chrono::steady_clock::now().time_since_epoch())
@@ -259,12 +259,30 @@ namespace monad::vm::utils
             ListNode base_;
             std::mutex mutex_;
             int64_t lru_update_period_;
+            // promote at most once per period: wall clock by default, or the
+            // externally advanced epoch (e.g. block number) when supplied
+            std::atomic<uint64_t> const *epoch_;
 
         public:
-            explicit LruList(int64_t const lru_update_period)
+            explicit LruList(
+                int64_t const lru_update_period,
+                std::atomic<uint64_t> const *const epoch = nullptr)
                 : lru_update_period_{lru_update_period}
+                , epoch_{epoch}
             {
                 clear();
+            }
+
+            int64_t now() const
+            {
+                return epoch_ != nullptr ? static_cast<int64_t>(epoch_->load(
+                                               std::memory_order_relaxed))
+                                         : ListNode::second_type::wall_clock();
+            }
+
+            int64_t next_allowed() const
+            {
+                return now() + (epoch_ != nullptr ? 1 : lru_update_period_);
             }
 
             // Not thread-safe with other LruList operations.
@@ -280,7 +298,7 @@ namespace monad::vm::utils
                 if (node->second.is_in_list()) {
                     delink(node);
                     front_link(node);
-                    node->second.update_lru_time(lru_update_period_);
+                    node->second.update_lru_time(next_allowed());
                 } // else item is being evicted or inserted, don't update LRU
             }
 

@@ -52,6 +52,7 @@ class LruCache
     Mutex mutex_;
     HashMap hmap_;
     Pool pool_;
+    std::atomic<uint64_t> const *epoch_{nullptr};
 
 /// STATS MACROS
 #ifdef MONAD_LRU_CACHE_STATS
@@ -73,11 +74,14 @@ class LruCache
 public:
     using ConstAccessor = HashMap::const_accessor;
 
-    explicit LruCache(size_t const max_size)
+    explicit LruCache(
+        size_t const max_size,
+        std::atomic<uint64_t> const *const epoch = nullptr)
         : max_size_(max_size)
         , size_(0)
         , hmap_(max_size + SLACK)
         , pool_(max_size + SLACK, 1)
+        , epoch_(epoch)
     {
     }
 
@@ -132,12 +136,27 @@ public:
     }
 
 private:
+    // promote at most once per period: wall clock by default, or the
+    // externally advanced epoch (e.g. block number) when one is supplied
+    int64_t now() const
+    {
+        return epoch_ != nullptr ? static_cast<int64_t>(
+                                       epoch_->load(std::memory_order_relaxed))
+                                 : ListNode::wall_clock();
+    }
+
+    int64_t update_period() const
+    {
+        return epoch_ != nullptr ? 1 : ListNode::LRU_UPDATE_PERIOD;
+    }
+
     void try_update_lru(ListNode *node)
     {
-        if (node->check_lru_time()) {
+        int64_t const t = now();
+        if (node->check_lru_time(t, update_period())) {
             std::unique_lock const l(mutex_);
             STATS_EVENT_UPDATE_LRU();
-            lru_.update_lru(node);
+            lru_.update_lru(node, t);
         }
     }
 
@@ -208,18 +227,17 @@ private:
             return prev_ != nullptr;
         }
 
-        void update_lru_time()
+        void update_lru_time(int64_t const now)
         {
-            lru_time_.store(cur_time(), std::memory_order_release);
+            lru_time_.store(now, std::memory_order_release);
         }
 
-        bool check_lru_time() const
+        bool check_lru_time(int64_t const now, int64_t const period) const
         {
-            return (cur_time() - lru_time_.load(std::memory_order_acquire)) >=
-                   LRU_UPDATE_PERIOD;
+            return (now - lru_time_.load(std::memory_order_acquire)) >= period;
         }
 
-        int64_t cur_time() const
+        static int64_t wall_clock()
         {
             return (int64_t)
                 std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -240,12 +258,12 @@ private:
             tail_.prev_ = &head_;
         }
 
-        void update_lru(ListNode *node)
+        void update_lru(ListNode *node, int64_t const now)
         {
             if (node->is_in_list()) {
                 delink(node);
                 push_front(node);
-                node->update_lru_time();
+                node->update_lru_time(now);
             } // else item is being evicted, don't update LRU
         }
 

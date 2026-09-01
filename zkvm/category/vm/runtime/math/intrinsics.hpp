@@ -20,12 +20,64 @@
 
 #include <category/core/runtime/uint256.hpp>
 
+#ifdef MONAD_ZKVM_ZISK
+namespace monad::vm::runtime
+{
+    // ZisK's arith256 precompile computes `a * b + c = dh | dl` in one step, and
+    // the EVM's MUL is exactly its low half with c = 0.
+    //
+    // Here and not in uint256_t::operator*: this is the EVM opcode's own entry
+    // point, where every multiply is a real 256x256 one. The operator is
+    // general-purpose -- exp reaches truncating_mul directly, gas multiplies
+    // Bin, memory expansion multiplies uint64_t -- so putting a 1,440-cell call
+    // behind `a * b` would only be a trap for a future caller.
+    struct ZiskArith256Params
+    {
+        uint64_t const *a;
+        uint64_t const *b;
+        uint64_t const *c;
+        uint64_t *dl;
+        uint64_t *dh;
+    };
+}
+#endif
+
 namespace monad::vm::runtime
 {
     inline void
     mul(uint256_t *result_ptr, uint256_t const *a_ptr,
         uint256_t const *b_ptr) noexcept
     {
+#ifdef MONAD_ZKVM_ZISK
+        // The operands are read where they lie. A uint256_t is at least 8-aligned
+        // and its words are the little-endian limb order the syscall wants, so
+        // staging them into locals buys nothing and costs eight loads and twelve
+        // stores a call.
+        static_assert(alignof(uint256_t) >= 8);
+        static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
+        // Reuse the parameter block: only a, b and dl change per call.
+        // The guest is single-threaded and the precompile cannot reenter mul.
+        alignas(8) static constexpr uint64_t zero[4] = {0, 0, 0, 0};
+        alignas(8) static uint64_t hi[4];
+        // nullptr keeps initialization constant, avoiding a per-call guard.
+        // Set the argument-dependent pointers below.
+        static ZiskArith256Params p{nullptr, nullptr, zero, nullptr, hi};
+        p.a = reinterpret_cast<uint64_t const *>(a_ptr);
+        p.b = reinterpret_cast<uint64_t const *>(b_ptr);
+        // Inputs are read before either output is written, so result may alias
+        // a or b (opc_arith256 and MemBusHelpers::mem_aligned_op).
+        p.dl = reinterpret_cast<uint64_t *>(result_ptr);
+        // Emit ziskos' arith256 syscall marker inline to avoid call overhead.
+        // This port uses csrs with rd = x0, matching ziskos' implementation.
+        asm volatile(".option push\n\t"
+                     ".option arch, +zicsr\n\t"
+                     "csrs 0x801, %0\n\t"
+                     ".option pop"
+                     :
+                     : "r"(&p)
+                     : "memory");
+#else
         *result_ptr = *a_ptr * *b_ptr;
+#endif
     }
 }

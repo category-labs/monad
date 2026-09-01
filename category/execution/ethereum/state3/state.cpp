@@ -259,13 +259,14 @@ void State::journal_warm_slot(Address const &address, bytes32_t const &key)
     undo_words_.push_back(key);
 }
 
+// Reuse the caller's lookup to save the old value without another probe.
 void State::journal_slot(
-    Address const &address, AccountState const &row, bytes32_t const &key)
+    Address const &address, bytes32_t const &key,
+    bytes32_t const *const previous_value)
 {
     if (!journalling()) {
         return;
     }
-    bytes32_t const *const previous_value = row.storage_.find(key);
     undo_.emplace_back(address, Undo::Kind::Slot, undo_slots_.size());
 #ifdef MONAD_ZKVM_ZISK
     // Both branches refer to existing objects, avoiding a temporary value.
@@ -848,6 +849,10 @@ monad_storage_status State::set_storage(
     bytes32_t original_value;
     auto &account_state = current_account_state(address);
     MONAD_ASSERT(account_state.account_);
+    // Reuse this value for journalling and storage-status computation.
+    // The separate pre-state cache cannot invalidate this pointer; the
+    // eventual upsert still performs its own lookup.
+    bytes32_t const *const stored_value = account_state.storage_.find(key);
     // original
     {
         MONAD_ASSERT(account_state.original_state_ != nullptr);
@@ -871,9 +876,9 @@ monad_storage_status State::set_storage(
     }
     // state
     {
-        journal_slot(address, account_state, key);
+        journal_slot(address, key, stored_value);
         auto const result =
-            account_state.set_storage(key, value, original_value);
+            account_state.set_storage(key, value, original_value, stored_value);
         return result;
     }
 }

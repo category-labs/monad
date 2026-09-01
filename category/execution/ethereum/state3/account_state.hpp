@@ -246,16 +246,13 @@ public:
         return {};
     }
 
+    // Reuse the caller's current-value lookup; null means no overlay entry.
     monad_storage_status set_storage(
         bytes32_t const &key, bytes32_t const &value,
-        bytes32_t const &original_value)
+        bytes32_t const &original_value, bytes32_t const *const stored_value)
     {
-        bytes32_t current_value = original_value;
-        {
-            if (auto const *const it = storage_.find(key); it) {
-                current_value = *it;
-            }
-        }
+        bytes32_t const current_value =
+            stored_value ? *stored_value : original_value;
         if (value == bytes32_t{}) {
             return zero_out_key(key, original_value, current_value);
         }

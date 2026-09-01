@@ -60,8 +60,33 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm)
 #endif
 }
 
+#ifdef MONAD_ZKVM_ZISK
+StateDelta &BlockState::read_account_delta(Address const &address)
+{
+    // Find or insert in one lookup; read the DB only when creating an entry.
+    struct DeferredAccountRead
+    {
+        Db &db;
+        Address const &address;
+
+        operator StateDelta() const
+        {
+            auto const result = db.read_account(address);
+            return StateDelta{.account = {result, result}, .storage = {}};
+        }
+    };
+
+    MONAD_ASSERT(state_);
+    return state_->try_emplace(address, DeferredAccountRead{db_, address})
+        .first->second;
+}
+#endif
+
 std::optional<Account> BlockState::read_account(Address const &address)
 {
+#ifdef MONAD_ZKVM_ZISK
+    return read_account_delta(address).account.second;
+#else
     // block state
     {
         StateDeltas::const_accessor it{};
@@ -80,11 +105,76 @@ std::optional<Account> BlockState::read_account(Address const &address)
             StateDelta{.account = {result, result}, .storage = {}});
         return it->second.account.second;
     }
+#endif
 }
+
+#ifdef MONAD_ZKVM_ZISK
+bytes32_t const &BlockState::read_storage(
+    StateDelta &delta, Address const &address, Incarnation const incarnation,
+    bytes32_t const &key)
+{
+    // Keep using the supplied entry across the DB read: guest execution is
+    // single-threaded, and map insertions preserve pointers.
+    auto const &account = delta.account.second;
+    if (!account || incarnation != account->incarnation) {
+        // A returned reference must outlive this call.
+        static constexpr bytes32_t zero{};
+        return zero;
+    }
+    // The single-threaded guest cannot change the account during the DB read,
+    // so it does not need the host's second account check.
+    auto const &original_account = delta.account.first;
+    // Reserve for 64 slots on the first read to avoid early rehashes.
+    if (MONAD_UNLIKELY(delta.storage.bucket_count() == 0)) {
+        delta.storage.reserve(64);
+    }
+
+    // Defer the DB read until try_emplace constructs a missing slot.
+    struct DeferredStorageRead
+    {
+        BlockState &block_state;
+        Address const &address;
+        Incarnation incarnation;
+        bytes32_t const &key;
+        bool has_original_storage;
+
+        // Initialize directly from the DB result instead of zeroing then
+        // assigning.
+        operator StorageDelta() const
+        {
+            if (!has_original_storage) {
+                return {};
+            }
+            bytes32_t const result =
+                block_state.db_.read_storage(address, incarnation, key);
+            return {result, result};
+        }
+    };
+
+    // The conversion reads the DB only when try_emplace inserts a slot.
+    return delta.storage
+        .try_emplace(
+            key,
+            DeferredStorageRead{
+                *this,
+                address,
+                incarnation,
+                key,
+                original_account &&
+                    incarnation == original_account->incarnation})
+        .first->second.second;
+}
+#endif
 
 bytes32_t BlockState::read_storage(
     Address const &address, Incarnation const incarnation, bytes32_t const &key)
 {
+#ifdef MONAD_ZKVM_ZISK
+    StateDeltas::accessor it{};
+    MONAD_ASSERT(state_);
+    MONAD_ASSERT(state_->find(it, address));
+    return read_storage(it->second, address, incarnation, key);
+#else
     bool read_storage = false;
     // block state
     {
@@ -115,6 +205,8 @@ bytes32_t BlockState::read_storage(
         }
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
+        // The host must recheck the account after releasing the lock for the
+        // read.
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return result;
@@ -126,6 +218,7 @@ bytes32_t BlockState::read_storage(
             return it2->second.second;
         }
     }
+#endif
 }
 
 vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
@@ -224,39 +317,49 @@ void BlockState::merge(State const &state)
     for (auto const &[address, account_state] : current) {
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
+#ifdef MONAD_ZKVM_ZISK
+        // The entry the account's original row was read from.
+        MONAD_ASSERT(account_state.original_state_ != nullptr);
+        StateDelta *const cached_delta =
+            account_state.original_state_->block_delta_;
+        MONAD_ASSERT(cached_delta != nullptr);
+        StateDelta &delta = *cached_delta;
+#else
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
-        it->second.account.second = account;
+        StateDelta &delta = it->second;
+#endif
+        delta.account.second = account;
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {
                 StorageDeltas::accessor it2{};
-                if (it->second.storage.find(it2, key)) {
+                if (delta.storage.find(it2, key)) {
                     it2->second.second = value;
                 }
                 else {
 #ifdef MONAD_ZKVM_ZISK
-                    // Reserve on first insertion to avoid early rehashes.
-                    // Host TBB maps have no reserve().
-                    if (MONAD_UNLIKELY(it->second.storage.empty())) {
-                        it->second.storage.reserve(64);
+                    // Match read_storage's initial capacity when merge
+                    // inserts the first slot. Host TBB maps have no reserve().
+                    if (MONAD_UNLIKELY(delta.storage.empty())) {
+                        delta.storage.reserve(64);
                     }
 #endif
-                    it->second.storage.emplace(
+                    delta.storage.emplace(
                         key, std::make_pair(bytes32_t{}, value));
                 }
             }
         }
         else {
-            if (it->second.account.first.has_value()) {
+            if (delta.account.first.has_value()) {
                 auto const [iter, inserted] =
                     self_destruct_storage_reads_.try_emplace(address);
                 if (inserted) {
-                    for (auto const &kv : it->second.storage) {
+                    for (auto const &kv : delta.storage) {
                         iter->second.insert(kv.first);
                     }
                 }
             }
-            it->second.storage.clear();
+            delta.storage.clear();
         }
     }
 }

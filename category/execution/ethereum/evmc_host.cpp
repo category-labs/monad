@@ -33,6 +33,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
@@ -197,11 +198,14 @@ void EvmcHostBase::emit_log(
     MONAD_TRY
     {
         Receipt::Log log{.data = {data, data_size}, .address = address};
-        for (auto i = 0u; i < num_topics; ++i) {
-            log.topics.push_back({topics[i]});
+        // Copy all topics in one range.
+        static_assert(std::is_convertible_v<evmc::bytes32 const &, bytes32_t>);
+        if (num_topics != 0) {
+            log.topics.assign(topics, topics + num_topics);
         }
-        state_.store_log(log);
-        call_tracer_.on_log(std::move(log));
+        // Trace before moving the log into state.
+        call_tracer_.on_log(log);
+        state_.store_log(std::move(log));
         return;
     }
     MONAD_CATCH(...)

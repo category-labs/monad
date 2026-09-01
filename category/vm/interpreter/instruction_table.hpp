@@ -1575,9 +1575,15 @@ namespace monad::vm::interpreter
         // and its operands, then destination validation -- a bad destination still
         // exits Error with the jump's gas already charged, as it does today.
         if constexpr (N == 2) {
+            // size_t and not unsigned for the difference: the operands are a
+            // byte and a constant, so a 32-bit subtract puts this on ZisK's
+            // generic binary machine at 60 cells where the native form is 15.3,
+            // on every PUSH2 in the block. The wrap for a follower below JUMP
+            // lands far above 1 either width.
             auto const monad_vm_op2 = *(instr_ptr + 3);
-            if (static_cast<unsigned>(monad_vm_op2 -
-                                      static_cast<std::uint8_t>(JUMP)) <= 1u) {
+            if (static_cast<size_t>(monad_vm_op2) -
+                    static_cast<size_t>(JUMP) <=
+                1u) {
                 // Reading the destination immediate is pure, so it moves above
                 // the checks: the aggregate has to know which follower it is
                 // before it can test the sequence, and PUSH2 and JUMPI do not

@@ -268,6 +268,25 @@ State::State(
     , relaxed_validation_{relaxed_validation}
     , rb_{this}
 {
+    // A State is built per transaction, and every container below starts empty
+    // and doubles its way up: with a bump allocator each intermediate capacity
+    // is allocated, copied forward and abandoned, and a map rehashes -- which
+    // recomputes the hash of every entry it already holds -- on each step.
+    //
+    // FLOOR is a floor and not an estimate. It skips the first four doublings,
+    // which is where nearly all the growth events are; a transaction that goes
+    // past it pays one reallocation, exactly as it does today.
+    constexpr size_t FLOOR = 16;
+    original_.reserve(FLOOR);
+    current_.reserve(FLOOR);
+    undo_.reserve(FLOOR);
+    undo_accts_.reserve(FLOOR);
+    undo_words_.reserve(FLOOR);
+    undo_u64_.reserve(FLOOR);
+    undo_slots_.reserve(FLOOR);
+    undo_marks_.reserve(FLOOR);
+    logs_.reserve(FLOOR);
+    log_marks_.reserve(FLOOR);
 }
 
 State::Map<Address, OriginalAccountState> const &State::original() const

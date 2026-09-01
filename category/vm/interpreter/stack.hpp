@@ -48,11 +48,18 @@ namespace monad::vm::interpreter
             return;
         }
 
-        auto const stack_size = stack_top - stack_bottom;
-        MONAD_DEBUG_ASSERT(stack_size <= 1024);
+        MONAD_DEBUG_ASSERT(stack_top - stack_bottom <= 1024);
 
+        // Compared as POINTERS, not through the height. `stack_top -
+        // stack_bottom` is a `sub`, which ZisK prices at 60 cells where an add
+        // has its own path at 15.3, and the same comparisons decide either way.
+        // The underflow bound is small enough for a 12-bit immediate; the
+        // overflow one is 1024 slots -- 32768 bytes -- which is not, so it
+        // comes from ctx.stack_limit, already formed. Same reasoning as
+        // MONAD_VM_CHECK_AT in instruction_table.hpp, which is the other place
+        // these two tests live.
         if constexpr (info.min_stack > 0) {
-            if (MONAD_UNLIKELY(stack_size < info.min_stack)) {
+            if (MONAD_UNLIKELY(stack_top < stack_bottom + info.min_stack)) {
                 ctx.exit(Error);
             }
         }
@@ -66,7 +73,9 @@ namespace monad::vm::interpreter
             // the stack with >1024 elements if it _began_ with >1024, then we
             // assume that the input stack was valid and elide the check.
             if constexpr (max_safe_size < 1024) {
-                if (MONAD_UNLIKELY(stack_size > max_safe_size)) {
+                if (MONAD_UNLIKELY(
+                        stack_top >=
+                        ctx.stack_limit + (max_safe_size + 1 - 1024))) {
                     ctx.exit(Error);
                 }
             }

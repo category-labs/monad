@@ -273,6 +273,19 @@ namespace monad::vm::runtime
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
 
+        // One past the last slot an opcode may leave occupied: stack_bottom +
+        // 1024. Held here rather than formed at each check, because 1024 slots
+        // is 32768 bytes and that does not fit a 12-bit immediate -- so
+        // `top >= bottom + 1024` costs a `lui`, an `addi`, a `sub` at 60 cells
+        // and a branch, and gcc reaches for the difference because the
+        // instruction count is the same either way. Against a pointer already
+        // in memory it is a load and a compare.
+        //
+        // Set by interpreter::execute, which is the only path that can reach a
+        // stack check, and after all the members whose offsets context.S and
+        // the offsetof asserts above pin down.
+        uint256_t const *stack_limit = nullptr;
+
         [[gnu::always_inline]]
         constexpr void deduct_gas(int64_t const gas) noexcept
         {

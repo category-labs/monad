@@ -60,6 +60,9 @@ namespace monad::vm::interpreter
     void execute(
         runtime::Context &ctx, Intercode const &analysis, uint8_t *stack_ptr)
     {
+        // core_loop takes stack_bottom as stack_ptr - 1, so the first slot an
+        // opcode may not occupy is stack_ptr + 1023.
+        ctx.stack_limit = reinterpret_cast<uint256_t *>(stack_ptr) + 1023;
         trampoline(
             ctx,
             analysis,

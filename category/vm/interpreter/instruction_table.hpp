@@ -161,9 +161,18 @@
                  * formed. Nothing is elided: the same comparison decides. */  \
                 static constexpr auto monad_vm_limit =                         \
                     1025 - monad_vm_delta;                                     \
+                /* Against ctx.stack_limit, which is stack_bottom + 1024   \
+                 * already formed, and not against stack_bottom + the          \
+                 * constant. 1024 slots is 32768 bytes, which no 12-bit         \
+                 * immediate holds, so the second form costs a `lui`, an        \
+                 * `addi`, a `sub` at 60 cells and a branch -- and gcc picks    \
+                 * the difference because the instruction count is the same     \
+                 * either way. The offset below is 0 at every emitted site:     \
+                 * every opcode with a positive delta has it exactly 1. */     \
                 if constexpr (monad_vm_limit <= 1024) {                        \
                     if (MONAD_UNLIKELY(                                        \
-                            monad_vm_top >= stack_bottom + monad_vm_limit)) {  \
+                            monad_vm_top >=                                    \
+                            ctx.stack_limit + (monad_vm_limit - 1024))) {      \
                         MONAD_VM_MUST_TAIL return ctx.exit(Error);             \
                     }                                                          \
                 }                                                              \

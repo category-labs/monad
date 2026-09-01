@@ -64,17 +64,34 @@ namespace monad::vm::runtime
         // took the precompile's gain from -0.594 % down to -0.043 %. That is the
         // cost of a rejected variant, not of the routing below: the point is that
         // the copies are what nearly cancelled it, so do not reintroduce them.
-        alignas(8) static constexpr uint64_t zero[4] = {0, 0, 0, 0};
-        alignas(8) uint64_t lo[4];
-        alignas(8) uint64_t hi[4];
         static_assert(alignof(uint256_t) >= 8);
         static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
-        ZiskArith256Params p{
-            reinterpret_cast<uint64_t const *>(a_ptr),
-            reinterpret_cast<uint64_t const *>(b_ptr),
-            zero,
-            lo,
-            hi};
+        // The params block is built once, not per call. Three of its five
+        // fields never change -- the zero addend and the two result buffers --
+        // and the syscall needs the block's address, so a stack-local one
+        // stores all five every time. Static, they are two stores.
+        //
+        // Safe because this is the only writer: the guest is single-threaded
+        // and nothing runs between filling the block and reading the result,
+        // so no call can be in flight while another fills it. The invariant is
+        // not one the compiler checks -- a reentrant mul would corrupt lo under
+        // its own caller -- so nothing may call into this file between the
+        // syscall and the read below.
+        alignas(8) static constexpr uint64_t zero[4] = {0, 0, 0, 0};
+        alignas(8) static uint64_t lo[4];
+        alignas(8) static uint64_t hi[4];
+        // The two nullptrs are what keep the initialiser constant, and that is
+        // the point of writing a and b separately instead of in the braces.
+        // Braced with a_ptr and b_ptr the initialiser depends on the arguments,
+        // so the static is initialised on first use and gcc guards it: not just
+        // the one-time __cxa_guard_acquire, but a guard byte loaded, an acquire
+        // `fence r,rw` and a branch on EVERY entry. Checked on this compiler --
+        // constant, the whole body is two `sd` and the tail call; argument-
+        // dependent, the fence and test precede it. The barrier alone would
+        // cost more per MUL than the three stores being saved.
+        static ZiskArith256Params p{nullptr, nullptr, zero, lo, hi};
+        p.a = reinterpret_cast<uint64_t const *>(a_ptr);
+        p.b = reinterpret_cast<uint64_t const *>(b_ptr);
         syscall_arith256(&p);
         // Through a local and not straight into result_ptr: the interface allows
         // result to be one of the operands, and the precompile's write order is

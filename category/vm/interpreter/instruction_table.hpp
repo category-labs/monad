@@ -108,6 +108,14 @@
 // 3.3 % of the current guest.
 #define MONAD_VM_CHECK(OP) MONAD_VM_CHECK_AT(OP, 0)
 
+#if defined(MONAD_VM_QUICKEN)
+// A synthetic opcode, occupying one of the 107 slots the EVM leaves undefined
+// and this table maps to `invalid`. It never appears in a contract: the
+// interpreter writes it into its own private copy of the code, and nothing
+// outside the interpreter reads that copy's bytes.
+inline constexpr std::uint8_t MONAD_VM_QUICK_PUSH1 = 0x0C;
+#endif
+
 // The same checks, then the runtime call -- as a macro for the reason above.
 //
 // checked_runtime_call() was a function, so its check_requirements() could not
@@ -385,7 +393,11 @@ namespace monad::vm::interpreter
             mulmod<traits>, // 0x09,
             exp<traits>, // 0x0A,
             signextend<traits>, // 0x0B,
+#if defined(MONAD_VM_QUICKEN)
+            push1_quick<traits>, // 0x0C, synthetic: see MONAD_VM_QUICK_PUSH1
+#else
             invalid, //
+#endif
             invalid, //
             invalid, //
             invalid, //
@@ -1754,11 +1766,54 @@ namespace monad::vm::interpreter
             }
         }
 #endif
+#if defined(MONAD_VM_QUICKEN)
+        // Reaching here means none of the gates above accepted this PUSH1's
+        // follower, and they never will: they test bytes that do not change.
+        // Rewrite the opcode so every later execution of THIS position
+        // dispatches straight to a gate-free PUSH1 instead of re-deciding.
+        //
+        // The gates cost 3 instructions on all 297,218 PUSH1 entries a block,
+        // 4 more on the 94,663 that reach the bitmap and 2 more on the 231,204
+        // that reach the PUSH1+PUSH1 compare -- 1.73 M steps deciding rather
+        // than doing. This pays that once per code position instead.
+        //
+        // Writing there is sound. Intercode owns a private padded copy, made
+        // with `new uint8_t[]`, so the storage is not const however the member
+        // is spelled. The observable bytecode -- what CODECOPY, EXTCODECOPY,
+        // CODESIZE and the code hash read -- is ctx.env.code, a different
+        // pointer set from the caller's span. The only readers of
+        // analysis.code() are the entry point, jump targets, PC and the debug
+        // trace, and all four care about positions, which do not move.
+        //
+        // It cannot cost another handler its fusion. A position is rewritten
+        // only when it is dispatched to, and it is dispatched to only when the
+        // opcode before it declined to consume it -- a decision made on bytes
+        // that do not change, so it will decline again.
+        if constexpr (N == 1) {
+            const_cast<uint8_t *>(instr_ptr)[0] = MONAD_VM_QUICK_PUSH1;
+        }
+#endif
         MONAD_VM_CHECK(PUSH0 + N);
         push_impl<N, traits>::push(stack_top, instr_ptr);
 
         MONAD_VM_NEXT_PUSH(PUSH0 + N);
     }
+
+#if defined(MONAD_VM_QUICKEN)
+    // The plain PUSH1 body with no fusion gate. Reached only through the
+    // rewrite above, so its position is one already known not to fuse.
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void push1_quick(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        MONAD_VM_CHECK(PUSH1);
+        push_impl<1, traits>::push(stack_top, instr_ptr);
+
+        MONAD_VM_NEXT_PUSH(PUSH1);
+    }
+#endif
 
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void

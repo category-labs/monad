@@ -103,8 +103,22 @@ struct NodeIdHash
 
     uint64_t operator()(NodeId const id) const noexcept
     {
+#ifdef MONAD_ZKVM_ZISK
+        // Fibonacci, not wyhash. An id is a byte offset into the blob, so ids
+        // are ascending and at least a node apart -- they need spreading, but
+        // they need it in one direction only, and multiplying by an odd
+        // constant close to 2^64/phi puts the entropy in the high bits, which
+        // is the half unordered_dense takes its bucket from.
+        //
+        // unordered_dense::hash<uint64_t> is wyhash, whose mix is a 128-bit
+        // multiply: two multiplies where this has one, and ZisK prices a
+        // multiply at 97 cells against 15 for an add. This map is consulted
+        // once per child of every node the trie encodes.
+        return static_cast<uint64_t>(id) * 0x9E3779B97F4A7C15ull;
+#else
         return ankerl::unordered_dense::hash<uint64_t>{}(
             static_cast<uint64_t>(id));
+#endif
     }
 };
 

@@ -66,24 +66,55 @@ namespace
     }
 }
 
+#ifdef MONAD_ZKVM_ZISK
+OriginalAccountState::OriginalAccountState(StateDelta &delta)
+    : AccountState{delta.account.second}
+    , delta_{&delta}
+{
+}
+#endif
+
 OriginalAccountState &State::original_account_state(Address const &address)
 {
 #ifdef MONAD_ZKVM_ZISK
     if (orig_memo_ != nullptr && address == orig_memo_addr_) {
         return *orig_memo_;
     }
-#endif
+
+    // Pass a recipe, not the result of read_account_delta: function arguments
+    // are evaluated before try_emplace, even when the row already exists.
+    // This avoids both an unnecessary block lookup and a separate find here.
+    struct Entry
+    {
+        BlockState &block_state;
+        Address const &address;
+
+        // If the row is missing, try_emplace constructs OriginalAccountState.
+        // Its constructor needs StateDelta&, so C++ invokes this conversion.
+        // An existing row requires no construction and never calls this code.
+        operator StateDelta &() const
+        {
+            return block_state.read_account_delta(address);
+        }
+    };
+
+    // Entry is temporary, but the returned delta belongs to BlockState.
+    // The new row retains a pointer to that stable delta, not to Entry.
+    OriginalAccountState &row =
+        original_.try_emplace(address, Entry{block_state_, address})
+            .first->second;
+    orig_memo_addr_ = address;
+    orig_memo_ = &row;
+    return row;
+#else
     auto it = original_.find(address);
     if (it == original_.end()) {
         // block state
         auto const account = block_state_.read_account(address);
         it = original_.try_emplace(address, account).first;
     }
-#ifdef MONAD_ZKVM_ZISK
-    orig_memo_addr_ = address;
-    orig_memo_ = &it->second;
-#endif
     return it->second;
+#endif
 }
 
 AccountState const &State::recent_account_state(Address const &address)
@@ -702,8 +733,16 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
             return *it3;
         }
         else {
+#ifdef MONAD_ZKVM_ZISK
+            bytes32_t const &value = block_state_.read_storage(
+                *account_state.delta_,
+                address,
+                account.value().incarnation,
+                key);
+#else
             bytes32_t const value = block_state_.read_storage(
                 address, account.value().incarnation, key);
+#endif
             storage.insert(key, value);
             return value;
         }
@@ -729,8 +768,16 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
             return *it3;
         }
         else {
+#ifdef MONAD_ZKVM_ZISK
+            bytes32_t const &value = block_state_.read_storage(
+                *original_account_state.delta_,
+                address,
+                account.value().incarnation,
+                key);
+#else
             bytes32_t const value = block_state_.read_storage(
                 address, account.value().incarnation, key);
+#endif
             original_storage.insert(key, value);
             return value;
         }
@@ -828,8 +875,13 @@ monad_storage_status State::set_storage(
         }
         else {
             Incarnation const incarnation = account_state.account_->incarnation;
+#ifdef MONAD_ZKVM_ZISK
+            bytes32_t const &value = block_state_.read_storage(
+                *orig_account_state.delta_, address, incarnation, key);
+#else
             bytes32_t const value =
                 block_state_.read_storage(address, incarnation, key);
+#endif
             storage.insert(key, value);
             original_value = value;
         }

@@ -1425,8 +1425,7 @@ namespace monad::vm::interpreter
                 (1ull << static_cast<unsigned>(SHL)) |
                 (1ull << static_cast<unsigned>(SHR)) |
                 (1ull << static_cast<unsigned>(SAR));
-            // PUSH1 and DUP2 exceed the mask's range and still need stack
-            // writes, so their fusions are omitted.
+            // PUSH1 (handled below) and DUP2 exceed this mask's range.
             auto const monad_vm_op2 = *(instr_ptr + 2);
             // Filtering for these four opcodes first improves performance.
             if (monad_vm_op2 < 64 &&
@@ -1467,6 +1466,25 @@ namespace monad::vm::interpreter
                 // and call the next opcode handler.
                 // Returns from the current handler.
                 MONAD_VM_FUSED_NEXT(3, 0);
+            }
+            // Fuse PUSH1 <a> PUSH1 <b>, saving one dispatch.
+            // The pair needs two free slots and 6 gas; the fallback preserves
+            // per-opcode checks and error order.
+            // Zero padding supplies a missing second immediate.
+            // Tested outside of the previous mask because PUSH1 is #96 > 64.
+            if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH1)) {
+                static constexpr auto monad_vm_reqp =
+                    fused_requirements<traits, PUSH1, PUSH1>();
+                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_reqp))) {
+                    gas_remaining -= monad_vm_reqp.gas;
+                }
+                else {
+                    MONAD_VM_CHECK(PUSH1);
+                    MONAD_VM_CHECK_AT(PUSH1, 1);
+                }
+                interpreter::push(stack_top, uint256_t{*(instr_ptr + 1)});
+                interpreter::push(stack_top + 1, uint256_t{*(instr_ptr + 3)});
+                MONAD_VM_FUSED_NEXT(4, 2);
             }
         }
         // Use PUSH2's immediate directly as the JUMP/JUMPI destination.

@@ -81,6 +81,10 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // updates. This uses more memory than a bitmap.
     std::vector<unsigned char> node_marks(blob_.size(), 0);
 
+    // Reserve before priming to avoid rehashing. The measured corpus has
+    // about one cached hash per 430 blob bytes; /256 leaves spare capacity.
+    hashes_.reserve(blob_.size() / 256);
+
     // A node's byte is set when the walk reaches it and cleared when a parent
     // claims it as a child.
     // A child whose byte is clear is either previously unseen/invalid or

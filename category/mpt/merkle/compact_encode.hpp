@@ -17,12 +17,15 @@
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/core/rlp/decode_error.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
+#include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <type_traits>
@@ -36,8 +39,33 @@ constexpr unsigned compact_encode_len(unsigned const si, unsigned const ei)
     return (ei - si) / 2 + 1;
 }
 
-// Transform the nibbles to its compact encoding
-// https://ethereum.org/en/developers/docs/data-structures-and-encoding/patricia-merkle-trie/
+// Shift packed nibbles left by four bits into n bytes of out.
+// For n > 0, reads src[0..n]; source and destination must not overlap.
+// For n >= 8, finish with an overlapping 8-byte group instead of a costly
+// byte-store tail on ZisK. Rewritten output bytes are unchanged.
+// Keep one group body to preserve GCC's inlining.
+inline void shift_nibbles_left(
+    unsigned char *const out, unsigned char const *const src, unsigned const n)
+{
+    if (n >= 8) {
+        unsigned const last = n - 8;
+        for (unsigned k = 0;; k = std::min(k + 8, last)) {
+            std::uint64_t w;
+            std::memcpy(&w, src + k, sizeof(w));
+            std::uint64_t const be = bswap(
+                (bswap(w) << 4) |
+                (static_cast<std::uint64_t>(src[k + 8]) >> 4));
+            std::memcpy(out + k, &be, sizeof(be));
+            if (k == last) {
+                return;
+            }
+        }
+    }
+    for (unsigned k = 0; k < n; ++k) {
+        out[k] = static_cast<unsigned char>((src[k] << 4) | (src[k + 1] >> 4));
+    }
+}
+
 constexpr void compact_encode_raw(
     unsigned char *const res, NibblesView const nibbles, bool const terminating)
 {
@@ -74,10 +102,10 @@ constexpr void compact_encode_raw(
         std::memcpy(res + 1, src, m / 2);
     }
     else {
-        for (unsigned k = 0; k < m / 2; ++k) {
-            res[1 + k] = static_cast<unsigned char>(
-                (src[k] << 4) | (src[k + 1] >> 4));
-        }
+        // Leaf paths here are the unconsumed tail of a hashed key and so run
+        // near the full 32 bytes, which is what makes the wide form worth
+        // having.
+        shift_nibbles_left(res + 1, src, m / 2);
     }
 }
 

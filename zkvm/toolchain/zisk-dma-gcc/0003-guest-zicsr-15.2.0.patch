@@ -1,0 +1,15 @@
+diff --git a/zkvm/guest/CMakeLists.txt b/zkvm/guest/CMakeLists.txt
+index 07e17347c..0dca50097 100644
+--- a/zkvm/guest/CMakeLists.txt
++++ b/zkvm/guest/CMakeLists.txt
+@@ -112,8 +112,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
+         # it. Measured over 200 mainnet blocks it is worth 0.1% (-0.08% steps, -0.06% COST). Kept
+         # because the guest should carry every extension the runtime is known to implement, not
+         # because it pays.
+-        string(APPEND CMAKE_C_FLAGS " -march=rv64ima_zbb_zbs_zbkb")
+-        string(APPEND CMAKE_CXX_FLAGS " -march=rv64ima_zbb_zbs_zbkb")
++        string(APPEND CMAKE_C_FLAGS " -march=rv64ima_zbb_zbs_zbkb_zicsr")
++        string(APPEND CMAKE_CXX_FLAGS " -march=rv64ima_zbb_zbs_zbkb_zicsr")
+ 
+     endif()
+ 

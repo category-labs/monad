@@ -397,7 +397,17 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // digest is never shadowed, because every mutation path
                 // (upsert_node, erase_node, fold_ext_node_path_maybe) aborts
                 // on a DigestView, so no id reaching put_node names one.
-                auto const digest_at = [this](node_id_wire const w) {
+                // Taken widened. A wire field reaching a 64-bit parameter is
+                // one `lwu`; reaching a 32-bit one it is `lw` and then the
+                // `slli 32 / srli 32` pair that every 64-bit use of the value
+                // needs after it, because the narrow form cannot serve both.
+                // ZisK charges 68 cells a step and 56 an opcode, so the pair
+                // is 248 cells -- 185,268 of them in this pass on block
+                // 25815042. The 32-bit form buys one thing back: `w != 0 &&
+                // w < OVERLAY_BASE` is a single signed test on a 32-bit
+                // value, where widened it is two. One instruction against
+                // three.
+                auto const digest_at = [this](uint64_t const w) {
                     return w != 0 && w < OVERLAY_BASE &&
                            get_original(NodeId{w}).tag() == Tag::DIGEST;
                 };
@@ -421,19 +431,37 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // unsigned counter needs, and leaves `i = lo` below meaning
                 // exactly what it meant with the trailing `--i`.
                 for (size_t i = 16; i-- > 0;) {
-                    if (!digest_at(raw[i])) {
-                        dest = child_ref<priming_pass>(NodeId{raw[i]}, dest);
+                    uint64_t const w = raw[i];
+                    if (!digest_at(w)) {
+                        dest = child_ref<priming_pass>(NodeId{w}, dest);
                         continue;
                     }
                     size_t lo = i;
-                    while (lo > 0 && digest_at(raw[lo - 1]) &&
-                           uint64_t{raw[lo]} ==
-                               uint64_t{raw[lo - 1]} + DIGEST_NODE_LEN) {
+                    // The run test compares the slot against its neighbour,
+                    // so each extension already holds the value the next turn
+                    // reads: carry it instead of reading `raw[lo]` again --
+                    // 96,825 repeat 4-byte loads on block 25815042 in this
+                    // pass, 122 cells apiece. `cur == raw[lo]` holds on entry
+                    // and across the body.
+                    //
+                    // Carried and widened are one change, not two. Carried
+                    // against a 32-bit `digest_at` measures +0.15 % COST: the
+                    // loop then keeps a narrow value live across the back edge
+                    // and the widening pair lands inside the loop instead of
+                    // ahead of it. Widened alone is -0.20 %, both -0.29 %.
+                    uint64_t cur = w;
+                    while (lo > 0) {
+                        uint64_t const prev = raw[lo - 1];
+                        if (!digest_at(prev) ||
+                            cur != prev + DIGEST_NODE_LEN) {
+                            break;
+                        }
+                        cur = prev;
                         --lo;
                     }
                     size_t const run = (i - lo + 1) * HASH_RLP_LEN;
                     unsigned char *const out = dest.last(run).data();
-                    std::memcpy(out, blob_.data() + raw[lo], run);
+                    std::memcpy(out, blob_.data() + cur, run);
                     // Carried as a pointer: an index costs the scale-and-add
                     // on every record on top of its own increment, and this
                     // loop runs once per digest child of every branch in the

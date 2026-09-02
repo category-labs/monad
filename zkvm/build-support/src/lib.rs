@@ -107,6 +107,20 @@ impl Backend {
         });
         cfg.define("CMAKE_PREFIX_PATH", &prefix_path);
 
+        // Keep the official-build boundary explicit: accepting arbitrary CMake
+        // definitions here would make a typo or duplicate silently alter a
+        // release artifact.
+        if let Ok(profile) = env::var("MONAD_ZKVM_OFFICIAL_PROFILE") {
+            assert_eq!(
+                profile, "ON",
+                "MONAD_ZKVM_OFFICIAL_PROFILE must be ON or unset"
+            );
+            cfg.define("MONAD_ZKVM_OFFICIAL_PROFILE", "ON");
+        }
+        if let Ok(commit) = env::var("MONAD_ZKVM_GIT_COMMIT") {
+            cfg.define("MONAD_ZKVM_GIT_COMMIT", commit);
+        }
+
         if let Self::Sp1 = self {
             cfg.define("CMAKE_C_FLAGS_INIT", SP1_C_FLAGS)
                 .define("CMAKE_CXX_FLAGS_INIT", SP1_CXX_FLAGS)
@@ -346,6 +360,9 @@ fn locate_repo_root(manifest: &PathBuf) -> PathBuf {
 
 fn emit_rerun_directives(zkvm_dir: &Path, repo_root: &Path) {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=RISCV_TOOLCHAIN_DIR");
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_OFFICIAL_PROFILE");
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_GIT_COMMIT");
     // `rerun-if-changed=<dir>` watches only the directory's own mtime, which
     // doesn't update when files inside are edited. Walk and emit per-file
     // paths so edits to ffi.cpp / headers / cmake actually trigger a rebuild.

@@ -325,7 +325,7 @@ dependencies = [
  "bitflags",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -1717,10 +1717,11 @@ dependencies = [
 
 [[package]]
 name = "proofman-fields"
-version = "1.2.0-alpha"
+version = "1.3.1-alpha"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "124c75a333fd7209e5f77da6c7734260ad54eaabf7e2e20db24917f7ec4505cd"
+checksum = "288f1cfadffdd60f4297428d41fa27dbae9837a63c89f77ba3e9ce8f5e03f987"
 dependencies = [
+ "blake3",
  "cfg-if",
  "num-bigint 0.4.6",
  "paste",
@@ -1730,9 +1731,9 @@ dependencies = [
 
 [[package]]
 name = "proofman-starks-lib-c"
-version = "1.2.0-alpha"
+version = "1.3.1-alpha"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1f0b940c17f32bcc0b289fd11bd0f8a812c82a4d44a067cd67d773fef54b13f"
+checksum = "71fbc5a3cbea8630ccc96c4373ee45c8f63f5ac243f9b9456026773e30ab130e"
 dependencies = [
  "crossbeam-channel",
  "proofman-starks-src",
@@ -1740,15 +1741,15 @@ dependencies = [
 
 [[package]]
 name = "proofman-starks-src"
-version = "1.2.0-alpha"
+version = "1.3.1-alpha"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0efcb2cd92919487f86364fc3b51c8efa8ac2ea3a56f3d6c4d39b3bd464a5b50"
+checksum = "ec72725ea4f99741a95b52edc3290d5b9fe904762b6991b14aedb399ce43e86a"
 
 [[package]]
 name = "proofman-verifier"
-version = "1.2.0-alpha"
+version = "1.3.1-alpha"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d265453d0cb920c636de66ef3d7dffbcef6a1a8adea91b8484d1b09398d2f51"
+checksum = "fcfb929d02d38e48617f4badd3c5cc9cf140742dcf539c0d53ea5e6d9c037ab7"
 dependencies = [
  "num-traits",
  "proofman-fields",
@@ -2788,23 +2789,23 @@ dependencies = [
 
 [[package]]
 name = "zisk-circuit"
-version = "1.2.0-alpha"
-source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.2.0-alpha#fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3"
+version = "1.3.1-alpha"
+source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.3.1-alpha#306a9c934ba4947b1d586d69b67120f8b4c41466"
 
 [[package]]
 name = "zisk-definitions"
-version = "1.2.0-alpha"
-source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.2.0-alpha#fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3"
+version = "1.3.1-alpha"
+source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.3.1-alpha#306a9c934ba4947b1d586d69b67120f8b4c41466"
 
 [[package]]
 name = "zisk-lib-c"
-version = "1.2.0-alpha"
-source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.2.0-alpha#fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3"
+version = "1.3.1-alpha"
+source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.3.1-alpha#306a9c934ba4947b1d586d69b67120f8b4c41466"
 
 [[package]]
 name = "zisk-precomp-helpers"
-version = "1.2.0-alpha"
-source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.2.0-alpha#fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3"
+version = "1.3.1-alpha"
+source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.3.1-alpha#306a9c934ba4947b1d586d69b67120f8b4c41466"
 dependencies = [
  "ark-bls12-381",
  "ark-bn254",
@@ -2821,8 +2822,8 @@ dependencies = [
 
 [[package]]
 name = "zisk-stream"
-version = "1.2.0-alpha"
-source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.2.0-alpha#fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3"
+version = "1.3.1-alpha"
+source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.3.1-alpha#306a9c934ba4947b1d586d69b67120f8b4c41466"
 dependencies = [
  "libc",
  "thiserror 2.0.18",
@@ -2831,24 +2832,25 @@ dependencies = [
 
 [[package]]
 name = "zisk-verifier"
-version = "1.2.0-alpha"
-source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.2.0-alpha#fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3"
+version = "1.3.1-alpha"
+source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.3.1-alpha#306a9c934ba4947b1d586d69b67120f8b4c41466"
 dependencies = [
+ "proofman-fields",
  "proofman-verifier",
 ]
 
 [[package]]
 name = "zisk-zkvm-interface"
-version = "1.2.0-alpha"
-source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.2.0-alpha#fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3"
+version = "1.3.1-alpha"
+source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.3.1-alpha#306a9c934ba4947b1d586d69b67120f8b4c41466"
 dependencies = [
  "bindgen",
 ]
 
 [[package]]
 name = "ziskos"
-version = "1.2.0-alpha"
-source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.2.0-alpha#fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3"
+version = "1.3.1-alpha"
+source = "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.3.1-alpha#306a9c934ba4947b1d586d69b67120f8b4c41466"
 dependencies = [
  "anyhow",
  "ark-bn254",

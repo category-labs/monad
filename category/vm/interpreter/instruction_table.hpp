@@ -259,6 +259,39 @@
     }                                                                          \
     while (false);
 
+// The same dispatch, on a follower byte the handler already holds.
+//
+// Same address, not merely the same value: a PUSH<N> fusion gate reads
+// instr_ptr[N + 1] and this advances instr_ptr by N + 1, so `*instr_ptr` here
+// and the gate's byte are one load of one place. GCC cannot fold them -- the
+// handler stores the pushed word in between, and a store through `uint256_t *`
+// may alias an `unsigned char const *`, because `unsigned char` aliases
+// everything -- so it reloads: 68 cells of MAIN and 42.6 of memory.
+//
+// Sound because the code array is not written during execution, and cheap
+// because it adds no access: the gate's read already happens, and the code
+// padding that makes reading past the last opcode safe is already relied on by
+// the generic path.
+#define MONAD_VM_NEXT_PUSH_OP(OP, OP2)                                         \
+    do {                                                                       \
+        static constexpr auto delta =                                          \
+            compiler::opcode_table<traits>[(OP)].stack_increase -              \
+            compiler::opcode_table<traits>[(OP)].min_stack;                    \
+                                                                               \
+        instr_ptr += (((OP) - PUSH0) + 1);                                     \
+        if constexpr (debug_enabled) {                                         \
+            trace(analysis, gas_remaining, instr_ptr);                         \
+        }                                                                      \
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[(OP2)](                   \
+            ctx,                                                               \
+            analysis,                                                          \
+            stack_bottom,                                                      \
+            stack_top + delta,                                                 \
+            gas_remaining,                                                     \
+            instr_ptr MONAD_VM_TBL_ARG);                                       \
+    }                                                                          \
+    while (false);
+
 namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
@@ -1566,6 +1599,13 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
 #if defined(MONAD_VM_FUSE_PUSH2JUMP)
+        // The follower byte, read once for the two widths whose gate wants it.
+        // The unfused exit below dispatches on this same address, so reading it
+        // here is the handler's only load of it.
+        [[maybe_unused]] uint8_t monad_vm_op2 = 0;
+        if constexpr (N == 1 || N == 2) {
+            monad_vm_op2 = *(instr_ptr + N + 1);
+        }
         // PUSH2 <dst16> JUMP / JUMPI: the destination is a 16-bit immediate, so it
         // never becomes a 256-bit stack word that the jump then compares against
         // size_t and pops. JUMP and JUMPI are 0x56 and 0x57, so the gate on every
@@ -1580,7 +1620,6 @@ namespace monad::vm::interpreter
             // generic binary machine at 60 cells where the native form is 15.3,
             // on every PUSH2 in the block. The wrap for a follower below JUMP
             // lands far above 1 either width.
-            auto const monad_vm_op2 = *(instr_ptr + 3);
             if (static_cast<size_t>(monad_vm_op2) -
                     static_cast<size_t>(JUMP) <=
                 1u) {
@@ -1680,7 +1719,6 @@ namespace monad::vm::interpreter
             // measured at +1.4 % against this one's -0.9 %. Both write their
             // operands to memory anyway, so they save a dispatch and not a round
             // trip -- the smaller half of what the four below return.
-            auto const monad_vm_op2 = *(instr_ptr + 2);
             if (monad_vm_op2 < 64 &&
                 ((monad_vm_fuse_mask >> monad_vm_op2) & 1)) {
                 // All four followers in the mask pop two, push one and cost 3,
@@ -1757,7 +1795,16 @@ namespace monad::vm::interpreter
         MONAD_VM_CHECK(PUSH0 + N);
         push_impl<N, traits>::push(stack_top, instr_ptr);
 
+#if defined(MONAD_VM_FUSE_PUSH2JUMP)
+        if constexpr (N == 1 || N == 2) {
+            MONAD_VM_NEXT_PUSH_OP(PUSH0 + N, monad_vm_op2);
+        }
+        else {
+            MONAD_VM_NEXT_PUSH(PUSH0 + N);
+        }
+#else
         MONAD_VM_NEXT_PUSH(PUSH0 + N);
+#endif
     }
 
     template <Traits traits>
@@ -2093,3 +2140,4 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_MUST_TAIL
 #undef MONAD_VM_NEXT
 #undef MONAD_VM_NEXT_PUSH
+#undef MONAD_VM_NEXT_PUSH_OP

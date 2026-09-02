@@ -52,6 +52,13 @@ from the xPack the guest already uses, so binutils and headers match by construc
 compiles a witness translation unit with `-mzisk-dma` and fails unless the assembly contains
 `csrs 0x813` — the flag parsing on its own is not evidence the lowering is present.
 
+`zkvm/guest/CMakeLists.txt` makes the same assertion at configure time for any official-profile
+build whose flags carry `-mzisk-dma`, so a compiler without the lowering cannot quietly produce a
+guest whose block mem\* are still thunk calls. It also folds the SHA256 of the three patch files
+into `MONAD_ZKVM_BUILD_SIGNATURE`: unlike the compiler binary, they hash the same on every machine,
+so that part of the toolchain identity is something two builds of one commit can be expected to
+agree on.
+
 ## Upstreaming
 
 The natural home for this is ZisK itself, beside the LLVM patch it mirrors. Until it is there, it is

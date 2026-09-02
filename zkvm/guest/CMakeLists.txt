@@ -146,10 +146,67 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
                 "MONAD_ZKVM_GIT_COMMIT must be a full lowercase Git SHA")
         endif()
 
+        # The DMA lowering is not in upstream gcc; it comes from the patch set in
+        # zkvm/toolchain/zisk-dma-gcc. Keyed on the flag actually being in the
+        # flags rather than on the option that sets it, so the assertion holds
+        # for any route to -mzisk-dma and needs no maintenance when one is added.
+        #
+        # Hashing the compiler binary cannot stand in for this. Two people
+        # applying the same patch to the same source get different binaries --
+        # different host compiler, build paths, linked libraries -- so the hash
+        # below is provenance and not a gate: it is recorded, never compared.
+        # What is checkable is the behaviour, and only the emitted marker shows
+        # it. The flag parses on a stock compiler that ignores it.
+        if(CMAKE_CXX_FLAGS MATCHES "-mzisk-dma" OR CMAKE_C_FLAGS MATCHES "-mzisk-dma")
+            # Compiled with the guest's own flags, so the probe tests the
+            # configuration being built and not a neighbouring one -- the
+            # lowering needs Zicsr, which only those flags carry. `sink` keeps
+            # the copy alive; at -O2 a dead memcpy lowers to nothing and the
+            # probe would report a stock compiler as patched.
+            set(_dma_probe "${CMAKE_CURRENT_BINARY_DIR}/zisk-dma-probe.c")
+            file(WRITE "${_dma_probe}"
+                "void *memcpy(void *, void const *, unsigned long);\n"
+                "void sink(void *);\n"
+                "void p(char *d, char const *s) { memcpy(d, s, 512); sink(d); }\n")
+            separate_arguments(_dma_probe_flags UNIX_COMMAND "${CMAKE_C_FLAGS}")
+            execute_process(
+                COMMAND ${CMAKE_C_COMPILER} ${_dma_probe_flags} -O2 -S -o -
+                        "${_dma_probe}"
+                RESULT_VARIABLE _dma_rc OUTPUT_VARIABLE _dma_asm ERROR_QUIET)
+            if(NOT _dma_rc EQUAL 0)
+                message(FATAL_ERROR
+                    "-mzisk-dma is in the flags but ${CMAKE_C_COMPILER} cannot "
+                    "compile with it; build the compiler with "
+                    "zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh")
+            endif()
+            if(NOT _dma_asm MATCHES "csrs?[ \t]+[^\n]*0x813")
+                message(FATAL_ERROR
+                    "${CMAKE_C_COMPILER} accepts -mzisk-dma but emits no DMA "
+                    "marker, so block mem* would still be thunk calls. Build it "
+                    "with zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh")
+            endif()
+        endif()
+
         file(SHA256 "${CMAKE_CXX_COMPILER}" _official_cxx_sha256)
+        # The patch files hash the same on every machine, unlike the compiler
+        # they produce, so this is the part of the toolchain identity that two
+        # builds of one commit can actually be expected to agree on.
+        set(_dma_patch_dir "${CMAKE_CURRENT_SOURCE_DIR}/../toolchain/zisk-dma-gcc")
+        set(_dma_patch_sha "")
+        foreach(_p 0001-riscv-zisk-dma-lowering-14.3.0.patch
+                   0002-riscv.md-forward-port-15.2.0.diff
+                   0003-guest-zicsr-15.2.0.patch)
+            if(NOT EXISTS "${_dma_patch_dir}/${_p}")
+                message(FATAL_ERROR
+                    "official ZisK profile: missing ${_p} in zkvm/toolchain/zisk-dma-gcc")
+            endif()
+            file(SHA256 "${_dma_patch_dir}/${_p}" _one)
+            string(APPEND _dma_patch_sha "${_one}")
+        endforeach()
+        string(SHA256 _dma_patch_sha "${_dma_patch_sha}")
         list(JOIN _monad_zkvm_official_features "," _official_features_csv)
         string(SHA256 _official_build_signature
-            "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}")
+            "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}\n${_dma_patch_sha}")
         add_compile_definitions(
             MONAD_ZKVM_OFFICIAL_PROFILE=1
             MONAD_ZKVM_BUILD_COMMIT="${MONAD_ZKVM_GIT_COMMIT}"
@@ -167,6 +224,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "  \"compiler_id\": \"${CMAKE_CXX_COMPILER_ID}\",\n"
             "  \"compiler_version\": \"${CMAKE_CXX_COMPILER_VERSION}\",\n"
             "  \"compiler_sha256\": \"${_official_cxx_sha256}\",\n"
+            "  \"dma_patch_sha256\": \"${_dma_patch_sha}\",\n"
             "  \"commit\": \"${MONAD_ZKVM_GIT_COMMIT}\",\n"
             "  \"build_signature\": \"${_official_build_signature}\",\n"
             "  \"c_flags\": \"${CMAKE_C_FLAGS}\",\n"

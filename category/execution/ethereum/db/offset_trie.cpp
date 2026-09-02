@@ -386,40 +386,45 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // A digest is pre-state only, put_node never shadows a digest
                 // id and its original bytes are still its current bytes which
                 // is why we can memcpy from the blob_ directly below.
-                auto const digest_at = [this](node_id_wire_t const w) {
+                //
+                // Taken widened. A wire field reaching a 64-bit parameter is
+                // cheaper than a 32-bit one.
+                auto const digest_at = [this](uint64_t const w) {
                     return w != 0 && w < OVERLAY_BASE &&
                            get_original(NodeId{w}).tag() == Tag::DIGEST;
-                };
-
-                auto const consecutive_digest = [](node_id_wire_t const a,
-                                                   node_id_wire_t const b) {
-                    return uint64_t{a} + HASH_RLP_LEN == uint64_t{b};
                 };
 
                 // 64-bit, though the slots are in [0, 15]: ZisK prices add_w,
                 // sub and eq at 60 cells against ~15 for a native add, so an
                 // int counter would run the whole loop at the higher rate.
                 for (size_t i = 16; i-- > 0;) {
-                    if (!digest_at(children[i])) {
-                        dest =
-                            child_ref<priming_pass>(NodeId{children[i]}, dest);
+                    uint64_t const w = children[i];
+                    if (!digest_at(w)) {
+                        dest = child_ref<priming_pass>(NodeId{w}, dest);
                         continue;
                     }
                     // copy any contiguous digests directly into dest, since a
                     // digest node is already a valid RLP string
                     static_assert(DIGEST == 0x80 + KECCAK256_SIZE);
                     size_t lo = i;
-                    while (lo > 0 &&
-                           consecutive_digest(children[lo - 1], children[lo]) &&
-                           digest_at(children[lo - 1])) {
+                    // The run test compares the slot against its neighbour,
+                    // so each extension already holds the value the next turn
+                    // reads: `cur == children[lo]` holds on entry and across
+                    // the body.
+                    uint64_t cur = w;
+                    while (lo > 0) {
+                        uint64_t const prev = children[lo - 1];
+                        if (!digest_at(prev) || cur != prev + HASH_RLP_LEN) {
+                            break;
+                        }
+                        cur = prev;
                         --lo;
                     }
                     size_t const digests_length = (i - lo + 1) * HASH_RLP_LEN;
 
                     unsigned char *const digests =
                         dest.last(digests_length).data();
-                    std::memcpy(
-                        digests, blob_.data() + children[lo], digests_length);
+                    std::memcpy(digests, blob_.data() + cur, digests_length);
 
                     dest = dest.shrink(digests_length);
                     i = lo; // the test's decrement steps past the run

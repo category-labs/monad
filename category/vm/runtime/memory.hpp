@@ -40,7 +40,21 @@ namespace monad::vm::runtime
     {
         auto const offset = ctx->get_memory_offset(*offset_ptr);
         ctx->expand_memory<traits>(offset + bin<32>);
+#if defined(MONAD_ZKVM_ZISK)
+        // Store one byte-swapped word at a time to avoid staging a 32-byte
+        // temporary on the stack for a DMA copy. The resulting bytes match
+        // store_be.
+        {
+            auto const monad_be = bswap(*value_ptr);
+            auto *const monad_d = ctx->memory.data + *offset;
+            store_le(monad_d, monad_be[0]);
+            store_le(monad_d + 8, monad_be[1]);
+            store_le(monad_d + 16, monad_be[2]);
+            store_le(monad_d + 24, monad_be[3]);
+        }
+#else
         store_be(ctx->memory.data + *offset, *value_ptr);
+#endif
     }
 
     template <Traits traits>

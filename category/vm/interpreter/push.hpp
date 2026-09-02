@@ -63,6 +63,36 @@ namespace monad::vm::interpreter
         load_be_k(uint8_t const *const p) noexcept
         {
             static_assert(K >= 1 && K <= 8);
+#ifdef MONAD_ZKVM_ZISK
+            // Two bytes assemble with `packh`, where gcc reaches for a
+            // halfword load and a byte swap. The same three instructions
+            // either way, and ZisK prices them differently: a 1-byte read is
+            // 41 cells against 122 for the 2-byte one, and `packh` is 56
+            // where `rev8` and `srli` are 56 apiece.
+            //
+            //   lhu / rev8 / srli 48   190 + 124 + 124 = 438 cells
+            //   lbu / lbu / packh      109 + 109 + 124 = 342
+            //
+            // 96 cells on every PUSH2 that reaches here, 181,240 of them on
+            // block 25815042.
+            //
+            // In asm because gcc never emits `packh` -- the 219 in this guest
+            // are all rustc's, out of core::fmt -- and because it will not
+            // choose two loads over one it can merge. `packh rd, rs1, rs2` is
+            // {rs2[7:0], rs1[7:0]} zero-extended, so rs2 carries the leading
+            // byte. The two `m` inputs are unreferenced by the template and
+            // exist to tell gcc which memory the block reads.
+            if constexpr (K == 2) {
+                subword_t hi;
+                subword_t lo;
+                asm("lbu %0, 0(%2)\n\t"
+                    "lbu %1, 1(%2)\n\t"
+                    "packh %0, %1, %0"
+                    : "=&r"(hi), "=&r"(lo)
+                    : "r"(p), "m"(p[0]), "m"(p[1]));
+                return hi;
+            }
+#endif
             return [p]<size_t... Is>(std::index_sequence<Is...>) {
                 return ((static_cast<subword_t>(p[Is]) << (8 * (K - 1 - Is))) |
                         ...);

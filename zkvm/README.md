@@ -77,8 +77,8 @@ codegen flags. It embeds the commit and build identity in the ELF, then audits
 the result and writes `<elf>.build.json` with the ELF hash. Keep that manifest
 with published benchmark artifacts.
 
-DMA lowering is disabled in this initial profile. Build-dependent optimisations
-must extend the feature list and audit in the same commit; source-only changes
+The official profile requires DMA lowering with a patched GCC. Build-dependent
+optimisations must extend the feature list and audit in the same commit; source-only changes
 are already identified by the commit and ELF hash. Use direct `cargo-zisk build`
 for diagnostic A/B builds, which do not produce an audited manifest.
 

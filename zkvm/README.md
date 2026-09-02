@@ -48,7 +48,7 @@ SP1 zkEVM SDK source at build time.
 
   (cargo merges `.cargo/config.toml` up the tree, so this one file covers both
   `zkvm/zisk` and `zkvm/sp1/script`.)
-- [ZisK](https://github.com/0xPolygonHermez/zisk) ≥ v1.2.0-alpha
+- [ZisK](https://github.com/0xPolygonHermez/zisk) ≥ v1.3.1-alpha
   (`ziskup` from <https://github.com/0xPolygonHermez/zisk>) — installs
   `cargo-zisk`, `ziskemu`.
 - [SP1](https://docs.succinct.xyz/) ≥ v6.2.x (`sp1up` from
@@ -60,6 +60,22 @@ SP1 zkEVM SDK source at build time.
 Build and run the guest in the emulator. ZisK expects inputs to be
 length-prefixed: the first 8 bytes are the little-endian payload length,
 followed by the payload itself.
+
+Report and release artifacts must use the audited profile:
+
+```sh
+zkvm/zisk/build-official.sh
+```
+
+The official profile requires ZisK 1.3.1-alpha, GCC 15.2.0 and the baseline
+codegen flags. It embeds the commit and build identity in the ELF, then audits
+the result and writes `<elf>.build.json` with the ELF hash. Keep that manifest
+with published benchmark artifacts.
+
+DMA lowering is disabled in this initial profile. Build-dependent optimisations
+must extend the feature list and audit in the same commit; source-only changes
+are already identified by the commit and ELF hash. Use direct `cargo-zisk build`
+for diagnostic A/B builds, which do not produce an audited manifest.
 
 ```sh
 # 1. Build the guest ELF.

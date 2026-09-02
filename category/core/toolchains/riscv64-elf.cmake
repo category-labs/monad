@@ -22,8 +22,9 @@ set(RISCV_TOOLCHAIN_DIR "/opt/riscv" CACHE PATH "RISC-V toolchain directory")
 list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES RISCV_TOOLCHAIN_DIR)
 
 # nix names the cross compiler riscv64-none-elf-, riscv-gnu-toolchain names
-# it riscv64-unknown-elf-; both are accepted.
-foreach(_candidate "riscv64-none-elf-" "riscv64-unknown-elf-")
+# it riscv64-unknown-elf-, and xPack uses riscv-none-elf-.
+foreach(_candidate
+        "riscv64-none-elf-" "riscv64-unknown-elf-" "riscv-none-elf-")
     if(EXISTS "${RISCV_TOOLCHAIN_DIR}/bin/${_candidate}gcc")
         set(RISCV_PREFIX "${_candidate}")
         break()

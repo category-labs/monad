@@ -61,6 +61,24 @@ Build and run the guest in the emulator. ZisK expects inputs to be
 length-prefixed: the first 8 bytes are the little-endian payload length,
 followed by the payload itself.
 
+Report and release artifacts must use the audited profile:
+
+```sh
+zkvm/zisk/build-official.sh
+```
+
+The initial profile pins ZisK 1.2, GCC 15.2, the effective baseline codegen
+flags, the full Monad commit and the resulting ELF digest. The compiler carries
+the ZisK DMA patch, but DMA lowering remains disabled until its own optimisation
+commit adds the flag and feature. The profile embeds the same
+identity in the ELF and writes `<elf>.build.json`; keep that manifest beside
+any ELF used in a published benchmark. An optimisation that later depends on
+a build switch, compiler extension or runtime precompile must add itself to the
+profile and its post-link audit in the same commit. An always-on source change
+is already identified by the embedded commit and needs no redundant feature
+switch. Direct `cargo-zisk build` remains available for diagnostic A/B builds
+and deliberately does not produce an official artifact.
+
 ```sh
 # 1. Build the guest ELF.
 cd zkvm/zisk

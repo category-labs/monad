@@ -1,0 +1,11 @@
+{
+  "schema": 2,
+  "profile": "dev",
+  "target": "@MONAD_ZKVM_GUEST_TARGET@",
+  "compiler": "@CMAKE_CXX_COMPILER@",
+  "compiler_id": "@CMAKE_CXX_COMPILER_ID@",
+  "compiler_version": "@CMAKE_CXX_COMPILER_VERSION@",
+  "c_flags": "@CMAKE_C_FLAGS@",
+  "cxx_flags": "@CMAKE_CXX_FLAGS@",
+  "asm_flags": "@CMAKE_ASM_FLAGS@"
+}

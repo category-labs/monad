@@ -66,10 +66,27 @@ Start each section's commands from the repository root unless stated otherwise.
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
 
+Report and release artifacts must use the audited profile:
+
+```sh
+zkvm/zisk/build.sh --official
+```
+
+The official profile requires ZisK 1.3.1-alpha, GCC 15.2.0 and the baseline
+codegen flags. It embeds the commit and build identity in the ELF, then audits
+the result and writes `<elf>.build.json` with the ELF hash. Keep that manifest
+with published benchmark artifacts.
+
+DMA lowering is disabled in this initial profile. Build-dependent optimisations
+must extend the feature list and audit in the same commit; source-only changes
+are already identified by the commit and ELF hash. Run `zkvm/zisk/build.sh`
+without `--official` for development builds, which do not produce an
+audited manifest.
+
 ```sh
 # 1. Build the guest ELF.
+zkvm/zisk/build.sh
 cd zkvm/zisk
-cargo-zisk build --release --bin monad-zkvm-zisk
 #  → target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk
 
 # 2. Wrap the witness with the 8-byte length prefix the emulator expects,

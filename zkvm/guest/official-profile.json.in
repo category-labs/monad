@@ -1,0 +1,20 @@
+{
+  "schema": 2,
+  "profile": "official",
+  "target": "zisk",
+  "runtime_version": "@_monad_zkvm_runtime_version@",
+  "runtime_revision": "@_monad_zkvm_runtime_revision@",
+  "features_csv": "@_official_features_csv@",
+  "compiler": "@CMAKE_CXX_COMPILER@",
+  "compiler_id": "@CMAKE_CXX_COMPILER_ID@",
+  "compiler_version": "@CMAKE_CXX_COMPILER_VERSION@",
+  "compiler_sha256": "@_official_cxx_sha256@",
+  "commit": "@MONAD_ZKVM_GIT_COMMIT@",
+  "build_signature": "@_official_build_signature@",
+  "c_flags": "@CMAKE_C_FLAGS@",
+  "c_flags_release": "@CMAKE_C_FLAGS_RELEASE@",
+  "cxx_flags": "@CMAKE_CXX_FLAGS@",
+  "cxx_flags_release": "@CMAKE_CXX_FLAGS_RELEASE@",
+  "asm_flags": "@CMAKE_ASM_FLAGS@",
+  "asm_flags_release": "@CMAKE_ASM_FLAGS_RELEASE@"
+}

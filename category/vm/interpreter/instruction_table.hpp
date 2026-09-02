@@ -173,6 +173,12 @@ namespace monad::vm::interpreter
 #define MONAD_VM_NEXT_PUSH(OP)                                                 \
     MONAD_VM_NEXT_IMPL(OP, ((OP) - PUSH0) + 1, *instr_ptr)
 
+// Dispatch using OP2, the opcode already read just after this PUSH.
+// Reuse it across stack writes: bytecode is immutable, but GCC cannot
+// rule out aliasing between the stack and the bytecode pointer.
+#define MONAD_VM_NEXT_PUSH_OP(OP, OP2)                                         \
+    MONAD_VM_NEXT_IMPL(OP, ((OP) - PUSH0) + 1, OP2)
+
 namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
@@ -1504,15 +1510,18 @@ namespace monad::vm::interpreter
         // The result replaces the top; the pair's net stack change is zero.
         // Check PUSH1 before its follower, including temporary stack growth.
         // Code padding makes the lookahead safe.
+        // Reuse the next opcode for fusion checks and normal dispatch.
+        [[maybe_unused]] uint8_t next_opcode = 0;
+        if constexpr (N == 1 || N == 2) {
+            next_opcode = *(instr_ptr + N + 1);
+        }
         if constexpr (N == 1) {
             // A bitmap keeps the check cheap on every PUSH1; testing four
             // opcodes separately regressed performance.
             constexpr std::uint64_t monad_vm_fuse_mask =
                 (1ull << static_cast<unsigned>(ADD)) |
                 (1ull << static_cast<unsigned>(SHL));
-            // PUSH1 and DUP2 exceed the mask's range and still need stack
-            // writes, so their fusions are omitted.
-            auto const next_opcode = *(instr_ptr + 2);
+            // PUSH1 and DUP2 exceed this mask's range.
             // Filtering for these two opcodes first improves performance.
             if (next_opcode < 64 && ((monad_vm_fuse_mask >> next_opcode) & 1)) {
                 // These two followers share gas and stack requirements.
@@ -1547,7 +1556,6 @@ namespace monad::vm::interpreter
         // Use PUSH2's immediate directly as the JUMP/JUMPI destination.
         // Check gas and stack in opcode order, then validate taken jumps.
         if constexpr (N == 2) {
-            auto const next_opcode = *(instr_ptr + 3);
             // Match JUMP and JUMPI with one range check: they are consecutive.
             // size_t and not unsigned for the difference: a 32-bit subtract
             // puts this on ZisK's generic binary machine on every PUSH2.
@@ -1623,6 +1631,11 @@ namespace monad::vm::interpreter
         MONAD_VM_CHECK(PUSH0 + N);
         push_impl<N, traits>::push(stack_top, instr_ptr);
 
+#if defined(MONAD_ZKVM_ZISK)
+        if constexpr (N == 1 || N == 2) {
+            MONAD_VM_NEXT_PUSH_OP(PUSH0 + N, next_opcode);
+        }
+#endif
         MONAD_VM_NEXT_PUSH(PUSH0 + N);
     }
 
@@ -2014,6 +2027,7 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_NEXT
 #undef MONAD_VM_NEXT_PUSH
 #undef MONAD_VM_NEXT_IMM
+#undef MONAD_VM_NEXT_PUSH_OP
 #undef MONAD_VM_CHECK
 #undef MONAD_VM_CHECK_AT
 #undef MONAD_VM_CHARGE

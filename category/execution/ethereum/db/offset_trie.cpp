@@ -155,19 +155,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             node,
             Cases{
                 [&](BranchView b) {
-                    // Validate the 16 children two at a time: a uint64_t load
-                    // spans exactly one pair, low word first.
-                    static_assert(std::endian::native == std::endian::little);
-                    static_assert(
-                        sizeof(uint64_t) == 2 * sizeof(node_id_wire_t));
-                    unsigned char const *const p = b.payload();
-                    uint64_t pair;
-                    for (unsigned i = 0; i < 8; ++i) {
-                        std::memcpy(&pair, p + i * sizeof(pair), sizeof(pair));
-                        is_valid_offset(
-                            NodeId{static_cast<node_id_wire_t>(pair)});
-                        is_valid_offset(
-                            NodeId{static_cast<node_id_wire_t>(pair >> 32)});
+                    // checked_end validated all 16 wire fields. Read and
+                    // validate each directly: on ZisK, 32-bit loads avoid the
+                    // extraction overhead of paired 64-bit reads, and immediate
+                    // validation avoids array spills.
+                    unsigned char const *const first = b.payload();
+                    unsigned char const *const last =
+                        first + 16 * sizeof(node_id_wire_t);
+                    for (unsigned char const *q = first; q != last;
+                         q += sizeof(node_id_wire_t)) {
+                        is_valid_offset(read_node_id(q));
                     }
                 },
                 [&](ExtView e) { is_valid_offset(e.child()); },

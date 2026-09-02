@@ -199,13 +199,19 @@ class State
 
         Address addr;
         Kind kind;
-        std::uint32_t aux;
-        // Padded to 32, and the size is the point rather than the alignment.
-        // `vector::size()` is a pointer difference divided by the element size,
-        // and a size that is not a power of two makes that division a multiply
-        // -- 97 cells where a shift is 56, on `undo_.size()` in every journal_*
-        // and in push, about 17,000 times a block. 20 + 1 + 4 lands at 28.
-        std::uint32_t pad_{0};
+        // 64-bit, and the width is what pads the record. `sizeof(Undo)` has to
+        // stay a power of two: `vector::size()` is a pointer difference divided
+        // by the element size, and a size that is not a power of two makes that
+        // division a multiply -- 97 cells where a shift is 56, on
+        // `undo_.size()` in every journal_* and in push, about 17,000 times a
+        // block. 20 + 1 + 3 of alignment + 8 lands at 32, so the alignment the
+        // wider field needs supplies the padding a named member used to.
+        //
+        // It is only ever a subscript into undo_words_ / undo_slots_ /
+        // undo_accts_ / undo_u64_ / undo_pages_, so the width buys the index
+        // too: a 32-bit one is stored and reloaded through `slli`/`srli`
+        // zero-extension, where a register-width index is not.
+        std::uint64_t aux;
 #ifdef MONAD_ZKVM_KECCAK_SITES
         // Diagnostic: left behind by a frame that was ACCEPTED, so replaying it means a parent
         // revert is undoing work an accepted child did -- the nested combination a mainnet corpus

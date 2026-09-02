@@ -131,7 +131,7 @@ void State::journal_created(Address const &address)
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{address, Undo::Kind::Created, 0});
+    undo_.emplace_back(address, Undo::Kind::Created, 0);
 }
 
 void State::journal_account(Address const &address, AccountState const &row)
@@ -139,10 +139,10 @@ void State::journal_account(Address const &address, AccountState const &row)
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{
+    undo_.emplace_back(
         address,
         Undo::Kind::AccountWhole,
-        static_cast<std::uint32_t>(undo_accts_.size())});
+        undo_accts_.size());
     undo_accts_.push_back(row.account_);
 }
 
@@ -156,10 +156,10 @@ void State::journal_balance(Address const &address, uint256_t const &prev)
     // is a copy and not a conversion.
     static_assert(sizeof(w.bytes) == sizeof(prev));
     __builtin_memcpy(w.bytes, &prev, sizeof(w.bytes));
-    undo_.push_back(Undo{
+    undo_.emplace_back(
         address,
         Undo::Kind::Balance,
-        static_cast<std::uint32_t>(undo_words_.size())});
+        undo_words_.size());
     undo_words_.push_back(w);
 }
 
@@ -168,10 +168,10 @@ void State::journal_code_hash(Address const &address, bytes32_t const &prev)
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{
+    undo_.emplace_back(
         address,
         Undo::Kind::CodeHash,
-        static_cast<std::uint32_t>(undo_words_.size())});
+        undo_words_.size());
     undo_words_.push_back(prev);
 }
 
@@ -180,10 +180,10 @@ void State::journal_nonce(Address const &address, std::uint64_t const prev)
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{
+    undo_.emplace_back(
         address,
         Undo::Kind::Nonce,
-        static_cast<std::uint32_t>(undo_u64_.size())});
+        undo_u64_.size());
     undo_u64_.push_back(prev);
 }
 
@@ -192,7 +192,7 @@ void State::journal_flag(Address const &address, Undo::Kind const which)
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{address, which, 0});
+    undo_.emplace_back(address, which, 0);
 }
 
 void State::journal_warm_slot(Address const &address, bytes32_t const &key)
@@ -200,10 +200,10 @@ void State::journal_warm_slot(Address const &address, bytes32_t const &key)
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{
+    undo_.emplace_back(
         address,
         Undo::Kind::WarmSlot,
-        static_cast<std::uint32_t>(undo_words_.size())});
+        undo_words_.size());
     undo_words_.push_back(key);
 }
 
@@ -217,12 +217,12 @@ void State::journal_slot(
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{
+    undo_.emplace_back(
         address,
         Undo::Kind::Slot,
-        static_cast<std::uint32_t>(undo_slots_.size())});
-    undo_slots_.push_back(
-        SlotUndo{key, prev ? *prev : bytes32_t{}, prev != nullptr});
+        undo_slots_.size());
+    undo_slots_.emplace_back(
+        key, prev ? *prev : bytes32_t{}, prev != nullptr);
 }
 
 void State::journal_transient(
@@ -232,12 +232,12 @@ void State::journal_transient(
         return;
     }
     bytes32_t const *const prev = row.transient_storage_.find(key);
-    undo_.push_back(Undo{
+    undo_.emplace_back(
         address,
         Undo::Kind::Transient,
-        static_cast<std::uint32_t>(undo_slots_.size())});
-    undo_slots_.push_back(
-        SlotUndo{key, prev ? *prev : bytes32_t{}, prev != nullptr});
+        undo_slots_.size());
+    undo_slots_.emplace_back(
+        key, prev ? *prev : bytes32_t{}, prev != nullptr);
 }
 
 void State::journal_pages(Address const &address, AccountState const &row)
@@ -245,10 +245,10 @@ void State::journal_pages(Address const &address, AccountState const &row)
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{
+    undo_.emplace_back(
         address,
         Undo::Kind::Pages,
-        static_cast<std::uint32_t>(undo_pages_.size())});
+        undo_pages_.size());
     undo_pages_.push_back(row.page_tracker_);
 }
 

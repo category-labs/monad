@@ -88,8 +88,8 @@ namespace monad::vm::runtime
 
     Context Context::from(
         evmc_host_interface const *const host, evmc_host_context *const context,
-        evmc_message const *const msg,
-        std::span<uint8_t const> const code) noexcept
+        evmc_message const *const msg, std::span<uint8_t const> const code,
+        uint64_t *const growth_gas_ptr) noexcept
     {
         return Context{
             .host = host,
@@ -115,11 +115,13 @@ namespace monad::vm::runtime
             .result = {},
             .memory =
                 Memory(msg->memory_handle, msg->memory, msg->memory_capacity),
+            .growth_gas_ptr = growth_gas_ptr,
         };
     }
 
     Context Context::empty(
-        uint8_t *const memory_handle, uint32_t const memory_capacity) noexcept
+        uint8_t *const memory_handle, uint32_t const memory_capacity,
+        uint64_t *const growth_gas_ptr) noexcept
     {
         return Context{
             .host = nullptr,
@@ -144,6 +146,7 @@ namespace monad::vm::runtime
                 },
             .result = {},
             .memory = Memory(memory_handle, memory_handle, memory_capacity),
+            .growth_gas_ptr = growth_gas_ptr,
         };
     }
 

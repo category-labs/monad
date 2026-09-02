@@ -43,6 +43,16 @@
 #include <utility>
 #include <vector>
 
+#ifdef MONAD_ZKVM_OFFICIAL_PROFILE
+// Retained by align.ld so the post-link audit can match the ELF to its
+// commit, runtime, features and build signature.
+extern "C" [[gnu::used, gnu::section(".monad_zkvm_profile")]]
+unsigned char const monad_zkvm_official_profile[] =
+    "monad-zkvm-official-v2;runtime=ziskos-" MONAD_ZKVM_RUNTIME_VERSION
+    ";features=" MONAD_ZKVM_BUILD_FEATURES ";commit=" MONAD_ZKVM_BUILD_COMMIT
+    ";signature=" MONAD_ZKVM_BUILD_SIGNATURE;
+#endif
+
 extern "C" void monad_zkvm_execute_witness(void)
 {
     std::uint8_t const *input = nullptr;

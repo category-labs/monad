@@ -59,6 +59,18 @@
 #include <cstdint>
 #include <utility>
 
+#ifdef MONAD_ZKVM_OFFICIAL_PROFILE
+// Kept by zkvm/zisk/align.ld. The audit requires the exact commit, build
+// signature, runtime and feature set to occur in the linked ELF, so neither a
+// stale CMake cache nor a differently configured binary can inherit an
+// official manifest.
+extern "C" [[gnu::used, gnu::section(".monad_zkvm_profile")]]
+unsigned char const monad_zkvm_official_profile[] =
+    "monad-zkvm-official-v2;runtime=ziskos-" MONAD_ZKVM_RUNTIME_VERSION
+    ";features=" MONAD_ZKVM_BUILD_FEATURES ";commit=" MONAD_ZKVM_BUILD_COMMIT
+    ";signature=" MONAD_ZKVM_BUILD_SIGNATURE;
+#endif
+
 namespace
 {
     // EVM-only dispatch wrapper: SWITCH_EVM_TRAITS forwards a runtime

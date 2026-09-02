@@ -51,6 +51,11 @@ The script expects patched sources. It builds only GCC, reuses xPack's binutils,
 headers and RV64 libraries, then compiles a 32-byte copy with `-mzisk-dma`.
 The check requires `csrs 0x813` in the assembly, not just acceptance of the flag.
 
+For official builds requesting `-mzisk-dma`, CMake also compiles a `memcpy` probe
+and requires the DMA marker. It includes the three patches' combined SHA-256 in
+`MONAD_ZKVM_BUILD_SIGNATURE` and the CMake profile JSON, identifying their content
+independently of the compiler binary.
+
 ## Upstreaming
 
 These patches belong beside ZisK's LLVM implementation. They are kept here so

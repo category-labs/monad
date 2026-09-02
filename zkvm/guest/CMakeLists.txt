@@ -53,7 +53,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # and ELF hash already identify them.
     option(MONAD_ZKVM_OFFICIAL_PROFILE
            "build the audited, fail-closed official ZisK guest profile" OFF)
-    set(_monad_zkvm_official_features "baseline")
+    set(_monad_zkvm_official_features "baseline" "zisk-dma")
     set(_monad_zkvm_runtime_version "1.3.1-alpha")
     set(_monad_zkvm_runtime_revision
         "306a9c934ba4947b1d586d69b67120f8b4c41466")
@@ -61,6 +61,20 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
        NOT MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         message(FATAL_ERROR
             "MONAD_ZKVM_OFFICIAL_PROFILE is a ZisK-only build profile")
+    endif()
+
+    # Enable options required by the official profile; reject explicit OFF values.
+    # Add each new required option here and its feature to the list above.
+    set(_monad_zkvm_required_levers MONAD_ZKVM_ZISK_DMA)
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        foreach(_lever ${_monad_zkvm_required_levers})
+            if(DEFINED ${_lever} AND NOT ${_lever})
+                message(FATAL_ERROR
+                    "${_lever}=OFF contradicts MONAD_ZKVM_OFFICIAL_PROFILE=ON")
+            endif()
+            set(${_lever} ON CACHE BOOL
+                "required by the official ZisK profile" FORCE)
+        endforeach()
     endif()
 
     # The riscv64-elf toolchain file specifies these as CMAKE_*_FLAGS_INIT,
@@ -119,6 +133,16 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+        # Lower eligible block memory operations, including struct copies,
+        # directly to ZisK DMA. Requires Zicsr and the patched compiler built by
+        # zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh.
+        # The official profile also probes the emitted code for a DMA marker.
+        option(MONAD_ZKVM_ZISK_DMA
+               "lower block mem* to the ZisK DMA precompile" OFF)
+        if(MONAD_ZKVM_ZISK_DMA)
+            string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
+            string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+        endif()
     endif()
 
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
@@ -137,6 +161,35 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
            NOT MONAD_ZKVM_GIT_COMMIT MATCHES "^[0-9a-f]+$")
             message(FATAL_ERROR
                 "MONAD_ZKVM_GIT_COMMIT must be a full lowercase Git SHA")
+        endif()
+
+        # When DMA is requested, verify emitted code, not just flag acceptance.
+        # A compiler hash identifies the binary but does not prove DMA support.
+        if(CMAKE_CXX_FLAGS MATCHES "-mzisk-dma" OR CMAKE_C_FLAGS MATCHES "-mzisk-dma")
+            # Use the guest's C flags, including Zicsr. sink exposes the copied
+            # bytes to an external call.
+            set(_dma_probe "${CMAKE_CURRENT_BINARY_DIR}/zisk-dma-probe.c")
+            file(WRITE "${_dma_probe}"
+                "void *memcpy(void *, void const *, unsigned long);\n"
+                "void sink(void *);\n"
+                "void p(char *d, char const *s) { memcpy(d, s, 512); sink(d); }\n")
+            separate_arguments(_dma_probe_flags UNIX_COMMAND "${CMAKE_C_FLAGS}")
+            execute_process(
+                COMMAND ${CMAKE_C_COMPILER} ${_dma_probe_flags} -O2 -S -o -
+                        "${_dma_probe}"
+                RESULT_VARIABLE _dma_rc OUTPUT_VARIABLE _dma_asm ERROR_QUIET)
+            if(NOT _dma_rc EQUAL 0)
+                message(FATAL_ERROR
+                    "-mzisk-dma is in the flags but ${CMAKE_C_COMPILER} cannot "
+                    "compile with it; build the compiler with "
+                    "zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh")
+            endif()
+            if(NOT _dma_asm MATCHES "csrs?[ \t]+[^\n]*0x813")
+                message(FATAL_ERROR
+                    "${CMAKE_C_COMPILER} accepts -mzisk-dma but emits no DMA "
+                    "marker, so block mem* would still be thunk calls. Build it "
+                    "with zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh")
+            endif()
         endif()
     endif()
 
@@ -341,12 +394,26 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # Add new flags above this block so the signature includes them.
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
         file(SHA256 "${CMAKE_CXX_COMPILER}" _official_cxx_sha256)
+        # Hash the patch set separately from host-dependent compiler binaries.
+        set(_dma_patch_dir "${CMAKE_CURRENT_SOURCE_DIR}/../toolchain/zisk-dma-gcc")
+        set(_dma_patch_sha "")
+        foreach(_p 0001-riscv-zisk-dma-lowering-14.3.0.patch
+                   0002-riscv.md-forward-port-15.2.0.diff
+                   0003-guest-zicsr-15.2.0.patch)
+            if(NOT EXISTS "${_dma_patch_dir}/${_p}")
+                message(FATAL_ERROR
+                    "official ZisK profile: missing ${_p} in zkvm/toolchain/zisk-dma-gcc")
+            endif()
+            file(SHA256 "${_dma_patch_dir}/${_p}" _one)
+            string(APPEND _dma_patch_sha "${_one}")
+        endforeach()
+        string(SHA256 _dma_patch_sha "${_dma_patch_sha}")
         list(JOIN _monad_zkvm_official_features "," _official_features_csv)
         # Normalise the guest source path (e.g. in -include nodelete.hpp) so
         # build signatures do not depend on the checkout location.
         # Compilation still uses the original flags and paths.
         set(_official_signed_inputs
-            "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}")
+            "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}\n${_dma_patch_sha}")
         string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}" "<guest>"
                _official_signed_inputs "${_official_signed_inputs}")
         string(SHA256 _official_build_signature "${_official_signed_inputs}")
@@ -368,6 +435,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "  \"compiler_id\": \"${CMAKE_CXX_COMPILER_ID}\",\n"
             "  \"compiler_version\": \"${CMAKE_CXX_COMPILER_VERSION}\",\n"
             "  \"compiler_sha256\": \"${_official_cxx_sha256}\",\n"
+            "  \"dma_patch_sha256\": \"${_dma_patch_sha}\",\n"
             "  \"commit\": \"${MONAD_ZKVM_GIT_COMMIT}\",\n"
             "  \"build_signature\": \"${_official_build_signature}\",\n"
             "  \"c_flags\": \"${CMAKE_C_FLAGS}\",\n"

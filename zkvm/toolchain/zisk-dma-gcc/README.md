@@ -4,8 +4,8 @@ These patches add `-mzisk-dma` to GCC's RISC-V backend, translating block memory
 operations into ZisK DMA markers. They mirror the LLVM patch in ZisK's Rust fork
 (`src/llvm-patches/0001-riscv-zisk-dma-lowering.patch`, enabled by `+zisk-dma`).
 
-DMA lowering is disabled by default. This commit supplies the compiler patches;
-enabling them in the guest is a separate change.
+DMA lowering is off by default (`MONAD_ZKVM_ZISK_DMA=OFF`). The official ZisK
+profile requires it: it forces the option on and rejects an explicit `OFF`.
 
 ## Why the guest wants it
 

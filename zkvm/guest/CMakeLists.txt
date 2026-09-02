@@ -59,6 +59,19 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "MONAD_ZKVM_OFFICIAL_PROFILE is a ZisK-only build profile")
     endif()
 
+    # Enable required CMake boolean options; reject explicit OFF values.
+    set(_monad_zkvm_required_options MONAD_ZKVM_ZISK_DMA)
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        foreach(_option ${_monad_zkvm_required_options})
+            if(DEFINED ${_option} AND NOT ${_option})
+                message(FATAL_ERROR
+                    "${_option}=OFF contradicts MONAD_ZKVM_OFFICIAL_PROFILE=ON")
+            endif()
+            set(${_option} ON CACHE BOOL
+                "required by the official ZisK profile" FORCE)
+        endforeach()
+    endif()
+
     # Stamp official builds with the commit and development builds with an
     # explicit marker, so an ELF's origin is never ambiguous. Only
     # execute_witness.cpp reads the commit, so a new commit recompiles that
@@ -136,6 +149,15 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+        # Lower eligible block memory operations, including struct copies,
+        # directly to ZisK DMA. Requires Zicsr and the compiler patches in
+        # zkvm/toolchain/zisk-dma-gcc.
+        option(MONAD_ZKVM_ZISK_DMA
+               "lower block mem* to the ZisK DMA precompile" OFF)
+        if(MONAD_ZKVM_ZISK_DMA)
+            string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
+            string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+        endif()
     endif()
 
     # Repo + third-party paths.

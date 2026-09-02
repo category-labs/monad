@@ -258,8 +258,7 @@ namespace monad::vm::interpreter
         if (!taken) {
             return p + 5;
         }
-        auto const dst = static_cast<size_t>(
-            (static_cast<unsigned>(p[2]) << 8) | static_cast<unsigned>(p[3]));
+        auto const dst = static_cast<size_t>(detail::load_be_k<2>(p + 2));
         if (MONAD_UNLIKELY(!analysis.is_jumpdest(dst))) {
             ctx.exit(Error);
         }
@@ -1579,10 +1578,10 @@ namespace monad::vm::interpreter
             // puts this on ZisK's generic binary machine on every PUSH2.
             if (static_cast<size_t>(next_opcode) - static_cast<size_t>(JUMP) <=
                 1u) {
-                // PUSH2's two-byte immediate gives the jump destination.
-                auto const destination = static_cast<size_t>(
-                    (static_cast<unsigned>(*(instr_ptr + 1)) << 8) |
-                    static_cast<unsigned>(*(instr_ptr + 2)));
+                // Decode PUSH2's destination with the shared big-endian reader
+                // to favor the cheaper packh sequence on ZisK.
+                auto const destination =
+                    static_cast<size_t>(detail::load_be_k<2>(instr_ptr + 1));
                 if (next_opcode == static_cast<std::uint8_t>(JUMP)) {
                     static constexpr auto requirements =
                         fused_requirements<traits, PUSH2, JUMP>();

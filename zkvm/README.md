@@ -66,22 +66,35 @@ Start each section's commands from the repository root unless stated otherwise.
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
 
-Report and release artifacts must use the audited profile:
+`zkvm/zisk/build.sh` builds the guest. Published benchmark and release
+artifacts must use the reference ("official") configuration:
 
 ```sh
 zkvm/zisk/build.sh --official
 ```
 
-The official profile requires ZisK 1.3.1-alpha, GCC 15.2.0 and the baseline
-codegen flags. It embeds the commit and build identity in the ELF, then audits
-the result and writes `<elf>.build.json` with the ELF hash. Keep that manifest
-with published benchmark artifacts.
+This enables `MONAD_ZKVM_OFFICIAL_PROFILE`, requires a clean worktree, and
+builds with ZisK 1.3.1-alpha, patched GCC 15.2.0, DMA lowering and the required
+codegen flags. The ELF embeds the commit and build identity.
 
-DMA lowering is disabled in this initial profile. Build-dependent optimisations
-must extend the feature list and audit in the same commit; source-only changes
-are already identified by the commit and ELF hash. Run `zkvm/zisk/build.sh`
-without `--official` for development builds, which do not produce an
-audited manifest.
+Without `--official`, `build.sh` uses the development profile.
+
+After linking, `audit-official-build.py` checks that identity against the local
+build records, compiler and runtime versions, effective flags and selected
+code assumptions (such as no-op `delete`/`free`). On success it writes
+`<elf>.build.json` with the ELF hash. Keep this manifest with published benchmarks
+to identify the build and detect configuration drift. These checks rely on the
+local toolchain and build records; they do not prove guest correctness or
+guarantee byte-identical rebuilds.
+
+`cargo-zisk build` run directly uses the development profile when the
+`MONAD_ZKVM_OFFICIAL_PROFILE` environment variable is unset (`OFF` in CMake),
+allowing different compilers and options for A/B experiments. Development builds
+can still use `--release`; they carry a `dev` marker and do not run the audit or
+produce its manifest automatically.
+
+Build-dependent optimisations must extend the feature list and audit in the
+same commit; source-only changes are identified by the commit and ELF hash.
 
 ```sh
 # 1. Build the guest ELF.

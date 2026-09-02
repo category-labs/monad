@@ -9,6 +9,7 @@
   "compiler_id": "@CMAKE_CXX_COMPILER_ID@",
   "compiler_version": "@CMAKE_CXX_COMPILER_VERSION@",
   "compiler_sha256": "@_official_cxx_sha256@",
+  "dma_patch_sha256": "@_dma_patch_sha@",
   "commit": "@MONAD_ZKVM_GIT_COMMIT@",
   "build_signature": "@_official_build_signature@",
   "c_flags": "@CMAKE_C_FLAGS@",

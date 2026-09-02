@@ -13,11 +13,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Audit an existing ELF against the official ZisK build profile.
+"""Check an existing ELF against the reference ZisK build configuration.
 
-Check build metadata, runtime and compiler pins, required flags,
-allocator no-op assumptions, symbol sizes and declared ISA extensions.
-Write an evidence manifest if all checks pass. Nothing is rebuilt.
+Match its embedded identity to local build records, then check compiler/runtime
+pins, required flags, allocator no-op assumptions and declared ISA extensions.
+Write a manifest with the ELF hash if all checks pass. Nothing is rebuilt.
+
+This detects configuration drift and records the build used for benchmarks.
+It relies on the local toolchain and build records; it does not establish guest
+correctness or byte-identical reproducibility.
 """
 
 from __future__ import annotations
@@ -44,6 +48,7 @@ REQUIRED_FLAGS = (
     "-O3",
     "-mabi=lp64",
     "-fno-pic",
+    "-mzisk-dma",
     "-funroll-loops",
     "--param=max-inline-insns-single=1600",
     "--param=max-inline-insns-auto=533",
@@ -166,8 +171,8 @@ def main() -> int:
     if profile.get("runtime_revision") != RUNTIME_REVISION:
         fail("generated profile has the wrong runtime revision")
     features = str(profile.get("features_csv", "")).split(",")
-    if features != ["baseline"]:
-        fail(f"unexpected initial feature set: {features!r}")
+    if features != ["baseline", "zisk-dma"]:
+        fail(f"unexpected feature set: {features!r}")
 
     cache = build_dir / "CMakeCache.txt"
     if not cache.is_file():

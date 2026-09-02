@@ -31,7 +31,24 @@ namespace monad::vm::runtime
     [[gnu::always_inline]] inline void
     mload_at(Context *ctx, uint256_t *result_ptr, Memory::Offset const offset)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        // Load four words directly to avoid a 32-byte DMA copy to the stack.
+        // Big-endian order puts the first word in the highest result limb.
+        // Read all words before writing, in case input and result overlap.
+        {
+            auto const *const source = ctx->memory.data + *offset;
+            auto const word3 = load_be_unsafe<uint64_t>(source);
+            auto const word2 = load_be_unsafe<uint64_t>(source + 8);
+            auto const word1 = load_be_unsafe<uint64_t>(source + 16);
+            auto const word0 = load_be_unsafe<uint64_t>(source + 24);
+            (*result_ptr)[0] = word0;
+            (*result_ptr)[1] = word1;
+            (*result_ptr)[2] = word2;
+            (*result_ptr)[3] = word3;
+        }
+#else
         *result_ptr = load_be_unsafe<uint256_t>(ctx->memory.data + *offset);
+#endif
     }
 
     template <Traits traits>

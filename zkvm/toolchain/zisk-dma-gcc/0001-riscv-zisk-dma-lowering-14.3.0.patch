@@ -1,0 +1,366 @@
+diff -urN pristine/gcc/config/riscv/riscv.h gcc-14.3.0/gcc/config/riscv/riscv.h
+--- a/gcc/config/riscv/riscv.h	2025-05-23 13:02:04.444199918 +0200
++++ b/gcc/config/riscv/riscv.h	2026-08-07 08:26:48.740875210 +0200
+@@ -1114,27 +1114,34 @@
+ 
+ #define RISCV_MAX_MOVE_BYTES_STRAIGHT (RISCV_MAX_MOVE_BYTES_PER_LOOP_ITER * 3)
+ 
+-/* If a memory-to-memory move would take MOVE_RATIO or more simple
++/* ZisK (-mzisk-dma): a block copy of any size is ONE precompile op, so only
++   the copies that fit in a couple of word moves are worth doing by pieces;
++   everything larger goes to the cpymem pattern.  Mirrors MaxStoresPerMemcpy
++   = 2 in the LLVM zisk-dma lowering.
++
++   If a memory-to-memory move would take MOVE_RATIO or more simple
+    move-instruction pairs, we will do a cpymem or libcall instead.
+    Do not use move_by_pieces at all when strict alignment is not
+    in effect but the target has slow unaligned accesses; in this
+    case, cpymem or libcall is more efficient.  */
+ 
+ #define MOVE_RATIO(speed)						\
+-  (!STRICT_ALIGNMENT && riscv_slow_unaligned_access_p ? 1 :		\
++  (TARGET_ZISK_DMA ? 2 :						\
++   !STRICT_ALIGNMENT && riscv_slow_unaligned_access_p ? 1 :		\
+    (speed) ? RISCV_MAX_MOVE_BYTES_PER_LOOP_ITER / UNITS_PER_WORD :	\
+    CLEAR_RATIO (speed) / 2)
+ 
+ /* For CLEAR_RATIO, when optimizing for size, give a better estimate
+    of the length of a memset call, but use the default otherwise.  */
+ 
+-#define CLEAR_RATIO(speed) ((speed) ? 16 : 6)
++#define CLEAR_RATIO(speed) (TARGET_ZISK_DMA ? 2 : ((speed) ? 16 : 6))
+ 
+ /* This is similar to CLEAR_RATIO, but for a non-zero constant, so when
+    optimizing for size adjust the ratio to account for the overhead of
+    loading the constant and replicating it across the word.  */
+ 
+-#define SET_RATIO(speed) (CLEAR_RATIO (speed) - ((speed) ? 0 : 2))
++#define SET_RATIO(speed)						\
++  (TARGET_ZISK_DMA ? 2 : CLEAR_RATIO (speed) - ((speed) ? 0 : 2))
+ 
+ #ifndef USED_FOR_TARGET
+ extern const enum reg_class riscv_regno_to_class[];
+diff -urN pristine/gcc/config/riscv/riscv.md gcc-14.3.0/gcc/config/riscv/riscv.md
+--- a/gcc/config/riscv/riscv.md	2025-05-23 13:02:04.444199918 +0200
++++ b/gcc/config/riscv/riscv.md	2026-08-07 08:26:48.741140965 +0200
+@@ -36,6 +36,9 @@
+ 
+ (define_c_enum "unspec" [
+   ;; Override return address for exception handling.
++  UNSPEC_ZISK_CPYMEM
++  UNSPEC_ZISK_SETMEM
++  UNSPEC_ZISK_CMPMEM
+   UNSPEC_EH_RETURN
+ 
+   ;; Symbolic accesses.  The order of this list must match that of
+@@ -2396,12 +2399,127 @@
+ 	      (use (match_operand:SI 3 "const_int_operand"))])]
+   ""
+ {
+-  if (riscv_expand_block_move (operands[0], operands[1], operands[2]))
++  if (riscv_zisk_expand_cpymem (operands[0], operands[1], operands[2]))
++    DONE;
++  else if (riscv_expand_block_move (operands[0], operands[1], operands[2]))
++    DONE;
++  else
++    FAIL;
++})
++
++;; memmove.  The ZisK memcpy precompile honours overlapping ranges, so it
++;; satisfies the memmove contract and the same insns serve both.
++(define_expand "movmem<mode>"
++  [(parallel [(set (match_operand:BLK 0 "general_operand")
++		   (match_operand:BLK 1 "general_operand"))
++	      (use (match_operand:P 2 ""))
++	      (use (match_operand:SI 3 "const_int_operand"))])]
++  "TARGET_ZISK_DMA"
++{
++  if (riscv_zisk_expand_cpymem (operands[0], operands[1], operands[2]))
++    DONE;
++  else
++    FAIL;
++})
++
++;; The marker pair, as one insn so it can never be split or scheduled apart.
++;; Length in the addi immediate: one zisk instruction.
++(define_expand "setmem<mode>"
++  [(parallel [(set (match_operand:BLK 0 "memory_operand")
++		   (match_operand:QI 2 "nonmemory_operand"))
++	      (use (match_operand:P 1 ""))
++	      (use (match_operand:SI 3 "const_int_operand"))])]
++  "TARGET_ZISK_DMA"
++{
++  if (riscv_zisk_expand_setmem (operands[0], operands[1], operands[2]))
+     DONE;
+   else
+     FAIL;
+ })
+ 
++(define_expand "cmpmemsi"
++  [(set (match_operand:SI 0 "register_operand")
++	(compare:SI (match_operand:BLK 1 "memory_operand")
++		    (match_operand:BLK 2 "memory_operand")))
++   (use (match_operand:SI 3 "general_operand"))
++   (use (match_operand:SI 4 "const_int_operand"))]
++  "TARGET_ZISK_DMA"
++{
++  if (riscv_zisk_expand_cmpmem (operands[0], operands[1], operands[2],
++				operands[3]))
++    DONE;
++  else
++    FAIL;
++})
++
++;; memset, count and fill both immediate.
++(define_insn "riscv_zisk_setmem_imm<mode>"
++  [(set (mem:BLK (match_operand:P 0 "register_operand" "r"))
++	(unspec:BLK [(match_operand 1 "const_arith_operand" "I")
++		     (match_operand 2 "const_arith_operand" "I")]
++		    UNSPEC_ZISK_SETMEM))]
++  "TARGET_ZISK_DMA"
++  "csrsi\t0x816,2\;addi\tzero,%0,%1\;addi\tzero,%0,%2"
++  [(set_attr "type" "multi")
++   (set_attr "length" "12")])
++
++;; memset, count in a register.
++(define_insn "riscv_zisk_setmem_reg<mode>"
++  [(set (mem:BLK (match_operand:P 0 "register_operand" "r"))
++	(unspec:BLK [(match_operand:P 1 "register_operand" "r")
++		     (match_operand 2 "const_arith_operand" "I")]
++		    UNSPEC_ZISK_SETMEM))]
++  "TARGET_ZISK_DMA"
++  "csrs\t0x816,%0\;addi\tzero,%1,%2"
++  [(set_attr "type" "multi")
++   (set_attr "length" "8")])
++
++;; memcmp, count immediate.  The result register is the csrrs rd.
++(define_insn "riscv_zisk_cmpmem_imm<mode>"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(mem:BLK (match_operand:P 1 "register_operand" "r"))
++		    (mem:BLK (match_operand:P 2 "register_operand" "r"))
++		    (match_operand 3 "const_arith_operand" "I")]
++		   UNSPEC_ZISK_CMPMEM))]
++  "TARGET_ZISK_DMA"
++  "csrrs\t%0,0x814,%2\;addi\tzero,%1,%3"
++  [(set_attr "type" "multi")
++   (set_attr "length" "8")])
++
++;; memcmp, count in a register.
++(define_insn "riscv_zisk_cmpmem_reg<mode>"
++  [(set (match_operand:SI 0 "register_operand" "=r")
++	(unspec:SI [(mem:BLK (match_operand:P 1 "register_operand" "r"))
++		    (mem:BLK (match_operand:P 2 "register_operand" "r"))
++		    (match_operand:P 3 "register_operand" "r")]
++		   UNSPEC_ZISK_CMPMEM))]
++  "TARGET_ZISK_DMA"
++  "csrrs\t%0,0x814,%2\;add\tzero,%1,%3"
++  [(set_attr "type" "multi")
++   (set_attr "length" "8")])
++
++(define_insn "riscv_zisk_cpymem_imm<mode>"
++  [(set (mem:BLK (match_operand:P 0 "register_operand" "r"))
++	(unspec:BLK [(mem:BLK (match_operand:P 1 "register_operand" "r"))
++		     (match_operand 2 "const_arith_operand" "I")]
++		    UNSPEC_ZISK_CPYMEM))]
++  "TARGET_ZISK_DMA"
++  "csrs\t0x813,%1\;addi\tzero,%0,%2"
++  [(set_attr "type" "multi")
++   (set_attr "length" "8")])
++
++;; Length in a register: two zisk instructions (the count goes through
++;; EXTRA_PARAMS_ADDR).
++(define_insn "riscv_zisk_cpymem_reg<mode>"
++  [(set (mem:BLK (match_operand:P 0 "register_operand" "r"))
++	(unspec:BLK [(mem:BLK (match_operand:P 1 "register_operand" "r"))
++		     (match_operand:P 2 "register_operand" "r")]
++		    UNSPEC_ZISK_CPYMEM))]
++  "TARGET_ZISK_DMA"
++  "csrs\t0x813,%1\;add\tzero,%0,%2"
++  [(set_attr "type" "multi")
++   (set_attr "length" "8")])
++
+ ;; Expand in-line code to clear the instruction cache between operand[0] and
+ ;; operand[1].
+ (define_expand "clear_cache"
+diff -urN pristine/gcc/config/riscv/riscv.opt gcc-14.3.0/gcc/config/riscv/riscv.opt
+--- a/gcc/config/riscv/riscv.opt	2025-05-23 13:02:04.444199918 +0200
++++ b/gcc/config/riscv/riscv.opt	2026-08-07 08:01:11.999423901 +0200
+@@ -620,3 +620,7 @@
+ mtls-dialect=
+ Target RejectNegative Joined Enum(tls_type) Var(riscv_tls_dialect) Init(TLS_TRADITIONAL) Save
+ Specify TLS dialect.
++
++mzisk-dma
++Target Var(TARGET_ZISK_DMA) Init(0)
++Lower block memory operations to ZisK zkVM DMA precompile markers.
+diff -urN pristine/gcc/config/riscv/riscv-protos.h gcc-14.3.0/gcc/config/riscv/riscv-protos.h
+--- a/gcc/config/riscv/riscv-protos.h	2025-05-23 13:02:04.440199854 +0200
++++ b/gcc/config/riscv/riscv-protos.h	2026-08-07 08:26:48.740963822 +0200
+@@ -189,6 +189,9 @@
+ 
+ /* Routines implemented in riscv-string.c.  */
+ extern bool riscv_expand_block_move (rtx, rtx, rtx);
++extern bool riscv_zisk_expand_cpymem (rtx, rtx, rtx);
++extern bool riscv_zisk_expand_setmem (rtx, rtx, rtx);
++extern bool riscv_zisk_expand_cmpmem (rtx, rtx, rtx, rtx);
+ 
+ /* Information about one CPU we know about.  */
+ struct riscv_cpu_info {
+diff -urN pristine/gcc/config/riscv/riscv-string.cc gcc-14.3.0/gcc/config/riscv/riscv-string.cc
+--- a/gcc/config/riscv/riscv-string.cc	2025-05-23 13:02:04.440199854 +0200
++++ b/gcc/config/riscv/riscv-string.cc	2026-08-07 08:26:48.741004543 +0200
+@@ -1249,3 +1249,154 @@
+ }
+ 
+ }
++
++/* ZisK zkVM DMA lowering ---------------------------------------------------
++
++   The ZisK transpiler folds a `csrs 0x813, src` marker immediately followed by
++   an `add`/`addi` writing x0 into a single memcpy operation, the way x86 folds
++   `rep movsb`.  The two instructions must stay adjacent, so each form is one
++   define_insn whose template prints both: an insn is never split or scheduled
++   apart, which is what the LLVM lowering achieves with a Pseudo expanded in the
++   AsmPrinter.
++
++   Two forms, and they do NOT cost the same on ZisK:
++
++     csrs 0x813,src ; addi x0,dst,IMM  -> one zisk instruction, the count rides
++                                          in the extended argument
++     csrs 0x813,src ; add  x0,dst,reg  -> two, the first *writes* the count to
++                                          EXTRA_PARAMS_ADDR
++
++   so a compile-time length is worth preferring wherever it fits simm12.
++
++   Overlapping ranges are fine: the machine's memcpy detects overlap and copies
++   through a temporary, which is why movmem (memmove) shares this path.  */
++
++/* Largest count the addi form can carry.  */
++#define ZISK_DMA_MAX_IMM 2047
++
++bool
++riscv_zisk_expand_cpymem (rtx dest, rtx src, rtx length)
++{
++  if (!TARGET_ZISK_DMA)
++    return false;
++
++  /* A volatile block move has to keep its exact access pattern; the precompile
++     performs the copy in one opaque step, so leave those to the generic code.  */
++  if (MEM_VOLATILE_P (dest) || MEM_VOLATILE_P (src))
++    return false;
++
++  rtx dst_addr = force_reg (Pmode, XEXP (dest, 0));
++  rtx src_addr = force_reg (Pmode, XEXP (src, 0));
++
++  if (CONST_INT_P (length))
++    {
++      unsigned HOST_WIDE_INT n = UINTVAL (length);
++      if (n == 0)
++	return true;
++      if (n <= ZISK_DMA_MAX_IMM)
++	{
++	  if (Pmode == DImode)
++	    emit_insn (gen_riscv_zisk_cpymem_immdi (dst_addr, src_addr,
++						    GEN_INT (n)));
++	  else
++	    emit_insn (gen_riscv_zisk_cpymem_immsi (dst_addr, src_addr,
++						    GEN_INT (n)));
++	  return true;
++	}
++    }
++
++  rtx len = force_reg (Pmode, length);
++  if (Pmode == DImode)
++    emit_insn (gen_riscv_zisk_cpymem_regdi (dst_addr, src_addr, len));
++  else
++    emit_insn (gen_riscv_zisk_cpymem_regsi (dst_addr, src_addr, len));
++  return true;
++}
++
++/* memset.  Two marker forms, both one zisk operation:
++
++     csrsi 0x816,2 ; addi x0,dst,COUNT ; addi x0,dst,FILL   (both immediate)
++     csrs  0x816,dst ; addi x0,count,FILL                   (count in a register)
++
++   The fill byte always rides in an addi immediate, so a run-time fill cannot use
++   the precompile at all and falls back to the generic code (which reaches the
++   ziskos thunk and its 256-entry jump table).  */
++
++bool
++riscv_zisk_expand_setmem (rtx dest, rtx length, rtx value)
++{
++  if (!TARGET_ZISK_DMA)
++    return false;
++  if (MEM_VOLATILE_P (dest))
++    return false;
++  if (!CONST_INT_P (value))
++    return false;
++
++  rtx fill = GEN_INT (UINTVAL (value) & 0xff);
++  rtx dst_addr = force_reg (Pmode, XEXP (dest, 0));
++
++  if (CONST_INT_P (length))
++    {
++      unsigned HOST_WIDE_INT n = UINTVAL (length);
++      if (n == 0)
++	return true;
++      if (n <= ZISK_DMA_MAX_IMM)
++	{
++	  if (Pmode == DImode)
++	    emit_insn (gen_riscv_zisk_setmem_immdi (dst_addr, GEN_INT (n), fill));
++	  else
++	    emit_insn (gen_riscv_zisk_setmem_immsi (dst_addr, GEN_INT (n), fill));
++	  return true;
++	}
++    }
++
++  rtx len = force_reg (Pmode, convert_to_mode (Pmode, length, 1));
++  if (Pmode == DImode)
++    emit_insn (gen_riscv_zisk_setmem_regdi (dst_addr, len, fill));
++  else
++    emit_insn (gen_riscv_zisk_setmem_regsi (dst_addr, len, fill));
++  return true;
++}
++
++/* memcmp.  The result register rides on the marker's csrrs, and the machine
++   returns (byte_a - byte_b) sign extended to 64 bits, so it is already a
++   canonical SImode value and needs no sext.w.  */
++
++bool
++riscv_zisk_expand_cmpmem (rtx result, rtx op1, rtx op2, rtx length)
++{
++  if (!TARGET_ZISK_DMA)
++    return false;
++  if (MEM_VOLATILE_P (op1) || MEM_VOLATILE_P (op2))
++    return false;
++
++  rtx a_addr = force_reg (Pmode, XEXP (op1, 0));
++  rtx b_addr = force_reg (Pmode, XEXP (op2, 0));
++
++  if (CONST_INT_P (length))
++    {
++      unsigned HOST_WIDE_INT n = UINTVAL (length);
++      if (n == 0)
++	{
++	  emit_move_insn (result, const0_rtx);
++	  return true;
++	}
++      if (n <= ZISK_DMA_MAX_IMM)
++	{
++	  if (Pmode == DImode)
++	    emit_insn (gen_riscv_zisk_cmpmem_immdi (result, a_addr, b_addr,
++						    GEN_INT (n)));
++	  else
++	    emit_insn (gen_riscv_zisk_cmpmem_immsi (result, a_addr, b_addr,
++						    GEN_INT (n)));
++	  return true;
++	}
++    }
++
++  rtx len = force_reg (Pmode, convert_to_mode (Pmode, length, 1));
++  if (Pmode == DImode)
++    emit_insn (gen_riscv_zisk_cmpmem_regdi (result, a_addr, b_addr, len));
++  else
++    emit_insn (gen_riscv_zisk_cmpmem_regsi (result, a_addr, b_addr, len));
++  return true;
++}

@@ -546,6 +546,11 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                          children_begin + children.size();
                      child_cursor != children_begin;) {
                     --child_cursor;
+#if defined(MONAD_ZKVM_ZISK)
+                    // Make the load use the decremented pointer, avoiding an
+                    // old/new pointer register copy on each iteration.
+                    asm("" : "+r"(child_cursor));
+#endif
                     uint64_t const child_offset = *child_cursor;
                     if (!digest_at(child_offset)) {
                         dest =
@@ -571,19 +576,26 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                         preceding_offset -= HASH_RLP_LEN;
                         --run_begin;
                     }
-                    // Subtract the offset before the run from its last digest
-                    // offset to get the full run length.
-                    size_t const digests_length =
-                        child_offset - preceding_offset;
+#if defined(MONAD_ZKVM_ZISK)
+                    // Make the copy use the final offset, avoiding an extra
+                    // old/new offset register copy in the digest loop.
+                    asm("" : "+r"(preceding_offset));
+#endif
+                    // preceding_offset is one digest before the run;
+                    // child_offset is its last.
+                    // NOLINTNEXTLINE(misc-const-correctness)
+                    size_t digests_length = child_offset - preceding_offset;
+#if defined(MONAD_ZKVM_ZISK)
+                    // Keep the computed run length in a register for the copy
+                    // and cursor.
+                    asm("" : "+r"(digests_length));
+#endif
 
-                    unsigned char *const digests =
-                        dest.last(digests_length).data();
-                    std::memcpy(
-                        digests,
+                    // A complete branch needs at most 532 bytes, within
+                    // MAX_NODE_RLP, so this copy needs no extra room check.
+                    dest = dest.prepend_unchecked(
                         blob_.data() + (preceding_offset + HASH_RLP_LEN),
                         digests_length);
-
-                    dest = dest.shrink(digests_length);
                     // The next decrement skips the whole copied run.
                     child_cursor = run_begin;
                 }

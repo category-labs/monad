@@ -87,6 +87,15 @@ struct node_rlp_span : private std::span<unsigned char>
         return std::span<unsigned char>::data() + size();
     }
 
+    // Prepend length bytes. The caller must ensure length <= size().
+    node_rlp_span prepend_unchecked(
+        unsigned char const *const source, size_t const length) const
+    {
+        std::memcpy(
+            std::span<unsigned char>::data() + size() - length, source, length);
+        return node_rlp_span{std::span<unsigned char>::first(size() - length)};
+    }
+
     size_t rlp_size() const
     {
         return Capacity - size();

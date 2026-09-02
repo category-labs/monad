@@ -25,7 +25,7 @@ use std::{
 use std::process::Command;
 
 /// Environment variables forwarded to the guest's CMake configuration.
-const GUEST_SETTINGS: &[&str] = &["MONAD_ZKVM_GIT_COMMIT"];
+const GUEST_SETTINGS: &[&str] = &["MONAD_ZKVM_GIT_COMMIT", "MONAD_ZKVM_ZISK_DMA"];
 
 #[derive(Clone, Copy, Debug)]
 pub enum Backend {

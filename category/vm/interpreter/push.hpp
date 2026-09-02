@@ -61,6 +61,23 @@ namespace monad::vm::interpreter
         load_be_k(uint8_t const *const p) noexcept
         {
             static_assert(K >= 1 && K <= 8);
+#ifdef MONAD_ZKVM_ZISK
+            // ZisK charges less for two byte loads + packh than lhu/rev8/srli.
+            // Memory operands let GCC fold pointer offsets into the loads.
+            if constexpr (K == 2) {
+                subword_t hi;
+                subword_t lo;
+                // %0 = hi, %1 = lo; %2/%3 address p[0]/p[1].
+                // "=&r": write-only registers, distinct from input addresses.
+                // lbu zero-extends each byte.
+                asm("lbu %0, %2\n\t" // hi = p[0]
+                    "lbu %1, %3\n\t" // lo = p[1]
+                    "packh %0, %1, %0" // hi = (hi << 8) | lo
+                    : "=&r"(hi), "=&r"(lo)
+                    : "m"(p[0]), "m"(p[1]));
+                return hi;
+            }
+#endif
             return [p]<size_t... Is>(std::index_sequence<Is...>) {
                 return (
                     (static_cast<subword_t>(p[Is]) << (8 * (K - 1 - Is))) |

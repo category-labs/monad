@@ -66,10 +66,15 @@ Start each section's commands from the repository root unless stated otherwise.
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
 
+`zkvm/zisk/build.sh` builds the guest using locally installed tools.
+`--official` requires a clean worktree and the reference compiler settings,
+and embeds the source commit in the ELF. Development builds carry a
+`monad-zkvm-dev` marker.
+
 ```sh
 # 1. Build the guest ELF.
+zkvm/zisk/build.sh
 cd zkvm/zisk
-cargo-zisk build --release --bin monad-zkvm-zisk
 #  → target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk
 
 # 2. Wrap the witness with the 8-byte length prefix the emulator expects,

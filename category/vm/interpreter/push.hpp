@@ -21,6 +21,7 @@
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
+#include <category/vm/interpreter/intrinsics.hpp>
 #include <category/vm/interpreter/stack.hpp>
 #include <category/vm/interpreter/stack_top.hpp>
 #include <category/vm/interpreter/types.hpp>
@@ -52,20 +53,6 @@ namespace monad::vm::interpreter
         }
 
         using subword_t = uint256_t::word_type;
-
-        // Assemble K big-endian bytes directly to avoid a temporary and a
-        // software byte swap on targets without a byte-swap instruction.
-        template <size_t K>
-        [[gnu::always_inline]] inline subword_t
-        load_be_k(uint8_t const *const p) noexcept
-        {
-            static_assert(K >= 1 && K <= 8);
-            return [p]<size_t... Is>(std::index_sequence<Is...>) {
-                return (
-                    (static_cast<subword_t>(p[Is]) << (8 * (K - 1 - Is))) |
-                    ...);
-            }(std::make_index_sequence<K>{});
-        }
 
         [[gnu::always_inline]] inline subword_t
         read_unaligned(uint8_t const *const ptr)

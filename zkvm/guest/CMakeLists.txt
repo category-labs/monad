@@ -47,6 +47,25 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "MONAD_COMPILER_TESTING is not supported in zkVM builds")
     endif()
 
+    # Fail-closed identity for report/release ZisK artifacts. This baseline
+    # deliberately certifies only properties already present on the Sam/ZisK
+    # 1.2 branch. A later optimisation that depends on a build switch, compiler
+    # extension or runtime precompile must append its name to
+    # _monad_zkvm_official_features and extend the post-link audit in the same
+    # commit. Ordinary source changes need no feature bit: the embedded full
+    # Git commit and the ELF digest already identify them.
+    option(MONAD_ZKVM_OFFICIAL_PROFILE
+           "build the audited, fail-closed official ZisK guest profile" OFF)
+    set(_monad_zkvm_official_features "baseline")
+    set(_monad_zkvm_runtime_version "1.2.0-alpha")
+    set(_monad_zkvm_runtime_revision
+        "fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3")
+    if(MONAD_ZKVM_OFFICIAL_PROFILE AND
+       NOT MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        message(FATAL_ERROR
+            "MONAD_ZKVM_OFFICIAL_PROFILE is a ZisK-only build profile")
+    endif()
+
     # The riscv64-elf toolchain file specifies these as CMAKE_*_FLAGS_INIT,
     # but cmake-rs (driving this cmake invocation from build.rs) overrides
     # CMAKE_*_FLAGS with cc-rs's target-arch flags only — dropping the
@@ -107,6 +126,56 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+    endif()
+
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
+           NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "15.2.0")
+            message(FATAL_ERROR
+                "initial official ZisK 1.2 profile requires GCC 15.2.0; got "
+                "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+        endif()
+        if(NOT DEFINED MONAD_ZKVM_GIT_COMMIT)
+            message(FATAL_ERROR
+                "official ZisK profile requires MONAD_ZKVM_GIT_COMMIT")
+        endif()
+        string(LENGTH "${MONAD_ZKVM_GIT_COMMIT}" _official_git_commit_length)
+        if(NOT _official_git_commit_length EQUAL 40 OR
+           NOT MONAD_ZKVM_GIT_COMMIT MATCHES "^[0-9a-f]+$")
+            message(FATAL_ERROR
+                "MONAD_ZKVM_GIT_COMMIT must be a full lowercase Git SHA")
+        endif()
+
+        file(SHA256 "${CMAKE_CXX_COMPILER}" _official_cxx_sha256)
+        list(JOIN _monad_zkvm_official_features "," _official_features_csv)
+        string(SHA256 _official_build_signature
+            "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}")
+        add_compile_definitions(
+            MONAD_ZKVM_OFFICIAL_PROFILE=1
+            MONAD_ZKVM_BUILD_COMMIT="${MONAD_ZKVM_GIT_COMMIT}"
+            MONAD_ZKVM_BUILD_SIGNATURE="${_official_build_signature}"
+            MONAD_ZKVM_BUILD_FEATURES="${_official_features_csv}"
+            MONAD_ZKVM_RUNTIME_VERSION="${_monad_zkvm_runtime_version}")
+        file(WRITE "${CMAKE_BINARY_DIR}/monad-zkvm-official-profile.json"
+            "{\n"
+            "  \"schema\": 2,\n"
+            "  \"target\": \"zisk\",\n"
+            "  \"runtime_version\": \"${_monad_zkvm_runtime_version}\",\n"
+            "  \"runtime_revision\": \"${_monad_zkvm_runtime_revision}\",\n"
+            "  \"features_csv\": \"${_official_features_csv}\",\n"
+            "  \"compiler\": \"${CMAKE_CXX_COMPILER}\",\n"
+            "  \"compiler_id\": \"${CMAKE_CXX_COMPILER_ID}\",\n"
+            "  \"compiler_version\": \"${CMAKE_CXX_COMPILER_VERSION}\",\n"
+            "  \"compiler_sha256\": \"${_official_cxx_sha256}\",\n"
+            "  \"commit\": \"${MONAD_ZKVM_GIT_COMMIT}\",\n"
+            "  \"build_signature\": \"${_official_build_signature}\",\n"
+            "  \"c_flags\": \"${CMAKE_C_FLAGS}\",\n"
+            "  \"c_flags_release\": \"${CMAKE_C_FLAGS_RELEASE}\",\n"
+            "  \"cxx_flags\": \"${CMAKE_CXX_FLAGS}\",\n"
+            "  \"cxx_flags_release\": \"${CMAKE_CXX_FLAGS_RELEASE}\",\n"
+            "  \"asm_flags\": \"${CMAKE_ASM_FLAGS}\",\n"
+            "  \"asm_flags_release\": \"${CMAKE_ASM_FLAGS_RELEASE}\"\n"
+            "}\n")
     endif()
 
     # Repo + third-party paths.

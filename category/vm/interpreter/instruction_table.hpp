@@ -1714,11 +1714,14 @@ namespace monad::vm::interpreter
             runtime::Context &ctx, Intercode const &analysis,
             uint256_t const &target)
         {
-            if (MONAD_UNLIKELY(target > std::numeric_limits<size_t>::max())) {
+            // Our bytecode offsets use 64-bit size_t; EVM targets are 256-bit.
+            // Reject nonzero upper words before narrowing, avoiding a full
+            // uint256_t comparison. is_jumpdest checks bounds and JUMPDEST.
+            if (MONAD_UNLIKELY((target[1] | target[2] | target[3]) != 0)) {
                 ctx.exit(Error);
             }
 
-            auto const jd = static_cast<size_t>(target);
+            auto const jd = static_cast<size_t>(target[0]);
             if (MONAD_UNLIKELY(!analysis.is_jumpdest(jd))) {
                 ctx.exit(Error);
             }

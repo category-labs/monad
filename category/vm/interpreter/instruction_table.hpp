@@ -126,6 +126,11 @@
                                 runtime::EvmStackAllocatorMeta::size) -        \
                             (REQ).max_growth)))
 
+// Dispatch using OP2, the opcode already read at instr_ptr[1].
+// EQ/ISZERO's stack writes prevent GCC from reusing that load itself;
+// reusing it explicitly is safe because bytecode is immutable.
+#define MONAD_VM_NEXT_OP(OP, OP2) MONAD_VM_NEXT_IMPL(OP, 1, OP2)
+
 #define MONAD_VM_NEXT_PUSH(OP)                                                 \
     MONAD_VM_NEXT_IMPL(OP, ((OP) - PUSH0) + 1, *instr_ptr)
 
@@ -728,7 +733,8 @@ namespace monad::vm::interpreter
 #if defined(MONAD_ZKVM_ZISK)
         // Fuse EQ PUSH2 <dst16> JUMPI. EQ frees a stack slot, so PUSH2
         // cannot overflow once EQ's operands are validated.
-        if (*(instr_ptr + 1) == static_cast<std::uint8_t>(PUSH2) &&
+        uint8_t const monad_vm_op2 = *(instr_ptr + 1);
+        if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH2) &&
             *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
             static constexpr auto monad_vm_req =
                 fused_requirements<traits, EQ, PUSH2, JUMPI>();
@@ -763,7 +769,11 @@ namespace monad::vm::interpreter
         auto &&[a, b] = top_two(stack_top);
         b = (a == b);
 
+#if defined(MONAD_ZKVM_ZISK)
+        MONAD_VM_NEXT_OP(EQ, monad_vm_op2);
+#else
         MONAD_VM_NEXT(EQ);
+#endif
     }
 
     template <Traits traits>
@@ -774,7 +784,8 @@ namespace monad::vm::interpreter
     {
 #if defined(MONAD_ZKVM_ZISK)
         // Fuse ISZERO PUSH2 <dst16> JUMPI without storing the test result.
-        if (*(instr_ptr + 1) == static_cast<std::uint8_t>(PUSH2) &&
+        uint8_t const monad_vm_op2 = *(instr_ptr + 1);
+        if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH2) &&
             *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
             static constexpr auto monad_vm_req =
                 fused_requirements<traits, ISZERO, PUSH2, JUMPI>();
@@ -802,7 +813,11 @@ namespace monad::vm::interpreter
         auto &a = *stack_top;
         a = !a;
 
+#if defined(MONAD_ZKVM_ZISK)
+        MONAD_VM_NEXT_OP(ISZERO, monad_vm_op2);
+#else
         MONAD_VM_NEXT(ISZERO);
+#endif
     }
 
     // Bitwise
@@ -1895,6 +1910,7 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_FUSED_NEXT
 #undef MONAD_VM_NEXT_IMPL
 #undef MONAD_VM_NEXT
+#undef MONAD_VM_NEXT_OP
 #undef MONAD_VM_NEXT_PUSH
 #undef MONAD_VM_NEXT_PUSH_OP
 #undef MONAD_VM_CHECK

@@ -476,56 +476,72 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // id and its original bytes are still its current bytes which
                 // is why we can memcpy from the blob_ directly below.
                 //
+                // Widen wire IDs once to use native 64-bit arithmetic.
+                //
                 // Priming uses validated blob IDs. During mutation, reject
                 // overlay IDs before reading the original blob; get_original
                 // checks bounds.
-                auto const digest_at = [this](node_id_wire_t const w) {
+                auto const blob_digest_at = [this](uint64_t const w) {
+                    return w != 0 &&
+                           get_original(NodeId{w}).tag() == Tag::DIGEST;
+                };
+                auto const digest_at = [blob_digest_at](uint64_t const w) {
                     if constexpr (priming_pass) {
-                        return w != 0 &&
-                               get_original(NodeId{w}).tag() == Tag::DIGEST;
+                        return blob_digest_at(w);
                     }
                     else {
-                        return w != 0 && w < OVERLAY_BASE &&
-                               get_original(NodeId{w}).tag() == Tag::DIGEST;
+                        return w < OVERLAY_BASE && blob_digest_at(w);
                     }
                 };
 
-                auto const consecutive_digest = [](node_id_wire_t const a,
-                                                   node_id_wire_t const b) {
-                    return uint64_t{a} + HASH_RLP_LEN == uint64_t{b};
-                };
-
-                // Use native 64-bit arithmetic for the reverse child scan on
-                // ZisK.
-                for (size_t child_index = 16; child_index-- > 0;) {
-                    if (!digest_at(children[child_index])) {
-                        dest = child_ref<priming_pass>(
-                            NodeId{children[child_index]}, dest);
+                // Walk backwards by pointer to avoid repeated index scaling.
+                // Test before decrementing to stay within the array and avoid
+                // GCC copying the pointer's old value for the comparison.
+                node_id_wire_t const *const children_begin = children.data();
+                for (node_id_wire_t const *child_cursor =
+                         children_begin + children.size();
+                     child_cursor != children_begin;) {
+                    --child_cursor;
+                    uint64_t const child_offset = *child_cursor;
+                    if (!digest_at(child_offset)) {
+                        dest =
+                            child_ref<priming_pass>(NodeId{child_offset}, dest);
                         continue;
                     }
                     // copy any contiguous digests directly into dest, since a
                     // digest node is already a valid RLP string
                     static_assert(DIGEST == 0x80 + KECCAK256_SIZE);
-                    size_t run_start = child_index;
-                    while (run_start > 0 &&
-                           consecutive_digest(
-                               children[run_start - 1], children[run_start]) &&
-                           digest_at(children[run_start - 1])) {
-                        --run_start;
+                    node_id_wire_t const *run_begin = child_cursor;
+                    // Expected offset of the preceding digest. The run starts
+                    // at preceding_offset + HASH_RLP_LEN when the loop ends.
+                    // A matching preceding offset cannot be an overlay ID.
+                    // Disable unrolling to avoid extra GCC register moves.
+                    uint64_t preceding_offset = child_offset - HASH_RLP_LEN;
+#pragma GCC unroll 1
+                    while (run_begin != children_begin) {
+                        uint64_t const previous_child = run_begin[-1];
+                        if (previous_child != preceding_offset ||
+                            !blob_digest_at(previous_child)) {
+                            break;
+                        }
+                        preceding_offset -= HASH_RLP_LEN;
+                        --run_begin;
                     }
+                    // Subtract the offset before the run from its last digest
+                    // offset to get the full run length.
                     size_t const digests_length =
-                        (child_index - run_start + 1) * HASH_RLP_LEN;
+                        child_offset - preceding_offset;
 
                     unsigned char *const digests =
                         dest.last(digests_length).data();
                     std::memcpy(
                         digests,
-                        blob_.data() + children[run_start],
+                        blob_.data() + (preceding_offset + HASH_RLP_LEN),
                         digests_length);
 
                     dest = dest.shrink(digests_length);
-                    child_index =
-                        run_start; // the test's decrement steps past the run
+                    // The next decrement skips the whole copied run.
+                    child_cursor = run_begin;
                 }
                 return wrap(dest);
             },

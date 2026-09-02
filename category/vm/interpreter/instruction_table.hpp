@@ -239,6 +239,35 @@
      ((REQ).max_growth == 0 ||                                                 \
       (stack_top) < (stack_bottom) + (1025 - (REQ).max_growth)))
 
+// MONAD_VM_NEXT on a follower byte the handler already holds. `++instr_ptr`
+// lands on instr_ptr[1], which is the byte a one-ahead fusion gate reads, so the
+// two are one load of one place -- see MONAD_VM_NEXT_PUSH_OP below for why the
+// compiler cannot fold them and why reusing the value is sound.
+//
+// Only worth applying to a handler that STORES between its gate and its exit.
+// `pop` gates the same way and needs nothing: it writes no memory, so gcc
+// already proves the two loads equal and emits one. `eq` and `iszero` write
+// their result to the stack, and that store is what forces the reload.
+#define MONAD_VM_NEXT_OP(OP, OP2)                                              \
+    do {                                                                       \
+        static constexpr auto delta =                                          \
+            compiler::opcode_table<traits>[(OP)].stack_increase -              \
+            compiler::opcode_table<traits>[(OP)].min_stack;                    \
+                                                                               \
+        ++instr_ptr;                                                           \
+        if constexpr (debug_enabled) {                                         \
+            trace(analysis, gas_remaining, instr_ptr);                         \
+        }                                                                      \
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[(OP2)](                   \
+            ctx,                                                               \
+            analysis,                                                          \
+            stack_bottom,                                                      \
+            stack_top + delta,                                                 \
+            gas_remaining,                                                     \
+            instr_ptr MONAD_VM_TBL_ARG);                                       \
+    }                                                                          \
+    while (false);
+
 #define MONAD_VM_NEXT_PUSH(OP)                                                 \
     do {                                                                       \
         static constexpr auto delta =                                          \
@@ -901,7 +930,8 @@ namespace monad::vm::interpreter
         // EQ PUSH2 <dst16> JUMPI -- "jump if equal". EQ pops two and pushes one,
         // so the PUSH2 that follows can never overflow the stack; only EQ's own
         // two-operand requirement needs checking.
-        if (*(instr_ptr + 1) == static_cast<std::uint8_t>(PUSH2) &&
+        uint8_t const monad_vm_op2 = *(instr_ptr + 1);
+        if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH2) &&
             *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
             static constexpr auto monad_vm_req =
                 fused_requirements<traits, EQ, PUSH2, JUMPI>();
@@ -930,7 +960,11 @@ namespace monad::vm::interpreter
         auto &&[a, b] = top_two(stack_top);
         b = (a == b);
 
+#if defined(MONAD_VM_FUSE_TESTJUMPI)
+        MONAD_VM_NEXT_OP(EQ, monad_vm_op2);
+#else
         MONAD_VM_NEXT(EQ);
+#endif
     }
 
     template <Traits traits>
@@ -943,7 +977,8 @@ namespace monad::vm::interpreter
         // ISZERO PUSH2 <dst16> JUMPI -- "jump if zero", the commonest branch shape
         // a Solidity require() compiles to. Gate: two byte compares on every
         // ISZERO, which the fused triple has to earn back.
-        if (*(instr_ptr + 1) == static_cast<std::uint8_t>(PUSH2) &&
+        uint8_t const monad_vm_op2 = *(instr_ptr + 1);
+        if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH2) &&
             *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
             static constexpr auto monad_vm_req =
                 fused_requirements<traits, ISZERO, PUSH2, JUMPI>();
@@ -967,7 +1002,11 @@ namespace monad::vm::interpreter
         auto &a = *stack_top;
         a = !a;
 
+#if defined(MONAD_VM_FUSE_TESTJUMPI)
+        MONAD_VM_NEXT_OP(ISZERO, monad_vm_op2);
+#else
         MONAD_VM_NEXT(ISZERO);
+#endif
     }
 
     // Bitwise
@@ -2139,5 +2178,6 @@ namespace monad::vm::interpreter
 
 #undef MONAD_VM_MUST_TAIL
 #undef MONAD_VM_NEXT
+#undef MONAD_VM_NEXT_OP
 #undef MONAD_VM_NEXT_PUSH
 #undef MONAD_VM_NEXT_PUSH_OP

@@ -80,16 +80,20 @@ namespace monad::vm::interpreter
             // are all rustc's, out of core::fmt -- and because it will not
             // choose two loads over one it can merge. `packh rd, rs1, rs2` is
             // {rs2[7:0], rs1[7:0]} zero-extended, so rs2 carries the leading
-            // byte. The two `m` inputs are unreferenced by the template and
-            // exist to tell gcc which memory the block reads.
+            // byte.
+            //
+            // The bytes are `m` operands, not offsets off an `r` pointer: gcc
+            // then prints each one's own `disp(reg)` and folds the +1 into the
+            // displacement, where a register base costs an `addi` to
+            // materialise it and gives back a quarter of the saving.
             if constexpr (K == 2) {
                 subword_t hi;
                 subword_t lo;
-                asm("lbu %0, 0(%2)\n\t"
-                    "lbu %1, 1(%2)\n\t"
+                asm("lbu %0, %2\n\t"
+                    "lbu %1, %3\n\t"
                     "packh %0, %1, %0"
                     : "=&r"(hi), "=&r"(lo)
-                    : "r"(p), "m"(p[0]), "m"(p[1]));
+                    : "m"(p[0]), "m"(p[1]));
                 return hi;
             }
 #endif

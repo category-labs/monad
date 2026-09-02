@@ -615,6 +615,11 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 for (node_id_wire_t const *c = first + children.size();
                      c != first;) {
                     --c;
+#if defined(MONAD_ZKVM_ZISK)
+                    // Make the load use the decremented pointer, avoiding an
+                    // old/new pointer register copy on each iteration.
+                    asm("" : "+r"(c));
+#endif
                     uint64_t const w = *c;
                     if (!digest_at(w)) {
                         dest = child_ref<priming_pass>(NodeId{w}, dest);
@@ -650,19 +655,23 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                         below -= HASH_RLP_LEN;
                         --lo;
                     }
-                    // below starts one digest before w and moves back by 33
-                    // bytes for each additional digest, so w - below is the
-                    // total byte length.
-                    size_t const digests_length = w - below;
+#if defined(MONAD_ZKVM_ZISK)
+                    // Make the copy use the final offset, avoiding an extra
+                    // old/new offset register copy in the digest loop.
+                    asm("" : "+r"(below));
+#endif
+                    // below sits one digest before the run; w is its last one.
+                    // NOLINTNEXTLINE(misc-const-correctness)
+                    size_t digests_length = w - below;
+#if defined(MONAD_ZKVM_ZISK)
+                    // Reuse this subtraction for claims, the copy and the cursor.
+                    asm("" : "+r"(digests_length));
+#endif
 
-                    unsigned char *const digests =
-                        dest.last(digests_length).data();
-                    std::memcpy(
-                        digests,
-                        blob_.data() + (below + HASH_RLP_LEN),
-                        digests_length);
-
-                    dest = dest.shrink(digests_length);
+                    // A complete branch needs at most 532 bytes, within
+                    // MAX_NODE_RLP, so this copy needs no extra room check.
+                    dest = dest.prepend_unchecked(
+                        blob_.data() + (below + HASH_RLP_LEN), digests_length);
                     c = lo; // the next turn's decrement steps past the run
                 }
                 return wrap(dest);

@@ -325,9 +325,9 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
         std::memcpy(dest.last(child_rlp_len).data(), child_rlp, child_rlp_len);
         return dest.shrink(child_rlp_len);
     }
-    // A pre-state (blob) node this large is hash-referenced, so prime()
-    // cached it bottom-up before any parent could reference it. Reaching
-    // here on a cache miss means the parent held a forward/garbage offset.
+    // Unreachable: the sweep validates that children were already seen and
+    // caches hash-referenced nodes before their parents. Hashing in blob order
+    // avoids recursive traversal without duplicating the later pass's work.
     if constexpr (priming_pass) {
         MONAD_ABORT("offset trie: unprimed hash-referenced node (bad offset)");
     }

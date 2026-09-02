@@ -22,6 +22,13 @@ cmake -B build-zkvm -S zkvm/guest \
     -DCMAKE_BUILD_TYPE=Release
 ```
 
+## ZisK compiler prerequisite
+
+DMA lowering requires the external [ZisK GCC fork](https://github.com/anne-laure-s/gcc/tree/zisk/gcc-15.2.0).
+Check an installed compiler with
+`bash nix/gcc-probes/check-probes.sh /path/to/riscv64-none-elf-gcc`.
+The probes verify generated instructions, not just flag acceptance.
+
 ## Why nix
 
 `riscv-gnu-toolchain` builds by cloning binutils, gdb and newlib from

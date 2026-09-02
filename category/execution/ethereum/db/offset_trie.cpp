@@ -167,27 +167,38 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             node,
             Cases{
                 [&](BranchView b) {
-                    // b.children() widens each 4-byte wire field on its own,
-                    // and the field never lands 4-aligned, so a slot costs
-                    // nine instructions to read before it costs anything to
-                    // check. Read the 16 fields as eight words instead: the
-                    // branch's extent was validated by checked_end above, and
-                    // a BRANCH is exactly payload() + 16 wire fields.
+                    // One `lwu` a field, walked by pointer. The branch's
+                    // extent was validated by checked_end above, and a BRANCH
+                    // is exactly payload() + 16 wire fields, so the reads need
+                    // no bound of their own; read_node_id is the one place the
+                    // wire and id representations meet on the read side.
                     //
-                    // Each word is checked in the register it lands in.
-                    // Staging the eight into an array first made gcc spill all
-                    // of them and read them back a field at a time, and the
-                    // frame slot it picked sits past the 12-bit offset window,
-                    // so every one of those accesses also re-materialised the
+                    // Not eight 8-byte words: ZisK prices a narrow load's
+                    // extraction INTO the load. An `lwu` is 122 cells and 191
+                    // when it crosses an 8-byte boundary, which half of these
+                    // do -- a wire field sits at payload() + 4i and payload()
+                    // is a tag byte past an arbitrary blob offset. Against
+                    // that, one 8-byte read of a pair is 191 and then pays 248
+                    // more to mask the low field out (`slli 32 / srli 32`) and
+                    // 124 to shift the high one down: 631 cells a pair against
+                    // 449. Reading fewer, wider words pays only when it
+                    // removes the extraction too, and here it moves it from
+                    // the load's price into instructions.
+                    //
+                    // Each field is checked in the register it lands in.
+                    // Staging them into an array first made gcc spill all of
+                    // them and read them back a field at a time, and the frame
+                    // slot it picked sits past the 12-bit offset window, so
+                    // every one of those accesses also re-materialised the
                     // stack base (`addi aN, sp, 2047`).
-                    unsigned char const *const p = b.payload();
-                    for (unsigned i = 0; i < 16; i += 2) {
-                        uint64_t const pair =
-                            bits::load64(p + i * sizeof(node_id_wire));
-                        is_valid_offset(
-                            NodeId{static_cast<node_id_wire>(pair)});
-                        is_valid_offset(
-                            NodeId{static_cast<node_id_wire>(pair >> 32)});
+                    unsigned char const *const first = b.payload();
+                    for (unsigned char const *q = first,
+                                             *const last =
+                                                 first +
+                                                 16 * sizeof(node_id_wire);
+                         q != last;
+                         q += sizeof(node_id_wire)) {
+                        is_valid_offset(read_node_id(q));
                     }
                 },
                 [&](ExtView e) { is_valid_offset(e.child()); },

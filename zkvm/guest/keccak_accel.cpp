@@ -62,8 +62,12 @@ void syscall_keccak_f(uint64_t (*state)[25]);
 
 // ── the permutation memo ─────────────────────────────────────────────────
 //
-// A permutation is 75,575 of ZisK cost against 15-60 for an ordinary op, and
-// keccak is 37.8 % of this guest's COST. About 14 % of the permutations a
+// A permutation is 38,454 of ZisK cost against 15-60 for an ordinary op, and
+// keccak is 24.4 % of this guest's COST -- both on ziskemu 1.2, which repriced
+// the precompiles 43.8 % below 1.1 and left every other category to the cell.
+// The 1.2 numbers halve the memo's takings and leave its case stronger, since
+// the alternative it was measured against is a guest-side cost that 1.2 did
+// not touch. About 14 % of the permutations a
 // block runs repeat a state an earlier one already permuted: 12.1-16.7 %
 // over the 25815000-25815199 corpus, which is the same 13.6-15.7 % a
 // fingerprint census over our own call stream reported independently.
@@ -73,8 +77,10 @@ void syscall_keccak_f(uint64_t (*state)[25]);
 // natively (zisk-core `opc_fcall`, plus the assembly emulator's copy in
 // zisk-lib-c, so the prover's EXECUTE phase knows it too). `fcall_param`,
 // `fcall` and `fcall_get` all cost ZERO in `zisk_ops_costs.rs`. A guest-side
-// fingerprint over the 25 words was measured at +9.09 % COST, and avoiding
-// it is the whole reason this is worth building.
+// fingerprint over the 25 words was measured at +9.09 % COST on 1.1, where a
+// permutation was worth twice what it is now -- so the margin against
+// fingerprinting has only widened. Avoiding it is the whole reason this is
+// worth building.
 //
 // SOUNDNESS. The index is a HINT: a free-input call is not verified by the
 // VM, and a wrong or hostile answer must not be able to change a digest. Two

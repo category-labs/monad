@@ -47,6 +47,28 @@ namespace monad::vm::runtime
             auto const *const sw = reinterpret_cast<uint64_t const *>(&be);
             d[0] = sw[0]; d[1] = sw[1]; d[2] = sw[2]; d[3] = sw[3];
         }
+#elif defined(MONAD_ZKVM_ZISK)
+        // Four loads, not a staged copy -- the mirror of mstore below.
+        // `load_be_unsafe<uint256_t>` memcpys 32 bytes into a local before it
+        // can byte-swap them, so gcc DMA copies EVM memory into a stack temp
+        // and reads it back. Loading the words individually never takes an
+        // address, so each is one `ld` and one `rev8` in registers.
+        //
+        // bswap reverses all 32 bytes, so the word at the lowest source
+        // address becomes the result's HIGHEST word. All four are loaded
+        // before any is stored, so the mapping stays readable and no store
+        // can be read back.
+        {
+            auto const *const monad_s = ctx->memory.data + *offset;
+            auto const monad_w3 = load_be_unsafe<uint64_t>(monad_s);
+            auto const monad_w2 = load_be_unsafe<uint64_t>(monad_s + 8);
+            auto const monad_w1 = load_be_unsafe<uint64_t>(monad_s + 16);
+            auto const monad_w0 = load_be_unsafe<uint64_t>(monad_s + 24);
+            (*result_ptr)[0] = monad_w0;
+            (*result_ptr)[1] = monad_w1;
+            (*result_ptr)[2] = monad_w2;
+            (*result_ptr)[3] = monad_w3;
+        }
 #else
         *result_ptr = load_be_unsafe<uint256_t>(ctx->memory.data + *offset);
 #endif

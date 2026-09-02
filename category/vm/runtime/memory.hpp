@@ -76,6 +76,28 @@ namespace monad::vm::runtime
                 ctx->memory.data + *offset,
                 reinterpret_cast<unsigned char const *>(&be));
         }
+#elif defined(MONAD_ZKVM_ZISK)
+        // Four stores, not a staged copy. `store_be` is `store_le(dst,
+        // bswap(x))` and `store_le` takes the value's ADDRESS, so gcc has to
+        // materialise the byte-swapped 32 bytes somewhere it can point at:
+        // four `sd` into a 112-byte stack frame, a pointer to the temp, the
+        // DMA `csrs` pair to copy it out, and the frame's own `ra` save and
+        // teardown -- about 670 cells and eight steps to move bytes that were
+        // already sitting in four registers.
+        //
+        // Writing the words one at a time never takes the value's address, so
+        // it stays in registers and each word lands with one `sd`. bswap
+        // reverses all 32 bytes, so word i of the result carries input word
+        // 3 - i and the four go out in ascending address order -- the same 32
+        // bytes `store_be` would have written, in the same places.
+        {
+            auto const monad_be = bswap(*value_ptr);
+            auto *const monad_d = ctx->memory.data + *offset;
+            store_le(monad_d, monad_be[0]);
+            store_le(monad_d + 8, monad_be[1]);
+            store_le(monad_d + 16, monad_be[2]);
+            store_le(monad_d + 24, monad_be[3]);
+        }
 #else
         store_be(ctx->memory.data + *offset, *value_ptr);
 #endif

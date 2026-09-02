@@ -107,6 +107,25 @@ impl Backend {
         });
         cfg.define("CMAKE_PREFIX_PATH", &prefix_path);
 
+        // Keep official-profile settings explicit instead of forwarding
+        // arbitrary CMake definitions.
+        match env::var("MONAD_ZKVM_OFFICIAL_PROFILE") {
+            Ok(profile) => {
+                assert_eq!(
+                    profile, "ON",
+                    "MONAD_ZKVM_OFFICIAL_PROFILE must be ON or unset"
+                );
+                cfg.define("MONAD_ZKVM_OFFICIAL_PROFILE", "ON")
+                    .define("MONAD_ZKVM_GIT_COMMIT", official_build_commit(&repo_root));
+            }
+            // Outside the official profile, keep the caller's commit label.
+            Err(_) => {
+                if let Ok(commit) = env::var("MONAD_ZKVM_GIT_COMMIT") {
+                    cfg.define("MONAD_ZKVM_GIT_COMMIT", commit);
+                }
+            }
+        }
+
         if let Self::Sp1 = self {
             cfg.define("CMAKE_C_FLAGS_INIT", SP1_C_FLAGS)
                 .define("CMAKE_CXX_FLAGS_INIT", SP1_CXX_FLAGS)
@@ -325,6 +344,47 @@ fn sp1_zkevm_dir() -> PathBuf {
     zkevm
 }
 
+/// Use Git HEAD, rejecting a mismatched supplied SHA or reported tracked changes.
+/// Without a usable HEAD, require MONAD_ZKVM_GIT_COMMIT (e.g. source archives).
+fn official_build_commit(repo_root: &Path) -> String {
+    let git = |args: &[&str]| -> Option<String> {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(repo_root)
+            .args(args)
+            .output()
+            .ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    };
+    let supplied = env::var("MONAD_ZKVM_GIT_COMMIT").ok();
+    let head = match git(&["rev-parse", "HEAD"]) {
+        Some(h) if h.len() == 40 => h,
+        _ => {
+            return supplied.expect(
+                "official ZisK profile: no git in the build tree, so \
+                 MONAD_ZKVM_GIT_COMMIT must supply the commit",
+            );
+        }
+    };
+    // Check tracked changes; untracked files are excluded here.
+    if let Some(dirty) = git(&["status", "--porcelain", "--untracked-files=no"]) {
+        assert!(
+            dirty.is_empty(),
+            "official ZisK profile: the worktree is dirty, so no commit \
+             describes what would be built:\n{dirty}"
+        );
+    }
+    if let Some(supplied) = supplied {
+        assert_eq!(
+            supplied, head,
+            "MONAD_ZKVM_GIT_COMMIT does not match the tree being built"
+        );
+    }
+    head
+}
+
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset"))
 }
@@ -346,6 +406,16 @@ fn locate_repo_root(manifest: &PathBuf) -> PathBuf {
 
 fn emit_rerun_directives(zkvm_dir: &Path, repo_root: &Path) {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=RISCV_TOOLCHAIN_DIR");
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_OFFICIAL_PROFILE");
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_GIT_COMMIT");
+    // Watch Git metadata to refresh the build stamp when only the commit changes.
+    for git_path in ["HEAD", "refs"] {
+        let p = repo_root.join(".git").join(git_path);
+        if p.exists() {
+            println!("cargo:rerun-if-changed={}", p.display());
+        }
+    }
     // `rerun-if-changed=<dir>` watches only the directory's own mtime, which
     // doesn't update when files inside are edited. Walk and emit per-file
     // paths so edits to ffi.cpp / headers / cmake actually trigger a rebuild.

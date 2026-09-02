@@ -48,6 +48,15 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "MONAD_COMPILER_TESTING is not supported in zkVM builds")
     endif()
 
+    # Reference builds require fixed compiler settings; development builds allow overrides.
+    option(MONAD_ZKVM_OFFICIAL_PROFILE
+           "require the reference ZisK compiler and build options" OFF)
+    if(MONAD_ZKVM_OFFICIAL_PROFILE AND
+       NOT MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        message(FATAL_ERROR
+            "MONAD_ZKVM_OFFICIAL_PROFILE is a ZisK-only build profile")
+    endif()
+
     # The riscv64-elf toolchain file specifies these as CMAKE_*_FLAGS_INIT,
     # but cmake-rs (driving this cmake invocation from build.rs) overrides
     # CMAKE_*_FLAGS with cc-rs's target-arch flags only — dropping the
@@ -61,7 +70,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # ZisK-only codegen tuning, duplicated from Polygon's ziskethone guest
     # (github.com/0xPolygonHermez/ziskethone, cpp-guest/zisk/toolchain.cmake +
     # cpp-guest/zisk/CMakeLists.txt).
-    #  - -march adds Zbb/Zbs/Zbkb, transpiled natively by ZisK >= v1.2.0-alpha.
+    #  - -march adds Zba/Zbb/Zbs/Zbkb, transpiled natively by ZisK.
     #  - -mtune=size was ziskethone's dominant single win (-13% block cost);
     #    -funroll-loops + the widened inliner --params cut call/loop overhead
     #    on hot paths; -fno-schedule-insns* drops scheduling that only helps
@@ -76,7 +85,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # overrides CMAKE_*_FLAGS, and the -march must land after cc-rs's
     # -march=rv64ima — the last flag wins.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
-        set(_zisk_march "-march=rv64ima_zicsr_zbb_zbs_zbkb -mabi=lp64")
+        set(_zisk_march "-march=rv64ima_zicsr_zba_zbb_zbs_zbkb -mabi=lp64")
         string(JOIN " " _zisk_opt
             "-fno-pic"
             "-mtune=size"
@@ -105,6 +114,28 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+    endif()
+
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
+           NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "15.2.0")
+            message(FATAL_ERROR
+                "the reference ZisK profile requires GCC 15.2.0; got "
+                "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+        endif()
+        if(NOT DEFINED MONAD_ZKVM_GIT_COMMIT)
+            message(FATAL_ERROR
+                "official ZisK profile requires MONAD_ZKVM_GIT_COMMIT")
+        endif()
+        string(LENGTH "${MONAD_ZKVM_GIT_COMMIT}" _official_git_commit_length)
+        if(NOT _official_git_commit_length EQUAL 40 OR
+           NOT MONAD_ZKVM_GIT_COMMIT MATCHES "^[0-9a-f]+$")
+            message(FATAL_ERROR
+                "MONAD_ZKVM_GIT_COMMIT must be a full lowercase Git SHA")
+        endif()
+
+        set(_monad_zkvm_stamp_defs
+            "MONAD_ZKVM_BUILD_COMMIT=\"${MONAD_ZKVM_GIT_COMMIT}\"")
     endif()
 
     # Repo + third-party paths.
@@ -298,6 +329,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     else()
         message(FATAL_ERROR
             "libgcc.a not found via compiler query")
+    endif()
+
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        add_compile_definitions(MONAD_ZKVM_OFFICIAL_PROFILE=1 ${_monad_zkvm_stamp_defs})
+    else()
+        add_compile_definitions(MONAD_ZKVM_DEV_PROFILE=1)
     endif()
 
     # ---- Bare-metal libc / libstdc++ stubs ----

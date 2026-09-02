@@ -31,7 +31,24 @@ namespace monad::vm::runtime
     {
         auto const offset = ctx->get_memory_offset(*offset_ptr);
         ctx->expand_memory<traits>(offset + bin<32>);
+#if defined(MONAD_ZKVM_ZISK)
+        // Load four words directly to avoid a 32-byte DMA copy to the stack.
+        // Big-endian order puts the first word in the highest result limb.
+        // Read all words before writing, in case input and result overlap.
+        {
+            auto const *const monad_s = ctx->memory.data + *offset;
+            auto const monad_w3 = load_be_unsafe<uint64_t>(monad_s);
+            auto const monad_w2 = load_be_unsafe<uint64_t>(monad_s + 8);
+            auto const monad_w1 = load_be_unsafe<uint64_t>(monad_s + 16);
+            auto const monad_w0 = load_be_unsafe<uint64_t>(monad_s + 24);
+            (*result_ptr)[0] = monad_w0;
+            (*result_ptr)[1] = monad_w1;
+            (*result_ptr)[2] = monad_w2;
+            (*result_ptr)[3] = monad_w3;
+        }
+#else
         *result_ptr = load_be_unsafe<uint256_t>(ctx->memory.data + *offset);
+#endif
     }
 
     template <Traits traits>

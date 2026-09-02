@@ -1015,13 +1015,30 @@ struct RODb::Impl final
     }
 };
 
-RODb::RODb(ReadOnlyOnDiskDbConfig const &options, timeline_id const tid)
+RODb::RODb(std::unique_ptr<Impl> impl)
+    : impl_(std::move(impl))
+{
+}
+
+RODb::RODb(ReadOnlyOnDiskDbConfig const &options)
     : impl_(std::make_unique<Impl>(
-          std::make_shared<OnDiskDbServiceThread>(options), tid))
+          std::make_shared<OnDiskDbServiceThread>(options),
+          timeline_id::primary))
 {
 }
 
 RODb::~RODb() = default;
+
+std::unique_ptr<RODb> RODb::open_secondary_timeline() const
+{
+    MONAD_ASSERT(impl_);
+    MONAD_ASSERT(impl_->tid_ == timeline_id::primary);
+    if (!impl_->aux().metadata_ctx().timeline_active(timeline_id::secondary)) {
+        return nullptr;
+    }
+    return std::unique_ptr<RODb>(new RODb(
+        std::make_unique<Impl>(impl_->worker_thread_, timeline_id::secondary)));
+}
 
 uint64_t RODb::get_latest_version() const
 {

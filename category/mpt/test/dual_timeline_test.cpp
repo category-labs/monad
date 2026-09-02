@@ -593,20 +593,20 @@ namespace
         {
             ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
             RODb const ro_primary{ro_config};
-            RODb const ro_secondary{ro_config, timeline_id::secondary};
-
             EXPECT_TRUE(ro_primary.timeline_active(timeline_id::secondary));
+            auto const ro_secondary = ro_primary.open_secondary_timeline();
+            ASSERT_NE(ro_secondary, nullptr);
 
             // Each handle reports its own timeline's version range.
             EXPECT_EQ(ro_primary.get_latest_version(), 4);
-            EXPECT_EQ(ro_secondary.get_latest_version(), 6);
+            EXPECT_EQ(ro_secondary->get_latest_version(), 6);
             EXPECT_TRUE(ro_primary.version_is_valid_ondisk(4));
             EXPECT_FALSE(ro_primary.version_is_valid_ondisk(6));
-            EXPECT_TRUE(ro_secondary.version_is_valid_ondisk(6));
+            EXPECT_TRUE(ro_secondary->version_is_valid_ondisk(6));
 
             // A version only the secondary has is readable through the
             // secondary-bound handle and rejected by the primary-bound one.
-            auto const sres = ro_secondary.find(NibblesView{sk}, 6);
+            auto const sres = ro_secondary->find(NibblesView{sk}, 6);
             ASSERT_TRUE(sres.has_value());
             EXPECT_EQ(
                 monad::byte_string{sres.value().node->value()},
@@ -620,7 +620,7 @@ namespace
             EXPECT_EQ(
                 monad::byte_string{pres.value().node->value()},
                 monad::byte_string{pk});
-            EXPECT_FALSE(ro_secondary.find(NibblesView{pk}, 6).has_value());
+            EXPECT_FALSE(ro_secondary->find(NibblesView{pk}, 6).has_value());
         }
 
         deactivate_secondary();

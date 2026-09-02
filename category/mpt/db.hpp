@@ -61,18 +61,20 @@ struct AsyncIOContext
     explicit AsyncIOContext(OnDiskDbConfig const &options);
 };
 
-// A read-only db handle bound to one timeline (primary by default). During
-// the dual-timeline migration the timelines differ in encoding and, once
-// post-fork commits go to the page-encoded timeline only, in which versions
-// they have on file.
+// A read-only db handle bound to one timeline. The constructor opens the
+// primary; a secondary handle comes from open_secondary_timeline and shares
+// the primary's service thread and node cache. During the dual-timeline
+// migration the timelines differ in encoding and, once post-fork commits go
+// to the page-encoded timeline only, in which versions they have on file.
 class RODb
 {
     struct Impl;
     std::unique_ptr<Impl> impl_;
 
+    explicit RODb(std::unique_ptr<Impl>);
+
 public:
-    explicit RODb(
-        ReadOnlyOnDiskDbConfig const &, timeline_id tid = timeline_id::primary);
+    explicit RODb(ReadOnlyOnDiskDbConfig const &);
     ~RODb();
 
     RODb(RODb const &) = delete;
@@ -93,6 +95,10 @@ public:
         size_t concurrency_limit = 4096);
 
     state_machine_kind state_machine_type() const;
+
+    // Handle on the secondary timeline sharing this (primary) handle's
+    // service thread and node cache; nullptr when no secondary is active.
+    [[nodiscard]] std::unique_ptr<RODb> open_secondary_timeline() const;
 };
 
 // A Db is bound to one timeline. The constructors below produce a primary

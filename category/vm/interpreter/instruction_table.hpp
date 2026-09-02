@@ -1666,9 +1666,14 @@ namespace monad::vm::interpreter
                 // the checks: the aggregate has to know which follower it is
                 // before it can test the sequence, and PUSH2 and JUMPI do not
                 // aggregate to the same requirements as PUSH2 and JUMP.
-                auto const monad_vm_dst = static_cast<size_t>(
-                    (static_cast<unsigned>(*(instr_ptr + 1)) << 8) |
-                    static_cast<unsigned>(*(instr_ptr + 2)));
+                //
+                // Through load_be_k, which is the same two bytes the unfused
+                // exit assembles and is where the `packh` form of it lives.
+                // Written out here it was `lhu / rev8 / srli`, 96 cells more
+                // on the fused majority of PUSH2s -- 114,343 of 181,240 on
+                // block 25815042.
+                auto const monad_vm_dst =
+                    static_cast<size_t>(detail::load_be_k<2>(instr_ptr + 1));
                 if (monad_vm_op2 == static_cast<std::uint8_t>(JUMP)) {
                     static constexpr auto monad_vm_req =
                         fused_requirements<traits, PUSH2, JUMP>();

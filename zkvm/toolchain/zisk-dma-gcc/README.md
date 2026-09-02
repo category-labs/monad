@@ -4,8 +4,9 @@ These patches add `-mzisk-dma` to GCC's RISC-V backend, translating block memory
 operations into ZisK DMA markers. They mirror the LLVM patch in ZisK's Rust fork
 (`src/llvm-patches/0001-riscv-zisk-dma-lowering.patch`, enabled by `+zisk-dma`).
 
-DMA lowering is disabled by default. This commit supplies the compiler patches;
-enabling them in the guest is a separate change.
+DMA lowering is off by default (`MONAD_ZKVM_ZISK_DMA=OFF`). The official ZisK
+profile requires it: it forces the option on, rejects an explicit `OFF`, and
+checks that a `memcpy` probe compiles to a DMA marker.
 
 ## Why the guest wants it
 
@@ -46,6 +47,11 @@ ZISK_DMA_GCC_SRC=$PWD .../build-gcc15.sh
 The script expects patched sources. It builds only GCC, reuses xPack's binutils,
 headers and RV64 libraries, then compiles a 32-byte copy with `-mzisk-dma`.
 The check requires `csrs 0x813` in the assembly, not just acceptance of the flag.
+
+For official builds requesting `-mzisk-dma`, CMake also compiles a `memcpy` probe
+and requires the DMA marker. It includes the two patches' combined SHA-256 in
+`MONAD_ZKVM_BUILD_SIGNATURE` and the CMake profile JSON, identifying their content
+independently of the compiler binary.
 
 ## Upstreaming
 

@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/core/bit_primitives.hpp>
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
@@ -151,9 +152,16 @@ MONAD_NAMESPACE_END
 template <>
 struct std::hash<monad::bytes32_t>
 {
+    [[gnu::always_inline]] inline
     size_t operator()(monad::bytes32_t const &x) const noexcept
     {
+        #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
+        // Use word-wise hashing in the guest.
+        return monad::bits::hash_bytes32(x.bytes);
+#else
+        // Keep seeded komihash for host HashDoS protection.
         return monad::seeded_fast_hash(x.bytes, sizeof(x.bytes));
+#endif
     }
 };
 
@@ -162,7 +170,7 @@ struct ankerl::unordered_dense::hash<monad::bytes32_t>
 {
     using is_avalanching = void;
 
-    uint64_t operator()(monad::bytes32_t const &x) const noexcept
+    [[gnu::always_inline]] inline uint64_t operator()(monad::bytes32_t const &x) const noexcept
     {
         return std::hash<monad::bytes32_t>{}(x);
     }

@@ -18,6 +18,7 @@
 #include <zkvm/guest/witness_block_hash_buffer.hpp>
 
 #include <category/core/assert.h>
+#include <category/core/bit_primitives.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/keccak.hpp>
@@ -67,10 +68,11 @@ extern "C" void monad_zkvm_execute_witness(void)
     MONAD_ASSERT(block_view.empty());
     auto const &block = block_result.value();
 
-    // Compute the canonical block hash once. Publish it only after checking
-    // that execution reproduces the state root in this header.
+    // Seed maps before insertion with the canonical block hash. Reuse it as
+    // output only after checking the computed state root against this header.
     monad_hash256 const block_hash =
         monad::keccak256(monad::rlp::encode_block_header(block.header));
+    monad::bits::set_map_keys(block_hash.bytes);
 
     monad::CodeIndex code_index;
     {

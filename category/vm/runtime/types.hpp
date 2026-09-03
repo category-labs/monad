@@ -286,6 +286,25 @@ namespace monad::vm::runtime
         // the offsetof asserts above pin down.
         uint256_t const *stack_limit = nullptr;
 
+#if defined(MONAD_ZKVM_ZISK)
+        // Scratch for the 32-byte exchange SWAP1-16 needs. A local temporary is
+        // a frame, and these handlers have none otherwise: gcc opens and closes
+        // one around it -- `addi sp,sp,-32` and `addi sp,sp,32`, two steps on
+        // every one of 257,172 SWAPs a block, 0.28 % of COST. ctx is already in
+        // a register, so a slot here is one `addi` to address and the frame goes.
+        //
+        // One slot serves all sixteen instantiations and every revision: it is
+        // live only between the first and last of one exchange's three copies,
+        // which are straight-line with nothing in between that could reach
+        // another SWAP. The copies also may not be reordered -- each reads what
+        // the one before it wrote -- so the dependency chain holds them in place
+        // whatever the compiler assumes about aliasing.
+        //
+        // Last, like stack_limit above, so no offset context.S or the asserts
+        // below pin down moves.
+        uint256_t swap_scratch;
+#endif
+
         [[gnu::always_inline]]
         constexpr void deduct_gas(int64_t const gas) noexcept
         {

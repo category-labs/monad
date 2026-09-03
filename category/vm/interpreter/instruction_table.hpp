@@ -1908,17 +1908,30 @@ namespace monad::vm::interpreter
             a[i] = b[i];
             b[i] = t;
         }
-#else
-        // A plain temporary, not the AVX type. Exchanging two 32-byte words needs three copies --
-        // save, move down, restore -- and that is what this emits. The round trip through to_avx()
-        // and back emitted FOUR: measured on block 25815100, every one of the sixteen swap<N>
-        // instantiations ran exactly 4.00 dma_xmemcpy an entry against dup<N>'s 1.00, and the extra
-        // one is frame-slot to frame-slot inside our own stack, the AVX conversion having
-        // materialised two 32-byte slots instead of one.
+#elif defined(MONAD_ZKVM_ZISK)
+        // Three copies -- save, move down, restore -- through the slot in Context rather than a
+        // local. A local is a frame: the handler has none otherwise, so gcc opens and closes one
+        // around the temporary, and ctx.swap_scratch replaces those two stack-pointer adjustments
+        // with the one `addi` that addresses it. Context::swap_scratch says why one slot is enough
+        // and why the three copies cannot be reordered.
+        //
+        // The round trip through to_avx() and back emitted FOUR copies: measured on block
+        // 25815100, every one of the sixteen swap<N> instantiations ran exactly 4.00 dma_xmemcpy an
+        // entry against dup<N>'s 1.00, and the extra one is frame-slot to frame-slot inside our own
+        // stack, the AVX conversion having materialised two 32-byte slots instead of one.
         //
         // NOT the lane exchange the SP1 arm uses: on ZisK that measures +0.9-1.8 % steps. Four
         // 8-byte pairs cost more here than one 32-byte DMA copy, which is exactly the opposite of
         // the rv32 case above.
+        {
+            uint256_t *const monad_t = &ctx.swap_scratch;
+            *monad_t = *stack_top;
+            *stack_top = *(stack_top - N);
+            *(stack_top - N) = *monad_t;
+        }
+#else
+        // A plain temporary, not the AVX type. Exchanging two 32-byte words needs three copies --
+        // save, move down, restore -- and that is what this emits.
         uint256_t const top = *stack_top;
         *stack_top = *(stack_top - N);
         *(stack_top - N) = top;

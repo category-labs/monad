@@ -51,6 +51,10 @@ unsigned char const monad_zkvm_official_profile[] =
     "monad-zkvm-official-v2;runtime=ziskos-" MONAD_ZKVM_RUNTIME_VERSION
     ";features=" MONAD_ZKVM_BUILD_FEATURES ";commit=" MONAD_ZKVM_BUILD_COMMIT
     ";signature=" MONAD_ZKVM_BUILD_SIGNATURE;
+#elif defined(MONAD_ZKVM_DEV_PROFILE)
+// Identify development builds explicitly; a missing marker is ambiguous.
+extern "C" [[gnu::used, gnu::section(".monad_zkvm_profile")]]
+unsigned char const monad_zkvm_official_profile[] = "monad-zkvm-dev-v2";
 #endif
 
 extern "C" void monad_zkvm_execute_witness(void)

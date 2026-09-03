@@ -21,6 +21,7 @@
 #include <category/core/runtime/bit.hpp>
 #include <category/core/runtime/uint128.hpp>
 #include <category/core/runtime/uint256/intrinsics.hpp>
+#include <category/core/runtime/uint256/overrides.hpp>
 #include <category/core/runtime/uint256/portable.hpp>
 #include <category/core/runtime/uint256/types.hpp>
 #include <category/core/throw.hpp>
@@ -205,6 +206,9 @@ public:
     [[gnu::always_inline]]
     constexpr explicit operator bool() const noexcept
     {
+        if constexpr (uint256::overrides::enabled) {
+            return uint256::overrides::is_nonzero(*this);
+        }
         using namespace monad::uint256::intrinsics;
 
         auto const w0 = force(words_[0]);
@@ -293,6 +297,9 @@ public:
     friend constexpr bool
     operator<(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
+        if constexpr (uint256::overrides::enabled) {
+            return uint256::overrides::less(lhs, rhs);
+        }
         using namespace monad::uint256::intrinsics;
 
         auto [diff, carry] = subb(lhs, rhs);
@@ -348,6 +355,9 @@ public:
     [[gnu::always_inline]] friend constexpr bool
     operator==(uint256_t const &x, uint256_t const &y) noexcept
     {
+        if constexpr (uint256::overrides::enabled) {
+            return uint256::overrides::equal(x, y);
+        }
         using namespace monad::uint256::intrinsics;
 
         auto const e0 = force(x[0] ^ y[0]);

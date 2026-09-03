@@ -274,6 +274,14 @@ namespace monad::vm::runtime
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
 
+#if defined(MONAD_ZKVM_ZISK)
+        // Reusable ADD parameters and output avoid a local stack frame.
+        // execute sets carry-in to 0 and binds c to this output buffer.
+        // Last, so no offset context.S or the asserts below pin down moves.
+        alignas(8) uint64_t add256_out[4]{};
+        ZiskAdd256Params add256_params{nullptr, nullptr, 0, add256_out};
+#endif
+
         [[gnu::always_inline]]
         constexpr void deduct_gas(int64_t const gas) noexcept
         {

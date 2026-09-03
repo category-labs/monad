@@ -672,6 +672,44 @@ extern "C" void syscall_arith256_mod(ZiskArith256ModParams *params);
     // also assigns to.
     return uint256_t{D[0], D[1], D[2], D[3]};
 }
+
+// ZisK add256 parameters (CSR 0x811): c = a + b + cin.
+// Operands and result use four little-endian 64-bit limbs;
+// the instruction returns the carry-out.
+struct ZiskAdd256Params
+{
+    uint64_t const *a;
+    uint64_t const *b;
+    uint64_t cin;
+    uint64_t *c;
+};
+
+// Reuse caller-owned storage to avoid a local stack frame.
+// Caller sets p.c = out and p.cin = 0; out must not overlap a or b.
+[[gnu::always_inline]] inline void zisk_add256(
+    ZiskAdd256Params &p, uint64_t const *out, uint256_t const &a,
+    uint256_t const &b, uint256_t &dst) noexcept
+{
+    static_assert(alignof(uint256_t) >= 8);
+    static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
+    p.a = reinterpret_cast<uint64_t const *>(&a);
+    p.b = reinterpret_cast<uint64_t const *>(&b);
+    // ZisK requires a nonzero destination register distinct from the input.
+    // `=&r` prevents overlap; `csrs` (rd = x0) is not a valid add256 marker.
+    // Discard carry-out: EVM ADD keeps only the low 256 bits.
+    uint64_t cout;
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrrs %0, 0x811, %1\n\t"
+                 ".option pop"
+                 : "=&r"(cout)
+                 : "r"(&p)
+                 : "memory");
+    (void)cout;
+    // Use a separate result buffer because dst may also be an operand.
+    // memcpy lets the ZisK compiler emit a single DMA copy.
+    __builtin_memcpy(&dst[0], out, sizeof(uint256_t));
+}
 #endif
 
 MONAD_NO_VECTORIZE

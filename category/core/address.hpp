@@ -17,6 +17,7 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/zkvm_hashmap_primitives.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/seeded_fast_hash.hpp>
 
@@ -117,9 +118,19 @@ MONAD_NAMESPACE_END
 template <>
 struct std::hash<monad::Address>
 {
+    [[gnu::always_inline]] inline
     size_t operator()(monad::Address const &x) const noexcept
     {
+        #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
+        // zkVM guest: fold, and a multiply only where it pays
+        // (category/core/zkvm_hashmap_primitives.hpp). Measured on the guest, where
+        // komihash-class byte-wise hashing is step-priced; no entropy source
+        // exists there anyway, so the seed would be constant.
+        return monad::bits::hash_bytes20(x.bytes);
+#else
+        // Node: seeded komihash -- HashDoS protection, seeded at startup.
         return monad::seeded_fast_hash(x.bytes, sizeof(x.bytes));
+#endif
     }
 };
 
@@ -128,7 +139,7 @@ struct ankerl::unordered_dense::hash<monad::Address>
 {
     using is_avalanching = void;
 
-    uint64_t operator()(monad::Address const &x) const noexcept
+    [[gnu::always_inline]] inline uint64_t operator()(monad::Address const &x) const noexcept
     {
         return std::hash<monad::Address>{}(x);
     }

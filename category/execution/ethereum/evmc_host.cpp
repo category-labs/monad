@@ -57,7 +57,7 @@ evmc::bytes32 EvmcHostBase::get_storage(
 {
     MONAD_TRY
     {
-        return state_.get_storage(address, key);
+        return state_.get_storage(as_monad(address), as_monad(key));
     }
     MONAD_CATCH(...)
     {
@@ -72,7 +72,8 @@ evmc_storage_status EvmcHostBase::set_storage(
 {
     MONAD_TRY
     {
-        return to_evmc_storage_status(state_.set_storage(address, key, value));
+        return to_evmc_storage_status(state_.set_storage(
+            as_monad(address), as_monad(key), as_monad(value)));
     }
     MONAD_CATCH(...)
     {
@@ -86,7 +87,8 @@ EvmcHostBase::get_balance(evmc::address const &address) const noexcept
 {
     MONAD_TRY
     {
-        return store_be_as<evmc::uint256be>(state_.get_balance(address));
+        return store_be_as<evmc::uint256be>(
+            state_.get_balance(as_monad(address)));
     }
     MONAD_CATCH(...)
     {
@@ -100,7 +102,7 @@ size_t EvmcHostBase::get_code_size(evmc::address const &address) const noexcept
     MONAD_TRY
     {
         if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
-            bytes32_t const hash = state_.get_code_hash(address);
+            bytes32_t const hash = state_.get_code_hash(as_monad(address));
             if (hash == NULL_HASH) {
                 return 0;
             }
@@ -109,7 +111,7 @@ size_t EvmcHostBase::get_code_size(evmc::address const &address) const noexcept
             trace::on_read_code(state_tracer_, hash, vcode->intercode());
             return vcode->intercode()->size();
         }
-        return state_.get_code_size(address);
+        return state_.get_code_size(as_monad(address));
     }
     MONAD_CATCH(...)
     {
@@ -123,10 +125,10 @@ EvmcHostBase::get_code_hash(evmc::address const &address) const noexcept
 {
     MONAD_TRY
     {
-        if (state_.account_is_dead(address)) {
+        if (state_.account_is_dead(as_monad(address))) {
             return bytes32_t{};
         }
-        return state_.get_code_hash(address);
+        return state_.get_code_hash(as_monad(address));
     }
     MONAD_CATCH(...)
     {
@@ -142,7 +144,7 @@ size_t EvmcHostBase::copy_code(
     MONAD_TRY
     {
         if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
-            bytes32_t const hash = state_.get_code_hash(address);
+            bytes32_t const hash = state_.get_code_hash(as_monad(address));
             if (hash != NULL_HASH) {
                 auto const vcode = state_.read_code(hash);
                 MONAD_ASSERT(vcode);
@@ -151,7 +153,7 @@ size_t EvmcHostBase::copy_code(
             }
             return 0;
         }
-        return state_.copy_code(address, offset, data, size);
+        return state_.copy_code(as_monad(address), offset, data, size);
     }
     MONAD_CATCH(...)
     {
@@ -251,7 +253,7 @@ evmc::bytes32 EvmcHostBase::get_transient_storage(
 {
     MONAD_TRY
     {
-        return state_.get_transient_storage(address, key);
+        return state_.get_transient_storage(as_monad(address), as_monad(key));
     }
     MONAD_CATCH(...)
     {
@@ -266,7 +268,8 @@ void EvmcHostBase::set_transient_storage(
 {
     MONAD_TRY
     {
-        return state_.set_transient_storage(address, key, value);
+        return state_.set_transient_storage(
+            as_monad(address), as_monad(key), as_monad(value));
     }
     MONAD_CATCH(...)
     {

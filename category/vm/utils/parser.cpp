@@ -196,10 +196,21 @@ namespace monad::vm::utils
         for (size_t i = 0; i < opcodes.size(); ++i) {
             auto c = opcodes[i];
             ss << std::format("[{:#x}] {:#x} {}\n", i, c, tbl[opcodes[i]].name);
-            if (c >= PUSH1 && c <= PUSH32) {
-                for (auto j = 0; j < c - PUSH0; ++j) {
+            if (is_push_opcode(c)) {
+                // A trailing push may have a truncated immediate region.
+                size_t const n = get_push_opcode_index(c);
+                size_t const avail = std::min(n, opcodes.size() - i - 1);
+                for (size_t j = 0; j < avail; ++j) {
                     i++;
                     ss << std::format("[{:#x}] {:#x}\n", i, opcodes[i]);
+                }
+                if (avail < n) {
+                    ss << std::format(
+                        "// truncated PUSH{}: {} of {} immediate bytes "
+                        "missing (zero-padded when executed)\n",
+                        n,
+                        n - avail,
+                        n);
                 }
             }
         }

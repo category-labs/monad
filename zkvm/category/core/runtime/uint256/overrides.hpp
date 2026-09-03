@@ -68,5 +68,17 @@ namespace monad::uint256::overrides
         }
         return x[3] == y[3];
     }
+
+    template <typename U>
+    [[gnu::always_inline]] constexpr bool slt(U const &x, U const &y) noexcept
+    {
+        auto const x_neg = x[U::num_words - 1] >> 63;
+        auto const y_neg = y[U::num_words - 1] >> 63;
+        // On ZisK, skip the full comparison when signs alone decide the result.
+        if (x_neg != y_neg) {
+            return x_neg != 0;
+        }
+        return x < y;
+    }
 }
 #endif

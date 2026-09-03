@@ -1094,6 +1094,9 @@ sdivrem(uint256_t const &x, uint256_t const &y) noexcept
 [[gnu::always_inline]]
 constexpr bool slt(uint256_t const &x, uint256_t const &y) noexcept
 {
+    if constexpr (uint256::overrides::enabled) {
+        return uint256::overrides::slt(x, y);
+    }
     auto const x_neg = x[uint256_t::num_words - 1] >> 63;
     auto const y_neg = y[uint256_t::num_words - 1] >> 63;
     auto const diff = x_neg ^ y_neg;

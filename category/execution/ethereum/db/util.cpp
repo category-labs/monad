@@ -738,6 +738,12 @@ decode_storage_db_raw(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
     BOOST_OUTCOME_TRY(byte_string_view const slot, rlp::decode_string(payload));
+    if (MONAD_UNLIKELY(slot.size() > sizeof(bytes32_t))) {
+        return rlp::DecodeError::InputTooLong;
+    }
+    // The value is left unbounded: it is a bytes32 on the slot-encoded path but
+    // a whole encoded page on the page-encoded one, so only the caller knows
+    // its bound.
     BOOST_OUTCOME_TRY(byte_string_view const val, rlp::decode_string(payload));
     return {slot, val};
 }
@@ -746,6 +752,9 @@ Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(auto res, decode_storage_db_raw(enc));
     if (!enc.empty()) {
+        return rlp::DecodeError::InputTooLong;
+    }
+    if (MONAD_UNLIKELY(res.second.size() > sizeof(bytes32_t))) {
         return rlp::DecodeError::InputTooLong;
     }
     return {to_bytes(res.first), to_bytes(res.second)};

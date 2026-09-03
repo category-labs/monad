@@ -20,12 +20,11 @@
 #include <instrumentation_device.hpp>
 #include <stopwatch.hpp>
 
-#include <category/core/int.hpp>
+#include <category/core/byte_string.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/log.hpp>
-#include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
-#include <category/vm/compiler/types.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <asmjit/core/jitruntime.h>
@@ -147,13 +146,8 @@ static void dump_result(arguments const &args, evmc::Result const &result)
     }
 
     if (result.status_code == EVMC_SUCCESS) {
-        if (result.output_size == 0) {
-            object["result"] = json("");
-        }
-        else {
-            auto const x = load_be_unsafe<uint256_t>(&result.output_data[0]);
-            object["result"] = json(x.to_string(16));
-        }
+        object["result"] = json(monad::to_hex(
+            monad::byte_string_view{result.output_data, result.output_size}));
     }
     else {
         switch (result.status_code) {

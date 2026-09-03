@@ -303,6 +303,14 @@ namespace monad::vm::runtime
         // Last, like stack_limit above, so no offset context.S or the asserts
         // below pin down moves.
         uint256_t swap_scratch;
+
+        // add256's parameter block and result slot, here for the same reason:
+        // as locals they are 64 bytes of frame in a handler that opens none.
+        // `cin` is always 0 (EVM ADD is mod 2^256, so the carry-in is unused
+        // and the carry-out discarded) and `c` always this slot, so both are
+        // set once here instead of on every ADD.
+        alignas(8) uint64_t add256_out[4]{};
+        ZiskAdd256Params add256_params{nullptr, nullptr, 0, add256_out};
 #endif
 
         [[gnu::always_inline]]

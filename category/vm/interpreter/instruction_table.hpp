@@ -748,7 +748,13 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_CHECK(ADD);
         auto &&[a, b] = top_two(stack_top);
+#if defined(MONAD_ZKVM_ZISK)
+        // One precompile against the portable carry chain's four adds, three
+        // carry propagations and their loads and stores. See zisk_add256.
+        zisk_add256(ctx.add256_params, ctx.add256_out, a, b, b);
+#else
         b = a + b;
+#endif
 
         MONAD_VM_NEXT(ADD);
     }

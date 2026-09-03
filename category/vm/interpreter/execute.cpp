@@ -63,6 +63,20 @@ namespace monad::vm::interpreter
         // core_loop takes stack_bottom as stack_ptr - 1, so the first slot an
         // opcode may not occupy is stack_ptr + 1023.
         ctx.stack_limit = reinterpret_cast<uint256_t *>(stack_ptr) + 1023;
+#if defined(MONAD_ZKVM_ZISK)
+        // Here and not as a member initialiser on Context. Context is not
+        // always built by a C++ constructor -- context.S assembles it, which is
+        // why the offsets above it are pinned by static_assert -- so a default
+        // member initialiser is not guaranteed to have run. Set with
+        // stack_limit, which the comment on that member says is the same
+        // situation, and which is the only path that can reach an opcode.
+        //
+        // The first build that relied on the member initialiser wrote add256's
+        // result through an uninitialised pointer: the run died after 19.6 M
+        // steps having published zeros, and `-X` counted no add256 at all.
+        ctx.add256_params.cin = 0;
+        ctx.add256_params.c = ctx.add256_out;
+#endif
         trampoline(
             ctx,
             analysis,

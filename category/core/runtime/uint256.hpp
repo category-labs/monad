@@ -692,6 +692,79 @@ extern "C" void syscall_arith256_mod(ZiskArith256ModParams *params);
     // also assigns to.
     return uint256_t{D[0], D[1], D[2], D[3]};
 }
+
+// ZisK's 256-bit ADDER, c = a + b + cin over four little-endian 64-bit limbs,
+// carry-out in the instruction's result. 104 cells against the 23-odd
+// instructions the portable add-with-carry chain costs, and the shipped
+// proving key carries its AIR (`Add256`, 2^20 rows) so it is provable and not
+// merely emulated.
+//
+// ziskos exports no syscall for it -- the guest links only syscall_arith256,
+// syscall_arith256_mod and syscall_keccak_f -- so the marker is written here.
+// `syscall_arith256_mod` is one door along and is literally `csrs 0x802, a0`,
+// which is where the shape comes from: the parameter block's ADDRESS goes in
+// the register and the precompile reads the block. CSR 0x811 is 0x800 + 17,
+// add256's position in ZisK's CSR_PRECOMPILED table (0x800 keccak ..
+// 0x813 dma_memcpy, and 0x813 is the one this guest already emits for every
+// block copy, which is what pins the base).
+//
+// zicsr is enabled for the one instruction rather than globally, as
+// intercode.cpp does for the JUMPDEST marker: a wider -march changes codegen
+// everywhere and would make the lever unmeasurable.
+struct ZiskAdd256Params
+{
+    uint64_t const *a;
+    uint64_t const *b;
+    uint64_t cin;
+    uint64_t *c;
+};
+
+// The parameter block and the result slot are the CALLER's, not locals: 64
+// bytes of local is a stack frame, and the musttail handlers that call this
+// carry none otherwise -- the same two `addi sp,sp,+-64` a temporary cost SWAP
+// before Context::swap_scratch. `cin` and the result pointer are the same on
+// every call, so the caller sets them once and only the two operand pointers
+// are written here.
+[[gnu::always_inline]] inline void zisk_add256(
+    ZiskAdd256Params &p, uint64_t const *out, uint256_t const &a,
+    uint256_t const &b, uint256_t &dst) noexcept
+{
+    static_assert(alignof(uint256_t) >= 8);
+    static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
+    p.a = reinterpret_cast<uint64_t const *>(&a);
+    p.b = reinterpret_cast<uint64_t const *>(&b);
+    // `csrrs` with a REAL destination, distinct from the operand register.
+    // Both halves of that are load-bearing, and getting either wrong produces
+    // a guest that builds, runs and computes the WRONG ANSWER rather than an
+    // error -- ZisK maps a marker it does not recognise to an ordinary CSR
+    // operation instead of rejecting it:
+    //
+    //   csrs  0x811, rs      (rd = x0)   -> `or` into the CSR's own address;
+    //                                       20.4 M steps, published zeros
+    //   csrrs rd, 0x811, rd  (rd == rs)  -> no add256 op emitted at all;
+    //                                       19.6 M steps, published zeros
+    //   csrrs rd, 0x811, rs  (distinct)  -> 83,822 add256 ops, correct root
+    //
+    // Hence `=&r`: the early-clobber is what stops gcc from choosing the
+    // operand's own register for the carry-out. The carry itself is unused --
+    // EVM ADD is mod 2^256 -- but the encoding requires a destination.
+    uint64_t cout;
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrrs %0, 0x811, %1\n\t"
+                 ".option pop"
+                 : "=&r"(cout)
+                 : "r"(&p)
+                 : "memory");
+    (void)cout;
+    // Through the caller's slot and not straight into `dst`, for the reason the
+    // modular door above gives: the precompile's write order is not ours to
+    // assume, and every EVM caller passes an operand it also assigns to. The
+    // copy is a memcpy so it lowers to ONE DMA marker (317 cells) rather than
+    // the four `ld` and four `sd` gcc emits for a limb-by-limb assignment
+    // (680) -- the constant-size block move the ZisK DMA port exists for.
+    __builtin_memcpy(&dst, out, sizeof(uint256_t));
+}
 #endif
 
 #ifdef MONAD_ZKVM_SP1

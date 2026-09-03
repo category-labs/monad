@@ -199,6 +199,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         file(WRITE "${CMAKE_BINARY_DIR}/monad-zkvm-official-profile.json"
             "{\n"
             "  \"schema\": 2,\n"
+            "  \"profile\": \"official\",\n"
             "  \"target\": \"zisk\",\n"
             "  \"runtime_version\": \"${_monad_zkvm_runtime_version}\",\n"
             "  \"runtime_revision\": \"${_monad_zkvm_runtime_revision}\",\n"
@@ -216,6 +217,21 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "  \"cxx_flags_release\": \"${CMAKE_CXX_FLAGS_RELEASE}\",\n"
             "  \"asm_flags\": \"${CMAKE_ASM_FLAGS}\",\n"
             "  \"asm_flags_release\": \"${CMAKE_ASM_FLAGS_RELEASE}\"\n"
+            "}\n")
+    else()
+        # Mark development builds explicitly in both the ELF and JSON profile.
+        add_compile_definitions(MONAD_ZKVM_DEV_PROFILE=1)
+        file(WRITE "${CMAKE_BINARY_DIR}/monad-zkvm-official-profile.json"
+            "{\n"
+            "  \"schema\": 2,\n"
+            "  \"profile\": \"dev\",\n"
+            "  \"target\": \"${MONAD_ZKVM_GUEST_TARGET}\",\n"
+            "  \"compiler\": \"${CMAKE_CXX_COMPILER}\",\n"
+            "  \"compiler_id\": \"${CMAKE_CXX_COMPILER_ID}\",\n"
+            "  \"compiler_version\": \"${CMAKE_CXX_COMPILER_VERSION}\",\n"
+            "  \"c_flags\": \"${CMAKE_C_FLAGS}\",\n"
+            "  \"cxx_flags\": \"${CMAKE_CXX_FLAGS}\",\n"
+            "  \"asm_flags\": \"${CMAKE_ASM_FLAGS}\"\n"
             "}\n")
     endif()
 

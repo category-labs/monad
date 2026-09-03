@@ -715,6 +715,12 @@ else()
         PRIVATE "${THIRD_PARTY_DIR}/ethash/include")
     add_test(NAME monad-zkvm-keccak-memo-test COMMAND monad-zkvm-keccak-memo-test)
 
+    add_executable(monad-zkvm-hash-test test/hash_test.cpp)
+    monad_compile_options(monad-zkvm-hash-test)
+    target_include_directories(monad-zkvm-hash-test PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+    add_test(NAME monad-zkvm-hash-test COMMAND monad-zkvm-hash-test)
+
 endif()
 
 # ---- Guest sources, shared by both modes ----

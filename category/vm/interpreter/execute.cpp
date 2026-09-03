@@ -55,6 +55,12 @@ namespace monad::vm::interpreter
     void execute(
         runtime::Context &ctx, Intercode const &analysis, uint8_t *stack_ptr)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        // Set fixed parameters once per execution and rebind the output pointer
+        // to this Context's buffer, even if the Context was copied.
+        ctx.add256_params.cin = 0;
+        ctx.add256_params.c = ctx.add256_out;
+#endif
         trampoline(
             ctx,
             analysis,

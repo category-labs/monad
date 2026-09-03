@@ -494,9 +494,25 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                     // loop runs once per digest child of every branch in the
                     // blob -- 111,237 stamps on block 25815042 in the priming
                     // pass alone.
-                    for (unsigned char *p = out, *const stamp_end = out + run;
-                         p < stamp_end;
-                         p += HASH_RLP_LEN) {
+                    // Four at a time. The average run is 4.38 records --
+                    // 25,386 loop entries against 111,237 stamps -- and gcc
+                    // declines to unroll this itself even under
+                    // -funroll-loops, the trip count being unknown. Unrolled,
+                    // the four offsets are immediates off one pointer and the
+                    // increment and back-edge amortise four ways: 314 cells a
+                    // stamp against 472, where the store itself is 261 of it
+                    // (a one-byte write into a word the DMA copy just
+                    // dirtied).
+                    unsigned char *p = out;
+                    unsigned char *const stamp_end = out + run;
+                    for (; p + 4 * HASH_RLP_LEN <= stamp_end;
+                         p += 4 * HASH_RLP_LEN) {
+                        p[0] = 0xa0;
+                        p[HASH_RLP_LEN] = 0xa0;
+                        p[2 * HASH_RLP_LEN] = 0xa0;
+                        p[3 * HASH_RLP_LEN] = 0xa0;
+                    }
+                    for (; p < stamp_end; p += HASH_RLP_LEN) {
                         *p = 0xa0;
                     }
                     dest = dest.shrink(run);

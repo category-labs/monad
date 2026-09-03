@@ -1249,11 +1249,22 @@ inline constexpr bool slt(uint256_t const &x, uint256_t const &y) noexcept
 {
     auto const x_neg = x[uint256_t::num_words - 1] >> 63;
     auto const y_neg = y[uint256_t::num_words - 1] >> 63;
+#if defined(MONAD_ZKVM_ZISK)
+    // Signs differ: the negative operand is the smaller one and `x < y` need
+    // not be computed at all. Same inversion as operator< above -- the
+    // branchless form below is for a machine that mispredicts, and the note
+    // that justifies it says so.
+    if (x_neg != y_neg) {
+        return x_neg != 0;
+    }
+    return x < y;
+#else
     auto const diff = x_neg ^ y_neg;
     // branching on the sign bit will be mispredicted on
     // random data ~50% of the time. The branchless version does not add
     // much overhead so it is probably worth it
     return (~diff & (x < y)) | (x_neg & ~y_neg);
+#endif
 }
 
 MONAD_NO_VECTORIZE

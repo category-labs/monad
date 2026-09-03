@@ -282,6 +282,11 @@ namespace monad::vm::runtime
         // Shared temporary for SWAP1-16: no nested SWAP can occur between
         // saving and restoring it. Keep last to preserve assembly offsets.
         uint256_t swap_scratch;
+
+        // Reusable ADD parameters and output avoid a local stack frame.
+        // execute sets carry-in to 0 and binds c to this output buffer.
+        alignas(8) uint64_t add256_out[4]{};
+        ZiskAdd256Params add256_params{nullptr, nullptr, 0, add256_out};
 #endif
 
         [[gnu::always_inline]]

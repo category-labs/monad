@@ -58,7 +58,12 @@ namespace mpt_witness
         EXT = 1,
         LEAF_ACCT = 2,
         LEAF_STORAGE = 3,
-        DIGEST = 4,
+        // 0xa0 is RLP's prefix for a 32-byte string, so a digest node's blob
+        // bytes -- tag | hash32 -- are already the hash-reference its parent
+        // must emit. DIGEST_NODE_LEN was made equal to HASH_RLP_LEN so that a
+        // run of digest children is the run of refs the parent needs; this
+        // finishes that, and the consumer's stamp loop over the run goes away.
+        DIGEST = 0xa0,
     };
 
     inline constexpr uint32_t HEADER_LEN = 8; // magic(4) root_off(4)

@@ -20,6 +20,7 @@
 #include <category/core/nibble.h>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
+#include <category/execution/monad/dkg/read_state.hpp>
 #include <category/execution/monad/staking/read_valset.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
@@ -612,4 +613,133 @@ validator_set *triedb_read_valset(
     }
 
     return valset;
+}
+
+namespace
+{
+    triedb_dkg_read_result *alloc_dkg_result(
+        monad::byte_string const &data, bool const registration_open = false)
+    {
+        auto *const result = new triedb_dkg_read_result{
+            .data = nullptr,
+            .length = data.size(),
+            .error = 0,
+            .registration_open = registration_open};
+        if (!data.empty()) {
+            result->data = new uint8_t[data.size()];
+            std::memcpy(result->data, data.data(), data.size());
+        }
+        return result;
+    }
+
+    triedb_dkg_read_result *alloc_dkg_error(int32_t const error)
+    {
+        return new triedb_dkg_read_result{
+            .data = nullptr,
+            .length = 0,
+            .error = error,
+            .registration_open = false};
+    }
+
+    template <typename T, typename Encode>
+    triedb_dkg_read_result *encode_dkg_result(T &&result, Encode &&encode)
+    {
+        if (result.has_error()) {
+            return alloc_dkg_error(
+                static_cast<int32_t>(result.error().value()));
+        }
+        return encode(std::move(result).assume_value());
+    }
+
+    triedb_dkg_read_result *
+    encode_dkg_bytes(monad::Result<monad::byte_string> &&result)
+    {
+        return encode_dkg_result(
+            std::move(result),
+            [](monad::byte_string &&data) { return alloc_dkg_result(data); });
+    }
+}
+
+void triedb_free_dkg_read_result(triedb_dkg_read_result *result)
+{
+    if (result == nullptr) {
+        return;
+    }
+    delete[] result->data;
+    delete result;
+}
+
+triedb_dkg_read_result *triedb_read_dkg_registrations(
+    TriedbRoInner *db, size_t const block_num, uint64_t const epoch,
+    monad_c_address const *const validators, size_t const validator_count)
+{
+    if (db == nullptr || (validator_count != 0 && validators == nullptr)) {
+        return alloc_dkg_error(-1);
+    }
+    try {
+        std::vector<monad::Address> addresses;
+        addresses.reserve(validator_count);
+        for (size_t i = 0; i < validator_count; ++i) {
+            addresses.emplace_back(validators[i]);
+        }
+        return encode_dkg_result(
+            monad::dkg::read_registrations(db->db, block_num, epoch, addresses),
+            [](monad::dkg::RegistrationRead &&read) {
+                monad::byte_string data;
+                for (auto &registration : read.registrations) {
+                    data += std::move(registration);
+                }
+                return alloc_dkg_result(data, read.registration_open);
+            });
+    }
+    catch (...) {
+        return alloc_dkg_error(-2);
+    }
+}
+
+triedb_dkg_read_result *triedb_read_dkg_pc_qcs(
+    TriedbRoInner *db, size_t const block_num, uint64_t const epoch,
+    uint64_t const start, uint32_t const limit)
+{
+    if (db == nullptr) {
+        return alloc_dkg_error(-1);
+    }
+    try {
+        return encode_dkg_bytes(
+            monad::dkg::read_pc_qcs(db->db, block_num, epoch, start, limit));
+    }
+    catch (...) {
+        return alloc_dkg_error(-2);
+    }
+}
+
+triedb_dkg_read_result *triedb_read_dkg_bve_qcs(
+    TriedbRoInner *db, size_t const block_num, uint64_t const epoch,
+    uint64_t const start, uint32_t const limit)
+{
+    if (db == nullptr) {
+        return alloc_dkg_error(-1);
+    }
+    try {
+        return encode_dkg_bytes(
+            monad::dkg::read_bve_qcs(db->db, block_num, epoch, start, limit));
+    }
+    catch (...) {
+        return alloc_dkg_error(-2);
+    }
+}
+
+triedb_dkg_read_result *triedb_read_dkg_result(
+    TriedbRoInner *db, size_t const block_num, uint64_t const epoch)
+{
+    if (db == nullptr) {
+        return alloc_dkg_error(-1);
+    }
+    try {
+        return encode_dkg_bytes(
+            monad::dkg::read_dkg_result(db->db, block_num, epoch));
+    }
+    catch (...) {
+        return alloc_dkg_error(-2);
+    }
 }

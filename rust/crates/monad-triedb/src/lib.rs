@@ -72,6 +72,47 @@ pub struct StorageStats {
     pub disk_used_bytes: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DkgRegistrations {
+    pub registration_open: bool,
+    /// ABI-encoded `registrationOf` return values in request order.
+    pub registrations: Vec<Vec<u8>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DkgReadError {
+    Native(i32),
+    InvalidLength { expected: usize, actual: usize },
+    SizeOverflow,
+}
+
+struct DkgReadOutput {
+    data: Vec<u8>,
+    registration_open: bool,
+}
+
+fn take_dkg_read_result(
+    result: *mut ffi::triedb_dkg_read_result,
+) -> Result<DkgReadOutput, DkgReadError> {
+    let result = NonNull::new(result).ok_or(DkgReadError::Native(-3))?;
+    let raw = unsafe { result.as_ref() };
+    let output = if raw.error != 0 {
+        Err(DkgReadError::Native(raw.error))
+    } else {
+        let data = if raw.length == 0 {
+            Vec::new()
+        } else {
+            unsafe { std::slice::from_raw_parts(raw.data, raw.length) }.to_vec()
+        };
+        Ok(DkgReadOutput {
+            data,
+            registration_open: raw.registration_open,
+        })
+    };
+    unsafe { ffi::triedb_free_dkg_read_result(result.as_ptr()) };
+    output
+}
+
 struct SenderContext {
     sender: Sender<Option<Vec<u8>>>,
     completed_counter: Arc<AtomicUsize>,
@@ -530,6 +571,78 @@ impl TriedbHandle {
             ptr: NonNull::new(result_ptr)?,
             _lifetime: std::marker::PhantomData,
         })
+    }
+
+    pub fn read_dkg_registrations(
+        &self,
+        block_num: usize,
+        epoch: u64,
+        validators: &[[u8; 20]],
+    ) -> Result<DkgRegistrations, DkgReadError> {
+        const REGISTRATION_OUTPUT_BYTES: usize = 7 * 32;
+
+        let validators = validators
+            .iter()
+            .map(|bytes| ffi::monad_c_address { bytes: *bytes })
+            .collect::<Vec<_>>();
+        let output = take_dkg_read_result(unsafe {
+            ffi::triedb_read_dkg_registrations(
+                self.db_ptr,
+                block_num,
+                epoch,
+                validators.as_ptr(),
+                validators.len(),
+            )
+        })?;
+        let expected = validators
+            .len()
+            .checked_mul(REGISTRATION_OUTPUT_BYTES)
+            .ok_or(DkgReadError::SizeOverflow)?;
+        if output.data.len() != expected {
+            return Err(DkgReadError::InvalidLength {
+                expected,
+                actual: output.data.len(),
+            });
+        }
+        Ok(DkgRegistrations {
+            registration_open: output.registration_open,
+            registrations: output
+                .data
+                .chunks_exact(REGISTRATION_OUTPUT_BYTES)
+                .map(<[u8]>::to_vec)
+                .collect(),
+        })
+    }
+
+    pub fn read_dkg_pc_qcs(
+        &self,
+        block_num: usize,
+        epoch: u64,
+        start: u64,
+        limit: u32,
+    ) -> Result<Vec<u8>, DkgReadError> {
+        take_dkg_read_result(unsafe {
+            ffi::triedb_read_dkg_pc_qcs(self.db_ptr, block_num, epoch, start, limit)
+        })
+        .map(|output| output.data)
+    }
+
+    pub fn read_dkg_bve_qcs(
+        &self,
+        block_num: usize,
+        epoch: u64,
+        start: u64,
+        limit: u32,
+    ) -> Result<Vec<u8>, DkgReadError> {
+        take_dkg_read_result(unsafe {
+            ffi::triedb_read_dkg_bve_qcs(self.db_ptr, block_num, epoch, start, limit)
+        })
+        .map(|output| output.data)
+    }
+
+    pub fn read_dkg_result(&self, block_num: usize, epoch: u64) -> Result<Vec<u8>, DkgReadError> {
+        take_dkg_read_result(unsafe { ffi::triedb_read_dkg_result(self.db_ptr, block_num, epoch) })
+            .map(|output| output.data)
     }
 }
 

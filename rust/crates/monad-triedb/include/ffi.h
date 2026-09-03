@@ -162,6 +162,31 @@ void triedb_free_valset(validator_set *);
 validator_set *
 triedb_read_valset(TriedbRoInner *, size_t block_num, uint64_t requested_epoch);
 
+typedef struct triedb_dkg_read_result
+{
+    uint8_t *data;
+    size_t length;
+    int32_t error;
+    bool registration_open;
+} triedb_dkg_read_result;
+
+void triedb_free_dkg_read_result(triedb_dkg_read_result *);
+
+triedb_dkg_read_result *triedb_read_dkg_registrations(
+    TriedbRoInner *, size_t block_num, uint64_t epoch,
+    monad_c_address const *validators, size_t validator_count);
+
+triedb_dkg_read_result *triedb_read_dkg_pc_qcs(
+    TriedbRoInner *, size_t block_num, uint64_t epoch, uint64_t start,
+    uint32_t limit);
+
+triedb_dkg_read_result *triedb_read_dkg_bve_qcs(
+    TriedbRoInner *, size_t block_num, uint64_t epoch, uint64_t start,
+    uint32_t limit);
+
+triedb_dkg_read_result *
+triedb_read_dkg_result(TriedbRoInner *, size_t block_num, uint64_t epoch);
+
 #ifdef __cplusplus
 }
 #endif

@@ -250,6 +250,8 @@ add_library(
   "monad/dkg/dkg_error.hpp"
   "monad/dkg/execute_block_prelude.cpp"
   "monad/dkg/execute_block_prelude.hpp"
+  "monad/dkg/read_state.cpp"
+  "monad/dkg/read_state.hpp"
   "monad/min_base_fee.cpp"
   "monad/min_base_fee.h"
   "monad/monad_precompiles.cpp"

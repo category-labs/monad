@@ -14,20 +14,22 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 pub(crate) use self::bindings::{
-    monad_c_bytes32, triedb_async_ranged_get, triedb_async_read, triedb_async_read_callback_fn,
-    triedb_async_traverse, triedb_async_traverse_callback, triedb_async_traverse_callback_fn,
+    monad_c_address, monad_c_bytes32, triedb_async_ranged_get, triedb_async_read,
+    triedb_async_read_callback_fn, triedb_async_traverse, triedb_async_traverse_callback,
+    triedb_async_traverse_callback_fn,
     triedb_async_traverse_callback_triedb_async_traverse_callback_finished_early,
     triedb_async_traverse_callback_triedb_async_traverse_callback_finished_normally,
     triedb_async_traverse_callback_triedb_async_traverse_callback_value, triedb_close,
     triedb_compute_page_key, triedb_compute_slot_offset, triedb_decode_storage_page_slot,
-    triedb_earliest_version, triedb_finalize, triedb_free_valset, triedb_is_page_encoded,
-    triedb_latest_finalized_version, triedb_latest_proposed_block_id,
+    triedb_earliest_version, triedb_finalize, triedb_free_dkg_read_result, triedb_free_valset,
+    triedb_is_page_encoded, triedb_latest_finalized_version, triedb_latest_proposed_block_id,
     triedb_latest_proposed_version, triedb_latest_verified_version, triedb_latest_voted_block_id,
     triedb_latest_voted_version, triedb_migration_phase, triedb_open, triedb_poll, triedb_read,
-    triedb_read_valset, triedb_storage_stats, triedb_storage_stats_read, triedb_traverse,
-    TriedbRoInner,
+    triedb_read_dkg_bve_qcs, triedb_read_dkg_pc_qcs, triedb_read_dkg_registrations,
+    triedb_read_dkg_result, triedb_read_valset, triedb_storage_stats, triedb_storage_stats_read,
+    triedb_traverse, TriedbRoInner,
 };
-pub use self::bindings::{validator_data, validator_set};
+pub use self::bindings::{triedb_dkg_read_result, validator_data, validator_set};
 
 #[allow(
     dead_code,

@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <type_traits>
+
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/throw.hpp>
@@ -44,6 +46,41 @@ MONAD_NAMESPACE_BEGIN
 
 static_assert(sizeof(vm::Host) == 24);
 static_assert(alignof(vm::Host) == 8);
+
+// evmc::address and monad::Address are SIBLINGS: both derive from evmc_address
+// and neither adds a data member, so each is pointer-interconvertible with that
+// base and therefore with the other. Same for evmc::bytes32 and bytes32_t over
+// evmc_bytes32.
+//
+// Binding across them by reference is free. Letting the implicit converting
+// constructor do it is not: it materialises a temporary, and this guest lowers
+// a 20-byte block copy to 283 ZisK cells and a 32-byte one to 317. Every
+// override below crosses the boundary, and the shim is crossed on every SLOAD,
+// SSTORE, BALANCE, EXTCODE*, TLOAD, TSTORE and LOG -- 51,608 copies a block in
+// get_storage alone, four per call where none is needed.
+//
+// A cast and not a State signature change: State's parameter types are monad's
+// throughout the execution layer, and the conversion belongs at the one
+// boundary that has an evmc type in its hand.
+[[gnu::always_inline]] inline Address const &
+as_monad(evmc::address const &a) noexcept
+{
+    static_assert(sizeof(Address) == sizeof(evmc::address));
+    static_assert(std::is_standard_layout_v<Address>);
+    static_assert(std::is_standard_layout_v<evmc::address>);
+    return reinterpret_cast<Address const &>(
+        static_cast<evmc_address const &>(a));
+}
+
+[[gnu::always_inline]] inline bytes32_t const &
+as_monad(evmc::bytes32 const &b) noexcept
+{
+    static_assert(sizeof(bytes32_t) == sizeof(evmc::bytes32));
+    static_assert(std::is_standard_layout_v<bytes32_t>);
+    static_assert(std::is_standard_layout_v<evmc::bytes32>);
+    return reinterpret_cast<bytes32_t const &>(
+        static_cast<evmc_bytes32 const &>(b));
+}
 
 class BlockHashBuffer;
 
@@ -140,7 +177,7 @@ struct EvmcHost final : public EvmcHostBase
 
         MONAD_TRY
         {
-            return !state_.account_is_dead(address);
+            return !state_.account_is_dead(as_monad(address));
         }
         MONAD_CATCH(...)
         {
@@ -156,7 +193,7 @@ struct EvmcHost final : public EvmcHostBase
         MONAD_TRY
         {
             auto const [result, transferred_balance] =
-                state_.selfdestruct<traits>(address, beneficiary);
+                state_.selfdestruct<traits>(as_monad(address), as_monad(beneficiary));
 
             call_tracer_.on_self_destruct(
                 address, beneficiary, transferred_balance);
@@ -210,7 +247,7 @@ struct EvmcHost final : public EvmcHostBase
             if (is_precompile<traits>(address)) {
                 return EVMC_ACCESS_WARM;
             }
-            return state_.access_account(address);
+            return state_.access_account(as_monad(address));
         }
         MONAD_CATCH(...)
         {
@@ -225,7 +262,7 @@ struct EvmcHost final : public EvmcHostBase
     {
         MONAD_TRY
         {
-            return state_.access_storage<traits>(address, key);
+            return state_.access_storage<traits>(as_monad(address), as_monad(key));
         }
         MONAD_CATCH(...)
         {

@@ -202,9 +202,14 @@ public:
         return result;
     }
 
+    // On ZisK, stop at the first nonzero word instead of combining all four.
     [[gnu::always_inline]]
     constexpr explicit operator bool() const noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        return words_[0] != 0 || words_[1] != 0 || words_[2] != 0 ||
+               words_[3] != 0;
+#else
         using namespace monad::uint256::intrinsics;
 
         auto const w0 = force(words_[0]);
@@ -212,6 +217,7 @@ public:
         auto const w2 = force(words_[2]);
         auto const w3 = force(words_[3]);
         return force(w0 | w1) | force(w2 | w3);
+#endif
     }
 
     template <typename Int>
@@ -289,10 +295,26 @@ public:
         return subb(lhs, rhs).value;
     }
 
+    // On ZisK, compare from the most significant word and stop at the first
+    // difference, avoiding a full subtraction and borrow chain.
+    // High words usually match; mark differences unlikely so GCC can avoid
+    // an extra jump on the common path to the low word.
     [[gnu::always_inline]]
     friend constexpr bool
     operator<(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if (MONAD_UNLIKELY(lhs[3] != rhs[3])) {
+            return lhs[3] < rhs[3];
+        }
+        if (MONAD_UNLIKELY(lhs[2] != rhs[2])) {
+            return lhs[2] < rhs[2];
+        }
+        if (MONAD_UNLIKELY(lhs[1] != rhs[1])) {
+            return lhs[1] < rhs[1];
+        }
+        return lhs[0] < rhs[0];
+#else
         using namespace monad::uint256::intrinsics;
 
         auto [diff, carry] = subb(lhs, rhs);
@@ -303,6 +325,7 @@ public:
         keep_live(diff[2]);
         keep_live(diff[3]);
         return carry;
+#endif
     }
 
     [[gnu::always_inline]]
@@ -345,9 +368,23 @@ public:
 
     // NOLINTEND(bugprone-macro-parentheses)
 
+    // On ZisK, stop at the first difference. Check the low word first because
+    // small integers differ there.
     [[gnu::always_inline]] friend constexpr bool
     operator==(uint256_t const &x, uint256_t const &y) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if (x[0] != y[0]) {
+            return false;
+        }
+        if (x[1] != y[1]) {
+            return false;
+        }
+        if (x[2] != y[2]) {
+            return false;
+        }
+        return x[3] == y[3];
+#else
         using namespace monad::uint256::intrinsics;
 
         auto const e0 = force(x[0] ^ y[0]);
@@ -355,6 +392,7 @@ public:
         auto const e2 = force(x[2] ^ y[2]);
         auto const e3 = force(x[3] ^ y[3]);
         return !(force(e0 | e1) | force(e2 | e3));
+#endif
     }
 
     [[gnu::always_inline]] constexpr uint256_t operator-() const noexcept

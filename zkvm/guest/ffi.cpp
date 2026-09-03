@@ -69,6 +69,13 @@ unsigned char const monad_zkvm_official_profile[] =
     "monad-zkvm-official-v2;runtime=ziskos-" MONAD_ZKVM_RUNTIME_VERSION
     ";features=" MONAD_ZKVM_BUILD_FEATURES ";commit=" MONAD_ZKVM_BUILD_COMMIT
     ";signature=" MONAD_ZKVM_BUILD_SIGNATURE;
+#elif defined(MONAD_ZKVM_DEV_PROFILE)
+// The same section, so the question "what is this binary" has an answer in
+// every guest rather than only in the audited ones. An absent marker would
+// have to be read as "not official", and absence is also what a stripped
+// section, a truncated read or a older build looks like.
+extern "C" [[gnu::used, gnu::section(".monad_zkvm_profile")]]
+unsigned char const monad_zkvm_official_profile[] = "monad-zkvm-dev-v2";
 #endif
 
 namespace

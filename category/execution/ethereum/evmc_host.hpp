@@ -39,12 +39,35 @@
 #include <evmc/evmc.hpp>
 
 #include <functional>
+#include <type_traits>
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
 static_assert(sizeof(vm::Host) == 24);
 static_assert(alignof(vm::Host) == 8);
+
+// Pass EVMC arguments as Monad references at the host boundary to avoid
+// temporary copies from converting constructors.
+[[gnu::always_inline]] inline Address const &
+as_monad(evmc::address const &a) noexcept
+{
+    static_assert(sizeof(Address) == sizeof(evmc::address));
+    static_assert(std::is_standard_layout_v<Address>);
+    static_assert(std::is_standard_layout_v<evmc::address>);
+    return reinterpret_cast<Address const &>(
+        static_cast<evmc_address const &>(a));
+}
+
+[[gnu::always_inline]] inline bytes32_t const &
+as_monad(evmc::bytes32 const &b) noexcept
+{
+    static_assert(sizeof(bytes32_t) == sizeof(evmc::bytes32));
+    static_assert(std::is_standard_layout_v<bytes32_t>);
+    static_assert(std::is_standard_layout_v<evmc::bytes32>);
+    return reinterpret_cast<bytes32_t const &>(
+        static_cast<evmc_bytes32 const &>(b));
+}
 
 class BlockHashBuffer;
 
@@ -137,7 +160,7 @@ struct EvmcHost final : public EvmcHostBase
 
         MONAD_TRY
         {
-            return !state_.account_is_dead(address);
+            return !state_.account_is_dead(as_monad(address));
         }
         MONAD_CATCH(...)
         {
@@ -153,7 +176,8 @@ struct EvmcHost final : public EvmcHostBase
         MONAD_TRY
         {
             auto const [result, transferred_balance] =
-                state_.selfdestruct<traits>(address, beneficiary);
+                state_.selfdestruct<traits>(
+                    as_monad(address), as_monad(beneficiary));
 
             call_tracer_.on_self_destruct(
                 address, beneficiary, transferred_balance);
@@ -207,7 +231,7 @@ struct EvmcHost final : public EvmcHostBase
             if (is_precompile<traits>(address)) {
                 return EVMC_ACCESS_WARM;
             }
-            return state_.access_account(address);
+            return state_.access_account(as_monad(address));
         }
         MONAD_CATCH(...)
         {
@@ -222,7 +246,8 @@ struct EvmcHost final : public EvmcHostBase
     {
         MONAD_TRY
         {
-            return state_.access_storage<traits>(address, key);
+            return state_.access_storage<traits>(
+                as_monad(address), as_monad(key));
         }
         MONAD_CATCH(...)
         {
@@ -238,7 +263,8 @@ struct EvmcHost final : public EvmcHostBase
         if constexpr (traits::mip_8_active()) {
             MONAD_TRY
             {
-                return state_.update_page(address, key, status);
+                return state_.update_page(
+                    as_monad(address), as_monad(key), status);
             }
             MONAD_CATCH(...)
             {

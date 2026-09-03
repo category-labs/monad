@@ -370,7 +370,14 @@ class State
     // The epoch is what makes skipping the dirty-set insert safe, and version_ could not: frame
     // indices recur (push->1, pop->0, push->1), so a version_ stamp would skip an insert that the
     // second frame 1 genuinely needs. The epoch only ever increases.
-    Address memo_addr_{};
+    // alignas(8) because the key is READ as two 8-byte words and an Address is
+    // 20 bytes: unaligned, this member lands at offset 428 of State, which is
+    // 4 mod 8, so BOTH reads straddle a word boundary. ZisK charges 191 cells
+    // for a word-crossing 8-byte read against 16 for an aligned one, and
+    // current_account_state, recent_account_state and get_storage between them
+    // do 107,273 of these a block. Four bytes of padding, and every later
+    // member stays 8-aligned.
+    alignas(8) Address memo_addr_{};
     AccountState *memo_val_{nullptr};
     std::uint64_t memo_epoch_{0};
     std::uint64_t frame_epoch_{1};

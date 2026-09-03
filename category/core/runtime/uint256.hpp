@@ -216,9 +216,15 @@ public:
     }
 
 
+    // Short-circuiting, as above. "Any limb nonzero" is the same predicate
+    // whichever order the limbs are tested in.
     [[gnu::always_inline]]
     inline constexpr explicit operator bool() const noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        return words_[0] != 0 || words_[1] != 0 || words_[2] != 0 ||
+               words_[3] != 0;
+#else
         using namespace monad::uint256::intrinsics;
 
         auto const w0 = force(words_[0]);
@@ -226,6 +232,7 @@ public:
         auto const w2 = force(words_[2]);
         auto const w3 = force(words_[3]);
         return force(w0 | w1) | force(w2 | w3);
+#endif
     }
 
     template <typename Int>
@@ -303,11 +310,41 @@ public:
         return subb(lhs, rhs).value;
     }
 
+    // Branchless BECAUSE OF x86, and that reasoning inverts on ZisK. `subb`'s
+    // comment in intrinsics.hpp says it forces its result because otherwise
+    // "clang replaces the sub/sbb chain with a long series of comparisons and
+    // flag logic which is worse" -- and a series of comparisons is exactly what
+    // is wanted here, where a step costs 68 cells and a taken branch costs
+    // nothing on top. The guest's own intrinsics shadow defines force() as
+    // `return expr;`, so nothing but the expression's shape was holding the
+    // branchless form in place.
+    //
+    // Lexicographic order on the limbs from the most significant down IS
+    // unsigned 256-bit order, so the predicate is bit-identical for every input
+    // pair; only the instructions that compute it change. Bounded at four steps
+    // where the borrow chain is thirteen unconditionally -- and unconditional
+    // is why this is a floor and not an average.
+    //
+    // operator<=, operator> and operator>= all route through this one, so LT,
+    // GT, LE and GE move together.
     [[gnu::always_inline]]
     friend inline constexpr bool
     operator<(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if (lhs[3] != rhs[3]) {
+            return lhs[3] < rhs[3];
+        }
+        if (lhs[2] != rhs[2]) {
+            return lhs[2] < rhs[2];
+        }
+        if (lhs[1] != rhs[1]) {
+            return lhs[1] < rhs[1];
+        }
+        return lhs[0] < rhs[0];
+#else
         return subb(lhs, rhs).carry;
+#endif
     }
 
     [[gnu::always_inline]]
@@ -350,9 +387,24 @@ public:
 
     // NOLINTEND(bugprone-macro-parentheses)
 
+    // Short-circuiting, for the reason operator< above gives. Low word first:
+    // the EVM compares small numbers far more often than it compares hashes, and
+    // a small number carries its difference in limb 0.
     [[gnu::always_inline]] friend inline constexpr bool
     operator==(uint256_t const &x, uint256_t const &y) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if (x[0] != y[0]) {
+            return false;
+        }
+        if (x[1] != y[1]) {
+            return false;
+        }
+        if (x[2] != y[2]) {
+            return false;
+        }
+        return x[3] == y[3];
+#else
         using namespace monad::uint256::intrinsics;
 
         auto const e0 = force(x[0] ^ y[0]);
@@ -360,6 +412,7 @@ public:
         auto const e2 = force(x[2] ^ y[2]);
         auto const e3 = force(x[3] ^ y[3]);
         return !(force(e0 | e1) | force(e2 | e3));
+#endif
     }
 
     [[gnu::always_inline]] inline constexpr uint256_t operator-() const noexcept

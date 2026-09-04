@@ -76,16 +76,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     string(APPEND CMAKE_CXX_FLAGS
         " -mcmodel=medany -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti")
 
-    # ZisK-only codegen tuning, duplicated from Polygon's ziskethone guest
-    # (github.com/0xPolygonHermez/ziskethone, cpp-guest/zisk/toolchain.cmake +
-    # cpp-guest/zisk/CMakeLists.txt).
+    # ZisK-only codegen flags.
     #  - -march adds Zbb/Zbs/Zbkb, transpiled natively by ZisK >= v1.2.0-alpha.
-    #  - -mtune=size was ziskethone's dominant single win (-13% block cost);
-    #    -funroll-loops + the widened inliner --params cut call/loop overhead
-    #    on hot paths; -fno-schedule-insns* drops scheduling that only helps
-    #    real pipelines; -fno-jump-tables avoids indirect jumps. Combined
-    #    measurement upstream: -16% block cost / -21.6% steps. -flto was
-    #    rejected there (marginal gain, overran the ZisK RAM ceiling).
     #  - -fno-pic: cmake-rs injects cc-rs's -fPIC, but the guest is a
     #    statically linked fixed-address ELF, so PIC only buys GOT
     #    indirections on global accesses.
@@ -95,22 +87,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # -march=rv64ima — the last flag wins.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         set(_zisk_march "-march=rv64ima_zicsr_zbb_zbs_zbkb -mabi=lp64")
-        string(JOIN " " _zisk_opt
-            "-fno-pic"
-            "-mtune=size"
-            "-funroll-loops"
-            "--param=max-inline-insns-single=1600"
-            "--param=max-inline-insns-auto=533"
-            "--param=inline-unit-growth=266"
-            "--param=max-inline-recursive-depth=6"
-            "--param=max-completely-peeled-insns=400"
-            "--param=large-function-growth=280"
-            "--param=large-unit-insns=30000"
-            "-fno-schedule-insns"
-            "-fno-schedule-insns2"
-            "-fno-jump-tables")
-        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} ${_zisk_opt}")
-        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} ${_zisk_opt}")
+        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} -fno-pic")
+        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} -fno-pic")
         string(APPEND CMAKE_ASM_FLAGS " ${_zisk_march}")
     endif()
 

@@ -20,6 +20,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/vm/evm/status_code.h>
 
 #include <evmc/evmc.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -81,7 +82,7 @@ struct CallFrame
     uint64_t gas_used{};
     byte_string input{};
     byte_string output{};
-    evmc_status_code status{};
+    monad_status_code status{};
     uint64_t depth{};
     std::optional<std::vector<Log>> logs{};
 

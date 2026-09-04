@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
+#include <category/vm/evm/status_code.h>
 
 #include <cryptopp/eccrypto.h>
 #include <cryptopp/ecp.h>
@@ -120,7 +121,7 @@ static inline PrecompileResult silkpre_execute(byte_string_view const input)
         MONAD_ASSERT(output_size == 0);
         return PrecompileResult::failure();
     }
-    return {EVMC_SUCCESS, output, output_size};
+    return {MONAD_STATUS_SUCCESS, output, output_size};
 }
 
 [[gnu::always_inline]] inline PrecompileImplResult ecrecover_impl(

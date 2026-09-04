@@ -31,6 +31,7 @@
 #include <category/mpt/test/test_fixtures_gtest.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
+#include <category/vm/evm/status_code.h>
 
 #include <nlohmann/json.hpp>
 
@@ -873,7 +874,7 @@ TYPED_TEST(DBTest, commit_call_frames)
         .gas_used = 21'000u,
         .input = byte_string{0xaa, 0xbb, 0xcc},
         .output = byte_string{},
-        .status = EVMC_SUCCESS,
+        .status = MONAD_STATUS_SUCCESS,
         .depth = 0,
     };
 
@@ -887,7 +888,7 @@ TYPED_TEST(DBTest, commit_call_frames)
         .gas_used = 10'000u,
         .input = byte_string{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0x01},
         .output = byte_string{0x01, 0x02},
-        .status = EVMC_REVERT,
+        .status = MONAD_STATUS_REVERT,
         .depth = 1,
     };
 

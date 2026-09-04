@@ -22,6 +22,7 @@
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/test_util/temp_file_cleanup.hpp>
 
 #include <array>
 #include <cmath>
@@ -260,6 +261,8 @@ namespace
             gaps[2].clear();
             auto create_temp_file =
                 [](file_offset_t length) -> std::filesystem::path {
+                monad::test::remove_stale_temp_files_once(
+                    working_temporary_directory(), "monad_storage_pool_test_");
                 std::filesystem::path ret(
                     working_temporary_directory() /
                     "monad_storage_pool_test_XXXXXX");
@@ -373,6 +376,8 @@ namespace
     {
         auto create_temp_file =
             [](file_offset_t length) -> std::filesystem::path {
+            monad::test::remove_stale_temp_files_once(
+                working_temporary_directory(), "monad_storage_pool_test_");
             std::filesystem::path ret(
                 working_temporary_directory() /
                 "monad_storage_pool_test_XXXXXX");

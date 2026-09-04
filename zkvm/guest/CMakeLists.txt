@@ -66,6 +66,23 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "MONAD_ZKVM_OFFICIAL_PROFILE is a ZisK-only build profile")
     endif()
 
+    # The feature list above is a claim about the binary; on its own nothing
+    # holds the build to it. A lever the profile depends on is named there and
+    # listed here, and this forces it ON and refuses an explicit OFF, so the
+    # signature cannot describe a guest that was built without it. A commit
+    # adding a lever appends to both lists.
+    set(_monad_zkvm_required_levers)
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        foreach(_lever ${_monad_zkvm_required_levers})
+            if(DEFINED ${_lever} AND NOT ${_lever})
+                message(FATAL_ERROR
+                    "${_lever}=OFF contradicts MONAD_ZKVM_OFFICIAL_PROFILE=ON")
+            endif()
+            set(${_lever} ON CACHE BOOL
+                "required by the official ZisK profile" FORCE)
+        endforeach()
+    endif()
+
     # The riscv64-elf toolchain file specifies these as CMAKE_*_FLAGS_INIT,
     # but cmake-rs (driving this cmake invocation from build.rs) overrides
     # CMAKE_*_FLAGS with cc-rs's target-arch flags only — dropping the

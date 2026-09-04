@@ -174,7 +174,9 @@ namespace trace
             auto const &original_storage = original_account_state.storage_;
 
             // Nothing to do if the account has been created and destructed
-            // during the same tx.
+            // during the same tx and is therefore gone. Under EIP-8246 it is
+            // not gone if it holds a balance, so it reaches the diff below with
+            // its nonce and code cleared, which is the intended output.
             if (!original_account.has_value() && !current_account.has_value()) {
                 continue;
             }
@@ -476,7 +478,9 @@ namespace trace
 
                 // * Deletion operations are represented by:
                 //   - Account selfdestruct: Account appears in pre but not in
-                //     post
+                //     post. From EIP-8246 this holds only when the balance is
+                //     zero; one holding a balance is preserved and appears in
+                //     both, with nonce 0 and a cleared code hash.
                 //   - Storage clearing (setting a storage value to zero is also
                 //     treated as clearing): Storage slot appears in pre but not
                 //     in post

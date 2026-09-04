@@ -458,7 +458,16 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
         }
         subtract_from_balance(address, balance);
     }
+    else if constexpr (traits::eip_8246_active()) {
+        // EIP-8246: no burn, so value moves only when it has somewhere to go.
+        if (address != beneficiary) {
+            add_to_balance(beneficiary, balance);
+            subtract_from_balance(address, balance);
+        }
+    }
     else {
+        // The is_current_incarnation() arm is the burn: destructing to self
+        // takes the debit below with no matching credit.
         if (address != beneficiary || is_current_incarnation(address)) {
             if (address != beneficiary) {
                 add_to_balance(beneficiary, balance);
@@ -479,6 +488,16 @@ EXPLICIT_TRAITS_MEMBER(State::selfdestruct);
 template <Traits traits>
 void State::destruct_suicides()
 {
+    // Three things the EIP-8246 preservation below rests on, none of them
+    // stated where they are decided. destruct_touched_dead, which runs straight
+    // after this, is a second and untemplated deletion pass, so it cannot be
+    // made revision-aware; it spares a preserved account only because the
+    // balance test below and is_dead are the same EIP-161 emptiness test.
+    // BlockState::can_merge runs before execute_final, which is what stops
+    // relaxed merge zeroing a preserved balance and committing an empty
+    // account. And the reserve-balance check runs at depth 0 in
+    // execute_message, before finalization, so the preservation is invisible to
+    // it.
     MONAD_ASSERT(!version_);
 
     for (auto &it : current_) {
@@ -486,17 +505,67 @@ void State::destruct_suicides()
         MONAD_ASSERT(stack.size() == 1);
         MONAD_ASSERT(stack.version() == 0);
         auto &account_state = stack.current(0);
-        if (account_state.is_destructed()) {
-            auto &account = account_state.account_;
-            if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
-                account.reset();
-            }
-            else {
-                if (account->incarnation == incarnation_) {
-                    account.reset();
-                }
-            }
+        if (MONAD_LIKELY(!account_state.is_destructed())) {
+            continue;
         }
+        auto &account = account_state.account_;
+
+        if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
+            account.reset();
+            continue;
+        }
+
+        // EIP-6780: only an account created in this transaction is destroyed.
+        if (account->incarnation != incarnation_) {
+            continue;
+        }
+
+        if constexpr (!traits::eip_8246_active()) {
+            account.reset();
+            continue;
+        }
+
+        // EIP-161 still deletes the empty account, and this arm is what stops a
+        // zero-balance one surviving with its code: destruct_touched_dead would
+        // not remove it, since an account with a nonce and code is not dead.
+        if (account->balance == 0) {
+            account.reset();
+            continue;
+        }
+
+        // EIP-8246: preserve the account as balance-only. Mutate in place so
+        // the incarnation survives -- it is the storage-generation key the
+        // commit builders compare against the pre-block account to decide
+        // whether the old storage subtree is rebuilt, and a defaulted Account
+        // would zero it, {0, 0} being itself a legal incarnation rather than a
+        // safe sentinel.
+        account->nonce = 0;
+        account->code_hash = NULL_HASH;
+
+        // Zero the original map's key set, which covers the current map's
+        // because the current map's keys are always a subset of it: the entry
+        // is seeded by copying the original account state, set_storage inserts
+        // into the original map before writing the current one, and the
+        // original map never shrinks. Every current_ entry is seeded from
+        // original_account_state, so the lookup cannot miss; assert rather than
+        // use the accessor, which would read from the block state instead of
+        // failing loudly.
+        //
+        // In consensus the two key sets are equal, because reaching here means
+        // create_contract ran in this transaction, after which get_storage's
+        // read-through returns zero without recording anything. The original
+        // map can hold a key the current map does not only when something
+        // stamps the current incarnation onto a pre-existing contract -- which
+        // set_to_state_incarnation does, for the RPC full-state-override path
+        // -- so iterating it is what keeps eth_call correct. Zero rather than
+        // erase, so anything reading through the block delta sees the zero.
+        auto const orig = original_.find(it.first);
+        MONAD_ASSERT(orig != original_.end());
+        AccountState::StorageMap zeroed{};
+        for (auto const &kv : orig->second.storage_) {
+            zeroed = zeroed.insert({kv.first, bytes32_t{}});
+        }
+        account_state.storage_ = std::move(zeroed);
     }
 }
 

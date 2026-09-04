@@ -1354,6 +1354,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
     ASSERT_TRUE(call_frames[2].logs.has_value());
     ASSERT_EQ(call_frames[2].logs->size(), 0);
     EXPECT_EQ(call_frames[2].type, CallType::SELFDESTRUCT);
+    // The frame's value is the balance read before the guard, so the first
+    // destruct reports the whole balance at every revision.
+    EXPECT_EQ(call_frames[2].value, 1'000'000);
 
     ASSERT_TRUE(call_frames[3].logs.has_value());
     ASSERT_EQ(call_frames[3].logs->size(), 0);
@@ -1362,6 +1365,16 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
     ASSERT_TRUE(call_frames[4].logs.has_value());
     ASSERT_EQ(call_frames[4].logs->size(), 0);
     EXPECT_EQ(call_frames[4].type, CallType::SELFDESTRUCT);
+    // The contract destructs to itself twice, and the incarnations match, so
+    // the pre-8246 burn fires: the first destruct empties the account and this
+    // frame reports zero. Under EIP-8246 nothing is destroyed and it still sees
+    // the full balance. This is the suite's only end-to-end coverage of rule 1.
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        EXPECT_EQ(call_frames[4].value, 1'000'000);
+    }
+    else {
+        EXPECT_EQ(call_frames[4].value, 0);
+    }
 }
 
 TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)

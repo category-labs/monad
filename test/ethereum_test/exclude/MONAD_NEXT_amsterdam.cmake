@@ -13,10 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# Amsterdam spec tests are mutually dependent, so enable them together
-# when all EIPs land.
 set(MONAD_NEXT_amsterdam_excluded_tests
-  "BlockchainTests.*"
   # Test contains a EIP-4844 blob which is disabled on Monad
-  # "BlockchainTests.for_monad_next/amsterdam/eip7981_increase_access_list_cost/transaction_validity/transactions_without_access_list.json"
+  "BlockchainTests.for_monad_next/amsterdam/eip7981_increase_access_list_cost/transaction_validity/transactions_without_access_list.json"
 )

@@ -37,6 +37,7 @@
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/status_code.h>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
@@ -81,7 +82,7 @@ TEST(CallFrame, to_json)
         .gas = 100'000u,
         .gas_used = 21'000u,
         .input = byte_string{},
-        .status = EVMC_SUCCESS,
+        .status = MONAD_STATUS_SUCCESS,
     };
 
     auto const json_str = R"(
@@ -202,7 +203,7 @@ TYPED_TEST(TraitsTest, execute_success)
         .value = 0x10000,
         .gas = 0x100000,
         .gas_used = 0x5208,
-        .status = EVMC_SUCCESS,
+        .status = MONAD_STATUS_SUCCESS,
         .depth = 0,
         .logs = std::vector<CallFrame::Log>{},
     };
@@ -287,7 +288,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
         .value = 0x10000,
         .gas = 0x10000,
         .gas_used = 0x5208,
-        .status = EVMC_INSUFFICIENT_BALANCE,
+        .status = MONAD_STATUS_INSUFFICIENT_BALANCE,
         .depth = 0,
         .logs = std::vector<CallFrame::Log>{},
     };
@@ -380,7 +381,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
     EXPECT_EQ(call_frames[0].value, 0u);
     EXPECT_EQ(call_frames[0].input, byte_string{});
     EXPECT_EQ(call_frames[0].output, byte_string{});
-    EXPECT_EQ(call_frames[0].status, EVMC_SUCCESS);
+    EXPECT_EQ(call_frames[0].status, MONAD_STATUS_SUCCESS);
     EXPECT_EQ(call_frames[0].depth, 0u);
     EXPECT_EQ(call_frames[0].logs, std::vector<CallFrame::Log>{});
 
@@ -391,7 +392,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
     EXPECT_EQ(call_frames[1].value, 0u);
     EXPECT_EQ(call_frames[1].input, 0xFE_bytes);
     EXPECT_EQ(call_frames[1].output, byte_string{});
-    EXPECT_EQ(call_frames[1].status, EVMC_FAILURE);
+    EXPECT_EQ(call_frames[1].status, MONAD_STATUS_FAILURE);
     EXPECT_EQ(call_frames[1].depth, 1u);
     EXPECT_EQ(call_frames[1].logs, std::vector<CallFrame::Log>{});
 }
@@ -773,7 +774,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
         .value = 1'000'000,
         .gas = 1'000'000,
         .gas_used = 21'000,
-        .status = EVMC_SUCCESS,
+        .status = MONAD_STATUS_SUCCESS,
         .depth = 0,
         .logs = std::vector<CallFrame::Log>{{
             {

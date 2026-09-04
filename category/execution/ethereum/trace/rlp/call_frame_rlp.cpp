@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/vm/evm/status_code.h>
 
 #include <boost/outcome/try.hpp>
 
@@ -125,7 +126,7 @@ Result<CallFrame> decode_call_frame(byte_string_view &enc)
     BOOST_OUTCOME_TRY(call_frame.output, decode_string(payload));
     BOOST_OUTCOME_TRY(
         auto const status, decode_unsigned<unsigned char>(payload));
-    call_frame.status = static_cast<enum evmc_status_code>(status);
+    call_frame.status = static_cast<enum monad_status_code>(status);
     BOOST_OUTCOME_TRY(call_frame.depth, decode_unsigned<uint64_t>(payload));
 
     if (MONAD_UNLIKELY(payload.empty())) {

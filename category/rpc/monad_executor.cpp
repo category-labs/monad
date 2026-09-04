@@ -71,6 +71,7 @@
 #include <category/rpc/eth_simulate_block_hash_buffer.hpp>
 #include <category/rpc/lazy_block_hash.hpp>
 #include <category/vm/evm/revision.h>
+#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -701,14 +702,14 @@ namespace
 
             call_result["status"] = std::format(
                 "0x{:x}",
-                call_frames[tx_idx][0].status == EVMC_SUCCESS ? 1 : 0);
+                call_frames[tx_idx][0].status == MONAD_STATUS_SUCCESS ? 1 : 0);
             call_result["returnData"] =
                 format_hex(call_frames[tx_idx][0].output);
             call_result["gasUsed"] =
                 std::format("0x{:x}", call_frames[tx_idx][0].gas_used);
 
             size_t log_index = 0;
-            if (call_frames[tx_idx][0].status == EVMC_SUCCESS) {
+            if (call_frames[tx_idx][0].status == MONAD_STATUS_SUCCESS) {
                 call_result["logs"] = nlohmann::json::array();
                 for (auto const &log : receipts[tx_idx].logs) {
                     call_result["logs"].emplace_back(nlohmann::json{

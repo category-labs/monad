@@ -49,6 +49,7 @@
 #include <limits>
 #include <optional>
 #include <variant>
+#include <vector>
 
 using namespace monad;
 

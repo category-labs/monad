@@ -63,6 +63,20 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "MONAD_ZKVM_OFFICIAL_PROFILE is a ZisK-only build profile")
     endif()
 
+    # Enable options required by the official profile; reject explicit OFF values.
+    # Add each new required option here and its feature to the list above.
+    set(_monad_zkvm_required_levers)
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        foreach(_lever ${_monad_zkvm_required_levers})
+            if(DEFINED ${_lever} AND NOT ${_lever})
+                message(FATAL_ERROR
+                    "${_lever}=OFF contradicts MONAD_ZKVM_OFFICIAL_PROFILE=ON")
+            endif()
+            set(${_lever} ON CACHE BOOL
+                "required by the official ZisK profile" FORCE)
+        endforeach()
+    endif()
+
     # The riscv64-elf toolchain file specifies these as CMAKE_*_FLAGS_INIT,
     # but cmake-rs (driving this cmake invocation from build.rs) overrides
     # CMAKE_*_FLAGS with cc-rs's target-arch flags only — dropping the

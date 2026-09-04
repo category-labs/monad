@@ -126,6 +126,12 @@ extern "C"
         while (0)
 #endif
 
+// Type-layout / compile-time invariant assertion, on by default. The zkVM
+// guest shadows this header (zkvm/category/core/assert.h) to erase the
+// check, because backing-type substitutions (e.g. immutable::map switching
+// from immer to ankerl) change sizeof for affected classes.
+#define MONAD_STATIC_ASSERT(...) static_assert(__VA_ARGS__)
+
 #ifdef __cplusplus
 }
 #endif

@@ -1528,7 +1528,10 @@ struct monad_executor
                         return;
                     }
                     if (MONAD_UNLIKELY(res.has_error())) {
-                        result->status_code = EVMC_REJECTED;
+                        result->status_code =
+                            res.error() == TransactionError::InsufficientBalance
+                                ? EVMC_INSUFFICIENT_BALANCE
+                                : EVMC_REJECTED;
                         result->message = strdup(res.error().message().c_str());
                         MONAD_ASSERT(result->message);
                         complete(result, user);

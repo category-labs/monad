@@ -15,6 +15,22 @@
 
 include(ExternalProject)
 
+# Each fixture case is replayed once per vm::VM::Mode, so the default run costs
+# 3x. Restricting to one mode is for local iteration only; CI must leave this
+# empty so the compiler and interpreter stay differentially tested.
+set(MONAD_SPEC_TEST_VM_MODE
+    ""
+    CACHE STRING
+          "Restrict spec tests to one VM mode: Dual, CompilerOnly or \
+InterpreterOnly. Empty runs all three.")
+set_property(CACHE MONAD_SPEC_TEST_VM_MODE PROPERTY STRINGS "" Dual CompilerOnly
+                                                    InterpreterOnly)
+if(MONAD_SPEC_TEST_VM_MODE)
+  set(SPEC_TEST_VM_MODE_ARGS --vm_mode ${MONAD_SPEC_TEST_VM_MODE})
+else()
+  set(SPEC_TEST_VM_MODE_ARGS)
+endif()
+
 ExternalProject_Add(
   ExecutionSpecTestFixtures
   URL "https://github.com/ethereum/execution-spec-tests/releases/download/v5.4.0/fixtures_develop.tar.gz"
@@ -94,7 +110,8 @@ function(add_ethereum_test)
 
   add_test(NAME ${ADD_ETHEREUM_TEST_FORK}_monad_ethereum_test
            COMMAND monad-ethereum-test --fork ${ADD_ETHEREUM_TEST_FORK}
-                   --record-exec-events --gtest_filter=${FILTER})
+                   --record-exec-events ${SPEC_TEST_VM_MODE_ARGS}
+                   --gtest_filter=${FILTER})
 endfunction()
 
 function(add_monad_test)
@@ -114,7 +131,7 @@ function(add_monad_test)
                   # TODO: not ready yet
                   #  --record-exec-events
                    --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadSpecTestFixtures/blockchain_tests
-                   --gtest_filter=${FILTER})
+                   ${SPEC_TEST_VM_MODE_ARGS} --gtest_filter=${FILTER})
 endfunction()
 
 add_monad_test(FORK MONAD_EIGHT)
@@ -133,7 +150,7 @@ add_test(NAME MONAD_NEXT_amsterdam_monad_ethereum_test
          COMMAND monad-ethereum-test --fork MONAD_NEXT
                  --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadAmsterdamSpecTestFixtures/blockchain_tests
                  --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadEip7981SpecTestFixtures/blockchain_tests
-                 --gtest_filter=-:${TESTS_EXCLUDED})
+                 ${SPEC_TEST_VM_MODE_ARGS} --gtest_filter=-:${TESTS_EXCLUDED})
 if(MONAD_NEXT_amsterdam_excluded_tests STREQUAL "BlockchainTests.*")
   set_tests_properties(MONAD_NEXT_amsterdam_monad_ethereum_test
                        PROPERTIES WILL_FAIL TRUE)

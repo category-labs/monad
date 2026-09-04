@@ -32,6 +32,24 @@ RUN rustup toolchain install 1.91.1 --profile minimal --component clippy
 RUN rustup toolchain install nightly-2025-12-09 --profile minimal --component rustfmt
 RUN RUSTFLAGS="-C linker=gcc-15" cargo install cargo-shear@1.9.1
 
+FROM base AS base_vm_test
+
+RUN apt-get update && \
+    apt-get install -y opam && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    rm -rf /opt
+
+ARG OCAML_VERSION=5.4.1
+
+ENV OPAMROOT=/root/.opam
+ENV OPAMSWITCH="$OCAML_VERSION"
+ENV PATH="/root/.opam/$OCAML_VERSION/bin:$PATH"
+
+RUN opam init --bare -y && \
+    opam switch create "$OCAML_VERSION" "$OCAML_VERSION" && \
+    opam install -y dune
+
 FROM base AS build_and_test
 
 COPY . src
@@ -51,7 +69,7 @@ RUN cd src && ./scripts/build.sh
 # security=insecure for tests which use io_uring
 RUN --security=insecure cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} ./scripts/test.sh
 
-FROM base AS build_and_test_vm
+FROM base_vm_test AS build_and_test_vm
 
 COPY . src
 
@@ -79,7 +97,7 @@ RUN cd src/rust && cargo +nightly-2025-12-09 fmt --all --check
 RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo build --release --all-targets --all-features
 RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo test  --release --all-targets --all-features
 
-FROM base AS code_quality
+FROM base_vm_test AS code_quality
 
 COPY . src
 
@@ -176,7 +194,7 @@ RUN cd src && cmake -B build-zkvm -S zkvm/guest \
     -DCMAKE_BUILD_TYPE=Release
 RUN cd src && cmake --build build-zkvm --target monad-zkvm --parallel
 
-FROM base AS vm_fuzz
+FROM base_vm_test AS vm_fuzz
 
 RUN apt-get update && apt-get install -y tmux
 

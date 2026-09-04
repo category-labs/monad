@@ -16,10 +16,9 @@
 add_library(monad-vm-fuzzing OBJECT)
 
 target_sources(monad-vm-fuzzing PRIVATE
-  "generator/choice.hpp"
-  "generator/generator.hpp"
-  "generator/instruction_data.cpp"
-  "generator/instruction_data.hpp"
+  "choice.hpp"
+  "instruction_data.cpp"
+  "instruction_data.hpp"
 )
 
 monad_compile_options(monad-vm-fuzzing)

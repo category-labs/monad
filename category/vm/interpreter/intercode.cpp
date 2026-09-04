@@ -60,6 +60,9 @@ namespace monad::vm::interpreter
     {
         auto jumpdests = JumpdestMap(code.size(), false);
 
+        // The EIP-8024 opcodes (DUPN/SWAPN/EXCHANGE) are intentionally NOT
+        // special-cased: their immediate byte can never be 0x5B (JUMPDEST), so
+        // this pre-8024 scan already yields the correct valid-JUMPDEST set.
         for (auto i = 0u; i < code.size(); ++i) {
             auto const op = code[i];
 

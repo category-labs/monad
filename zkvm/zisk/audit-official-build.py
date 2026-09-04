@@ -33,9 +33,6 @@ REQUIRED_FLAGS = (
     "--param=max-completely-peeled-insns=400",
     "--param=large-function-growth=280",
     "--param=large-unit-insns=30000",
-    "-fno-schedule-insns",
-    "-fno-schedule-insns2",
-    "-fno-jump-tables",
 )
 
 

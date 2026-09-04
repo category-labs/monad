@@ -35,6 +35,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <stack>
@@ -45,6 +46,23 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
+    nlohmann::json make_truncated_call_frame(uint64_t const depth)
+    {
+        nlohmann::json frame;
+        frame["type"] = "TRUNCATED";
+        frame["from"] = "0x0000000000000000000000000000000000000000";
+        frame["to"] = "0x0000000000000000000000000000000000000000";
+        frame["value"] = "0x0";
+        frame["gas"] = "0x0";
+        frame["gasUsed"] = "0x0";
+        frame["input"] = "0x";
+        frame["output"] = "0x";
+        frame["error"] = "trace truncated";
+        frame["depth"] = depth;
+        frame["calls"] = nlohmann::json::array();
+        return frame;
+    }
+
     void to_json_helper(
         std::span<CallFrame const> const frames, nlohmann::json &json,
         size_t &pos)
@@ -84,25 +102,175 @@ void NoopCallTracer::on_finish(uint64_t const) {}
 
 void NoopCallTracer::reset() {}
 
+bool NoopCallTracer::truncated() const
+{
+    return false;
+}
+
 std::span<CallFrame const> NoopCallTracer::get_call_frames() const
 {
     return {};
 }
 
 CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
+    : CallTracer(tx, frames, std::numeric_limits<size_t>::max())
+{
+}
+
+CallTracer::CallFramesStack::CallFramesStack(std::vector<CallFrame> &frames)
     : frames_(frames)
+{
+    positions_.push(0);
+}
+
+void CallTracer::CallFramesStack::record_dropped_subtree_enter()
+{
+    if (!last_.empty()) {
+        advance_position();
+    }
+    dropped_subtree_depth_ = 1;
+}
+
+void CallTracer::CallFramesStack::record_dropped_subtree_child_enter()
+{
+    MONAD_ASSERT(dropped_subtree_depth_ > 0);
+    dropped_subtree_depth_++;
+}
+
+void CallTracer::CallFramesStack::advance_position()
+{
+    MONAD_ASSERT(!positions_.empty());
+    positions_.top()++;
+}
+
+bool CallTracer::CallFramesStack::consume_dropped_exit()
+{
+    if (dropped_subtree_depth_ == 0) {
+        return false;
+    }
+
+    dropped_subtree_depth_--;
+    return true;
+}
+
+CallFrame &CallTracer::CallFramesStack::top_frame()
+{
+    MONAD_ASSERT(!last_.empty());
+    return frames_.at(last_.top());
+}
+
+CallFrame &CallTracer::CallFramesStack::pop_frame()
+{
+    MONAD_ASSERT(!frames_.empty());
+    MONAD_ASSERT(!last_.empty());
+    MONAD_ASSERT(!positions_.empty());
+
+    auto &frame = frames_.at(last_.top());
+    last_.pop();
+    positions_.pop();
+    return frame;
+}
+
+CallFrame &CallTracer::CallFramesStack::push_frame(CallFrame &&frame)
+{
+    advance_position();
+    positions_.push(0);
+    frames_.emplace_back(std::move(frame));
+    last_.push(frames_.size() - 1);
+    return frames_.back();
+}
+
+CallFrame &
+CallTracer::CallFramesStack::push_selfdestruct_frame(CallFrame &&frame)
+{
+    MONAD_ASSERT(!last_.empty());
+    advance_position();
+    frames_.emplace_back(std::move(frame));
+    return frames_.back();
+}
+
+bool CallTracer::CallFramesStack::has_active_frame() const
+{
+    return !last_.empty();
+}
+
+bool CallTracer::CallFramesStack::in_dropped_subtree() const
+{
+    return dropped_subtree_depth_ > 0;
+}
+
+size_t CallTracer::CallFramesStack::dropped_subtree_depth() const
+{
+    return dropped_subtree_depth_;
+}
+
+size_t CallTracer::CallFramesStack::position() const
+{
+    MONAD_ASSERT(!positions_.empty());
+    return positions_.top();
+}
+
+void CallTracer::CallFramesStack::reset()
+{
+    last_ = std::stack<size_t>{};
+    positions_ = std::stack<size_t>{};
+    positions_.push(0);
+    dropped_subtree_depth_ = 0;
+}
+
+CallTracer::CallTracer(
+    Transaction const &tx, std::vector<CallFrame> &frames,
+    size_t const max_size)
+    : frames_(frames)
+    , frames_stack_(frames_)
     , tx_(tx)
+    , max_size_(max_size)
+    , size_(0)
 {
     frames_.reserve(128);
-    positions_.push(0);
+}
+
+bool CallTracer::fits(size_t const additional_size) const
+{
+    if (size_ >= max_size_) {
+        return false;
+    }
+
+    return additional_size <= (max_size_ - size_);
+}
+
+size_t CallTracer::log_size(Receipt::Log const &log) const
+{
+    size_t entry_size = sizeof(CallFrame::Log) + log.data.size();
+    for (auto const &topic : log.topics) {
+        entry_size += sizeof(topic);
+    }
+    return entry_size;
 }
 
 void CallTracer::on_enter(evmc_message const &msg)
 {
-    MONAD_ASSERT(!positions_.empty());
+    if (frames_stack_.in_dropped_subtree()) {
+        frames_stack_.record_dropped_subtree_child_enter();
+        return;
+    }
 
-    positions_.top()++;
-    positions_.push(0);
+    if (truncated_) {
+        frames_stack_.record_dropped_subtree_enter();
+        return;
+    }
+
+    auto const frame_size = sizeof(CallFrame) + msg.input_size;
+
+    if (!fits(frame_size)) {
+        truncated_ = true;
+        frames_stack_.record_dropped_subtree_enter();
+        return;
+    }
+
+    byte_string const input = msg.input_data == nullptr
+                                  ? byte_string{}
+                                  : byte_string{msg.input_data, msg.input_size};
 
     auto const depth = static_cast<uint64_t>(msg.depth);
 
@@ -120,7 +288,7 @@ void CallTracer::on_enter(evmc_message const &msg)
         to = msg.code_address;
     }
 
-    frames_.emplace_back(CallFrame{
+    frames_stack_.push_frame(CallFrame{
         .type =
             [kind = msg.kind] {
                 switch (kind) {
@@ -154,24 +322,32 @@ void CallTracer::on_enter(evmc_message const &msg)
         .logs = std::vector<CallFrame::Log>{},
     });
 
-    last_.push(frames_.size() - 1);
+    size_ += frame_size;
 }
 
 void CallTracer::on_exit(evmc::Result const &res)
 {
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(!last_.empty());
-    MONAD_ASSERT(!positions_.empty());
+    if (frames_stack_.consume_dropped_exit()) {
+        return;
+    }
 
-    auto &frame = frames_.at(last_.top());
+    CallFrame &frame = frames_stack_.pop_frame();
 
     MONAD_ASSERT(frame.gas >= static_cast<uint64_t>(res.gas_left));
     frame.gas_used = frame.gas - static_cast<uint64_t>(res.gas_left);
 
     if (res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT) {
-        frame.output = res.output_size == 0
-                           ? byte_string{}
-                           : byte_string{res.output_data, res.output_size};
+        if (res.output_size == 0) {
+            frame.output = byte_string{};
+        }
+        else if (fits(res.output_size)) {
+            frame.output = byte_string{res.output_data, res.output_size};
+            size_ += res.output_size;
+        }
+        else {
+            frame.output = byte_string{};
+            truncated_ = true;
+        }
     }
     frame.status = res.status_code;
 
@@ -180,34 +356,46 @@ void CallTracer::on_exit(evmc::Result const &res)
                        ? std::nullopt
                        : std::optional{res.create_address};
     }
-
-    last_.pop();
-    positions_.pop();
 }
 
 void CallTracer::on_log(Receipt::Log log)
 {
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(!last_.empty());
-    MONAD_ASSERT(!positions_.empty());
+    if (frames_stack_.in_dropped_subtree()) {
+        truncated_ = true;
+        return;
+    }
 
-    auto &frame = frames_.at(last_.top());
+    auto const entry_size = log_size(log);
+    if (!fits(entry_size)) {
+        truncated_ = true;
+        return;
+    }
+
+    auto &frame = frames_stack_.top_frame();
     MONAD_ASSERT(frame.logs.has_value());
 
-    frame.logs->emplace_back(std::move(log), positions_.top());
+    frame.logs->emplace_back(std::move(log), frames_stack_.position());
+    size_ += entry_size;
 }
 
 void CallTracer::on_self_destruct(
     Address const &from, Address const &to,
     uint256_t const &transferred_balance)
 {
-    MONAD_ASSERT(!last_.empty());
-    MONAD_ASSERT(!positions_.empty());
-    positions_.top()++;
+    if (frames_stack_.in_dropped_subtree()) {
+        truncated_ = true;
+        return;
+    }
 
-    auto const &parent = frames_.at(last_.top());
+    if (!fits(sizeof(CallFrame))) {
+        truncated_ = true;
+        frames_stack_.advance_position();
+        return;
+    }
 
-    frames_.emplace_back(CallFrame{
+    auto &parent = frames_stack_.top_frame();
+
+    frames_stack_.push_selfdestruct_frame(CallFrame{
         .type = CallType::SELFDESTRUCT,
         .flags = 0,
         .from = from,
@@ -221,22 +409,28 @@ void CallTracer::on_self_destruct(
         .depth = parent.depth + 1,
         .logs = std::vector<CallFrame::Log>{},
     });
+
+    size_ += sizeof(CallFrame);
 }
 
 void CallTracer::on_finish(uint64_t const gas_used)
 {
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(last_.empty());
+    MONAD_ASSERT(frames_stack_.dropped_subtree_depth() == 0);
+    MONAD_ASSERT(!frames_stack_.has_active_frame());
+
+    if (frames_.empty()) {
+        return;
+    }
+
     frames_.front().gas_used = gas_used;
 }
 
 void CallTracer::reset()
 {
     frames_.clear();
-    last_ = std::stack<size_t>{};
-
-    positions_ = std::stack<size_t>{};
-    positions_.push(0);
+    frames_stack_.reset();
+    size_ = 0;
+    truncated_ = false;
 }
 
 std::span<CallFrame const> CallTracer::get_call_frames() const
@@ -244,19 +438,33 @@ std::span<CallFrame const> CallTracer::get_call_frames() const
     return frames_;
 }
 
+bool CallTracer::truncated() const
+{
+    return truncated_;
+}
+
 nlohmann::json CallTracer::to_json() const
 {
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(frames_[0].depth == 0);
-
-    size_t pos = 0;
-
     nlohmann::json res{};
     auto const hash = keccak256(rlp::encode_transaction(tx_));
     auto const key = fmt::format(
         "0x{:02x}", fmt::join(std::as_bytes(std::span(hash.bytes)), ""));
     nlohmann::json value{};
-    to_json_helper(frames_, value, pos);
+
+    if (!frames_.empty()) {
+        MONAD_ASSERT(frames_[0].depth == 0);
+        size_t pos = 0;
+        to_json_helper(frames_, value, pos);
+        if (truncated_) {
+            value["calls"].push_back(
+                make_truncated_call_frame(frames_[0].depth + 1));
+        }
+    }
+    else {
+        MONAD_ASSERT(truncated_);
+        value = make_truncated_call_frame(0);
+    }
+
     res[key] = value;
 
     return res;

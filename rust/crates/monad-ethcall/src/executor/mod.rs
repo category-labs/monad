@@ -55,8 +55,8 @@ unsafe impl Sync for MonadExecutor {}
 
 impl MonadExecutor {
     pub fn new(
-        low_pool_config: ffi::PoolConfig,
-        high_pool_config: ffi::PoolConfig,
+        short_tx_pool_config: ffi::PoolConfig,
+        long_tx_pool_config: ffi::PoolConfig,
         block_pool_config: ffi::PoolConfig,
         tx_exec_num_fibers: u32,
         node_lru_max_mem: u64,
@@ -69,8 +69,8 @@ impl MonadExecutor {
 
         let eth_call_executor = unsafe {
             ffi::monad_executor_create(
-                low_pool_config,
-                high_pool_config,
+                short_tx_pool_config,
+                long_tx_pool_config,
                 block_pool_config,
                 tx_exec_num_fibers,
                 node_lru_max_mem,

@@ -46,8 +46,12 @@ namespace monad::vm::fuzzing
     //   PUSH0 - PUSH32  (generate_push)
     //   CREATE, CREATE2 (generate_create)
     //
-    // TODO(amsterdam): SLOTNUM is Amsterdam-only and unimplemented by
-    // by pinned evmone.
+    // TODO(amsterdam): no Amsterdam-gated opcode can be fuzzed. The arrays
+    // below are pinned to EvmTraits<MONAD_ETH_OSAKA>, and the fuzzer always
+    // compares against evmone, which has no revision above Osaka -- so the
+    // limit is the differential reference, not any individual opcode.
+    // Cover such opcodes with interpreter-vs-compiler unit tests instead.
+    // SLOTNUM (0x4B, EIP-7843) is the first; others will follow.
 
     constexpr auto call_non_terminators = std::array{
         CALL,

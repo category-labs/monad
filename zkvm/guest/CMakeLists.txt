@@ -180,74 +180,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
                     "with zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh")
             endif()
         endif()
-
-        file(SHA256 "${CMAKE_CXX_COMPILER}" _official_cxx_sha256)
-        # The patch files hash the same on every machine, unlike the compiler
-        # they produce, so this is the part of the toolchain identity that two
-        # builds of one commit can actually be expected to agree on.
-        set(_dma_patch_dir "${CMAKE_CURRENT_SOURCE_DIR}/../toolchain/zisk-dma-gcc")
-        set(_dma_patch_sha "")
-        foreach(_p 0001-riscv-zisk-dma-lowering-14.3.0.patch
-                   0002-riscv.md-forward-port-15.2.0.diff
-                   0003-guest-zicsr-15.2.0.patch)
-            if(NOT EXISTS "${_dma_patch_dir}/${_p}")
-                message(FATAL_ERROR
-                    "official ZisK profile: missing ${_p} in zkvm/toolchain/zisk-dma-gcc")
-            endif()
-            file(SHA256 "${_dma_patch_dir}/${_p}" _one)
-            string(APPEND _dma_patch_sha "${_one}")
-        endforeach()
-        string(SHA256 _dma_patch_sha "${_dma_patch_sha}")
-        list(JOIN _monad_zkvm_official_features "," _official_features_csv)
-        string(SHA256 _official_build_signature
-            "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}\n${_dma_patch_sha}")
-        add_compile_definitions(
-            MONAD_ZKVM_OFFICIAL_PROFILE=1
-            MONAD_ZKVM_BUILD_COMMIT="${MONAD_ZKVM_GIT_COMMIT}"
-            MONAD_ZKVM_BUILD_SIGNATURE="${_official_build_signature}"
-            MONAD_ZKVM_BUILD_FEATURES="${_official_features_csv}"
-            MONAD_ZKVM_RUNTIME_VERSION="${_monad_zkvm_runtime_version}")
-        file(WRITE "${CMAKE_BINARY_DIR}/monad-zkvm-official-profile.json"
-            "{\n"
-            "  \"schema\": 2,\n"
-            "  \"profile\": \"official\",\n"
-            "  \"target\": \"zisk\",\n"
-            "  \"runtime_version\": \"${_monad_zkvm_runtime_version}\",\n"
-            "  \"runtime_revision\": \"${_monad_zkvm_runtime_revision}\",\n"
-            "  \"features_csv\": \"${_official_features_csv}\",\n"
-            "  \"compiler\": \"${CMAKE_CXX_COMPILER}\",\n"
-            "  \"compiler_id\": \"${CMAKE_CXX_COMPILER_ID}\",\n"
-            "  \"compiler_version\": \"${CMAKE_CXX_COMPILER_VERSION}\",\n"
-            "  \"compiler_sha256\": \"${_official_cxx_sha256}\",\n"
-            "  \"dma_patch_sha256\": \"${_dma_patch_sha}\",\n"
-            "  \"commit\": \"${MONAD_ZKVM_GIT_COMMIT}\",\n"
-            "  \"build_signature\": \"${_official_build_signature}\",\n"
-            "  \"c_flags\": \"${CMAKE_C_FLAGS}\",\n"
-            "  \"c_flags_release\": \"${CMAKE_C_FLAGS_RELEASE}\",\n"
-            "  \"cxx_flags\": \"${CMAKE_CXX_FLAGS}\",\n"
-            "  \"cxx_flags_release\": \"${CMAKE_CXX_FLAGS_RELEASE}\",\n"
-            "  \"asm_flags\": \"${CMAKE_ASM_FLAGS}\",\n"
-            "  \"asm_flags_release\": \"${CMAKE_ASM_FLAGS_RELEASE}\"\n"
-            "}\n")
-    else()
-        # A guest built without the profile must say so. Left silent it is
-        # indistinguishable from an audited one to everything downstream --
-        # the runner, a report, a verifier -- and the difference is the whole
-        # point of having a profile. The manifest is written in both modes so
-        # that its absence never has to be interpreted.
-        add_compile_definitions(MONAD_ZKVM_DEV_PROFILE=1)
-        file(WRITE "${CMAKE_BINARY_DIR}/monad-zkvm-official-profile.json"
-            "{\n"
-            "  \"schema\": 2,\n"
-            "  \"profile\": \"dev\",\n"
-            "  \"target\": \"${MONAD_ZKVM_GUEST_TARGET}\",\n"
-            "  \"compiler\": \"${CMAKE_CXX_COMPILER}\",\n"
-            "  \"compiler_id\": \"${CMAKE_CXX_COMPILER_ID}\",\n"
-            "  \"compiler_version\": \"${CMAKE_CXX_COMPILER_VERSION}\",\n"
-            "  \"c_flags\": \"${CMAKE_C_FLAGS}\",\n"
-            "  \"cxx_flags\": \"${CMAKE_CXX_FLAGS}\",\n"
-            "  \"asm_flags\": \"${CMAKE_ASM_FLAGS}\"\n"
-            "}\n")
     endif()
 
     # Repo + third-party paths.
@@ -434,6 +366,81 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     else()
         message(FATAL_ERROR
             "libgcc.a not found via compiler query")
+    endif()
+
+    # The profile's identity is computed here, at the bottom of the flag setup
+    # and above the first compiled target. It signs CMAKE_{C,CXX,ASM}_FLAGS, so a
+    # flag appended below this point would be in the guest and not in its
+    # signature, and two differently-built guests would claim one identity.
+    # A commit that adds a guest flag adds it above this block.
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        file(SHA256 "${CMAKE_CXX_COMPILER}" _official_cxx_sha256)
+        # The patch files hash the same on every machine, unlike the compiler
+        # they produce, so this is the part of the toolchain identity that two
+        # builds of one commit can actually be expected to agree on.
+        set(_dma_patch_dir "${CMAKE_CURRENT_SOURCE_DIR}/../toolchain/zisk-dma-gcc")
+        set(_dma_patch_sha "")
+        foreach(_p 0001-riscv-zisk-dma-lowering-14.3.0.patch
+                   0002-riscv.md-forward-port-15.2.0.diff
+                   0003-guest-zicsr-15.2.0.patch)
+            if(NOT EXISTS "${_dma_patch_dir}/${_p}")
+                message(FATAL_ERROR
+                    "official ZisK profile: missing ${_p} in zkvm/toolchain/zisk-dma-gcc")
+            endif()
+            file(SHA256 "${_dma_patch_dir}/${_p}" _one)
+            string(APPEND _dma_patch_sha "${_one}")
+        endforeach()
+        string(SHA256 _dma_patch_sha "${_dma_patch_sha}")
+        list(JOIN _monad_zkvm_official_features "," _official_features_csv)
+        string(SHA256 _official_build_signature
+            "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}\n${_dma_patch_sha}")
+        add_compile_definitions(
+            MONAD_ZKVM_OFFICIAL_PROFILE=1
+            MONAD_ZKVM_BUILD_COMMIT="${MONAD_ZKVM_GIT_COMMIT}"
+            MONAD_ZKVM_BUILD_SIGNATURE="${_official_build_signature}"
+            MONAD_ZKVM_BUILD_FEATURES="${_official_features_csv}"
+            MONAD_ZKVM_RUNTIME_VERSION="${_monad_zkvm_runtime_version}")
+        file(WRITE "${CMAKE_BINARY_DIR}/monad-zkvm-official-profile.json"
+            "{\n"
+            "  \"schema\": 2,\n"
+            "  \"profile\": \"official\",\n"
+            "  \"target\": \"zisk\",\n"
+            "  \"runtime_version\": \"${_monad_zkvm_runtime_version}\",\n"
+            "  \"runtime_revision\": \"${_monad_zkvm_runtime_revision}\",\n"
+            "  \"features_csv\": \"${_official_features_csv}\",\n"
+            "  \"compiler\": \"${CMAKE_CXX_COMPILER}\",\n"
+            "  \"compiler_id\": \"${CMAKE_CXX_COMPILER_ID}\",\n"
+            "  \"compiler_version\": \"${CMAKE_CXX_COMPILER_VERSION}\",\n"
+            "  \"compiler_sha256\": \"${_official_cxx_sha256}\",\n"
+            "  \"dma_patch_sha256\": \"${_dma_patch_sha}\",\n"
+            "  \"commit\": \"${MONAD_ZKVM_GIT_COMMIT}\",\n"
+            "  \"build_signature\": \"${_official_build_signature}\",\n"
+            "  \"c_flags\": \"${CMAKE_C_FLAGS}\",\n"
+            "  \"c_flags_release\": \"${CMAKE_C_FLAGS_RELEASE}\",\n"
+            "  \"cxx_flags\": \"${CMAKE_CXX_FLAGS}\",\n"
+            "  \"cxx_flags_release\": \"${CMAKE_CXX_FLAGS_RELEASE}\",\n"
+            "  \"asm_flags\": \"${CMAKE_ASM_FLAGS}\",\n"
+            "  \"asm_flags_release\": \"${CMAKE_ASM_FLAGS_RELEASE}\"\n"
+            "}\n")
+    else()
+        # A guest built without the profile must say so. Left silent it is
+        # indistinguishable from an audited one to everything downstream --
+        # the runner, a report, a verifier -- and the difference is the whole
+        # point of having a profile. The manifest is written in both modes so
+        # that its absence never has to be interpreted.
+        add_compile_definitions(MONAD_ZKVM_DEV_PROFILE=1)
+        file(WRITE "${CMAKE_BINARY_DIR}/monad-zkvm-official-profile.json"
+            "{\n"
+            "  \"schema\": 2,\n"
+            "  \"profile\": \"dev\",\n"
+            "  \"target\": \"${MONAD_ZKVM_GUEST_TARGET}\",\n"
+            "  \"compiler\": \"${CMAKE_CXX_COMPILER}\",\n"
+            "  \"compiler_id\": \"${CMAKE_CXX_COMPILER_ID}\",\n"
+            "  \"compiler_version\": \"${CMAKE_CXX_COMPILER_VERSION}\",\n"
+            "  \"c_flags\": \"${CMAKE_C_FLAGS}\",\n"
+            "  \"cxx_flags\": \"${CMAKE_CXX_FLAGS}\",\n"
+            "  \"asm_flags\": \"${CMAKE_ASM_FLAGS}\"\n"
+            "}\n")
     endif()
 
     # ---- Bare-metal libc / libstdc++ stubs ----

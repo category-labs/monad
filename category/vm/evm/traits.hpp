@@ -40,9 +40,12 @@ namespace monad
         // storage tables — is in place) but are not yet wired up behaviorally.
         // Such forks are excluded from the typed-revision test matrices and
         // must not be run through evmone (see to_evmc_revision()).
-        // TODO(amsterdam): bump to MONAD_ETH_AMSTERDAM once Amsterdam support
-        // lands.
         inline constexpr monad_eth_revision LATEST_SUPPORTED_EVM_FORK =
+            MONAD_ETH_AMSTERDAM;
+
+        // The latest fork supported by the reference implementation,
+        // used for differential tests.
+        inline constexpr monad_eth_revision LATEST_REFERENCE_REVISION =
             MONAD_ETH_OSAKA;
 
         inline constexpr size_t MAX_CODE_SIZE_EIP170 = 24 * 1024; // 0x6000
@@ -80,8 +83,10 @@ namespace monad
         { T::eip_7685_active() } -> std::same_as<bool>;
         { T::eip_7691_active() } -> std::same_as<bool>;
         { T::eip_7823_active() } -> std::same_as<bool>;
+        { T::eip_7843_active() } -> std::same_as<bool>;
         { T::eip_7883_active() } -> std::same_as<bool>;
         { T::eip_7918_active() } -> std::same_as<bool>;
+        { T::eip_7928_active() } -> std::same_as<bool>;
         { T::eip_7939_active() } -> std::same_as<bool>;
         { T::eip_7951_active() } -> std::same_as<bool>;
         { T::eip_7981_active() } -> std::same_as<bool>;
@@ -163,6 +168,11 @@ namespace monad
             return Rev >= MONAD_ETH_OSAKA;
         }
 
+        static consteval bool eip_7843_active() noexcept
+        {
+            return Rev >= MONAD_ETH_AMSTERDAM;
+        }
+
         static consteval bool eip_7883_active() noexcept
         {
             return Rev >= MONAD_ETH_OSAKA;
@@ -171,6 +181,11 @@ namespace monad
         static consteval bool eip_7918_active() noexcept
         {
             return Rev >= MONAD_ETH_OSAKA;
+        }
+
+        static consteval bool eip_7928_active() noexcept
+        {
+            return Rev >= MONAD_ETH_AMSTERDAM;
         }
 
         static consteval bool eip_7939_active() noexcept
@@ -342,6 +357,11 @@ namespace monad
             return evm_rev() >= MONAD_ETH_OSAKA;
         }
 
+        static consteval bool eip_7843_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_AMSTERDAM;
+        }
+
         static consteval bool eip_7883_active() noexcept
         {
             return evm_rev() >= MONAD_ETH_OSAKA;
@@ -349,6 +369,13 @@ namespace monad
 
         static consteval bool eip_7918_active() noexcept
         {
+            return false;
+        }
+
+        static consteval bool eip_7928_active() noexcept
+        {
+            // Monad Amsterdam blocks carry an unused block_access_list_hash
+            // field.
             return false;
         }
 

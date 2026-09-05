@@ -23,6 +23,8 @@ target_sources(monad-vm-evm PRIVATE
     "delegation.cpp"
     "delegation.hpp"
     "explicit_traits.hpp"
+    "message.cpp"
+    "message.hpp"
     "opcodes.hpp"
     "opcodes_xmacro.hpp"
     "page_storage_status.cpp"

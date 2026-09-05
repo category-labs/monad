@@ -21,13 +21,13 @@
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/vm.hpp>
 
-#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <algorithm>
@@ -61,7 +61,7 @@ namespace monad::vm
 
     template <Traits traits>
     evmc::Result VM::execute(
-        Host &host, evmc_message const *msg, bytes32_t const &code_hash,
+        Host &host, monad_message const *msg, bytes32_t const &code_hash,
         SharedVarcode const &vcode)
     {
         auto const *const host_itf = &host.get_interface();
@@ -70,11 +70,12 @@ namespace monad::vm
 
         if constexpr (enable_execute_override) {
             if (execute_override_) {
+                auto const evmc_msg = to_evmc_message(*msg);
                 return execute_override_(
                     host_itf,
                     host_ctx,
                     traits::evm_rev(),
-                    msg,
+                    &evmc_msg,
                     icode->code(),
                     icode->size());
             }
@@ -102,18 +103,19 @@ namespace monad::vm
 
     template <Traits traits>
     evmc::Result VM::execute_bytecode(
-        Host &host, evmc_message const *msg, std::span<uint8_t const> code)
+        Host &host, monad_message const *msg, std::span<uint8_t const> code)
     {
         auto const *const host_itf = &host.get_interface();
         auto *const host_ctx = host.to_context();
 
         if constexpr (enable_execute_override) {
             if (execute_override_) {
+                auto const evmc_msg = to_evmc_message(*msg);
                 return execute_override_(
                     host_itf,
                     host_ctx,
                     traits::evm_rev(),
-                    msg,
+                    &evmc_msg,
                     code.data(),
                     code.size());
             }

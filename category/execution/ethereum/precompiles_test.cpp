@@ -19,6 +19,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <monad/test/traits_test.hpp>
 
@@ -331,7 +332,7 @@ namespace
 
         for (auto const &test_case : test_cases) {
             auto test_with_gas_offset = [&](int64_t gas_offset) {
-                evmc_message const input = {
+                monad_message const input = {
                     .gas = test_case.gas + gas_offset,
                     .input_data = test_case.input.data(),
                     .input_size = test_case.input.size(),

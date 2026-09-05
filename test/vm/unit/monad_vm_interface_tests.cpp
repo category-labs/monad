@@ -16,6 +16,7 @@
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/allocator.hpp>
@@ -82,7 +83,7 @@ namespace
     class HostMock : public Host
     {
         size_t calls_before_exception_;
-        std::function<evmc::Result(Host &, evmc_message const &)> call_impl_;
+        std::function<evmc::Result(Host &, monad_message const &)> call_impl_;
         evmc_tx_context tx_context_{};
 
     public:
@@ -93,7 +94,8 @@ namespace
 
         HostMock(
             size_t const calls_before_exception,
-            std::function<evmc::Result(Host &, evmc_message const &)> call_impl)
+            std::function<evmc::Result(Host &, monad_message const &)>
+                call_impl)
             : calls_before_exception_{calls_before_exception}
             , call_impl_{std::move(call_impl)}
         {
@@ -152,7 +154,7 @@ namespace
                 if (calls_before_exception_-- == 0) {
                     throw Exception{"exception"};
                 }
-                return call_impl_(*this, msg);
+                return call_impl_(*this, from_evmc_message(msg));
             }
             catch (...) {
                 capture_current_exception();
@@ -725,7 +727,7 @@ TEST(MonadVmInterface, execute)
     {
         VM vm;
         HostMock host{
-            0, [&](Host &, evmc_message const &) { return evmc::Result{}; }};
+            0, [&](Host &, monad_message const &) { return evmc::Result{}; }};
         std::vector<uint8_t> bytecode{};
         auto hash = std::bit_cast<bytes32_t>(
             keccak256({bytecode.data(), bytecode.size()}));
@@ -749,7 +751,7 @@ TEST(MonadVmInterface, execute)
             auto vcode = vm.try_insert_varcode(hash, icode);
             ASSERT_EQ(vcode->intercode(), icode);
             ASSERT_EQ(vcode->nativecode(), nullptr);
-            HostMock host{depth, [&](Host &host, evmc_message const &m) {
+            HostMock host{depth, [&](Host &host, monad_message const &m) {
                               return vm.execute<EvmTraits<MONAD_ETH_PRAGUE>>(
                                   host, &m, hash, vcode);
                           }};
@@ -768,7 +770,7 @@ TEST(MonadVmInterface, execute)
             ASSERT_TRUE(vcode.has_value());
             ASSERT_EQ(vcode.value()->intercode(), icode);
             ASSERT_NE(vcode.value()->nativecode(), nullptr);
-            HostMock host{depth, [&](Host &host, evmc_message const &m) {
+            HostMock host{depth, [&](Host &host, monad_message const &m) {
                               return vm.execute<EvmTraits<MONAD_ETH_PRAGUE>>(
                                   host, &m, hash, *vcode);
                           }};
@@ -796,7 +798,7 @@ TEST(MonadVmInterface, execute_bytecode)
 
     {
         HostMock host{
-            0, [&](Host &, evmc_message const &) { return evmc::Result{}; }};
+            0, [&](Host &, monad_message const &) { return evmc::Result{}; }};
         std::vector<uint8_t> bytecode{};
         auto result = vm.execute_bytecode<EvmTraits<MONAD_ETH_PRAGUE>>(
             host, &*msg, bytecode);
@@ -810,7 +812,7 @@ TEST(MonadVmInterface, execute_bytecode)
     for (size_t const depth : std::initializer_list<size_t>{0, 1, 2, 1023}) {
         try {
             HostMock host{
-                depth, [&](Host &host, evmc_message const &m) {
+                depth, [&](Host &host, monad_message const &m) {
                     return vm.execute_bytecode<EvmTraits<MONAD_ETH_PRAGUE>>(
                         host, &m, bytecode);
                 }};

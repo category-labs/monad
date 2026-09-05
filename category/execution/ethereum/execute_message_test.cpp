@@ -37,6 +37,7 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/delegation.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -107,8 +108,8 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
         BlockHeader{});
 
     auto msg_memory = vm.message_memory_ref();
-    evmc_message m{
-        .kind = EVMC_CREATE,
+    monad_message m{
+        .kind = MONAD_CREATE,
         .gas = 20'000,
         .sender = from,
         .memory_handle = msg_memory.get(),
@@ -116,7 +117,7 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
         .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000'000'000'000}; // too much
-    m.value = store_be_as<evmc::uint256be>(v);
+    m.value = store_be_as<bytes32_t>(v);
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
@@ -135,7 +136,7 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
         base_fee,
         0,
         chain_ctx};
-    init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
+    init_rb_for_test<typename TestFixture::Trait>(s, h, m.sender);
     auto const result =
         execute_create_message<typename TestFixture::Trait>(&h, s, m);
 
@@ -170,8 +171,8 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
         BlockHeader{});
 
     auto msg_memory = vm.message_memory_ref();
-    evmc_message m{
-        .kind = EVMC_CREATE,
+    monad_message m{
+        .kind = MONAD_CREATE,
         .depth = 0, // top-level transaction
         .gas = 20'000,
         .sender = from,
@@ -180,7 +181,7 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
         .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000'000'000'000}; // too much balance required
-    m.value = store_be_as<evmc::uint256be>(v);
+    m.value = store_be_as<bytes32_t>(v);
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
@@ -199,7 +200,7 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
         base_fee,
         0,
         chain_ctx};
-    init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
+    init_rb_for_test<typename TestFixture::Trait>(s, h, m.sender);
 
     auto const result =
         execute_create_message<typename TestFixture::Trait>(&h, s, m);
@@ -280,8 +281,8 @@ TYPED_TEST(TraitsTest, create_revert_preserves_access_list_trace)
     init_rb_for_test<typename TestFixture::Trait>(s, h, from);
 
     auto msg_memory = vm.message_memory_ref();
-    evmc_message m{
-        .kind = EVMC_CREATE,
+    monad_message m{
+        .kind = MONAD_CREATE,
         .depth = 1,
         .gas = 1'000'000,
         .sender = from,
@@ -340,8 +341,8 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
         BlockHeader{});
 
     auto msg_memory = vm.message_memory_ref();
-    evmc_message m{
-        .kind = EVMC_CREATE,
+    monad_message m{
+        .kind = MONAD_CREATE,
         .gas = 20'000,
         .sender = from,
         .memory_handle = msg_memory.get(),
@@ -349,7 +350,7 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
         .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000};
-    m.value = store_be_as<evmc::uint256be>(v);
+    m.value = store_be_as<bytes32_t>(v);
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
@@ -368,7 +369,7 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
         base_fee,
         0,
         chain_ctx};
-    init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
+    init_rb_for_test<typename TestFixture::Trait>(s, h, m.sender);
     auto const result =
         execute_create_message<typename TestFixture::Trait>(&h, s, m);
     EXPECT_EQ(result.status_code, EVMC_INVALID_INSTRUCTION);
@@ -419,8 +420,8 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
         BlockHeader{});
 
     auto msg_memory = vm.message_memory_ref();
-    evmc_message m{
-        .kind = EVMC_CREATE,
+    monad_message m{
+        .kind = MONAD_CREATE,
         .gas = 20'000,
         .sender = from,
         .memory_handle = msg_memory.get(),
@@ -428,9 +429,9 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
         .memory_capacity = vm.message_memory_capacity(),
     };
     uint256_t const v{70'000'000};
-    m.value = store_be_as<evmc::uint256be>(v);
+    m.value = store_be_as<bytes32_t>(v);
 
-    init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
+    init_rb_for_test<typename TestFixture::Trait>(s, h, m.sender);
     auto const result =
         execute_create_message<typename TestFixture::Trait>(&h, s, m);
 
@@ -485,14 +486,14 @@ TYPED_TEST(TraitsTest, static_precompile_execution)
     static constexpr auto data_size = sizeof(data);
 
     auto msg_memory = vm.message_memory_ref();
-    evmc_message const m{
-        .kind = EVMC_CALL,
+    monad_message const m{
+        .kind = MONAD_CALL,
         .gas = 400,
         .recipient = code_address,
         .sender = from,
         .input_data = reinterpret_cast<unsigned char const *>(data),
         .input_size = data_size,
-        .value = {0},
+        .value = {},
         .code_address = code_address,
         .memory_handle = msg_memory.get(),
         .memory = msg_memory.get(),
@@ -555,14 +556,14 @@ TYPED_TEST(TraitsTest, out_of_gas_static_precompile_execution)
     static constexpr auto data_size = sizeof(data);
 
     auto msg_memory = vm.message_memory_ref();
-    evmc_message const m{
-        .kind = EVMC_CALL,
+    monad_message const m{
+        .kind = MONAD_CALL,
         .gas = 100,
         .recipient = code_address,
         .sender = from,
         .input_data = reinterpret_cast<unsigned char const *>(data),
         .input_size = data_size,
-        .value = {0},
+        .value = {},
         .code_address = code_address,
         .memory_handle = msg_memory.get(),
         .memory = msg_memory.get(),
@@ -658,8 +659,8 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
         std::numeric_limits<size_t>::max()) {
         static_assert(TestFixture::Trait::max_initcode_size() < 0xFFFFFF);
         auto msg_memory = vm.message_memory_ref();
-        evmc_message m{
-            .kind = EVMC_CALL,
+        monad_message m{
+            .kind = MONAD_CALL,
             .gas = 1'000'000,
             .recipient = good_code_address,
             .sender = from,
@@ -678,8 +679,8 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
         TestFixture::Trait::max_initcode_size() <
         std::numeric_limits<size_t>::max()) {
         auto msg_memory = vm.message_memory_ref();
-        evmc_message m{
-            .kind = EVMC_CALL,
+        monad_message m{
+            .kind = MONAD_CALL,
             .gas = 1'000'000,
             .recipient = bad_code_address,
             .sender = from,
@@ -782,8 +783,8 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
         std::numeric_limits<size_t>::max()) {
         static_assert(TestFixture::Trait::max_initcode_size() < 0xFFFFFF);
         auto msg_memory = vm.message_memory_ref();
-        evmc_message m{
-            .kind = EVMC_CALL,
+        monad_message m{
+            .kind = MONAD_CALL,
             .gas = 1'000'000,
             .recipient = good_code_address,
             .sender = from,
@@ -802,8 +803,8 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
         TestFixture::Trait::max_initcode_size() <
         std::numeric_limits<size_t>::max()) {
         auto msg_memory = vm.message_memory_ref();
-        evmc_message m{
-            .kind = EVMC_CALL,
+        monad_message m{
+            .kind = MONAD_CALL,
             .gas = 1'000'000,
             .recipient = bad_code_address,
             .sender = from,
@@ -993,9 +994,9 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
         BlockHeader{});
 
     auto msg_memory = vm.message_memory_ref();
-    evmc_message const m{
-        .kind = EVMC_CALL,
-        .flags = EVMC_DELEGATED,
+    monad_message const m{
+        .kind = MONAD_CALL,
+        .flags = MONAD_DELEGATED,
         .gas = 1'000'000,
         .recipient = eoa,
         .sender = from,
@@ -1022,7 +1023,7 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
         base_fee,
         0,
         chain_ctx};
-    init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
+    init_rb_for_test<typename TestFixture::Trait>(s, h, m.sender);
 
     if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
         auto const result = h.call(m);
@@ -1124,9 +1125,9 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
         BlockHeader{});
 
     auto msg_memory = vm.message_memory_ref();
-    evmc_message const m{
-        .kind = EVMC_CALL,
-        .flags = EVMC_DELEGATED,
+    monad_message const m{
+        .kind = MONAD_CALL,
+        .flags = MONAD_DELEGATED,
         .gas = 1'000'000,
         .recipient = eoa,
         .sender = from,
@@ -1153,7 +1154,7 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
         base_fee,
         0,
         chain_ctx};
-    init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
+    init_rb_for_test<typename TestFixture::Trait>(s, h, m.sender);
 
     if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
         auto const result = h.call(m);
@@ -1239,8 +1240,8 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
         BlockHeader{});
 
     auto msg_memory = vm.message_memory_ref();
-    evmc_message const m{
-        .kind = EVMC_CALL,
+    monad_message const m{
+        .kind = MONAD_CALL,
         .gas = 1'000'000,
         .recipient = contract,
         .sender = from,
@@ -1269,7 +1270,7 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
             base_fee,
             0,
             chain_ctx};
-        init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
+        init_rb_for_test<typename TestFixture::Trait>(s, h, m.sender);
 
         auto const result = h.call(m);
 
@@ -1324,8 +1325,8 @@ TYPED_TEST(TraitsTest, cold_account_access)
     constexpr auto gas_limit = 1'000'000;
 
     auto msg_memory = vm.message_memory_ref();
-    evmc_message const m{
-        .kind = EVMC_CALL,
+    monad_message const m{
+        .kind = MONAD_CALL,
         .gas = gas_limit,
         .recipient = contract,
         .sender = from,
@@ -1352,7 +1353,7 @@ TYPED_TEST(TraitsTest, cold_account_access)
         base_fee,
         0,
         chain_ctx};
-    init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
+    init_rb_for_test<typename TestFixture::Trait>(s, h, m.sender);
     auto const result = h.call(m);
     auto const gas_used = gas_limit - result.gas_left;
 

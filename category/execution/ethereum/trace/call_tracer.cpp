@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/vm/evm/message.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -69,7 +70,7 @@ namespace
     }
 }
 
-void NoopCallTracer::on_enter(evmc_message const &) {}
+void NoopCallTracer::on_enter(monad_message const &) {}
 
 void NoopCallTracer::on_exit(evmc::Result const &) {}
 
@@ -97,7 +98,7 @@ CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
     positions_.push(0);
 }
 
-void CallTracer::on_enter(evmc_message const &msg)
+void CallTracer::on_enter(monad_message const &msg)
 {
     MONAD_ASSERT(!positions_.empty());
 
@@ -108,15 +109,15 @@ void CallTracer::on_enter(evmc_message const &msg)
 
     // This is to conform with quicknode RPC
     Address const from =
-        msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE
+        msg.kind == MONAD_DELEGATECALL || msg.kind == MONAD_CALLCODE
             ? msg.recipient
             : msg.sender;
 
     std::optional<Address> to;
-    if (msg.kind == EVMC_CALL) {
+    if (msg.kind == MONAD_CALL) {
         to = msg.recipient;
     }
-    else if (msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE) {
+    else if (msg.kind == MONAD_DELEGATECALL || msg.kind == MONAD_CALLCODE) {
         to = msg.code_address;
     }
 
@@ -124,17 +125,17 @@ void CallTracer::on_enter(evmc_message const &msg)
         .type =
             [kind = msg.kind] {
                 switch (kind) {
-                case EVMC_CALL:
+                case MONAD_CALL:
                     return CallType::CALL;
-                case EVMC_DELEGATECALL:
+                case MONAD_DELEGATECALL:
                     return CallType::DELEGATECALL;
-                case EVMC_CALLCODE:
+                case MONAD_CALLCODE:
                     return CallType::CALLCODE;
-                case EVMC_CREATE:
+                case MONAD_CREATE:
                     return CallType::CREATE;
-                case EVMC_CREATE2:
+                case MONAD_CREATE2:
                     return CallType::CREATE2;
-                case EVMC_EOFCREATE:
+                case MONAD_EOFCREATE:
                     MONAD_ABORT(); // unsupported
                 }
                 MONAD_ABORT(); // unreachable

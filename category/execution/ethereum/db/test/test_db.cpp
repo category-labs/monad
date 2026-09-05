@@ -190,7 +190,7 @@ TEST(DBTest, read_only)
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            mpt::OnDiskDbConfig{.dbname_paths = {name}}};
+            mpt::OnDiskDbConfig{.dbname_paths = {name}, .chunk_capacity = 24}};
         TrieDb rw(db);
 
         Account const acct1{.nonce = 1};
@@ -732,7 +732,8 @@ TYPED_TEST(DBTest, to_json)
         if (this->on_disk) {
             return mpt::Db{
                 std::make_unique<OnDiskMachine>(),
-                mpt::OnDiskDbConfig{.dbname_paths = {dbname}}};
+                mpt::OnDiskDbConfig{
+                    .dbname_paths = {dbname}, .chunk_capacity = 24}};
         }
         return mpt::Db{std::make_unique<InMemoryMachine>()};
     }();

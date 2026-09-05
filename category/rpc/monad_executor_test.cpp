@@ -158,7 +158,10 @@ namespace
                 return std::filesystem::path{dbpath};
             }()}
             , db{std::make_unique<Machine>(),
-                 mpt::OnDiskDbConfig{.append = false, .dbname_paths = {dbname}}}
+                 mpt::OnDiskDbConfig{
+                     .append = false,
+                     .dbname_paths = {dbname},
+                     .chunk_capacity = 24}}
             , tdb{db}
         {
         }

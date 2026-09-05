@@ -97,7 +97,8 @@ namespace
             .compaction = true,
             .sq_thread_cpu = std::nullopt,
             .dbname_paths = {dbname},
-            .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
+            .fixed_history_length = MPT_TEST_HISTORY_LENGTH,
+            .chunk_capacity = 24};
         Db db{std::make_unique<StateMachineAlwaysMerkle>(), config};
         std::optional<Db> secondary_db;
 
@@ -819,7 +820,8 @@ namespace
             .compaction = true,
             .sq_thread_cpu = std::nullopt,
             .dbname_paths = {dbname},
-            .fixed_history_length = SHORT_HISTORY};
+            .fixed_history_length = SHORT_HISTORY,
+            .chunk_capacity = 24};
         Db db{std::make_unique<StateMachineAlwaysMerkle>(), config};
         std::optional<Db> secondary_db;
 

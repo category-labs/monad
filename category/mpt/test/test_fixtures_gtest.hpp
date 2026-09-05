@@ -78,7 +78,8 @@ namespace monad::test
                   .compaction = true,
                   .sq_thread_cpu = std::nullopt,
                   .dbname_paths = {dbname},
-                  .fixed_history_length = MPT_TEST_HISTORY_LENGTH}}
+                  .fixed_history_length = MPT_TEST_HISTORY_LENGTH,
+                  .chunk_capacity = 24}}
             , db{std::make_unique<StateMachineType>(), config}
             , root{}
         {

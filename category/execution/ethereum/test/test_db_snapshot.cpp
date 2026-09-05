@@ -234,7 +234,8 @@ TEST(DbBinarySnapshot, Basic)
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.dbname_paths = {src_db.path}}};
+            OnDiskDbConfig{
+                .dbname_paths = {src_db.path}, .chunk_capacity = 24}};
         Node::SharedPtr root{};
         for (uint64_t i = 0; i < 100; ++i) {
             root = load_header(std::move(root), db, BlockHeader{.number = i});
@@ -300,7 +301,8 @@ TEST(DbBinarySnapshot, Basic)
         {
             mpt::Db dest_init{
                 std::make_unique<OnDiskMachine>(),
-                OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+                OnDiskDbConfig{
+                    .dbname_paths = {dest_db.path}, .chunk_capacity = 24}};
             // Stamp the kind so the snapshot loader's metadata-driven
             // Db ctor (via monad_db_snapshot_loader_create) can resolve
             // it.
@@ -357,7 +359,8 @@ TEST(DbBinarySnapshot, MultipleShards)
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.dbname_paths = {src_db.path}}};
+            OnDiskDbConfig{
+                .dbname_paths = {src_db.path}, .chunk_capacity = 24}};
         Node::SharedPtr root{};
         for (uint64_t i = 0; i < 100; ++i) {
             root = load_header(std::move(root), db, BlockHeader{.number = i});
@@ -461,7 +464,8 @@ TEST(DbBinarySnapshot, MultipleShards)
         {
             mpt::Db dest_init{
                 std::make_unique<OnDiskMachine>(),
-                OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+                OnDiskDbConfig{
+                    .dbname_paths = {dest_db.path}, .chunk_capacity = 24}};
             // Stamp the kind so the snapshot loader's metadata-driven
             // Db ctor (via monad_db_snapshot_loader_create) can resolve
             // it.
@@ -583,7 +587,8 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.dbname_paths = {dbname.path}}};
+            OnDiskDbConfig{
+                .dbname_paths = {dbname.path}, .chunk_capacity = 24}};
         load_header({}, db, BlockHeader{.number = 0});
         db.update_finalized_version(0);
         StateDeltas deltas;
@@ -634,7 +639,10 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
         {
             mpt::Db primary{
                 std::make_unique<OnDiskMachine>(),
-                OnDiskDbConfig{.append = true, .dbname_paths = {dbname.path}}};
+                OnDiskDbConfig{
+                    .append = true,
+                    .dbname_paths = {dbname.path},
+                    .chunk_capacity = 24}};
             [[maybe_unused]] auto const secondary =
                 primary.activate_secondary_timeline(
                     std::make_unique<monad::MonadOnDiskMachine>());
@@ -656,7 +664,10 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.append = true, .dbname_paths = {dbname.path}}};
+            OnDiskDbConfig{
+                .append = true,
+                .dbname_paths = {dbname.path},
+                .chunk_capacity = 24}};
         {
             auto db2 = db.open_secondary_timeline(
                 std::make_unique<monad::MonadOnDiskMachine>());
@@ -778,7 +789,7 @@ namespace
 
         mpt::Db db1{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.dbname_paths = {dbname}}};
+            OnDiskDbConfig{.dbname_paths = {dbname}, .chunk_capacity = 24}};
         // Activate before any TrieDb exists (requires worker_thread_use_count
         // == 1).
         mpt::Db db2 = db1.activate_secondary_timeline(
@@ -853,7 +864,7 @@ namespace
         using namespace monad::mpt;
         mpt::Db primary{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.dbname_paths = {dbname}}};
+            OnDiskDbConfig{.dbname_paths = {dbname}, .chunk_capacity = 24}};
         [[maybe_unused]] auto const secondary =
             primary.activate_secondary_timeline(
                 std::make_unique<monad::MonadOnDiskMachine>());
@@ -868,7 +879,10 @@ namespace
 
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.append = true, .dbname_paths = {dbname}}};
+            OnDiskDbConfig{
+                .append = true,
+                .dbname_paths = {dbname},
+                .chunk_capacity = 24}};
         {
             auto db2 = db.open_secondary_timeline(
                 std::make_unique<monad::MonadOnDiskMachine>());
@@ -956,7 +970,8 @@ TEST(DbBinarySnapshot, HeaderlessSnapshotRestores)
     {
         mpt::Db dest_init{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.dbname_paths = {slot_db.path}}};
+            OnDiskDbConfig{
+                .dbname_paths = {slot_db.path}, .chunk_capacity = 24}};
         monad::mpt::test::DbAccessor::aux(dest_init)
             .metadata_ctx()
             .set_state_machine_kind(
@@ -1026,7 +1041,8 @@ TEST(DbBinarySnapshot, DumpFromSecondaryPageDb)
     {
         mpt::Db db1{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.dbname_paths = {src_db.path}}};
+            OnDiskDbConfig{
+                .dbname_paths = {src_db.path}, .chunk_capacity = 24}};
         // Activate before any TrieDb exists (requires worker_thread_use_count
         // == 1). db2 is bound to the secondary timeline.
         mpt::Db db2 = db1.activate_secondary_timeline(
@@ -1086,7 +1102,8 @@ TEST(DbBinarySnapshot, DumpFromSecondaryPageDb)
         {
             mpt::Db dest_init{
                 std::make_unique<OnDiskMachine>(),
-                OnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+                OnDiskDbConfig{
+                    .dbname_paths = {dest_db.path}, .chunk_capacity = 24}};
             monad::mpt::test::DbAccessor::aux(dest_init)
                 .metadata_ctx()
                 .set_state_machine_kind(

@@ -239,6 +239,8 @@ TEST(update_aux_test, configurable_root_offset_chunks)
             4,
             monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
             monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+    // Default chunk capacity: the root offset ring capacity asserted below
+    // is derived from it.
     monad::async::storage_pool::creation_flags flags;
     flags.num_cnv_chunks = 5;
     {
@@ -305,6 +307,7 @@ TEST(update_aux_test, legacy_zero_num_cnv_chunks_footer)
             monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
             monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
     monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 24;
     flags.num_cnv_chunks = 0; // legacy footer
     {
         monad::async::storage_pool pool(
@@ -497,6 +500,7 @@ TEST(update_aux_test, migrates_monad007_layout_to_monad008)
     static constexpr size_t MONAD007_LIST_TRIPLE_OFFSET = 528488;
 
     monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 24;
     flags.allow_migration = true;
     monad::async::storage_pool pool(
         monad::async::use_anonymous_inode_tag{}, flags);
@@ -702,6 +706,7 @@ TEST(update_aux_test, migrates_monad007_layout_to_monad008)
 TEST(update_aux_test, migrates_monad007_resumes_after_partial_migration)
 {
     monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 24;
     flags.allow_migration = true;
     monad::async::storage_pool pool(
         monad::async::use_anonymous_inode_tag{}, flags);
@@ -1372,6 +1377,7 @@ TEST(update_aux_test, promote_persists_across_reopen)
     MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30)); // 8GB
 
     monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 24;
     flags.num_cnv_chunks = 5;
 
     chunk_offset_t const primary_before{1, 0};
@@ -1463,6 +1469,7 @@ TEST(update_aux_test, replay_completes_pending_promote_after_crash)
     MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30));
 
     monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 24;
     flags.num_cnv_chunks = 5;
 
     {
@@ -1554,6 +1561,7 @@ TEST(update_aux_test, replay_completes_pending_activate_after_crash)
     MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30));
 
     monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 24;
     flags.num_cnv_chunks = 5;
 
     // Session 1: init pool; stamp pending activate flag manually (as if a
@@ -1665,6 +1673,7 @@ TEST(update_aux_test, replay_is_noop_when_activate_already_committed)
     MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30));
 
     monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 24;
     flags.num_cnv_chunks = 5;
 
     uint32_t target_chunks = 0;
@@ -1755,6 +1764,7 @@ TEST(update_aux_test, replay_completes_pending_deactivate_after_crash)
     MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30));
 
     monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 24;
     flags.num_cnv_chunks = 5;
 
     uint32_t target_chunks = 0;
@@ -1841,6 +1851,7 @@ TEST(update_aux_test, replay_completes_partial_cnv_chunks_move)
     MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30));
 
     monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 24;
     flags.num_cnv_chunks = 5; // 4 ring chunks → activate shrinks to 2
 
     uint32_t target_chunks = 0;
@@ -1970,6 +1981,7 @@ TEST(update_aux_test, replay_preserves_primary_low_positions)
     MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30));
 
     monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 24;
     flags.num_cnv_chunks = 5;
 
     chunk_offset_t const pushed{7, 12345};
@@ -2056,6 +2068,7 @@ TEST(update_aux_test, replay_handles_single_copy_pending_stamp)
     MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30));
 
     monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 24;
     flags.num_cnv_chunks = 5;
 
     uint32_t target_chunks = 0;

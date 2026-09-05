@@ -110,7 +110,8 @@ namespace
         // monad_statesync_client_context uses internally — finds a valid kind.
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
+            mpt::OnDiskDbConfig{
+                .append = false, .dbname_paths = {path}, .chunk_capacity = 24}};
         monad::mpt::test::DbAccessor::aux(db)
             .metadata_ctx()
             .set_state_machine_kind(
@@ -222,7 +223,10 @@ namespace
             , cctx{nullptr}
             , sdbname{tmp_dbname()}
             , sdb{make_server_machine(),
-                  OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}}
+                  OnDiskDbConfig{
+                      .append = true,
+                      .dbname_paths = {sdbname},
+                      .chunk_capacity = 24}}
             , stdb{sdb}
             , sctx{stdb}
             , io_ctx{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {sdbname}}}
@@ -235,7 +239,10 @@ namespace
             // already be active on the client db.
             mpt::Db primary{
                 std::make_unique<OnDiskMachine>(),
-                OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+                OnDiskDbConfig{
+                    .append = true,
+                    .dbname_paths = {cdbname},
+                    .chunk_capacity = 24}};
             [[maybe_unused]] mpt::Db secondary =
                 primary.activate_secondary_timeline(
                     std::make_unique<MonadOnDiskMachine>());
@@ -389,7 +396,10 @@ TYPED_TEST(StateSyncTestBothForks, sync_from_latest)
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.append = true, .dbname_paths = {this->cdbname}}};
+            OnDiskDbConfig{
+                .append = true,
+                .dbname_paths = {this->cdbname},
+                .chunk_capacity = 24}};
         TrieDb tdb{db};
         // In dual-db set up, both primary and secondary should stay in
         // lockstep.
@@ -494,7 +504,8 @@ TEST_F(StateSyncFixture, sync_from_empty)
 
     mpt::Db cdb{
         std::make_unique<OnDiskMachine>(),
-        mpt::OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+        mpt::OnDiskDbConfig{
+            .append = true, .dbname_paths = {cdbname}, .chunk_capacity = 24}};
     TrieDb ctdb{cdb};
     ctdb.set_block_and_prefix(cdb.get_latest_finalized_version());
     EXPECT_EQ(ctdb.get_block_number(), 1'000'000);
@@ -529,7 +540,10 @@ TYPED_TEST(StateSyncTestBothForks, sync_from_some)
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.append = true, .dbname_paths = {this->cdbname}}};
+            OnDiskDbConfig{
+                .append = true,
+                .dbname_paths = {this->cdbname},
+                .chunk_capacity = 24}};
         TrieDb tdb{db};
         auto db2_opt =
             db.open_secondary_timeline(std::make_unique<MonadOnDiskMachine>());
@@ -704,7 +718,10 @@ TYPED_TEST(StateSyncTestBothForks, deletion_proposal)
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.append = true, .dbname_paths = {this->cdbname}}};
+            OnDiskDbConfig{
+                .append = true,
+                .dbname_paths = {this->cdbname},
+                .chunk_capacity = 24}};
         TrieDb tdb{db};
         auto db2_opt =
             db.open_secondary_timeline(std::make_unique<MonadOnDiskMachine>());
@@ -1040,7 +1057,10 @@ TEST_F(StateSyncFixture, sync_client_has_proposals)
         // init client DB
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.append = true, .dbname_paths = {cdbname}}};
+            OnDiskDbConfig{
+                .append = true,
+                .dbname_paths = {cdbname},
+                .chunk_capacity = 24}};
         TrieDb tdb{db};
         tdb.reset_root(load_header({}, db, BlockHeader{.number = 0}), 0);
         for (uint64_t n = 1; n <= 249; ++n) {

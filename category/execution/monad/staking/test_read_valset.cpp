@@ -91,7 +91,8 @@ protected:
             vm::VM vm;
             mpt::Db db{
                 std::make_unique<OnDiskMachine>(),
-                mpt::OnDiskDbConfig{.dbname_paths = {db_file.path}}};
+                mpt::OnDiskDbConfig{
+                    .dbname_paths = {db_file.path}, .chunk_capacity = 24}};
             TrieDb tdb{db};
             BlockState bs{tdb, vm};
             State state{bs, Incarnation{0, 0}};

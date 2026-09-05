@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/vm/evm/tx_context.hpp>
 
 namespace monad::test
 {
@@ -35,7 +36,7 @@ namespace monad::test
         uint64_t tx_index_;
         NoopCallTracer noop_call_tracer_;
         State &state_;
-        evmc_tx_context tx_context_;
+        monad_tx_context tx_context_;
         std::vector<Address> chain_context_senders_;
         std::vector<std::vector<std::optional<Address>>>
             chain_context_authorities_;

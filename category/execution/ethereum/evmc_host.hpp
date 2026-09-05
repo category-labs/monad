@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/tx_context.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -52,7 +53,8 @@ class EvmcHostBase : public vm::Host
     BlockHashBuffer const &block_hash_buffer_;
 
 protected:
-    evmc_tx_context const &tx_context_;
+    // evmc copy for the get_tx_context vtable slot; goes with EXE-173.
+    evmc_tx_context const tx_context_;
     State &state_;
     CallTracerBase &call_tracer_;
     bool const log_native_transfers_;
@@ -61,7 +63,7 @@ public:
     trace::StateTracer &state_tracer_;
 
     EvmcHostBase(
-        CallTracerBase &, trace::StateTracer &, evmc_tx_context const &,
+        CallTracerBase &, trace::StateTracer &, monad_tx_context const &,
         BlockHashBuffer const &, State &, bool log_native_transfers) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
@@ -107,7 +109,7 @@ public:
         evmc_storage_status) noexcept override;
 };
 
-static_assert(sizeof(EvmcHostBase) == 72);
+static_assert(sizeof(EvmcHostBase) == 328);
 static_assert(alignof(EvmcHostBase) == 8);
 
 template <Traits traits>
@@ -120,7 +122,7 @@ struct EvmcHost final : public EvmcHostBase
 
     EvmcHost(
         CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
-        evmc_tx_context const &tx_context,
+        monad_tx_context const &tx_context,
         BlockHashBuffer const &block_hash_buffer, State &state,
         Transaction const &tx, std::optional<uint256_t> const base_fee_per_gas,
         uint64_t const i, ChainContext<traits> const &chain_ctx,
@@ -267,10 +269,10 @@ struct EvmcHost final : public EvmcHostBase
 };
 
 static_assert(
-    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 136);
+    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 392);
 static_assert(
     alignof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 8);
-static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
+static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 392);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

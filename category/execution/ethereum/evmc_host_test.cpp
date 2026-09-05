@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/vm/evm/tx_context.hpp>
 #include <category/vm/vm.hpp>
 
 #include <monad/test/traits_test.hpp>
@@ -40,39 +41,22 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
-#include <cstring>
 
 using namespace monad;
 
 using db_t = TrieDb;
 
-bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
+bool operator==(monad_tx_context const &lhs, monad_tx_context const &rhs)
 {
-    return !std::memcmp(
-               lhs.tx_gas_price.bytes,
-               rhs.tx_gas_price.bytes,
-               sizeof(evmc_bytes32)) &&
-           !std::memcmp(
-               lhs.tx_origin.bytes,
-               rhs.tx_origin.bytes,
-               sizeof(evmc_address)) &&
-           !std::memcmp(
-               lhs.block_coinbase.bytes,
-               rhs.block_coinbase.bytes,
-               sizeof(evmc_address)) &&
+    return lhs.tx_gas_price == rhs.tx_gas_price &&
+           lhs.tx_origin == rhs.tx_origin &&
+           lhs.block_coinbase == rhs.block_coinbase &&
            lhs.block_number == rhs.block_number &&
            lhs.block_timestamp == rhs.block_timestamp &&
            lhs.block_gas_limit == rhs.block_gas_limit &&
-           !std::memcmp(
-               lhs.block_prev_randao.bytes,
-               rhs.block_prev_randao.bytes,
-               sizeof(evmc_bytes32)) &&
-           !std::memcmp(
-               lhs.chain_id.bytes, rhs.chain_id.bytes, sizeof(evmc_bytes32)) &&
-           !std::memcmp(
-               lhs.block_base_fee.bytes,
-               rhs.block_base_fee.bytes,
-               sizeof(evmc_bytes32)) &&
+           lhs.block_prev_randao == rhs.block_prev_randao &&
+           lhs.chain_id == rhs.chain_id &&
+           lhs.block_base_fee == rhs.block_base_fee &&
            lhs.block_round == rhs.block_round;
 }
 
@@ -101,26 +85,23 @@ TYPED_TEST(TraitsTest, get_tx_context)
 
     auto const result = get_tx_context<typename TestFixture::Trait>(
         tx, from, hdr, 1, default_blob_schedule<typename TestFixture::Trait>());
-    evmc_tx_context ctx{
+    monad_tx_context ctx{
         .tx_origin = from,
         .block_coinbase = bene,
         .block_number = 15'000'000,
         .block_timestamp = 1677616016,
         .block_gas_limit = 50'000,
-        .block_prev_randao = evmc::uint256be{10'000'000u},
+        .block_prev_randao = bytes32_t{10'000'000u},
     };
-    ctx.chain_id = store_be_as<evmc::uint256be>(uint256_t{chain_id});
-    ctx.tx_gas_price = store_be_as<evmc::uint256be>(gas_cost);
-    ctx.block_base_fee = store_be_as<evmc::uint256be>(base_fee_per_gas);
+    ctx.chain_id = store_be_as<bytes32_t>(uint256_t{chain_id});
+    ctx.tx_gas_price = store_be_as<bytes32_t>(gas_cost);
+    ctx.block_base_fee = store_be_as<bytes32_t>(base_fee_per_gas);
     EXPECT_EQ(result, ctx);
 
     hdr.difficulty = 0;
     auto const pos_result = get_tx_context<typename TestFixture::Trait>(
         tx, from, hdr, 1, default_blob_schedule<typename TestFixture::Trait>());
-    std::memcpy(
-        ctx.block_prev_randao.bytes,
-        hdr.prev_randao.bytes,
-        sizeof(hdr.prev_randao));
+    ctx.block_prev_randao = hdr.prev_randao;
     EXPECT_EQ(pos_result, ctx);
 
     // slot_number (EIP-7843) is surfaced as block_round (unset -> 0 is

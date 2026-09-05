@@ -15,16 +15,15 @@
 
 #pragma once
 
+#include <category/vm/evm/message.hpp>
 #include <test/vm/utils/test_memory.hpp>
-
-#include <evmc/evmc.h>
 
 namespace monad::vm::test
 {
     struct TestMessage
     {
         TestMemory test_memory;
-        evmc_message msg;
+        monad_message msg;
 
         TestMessage()
             : msg{}
@@ -34,12 +33,12 @@ namespace monad::vm::test
             msg.memory_capacity = test_memory.capacity;
         }
 
-        evmc_message &operator*()
+        monad_message &operator*()
         {
             return msg;
         }
 
-        evmc_message *operator->()
+        monad_message *operator->()
         {
             return &msg;
         }

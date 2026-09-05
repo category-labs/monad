@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/fuzzing/generator/choice.hpp>
@@ -203,7 +204,7 @@ private:
 static constexpr auto block_gas_limit = 300'000'000;
 
 static Transaction
-tx_from(TransitionState &tstate, evmc_message const &msg) noexcept
+tx_from(TransitionState &tstate, monad_message const &msg) noexcept
 {
     auto tx = Transaction{};
     tx.to = msg.recipient;
@@ -215,7 +216,7 @@ tx_from(TransitionState &tstate, evmc_message const &msg) noexcept
 template <Traits traits>
 static evmc::Result message_call(
     TransitionState &tstate, BlockHashBuffer const &block_hash_buffer,
-    Transaction const &tx, evmc_message const &msg,
+    Transaction const &tx, monad_message const &msg,
     BlockHeader const &block_header)
 {
     std::optional<uint256_t> base_fee_per_gas{};
@@ -236,7 +237,7 @@ static evmc::Result message_call(
 }
 
 static evmc::Result transition(
-    TransitionState &tstate, evmc_message const &msg,
+    TransitionState &tstate, monad_message const &msg,
     monad_eth_revision const rev, BlockHashBuffer const &block_hash_buffer,
     BlockHeader const &block_header)
 {
@@ -438,7 +439,7 @@ static arguments parse_args(int const argc, char **const argv)
 }
 
 static evmc_status_code fuzz_iteration(
-    evmc_message const &msg, monad_eth_revision const rev,
+    monad_message const &msg, monad_eth_revision const rev,
     BlockHashBuffer const &block_hash_buffer, FuzzerTestStateRef evmone_state,
     FuzzerTestStateRef monad_state, BlockHeader const &block_header,
     bool const strict_out_of_gas)

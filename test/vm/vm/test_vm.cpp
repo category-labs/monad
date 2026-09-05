@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/vm/evm/message.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <hash_utils.hpp>
 #include <test_state.hpp>
@@ -113,8 +114,9 @@ evmc::Result BlockchainTestVM::execute(
     monad_eth_revision const rev = from_evmc_revision(evmc_rev);
     MONAD_ASSERT(rev >= constants::EARLIEST_SUPPORTED_EVM_FORK);
     auto *const prev_rt_ctx = rt_ctx_;
+    auto const monad_msg = from_evmc_message(*msg);
     auto new_rt_ctx =
-        runtime::Context::from(host, context, msg, {code, code_size});
+        runtime::Context::from(host, context, &monad_msg, {code, code_size});
     rt_ctx_ = &new_rt_ctx;
 
     auto res = [&] {

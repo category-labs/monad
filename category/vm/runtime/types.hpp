@@ -20,6 +20,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/exit.hpp>
@@ -228,7 +229,7 @@ namespace monad::vm::runtime
     {
         static Context from(
             evmc_host_interface const *host, evmc_host_context *context,
-            evmc_message const *msg, std::span<uint8_t const> code) noexcept;
+            monad_message const *msg, std::span<uint8_t const> code) noexcept;
 
         static Context
         empty(uint8_t *memory_handle, uint32_t memory_capacity) noexcept;

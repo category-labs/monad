@@ -19,6 +19,7 @@
 #include <category/core/assert.h>
 #include <category/core/log.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/memory_pool.hpp>
@@ -92,8 +93,8 @@ public:
         using namespace evmone::state;
 
         auto msg_memory = memory_pool_.alloc_ref();
-        auto msg = new evmc_message{
-            .kind = EVMC_CALL,
+        auto msg = new monad_message{
+            .kind = MONAD_CALL,
             .flags = 0,
             .depth = 0,
             .gas = 150'000'000,

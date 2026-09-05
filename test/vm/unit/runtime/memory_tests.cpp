@@ -16,6 +16,7 @@
 #include "fixture.hpp"
 
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/memory.hpp>
@@ -47,7 +48,7 @@ namespace
 
         void call(std::function<void(Context &)> const continuation)
         {
-            evmc_message msg{};
+            monad_message msg{};
             if (prev_rt_ctx_) {
                 auto const &m = prev_rt_ctx_->memory;
                 msg.memory = m.data + m.size;

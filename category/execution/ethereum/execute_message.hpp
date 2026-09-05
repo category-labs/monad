@@ -17,6 +17,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/config.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -37,10 +38,10 @@ deploy_contract_code(State &, Address const &, evmc::Result) noexcept;
 
 template <Traits traits>
 evmc::Result
-execute_create_message(EvmcHost<traits> *, State &, evmc_message const &);
+execute_create_message(EvmcHost<traits> *, State &, monad_message const &);
 
 template <Traits traits>
 evmc::Result
-execute_call_message(EvmcHost<traits> *, State &, evmc_message const &);
+execute_call_message(EvmcHost<traits> *, State &, monad_message const &);
 
 MONAD_NAMESPACE_END

@@ -18,11 +18,7 @@
 #include <category/core/address.hpp>
 #include <category/core/config.hpp>
 #include <category/vm/evm/traits.hpp>
-
-#include <evmc/evmc.h>
-
-static_assert(sizeof(evmc_tx_context) == 264);
-static_assert(alignof(evmc_tx_context) == 8);
+#include <category/vm/evm/tx_context.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -30,7 +26,7 @@ struct BlockHeader;
 struct BlobSchedule;
 struct Transaction;
 
-inline constexpr evmc_tx_context EMPTY_TX_CONTEXT{
+inline constexpr monad_tx_context EMPTY_TX_CONTEXT{
     .tx_gas_price{},
     .tx_origin{},
     .block_coinbase{},
@@ -48,7 +44,7 @@ inline constexpr evmc_tx_context EMPTY_TX_CONTEXT{
     .block_round = 0};
 
 template <Traits traits>
-evmc_tx_context get_tx_context(
+monad_tx_context get_tx_context(
     Transaction const &, Address const &sender, BlockHeader const &,
     uint256_t const &chain_id, BlobSchedule const &blob_schedule);
 

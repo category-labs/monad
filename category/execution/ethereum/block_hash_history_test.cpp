@@ -26,6 +26,7 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/mpt/db.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/tx_context.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <monad/test/traits_test.hpp>
 #include <test_resource_data.h>
@@ -93,7 +94,7 @@ namespace
 
             Transaction const tx{};
             BlockHeader const header = {.number = current_block_number};
-            evmc_tx_context const tx_context = get_tx_context<Trait>(
+            monad_tx_context const tx_context = get_tx_context<Trait>(
                 tx,
                 sender,
                 header,

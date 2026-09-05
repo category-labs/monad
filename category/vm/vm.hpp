@@ -19,6 +19,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/interpreter/execute.hpp>
@@ -199,13 +200,14 @@ namespace monad::vm
         /// interpreter and potentially start async compilation.
         template <Traits traits>
         evmc::Result execute(
-            Host &host, evmc_message const *msg, bytes32_t const &code_hash,
+            Host &host, monad_message const *msg, bytes32_t const &code_hash,
             SharedVarcode const &vcode);
 
         /// Execute the bytecode `code` with interpreter.
         template <Traits traits>
         evmc::Result execute_bytecode(
-            Host &host, evmc_message const *msg, std::span<uint8_t const> code);
+            Host &host, monad_message const *msg,
+            std::span<uint8_t const> code);
 
         /// Like `execute`, but without stack unwind support.
         template <Traits traits>

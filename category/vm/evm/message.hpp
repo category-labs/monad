@@ -61,7 +61,7 @@ struct monad_message
 
 struct evmc_message;
 
-// Bridges for the evmc::HostInterface::call vtable slot and the evmone ABI;
+// Bridges for the evmc::HostInterface::call vtable slot and the evmc_vm ABI;
 // go with EXE-173.
 evmc_message to_evmc_message(monad_message const &);
 monad_message from_evmc_message(evmc_message const &);

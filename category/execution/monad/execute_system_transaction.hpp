@@ -18,9 +18,8 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
-
-#include <evmc/evmc.h>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -50,7 +49,7 @@ public:
 
     Result<Receipt> operator()();
 
-    evmc_message to_message() const;
+    monad_message to_message() const;
     Result<void> execute(State &);
     Receipt execute_final(State &);
 

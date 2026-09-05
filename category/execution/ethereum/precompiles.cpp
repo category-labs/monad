@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_impl.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -131,7 +132,7 @@ bool is_precompile(Address const &address)
 EXPLICIT_EVM_TRAITS(is_precompile);
 
 template <Traits traits>
-std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
+std::optional<evmc::Result> check_call_eth_precompile(monad_message const &msg)
 {
     auto const &address = msg.code_address;
     auto const maybe_precompile = resolve_precompile<traits>(address);
@@ -143,7 +144,7 @@ std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         // EIP-7702 specifies that precompiles don't actually get called when
         // they're the target of a delegation.
-        auto const delegated = (msg.flags & EVMC_DELEGATED) != 0;
+        auto const delegated = (msg.flags & MONAD_DELEGATED) != 0;
         if (delegated) {
             return evmc::Result{evmc_status_code::EVMC_SUCCESS, msg.gas};
         }
@@ -182,7 +183,7 @@ EXPLICIT_TRAITS(check_call_eth_precompile);
 
 template <Traits traits>
 std::optional<evmc::Result>
-check_call_precompile(State &, CallTracerBase &, evmc_message const &msg)
+check_call_precompile(State &, CallTracerBase &, monad_message const &msg)
 {
     return check_call_eth_precompile<traits>(msg);
 }

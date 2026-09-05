@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/mpt/db.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <monad/test/traits_test.hpp>
@@ -115,8 +116,8 @@ namespace
                 ChainContext<Trait>::debug_empty()};
 
             auto msg_memory = state.vm().message_memory_ref();
-            evmc_message const msg{
-                .kind = EVMC_CALL,
+            monad_message const msg{
+                .kind = MONAD_CALL,
                 .gas = gas,
                 .recipient = code_addr,
                 .sender = sender,

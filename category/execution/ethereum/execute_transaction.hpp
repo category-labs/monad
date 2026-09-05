@@ -21,6 +21,7 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
@@ -47,7 +48,7 @@ struct Transaction;
 template <Traits traits>
 class ExecuteTransactionNoValidation
 {
-    evmc_message to_message(
+    monad_message to_message(
         vm::MemoryPool::Ref &msg_memory, uint32_t msg_memory_capacity) const;
 
     uint64_t process_authorizations(State &, EvmcHost<traits> &);

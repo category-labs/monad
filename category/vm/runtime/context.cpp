@@ -21,6 +21,7 @@
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -88,7 +89,7 @@ namespace monad::vm::runtime
 
     Context Context::from(
         evmc_host_interface const *const host, evmc_host_context *const context,
-        evmc_message const *const msg,
+        monad_message const *const msg,
         std::span<uint8_t const> const code) noexcept
     {
         return Context{
@@ -102,8 +103,8 @@ namespace monad::vm::runtime
                     .depth = msg->depth,
                     .recipient = msg->recipient,
                     .sender = msg->sender,
-                    .value = static_cast<bytes32_t>(msg->value),
-                    .create2_salt = static_cast<bytes32_t>(msg->create2_salt),
+                    .value = msg->value,
+                    .create2_salt = msg->create2_salt,
                     .input_data = msg->input_data,
                     .code = code.data(),
                     .return_data = {},

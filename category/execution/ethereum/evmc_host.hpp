@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/delegation.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -173,11 +174,12 @@ struct EvmcHost final : public EvmcHostBase
         stack_unwind();
     }
 
-    virtual evmc::Result call(evmc_message const &msg) noexcept override
+    // In-tree entry; the evmc override below is the adapter. Goes with EXE-173.
+    evmc::Result call(monad_message const &msg) noexcept
     {
         MONAD_TRY
         {
-            if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
+            if (msg.kind == MONAD_CREATE || msg.kind == MONAD_CREATE2) {
                 auto result =
                     ::monad::execute_create_message<traits>(this, state_, msg);
 
@@ -200,6 +202,11 @@ struct EvmcHost final : public EvmcHostBase
             capture_current_exception();
         }
         stack_unwind();
+    }
+
+    virtual evmc::Result call(evmc_message const &msg) noexcept override
+    {
+        return call(from_evmc_message(msg));
     }
 
     virtual evmc_access_status

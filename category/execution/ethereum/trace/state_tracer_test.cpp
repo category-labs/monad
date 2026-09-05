@@ -41,6 +41,7 @@
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/mpt/db.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -2013,8 +2014,8 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
     // depth = 1 to bypass the depth-0 reserve-balance revert path; we want
     // to isolate execute_call_message's own code-read here.
     auto msg_memory = vm.message_memory_ref();
-    evmc_message const msg{
-        .kind = EVMC_CALL,
+    monad_message const msg{
+        .kind = MONAD_CALL,
         .depth = 1,
         .gas = 1'000'000,
         .recipient = ADDR_B,

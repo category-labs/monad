@@ -78,6 +78,31 @@ using node_id_wire = uint32_t;
 
 inline constexpr size_t HASH_RLP_LEN = 33; // 0xa0 ‖ 32 B
 
+// ZisK prices an unaligned one-byte store at 66 cells when the source register
+// holds a zero-extended byte and 193 when it does not -- a 127-cell surcharge
+// that depends on the REGISTER's upper bits, not on the address and not on any
+// property of the memory. gcc materialises a QImode constant >= 0x80 in its
+// SIGN-extended form (`li a3,-96` for 0xa0), so every store of a high byte
+// constant pays it, and RLP prefixes are all high: 287,937 such stores a block,
+// 198,559 of them 0xa0 and 87,534 of them 0x80.
+//
+// An empty asm barrier on a 64-bit copy of the value forces `li a3,160`
+// instead, and costs nothing: gcc still hoists the constant out of the loop it
+// feeds. Verified by compiling both forms with the guest's own flags, and
+// measured end to end by patching the 46 `li` sites of a built ELF --
+// STEPS unchanged to the instruction, published output byte-identical,
+// COST -36,574,349 = -0.242 %.
+//
+// Guarded, because on a real CPU the barrier costs an instruction and buys
+// nothing: there, a byte store is a byte store.
+[[gnu::always_inline]] inline unsigned char zx(unsigned long v) noexcept
+{
+#if defined(MONAD_ZKVM_ZISK)
+    asm("" : "+r"(v));
+#endif
+    return static_cast<unsigned char>(v);
+}
+
 // A digest node's own size in the blob: DIGEST ‖ 32 B. Numerically the same
 // as HASH_RLP_LEN, and that is the point — a run of digest nodes is the run
 // of hash-refs their parent needs, tag bytes apart.
@@ -676,7 +701,7 @@ private:
     inline node_rlp_span child_ref(NodeId const id, node_rlp_span dest)
     {
         if (id == NULL_ID) {
-            dest.back() = 0x80; // RLP empty string
+            dest.back() = zx(0x80); // RLP empty string
             return dest.shrink(1);
         }
         // Pre-state (priming) reads bound-check and resolve against the blob;

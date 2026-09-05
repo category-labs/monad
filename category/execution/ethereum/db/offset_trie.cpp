@@ -405,7 +405,7 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
         node,
         Cases{
             [&, wrap](BranchView b) -> std::span<unsigned char> {
-                dest.back() = 0x80; // empty branch value — last list element
+                dest.back() = zx(0x80); // empty branch value — last list element
                 dest = dest.shrink(1);
                 // The wire child fields are 4 bytes wide and land at odd
                 // offsets inside the payload, so widening one per slot costs
@@ -507,13 +507,13 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                     unsigned char *const stamp_end = out + run;
                     for (; p + 4 * HASH_RLP_LEN <= stamp_end;
                          p += 4 * HASH_RLP_LEN) {
-                        p[0] = 0xa0;
-                        p[HASH_RLP_LEN] = 0xa0;
-                        p[2 * HASH_RLP_LEN] = 0xa0;
-                        p[3 * HASH_RLP_LEN] = 0xa0;
+                        p[0] = zx(0xa0);
+                        p[HASH_RLP_LEN] = zx(0xa0);
+                        p[2 * HASH_RLP_LEN] = zx(0xa0);
+                        p[3 * HASH_RLP_LEN] = zx(0xa0);
                     }
                     for (; p < stamp_end; p += HASH_RLP_LEN) {
-                        *p = 0xa0;
+                        *p = zx(0xa0);
                     }
                     dest = dest.shrink(run);
                     i = lo; // the test's decrement steps past the run
@@ -697,7 +697,7 @@ namespace
             --w;
         }
         if (w == 0) {
-            out.push_back(0x80); // RLP of zero is the empty string
+            out.push_back(zx(0x80)); // RLP of zero is the empty string
             return;
         }
         unsigned const top = 8u - static_cast<unsigned>(
@@ -732,7 +732,7 @@ void append_acct(
     // single-byte form -- and a 33-byte temporary for a constant header costs
     // an allocation and two copies per account.
     static_assert(sizeof(acct.code_hash) == 32);
-    out.push_back(0x80 + 32);
+    out.push_back(zx(0x80 + 32));
     out.append(acct.code_hash.bytes, sizeof(acct.code_hash.bytes));
     // The length is only known once nonce ‖ balance are encoded, and the
     // appends below may reallocate, so hold slot by index

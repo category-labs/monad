@@ -148,6 +148,13 @@ TEST(uint256, sar)
     ASSERT_EQ(sar(i, x), 0);
 }
 
+TEST(uint256, countl_zero)
+{
+    constexpr uint256_t zero{0};
+    ASSERT_EQ(countl_zero(zero), uint256_t::num_bits);
+    ASSERT_EQ(countl_zero(zero.as_words()), uint256_t::num_bits);
+}
+
 template <size_t N>
 void test_bit_width()
 {
@@ -159,6 +166,9 @@ void test_bit_width()
 
 TEST(uint256, bit_width)
 {
+    constexpr uint256_t zero{0};
+    ASSERT_EQ(bit_width(zero), 0);
+    ASSERT_EQ(bit_width(zero.as_words()), 0);
     test_bit_width<255>();
 }
 

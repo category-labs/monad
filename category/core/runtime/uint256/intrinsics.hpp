@@ -32,6 +32,13 @@
 
 namespace monad::uint256::intrinsics
 {
+    [[gnu::always_inline]] constexpr void keep_live(uint64_t expr) noexcept
+    {
+        if !consteval {
+            asm volatile("" : : "r"(expr));
+        }
+    }
+
     [[gnu::always_inline]] constexpr uint64_t force(uint64_t expr) noexcept
     {
         if !consteval {
@@ -59,10 +66,8 @@ namespace monad::uint256::intrinsics
         unsigned long long borrow_out = 0;
         uint64_t const sub_borrow =
             __builtin_subcll(lhs, rhs, borrow_in, &borrow_out);
-        // If we do not force the result here, clang replaces the sub/sbb chain
-        // with a long series of comparisons and flag logic which is worse
         return result_with_carry{
-            .value = force(sub_borrow), .carry = static_cast<bool>(borrow_out)};
+            .value = sub_borrow, .carry = static_cast<bool>(borrow_out)};
     }
 
     [[gnu::always_inline]]

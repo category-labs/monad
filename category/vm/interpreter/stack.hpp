@@ -51,7 +51,14 @@
         uint256_t const *const stack_at = (stack_top) + (SHIFT);               \
         MONAD_DEBUG_ASSERT(stack_at - stack_bottom <= 1024);                   \
                                                                                \
-        if constexpr (info.min_stack > 0) {                                    \
+        /* For one operand, compare directly with stack_bottom to avoid        \
+         * computing stack_bottom + 1. */                                      \
+        if constexpr (info.min_stack == 1) {                                   \
+            if (MONAD_UNLIKELY(stack_at <= stack_bottom)) {                    \
+                EXIT(Error);                                                   \
+            }                                                                  \
+        }                                                                      \
+        else if constexpr (info.min_stack > 1) {                               \
             if (MONAD_UNLIKELY(stack_at < stack_bottom + info.min_stack)) {    \
                 EXIT(Error);                                                   \
             }                                                                  \

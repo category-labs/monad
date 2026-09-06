@@ -44,6 +44,10 @@
 #include <utility>
 #include <vector>
 
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/crypto/keccak.h>
+#endif
+
 #ifdef MONAD_ZKVM_OFFICIAL_PROFILE
 // Retained by align.ld so the post-link audit can match the ELF to its
 // commit, runtime, features and build signature.
@@ -85,10 +89,19 @@ extern "C" void monad_zkvm_execute_witness(void)
                 std::memcmp(
                     code->code(), bytes.value().data(), bytes.value().size()) ==
                 0);
+#if defined(MONAD_ZKVM_ZISK)
+            // Avoid memo lookup and insertion costs when hashing bytecode.
+            // Repeated states are safe to recompute.
+            monad::bytes32_t code_hash;
+            monad_zkvm_keccak256_fast_nomemo(
+                code->code(), bytes.value().size(), code_hash.bytes);
+            code_index.emplace(code_hash, code);
+#else
             code_index.emplace(
                 monad::to_bytes(
                     monad::keccak256({code->code(), bytes.value().size()})),
                 code);
+#endif
         }
     }
 

@@ -29,6 +29,10 @@ constexpr size_t KECCAK256_SIZE = 32;
 extern "C" void monad_zkvm_keccak256_fast(
     void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
 
+// Same digest without memo lookups or inserts, used for bytecode.
+extern "C" void monad_zkvm_keccak256_fast_nomemo(
+    void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
+
 [[gnu::always_inline]] static inline void monad_keccak256(
     void const *const in, size_t const len, uint8_t out[KECCAK256_SIZE])
 {

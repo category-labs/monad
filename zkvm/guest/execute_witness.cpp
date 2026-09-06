@@ -23,6 +23,7 @@
 #include <category/core/keccak.hpp>
 #include <category/core/result.hpp>
 #include <category/crypto/hash256.h>
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -85,10 +86,19 @@ extern "C" void monad_zkvm_execute_witness(void)
                 std::memcmp(
                     code->code(), bytes.value().data(),
                     bytes.value().size()) == 0);
+#if defined(MONAD_ZKVM_ZISK)
+            // Avoid memo lookup and insertion costs when hashing bytecode.
+            // Repeated states are safe to recompute.
+            monad::bytes32_t code_hash;
+            monad_zkvm_keccak256_fast_nomemo(
+                code->code(), bytes.value().size(), code_hash.bytes);
+            code_index.emplace(code_hash, code);
+#else
             code_index.emplace(
-                monad::to_bytes(monad::keccak256(
-                    {code->code(), bytes.value().size()})),
+                monad::to_bytes(
+                    monad::keccak256({code->code(), bytes.value().size()})),
                 code);
+#endif
         }
     }
 

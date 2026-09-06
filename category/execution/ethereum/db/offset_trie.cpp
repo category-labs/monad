@@ -36,6 +36,7 @@
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <new>
 #include <span>
 #include <utility>
 #include <vector>
@@ -79,7 +80,15 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     MONAD_ASSERT(node.bytes() == region_end || node.tag() != EMPTY);
     // One byte per blob offset avoids bit extraction and read-modify-write
     // updates. This uses more memory than a bitmap.
+#if defined(MONAD_ZKVM_ZISK)
+    // Fresh ZisK bump allocations are never reused and read as zero before
+    // their first write. No explicit clear or deallocation is needed here.
+    std::span<unsigned char> const node_marks{
+        static_cast<unsigned char *>(::operator new(blob_.size())),
+        blob_.size()};
+#else
     std::vector<unsigned char> node_marks(blob_.size(), 0);
+#endif
     // Follow the current node with a mark pointer. Digest nodes can advance
     // it directly without recomputing their offset from the blob base.
     unsigned char *current_node_mark = node_marks.data() + node_offset;

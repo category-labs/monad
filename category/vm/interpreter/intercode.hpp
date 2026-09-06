@@ -33,7 +33,15 @@ namespace monad::vm::interpreter
         // PUSHN opcodes by reading data from _before_ the instruction
         // pointer with a single 32-byte read, then cleaning up any
         // over-read in the result value.
-        static constexpr size_t start_padding_size = 30;
+        //
+        // 32 and not the 30 that read needs: the guest hashes a contract body
+        // straight out of this buffer, and the keccak rate is a multiple of 8,
+        // so a start that is not 8-aligned makes every lane of every rate
+        // block a boundary-crossing load. operator new is 16-byte aligned
+        // (the guest's is sys_alloc_aligned(size, 16)), so a 32-byte offset
+        // lands aligned where 30 lands at 6 mod 8 every time. Two bytes a
+        // contract, and more front padding is harmless for the read above.
+        static constexpr size_t start_padding_size = 32;
 
         // 32 for a truncated PUSH32, 1 for a STOP so that we don't have to
         // worry about going off the end.

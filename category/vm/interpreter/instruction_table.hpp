@@ -120,7 +120,9 @@
 #define MONAD_VM_FUSED_OK(REQ)                                                 \
     ((gas_remaining >= (REQ).gas) &&                                           \
      ((REQ).min_required == 0 ||                                               \
-      (stack_top) >= (stack_bottom) + (REQ).min_required) &&                   \
+      ((REQ).min_required == 1                                                 \
+           ? (stack_top) > (stack_bottom)                                      \
+           : (stack_top) >= (stack_bottom) + (REQ).min_required)) &&           \
      ((REQ).max_growth == 0 ||                                                 \
       (stack_top) < ctx.stack_limit + (1 - (REQ).max_growth)))
 

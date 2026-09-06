@@ -73,9 +73,22 @@ extern "C" void monad_zkvm_execute_witness(void)
         while (!codes.empty()) {
             auto const bytes = monad::rlp::parse_string_metadata(codes);
             MONAD_ASSERT(bytes.has_value());
+            // Hash the intercode's existing aligned copy: witness slices may
+            // be misaligned. Keccak's 136-byte blocks keep word loads aligned,
+            // and no additional copy is needed.
+            auto const code = monad::vm::make_shared_intercode(bytes.value());
+            // Check alignment and, in debug builds, unchanged bytecode.
+            // The hash excludes the surrounding padding.
+            MONAD_ASSERT(
+                (reinterpret_cast<uintptr_t>(code->code()) & 7) == 0);
+            MONAD_DEBUG_ASSERT(
+                std::memcmp(
+                    code->code(), bytes.value().data(),
+                    bytes.value().size()) == 0);
             code_index.emplace(
-                monad::to_bytes(monad::keccak256(bytes.value())),
-                monad::vm::make_shared_intercode(bytes.value()));
+                monad::to_bytes(monad::keccak256(
+                    {code->code(), bytes.value().size()})),
+                code);
         }
     }
 

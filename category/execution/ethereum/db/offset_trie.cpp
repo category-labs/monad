@@ -91,7 +91,29 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // produce. The price is the zeroing, and it is not close -- the extra bytes are one memset, which
     // ZisK charges per 8-byte word on the aligned path, against six instructions saved per lookup at
     // 68 COST a step.
+#if defined(MONAD_ZKVM_ZISK)
+    // The zeroing the note above prices is dead on this guest, so the byte
+    // array's only cost is its address space. Two facts carry it, and
+    // MemoryPool::alloc's cold path records the same pair: `operator new` here
+    // is `sys_alloc_aligned`, a bump allocator whose `free` is a no-op
+    // (zkvm/core/libc.cpp), so these bytes have never been handed out and never
+    // been written; and ZisK's memory AIR constrains the first access to an
+    // address to read zero when that access is a read --
+    // `addr_changes * (1 - sel) * value[i] === 0`,
+    // state-machines/mem/pil/mem.pil. A prover cannot answer such a read with
+    // anything else, so an unmarked offset still reads 0 and `is_valid_offset`
+    // still rejects it.
+    //
+    // What that removes on a 3.7 MB blob is ~462,000 aligned 8-byte writes at
+    // 18.0 plus `61 + ceil(w/8) * 35` of dma_xmemset -- for a value every read
+    // already gets. The allocation is not released, which is what `free` does
+    // in this guest either way.
+    std::span<unsigned char> const node_offsets{
+        static_cast<unsigned char *>(::operator new(blob_.size())),
+        blob_.size()};
+#else
     std::vector<unsigned char> node_offsets(blob_.size(), 0);
+#endif
     // Carried as a pointer, not indexed. The DIGEST arm below is nine nodes in ten and its only use
     // of the offset is this one subscript, so an index costs the scale-and-add on every one of them
     // -- `add` then `sb` -- plus its own increment. A pointer is the store and the increment, and the

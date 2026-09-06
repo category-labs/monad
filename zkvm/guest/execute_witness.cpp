@@ -23,6 +23,7 @@
 #include <category/core/keccak.hpp>
 #include <category/core/result.hpp>
 #include <category/crypto/hash256.h>
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -99,10 +100,15 @@ extern "C" void monad_zkvm_execute_witness(void)
                 std::memcmp(
                     code->code(), bytes.value().data(),
                     bytes.value().size()) == 0);
-            code_index.emplace(
-                monad::to_bytes(monad::keccak256(
-                    {code->code(), bytes.value().size()})),
-                code);
+            // Without the Keccak-f memo. Bytecode is 28,451 of the block's
+            // 120,701 permutations and the 395 bodies are all distinct, so not
+            // one state in a body's chain recurs: the memo files 2 x 1,232
+            // cells per permutation and collects nothing. See
+            // monad_zkvm_keccak256_fast_nomemo for the soundness argument.
+            monad::bytes32_t code_hash;
+            monad_zkvm_keccak256_fast_nomemo(
+                code->code(), bytes.value().size(), code_hash.bytes);
+            code_index.emplace(code_hash, code);
         }
     }
 

@@ -471,6 +471,9 @@ lanes0:
 
 #endif // MONAD_ZKVM_KECCAKF_MEMO
 
+// Only `syscall_keccak_f` above and the two entry points below carry C linkage;
+// everything between them is C++ and the sponge is a template, which may not have it.
+
 // Raw permutation for the sponge's non-memo path.
 static inline void keccak_permute(uint64_t (*state)[25])
 {
@@ -489,8 +492,8 @@ static inline void keccak_permute(uint64_t (*state)[25])
 }
 #endif
 
-extern "C" void monad_zkvm_keccak256_fast(
-    void const *const in, size_t len, uint8_t out[32])
+template <bool Memo>
+static void keccak256_sponge(void const *const in, size_t len, uint8_t out[32])
 {
     constexpr size_t WORDS = KECCAK_RATE / 8; // 17
 
@@ -498,13 +501,15 @@ extern "C" void monad_zkvm_keccak256_fast(
     // 69.8 % of this entry's calls are one rate block (33,123 of 47,455 on
     // 25815042 -- a key, an address, a leaf or extension node's RLP). They
     // have a cheaper shape than the general sponge; see keccak256_one_block.
-    if (len < KECCAK_RATE) {
-        keccak256_one_block(in, len, out);
+    if constexpr (Memo) {
+        if (len < KECCAK_RATE) {
+            keccak256_one_block(in, len, out);
+        }
+        else {
+            keccak256_memo_sponge(in, len, out);
+        }
+        return;
     }
-    else {
-        keccak256_memo_sponge(in, len, out);
-    }
-    return;
 #endif
 
 #ifdef MONAD_ZKVM_ZISK
@@ -625,8 +630,33 @@ extern "C" void monad_zkvm_keccak256_fast(
         }
         last[len] = 0x01;
         auto const *const w = reinterpret_cast<uint64_t const *>(last);
-        for (size_t i = 0; i < WORDS; ++i) {
-            st[i] ^= w[i];
+        // Skip zero lanes beyond the domain byte. Each branch uses a constant
+        // lane count to preserve loop unrolling; a runtime count measured
+        // worse.
+        if (len <= 31) {
+            for (size_t i = 0; i < 4; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else if (len <= 63) {
+            for (size_t i = 0; i < 8; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else if (len <= 95) {
+            for (size_t i = 0; i < 12; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else if (len <= 127) {
+            for (size_t i = 0; i < 16; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else {
+            for (size_t i = 0; i < WORDS; ++i) {
+                st[i] ^= w[i];
+            }
         }
         // The high pad bit goes into the state, not into `last`, for the reason
         // the `first` arm above already gives: byte 135 is byte 7 of lane 16,
@@ -642,5 +672,24 @@ extern "C" void monad_zkvm_keccak256_fast(
 
     std::memcpy(out, st, 32);
 }
+
+extern "C"
+{
+
+void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32])
+{
+    keccak256_sponge<true>(in, len, out);
+}
+
+// Skip memo lookups and bookkeeping for bytecode, whose permutation states
+// rarely repeat. Not registering them only forgoes future cache hits;
+// any hints for later calls still undergo the full input-state check.
+void monad_zkvm_keccak256_fast_nomemo(
+    void const *const in, size_t len, uint8_t out[32])
+{
+    keccak256_sponge<false>(in, len, out);
+}
+
+} // extern "C"
 
 #endif // MONAD_ZKVM_ZISK || MONAD_ZKVM_SP1

@@ -410,20 +410,24 @@ static inline void keccak_permute(uint64_t (*state)[25])
     zisk_keccakf(state);
 }
 
-extern "C" void monad_zkvm_keccak256_fast(
+// Select memoized or raw hashing at compile time.
+template <bool Memo>
+static void keccak256_sponge(
     void const *const input, size_t remaining_bytes, uint8_t output[32])
 {
     constexpr size_t RATE_WORDS = KECCAK_RATE / 8; // 17
 
     #if MONAD_ZKVM_KECCAKF_MEMO
-    // Short inputs build their padded state directly in the memo.
-    if (remaining_bytes < KECCAK_RATE) {
-        keccak256_one_block(input, remaining_bytes, output);
+    if constexpr (Memo) {
+        // Short inputs build their padded state directly input the memo.
+        if (remaining_bytes < KECCAK_RATE) {
+            keccak256_one_block(input, remaining_bytes, output);
+        }
+        else {
+            keccak256_memo_sponge(input, remaining_bytes, output);
+        }
+        return;
     }
-    else {
-        keccak256_memo_sponge(input, remaining_bytes, output);
-    }
-    return;
     #endif
 
     // Keccak-f[1600] uses 25 lanes of 64 bits (200 bytes).
@@ -512,5 +516,24 @@ extern "C" void monad_zkvm_keccak256_fast(
 
     std::memcpy(output, state, 32);
 }
+
+extern "C"
+{
+
+void monad_zkvm_keccak256_fast(
+    void const *const in, size_t len, uint8_t out[32])
+{
+    keccak256_sponge<true>(in, len, out);
+}
+
+// Compute every permutation without caching; later calls may lose cache hits.
+// Their hints still require valid indices and exact input-state matches.
+void monad_zkvm_keccak256_fast_nomemo(
+    void const *const in, size_t len, uint8_t out[32])
+{
+    keccak256_sponge<false>(in, len, out);
+}
+
+} // extern "C"
 
 #endif // MONAD_ZKVM_ZISK || MONAD_ZKVM_KECCAK_TEST

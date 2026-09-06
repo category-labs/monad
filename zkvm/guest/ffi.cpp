@@ -37,6 +37,7 @@
 #include <category/core/keccak.hpp>
 #include <category/core/result.hpp>
 #include <category/crypto/hash256.h>
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
@@ -122,9 +123,41 @@ extern "C" void monad_zkvm_execute_witness(void)
         while (!codes.empty()) {
             auto const bytes = monad::rlp::parse_string_metadata(codes);
             MONAD_ASSERT(bytes.has_value());
-            code_index.emplace(
-                monad::to_bytes(monad::keccak256(bytes.value())),
-                monad::vm::make_shared_intercode(bytes.value()));
+            // Hash the intercode's copy, not the witness bytes.
+            //
+            // Bytecode is the guest's longest keccak input -- 72 rate blocks a
+            // call on 25815100 -- and it sits at whatever offset the witness
+            // envelope left it at. 136 is a multiple of 8, so a misaligned
+            // start makes every lane of every block a boundary-crossing load,
+            // 159 against 16.
+            //
+            // Intercode already owns an 8-aligned verbatim copy: `pad` takes it
+            // from `new uint8_t[]` and returns it offset by a 32-byte prologue,
+            // so `code()` keeps the alignment operator new gives. Building it
+            // first and hashing from there costs no memory and no copy -- the
+            // copy exists either way.
+            auto const code = monad::vm::make_shared_intercode(bytes.value());
+            // The two properties this depends on, checked rather than trusted:
+            // the copy is 8-aligned, and it is the witness bytes unchanged.
+            // Intercode pads around the code, never inside it, so the first
+            // `size()` bytes at code() are verbatim -- but the padding is what
+            // makes the alignment hold, so an assert here is what would catch a
+            // change to it.
+            MONAD_ASSERT(
+                (reinterpret_cast<uintptr_t>(code->code()) & 7) == 0);
+            MONAD_DEBUG_ASSERT(
+                std::memcmp(
+                    code->code(), bytes.value().data(),
+                    bytes.value().size()) == 0);
+            // Without the Keccak-f memo. Bytecode is 28,451 of the block's
+            // 120,701 permutations and the 395 bodies are all distinct, so not
+            // one state in a body's chain recurs: the memo files 2 x 1,232
+            // cells per permutation and collects nothing. See
+            // monad_zkvm_keccak256_fast_nomemo for the soundness argument.
+            monad::bytes32_t code_hash;
+            monad_zkvm_keccak256_fast_nomemo(
+                code->code(), bytes.value().size(), code_hash.bytes);
+            code_index.emplace(code_hash, code);
         }
     }
 

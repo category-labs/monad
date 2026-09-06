@@ -687,6 +687,19 @@ private:
         auto const span33 = dest.last(33);
         span33.data()[0] = 0xa0;
         bits::copy32_from_aligned(span33.data() + 1, hash32);
+#elif defined(MONAD_ZKVM_ZISK)
+        // The copy stays a copy -- a constant 32 bytes, which is the single DMA
+        // marker encode_string already lowers to, and not the shift-combine the
+        // comment above rejects. What changes is the prefix: encode_string
+        // writes `0x80 + s.size()`, gcc constant-folds that to 0xa0 and
+        // materialises a QImode constant above 0x7f in SIGN-extended form
+        // (`li a5, -96`), which prices the byte store at 193 cells instead of
+        // 66. zx() is the same idiom the six offset_trie.cpp stamp sites use;
+        // this one was out of reach there because the store is inside
+        // encode_string.
+        auto const span33 = dest.last(33);
+        span33.data()[0] = zx(0xa0);
+        __builtin_memcpy(span33.data() + 1, hash32, 32);
 #else
         rlp::encode_string(dest.last(33), byte_string_view{hash32, 32});
 #endif

@@ -409,8 +409,13 @@ namespace monad::vm::interpreter
         if (!taken) {
             return p + 5;
         }
-        auto const dst = static_cast<size_t>(
-            (static_cast<unsigned>(p[2]) << 8) | static_cast<unsigned>(p[3]));
+        // Through push.hpp's helper rather than open-coded, so this picks up
+        // the ZisK lowering PUSH2 already uses: gcc turns the big-endian merge
+        // into `lhu` + `rev8` + `srli 48`, and ZisK prices a 2-byte read at 122
+        // against 41 for a 1-byte one, so `lbu` + `lbu` + `packh` is the same
+        // three instructions 96 cells cheaper. The fallback off ZisK is this
+        // same shift-or expression.
+        auto const dst = static_cast<size_t>(detail::load_be_k<2>(p + 2));
         if (MONAD_UNLIKELY(!analysis.is_jumpdest(dst))) {
             ctx.exit(Error);
         }

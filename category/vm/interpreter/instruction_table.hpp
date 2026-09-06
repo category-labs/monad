@@ -154,7 +154,22 @@
             uint256_t const *const monad_vm_top = (stack_top) + (SHIFT);       \
             MONAD_DEBUG_ASSERT(monad_vm_top - stack_bottom <= 1024);           \
                                                                                \
-            if constexpr (monad_vm_ci.min_stack > 0) {                         \
+            /* `top < bottom + 1` and `top <= bottom` are the same          \
+             * predicate, and the second needs no address arithmetic. gcc      \
+             * will not make the substitution itself -- for pointers it        \
+             * cannot assume `bottom + 1` is representable, though here it is: \
+             * the buffer is 1024 slots and `bottom` is the first. One         \
+             * `addi rd, x12, 0x20` disappears from every opcode that takes    \
+             * one operand, which on 25815042 is 525,531 of them.             \
+             *                                                                 \
+             * Only the 1-operand form collapses. `top < bottom + 2` is        \
+             * `top <= bottom + 1`, which still forms an address. */           \
+            if constexpr (monad_vm_ci.min_stack == 1) {                        \
+                if (MONAD_UNLIKELY(monad_vm_top <= stack_bottom)) {            \
+                    MONAD_VM_MUST_TAIL return ctx.exit(Error);                 \
+                }                                                              \
+            }                                                                  \
+            else if constexpr (monad_vm_ci.min_stack > 1) {                    \
                 if (MONAD_UNLIKELY(                                            \
                         monad_vm_top < stack_bottom + monad_vm_ci.min_stack)) {\
                     MONAD_VM_MUST_TAIL return ctx.exit(Error);                 \
@@ -235,7 +250,9 @@
 #define MONAD_VM_FUSED_OK(REQ)                                                 \
     ((gas_remaining >= (REQ).gas) &&                                           \
      ((REQ).min_required == 0 ||                                               \
-      (stack_top) >= (stack_bottom) + (REQ).min_required) &&                   \
+      ((REQ).min_required == 1                                                 \
+           ? (stack_top) > (stack_bottom)                                      \
+           : (stack_top) >= (stack_bottom) + (REQ).min_required)) &&           \
      ((REQ).max_growth == 0 ||                                                 \
       (stack_top) < (stack_bottom) + (1025 - (REQ).max_growth)))
 

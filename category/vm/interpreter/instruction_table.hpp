@@ -169,7 +169,9 @@ namespace monad::vm::interpreter
 #define MONAD_VM_FUSED_OK(REQ)                                                 \
     ((gas_remaining >= (REQ).gas) &&                                           \
      ((REQ).min_required == 0 ||                                               \
-      stack_top.next_slot() >= (stack_bottom) + (REQ).min_required) &&         \
+      ((REQ).min_required == 1                                                 \
+           ? stack_top.next_slot() > (stack_bottom)                            \
+           : stack_top.next_slot() >= (stack_bottom) + (REQ).min_required)) && \
      ((REQ).max_growth == 0 ||                                                 \
       stack_top.next_slot() < ctx.stack_limit + (1 - (REQ).max_growth)))
 

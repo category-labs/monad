@@ -36,6 +36,7 @@
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <new>
 #include <span>
 #include <utility>
 #include <vector>
@@ -87,7 +88,18 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // close -- the extra bytes are one memset, which ZisK charges per 8-byte
     // word on the aligned path, against six instructions saved per lookup at 68
     // COST a step.
+#if defined(MONAD_ZKVM_ZISK)
+    // No explicit zeroing is needed on ZisK: the guest's bump allocator never
+    // reuses memory, and ZisK's memory constraints guarantee that unwritten
+    // addresses read as zero. Unmarked offsets therefore still fail
+    // validation.
+    // free is a no-op on this guest, so no deallocation is needed.
+    std::span<unsigned char> const node_offsets{
+        static_cast<unsigned char *>(::operator new(blob_.size())),
+        blob_.size()};
+#else
     std::vector<unsigned char> node_offsets(blob_.size(), 0);
+#endif
     // Carried as a pointer, not indexed. The DIGEST arm below is nine nodes in
     // ten and its only use of the offset is this one subscript, so an index
     // costs the scale-and-add on every one of them

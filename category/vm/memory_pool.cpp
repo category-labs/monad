@@ -55,7 +55,36 @@ namespace monad::vm
         if (old_head == &empty_head_) {
             void *const p = std::aligned_alloc(32, alloc_capacity_);
             MONAD_ASSERT(p);
+#if defined(MONAD_ZKVM_ZISK)
+            // A freshly allocated buffer already reads as zero on ZisK, so the
+            // fill is redundant there and it is the largest single instruction
+            // in the guest: one `dma_xmemset` over the whole 8 MiB capacity,
+            // 4,587,581 cells of Precompiles plus 1,048,576 aligned 8-byte
+            // writes at 18.0, 23,461,949 in total -- 0.155 % of COST for one
+            // step, on block 25815042.
+            //
+            // Two properties carry it, and neither is an assumption about the
+            // emulator:
+            //
+            //  1. `aligned_alloc` in the guest is `sys_alloc_aligned`, a bump
+            //     allocator whose `free` is a no-op (zkvm/core/libc.cpp), so an
+            //     address it returns has never been handed out before and
+            //     nothing has written to it.
+            //  2. ZisK's memory AIR constrains the first access to an address
+            //     to read zero when that access is a read:
+            //     `addr_changes * (1 - sel) * value[i] === 0` in
+            //     state-machines/mem/pil/mem.pil. It is a constraint on the
+            //     proof, not a convenience of the emulator, so a prover cannot
+            //     answer such a read with anything else.
+            //
+            // The RECYCLE path below is a different matter and still clears:
+            // the buffer it returns has been written, and what makes it zero
+            // again is `Memory::clear` on release plus the one pointer word
+            // `dealloc` dirtied.
+            (void)0;
+#else
             runtime::non_temporal_bzero(p, alloc_capacity_);
+#endif
             return reinterpret_cast<uint8_t *>(p);
         }
 

@@ -44,13 +44,11 @@
 
 #include <category/core/bit_primitives.hpp>
 
-extern "C"
-{
 
 #ifdef MONAD_ZKVM_ZISK
 // ziskos's raw precompile entry (no_mangle, extern "C"), the same door
 // zisklib's own wrapper uses.
-void syscall_keccak_f(uint64_t (*state)[25]);
+extern "C" void syscall_keccak_f(uint64_t (*state)[25]);
 
 // Keccak-f memo. OFF gives the exact control arm: the mechanism is compiled
 // out, not disabled, so an A/B measures the memo rather than a predicate.
@@ -219,11 +217,24 @@ static inline uint64_t fcall_get_keccakf_index(uint64_t const *const state)
 
 #endif // MONAD_ZKVM_KECCAKF_MEMO
 
+// Only `syscall_keccak_f` above and the two entry points below carry C linkage;
+// everything between them is C++ and the sponge is a template, which may not have it.
+
 // The only Keccak-f this guest runs. With the memo on it IS the permutation,
 // with an earlier identical one reused when the executor knows of one.
+//
+// `Memo` is a template parameter and not a flag, because a flag would cost a
+// load and a branch on all 120,701 permutations of a block -- 0.109 % of COST,
+// a quarter of what turning the memo off for bytecode is worth. The sponge
+// below is templated with it for the same reason.
+template <bool Memo>
 static inline void keccak_permute(uint64_t (*state)[25])
 {
 #if MONAD_ZKVM_KECCAKF_MEMO
+    if constexpr (!Memo) {
+        syscall_keccak_f(state);
+        return;
+    }
     uint64_t *const s = &(*state)[0];
     uint64_t const index = fcall_get_keccakf_index(s);
 
@@ -265,6 +276,7 @@ static inline void keccak_permute(uint64_t (*state)[25])
 // SP1's syscall_keccak_permute symbol is LTO-internalised inside libzkevm.a,
 // so emit the ecall the SDK itself emits: t0 = KECCAK_PERMUTE (0x00_01_01_09),
 // a0 = state, a1 = 0. The precompile rewrites the 25 u64 lanes in place.
+template <bool>
 static inline void keccak_permute(uint64_t (*state)[25])
 {
     register uintptr_t a0 asm("a0") = reinterpret_cast<uintptr_t>(state);
@@ -274,7 +286,8 @@ static inline void keccak_permute(uint64_t (*state)[25])
 }
 #endif
 
-void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32])
+template <bool Memo>
+static void keccak256_sponge(void const *const in, size_t len, uint8_t out[32])
 {
     constexpr size_t RATE = 136;
     constexpr size_t WORDS = RATE / 8; // 17
@@ -357,7 +370,7 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
                 st[i] ^= monad::bits::load64(p + 8 * i);
             }
         }
-        keccak_permute(&st);
+        keccak_permute<Memo>(&st);
         p += RATE;
         len -= RATE;
     }
@@ -372,7 +385,7 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
             for (size_t i = 0; i < WORDS; ++i) {
                 st[i] ^= w[i];
             }
-            keccak_permute(&st);
+            keccak_permute<Memo>(&st);
             p += RATE;
             len -= RATE;
         }
@@ -393,7 +406,7 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
                 st[i] ^= (lo >> rs) | (hi << ls);
                 lo = hi;
             }
-            keccak_permute(&st);
+            keccak_permute<Memo>(&st);
             p += RATE;
             len -= RATE;
         }
@@ -404,7 +417,7 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
             for (size_t i = 0; i < WORDS; ++i) {
                 st[i] ^= w[i];
             }
-            keccak_permute(&st);
+            keccak_permute<Memo>(&st);
             p += RATE;
             len -= RATE;
         }
@@ -436,13 +449,21 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
             std::memcpy(last, p, len);
         }
         last[len] = 0x01;
-        last[RATE - 1] |= 0x80;
         auto const *const w = reinterpret_cast<uint64_t const *>(last);
         for (size_t i = 0; i < WORDS; ++i) {
             st[i] ^= w[i];
         }
+        // The high pad bit goes into the state, not into `last`, for the reason
+        // the `first` arm above already gives: byte RATE-1 is byte 7 of lane 16,
+        // a constant position, so the lane takes it whole. In `last` it is a
+        // read-modify-write whose `|= 0x80` gcc lowers to `ori rd, rs, -128` --
+        // a source register with bits 63..8 set, which prices the store at the
+        // 193-cell dirty form rather than 66. Here it is an xor of a constant
+        // into an aligned lane, and xor is commutative so the digest is
+        // unchanged: `last[RATE-1]` contributes to nothing else.
+        st[16] ^= uint64_t{0x80} << 56;
     }
-    keccak_permute(&st);
+    keccak_permute<Memo>(&st);
 
 #ifdef MONAD_ZKVM_SP1
     // out is a caller buffer of arbitrary alignment; st is 8-aligned. Inline
@@ -452,6 +473,39 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
 #else
     std::memcpy(out, st, 32);
 #endif
+}
+
+extern "C"
+{
+
+void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32])
+{
+    keccak256_sponge<true>(in, len, out);
+}
+
+// The same sponge with the Keccak-f memo compiled out of it, for inputs whose
+// permutations are known in advance never to repeat.
+//
+// The memo pays 2 x 1,232 cells on every MISS -- keccakf_state_copy of the
+// input state before the permutation and of the output after it -- against
+// 38,454 saved on a hit, so it is a bet that a state recurs. Contract bytecode
+// is the one input where the bet is certain to lose: the 395 bodies a block
+// carry 28,451 of the 120,701 permutations and they are all distinct
+// contents, so no state in a bytecode's chain has been seen before or will be
+// seen again. Filing them is 82.5 M cells for zero hits, and it is also the
+// only site large enough to be worth splitting: the rest of the block's rate
+// blocks hit 12.1 %, above the 10.27 % break-even.
+//
+// Soundness is unaffected in both directions. Not filing an entry can only
+// cost a later hint; and a permutation that runs without a preceding
+// `fcall_set_keccakf_index` leaves the executor's next filing under a stale
+// index, which `keccakf_state_eq` rejects on the way out -- a poisoned entry,
+// never a wrong digest. That is the same argument the memo already relies on
+// for zisklib's own permutations, which run through this binary unannounced.
+void monad_zkvm_keccak256_fast_nomemo(
+    void const *const in, size_t len, uint8_t out[32])
+{
+    keccak256_sponge<false>(in, len, out);
 }
 
 } // extern "C"

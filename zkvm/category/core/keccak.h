@@ -46,12 +46,33 @@ void monad_zkvm_keccak256_fast(
 {
     monad_zkvm_keccak256_fast(in, (size_t)len, out);
 }
+
+// The same digest with the Keccak-f memo compiled out, for an input whose
+// permutations cannot repeat -- see the entry point's own comment for why
+// contract bytecode is the one such caller and why not filing is sound.
+void monad_zkvm_keccak256_fast_nomemo(
+    void const *in, size_t len, unsigned char out[32]);
+
+[[gnu::always_inline]] static inline void keccak256_nomemo(
+    unsigned char const *const in, unsigned long const len,
+    unsigned char out[KECCAK256_SIZE])
+{
+    monad_zkvm_keccak256_fast_nomemo(in, (size_t)len, out);
+}
 #else
 [[gnu::always_inline]] static inline void keccak256(
     unsigned char const *const in, unsigned long const len,
     unsigned char out[KECCAK256_SIZE])
 {
     zkvm_keccak256(in, (size_t)len, (zkvm_keccak256_hash *)out);
+}
+
+// No memo to leave out on this path; the name exists so callers need no guard.
+[[gnu::always_inline]] static inline void keccak256_nomemo(
+    unsigned char const *const in, unsigned long const len,
+    unsigned char out[KECCAK256_SIZE])
+{
+    keccak256(in, len, out);
 }
 #endif
 

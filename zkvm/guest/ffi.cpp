@@ -170,10 +170,15 @@ extern "C" void monad_zkvm_execute_witness(void)
                     code->code(), bytes.value().data(),
                     bytes.value().size()) == 0);
             MONAD_KECCAK_SITE(CODE_INDEX, bytes.value().size());
-            code_index.emplace(
-                monad::to_bytes(monad::keccak256(monad::byte_string_view{
-                    code->code(), bytes.value().size()})),
-                code);
+            // Without the Keccak-f memo. Bytecode is 28,451 of the block's
+            // 120,701 permutations and the 395 bodies are all distinct, so not
+            // one state in a body's chain recurs: the memo files 2 x 1,232
+            // cells per permutation and collects nothing. See
+            // monad_zkvm_keccak256_fast_nomemo for the soundness argument.
+            monad::bytes32_t code_hash;
+            keccak256_nomemo(
+                code->code(), bytes.value().size(), code_hash.bytes);
+            code_index.emplace(code_hash, code);
         }
     }
 

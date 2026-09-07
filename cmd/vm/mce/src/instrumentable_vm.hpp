@@ -18,26 +18,31 @@
 
 #include <category/core/assert.h>
 #include <category/core/log.hpp>
+#include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
-#include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/memory_pool.hpp>
 #include <category/vm/runtime/allocator.hpp>
+#include <category/vm/vm.hpp>
 
 #include <cmd/vm/mce/src/instrumentable_compiler.hpp>
+
+#include <test/utils/test_state.hpp>
+#include <test/vm/utils/test_block_hash_buffer.hpp>
+#include <test/vm/utils/test_host.hpp>
 
 #include <asmjit/x86.h>
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
-#include <evmone/evmone.h>
 #include <valgrind/cachegrind.h>
-
-#include "host.hpp"
-#include "state.hpp"
-#include "test_state.hpp"
 
 #include <cstdint>
 #include <iostream>
+#include <optional>
 #include <vector>
 
 using namespace monad;
@@ -65,6 +70,8 @@ class InstrumentableVM : public evmc_vm
 {
     monad::vm::runtime::EvmStackAllocator stack_allocator;
     monad::vm::MemoryPool memory_pool_;
+    monad::test::TestState<false> test_state_;
+    monad::vm::VM vm_;
 
 public:
     InstrumentableVM(asmjit::JitRuntime &rt)
@@ -89,8 +96,6 @@ public:
     template <monad::Traits traits, InstrumentationDevice device>
     evmc::Result execute(Binary &entry)
     {
-        using namespace evmone::state;
-
         auto msg_memory = memory_pool_.alloc_ref();
         auto msg = new evmc_message{
             .kind = EVMC_CALL,
@@ -109,24 +114,34 @@ public:
             .memory_capacity = memory_pool_.alloc_capacity(),
         };
 
-        auto vm = evmc::VM(this);
+        BlockState block_state{test_state_.trie_db, vm_};
+        State state{block_state, Incarnation{0, 0}};
+        state.push();
+        for (auto const &addr : {msg->sender, msg->recipient}) {
+            state.add_to_balance(addr, 0);
+            state.access_account(addr);
+        }
 
-        auto const init_state = evmone::test::TestState{};
-        auto evm_state = State{init_state};
-        auto block = BlockInfo{};
-        auto hashes = evmone::test::TestBlockHashes{};
-        auto tx = Transaction{};
+        monad::test::TestBlockHashBuffer const block_hash_buffer{};
+        Transaction const tx{};
+        BlockHeader const block_header{};
+        EthereumMainnet const chain{};
+        std::optional<uint256_t> const base_fee_per_gas{};
+        std::vector<std::optional<Address>> const authorities{};
 
-        auto host = Host(
-            to_evmc_revision(traits::evm_rev()),
-            vm,
-            evm_state,
-            block,
-            hashes,
-            tx);
+        monad::test::TestHost<traits> test_host{
+            block_hash_buffer,
+            state,
+            tx,
+            msg->sender,
+            base_fee_per_gas,
+            authorities,
+            block_header,
+            chain};
+        auto &host = test_host.get_evmc_host();
 
-        auto const *interface = &host.get_interface();
-        auto *context = host.to_context();
+        evmc_host_interface const *const interface = &host.get_interface();
+        evmc_host_context *const context = host.to_context();
 
         std::vector<uint8_t> empty_code{};
         auto code_span = std::span<uint8_t const>{empty_code.data(), 0};

@@ -26,7 +26,7 @@ zkvm/
 
 Both backends drive the same C++ guest entry point: a parameterless
 `monad_zkvm_execute_witness()` that reads the witness via `read_input` and
-emits the post-state root via `write_output`, both from
+emits the block hash via `write_output`, both from
 [`zkvm_io.h`](core/zkvm_io.h). On ZisK the guest is a Rust crate and those
 symbols are provided by `ziskos`; on SP1 there is no Rust guest — the entry is
 `program/main.c`, and `read_input` / `write_output` (plus `_start`, the

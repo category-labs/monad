@@ -18,7 +18,7 @@ ziskos::entrypoint!(main);
 
 // The C++ guest (zkvm/guest/ffi.cpp) owns input and output via the eth-act
 // standard interface (zkvm/core/zkvm_io.h): it calls read_input to fetch the
-// RLP-encoded witness and write_output to emit the 32-byte post-state root.
+// RLP-encoded witness and write_output to emit the 32-byte block hash.
 // ziskos supplies both symbols at link time, so Rust just dispatches.
 //
 // zkvm_halt (declared in zkvm/core/zkvm_halt.h) has no ziskos equivalent;

@@ -251,8 +251,9 @@ Result<bytes32_t> execute_block_zkvm(
 
     // 5. Commit accumulated state deltas to the partial trie, then read the
     //    post-state root back. No populate_header — the zkVM doesn't care
-    //    about the live header's state_root / receipts_root / etc.; the
-    //    output is the trie root we just computed.
+    //    about the witness header's state_root / receipts_root / etc.; the
+    //    output is the trie root we just computed, and ffi.cpp
+    //    seals that into the header it hashes for the public value.
     auto const released = std::move(block_state).release();
     CommitBuilder builder{block.header.number};
     pdb.commit(

@@ -21,7 +21,7 @@
 // allocator, the eth-act IO ABI (`read_input` / `write_output`), `zkvm_halt`,
 // and every `zkvm_*` accelerator. So all this program does is hand control to
 // the C++ guest's `monad_zkvm_execute_witness`, which reads the witness via
-// `read_input` and emits the post-state root via `write_output`.
+// `read_input` and emits the block hash via `write_output`.
 //
 // Kept as a standalone object (not folded into the guest archive) so the
 // linker always pulls `main` in to satisfy `_start`'s reference to it.

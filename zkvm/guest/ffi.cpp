@@ -15,15 +15,15 @@
 
 // Phase 4 — ingest a reth-format execution witness from the eth-act standard
 // input interface, reconstruct the partial state trie, execute the embedded
-// block sequentially via execute_block_zkvm<traits>, and emit the resulting
-// post-state root as the 32-byte output.
+// block sequentially via execute_block_zkvm<traits>, and emit the hash of that
+// block's header with the computed post-state root sealed into it.
 //
 // The Rust ZisK / SP1 guest crates link this library and call
 // monad_zkvm_execute_witness from their respective entrypoints. The C++
 // side owns input/output via the eth-act standard interface
 // (zkvm/core/zkvm_io.h):
 //   - read_input(...)  — fetches the RLP-encoded witness buffer
-//   - write_output(...) — emits the computed post-state root as 32 bytes
+//   - write_output(...) — emits that 32-byte block hash
 // Both symbols are resolved by the backend's runtime (ziskos on ZisK;
 // libzkevm.a on SP1; the x86 test runner provides them against a --input
 // file).
@@ -154,11 +154,10 @@ extern "C" void monad_zkvm_execute_witness(void)
                 // The newest ancestor is this block's parent
                 MONAD_ASSERT(hash == block.header.parent_hash);
                 pre_state_root = pdb.state_root();
-                // The witness parent must agree with the trie it delivers --
-                // an in-guest consistency check. The BINDING to the real
-                // chain is the exposure of pre_state_root as a public value
-                // below: the verifier compares it against the canonical
-                // parent header, which the prover cannot choose.
+                // pre_state_root is recomputed from the witness nodes;
+                // header.value().state_root is given by the witness.
+                // The binding to the real block is made through the
+                // public value below.
                 MONAD_ASSERT(pre_state_root == header.value().state_root);
                 checked_pre_state_root = true;
             }
@@ -201,26 +200,8 @@ extern "C" void monad_zkvm_execute_witness(void)
         monad::rlp::encode_block_header(sealed_header);
     monad_hash256 const block_hash = monad::keccak256(header_rlp);
 
-    // Public values, in order: post-state root, pre-state root, block hash.
-    //
-    // The THIRD ALONE is sufficient now that the computed root is sealed into
-    // the header it hashes: checking it against the canonical hash at this
-    // height binds the state root, the parent, and every other field the header
-    // carries, in one comparison that cannot be half-applied. The first two are
-    // published because they are useful to a caller and to the corpus gate, not
-    // because the verifier needs them.
-    //
-    // Before the sealing above, all three had to be checked, and the check that
-    // mattered most -- that the published post-root is the one the header
-    // claims -- lived only in this comment. Kept here for the record: the first
-    // alone proves only that SOME state yields this post-root; the second binds
-    // the witness to the real pre-state; the third binds the execution to the
-    // real block -- and,
-    // with it, the ancestor headers walked above: the newest of them is
-    // asserted to hash to block.header.parent_hash and each older one to be
-    // named by its successor, so pinning this header pins the whole run the
-    // BLOCKHASH buffer serves.
-    write_output(state_root.bytes, sizeof(state_root.bytes));
-    write_output(pre_state_root.bytes, sizeof(pre_state_root.bytes));
+    // Public value: the block hash alone is sufficient as the computed root is
+    // sealed into the header it hashes; it also binds the execution to the
+    // real block and, with it, the ancestor headers walked above.
     write_output(block_hash.bytes, sizeof(block_hash.bytes));
 }

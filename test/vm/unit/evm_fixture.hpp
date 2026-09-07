@@ -18,21 +18,20 @@
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 #include <test/vm/utils/test_message.hpp>
 
+#include <monadml_evm/monadml_evm.hpp>
+
 #include <evmc/evmc.hpp>
 #include <evmc/mocked_host.hpp>
-
-#include <evmone/baseline.hpp>
-#include <evmone/constants.hpp>
-#include <evmone/evmone.h>
-#include <evmone/vm.hpp>
 
 #include <gtest/gtest.h>
 
@@ -55,8 +54,13 @@ namespace monad::vm::compiler::test
         {
             Compiler,
             Interpreter,
-            Evmone,
+            Spec,
         };
+
+        // The OCaml spec VM ignores the evmc_revision it is handed and is
+        // pinned to this Monad revision; execute_and_compare skips for any
+        // other trait.
+        static constexpr monad_revision spec_revision = MONAD_EIGHT;
 
         static constexpr auto get_trait()
         {
@@ -146,16 +150,16 @@ namespace monad::vm::compiler::test
                         rt_ctx, icode);
             }
             else {
-                MONAD_ASSERT(impl == Evmone);
-                evmc::VM const evmone_vm{evmc_create_evmone()};
+                MONAD_ASSERT(impl == Spec);
+                evmc::VM spec_vm{evmc_create_monadml_evm()};
 
-                result_ = evmc::Result{::evmone::baseline::execute(
-                    *static_cast<::evmone::VM *>(evmone_vm.get_raw_pointer()),
+                result_ = spec_vm.execute(
                     host_.get_interface(),
                     host_.to_context(),
                     to_evmc_revision(TraitsTest<T>::Trait::evm_rev()),
                     msg_,
-                    evmone::baseline::analyze(evmc::bytes_view(code)))};
+                    code.data(),
+                    code.size());
             }
         }
 
@@ -199,6 +203,11 @@ namespace monad::vm::compiler::test
             std::int64_t gas_limit, std::span<std::uint8_t const> code,
             std::span<std::uint8_t const> calldata = {}) noexcept
         {
+            if constexpr (!std::same_as<Trait, MonadTraits<spec_revision>>) {
+                GTEST_SKIP() << "spec oracle is pinned to "
+                             << monad_revision_to_string(spec_revision);
+            }
+
             // This comparison shouldn't be called multiple times in one test;
             // if any state has been recorded on this host before we begin a
             // test, the test should fail and stop us from trying to make
@@ -214,7 +223,7 @@ namespace monad::vm::compiler::test
             // second one).
             host_ = {};
 
-            execute(gas_limit, code, calldata, Evmone);
+            execute(gas_limit, code, calldata, Spec);
             auto expected = std::move(result_);
 
             switch (expected.status_code) {

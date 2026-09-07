@@ -306,9 +306,6 @@ TEST_P(VMFileTest, RegressionFile)
 {
     auto const [entry, rev] = GetParam();
 
-    if (std::holds_alternative<monad_revision>(rev)) {
-        GTEST_SKIP() << "evmone only executes evm revisions";
-    }
     auto file = std::ifstream{entry.path(), std::ifstream::binary};
 
     ASSERT_TRUE(file.good());
@@ -404,10 +401,6 @@ TYPED_TEST(VMTraitsTest, MissingDischargeInJumpiKeepFallthroughStack)
         0x60, 0x08, 0x86, 0x90, 0x1c, 0x90, 0x50, 0x80, 0x60, 0x04, 0x1a, 0x90,
         0x50, 0x5f, 0x60, 0x10};
 
-    if constexpr (TestFixture::is_monad_trait()) {
-        GTEST_SKIP() << "evmone only executes evm revisions";
-    }
-
     TestFixture::execute_and_compare(1'000'000, bytecode, {});
 }
 
@@ -430,10 +423,6 @@ TYPED_TEST(VMTraitsTest, WrongGasCheckConditionalJump)
         0x26, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-
-    if constexpr (TestFixture::is_monad_trait()) {
-        GTEST_SKIP() << "evmone only executes evm revisions";
-    }
 
     TestFixture::execute_and_compare(1'000'000, bytecode, calldata);
 }
@@ -460,10 +449,6 @@ TYPED_TEST(VMTraitsTest, MissingRemoveStackOffsetInFallthroughStack)
                                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-
-    if constexpr (TestFixture::is_monad_trait()) {
-        GTEST_SKIP() << "evmone only executes evm revisions";
-    }
 
     TestFixture::execute_and_compare(1'000'000, bytecode, calldata);
 }

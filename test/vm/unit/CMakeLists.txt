@@ -76,7 +76,7 @@ target_link_libraries(vm-unit-tests
 
 if(MONAD_COMPILER_TESTING)
     target_link_libraries(vm-unit-tests
-        PRIVATE evmone
+        PRIVATE monadml-evm
     )
 endif()
 

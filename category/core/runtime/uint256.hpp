@@ -942,6 +942,17 @@ addmod(uint256_t const &x, uint256_t const &y, uint256_t const &mod) noexcept
             return xy_sum;
         }
     }
+#ifdef MONAD_ZKVM_ZISK
+    // Slow path only: the branch above (mod >= 2^192, the common EVM case) is
+    // a handful of subb/addc and stays. What follows in software is a 320/256
+    // udivrem; the precompile does (x*1 + y) mod m in one call.
+    if (!std::is_constant_evaluated()) {
+        if (mod == 0) {
+            return 0;
+        }
+        return zisk_arith256_mod(x, 1, y, mod);
+    }
+#endif
     words_t<uint256_t::num_words + 1> sum;
     uint64_t carry = 0;
 #pragma GCC unroll(4)

@@ -910,6 +910,16 @@ udivrem(uint256_t const &u, uint256_t const &v) noexcept
 constexpr uint256_t
 addmod(uint256_t const &x, uint256_t const &y, uint256_t const &mod) noexcept
 {
+#ifdef MONAD_ZKVM_ZISK
+    // Use (x * 1 + y) % mod for all runtime ZisK calls, avoiding even the
+    // software fast path's multiword arithmetic.
+    if (!std::is_constant_evaluated()) {
+        if (mod == 0) {
+            return 0;
+        }
+        return zisk_arith256_mod(x, 1, y, mod);
+    }
+#endif
     // Fast path when mod >= 2^192 and x, y < 2*mod
     if (mod[3] && (x[3] <= mod[3]) && (y[3] <= mod[3])) {
         // x, y < 2 * mod

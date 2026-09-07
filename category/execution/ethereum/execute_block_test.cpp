@@ -46,6 +46,7 @@
 #include <category/mpt/util.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/status_code.h>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
@@ -697,7 +698,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
         .value = 0,
         .gas = 0x186a0,
         .gas_used = gas_used,
-        .status = EVMC_SUCCESS,
+        .status = MONAD_STATUS_SUCCESS,
         .depth = 0,
         .logs = std::vector<CallFrame::Log>{},
     };

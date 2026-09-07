@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/vm/evm/status_code.h>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -149,7 +150,7 @@ void CallTracer::on_enter(evmc_message const &msg)
                      ? byte_string{}
                      : byte_string{msg.input_data, msg.input_size},
         .output = {},
-        .status = EVMC_FAILURE,
+        .status = MONAD_STATUS_FAILURE,
         .depth = depth,
         .logs = std::vector<CallFrame::Log>{},
     });
@@ -173,7 +174,7 @@ void CallTracer::on_exit(evmc::Result const &res)
                            ? byte_string{}
                            : byte_string{res.output_data, res.output_size};
     }
-    frame.status = res.status_code;
+    frame.status = from_evmc_status_code(res.status_code);
 
     if (frame.type == CallType::CREATE || frame.type == CallType::CREATE2) {
         frame.to = is_zero(res.create_address)
@@ -217,7 +218,7 @@ void CallTracer::on_self_destruct(
         .gas_used = 0,
         .input = {},
         .output = {},
-        .status = EVMC_SUCCESS, // TODO
+        .status = MONAD_STATUS_SUCCESS, // TODO
         .depth = parent.depth + 1,
         .logs = std::vector<CallFrame::Log>{},
     });

@@ -59,6 +59,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/evm-as.hpp>
@@ -276,7 +277,7 @@ namespace
             .gas = gas_specified ? tx.gas_limit : MONAD_ETH_CALL_LOW_GAS_LIMIT,
             .gas_used =
                 gas_specified ? tx.gas_limit : MONAD_ETH_CALL_LOW_GAS_LIMIT,
-            .status = EVMC_SUCCESS,
+            .status = MONAD_STATUS_SUCCESS,
             .depth = 0,
             .logs = std::vector<CallFrame::Log>{},
         };
@@ -1441,7 +1442,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         .gas_used = 100'000,
         .input = byte_string{},
         .output = byte_string{},
-        .status = EVMC_SUCCESS,
+        .status = MONAD_STATUS_SUCCESS,
         .depth = 0,
         .logs =
             std::vector{
@@ -1480,7 +1481,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         .gas_used = 10'115,
         .input = byte_string{},
         .output = byte_string{},
-        .status = EVMC_SUCCESS,
+        .status = MONAD_STATUS_SUCCESS,
         .depth = 1,
         .logs = std::vector<CallFrame::Log>{},
     };
@@ -1497,7 +1498,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         .gas_used = 0,
         .input = byte_string{},
         .output = byte_string{},
-        .status = EVMC_SUCCESS,
+        .status = MONAD_STATUS_SUCCESS,
         .depth = 2,
         .logs = std::vector<CallFrame::Log>{},
     };
@@ -1513,7 +1514,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         .gas_used = 1027,
         .input = byte_string{},
         .output = byte_string{},
-        .status = EVMC_SUCCESS,
+        .status = MONAD_STATUS_SUCCESS,
         .depth = 1,
         .logs = std::vector{CallFrame::Log{
             .log =
@@ -1617,7 +1618,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
         .gas = 22000,
         .gas_used = 22000,
         .input = byte_string(data),
-        .status = EVMC_OUT_OF_GAS,
+        .status = MONAD_STATUS_OUT_OF_GAS,
         .depth = 0,
         .logs = std::vector<CallFrame::Log>{},
     };

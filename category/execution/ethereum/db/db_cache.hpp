@@ -64,6 +64,13 @@ class DbCache final
     // index 0 only. This will be compatible for future page-granular reads.
     using StorageCache = vm::utils::LruWeightCache<
         StorageKey, storage_page_t, StorageKeyHashCompare>;
+    // recency entries: value is last_access, 0 = known absent (not cached);
+    // sized above the modeled pricing capacity so the priced-cached set stays
+    // resident
+    using RecencyAccountsCache =
+        LruCache<Address, uint64_t, AddressHashCompare>;
+    using RecencyStorageCache =
+        LruCache<StorageKey, uint64_t, StorageKeyHashCompare>;
 
     // sized so the priced-cached window (CACHE_PRICING_STORAGE_SLOT_CAPACITY
     // slots, worst case single-slot pages) stays resident
@@ -75,6 +82,8 @@ class DbCache final
     AccountsCache accounts_{10'000'000, &block_};
     StorageCache storage_{
         STORAGE_CACHE_MAX_BYTES, std::chrono::milliseconds{200}, &block_};
+    RecencyAccountsCache recency_accounts_{8'000'000, &block_};
+    RecencyStorageCache recency_storage_{8'000'000, &block_};
     Proposals proposals_;
 
 public:
@@ -166,6 +175,56 @@ public:
             skey, page, static_cast<uint32_t>(page.byte_size()));
     }
 
+    CacheReadStatus
+    try_read_recency_account(Address const &address, uint64_t &ts)
+    {
+        auto const res = proposals_.try_read_recency_account(address, ts);
+        if (res.found) {
+            return CacheReadStatus::Hit;
+        }
+        if (res.truncated) {
+            return CacheReadStatus::MissTruncated;
+        }
+        RecencyAccountsCache::ConstAccessor acc{};
+        if (recency_accounts_.find(acc, address)) {
+            ts = acc->second.value_;
+            return CacheReadStatus::Hit;
+        }
+        return CacheReadStatus::MissResolved;
+    }
+
+    void insert_recency_account(Address const &address, uint64_t const ts)
+    {
+        recency_accounts_.insert(address, ts);
+    }
+
+    CacheReadStatus try_read_recency_storage(
+        Address const &address, bytes32_t const &lookup_key, uint64_t &ts)
+    {
+        auto const res =
+            proposals_.try_read_recency_storage(address, lookup_key, ts);
+        if (res.found) {
+            return CacheReadStatus::Hit;
+        }
+        if (res.truncated) {
+            return CacheReadStatus::MissTruncated;
+        }
+        StorageKey const skey{address, Incarnation{0, 0}, lookup_key};
+        RecencyStorageCache::ConstAccessor acc{};
+        if (recency_storage_.find(acc, skey)) {
+            ts = acc->second.value_;
+            return CacheReadStatus::Hit;
+        }
+        return CacheReadStatus::MissResolved;
+    }
+
+    void insert_recency_storage(
+        Address const &address, bytes32_t const &lookup_key, uint64_t const ts)
+    {
+        StorageKey const skey{address, Incarnation{0, 0}, lookup_key};
+        recency_storage_.insert(skey, ts);
+    }
+
     void
     set_block_and_prefix(uint64_t const block_number, bytes32_t const &block_id)
     {
@@ -193,6 +252,8 @@ public:
             // cache speed is the least of our problems.
             accounts_.clear();
             storage_.clear();
+            recency_accounts_.clear();
+            recency_storage_.clear();
         }
     }
 
@@ -215,6 +276,12 @@ private:
         }
         for (auto const &[sk, leaf] : post_state.storage) {
             storage_.insert(sk, leaf, static_cast<uint32_t>(leaf.byte_size()));
+        }
+        for (auto const &[addr, ts] : post_state.recency_accounts) {
+            recency_accounts_.insert(addr, ts);
+        }
+        for (auto const &[sk, ts] : post_state.recency_storage) {
+            recency_storage_.insert(sk, ts);
         }
     }
 };

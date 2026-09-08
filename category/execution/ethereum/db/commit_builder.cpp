@@ -103,6 +103,7 @@ void CommitBuilder::record_recency(
         if (cache_pricing_bump_due(ts_old, block_number_)) {
             bump(PricingKind::account, ts_old);
             upsert(cache_pricing_account_key(hashed_addr));
+            proposal_post_state_.recency_accounts[addr] = block_number_;
         }
     }
     for (auto const &lookup_key : lookup_keys) {
@@ -113,6 +114,9 @@ void CommitBuilder::record_recency(
         }
         bump(PricingKind::storage, ts_old);
         upsert(cache_pricing_storage_key(addr, lookup_key));
+        proposal_post_state_
+            .recency_storage[StorageKey{addr, Incarnation{0, 0}, lookup_key}] =
+            block_number_;
     }
 }
 

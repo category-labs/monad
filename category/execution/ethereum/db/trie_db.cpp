@@ -223,14 +223,36 @@ TrieDb::read_storage_pricing_bucket(uint64_t const block)
 
 std::optional<uint64_t> TrieDb::read_account_last_access(Address const &addr)
 {
-    return read_pricing_value(cache_pricing_account_key(
+    uint64_t ts = 0;
+    auto const status = cache_ ? cache_->try_read_recency_account(addr, ts)
+                               : CacheReadStatus::MissTruncated;
+    if (status == CacheReadStatus::Hit) {
+        return ts == 0 ? std::nullopt : std::optional<uint64_t>{ts};
+    }
+    auto const value = read_pricing_value(cache_pricing_account_key(
         to_bytes(keccak256({addr.bytes, sizeof(addr.bytes)}))));
+    if (cache_ && status == CacheReadStatus::MissResolved) {
+        cache_->insert_recency_account(addr, value.value_or(0));
+    }
+    return value;
 }
 
 std::optional<uint64_t> TrieDb::read_storage_last_access(
     Address const &addr, bytes32_t const &lookup_key)
 {
-    return read_pricing_value(cache_pricing_storage_key(addr, lookup_key));
+    uint64_t ts = 0;
+    auto const status =
+        cache_ ? cache_->try_read_recency_storage(addr, lookup_key, ts)
+               : CacheReadStatus::MissTruncated;
+    if (status == CacheReadStatus::Hit) {
+        return ts == 0 ? std::nullopt : std::optional<uint64_t>{ts};
+    }
+    auto const value =
+        read_pricing_value(cache_pricing_storage_key(addr, lookup_key));
+    if (cache_ && status == CacheReadStatus::MissResolved) {
+        cache_->insert_recency_storage(addr, lookup_key, value.value_or(0));
+    }
+    return value;
 }
 
 std::optional<uint64_t>

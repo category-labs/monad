@@ -43,4 +43,9 @@ size_t value_size(std::optional<bytes32_t> const &);
 size_t value_size(std::optional<uint64_t> const &);
 size_t value_size(std::optional<uint256_t> const &);
 
+// Given a requested maximum size, this function returns a slightly larger size
+// to provide headroom for some bookkeeping to manage the RPC request resource
+// consumption.
+size_t padded_max_size(size_t);
+
 MONAD_NAMESPACE_END

@@ -946,49 +946,7 @@ namespace
 
         // Calculate the maximum size of the in-memory structures that we are
         // willing to materialize this simulation.
-        size_t const soft_max_size = [max_size]() -> size_t {
-            // We use the size of the in-memory structures to bound the memory
-            // consumption. This estimator is inaccurate as the RPC
-            // client submits the maximum size of the CBOR response, which is
-            // more compact than the in-memory structures.  Therefore we keep a
-            // small amount of headroom to absorb estimator drift while still
-            // bounding memory growth. We use a monotonic hyperbolic function to
-            // compute the headroom, which decays percentage-wise as the
-            // `max_size` increases. This is to avoid over-estimating the
-            // headroom for large `max_size` values, preventing excessive
-            // memory usage.
-            //
-            // Monotonic hyperbolic percentage in basis points:
-            // S(M) = M_min + (M_max - M_min) * k / (k + M)
-            // where k controls how quickly slack decays.
-            constexpr size_t bps_scale = 10'000; // basis points: 100% = 10'000.
-            constexpr size_t M_max = bps_scale / 2; // 50%
-            constexpr size_t M_min = 1; // 0.01%
-            constexpr size_t k = 4096; // 4 KiB
-            // At the time of writing the BFT RPC client has M = 25'000'000 (25
-            // MB). Meaning, we get roughly 2500 bytes of slack using this
-            // method.
-
-            size_t const denominator =
-                max_size > std::numeric_limits<size_t>::max() - k
-                    ? std::numeric_limits<size_t>::max()
-                    : max_size + k;
-            size_t const slack_bps =
-                M_min + ((M_max - M_min) * k) / denominator;
-
-            // Computing `ceil(max_size * slack_bps / bps_scale)` using integer
-            // maths.
-            size_t const whole = (max_size / bps_scale) * slack_bps;
-            size_t const remainder = max_size % bps_scale;
-            size_t const fraction =
-                (remainder * slack_bps + (bps_scale - 1)) / bps_scale;
-            size_t const slack = whole + fraction;
-
-            if (max_size > std::numeric_limits<size_t>::max() - slack) {
-                return std::numeric_limits<size_t>::max();
-            }
-            return max_size + slack;
-        }();
+        size_t const soft_max_size = padded_max_size(max_size);
 
         TrieRODb tdb{db};
         tdb.set_block_and_prefix(base_block_number, block_id);

@@ -13,7 +13,6 @@ on:
       - 'cmd/vm/**'
       - 'scripts/vm/**'
       - 'test/vm/**'
-      - 'third_party/evmone'
       - 'docker/Dockerfile'
   workflow_dispatch:
 

@@ -144,7 +144,6 @@ namespace
         BlockchainTestVM *vm_ptr, monad_eth_revision rev,
         bytes32_t const &code_hash, uint8_t const *code, size_t const code_size)
     {
-        (void)vm_ptr->get_code_analysis(code_hash, code, code_size);
         (void)vm_ptr->get_intercode_nativecode(rev, code_hash, code, code_size);
     }
 
@@ -320,7 +319,6 @@ namespace
     static BlockchainTestVM::Implementation const all_impls[] = {
         Interpreter,
         Compiler,
-        Evmone,
     };
 
     void register_benchmark(

@@ -46,14 +46,6 @@ option(MONAD_COMPILER_DUMP_ASM "Dump assembly files into build/asm" OFF)
 option(MONAD_COMPILER_STATS "Print statistics about the compiler" OFF)
 option(MONAD_COMPILER_HOT_PATH_STATS "Print statistics about the vm" OFF)
 
-if(NOT DEFINED BUILD_SHARED_LIBS)
-  # If this isn't defined, evmone has the audacity to define it itself (to ON)
-  # whereas the ordinary default is for static libraries; if it's not specified,
-  # we explicitly set it to OFF, agreeing with the expected default and
-  # preventing evmone from doing something different
-  option(BUILD_SHARED_LIBS "Build monad with shared libraries" OFF)
-endif()
-
 include(cmake/test.cmake)
 
 # ##############################################################################
@@ -101,8 +93,7 @@ add_subdirectory("third_party/cthash")
 # ethash
 # No monad code uses ethash: hashing goes through category/crypto/keccak.h and
 # the digest type is monad_hash256 (category/crypto/hash256.h). It is still
-# configured because two third-party libraries link ethash::keccak privately —
-# silkpre, and evmone under MONAD_COMPILER_TESTING/BENCHMARKS. Retiring the
+# configured because silkpre links ethash::keccak privately. Retiring the
 # submodule means finishing the silkpre -> silkpre_vendor migration.
 set(ETHASH_TESTING NO)
 add_subdirectory("third_party/ethash")
@@ -150,11 +141,6 @@ add_subdirectory("third_party/intx")
 # evmc
 set(HUNTER_ENABLED OFF)
 add_subdirectory("third_party/evmc")
-
-# evmone
-if (MONAD_COMPILER_TESTING OR MONAD_COMPILER_BENCHMARKS)
-  include(cmake/evmone.cmake)
-endif()
 
 # komihash
 add_library(komihash INTERFACE)

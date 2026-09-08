@@ -15,8 +15,6 @@
 
 #pragma once
 
-#include "state.hpp"
-
 #include <category/core/assert.h>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/revision.h>
@@ -28,10 +26,6 @@
 
 #include <evmc/evmc.hpp>
 
-#include <evmone/baseline.hpp>
-#include <evmone/constants.hpp>
-#include <evmone/vm.hpp>
-
 #include <unordered_map>
 
 class BlockchainTestVM : public evmc_vm
@@ -41,7 +35,6 @@ public:
     {
         Compiler,
         Interpreter,
-        Evmone,
     };
 
     template <typename V>
@@ -65,8 +58,6 @@ public:
             return "interpreter";
         case Implementation::Compiler:
             return "compiler";
-        case Implementation::Evmone:
-            return "evmone";
         }
 
         std::unreachable();
@@ -76,10 +67,6 @@ public:
     {
         return impl_;
     }
-
-    evmone::baseline::CodeAnalysis const &get_code_analysis(
-        monad::bytes32_t const &code_hash, uint8_t const *code,
-        size_t code_size);
 
     monad::vm::SharedIntercode const &get_intercode(
         monad::bytes32_t const &code_hash, uint8_t const *code,
@@ -94,18 +81,11 @@ public:
 
 private:
     Implementation impl_;
-    evmone::VM evmone_vm_;
     monad::vm::VM monad_vm_;
     char const *debug_dir_;
     monad::vm::CompilerConfig base_config;
-    CodeMap<evmone::baseline::CodeAnalysis> code_analyses_;
     CodeMap<monad::vm::SharedIntercode> intercodes_;
     monad::vm::runtime::Context *rt_ctx_;
-
-    evmc::Result execute_evmone(
-        evmc_host_interface const *host, evmc_host_context *context,
-        evmc_revision rev, evmc_message const *msg, uint8_t const *code,
-        size_t code_size);
 
     evmc::Result execute_compiler(
         evmc_host_interface const *host, evmc_host_context *context,

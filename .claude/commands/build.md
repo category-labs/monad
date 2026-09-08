@@ -50,8 +50,8 @@ You are helping the user configure and build the monad C++ project located at $C
 | Option | Default | Description |
 |--------|---------|-------------|
 | `MONAD_COMPILER_COVERAGE` | OFF | Build with coverage instrumentation |
-| `MONAD_COMPILER_TESTING` | OFF | Build compiler tests (requires the `third_party/evmone` submodule) |
-| `MONAD_COMPILER_BENCHMARKS` | OFF | Build compiler benchmarks (requires the `third_party/evmone` submodule) |
+| `MONAD_COMPILER_TESTING` | OFF | Build compiler tests |
+| `MONAD_COMPILER_BENCHMARKS` | OFF | Build compiler benchmarks |
 | `MONAD_COMPILER_DUMP_ASM` | OFF | Dump assembly files into `build/asm` |
 | `MONAD_COMPILER_STATS` | OFF | Print JIT compiler statistics |
 | `MONAD_COMPILER_HOT_PATH_STATS` | OFF | Print VM hot-path statistics |
@@ -187,7 +187,7 @@ CC=clang-19 CXX=clang++-19 cmake -G Ninja -B build \
 
 - If cmake configure fails, check for missing dependencies and suggest install commands
 - If configure fails with "GCC version 15 or higher is required", ensure `CC=gcc-15 CXX=g++-15` is set (or use `CC=clang-19 CXX=clang++-19` for Clang)
-- If configure fails with missing `CMakeLists.txt` in `third_party/` (including `third_party/evmone`, which is required for `MONAD_COMPILER_TESTING`, `MONAD_COMPILER_BENCHMARKS`, lint, and fuzz builds), run `git submodule update --init --recursive`
+- If configure fails with missing `CMakeLists.txt` in `third_party/`, run `git submodule update --init --recursive`
 - If build fails with `#error avx2 or avx512 required`, ensure a toolchain file is being used
 - If build fails, show the relevant error lines and suggest fixes
 

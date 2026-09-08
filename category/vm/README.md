@@ -88,40 +88,17 @@ If the project is configured with `MONAD_COMPILER_TESTING` enabled, e.g.
 $ cmake -S . -B build -DMONAD_COMPILER_TESTING=ON
 ```
 then debug assertions will be enabled even when the `NDEBUG` macro is
-defined. With `MONAD_COMPILER_TESTING` configuration one can also define
-the `EVMONE_DEBUG_TRACE=1` environment variable to get runtime debug
-information from evmone and the test host, defined in the evmone project.
-For example
+defined. For example
 ```
 $ export MONAD_COMPILER_DEBUG_TRACE=1
-$ export EVMONE_DEBUG_TRACE=1
-$ scrips/vm/fuzzer.sh
+$ scripts/vm/fuzzer.sh
 ...
-offset: 0x59  opcode: 0x90  gas_left: 29977858
-offset: 0x5a  opcode: 0x62  gas_left: 29977855
-offset: 0x5e  opcode: 0x1  gas_left: 29977852
-offset: 0x5f  opcode: 0x55  gas_left: 29977849
-offset: 0x60  opcode: 0x0  gas_left: 29975649
-START baseline_execute address 095E7BAEA6A6C7C4C2DFEB977EFAC326AF552D87 with gas = 379000
 Block 0x00: gas remaining: 379000
 Block 0x2d: gas remaining: 378784
-END baseline_execute address 095E7BAEA6A6C7C4C2DFEB977EFAC326AF552D87
-offset: 0x00  opcode: 0x33  gas_left: 30000000
-offset: 0x01  opcode: 0x73  gas_left: 29999998
-...
-offset: 0x16  opcode: 0x14  gas_left: 29999995
-offset: 0x5f  opcode: 0x55  gas_left: 29977849
-offset: 0x60  opcode: 0x0  gas_left: 29975649
-START baseline_execute address 095E7BAEA6A6C7C4C2DFEB977EFAC326AF552D87 with gas = 379000
-Block 0x00: gas remaining: 379000
-END baseline_execute address 095E7BAEA6A6C7C4C2DFEB977EFAC326AF552D87
 ```
 
-The lines starting with `offset` contain runtime debug information from
-evmone, with one line for each instruction executed by evmone. The
-`START` and `END` lines contain information about which contracts are
-executing. Lines starting with `Block` contain runtime debug output
-from `monad-compiler`.
+Lines starting with `Block` contain runtime debug output from
+`monad-compiler`, one for each basic block entered.
 
 ### Fuzzer
 
@@ -137,7 +114,7 @@ and build
 cmake --build
 ```
 
-Use the helper script `scrips/fuzzer.sh` to run the fuzzer.
+Use the helper script `scripts/vm/fuzzer.sh` to run the fuzzer.
 
 Execute
 ```
@@ -199,7 +176,6 @@ Benchmark                                        Time             CPU   Iteratio
 ----------------------------------------------------------------------------------
 burntpix/0x0/0x7a120/interpreter        1025652212 ns   1025644766 ns            1
 burntpix/0x0/0x7a120/compiler            509836576 ns    509846789 ns            1
-burntpix/0x0/0x7a120/evmone              802911097 ns    802921406 ns            1
 ...
 ```
 

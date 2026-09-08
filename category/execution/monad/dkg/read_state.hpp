@@ -21,10 +21,16 @@ namespace mpt
 namespace dkg
 {
 
+    struct RegistrationEntry
+    {
+        uint64_t validator_id;
+        byte_string registration;
+    };
+
     struct RegistrationRead
     {
         bool registration_open;
-        std::vector<byte_string> registrations;
+        std::vector<RegistrationEntry> registrations;
     };
 
     Result<RegistrationRead> read_registrations(

@@ -208,7 +208,10 @@ TEST(DkgReadState, reads_finalized_native_state_without_eth_call)
     ASSERT_TRUE(registrations.has_value());
     EXPECT_FALSE(registrations.value().registration_open);
     ASSERT_EQ(registrations.value().registrations.size(), 1);
-    EXPECT_EQ(abi_word_u64(registrations.value().registrations[0], 0), 1);
+    EXPECT_EQ(registrations.value().registrations[0].validator_id, 1u);
+    EXPECT_EQ(
+        abi_word_u64(registrations.value().registrations[0].registration, 0),
+        1);
 
     auto pc_qcs = read_pc_qcs(db, TEST_BLOCK_NUM, TEST_EPOCH, 0, 16);
     ASSERT_TRUE(pc_qcs.has_value());

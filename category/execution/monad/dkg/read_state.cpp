@@ -101,7 +101,9 @@ namespace dkg
                     BOOST_OUTCOME_TRY(
                         auto registration,
                         contract.precompile_registration_of(input, {}, {}));
-                    result.registrations.push_back(std::move(registration));
+                    result.registrations.push_back(RegistrationEntry{
+                        .validator_id = validator_id,
+                        .registration = std::move(registration)});
                 }
                 return result;
             });

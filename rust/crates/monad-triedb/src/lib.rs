@@ -73,10 +73,17 @@ pub struct StorageStats {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DkgRegistration {
+    pub validator_id: u64,
+    /// ABI-encoded `registrationOf` return value.
+    pub registration: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DkgRegistrations {
     pub registration_open: bool,
     /// ABI-encoded `registrationOf` return values in request order.
-    pub registrations: Vec<Vec<u8>>,
+    pub registrations: Vec<DkgRegistration>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -579,7 +586,9 @@ impl TriedbHandle {
         epoch: u64,
         validators: &[[u8; 20]],
     ) -> Result<DkgRegistrations, DkgReadError> {
+        const VALIDATOR_ID_BYTES: usize = size_of::<u64>();
         const REGISTRATION_OUTPUT_BYTES: usize = 7 * 32;
+        const REGISTRATION_ENTRY_BYTES: usize = VALIDATOR_ID_BYTES + REGISTRATION_OUTPUT_BYTES;
 
         let validators = validators
             .iter()
@@ -596,7 +605,7 @@ impl TriedbHandle {
         })?;
         let expected = validators
             .len()
-            .checked_mul(REGISTRATION_OUTPUT_BYTES)
+            .checked_mul(REGISTRATION_ENTRY_BYTES)
             .ok_or(DkgReadError::SizeOverflow)?;
         if output.data.len() != expected {
             return Err(DkgReadError::InvalidLength {
@@ -608,8 +617,15 @@ impl TriedbHandle {
             registration_open: output.registration_open,
             registrations: output
                 .data
-                .chunks_exact(REGISTRATION_OUTPUT_BYTES)
-                .map(<[u8]>::to_vec)
+                .chunks_exact(REGISTRATION_ENTRY_BYTES)
+                .map(|entry| DkgRegistration {
+                    validator_id: u64::from_be_bytes(
+                        entry[..VALIDATOR_ID_BYTES]
+                            .try_into()
+                            .expect("validator ID prefix has fixed length"),
+                    ),
+                    registration: entry[VALIDATOR_ID_BYTES..].to_vec(),
+                })
                 .collect(),
         })
     }

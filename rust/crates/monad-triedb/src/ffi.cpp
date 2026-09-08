@@ -686,8 +686,15 @@ triedb_dkg_read_result *triedb_read_dkg_registrations(
             monad::dkg::read_registrations(db->db, block_num, epoch, addresses),
             [](monad::dkg::RegistrationRead &&read) {
                 monad::byte_string data;
-                for (auto &registration : read.registrations) {
-                    data += std::move(registration);
+                for (auto &entry : read.registrations) {
+                    for (size_t byte = 0; byte < sizeof(entry.validator_id);
+                         ++byte) {
+                        auto const shift =
+                            8 * (sizeof(entry.validator_id) - byte - 1);
+                        data.push_back(
+                            static_cast<uint8_t>(entry.validator_id >> shift));
+                    }
+                    data += std::move(entry.registration);
                 }
                 return alloc_dkg_result(data, read.registration_open);
             });

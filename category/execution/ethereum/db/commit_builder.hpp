@@ -55,9 +55,7 @@ protected:
     // last_access values and histogram buckets
     Db *db_{nullptr};
     BlockAccessSets const *access_{nullptr};
-    // histogram weight deltas by (kind, bucket block); ordered so the emitted
-    // updates are reproducible
-    std::map<std::pair<PricingKind, uint64_t>, int64_t> bucket_deltas_;
+    PricingBucketDeltas bucket_deltas_;
     mpt::UpdateList pricing_updates_;
 
     // lookup_keys hold the touched storage keys in the encoding's lookup
@@ -103,6 +101,11 @@ public:
     ProposalPostState take_proposal_post_state()
     {
         return std::move(proposal_post_state_);
+    }
+
+    PricingBucketDeltas const &bucket_deltas() const
+    {
+        return bucket_deltas_;
     }
 };
 

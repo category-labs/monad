@@ -99,6 +99,12 @@ bool mbc_measure_enabled()
     return enabled;
 }
 
+// In-memory histogram mirror: seeded from the trie once at startup, then kept
+// current from each block's committed bucket deltas, so per-block cutoffs
+// need no trie reads.
+PricingHistogram pricing_histogram;
+bool pricing_histogram_seeded = false;
+
 // Process a single historical Ethereum block
 template <Traits traits>
 Result<void> process_ethereum_block(
@@ -186,16 +192,11 @@ Result<void> process_ethereum_block(
         traits::multi_block_cache_active() && mbc_measure_enabled());
     if constexpr (traits::multi_block_cache_active()) {
         if (mbc_measure_enabled()) {
-            // the cutoff walk cost grows with the depth of the histogram, so
-            // amortize it: staleness is bounded by the recompute interval,
-            // which matches the last_access hysteresis C
-            static PricingCutoffs cutoffs;
-            static uint64_t computed_at = 0;
-            if (computed_at == 0 || block.header.number - computed_at >=
-                                        CACHE_PRICING_UPDATE_INTERVAL) {
-                cutoffs = compute_pricing_cutoffs(db, block.header.number);
-                computed_at = block.header.number;
+            if (!pricing_histogram_seeded) {
+                pricing_histogram.seed(db, block.header.number);
+                pricing_histogram_seeded = true;
             }
+            auto const cutoffs = pricing_histogram.cutoffs(block.header.number);
             block_state.set_pricing_cutoffs(cutoffs.account, cutoffs.storage);
         }
     }
@@ -253,6 +254,12 @@ Result<void> process_ethereum_block(
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);
+    if constexpr (traits::multi_block_cache_active()) {
+        if (mbc_measure_enabled()) {
+            pricing_histogram.apply(
+                builder.bucket_deltas(), block.header.number);
+        }
+    }
     if (commit_time > std::chrono::milliseconds(500)) {
         LOG_WARNING(
             "Slow block commit detected - block {}: {}",

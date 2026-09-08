@@ -30,6 +30,8 @@
 #include <category/core/config.hpp>
 
 #include <cstdint>
+#include <map>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -96,5 +98,21 @@ struct PricingCutoffs
 // Walks histogram buckets of the db's current (parent) prefix newest to
 // oldest, accumulating weight until each capacity is exceeded.
 PricingCutoffs compute_pricing_cutoffs(Db &, uint64_t block);
+
+// histogram weight deltas by (kind, bucket block), assembled by the commit
+// builder; ordered so the emitted updates are reproducible
+using PricingBucketDeltas = std::map<std::pair<PricingKind, uint64_t>, int64_t>;
+
+// In-memory histogram mirror: seeded from the trie once, then kept current
+// from the committed bucket deltas, so per-block cutoffs need no trie reads.
+class PricingHistogram
+{
+    std::map<uint64_t, uint64_t> buckets_[2];
+
+public:
+    void seed(Db &, uint64_t block);
+    void apply(PricingBucketDeltas const &, uint64_t block);
+    PricingCutoffs cutoffs(uint64_t block) const;
+};
 
 MONAD_NAMESPACE_END

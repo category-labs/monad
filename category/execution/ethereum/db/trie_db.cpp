@@ -221,38 +221,39 @@ TrieDb::read_storage_pricing_bucket(uint64_t const block)
     return read_pricing_bucket(PricingKind::storage, block);
 }
 
+// Recency reads are served purely from memory: every table write is fed into
+// DbCache (proposal overlay, then LRU at finalize) and the modeled pricing
+// cache is sized to stay resident there, so a miss means the entry is not
+// cached. The trie copy is the durable record for restart and statesync; it
+// is only read here when there is no DbCache.
 std::optional<uint64_t> TrieDb::read_account_last_access(Address const &addr)
 {
-    uint64_t ts = 0;
-    auto const status = cache_ ? cache_->try_read_recency_account(addr, ts)
-                               : CacheReadStatus::MissTruncated;
-    if (status == CacheReadStatus::Hit) {
-        return ts == 0 ? std::nullopt : std::optional<uint64_t>{ts};
+    if (cache_) {
+        uint64_t ts = 0;
+        if (cache_->try_read_recency_account(addr, ts) ==
+                CacheReadStatus::Hit &&
+            ts != 0) {
+            return ts;
+        }
+        return std::nullopt;
     }
-    auto const value = read_pricing_value(cache_pricing_account_key(
+    return read_pricing_value(cache_pricing_account_key(
         to_bytes(keccak256({addr.bytes, sizeof(addr.bytes)}))));
-    if (cache_ && status == CacheReadStatus::MissResolved) {
-        cache_->insert_recency_account(addr, value.value_or(0));
-    }
-    return value;
 }
 
 std::optional<uint64_t> TrieDb::read_storage_last_access(
     Address const &addr, bytes32_t const &lookup_key)
 {
-    uint64_t ts = 0;
-    auto const status =
-        cache_ ? cache_->try_read_recency_storage(addr, lookup_key, ts)
-               : CacheReadStatus::MissTruncated;
-    if (status == CacheReadStatus::Hit) {
-        return ts == 0 ? std::nullopt : std::optional<uint64_t>{ts};
+    if (cache_) {
+        uint64_t ts = 0;
+        if (cache_->try_read_recency_storage(addr, lookup_key, ts) ==
+                CacheReadStatus::Hit &&
+            ts != 0) {
+            return ts;
+        }
+        return std::nullopt;
     }
-    auto const value =
-        read_pricing_value(cache_pricing_storage_key(addr, lookup_key));
-    if (cache_ && status == CacheReadStatus::MissResolved) {
-        cache_->insert_recency_storage(addr, lookup_key, value.value_or(0));
-    }
-    return value;
+    return read_pricing_value(cache_pricing_storage_key(addr, lookup_key));
 }
 
 std::optional<uint64_t>

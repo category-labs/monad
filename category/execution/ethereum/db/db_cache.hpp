@@ -64,9 +64,9 @@ class DbCache final
     // index 0 only. This will be compatible for future page-granular reads.
     using StorageCache = vm::utils::LruWeightCache<
         StorageKey, storage_page_t, StorageKeyHashCompare>;
-    // recency entries: value is last_access, 0 = known absent (not cached);
-    // sized above the modeled pricing capacity so the priced-cached set stays
-    // resident
+    // recency entries: value is last_access, fed only from committed bumps
+    // (a miss means not in the modeled cache); sized above the modeled
+    // pricing capacity so the priced-cached set stays resident
     using RecencyAccountsCache =
         LruCache<Address, uint64_t, AddressHashCompare>;
     using RecencyStorageCache =
@@ -193,11 +193,6 @@ public:
         return CacheReadStatus::MissResolved;
     }
 
-    void insert_recency_account(Address const &address, uint64_t const ts)
-    {
-        recency_accounts_.insert(address, ts);
-    }
-
     CacheReadStatus try_read_recency_storage(
         Address const &address, bytes32_t const &lookup_key, uint64_t &ts)
     {
@@ -216,13 +211,6 @@ public:
             return CacheReadStatus::Hit;
         }
         return CacheReadStatus::MissResolved;
-    }
-
-    void insert_recency_storage(
-        Address const &address, bytes32_t const &lookup_key, uint64_t const ts)
-    {
-        StorageKey const skey{address, Incarnation{0, 0}, lookup_key};
-        recency_storage_.insert(skey, ts);
     }
 
     void

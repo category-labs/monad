@@ -60,9 +60,13 @@ protected:
     std::map<std::pair<PricingKind, uint64_t>, int64_t> bucket_deltas_;
     mpt::UpdateList pricing_updates_;
 
+    // lookup_keys hold the touched storage keys in the encoding's lookup
+    // granularity; delta's memos carry execution's probed last_access values
+    // so commit only falls back to a recency read for unprobed keys
     void record_recency(
         Address const &,
-        ankerl::unordered_dense::segmented_set<bytes32_t> const &lookup_keys);
+        ankerl::unordered_dense::segmented_set<bytes32_t> const &lookup_keys,
+        StateDelta const &);
     void add_pricing_updates();
 
 public:

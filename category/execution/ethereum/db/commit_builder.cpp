@@ -79,7 +79,8 @@ CommitBuilder::CommitBuilder(
 // in the encoding's lookup granularity (slot or page key).
 void CommitBuilder::record_recency(
     Address const &addr,
-    ankerl::unordered_dense::segmented_set<bytes32_t> const &lookup_keys)
+    ankerl::unordered_dense::segmented_set<bytes32_t> const &lookup_keys,
+    StateDelta const &delta)
 {
     auto const upsert = [this](byte_string key) {
         pricing_updates_.push_front(update_alloc_.emplace_back(Update{
@@ -96,19 +97,24 @@ void CommitBuilder::record_recency(
         }
         bucket_deltas_[{kind, block_number_}] += 1;
     };
-    auto const hashed_addr =
-        to_bytes(keccak256({addr.bytes, sizeof(addr.bytes)}));
     {
-        uint64_t const ts_old = db_->read_account_last_access(addr).value_or(0);
+        uint64_t const ts_old =
+            delta.account_last_access.has_value()
+                ? *delta.account_last_access
+                : db_->read_account_last_access(addr).value_or(0);
         if (cache_pricing_bump_due(ts_old, block_number_)) {
             bump(PricingKind::account, ts_old);
-            upsert(cache_pricing_account_key(hashed_addr));
+            upsert(cache_pricing_account_key(
+                to_bytes(keccak256({addr.bytes, sizeof(addr.bytes)}))));
             proposal_post_state_.recency_accounts[addr] = block_number_;
         }
     }
     for (auto const &lookup_key : lookup_keys) {
+        auto const mit = delta.storage_last_access.find(lookup_key);
         uint64_t const ts_old =
-            db_->read_storage_last_access(addr, lookup_key).value_or(0);
+            mit != delta.storage_last_access.end()
+                ? mit->second
+                : db_->read_storage_last_access(addr, lookup_key).value_or(0);
         if (!cache_pricing_bump_due(ts_old, block_number_)) {
             continue;
         }
@@ -131,7 +137,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         // itself contains reads from aborted speculative attempts
         if (access_ != nullptr) {
             if (auto const it = access_->find(addr); it != access_->end()) {
-                record_recency(addr, it->second);
+                record_recency(addr, it->second, delta);
             }
         }
         proposal_post_state_.accounts[addr] = account;

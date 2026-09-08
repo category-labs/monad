@@ -164,19 +164,18 @@ bool BlockState::account_is_cached(Address const &address)
     {
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_->find(it, address));
-        if (it->second.account_cached.has_value()) {
-            return *it->second.account_cached;
+        if (it->second.account_last_access.has_value()) {
+            return *it->second.account_last_access > *account_cutoff_;
         }
     }
     uint64_t const last_access =
         db_.read_account_last_access(address).value_or(0);
-    bool const cached = last_access > *account_cutoff_;
     {
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
-        it->second.account_cached = cached;
+        it->second.account_last_access = last_access;
     }
-    return cached;
+    return last_access > *account_cutoff_;
 }
 
 bool BlockState::storage_page_is_cached(
@@ -195,20 +194,19 @@ bool BlockState::storage_page_is_cached(
         if (!pre.has_value() || incarnation != pre->incarnation) {
             return false;
         }
-        if (auto const mit = it->second.cached_pages.find(lookup_key);
-            mit != it->second.cached_pages.end()) {
-            return mit->second;
+        if (auto const mit = it->second.storage_last_access.find(lookup_key);
+            mit != it->second.storage_last_access.end()) {
+            return mit->second > *storage_cutoff_;
         }
     }
     uint64_t const last_access =
         db_.read_storage_last_access(address, lookup_key).value_or(0);
-    bool const cached = last_access > *storage_cutoff_;
     {
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
-        it->second.cached_pages.try_emplace(lookup_key, cached);
+        it->second.storage_last_access.try_emplace(lookup_key, last_access);
     }
-    return cached;
+    return last_access > *storage_cutoff_;
 }
 
 bool BlockState::can_merge(State &state) const

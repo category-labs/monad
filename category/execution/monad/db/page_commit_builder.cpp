@@ -68,7 +68,7 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 for (auto const &key : it->second) {
                     page_keys.insert(compute_page_key(key));
                 }
-                record_recency(addr, page_keys);
+                record_recency(addr, page_keys, delta);
             }
         }
         proposal_post_state_.accounts[addr] = account;

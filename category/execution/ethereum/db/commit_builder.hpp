@@ -58,8 +58,11 @@ protected:
     // histogram weight deltas by (kind, bucket block); ordered so the emitted
     // updates are reproducible
     std::map<std::pair<PricingKind, uint64_t>, int64_t> bucket_deltas_;
+    mpt::UpdateList pricing_updates_;
 
-    void bump_account(std::optional<Account> const &pre, Account &post);
+    void record_recency(
+        Address const &,
+        ankerl::unordered_dense::segmented_set<bytes32_t> const &lookup_keys);
     void add_pricing_updates();
 
 public:

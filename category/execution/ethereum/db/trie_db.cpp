@@ -221,10 +221,26 @@ TrieDb::read_storage_pricing_bucket(uint64_t const block)
     return read_pricing_bucket(PricingKind::storage, block);
 }
 
+std::optional<uint64_t> TrieDb::read_account_last_access(Address const &addr)
+{
+    return read_pricing_value(cache_pricing_account_key(
+        to_bytes(keccak256({addr.bytes, sizeof(addr.bytes)}))));
+}
+
+std::optional<uint64_t> TrieDb::read_storage_last_access(
+    Address const &addr, bytes32_t const &lookup_key)
+{
+    return read_pricing_value(cache_pricing_storage_key(addr, lookup_key));
+}
+
 std::optional<uint64_t>
 TrieDb::read_pricing_bucket(PricingKind const kind, uint64_t const block)
 {
-    auto const key = cache_pricing_bucket_key(kind, block);
+    return read_pricing_value(cache_pricing_bucket_key(kind, block));
+}
+
+std::optional<uint64_t> TrieDb::read_pricing_value(byte_string const &key)
+{
     auto const res = db_.find(
         curr_root_,
         concat(prefix_, CACHE_PRICING_NIBBLE, NibblesView{key}),
@@ -233,9 +249,9 @@ TrieDb::read_pricing_bucket(PricingKind const kind, uint64_t const block)
         return std::nullopt;
     }
     auto encoded = res.value().node->value();
-    auto const weight = rlp::decode_unsigned<uint64_t>(encoded);
-    MONAD_ASSERT(!weight.has_error());
-    return weight.value();
+    auto const value = rlp::decode_unsigned<uint64_t>(encoded);
+    MONAD_ASSERT(!value.has_error());
+    return value.value();
 }
 
 void TrieDb::commit(

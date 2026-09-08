@@ -58,36 +58,17 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
     for (auto const &[addr, delta] : state_deltas) {
         UpdateList storage_updates;
         std::optional<byte_string_view> value;
-        // mutable copy: last_access bumps are applied at commit time only
-        std::optional<Account> account = delta.account.second;
+        auto const &account = delta.account.second;
         // bump only addresses in the deterministic access set; StateDeltas
-        // itself contains reads from aborted speculative attempts
-        // access sets hold raw slot keys; map to page keys
-        std::optional<ankerl::unordered_dense::segmented_set<bytes32_t>>
-            touched_page_keys;
+        // itself contains reads from aborted speculative attempts. Access
+        // sets hold raw slot keys; map to page keys first.
         if (access_ != nullptr) {
             if (auto const it = access_->find(addr); it != access_->end()) {
-                touched_page_keys.emplace();
+                ankerl::unordered_dense::segmented_set<bytes32_t> page_keys;
                 for (auto const &key : it->second) {
-                    touched_page_keys->insert(compute_page_key(key));
+                    page_keys.insert(compute_page_key(key));
                 }
-            }
-        }
-        auto const *const touched_pages =
-            touched_page_keys.has_value() ? &*touched_page_keys : nullptr;
-        if (access_ != nullptr) {
-            if (account.has_value()) {
-                if (touched_pages != nullptr) {
-                    bump_account(delta.account.first, *account);
-                }
-            }
-            else if (
-                delta.account.first.has_value() &&
-                delta.account.first->last_access_block != 0) {
-                // deleted account leaves the histogram
-                bucket_deltas_[{
-                    PricingKind::account,
-                    delta.account.first->last_access_block}] -= 1;
+                record_recency(addr, page_keys);
             }
         }
         proposal_post_state_.accounts[addr] = account;
@@ -107,13 +88,6 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 storage_page_t,
                 BytesHashCompare<bytes32_t>>
                 pages;
-            // (page_key -> pre-state (last_access, occupied slots)) for
-            // histogram deltas
-            ankerl::unordered_dense::segmented_map<
-                bytes32_t,
-                std::pair<uint64_t, uint64_t>,
-                BytesHashCompare<bytes32_t>>
-                pre_pages;
 
             for (auto const &[key, slot_delta] : delta.storage) {
                 if (slot_delta.first != slot_delta.second) {
@@ -127,51 +101,13 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                             reincarnated
                                 ? storage_page_t{}
                                 : db_->read_storage_page(addr, inc, pg_key);
-                        pre_pages[pg_key] = {
-                            it->second.last_access, it->second.size()};
                     }
                     it->second.set(slot_off, slot_delta.second);
                 }
             }
 
-            // read-only touched pages whose last_access is due for a bump
-            // become full-page rewrites
-            bool const pre_storage_valid =
-                !reincarnated && delta.account.first.has_value();
-            if (touched_pages != nullptr && pre_storage_valid) {
-                for (auto const &pg_key : *touched_pages) {
-                    if (pages.contains(pg_key)) {
-                        continue;
-                    }
-                    storage_page_t page =
-                        db_->read_storage_page(addr, inc, pg_key);
-                    if (page.is_empty()) {
-                        continue;
-                    }
-                    if (!cache_pricing_bump_due(
-                            page.last_access, block_number_)) {
-                        continue;
-                    }
-                    pre_pages[pg_key] = {page.last_access, page.size()};
-                    pages.try_emplace(pg_key, std::move(page));
-                }
-            }
-
             for (auto &[page_key, page] : pages) {
                 bool const is_empty = page.is_empty();
-                if (touched_pages != nullptr &&
-                    cache_pricing_bump_due(page.last_access, block_number_)) {
-                    page.last_access = block_number_;
-                }
-                auto const [pre_ts, pre_size] = pre_pages.at(page_key);
-                if (pre_ts != 0) {
-                    bucket_deltas_[{PricingKind::storage, pre_ts}] -=
-                        static_cast<int64_t>(pre_size);
-                }
-                if (!is_empty && page.last_access != 0) {
-                    bucket_deltas_[{PricingKind::storage, page.last_access}] +=
-                        static_cast<int64_t>(page.size());
-                }
                 // Record the post-commit page for the proposal cache. An empty
                 // page is still stored (entry present, all slots zero); the
                 // trie gets a deletion (nullopt) since it holds no empty leaf.

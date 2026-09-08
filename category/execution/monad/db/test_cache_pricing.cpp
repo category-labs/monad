@@ -132,12 +132,11 @@ TEST(CachePricing, last_access_bump_and_histogram)
     tdb.set_block_and_prefix(1, bytes32_t{uint64_t{1}});
     auto const acct1 = tdb.read_account(ADDR_A);
     ASSERT_TRUE(acct1.has_value());
-    EXPECT_EQ(acct1->last_access_block, 1);
-    auto const page1 =
-        tdb.read_storage_page(ADDR_A, acct1->incarnation, page_key);
-    EXPECT_EQ(page1.last_access, 1);
+    EXPECT_EQ(acct1->last_access_block, 0); // leaves carry no timestamps
+    EXPECT_EQ(tdb.read_account_last_access(ADDR_A), 1);
+    EXPECT_EQ(tdb.read_storage_last_access(ADDR_A, page_key), 1);
     EXPECT_EQ(tdb.read_account_pricing_bucket(1), 1);
-    EXPECT_EQ(tdb.read_storage_pricing_bucket(1), 2);
+    EXPECT_EQ(tdb.read_storage_pricing_bucket(1), 1);
 
     // block 2: read-only touch within C, no bump and no histogram change
     {
@@ -147,7 +146,7 @@ TEST(CachePricing, last_access_bump_and_histogram)
         drive_commit(tdb, 2, 1, bytes32_t{uint64_t{1}}, deltas, access);
     }
     tdb.set_block_and_prefix(2, bytes32_t{uint64_t{2}});
-    EXPECT_EQ(tdb.read_account(ADDR_A)->last_access_block, 1);
+    EXPECT_EQ(tdb.read_account_last_access(ADDR_A), 1);
     EXPECT_EQ(tdb.read_account_pricing_bucket(1), 1);
     EXPECT_EQ(tdb.read_account_pricing_bucket(2), std::nullopt);
 
@@ -160,20 +159,20 @@ TEST(CachePricing, last_access_bump_and_histogram)
         drive_commit(tdb, b, b - 1, bytes32_t{b - 1}, deltas, access);
         if (b < bump_block) {
             tdb.set_block_and_prefix(b, bytes32_t{b});
-            EXPECT_EQ(tdb.read_account(ADDR_A)->last_access_block, 1);
+            EXPECT_EQ(tdb.read_account_last_access(ADDR_A), 1);
         }
     }
     tdb.set_block_and_prefix(bump_block, bytes32_t{bump_block});
+    EXPECT_EQ(tdb.read_account_last_access(ADDR_A), bump_block);
+    EXPECT_EQ(tdb.read_storage_last_access(ADDR_A, page_key), bump_block);
     auto const acct2 = tdb.read_account(ADDR_A);
-    EXPECT_EQ(acct2->last_access_block, bump_block);
-    auto const page2 =
-        tdb.read_storage_page(ADDR_A, acct2->incarnation, page_key);
-    EXPECT_EQ(page2.last_access, bump_block);
-    EXPECT_EQ(page2[0], bytes32_t{uint64_t{0xa1}});
+    EXPECT_EQ(
+        tdb.read_storage_page(ADDR_A, acct2->incarnation, page_key)[0],
+        bytes32_t{uint64_t{0xa1}});
     EXPECT_EQ(tdb.read_account_pricing_bucket(1), std::nullopt);
     EXPECT_EQ(tdb.read_account_pricing_bucket(bump_block), 1);
     EXPECT_EQ(tdb.read_storage_pricing_bucket(1), std::nullopt);
-    EXPECT_EQ(tdb.read_storage_pricing_bucket(bump_block), 2);
+    EXPECT_EQ(tdb.read_storage_pricing_bucket(bump_block), 1);
 
     // young chain, weight below capacity: everything in the window is cached
     auto const cutoffs = compute_pricing_cutoffs(tdb, bump_block + 1);
@@ -201,7 +200,7 @@ TEST(CachePricing, no_access_no_change)
         drive_commit(tdb, 1, 0, bytes32_t{}, deltas, empty_access);
     }
     tdb.set_block_and_prefix(1, bytes32_t{uint64_t{1}});
-    EXPECT_EQ(tdb.read_account(ADDR_A)->last_access_block, 0);
+    EXPECT_EQ(tdb.read_account_last_access(ADDR_A), std::nullopt);
     EXPECT_EQ(tdb.read_account_pricing_bucket(1), std::nullopt);
 }
 
@@ -319,12 +318,11 @@ TEST(CachePricing, slot_encoded_last_access)
     tdb.set_block_and_prefix(1, bytes32_t{uint64_t{1}});
     auto const acct1 = tdb.read_account(ADDR_A);
     ASSERT_TRUE(acct1.has_value());
-    EXPECT_EQ(acct1->last_access_block, 1);
     EXPECT_EQ(
         tdb.read_storage(ADDR_A, acct1->incarnation, slot_0),
         bytes32_t{uint64_t{0xa1}});
-    auto const leaf = tdb.read_storage_page(ADDR_A, acct1->incarnation, slot_0);
-    EXPECT_EQ(leaf.last_access, 1);
+    EXPECT_EQ(tdb.read_account_last_access(ADDR_A), 1);
+    EXPECT_EQ(tdb.read_storage_last_access(ADDR_A, slot_0), 1);
     EXPECT_EQ(tdb.read_account_pricing_bucket(1), 1);
     EXPECT_EQ(tdb.read_storage_pricing_bucket(1), 1);
 
@@ -336,9 +334,7 @@ TEST(CachePricing, slot_encoded_last_access)
         drive(2, 1, deltas);
     }
     tdb.set_block_and_prefix(2, bytes32_t{uint64_t{2}});
-    EXPECT_EQ(tdb.read_account(ADDR_A)->last_access_block, 1);
-    EXPECT_EQ(
-        tdb.read_storage_page(ADDR_A, acct1->incarnation, slot_0).last_access,
-        1);
+    EXPECT_EQ(tdb.read_account_last_access(ADDR_A), 1);
+    EXPECT_EQ(tdb.read_storage_last_access(ADDR_A, slot_0), 1);
     EXPECT_EQ(tdb.read_storage_pricing_bucket(2), std::nullopt);
 }

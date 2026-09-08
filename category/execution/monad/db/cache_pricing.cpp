@@ -13,11 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/monad/db/cache_pricing.hpp>
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -29,6 +31,31 @@ uint64_t cache_pricing_update_interval()
                               : CACHE_PRICING_UPDATE_INTERVAL;
     }();
     return interval;
+}
+
+byte_string cache_pricing_account_key(bytes32_t const &hashed_address)
+{
+    byte_string key(1 + sizeof(hashed_address.bytes), 0);
+    key[0] = CACHE_PRICING_ACCOUNT_ENTRY;
+    std::memcpy(
+        key.data() + 1, hashed_address.bytes, sizeof(hashed_address.bytes));
+    return key;
+}
+
+byte_string
+cache_pricing_storage_key(Address const &address, bytes32_t const &lookup_key)
+{
+    unsigned char buf[sizeof(address.bytes) + sizeof(lookup_key.bytes)];
+    std::memcpy(buf, address.bytes, sizeof(address.bytes));
+    std::memcpy(
+        buf + sizeof(address.bytes),
+        lookup_key.bytes,
+        sizeof(lookup_key.bytes));
+    auto const hashed = keccak256({buf, sizeof(buf)});
+    byte_string key(1 + sizeof(hashed.bytes), 0);
+    key[0] = CACHE_PRICING_STORAGE_ENTRY;
+    std::memcpy(key.data() + 1, hashed.bytes, sizeof(hashed.bytes));
+    return key;
 }
 
 byte_string

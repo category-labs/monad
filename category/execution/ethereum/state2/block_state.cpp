@@ -160,11 +160,23 @@ bool BlockState::account_is_cached(Address const &address)
     if (!account_cutoff_.has_value()) {
         return false;
     }
-    StateDeltas::const_accessor it{};
     MONAD_ASSERT(state_);
-    MONAD_ASSERT(state_->find(it, address));
-    auto const &pre = it->second.account.first;
-    return pre.has_value() && pre->last_access_block > *account_cutoff_;
+    {
+        StateDeltas::const_accessor it{};
+        MONAD_ASSERT(state_->find(it, address));
+        if (it->second.account_cached.has_value()) {
+            return *it->second.account_cached;
+        }
+    }
+    uint64_t const last_access =
+        db_.read_account_last_access(address).value_or(0);
+    bool const cached = last_access > *account_cutoff_;
+    {
+        StateDeltas::accessor it{};
+        MONAD_ASSERT(state_->find(it, address));
+        it->second.account_cached = cached;
+    }
+    return cached;
 }
 
 bool BlockState::storage_page_is_cached(
@@ -188,8 +200,9 @@ bool BlockState::storage_page_is_cached(
             return mit->second;
         }
     }
-    auto const page = db_.read_storage_page(address, incarnation, lookup_key);
-    bool const cached = page.last_access > *storage_cutoff_;
+    uint64_t const last_access =
+        db_.read_storage_last_access(address, lookup_key).value_or(0);
+    bool const cached = last_access > *storage_cutoff_;
     {
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));

@@ -81,6 +81,10 @@ public:
     read_account_pricing_bucket(uint64_t block) override;
     virtual std::optional<uint64_t>
     read_storage_pricing_bucket(uint64_t block) override;
+    virtual std::optional<uint64_t>
+    read_account_last_access(Address const &) override;
+    virtual std::optional<uint64_t>
+    read_storage_last_access(Address const &, bytes32_t const &) override;
     virtual void set_block_and_prefix(
         uint64_t block_number,
         bytes32_t const &block_id = bytes32_t{}) override;
@@ -111,6 +115,7 @@ public:
 
 private:
     std::optional<uint64_t> read_pricing_bucket(PricingKind, uint64_t block);
+    std::optional<uint64_t> read_pricing_value(byte_string const &key);
 
     /// STATS
     std::atomic<uint64_t> n_account_no_value_{0};

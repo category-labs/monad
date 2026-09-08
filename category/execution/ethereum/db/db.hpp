@@ -84,6 +84,19 @@ struct Db
         return std::nullopt;
     }
 
+    // Multi-block cache recency entries: last_access of an entry in the
+    // modeled cache; nullopt means not cached.
+    virtual std::optional<uint64_t> read_account_last_access(Address const &)
+    {
+        return std::nullopt;
+    }
+
+    virtual std::optional<uint64_t>
+    read_storage_last_access(Address const &, bytes32_t const & /*lookup_key*/)
+    {
+        return std::nullopt;
+    }
+
     virtual std::optional<uint64_t>
     read_storage_pricing_bucket(uint64_t /*block*/)
     {

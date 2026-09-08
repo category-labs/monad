@@ -267,12 +267,10 @@ Result<void> process_ethereum_block(
             validate_output_header(block.header, exec_output.eth_header));
     }
     else {
-        // shadow pricing keeps the execution trace identical to history;
-        // only state_root diverges (last_access fields, page encoding), so
-        // mask it and enforce every other output
-        BlockHeader masked = exec_output.eth_header;
-        masked.state_root = block.header.state_root;
-        auto res = validate_output_header(block.header, masked);
+        // shadow pricing keeps the execution trace identical to history, and
+        // the recency table lives outside the state trie, so the full header
+        // (state_root included) must match
+        auto res = validate_output_header(block.header, exec_output.eth_header);
         if (res.has_error()) {
             LOG_ERROR(
                 "mbc trace divergence bl={} gas_in={} gas_out={} tx_root={} "

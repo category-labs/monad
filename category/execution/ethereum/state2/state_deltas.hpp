@@ -60,13 +60,14 @@ struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
-    // multi-block cache: per-block memo of page cached-status (pure function
-    // of pre-state and the block's cutoff, so any racer computes the same
+    // multi-block cache: per-block memo of cached-status (pure function of
+    // pre-state and the block's cutoff, so any racer computes the same
     // value); mutated under a StateDeltas accessor lock
     ankerl::unordered_dense::segmented_map<bytes32_t, bool> cached_pages{};
+    std::optional<bool> account_cached{};
 };
 
-static_assert(sizeof(StateDelta) == 832);
+static_assert(sizeof(StateDelta) == 840);
 static_assert(alignof(StateDelta) == 8);
 
 using StateDeltas = oneapi::tbb::concurrent_hash_map<

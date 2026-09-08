@@ -24,7 +24,9 @@
 // where the weight of blocks (B*, N) exceeds the capacity; an entry is priced
 // "cached" iff its last_access > B* (the boundary block is excluded).
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 
 #include <cstdint>
@@ -71,6 +73,18 @@ cache_pricing_bump_due(uint64_t const last_access, uint64_t const block)
 
 // Histogram leaf key under CACHE_PRICING_NIBBLE: kind byte + block big endian.
 byte_string cache_pricing_bucket_key(PricingKind, uint64_t block);
+
+// Recency-table leaf keys under CACHE_PRICING_NIBBLE: last_access is kept
+// only for entries in the modeled cache; an absent entry prices cold. Keys
+// are keccak-hashed (addresses and slots are attacker-chosen).
+inline constexpr unsigned char CACHE_PRICING_ACCOUNT_ENTRY = 2;
+inline constexpr unsigned char CACHE_PRICING_STORAGE_ENTRY = 3;
+
+byte_string cache_pricing_account_key(bytes32_t const &hashed_address);
+// storage entries are keyed by one hash over (address, lookup_key) to keep
+// the trie path within max_depth
+byte_string
+cache_pricing_storage_key(Address const &, bytes32_t const &lookup_key);
 
 struct PricingCutoffs
 {

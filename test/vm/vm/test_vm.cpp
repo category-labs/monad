@@ -14,8 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/vm/interpreter/intercode.hpp>
-#include <hash_utils.hpp>
-#include <test_state.hpp>
 #include <test_vm.hpp>
 
 #include <category/core/assert.h>
@@ -32,12 +30,8 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <evmone/baseline.hpp>
-
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
@@ -49,15 +43,10 @@ using namespace monad::vm::interpreter;
 
 namespace runtime = monad::vm::runtime;
 
-using namespace monad::literals;
-
 namespace fs = std::filesystem;
 
 namespace
 {
-
-    constexpr auto SYSTEM_ADDRESS =
-        0xfffffffffffffffffffffffffffffffffffffffe_address;
 
     void destroy(evmc_vm *vm)
     {
@@ -78,26 +67,12 @@ namespace
     {
         return EVMC_CAPABILITY_EVM1;
     }
-
-    BlockchainTestVM::Implementation
-    impl_from_env(BlockchainTestVM::Implementation const impl) noexcept
-    {
-        static auto *const evmone_vm_only_env =
-            std::getenv("MONAD_COMPILER_EVMONE_ONLY");
-        static bool const evmone_vm_only =
-            evmone_vm_only_env && std::strcmp(evmone_vm_only_env, "1") == 0;
-        if (evmone_vm_only) {
-            return BlockchainTestVM::Implementation::Evmone;
-        }
-
-        return impl;
-    }
 }
 
 BlockchainTestVM::BlockchainTestVM(
     Implementation impl, native::EmitterHook post_hook)
     : evmc_vm{EVMC_ABI_VERSION, "monad-compiler-blockchain-test-vm", "0.0.0", ::destroy, ::execute, ::get_capabilities, nullptr}
-    , impl_{impl_from_env(impl)}
+    , impl_{impl}
     , base_config{.runtime_debug_trace = monad::vm::utils::is_compiler_runtime_debug_trace_enabled, .max_code_size_offset = code_size_t::max(), .post_instruction_emit_hook = post_hook}
     , rt_ctx_{nullptr}
 {
@@ -108,8 +83,7 @@ evmc::Result BlockchainTestVM::execute(
     evmc_revision evmc_rev, evmc_message const *msg, uint8_t const *code,
     size_t code_size)
 {
-    // evmone consumes evmc_revision directly; our own VM dispatches through
-    // SWITCH_EVM_TRAITS, which switches on a monad_eth_revision named `rev`.
+    // SWITCH_EVM_TRAITS switches on a monad_eth_revision named `rev`.
     monad_eth_revision const rev = from_evmc_revision(evmc_rev);
     MONAD_ASSERT(rev >= constants::EARLIEST_SUPPORTED_EVM_FORK);
     auto *const prev_rt_ctx = rt_ctx_;
@@ -118,18 +92,10 @@ evmc::Result BlockchainTestVM::execute(
     rt_ctx_ = &new_rt_ctx;
 
     auto res = [&] {
-        if (msg->sender == SYSTEM_ADDRESS) {
-            return evmc::Result{evmone_vm_.execute(
-                &evmone_vm_, host, context, evmc_rev, msg, code, code_size)};
-        }
-        else if (msg->kind == EVMC_CREATE || msg->kind == EVMC_CREATE2) {
+        if (msg->kind == EVMC_CREATE || msg->kind == EVMC_CREATE2) {
             SWITCH_EVM_TRAITS(
                 monad_vm_.execute_bytecode_raw, *rt_ctx_, {code, code_size});
             MONAD_ABORT();
-        }
-        else if (impl_ == Implementation::Evmone) {
-            return execute_evmone(
-                host, context, evmc_rev, msg, code, code_size);
         }
         else if (impl_ == Implementation::Compiler) {
             return execute_compiler(host, context, rev, msg, code, code_size);
@@ -145,19 +111,6 @@ evmc::Result BlockchainTestVM::execute(
 
     rt_ctx_ = prev_rt_ctx;
     return res;
-}
-
-evmone::baseline::CodeAnalysis const &BlockchainTestVM::get_code_analysis(
-    bytes32_t const &code_hash, uint8_t const *code, size_t code_size)
-{
-    auto it1 = code_analyses_.find(code_hash);
-    if (it1 != code_analyses_.end()) {
-        return it1->second;
-    }
-    auto [it2, b] = code_analyses_.insert(
-        {code_hash, evmone::baseline::analyze({code, code_size})});
-    MONAD_ASSERT(b);
-    return it2->second;
 }
 
 monad::vm::SharedIntercode const &BlockchainTestVM::get_intercode(
@@ -189,17 +142,6 @@ BlockchainTestVM::get_intercode_nativecode(
     }();
 
     return {icode, ncode};
-}
-
-evmc::Result BlockchainTestVM::execute_evmone(
-    evmc_host_interface const *host, evmc_host_context *context,
-    evmc_revision rev, evmc_message const *msg, uint8_t const *code,
-    size_t code_size)
-{
-    auto code_hash = host->get_code_hash(context, &msg->code_address);
-    auto const &a = get_code_analysis(code_hash, code, code_size);
-    return evmc::Result{
-        evmone::baseline::execute(evmone_vm_, *host, context, rev, *msg, a)};
 }
 
 evmc::Result BlockchainTestVM::execute_compiler(

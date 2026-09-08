@@ -43,13 +43,15 @@ int triedb_read(
 // is an encoded page; otherwise storage is slot-encoded.
 bool triedb_is_page_encoded(TriedbRoInner *);
 
-// Dual-DB migration phase of the on-disk triedb, derived from the primary
-// timeline's state-machine kind and secondary-timeline presence (the same
-// pair monad-mpt reports). Read racily from the mmap'd metadata; safe on a
-// read-only handle while the writer is live.
+// Dual-DB migration phase. Fully determines each timeline's encoding, so
+// readers derive both from it. Safe on a read-only handle while the writer
+// is live.
 //   0 = legacy        (primary ethereum, no secondary)
-//   1 = dual-timeline (primary ethereum, secondary active — migrating)
-//   2 = page-encoded  (primary monad — migration complete)
+//   1 = dual-timeline (primary ethereum, page secondary backfilling)
+//   2 = page-encoded  (primary monad, no secondary)
+//   3 = promoted      (primary monad, slot secondary kept as history)
+// Phases only change offline via monad-mpt with every reader and the daemon
+// stopped; a handle observes one phase for its lifetime.
 uint8_t triedb_migration_phase(TriedbRoInner *);
 
 // Storage-pool disk capacity and usage, in bytes. Zeros for in-memory /
@@ -135,9 +137,15 @@ uint64_t triedb_latest_finalized_version(TriedbRoInner *);
 uint64_t triedb_latest_verified_version(TriedbRoInner *);
 
 // returns MAX if doesn't exist
+// Earliest version available on any timeline.
 uint64_t triedb_earliest_version(TriedbRoInner *);
 // returns MAX if doesn't exist
+// Latest version available on any timeline.
 uint64_t triedb_latest_version(TriedbRoInner *);
+// Earliest version on file in the primary timeline. Versions below it are
+// only on file in the secondary (when one is active); on an archive node
+// after the offline promote that is the frozen slot-encoded history.
+uint64_t triedb_primary_earliest_version(TriedbRoInner *);
 
 #pragma pack(push, 1)
 

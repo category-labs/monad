@@ -26,15 +26,14 @@ target_sources(mce PRIVATE
 
 target_include_directories(mce
   PUBLIC src/
-  PUBLIC "${CATEGORY_MAIN_DIR}/third_party/evmone/test/state"
   PUBLIC "${CATEGORY_MAIN_DIR}/third_party/valgrind/cachegrind"
   PUBLIC "${CATEGORY_MAIN_DIR}/third_party/valgrind/include"
 )
 
 target_link_libraries(mce
   PRIVATE monad_execution
-  PRIVATE evmone
-  PRIVATE evmone::state
+  PRIVATE monad-test-utils
+  PRIVATE monad-vm::monad-vm-test-utils
   PRIVATE CLI11::CLI11
   PRIVATE nlohmann_json::nlohmann_json
 )

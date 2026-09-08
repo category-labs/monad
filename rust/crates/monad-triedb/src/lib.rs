@@ -41,17 +41,21 @@ pub struct TriedbHandle {
 }
 
 /// Dual-DB migration phase read from the triedb metadata, mirroring what
-/// `monad-mpt` reports. Cheap and safe on a read-only handle while execution
-/// is writing.
+/// `monad-mpt` reports. Fully determines each timeline's encoding, so
+/// readers derive both from it. Cheap and safe on a read-only handle while
+/// execution is writing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MigrationPhase {
-    /// Primary ethereum, no secondary timeline — migration not started.
+    /// Primary ethereum, no secondary timeline: migration not started.
     Legacy = 0,
-    /// Primary ethereum with an active secondary — migration in progress.
+    /// Primary ethereum, page secondary backfilling: migration in progress.
     DualTimeline = 1,
-    /// Primary monad — migration complete.
+    /// Primary monad, no secondary: migration complete.
     PageEncoded = 2,
+    /// Primary monad, slot secondary kept as pre-cutoff history (archive
+    /// nodes after the offline promote).
+    Promoted = 3,
 }
 
 impl MigrationPhase {
@@ -59,6 +63,7 @@ impl MigrationPhase {
         match code {
             1 => Self::DualTimeline,
             2 => Self::PageEncoded,
+            3 => Self::Promoted,
             _ => Self::Legacy,
         }
     }
@@ -283,8 +288,10 @@ impl TriedbHandle {
         unsafe { ffi::triedb_is_page_encoded(self.db_ptr) }
     }
 
-    /// The on-disk dual-DB migration phase. Cheap (a couple of loads from the
-    /// mmap'd metadata) and safe on a read-only handle while execution writes.
+    /// The on-disk dual-DB migration phase. Phases only change offline
+    /// (monad-mpt with readers and the daemon stopped), so the answer is
+    /// fixed for the lifetime of the handle. Cheap and safe on a read-only
+    /// handle while execution writes.
     pub fn migration_phase(&self) -> MigrationPhase {
         MigrationPhase::from_code(unsafe { ffi::triedb_migration_phase(self.db_ptr) })
     }
@@ -518,6 +525,13 @@ impl TriedbHandle {
         parse_triedb_block_num(unsafe { ffi::triedb_earliest_version(self.db_ptr) })
     }
 
+    /// Earliest version on file in the primary timeline. Versions below it
+    /// are only on file in the secondary (when one is active); on an archive
+    /// node after the offline promote that is the frozen slot history.
+    pub fn primary_earliest_version(&self) -> Option<u64> {
+        parse_triedb_block_num(unsafe { ffi::triedb_primary_earliest_version(self.db_ptr) })
+    }
+
     pub fn validator_set_at_block(
         &self,
         block_num: usize,
@@ -575,9 +589,10 @@ mod migration_phase_tests {
         assert_eq!(MigrationPhase::from_code(0), MigrationPhase::Legacy);
         assert_eq!(MigrationPhase::from_code(1), MigrationPhase::DualTimeline);
         assert_eq!(MigrationPhase::from_code(2), MigrationPhase::PageEncoded);
+        assert_eq!(MigrationPhase::from_code(3), MigrationPhase::Promoted);
         // Unexpected codes fall back to Legacy rather than panicking in a
         // monitoring path.
-        assert_eq!(MigrationPhase::from_code(3), MigrationPhase::Legacy);
+        assert_eq!(MigrationPhase::from_code(4), MigrationPhase::Legacy);
         assert_eq!(MigrationPhase::from_code(255), MigrationPhase::Legacy);
     }
 }

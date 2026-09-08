@@ -15,10 +15,11 @@
 
 #pragma once
 
+#include "generator.hpp"
+
 #include <category/vm/compiler/ir/x86/emitter.hpp>
 #include <category/vm/compiler/ir/x86/virtual_stack.hpp>
-#include <category/vm/fuzzing/generator/choice.hpp>
-#include <category/vm/fuzzing/generator/generator.hpp>
+#include <category/vm/fuzzing/choice.hpp>
 
 #include <array>
 #include <cstdint>

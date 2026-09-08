@@ -25,7 +25,6 @@ target_sources(blockchain-test-vm
 
 target_link_libraries(blockchain-test-vm
     PUBLIC
-        evmone
         evmc::evmc
         monad-vm::monad-vm
         monad-vm::monad-vm-compiler
@@ -34,6 +33,5 @@ target_link_libraries(blockchain-test-vm
 
 target_include_directories(blockchain-test-vm
     PUBLIC .
-    PUBLIC "${CATEGORY_MAIN_DIR}/third_party/evmone/test/state"
 )
 monad_compile_options(blockchain-test-vm)

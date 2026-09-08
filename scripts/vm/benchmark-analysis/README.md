@@ -5,7 +5,7 @@ benchmark results across different axes:
 * Two versions of the same program against each other (e.g. before and after an
   optimisation is applied).
 * Two implementations on the same benchmark (e.g. the Monad X86 compiler against
-  evmone on the same program and input data).
+  the interpreter on the same program and input data).
 
 The scripts are built using [UV](https://github.com/astral-sh/uv), which needs
 to be installed before running the examples in this file.
@@ -25,7 +25,7 @@ $ ./build/test/execution_benchmarks/execution-benchmarks  \
 for two different builds of the `execution-benchmarks` executable, producing two
 output files `before.json` and `after.json`. Then, run (for example):
 ```console
-$ uv run --directory scripts/benchmark-analysis   \
+$ uv run --directory scripts/vm/benchmark-analysis   \
     compare-benchmarks                            \
     --before before.json                          \
     --after after.json                            \
@@ -46,8 +46,8 @@ $ ./build/test/execution_benchmarks/execution-benchmarks  \
 ```
 as above. Then, run:
 ```console
-$ uv run --directory scripts/benchmark-analysis \
-    compare-implementations results.json evmone interpreter
+$ uv run --directory scripts/vm/benchmark-analysis \
+    compare-implementations results.json interpreter compiler
 ```
-to generate a table showing the speedup of the `interpreter` implementation over
-`evmone`.
+to generate a table showing the speedup of the `compiler` implementation over
+`interpreter`.

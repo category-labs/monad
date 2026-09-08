@@ -1,0 +1,5 @@
+# The OCaml runtime keeps its heap in its own mmap'd regions, which
+# LeakSanitizer does not scan as roots, so allocations owned by the spec VM
+# (libmonadml_evm.so and its statically linked ctypes/secp256k1 dependencies)
+# are reported as leaked at exit even though they are still reachable.
+leak:libmonadml_evm.so

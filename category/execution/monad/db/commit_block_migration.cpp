@@ -78,36 +78,29 @@ void commit_block(
         return;
     }
 
-    // Dual-write migration path. The primary and secondary dbs write the same
-    // data to every table; the only difference is state encoding. state_deltas
-    // is added separately to each builder so the page builder's override can
-    // kick in; everything else goes through the shared helper.
+    // Dual-write path: one slot db and one page db, in either role order
+    // (the offline promote swaps them). The db whose encoding matches the
+    // block's revision is canonical; it commits first so its roots are live
+    // when the other db's populate_header runs.
     MONAD_ASSERT(
-        !primary_db.is_page_encoded() && secondary_db->is_page_encoded());
-    auto builder = make_commit_builder(header.number, primary_db);
-    builder->add_state_deltas(state);
-    add_common_deltas(*builder);
+        primary_db.is_page_encoded() != secondary_db->is_page_encoded());
+    canonical_db = traits::mip_8_active() == primary_db.is_page_encoded()
+                       ? &primary_db
+                       : secondary_db;
+    Db *const other_db =
+        canonical_db == &primary_db ? secondary_db : &primary_db;
 
-    auto builder2 = make_commit_builder(header.number, *secondary_db);
-    builder2->add_state_deltas(state);
-    add_common_deltas(*builder2);
+    auto canonical_builder = make_commit_builder(header.number, *canonical_db);
+    canonical_builder->add_state_deltas(state);
+    add_common_deltas(*canonical_builder);
 
-    // The canonical db owns the state_root stamped into the header: pre-fork
-    // the slot-encoded primary, post-fork (mip-8 active) the page-encoded
-    // secondary. The canonical db commits first so its roots are live when the
-    // other db's populate_header runs.
-    bool const primary_is_canonical = !traits::mip_8_active();
-    canonical_db = primary_is_canonical ? &primary_db : secondary_db;
-    if (primary_is_canonical) {
-        primary_db.commit(block_id, *builder, header, state, populate_header);
-        secondary_db->commit(
-            block_id, *builder2, header, state, populate_header);
-    }
-    else {
-        secondary_db->commit(
-            block_id, *builder2, header, state, populate_header);
-        primary_db.commit(block_id, *builder, header, state, populate_header);
-    }
+    auto other_builder = make_commit_builder(header.number, *other_db);
+    other_builder->add_state_deltas(state);
+    add_common_deltas(*other_builder);
+
+    canonical_db->commit(
+        block_id, *canonical_builder, header, state, populate_header);
+    other_db->commit(block_id, *other_builder, header, state, populate_header);
 }
 
 EXPLICIT_MONAD_TRAITS(commit_block);

@@ -116,12 +116,6 @@ for file in $(git ls-files -- '*.rs' '*.h' '*.hpp' '*.c' '*.cpp' '*.S'); do
 done
 
 for file in $(git ls-files -- '*.py' '*CMakeLists.txt' '*.cmake'); do
-    directory=$(dirname "$file")
-
-    if [ "$directory" == "cmake/dummy" ]; then
-        continue
-    fi
-
     license_lines=("${PYTHON_LICENSE_LINES[@]}")
     if [ -n "${new_files[$file]+x}" ]; then
         license_lines=("${NEW_PYTHON_LICENSE_LINES[@]}")

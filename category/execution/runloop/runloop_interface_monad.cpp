@@ -406,6 +406,7 @@ try {
         runloop->ledger_dir,
         runloop->raw_db,
         runloop->runloop_db,
+        &runloop->secondary_runloop_db,
         runloop->vm,
         runloop->block_hash_buffer,
         runloop->priority_pool,
@@ -414,7 +415,6 @@ try {
         stop,
         /* enable_tracing = */ false,
         /* exec_recorder = */ nullptr,
-        &runloop->secondary_runloop_db,
         runloop_override);
 
     auto const block_num_after = runloop->block_num;

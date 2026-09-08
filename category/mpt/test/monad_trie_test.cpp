@@ -818,7 +818,8 @@ int main(int const argc, char *argv[])
                                 NodeCursor{start_node},
                                 aux.metadata_ctx().db_history_max_version(),
                                 NibblesView{},
-                                true},
+                                true,
+                                timeline_id::primary},
                             receiver_t(
                                 ops,
                                 signal_done,

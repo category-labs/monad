@@ -20,6 +20,7 @@
 #include <category/core/assert.h>
 #include <category/core/tl_tid.h>
 #include <category/mpt/config.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cache.hpp>
@@ -251,9 +252,10 @@ void find_notify_fiber_future(
 void find_owning_notify_fiber_future(
     UpdateAux &aux, NodeCache &node_cache, inflight_map_owning_t &inflights,
     ::boost::fibers::promise<find_owning_cursor_result_type> promise,
-    NodeCursor const &start, NibblesView const key, uint64_t const version)
+    NodeCursor const &start, NibblesView const key, uint64_t const version,
+    timeline_id const tid)
 {
-    if (!aux.metadata_ctx().version_is_valid_ondisk(version)) {
+    if (!aux.metadata_ctx().version_is_valid_ondisk(version, tid)) {
         promise.set_value({start, find_result::version_no_longer_exist});
         return;
     }
@@ -296,7 +298,7 @@ void find_owning_notify_fiber_future(
         auto const next_virtual_offset =
             aux.physical_to_virtual(next_node_offset);
         // version validity check must be after the virtual offset translation
-        if (!aux.metadata_ctx().version_is_valid_ondisk(version) ||
+        if (!aux.metadata_ctx().version_is_valid_ondisk(version, tid) ||
             next_virtual_offset == INVALID_VIRTUAL_OFFSET) {
             promise.set_value({start, find_result::version_no_longer_exist});
             return;
@@ -312,7 +314,8 @@ void find_owning_notify_fiber_future(
                 std::move(promise),
                 next_cursor,
                 next_key,
-                version);
+                version,
+                tid);
             return;
         }
         if (aux.io->owning_thread_id() != get_tl_tid()) {
@@ -326,7 +329,8 @@ void find_owning_notify_fiber_future(
              &inflights,
              p = std::move(promise),
              next_key,
-             version](NodeCursor const &node_cursor) mutable -> result<void> {
+             version,
+             tid](NodeCursor const &node_cursor) mutable -> result<void> {
             if (!node_cursor.is_valid()) {
                 p.set_value(
                     {NodeCursor{}, find_result::version_no_longer_exist});
@@ -339,7 +343,8 @@ void find_owning_notify_fiber_future(
                 std::move(p),
                 node_cursor,
                 next_key,
-                version);
+                version,
+                tid);
             return success();
         };
         async_read_with_continuation(
@@ -360,13 +365,13 @@ void find_owning_notify_fiber_future(
 void load_root_notify_fiber_future(
     UpdateAux &aux, NodeCache &node_cache, inflight_map_owning_t &inflights,
     ::boost::fibers::promise<find_owning_cursor_result_type> promise,
-    uint64_t const version)
+    uint64_t const version, timeline_id const tid)
 {
     auto const root_offset =
-        aux.metadata_ctx().get_root_offset_at_version(version);
+        aux.metadata_ctx().get_root_offset_at_version(version, tid);
     auto const root_virtual_offset = aux.physical_to_virtual(root_offset);
     // version validity check must be after the virtual offset translation
-    if (!aux.metadata_ctx().version_is_valid_ondisk(version) ||
+    if (!aux.metadata_ctx().version_is_valid_ondisk(version, tid) ||
         root_virtual_offset == INVALID_VIRTUAL_OFFSET) {
         promise.set_value({NodeCursor{}, find_result::version_no_longer_exist});
         return;

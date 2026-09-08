@@ -25,9 +25,6 @@ monad_compile_options(vm-micro-benchmarks)
 target_link_libraries(vm-micro-benchmarks
     PRIVATE blockchain-test-vm
     PRIVATE monad-vm::monad-vm-test-utils
-    PRIVATE evmone::state
-    PRIVATE evmone::statetestutils
-    PRIVATE evmone-blockchaintest-lib
     PRIVATE monad_execution
     PRIVATE monad-test-utils
 )

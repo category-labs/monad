@@ -25,7 +25,9 @@
 
 #include <ankerl/unordered_dense.h>
 
+#include <cstdint>
 #include <optional>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -45,10 +47,34 @@ using AccountPostState =
 using StoragePostState = ankerl::unordered_dense::segmented_map<
     StorageKey, storage_page_t, BytesHashCompare<StorageKey>>;
 
+// Multi-block cache stamp records of one block, in canonical commit order
+// (txn_index, key sort within txn): the entry is stamped to the block number
+// (weight != 0) or its stamp is dropped (weight == 0, deletion / incarnation
+// death). prev values feed the exact window decrements; weights are entry
+// counts for accounts and page byte sizes for storage. The serialized record
+// stream is the block's persistence blob.
+struct AccountStampRecord
+{
+    Address address;
+    uint64_t prev_stamp;
+    uint8_t prev_weight;
+    uint8_t weight;
+};
+
+struct StorageStampRecord
+{
+    StorageKey key;
+    uint64_t prev_stamp;
+    uint32_t prev_weight;
+    uint32_t weight;
+};
+
 struct ProposalPostState
 {
     AccountPostState accounts;
     StoragePostState storage;
+    std::vector<AccountStampRecord> account_stamps;
+    std::vector<StorageStampRecord> storage_stamps;
 };
 
 MONAD_NAMESPACE_END

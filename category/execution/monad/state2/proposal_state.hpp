@@ -34,17 +34,31 @@ MONAD_NAMESPACE_BEGIN
 class ProposalState
 {
     ProposalPostState post_state_;
+    uint64_t block_;
     uint64_t parent_block_;
     bytes32_t parent_id_;
+    // stamp overlay indexes built from the block's stamp records: value is
+    // the block number for stamped entries, 0 for dropped stamps
+    ankerl::unordered_dense::segmented_map<Address, uint64_t> stamped_accounts_;
+    ankerl::unordered_dense::segmented_map<
+        StorageKey, uint64_t, BytesHashCompare<StorageKey>>
+        stamped_storage_;
 
 public:
     ProposalState(
-        ProposalPostState post_state, uint64_t const parent_block_number,
-        bytes32_t const &parent_id)
+        ProposalPostState post_state, uint64_t const block_number,
+        uint64_t const parent_block_number, bytes32_t const &parent_id)
         : post_state_(std::move(post_state))
+        , block_(block_number)
         , parent_block_(parent_block_number)
         , parent_id_(parent_id)
     {
+        for (auto const &r : post_state_.account_stamps) {
+            stamped_accounts_[r.address] = r.weight != 0 ? block_ : 0;
+        }
+        for (auto const &r : post_state_.storage_stamps) {
+            stamped_storage_[r.key] = r.weight != 0 ? block_ : 0;
+        }
     }
 
     std::pair<uint64_t, bytes32_t> parent_info() const
@@ -63,6 +77,26 @@ public:
         auto const it = post_state_.accounts.find(address);
         if (it != post_state_.accounts.end()) {
             result = it->second;
+            return true;
+        }
+        return false;
+    }
+
+    bool try_read_account_stamp(Address const &address, uint64_t &stamp) const
+    {
+        auto const it = stamped_accounts_.find(address);
+        if (it != stamped_accounts_.end()) {
+            stamp = it->second;
+            return true;
+        }
+        return false;
+    }
+
+    bool try_read_storage_stamp(StorageKey const &key, uint64_t &stamp) const
+    {
+        auto const it = stamped_storage_.find(key);
+        if (it != stamped_storage_.end()) {
+            stamp = it->second;
             return true;
         }
         return false;
@@ -146,6 +180,24 @@ public:
         return try_read(fn);
     }
 
+    TryReadResult
+    try_read_account_stamp(Address const &address, uint64_t &stamp) const
+    {
+        auto const fn = [&address, &stamp](ProposalState const &ps) {
+            return ps.try_read_account_stamp(address, stamp);
+        };
+        return try_read(fn);
+    }
+
+    TryReadResult
+    try_read_storage_stamp(StorageKey const &key, uint64_t &stamp) const
+    {
+        auto const fn = [&key, &stamp](ProposalState const &ps) {
+            return ps.try_read_storage_stamp(key, stamp);
+        };
+        return try_read(fn);
+    }
+
     void
     set_block_and_prefix(uint64_t const block_number, bytes32_t const &block_id)
     {
@@ -166,7 +218,10 @@ public:
                 .insert(
                     {key,
                      std::unique_ptr<ProposalState>(new ProposalState(
-                         std::move(post_state), block_, block_id_))})
+                         std::move(post_state),
+                         block_number,
+                         block_,
+                         block_id_))})
                 .second == true);
         block_ = block_number;
         block_id_ = block_id;

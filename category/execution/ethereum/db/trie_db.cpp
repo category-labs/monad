@@ -103,8 +103,16 @@ Node::SharedPtr const &TrieDb::get_root() const
 
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
+    uint64_t stamp = 0;
+    return read_account_stamped(addr, stamp);
+}
+
+std::optional<Account>
+TrieDb::read_account_stamped(Address const &addr, uint64_t &stamp)
+{
+    stamp = 0;
     std::optional<Account> result;
-    auto const status = cache_ ? cache_->try_read_account(addr, result)
+    auto const status = cache_ ? cache_->try_read_account(addr, result, &stamp)
                                : CacheReadStatus::MissTruncated;
     if (status == CacheReadStatus::Hit) {
         return result;
@@ -134,13 +142,23 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 bytes32_t TrieDb::read_storage(
     Address const &addr, Incarnation const incarnation, bytes32_t const &key)
 {
+    uint64_t stamp = 0;
+    return read_storage_stamped(addr, incarnation, key, stamp);
+}
+
+bytes32_t TrieDb::read_storage_stamped(
+    Address const &addr, Incarnation const incarnation, bytes32_t const &key,
+    uint64_t &stamp)
+{
+    stamp = 0;
     bytes32_t const lookup_key = storage_lookup_key(key);
     uint8_t const lookup_offset = page_encoded_ ? compute_slot_offset(key) : 0;
     bytes32_t result{};
     auto const status =
-        cache_ ? cache_->try_read_storage(
-                     addr, incarnation, lookup_key, lookup_offset, result)
-               : CacheReadStatus::MissTruncated;
+        cache_
+            ? cache_->try_read_storage(
+                  addr, incarnation, lookup_key, lookup_offset, result, &stamp)
+            : CacheReadStatus::MissTruncated;
     if (status == CacheReadStatus::Hit) {
         return result;
     }

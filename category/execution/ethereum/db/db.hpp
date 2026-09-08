@@ -75,6 +75,24 @@ struct Db
         BlockHeader const &header, StateDeltas const &state_deltas,
         std::function<void(BlockHeader &)> populate_header_fn) = 0;
 
+    // Multi-block cache: value reads that also return the entry's consensus
+    // stamp (0 = unstamped, prices cold). Stamps live only in memory; a db
+    // with no cache serves everything cold.
+    virtual std::optional<Account>
+    read_account_stamped(Address const &address, uint64_t &stamp)
+    {
+        stamp = 0;
+        return read_account(address);
+    }
+
+    virtual bytes32_t read_storage_stamped(
+        Address const &address, Incarnation const incarnation,
+        bytes32_t const &key, uint64_t &stamp)
+    {
+        stamp = 0;
+        return read_storage(address, incarnation, key);
+    }
+
     virtual std::string print_stats()
     {
         return {};

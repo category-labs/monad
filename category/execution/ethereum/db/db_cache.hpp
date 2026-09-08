@@ -24,10 +24,13 @@
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
 #include <category/vm/utils/lru_weight_cache.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <format>
 #include <memory>
@@ -65,18 +68,69 @@ class DbCache final
 
     static constexpr uint32_t STORAGE_CACHE_MAX_BYTES = 1024u * 1024 * 1024;
 
-    AccountsCache accounts_{10'000'000};
-    StorageCache storage_{STORAGE_CACHE_MAX_BYTES};
+    // pin predicates: only live values participate in warm-set pinning
+    // (negative entries reuse the stamp field as a local promotion block)
+    static bool account_pinned(std::optional<Account> const &v)
+    {
+        return v.has_value();
+    }
+
+    static bool storage_pinned(storage_page_t const &v)
+    {
+        return !v.is_empty();
+    }
+
+    std::atomic<uint64_t> block_{0};
+    AccountsCache accounts_{10'000'000, /*stamp_mode=*/true, account_pinned};
+    StorageCache storage_{
+        STORAGE_CACHE_MAX_BYTES,
+        std::chrono::nanoseconds{0},
+        /*stamp_mode=*/true,
+        storage_pinned};
+    // consensus windows: counted from committed stamp records only, never
+    // from physical cache state
+    StampWindow account_window_{ACCOUNT_WINDOW_BUDGET};
+    StampWindow storage_window_{STORAGE_WINDOW_BUDGET};
     Proposals proposals_;
 
 public:
+    struct PricingBoundaries
+    {
+        // warm iff stamp != 0 and stamp >= boundary
+        uint64_t account;
+        uint64_t storage;
+    };
+
     DbCache() = default;
 
-    CacheReadStatus
-    try_read_account(Address const &address, std::optional<Account> &result)
+    PricingBoundaries boundaries() const
     {
+        return {account_window_.boundary(), storage_window_.boundary()};
+    }
+
+    // The optional stamp output is the entry's consensus stamp as of the
+    // current read prefix: the proposal overlay wins, else the resident
+    // entry's stamp field; 0 (cold) when neither knows the key — losing a
+    // stamp only overcharges.
+    CacheReadStatus try_read_account(
+        Address const &address, std::optional<Account> &result,
+        uint64_t *const stamp = nullptr)
+    {
+        bool stamp_found = false;
+        if (stamp != nullptr) {
+            *stamp = 0;
+            stamp_found =
+                proposals_.try_read_account_stamp(address, *stamp).found;
+        }
         auto const res = proposals_.try_read_account(address, result);
         if (res.found) {
+            if (stamp != nullptr && !stamp_found) {
+                AccountsCache::ConstAccessor acc{};
+                if (accounts_.find(acc, address) &&
+                    acc->second.value_.has_value()) {
+                    *stamp = accounts_.stamp_of(acc);
+                }
+            }
             return CacheReadStatus::Hit;
         }
         if (res.truncated) {
@@ -85,6 +139,15 @@ public:
         AccountsCache::ConstAccessor acc{};
         if (accounts_.find(acc, address)) {
             result = acc->second.value_;
+            if (result.has_value()) {
+                if (stamp != nullptr && !stamp_found) {
+                    *stamp = accounts_.stamp_of(acc);
+                }
+            }
+            else {
+                accounts_.promote_negative(
+                    acc, block_.load(std::memory_order_relaxed));
+            }
             return CacheReadStatus::Hit;
         }
         return CacheReadStatus::MissResolved;
@@ -122,23 +185,45 @@ public:
 
     CacheReadStatus try_read_storage(
         Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, uint8_t const slot_offset, bytes32_t &result)
+        bytes32_t const &key, uint8_t const slot_offset, bytes32_t &result,
+        uint64_t *const stamp = nullptr)
     {
+        StorageKey const skey{address, incarnation, key};
+        bool stamp_found = false;
+        if (stamp != nullptr) {
+            *stamp = 0;
+            stamp_found = proposals_.try_read_storage_stamp(skey, *stamp).found;
+        }
         storage_page_t page;
         auto const res =
             proposals_.try_read_storage(address, incarnation, key, page);
         if (res.found) {
             // slot_offset is 0 for slot encoding, the in-page offset for page.
             result = page[slot_offset];
+            if (stamp != nullptr && !stamp_found) {
+                StorageCache::ConstAccessor acc{};
+                if (storage_.find(acc, skey) &&
+                    !acc->second.value_.is_empty()) {
+                    *stamp = storage_.stamp_of(acc);
+                }
+            }
             return CacheReadStatus::Hit;
         }
         if (res.truncated) {
             return CacheReadStatus::MissTruncated;
         }
-        StorageKey const skey{address, incarnation, key};
         StorageCache::ConstAccessor acc{};
         if (storage_.find(acc, skey)) {
             result = acc->second.value_[slot_offset];
+            if (!acc->second.value_.is_empty()) {
+                if (stamp != nullptr && !stamp_found) {
+                    *stamp = storage_.stamp_of(acc);
+                }
+            }
+            else {
+                storage_.promote_negative(
+                    acc, block_.load(std::memory_order_relaxed));
+            }
             return CacheReadStatus::Hit;
         }
         return CacheReadStatus::MissResolved;
@@ -161,6 +246,7 @@ public:
     void
     set_block_and_prefix(uint64_t const block_number, bytes32_t const &block_id)
     {
+        block_.store(block_number, std::memory_order_relaxed);
         proposals_.set_block_and_prefix(block_number, block_id);
     }
 
@@ -177,6 +263,7 @@ public:
             proposals_.finalize(block_number, block_id);
         if (ps) {
             insert_in_lru_caches(ps->post_state());
+            apply_stamps(ps->post_state(), block_number);
         }
         else {
             // Finalizing a truncated proposal. Clear LRU caches.  This is an
@@ -185,6 +272,27 @@ public:
             accounts_.clear();
             storage_.clear();
         }
+    }
+
+    // Apply one finalized block's stamp records in commit order: set entry
+    // stamps (best effort on residency) and update the consensus windows
+    // (unconditionally — the windows must not depend on physical state).
+    void apply_stamps(ProposalPostState const &post, uint64_t const block)
+    {
+        for (auto const &r : post.account_stamps) {
+            uint64_t const next = r.weight != 0 ? block : 0;
+            accounts_.set_stamp(r.address, next);
+            account_window_.apply(r.prev_stamp, next, r.prev_weight, r.weight);
+        }
+        for (auto const &r : post.storage_stamps) {
+            uint64_t const next = r.weight != 0 ? block : 0;
+            storage_.set_stamp(r.key, next);
+            storage_window_.apply(r.prev_stamp, next, r.prev_weight, r.weight);
+        }
+        account_window_.advance();
+        storage_window_.advance();
+        accounts_.set_pin_floor(account_window_.boundary());
+        storage_.set_pin_floor(storage_window_.boundary());
     }
 
     std::string accounts_stats()

@@ -52,7 +52,14 @@ class LruCache
     Mutex mutex_;
     HashMap hmap_;
     Pool pool_;
-    std::atomic<uint64_t> const *epoch_{nullptr};
+    // Stamp mode: the node time field holds the consensus stamp (last
+    // qualifying access block) of live entries, written only by set_stamp at
+    // finalize — find() never writes it. Negative entries reuse the field as
+    // a local last-promotion block via promote_negative. Entries whose value
+    // satisfies pinned_ and whose stamp >= the pin floor are never evicted.
+    bool const stamp_mode_{false};
+    bool (*const pinned_)(Value const &){nullptr};
+    std::atomic<uint64_t> pin_floor_{0};
 
 /// STATS MACROS
 #ifdef MONAD_LRU_CACHE_STATS
@@ -75,13 +82,14 @@ public:
     using ConstAccessor = HashMap::const_accessor;
 
     explicit LruCache(
-        size_t const max_size,
-        std::atomic<uint64_t> const *const epoch = nullptr)
+        size_t const max_size, bool const stamp_mode = false,
+        bool (*const pinned)(Value const &) = nullptr)
         : max_size_(max_size)
         , size_(0)
         , hmap_(max_size + SLACK)
         , pool_(max_size + SLACK, 1)
-        , epoch_(epoch)
+        , stamp_mode_(stamp_mode)
+        , pinned_(pinned)
     {
     }
 
@@ -100,9 +108,50 @@ public:
             return false;
         }
         STATS_EVENT_FIND_HIT();
-        ListNode *const node = acc->second.node_;
-        try_update_lru(node);
+        if (!stamp_mode_) {
+            ListNode *const node = acc->second.node_;
+            try_update_lru(node);
+        }
         return true;
+    }
+
+    // Stamp of the entry held by the accessor; 0 = unstamped.
+    uint64_t stamp_of(ConstAccessor const &acc) const
+    {
+        return static_cast<uint64_t>(
+            acc->second.node_->lru_time_.load(std::memory_order_acquire));
+    }
+
+    // Negative entries only: promote at most once per block, reusing the
+    // stamp field as the last-promotion block (never consensus-read).
+    void promote_negative(ConstAccessor const &acc, uint64_t const block)
+    {
+        ListNode *const node = acc->second.node_;
+        if (node->check_lru_time(static_cast<int64_t>(block), 1)) {
+            std::unique_lock const l(mutex_);
+            STATS_EVENT_UPDATE_LRU();
+            lru_.update_lru(node, static_cast<int64_t>(block));
+        }
+    }
+
+    // Finalize path: set the consensus stamp of a resident entry and move it
+    // to the front. Returns false when the entry is not resident (the stamp
+    // is lost; the window still counts it, which only overcharges).
+    bool set_stamp(Key const &key, uint64_t const stamp)
+    {
+        ConstAccessor acc;
+        if (!hmap_.find(acc, key)) {
+            return false;
+        }
+        ListNode *const node = acc->second.node_;
+        std::unique_lock const l(mutex_);
+        lru_.update_lru(node, static_cast<int64_t>(stamp));
+        return true;
+    }
+
+    void set_pin_floor(uint64_t const floor)
+    {
+        pin_floor_.store(floor, std::memory_order_relaxed);
     }
 
     bool insert(Key const &key, Value const &value)
@@ -112,8 +161,10 @@ public:
         if (!hmap_.insert(acc, hmkv)) {
             STATS_EVENT_INSERT_FOUND();
             acc->second.value_ = value;
-            ListNode *const node = acc->second.node_;
-            try_update_lru(node);
+            if (!stamp_mode_) {
+                ListNode *const node = acc->second.node_;
+                try_update_lru(node);
+            }
             return false;
         }
         ListNode *const node = pool_.new_obj(key);
@@ -136,24 +187,10 @@ public:
     }
 
 private:
-    // promote at most once per period: wall clock by default, or the
-    // externally advanced epoch (e.g. block number) when one is supplied
-    int64_t now() const
-    {
-        return epoch_ != nullptr ? static_cast<int64_t>(
-                                       epoch_->load(std::memory_order_relaxed))
-                                 : ListNode::wall_clock();
-    }
-
-    int64_t update_period() const
-    {
-        return epoch_ != nullptr ? 1 : ListNode::LRU_UPDATE_PERIOD;
-    }
-
     void try_update_lru(ListNode *node)
     {
-        int64_t const t = now();
-        if (node->check_lru_time(t, update_period())) {
+        int64_t const t = ListNode::wall_clock();
+        if (node->check_lru_time(t, ListNode::LRU_UPDATE_PERIOD)) {
             std::unique_lock const l(mutex_);
             STATS_EVENT_UPDATE_LRU();
             lru_.update_lru(node, t);
@@ -187,21 +224,40 @@ private:
 
     bool evict()
     {
-        ListNode *target;
-        {
-            std::unique_lock const l(mutex_);
-            STATS_EVENT_EVICT();
-            target = lru_.evict();
+        // pinned victims (live value, stamp >= pin floor) go back to the
+        // front and the next victim is tried; the retry cap keeps a fully
+        // pinned tail from spinning (the cache then grows transiently)
+        for (int attempt = 0; attempt < 64; ++attempt) {
+            ListNode *target;
+            {
+                std::unique_lock const l(mutex_);
+                STATS_EVENT_EVICT();
+                target = lru_.evict();
+            }
+            if (!target) {
+                return false;
+            }
+            Accessor acc;
+            bool const found = hmap_.find(acc, target->key_);
+            MONAD_ASSERT(found);
+            if (stamp_mode_ && pinned_ != nullptr &&
+                pinned_(acc->second.value_)) {
+                uint64_t const stamp = static_cast<uint64_t>(
+                    target->lru_time_.load(std::memory_order_acquire));
+                uint64_t const floor =
+                    pin_floor_.load(std::memory_order_relaxed);
+                if (stamp != 0 && stamp >= floor) {
+                    acc.release();
+                    std::unique_lock const l(mutex_);
+                    lru_.push_front(target);
+                    continue;
+                }
+            }
+            hmap_.erase(acc);
+            pool_.delete_obj(target);
+            return true;
         }
-        if (!target) {
-            return false;
-        }
-        Accessor acc;
-        bool const found = hmap_.find(acc, target->key_);
-        MONAD_ASSERT(found);
-        hmap_.erase(acc);
-        pool_.delete_obj(target);
-        return true;
+        return false;
     }
 
     /// ListNode

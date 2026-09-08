@@ -77,6 +77,11 @@ public:
     virtual storage_page_t read_storage_page(
         Address const &, Incarnation, bytes32_t const &page_key) override;
     virtual vm::SharedIntercode read_code(bytes32_t const &) override;
+    virtual std::optional<Account>
+    read_account_stamped(Address const &, uint64_t &stamp) override;
+    virtual bytes32_t read_storage_stamped(
+        Address const &, Incarnation, bytes32_t const &key,
+        uint64_t &stamp) override;
     virtual void set_block_and_prefix(
         uint64_t block_number,
         bytes32_t const &block_id = bytes32_t{}) override;

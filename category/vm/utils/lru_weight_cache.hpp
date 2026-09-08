@@ -49,6 +49,14 @@ namespace monad::vm::utils
         std::atomic<int64_t> weight_;
         LruList lru_;
         HashMap hmap_;
+        // Stamp mode: the entry time field holds the consensus stamp of live
+        // entries, written only by set_stamp at finalize — find() never
+        // writes it. Negative entries reuse the field as a local
+        // last-promotion block via promote_negative. Entries whose value
+        // satisfies pinned_ and whose stamp >= the pin floor never evict.
+        bool const stamp_mode_{false};
+        bool (*const pinned_)(Value const &){nullptr};
+        std::atomic<uint64_t> pin_floor_{0};
 
     public:
         using ConstAccessor = HashMap::const_accessor;
@@ -57,10 +65,13 @@ namespace monad::vm::utils
             uint32_t const max_weight,
             std::chrono::nanoseconds const lru_update_duration =
                 std::chrono::milliseconds{200},
-            std::atomic<uint64_t> const *const epoch = nullptr)
+            bool const stamp_mode = false,
+            bool (*const pinned)(Value const &) = nullptr)
             : max_weight_(max_weight)
             , weight_(0)
-            , lru_{lru_update_duration.count(), epoch}
+            , lru_{lru_update_duration.count()}
+            , stamp_mode_{stamp_mode}
+            , pinned_{pinned}
         {
         }
 
@@ -72,8 +83,45 @@ namespace monad::vm::utils
             if (!hmap_.find(acc, key)) {
                 return false;
             }
-            try_update_lru(&*acc);
+            if (!stamp_mode_) {
+                try_update_lru(&*acc);
+            }
             return true;
+        }
+
+        // Stamp of the entry held by the accessor; 0 = unstamped.
+        uint64_t stamp_of(ConstAccessor const &acc) const
+        {
+            return static_cast<uint64_t>(
+                acc->second.lru_time_.load(std::memory_order_acquire));
+        }
+
+        // Negative entries only: promote at most once per block, reusing the
+        // stamp field as the last-promotion block (never consensus-read).
+        void promote_negative(ConstAccessor const &acc, uint64_t const block)
+        {
+            if (acc->second.lru_time_.load(std::memory_order_acquire) !=
+                static_cast<int64_t>(block)) {
+                lru_.update_lru_stamped(&*acc, static_cast<int64_t>(block));
+            }
+        }
+
+        // Finalize path: set the consensus stamp of a resident entry and move
+        // it to the front. Returns false when the entry is not resident (the
+        // stamp is lost; the window still counts it, which only overcharges).
+        bool set_stamp(Key const &key, uint64_t const stamp)
+        {
+            ConstAccessor acc;
+            if (!hmap_.find(acc, key)) {
+                return false;
+            }
+            lru_.update_lru_stamped(&*acc, static_cast<int64_t>(stamp));
+            return true;
+        }
+
+        void set_pin_floor(uint64_t const floor)
+        {
+            pin_floor_.store(floor, std::memory_order_relaxed);
         }
 
         /// Insert `value` with `weight` under `key`. Overwrites if there is
@@ -90,7 +138,9 @@ namespace monad::vm::utils
                 Value tmp = value;
                 swap(node->second.value_, tmp);
                 node->second.cache_weight_ = weight;
-                try_update_lru(node);
+                if (!stamp_mode_) {
+                    try_update_lru(node);
+                }
                 acc.release();
                 is_new_key = false;
             }
@@ -119,7 +169,9 @@ namespace monad::vm::utils
             ConstAccessor acc;
             if (!hmap_.insert(acc, {key, HashMapValue{value, weight}})) {
                 value = acc->second.value_;
-                try_update_lru(&*acc);
+                if (!stamp_mode_) {
+                    try_update_lru(&*acc);
+                }
                 return false;
             }
             ListNode const *const node = &*acc;
@@ -137,7 +189,9 @@ namespace monad::vm::utils
         {
             ConstAccessor acc;
             if (!hmap_.insert(acc, {key, HashMapValue{value, weight}})) {
-                try_update_lru(&*acc);
+                if (!stamp_mode_) {
+                    try_update_lru(&*acc);
+                }
                 return false;
             }
             ListNode const *const node = &*acc;
@@ -174,10 +228,25 @@ namespace monad::vm::utils
                 weight_.fetch_add(delta_weight, std::memory_order_acq_rel);
             if (delta_weight + pre_weight > max_weight_) {
                 int64_t evicted_weight = 0;
-                while (evicted_weight < delta_weight) {
+                int attempts = 0;
+                while (evicted_weight < delta_weight && attempts++ < 256) {
                     ListNode const *target = lru_.evict();
                     if (MONAD_UNLIKELY(!target)) {
                         break;
+                    }
+                    // pinned victims (live value, stamp >= pin floor) go back
+                    // to the front and the next victim is tried
+                    if (stamp_mode_ && pinned_ != nullptr &&
+                        pinned_(target->second.value_)) {
+                        uint64_t const stamp =
+                            static_cast<uint64_t>(target->second.lru_time_.load(
+                                std::memory_order_acquire));
+                        uint64_t const floor =
+                            pin_floor_.load(std::memory_order_relaxed);
+                        if (stamp != 0 && stamp >= floor) {
+                            lru_.push_front_evicted(target);
+                            continue;
+                        }
                     }
                     int64_t const n = evict(target);
                     weight_.fetch_sub(n, std::memory_order_acq_rel);
@@ -259,30 +328,22 @@ namespace monad::vm::utils
             ListNode base_;
             std::mutex mutex_;
             int64_t lru_update_period_;
-            // promote at most once per period: wall clock by default, or the
-            // externally advanced epoch (e.g. block number) when supplied
-            std::atomic<uint64_t> const *epoch_;
 
         public:
-            explicit LruList(
-                int64_t const lru_update_period,
-                std::atomic<uint64_t> const *const epoch = nullptr)
+            explicit LruList(int64_t const lru_update_period)
                 : lru_update_period_{lru_update_period}
-                , epoch_{epoch}
             {
                 clear();
             }
 
             int64_t now() const
             {
-                return epoch_ != nullptr ? static_cast<int64_t>(epoch_->load(
-                                               std::memory_order_relaxed))
-                                         : ListNode::second_type::wall_clock();
+                return ListNode::second_type::wall_clock();
             }
 
             int64_t next_allowed() const
             {
-                return now() + (epoch_ != nullptr ? 1 : lru_update_period_);
+                return now() + lru_update_period_;
             }
 
             // Not thread-safe with other LruList operations.
@@ -307,6 +368,26 @@ namespace monad::vm::utils
                 std::unique_lock const l(mutex_);
                 front_link(node);
                 node->second.update_lru_time(lru_update_period_);
+            }
+
+            // Stamp mode: move to the front and store the stamp verbatim in
+            // the time field.
+            void
+            update_lru_stamped(ListNode const *const node, int64_t const stamp)
+            {
+                std::unique_lock const l(mutex_);
+                if (node->second.is_in_list()) {
+                    delink(node);
+                    front_link(node);
+                    node->second.update_lru_time(stamp);
+                }
+            }
+
+            // Re-link a node handed out by evict() (already delinked).
+            void push_front_evicted(ListNode const *const node)
+            {
+                std::unique_lock const l(mutex_);
+                front_link(node);
             }
 
             ListNode const *evict()

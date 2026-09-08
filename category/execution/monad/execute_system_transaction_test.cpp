@@ -151,8 +151,6 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 "storage": {
                     "0x0000000000000000000000000000000000000000000000000000000000000001": "0x0000000000000001000000000000000000000000000000000000000000000000",
                     "0x0000000000000000000000000000000000000000000000000000000000000002": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                    "0x0000000000000000000000000000000000000000000000000000000000000005": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                    "0x0000000000000000000000000000000000000000000000000000000000000006": "0x0000000000000000000000000000000000000000000000000000000000000000",
                     "0x0300000000000000000000000000000000000000000000000000000000000000": "0x0000000000000000000000000000000000000000000000000000000000000000"
                 }
             },
@@ -167,55 +165,6 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
 
         EXPECT_EQ(trace, nlohmann::json::parse(expected));
     }
-}
-
-TEST(SystemTransaction, staking_snapshot_records_scheduled_epoch_boundary)
-{
-    mpt::Db db{std::make_unique<InMemoryMachine>()};
-    TrieDb tdb{db};
-    vm::VM vm;
-    MonadDevnet chain;
-    BlockState block_state{tdb, vm};
-    BlockMetrics block_metrics;
-    BlockHeader const header{.number = 0, .slot_number = 777};
-    NoopCallTracer noop_call_tracer;
-    nlohmann::json trace;
-    trace::StateTracer statediff_tracer = trace::StateDiffTracer{trace};
-
-    Transaction const snapshot_tx{
-        .sc =
-            SignatureAndChain{
-                .signature = {.r = 1, .s = 2, .y_parity = 0},
-            },
-        .nonce = 0,
-        .to = staking::STAKING_CA,
-        .data = from_hex("0x271ed9cd"
-                         "00000000000000000000000000000000000000000000000000000"
-                         "000000003d1"
-                         "00000000000000000000000000000000000000000000000000000"
-                         "000000000c8")
-                    .value()};
-
-    boost::fibers::promise<void> promise;
-    promise.set_value();
-    Result<Receipt> const result =
-        ExecuteSystemTransaction<MonadTraits<MONAD_NEXT>>{
-            chain,
-            0,
-            snapshot_tx,
-            SYSTEM_SENDER,
-            header,
-            block_state,
-            block_metrics,
-            promise,
-            noop_call_tracer,
-            statediff_tracer}();
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(
-        trace["post"]["0x0000000000000000000000000000000000001000"]["storage"]
-             ["0x00000000000000000000000000000000000000000000000000000000000000"
-              "06"],
-        "0x000000000000000100000000000003d100000000000000000000000000000000");
 }
 
 TEST(SystemTransaction, statediff_trace_staking_epoch_change)

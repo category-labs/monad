@@ -25,16 +25,19 @@
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/monad/db/cache_pricing.hpp>
+#include <category/execution/monad/db/stamp_blob.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
 #include <category/vm/utils/lru_weight_cache.hpp>
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <format>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -76,25 +79,44 @@ class DbCache final
     static constexpr uint32_t STORAGE_CACHE_MAX_BYTES = 1024u * 1024 * 1024;
     static constexpr size_t NEGATIVE_MAX_ENTRIES = 2'000'000;
 
-    AccountsCache accounts_{
-        10'000'000, /*stamp_mode=*/true, NEGATIVE_MAX_ENTRIES};
-    StorageCache storage_{
-        STORAGE_CACHE_MAX_BYTES,
-        std::chrono::milliseconds{200},
-        /*stamp_mode=*/true,
-        NEGATIVE_MAX_ENTRIES};
+    AccountsCache accounts_;
+    StorageCache storage_;
     // consensus windows: counted from committed stamp records only, never
     // from physical cache state
     StampWindow account_window_{ACCOUNT_WINDOW_BUDGET};
     StampWindow storage_window_{STORAGE_WINDOW_BUDGET};
+    // when set, each finalized block's stamp records are appended here as a
+    // hashed blob; restart replays them (TrieDb::set_stamp_blob_dir)
+    std::filesystem::path blob_dir_{};
     Proposals proposals_;
 
 public:
-    DbCache() = default;
+    // stamp_mode false = plain wall-clock LRU promotion (pre multi-block
+    // cache behavior, for baseline measurement arms)
+    explicit DbCache(bool const stamp_mode = true)
+        : accounts_{10'000'000, stamp_mode, NEGATIVE_MAX_ENTRIES}
+        , storage_{
+              STORAGE_CACHE_MAX_BYTES,
+              std::chrono::milliseconds{200},
+              stamp_mode,
+              NEGATIVE_MAX_ENTRIES}
+    {
+    }
 
     PricingBoundaries boundaries() const
     {
         return {account_window_.boundary(), storage_window_.boundary()};
+    }
+
+    void set_stamp_blob_dir(std::filesystem::path dir)
+    {
+        blob_dir_ = std::move(dir);
+    }
+
+    // Restart replay: apply one persisted block's stamp records.
+    void replay_stamps(ProposalPostState const &post, uint64_t const block)
+    {
+        apply_stamps(post, block);
     }
 
     // The optional stamp output is the entry's consensus stamp as of the
@@ -243,6 +265,13 @@ public:
         if (ps) {
             insert_in_lru_caches(ps->post_state());
             apply_stamps(ps->post_state(), block_number);
+            if (!blob_dir_.empty()) {
+                write_stamp_blob(
+                    blob_dir_,
+                    block_number,
+                    ps->post_state().account_stamps,
+                    ps->post_state().storage_stamps);
+            }
         }
         else {
             // Finalizing a truncated proposal. Clear LRU caches.  This is an

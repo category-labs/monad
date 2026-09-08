@@ -397,6 +397,10 @@ try {
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - load_start_time));
 
+    if (char const *const blob_dir = std::getenv("MONAD_MBC_BLOB_DIR")) {
+        triedb.set_stamp_blob_dir(blob_dir);
+    }
+
     uint64_t const start_block_num = init_block_num + 1;
 
     LOG_INFO(

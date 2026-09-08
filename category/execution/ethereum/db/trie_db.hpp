@@ -35,6 +35,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include <deque>
+#include <filesystem>
 #include <istream>
 #include <memory>
 #include <optional>
@@ -78,6 +79,11 @@ public:
         Address const &, Incarnation, bytes32_t const &page_key) override;
     virtual vm::SharedIntercode read_code(bytes32_t const &) override;
     virtual PricingBoundaries pricing_boundaries() override;
+
+    // Replay persisted stamp blobs (rebuilding stamps, windows, and the
+    // physical residency of the warm set), then start appending new ones.
+    void set_stamp_blob_dir(std::filesystem::path const &);
+
     virtual std::optional<Account>
     read_account_stamped(Address const &, uint64_t &stamp) override;
     virtual bytes32_t read_storage_stamped(

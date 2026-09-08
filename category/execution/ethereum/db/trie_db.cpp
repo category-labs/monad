@@ -44,6 +44,7 @@
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/db/page_commit_builder.hpp>
+#include <category/execution/monad/db/stamp_blob.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -104,6 +105,51 @@ Node::SharedPtr const &TrieDb::get_root() const
 PricingBoundaries TrieDb::pricing_boundaries()
 {
     return cache_ ? cache_->boundaries() : PricingBoundaries{0, 0};
+}
+
+void TrieDb::set_stamp_blob_dir(std::filesystem::path const &dir)
+{
+    if (!cache_) {
+        return;
+    }
+    uint64_t replayed = 0;
+    for (uint64_t const block : list_stamp_blobs(dir)) {
+        if (block > block_number_) {
+            break;
+        }
+        auto const blob =
+            read_stamp_blob(dir / (std::to_string(block) + ".blob"));
+        MONAD_ASSERT_PRINTF(
+            blob.has_value(), "corrupt stamp blob for block %lu", block);
+        // prefetch so the stamps have resident entries to attach to
+        for (auto const &r : blob->account_stamps) {
+            if (r.weight != 0) {
+                read_account(r.address);
+            }
+        }
+        for (auto const &r : blob->storage_stamps) {
+            if (r.weight == 0) {
+                continue;
+            }
+            Address addr;
+            Incarnation inc{0, 0};
+            bytes32_t key;
+            std::memcpy(addr.bytes, r.key.bytes, sizeof(addr.bytes));
+            std::memcpy(&inc, r.key.bytes + sizeof(addr.bytes), sizeof(inc));
+            std::memcpy(
+                key.bytes,
+                r.key.bytes + sizeof(addr.bytes) + sizeof(inc),
+                sizeof(key.bytes));
+            read_storage(addr, inc, key);
+        }
+        ProposalPostState post;
+        post.account_stamps = std::move(blob->account_stamps);
+        post.storage_stamps = std::move(blob->storage_stamps);
+        cache_->replay_stamps(post, block);
+        ++replayed;
+    }
+    LOG_INFO("replayed {} stamp blobs from {}", replayed, dir.string());
+    cache_->set_stamp_blob_dir(dir);
 }
 
 std::optional<Account> TrieDb::read_account(Address const &addr)

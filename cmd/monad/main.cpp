@@ -581,10 +581,14 @@ try {
         auto const &shadow = vm::runtime::g_cache_shadow_stats;
         LOG_INFO(
             "multi-block cache shadow: cached_accounts = {}, cached_storage "
-            "= {}, saved_gas = {}",
+            "= {}, saved_gas = {}, account_bumps = {}, storage_bumps = {}, "
+            "recency_fallback_reads = {}",
             shadow.cached_accounts.load(),
             shadow.cached_storage.load(),
-            shadow.saved_gas.load());
+            shadow.saved_gas.load(),
+            shadow.account_bumps.load(),
+            shadow.storage_bumps.load(),
+            shadow.recency_fallback_reads.load());
     }
 
     sync_server.reset();

@@ -39,6 +39,7 @@
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
+#include <category/vm/runtime/access.hpp>
 
 #include <limits>
 
@@ -98,11 +99,17 @@ void CommitBuilder::record_recency(
         bucket_deltas_[{kind, block_number_}] += 1;
     };
     {
+        if (!delta.account_last_access.has_value()) {
+            vm::runtime::g_cache_shadow_stats.recency_fallback_reads.fetch_add(
+                1, std::memory_order_relaxed);
+        }
         uint64_t const ts_old =
             delta.account_last_access.has_value()
                 ? *delta.account_last_access
                 : db_->read_account_last_access(addr).value_or(0);
         if (cache_pricing_bump_due(ts_old, block_number_)) {
+            vm::runtime::g_cache_shadow_stats.account_bumps.fetch_add(
+                1, std::memory_order_relaxed);
             bump(PricingKind::account, ts_old);
             upsert(cache_pricing_account_key(
                 to_bytes(keccak256({addr.bytes, sizeof(addr.bytes)}))));
@@ -111,6 +118,10 @@ void CommitBuilder::record_recency(
     }
     for (auto const &lookup_key : lookup_keys) {
         auto const mit = delta.storage_last_access.find(lookup_key);
+        if (mit == delta.storage_last_access.end()) {
+            vm::runtime::g_cache_shadow_stats.recency_fallback_reads.fetch_add(
+                1, std::memory_order_relaxed);
+        }
         uint64_t const ts_old =
             mit != delta.storage_last_access.end()
                 ? mit->second
@@ -118,6 +129,8 @@ void CommitBuilder::record_recency(
         if (!cache_pricing_bump_due(ts_old, block_number_)) {
             continue;
         }
+        vm::runtime::g_cache_shadow_stats.storage_bumps.fetch_add(
+            1, std::memory_order_relaxed);
         bump(PricingKind::storage, ts_old);
         upsert(cache_pricing_storage_key(addr, lookup_key));
         proposal_post_state_

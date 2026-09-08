@@ -39,8 +39,26 @@ byte_string read_file(bytes32_t const &id, std::filesystem::path const &dir)
     byte_string const data{
         std::istreambuf_iterator<char>(is), std::istreambuf_iterator<char>()};
     auto const checksum = to_bytes(blake3(data));
+
+    // Decrypted headers and bodies have a different content hash from their
+    // consensus identity. The ledger stores the content under its real hash
+    // and publishes the consensus identity as a symlink alias.
+    auto expected_checksum = id;
+    if (std::filesystem::is_symlink(path)) {
+        auto const target_name =
+            std::filesystem::read_symlink(path).filename().string();
+        auto const target_id = from_hex<bytes32_t>(target_name);
+        MONAD_ASSERT_PRINTF(
+            target_name.size() == sizeof(bytes32_t) * 2 &&
+                target_id.has_value(),
+            "Content alias target is not a block hash: %s",
+            path.c_str());
+        expected_checksum = target_id.value();
+    }
     MONAD_ASSERT_PRINTF(
-        checksum == id, "Checksum failed for file: %s", path.c_str());
+        checksum == expected_checksum,
+        "Checksum failed for file: %s",
+        path.c_str());
     return data;
 }
 

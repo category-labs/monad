@@ -70,6 +70,7 @@
 #include <category/rpc/chain_context_buffer.hpp>
 #include <category/rpc/eth_simulate_block_hash_buffer.hpp>
 #include <category/rpc/lazy_block_hash.hpp>
+#include <category/rpc/utils/value_size.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -609,86 +610,6 @@ namespace
         MONAD_ASSERT_THROW(
             txn_hashes.size() == block.transactions.size(),
             "transaction hashes size mismatch with transactions");
-
-        auto const value_size = [](auto const &x) -> size_t {
-            auto const inner = [](this auto const &self,
-                                  auto const &x) -> size_t {
-                using type =
-                    std::remove_cv_t<std::remove_reference_t<decltype(x)>>;
-                if constexpr (
-                    std::is_same_v<type, size_t> ||
-                    std::is_same_v<type, uint64_t> ||
-                    std::is_same_v<type, uint256_t>) {
-
-                    size_t digits = 0;
-                    type num{x};
-                    do {
-                        num >>= 4;
-                        digits++;
-                    }
-                    while (num != 0);
-                    return digits + 2 /* 0xABCDEF.... */;
-                }
-                else if constexpr (std::is_same_v<type, bytes32_t>) {
-                    return 2 * sizeof(bytes32_t) + 2 /* 0xABCDEF.... */;
-                }
-                else if constexpr (std::is_same_v<type, Address>) {
-                    return 2 * sizeof(Address) + 2 /* 0xABCDEF.... */;
-                }
-                else if constexpr (
-                    std::is_same_v<type, byte_string_view> ||
-                    std::is_same_v<type, byte_string>) {
-                    return x.size() * 2 + 2 /* 0xABCDEF.... */;
-                }
-                else if constexpr (std::is_same_v<
-                                       type,
-                                       std::array<unsigned char, 8>>) {
-                    return 18; // 0x0000...
-                }
-                else if constexpr (std::is_same_v<
-                                       type,
-                                       std::array<unsigned char, 256>>) {
-                    return 514; // 0x0000...
-                }
-                else if constexpr (std::is_same_v<
-                                       type,
-                                       std::optional<uint64_t>>) {
-                    if (x.has_value()) {
-                        return self(x.value());
-                    }
-                    else {
-                        return 3; // 0x0
-                    }
-                }
-                else if constexpr (std::is_same_v<
-                                       type,
-                                       std::optional<bytes32_t>>) {
-                    return sizeof(bytes32_t) * 2 + 2; // 0xABCDEF...
-                }
-                else if constexpr (std::is_same_v<
-                                       type,
-                                       std::optional<Address>>) {
-                    return sizeof(Address) * 2 + 2; // 0xABCDEF...
-                }
-                else if constexpr (std::is_same_v<
-                                       type,
-                                       std::optional<uint256_t>>) {
-                    if (x.has_value()) {
-                        return self(x.value());
-                    }
-                    else {
-                        return 3; // 0x0
-                    }
-                }
-                else {
-                    static_assert(
-                        std::is_same_v<type, void>,
-                        "unsupported type for value_size");
-                }
-            };
-
-            return sizeof(nlohmann::json::value_t) + inner(x);
-        };
 
         static constexpr std::string_view calls = "calls";
         static constexpr std::string_view status = "status";

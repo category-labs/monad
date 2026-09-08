@@ -47,39 +47,60 @@
 
 MONAD_NAMESPACE_BEGIN
 
-BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
+BlockState::BlockState(
+    Db &db, vm::VM &monad_vm, Db *const secondary_db, bool const stamp_tracking)
     : db_{db}
     , secondary_db_{secondary_db}
     , vm_{monad_vm}
     , state_(std::make_unique<StateDeltas>())
+    , stamp_tracking_{stamp_tracking}
 {
 }
 
-std::optional<Account> BlockState::read_account(Address const &address)
+std::optional<Account>
+BlockState::read_account(Address const &address, uint64_t *const stamp)
 {
     // block state
     {
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_);
         if (MONAD_LIKELY(state_->find(it, address))) {
+            if (stamp != nullptr) {
+                *stamp = it->second.account_stamp.value_or(0);
+            }
             return it->second.account.second;
         }
     }
     // database
     {
-        auto const result = db_.read_account(address);
+        uint64_t read_stamp = 0;
+        auto const result = stamp_tracking_
+                                ? db_.read_account_stamped(address, read_stamp)
+                                : db_.read_account(address);
         StateDeltas::const_accessor it{};
         state_->emplace(
             it,
             address,
-            StateDelta{.account = {result, result}, .storage = {}});
+            StateDelta{
+                .account = {result, result},
+                .storage = {},
+                .account_stamp = stamp_tracking_
+                                     ? std::optional<uint64_t>{read_stamp}
+                                     : std::nullopt});
+        if (stamp != nullptr) {
+            *stamp = it->second.account_stamp.value_or(0);
+        }
         return it->second.account.second;
     }
 }
 
 bytes32_t BlockState::read_storage(
-    Address const &address, Incarnation const incarnation, bytes32_t const &key)
+    Address const &address, Incarnation const incarnation, bytes32_t const &key,
+    uint64_t *const stamp)
 {
+    if (stamp != nullptr) {
+        *stamp = 0;
+    }
     bool read_storage = false;
     // block state
     {
@@ -94,6 +115,12 @@ bytes32_t BlockState::read_storage(
         {
             StorageDeltas::const_accessor it2{};
             if (MONAD_LIKELY(storage.find(it2, key))) {
+                if (stamp != nullptr) {
+                    auto const mit = it->second.storage_stamps.find(key);
+                    if (mit != it->second.storage_stamps.end()) {
+                        *stamp = mit->second;
+                    }
+                }
                 return it2->second.second;
             }
         }
@@ -105,14 +132,21 @@ bytes32_t BlockState::read_storage(
     // database
     {
         bytes32_t result{};
+        uint64_t read_stamp = 0;
         if (read_storage) {
-            result = db_.read_storage(address, incarnation, key);
+            result = stamp_tracking_
+                         ? db_.read_storage_stamped(
+                               address, incarnation, key, read_stamp)
+                         : db_.read_storage(address, incarnation, key);
             MONAD_ASSERT(
                 !secondary_db_ || secondary_db_->read_storage(
                                       address, incarnation, key) == result);
         }
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
+        if (stamp_tracking_) {
+            it->second.storage_stamps.try_emplace(key, read_stamp);
+        }
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return result;
@@ -121,6 +155,9 @@ bytes32_t BlockState::read_storage(
         {
             StorageDeltas::const_accessor it2{};
             storage.emplace(it2, key, std::make_pair(result, result));
+            if (stamp != nullptr) {
+                *stamp = read_stamp;
+            }
             return it2->second.second;
         }
     }
@@ -193,6 +230,24 @@ bool BlockState::can_merge(State &state) const
 
 void BlockState::merge(State const &state)
 {
+    if (stamp_tracking_) {
+        // commit order: merge() runs serially in transaction order
+        TxStampCandidates tx;
+        for (auto const &[address, stack] : state.current()) {
+            auto const &account_state = stack.recent();
+            if (account_state.is_stamp_candidate()) {
+                tx.accounts.push_back(address);
+            }
+            for (auto const &key :
+                 account_state.get_stamp_candidate_storage()) {
+                tx.storage.emplace_back(address, key);
+            }
+        }
+        if (!tx.accounts.empty() || !tx.storage.empty()) {
+            stamp_candidates_.push_back(std::move(tx));
+        }
+    }
+
     ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
 
     auto const &current = state.current();
@@ -255,7 +310,8 @@ BlockState::ReleasedState BlockState::release() &&
     return {
         std::move(state_),
         std::move(code_),
-        std::move(self_destruct_storage_reads_)};
+        std::move(self_destruct_storage_reads_),
+        std::move(stamp_candidates_)};
 }
 
 void BlockState::log_debug()

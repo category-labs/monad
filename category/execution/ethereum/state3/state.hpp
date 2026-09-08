@@ -68,6 +68,12 @@ class State
 
     std::deque<Set<Address>> dirty_;
 
+    // multi-block cache: copied from BlockState at construction; the access
+    // tier is then two compares on in-hand data
+    bool const stamp_tracking_;
+    uint64_t const account_boundary_;
+    uint64_t const storage_boundary_;
+
     bool const relaxed_validation_{false};
     ReserveBalance rb_;
 
@@ -87,6 +93,10 @@ private:
     AccountState const &recent_account_state(Address const &);
 
     AccountState &current_account_state(Address const &);
+
+    bytes32_t load_original_storage(
+        Address const &, OriginalAccountState &, Incarnation,
+        bytes32_t const &key);
 
     std::optional<Account> const &recent_account(Address const &);
 

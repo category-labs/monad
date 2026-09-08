@@ -38,6 +38,9 @@ namespace monad::vm::runtime
         std::atomic<uint64_t> cached_accounts{0};
         std::atomic<uint64_t> cached_storage{0};
         std::atomic<uint64_t> saved_gas{0};
+        // stamp-record volume (filled by the commit builder)
+        std::atomic<uint64_t> account_stamp_records{0};
+        std::atomic<uint64_t> storage_stamp_records{0};
     };
 
     inline CacheShadowStats g_cache_shadow_stats;

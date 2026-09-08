@@ -46,6 +46,13 @@ inline constexpr uint64_t CACHE_STAMP_REFRESH_FLOOR = 64;
 // gas-limit raises.
 inline constexpr uint64_t K_STAMP_CEILING = 1ull << 18;
 
+struct PricingBoundaries
+{
+    // warm iff stamp != 0 and stamp >= boundary
+    uint64_t account;
+    uint64_t storage;
+};
+
 inline bool cache_stamp_refresh_due(
     uint64_t const stamp, uint64_t const block, uint64_t const boundary)
 {

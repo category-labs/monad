@@ -28,6 +28,19 @@
 
 MONAD_NAMESPACE_BEGIN
 
+// Default mode: a plain LRU with wall-clock rate-limited promotion on find.
+//
+// Stamp mode (multi-block cache): one hash map, two eviction lists. Live
+// entries sit on the live list, whose node time field holds the consensus
+// stamp (last qualifying access block), written only by set_stamp at
+// finalize — find() is read-only for them, so live-list order is stamp order
+// and the tail is always the oldest-stamped (or unstamped) entry; eviction
+// of a warm entry (stamp >= the evict floor E) is impossible by construction
+// while budget + in-flight inserts < capacity, and evict() asserts it.
+// Negative entries ("this key holds nothing") sit on the negative list with
+// its own budget and wall-clock recency; a negative flood can only churn the
+// negative list. A value transition (create/delete at finalize) flips the
+// same entry between lists in place — one map, no cross-cache invalidation.
 template <
     class Key, class Value, class KeyHashCompare = tbb::tbb_hash_compare<Key>>
 class LruCache
@@ -52,14 +65,11 @@ class LruCache
     Mutex mutex_;
     HashMap hmap_;
     Pool pool_;
-    // Stamp mode: the node time field holds the consensus stamp (last
-    // qualifying access block) of live entries, written only by set_stamp at
-    // finalize — find() never writes it. Negative entries reuse the field as
-    // a local last-promotion block via promote_negative. Entries whose value
-    // satisfies pinned_ and whose stamp >= the pin floor are never evicted.
     bool const stamp_mode_{false};
-    bool (*const pinned_)(Value const &){nullptr};
-    std::atomic<uint64_t> pin_floor_{0};
+    size_t const negative_max_{0};
+    std::atomic<size_t> negative_size_{0};
+    LruList negative_lru_;
+    std::atomic<uint64_t> evict_floor_{0};
 
 /// STATS MACROS
 #ifdef MONAD_LRU_CACHE_STATS
@@ -83,13 +93,13 @@ public:
 
     explicit LruCache(
         size_t const max_size, bool const stamp_mode = false,
-        bool (*const pinned)(Value const &) = nullptr)
+        size_t const negative_max = 0)
         : max_size_(max_size)
         , size_(0)
-        , hmap_(max_size + SLACK)
-        , pool_(max_size + SLACK, 1)
+        , hmap_(max_size + negative_max + SLACK)
+        , pool_(max_size + negative_max + SLACK, 1)
         , stamp_mode_(stamp_mode)
-        , pinned_(pinned)
+        , negative_max_(negative_max)
     {
     }
 
@@ -108,35 +118,37 @@ public:
             return false;
         }
         STATS_EVENT_FIND_HIT();
+        ListNode *const node = acc->second.node_;
         if (!stamp_mode_) {
-            ListNode *const node = acc->second.node_;
-            try_update_lru(node);
+            try_update_lru(lru_, node);
+        }
+        else if (node->negative_) {
+            try_update_lru(negative_lru_, node);
         }
         return true;
     }
 
-    // Stamp of the entry held by the accessor; 0 = unstamped.
+    bool is_negative(ConstAccessor const &acc) const
+    {
+        return acc->second.node_->negative_;
+    }
+
+    // Consensus stamp of a live entry; 0 = unstamped (and for negative
+    // entries, whose time field is local recency).
     uint64_t stamp_of(ConstAccessor const &acc) const
     {
-        return static_cast<uint64_t>(
-            acc->second.node_->lru_time_.load(std::memory_order_acquire));
-    }
-
-    // Negative entries only: promote at most once per block, reusing the
-    // stamp field as the last-promotion block (never consensus-read).
-    void promote_negative(ConstAccessor const &acc, uint64_t const block)
-    {
-        ListNode *const node = acc->second.node_;
-        if (node->check_lru_time(static_cast<int64_t>(block), 1)) {
-            std::unique_lock const l(mutex_);
-            STATS_EVENT_UPDATE_LRU();
-            lru_.update_lru(node, static_cast<int64_t>(block));
+        ListNode const *const node = acc->second.node_;
+        if (node->negative_) {
+            return 0;
         }
+        return static_cast<uint64_t>(
+            node->lru_time_.load(std::memory_order_acquire));
     }
 
-    // Finalize path: set the consensus stamp of a resident entry and move it
-    // to the front. Returns false when the entry is not resident (the stamp
-    // is lost; the window still counts it, which only overcharges).
+    // Finalize path: set the consensus stamp of a resident live entry and
+    // move it to the live-list front. Returns false when the entry is not
+    // resident (the stamp is lost; the window still counts it, which only
+    // overcharges).
     bool set_stamp(Key const &key, uint64_t const stamp)
     {
         ConstAccessor acc;
@@ -144,30 +156,37 @@ public:
             return false;
         }
         ListNode *const node = acc->second.node_;
+        if (node->negative_) {
+            return false;
+        }
         std::unique_lock const l(mutex_);
         lru_.update_lru(node, static_cast<int64_t>(stamp));
         return true;
     }
 
-    void set_pin_floor(uint64_t const floor)
+    void set_evict_floor(uint64_t const floor)
     {
-        pin_floor_.store(floor, std::memory_order_relaxed);
+        evict_floor_.store(floor, std::memory_order_relaxed);
     }
 
-    bool insert(Key const &key, Value const &value)
+    bool insert(Key const &key, Value const &value, bool const negative = false)
     {
         Accessor acc;
         HashMapKeyValue const hmkv(key, HashMapValue(value, nullptr));
         if (!hmap_.insert(acc, hmkv)) {
             STATS_EVENT_INSERT_FOUND();
             acc->second.value_ = value;
+            ListNode *const node = acc->second.node_;
             if (!stamp_mode_) {
-                ListNode *const node = acc->second.node_;
-                try_update_lru(node);
+                try_update_lru(lru_, node);
+            }
+            else if (node->negative_ != negative) {
+                transition(node, negative);
             }
             return false;
         }
         ListNode *const node = pool_.new_obj(key);
+        node->negative_ = stamp_mode_ && negative;
         acc->second.node_ = node;
         acc.release();
         finish_insert(node);
@@ -178,7 +197,9 @@ public:
     {
         hmap_.clear();
         lru_.clear(pool_);
+        negative_lru_.clear(pool_);
         size_.store(0, std::memory_order_release);
+        negative_size_.store(0, std::memory_order_release);
     }
 
     size_t size() const
@@ -187,18 +208,64 @@ public:
     }
 
 private:
-    void try_update_lru(ListNode *node)
+    void try_update_lru(LruList &list, ListNode *node)
     {
         int64_t const t = ListNode::wall_clock();
         if (node->check_lru_time(t, ListNode::LRU_UPDATE_PERIOD)) {
             std::unique_lock const l(mutex_);
             STATS_EVENT_UPDATE_LRU();
-            lru_.update_lru(node, t);
+            list.update_lru(node, t);
+        }
+    }
+
+    // Flip an entry between the live and negative lists in place (finalize
+    // path: the value was created or deleted).
+    void transition(ListNode *const node, bool const negative)
+    {
+        {
+            std::unique_lock const l(mutex_);
+            if (!node->is_in_list()) {
+                return; // being evicted concurrently
+            }
+            (node->negative_ ? negative_lru_ : lru_).delink(node);
+            node->negative_ = negative;
+            // negative recency restarts; a fresh live entry is unstamped
+            node->update_lru_time(negative ? ListNode::wall_clock() : 0);
+            (negative ? negative_lru_ : lru_).push_front(node);
+        }
+        if (negative) {
+            size_.fetch_sub(1, std::memory_order_acq_rel);
+            size_t const sz =
+                1 + negative_size_.fetch_add(1, std::memory_order_acq_rel);
+            if (sz > negative_max_ && evict_negative()) {
+                negative_size_.fetch_sub(1, std::memory_order_acq_rel);
+            }
+        }
+        else {
+            negative_size_.fetch_sub(1, std::memory_order_acq_rel);
+            size_t const sz = 1 + size_.fetch_add(1, std::memory_order_acq_rel);
+            if (sz > max_size_ && evict()) {
+                size_.fetch_sub(1, std::memory_order_acq_rel);
+            }
         }
     }
 
     void finish_insert(ListNode *node)
     {
+        if (node->negative_) {
+            {
+                std::unique_lock const l(mutex_);
+                STATS_EVENT_INSERT_NEW();
+                negative_lru_.push_front(node);
+                node->update_lru_time(ListNode::wall_clock());
+            }
+            size_t const sz =
+                1 + negative_size_.fetch_add(1, std::memory_order_acq_rel);
+            if (sz > negative_max_ && evict_negative()) {
+                negative_size_.fetch_sub(1, std::memory_order_acq_rel);
+            }
+            return;
+        }
         size_t sz = size();
         bool const evicted = (sz >= max_size_) && evict();
         {
@@ -224,40 +291,50 @@ private:
 
     bool evict()
     {
-        // pinned victims (live value, stamp >= pin floor) go back to the
-        // front and the next victim is tried; the retry cap keeps a fully
-        // pinned tail from spinning (the cache then grows transiently)
-        for (int attempt = 0; attempt < 64; ++attempt) {
-            ListNode *target;
-            {
-                std::unique_lock const l(mutex_);
-                STATS_EVENT_EVICT();
-                target = lru_.evict();
-            }
-            if (!target) {
-                return false;
-            }
-            Accessor acc;
-            bool const found = hmap_.find(acc, target->key_);
-            MONAD_ASSERT(found);
-            if (stamp_mode_ && pinned_ != nullptr &&
-                pinned_(acc->second.value_)) {
-                uint64_t const stamp = static_cast<uint64_t>(
-                    target->lru_time_.load(std::memory_order_acquire));
-                uint64_t const floor =
-                    pin_floor_.load(std::memory_order_relaxed);
-                if (stamp != 0 && stamp >= floor) {
-                    acc.release();
-                    std::unique_lock const l(mutex_);
-                    lru_.push_front(target);
-                    continue;
-                }
-            }
-            hmap_.erase(acc);
-            pool_.delete_obj(target);
-            return true;
+        ListNode *target;
+        {
+            std::unique_lock const l(mutex_);
+            STATS_EVENT_EVICT();
+            target = lru_.evict();
         }
-        return false;
+        if (!target) {
+            return false;
+        }
+        if (stamp_mode_) {
+            // the live tail is the oldest-stamped entry, so a warm victim
+            // means the warm set outgrew the physical capacity — a consensus
+            // bug, not a perf bug
+            uint64_t const stamp = static_cast<uint64_t>(
+                target->lru_time_.load(std::memory_order_acquire));
+            MONAD_ASSERT(
+                stamp == 0 ||
+                stamp < evict_floor_.load(std::memory_order_relaxed));
+        }
+        Accessor acc;
+        bool const found = hmap_.find(acc, target->key_);
+        MONAD_ASSERT(found);
+        hmap_.erase(acc);
+        pool_.delete_obj(target);
+        return true;
+    }
+
+    bool evict_negative()
+    {
+        ListNode *target;
+        {
+            std::unique_lock const l(mutex_);
+            STATS_EVENT_EVICT();
+            target = negative_lru_.evict();
+        }
+        if (!target) {
+            return false;
+        }
+        Accessor acc;
+        bool const found = hmap_.find(acc, target->key_);
+        MONAD_ASSERT(found);
+        hmap_.erase(acc);
+        pool_.delete_obj(target);
+        return true;
     }
 
     /// ListNode
@@ -270,6 +347,7 @@ private:
         ListNode *next_{nullptr};
         Key key_;
         std::atomic<int64_t> lru_time_{0};
+        bool negative_{false};
 
         ListNode() = default;
 

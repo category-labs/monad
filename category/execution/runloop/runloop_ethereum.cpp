@@ -41,6 +41,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -50,6 +51,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <memory>
 #include <vector>
 
@@ -84,6 +86,17 @@ void log_tps(
 };
 
 #pragma GCC diagnostic pop
+
+// Multi-block cache measurement arm toggle: MONAD_MBC_MEASURE=0 keeps the
+// cache machinery dormant so the same binary provides the baseline.
+bool mbc_measure_enabled()
+{
+    static bool const enabled = [] {
+        char const *const env = std::getenv("MONAD_MBC_MEASURE");
+        return env == nullptr || env[0] != '0';
+    }();
+    return enabled;
+}
 
 // Process a single historical Ethereum block
 template <Traits traits>
@@ -158,7 +171,17 @@ Result<void> process_ethereum_block(
     // changes but does not commit them
     db.set_block_and_prefix(block.header.number - 1, parent_block_id);
     BlockMetrics block_metrics;
-    BlockState block_state(db, vm);
+    bool mbc_tracking = false;
+    if constexpr (traits::multi_block_cache_active()) {
+        mbc_tracking = mbc_measure_enabled();
+    }
+    PricingBoundaries const bounds =
+        mbc_tracking ? db.pricing_boundaries() : PricingBoundaries{0, 0};
+    BlockState block_state(db, vm, nullptr, mbc_tracking);
+    if (mbc_tracking) {
+        block_state.set_pricing_window(
+            block.header.number, bounds.account, bounds.storage);
+    }
 
     ChainContext<traits> const chain_ctx{};
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
@@ -183,9 +206,12 @@ Result<void> process_ethereum_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
-    auto [state, code, _] = std::move(block_state).release();
+    auto [state, code, _, candidates] = std::move(block_state).release();
 
-    CommitBuilder builder(block.header.number);
+    StampContext const stamp_ctx{
+        .candidates = &candidates, .boundaries = bounds};
+    CommitBuilder builder(
+        block.header.number, mbc_tracking ? &stamp_ctx : nullptr);
     builder.add_state_deltas(*state)
         .add_code(code)
         .add_receipts(receipts)

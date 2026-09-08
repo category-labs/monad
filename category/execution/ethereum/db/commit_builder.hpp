@@ -20,12 +20,22 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/mpt/update.hpp>
 
 #include <deque>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
+
+// Multi-block cache inputs for one block's stamp records: the journaled
+// per-transaction candidates and the window boundaries the block charged
+// against.
+struct StampContext
+{
+    BlockStampCandidates const *candidates;
+    PricingBoundaries boundaries;
+};
 
 struct CallFrame;
 struct Transaction;
@@ -46,9 +56,17 @@ protected:
     // storage slot key, Paged based storage fills it with the actual storage
     // page keyed by storage page key.
     ProposalPostState proposal_post_state_;
+    StampContext const *stamps_{nullptr};
+
+    // Assemble the block's stamp records into the proposal post-state:
+    // write-stamps from the state deltas (key-sorted), then read-stamps from
+    // the journaled candidates in (txn, key) order, one record per key,
+    // capped at K_STAMP_CEILING. Records never touch the trie.
+    void add_stamp_records(StateDeltas const &);
 
 public:
-    explicit CommitBuilder(uint64_t block_number);
+    explicit CommitBuilder(
+        uint64_t block_number, StampContext const *stamps = nullptr);
     virtual ~CommitBuilder() = default;
 
     virtual CommitBuilder &add_state_deltas(StateDeltas const &);

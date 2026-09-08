@@ -662,7 +662,8 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_commit_incarnation)
         bs.merge(s2);
     }
     {
-        auto [released_state, released_code, _] = std::move(bs).release();
+        auto [released_state, released_code, _, _candidates] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -717,7 +718,8 @@ TYPED_TEST(
         bs.merge(s2);
     }
     {
-        auto [released_state, released_code, _] = std::move(bs).release();
+        auto [released_state, released_code, _, _candidates] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -785,7 +787,8 @@ TYPED_TEST(
         bs.merge(s2);
     }
     {
-        auto [released_state, released_code, _] = std::move(bs).release();
+        auto [released_state, released_code, _, _candidates] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -838,7 +841,8 @@ TYPED_TEST(
         bs.merge(s1);
     }
 
-    auto [_state, _code, self_destruct_reads] = std::move(bs).release();
+    auto [_state, _code, self_destruct_reads, _candidates] =
+        std::move(bs).release();
 
     ASSERT_TRUE(self_destruct_reads.contains(a));
     auto const &slots = self_destruct_reads.at(a);
@@ -890,7 +894,8 @@ TYPED_TEST(
         bs.merge(s3);
     }
 
-    auto [_state, _code, self_destruct_reads] = std::move(bs).release();
+    auto [_state, _code, self_destruct_reads, _candidates] =
+        std::move(bs).release();
 
     ASSERT_TRUE(self_destruct_reads.contains(a));
     auto const &slots = self_destruct_reads.at(a);
@@ -944,7 +949,8 @@ TYPED_TEST(
         bs.merge(s3);
     }
 
-    auto [_state, _code, self_destruct_reads] = std::move(bs).release();
+    auto [_state, _code, self_destruct_reads, _candidates] =
+        std::move(bs).release();
 
     ASSERT_TRUE(self_destruct_reads.contains(a));
     EXPECT_TRUE(self_destruct_reads.at(a).empty());
@@ -968,7 +974,8 @@ TYPED_TEST(
         bs.merge(s1);
     }
 
-    auto [_state, _code, self_destruct_reads] = std::move(bs).release();
+    auto [_state, _code, self_destruct_reads, _candidates] =
+        std::move(bs).release();
 
     EXPECT_FALSE(self_destruct_reads.contains(a));
 }
@@ -1529,7 +1536,8 @@ TEST_F(InMemoryStateTest, commit_storage_and_account_together_regression)
     as.set_storage(a, key1, value1);
 
     bs.merge(as);
-    auto [released_state, released_code, _] = std::move(bs).release();
+    auto [released_state, released_code, _, _candidates] =
+        std::move(bs).release();
     commit_simple(
         this->tdb,
         *released_state,
@@ -1559,7 +1567,8 @@ TEST_F(InMemoryStateTest, set_and_then_clear_storage_in_same_commit)
     EXPECT_EQ(as.set_storage(a, key1, value1), EVMC_STORAGE_ADDED);
     EXPECT_EQ(as.set_storage(a, key1, null), EVMC_STORAGE_ADDED_DELETED);
     bs.merge(as);
-    auto [released_state, released_code, _] = std::move(bs).release();
+    auto [released_state, released_code, _, _candidates] =
+        std::move(bs).release();
     commit_simple(
         this->tdb,
         *released_state,
@@ -1620,7 +1629,8 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
             as.set_storage(b, key2, value2), EVMC_STORAGE_DELETED_RESTORED);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
-        auto [released_state, released_code, _] = std::move(bs).release();
+        auto [released_state, released_code, _, _candidates] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -1647,7 +1657,8 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         cs.destruct_suicides<typename TestFixture::Trait>();
         EXPECT_TRUE(bs.can_merge(cs));
         bs.merge(cs);
-        auto [released_state, released_code, _] = std::move(bs).release();
+        auto [released_state, released_code, _, _candidates] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -1730,7 +1741,8 @@ TYPED_TEST(OnDiskTestSuite, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 8 on top of block 10 round 5
-        auto [released_state, released_code, _] = std::move(bs).release();
+        auto [released_state, released_code, _, _candidates] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -1758,7 +1770,8 @@ TYPED_TEST(OnDiskTestSuite, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 6 on top of block 10 round 5
-        auto [released_state, released_code, _] = std::move(bs).release();
+        auto [released_state, released_code, _, _candidates] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -1788,7 +1801,8 @@ TYPED_TEST(OnDiskTestSuite, commit_multiple_proposals)
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 7 on top of block 10 round 5
-        auto [released_state, released_code, _] = std::move(bs).release();
+        auto [released_state, released_code, _, _candidates] =
+            std::move(bs).release();
         commit_simple(
             this->tdb,
             *released_state,
@@ -1837,7 +1851,8 @@ TYPED_TEST(OnDiskCachedTestSuite, proposal_basics)
     auto
         [released_state1,
          released_code1,
-         _released_self_destruct_storage_reads1] = std::move(bs1).release();
+         _released_self_destruct_storage_reads1,
+         _released_candidates1] = std::move(bs1).release();
     commit_simple(
         db,
         *released_state1,
@@ -1857,7 +1872,8 @@ TYPED_TEST(OnDiskCachedTestSuite, proposal_basics)
     auto
         [released_state2,
          released_code2,
-         _released_self_destruct_storage_reads2] = std::move(bs2).release();
+         _released_self_destruct_storage_reads2,
+         _released_candidates2] = std::move(bs2).release();
     commit_simple(
         db,
         *released_state2,
@@ -1933,8 +1949,8 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
     auto
         [released_state_111,
          released_code_111,
-         _released_self_destruct_storage_reads_111] =
-            std::move(bs_111).release();
+         _released_self_destruct_storage_reads_111,
+         _released_candidates_111] = std::move(bs_111).release();
     commit_simple(
         db,
         *released_state_111,
@@ -1968,8 +1984,8 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
     auto
         [released_state_121,
          released_code_121,
-         _released_self_destruct_storage_reads_121] =
-            std::move(bs_121).release();
+         _released_self_destruct_storage_reads_121,
+         _released_candidates_121] = std::move(bs_121).release();
     commit_simple(
         db,
         *released_state_121,
@@ -2003,8 +2019,8 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
     auto
         [released_state_112,
          released_code_112,
-         _released_self_destruct_storage_reads_112] =
-            std::move(bs_112).release();
+         _released_self_destruct_storage_reads_112,
+         _released_candidates_112] = std::move(bs_112).release();
     commit_simple(
         db,
         *released_state_112,
@@ -2026,8 +2042,8 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
     auto
         [released_state_122,
          released_code_122,
-         _released_self_destruct_storage_reads_122] =
-            std::move(bs_122).release();
+         _released_self_destruct_storage_reads_122,
+         _released_candidates_122] = std::move(bs_122).release();
     commit_simple(
         db,
         *released_state_122,
@@ -2052,8 +2068,8 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
     auto
         [released_state_131,
          released_code_131,
-         _released_self_destruct_storage_reads_131] =
-            std::move(bs_131).release();
+         _released_self_destruct_storage_reads_131,
+         _released_candidates_131] = std::move(bs_131).release();
     commit_simple(
         db,
         *released_state_131,
@@ -2076,8 +2092,8 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
     auto
         [released_state_132,
          released_code_132,
-         _released_self_destruct_storage_reads_132] =
-            std::move(bs_132).release();
+         _released_self_destruct_storage_reads_132,
+         _released_candidates_132] = std::move(bs_132).release();
     commit_simple(
         db,
         *released_state_132,
@@ -2366,7 +2382,7 @@ namespace
             bs1.merge(st1);
             bs2.merge(st2);
             {
-                auto [state1, code1, _] = std::move(bs1).release();
+                auto [state1, code1, _, _c1] = std::move(bs1).release();
                 commit_simple(
                     db1_,
                     *state1,
@@ -2375,7 +2391,7 @@ namespace
                     BlockHeader{.number = block});
             }
             {
-                auto [state2, code2, _] = std::move(bs2).release();
+                auto [state2, code2, _, _c2] = std::move(bs2).release();
                 commit_simple(
                     db2_,
                     *state2,

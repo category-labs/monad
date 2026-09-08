@@ -55,10 +55,31 @@ OriginalAccountState &State::original_account_state(Address const &address)
     auto it = original_.find(address);
     if (it == original_.end()) {
         // block state
-        auto const account = block_state_.read_account(address);
+        uint64_t stamp = 0;
+        auto const account = block_state_.read_account(
+            address, stamp_tracking_ ? &stamp : nullptr);
         it = original_.try_emplace(address, account).first;
+        it->second.set_stamp(stamp);
     }
     return it->second;
+}
+
+bytes32_t State::load_original_storage(
+    Address const &address, OriginalAccountState &orig,
+    Incarnation const incarnation, bytes32_t const &key)
+{
+    auto &storage = orig.storage_;
+    if (auto const *const it = storage.find(key); it) {
+        return *it;
+    }
+    uint64_t stamp = 0;
+    bytes32_t const value = block_state_.read_storage(
+        address, incarnation, key, stamp_tracking_ ? &stamp : nullptr);
+    storage = storage.insert({key, value});
+    if (stamp_tracking_) {
+        orig.set_storage_stamp(key, stamp);
+    }
+    return value;
 }
 
 AccountState const &State::recent_account_state(Address const &address)
@@ -97,6 +118,9 @@ State::State(
     bool const relaxed_validation)
     : block_state_{block_state}
     , incarnation_{incarnation}
+    , stamp_tracking_{block_state.stamp_tracking()}
+    , account_boundary_{block_state.account_boundary()}
+    , storage_boundary_{block_state.storage_boundary()}
     , relaxed_validation_{relaxed_validation}
     , rb_{this}
 {
@@ -280,16 +304,8 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         auto &account_state = it2->second;
         auto const &account = account_state.account_;
         MONAD_ASSERT(account.has_value());
-        auto &storage = account_state.storage_;
-        if (auto const *const it3 = storage.find(key); it3) {
-            return *it3;
-        }
-        else {
-            bytes32_t const value = block_state_.read_storage(
-                address, account.value().incarnation, key);
-            storage = storage.insert({key, value});
-            return value;
-        }
+        return load_original_storage(
+            address, account_state, account.value().incarnation, key);
     }
     else {
         auto const &account_state = it->second.recent();
@@ -308,16 +324,8 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
                 original_account.value().incarnation) {
             return {};
         }
-        auto &original_storage = original_account_state.storage_;
-        if (auto const *const it3 = original_storage.find(key); it3) {
-            return *it3;
-        }
-        else {
-            bytes32_t const value = block_state_.read_storage(
-                address, account.value().incarnation, key);
-            original_storage = original_storage.insert({key, value});
-            return value;
-        }
+        return load_original_storage(
+            address, original_account_state, account.value().incarnation, key);
     }
 }
 
@@ -385,17 +393,11 @@ evmc_storage_status State::set_storage(
     // original
     {
         auto &orig_account_state = original_account_state(address);
-        auto &storage = orig_account_state.storage_;
-        if (auto const *const it = storage.find(key); it) {
-            original_value = *it;
-        }
-        else {
-            Incarnation const incarnation = account_state.account_->incarnation;
-            bytes32_t const value =
-                block_state_.read_storage(address, incarnation, key);
-            storage = storage.insert({key, value});
-            original_value = value;
-        }
+        original_value = load_original_storage(
+            address,
+            orig_account_state,
+            account_state.account_->incarnation,
+            key);
     }
     // state
     {
@@ -443,7 +445,17 @@ vm::Host::AccessTier State::access_account_tier(Address const &address)
     if (account_state.access() == EVMC_ACCESS_WARM) {
         return vm::Host::AccessTier::warm;
     }
-    return vm::Host::AccessTier::cold;
+    if (!stamp_tracking_) {
+        return vm::Host::AccessTier::cold;
+    }
+    auto &orig = original_account_state(address);
+    if (orig.has_account()) {
+        account_state.mark_stamp_candidate();
+    }
+    uint64_t const stamp = orig.stamp();
+    return stamp != 0 && stamp >= account_boundary_
+               ? vm::Host::AccessTier::cached
+               : vm::Host::AccessTier::cold;
 }
 
 template <Traits traits>
@@ -471,7 +483,24 @@ State::access_storage_tier(Address const &address, bytes32_t const &key)
         if (warm_status == EVMC_ACCESS_WARM) {
             return vm::Host::AccessTier::warm;
         }
-        return vm::Host::AccessTier::cold;
+        if (!stamp_tracking_ || !account_state.account_.has_value()) {
+            return vm::Host::AccessTier::cold;
+        }
+        Incarnation const inc = account_state.account_->incarnation;
+        auto &orig = original_account_state(address);
+        // stamp identity is (address, incarnation, key): a fresh incarnation
+        // has no pre-state leaf and never stamps
+        if (!orig.has_account() || orig.account_->incarnation != inc) {
+            return vm::Host::AccessTier::cold;
+        }
+        bytes32_t const value = load_original_storage(address, orig, inc, key);
+        if (value != bytes32_t{}) {
+            account_state.mark_stamp_candidate(key);
+        }
+        uint64_t const stamp = orig.storage_stamp(key).value_or(0);
+        return stamp != 0 && stamp >= storage_boundary_
+                   ? vm::Host::AccessTier::cached
+                   : vm::Host::AccessTier::cold;
     }
 }
 

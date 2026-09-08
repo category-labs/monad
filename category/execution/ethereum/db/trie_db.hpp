@@ -77,6 +77,7 @@ public:
     virtual storage_page_t read_storage_page(
         Address const &, Incarnation, bytes32_t const &page_key) override;
     virtual vm::SharedIntercode read_code(bytes32_t const &) override;
+    virtual PricingBoundaries pricing_boundaries() override;
     virtual std::optional<Account>
     read_account_stamped(Address const &, uint64_t &stamp) override;
     virtual bytes32_t read_storage_stamped(

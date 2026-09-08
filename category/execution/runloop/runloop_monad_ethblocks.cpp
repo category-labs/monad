@@ -237,7 +237,7 @@ Result<void> process_monad_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
-    auto [state, code, _] = std::move(block_state).release();
+    auto [state, code, _, _candidates] = std::move(block_state).release();
 
     BlockCommitAncillaries const anc{
         .code = code,

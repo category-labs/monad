@@ -24,6 +24,10 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/vm/code.hpp>
 
+#include <ankerl/unordered_dense.h>
+
+#include <vector>
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <oneapi/tbb/concurrent_hash_map.h>
@@ -58,13 +62,31 @@ struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
+    // multi-block cache: consensus stamps as of the parent block, memoized
+    // by the stamped reads that materialized the values (raw slot keys).
+    // Pure functions of pre-state, so any racer stores the same value.
+    std::optional<uint64_t> account_stamp{};
+    ankerl::unordered_dense::segmented_map<bytes32_t, uint64_t>
+        storage_stamps{};
 };
 
-static_assert(sizeof(StateDelta) == 752);
+static_assert(sizeof(StateDelta) == 832);
 static_assert(alignof(StateDelta) == 8);
 
 using StateDeltas = oneapi::tbb::concurrent_hash_map<
     Address, StateDelta, BytesHashCompare<Address>>;
+
+// Multi-block cache stamp candidates of one transaction, in access order:
+// first accesses whose tier was not warm. Storage keys are raw slot keys;
+// the commit builder maps them to the storage encoding and applies the
+// pre-state liveness and refresh gates.
+struct TxStampCandidates
+{
+    std::vector<Address> accounts;
+    std::vector<std::pair<Address, bytes32_t>> storage;
+};
+
+using BlockStampCandidates = std::vector<TxStampCandidates>;
 
 static_assert(sizeof(StateDeltas) == 576);
 static_assert(alignof(StateDeltas) == 8);

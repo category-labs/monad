@@ -101,6 +101,11 @@ Node::SharedPtr const &TrieDb::get_root() const
     return curr_root_;
 }
 
+PricingBoundaries TrieDb::pricing_boundaries()
+{
+    return cache_ ? cache_->boundaries() : PricingBoundaries{0, 0};
+}
+
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
     uint64_t stamp = 0;

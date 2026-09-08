@@ -49,14 +49,19 @@ namespace monad::vm::utils
         std::atomic<int64_t> weight_;
         LruList lru_;
         HashMap hmap_;
-        // Stamp mode: the entry time field holds the consensus stamp of live
-        // entries, written only by set_stamp at finalize — find() never
-        // writes it. Negative entries reuse the field as a local
-        // last-promotion block via promote_negative. Entries whose value
-        // satisfies pinned_ and whose stamp >= the pin floor never evict.
+        // Stamp mode: the entry time field holds the consensus stamp,
+        // written only by set_stamp at finalize — find() and insert() never
+        // promote or write it, so list order is stamp order and the tail is
+        // always the oldest-stamped (or unstamped) entry. Eviction of a warm
+        // entry (stamp >= the evict floor E) is impossible by construction
+        // while budget + in-flight inserts < capacity; eviction asserts it.
         bool const stamp_mode_{false};
-        bool (*const pinned_)(Value const &){nullptr};
-        std::atomic<uint64_t> pin_floor_{0};
+        std::atomic<uint64_t> evict_floor_{0};
+        // negative entries sit on their own count-budgeted list; the shared
+        // weight budget covers live entries only
+        size_t const negative_max_{0};
+        std::atomic<size_t> negative_size_{0};
+        LruList negative_lru_;
 
     public:
         using ConstAccessor = HashMap::const_accessor;
@@ -65,13 +70,13 @@ namespace monad::vm::utils
             uint32_t const max_weight,
             std::chrono::nanoseconds const lru_update_duration =
                 std::chrono::milliseconds{200},
-            bool const stamp_mode = false,
-            bool (*const pinned)(Value const &) = nullptr)
+            bool const stamp_mode = false, size_t const negative_max = 0)
             : max_weight_(max_weight)
             , weight_(0)
             , lru_{lru_update_duration.count()}
             , stamp_mode_{stamp_mode}
-            , pinned_{pinned}
+            , negative_max_{negative_max}
+            , negative_lru_{lru_update_duration.count()}
         {
         }
 
@@ -84,26 +89,28 @@ namespace monad::vm::utils
                 return false;
             }
             if (!stamp_mode_) {
-                try_update_lru(&*acc);
+                try_update_lru(lru_, &*acc);
+            }
+            else if (acc->second.negative_) {
+                try_update_lru(negative_lru_, &*acc);
             }
             return true;
         }
 
-        // Stamp of the entry held by the accessor; 0 = unstamped.
-        uint64_t stamp_of(ConstAccessor const &acc) const
+        bool is_negative(ConstAccessor const &acc) const
         {
-            return static_cast<uint64_t>(
-                acc->second.lru_time_.load(std::memory_order_acquire));
+            return acc->second.negative_;
         }
 
-        // Negative entries only: promote at most once per block, reusing the
-        // stamp field as the last-promotion block (never consensus-read).
-        void promote_negative(ConstAccessor const &acc, uint64_t const block)
+        // Consensus stamp of a live entry; 0 = unstamped (and for negative
+        // entries, whose time field is local recency).
+        uint64_t stamp_of(ConstAccessor const &acc) const
         {
-            if (acc->second.lru_time_.load(std::memory_order_acquire) !=
-                static_cast<int64_t>(block)) {
-                lru_.update_lru_stamped(&*acc, static_cast<int64_t>(block));
+            if (acc->second.negative_) {
+                return 0;
             }
+            return static_cast<uint64_t>(
+                acc->second.lru_time_.load(std::memory_order_acquire));
         }
 
         // Finalize path: set the consensus stamp of a resident entry and move
@@ -112,45 +119,65 @@ namespace monad::vm::utils
         bool set_stamp(Key const &key, uint64_t const stamp)
         {
             ConstAccessor acc;
-            if (!hmap_.find(acc, key)) {
+            if (!hmap_.find(acc, key) || acc->second.negative_) {
                 return false;
             }
             lru_.update_lru_stamped(&*acc, static_cast<int64_t>(stamp));
             return true;
         }
 
-        void set_pin_floor(uint64_t const floor)
+        void set_evict_floor(uint64_t const floor)
         {
-            pin_floor_.store(floor, std::memory_order_relaxed);
+            evict_floor_.store(floor, std::memory_order_relaxed);
         }
 
         /// Insert `value` with `weight` under `key`. Overwrites if there is
-        /// already a value under `key`.
-        bool insert(Key const &key, Value const &value, uint32_t const weight)
+        /// already a value under `key`. In stamp mode `negative` selects the
+        /// list; a changed flag flips the entry in place.
+        bool insert(
+            Key const &key, Value const &value, uint32_t const weight,
+            bool const negative = false)
         {
-            int64_t delta_weight = weight;
-            bool is_new_key = true;
+            bool const neg = stamp_mode_ && negative;
             Accessor acc;
-            if (!hmap_.insert(acc, {key, HashMapValue{value, weight}})) {
+            if (!hmap_.insert(acc, {key, HashMapValue{value, weight, neg}})) {
                 ListNode *const node = &*acc;
-                delta_weight -= node->second.cache_weight_;
+                bool const was_negative = node->second.negative_;
+                int64_t delta_weight = neg ? 0 : weight;
+                if (!was_negative) {
+                    delta_weight -= node->second.cache_weight_;
+                }
                 using std::swap;
                 Value tmp = value;
                 swap(node->second.value_, tmp);
                 node->second.cache_weight_ = weight;
                 if (!stamp_mode_) {
-                    try_update_lru(node);
+                    try_update_lru(lru_, node);
+                }
+                else if (was_negative != neg) {
+                    transition(node, neg);
                 }
                 acc.release();
-                is_new_key = false;
+                if (delta_weight != 0) {
+                    adjust_by_delta_weight(delta_weight);
+                }
+                return false;
+            }
+            ListNode *const node = &*acc;
+            acc.release();
+            if (neg) {
+                negative_lru_.push_front(node);
+                trim_negative(
+                    1 + negative_size_.fetch_add(1, std::memory_order_acq_rel));
             }
             else {
-                ListNode *const node = &*acc;
-                acc.release();
                 lru_.push_front(node);
+                if (stamp_mode_) {
+                    node->second.update_lru_time(0); // unstamped
+                }
+                adjust_by_delta_weight(weight);
             }
-            adjust_by_delta_weight(delta_weight);
-            return is_new_key;
+            return true;
         }
 
         // Not thread-safe with other cache operations.
@@ -158,7 +185,9 @@ namespace monad::vm::utils
         {
             hmap_.clear();
             lru_.clear();
+            negative_lru_.clear();
             weight_.store(0, std::memory_order_release);
+            negative_size_.store(0, std::memory_order_release);
         }
 
         /// Like insert, but does not overwrite an existing value in the cache.
@@ -167,10 +196,10 @@ namespace monad::vm::utils
         bool try_insert(Key const &key, Value &value, uint32_t const weight)
         {
             ConstAccessor acc;
-            if (!hmap_.insert(acc, {key, HashMapValue{value, weight}})) {
+            if (!hmap_.insert(acc, {key, HashMapValue{value, weight, false}})) {
                 value = acc->second.value_;
                 if (!stamp_mode_) {
-                    try_update_lru(&*acc);
+                    try_update_lru(lru_, &*acc);
                 }
                 return false;
             }
@@ -185,19 +214,34 @@ namespace monad::vm::utils
         /// mutates it or overwrites an existing entry. Returns true iff a new
         /// entry was inserted.
         bool try_insert_no_overwrite(
-            Key const &key, Value const &value, uint32_t const weight)
+            Key const &key, Value const &value, uint32_t const weight,
+            bool const negative = false)
         {
+            bool const neg = stamp_mode_ && negative;
             ConstAccessor acc;
-            if (!hmap_.insert(acc, {key, HashMapValue{value, weight}})) {
+            if (!hmap_.insert(acc, {key, HashMapValue{value, weight, neg}})) {
                 if (!stamp_mode_) {
-                    try_update_lru(&*acc);
+                    try_update_lru(lru_, &*acc);
+                }
+                else if (acc->second.negative_) {
+                    try_update_lru(negative_lru_, &*acc);
                 }
                 return false;
             }
             ListNode const *const node = &*acc;
             acc.release();
-            lru_.push_front(node);
-            adjust_by_delta_weight(weight);
+            if (neg) {
+                negative_lru_.push_front(node);
+                trim_negative(
+                    1 + negative_size_.fetch_add(1, std::memory_order_acq_rel));
+            }
+            else {
+                lru_.push_front(node);
+                if (stamp_mode_) {
+                    node->second.update_lru_time(0); // unstamped
+                }
+                adjust_by_delta_weight(weight);
+            }
             return true;
         }
 
@@ -228,25 +272,22 @@ namespace monad::vm::utils
                 weight_.fetch_add(delta_weight, std::memory_order_acq_rel);
             if (delta_weight + pre_weight > max_weight_) {
                 int64_t evicted_weight = 0;
-                int attempts = 0;
-                while (evicted_weight < delta_weight && attempts++ < 256) {
+                while (evicted_weight < delta_weight) {
                     ListNode const *target = lru_.evict();
                     if (MONAD_UNLIKELY(!target)) {
                         break;
                     }
-                    // pinned victims (live value, stamp >= pin floor) go back
-                    // to the front and the next victim is tried
-                    if (stamp_mode_ && pinned_ != nullptr &&
-                        pinned_(target->second.value_)) {
+                    if (stamp_mode_) {
+                        // the tail is the oldest-stamped entry, so a warm
+                        // victim means the warm set outgrew the physical
+                        // capacity — a consensus bug, not a perf bug
                         uint64_t const stamp =
                             static_cast<uint64_t>(target->second.lru_time_.load(
                                 std::memory_order_acquire));
-                        uint64_t const floor =
-                            pin_floor_.load(std::memory_order_relaxed);
-                        if (stamp != 0 && stamp >= floor) {
-                            lru_.push_front_evicted(target);
-                            continue;
-                        }
+                        MONAD_ASSERT(
+                            stamp == 0 ||
+                            stamp <
+                                evict_floor_.load(std::memory_order_relaxed));
                     }
                     int64_t const n = evict(target);
                     weight_.fetch_sub(n, std::memory_order_acq_rel);
@@ -255,11 +296,47 @@ namespace monad::vm::utils
             }
         }
 
-        void try_update_lru(ListNode const *const node)
+        void try_update_lru(LruList &list, ListNode const *const node)
         {
-            if (node->second.check_lru_time(lru_.now())) {
-                lru_.update_lru(node);
+            if (node->second.check_lru_time(list.now())) {
+                list.update_lru(node);
             }
+        }
+
+        // Flip an entry between the live and negative lists in place
+        // (finalize path: the value was created or deleted). Weight and count
+        // budgets are adjusted by the caller via delta_weight/trim.
+        void transition(ListNode *const node, bool const negative)
+        {
+            if (!(negative ? negative_lru_ : lru_)
+                     .relink_from(
+                         negative ? lru_ : negative_lru_, node, negative)) {
+                return; // being evicted concurrently
+            }
+            if (negative) {
+                trim_negative(
+                    1 + negative_size_.fetch_add(1, std::memory_order_acq_rel));
+            }
+            else {
+                negative_size_.fetch_sub(1, std::memory_order_acq_rel);
+            }
+        }
+
+        void trim_negative(size_t const size)
+        {
+            if (size > negative_max_ && evict_negative()) {
+                negative_size_.fetch_sub(1, std::memory_order_acq_rel);
+            }
+        }
+
+        bool evict_negative()
+        {
+            ListNode const *const target = negative_lru_.evict();
+            if (!target) {
+                return false;
+            }
+            evict(target);
+            return true;
         }
 
         uint32_t evict(ListNode const *const target)
@@ -280,12 +357,16 @@ namespace monad::vm::utils
             mutable std::atomic<int64_t> lru_time_{0};
             Value value_;
             uint32_t cache_weight_;
+            mutable bool negative_{false};
 
             HashMapValue() = default;
 
-            HashMapValue(Value const &value, uint32_t const weight)
+            HashMapValue(
+                Value const &value, uint32_t const weight,
+                bool const negative = false)
                 : value_{value}
                 , cache_weight_{weight}
+                , negative_{negative}
             {
             }
 
@@ -296,6 +377,7 @@ namespace monad::vm::utils
                 , lru_time_{x.lru_time_.load(std::memory_order_relaxed)}
                 , value_{std::move(x.value_)}
                 , cache_weight_{x.cache_weight_}
+                , negative_{x.negative_}
             {
             }
 
@@ -383,11 +465,23 @@ namespace monad::vm::utils
                 }
             }
 
-            // Re-link a node handed out by evict() (already delinked).
-            void push_front_evicted(ListNode const *const node)
+            // Move a node from `src` onto this list's front, updating the
+            // negative flag and resetting the time field (fresh recency for
+            // negatives, unstamped for live). False when the node is not in
+            // any list (a concurrent eviction already claimed it).
+            bool relink_from(
+                LruList &src, ListNode const *const node, bool const negative)
             {
-                std::unique_lock const l(mutex_);
+                std::scoped_lock const l(mutex_, src.mutex_);
+                if (!node->second.is_in_list()) {
+                    return false;
+                }
+                src.delink(node);
+                node->second.negative_ = negative;
+                node->second.update_lru_time(
+                    negative ? ListNode::second_type::wall_clock() : 0);
                 front_link(node);
+                return true;
             }
 
             ListNode const *evict()

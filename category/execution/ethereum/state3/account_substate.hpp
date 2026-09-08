@@ -37,7 +37,12 @@ class AccountSubstate
     bool destructed_{false}; // A_s
     bool touched_{false}; // A_t
     bool accessed_{false}; // A_a
+    // multi-block cache stamp candidate: this account / these slots saw a
+    // first access whose tier was not warm; reverts with the frame exactly
+    // like the access sets
+    bool stamp_candidate_{false};
     Set accessed_storage_{}; // A_K
+    Set stamp_candidate_storage_{};
 
 public:
     AccountSubstate() = default;
@@ -89,6 +94,26 @@ public:
         return EVMC_ACCESS_WARM;
     }
 
+    bool is_stamp_candidate() const
+    {
+        return stamp_candidate_;
+    }
+
+    Set const &get_stamp_candidate_storage() const
+    {
+        return stamp_candidate_storage_;
+    }
+
+    void mark_stamp_candidate()
+    {
+        stamp_candidate_ = true;
+    }
+
+    void mark_stamp_candidate(bytes32_t const &key)
+    {
+        stamp_candidate_storage_ = stamp_candidate_storage_.insert(key);
+    }
+
     // A_K
     evmc_access_status access_storage(bytes32_t const &key)
     {
@@ -100,6 +125,6 @@ public:
     }
 };
 
-static_assert(sizeof(AccountSubstate) == 24);
+static_assert(sizeof(AccountSubstate) == 40);
 
 MONAD_NAMESPACE_END

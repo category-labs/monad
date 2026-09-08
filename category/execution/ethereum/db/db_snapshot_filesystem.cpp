@@ -170,9 +170,6 @@ void monad_db_snapshot_load_filesystem(
 {
     std::filesystem::path const root{std::format("{}/{}", snapshot_dir, block)};
     MONAD_ASSERT(std::filesystem::is_directory(root));
-    // The input snapshot is always slot-encoded (the standard format produced
-    // by monad_db_dump_snapshot from a slot db). If the target timeline is
-    // page-encoded, the loader converts slot leaves to page leaves on the fly.
     monad_db_snapshot_loader *const loader = monad_db_snapshot_loader_create(
         block, dbname_paths, len, sq_thread_cpu, load_to_secondary);
 

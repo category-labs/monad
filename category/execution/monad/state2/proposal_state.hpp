@@ -68,28 +68,6 @@ public:
         return false;
     }
 
-    bool try_read_recency_account(Address const &address, uint64_t &ts) const
-    {
-        auto const it = post_state_.recency_accounts.find(address);
-        if (it != post_state_.recency_accounts.end()) {
-            ts = it->second;
-            return true;
-        }
-        return false;
-    }
-
-    bool try_read_recency_storage(
-        Address const &address, bytes32_t const &lookup_key, uint64_t &ts) const
-    {
-        StorageKey const sk{address, Incarnation{0, 0}, lookup_key};
-        auto const it = post_state_.recency_storage.find(sk);
-        if (it != post_state_.recency_storage.end()) {
-            ts = it->second;
-            return true;
-        }
-        return false;
-    }
-
     bool try_read_storage(
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key, storage_page_t &result) const
@@ -165,24 +143,6 @@ public:
             [&address, incarnation, &key, &result](ProposalState const &ps) {
                 return ps.try_read_storage(address, incarnation, key, result);
             };
-        return try_read(fn);
-    }
-
-    TryReadResult
-    try_read_recency_account(Address const &address, uint64_t &ts) const
-    {
-        auto const fn = [&address, &ts](ProposalState const &ps) {
-            return ps.try_read_recency_account(address, ts);
-        };
-        return try_read(fn);
-    }
-
-    TryReadResult try_read_recency_storage(
-        Address const &address, bytes32_t const &lookup_key, uint64_t &ts) const
-    {
-        auto const fn = [&address, &lookup_key, &ts](ProposalState const &ps) {
-            return ps.try_read_recency_storage(address, lookup_key, ts);
-        };
         return try_read(fn);
     }
 

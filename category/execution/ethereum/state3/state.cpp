@@ -443,9 +443,7 @@ vm::Host::AccessTier State::access_account_tier(Address const &address)
     if (account_state.access() == EVMC_ACCESS_WARM) {
         return vm::Host::AccessTier::warm;
     }
-    return block_state_.account_is_cached(address)
-               ? vm::Host::AccessTier::cached
-               : vm::Host::AccessTier::cold;
+    return vm::Host::AccessTier::cold;
 }
 
 template <Traits traits>
@@ -473,13 +471,7 @@ State::access_storage_tier(Address const &address, bytes32_t const &key)
         if (warm_status == EVMC_ACCESS_WARM) {
             return vm::Host::AccessTier::warm;
         }
-        if (!account_state.account_.has_value()) {
-            return vm::Host::AccessTier::cold;
-        }
-        return block_state_.storage_page_is_cached(
-                   address, account_state.account_->incarnation, key)
-                   ? vm::Host::AccessTier::cached
-                   : vm::Host::AccessTier::cold;
+        return vm::Host::AccessTier::cold;
     }
 }
 

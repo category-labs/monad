@@ -36,19 +36,11 @@ MONAD_RLP_NAMESPACE_BEGIN
 byte_string
 encode_account(Account const &account, bytes32_t const &storage_root)
 {
-    if (account.last_access_block == 0) {
-        return encode_list2(
-            encode_unsigned(account.nonce),
-            encode_unsigned(account.balance),
-            encode_bytes32(storage_root),
-            encode_bytes32(account.code_hash));
-    }
     return encode_list2(
         encode_unsigned(account.nonce),
         encode_unsigned(account.balance),
         encode_bytes32(storage_root),
-        encode_bytes32(account.code_hash),
-        encode_unsigned(account.last_access_block));
+        encode_bytes32(account.code_hash));
 }
 
 Result<Account> decode_account(bytes32_t &storage_root, byte_string_view &enc)
@@ -60,14 +52,6 @@ Result<Account> decode_account(bytes32_t &storage_root, byte_string_view &enc)
     BOOST_OUTCOME_TRY(acct.balance, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(storage_root, decode_bytes32(payload));
     BOOST_OUTCOME_TRY(acct.code_hash, decode_bytes32(payload));
-
-    if (!payload.empty()) {
-        BOOST_OUTCOME_TRY(
-            acct.last_access_block, decode_unsigned<uint64_t>(payload));
-        if (MONAD_UNLIKELY(acct.last_access_block == 0)) {
-            return DecodeError::TypeUnexpected;
-        }
-    }
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;

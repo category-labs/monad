@@ -436,20 +436,8 @@ namespace
         BOOST_OUTCOME_TRY(acct.nonce, rlp::decode_unsigned<uint64_t>(payload));
         BOOST_OUTCOME_TRY(
             acct.balance, rlp::decode_unsigned<uint256_t>(payload));
-        // code_hash is a 32-byte rlp string, so its header byte is 0x80 + 32;
-        // a canonical unsigned begins <= 0x88, so the two optionals can't
-        // be confused
-        constexpr uint8_t bytes32_rlp_header = 0x80 + 32;
-        if (!payload.empty() && payload[0] == bytes32_rlp_header) {
-            BOOST_OUTCOME_TRY(acct.code_hash, rlp::decode_bytes32(payload));
-        }
         if (!payload.empty()) {
-            BOOST_OUTCOME_TRY(
-                acct.last_access_block,
-                rlp::decode_unsigned<uint64_t>(payload));
-            if (MONAD_UNLIKELY(acct.last_access_block == 0)) {
-                return rlp::DecodeError::TypeUnexpected;
-            }
+            BOOST_OUTCOME_TRY(acct.code_hash, rlp::decode_bytes32(payload));
         }
         if (MONAD_UNLIKELY(!payload.empty())) {
             return rlp::DecodeError::InputTooLong;
@@ -540,7 +528,7 @@ void MachineBase::down(unsigned char const nibble)
     if (MONAD_UNLIKELY(depth == prefix_length)) {
         MONAD_ASSERT(table == TableType::Prefix);
         MONAD_ASSERT_PRINTF(
-            nibble <= CACHE_PRICING_NIBBLE,
+            nibble <= CALL_FRAME_NIBBLE,
             "Invalid nibble %u",
             static_cast<unsigned>(nibble));
         table = static_cast<TableType>(nibble + 1);
@@ -701,9 +689,6 @@ byte_string encode_account_db(Address const &address, Account const &account)
     if (account.code_hash != NULL_HASH) {
         encoded_account += rlp::encode_bytes32(account.code_hash);
     }
-    if (account.last_access_block != 0) {
-        encoded_account += rlp::encode_unsigned(account.last_access_block);
-    }
     return rlp::encode_list2(encoded_account);
 }
 
@@ -732,15 +717,11 @@ Result<Account> decode_account_db_ignore_address(byte_string_view &enc)
     return decode_account_db_helper(res.second);
 }
 
-byte_string encode_storage_db(
-    bytes32_t const &key, bytes32_t const &val, uint64_t const last_access)
+byte_string encode_storage_db(bytes32_t const &key, bytes32_t const &val)
 {
     byte_string encoded_storage;
     encoded_storage += rlp::encode_bytes32_compact(key);
     encoded_storage += rlp::encode_bytes32_compact(val);
-    if (last_access != 0) {
-        encoded_storage += rlp::encode_unsigned(last_access);
-    }
     return rlp::encode_list2(encoded_storage);
 }
 
@@ -782,21 +763,10 @@ Result<byte_string_view> decode_storage_db_ignore_key(byte_string_view &enc)
 storage_page_t
 decode_storage_leaf_to_page(byte_string_view encoded, bool const page_encoded)
 {
-    auto payload = rlp::parse_list_metadata(encoded);
-    MONAD_ASSERT(!payload.has_error());
-    auto const slot = rlp::decode_string(payload.value());
-    MONAD_ASSERT(!slot.has_error());
-    auto const value = rlp::decode_string(payload.value());
+    auto const value = decode_storage_db_ignore_key(encoded);
     MONAD_ASSERT(!value.has_error());
     if (!page_encoded) {
-        storage_page_t page{to_bytes(value.value())};
-        if (!payload.value().empty()) {
-            auto const last_access =
-                rlp::decode_unsigned<uint64_t>(payload.value());
-            MONAD_ASSERT(!last_access.has_error());
-            page.last_access = last_access.value();
-        }
-        return page;
+        return storage_page_t{to_bytes(value.value())};
     }
     auto const page = decode_storage_page(value.value());
     MONAD_ASSERT(!page.has_error());

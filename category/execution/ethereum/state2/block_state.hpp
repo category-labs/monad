@@ -60,16 +60,9 @@ class BlockState final
     /// incarnation (which, by definition, has no pre-state storage), so
     /// the slots they wipe are not pre-state reads and must not be added.
     SelfDestructStorageReads self_destruct_storage_reads_;
-    bool const track_access_;
-    BlockAccessSets access_;
-    // multi-block cache pricing cutoffs for this block; absent = everything
-    // prices cold/warm as before the fork
-    std::optional<uint64_t> account_cutoff_;
-    std::optional<uint64_t> storage_cutoff_;
 
 public:
-    BlockState(
-        Db &, vm::VM &, Db *secondary_db = nullptr, bool track_access = false);
+    BlockState(Db &, vm::VM &, Db *secondary_db = nullptr);
 
     vm::VM &vm()
     {
@@ -82,19 +75,6 @@ public:
 
     vm::SharedVarcode read_code(bytes32_t const &);
 
-    void set_pricing_cutoffs(uint64_t account, uint64_t storage)
-    {
-        account_cutoff_ = account;
-        storage_cutoff_ = storage;
-    }
-
-    // multi-block cache tier inputs: pure functions of the pre-state and the
-    // block's cutoffs. The address must already be materialized in the block
-    // state (callers go through State::current_account_state first).
-    bool account_is_cached(Address const &);
-    bool
-    storage_page_is_cached(Address const &, Incarnation, bytes32_t const &key);
-
     bool can_merge(State &) const;
 
     void merge(State const &);
@@ -104,7 +84,6 @@ public:
         std::unique_ptr<StateDeltas> state;
         Code code;
         SelfDestructStorageReads self_destruct_storage_reads;
-        BlockAccessSets access;
     };
 
     ReleasedState release() &&;

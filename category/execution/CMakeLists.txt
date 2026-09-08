@@ -206,8 +206,6 @@ add_library(
   # monad/db
   "monad/db/commit_block_migration.cpp"
   "monad/db/commit_block_migration.hpp"
-  "monad/db/cache_pricing.hpp"
-  "monad/db/cache_pricing.cpp"
   "monad/db/page_commit_builder.hpp"
   "monad/db/page_commit_builder.cpp"
   "monad/db/state_machine_init.cpp"

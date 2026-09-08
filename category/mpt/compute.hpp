@@ -128,10 +128,9 @@ struct MerkleComputeBase : Compute
         + rlp::list_length(KECCAK256_SIZE) // code hash
         + rlp::list_length(KECCAK256_SIZE) // storage hash
         + rlp::list_length(8) // nonce
-        + rlp::list_length(8) // last access block
     );
     static_assert(max_branch_rlp_size == 532);
-    static_assert(max_leaf_data_size == 119);
+    static_assert(max_leaf_data_size == 110);
 
     // Compute data from children and value to the internal state, which
     // will later be copied to in the intermediate data section inside node

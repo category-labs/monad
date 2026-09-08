@@ -155,7 +155,7 @@ public:
     }
 };
 
-static_assert(sizeof(AccountState) == 168);
+static_assert(sizeof(AccountState) == 160);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

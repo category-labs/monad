@@ -24,7 +24,6 @@ extern "C"
 #include <category/core/result.hpp>
 #include <category/core/rlp/decode_error.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
-#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
@@ -97,12 +96,10 @@ namespace
     }
 
     bytes32_t blake3_seal(
-        storage_page_t::bitmap_t const slot_bitmap, uint8_t const *root_32,
-        uint64_t const last_access)
+        storage_page_t::bitmap_t const slot_bitmap, uint8_t const *root_32)
     {
-        // blake3_compress(slot_bitmap_le_16B || merge_root_32B ||
-        // last_access_le_8B), or just the bitmap when there is no root (empty
-        // page). Zero last_access is omitted; block_len domain-separates.
+        // blake3_compress(slot_bitmap_le_16B || merge_root_32B), or just the
+        // bitmap when there is no root (empty page).
         uint8_t block[BLAKE3_BLOCK_LEN] = {}; // zero-padded to 64 bytes
         static_assert(std::endian::native == std::endian::little);
         std::memcpy(block, &slot_bitmap, sizeof(slot_bitmap)); // little endian
@@ -110,10 +107,6 @@ namespace
         if (root_32 != nullptr) {
             std::memcpy(block + sizeof(slot_bitmap), root_32, BLAKE3_OUT_LEN);
             len += BLAKE3_OUT_LEN; // 16 + 32 = 48
-        }
-        if (last_access != 0) {
-            std::memcpy(block + len, &last_access, sizeof(last_access));
-            len += sizeof(last_access); // 48 + 8 = 56, still one block
         }
         uint32_t cv[8];
         std::memcpy(cv, IV, sizeof(cv));
@@ -263,12 +256,12 @@ namespace
 bytes32_t page_commit(storage_page_t const &page)
 {
     if (page.is_empty()) {
-        return blake3_seal(0, nullptr, 0);
+        return blake3_seal(0, nullptr);
     }
     auto const slot_bitmap = page.bitmap();
     uint64_t const pair_bitmap = page.pair_bitmap();
     bytes32_t const root = compute_nonempty_subtree_root(page, pair_bitmap);
-    return blake3_seal(slot_bitmap, root.bytes, page.last_access);
+    return blake3_seal(slot_bitmap, root.bytes);
 }
 
 // Storage page encoding: a flat sequence of (slot_index, value) pairs.
@@ -281,25 +274,16 @@ bytes32_t page_commit(storage_page_t const &page)
 // Pairs appear in strictly ascending index order. The empty page encodes as
 // the empty byte string.
 //
-// A non-zero last_access block is encoded as a 0xFF marker byte followed by
-// rlp::encode_unsigned(last_access), before the first pair; 0xFF cannot
-// collide with a slot index (< 128). last_access == 0 encodes as absence.
-//
 // Rejected non-canonical forms:
 //   - index >= SLOTS (128)
 //   - indices not strictly ascending
 //   - zero value in a pair
 //   - leading zero bytes in a value (non-minimal compact form)
-//   - explicit zero last_access
 
 byte_string encode_storage_page(storage_page_t const &page)
 {
     byte_string encoded;
     encoded.reserve(page.size() * 34);
-    if (page.last_access != 0) {
-        encoded.push_back(0xFF);
-        encoded += rlp::encode_unsigned(page.last_access);
-    }
     auto const values = page.values();
     size_t dense = 0;
     for (auto bits = page.bitmap(); bits != 0; bits &= bits - 1) {
@@ -313,15 +297,6 @@ byte_string encode_storage_page(storage_page_t const &page)
 Result<storage_page_t> decode_storage_page(byte_string_view enc)
 {
     storage_page_t page{};
-    if (!enc.empty() && enc[0] == 0xFF) {
-        enc.remove_prefix(1);
-        BOOST_OUTCOME_TRY(
-            auto const last_access, rlp::decode_unsigned<uint64_t>(enc));
-        if (MONAD_UNLIKELY(last_access == 0)) {
-            return rlp::DecodeError::NonCanonical;
-        }
-        page.last_access = last_access;
-    }
     uint8_t prev_index = 0;
     bool first = true;
     while (!enc.empty()) {

@@ -41,8 +41,6 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
-#include <category/execution/monad/db/cache_pricing.hpp>
-#include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -52,7 +50,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdlib>
 #include <memory>
 #include <vector>
 
@@ -88,23 +85,6 @@ void log_tps(
 
 #pragma GCC diagnostic pop
 
-// Multi-block cache measurement arm toggle: MONAD_MBC_MEASURE=0 keeps the
-// cache machinery dormant so the same binary provides the baseline.
-bool mbc_measure_enabled()
-{
-    static bool const enabled = [] {
-        char const *const env = std::getenv("MONAD_MBC_MEASURE");
-        return env == nullptr || env[0] != '0';
-    }();
-    return enabled;
-}
-
-// In-memory histogram mirror: seeded from the trie once at startup, then kept
-// current from each block's committed bucket deltas, so per-block cutoffs
-// need no trie reads.
-PricingHistogram pricing_histogram;
-bool pricing_histogram_seeded = false;
-
 // Process a single historical Ethereum block
 template <Traits traits>
 Result<void> process_ethereum_block(
@@ -133,16 +113,9 @@ Result<void> process_ethereum_block(
         std::nullopt,
         std::nullopt);
 
-    // Block input validation. With the multi-block cache experiment active,
-    // state roots (and hence header hashes) diverge from the on-chain
-    // headers, so the parent-hash check cannot hold.
-    if constexpr (!traits::multi_block_cache_active()) {
-        BOOST_OUTCOME_TRY(static_validate_block_with_parent<traits>(
-            chain, block, parent_header));
-    }
-    else {
-        BOOST_OUTCOME_TRY(static_validate_block<traits>(chain, block));
-    }
+    // Block input validation
+    BOOST_OUTCOME_TRY(
+        static_validate_block_with_parent<traits>(chain, block, parent_header));
 
     // Sender and authority recovery
     auto const sender_recovery_begin = std::chrono::steady_clock::now();
@@ -185,21 +158,7 @@ Result<void> process_ethereum_block(
     // changes but does not commit them
     db.set_block_and_prefix(block.header.number - 1, parent_block_id);
     BlockMetrics block_metrics;
-    BlockState block_state(
-        db,
-        vm,
-        nullptr,
-        traits::multi_block_cache_active() && mbc_measure_enabled());
-    if constexpr (traits::multi_block_cache_active()) {
-        if (mbc_measure_enabled()) {
-            if (!pricing_histogram_seeded) {
-                pricing_histogram.seed(db, block.header.number);
-                pricing_histogram_seeded = true;
-            }
-            auto const cutoffs = pricing_histogram.cutoffs(block.header.number);
-            block_state.set_pricing_cutoffs(cutoffs.account, cutoffs.storage);
-        }
-    }
+    BlockState block_state(db, vm);
 
     ChainContext<traits> const chain_ctx{};
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
@@ -224,14 +183,9 @@ Result<void> process_ethereum_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
-    auto [state, code, _, access] = std::move(block_state).release();
+    auto [state, code, _] = std::move(block_state).release();
 
-    auto const builder_ptr = make_commit_builder(
-        block.header.number,
-        db,
-        traits::multi_block_cache_active() && mbc_measure_enabled() ? &access
-                                                                    : nullptr);
-    CommitBuilder &builder = *builder_ptr;
+    CommitBuilder builder(block.header.number);
     builder.add_state_deltas(*state)
         .add_code(code)
         .add_receipts(receipts)
@@ -254,12 +208,6 @@ Result<void> process_ethereum_block(
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);
-    if constexpr (traits::multi_block_cache_active()) {
-        if (mbc_measure_enabled()) {
-            pricing_histogram.apply(
-                builder.bucket_deltas(), block.header.number);
-        }
-    }
     if (commit_time > std::chrono::milliseconds(500)) {
         LOG_WARNING(
             "Slow block commit detected - block {}: {}",
@@ -269,48 +217,15 @@ Result<void> process_ethereum_block(
     // Post-commit validation of header, with Merkle root fields filled in
     BlockExecOutput exec_output;
     exec_output.eth_header = db.read_eth_header();
-    if constexpr (!traits::multi_block_cache_active()) {
-        BOOST_OUTCOME_TRY(
-            validate_output_header(block.header, exec_output.eth_header));
-    }
-    else {
-        // shadow pricing keeps the execution trace identical to history, and
-        // the recency table lives outside the state trie, so the full header
-        // (state_root included) must match
-        auto res = validate_output_header(block.header, exec_output.eth_header);
-        if (res.has_error()) {
-            LOG_ERROR(
-                "mbc trace divergence bl={} gas_in={} gas_out={} tx_root={} "
-                "receipts_root={} withdrawals_root={} parent_hash={} bloom={}",
-                block.header.number,
-                block.header.gas_used,
-                exec_output.eth_header.gas_used,
-                block.header.transactions_root ==
-                    exec_output.eth_header.transactions_root,
-                block.header.receipts_root ==
-                    exec_output.eth_header.receipts_root,
-                block.header.withdrawals_root ==
-                    exec_output.eth_header.withdrawals_root,
-                block.header.parent_hash == exec_output.eth_header.parent_hash,
-                block.header.logs_bloom == exec_output.eth_header.logs_bloom);
-        }
-        BOOST_OUTCOME_TRY(std::move(res));
-    }
+    BOOST_OUTCOME_TRY(
+        validate_output_header(block.header, exec_output.eth_header));
 
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer
     db.finalize(block.header.number, block_id);
     db.update_verified_block(block.header.number);
-    if constexpr (traits::multi_block_cache_active()) {
-        // our state_root (last_access fields) diverges from history, so hash
-        // the historical input header to keep BLOCKHASH results faithful
-        exec_output.eth_block_hash =
-            to_bytes(keccak256(rlp::encode_block_header(block.header)));
-    }
-    else {
-        exec_output.eth_block_hash = to_bytes(
-            keccak256(rlp::encode_block_header(exec_output.eth_header)));
-    }
+    exec_output.eth_block_hash =
+        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
     block_hash_buffer.set(
         exec_output.eth_header.number, exec_output.eth_block_hash);
     (void)record_block_result(exec_recorder, exec_output);

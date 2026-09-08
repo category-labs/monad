@@ -413,10 +413,7 @@ try {
     BlockHashBufferFinalized block_hash_buffer;
     bool initialized_headers_from_triedb = false;
 
-    // ethereum replay preloads from the block db: with the multi-block cache
-    // experiment the triedb headers carry diverged state roots, and BLOCKHASH
-    // must keep returning the historical hashes
-    if (!db_in_memory && chain_config != CHAIN_CONFIG_ETHEREUM_MAINNET) {
+    if (!db_in_memory) {
         mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
             .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths = dbname_paths}};
         mpt::Db rodb{io_ctx};
@@ -581,14 +578,10 @@ try {
         auto const &shadow = vm::runtime::g_cache_shadow_stats;
         LOG_INFO(
             "multi-block cache shadow: cached_accounts = {}, cached_storage "
-            "= {}, saved_gas = {}, account_bumps = {}, storage_bumps = {}, "
-            "recency_fallback_reads = {}",
+            "= {}, saved_gas = {}",
             shadow.cached_accounts.load(),
             shadow.cached_storage.load(),
-            shadow.saved_gas.load(),
-            shadow.account_bumps.load(),
-            shadow.storage_bumps.load(),
-            shadow.recency_fallback_reads.load());
+            shadow.saved_gas.load());
     }
 
     sync_server.reset();

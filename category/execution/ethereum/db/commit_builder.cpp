@@ -27,7 +27,6 @@
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
-#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -35,11 +34,9 @@
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
-#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
-#include <category/vm/runtime/access.hpp>
 
 #include <limits>
 
@@ -65,78 +62,9 @@ namespace
     }
 }
 
-CommitBuilder::CommitBuilder(
-    uint64_t const block_number, monad::Db *const db,
-    BlockAccessSets const *const access)
+CommitBuilder::CommitBuilder(uint64_t const block_number)
     : block_number_{block_number}
-    , db_{db}
-    , access_{access}
 {
-}
-
-// Bump the recency-table entries for one touched address: last_access is
-// kept only for entries in the modeled cache, so a bump is a small table
-// upsert instead of a state-leaf rewrite. lookup_keys hold the storage keys
-// in the encoding's lookup granularity (slot or page key).
-void CommitBuilder::record_recency(
-    Address const &addr,
-    ankerl::unordered_dense::segmented_set<bytes32_t> const &lookup_keys,
-    StateDelta const &delta)
-{
-    auto const upsert = [this](byte_string key) {
-        pricing_updates_.push_front(update_alloc_.emplace_back(Update{
-            .key = NibblesView{bytes_alloc_.emplace_back(std::move(key))},
-            .value =
-                bytes_alloc_.emplace_back(rlp::encode_unsigned(block_number_)),
-            .incarnation = false,
-            .next = UpdateList{},
-            .version = static_cast<int64_t>(block_number_)}));
-    };
-    auto const bump = [this](PricingKind const kind, uint64_t const ts_old) {
-        if (ts_old != 0) {
-            bucket_deltas_[{kind, ts_old}] -= 1;
-        }
-        bucket_deltas_[{kind, block_number_}] += 1;
-    };
-    {
-        if (!delta.account_last_access.has_value()) {
-            vm::runtime::g_cache_shadow_stats.recency_fallback_reads.fetch_add(
-                1, std::memory_order_relaxed);
-        }
-        uint64_t const ts_old =
-            delta.account_last_access.has_value()
-                ? *delta.account_last_access
-                : db_->read_account_last_access(addr).value_or(0);
-        if (cache_pricing_bump_due(ts_old, block_number_)) {
-            vm::runtime::g_cache_shadow_stats.account_bumps.fetch_add(
-                1, std::memory_order_relaxed);
-            bump(PricingKind::account, ts_old);
-            upsert(cache_pricing_account_key(
-                to_bytes(keccak256({addr.bytes, sizeof(addr.bytes)}))));
-            proposal_post_state_.recency_accounts[addr] = block_number_;
-        }
-    }
-    for (auto const &lookup_key : lookup_keys) {
-        auto const mit = delta.storage_last_access.find(lookup_key);
-        if (mit == delta.storage_last_access.end()) {
-            vm::runtime::g_cache_shadow_stats.recency_fallback_reads.fetch_add(
-                1, std::memory_order_relaxed);
-        }
-        uint64_t const ts_old =
-            mit != delta.storage_last_access.end()
-                ? mit->second
-                : db_->read_storage_last_access(addr, lookup_key).value_or(0);
-        if (!cache_pricing_bump_due(ts_old, block_number_)) {
-            continue;
-        }
-        vm::runtime::g_cache_shadow_stats.storage_bumps.fetch_add(
-            1, std::memory_order_relaxed);
-        bump(PricingKind::storage, ts_old);
-        upsert(cache_pricing_storage_key(addr, lookup_key));
-        proposal_post_state_
-            .recency_storage[StorageKey{addr, Incarnation{0, 0}, lookup_key}] =
-            block_number_;
-    }
 }
 
 CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
@@ -146,34 +74,26 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         UpdateList storage_updates;
         std::optional<byte_string_view> value;
         auto const &account = delta.account.second;
-        // bump only addresses in the deterministic access set; StateDeltas
-        // itself contains reads from aborted speculative attempts
-        if (access_ != nullptr) {
-            if (auto const it = access_->find(addr); it != access_->end()) {
-                record_recency(addr, it->second, delta);
-            }
-        }
         proposal_post_state_.accounts[addr] = account;
         if (account.has_value()) {
             auto const inc = account->incarnation;
-            for (auto const &[key, slot_delta] : delta.storage) {
-                if (slot_delta.first != slot_delta.second) {
+            for (auto const &[key, delta] : delta.storage) {
+                if (delta.first != delta.second) {
                     storage_updates.push_front(
                         update_alloc_.emplace_back(Update{
                             .key = hash_alloc_.emplace_back(
                                 keccak256({key.bytes, sizeof(key.bytes)})),
-                            .value =
-                                slot_delta.second == bytes32_t{}
-                                    ? std::nullopt
-                                    : std::make_optional<byte_string_view>(
-                                          bytes_alloc_.emplace_back(
-                                              encode_storage_db(
-                                                  key, slot_delta.second))),
+                            .value = delta.second == bytes32_t{}
+                                         ? std::nullopt
+                                         : std::make_optional<byte_string_view>(
+                                               bytes_alloc_.emplace_back(
+                                                   encode_storage_db(
+                                                       key, delta.second))),
                             .incarnation = false,
                             .next = UpdateList{},
                             .version = static_cast<int64_t>(block_number_)}));
                     proposal_post_state_.storage[StorageKey{addr, inc, key}] =
-                        storage_page_t{slot_delta.second};
+                        storage_page_t{delta.second};
                 }
             }
             value = bytes_alloc_.emplace_back(
@@ -201,96 +121,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         .next = std::move(account_updates),
         .version = static_cast<int64_t>(block_number_)}));
 
-    if (access_ != nullptr) {
-        add_pricing_updates();
-    }
-
     return *this;
-}
-
-void CommitBuilder::add_pricing_updates()
-{
-    auto const read_bucket = [this](PricingKind const kind, uint64_t const b) {
-        return kind == PricingKind::account
-                   ? db_->read_account_pricing_bucket(b)
-                   : db_->read_storage_pricing_bucket(b);
-    };
-    // prune the bucket falling out of the window: increments only happen at
-    // the bucket's own block, so bucket b is dead after block b + W
-    if (block_number_ > CACHE_PRICING_WINDOW) {
-        for (auto const kind : {PricingKind::account, PricingKind::storage}) {
-            uint64_t const b = block_number_ - CACHE_PRICING_WINDOW - 1;
-            if (b != CACHE_PRICING_META_BUCKET &&
-                read_bucket(kind, b).has_value()) {
-                bucket_deltas_.try_emplace({kind, b}, 0);
-            }
-        }
-    }
-
-    // maintain the oldest-live-bucket marker that bounds the cutoff walk
-    for (auto const kind : {PricingKind::account, PricingKind::storage}) {
-        uint64_t min_new = std::numeric_limits<uint64_t>::max();
-        for (auto const &[bucket, delta] : bucket_deltas_) {
-            if (bucket.first == kind && delta > 0) {
-                min_new = std::min(min_new, bucket.second);
-                break; // bucket_deltas_ is ordered by (kind, block)
-            }
-        }
-        if (min_new == std::numeric_limits<uint64_t>::max()) {
-            continue;
-        }
-        auto const meta = read_bucket(kind, CACHE_PRICING_META_BUCKET);
-        if (!meta.has_value() || min_new < *meta) {
-            bucket_deltas_[{kind, CACHE_PRICING_META_BUCKET}] =
-                static_cast<int64_t>(min_new) -
-                static_cast<int64_t>(meta.value_or(0));
-        }
-    }
-
-    uint64_t const window_floor = block_number_ > CACHE_PRICING_WINDOW
-                                      ? block_number_ - CACHE_PRICING_WINDOW
-                                      : 0;
-    UpdateList bucket_updates;
-    for (auto const &[bucket, delta] : bucket_deltas_) {
-        auto const [kind, block] = bucket;
-        bool const pruned =
-            block != CACHE_PRICING_META_BUCKET && block < window_floor;
-        if (delta == 0 && !pruned) {
-            continue;
-        }
-        int64_t const current =
-            static_cast<int64_t>(read_bucket(kind, block).value_or(0));
-        if (pruned && current == 0) {
-            continue;
-        }
-        int64_t const weight = pruned ? 0 : current + delta;
-        MONAD_ASSERT(weight >= 0);
-        bucket_updates.push_front(update_alloc_.emplace_back(Update{
-            .key = NibblesView{bytes_alloc_.emplace_back(
-                cache_pricing_bucket_key(kind, block))},
-            .value = weight > 0
-                         ? std::make_optional<byte_string_view>(
-                               bytes_alloc_.emplace_back(rlp::encode_unsigned(
-                                   static_cast<uint64_t>(weight))))
-                         : std::nullopt,
-            .incarnation = false,
-            .next = UpdateList{},
-            .version = static_cast<int64_t>(block_number_)}));
-    }
-    while (!bucket_updates.empty()) {
-        auto &u = bucket_updates.front();
-        bucket_updates.pop_front();
-        pricing_updates_.push_front(u);
-    }
-    if (pricing_updates_.empty()) {
-        return;
-    }
-    updates_.push_front(update_alloc_.emplace_back(Update{
-        .key = cache_pricing_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(pricing_updates_),
-        .version = static_cast<int64_t>(block_number_)}));
 }
 
 CommitBuilder &CommitBuilder::add_code(Code const &code)

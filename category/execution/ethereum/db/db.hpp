@@ -26,7 +26,6 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
-#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/code.hpp>
 
@@ -76,38 +75,12 @@ struct Db
         BlockHeader const &header, StateDeltas const &state_deltas,
         std::function<void(BlockHeader &)> populate_header_fn) = 0;
 
-    // Multi-block cache pricing histogram buckets at the current prefix;
-    // nullopt when absent or unsupported.
-    virtual std::optional<uint64_t>
-    read_account_pricing_bucket(uint64_t /*block*/)
-    {
-        return std::nullopt;
-    }
-
-    // Multi-block cache recency entries: last_access of an entry in the
-    // modeled cache; nullopt means not cached.
-    virtual std::optional<uint64_t> read_account_last_access(Address const &)
-    {
-        return std::nullopt;
-    }
-
-    virtual std::optional<uint64_t>
-    read_storage_last_access(Address const &, bytes32_t const & /*lookup_key*/)
-    {
-        return std::nullopt;
-    }
-
-    virtual std::optional<uint64_t>
-    read_storage_pricing_bucket(uint64_t /*block*/)
-    {
-        return std::nullopt;
-    }
-
     virtual std::string print_stats()
     {
         return {};
     }
 
+protected:
     bytes32_t storage_lookup_key(bytes32_t const &key) const
     {
         return is_page_encoded() ? compute_page_key(key) : key;

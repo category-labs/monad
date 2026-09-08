@@ -45,20 +45,10 @@ using AccountPostState =
 using StoragePostState = ankerl::unordered_dense::segmented_map<
     StorageKey, storage_page_t, BytesHashCompare<StorageKey>>;
 
-// Multi-block cache recency writes of the proposal: last_access bumps keyed
-// by address, and by StorageKey{addr, Incarnation{0, 0}, lookup_key} for
-// storage (incarnation is not part of recency identity).
-using AccountRecencyPostState =
-    ankerl::unordered_dense::segmented_map<Address, uint64_t>;
-using StorageRecencyPostState = ankerl::unordered_dense::segmented_map<
-    StorageKey, uint64_t, BytesHashCompare<StorageKey>>;
-
 struct ProposalPostState
 {
     AccountPostState accounts;
     StoragePostState storage;
-    AccountRecencyPostState recency_accounts;
-    StorageRecencyPostState recency_storage;
 };
 
 MONAD_NAMESPACE_END

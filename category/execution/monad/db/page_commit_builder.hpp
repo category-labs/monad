@@ -25,9 +25,10 @@ struct Db;
 
 class PageCommitBuilder final : public CommitBuilder
 {
+    Db &db_;
+
 public:
-    PageCommitBuilder(
-        uint64_t block_number, Db &db, BlockAccessSets const *access = nullptr);
+    PageCommitBuilder(uint64_t block_number, Db &db);
 
     // Materializes pages from slot deltas, writes per-page updates, and
     // populates the inherited `proposal_post_state_` with page-keyed
@@ -38,7 +39,7 @@ public:
 
 // Selects the builder matching the db encoding: PageCommitBuilder for a
 // page-encoded db, plain CommitBuilder otherwise.
-std::unique_ptr<CommitBuilder> make_commit_builder(
-    uint64_t block_number, Db &db, BlockAccessSets const *access = nullptr);
+std::unique_ptr<CommitBuilder>
+make_commit_builder(uint64_t block_number, Db &db);
 
 MONAD_NAMESPACE_END

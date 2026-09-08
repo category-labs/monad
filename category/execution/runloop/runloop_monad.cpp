@@ -46,7 +46,6 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
-#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/execution/monad/db/commit_block_migration.hpp>
 #include <category/execution/monad/event/record_consensus_events.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
@@ -304,15 +303,7 @@ Result<BlockExecOutput> propose_block(
     BlockExecOutput exec_output;
     BlockMetrics block_metrics;
 
-    BlockState block_state(
-        db, vm, secondary_db, traits::multi_block_cache_active());
-    if constexpr (traits::multi_block_cache_active()) {
-        // the pricing table and page timestamps live in the page-encoded db;
-        // the dual-write migration must be complete before the fork
-        MONAD_ASSERT(secondary_db == nullptr && db.is_page_encoded());
-        auto const cutoffs = compute_pricing_cutoffs(db, block.header.number);
-        block_state.set_pricing_cutoffs(cutoffs.account, cutoffs.storage);
-    }
+    BlockState block_state(db, vm, secondary_db);
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const results,
@@ -335,7 +326,7 @@ Result<BlockExecOutput> propose_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
-    auto [state, code, _, access] = std::move(block_state).release();
+    auto [state, code, _] = std::move(block_state).release();
     MONAD_ASSERT(state);
 
     // Allow overriding the state deltas for testing purposes:
@@ -348,8 +339,7 @@ Result<BlockExecOutput> propose_block(
         .senders = senders,
         .call_frames = call_frames,
         .ommers = block.ommers,
-        .withdrawals = block.withdrawals,
-        .access = &access};
+        .withdrawals = block.withdrawals};
     commit_block<traits>(db, secondary_db, block_id, block.header, *state, anc);
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(

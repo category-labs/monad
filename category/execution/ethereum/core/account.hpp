@@ -31,16 +31,14 @@ struct Account
     bytes32_t code_hash{NULL_HASH}; // sigma[a]_c
     uint64_t nonce{0}; // sigma[a]_n
     Incarnation incarnation{0, 0};
-    // multi-block cache last access; 0 = never, suppressed from encodings
-    uint64_t last_access_block{0};
 
     friend bool operator==(Account const &, Account const &) = default;
 };
 
-static_assert(sizeof(Account) == 88);
+static_assert(sizeof(Account) == 80);
 static_assert(alignof(Account) == 8);
 
-static_assert(sizeof(std::optional<Account>) == 96);
+static_assert(sizeof(std::optional<Account>) == 88);
 static_assert(alignof(std::optional<Account>) == 8);
 
 // YP (14)

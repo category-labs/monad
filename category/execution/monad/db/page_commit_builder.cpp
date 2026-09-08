@@ -13,16 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/assert.h>
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/core/keccak.hpp>
-#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
-#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/update.hpp>
@@ -34,21 +31,19 @@ MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
 
-PageCommitBuilder::PageCommitBuilder(
-    uint64_t const block_number, monad::Db &db,
-    BlockAccessSets const *const access)
-    : CommitBuilder{block_number, &db, access}
+PageCommitBuilder::PageCommitBuilder(uint64_t const block_number, monad::Db &db)
+    : CommitBuilder{block_number}
+    , db_{db}
 {
 }
 
-std::unique_ptr<CommitBuilder> make_commit_builder(
-    uint64_t const block_number, monad::Db &db,
-    BlockAccessSets const *const access)
+std::unique_ptr<CommitBuilder>
+make_commit_builder(uint64_t const block_number, monad::Db &db)
 {
     if (db.is_page_encoded()) {
-        return std::make_unique<PageCommitBuilder>(block_number, db, access);
+        return std::make_unique<PageCommitBuilder>(block_number, db);
     }
-    return std::make_unique<CommitBuilder>(block_number, &db, access);
+    return std::make_unique<CommitBuilder>(block_number);
 }
 
 CommitBuilder &
@@ -59,18 +54,6 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         UpdateList storage_updates;
         std::optional<byte_string_view> value;
         auto const &account = delta.account.second;
-        // bump only addresses in the deterministic access set; StateDeltas
-        // itself contains reads from aborted speculative attempts. Access
-        // sets hold raw slot keys; map to page keys first.
-        if (access_ != nullptr) {
-            if (auto const it = access_->find(addr); it != access_->end()) {
-                ankerl::unordered_dense::segmented_set<bytes32_t> page_keys;
-                for (auto const &key : it->second) {
-                    page_keys.insert(compute_page_key(key));
-                }
-                record_recency(addr, page_keys, delta);
-            }
-        }
         proposal_post_state_.accounts[addr] = account;
         // reincarnated account starts with empty storage.
         bool const reincarnated =
@@ -100,13 +83,13 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                         it->second =
                             reincarnated
                                 ? storage_page_t{}
-                                : db_->read_storage_page(addr, inc, pg_key);
+                                : db_.read_storage_page(addr, inc, pg_key);
                     }
                     it->second.set(slot_off, slot_delta.second);
                 }
             }
 
-            for (auto &[page_key, page] : pages) {
+            for (auto const &[page_key, page] : pages) {
                 bool const is_empty = page.is_empty();
                 // Record the post-commit page for the proposal cache. An empty
                 // page is still stored (entry present, all slots zero); the
@@ -146,10 +129,6 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         .incarnation = false,
         .next = std::move(account_updates),
         .version = static_cast<int64_t>(block_number_)}));
-
-    if (access_ != nullptr) {
-        add_pricing_updates();
-    }
 
     return *this;
 }

@@ -18,7 +18,6 @@
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -47,9 +46,6 @@ struct BlockCommitAncillaries
     std::vector<std::vector<CallFrame>> const &call_frames;
     std::vector<BlockHeader> const &ommers;
     std::optional<std::vector<Withdrawal>> const &withdrawals;
-    // non-null when multi_block_cache_active: the block's touched
-    // accounts/pages for last_access updates
-    BlockAccessSets const *access{nullptr};
 };
 
 template <Traits traits>

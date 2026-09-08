@@ -38,10 +38,6 @@ namespace monad::vm::runtime
         std::atomic<uint64_t> cached_accounts{0};
         std::atomic<uint64_t> cached_storage{0};
         std::atomic<uint64_t> saved_gas{0};
-        // commit-side volume counters (filled by the commit builders)
-        std::atomic<uint64_t> account_bumps{0};
-        std::atomic<uint64_t> storage_bumps{0};
-        std::atomic<uint64_t> recency_fallback_reads{0};
     };
 
     inline CacheShadowStats g_cache_shadow_stats;

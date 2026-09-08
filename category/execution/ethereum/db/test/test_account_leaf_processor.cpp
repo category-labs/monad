@@ -133,36 +133,3 @@ TEST(AccountLeafProcessor, EmptyValueReturnsEmpty)
 
     EXPECT_EQ(AccountLeafProcessor::process(*node), byte_string{});
 }
-
-TEST(AccountLeafProcessor, DbRoundtripLastAccess)
-{
-    Address const address = 0x00000000000000000000000000000000deadbeef_address;
-    Account const combos[] = {
-        {.balance = 1, .nonce = 2},
-        {.balance = 1, .nonce = 2, .last_access_block = 99},
-        {.balance = 1,
-         .code_hash =
-             0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32,
-         .nonce = 2,
-         .last_access_block = 99},
-    };
-    for (auto const &original : combos) {
-        byte_string enc = encode_account_db(address, original);
-        byte_string_view view{enc};
-        auto const decoded = decode_account_db(view);
-        ASSERT_FALSE(decoded.has_error());
-        EXPECT_EQ(decoded.value().first, address);
-        EXPECT_EQ(decoded.value().second, original);
-    }
-}
-
-TEST(AccountLeafProcessor, DbEncodingZeroLastAccessIsIdentical)
-{
-    Address const address = 0x00000000000000000000000000000000deadbeef_address;
-    Account const base{.balance = 5, .nonce = 1};
-    Account with_zero = base;
-    with_zero.last_access_block = 0;
-    EXPECT_EQ(
-        encode_account_db(address, base),
-        encode_account_db(address, with_zero));
-}

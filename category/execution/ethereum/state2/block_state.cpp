@@ -47,13 +47,11 @@
 
 MONAD_NAMESPACE_BEGIN
 
-BlockState::BlockState(
-    Db &db, vm::VM &monad_vm, Db *const secondary_db, bool const track_access)
+BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
     : db_{db}
     , secondary_db_{secondary_db}
     , vm_{monad_vm}
     , state_(std::make_unique<StateDeltas>())
-    , track_access_{track_access}
 {
 }
 
@@ -155,60 +153,6 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
     }
 }
 
-bool BlockState::account_is_cached(Address const &address)
-{
-    if (!account_cutoff_.has_value()) {
-        return false;
-    }
-    MONAD_ASSERT(state_);
-    {
-        StateDeltas::const_accessor it{};
-        MONAD_ASSERT(state_->find(it, address));
-        if (it->second.account_last_access.has_value()) {
-            return *it->second.account_last_access > *account_cutoff_;
-        }
-    }
-    uint64_t const last_access =
-        db_.read_account_last_access(address).value_or(0);
-    {
-        StateDeltas::accessor it{};
-        MONAD_ASSERT(state_->find(it, address));
-        it->second.account_last_access = last_access;
-    }
-    return last_access > *account_cutoff_;
-}
-
-bool BlockState::storage_page_is_cached(
-    Address const &address, Incarnation const incarnation, bytes32_t const &key)
-{
-    if (!storage_cutoff_.has_value()) {
-        return false;
-    }
-    bytes32_t const lookup_key = db_.storage_lookup_key(key);
-    MONAD_ASSERT(state_);
-    {
-        StateDeltas::const_accessor it{};
-        MONAD_ASSERT(state_->find(it, address));
-        auto const &pre = it->second.account.first;
-        // fresh incarnation has no pre-state pages
-        if (!pre.has_value() || incarnation != pre->incarnation) {
-            return false;
-        }
-        if (auto const mit = it->second.storage_last_access.find(lookup_key);
-            mit != it->second.storage_last_access.end()) {
-            return mit->second > *storage_cutoff_;
-        }
-    }
-    uint64_t const last_access =
-        db_.read_storage_last_access(address, lookup_key).value_or(0);
-    {
-        StateDeltas::accessor it{};
-        MONAD_ASSERT(state_->find(it, address));
-        it->second.storage_last_access.try_emplace(lookup_key, last_access);
-    }
-    return last_access > *storage_cutoff_;
-}
-
 bool BlockState::can_merge(State &state) const
 {
     MONAD_ASSERT(state_);
@@ -249,17 +193,6 @@ bool BlockState::can_merge(State &state) const
 
 void BlockState::merge(State const &state)
 {
-    if (track_access_) {
-        // union of the merged transaction's read+write set; original_ is
-        // never rolled back so reverted-frame accesses are included
-        for (auto const &[address, account_state] : state.original()) {
-            auto &slots = access_[address];
-            for (auto const &[key, value] : account_state.storage_) {
-                slots.insert(key);
-            }
-        }
-    }
-
     ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
 
     auto const &current = state.current();
@@ -322,8 +255,7 @@ BlockState::ReleasedState BlockState::release() &&
     return {
         std::move(state_),
         std::move(code_),
-        std::move(self_destruct_storage_reads_),
-        std::move(access_)};
+        std::move(self_destruct_storage_reads_)};
 }
 
 void BlockState::log_debug()

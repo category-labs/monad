@@ -24,8 +24,6 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/vm/code.hpp>
 
-#include <ankerl/unordered_dense.h>
-
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <oneapi/tbb/concurrent_hash_map.h>
@@ -42,7 +40,7 @@ using Delta = std::pair<T const, T>;
 
 using AccountDelta = Delta<std::optional<Account>>;
 
-static_assert(sizeof(AccountDelta) == 192);
+static_assert(sizeof(AccountDelta) == 176);
 static_assert(alignof(AccountDelta) == 8);
 
 using StorageDelta = Delta<bytes32_t>;
@@ -60,26 +58,13 @@ struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
-    // multi-block cache: per-block memo of the probed last_access (0 = not
-    // in the modeled cache), keyed by storage lookup key. A pure function of
-    // pre-state, so any racer computes the same value; mutated under a
-    // StateDeltas accessor lock. Commit reuses it to skip recency reads.
-    ankerl::unordered_dense::segmented_map<bytes32_t, uint64_t>
-        storage_last_access{};
-    std::optional<uint64_t> account_last_access{};
 };
 
-static_assert(sizeof(StateDelta) == 848);
+static_assert(sizeof(StateDelta) == 752);
 static_assert(alignof(StateDelta) == 8);
 
 using StateDeltas = oneapi::tbb::concurrent_hash_map<
     Address, StateDelta, BytesHashCompare<Address>>;
-
-/// Accounts and storage slots touched (read or written) by merged
-/// transactions; the deterministic access set for multi-block cache pricing.
-/// Slot keys are raw; commit builders map them to their storage encoding.
-using BlockAccessSets = ankerl::unordered_dense::segmented_map<
-    Address, ankerl::unordered_dense::segmented_set<bytes32_t>>;
 
 static_assert(sizeof(StateDeltas) == 576);
 static_assert(alignof(StateDeltas) == 8);

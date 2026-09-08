@@ -41,7 +41,6 @@
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
-#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/execution/monad/db/commit_block_migration.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
@@ -215,11 +214,7 @@ Result<void> process_monad_block(
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
     BlockMetrics block_metrics;
-    BlockState block_state(db, vm, nullptr, traits::multi_block_cache_active());
-    if constexpr (traits::multi_block_cache_active()) {
-        auto const cutoffs = compute_pricing_cutoffs(db, block.header.number);
-        block_state.set_pricing_cutoffs(cutoffs.account, cutoffs.storage);
-    }
+    BlockState block_state(db, vm);
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const receipts,
@@ -242,7 +237,7 @@ Result<void> process_monad_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
-    auto [state, code, _, access] = std::move(block_state).release();
+    auto [state, code, _] = std::move(block_state).release();
 
     BlockCommitAncillaries const anc{
         .code = code,
@@ -251,8 +246,7 @@ Result<void> process_monad_block(
         .senders = senders,
         .call_frames = call_frames,
         .ommers = block.ommers,
-        .withdrawals = block.withdrawals,
-        .access = &access};
+        .withdrawals = block.withdrawals};
     commit_block<traits>(db, nullptr, block_id, block.header, *state, anc);
 
     [[maybe_unused]] auto const commit_time =

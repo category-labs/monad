@@ -20,12 +20,9 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
-#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/mpt/update.hpp>
 
 #include <deque>
-#include <map>
-#include <utility>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -35,8 +32,6 @@ struct Transaction;
 struct BlockHeader;
 struct Receipt;
 struct Withdrawal;
-
-struct Db;
 
 class CommitBuilder
 {
@@ -51,26 +46,9 @@ protected:
     // storage slot key, Paged based storage fills it with the actual storage
     // page keyed by storage page key.
     ProposalPostState proposal_post_state_;
-    // multi-block cache: non-null when active; db_ reads pre-state
-    // last_access values and histogram buckets
-    Db *db_{nullptr};
-    BlockAccessSets const *access_{nullptr};
-    PricingBucketDeltas bucket_deltas_;
-    mpt::UpdateList pricing_updates_;
-
-    // lookup_keys hold the touched storage keys in the encoding's lookup
-    // granularity; delta's memos carry execution's probed last_access values
-    // so commit only falls back to a recency read for unprobed keys
-    void record_recency(
-        Address const &,
-        ankerl::unordered_dense::segmented_set<bytes32_t> const &lookup_keys,
-        StateDelta const &);
-    void add_pricing_updates();
 
 public:
-    explicit CommitBuilder(
-        uint64_t block_number, Db *db = nullptr,
-        BlockAccessSets const *access = nullptr);
+    explicit CommitBuilder(uint64_t block_number);
     virtual ~CommitBuilder() = default;
 
     virtual CommitBuilder &add_state_deltas(StateDeltas const &);
@@ -101,11 +79,6 @@ public:
     ProposalPostState take_proposal_post_state()
     {
         return std::move(proposal_post_state_);
-    }
-
-    PricingBucketDeltas const &bucket_deltas() const
-    {
-        return bucket_deltas_;
     }
 };
 

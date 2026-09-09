@@ -612,6 +612,8 @@ template <class... Fs>
 class OffsetTrie
 {
     byte_string_view blob_;
+    // Cache the extent after the header for a single unsigned bounds check.
+    uint64_t blob_span_;
 #if defined(MONAD_ZKVM_ZISK)
     // Direct slots point to separately allocated byte_strings, or null.
     // The objects stay put; replacing their contents may move their buffers.
@@ -797,9 +799,13 @@ public:
     {
         // NULL_ID resolves to the blob's first magic byte, i.e. the EMPTY
         // tag
+        //
+        // Subtracting HEADER_LEN makes low IDs wrap past the upper bound.
+        // read_root limits the blob size, so one unsigned comparison rejects
+        // both low and high out-of-range IDs.
         MONAD_ASSERT(
-            id == NULL_ID || (static_cast<uint64_t>(id) >= HEADER_LEN &&
-                              static_cast<uint64_t>(id) < blob_.size()));
+            id == NULL_ID ||
+            static_cast<uint64_t>(id) - HEADER_LEN < blob_span_);
         return NodeViewBase{blob_.data() + static_cast<uint64_t>(id)};
     }
 

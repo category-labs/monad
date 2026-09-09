@@ -703,6 +703,13 @@ public:
         return NodeViewBase{blob_.data() + static_cast<uint64_t>(id)};
     }
 
+    // Only for child IDs read from the validated original blob, or NULL_ID.
+    // The constructor checked their offsets; NULL_ID points to the EMPTY tag.
+    NodeViewBase original_child(NodeId const id) const
+    {
+        return NodeViewBase{blob_.data() + static_cast<uint64_t>(id)};
+    }
+
     // Current bytes for `id` — overlay entry if present, else the blob.
     // put_node shadows a rewritten blob node under its own blob id, so the
     // overlay has to be consulted for every id, not just fresh ones. A

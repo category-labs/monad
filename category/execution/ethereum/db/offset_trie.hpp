@@ -468,6 +468,10 @@ decltype(auto) match(NodeViewBase n, Fs &&...fs)
 class OffsetTrie
 {
     byte_string_view blob_;
+    // blob_.size() - HEADER_LEN, so the two-sided bound get_original tests is
+    // ONE unsigned compare against a value already formed. read_root has
+    // asserted blob_.size() >= HEADER_LEN before any lookup can run.
+    uint64_t blob_span_;
     ankerl::unordered_dense::map<NodeId, byte_string, NodeIdHash> overlay_{};
     // A cached hash, and whether it is still the node's.
     //
@@ -592,9 +596,16 @@ public:
     {
         // NULL_ID resolves to the blob's first magic byte, i.e. the EMPTY
         // tag
+        //
+        // `id - HEADER_LEN < blob_.size() - HEADER_LEN` is the SAME predicate
+        // as `id >= HEADER_LEN && id < blob_.size()`: an id below HEADER_LEN
+        // wraps to at least 2^64 - HEADER_LEN, which exceeds any blob (read_root
+        // asserts blob_.size() <= OVERLAY_BASE), and an overlay id is rejected
+        // by the same bound it is rejected by today. Two priced `ltu` at 60
+        // cells become one, and the low bound stops needing its own constant.
         MONAD_ASSERT(
-            id == NULL_ID || (static_cast<uint64_t>(id) >= HEADER_LEN &&
-                              static_cast<uint64_t>(id) < blob_.size()));
+            id == NULL_ID ||
+            static_cast<uint64_t>(id) - HEADER_LEN < blob_span_);
         return NodeViewBase{blob_.data() + static_cast<uint64_t>(id)};
     }
 

@@ -68,6 +68,11 @@ NodeId OffsetTrie::read_root(byte_string_view const blob)
 
 OffsetTrie::OffsetTrie(byte_string_view const blob)
     : blob_(blob)
+    // Declaration order puts this before `root`, so it is formed before
+    // read_root's asserts run. If the blob is shorter than the header this
+    // wraps and read_root aborts on the next initialiser, before any lookup
+    // can observe it.
+    , blob_span_{blob_.size() - HEADER_LEN}
     , root{read_root(blob_)}
 {
     unsigned char const *const base = blob_.data();

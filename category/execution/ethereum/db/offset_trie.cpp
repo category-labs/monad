@@ -185,9 +185,11 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
                     if (key.nibble_size() == 0) { // no value at a branch
                         return NULL_ID;
                     }
-                    NodeId const next = b.child(key.get(0));
-                    key = key.substr(1);
-                    return next;
+                    // Read the child after drop_front1 so GCC can use one
+                    // zero-extending load (lwu) on RISC-V.
+                    unsigned const i = key.get(0);
+                    key.drop_front1();
+                    return b.child(i);
                 },
                 [&](ExtView e) -> NodeId {
                     NibblesView const ep = e.path();
@@ -731,15 +733,18 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
             [&](BranchView b) -> std::pair<NodeId, NibblesView> {
                 MONAD_ASSERT(key.nibble_size() > 0); // never ends at branch
                 unsigned const nib = key.get(0);
+                NibblesView rest = key;
+                rest.drop_front1();
+                // Keep the child load after drop_front1, as in find_original.
                 NodeId const child = b.child(nib);
                 if (child != NULL_ID) {
-                    return upsert_node(child, key.substr(1));
+                    return upsert_node(child, rest);
                 }
                 // A previously-empty slot fills, so the branch is rewritten
                 // and its sixteen children are needed. Read them before
                 // recursing.
                 std::array<node_id_wire_t, 16> children = b.children();
-                auto const result = upsert_node(NULL_ID, key.substr(1));
+                auto const result = upsert_node(NULL_ID, rest);
                 children[nib] = to_node_id_wire_t(result.first);
                 put_branch(id, children);
                 return result;

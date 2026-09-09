@@ -64,6 +64,9 @@ NodeId OffsetTrie::read_root(byte_string_view const blob)
 
 OffsetTrie::OffsetTrie(byte_string_view const blob)
     : blob_(blob)
+    // This unsigned subtraction may wrap for a short blob. read_root then
+    // rejects it before construction completes or any lookup can run.
+    , blob_span_{blob_.size() - HEADER_LEN}
     , root{read_root(blob_)}
 {
     unsigned char const *const base = blob_.data();

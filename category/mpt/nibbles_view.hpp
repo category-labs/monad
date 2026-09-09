@@ -347,6 +347,19 @@ constexpr unsigned nibble_mismatch(NibblesView const &a, NibblesView const &b)
             }
             matched += 16;
         }
+        // Compare the tail using the last 16 nibbles; i != 0 ensures they
+        // exist.
+        // The overlap was already checked equal, so any mismatch is the first
+        // remaining one. Uses the same load footprint as a forward chunk.
+        if (matched != 0 && matched != common) {
+            unsigned const tail = common - 16;
+            std::uint64_t const diff =
+                chunk(a.data(), a.begin_nibble() + tail) ^
+                chunk(b.data(), b.begin_nibble() + tail);
+            return diff
+                       ? tail + static_cast<unsigned>(__builtin_clzll(diff) / 4)
+                       : common;
+        }
     }
     for (; matched < common; ++matched) {
         if (a.get(matched) != b.get(matched)) {

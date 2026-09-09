@@ -78,7 +78,20 @@ namespace monad::vm::runtime
         static ZiskArith256Params p{nullptr, nullptr, zero, lo, hi};
         p.a = reinterpret_cast<uint64_t const *>(a_ptr);
         p.b = reinterpret_cast<uint64_t const *>(b_ptr);
-        syscall_arith256(&p);
+        // The marker in place. `syscall_arith256` is `csrs 0x801, a0` plus
+        // the return, so the call costs more than the body: an argument move, a
+        // `jal` at 68 cells, and a `jalr` out at 68 plus the 60 its low-bit
+        // `and` is priced at, on each of the block's 11,034 MULs. The form is
+        // ziskos' own (`ziskos_syscall!(SYSCALL_ARITH256_ID, params)` expands to
+        // `csrs {port}, {value}`); rd = x0 is correct for THIS port and is not
+        // for add256, where the same spelling silently becomes an `or`.
+        asm volatile(".option push\n\t"
+                     ".option arch, +zicsr\n\t"
+                     "csrs 0x801, %0\n\t"
+                     ".option pop"
+                     :
+                     : "r"(&p)
+                     : "memory");
         // Through a local and not straight into result_ptr: the interface allows
         // result to be one of the operands, and the precompile's write order is
         // not ours to assume.

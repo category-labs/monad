@@ -562,13 +562,30 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // rather than keep it live across the child_ref call, so the
                 // bound is `bseti`, `addi`, `addi`, `bltu` on each of 83,701
                 // slots and 104,258 run-extension tests (block 25815042).
-                auto const digest_at = [this](uint64_t const w) {
+                // Opaque so the bound stays in a register. gcc will not keep
+                // OVERLAY_BASE - 2 -- the form it folds `w != 0 && w <
+                // OVERLAY_BASE` into -- live across the child_ref call in the
+                // slot loop below, so it rematerialises `bset rD, 0, 0x1f` and
+                // `addi rD, rD, -2` on each of the 63,229 slot and
+                // run-extension tests this pass makes on block 25815042. The
+                // idiom is zx()'s in the header, and for the same reason: a
+                // constant the compiler can rebuild is a constant it will
+                // rebuild.
+                //
+                // Only on the mutation pass. The priming pass carries no bound
+                // -- see the note above digest_at -- so it needs no register.
+                uint64_t monad_vm_overlay_base = OVERLAY_BASE;
+                if constexpr (!priming_pass) {
+                    asm("" : "+r"(monad_vm_overlay_base));
+                }
+                auto const digest_at = [this,
+                                        monad_vm_overlay_base](uint64_t const w) {
                     if constexpr (priming_pass) {
                         return w != 0 &&
                                get_original(NodeId{w}).tag() == Tag::DIGEST;
                     }
                     else {
-                        return w != 0 && w < OVERLAY_BASE &&
+                        return w != 0 && w < monad_vm_overlay_base &&
                                get_original(NodeId{w}).tag() == Tag::DIGEST;
                     }
                 };

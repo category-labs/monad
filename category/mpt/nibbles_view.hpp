@@ -268,6 +268,26 @@ public:
                nibble_mismatch(*this, other) == other.nibble_size();
     }
 
+    // Equivalent to *this = substr(1), but updates the pointer and nibble
+    // parity directly. Requires a non-empty view; resets to null if emptied.
+    constexpr void drop_front1()
+    {
+        MONAD_ASSERT(nibble_size() != 0);
+        if (begin_nibble_) {
+            ++data_;
+            begin_nibble_ = false;
+            end_nibble_ = static_cast<size_type>(end_nibble_ - 2);
+        }
+        else {
+            begin_nibble_ = true;
+        }
+        if (end_nibble_ == static_cast<size_type>(begin_nibble_)) {
+            data_ = nullptr;
+            begin_nibble_ = false;
+            end_nibble_ = 0;
+        }
+    }
+
     [[nodiscard]] unsigned char get(unsigned const i) const
     {
         MONAD_ASSERT(i < nibble_size());

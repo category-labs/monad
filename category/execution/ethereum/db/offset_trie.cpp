@@ -388,6 +388,46 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
     return write_hash_ref(dest, h.bytes);
 }
 
+namespace
+{
+    // The first non-zero byte of a 32-byte big-endian slot value, a word at a
+    // time. Returns exactly the view rlp::zeroless_view returns for the same
+    // bytes.
+    //
+    // A slot value carries 24 leading zero bytes on average -- the shape
+    // encode2.hpp's to_big_compact already exploits -- and the byte walk pays
+    // an `lbu` (41 cells) and three steps per zero byte: 76,126 byte reads
+    // and 242,247 steps across the two encode_rlp passes on block 25815042.
+    // Four 8-aligned 8-byte reads are 16 cells apiece, and `rev8` then `clz`
+    // turn the loaded word into the index without a loop.
+    //
+    // The words come from the stack copy and not the blob on purpose: a blob
+    // offset is arbitrary, so four unaligned 8-byte reads there would be 191
+    // cells each, more than the 32-byte dma_xmemcpy the copy already costs.
+    [[gnu::always_inline]] inline byte_string_view
+    zeroless_view32(unsigned char const *const p)
+    {
+        for (unsigned w = 0; w < 32; w += 8) {
+            uint64_t const word = bits::load64(p + w);
+            if (word == 0) {
+                continue;
+            }
+            // `word` holds p[w..w+7] little-endian, so a leading zero byte in
+            // memory order is a low-order zero byte here.
+#if defined(__riscv_zbb) || defined(__x86_64__) || defined(__aarch64__)
+            unsigned const lz =
+                static_cast<unsigned>(std::countl_zero(std::byteswap(word))) /
+                8;
+#else
+            unsigned const lz =
+                static_cast<unsigned>(bits::clz64(bits::bswap64(word))) / 8;
+#endif
+            return {p + w + lz, 32 - w - lz};
+        }
+        return {p + 32, 0};
+    }
+}
+
 template <bool priming_pass>
 OffsetTrie::node_rlp_span
 OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
@@ -594,13 +634,14 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
             },
             [&, encode_path, wrap](
                 StorageLeafView l) -> std::span<unsigned char> {
-                bytes32_t const v = l.value();
+                // 8-aligned so zeroless_view32's word reads are 16 cells and
+                // not 191.
+                alignas(8) bytes32_t const v = l.value();
                 // storage value = rlp(zeroless(slot)), itself wrapped again
                 // as the leaf's value string: write the inner rlp(zl) into
                 // dest's tail, then prepend the outer string prefix in
                 // place.
-                auto const val =
-                    rlp::zeroless_view(to_byte_string_view(v.bytes));
+                auto const val = zeroless_view32(v.bytes);
                 size_t const val_len = rlp::string_length(val);
                 rlp::encode_string(dest.last(val_len), val);
                 dest = dest.shrink(val_len);

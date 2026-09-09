@@ -53,6 +53,32 @@ load64(unsigned char const *const p)
 // zisklib's own wrapper uses.
 extern "C" void syscall_keccak_f(uint64_t (*state)[25]);
 
+// ziskos' `syscall_keccak_f` is two instructions -- `csrs 0x800, a0` and the
+// return -- so the call costs more than the body: a `jal` in at 68 cells and a
+// `jalr` out at 68 plus the 60 its low-bit `and` is priced at, 196 cells on each
+// of the block's 97,918 permutations. Emitted here it is the one instruction.
+//
+// The form is ziskos' own (`ziskos_syscall!(SYSCALL_KECCAKF_ID, state)` expands
+// to `csrs {port}, {value}`, and the transpiler shows it as `keccak 0, rs`).
+// rd = x0 is correct for THIS port; it is not for add256, where the same
+// spelling silently transpiles to an `or` -- see zisk_add256.
+//
+// Safe against the memo's ordering requirement. What that requires is that no
+// OTHER Keccak-f run between `fcall_set_keccakf_index` and this permutation, and
+// the compiler cannot introduce one; `asm volatile` statements are not reordered
+// against each other, and the "memory" clobber keeps the state's stores and loads
+// on the correct side.
+[[gnu::always_inline]] inline void zisk_keccakf(uint64_t (*state)[25]) noexcept
+{
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrs 0x800, %0\n\t"
+                 ".option pop"
+                 :
+                 : "r"(state)
+                 : "memory");
+}
+
 // Keccak-f memo. OFF gives the exact control arm: the mechanism is compiled
 // out, not disabled, so an A/B measures the memo rather than a predicate.
 #ifndef MONAD_ZKVM_KECCAKF_MEMO
@@ -256,7 +282,7 @@ static void keccak256_one_block(
     if (keccakf_memo_used == KECCAKF_MEMO_ENTRIES) {
         // Full: keep permuting, stop remembering. The scratch is the spare
         // slot, so permute it in place; nothing will read the rest of it.
-        syscall_keccak_f(&e.in);
+        zisk_keccakf(&e.in);
         std::memcpy(out, s, 32);
         return;
     }
@@ -266,7 +292,7 @@ static void keccak256_one_block(
     // reason `keccak_permute` gives.
     keccakf_state_copy(e.out, s);
     fcall_set_keccakf_index(keccakf_memo_used);
-    syscall_keccak_f(&e.out);
+    zisk_keccakf(&e.out);
     // Published last: this is what puts the entry in range, so it must not
     // move until both halves are there.
     ++keccakf_memo_used;
@@ -289,7 +315,7 @@ static inline void keccak_permute(uint64_t (*state)[25])
 {
 #if MONAD_ZKVM_KECCAKF_MEMO
     if constexpr (!Memo) {
-        syscall_keccak_f(state);
+        zisk_keccakf(state);
         return;
     }
     uint64_t *const s = &(*state)[0];
@@ -307,7 +333,7 @@ static inline void keccak_permute(uint64_t (*state)[25])
         // Full: keep permuting, stop remembering. Filing more would mean
         // evicting, and an evicted slot only ever produces hints that fail
         // the compare above.
-        syscall_keccak_f(state);
+        zisk_keccakf(state);
         return;
     }
 
@@ -320,13 +346,13 @@ static inline void keccak_permute(uint64_t (*state)[25])
     KeccakfEntry &e = keccakf_memo[keccakf_memo_used];
     keccakf_state_copy(e.in, s);
     fcall_set_keccakf_index(keccakf_memo_used);
-    syscall_keccak_f(state);
+    zisk_keccakf(state);
     keccakf_state_copy(e.out, s);
     // Published last: this is what puts the entry in range, so it must not
     // move until both halves are there.
     ++keccakf_memo_used;
 #else
-    syscall_keccak_f(state);
+    zisk_keccakf(state);
 #endif
 }
 #else

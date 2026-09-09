@@ -39,9 +39,23 @@ extern "C"
 // ziskos's raw Keccak-f[1600] precompile entry.
 void syscall_keccak_f(uint64_t (*state)[25]);
 
+// Inline ZisK's Keccak-f marker (CSR 0x800) to avoid call/return overhead.
+// The precompile updates state in place; the memory clobber tells the
+// compiler that this instruction reads and writes memory.
+[[gnu::always_inline]] inline void zisk_keccakf(uint64_t (*state)[25]) noexcept
+{
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrs 0x800, %0\n\t"
+                 ".option pop"
+                 :
+                 : "r"(state)
+                 : "memory");
+}
+
 static inline void keccak_permute(uint64_t (*state)[25])
 {
-    syscall_keccak_f(state);
+    zisk_keccakf(state);
 }
 
 void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32])

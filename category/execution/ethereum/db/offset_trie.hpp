@@ -484,8 +484,29 @@ class OffsetTrie
         // written on every insert, and ZisK charges a 1-byte read 66 cells and
         // a 1-byte write 193, against 17 and 18 for an aligned word. The map's
         // value is std::pair<NodeId, CachedHash>, whose alignment already pads
-        // this out to the same 48 bytes either way, so the width is free.
+        // this out to the same size either way, so the width is free.
         uint64_t valid;
+        // Padding, so that std::pair<NodeId, CachedHash> is 64 bytes.
+        //
+        // unordered_dense keeps its entries in a vector and converts between a
+        // slot index and a slot address in both directions -- `size()` on every
+        // insert, `data() + i` on every hit -- and each conversion is a
+        // division or a multiplication by sizeof(value_type). At 48 bytes the
+        // division is an exact division by three: `srai 4`, then five
+        // instructions to materialise 0xAAAAAAAAAAAAAAAB (lui, lui, addi, addi,
+        // pack), then a 97-cell `mul`. gcc rematerialises that constant at each
+        // use rather than hold it across the encode_rlp/keccak256 calls it sits
+        // between, so the five instructions are per insert and not per sweep.
+        // At 64 bytes the same conversion is `srai 6` alone. The priming sweep
+        // performs 27,154 of these divisions a block -- two per non-digest
+        // node, once before the vector append and once after -- and the
+        // mutation pass another 8,917 in child_ref_compute.
+        //
+        // The bytes are never read and never written, so they are never a
+        // memory access. They cost arena, which this guest has: the value
+        // vector is one bump allocation whose `free` is a no-op
+        // (zkvm/core/libc.cpp), and the reserve below sizes it once.
+        [[maybe_unused]] uint64_t pad_[2];
     };
 
     ankerl::unordered_dense::map<NodeId, CachedHash, NodeIdHash> hashes_{};

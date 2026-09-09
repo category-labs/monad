@@ -27,7 +27,9 @@
 
 #include <evmc/evmc.hpp>
 
+#include <chrono>
 #include <cstddef>
+#include <limits>
 #include <span>
 #include <type_traits>
 #include <variant>
@@ -41,6 +43,7 @@ namespace monad::vm::runtime
         Revert,
         Error,
         OutOfGas,
+        Cancelled,
     };
 
     struct alignas(uint64_t) Result
@@ -248,6 +251,58 @@ namespace monad::vm::runtime
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
 
+        /// Sentinel meaning no execution deadline is armed.
+        static constexpr int64_t no_deadline =
+            std::numeric_limits<int64_t>::max();
+
+        /// How many deadline checks are amortized into one clock read.
+        static constexpr uint32_t deadline_check_interval = 256;
+
+        /// Absolute execution deadline as a steady-clock timestamp in
+        /// nanoseconds (see `steady_clock_now_ns`), or `no_deadline`.
+        /// Observed at gas-check sites: execution exits with
+        /// `StatusCode::Cancelled` once the deadline has passed.
+        int64_t deadline_ns = no_deadline;
+        uint32_t deadline_countdown = deadline_check_interval;
+
+        static int64_t steady_clock_now_ns() noexcept
+        {
+            return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                       std::chrono::steady_clock::now().time_since_epoch())
+                .count();
+        }
+
+        [[gnu::always_inline]]
+        constexpr void check_deadline() noexcept
+        {
+            if (MONAD_LIKELY(deadline_ns == no_deadline)) {
+                return;
+            }
+            if (--deadline_countdown != 0) {
+                return;
+            }
+            deadline_countdown = deadline_check_interval;
+            check_deadline_now();
+        }
+
+        /// Like `check_deadline`, but reads the clock unconditionally
+        /// instead of amortizing it. Used after operations expensive enough
+        /// that the clock read is noise, and where promptness matters: in
+        /// particular right after a child call frame returns, so that a
+        /// child cancelled by the deadline deterministically cancels every
+        /// ancestor frame instead of being mistaken for an ordinary failed
+        /// call.
+        [[gnu::always_inline]]
+        constexpr void check_deadline_now() noexcept
+        {
+            if (MONAD_LIKELY(deadline_ns == no_deadline)) {
+                return;
+            }
+            if (steady_clock_now_ns() >= deadline_ns) {
+                exit(StatusCode::Cancelled);
+            }
+        }
+
         [[gnu::always_inline]]
         constexpr void deduct_gas(int64_t const gas) noexcept
         {
@@ -255,6 +310,7 @@ namespace monad::vm::runtime
             if (MONAD_UNLIKELY(gas_remaining < 0)) {
                 exit(StatusCode::OutOfGas);
             }
+            check_deadline();
         }
 
         [[gnu::always_inline]]

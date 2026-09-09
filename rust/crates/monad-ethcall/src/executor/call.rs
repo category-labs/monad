@@ -98,7 +98,6 @@ pub struct EthCallRequest<'a> {
     pub block_id: Option<[u8; 32]>,
     pub state_override_set: &'a StateOverrideSet,
     pub tracer: MonadTracer,
-    pub gas_specified: bool,
 }
 
 impl MonadExecutor {
@@ -115,7 +114,6 @@ impl MonadExecutor {
             block_id,
             state_override_set,
             tracer,
-            gas_specified,
         } = request;
 
         if transaction.gas_limit() > block_header.gas_limit {
@@ -239,7 +237,6 @@ impl MonadExecutor {
                 Some(eth_call_submit_callback),
                 Box::into_raw(sender_ctx) as *mut std::ffi::c_void,
                 tracer.into(),
-                gas_specified,
             )
         };
 

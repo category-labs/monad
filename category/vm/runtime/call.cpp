@@ -181,6 +181,14 @@ namespace monad::vm::runtime
         // is deallocated by the `Environment` destructor.
         ctx->propagate_stack_unwind();
 
+        // A cancelled child frame (execution deadline passed) must cancel
+        // this frame too: otherwise the caller would observe the abort as an
+        // ordinary failed call and keep executing, producing a
+        // nondeterministic result. The child only aborts once the deadline
+        // has passed, so an unconditional clock check here is sufficient to
+        // propagate the cancellation.
+        ctx->check_deadline_now();
+
         ctx->deduct_gas(gas - result.gas_left);
         ctx->gas_refund += result.gas_refund;
 

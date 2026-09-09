@@ -33,6 +33,7 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdint>
 #include <vector>
 
@@ -851,4 +852,89 @@ TEST(MonadVmInterface, message_memory)
         mem1.get()[capacity - 1] = 0;
         mem1.get()[0] = 0;
     }
+}
+
+namespace
+{
+    // JUMPDEST; PUSH1 0; POP; PUSH1 0; JUMP -- an infinite loop, bounded
+    // only by gas.
+    std::vector<uint8_t> make_loop_bytecode()
+    {
+        return {JUMPDEST, PUSH1, 0, POP, PUSH1, 0, JUMP};
+    }
+}
+
+TEST(MonadVmInterface, expired_deadline_aborts_execution)
+{
+    VM vm;
+    evmc::MockedHost host;
+
+    auto const bytecode = make_loop_bytecode();
+    auto const icode = make_shared_intercode(bytecode);
+
+    test::TestMessage msg{};
+    msg->gas = 100'000'000;
+
+    auto rt_ctx = runtime::Context::from(
+        &host.get_interface(),
+        host.to_context(),
+        &*msg,
+        {bytecode.data(), bytecode.size()});
+    rt_ctx.deadline_ns = runtime::Context::steady_clock_now_ns() - 1;
+
+    auto const result = vm.execute_intercode_raw<TestTraits>(rt_ctx, icode);
+    ASSERT_EQ(result.status_code, EVMC_REJECTED);
+}
+
+TEST(MonadVmInterface, deadline_aborts_execution_mid_loop)
+{
+    VM vm;
+    evmc::MockedHost host;
+
+    auto const bytecode = make_loop_bytecode();
+    auto const icode = make_shared_intercode(bytecode);
+
+    test::TestMessage msg{};
+    // Enough gas that the loop runs for minutes if the deadline is not
+    // honored; the test passing quickly demonstrates the mid-execution
+    // abort.
+    msg->gas = 1'000'000'000'000;
+
+    auto rt_ctx = runtime::Context::from(
+        &host.get_interface(),
+        host.to_context(),
+        &*msg,
+        {bytecode.data(), bytecode.size()});
+    rt_ctx.deadline_ns = runtime::Context::steady_clock_now_ns() +
+                         std::chrono::duration_cast<std::chrono::nanoseconds>(
+                             std::chrono::milliseconds(50))
+                             .count();
+
+    auto const start = std::chrono::steady_clock::now();
+    auto const result = vm.execute_intercode_raw<TestTraits>(rt_ctx, icode);
+    auto const elapsed = std::chrono::steady_clock::now() - start;
+
+    ASSERT_EQ(result.status_code, EVMC_REJECTED);
+    ASSERT_LT(elapsed, std::chrono::seconds(5));
+}
+
+TEST(MonadVmInterface, no_deadline_runs_to_out_of_gas)
+{
+    VM vm;
+    evmc::MockedHost host;
+
+    auto const bytecode = make_loop_bytecode();
+    auto const icode = make_shared_intercode(bytecode);
+
+    test::TestMessage msg{};
+    msg->gas = 10'000;
+
+    auto rt_ctx = runtime::Context::from(
+        &host.get_interface(),
+        host.to_context(),
+        &*msg,
+        {bytecode.data(), bytecode.size()});
+
+    auto const result = vm.execute_intercode_raw<TestTraits>(rt_ctx, icode);
+    ASSERT_EQ(result.status_code, EVMC_OUT_OF_GAS);
 }

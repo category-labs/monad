@@ -540,9 +540,37 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // w < OVERLAY_BASE` is a single signed test on a 32-bit
                 // value, where widened it is two. One instruction against
                 // three.
+                //
+                // The bound is only carried on the mutation arm. On the
+                // priming pass it cannot be false: the sweep validates a
+                // node's children --
+                // `c == NULL_ID || (c < node_offset && node_offsets[c] != 0)`
+                // -- before it encodes that node, node_offset is below
+                // blob_.size(), and read_root bounds blob_.size() by
+                // OVERLAY_BASE. A node reached recursively through child_ref
+                // is one the sweep has already marked, so its children passed
+                // the same test in an earlier iteration.
+                //
+                // A field at or above OVERLAY_BASE is not a hazard without
+                // the test either: both arms resolve such a field through
+                // get_original, which asserts the id lies inside the blob.
+                // Nor does dropping the test read a byte the bound keeps
+                // unread -- that assert precedes the tag load.
+                //
+                // What it costs is four instructions a slot, not one: gcc
+                // rematerialises `OVERLAY_BASE - 2` inside the slot loop
+                // rather than keep it live across the child_ref call, so the
+                // bound is `bseti`, `addi`, `addi`, `bltu` on each of 83,701
+                // slots and 104,258 run-extension tests (block 25815042).
                 auto const digest_at = [this](uint64_t const w) {
-                    return w != 0 && w < OVERLAY_BASE &&
-                           get_original(NodeId{w}).tag() == Tag::DIGEST;
+                    if constexpr (priming_pass) {
+                        return w != 0 &&
+                               get_original(NodeId{w}).tag() == Tag::DIGEST;
+                    }
+                    else {
+                        return w != 0 && w < OVERLAY_BASE &&
+                               get_original(NodeId{w}).tag() == Tag::DIGEST;
+                    }
                 };
                 // size_t and not int for the slot index, because ZisK prices
                 // 32-bit arithmetic through the generic binary machine: add_w

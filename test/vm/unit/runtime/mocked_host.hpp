@@ -46,7 +46,7 @@ namespace monad::vm::test
         std::set<PageKey> read_accessed_pages_;
         std::set<PageKey> write_accessed_pages_;
         std::map<PageKey, PageGrowth> growth_;
-        PageStorageStatus last_write_page_status_{};
+        evmc_page_storage_status last_write_page_status_{};
 
         static evmc::bytes32
         compute_page_key(evmc::bytes32 const &slot_key) noexcept
@@ -201,7 +201,7 @@ namespace monad::vm::test
             inner_.set_transient_storage(addr, key, value);
         }
 
-        PageStorageStatus update_page(
+        evmc_page_storage_status update_page(
             evmc::address const &, evmc::bytes32 const &,
             evmc_storage_status) noexcept override
         {

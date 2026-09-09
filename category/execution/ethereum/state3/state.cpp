@@ -437,7 +437,7 @@ State::access_storage(Address const &address, bytes32_t const &key)
 
 EXPLICIT_TRAITS_MEMBER(State::access_storage);
 
-vm::Host::PageStorageStatus State::update_page(
+evmc_page_storage_status State::update_page(
     Address const &address, bytes32_t const &key,
     evmc_storage_status const status)
 {

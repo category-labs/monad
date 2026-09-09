@@ -240,19 +240,4 @@ void EvmcHostBase::set_transient_storage(
     stack_unwind();
 }
 
-EvmcHostBase::PageStorageStatus EvmcHostBase::update_page(
-    evmc::address const &address, evmc::bytes32 const &page_key,
-    evmc_storage_status const status) noexcept
-{
-    MONAD_TRY
-    {
-        return state_.update_page(address, page_key, status);
-    }
-    MONAD_CATCH(...)
-    {
-        capture_current_exception();
-    }
-    stack_unwind();
-}
-
 MONAD_NAMESPACE_END

@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/throw.hpp>
@@ -101,10 +102,6 @@ public:
     virtual void set_transient_storage(
         evmc::address const &, evmc::bytes32 const &key,
         evmc::bytes32 const &value) noexcept override;
-
-    virtual PageStorageStatus update_page(
-        evmc::address const &, evmc::bytes32 const &page_key,
-        evmc_storage_status) noexcept override;
 };
 
 static_assert(sizeof(EvmcHostBase) == 72);
@@ -232,6 +229,26 @@ struct EvmcHost final : public EvmcHostBase
             capture_current_exception();
         }
         stack_unwind();
+    }
+
+    virtual evmc_page_storage_status update_page(
+        evmc::address const &address, evmc::bytes32 const &key,
+        evmc_storage_status const status) noexcept override
+    {
+        if constexpr (traits::mip_8_active()) {
+            MONAD_TRY
+            {
+                return state_.update_page(address, key, status);
+            }
+            MONAD_CATCH(...)
+            {
+                capture_current_exception();
+            }
+            stack_unwind();
+        }
+        else {
+            MONAD_ABORT("update_page is MIP-8 only");
+        }
     }
 
     CallTracerBase &get_call_tracer() noexcept

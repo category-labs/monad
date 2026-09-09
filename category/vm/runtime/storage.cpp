@@ -20,13 +20,11 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/host.hpp>
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/storage_costs.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <cstdint>
 
@@ -87,9 +85,8 @@ namespace monad::vm::runtime
             auto const storage_status = ctx->host->set_storage(
                 ctx->context, &ctx->env.recipient, &key, &value);
 
-            auto *monad_host = evmc::Host::from_context<vm::Host>(ctx->context);
-            auto const [first_page_write, grew_state] = monad_host->update_page(
-                ctx->env.recipient, key, storage_status);
+            auto const [first_page_write, grew_state] = ctx->host->update_page(
+                ctx->context, &ctx->env.recipient, &key, storage_status);
 
             int64_t gas_used = traits::base_sstore_cost();
             if (first_page_write) {

@@ -18,7 +18,6 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
-#include <category/vm/host.hpp>
 
 #include <evmc/evmc.h>
 
@@ -63,7 +62,7 @@ public:
         return EVMC_ACCESS_COLD;
     }
 
-    vm::Host::PageStorageStatus
+    evmc_page_storage_status
     update_page(bytes32_t const &key, evmc_storage_status status)
     {
         auto const pkey = compute_page_key(key);

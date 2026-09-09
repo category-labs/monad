@@ -94,7 +94,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -132,6 +131,7 @@ namespace
         "failed to recover the grandparent transactions context";
     char const *const TRANSACTION_OUT_OF_BOUNDS_ERR_MSG =
         "transaction out of bounds";
+    namespace eth_simulate_json = monad::rpc::eth_simulateV1::json_fields;
     static ankerl::unordered_dense::segmented_set<Address>
         empty_senders_and_authorities{};
 
@@ -611,162 +611,11 @@ namespace
             txn_hashes.size() == block.transactions.size(),
             "transaction hashes size mismatch with transactions");
 
-        static constexpr std::string_view calls = "calls";
-        static constexpr std::string_view status = "status";
-        static constexpr std::string_view return_data = "returnData";
-        static constexpr std::string_view logs = "logs";
-        static constexpr std::string_view address = "address";
-        static constexpr std::string_view topics = "topics";
-        static constexpr std::string_view data = "data";
-        static constexpr std::string_view gas_used = "gasUsed";
-        static constexpr std::string_view block_number = "blockNumber";
-        static constexpr std::string_view transaction_hash = "transactionHash";
-        static constexpr std::string_view transaction_index =
-            "transactionIndex";
-        static constexpr std::string_view block_hash_field = "blockHash";
-        static constexpr std::string_view log_index = "logIndex";
-        static constexpr std::string_view removed = "removed";
-        static constexpr std::string_view error = "error";
-        static constexpr std::string_view message = "message";
-        static constexpr std::string_view execution_reverted =
-            "execution reverted";
-
         // NOTE(dhil): We may slightly over-estimate the size of the output
         // JSON/CBOR here, because we are basing our estimate on the size of the
         // in-memory representation.
-
-        carried_size +=
-            calls.size() + sizeof(nlohmann::json::array_t) +
-            sizeof(nlohmann::json::value_t) +
-            sizeof(nlohmann::json::object_t) * block.transactions.size();
-
-        // NOTE(dhil): First we calculate the size of the "calls" field. This is
-        // a user-controlled field.
-
-        for (size_t tx_idx = 0; tx_idx < block.transactions.size(); ++tx_idx) {
-            MONAD_ASSERT_THROW(
-                call_frames[tx_idx].size() > 0,
-                "call frames size must be greater than 0");
-
-            carried_size +=
-                // Field names + value sizes
-                (return_data.size() +
-                 value_size(call_frames[tx_idx][0].output)) +
-                (gas_used.size() +
-                 value_size(call_frames[tx_idx][0].gas_used)) +
-                (status.size() + sizeof(nlohmann::json::value_t) +
-                 3); // NOTE(dhil): Return status is always 3
-                     // bytes, either 0x0 or 0x1.
-
-            // Calculate the size of each log entry
-            size_t log_index_cnt = 0;
-            if (call_frames[tx_idx][0].status == EVMC_SUCCESS) {
-                carried_size += logs.size() + sizeof(nlohmann::json::array_t);
-                for (auto const &log : receipts[tx_idx].logs) {
-                    carried_size +=
-                        sizeof(nlohmann::json::object_t) +
-                        (address.size() + value_size(log.address)) +
-                        (topics.size() + sizeof(nlohmann::json::array_t) +
-                         (sizeof(nlohmann::json::value_t) +
-                          sizeof(bytes32_t) * 2 + 2) *
-                             log.topics.size()) +
-                        (data.size() + value_size(log.data)) +
-                        (block_number.size() +
-                         value_size(block.header.number)) +
-                        (transaction_hash.size() +
-                         value_size(txn_hashes[tx_idx])) +
-                        (transaction_index.size() + value_size(tx_idx)) +
-                        (block_hash_field.size() + value_size(block_hash)) +
-                        (log_index.size() + value_size(log_index_cnt++)) +
-                        (removed.size() + sizeof(nlohmann::json::value_t) +
-                         sizeof(bool));
-                }
-            }
-            else {
-                constexpr size_t error_term_size =
-                    sizeof(nlohmann::json::object_t) +
-                    2 * sizeof(nlohmann::json::value_t) + error.size() +
-                    message.size() + execution_reverted.size();
-                carried_size += error_term_size;
-            }
-        }
-
-        // Next we calculate the size of output header.
-        // Header fields
-        static constexpr std::string_view hash = "hash";
-        static constexpr std::string_view parent_hash = "parentHash";
-        static constexpr std::string_view sha3_uncles = "sha3Uncles";
-        static constexpr std::string_view miner = "miner";
-        static constexpr std::string_view size = "size";
-        static constexpr std::string_view state_root = "stateRoot";
-        static constexpr std::string_view transactions_root =
-            "transactionsRoot";
-        static constexpr std::string_view receipts_root = "receiptsRoot";
-        static constexpr std::string_view withdrawals_root = "withdrawalsRoot";
-        static constexpr std::string_view logs_bloom = "logsBloom";
-        static constexpr std::string_view difficulty = "difficulty";
-        static constexpr std::string_view number = "number";
-        static constexpr std::string_view gas_limit = "gasLimit";
-        static constexpr std::string_view timestamp = "timestamp";
-        static constexpr std::string_view extra_data = "extraData";
-        static constexpr std::string_view mix_hash = "mixHash";
-        static constexpr std::string_view nonce = "nonce";
-        static constexpr std::string_view base_fee_per_gas = "baseFeePerGas";
-        static constexpr std::string_view uncles = "uncles";
-        static constexpr std::string_view transactions = "transactions";
-        static constexpr std::string_view withdrawals = "withdrawals";
-
-        // Withdrawals fields
-        static constexpr std::string_view index = "index";
-        static constexpr std::string_view validator_index = "validatorIndex";
-        static constexpr std::string_view amount = "amount";
-        static constexpr std::string_view recipient = "recipient";
-
-        carried_size +=
-            (hash.size() + value_size(block_hash)) +
-            (parent_hash.size() + value_size(block.header.parent_hash)) +
-            (sha3_uncles.size() + value_size(block.header.ommers_hash)) +
-            (miner.size() + value_size(block.header.beneficiary)) +
-            (size.size() +
-             // NOTE(dhil): The block size is calculated later, however, its
-             // size is bounded by size_t. This is a conservative estimate which
-             // likely overestimates the size of the field by 10-12 bytes or so.
-             value_size(std::numeric_limits<size_t>::max())) +
-            (state_root.size() + value_size(block.header.state_root)) +
-            (transactions_root.size() +
-             value_size(block.header.transactions_root)) +
-            (receipts_root.size() + value_size(block.header.receipts_root)) +
-            (withdrawals_root.size() +
-             value_size(block.header.withdrawals_root)) +
-            (logs_bloom.size() + value_size(block.header.logs_bloom)) +
-            (difficulty.size() + value_size(block.header.difficulty)) +
-            (number.size() + value_size(block.header.number)) +
-            (gas_limit.size() + value_size(block.header.gas_limit)) +
-            (gas_used.size() + value_size(block.header.gas_used)) +
-            (timestamp.size() + value_size(block.header.timestamp)) +
-            (extra_data.size() + value_size(block.header.extra_data)) +
-            (mix_hash.size() + value_size(block.header.prev_randao)) +
-            (nonce.size() + value_size(block.header.nonce)) +
-            (base_fee_per_gas.size() +
-             value_size(block.header.base_fee_per_gas)) +
-            (uncles.size() + sizeof(nlohmann::json::array_t) +
-             block.ommers.size() * (sizeof(nlohmann::json::value_t) +
-                                    sizeof(bytes32_t) * 2 + 2)) +
-            (transactions.size() + sizeof(nlohmann::json::array_t) +
-             (sizeof(nlohmann::json::value_t) + sizeof(bytes32_t) * 2 + 2) *
-                 txn_hashes.size()) +
-            (withdrawals.size() + sizeof(nlohmann::json::array_t));
-
-        for (auto const &withdrawal :
-             block.withdrawals.value_or(std::vector<Withdrawal>{})) {
-            carried_size +=
-                (sizeof(nlohmann::json::object_t) +
-                 (index.size() + value_size(withdrawal.index)) +
-                 (validator_index.size() +
-                  value_size(withdrawal.validator_index)) +
-                 (amount.size() + value_size(withdrawal.amount)) +
-                 (recipient.size() + value_size(withdrawal.recipient)));
-        }
+        carried_size += rpc::eth_simulateV1::log_entry_size(
+            block, receipts, call_frames, block_hash, txn_hashes);
 
         MONAD_ASSERT_THROW(
             carried_size <= soft_max_size,
@@ -778,49 +627,62 @@ namespace
 
         auto entry = nlohmann::json::object();
 
-        entry[calls] = nlohmann::json::array();
-        auto &txns = entry[calls];
+        entry[eth_simulate_json::calls] = nlohmann::json::array();
+        auto &txns = entry[eth_simulate_json::calls];
 
         for (size_t tx_idx = 0; tx_idx < block.transactions.size(); ++tx_idx) {
             auto call_result = nlohmann::json::object();
 
-            call_result[status] = std::format(
+            call_result[eth_simulate_json::status] = std::format(
                 "0x{:x}",
                 call_frames[tx_idx][0].status == EVMC_SUCCESS ? 1 : 0);
-            call_result[return_data] =
+            call_result[eth_simulate_json::return_data] =
                 format_hex(call_frames[tx_idx][0].output);
-            call_result[gas_used] =
+            call_result[eth_simulate_json::gas_used] =
                 std::format("0x{:x}", call_frames[tx_idx][0].gas_used);
 
             size_t log_index_value = 0;
             if (call_frames[tx_idx][0].status == EVMC_SUCCESS) {
-                call_result[logs] = nlohmann::json::array();
+                call_result[eth_simulate_json::logs] = nlohmann::json::array();
                 for (auto const &log : receipts[tx_idx].logs) {
-                    call_result[logs].emplace_back(nlohmann::json{
-                        {address, format_hex(log.address)},
-                        {topics, nlohmann::json::array()},
-                        {data, format_hex(log.data)},
-                        {block_number,
-                         std::format("0x{:x}", block.header.number)},
-                        {
-                            transaction_hash,
-                            format_hex(txn_hashes[tx_idx]),
-                        },
-                        {transaction_index, std::format("0x{:x}", tx_idx)},
-                        {block_hash_field, format_hex(block_hash)},
-                        {log_index, std::format("0x{:x}", log_index_value++)},
-                        // NOTE(dhil): Geth always emits logs with "removed"
-                        // fixed to `false`.
-                        {removed, false},
-                    });
+                    call_result[eth_simulate_json::logs].emplace_back(
+                        nlohmann::json{
+                            {eth_simulate_json::address,
+                             format_hex(log.address)},
+                            {eth_simulate_json::topics,
+                             nlohmann::json::array()},
+                            {eth_simulate_json::data, format_hex(log.data)},
+                            {eth_simulate_json::block_number,
+                             std::format("0x{:x}", block.header.number)},
+                            {
+                                eth_simulate_json::transaction_hash,
+                                format_hex(txn_hashes[tx_idx]),
+                            },
+                            {
+                                eth_simulate_json::transaction_index,
+                                std::format("0x{:x}", tx_idx),
+                            },
+                            {eth_simulate_json::block_hash,
+                             format_hex(block_hash)},
+                            {
+                                eth_simulate_json::log_index,
+                                std::format("0x{:x}", log_index_value++),
+                            },
+                            // NOTE(dhil): Geth always emits logs with "removed"
+                            // fixed to `false`.
+                            {eth_simulate_json::removed, false},
+                        });
                     for (auto const &topic : log.topics) {
-                        call_result[logs].back()[topics].emplace_back(
-                            format_hex(topic));
+                        call_result[eth_simulate_json::logs]
+                            .back()[eth_simulate_json::topics]
+                            .emplace_back(format_hex(topic));
                     }
                 }
             }
             else {
-                call_result[error] = {{message, execution_reverted}};
+                call_result[eth_simulate_json::error] = {
+                    {eth_simulate_json::message,
+                     eth_simulate_json::execution_reverted}};
             }
 
             txns.emplace_back(std::move(call_result));
@@ -831,63 +693,79 @@ namespace
         // fields currently requires a roundtrip to the db. However, in
         // simulation mode we only have readonly access to the db.
 
-        entry[hash] = format_hex(block_hash);
-        entry[parent_hash] = format_hex(block.header.parent_hash);
-        entry[sha3_uncles] = format_hex(block.header.ommers_hash);
-        entry[miner] = format_hex(block.header.beneficiary);
+        entry[eth_simulate_json::hash] = format_hex(block_hash);
+        entry[eth_simulate_json::parent_hash] =
+            format_hex(block.header.parent_hash);
+        entry[eth_simulate_json::sha3_uncles] =
+            format_hex(block.header.ommers_hash);
+        entry[eth_simulate_json::miner] = format_hex(block.header.beneficiary);
         {
             auto const encoded = rlp::encode_block(block);
-            entry[size] = std::format("0x{:x}", encoded.size());
+            entry[eth_simulate_json::size] =
+                std::format("0x{:x}", encoded.size());
         }
         // TODO(dhil): We currently do not have a way to compute roots
         // information in simulation mode.
-        entry[state_root] = format_hex(block.header.state_root);
-        entry[transactions_root] = format_hex(block.header.transactions_root);
-        entry[receipts_root] = format_hex(block.header.receipts_root);
+        entry[eth_simulate_json::state_root] =
+            format_hex(block.header.state_root);
+        entry[eth_simulate_json::transactions_root] =
+            format_hex(block.header.transactions_root);
+        entry[eth_simulate_json::receipts_root] =
+            format_hex(block.header.receipts_root);
         // In the absence of withdrawals we default to `NULL_HASH`.
-        entry[withdrawals_root] =
+        entry[eth_simulate_json::withdrawals_root] =
             format_hex(block.header.withdrawals_root.value_or(NULL_HASH));
         {
             Receipt::Bloom bloom = compute_bloom(receipts);
-            entry[logs_bloom] =
+            entry[eth_simulate_json::logs_bloom] =
                 format_hex(byte_string_view{bloom.data(), bloom.size()});
         }
-        entry[difficulty] =
+        entry[eth_simulate_json::difficulty] =
             std::format("0x{}", to_string(block.header.difficulty, 16));
-        entry[number] = std::format("0x{:x}", block.header.number);
-        entry[gas_limit] = std::format("0x{:x}", block.header.gas_limit);
-        entry[gas_used] = std::format("0x{:x}", block.header.gas_used);
-        entry[timestamp] = std::format("0x{:x}", block.header.timestamp);
-        entry[extra_data] = format_hex(block.header.extra_data);
-        entry[mix_hash] = format_hex(block.header.prev_randao);
-        entry[nonce] = std::format("0x0000000000000000");
-        entry[base_fee_per_gas] = std::format(
+        entry[eth_simulate_json::number] =
+            std::format("0x{:x}", block.header.number);
+        entry[eth_simulate_json::gas_limit] =
+            std::format("0x{:x}", block.header.gas_limit);
+        entry[eth_simulate_json::gas_used] =
+            std::format("0x{:x}", block.header.gas_used);
+        entry[eth_simulate_json::timestamp] =
+            std::format("0x{:x}", block.header.timestamp);
+        entry[eth_simulate_json::extra_data] =
+            format_hex(block.header.extra_data);
+        entry[eth_simulate_json::mix_hash] =
+            format_hex(block.header.prev_randao);
+        entry[eth_simulate_json::nonce] = std::format("0x0000000000000000");
+        entry[eth_simulate_json::base_fee_per_gas] = std::format(
             "0x{}", to_string(block.header.base_fee_per_gas.value_or(0), 16));
         {
-            entry[uncles] = nlohmann::json::array();
+            entry[eth_simulate_json::uncles] = nlohmann::json::array();
             for (auto const &uncle : block.ommers) {
-                entry[uncles].emplace_back(format_hex(
+                entry[eth_simulate_json::uncles].emplace_back(format_hex(
                     to_bytes(keccak256(rlp::encode_block_header(uncle)))));
             }
         }
         {
-            entry[transactions] = nlohmann::json::array();
+            entry[eth_simulate_json::transactions] = nlohmann::json::array();
             for (auto const &txn_hash : txn_hashes) {
-                entry[transactions].emplace_back(format_hex(txn_hash));
+                entry[eth_simulate_json::transactions].emplace_back(
+                    format_hex(txn_hash));
             }
         }
         {
-            entry[withdrawals] = nlohmann::json::array();
+            entry[eth_simulate_json::withdrawals] = nlohmann::json::array();
             for (auto const &withdrawal :
                  block.withdrawals.value_or(std::vector<Withdrawal>{})) {
-                entry[withdrawals].emplace_back(nlohmann::json{
-                    {index, std::format("0x{:x}", withdrawal.index)},
-                    {validator_index,
-                     std::format("0x{:x}", withdrawal.validator_index)},
-                    {amount, std::format("0x{:x}", withdrawal.amount)},
-                    {recipient,
-                     std::format("0x{}", evmc::hex(withdrawal.recipient))},
-                });
+                entry[eth_simulate_json::withdrawals].emplace_back(
+                    nlohmann::json{
+                        {eth_simulate_json::index,
+                         std::format("0x{:x}", withdrawal.index)},
+                        {eth_simulate_json::validator_index,
+                         std::format("0x{:x}", withdrawal.validator_index)},
+                        {eth_simulate_json::amount,
+                         std::format("0x{:x}", withdrawal.amount)},
+                        {eth_simulate_json::recipient,
+                         std::format("0x{}", evmc::hex(withdrawal.recipient))},
+                    });
             }
         }
 

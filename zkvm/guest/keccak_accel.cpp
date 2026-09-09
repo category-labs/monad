@@ -58,9 +58,35 @@ extern "C"
 // zisklib's own wrapper uses.
 void syscall_keccak_f(uint64_t (*state)[25]);
 
+// ziskos' `syscall_keccak_f` is two instructions -- `csrs 0x800, a0` and the
+// return -- so the call costs more than the body: a `jal` in at 68 cells and a
+// `jalr` out at 68 plus the 60 its low-bit `and` is priced at, 196 cells on each
+// of the block's 97,918 permutations. Emitted here it is the one instruction.
+//
+// The form is ziskos' own (`ziskos_syscall!(SYSCALL_KECCAKF_ID, state)` expands
+// to `csrs {port}, {value}`, and the transpiler shows it as `keccak 0, rs`).
+// rd = x0 is correct for THIS port; it is not for add256, where the same
+// spelling silently transpiles to an `or` -- see zisk_add256.
+//
+// Safe against the memo's ordering requirement. What that requires is that no
+// OTHER Keccak-f run between `fcall_set_keccakf_index` and this permutation, and
+// the compiler cannot introduce one; `asm volatile` statements are not reordered
+// against each other, and the "memory" clobber keeps the state's stores and loads
+// on the correct side.
+[[gnu::always_inline]] inline void zisk_keccakf(uint64_t (*state)[25]) noexcept
+{
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrs 0x800, %0\n\t"
+                 ".option pop"
+                 :
+                 : "r"(state)
+                 : "memory");
+}
+
 static inline void keccak_permute(uint64_t (*state)[25])
 {
-    syscall_keccak_f(state);
+    zisk_keccakf(state);
 }
 #else
 // SP1's syscall_keccak_permute symbol is LTO-internalised inside libzkevm.a,

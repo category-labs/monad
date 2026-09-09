@@ -356,6 +356,23 @@ nibble_mismatch(NibblesView const &a, NibblesView const &b)
             }
             i += 16;
         }
+        // The 0 < n - i < 16 remainder, as ONE more 16-nibble chunk aligned to
+        // the END of the run rather than up to fifteen nibble-at-a-time
+        // compares. `i != 0` is exactly "the loop above ran", i.e. n >= 16, so
+        // nibbles [n-16, n) exist on both sides and the 8-byte load covers them
+        // with the same footprint the forward chunk has -- one nibble before an
+        // odd start, nothing past the last.
+        //
+        // [n-16, i) is already known equal, so a difference this chunk reports
+        // is at or past i and the index it yields is the first difference in
+        // the whole run: the value returned is identical to the walk's, input
+        // for input.
+        if (i != 0 && i != n) {
+            unsigned const t = n - 16;
+            std::uint64_t const x = chunk(a.data(), a.begin_nibble() + t) ^
+                                    chunk(b.data(), b.begin_nibble() + t);
+            return x ? t + static_cast<unsigned>(__builtin_clzll(x) / 4) : n;
+        }
     }
     for (; i < n; ++i) {
         if (a.get(i) != b.get(i)) {

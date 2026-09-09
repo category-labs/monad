@@ -1908,12 +1908,75 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_VM_FUSE_SELTEST)
+        // DUP1 PUSH4 <selector> EQ PUSH2 <dst> JUMPI -- one arm of the jump
+        // table every Solidity dispatcher emits, repeated once per public
+        // method. Three dispatches become one, and nothing the sequence
+        // computes reaches the stack: DUP1's copy of the selector under test
+        // and PUSH4's constant are a register compare, and the EQ triple
+        // already keeps its own result out of memory.
+        //
+        // The whole sequence and not its DUP1 PUSH4 EQ prefix. That prefix was
+        // built: it cancels the arm on EQ, so the PUSH2 JUMPI left behind costs
+        // a dispatch of its own at 35.8 steps and the pair measures +0.159 %
+        // COST. A fusion that consumes the head of a longer one has to replace
+        // it, not shorten it.
+        //
+        // The follower byte is held for the unfused exit as well, which is what
+        // MONAD_VM_NEXT_OP is for: dup writes 32 bytes between the gate and the
+        // exit, so gcc cannot prove the two loads of instr_ptr[1] equal and
+        // emits both.
+        [[maybe_unused]] uint8_t monad_vm_op2 = 0;
+        if constexpr (N == 1) {
+            monad_vm_op2 = *(instr_ptr + 1);
+            // Short-circuited, so the 66 % of DUP1s whose follower is not PUSH4
+            // pay one byte compare. instr_ptr[10] is the JUMPI, and reading it
+            // past the end of the code is what the PUSH2 gate already relies
+            // on: Intercode pads the tail by 33 bytes.
+            if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH4) &&
+                *(instr_ptr + 6) == static_cast<std::uint8_t>(EQ) &&
+                *(instr_ptr + 7) == static_cast<std::uint8_t>(PUSH2) &&
+                *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI)) {
+                static constexpr auto monad_vm_req =
+                    fused_requirements<traits, DUP1, PUSH4, EQ, PUSH2, JUMPI>();
+                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) {
+                    gas_remaining -= monad_vm_req.gas;
+                }
+                else {
+                    MONAD_VM_CHECK(DUP1);
+                    MONAD_VM_CHECK_AT(PUSH4, 1);
+                    MONAD_VM_CHECK_AT(EQ, 2);
+                    MONAD_VM_CHECK_AT(PUSH2, 1);
+                    MONAD_VM_CHECK_AT(JUMPI, 2);
+                }
+                bool const monad_vm_taken =
+                    (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} ==
+                     *stack_top);
+                // The tail is the EQ triple's own, entered at the EQ: it reads
+                // the destination at p[2..3] and falls to p+5 when not taken.
+                instr_ptr = fused_branch(
+                    ctx, analysis, instr_ptr + 6, monad_vm_taken, gas_remaining);
+                MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                    ctx, analysis, stack_bottom, stack_top, gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+        }
+#endif
         MONAD_VM_CHECK(DUP1 + (N - 1));
 
         auto *const old_top = stack_top;
         push(stack_top, *(old_top - (N - 1)));
 
+#if defined(MONAD_VM_FUSE_SELTEST)
+        if constexpr (N == 1) {
+            MONAD_VM_NEXT_OP(DUP1, monad_vm_op2);
+        }
+        else {
+            MONAD_VM_NEXT(DUP1 + (N - 1));
+        }
+#else
         MONAD_VM_NEXT(DUP1 + (N - 1));
+#endif
     }
 
     template <size_t N, Traits traits>

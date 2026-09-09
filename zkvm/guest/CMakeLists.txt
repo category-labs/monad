@@ -343,11 +343,18 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         # steps -4.498 % median, COST -2.131 %, every block improving, 200 of 200
         # post-state roots.
         #
-        # Enables the four fusions that measured positive. The per-fusion macros
+        # Enables the five fusions that measured positive. The per-fusion macros
         # stay available as raw -D so one can be dropped to re-measure it:
-        # MONAD_VM_FUSE_JUMPDEST, _PUSH1OP, _PUSH2JUMP, _TESTJUMPI. POP+POP was
-        # measured and is deliberately absent -- its gate costs more than the one
-        # dispatch it saves.
+        # MONAD_VM_FUSE_JUMPDEST, _PUSH1OP, _PUSH2JUMP, _SELTEST, _TESTJUMPI.
+        #
+        # Two are measured and deliberately absent. POP+POP's gate costs more than
+        # the one dispatch it saves. PUSH1+SUB widens no gate at all -- SUB is
+        # opcode 3, inside _PUSH1OP's mask window, with the same aggregate
+        # requirements as ADD -- and still measures +0.022 % COST, because the
+        # transition census that motivates such a pair counts the opcode after an
+        # already-fused pair as well: it reads 25,036 and the arm fires 916 times.
+        # Size a new follower from the mask-miss count in a --disasm census, not
+        # from the pair census.
         option(MONAD_ZKVM_FUSE
                "fuse hot opcode sequences into single interpreter steps" OFF)
         if(MONAD_ZKVM_FUSE)
@@ -360,6 +367,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
                 MONAD_VM_FUSE_JUMPDEST
                 MONAD_VM_FUSE_PUSH1OP
                 MONAD_VM_FUSE_PUSH2JUMP
+                MONAD_VM_FUSE_SELTEST
                 MONAD_VM_FUSE_TESTJUMPI)
         endif()
 

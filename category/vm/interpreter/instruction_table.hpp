@@ -1611,12 +1611,68 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        // Fuse DUP1 PUSH4 <selector> EQ PUSH2 <dst> JUMPI without temporary
+        // stack writes. Fusing only DUP1/PUSH4/EQ would prevent the existing
+        // EQ/PUSH2/JUMPI fusion.
+        // Keep the next opcode for the unfused path to avoid reloading it.
+        [[maybe_unused]] uint8_t monad_vm_op2 = 0;
+        if constexpr (N == 1) {
+            monad_vm_op2 = *(instr_ptr + 1);
+            // Check PUSH4 first; Intercode's tail padding makes lookahead
+            // through instr_ptr[10] safe.
+            if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH4) &&
+                *(instr_ptr + 6) == static_cast<std::uint8_t>(EQ) &&
+                *(instr_ptr + 7) == static_cast<std::uint8_t>(PUSH2) &&
+                *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI)) {
+                static constexpr auto monad_vm_req =
+                    fused_requirements<traits, DUP1, PUSH4, EQ, PUSH2, JUMPI>();
+                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) {
+                    gas_remaining -= monad_vm_req.gas;
+                }
+                else {
+                    MONAD_VM_CHECK(DUP1);
+                    MONAD_VM_CHECK_AT(PUSH4, 1);
+                    MONAD_VM_CHECK_AT(EQ, 2);
+                    MONAD_VM_CHECK_AT(PUSH2, 1);
+                    MONAD_VM_CHECK_AT(JUMPI, 2);
+                }
+                bool const monad_vm_taken =
+                    (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} ==
+                     *stack_top);
+                // fused_branch expects a pointer to EQ, followed by
+                // PUSH2 <dst> JUMPI.
+                instr_ptr = fused_branch(
+                    ctx,
+                    analysis,
+                    instr_ptr + 6,
+                    monad_vm_taken,
+                    gas_remaining);
+                MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                    ctx,
+                    analysis,
+                    stack_bottom,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+        }
+#endif
         MONAD_VM_CHECK(DUP1 + (N - 1));
 
         auto *const old_top = stack_top;
         push(stack_top, *(old_top - (N - 1)));
 
+#if defined(MONAD_ZKVM_ZISK)
+        if constexpr (N == 1) {
+            MONAD_VM_NEXT_OP(DUP1, monad_vm_op2);
+        }
+        else {
+            MONAD_VM_NEXT(DUP1 + (N - 1));
+        }
+#else
         MONAD_VM_NEXT(DUP1 + (N - 1));
+#endif
     }
 
     template <size_t N, Traits traits>

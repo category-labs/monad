@@ -142,6 +142,21 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // A floor rather than an estimate -- the count is not known here.
     overlay_.reserve(1024);
 
+    // One hash slot for the whole sweep, its flag set once.
+    //
+    // bytes32_t's default constructor value-initialises all 32 bytes and
+    // keccak256 overwrites all 32 before anything reads them, so declaring the
+    // hash inside the loop bought a dead 32-byte dma_xmemset per non-digest
+    // node. Handing the object that is inserted to keccak256 directly also
+    // removes the copy into a `CachedHash{h, true}` temporary: the hash now
+    // reaches the map slot in one copy instead of two. And every entry this
+    // sweep inserts is valid, so the flag is not per-node either.
+    //
+    // Same shape as the validity array below, one level down: a store to
+    // memory whose value is read only after it has been overwritten.
+    CachedHash ch{};
+    ch.valid = true;
+
     // `child_offset < blob_.size()` followed from `child_offset < node_offset` and was dead. The walk
     // runs while node.bytes() < region_end, so node_offset < blob_.size() throughout; the one call
     // after the loop sets node_offset = blob_.size() first, where the first test IS the second. One
@@ -246,10 +261,9 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     // parent, so caching their hash would make child_ref
                     // emit a 32-byte ref where the trie inlines it.
                     if (rem.rlp_size() >= 32) {
-                        bytes32_t h;
                         MONAD_KECCAK_SITE(TRIE_PRIME, rem.rlp_size());
-                        keccak256(rem.rlp_data(), rem.rlp_size(), h.bytes);
-                        hashes_.insert_or_assign(NodeId{node_offset}, CachedHash{h, true});
+                        keccak256(rem.rlp_data(), rem.rlp_size(), ch.h.bytes);
+                        hashes_.insert_or_assign(NodeId{node_offset}, ch);
                     }
                 }});
 
@@ -722,11 +736,28 @@ namespace
 
 void append_branch(byte_string &out, std::array<NodeId, 16> const &children)
 {
-    out.reserve(out.size() + 1 + 16 * sizeof(node_id_wire));
-    out.push_back(BRANCH);
-    for (NodeId const c : children) {
-        append_node_id(out, c);
+    // Sixteen four-byte `append`s are sixteen capacity checks, sixteen size
+    // stores, sixteen NUL stores and sixteen UNALIGNED four-byte writes -- 328
+    // steps a node, measured, for 65 bytes of payload. The wire fields are
+    // adjacent and four bytes wide, so a PAIR of them is one aligned 8-byte
+    // store into a local (18 cells against 193 for the unaligned four-byte
+    // store into the string), and the run then leaves in a single append.
+    static_assert(std::endian::native == std::endian::little);
+    static_assert(sizeof(node_id_wire) == 4);
+    alignas(8) unsigned char buf[16 * sizeof(node_id_wire)];
+    for (unsigned i = 0; i < 16; i += 2) {
+        auto const lo = static_cast<node_id_wire>(children[i]);
+        auto const hi = static_cast<node_id_wire>(children[i + 1]);
+        // The narrowing check append_node_id makes, per child, unchanged.
+        MONAD_ASSERT(static_cast<uint64_t>(children[i]) == lo);
+        MONAD_ASSERT(static_cast<uint64_t>(children[i + 1]) == hi);
+        uint64_t const w =
+            static_cast<uint64_t>(lo) | (static_cast<uint64_t>(hi) << 32);
+        __builtin_memcpy(buf + i * sizeof(node_id_wire), &w, sizeof(w));
     }
+    out.reserve(out.size() + 1 + sizeof(buf));
+    out.push_back(BRANCH);
+    out.append(buf, sizeof(buf));
 }
 
 void append_ext(byte_string &out, NibblesView const path, NodeId const child)

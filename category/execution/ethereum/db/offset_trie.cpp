@@ -470,17 +470,42 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
         return d;
     };
     // Prepend the list header for payload [s.end(), dest.end()); return the
-    // final span. encode_list_prefix can transiently write up to 8 bytes,
-    // so build the header in a local and copy only its real length into
-    // place.
+    // final span.
+    //
+    // Written out rather than taken from rlp::encode_list_prefix: the generic
+    // prefix sizes a 64-bit length, and a payload here cannot exceed
+    // MAX_NODE_RLP, so the header is one, two or three bytes and its length
+    // field at most two. Sizing 64 bits costs bits::clz64's byte-length
+    // search, an 8-byte store into the `hdr` local -- unaligned, so 333 cells
+    // -- and a runtime-length dma_memcpy out of it, 47 to 55 steps a node
+    // against ten. The bytes are the same ones: 0xC0+len, 0xF8 | len and
+    // 0xF9 | len>>8 | len are what encode_list_prefix emits over those three
+    // ranges.
+    //
+    // zx() for the reason offset_trie.hpp gives: 0xF8 and 0xF9 are above
+    // 0x7F, so gcc materialises them sign-extended and each store would cost
+    // 193 cells instead of 66.
     auto const wrap = [](OffsetTrie::node_rlp_span const s) {
         size_t const payload_len = s.rlp_size();
-        unsigned char hdr[9];
-        auto const rest =
-            rlp::encode_list_prefix(std::span<unsigned char>{hdr}, payload_len);
-        size_t const hdr_len = sizeof(hdr) - rest.size();
-        std::memcpy(s.last(hdr_len).data(), hdr, hdr_len);
-        return s.shrink(hdr_len);
+        if (payload_len <= 55) {
+            s.back() = zx(0xC0 + payload_len);
+            return s.shrink(1);
+        }
+        if (payload_len <= 0xFF) {
+            auto const hdr = s.last(2);
+            hdr[0] = zx(0xF8);
+            hdr[1] = zx(payload_len);
+            return s.shrink(2);
+        }
+        // Unreachable above 0xFFFF, the buffer being MAX_NODE_RLP bytes --
+        // asserted and not assumed, because the two-byte length field below
+        // is written unconditionally.
+        MONAD_ASSERT(payload_len <= 0xFFFF);
+        auto const hdr = s.last(3);
+        hdr[0] = zx(0xF9);
+        hdr[1] = zx(payload_len >> 8);
+        hdr[2] = zx(payload_len & 0xFF);
+        return s.shrink(3);
     };
     return node_rlp_span{match(
         node,

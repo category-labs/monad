@@ -487,13 +487,26 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
         }
         return d;
     };
-    // Prepend the list header for payload [s.end(), dest.end()); return the
-    // final span.
-    auto const wrap = [](OffsetTrie::node_rlp_span const s) {
-        size_t const payload_len = s.rlp_size();
-        size_t const hdr_len = rlp::list_length(payload_len) - payload_len;
-        rlp::encode_list_prefix_compact(s.last(hdr_len), payload_len);
-        return s.shrink(hdr_len);
+    // Prepend the list prefix directly; node payloads need at most three bytes.
+    auto const wrap = [](OffsetTrie::node_rlp_span const payload) {
+        size_t const payload_len = payload.rlp_size();
+        if (payload_len <= 55) {
+            payload.back() = static_cast<unsigned char>(0xC0 + payload_len);
+            return payload.shrink(1);
+        }
+        if (payload_len <= 0xFF) {
+            auto const header = payload.last(2);
+            header[0] = static_cast<unsigned char>(0xF8);
+            header[1] = static_cast<unsigned char>(payload_len);
+            return payload.shrink(2);
+        }
+        // Ensure the payload length fits in the two-byte field below.
+        MONAD_ASSERT(payload_len <= 0xFFFF);
+        auto const header = payload.last(3);
+        header[0] = static_cast<unsigned char>(0xF9);
+        header[1] = static_cast<unsigned char>(payload_len >> 8);
+        header[2] = static_cast<unsigned char>(payload_len & 0xFF);
+        return payload.shrink(3);
     };
     return match(
         node,

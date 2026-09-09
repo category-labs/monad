@@ -1673,11 +1673,63 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        // Fuse DUP1 PUSH4 <selector> EQ PUSH2 <dst> JUMPI without temporary
+        // stack writes. Fusing only DUP1/PUSH4/EQ would prevent the existing
+        // EQ/PUSH2/JUMPI fusion.
+        // Keep the next opcode for the unfused path to avoid reloading it.
+        [[maybe_unused]] uint8_t next_opcode = 0;
+        if constexpr (N == 1) {
+            next_opcode = *(instr_ptr + 1);
+            // Check PUSH4 first; Intercode's tail padding makes lookahead
+            // through instr_ptr[10] safe.
+            if (next_opcode == static_cast<std::uint8_t>(PUSH4) &&
+                *(instr_ptr + 6) == static_cast<std::uint8_t>(EQ) &&
+                *(instr_ptr + 7) == static_cast<std::uint8_t>(PUSH2) &&
+                *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI)) {
+                static constexpr auto requirements =
+                    fused_requirements<traits, DUP1, PUSH4, EQ, PUSH2, JUMPI>();
+                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(requirements))) {
+                    gas_remaining -= requirements.gas;
+                }
+                else {
+                    MONAD_VM_CHECK(DUP1);
+                    MONAD_VM_CHECK_AT(PUSH4, 1);
+                    MONAD_VM_CHECK_AT(EQ, 2);
+                    MONAD_VM_CHECK_AT(PUSH2, 1);
+                    MONAD_VM_CHECK_AT(JUMPI, 2);
+                }
+                bool const take_jump =
+                    (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} ==
+                     *stack_top);
+                // fused_branch expects a pointer to EQ, followed by
+                // PUSH2 <dst> JUMPI.
+                instr_ptr = fused_branch(
+                    ctx, analysis, instr_ptr + 6, take_jump, gas_remaining);
+                MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                    ctx,
+                    analysis,
+                    stack_bottom,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+        }
+#endif
         MONAD_VM_CHECK(DUP1 + (N - 1));
 
         push(stack_top, stack_top[-(N - 1)]);
 
+#if defined(MONAD_ZKVM_ZISK)
+        if constexpr (N == 1) {
+            MONAD_VM_NEXT_OP(DUP1, next_opcode);
+        }
+        else {
+            MONAD_VM_NEXT(DUP1 + (N - 1));
+        }
+#else
         MONAD_VM_NEXT(DUP1 + (N - 1));
+#endif
     }
 
     [[gnu::always_inline]] inline void

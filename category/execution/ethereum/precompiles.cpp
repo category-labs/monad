@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/execution/ethereum/core/ecrecover/impl.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_impl.hpp>
@@ -227,13 +228,18 @@ PrecompileResult ecrecover_execute(byte_string_view const input)
     uint8_t *out{static_cast<uint8_t *>(std::aligned_alloc(8, 32))};
     MONAD_ASSERT(out != nullptr);
 
-    return from_impl_result(
-        ecrecover_impl(
+    std::memset(out, 0, 12);
+    if (!recover_address(
+            std::span<uint8_t, 20>{&out[12], 20},
             std::span<uint8_t const, 32>{&d[0], 32},
             std::span<uint8_t const, 64>{&d[64], 64},
-            v != 27,
-            std::span<uint8_t, 32>{out, 32}),
-        out);
+            v != 27)) {
+        std::free(out);
+        return {EVMC_SUCCESS, nullptr, 0};
+    }
+    else {
+        return {EVMC_SUCCESS, out, 32};
+    }
 }
 
 PrecompileResult sha256_execute(byte_string_view const input)

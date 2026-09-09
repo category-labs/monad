@@ -13,40 +13,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/address.hpp>
-#include <category/core/byte_string.hpp>
-#include <category/core/config.hpp>
-#include <category/core/int.hpp>
-#include <category/core/keccak.hpp>
-#include <category/execution/ethereum/core/ecrecover.hpp>
-#include <category/execution/ethereum/core/signature.hpp>
-
 #include <category/crypto/silkpre_vendor/ecdsa.h>
+#include <category/execution/ethereum/core/ecrecover/impl.hpp>
 
 #include <secp256k1.h>
 
-#include <cstdint>
 #include <memory>
-#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
-std::optional<Address>
-recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
+bool recover_address(
+    std::span<uint8_t, 20> const out, std::span<uint8_t const, 32> const msg,
+    std::span<uint8_t const, 64> const sig, uint8_t const recid)
 {
-    if (sig.y_parity > 1) {
-        return std::nullopt;
-    }
-
-    if (sig.has_upper_s()) {
-        return std::nullopt;
-    }
-
-    auto const encoding_hash = keccak256(encoding);
-
-    uint8_t signature[sizeof(sig.r) * 2];
-    store_be(signature, sig.r);
-    store_be(signature + sizeof(sig.r), sig.s);
 
     thread_local std::
         unique_ptr<secp256k1_context, void (*)(secp256k1_context *)> const
@@ -54,18 +33,8 @@ recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
                 secp256k1_context_create(MONAD_SECP256K1_CONTEXT_FLAGS),
                 &secp256k1_context_destroy);
 
-    Address result;
-
-    if (!monad_recover_address(
-            result.bytes,
-            encoding_hash.bytes,
-            signature,
-            sig.y_parity,
-            context.get())) {
-        return std::nullopt;
-    }
-
-    return result;
+    return monad_recover_address(
+        out.data(), msg.data(), sig.data(), recid, context.get());
 }
 
 MONAD_NAMESPACE_END

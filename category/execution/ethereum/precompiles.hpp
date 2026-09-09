@@ -172,10 +172,6 @@ struct PrecompileImplResult
     }
 };
 
-PrecompileImplResult ecrecover_impl(
-    std::span<uint8_t const, 32> msg, std::span<uint8_t const, 64> sig,
-    uint8_t recid, std::span<uint8_t, 32> const out);
-
 PrecompileImplResult
 sha256_impl(byte_string_view input, std::span<uint8_t, 32> const out);
 

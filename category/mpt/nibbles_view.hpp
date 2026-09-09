@@ -271,6 +271,37 @@ public:
                nibble_mismatch(*this, other) == other.nibble_size();
     }
 
+    // Advance past the first nibble. `substr(1)` reaches the general
+    // constructor, which renormalises data_, begin_nibble_ and end_nibble_ out
+    // of an arbitrary nibble range -- eleven instructions (0x800962bc-0x800962e4
+    // in find_original), where the two cases here are a pointer bump and a flag
+    // flip. The trie descent does this once per branch level: 23,496 times a
+    // block in OffsetTrie::find_original and 8,816 in OffsetTrie::upsert_node.
+    //
+    // Same view as `*this = substr(1)`, case for case: an even start keeps
+    // data_ and end_nibble_ and sets the parity; an odd start bumps data_,
+    // clears the parity and drops two from end_nibble_; and either way a run
+    // that empties normalises to the null view, which is what `empty()` and
+    // `data()` read. substr(1) on an empty run trips its constructor's
+    // `begin_nibble <= end_nibble` assert, so the guard is the same one.
+    constexpr void drop_front1()
+    {
+        MONAD_ASSERT(nibble_size() != 0);
+        if (begin_nibble_) {
+            ++data_;
+            begin_nibble_ = false;
+            end_nibble_ = static_cast<size_type>(end_nibble_ - 2);
+        }
+        else {
+            begin_nibble_ = true;
+        }
+        if (end_nibble_ == static_cast<size_type>(begin_nibble_)) {
+            data_ = nullptr;
+            begin_nibble_ = false;
+            end_nibble_ = 0;
+        }
+    }
+
     [[nodiscard]] unsigned char get(unsigned const i) const
     {
         MONAD_ASSERT(i < nibble_size());

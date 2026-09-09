@@ -273,7 +273,7 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
                         return NULL_ID;
                     }
                     NodeId const next = b.child(key.get(0));
-                    key = key.substr(1);
+                    key.drop_front1();
                     return next;
                 },
                 [&](ExtView e) -> NodeId {
@@ -1002,13 +1002,15 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
                 MONAD_ASSERT(key.nibble_size() > 0); // never ends at branch
                 unsigned const nib = key.get(0);
                 NodeId const child = b.child(nib);
+                NibblesView rest = key;
+                rest.drop_front1();
                 // The slot is already occupied on 97.1 % of descents measured
                 // (6,608 of 6,802 a block). Then the branch does not change,
                 // nothing reads b again, and materialising all sixteen
                 // children -- sixteen unaligned reads into a 64-byte array --
                 // was work to reach one of them.
                 if (child != NULL_ID) {
-                    return upsert_node(child, key.substr(1));
+                    return upsert_node(child, rest);
                 }
                 // A previously-empty slot fills, so the branch is rewritten
                 // and its sixteen children ARE needed. Read them before
@@ -1016,7 +1018,7 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
                 // recursion put_*s into that same overlay, which would leave
                 // the view reading stale bytes.
                 std::array<NodeId, 16> children = b.children();
-                auto const result = upsert_node(NULL_ID, key.substr(1));
+                auto const result = upsert_node(NULL_ID, rest);
                 children[nib] = result.first;
                 put_branch(id, children);
                 return result;

@@ -73,7 +73,36 @@ namespace monad::vm::interpreter
 
             bool test(size_t const i) const noexcept
             {
+#ifdef MONAD_ZKVM_ZISK
+                // `bext rd, rs1, rs2` IS this expression: rd = (rs1 >> (rs2 &
+                // 63)) & 1 on RV64. Two ZisK instructions become one -- 68
+                // cells of MAIN, plus the `and` at BINARY_COST = 60 where the
+                // shifted word is above the 386 free-operand window.
+                //
+                // In asm, and not left to gcc, because of the `& 63` in the
+                // portable form below. gcc reaches `bext` from this shape
+                // readily -- it emits one for PUSH1's fusion mask,
+                // `(mask >> op2) & 1`, at 80136810 -- but there the shift
+                // amount is a bare register. Here combine sees the position as
+                // `(and i 63)`, which its extraction matcher will not take;
+                // the mask is then stripped later, by which time the pattern
+                // is gone. The output is srl + andi, at 80134b04/08.
+                //
+                // Dropping the `& 63` from the C++ is not the fix: `i` runs to
+                // the code size, so `w >> i` would be a shift past the width
+                // and undefined. bext takes the mask itself.
+                uint64_t const w = words_[i >> 6];
+                uint64_t r;
+                asm(".option push\n\t"
+                    ".option arch, +zbs\n\t"
+                    "bext %0, %1, %2\n\t"
+                    ".option pop"
+                    : "=r"(r)
+                    : "r"(w), "r"(i));
+                return r != 0;
+#else
                 return (words_[i >> 6] >> (i & 63)) & 1;
+#endif
             }
 
             size_t word_count() const noexcept { return words_.size(); }

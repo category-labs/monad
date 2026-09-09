@@ -27,6 +27,7 @@
 #include <exception>
 #include <optional>
 #include <span>
+#include <type_traits>
 
 namespace monad::vm
 {
@@ -37,6 +38,9 @@ namespace monad::vm
         friend class VM;
 
     public:
+        /// Use Monad's adapters to avoid temporary EVMC argument copies.
+        static evmc_host_interface const &get_interface() noexcept;
+
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.
         void capture_current_exception() const noexcept
@@ -114,4 +118,163 @@ namespace monad::vm
         runtime::Context *runtime_context_{nullptr};
         mutable std::exception_ptr active_exception_;
     };
+}
+
+namespace monad::vm::host_shim
+{
+    // Bind C arguments as C++ references to avoid temporary adapter copies.
+    // The address and word wrappers add no data members to their C bases.
+    [[gnu::always_inline]] inline evmc::address const &
+    addr(evmc_address const *const address) noexcept
+    {
+        static_assert(sizeof(evmc::address) == sizeof(evmc_address));
+        static_assert(std::is_standard_layout_v<evmc::address>);
+        return reinterpret_cast<evmc::address const &>(*address);
+    }
+
+    [[gnu::always_inline]] inline evmc::bytes32 const &
+    word(evmc_bytes32 const *const value) noexcept
+    {
+        static_assert(sizeof(evmc::bytes32) == sizeof(evmc_bytes32));
+        static_assert(std::is_standard_layout_v<evmc::bytes32>);
+        return reinterpret_cast<evmc::bytes32 const &>(*value);
+    }
+
+    [[gnu::always_inline]] inline Host *
+    of(evmc_host_context *const context) noexcept
+    {
+        return evmc::Host::from_context<Host>(context);
+    }
+
+    inline bool account_exists(
+        evmc_host_context *context, evmc_address const *address) noexcept
+    {
+        return of(context)->account_exists(addr(address));
+    }
+
+    inline evmc_bytes32 get_storage(
+        evmc_host_context *context, evmc_address const *address,
+        evmc_bytes32 const *key) noexcept
+    {
+        return of(context)->get_storage(addr(address), word(key));
+    }
+
+    inline evmc_storage_status set_storage(
+        evmc_host_context *context, evmc_address const *address,
+        evmc_bytes32 const *key, evmc_bytes32 const *value) noexcept
+    {
+        return of(context)->set_storage(addr(address), word(key), word(value));
+    }
+
+    inline evmc_uint256be get_balance(
+        evmc_host_context *context, evmc_address const *address) noexcept
+    {
+        return of(context)->get_balance(addr(address));
+    }
+
+    inline size_t get_code_size(
+        evmc_host_context *context, evmc_address const *address) noexcept
+    {
+        return of(context)->get_code_size(addr(address));
+    }
+
+    inline evmc_bytes32 get_code_hash(
+        evmc_host_context *context, evmc_address const *address) noexcept
+    {
+        return of(context)->get_code_hash(addr(address));
+    }
+
+    inline size_t copy_code(
+        evmc_host_context *context, evmc_address const *address, size_t offset,
+        uint8_t *buffer, size_t size) noexcept
+    {
+        return of(context)->copy_code(addr(address), offset, buffer, size);
+    }
+
+    inline bool selfdestruct(
+        evmc_host_context *context, evmc_address const *address,
+        evmc_address const *beneficiary) noexcept
+    {
+        return of(context)->selfdestruct(addr(address), addr(beneficiary));
+    }
+
+    inline void emit_log(
+        evmc_host_context *context, evmc_address const *address,
+        uint8_t const *data, size_t data_size, evmc_bytes32 const topics[],
+        size_t num_topics) noexcept
+    {
+        of(context)->emit_log(
+            addr(address),
+            data,
+            data_size,
+            static_cast<evmc::bytes32 const *>(topics),
+            num_topics);
+    }
+
+    inline evmc_access_status access_account(
+        evmc_host_context *context, evmc_address const *address) noexcept
+    {
+        return of(context)->access_account(addr(address));
+    }
+
+    inline evmc_access_status access_storage(
+        evmc_host_context *context, evmc_address const *address,
+        evmc_bytes32 const *key) noexcept
+    {
+        return of(context)->access_storage(addr(address), word(key));
+    }
+
+    inline evmc_bytes32 get_transient_storage(
+        evmc_host_context *context, evmc_address const *address,
+        evmc_bytes32 const *key) noexcept
+    {
+        return of(context)->get_transient_storage(addr(address), word(key));
+    }
+
+    inline void set_transient_storage(
+        evmc_host_context *context, evmc_address const *address,
+        evmc_bytes32 const *key, evmc_bytes32 const *value) noexcept
+    {
+        of(context)->set_transient_storage(
+            addr(address), word(key), word(value));
+    }
+
+    // Avoid argument copies in MIP-8's SSTORE page-accounting callback.
+    inline evmc_page_storage_status update_page(
+        evmc_host_context *context, evmc_address const *address,
+        evmc_bytes32 const *key, evmc_storage_status const status) noexcept
+    {
+        return of(context)->update_page(addr(address), word(key), status);
+    }
+}
+
+namespace monad::vm
+{
+    // Reuse EVMC's call, get_tx_context and get_block_hash adapters:
+    // none takes address or word arguments that need conversion.
+    inline evmc_host_interface const &Host::get_interface() noexcept
+    {
+        static constexpr evmc_host_interface interface = {
+            ::monad::vm::host_shim::account_exists,
+            ::monad::vm::host_shim::get_storage,
+            ::monad::vm::host_shim::set_storage,
+            ::monad::vm::host_shim::get_balance,
+            ::monad::vm::host_shim::get_code_size,
+            ::monad::vm::host_shim::get_code_hash,
+            ::monad::vm::host_shim::copy_code,
+            ::monad::vm::host_shim::selfdestruct,
+            ::evmc::internal::call,
+            ::evmc::internal::get_tx_context,
+            ::evmc::internal::get_block_hash,
+            ::monad::vm::host_shim::emit_log,
+            ::monad::vm::host_shim::access_account,
+            ::monad::vm::host_shim::access_storage,
+            ::monad::vm::host_shim::get_transient_storage,
+            ::monad::vm::host_shim::set_transient_storage,
+            ::monad::vm::host_shim::update_page,
+        };
+        // An omitted trailing callback becomes null; require update_page.
+        static_assert(interface.update_page != nullptr);
+        return interface;
+    }
 }

@@ -130,7 +130,13 @@ static_assert(
 
 constexpr size_t KECCAKF_MEMO_ENTRIES = size_t{1} << 18;
 
-static KeccakfEntry keccakf_memo[KECCAKF_MEMO_ENTRIES];
+// One entry past capacity. `keccakf_memo[keccakf_memo_used]` is the scratch a
+// one-block digest builds its state in (keccak256_one_block below), and
+// `keccakf_memo_used` reaches KECCAKF_MEMO_ENTRIES when the table fills, so the
+// slot has to exist for the sponge to have somewhere to stand. It is never
+// filed and never in range: 512 B of .bss for one fewer bounds branch on the
+// hot path.
+static KeccakfEntry keccakf_memo[KECCAKF_MEMO_ENTRIES + 1];
 static uint64_t keccakf_memo_used = 0;
 
 // A 200-byte block op that reaches the DMA port instead of being expanded
@@ -208,6 +214,65 @@ static inline uint64_t fcall_get_keccakf_index(uint64_t const *const state)
     return index;
 }
 
+// A digest whose whole input fits in one rate block -- 33,123 of this guest's
+// 47,455 memoised calls on block 25815042 -- never needs the state to outlive
+// its single permutation. So it builds the padded block IN the slot the memo
+// would file it under, and the miss path's copy of the pre-state disappears:
+// the pre-state is already where the entry wants it. Two 200-byte port copies
+// become one on a miss and none on a hit, 1,232 cells either way.
+//
+// SOUNDNESS. Both of the memo's checks are here, unchanged and in the same
+// order, and neither trusts the executor: the hint must be below
+// `keccakf_memo_used`, and the entry it names must hold this state word for
+// word. The scratch is `keccakf_memo[keccakf_memo_used]`, which is not below
+// `keccakf_memo_used`, so it can never be served as its own hint; and
+// `keccakf_memo_used` still moves only after both halves of the entry are
+// written, so an index that arrives early is still out of range. A hit leaves
+// the scratch unpublished, for the next call to overwrite. `keccak_permute`'s
+// note on why an entry must own the bytes it compares against holds here too:
+// the entry owns them, the caller's buffer is never keyed on.
+static void keccak256_one_block(
+    void const *const in, size_t const len, uint8_t out[32])
+{
+    static_assert(135 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
+
+    KeccakfEntry &e = keccakf_memo[keccakf_memo_used];
+    uint64_t *const s = e.in;
+
+    std::memset(s, 0, KECCAKF_STATE_BYTES);
+    if (len) {
+        std::memcpy(s, in, len);
+    }
+    reinterpret_cast<unsigned char *>(s)[len] = 0x01;
+    s[16] |= uint64_t{0x80} << 56;
+
+    uint64_t const index = fcall_get_keccakf_index(s);
+    if (index < keccakf_memo_used &&
+        keccakf_state_eq(keccakf_memo[index].in, s)) {
+        std::memcpy(out, keccakf_memo[index].out, 32);
+        return;
+    }
+
+    if (keccakf_memo_used == KECCAKF_MEMO_ENTRIES) {
+        // Full: keep permuting, stop remembering. The scratch is the spare
+        // slot, so permute it in place; nothing will read the rest of it.
+        syscall_keccak_f(&e.in);
+        std::memcpy(out, s, 32);
+        return;
+    }
+
+    // `in` holds the pre-state already. Stage the copy the permutation will
+    // consume, then keep the request and the permutation adjacent for the
+    // reason `keccak_permute` gives.
+    keccakf_state_copy(e.out, s);
+    fcall_set_keccakf_index(keccakf_memo_used);
+    syscall_keccak_f(&e.out);
+    // Published last: this is what puts the entry in range, so it must not
+    // move until both halves are there.
+    ++keccakf_memo_used;
+    std::memcpy(out, e.out, 32);
+}
+
 #endif // MONAD_ZKVM_KECCAKF_MEMO
 
 // Only `syscall_keccak_f` above and the two entry points below carry C linkage;
@@ -283,6 +348,18 @@ static void keccak256_sponge(void const *const in, size_t len, uint8_t out[32])
 {
     constexpr size_t RATE = 136;
     constexpr size_t WORDS = RATE / 8; // 17
+
+#if defined(MONAD_ZKVM_ZISK) && MONAD_ZKVM_KECCAKF_MEMO
+    // 69.8 % of this entry's calls are one rate block (33,123 of 47,455 on
+    // 25815042 -- a key, an address, a leaf or extension node's RLP). They
+    // have a cheaper shape than the general sponge; see keccak256_one_block.
+    if constexpr (Memo) {
+        if (len < RATE) {
+            keccak256_one_block(in, len, out);
+            return;
+        }
+    }
+#endif
 
     uint64_t st[25] = {};
     auto const *p = static_cast<unsigned char const *>(in);

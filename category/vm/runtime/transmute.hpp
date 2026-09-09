@@ -90,8 +90,14 @@ namespace monad::vm::runtime
     [[gnu::always_inline]]
     constexpr bool is_bounded_by_bits(uint256_t const &x)
     {
-        static constexpr uint64_t mask = ~((uint64_t{1} << N) - 1);
-        return ((x[0] & mask) | x[1] | x[2] | x[3]) == 0;
+        // `x[0] >> N` and `x[0] & ~((1 << N) - 1)` are zero on exactly the
+        // same words, and the shift needs no constant. At N = 28 the mask has
+        // 36 set bits, so it costs a `lui` of its own on every call --
+        // 155,338 of them on block 25815042, 124,231 from MSTORE and MLOAD --
+        // and the `and` that consumes it can never be a ZisK FROP, because
+        // one operand is the mask. A shift by an immediate is one
+        // instruction and folds into the or-reduction.
+        return ((x[0] >> N) | x[1] | x[2] | x[3]) == 0;
     }
 
     template <typename T>

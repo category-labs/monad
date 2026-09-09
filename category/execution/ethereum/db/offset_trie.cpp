@@ -360,6 +360,35 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
     return encode_rlp(h, dest);
 }
 
+namespace
+{
+    // Like rlp::zeroless_view for a 32-byte big-endian value, but skips
+    // leading zeros eight bytes at a time. Reads the aligned stack copy
+    // because unaligned word reads from the blob are more expensive on ZisK.
+    [[gnu::always_inline]] inline byte_string_view
+    zeroless_view32(unsigned char const *const p)
+    {
+        for (unsigned w = 0; w < 32; w += 8) {
+            uint64_t const word = bits::load64(p + w);
+            if (word == 0) {
+                continue;
+            }
+            // `word` holds p[w..w+7] little-endian, so a leading zero byte in
+            // memory order is a low-order zero byte here.
+#if defined(__riscv_zbb) || defined(__x86_64__) || defined(__aarch64__)
+            unsigned const lz =
+                static_cast<unsigned>(std::countl_zero(std::byteswap(word))) /
+                8;
+#else
+            unsigned const lz =
+                static_cast<unsigned>(bits::clz64(bits::bswap64(word))) / 8;
+#endif
+            return {p + w + lz, 32 - w - lz};
+        }
+        return {p + 32, 0};
+    }
+}
+
 template <bool priming_pass>
 OffsetTrie::node_rlp_span
 OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
@@ -496,14 +525,15 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 dest = encode_path(dest, l.path(), /*terminating=*/true);
                 return wrap(dest);
             },
-            [&, encode_path, wrap](StorageLeafView l) -> node_rlp_span {
-                bytes32_t const v = l.value();
+                [&, encode_path, wrap](StorageLeafView l) -> node_rlp_span {
+                    // 8-aligned so zeroless_view32's word reads are 16 cells and
+                    // not 191.
+                    alignas(8) bytes32_t const v = l.value();
                 // storage value = rlp(zeroless(slot)), itself wrapped again
                 // as the leaf's value string: write the inner rlp(zl) into
                 // dest's tail, then prepend the outer string prefix in
                 // place.
-                auto const val =
-                    rlp::zeroless_view(to_byte_string_view(v.bytes));
+                auto const val = zeroless_view32(v.bytes);
                 size_t const val_len = rlp::string_length(val);
                 rlp::encode_string(dest.last(val_len), val);
                 dest = dest.shrink(val_len);

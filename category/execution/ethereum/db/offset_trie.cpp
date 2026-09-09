@@ -423,11 +423,29 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
     };
     // Prepend the list header for payload [s.end(), dest.end()); return the
     // final span.
+    //
+    // Node payloads need at most a three-byte RLP list prefix. Write it
+    // directly to avoid generic length sizing and copying; zx keeps byte
+    // stores cheap on ZisK.
     auto const wrap = [](OffsetTrie::node_rlp_span const s) {
         size_t const payload_len = s.rlp_size();
-        size_t const hdr_len = rlp::list_length(payload_len) - payload_len;
-        rlp::encode_list_prefix_compact(s.last(hdr_len), payload_len);
-        return s.shrink(hdr_len);
+        if (payload_len <= 55) {
+            s.back() = zx(0xC0 + payload_len);
+            return s.shrink(1);
+        }
+        if (payload_len <= 0xFF) {
+            auto const hdr = s.last(2);
+            hdr[0] = zx(0xF8);
+            hdr[1] = zx(payload_len);
+            return s.shrink(2);
+        }
+        // Ensure the payload length fits in the two-byte field below.
+        MONAD_ASSERT(payload_len <= 0xFFFF);
+        auto const hdr = s.last(3);
+        hdr[0] = zx(0xF9);
+        hdr[1] = zx(payload_len >> 8);
+        hdr[2] = zx(payload_len & 0xFF);
+        return s.shrink(3);
     };
     return match(
         node,

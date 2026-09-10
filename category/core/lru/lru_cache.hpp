@@ -32,11 +32,14 @@ MONAD_NAMESPACE_BEGIN
 //
 // Stamp mode (multi-block cache): one hash map, two eviction lists. Live
 // entries sit on the live list, whose node time field holds the consensus
-// stamp (last qualifying access block), written only by set_stamp at
-// finalize — find() is read-only for them, so live-list order is stamp order
-// and the tail is always the oldest-stamped (or unstamped) entry; eviction
-// of a warm entry (stamp >= the evict floor E) is impossible by construction
-// while budget + in-flight inserts < capacity, and evict() asserts it.
+// stamp (last selected access block), written only by set_stamp at finalize
+// — find() is read-only for them. The live list has two regions separated by
+// a fixed sentinel: stamped entries ahead of it in stamp order (set_stamp
+// moves an entry to the global head), unstamped entries behind it in
+// insertion order. Eviction takes the tail, so every unstamped entry goes
+// before any stamped one and the stamped region is drained oldest stamp
+// first: a cached entry (stamp >= the evict floor) can only be the victim
+// when the cached set itself outgrew the capacity, and evict() asserts it.
 // Negative entries ("this key holds nothing") sit on the negative list with
 // its own budget and wall-clock recency; a negative flood can only churn the
 // negative list. A value transition (create/delete at finalize) flips the
@@ -70,6 +73,9 @@ class LruCache
     std::atomic<size_t> negative_size_{0};
     LruList negative_lru_;
     std::atomic<uint64_t> evict_floor_{0};
+    // stamp mode: boundary between the stamped region (ahead) and the
+    // unstamped region (behind) of the live list; never evicted
+    ListNode boundary_;
 
 /// STATS MACROS
 #ifdef MONAD_LRU_CACHE_STATS
@@ -101,6 +107,9 @@ public:
         , stamp_mode_(stamp_mode)
         , negative_max_(negative_max)
     {
+        if (stamp_mode_) {
+            lru_.push_front(&boundary_);
+        }
     }
 
     LruCache(LruCache const &) = delete;
@@ -146,9 +155,8 @@ public:
     }
 
     // Finalize path: set the consensus stamp of a resident live entry and
-    // move it to the live-list front. Returns false when the entry is not
-    // resident (the stamp is lost; the window still counts it, which only
-    // overcharges).
+    // move it to the live-list front (the stamped region). Returns false when
+    // the entry is not resident or negative.
     bool set_stamp(Key const &key, uint64_t const stamp)
     {
         ConstAccessor acc;
@@ -196,7 +204,13 @@ public:
     void clear() // Not thread-safe with other cache operations
     {
         hmap_.clear();
+        if (stamp_mode_) {
+            lru_.delink(&boundary_);
+        }
         lru_.clear(pool_);
+        if (stamp_mode_) {
+            lru_.push_front(&boundary_);
+        }
         negative_lru_.clear(pool_);
         size_.store(0, std::memory_order_release);
         negative_size_.store(0, std::memory_order_release);
@@ -231,7 +245,12 @@ private:
             node->negative_ = negative;
             // negative recency restarts; a fresh live entry is unstamped
             node->update_lru_time(negative ? ListNode::wall_clock() : 0);
-            (negative ? negative_lru_ : lru_).push_front(node);
+            if (negative) {
+                negative_lru_.push_front(node);
+            }
+            else {
+                lru_.insert_after(&boundary_, node);
+            }
         }
         if (negative) {
             size_.fetch_sub(1, std::memory_order_acq_rel);
@@ -271,7 +290,12 @@ private:
         {
             std::unique_lock const l(mutex_);
             STATS_EVENT_INSERT_NEW();
-            lru_.push_front(node);
+            if (stamp_mode_) {
+                lru_.insert_after(&boundary_, node); // unstamped region
+            }
+            else {
+                lru_.push_front(node);
+            }
         }
         if (!evicted) {
             sz = 1 + size_.fetch_add(1, std::memory_order_acq_rel);
@@ -295,15 +319,16 @@ private:
         {
             std::unique_lock const l(mutex_);
             STATS_EVENT_EVICT();
-            target = lru_.evict();
+            target =
+                stamp_mode_ ? lru_.evict_skipping(&boundary_) : lru_.evict();
         }
         if (!target) {
             return false;
         }
         if (stamp_mode_) {
-            // the live tail is the oldest-stamped entry, so a warm victim
-            // means the warm set outgrew the physical capacity — a consensus
-            // bug, not a perf bug
+            // unstamped entries drain first, then stamps oldest first, so a
+            // cached victim means the cached set outgrew the physical
+            // capacity — a consensus bug, not a perf bug
             uint64_t const stamp = static_cast<uint64_t>(
                 target->lru_time_.load(std::memory_order_acquire));
             MONAD_ASSERT(
@@ -412,11 +437,31 @@ private:
 
         void push_front(ListNode *node)
         {
-            ListNode *const head = head_.next_;
-            node->prev_ = &head_;
-            node->next_ = head;
-            head->prev_ = node;
-            head_.next_ = node;
+            insert_after(&head_, node);
+        }
+
+        void insert_after(ListNode *const pos, ListNode *const node)
+        {
+            ListNode *const next = pos->next_;
+            node->prev_ = pos;
+            node->next_ = next;
+            next->prev_ = node;
+            pos->next_ = node;
+        }
+
+        // Evict the tail, or the node before `skip` when the tail is the
+        // sentinel `skip` itself.
+        ListNode *evict_skipping(ListNode *const skip)
+        {
+            ListNode *target = tail_.prev_;
+            if (target == skip) {
+                target = skip->prev_;
+            }
+            if (target == &head_) {
+                return nullptr;
+            }
+            delink(target);
+            return target;
         }
 
         void clear(Pool &pool)

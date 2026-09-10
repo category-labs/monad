@@ -84,15 +84,24 @@ class DbCache final
     Proposals proposals_;
 
 public:
+    static constexpr size_t ACCOUNT_CACHE_MAX_ENTRIES = 10'000'000;
+
     // stamp_mode false = plain wall-clock LRU promotion (pre multi-block
-    // cache behavior, for baseline measurement arms)
-    explicit DbCache(bool const stamp_mode = true)
-        : accounts_{10'000'000, stamp_mode, NEGATIVE_MAX_ENTRIES}
+    // cache behavior, for baseline measurement arms). The capacities are
+    // overridable for tests that exercise eviction; production sizes must
+    // exceed the fixed-window bounds (CACHE_WINDOW_BLOCKS x the per-block
+    // caps) plus in-flight inserts.
+    explicit DbCache(
+        bool const stamp_mode = true,
+        size_t const account_capacity = ACCOUNT_CACHE_MAX_ENTRIES,
+        uint32_t const storage_capacity_bytes = STORAGE_CACHE_MAX_BYTES,
+        size_t const negative_capacity = NEGATIVE_MAX_ENTRIES)
+        : accounts_{account_capacity, stamp_mode, negative_capacity}
         , storage_{
-              STORAGE_CACHE_MAX_BYTES,
+              storage_capacity_bytes,
               std::chrono::milliseconds{200},
               stamp_mode,
-              NEGATIVE_MAX_ENTRIES}
+              negative_capacity}
     {
     }
 

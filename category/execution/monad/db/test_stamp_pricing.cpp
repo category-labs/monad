@@ -531,3 +531,65 @@ TEST(StampBootstrap, restart_reproduces_stamps_from_the_log)
     EXPECT_EQ(
         restarted.read_storage(STAMP_LOG_ADDRESS, INC, key_of(0)), bytes32_t{});
 }
+
+// Adversarial model of the residency guarantee: a small cache flooded every
+// block with unstamped live inserts and negative results while a stream of
+// selected stamps keeps a cached set alive. The LRU may only ever evict
+// unstamped or expired entries (evict() aborts otherwise), and every stamp
+// of the live window stays resident with its stamp.
+TEST(StampAdversarial, floods_never_evict_the_cached_set)
+{
+    constexpr size_t CAPACITY = 20'000;
+    constexpr uint64_t STAMPS_PER_BLOCK = 10;
+    constexpr uint64_t UNSTAMPED_PER_BLOCK = 30;
+    constexpr uint64_t NEGATIVE_PER_BLOCK = 50;
+    constexpr uint64_t BLOCKS = 1'300;
+    DbCache cache{
+        /*stamp_mode=*/true,
+        CAPACITY,
+        /*storage_capacity_bytes=*/1u << 20,
+        /*negative_capacity=*/200};
+    uint64_t next = 1;
+    std::vector<std::pair<uint64_t, Address>> stamped; // (block, address)
+    for (uint64_t block = 1; block <= BLOCKS; ++block) {
+        ProposalPostState post;
+        for (uint64_t i = 0; i < STAMPS_PER_BLOCK; ++i) {
+            Address const a = addr_of(next++);
+            post.accounts[a] = Account{.nonce = 1};
+            post.account_stamps.push_back(a);
+            stamped.emplace_back(block, a);
+        }
+        for (uint64_t i = 0; i < UNSTAMPED_PER_BLOCK; ++i) {
+            post.accounts[addr_of(next++)] = Account{.nonce = 1};
+        }
+        for (uint64_t i = 0; i < NEGATIVE_PER_BLOCK; ++i) {
+            post.accounts[addr_of(next++)] = std::nullopt;
+        }
+        // re-stamp a random older cached account every block (class 3)
+        if (block > 600) {
+            auto const &[b, a] = stamped[(block * 7919) % stamped.size()];
+            if (cache_stamp_cached(b, block) && !post.accounts.contains(a)) {
+                post.accounts[a] = Account{.nonce = 1};
+                post.account_stamps.push_back(a);
+                stamped.emplace_back(block, a);
+            }
+        }
+        cache.update_proposal_state(std::move(post), block, bytes32_t{block});
+        cache.on_finalize(block, bytes32_t{block});
+
+        // every account stamped within the window is resident with its
+        // latest stamp
+        if (block % 100 == 0) {
+            ankerl::unordered_dense::map<Address, uint64_t> latest;
+            for (auto const &[b, a] : stamped) {
+                latest[a] = std::max(latest[a], b);
+            }
+            for (auto const &[a, b] : latest) {
+                if (cache_stamp_cached(b, block + 1)) {
+                    EXPECT_TRUE(cache.account_has_stamp(a, b))
+                        << "block " << block << " stamp " << b;
+                }
+            }
+        }
+    }
+}

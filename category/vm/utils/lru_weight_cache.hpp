@@ -51,10 +51,11 @@ namespace monad::vm::utils
         HashMap hmap_;
         // Stamp mode: the entry time field holds the consensus stamp,
         // written only by set_stamp at finalize — find() and insert() never
-        // promote or write it, so list order is stamp order and the tail is
-        // always the oldest-stamped (or unstamped) entry. Eviction of a warm
-        // entry (stamp >= the evict floor E) is impossible by construction
-        // while budget + in-flight inserts < capacity; eviction asserts it.
+        // promote or write it. The list has a stamped region (stamp order,
+        // ahead of the boundary sentinel) and an unstamped region (insertion
+        // order, behind it); eviction drains unstamped entries first, then
+        // stamps oldest first, so a cached victim (stamp >= the evict floor)
+        // means the cached set outgrew the capacity; eviction asserts it.
         bool const stamp_mode_{false};
         std::atomic<uint64_t> evict_floor_{0};
         // negative entries sit on their own count-budgeted list; the shared
@@ -73,7 +74,7 @@ namespace monad::vm::utils
             bool const stamp_mode = false, size_t const negative_max = 0)
             : max_weight_(max_weight)
             , weight_(0)
-            , lru_{lru_update_duration.count()}
+            , lru_{lru_update_duration.count(), stamp_mode}
             , stamp_mode_{stamp_mode}
             , negative_max_{negative_max}
             , negative_lru_{lru_update_duration.count()}
@@ -113,9 +114,9 @@ namespace monad::vm::utils
                 acc->second.lru_time_.load(std::memory_order_acquire));
         }
 
-        // Finalize path: set the consensus stamp of a resident entry and move
-        // it to the front. Returns false when the entry is not resident (the
-        // stamp is lost; the window still counts it, which only overcharges).
+        // Finalize path: set the consensus stamp of a resident live entry and
+        // move it to the front (the stamped region). Returns false when the
+        // entry is not resident or negative.
         bool set_stamp(Key const &key, uint64_t const stamp)
         {
             ConstAccessor acc;
@@ -171,10 +172,7 @@ namespace monad::vm::utils
                     1 + negative_size_.fetch_add(1, std::memory_order_acq_rel));
             }
             else {
-                lru_.push_front(node);
-                if (stamp_mode_) {
-                    node->second.update_lru_time(0); // unstamped
-                }
+                push_live(node);
                 adjust_by_delta_weight(weight);
             }
             return true;
@@ -236,10 +234,7 @@ namespace monad::vm::utils
                     1 + negative_size_.fetch_add(1, std::memory_order_acq_rel));
             }
             else {
-                lru_.push_front(node);
-                if (stamp_mode_) {
-                    node->second.update_lru_time(0); // unstamped
-                }
+                push_live(node);
                 adjust_by_delta_weight(weight);
             }
             return true;
@@ -266,6 +261,17 @@ namespace monad::vm::utils
         }
 
     private:
+        // A new live entry: unstamped, behind the boundary in stamp mode.
+        void push_live(ListNode const *const node)
+        {
+            if (stamp_mode_) {
+                lru_.push_unstamped(node);
+            }
+            else {
+                lru_.push_front(node);
+            }
+        }
+
         void adjust_by_delta_weight(int64_t const delta_weight)
         {
             int64_t const pre_weight =
@@ -310,7 +316,10 @@ namespace monad::vm::utils
         {
             if (!(negative ? negative_lru_ : lru_)
                      .relink_from(
-                         negative ? lru_ : negative_lru_, node, negative)) {
+                         negative ? lru_ : negative_lru_,
+                         node,
+                         negative,
+                         /*behind_boundary=*/!negative && stamp_mode_)) {
                 return; // being evicted concurrently
             }
             if (negative) {
@@ -408,12 +417,19 @@ namespace monad::vm::utils
         class LruList
         {
             ListNode base_;
+            // stamp mode: sentinel between the stamped region (ahead) and
+            // the unstamped region (behind); never evicted
+            ListNode boundary_;
             std::mutex mutex_;
             int64_t lru_update_period_;
+            bool const with_boundary_;
 
         public:
-            explicit LruList(int64_t const lru_update_period)
+            explicit LruList(
+                int64_t const lru_update_period,
+                bool const with_boundary = false)
                 : lru_update_period_{lru_update_period}
+                , with_boundary_{with_boundary}
             {
                 clear();
             }
@@ -433,6 +449,9 @@ namespace monad::vm::utils
             {
                 base_.second.next_ = &base_;
                 base_.second.prev_ = &base_;
+                if (with_boundary_) {
+                    front_link(&boundary_);
+                }
             }
 
             void update_lru(ListNode const *const node)
@@ -450,6 +469,15 @@ namespace monad::vm::utils
                 std::unique_lock const l(mutex_);
                 front_link(node);
                 node->second.update_lru_time(lru_update_period_);
+            }
+
+            // Stamp mode: a new live entry enters the unstamped region,
+            // right behind the boundary, with stamp 0.
+            void push_unstamped(ListNode const *const node)
+            {
+                std::unique_lock const l(mutex_);
+                link_after(&boundary_, node);
+                node->second.update_lru_time(0);
             }
 
             // Stamp mode: move to the front and store the stamp verbatim in
@@ -470,7 +498,8 @@ namespace monad::vm::utils
             // negatives, unstamped for live). False when the node is not in
             // any list (a concurrent eviction already claimed it).
             bool relink_from(
-                LruList &src, ListNode const *const node, bool const negative)
+                LruList &src, ListNode const *const node, bool const negative,
+                bool const behind_boundary)
             {
                 std::scoped_lock const l(mutex_, src.mutex_);
                 if (!node->second.is_in_list()) {
@@ -480,14 +509,24 @@ namespace monad::vm::utils
                 node->second.negative_ = negative;
                 node->second.update_lru_time(
                     negative ? ListNode::second_type::wall_clock() : 0);
-                front_link(node);
+                if (behind_boundary) {
+                    link_after(&boundary_, node);
+                }
+                else {
+                    front_link(node);
+                }
                 return true;
             }
 
+            // The tail, skipping the boundary sentinel: unstamped entries
+            // drain first, then the stamped region oldest stamp first.
             ListNode const *evict()
             {
                 std::unique_lock const l(mutex_);
-                ListNode const *const target = base_.second.prev_;
+                ListNode const *target = base_.second.prev_;
+                if (target == &boundary_) {
+                    target = boundary_.second.prev_;
+                }
                 if (target == &base_) {
                     return nullptr;
                 }
@@ -504,6 +543,10 @@ namespace monad::vm::utils
                 ListNode const *node = base_.second.next_;
                 int64_t node_weight = 0;
                 while (node != &base_) {
+                    if (node == &boundary_) {
+                        node = node->second.next_;
+                        continue;
+                    }
                     auto [_, inserted] = keys.insert(node->first);
                     if (!inserted) {
                         return false;
@@ -528,11 +571,17 @@ namespace monad::vm::utils
 
             void front_link(ListNode const *const node)
             {
-                ListNode const *const head = base_.second.next_;
-                node->second.prev_ = &base_;
-                node->second.next_ = head;
-                head->second.prev_ = node;
-                base_.second.next_ = node;
+                link_after(&base_, node);
+            }
+
+            void
+            link_after(ListNode const *const pos, ListNode const *const node)
+            {
+                ListNode const *const next = pos->second.next_;
+                node->second.prev_ = pos;
+                node->second.next_ = next;
+                next->second.prev_ = node;
+                pos->second.next_ = node;
             }
         }; /// LruList
     }; /// LruWeightCache

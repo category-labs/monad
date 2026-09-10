@@ -217,6 +217,9 @@ monad_statesync_server_context::monad_statesync_server_context(TrieDb &rw)
     : rw{rw}
     , ro{nullptr}
 {
+    // The server traversal expands page leaves into slot-format upserts and
+    // has no slot-encoded path.
+    MONAD_ASSERT(rw.is_page_encoded());
 }
 
 bool monad_statesync_server_context::is_page_encoded() const

@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/block_hash_buffer/util.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
+#include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -27,6 +28,7 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/execution/monad/db/state_machine_init.hpp>
 #include <category/execution/runloop/runloop_interface_monad.h>
 #include <category/execution/runloop/runloop_monad.hpp>
 #include <category/mpt/db.hpp>
@@ -211,11 +213,8 @@ struct MonadRunloopImpl
     fs::path ledger_dir;
     AccountOverrideMap account_override;
     mpt::Db raw_db;
-    mpt::Db secondary_raw_db;
     TrieDb triedb;
-    TrieDb secondary_triedb;
     MonadRunloopTrieDb runloop_db;
-    MonadRunloopTrieDb secondary_runloop_db;
     vm::VM vm;
     BlockHashBufferFinalized block_hash_buffer;
     fiber::PriorityPool priority_pool;
@@ -226,40 +225,35 @@ struct MonadRunloopImpl
         uint64_t chain_id, char const *ledger_path, char const *db_path);
 };
 
-mpt::Db get_secondary_raw_db(mpt::Db &db)
-{
-    if (db.timeline_active(mpt::timeline_id::secondary)) {
-        auto db2 =
-            db.open_secondary_timeline(std::make_unique<MonadOnDiskMachine>());
-        MONAD_ASSERT(db2.has_value());
-        return std::move(*db2);
-    }
-    return db.activate_secondary_timeline(
-        std::make_unique<MonadOnDiskMachine>());
-}
-
 MonadRunloopImpl::MonadRunloopImpl(
     uint64_t const chain_id, char const *const ledger_path,
     char const *const db_path)
     : chain{monad_chain_from_chain_id(chain_id)}
     , ledger_dir{ledger_path}
-    , raw_db{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{.append = true, .compaction = true, .rewind_to_latest_finalized = true, .rd_buffers = 8192, .wr_buffers = 32, .uring_entries = 128, .sq_thread_cpu = sq_thread_cpu, .dbname_paths = {fs::path{db_path}}}}
-    , secondary_raw_db{get_secondary_raw_db(raw_db)}
+    , raw_db{mpt::OnDiskDbConfig{
+          .append = true,
+          .compaction = true,
+          .rewind_to_latest_finalized = true,
+          .rd_buffers = 8192,
+          .wr_buffers = 32,
+          .uring_entries = 128,
+          .sq_thread_cpu = sq_thread_cpu,
+          .dbname_paths = {fs::path{db_path}}}}
     , triedb{raw_db, /*enable_multiblock_cache=*/true}
-    , secondary_triedb{secondary_raw_db}
     , runloop_db{triedb, account_override}
-    , secondary_runloop_db{secondary_triedb, account_override}
     , vm{}
     , block_hash_buffer{}
     , priority_pool{nthreads, nfibers}
 {
-    MONAD_ASSERT(triedb.is_page_encoded() == false);
-    MONAD_ASSERT(secondary_triedb.is_page_encoded() == true);
+    // runloop_monad requires a single page-encoded timeline. The encoding
+    // comes from the state_machine_kind persisted when the pool was created
+    // (monad-mpt --create --state-machine monad); it is never stamped here.
+    MONAD_ASSERT(triedb.is_page_encoded());
+    MONAD_ASSERT(!raw_db.timeline_active(mpt::timeline_id::secondary));
     if (triedb.get_root() == nullptr) {
         LOG_INFO("loading from genesis");
         GenesisState const genesis_state = chain->get_genesis_state();
         load_genesis_state(genesis_state, triedb);
-        load_genesis_state(genesis_state, secondary_triedb);
     }
     else {
         LOG_INFO("loading from previous DB state");
@@ -379,6 +373,11 @@ extern "C" MonadRunloop *monad_runloop_new(
         init_root_logger(log_level);
         is_quill_running = true;
     }
+    // The on-disk Db ctor reads the persisted state_machine_kind and builds
+    // the StateMachine through the registry, so the factories must be
+    // registered first. Idempotent.
+    register_ethereum_state_machines();
+    register_monad_state_machines();
     return from_impl(new MonadRunloopImpl{chain_id, ledger_path, db_path});
 }
 
@@ -406,7 +405,6 @@ try {
         runloop->ledger_dir,
         runloop->raw_db,
         runloop->runloop_db,
-        &runloop->secondary_runloop_db,
         runloop->vm,
         runloop->block_hash_buffer,
         runloop->priority_pool,
@@ -463,20 +461,12 @@ extern "C" void monad_runloop_get_balance(
     store_be(result_balance->bytes, bal);
 }
 
-extern "C" void monad_runloop_get_primary_state_root(
+extern "C" void monad_runloop_get_state_root(
     MonadRunloop *const pre_runloop, MonadRunloopWord *const result_state_root)
 {
     MonadRunloopImpl *const runloop = to_impl(pre_runloop);
     *result_state_root =
         std::bit_cast<MonadRunloopWord>(runloop->triedb.state_root());
-}
-
-extern "C" void monad_runloop_get_secondary_state_root(
-    MonadRunloop *const pre_runloop, MonadRunloopWord *const result_state_root)
-{
-    MonadRunloopImpl *const runloop = to_impl(pre_runloop);
-    *result_state_root = std::bit_cast<MonadRunloopWord>(
-        runloop->secondary_runloop_db.state_root());
 }
 
 extern "C" void monad_runloop_dump(MonadRunloop *const pre_runloop)

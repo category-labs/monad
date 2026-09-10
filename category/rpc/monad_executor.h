@@ -29,7 +29,15 @@ extern "C"
 
 static uint64_t const MONAD_ETH_CALL_LOW_GAS_LIMIT = 8'100'000;
 
+struct monad_event_ring;
 struct monad_executor;
+
+// Execution event recording options
+struct monad_executor_event_record_options
+{
+    struct monad_event_ring *exec_event_ring;
+    bool emit_mock_consensus_events;
+};
 
 typedef struct monad_executor_result
 {
@@ -131,6 +139,7 @@ void monad_executor_eth_simulate_submit(
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
     bool emit_native_transfer_logs,
+    struct monad_executor_event_record_options const *,
     void (*complete)(monad_executor_result *, void *user), void *user);
 
 #ifdef __cplusplus

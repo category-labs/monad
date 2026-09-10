@@ -35,7 +35,8 @@ struct MonadRunloopAddress
 // Opaque runloop structure:
 typedef void MonadRunloop;
 
-// Make a new runloop client
+// Make a new runloop client. The pool at db_path must already exist and be
+// page-encoded (created with monad-mpt --create --state-machine monad).
 MonadRunloop *monad_runloop_new(
     uint64_t chain_id, char const *ledger_path, char const *db_path);
 

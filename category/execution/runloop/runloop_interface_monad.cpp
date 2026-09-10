@@ -20,6 +20,7 @@
 #include <category/execution/ethereum/block_hash_buffer/util.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
+#include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -27,6 +28,7 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/execution/monad/db/state_machine_init.hpp>
 #include <category/execution/runloop/runloop_interface_monad.h>
 #include <category/execution/runloop/runloop_monad.hpp>
 #include <category/mpt/db.hpp>
@@ -228,15 +230,24 @@ MonadRunloopImpl::MonadRunloopImpl(
     char const *const db_path)
     : chain{monad_chain_from_chain_id(chain_id)}
     , ledger_dir{ledger_path}
-    , raw_db{std::make_unique<MonadOnDiskMachine>(), mpt::OnDiskDbConfig{.append = true, .compaction = true, .rewind_to_latest_finalized = true, .rd_buffers = 8192, .wr_buffers = 32, .uring_entries = 128, .sq_thread_cpu = sq_thread_cpu, .dbname_paths = {fs::path{db_path}}}}
+    , raw_db{mpt::OnDiskDbConfig{
+          .append = true,
+          .compaction = true,
+          .rewind_to_latest_finalized = true,
+          .rd_buffers = 8192,
+          .wr_buffers = 32,
+          .uring_entries = 128,
+          .sq_thread_cpu = sq_thread_cpu,
+          .dbname_paths = {fs::path{db_path}}}}
     , triedb{raw_db, /*enable_multiblock_cache=*/true}
     , runloop_db{triedb, account_override}
     , vm{}
     , block_hash_buffer{}
     , priority_pool{nthreads, nfibers}
 {
-    // runloop_monad requires a single page-encoded timeline; the machine
-    // passed above stamps the primary as page-encoded.
+    // runloop_monad requires a single page-encoded timeline. The encoding
+    // comes from the state_machine_kind persisted when the pool was created
+    // (monad-mpt --create --state-machine monad); it is never stamped here.
     MONAD_ASSERT(triedb.is_page_encoded());
     MONAD_ASSERT(!raw_db.timeline_active(mpt::timeline_id::secondary));
     if (triedb.get_root() == nullptr) {
@@ -362,6 +373,11 @@ extern "C" MonadRunloop *monad_runloop_new(
         init_root_logger(log_level);
         is_quill_running = true;
     }
+    // The on-disk Db ctor reads the persisted state_machine_kind and builds
+    // the StateMachine through the registry, so the factories must be
+    // registered first. Idempotent.
+    register_ethereum_state_machines();
+    register_monad_state_machines();
     return from_impl(new MonadRunloopImpl{chain_id, ledger_path, db_path});
 }
 

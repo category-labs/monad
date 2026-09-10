@@ -28,6 +28,11 @@ struct GenesisState
     char const *const alloc{nullptr};
 };
 
-void load_genesis_state(GenesisState const &, TrieDb &);
+// With verbatim_header, store the supplied genesis header as-is
+// instead of re-stamping its roots from the db; use when the header's
+// hash must be preserved although the db computes its state root in a
+// different encoding.
+void load_genesis_state(
+    GenesisState const &, TrieDb &, bool verbatim_header = false);
 
 MONAD_NAMESPACE_END

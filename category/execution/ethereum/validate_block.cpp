@@ -19,9 +19,11 @@
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
@@ -297,9 +299,11 @@ validate_output_header(BlockHeader const &input, BlockHeader const &output)
         return BlockError::WrongOmmersHash;
     }
     if (MONAD_UNLIKELY(input.transactions_root != output.transactions_root)) {
+        LOG_ERROR("block {} transactions root mismatch", input.number);
         return BlockError::WrongMerkleRoot;
     }
     if (MONAD_UNLIKELY(input.withdrawals_root != output.withdrawals_root)) {
+        LOG_ERROR("block {} withdrawals root mismatch", input.number);
         return BlockError::WrongMerkleRoot;
     }
 
@@ -325,10 +329,23 @@ validate_output_header(BlockHeader const &input, BlockHeader const &output)
     }
 
     // Lastly, validate execution outputs only known after commit.
-    if (MONAD_UNLIKELY(input.state_root != output.state_root)) {
-        return BlockError::WrongMerkleRoot;
+    bool const state_root_ok = input.state_root == output.state_root;
+    bool const receipts_root_ok = input.receipts_root == output.receipts_root;
+    if (MONAD_UNLIKELY(!state_root_ok)) {
+        LOG_ERROR(
+            "block {} state root mismatch: expected {} got {}",
+            input.number,
+            input.state_root,
+            output.state_root);
     }
-    if (MONAD_UNLIKELY(input.receipts_root != output.receipts_root)) {
+    if (MONAD_UNLIKELY(!receipts_root_ok)) {
+        LOG_ERROR(
+            "block {} receipts root mismatch: expected {} got {}",
+            input.number,
+            input.receipts_root,
+            output.receipts_root);
+    }
+    if (MONAD_UNLIKELY(!state_root_ok || !receipts_root_ok)) {
         return BlockError::WrongMerkleRoot;
     }
 

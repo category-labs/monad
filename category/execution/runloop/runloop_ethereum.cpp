@@ -221,9 +221,13 @@ Result<void> process_ethereum_block(
         builder.add_withdrawals(block.withdrawals.value());
     }
     db.commit(block_id, builder, block.header, *state, [&](BlockHeader &h) {
-        // second stage: populate block header
+        // second stage: populate block header. The measurement arm writes the
+        // stamp log into the state trie, so its state root cannot match
+        // mainnet; it records the mainnet root instead, keeping the stored
+        // headers, block hashes and BLOCKHASH results identical to mainnet
+        // across restarts (the trie's real root is unverifiable in that arm).
         h.receipts_root = db.receipts_root();
-        h.state_root = db.state_root();
+        h.state_root = mbc_tracking ? block.header.state_root : db.state_root();
         h.withdrawals_root = db.withdrawals_root();
         h.transactions_root = db.transactions_root();
         h.gas_used = receipts.empty() ? 0 : receipts.back().gas_used;
@@ -239,26 +243,18 @@ Result<void> process_ethereum_block(
             block.header.number,
             commit_time);
     }
-    // Post-commit validation of header, with Merkle root fields filled in.
-    // The measurement arm writes the stamp log into the state trie, so its
-    // state root cannot match the mainnet header: every other field is still
-    // validated, and the block hash buffer keeps the mainnet hash so
-    // BLOCKHASH-dependent execution stays identical to the baseline.
+    // Post-commit validation of header, with Merkle root fields filled in
     BlockExecOutput exec_output;
     exec_output.eth_header = db.read_eth_header();
-    BlockHeader expected_header = block.header;
-    if (mbc_tracking) {
-        expected_header.state_root = exec_output.eth_header.state_root;
-    }
     BOOST_OUTCOME_TRY(
-        validate_output_header(expected_header, exec_output.eth_header));
+        validate_output_header(block.header, exec_output.eth_header));
 
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer
     db.finalize(block.header.number, block_id);
     db.update_verified_block(block.header.number);
-    exec_output.eth_block_hash = to_bytes(keccak256(rlp::encode_block_header(
-        mbc_tracking ? block.header : exec_output.eth_header)));
+    exec_output.eth_block_hash =
+        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
     block_hash_buffer.set(
         exec_output.eth_header.number, exec_output.eth_block_hash);
     (void)record_block_result(exec_recorder, exec_output);

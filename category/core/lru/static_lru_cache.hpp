@@ -17,6 +17,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
+#include <category/core/lru/cache_stats.hpp>
 
 #include <boost/intrusive/list.hpp>
 
@@ -52,6 +53,8 @@ protected:
     boost::intrusive::list<list_node> active_list_;
     boost::intrusive::list<list_node> free_list_;
     Map map_;
+    // Derived caches evict on their own bound too, so they record here.
+    CacheStats stats_;
 
 public:
     using ConstAccessor = Map::const_iterator;
@@ -93,6 +96,7 @@ public:
         else { // reuse the last node in active_list_
             auto const list_it = std::prev(active_list_.end());
             erased_value = list_it->val;
+            stats_.record_eviction();
             map_.erase(list_it->key);
             node = &*list_it;
             active_list_.erase(list_it);
@@ -111,10 +115,20 @@ public:
     {
         acc = map_.find(key);
         if (acc == map_.end()) {
+            stats_.record_miss();
             return false;
         }
+        stats_.record_hit();
         update_lru(acc->second);
         return true;
+    }
+
+    // Existence check that is not a lookup: it neither counts nor updates the
+    // LRU order. For assertions and invariant checks, where find() would
+    // otherwise record a miss for a read nobody made.
+    bool contains(Key const &key) const noexcept
+    {
+        return map_.find(key) != map_.end();
     }
 
     size_t size() const noexcept
@@ -122,8 +136,24 @@ public:
         return map_.size();
     }
 
+    CacheStatsSnapshot stats() const noexcept
+    {
+        return stats_.snapshot();
+    }
+
     void clear() noexcept
     {
+        // Recycle the nodes, not just the index. Leaving them on the active
+        // list would make the next insert take the reuse path and count an
+        // eviction for an entry this already removed.
+        while (!active_list_.empty()) {
+            auto const list_it = std::prev(active_list_.end());
+            auto &node = *list_it;
+            active_list_.erase(list_it);
+            node.key = Key();
+            node.val = Value();
+            free_list_.push_front(node);
+        }
         map_.clear();
     }
 

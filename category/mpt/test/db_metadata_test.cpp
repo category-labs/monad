@@ -24,6 +24,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -129,13 +130,14 @@ TEST(db_metadata, ring_b_layout_matches_ring_a)
     // Layout order: root_offsets → root_offsets_state → ... →
     // secondary_timeline → secondary_timeline_state → primary_ring_idx →
     // secondary_timeline_active_ → reserved_timeline_[14] →
-    // pending_shrink_grow → future_variables_unused.
+    // pending_shrink_grow → device_sizes → future_variables_unused.
     auto const offset_secondary = offsetof(md, secondary_timeline);
     auto const offset_secondary_state = offsetof(md, secondary_timeline_state);
     auto const offset_primary_ring_idx = offsetof(md, primary_ring_idx);
     auto const offset_active = offsetof(md, secondary_timeline_active_);
     auto const offset_reserved = offsetof(md, reserved_timeline_);
     auto const offset_pending = offsetof(md, pending_shrink_grow);
+    auto const offset_device_sizes = offsetof(md, device_sizes);
     auto const offset_future = offsetof(md, future_variables_unused);
     EXPECT_EQ(
         offset_secondary_state - offset_secondary,
@@ -147,7 +149,15 @@ TEST(db_metadata, ring_b_layout_matches_ring_a)
     EXPECT_EQ(offset_reserved, offset_active + 1);
     EXPECT_EQ(offset_pending, offset_reserved + 14);
     EXPECT_EQ(
-        offset_future, offset_pending + sizeof(md::pending_shrink_grow_t));
+        offset_device_sizes,
+        offset_pending + sizeof(md::pending_shrink_grow_t));
+    EXPECT_EQ(
+        offset_future,
+        offset_device_sizes + md::MAX_RECORDED_DEVICES * sizeof(uint64_t));
+    // device_sizes reads as not-recorded on a pool that predates it only
+    // while it stays inside the window the MONAD007 migration zeroes.
+    EXPECT_GT(offset_device_sizes, offset_secondary);
+    EXPECT_LT(offset_device_sizes, offsetof(md, free_list));
 }
 
 TEST(db_metadata, role_bytes_zero_initialized)

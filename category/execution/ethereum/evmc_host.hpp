@@ -54,7 +54,6 @@ class EvmcHostBase : public vm::Host
     BlockHashBuffer const &block_hash_buffer_;
 
 protected:
-    // evmc copy for the get_tx_context vtable slot; goes with EXE-173.
     evmc_tx_context const tx_context_;
     State &state_;
     CallTracerBase &call_tracer_;

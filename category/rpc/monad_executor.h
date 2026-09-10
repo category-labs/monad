@@ -105,7 +105,8 @@ void monad_executor_eth_call_submit(
     uint8_t const *rlp_block_id, size_t rlp_block_id_len,
     struct monad_state_override const *,
     void (*complete)(monad_executor_result *, void *user), void *user,
-    enum monad_tracer_config, bool gas_specified);
+    enum monad_tracer_config, size_t const call_tracer_max_size,
+    bool gas_specified);
 
 struct monad_executor_state monad_executor_get_state(struct monad_executor *);
 
@@ -128,6 +129,7 @@ void monad_executor_eth_simulate_submit(
     uint8_t const *rlp_block_id, size_t rlp_block_id_len,
     uint8_t const *rlp_grandparent_block_id,
     size_t rlp_grandparent_block_id_len, uint64_t gas_limit, size_t max_calls,
+    size_t call_tracers_max_size,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
     bool emit_native_transfer_logs,

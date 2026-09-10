@@ -55,7 +55,7 @@ struct Secp256k1Signature
 
     constexpr bool is_valid() const
     {
-        return has_valid_range() && !has_upper_s();
+        return has_valid_range() && !has_upper_s() && y_parity <= 1;
     }
 
     friend bool operator==(

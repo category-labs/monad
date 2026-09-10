@@ -18,21 +18,38 @@
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
+#include <category/core/keccak.hpp>
+#include <category/execution/ethereum/core/ecrecover/impl.hpp>
+#include <category/execution/ethereum/core/signature.hpp>
 
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
-struct Secp256k1Signature;
-
 /// Recovers the Ethereum address that signed `encoding` with the given ECDSA
 /// signature. Rejects malformed signatures up-front (y_parity > 1, malleable
 /// s); returns nullopt if ECDSA recovery fails.
-///
-/// Kept in its own TU so the silkpre / secp256k1 dependency is confined to a
-/// single source file, and can be substituted on platforms that supply
-/// ecrecover via syscall.
-std::optional<Address>
-recover_address(Secp256k1Signature const &, byte_string_view encoding);
+inline std::optional<Address>
+recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
+{
+    if (!sig.is_valid()) {
+        return std::nullopt;
+    }
+
+    auto const encoding_hash = keccak256(encoding);
+
+    uint8_t signature[sizeof(sig.r) * 2];
+    store_be(signature, sig.r);
+    store_be(signature + sizeof(sig.r), sig.s);
+
+    Address result;
+
+    if (!recover_address(
+            result.bytes, encoding_hash.bytes, signature, sig.y_parity)) {
+        return std::nullopt;
+    }
+
+    return result;
+}
 
 MONAD_NAMESPACE_END

@@ -30,6 +30,10 @@ function(monad_zkvm_compile_options target)
     target_include_directories(${target} BEFORE PUBLIC "${ZKVM_INCLUDE_DIR}")
     target_include_directories(${target} PUBLIC "${MONAD_ROOT}")
 
+    # zkvm accelerators
+    target_include_directories(${target}
+        PRIVATE "${THIRD_PARTY_DIR}/zkevm-standards/standards")
+
     # NDEBUG: bare-metal zkVM has no libc, so __assert_func is missing.
     # _GLIBCXX_HAVE_ALIGNED_ALLOC: tells libstdc++ that our libc shim
     # (zkvm/core/libc.cpp) provides aligned_alloc; without it,

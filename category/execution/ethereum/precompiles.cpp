@@ -19,10 +19,12 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/execution/ethereum/core/ecrecover/impl.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_impl.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/status_code.h>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -165,8 +167,8 @@ std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
 
     auto const [status_code, output_buffer, output_size] = execute_func(input);
     return evmc::Result{evmc_result{
-        .status_code = status_code,
-        .gas_left = (status_code == EVMC_SUCCESS)
+        .status_code = to_evmc_status_code(status_code),
+        .gas_left = (status_code == MONAD_STATUS_SUCCESS)
                         ? msg.gas - static_cast<int64_t>(cost.value())
                         : 0,
         .gas_refund = 0,
@@ -200,9 +202,9 @@ from_impl_result(PrecompileImplResult result, uint8_t *out)
     }
     if (size == 0) {
         std::free(out);
-        return {EVMC_SUCCESS, nullptr, size};
+        return {MONAD_STATUS_SUCCESS, nullptr, size};
     }
-    return {EVMC_SUCCESS, data, size};
+    return {MONAD_STATUS_SUCCESS, data, size};
 }
 
 PrecompileResult ecrecover_execute(byte_string_view const input)
@@ -217,23 +219,28 @@ PrecompileResult ecrecover_execute(byte_string_view const input)
     auto const s{load_be_unsafe<uint256_t>(&d[96])};
 
     if (!Secp256k1Signature{r, s}.has_valid_range()) {
-        return {EVMC_SUCCESS, nullptr, 0};
+        return {MONAD_STATUS_SUCCESS, nullptr, 0};
     }
 
     if (v != 27 && v != 28) {
-        return {EVMC_SUCCESS, nullptr, 0};
+        return {MONAD_STATUS_SUCCESS, nullptr, 0};
     }
 
     uint8_t *out{static_cast<uint8_t *>(std::aligned_alloc(8, 32))};
     MONAD_ASSERT(out != nullptr);
 
-    return from_impl_result(
-        ecrecover_impl(
+    std::memset(out, 0, 12);
+    if (!recover_address(
+            std::span<uint8_t, 20>{&out[12], 20},
             std::span<uint8_t const, 32>{&d[0], 32},
             std::span<uint8_t const, 64>{&d[64], 64},
-            v != 27,
-            std::span<uint8_t, 32>{out, 32}),
-        out);
+            v != 27)) {
+        std::free(out);
+        return {MONAD_STATUS_SUCCESS, nullptr, 0};
+    }
+    else {
+        return {MONAD_STATUS_SUCCESS, out, 32};
+    }
 }
 
 PrecompileResult sha256_execute(byte_string_view const input)
@@ -271,7 +278,7 @@ PrecompileResult expmod_execute(byte_string_view const input)
     uint64_t const mod_len = load_be_unsafe<uint64_t>(&header[88]);
 
     if (mod_len == 0) {
-        return {EVMC_SUCCESS, nullptr, 0};
+        return {MONAD_STATUS_SUCCESS, nullptr, 0};
     }
 
     uint64_t const base_len = load_be_unsafe<uint64_t>(&header[24]);
@@ -414,21 +421,21 @@ PrecompileResult p256_verify_execute(byte_string_view const input)
         p256_verify_impl(input, std::span<uint8_t, 32>{out, 32});
     if (result.data == nullptr) {
         std::free(out);
-        return {EVMC_SUCCESS, nullptr, 0};
+        return {MONAD_STATUS_SUCCESS, nullptr, 0};
     }
-    return {EVMC_SUCCESS, result.data, result.size};
+    return {MONAD_STATUS_SUCCESS, result.data, result.size};
 }
 
 PrecompileResult identity_execute(byte_string_view const input)
 {
     if (input.empty()) {
-        return {EVMC_SUCCESS, nullptr, 0};
+        return {MONAD_STATUS_SUCCESS, nullptr, 0};
     }
     auto *const out = static_cast<uint8_t *>(std::malloc(input.size()));
     MONAD_ASSERT(out != nullptr);
     auto const result =
         identity_impl(input, std::span<uint8_t>{out, input.size()});
-    return {EVMC_SUCCESS, result.data, result.size};
+    return {MONAD_STATUS_SUCCESS, result.data, result.size};
 }
 
 MONAD_NAMESPACE_END

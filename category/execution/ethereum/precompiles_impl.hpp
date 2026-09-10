@@ -25,7 +25,6 @@
 #include <category/core/thread_local.h>
 #include <category/crypto/silkpre_vendor/blake2b.h>
 #include <category/crypto/silkpre_vendor/bn128.hpp>
-#include <category/crypto/silkpre_vendor/ecdsa.h>
 #include <category/crypto/silkpre_vendor/rmd160.h>
 #include <category/crypto/silkpre_vendor/sha256.h>
 #include <category/execution/ethereum/core/signature.hpp>
@@ -108,20 +107,6 @@ bool init_trusted_setup()
         }
     }
     return g_trustedSetup.has_value();
-}
-
-[[gnu::always_inline]] inline PrecompileImplResult ecrecover_impl(
-    std::span<uint8_t const, 32> msg, std::span<uint8_t const, 64> sig,
-    uint8_t recid, std::span<uint8_t, 32> const out)
-{
-    std::memset(out.data(), 0, 12);
-    thread_local secp256k1_context *context{
-        secp256k1_context_create(MONAD_SECP256K1_CONTEXT_FLAGS)};
-    if (!monad_recover_address(
-            &out[12], msg.data(), sig.data(), recid, context)) {
-        return {out.data(), 0};
-    }
-    return {out.data(), 32};
 }
 
 [[gnu::always_inline]] inline PrecompileImplResult

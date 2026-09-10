@@ -201,7 +201,7 @@ namespace
         {
         }
 
-        PageStorageStatus update_page(
+        evmc_page_storage_status update_page(
             evmc::address const &, evmc::bytes32 const &,
             evmc_storage_status) noexcept override
         {

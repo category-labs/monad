@@ -19,6 +19,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -123,14 +124,14 @@ uint64_t p256_verify_gas_cost(byte_string_view);
 
 struct PrecompileResult
 {
-    evmc_status_code status_code;
+    monad_status_code status_code;
     uint8_t *obuf;
     size_t output_size;
 
     static constexpr PrecompileResult failure() noexcept
     {
         return {
-            .status_code = EVMC_PRECOMPILE_FAILURE,
+            .status_code = MONAD_STATUS_PRECOMPILE_FAILURE,
             .obuf = nullptr,
             .output_size = 0,
         };
@@ -171,10 +172,6 @@ struct PrecompileImplResult
         };
     }
 };
-
-PrecompileImplResult ecrecover_impl(
-    std::span<uint8_t const, 32> msg, std::span<uint8_t const, 64> sig,
-    uint8_t recid, std::span<uint8_t, 32> const out);
 
 PrecompileImplResult
 sha256_impl(byte_string_view input, std::span<uint8_t, 32> const out);

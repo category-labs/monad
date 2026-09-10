@@ -37,6 +37,7 @@
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
@@ -103,7 +104,7 @@ TEST(CallFrame, to_json)
 
 TEST(CallTrace, enter_and_exit)
 {
-    evmc_message msg{.input_data = input};
+    monad_message msg{.input_data = input};
     evmc::Result res{};
     res.output_data = output;
 

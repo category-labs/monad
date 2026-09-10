@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 
@@ -45,7 +46,7 @@ MONAD_NAMESPACE_BEGIN
 namespace
 {
 
-    bool sender_has_balance(State &state, evmc_message const &msg) noexcept
+    bool sender_has_balance(State &state, monad_message const &msg) noexcept
     {
         uint256_t const value = load_be<uint256_t>(msg.value);
         // for optimistic execution, we do NOT require the original balance to
@@ -56,7 +57,7 @@ namespace
 
     template <Traits traits>
     void transfer_balances(
-        State &state, EvmcHost<traits> &host, evmc_message const &msg,
+        State &state, EvmcHost<traits> &host, monad_message const &msg,
         Address const &to)
     {
         uint256_t const value = load_be<uint256_t>(msg.value);
@@ -107,13 +108,13 @@ EXPLICIT_TRAITS(deploy_contract_code);
 
 template <Traits traits>
 std::optional<evmc::Result>
-pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
+pre_call(EvmcHost<traits> &host, monad_message const &msg, State &state)
 {
     state.push();
 
-    bool const static_call = msg.flags & EVMC_STATIC;
+    bool const static_call = msg.flags & MONAD_STATIC;
 
-    if (msg.kind != EVMC_DELEGATECALL) {
+    if (msg.kind != MONAD_DELEGATECALL) {
         if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
             // The pushed frame exits before bytecode, account access, or
             // storage access, so there is no access-list metadata to capture.
@@ -127,11 +128,10 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
 
     if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {
         MONAD_ASSERT(
-            msg.kind != EVMC_CALL ||
-            Address{msg.recipient} == Address{msg.code_address});
+            msg.kind != MONAD_CALL || msg.recipient == msg.code_address);
     }
 
-    if (msg.kind == EVMC_CALL && static_call) {
+    if (msg.kind == MONAD_CALL && static_call) {
         // eip-161
         state.touch(msg.recipient);
     }
@@ -175,11 +175,11 @@ void post_call(EvmcHost<traits> &host, State &state, evmc::Result const &result)
 
 template <Traits traits>
 evmc::Result execute_create_message(
-    EvmcHost<traits> *const host, State &state, evmc_message const &msg)
+    EvmcHost<traits> *const host, State &state, monad_message const &msg)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
-    MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
+    MONAD_ASSERT(msg.kind == MONAD_CREATE || msg.kind == MONAD_CREATE2);
 
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
@@ -218,10 +218,10 @@ evmc::Result execute_create_message(
     state.set_nonce(msg.sender, nonce + 1);
 
     Address const contract_address = [&] {
-        if (msg.kind == EVMC_CREATE) {
+        if (msg.kind == MONAD_CREATE) {
             return create_contract_address(msg.sender, nonce); // YP Eqn. 85
         }
-        else { // msg.kind == EVMC_CREATE2
+        else { // msg.kind == MONAD_CREATE2
             auto const code_hash = keccak256({msg.input_data, msg.input_size});
             return create2_contract_address(
                 msg.sender, msg.create2_salt, code_hash);
@@ -245,8 +245,8 @@ evmc::Result execute_create_message(
     state.set_nonce(contract_address, 1);
     transfer_balances<traits>(state, *host, msg, contract_address);
 
-    evmc_message const m_call{
-        .kind = EVMC_CALL,
+    monad_message const m_call{
+        .kind = MONAD_CALL,
         .flags = 0,
         .depth = msg.depth,
         .gas = msg.gas,
@@ -303,11 +303,11 @@ EXPLICIT_TRAITS(execute_create_message);
 
 template <Traits traits>
 evmc::Result execute_call_message(
-    EvmcHost<traits> *const host, State &state, evmc_message const &msg)
+    EvmcHost<traits> *const host, State &state, monad_message const &msg)
 {
     MONAD_ASSERT(
-        msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
-        msg.kind == EVMC_CALL);
+        msg.kind == MONAD_DELEGATECALL || msg.kind == MONAD_CALLCODE ||
+        msg.kind == MONAD_CALL);
 
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);

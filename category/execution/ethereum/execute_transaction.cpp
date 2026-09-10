@@ -41,6 +41,7 @@
 #include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/memory_pool.hpp>
@@ -198,17 +199,17 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
 }
 
 template <Traits traits>
-evmc_message ExecuteTransactionNoValidation<traits>::to_message(
+monad_message ExecuteTransactionNoValidation<traits>::to_message(
     vm::MemoryPool::Ref &msg_memory, uint32_t const msg_memory_capacity) const
 {
     auto const to_address = [this] {
         if (tx_.to) {
-            return std::pair{EVMC_CALL, *tx_.to};
+            return std::pair{MONAD_CALL, *tx_.to};
         }
-        return std::pair{EVMC_CREATE, Address{}};
+        return std::pair{MONAD_CREATE, Address{}};
     }();
 
-    evmc_message msg{
+    monad_message msg{
         .kind = to_address.first,
         .flags = 0,
         .depth = 0,
@@ -217,7 +218,7 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message(
         .sender = sender_,
         .input_data = tx_.data.data(),
         .input_size = tx_.data.size(),
-        .value = store_be_as<evmc::uint256be>(tx_.value),
+        .value = store_be_as<bytes32_t>(tx_.value),
         .create2_salt = {},
         .code_address = to_address.second,
         .memory_handle = msg_memory.get(),
@@ -281,14 +282,14 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
             if (auto const delegate = vm::evm::resolve_delegation(
                     &host.get_interface(), host.to_context(), *tx_.to)) {
                 msg.code_address = *delegate;
-                msg.flags |= EVMC_DELEGATED;
+                msg.flags |= MONAD_DELEGATED;
                 state.access_account(*delegate);
             }
         }
     }
 
     auto result =
-        (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
+        (msg.kind == MONAD_CREATE || msg.kind == MONAD_CREATE2)
             ? ::monad::execute_create_message<traits>(&host, state, msg)
             : ::monad::execute_call_message<traits>(&host, state, msg);
 

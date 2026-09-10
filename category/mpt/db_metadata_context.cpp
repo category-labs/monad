@@ -707,7 +707,7 @@ void DbMetadataContext::update_root_offset(
         ro.assign(i, root_offset);
         if (root_offset == INVALID_OFFSET && i == db_history_max_version(tid) &&
             i == db_history_min_valid_version(tid)) {
-            ro.reset_all(0);
+            ro.reset_all();
             MONAD_ASSERT(ro.max_version() == INVALID_BLOCK_NUM);
         }
     };
@@ -720,21 +720,7 @@ void DbMetadataContext::fast_forward_next_version(
 {
     auto do_ = [&](unsigned const which) {
         auto const g = copies_[which].main->hold_dirty();
-        auto ro = root_offsets(tid, which);
-        uint64_t curr_version = ro.max_version();
-        MONAD_ASSERT(
-            curr_version == INVALID_BLOCK_NUM || new_version > curr_version);
-
-        if (curr_version == INVALID_BLOCK_NUM ||
-            new_version - curr_version >= ro.capacity()) {
-            ro.reset_all(new_version);
-        }
-        else {
-            while (curr_version + 1 < new_version) {
-                ro.push(INVALID_OFFSET);
-                curr_version = ro.max_version();
-            }
-        }
+        root_offsets(tid, which).advance_next_version(new_version);
     };
     do_(0);
     do_(1);

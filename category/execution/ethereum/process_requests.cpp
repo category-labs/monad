@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/tx_context.hpp>
 
 #include <category/crypto/silkpre_vendor/sha256.h>
 
@@ -68,7 +69,7 @@ Result<byte_string> system_call(
     trace::on_read_code(state_tracer, hash, code->intercode());
     auto const blob_schedule = chain.get_blob_schedule(header.timestamp);
 
-    evmc_tx_context const tx_context = {
+    monad_tx_context const tx_context = {
         .tx_gas_price = {},
         .tx_origin = SYSTEM_ADDRESS,
         .block_coinbase = header.beneficiary,

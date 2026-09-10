@@ -46,6 +46,7 @@
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/tx_context.hpp>
 #include <category/vm/vm.hpp>
 
 #include <monad/test/traits_test.hpp>
@@ -258,7 +259,7 @@ void run_dipped_into_reserve_test(
     vm::VM vm;
     BlockState bs{tdb, vm};
     NoopCallTracer call_tracer;
-    evmc_tx_context const tx_context{};
+    monad_tx_context const tx_context{};
     BlockHashBufferFinalized block_hash_buffer{};
 
     ASSERT_EQ(monad_default_max_reserve_balance_mon(traits::monad_rev()), 10);

@@ -23,15 +23,14 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
-
-#include <evmc/evmc.h>
+#include <category/vm/evm/tx_context.hpp>
 
 #include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
-evmc_tx_context get_tx_context(
+monad_tx_context get_tx_context(
     Transaction const &tx, Address const &sender, BlockHeader const &hdr,
     uint256_t const &chain_id, BlobSchedule const &blob_schedule)
 {
@@ -53,8 +52,8 @@ evmc_tx_context get_tx_context(
             hdr.excess_blob_gas.value_or(0), blob_schedule)),
         .blob_hashes = tx.blob_versioned_hashes.data(),
         .blob_hashes_count = tx.blob_versioned_hashes.size(),
-        .initcodes = nullptr, // TODO
-        .initcodes_count = 0, // TODO
+        .initcodes = nullptr,
+        .initcodes_count = 0,
         .block_round = hdr.slot_number.value_or(0),
     };
 }

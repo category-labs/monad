@@ -19,8 +19,17 @@
 
 MONAD_NAMESPACE_BEGIN
 
+// The first entry is the EIP-7997 deterministic deployment factory
+// (Arachnid's proxy) at its canonical predeploy address. Per the EIP it is
+// part of genesis for new chains rather than an irregular state transition;
+// Monad testnet and mainnet already have it deployed at this address.
 inline constexpr char const *MONAD_DEVNET_ALLOC = R"(
 {
+    "4e59b44847b379578588920cA78FbF26c0B4956C": {
+        "code": "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3",
+        "nonce": "0x1",
+        "wei_balance": "0"
+    },
     "f39Fd6e51aad88F6F4ce6aB8827279cffFb92266": {
         "wei_balance": "100000000000000000000000000000000000000"
     },

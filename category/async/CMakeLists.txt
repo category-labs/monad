@@ -42,6 +42,9 @@ add_library(
   "util.hpp")
 
 target_include_directories(monad_async PUBLIC ${CATEGORY_MAIN_DIR})
+if(COMMAND monad_target_include_boost_outcome_status_code_overlay)
+  monad_target_include_boost_outcome_status_code_overlay(monad_async)
+endif()
 monad_compile_options(monad_async)
 target_link_libraries(monad_async PUBLIC monad_core Boost::fiber)
 

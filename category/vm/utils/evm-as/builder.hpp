@@ -691,6 +691,11 @@ namespace monad::vm::utils::evm_as
             return ins(compiler::EvmOpCode::BLOBBASEFEE);
         }
 
+        EvmBuilder &slotnum() noexcept
+        {
+            return ins(compiler::EvmOpCode::SLOTNUM);
+        }
+
         EvmBuilder &pop() noexcept
         {
             return ins(compiler::EvmOpCode::POP);

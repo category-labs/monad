@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <evmc/evmc.h>
@@ -34,7 +35,6 @@
 
 #include <gtest/gtest.h>
 
-#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -408,6 +408,10 @@ TYPED_TEST(TraitsTest, optional_fields_existence)
         value_since(rev<MONAD_ETH_CANCUN>{}, bytes32_t{});
     static constexpr auto requests_hash =
         value_since(rev<MONAD_ETH_PRAGUE>{}, bytes32_t{});
+    static constexpr auto block_access_list_hash =
+        value_since(rev<MONAD_ETH_AMSTERDAM>{}, bytes32_t{});
+    static constexpr auto slot_number =
+        value_since(rev<MONAD_ETH_AMSTERDAM>{}, uint64_t{});
 
     static constexpr BlockHeader valid_header{
         .gas_limit = 10000,
@@ -417,7 +421,9 @@ TYPED_TEST(TraitsTest, optional_fields_existence)
         .blob_gas_used = blob_gas_used,
         .excess_blob_gas = excess_blob_gas,
         .parent_beacon_block_root = parent_beacon_block_root,
-        .requests_hash = requests_hash};
+        .requests_hash = requests_hash,
+        .block_access_list_hash = block_access_list_hash,
+        .slot_number = slot_number};
 
     EXPECT_TRUE(
         static_validate_header<typename TestFixture::Trait>(valid_header)
@@ -429,6 +435,9 @@ TYPED_TEST(TraitsTest, optional_fields_existence)
     TEST_OPTIONAL_FIELD(excess_blob_gas, uint64_t{}, MONAD_ETH_CANCUN)
     TEST_OPTIONAL_FIELD(parent_beacon_block_root, bytes32_t{}, MONAD_ETH_CANCUN)
     TEST_OPTIONAL_FIELD(requests_hash, bytes32_t{}, MONAD_ETH_PRAGUE)
+    TEST_OPTIONAL_FIELD(
+        block_access_list_hash, bytes32_t{}, MONAD_ETH_AMSTERDAM)
+    TEST_OPTIONAL_FIELD(slot_number, uint64_t{}, MONAD_ETH_AMSTERDAM)
 }
 
 #undef TEST_OPTIONAL_FIELD
@@ -518,6 +527,10 @@ TYPED_TEST(TraitsTest, validate_excess_blob_gas_against_parent)
         if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
             header.requests_hash = bytes32_t{};
         }
+        if constexpr (TestFixture::Trait::eip_7843_active()) {
+            header.block_access_list_hash = bytes32_t{};
+            header.slot_number = uint64_t{};
+        }
         Block block{.header = header, .withdrawals = std::vector<Withdrawal>{}};
 
         auto result =
@@ -561,6 +574,10 @@ TYPED_TEST(TraitsTest, invalid_nonce)
         value_since(rev<MONAD_ETH_CANCUN>{}, bytes32_t{});
     static constexpr auto requests_hash =
         value_since(rev<MONAD_ETH_PRAGUE>{}, bytes32_t{});
+    static constexpr auto block_access_list_hash =
+        value_since(rev<MONAD_ETH_AMSTERDAM>{}, bytes32_t{});
+    static constexpr auto slot_number =
+        value_since(rev<MONAD_ETH_AMSTERDAM>{}, uint64_t{});
 
     static constexpr BlockHeader header{
         .gas_limit = 10000,
@@ -571,7 +588,9 @@ TYPED_TEST(TraitsTest, invalid_nonce)
         .blob_gas_used = blob_gas_used,
         .excess_blob_gas = excess_blob_gas,
         .parent_beacon_block_root = parent_beacon_block_root,
-        .requests_hash = requests_hash};
+        .requests_hash = requests_hash,
+        .block_access_list_hash = block_access_list_hash,
+        .slot_number = slot_number};
 
     auto const result =
         static_validate_header<typename TestFixture::Trait>(header);

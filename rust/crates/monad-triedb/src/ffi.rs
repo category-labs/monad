@@ -24,8 +24,9 @@ pub(crate) use self::bindings::{
     triedb_latest_finalized_version, triedb_latest_proposed_block_id,
     triedb_latest_proposed_version, triedb_latest_verified_version, triedb_latest_voted_block_id,
     triedb_latest_voted_version, triedb_migration_phase, triedb_open, triedb_poll,
-    triedb_primary_earliest_version, triedb_read, triedb_read_valset, triedb_storage_stats,
-    triedb_storage_stats_read, triedb_traverse, TriedbRoInner,
+    triedb_primary_earliest_version, triedb_read, triedb_read_valset, triedb_stats_close,
+    triedb_stats_open, triedb_storage_stats, triedb_storage_stats_read, triedb_traverse,
+    triedb_update_stats, triedb_update_stats_read, TriedbRoInner, TriedbStatsReader,
 };
 pub use self::bindings::{validator_data, validator_set};
 

@@ -49,6 +49,8 @@ add_library(
   "db_error.hpp"
   "db_metadata_context.cpp"
   "db_metadata_context.hpp"
+  "db_stats_shm.cpp"
+  "db_stats_shm.hpp"
   "find.cpp"
   "find_notify_fiber.cpp"
   "find_request_sender.hpp"

@@ -22,6 +22,7 @@
 #include <category/core/util/stopwatch.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/db_metadata_context.hpp>
+#include <category/mpt/db_stats_shm.hpp>
 #include <category/mpt/detail/collected_stats.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/timeline.hpp>
@@ -594,6 +595,9 @@ Node::SharedPtr UpdateAux::do_update(
     // into the next compacted upsert's figures.
     last_upsert_stats_ = stats_.delta_since(prev_upsert_stats_);
     prev_upsert_stats_ = stats_;
+    if (stats_publisher_ != nullptr) {
+        stats_publisher_->publish_update_stats(stats_);
+    }
     if (compaction) {
         update_disk_growth_data();
         // log stats

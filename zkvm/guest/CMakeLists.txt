@@ -151,7 +151,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # their 32-byte output word, so the precompile shim normalises them
     # differently (zkvm/category/execution/ethereum/precompiles_impl.hpp), and
     # the Keccak-f[1600] precompile is reached by a different entry on each
-    # (zkvm/category/crypto/keccakf1600.h).
+    # (zkvm/guest/keccak_accel.cpp).
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "sp1")
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")

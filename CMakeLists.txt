@@ -46,6 +46,33 @@ option(MONAD_COMPILER_DUMP_ASM "Dump assembly files into build/asm" OFF)
 option(MONAD_COMPILER_STATS "Print statistics about the compiler" OFF)
 option(MONAD_COMPILER_HOT_PATH_STATS "Print statistics about the vm" OFF)
 
+find_program(CCACHE_EXECUTABLE ccache)
+if(CCACHE_EXECUTABLE)
+  set(MONAD_CCACHE_DEFAULT ON)
+else()
+  set(MONAD_CCACHE_DEFAULT OFF)
+endif()
+option(MONAD_CCACHE "Compile via ccache" ${MONAD_CCACHE_DEFAULT})
+
+if(MONAD_CCACHE)
+  if(NOT CCACHE_EXECUTABLE)
+    message(FATAL_ERROR "MONAD_CCACHE is ON but ccache was not found")
+  endif()
+  if(NOT CMAKE_C_COMPILER_LAUNCHER)
+    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_EXECUTABLE}")
+  endif()
+  if(NOT CMAKE_CXX_COMPILER_LAUNCHER)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_EXECUTABLE}")
+  endif()
+  # Make __FILE__ and debug info checkout-relative so that object files are
+  # byte-identical no matter which checkout (main tree or worktree) compiled
+  # them, allowing ccache hits to be shared between checkouts. ccache excludes
+  # -f*-prefix-map options from its hash, so the per-checkout flag value does
+  # not itself cause misses.
+  add_compile_options("-ffile-prefix-map=${PROJECT_SOURCE_DIR}=."
+                      "-ffile-prefix-map=${CMAKE_BINARY_DIR}=.")
+endif()
+
 include(cmake/test.cmake)
 
 # ##############################################################################

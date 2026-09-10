@@ -23,7 +23,7 @@ pub use self::bindings::{
     monad_sync_type_SYNC_TYPE_TARGET, monad_sync_type_SYNC_TYPE_UPSERT_ACCOUNT,
     monad_sync_type_SYNC_TYPE_UPSERT_ACCOUNT_DELETE, monad_sync_type_SYNC_TYPE_UPSERT_CODE,
     monad_sync_type_SYNC_TYPE_UPSERT_HEADER, monad_sync_type_SYNC_TYPE_UPSERT_STORAGE,
-    monad_sync_type_SYNC_TYPE_UPSERT_STORAGE_DELETE,
+    monad_sync_type_SYNC_TYPE_UPSERT_STORAGE_DELETE, monad_sync_type_SYNC_TYPE_UPSERT_STORAGE_PAGE,
 };
 
 #[allow(dead_code, non_camel_case_types, non_upper_case_globals)]

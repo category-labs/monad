@@ -82,6 +82,61 @@ namespace
             ::close(fd);
         }
     };
+
+    int listen_on(std::filesystem::path const &socket_path)
+    {
+        int const fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        MONAD_ASSERT(fd >= 0);
+        struct sockaddr_un addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sun_family = AF_UNIX;
+        // Truncation would bind a different path, so fail loudly instead.
+        MONAD_ASSERT(socket_path.native().size() < sizeof(addr.sun_path));
+        strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
+        MONAD_ASSERT(bind(fd, (struct sockaddr *)&addr, sizeof(addr)) == 0);
+        MONAD_ASSERT(listen(fd, 1) == 0);
+        return fd;
+    }
+}
+
+// The production send path is what statesync_thread.cpp wires in; the other
+// statesync tests substitute their own. An upsert type it does not accept
+// aborts the serving process, in release builds too.
+TEST(StateSyncServerNetwork, send_upsert_accepts_every_upsert_type)
+{
+    std::filesystem::path const socket_path =
+        unique_socket_path("test_statesync_send_upsert");
+    std::filesystem::remove(socket_path);
+    BOOST_SCOPE_EXIT(&socket_path)
+    {
+        std::filesystem::remove(socket_path);
+    }
+    BOOST_SCOPE_EXIT_END
+
+    int const listen_fd = listen_on(socket_path);
+    BOOST_SCOPE_EXIT(&listen_fd)
+    {
+        close(listen_fd);
+    }
+    BOOST_SCOPE_EXIT_END
+
+    monad_statesync_server_network net{socket_path.c_str()};
+
+    constexpr std::array types{
+        SYNC_TYPE_UPSERT_CODE,
+        SYNC_TYPE_UPSERT_ACCOUNT,
+        SYNC_TYPE_UPSERT_STORAGE,
+        SYNC_TYPE_UPSERT_ACCOUNT_DELETE,
+        SYNC_TYPE_UPSERT_STORAGE_DELETE,
+        SYNC_TYPE_UPSERT_HEADER,
+        SYNC_TYPE_UPSERT_STORAGE_PAGE};
+    for (auto const type : types) {
+        monad::statesync_server_send_upsert(&net, type, nullptr, 0, nullptr, 0);
+    }
+
+    // One type byte plus a uint64 length per record, all still buffered:
+    // nothing reaches SEND_BATCH_SIZE.
+    EXPECT_EQ(net.obuf.size(), types.size() * (1 + sizeof(uint64_t)));
 }
 
 TEST(StateSyncThread, shutdown_via_jthread_stop_token)

@@ -104,6 +104,27 @@ namespace
 {
     constexpr size_t SEND_BATCH_SIZE = 64 * 1024;
 
+    // No `default` label: a new monad_sync_type must be classified here or
+    // the build fails, rather than aborting the serving process at runtime.
+    constexpr bool is_upsert(monad_sync_type const type)
+    {
+        switch (type) {
+        case SYNC_TYPE_UPSERT_CODE:
+        case SYNC_TYPE_UPSERT_ACCOUNT:
+        case SYNC_TYPE_UPSERT_STORAGE:
+        case SYNC_TYPE_UPSERT_ACCOUNT_DELETE:
+        case SYNC_TYPE_UPSERT_STORAGE_DELETE:
+        case SYNC_TYPE_UPSERT_HEADER:
+        case SYNC_TYPE_UPSERT_STORAGE_PAGE:
+            return true;
+        case SYNC_TYPE_REQUEST:
+        case SYNC_TYPE_TARGET:
+        case SYNC_TYPE_DONE:
+            return false;
+        }
+        return false;
+    }
+
     void send(int const fd, byte_string_view const buf)
     {
         size_t nsent = 0;
@@ -206,12 +227,7 @@ inline void statesync_server_send_upsert(
 {
     MONAD_ASSERT(v1 != nullptr || size1 == 0);
     MONAD_ASSERT(v2 != nullptr || size2 == 0);
-    MONAD_ASSERT(
-        type == SYNC_TYPE_UPSERT_CODE || type == SYNC_TYPE_UPSERT_ACCOUNT ||
-        type == SYNC_TYPE_UPSERT_STORAGE ||
-        type == SYNC_TYPE_UPSERT_ACCOUNT_DELETE ||
-        type == SYNC_TYPE_UPSERT_STORAGE_DELETE ||
-        type == SYNC_TYPE_UPSERT_HEADER);
+    MONAD_ASSERT(is_upsert(type));
 
     [[maybe_unused]] auto const start = std::chrono::steady_clock::now();
     net->obuf.push_back(type);

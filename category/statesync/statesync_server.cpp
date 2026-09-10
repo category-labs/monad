@@ -27,6 +27,7 @@
 #include <category/mpt/traverse.hpp>
 #include <category/statesync/statesync_server.h>
 #include <category/statesync/statesync_server_context.hpp>
+#include <category/statesync/statesync_version.h>
 
 #include <quill/std/Chrono.h>
 
@@ -202,11 +203,14 @@ bool statesync_server_handle_request(
         uint64_t until;
         uint64_t *num_upserts;
         uint64_t *upsert_bytes;
+        // page-encoded server serving a peer that can decode page records
+        bool emit_page_records;
 
         Traverse(
             monad_statesync_server *const sync, NibblesView const prefix,
             uint64_t const from, uint64_t const until,
-            uint64_t *const num_upserts, uint64_t *const upsert_bytes)
+            uint64_t *const num_upserts, uint64_t *const upsert_bytes,
+            bool const emit_page_records)
             : nibble{INVALID_BRANCH}
             , depth{0}
             , sync{sync}
@@ -215,12 +219,12 @@ bool statesync_server_handle_request(
             , until{until}
             , num_upserts{num_upserts}
             , upsert_bytes{upsert_bytes}
+            , emit_page_records{emit_page_records}
         {
         }
 
-        // When the server's primary is page-encoded, storage leaves hold
-        // encoded pages rather than single slots; we expand each page into
-        // slot-format upserts so v1 clients sync unchanged.
+        // Whether this server's storage leaves hold encoded pages rather than
+        // single slots.
         bool server_is_page_encoded() const
         {
             return sync->context->is_page_encoded();
@@ -292,7 +296,13 @@ bool statesync_server_handle_request(
                     }
                     else {
                         MONAD_ASSERT(depth == (HASH_SIZE * 2));
-                        if (server_is_page_encoded()) {
+                        if (emit_page_records) {
+                            send_upsert(
+                                SYNC_TYPE_UPSERT_STORAGE_PAGE,
+                                reinterpret_cast<unsigned char *>(&addr),
+                                sizeof(addr));
+                        }
+                        else if (server_is_page_encoded()) {
                             // Expand the page-encoded leaf into one slot-format
                             // upsert per non-zero slot, so the wire stays
                             // identical to a slot-encoded server.
@@ -439,7 +449,8 @@ bool statesync_server_handle_request(
         rq.from,
         rq.until,
         &num_upserts,
-        &upsert_bytes);
+        &upsert_bytes,
+        ctx->is_page_encoded() && rq.version >= MONAD_STATESYNC_VERSION_1_3);
     if (!db.traverse(finalized_root, traverse, rq.target)) {
         LOG_INFO(
             "Request failed: traverse failed for target={} prefix={} "

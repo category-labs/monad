@@ -334,6 +334,7 @@ namespace
         bytes32_t const block_id =
             header.number ? bytes32_t{header.number} : NULL_HASH_BLAKE3;
         BlockCommitAncillaries const anc{
+            .stamps = nullptr,
             .code = code,
             .receipts = receipts,
             .transactions = txns,

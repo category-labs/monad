@@ -44,6 +44,7 @@
 #include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/runtime/access.hpp>
 
 #include <boost/outcome/try.hpp>
 
@@ -175,13 +176,12 @@ Result<void> process_ethereum_block(
     if constexpr (traits::multi_block_cache_active()) {
         mbc_tracking = mbc_measure_enabled();
     }
-    PricingBoundaries const bounds =
-        mbc_tracking ? db.pricing_boundaries() : PricingBoundaries{0, 0};
     BlockState block_state(db, vm, nullptr, mbc_tracking);
-    if (mbc_tracking) {
-        block_state.set_pricing_window(
-            block.header.number, bounds.account, bounds.storage);
-    }
+    block_state.set_pricing_block(block.header.number);
+    auto const &shadow = vm::runtime::g_cache_shadow_stats;
+    uint64_t const shadow_accounts_before = shadow.cached_accounts.load();
+    uint64_t const shadow_storage_before = shadow.cached_storage.load();
+    uint64_t const shadow_gas_before = shadow.saved_gas.load();
 
     ChainContext<traits> const chain_ctx{};
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
@@ -208,8 +208,7 @@ Result<void> process_ethereum_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code, _, candidates] = std::move(block_state).release();
 
-    StampContext const stamp_ctx{
-        .candidates = &candidates, .boundaries = bounds};
+    StampContext const stamp_ctx{.candidates = &candidates};
     CommitBuilder builder(
         block.header.number, mbc_tracking ? &stamp_ctx : nullptr);
     builder.add_state_deltas(*state)
@@ -240,18 +239,26 @@ Result<void> process_ethereum_block(
             block.header.number,
             commit_time);
     }
-    // Post-commit validation of header, with Merkle root fields filled in
+    // Post-commit validation of header, with Merkle root fields filled in.
+    // The measurement arm writes the stamp log into the state trie, so its
+    // state root cannot match the mainnet header: every other field is still
+    // validated, and the block hash buffer keeps the mainnet hash so
+    // BLOCKHASH-dependent execution stays identical to the baseline.
     BlockExecOutput exec_output;
     exec_output.eth_header = db.read_eth_header();
+    BlockHeader expected_header = block.header;
+    if (mbc_tracking) {
+        expected_header.state_root = exec_output.eth_header.state_root;
+    }
     BOOST_OUTCOME_TRY(
-        validate_output_header(block.header, exec_output.eth_header));
+        validate_output_header(expected_header, exec_output.eth_header));
 
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer
     db.finalize(block.header.number, block_id);
     db.update_verified_block(block.header.number);
-    exec_output.eth_block_hash =
-        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
+    exec_output.eth_block_hash = to_bytes(keccak256(rlp::encode_block_header(
+        mbc_tracking ? block.header : exec_output.eth_header)));
     block_hash_buffer.set(
         exec_output.eth_header.number, exec_output.eth_block_hash);
     (void)record_block_result(exec_recorder, exec_output);
@@ -289,6 +296,37 @@ Result<void> process_ethereum_block(
         db.print_stats(),
         vm.print_and_reset_block_counts(),
         vm.print_compiler_stats());
+
+    if (mbc_tracking) {
+        // fixed-window cache per-block line: written items, candidates per
+        // class, selection, caps, log size, cached-tier hits and gas saved
+        auto const &st = builder.stamp_stats();
+        LOG_INFO(
+            "__mbc_block,bl={},aw={},pw={},sw={},ac1={},ac2={},ac3={},pc1={},"
+            "pc2={},pc3={},sa={},sp={},ss={},acap={},pcap={},rb={},lp={},"
+            "ha={},hp={},sg={},rh={}",
+            block.header.number,
+            st.accounts_written,
+            st.pages_written,
+            st.slots_written,
+            st.account_candidates[0],
+            st.account_candidates[1],
+            st.account_candidates[2],
+            st.page_candidates[0],
+            st.page_candidates[1],
+            st.page_candidates[2],
+            st.selected_accounts,
+            st.selected_pages,
+            st.selected_slots,
+            st.account_cap_hit ? 1 : 0,
+            st.page_cap_hit ? 1 : 0,
+            st.record_bytes,
+            st.log_pages,
+            shadow.cached_accounts.load() - shadow_accounts_before,
+            shadow.cached_storage.load() - shadow_storage_before,
+            shadow.saved_gas.load() - shadow_gas_before,
+            st.record_hash);
+    }
 
     return outcome_e::success();
 }

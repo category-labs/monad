@@ -205,8 +205,8 @@ add_library(
   monad_execution_native OBJECT
   # monad/db
   "monad/db/commit_block_migration.cpp"
-  "monad/db/stamp_blob.hpp"
-  "monad/db/stamp_blob.cpp"
+  "monad/db/stamp_log.hpp"
+  "monad/db/stamp_log.cpp"
   "monad/db/commit_block_migration.hpp"
   "monad/db/page_commit_builder.hpp"
   "monad/db/page_commit_builder.cpp"

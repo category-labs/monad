@@ -64,8 +64,6 @@ class BlockState final
     // merge() collects the per-transaction stamp candidates in commit order
     bool const stamp_tracking_;
     uint64_t block_number_{0};
-    uint64_t account_boundary_{0};
-    uint64_t storage_boundary_{0};
     BlockStampCandidates stamp_candidates_;
 
 public:
@@ -88,25 +86,11 @@ public:
         return block_number_;
     }
 
-    uint64_t account_boundary() const
-    {
-        return account_boundary_;
-    }
-
-    uint64_t storage_boundary() const
-    {
-        return storage_boundary_;
-    }
-
-    // window boundaries as of the parent block: warm iff stamp != 0 and
-    // stamp >= boundary
-    void set_pricing_window(
-        uint64_t const block_number, uint64_t const account_boundary,
-        uint64_t const storage_boundary)
+    // the block being executed: an entry prices cached iff its stamp (as of
+    // the parent block) lies within CACHE_WINDOW_BLOCKS of it
+    void set_pricing_block(uint64_t const block_number)
     {
         block_number_ = block_number;
-        account_boundary_ = account_boundary;
-        storage_boundary_ = storage_boundary;
     }
 
     std::optional<Account>

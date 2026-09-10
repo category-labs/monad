@@ -37,8 +37,11 @@ class ProposalState
     uint64_t block_;
     uint64_t parent_block_;
     bytes32_t parent_id_;
-    // stamp overlay indexes built from the block's stamp records: value is
-    // the block number for stamped entries, 0 for dropped stamps
+    // stamp overlay as of this proposal: selected entries carry the block
+    // number; entries whose value died in this block (deleted account, emptied
+    // page) carry 0 so a read through the proposal chain prices exactly like
+    // a read after finalize, when the physical entry flips to the negative
+    // list and forgets its stamp
     ankerl::unordered_dense::segmented_map<Address, uint64_t> stamped_accounts_;
     ankerl::unordered_dense::segmented_map<
         StorageKey, uint64_t, BytesHashCompare<StorageKey>>
@@ -53,11 +56,21 @@ public:
         , parent_block_(parent_block_number)
         , parent_id_(parent_id)
     {
-        for (auto const &r : post_state_.account_stamps) {
-            stamped_accounts_[r.address] = r.weight != 0 ? block_ : 0;
+        for (auto const &[addr, acct] : post_state_.accounts) {
+            if (!acct.has_value()) {
+                stamped_accounts_[addr] = 0;
+            }
         }
-        for (auto const &r : post_state_.storage_stamps) {
-            stamped_storage_[r.key] = r.weight != 0 ? block_ : 0;
+        for (auto const &[key, page] : post_state_.storage) {
+            if (page.is_empty()) {
+                stamped_storage_[key] = 0;
+            }
+        }
+        for (auto const &addr : post_state_.account_stamps) {
+            stamped_accounts_[addr] = block_;
+        }
+        for (auto const &key : post_state_.storage_stamps) {
+            stamped_storage_[key] = block_;
         }
     }
 

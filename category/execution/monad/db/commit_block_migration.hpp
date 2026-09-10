@@ -18,6 +18,7 @@
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -39,6 +40,9 @@ struct Db;
 // override that needs the same StateDeltas instance.
 struct BlockCommitAncillaries
 {
+    // fixed-window cache: the block's journaled read candidates, or nullptr
+    // when the traits price no cached tier
+    StampContext const *stamps;
     Code const &code;
     std::vector<Receipt> const &receipts;
     std::vector<Transaction> const &transactions;

@@ -15,113 +15,53 @@
 
 #pragma once
 
-// Multi-block cache pricing: every live account / storage entry carries a
-// consensus stamp (last qualifying access block) on its DbCache entry. The
-// protocol warm set is the most recent stamps that fit a per-cache budget;
-// the window boundary E is counted from committed stamp records, never from
-// physical cache state. Nothing is written to the trie: durability is a
-// per-block sequential blob of stamp records.
+// Fixed-window state caching: every live account / storage page carries a
+// consensus stamp (block number of its last selected access) on its DbCache
+// entry. An item is cached at block N iff it was stamped within the last
+// CACHE_WINDOW_BLOCKS blocks; the first access to a cached item in a
+// transaction charges the cached tier instead of cold. Each block stamps at
+// most a capped number of items (selection in commit_builder.cpp), so the
+// cached set is bounded, and writes its selected keys into the stamp log
+// (stamp_log.hpp) as ordinary state of STAMP_LOG_ADDRESS.
 
+#include <category/core/address.hpp>
 #include <category/core/config.hpp>
 
-#include <algorithm>
 #include <cstdint>
-#include <map>
 
 MONAD_NAMESPACE_BEGIN
 
-// Window budgets: accounts are counted in entries, storage in bytes of page
-// weight (storage_page_t::byte_size). Both sized at half the physical cache
-// of the minimum validator configuration so the warm set stays resident.
-inline constexpr uint64_t ACCOUNT_WINDOW_BUDGET = 5'000'000;
-inline constexpr uint64_t STORAGE_WINDOW_BUDGET = 128ull << 20;
+inline constexpr uint64_t CACHE_WINDOW_BLOCKS = 1000;
+inline constexpr uint64_t CACHE_REFRESH_PERIOD_BLOCKS = CACHE_WINDOW_BLOCKS / 2;
+inline constexpr uint64_t MAX_ACCOUNT_STAMPS_PER_BLOCK = 5000;
+// sum of occupied slots over the pages stamped in a block
+inline constexpr uint64_t MAX_STORAGE_SLOT_STAMPS_PER_BLOCK = 5000;
 
-// Lazy refresh rule: a warm read re-stamps iff the stamp is older than
-// max((N - E) >> ALPHA_SHIFT, REFRESH_FLOOR) blocks.
-inline constexpr unsigned CACHE_STAMP_ALPHA_SHIFT = 1;
-inline constexpr uint64_t CACHE_STAMP_REFRESH_FLOOR = 64;
+// Placeholder for the reserved system account holding the stamp log; the
+// final value is a protocol decision. Unreachable from the EVM: excluded from
+// stamping and pricing, its storage is written only by the commit path.
+inline constexpr Address STAMP_LOG_ADDRESS =
+    address_from_hex("0x0000000000000000000000000000000000c4c4e0");
 
-// Non-binding hard ceiling on stamp records per block, above the
-// gas-feasible maximum; decouples client I/O provisioning from future
-// gas-limit raises.
-inline constexpr uint64_t K_STAMP_CEILING = 1ull << 18;
-
-struct PricingBoundaries
+// Cached at block N: stamped within the window. Stamp 0 means unstamped.
+inline bool cache_stamp_cached(uint64_t const stamp, uint64_t const block)
 {
-    // warm iff stamp != 0 and stamp >= boundary
-    uint64_t account;
-    uint64_t storage;
-};
-
-inline bool cache_stamp_refresh_due(
-    uint64_t const stamp, uint64_t const block, uint64_t const boundary)
-{
-    uint64_t const depth = block > boundary ? block - boundary : 0;
-    uint64_t const threshold =
-        std::max(depth >> CACHE_STAMP_ALPHA_SHIFT, CACHE_STAMP_REFRESH_FLOOR);
-    return block > threshold && stamp < block - threshold;
+    return stamp != 0 && stamp + CACHE_WINDOW_BLOCKS >= block;
 }
 
-// Per-cache window: bucket weights by stamp block, and the boundary E such
-// that the weight of [E, N] fits the budget (all-or-nothing at block
-// granularity). E only advances: buckets popped for capacity never return,
-// and decrements below E are no-ops (those buckets are discardable).
-class StampWindow
+// Stale at block N: a cached read re-stamps only when the stamp is older
+// than the refresh period.
+inline bool cache_stamp_stale(uint64_t const stamp, uint64_t const block)
 {
-    std::map<uint64_t, uint64_t> counts_;
-    uint64_t total_{0};
-    uint64_t boundary_{0};
-    uint64_t const budget_;
+    return stamp + CACHE_REFRESH_PERIOD_BLOCKS < block;
+}
 
-public:
-    explicit StampWindow(uint64_t const budget)
-        : budget_{budget}
-    {
-    }
-
-    // prev == 0 means no previous stamp, next == 0 means the entry died.
-    void apply(
-        uint64_t const prev, uint64_t const next, uint64_t const prev_weight,
-        uint64_t const next_weight)
-    {
-        if (prev >= boundary_ && prev != 0) {
-            auto const it = counts_.find(prev);
-            if (it != counts_.end()) {
-                uint64_t const w = std::min(it->second, prev_weight);
-                it->second -= w;
-                total_ -= w;
-                if (it->second == 0) {
-                    counts_.erase(it);
-                }
-            }
-        }
-        if (next != 0) {
-            counts_[next] += next_weight;
-            total_ += next_weight;
-        }
-    }
-
-    // Advance E for a new block: pop oldest buckets until within budget.
-    void advance()
-    {
-        while (total_ > budget_ && !counts_.empty()) {
-            auto const it = counts_.begin();
-            total_ -= it->second;
-            boundary_ = it->first + 1;
-            counts_.erase(it);
-        }
-    }
-
-    // Warm iff stamp >= boundary() and stamp != 0.
-    uint64_t boundary() const
-    {
-        return boundary_;
-    }
-
-    uint64_t total() const
-    {
-        return total_;
-    }
-};
+// Physical eviction floor once block `finalized` is finalized: every entry
+// stamped at or above it may still price cached and must stay resident.
+inline uint64_t cache_evict_floor(uint64_t const finalized)
+{
+    return finalized > CACHE_WINDOW_BLOCKS ? finalized - CACHE_WINDOW_BLOCKS
+                                           : 0;
+}
 
 MONAD_NAMESPACE_END

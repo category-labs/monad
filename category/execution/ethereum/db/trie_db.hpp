@@ -35,7 +35,6 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include <deque>
-#include <filesystem>
 #include <istream>
 #include <memory>
 #include <optional>
@@ -61,7 +60,11 @@ class TrieDb final : public ::monad::Db
     bool const page_encoded_;
 
 public:
-    explicit TrieDb(mpt::Db &, bool enable_multiblock_cache = false);
+    // stamp_mode false keeps the pre-feature wall-clock LRU promotion (the
+    // baseline measurement arm); true runs the stamp-ordered caches.
+    explicit TrieDb(
+        mpt::Db &, bool enable_multiblock_cache = false,
+        bool stamp_mode = true);
     ~TrieDb();
 
     bool is_page_encoded() const override
@@ -78,11 +81,20 @@ public:
     virtual storage_page_t read_storage_page(
         Address const &, Incarnation, bytes32_t const &page_key) override;
     virtual vm::SharedIntercode read_code(bytes32_t const &) override;
-    virtual PricingBoundaries pricing_boundaries() override;
 
-    // Replay persisted stamp blobs (rebuilding stamps, windows, and the
-    // physical residency of the warm set), then start appending new ones.
-    void set_stamp_blob_dir(std::filesystem::path const &);
+    // Bootstrap the cached set from the finalized state alone: read the
+    // stamp log ring of STAMP_LOG_ADDRESS, replay its records in block order
+    // (last writer wins), and load every stamped item into the cache with
+    // its stamp. Returns the number of records replayed.
+    struct StampRebuildStats
+    {
+        uint64_t records{0};
+        uint64_t accounts{0};
+        uint64_t pages{0};
+        uint64_t slots{0};
+    };
+
+    StampRebuildStats rebuild_stamp_cache();
 
     virtual std::optional<Account>
     read_account_stamped(Address const &, uint64_t &stamp) override;

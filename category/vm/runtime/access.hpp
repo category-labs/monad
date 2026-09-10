@@ -41,6 +41,26 @@ namespace monad::vm::runtime
         // stamp-record volume (filled by the commit builder)
         std::atomic<uint64_t> account_stamp_records{0};
         std::atomic<uint64_t> storage_stamp_records{0};
+        // first (non-warm) accesses per block and how many hit no trie leaf
+        std::atomic<uint64_t> first_accounts{0};
+        std::atomic<uint64_t> missing_accounts{0};
+        std::atomic<uint64_t> first_storage{0};
+        std::atomic<uint64_t> missing_storage{0};
+        // inter-touch gap (block - stamp) of stamped items at their first
+        // access: buckets <=100, <=250, <=500, <=1000, <=2000, >2000
+        static constexpr uint64_t GAP_BOUNDS[] = {100, 250, 500, 1000, 2000};
+        std::atomic<uint64_t> account_gaps[6]{};
+        std::atomic<uint64_t> storage_gaps[6]{};
+
+        static void
+        record_gap(std::atomic<uint64_t> (&buckets)[6], uint64_t const gap)
+        {
+            size_t i = 0;
+            while (i < 5 && gap > GAP_BOUNDS[i]) {
+                ++i;
+            }
+            buckets[i].fetch_add(1, std::memory_order_relaxed);
+        }
     };
 
     inline CacheShadowStats g_cache_shadow_stats;

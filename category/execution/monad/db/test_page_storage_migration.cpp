@@ -84,6 +84,7 @@ namespace
     BlockCommitAncillaries make_empty_ancillaries()
     {
         return BlockCommitAncillaries{
+            .stamps = nullptr,
             .code = empty_code,
             .receipts = empty_receipts,
             .transactions = empty_transactions,

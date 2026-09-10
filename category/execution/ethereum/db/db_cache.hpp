@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
@@ -25,19 +26,17 @@
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/monad/db/cache_pricing.hpp>
-#include <category/execution/monad/db/stamp_blob.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
 #include <category/vm/utils/lru_weight_cache.hpp>
 
 #include <chrono>
 #include <cstdint>
-#include <filesystem>
 #include <format>
 #include <memory>
 #include <optional>
 #include <string>
-#include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -59,11 +58,12 @@ enum class CacheReadStatus
 //
 // The caches run in stamp mode: one hash map, two eviction lists. Live
 // entries carry the consensus stamp and are promoted only at stamp
-// application, so live-list order is stamp order and warm entries are never
-// eviction victims while the window budget stays below the physical
-// capacity. Negative results ("this key holds nothing") sit on a
-// count-budgeted negative list of the same map — a value transition flips
-// the entry in place, so the two can never disagree.
+// application, so live-list order is stamp order and cached entries (stamped
+// within CACHE_WINDOW_BLOCKS) are never eviction victims while the per-block
+// caps keep the cached set below the physical capacity. Negative results
+// ("this key holds nothing") sit on a count-budgeted negative list of the
+// same map — a value transition flips the entry in place, so the two can
+// never disagree and a deleted entry forgets its stamp.
 class DbCache final
 {
     using AddressHashCompare = BytesHashCompare<Address>;
@@ -81,13 +81,6 @@ class DbCache final
 
     AccountsCache accounts_;
     StorageCache storage_;
-    // consensus windows: counted from committed stamp records only, never
-    // from physical cache state
-    StampWindow account_window_{ACCOUNT_WINDOW_BUDGET};
-    StampWindow storage_window_{STORAGE_WINDOW_BUDGET};
-    // when set, each finalized block's stamp records are appended here as a
-    // hashed blob; restart replays them (TrieDb::set_stamp_blob_dir)
-    std::filesystem::path blob_dir_{};
     Proposals proposals_;
 
 public:
@@ -103,20 +96,29 @@ public:
     {
     }
 
-    PricingBoundaries boundaries() const
+    // Bootstrap: apply one block's stamp log record (its selected keys in
+    // selection order) to resident entries, oldest block first, so the
+    // live-list order ends identical to a continuously running node's.
+    void rebuild_stamps(
+        std::vector<Address> const &accounts,
+        std::vector<StorageKey> const &storage, uint64_t const block)
     {
-        return {account_window_.boundary(), storage_window_.boundary()};
+        apply_stamps(accounts, storage, block);
     }
 
-    void set_stamp_blob_dir(std::filesystem::path dir)
+    // Residency check (tests / debug): the entry is live and carries `stamp`.
+    bool account_has_stamp(Address const &address, uint64_t const stamp)
     {
-        blob_dir_ = std::move(dir);
+        AccountsCache::ConstAccessor acc{};
+        return accounts_.find(acc, address) && !accounts_.is_negative(acc) &&
+               accounts_.stamp_of(acc) == stamp;
     }
 
-    // Restart replay: apply one persisted block's stamp records.
-    void replay_stamps(ProposalPostState const &post, uint64_t const block)
+    bool storage_has_stamp(StorageKey const &key, uint64_t const stamp)
     {
-        apply_stamps(post, block);
+        StorageCache::ConstAccessor acc{};
+        return storage_.find(acc, key) && !storage_.is_negative(acc) &&
+               storage_.stamp_of(acc) == stamp;
     }
 
     // The optional stamp output is the entry's consensus stamp as of the
@@ -264,14 +266,10 @@ public:
             proposals_.finalize(block_number, block_id);
         if (ps) {
             insert_in_lru_caches(ps->post_state());
-            apply_stamps(ps->post_state(), block_number);
-            if (!blob_dir_.empty()) {
-                write_stamp_blob(
-                    blob_dir_,
-                    block_number,
-                    ps->post_state().account_stamps,
-                    ps->post_state().storage_stamps);
-            }
+            apply_stamps(
+                ps->post_state().account_stamps,
+                ps->post_state().storage_stamps,
+                block_number);
         }
         else {
             // Finalizing a truncated proposal. Clear LRU caches.  This is an
@@ -308,29 +306,29 @@ private:
         }
     }
 
-    // Apply one finalized block's stamp records in commit order: set entry
-    // stamps (best effort on residency) and update the consensus windows
-    // (unconditionally — the windows must never depend on physical state).
-    void apply_stamps(ProposalPostState const &post, uint64_t const block)
+    // Stamp the block's selected entries in selection order and advance the
+    // eviction floor. Every selected entry is live at the block's post-state
+    // (selection excludes entries that die in the block) and resident (the
+    // block's reads and writes put it there, and the LRU never evicts a
+    // cached entry), so a missing entry is a residency bug.
+    void apply_stamps(
+        std::vector<Address> const &accounts,
+        std::vector<StorageKey> const &storage, uint64_t const block)
     {
-        for (auto const &r : post.account_stamps) {
-            uint64_t const next = r.weight != 0 ? block : 0;
-            if (next != 0) {
-                accounts_.set_stamp(r.address, next);
-            }
-            account_window_.apply(r.prev_stamp, next, r.prev_weight, r.weight);
+        for (auto const &addr : accounts) {
+            bool const stamped = accounts_.set_stamp(addr, block);
+            MONAD_ASSERT_PRINTF(
+                stamped, "stamped account not resident at block %lu", block);
         }
-        for (auto const &r : post.storage_stamps) {
-            uint64_t const next = r.weight != 0 ? block : 0;
-            if (next != 0) {
-                storage_.set_stamp(r.key, next);
-            }
-            storage_window_.apply(r.prev_stamp, next, r.prev_weight, r.weight);
+        for (auto const &key : storage) {
+            bool const stamped = storage_.set_stamp(key, block);
+            MONAD_ASSERT_PRINTF(
+                stamped,
+                "stamped storage entry not resident at block %lu",
+                block);
         }
-        account_window_.advance();
-        storage_window_.advance();
-        accounts_.set_evict_floor(account_window_.boundary());
-        storage_.set_evict_floor(storage_window_.boundary());
+        accounts_.set_evict_floor(cache_evict_floor(block));
+        storage_.set_evict_floor(cache_evict_floor(block));
     }
 };
 

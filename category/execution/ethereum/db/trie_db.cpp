@@ -20,6 +20,7 @@
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/likely.h>
 #include <category/core/log.hpp>
 #include <category/crypto/keccak.h>
 #include <category/execution/ethereum/core/account.hpp>
@@ -43,8 +44,9 @@
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/execution/monad/db/page_commit_builder.hpp>
-#include <category/execution/monad/db/stamp_blob.hpp>
+#include <category/execution/monad/db/stamp_log.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -78,13 +80,14 @@ MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
 
-TrieDb::TrieDb(mpt::Db &db, bool const enable_multiblock_cache)
+TrieDb::TrieDb(
+    mpt::Db &db, bool const enable_multiblock_cache, bool const stamp_mode)
     : db_{db}
     , block_number_{db.get_latest_finalized_version()}
     , proposal_block_id_{bytes32_t{}}
     , prefix_{finalized_nibbles}
     , curr_root_{db.load_root_for_version(block_number_)}
-    , cache_{enable_multiblock_cache ? std::make_unique<DbCache>() : nullptr}
+    , cache_{enable_multiblock_cache ? std::make_unique<DbCache>(stamp_mode) : nullptr}
     , page_encoded_{db_.state_machine_type() == mpt::state_machine_kind::monad}
 {
 }
@@ -102,54 +105,113 @@ Node::SharedPtr const &TrieDb::get_root() const
     return curr_root_;
 }
 
-PricingBoundaries TrieDb::pricing_boundaries()
+TrieDb::StampRebuildStats TrieDb::rebuild_stamp_cache()
 {
-    return cache_ ? cache_->boundaries() : PricingBoundaries{0, 0};
-}
-
-void TrieDb::set_stamp_blob_dir(std::filesystem::path const &dir)
-{
+    StampRebuildStats stats;
     if (!cache_) {
-        return;
+        return stats;
     }
-    uint64_t replayed = 0;
-    for (uint64_t const block : list_stamp_blobs(dir)) {
-        if (block > block_number_) {
-            break;
+    MONAD_ASSERT(prefix_ == finalized_nibbles);
+    auto const log_prefix = concat(
+        prefix_,
+        STATE_NIBBLE,
+        NibblesView{keccak256(
+            {STAMP_LOG_ADDRESS.bytes, sizeof(STAMP_LOG_ADDRESS.bytes)})});
+    auto const read_page =
+        [&](uint64_t const slot, uint64_t const index, byte_string &record) {
+            bytes32_t const page_key = stamp_log_page_key(slot, index);
+            auto const res = db_.find(
+                curr_root_,
+                concat(
+                    log_prefix,
+                    NibblesView{
+                        keccak256({page_key.bytes, sizeof(page_key.bytes)})}),
+                block_number_);
+            if (res.has_error()) {
+                return false;
+            }
+            auto const decoded =
+                decode_storage_page_leaf(res.value().node->value());
+            MONAD_ASSERT(decoded.has_value());
+            stamp_log_append_page(record, decoded.value().page);
+            return true;
+        };
+
+    // ring slots never written read as empty and are skipped; a slot holds
+    // the record of the most recent block congruent to it, so once the chain
+    // is older than the window the ring is exactly the window
+    std::vector<StampLogRecord> records;
+    for (uint64_t slot = 0; slot < CACHE_WINDOW_BLOCKS; ++slot) {
+        byte_string record;
+        if (!read_page(slot, 0, record)) {
+            continue;
         }
-        auto const blob =
-            read_stamp_blob(dir / (std::to_string(block) + ".blob"));
-        MONAD_ASSERT_PRINTF(
-            blob.has_value(), "corrupt stamp blob for block %lu", block);
-        // prefetch so the stamps have resident entries to attach to
-        for (auto const &r : blob->account_stamps) {
-            if (r.weight != 0) {
-                read_account(r.address);
+        auto const header = decode_stamp_log_header(record);
+        MONAD_ASSERT(header.has_value());
+        if (header->block == 0 || header->block > block_number_ ||
+            header->block % CACHE_WINDOW_BLOCKS != slot ||
+            header->block + CACHE_WINDOW_BLOCKS <= block_number_) {
+            continue;
+        }
+        size_t const pages = stamp_log_pages(header->record_bytes());
+        for (size_t i = 1; i < pages; ++i) {
+            bool const ok = read_page(slot, i, record);
+            MONAD_ASSERT_PRINTF(
+                ok,
+                "stamp log page %zu of block %lu missing",
+                i,
+                header->block);
+        }
+        auto rec = decode_stamp_log_record(record);
+        MONAD_ASSERT(rec.has_value());
+        records.push_back(std::move(rec.value()));
+    }
+    std::sort(records.begin(), records.end(), [](auto const &a, auto const &b) {
+        return a.block < b.block;
+    });
+
+    for (auto const &rec : records) {
+        // load the stamped items so the stamps have resident entries; items
+        // that died or reincarnated since are skipped (never cached)
+        std::vector<Address> live_accounts;
+        for (auto const &addr : rec.accounts) {
+            if (read_account(addr).has_value()) {
+                live_accounts.push_back(addr);
             }
         }
-        for (auto const &r : blob->storage_stamps) {
-            if (r.weight == 0) {
-                continue;
-            }
+        std::vector<StorageKey> live_pages;
+        for (auto const &key : rec.storage) {
             Address addr;
             Incarnation inc{0, 0};
-            bytes32_t key;
-            std::memcpy(addr.bytes, r.key.bytes, sizeof(addr.bytes));
-            std::memcpy(&inc, r.key.bytes + sizeof(addr.bytes), sizeof(inc));
+            bytes32_t lookup;
+            std::memcpy(addr.bytes, key.bytes, sizeof(addr.bytes));
+            std::memcpy(&inc, key.bytes + sizeof(addr.bytes), sizeof(inc));
             std::memcpy(
-                key.bytes,
-                r.key.bytes + sizeof(addr.bytes) + sizeof(inc),
-                sizeof(key.bytes));
-            read_storage(addr, inc, key);
+                lookup.bytes,
+                key.bytes + sizeof(addr.bytes) + sizeof(inc),
+                sizeof(lookup.bytes));
+            auto const account = read_account(addr);
+            if (!account.has_value() || account->incarnation != inc) {
+                continue;
+            }
+            storage_page_t page;
+            auto const status =
+                cache_->try_read_storage_page(addr, inc, lookup, page);
+            if (status != CacheReadStatus::Hit) {
+                page = load_storage_page(addr, inc, lookup, status);
+            }
+            if (page.is_empty()) {
+                continue;
+            }
+            live_pages.push_back(key);
+            stats.slots += page.size();
         }
-        ProposalPostState post;
-        post.account_stamps = std::move(blob->account_stamps);
-        post.storage_stamps = std::move(blob->storage_stamps);
-        cache_->replay_stamps(post, block);
-        ++replayed;
+        cache_->rebuild_stamps(live_accounts, live_pages, rec.block);
+        ++stats.records;
+        stats.accounts += live_accounts.size();
+        stats.pages += live_pages.size();
     }
-    LOG_INFO("replayed {} stamp blobs from {}", replayed, dir.string());
-    cache_->set_stamp_blob_dir(dir);
+    return stats;
 }
 
 std::optional<Account> TrieDb::read_account(Address const &addr)
@@ -202,6 +264,11 @@ bytes32_t TrieDb::read_storage_stamped(
     uint64_t &stamp)
 {
     stamp = 0;
+    if (MONAD_UNLIKELY(addr == STAMP_LOG_ADDRESS)) {
+        // the stamp log is unreachable from the EVM; its leaves are page
+        // encoded whatever the primary encoding, so never decode them here
+        return {};
+    }
     bytes32_t const lookup_key = storage_lookup_key(key);
     uint8_t const lookup_offset = page_encoded_ ? compute_slot_offset(key) : 0;
     bytes32_t result{};
@@ -223,6 +290,9 @@ storage_page_t TrieDb::read_storage_page(
 {
     if (!page_encoded_) {
         MONAD_ABORT("read_storage_page is only valid on a page-encoded TrieDb");
+    }
+    if (MONAD_UNLIKELY(addr == STAMP_LOG_ADDRESS)) {
+        return {};
     }
     storage_page_t result;
     auto const status =

@@ -342,9 +342,21 @@ try {
         }
     }();
 
+    // Fixed-window cache measurement arm: MONAD_MBC_MEASURE=0 keeps the
+    // pre-feature wall-clock LRU (baseline); otherwise the stamp-ordered
+    // caches run and the cached set is rebuilt from the stamp log below.
+    bool const mbc_measure = [] {
+        char const *const env = std::getenv("MONAD_MBC_MEASURE");
+        return env == nullptr || env[0] != '0';
+    }();
     TrieDb triedb{
         raw_db,
-        /*enable_multiblock_cache=*/true};
+        /*enable_multiblock_cache=*/true,
+        /*stamp_mode=*/mbc_measure};
+    LOG_INFO(
+        "triedb page_encoded = {}, multi-block cache measure = {}",
+        triedb.is_page_encoded(),
+        mbc_measure);
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
         if (!snapshot.empty()) {
@@ -397,8 +409,18 @@ try {
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - load_start_time));
 
-    if (char const *const blob_dir = std::getenv("MONAD_MBC_BLOB_DIR")) {
-        triedb.set_stamp_blob_dir(blob_dir);
+    if (mbc_measure) {
+        auto const rebuild_begin = std::chrono::steady_clock::now();
+        auto const rebuilt = triedb.rebuild_stamp_cache();
+        LOG_INFO(
+            "stamp log bootstrap: records = {}, accounts = {}, pages = {}, "
+            "slots = {}, time = {}",
+            rebuilt.records,
+            rebuilt.accounts,
+            rebuilt.pages,
+            rebuilt.slots,
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - rebuild_begin));
     }
 
     uint64_t const start_block_num = init_block_num + 1;
@@ -580,14 +602,40 @@ try {
             vm.print_compiler_stats(),
             vm.print_total_counts());
         auto const &shadow = vm::runtime::g_cache_shadow_stats;
+        uint64_t const cached_accounts = shadow.cached_accounts.load();
+        uint64_t const cached_storage = shadow.cached_storage.load();
         LOG_INFO(
             "multi-block cache shadow: cached_accounts = {}, cached_storage "
-            "= {}, saved_gas = {}, account_stamps = {}, storage_stamps = {}",
-            shadow.cached_accounts.load(),
-            shadow.cached_storage.load(),
+            "= {}, saved_gas = {} (ethereum constants), saved_gas_monad = {} "
+            "(10100-1100 per account, 8100-1100 per page), account_stamps = "
+            "{}, storage_stamps = {}",
+            cached_accounts,
+            cached_storage,
             shadow.saved_gas.load(),
+            cached_accounts * 9000 + cached_storage * 7000,
             shadow.account_stamp_records.load(),
             shadow.storage_stamp_records.load());
+        LOG_INFO(
+            "multi-block cache first accesses: accounts = {} (missing = {}), "
+            "storage = {} (missing = {}); gap buckets (<=100, <=250, <=500, "
+            "<=1000, <=2000, >2000): accounts = {} {} {} {} {} {}, storage = "
+            "{} {} {} {} {} {}",
+            shadow.first_accounts.load(),
+            shadow.missing_accounts.load(),
+            shadow.first_storage.load(),
+            shadow.missing_storage.load(),
+            shadow.account_gaps[0].load(),
+            shadow.account_gaps[1].load(),
+            shadow.account_gaps[2].load(),
+            shadow.account_gaps[3].load(),
+            shadow.account_gaps[4].load(),
+            shadow.account_gaps[5].load(),
+            shadow.storage_gaps[0].load(),
+            shadow.storage_gaps[1].load(),
+            shadow.storage_gaps[2].load(),
+            shadow.storage_gaps[3].load(),
+            shadow.storage_gaps[4].load(),
+            shadow.storage_gaps[5].load());
     }
 
     sync_server.reset();

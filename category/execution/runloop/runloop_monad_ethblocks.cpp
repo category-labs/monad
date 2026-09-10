@@ -214,7 +214,8 @@ Result<void> process_monad_block(
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
     BlockMetrics block_metrics;
-    BlockState block_state(db, vm);
+    BlockState block_state(db, vm, nullptr, traits::multi_block_cache_active());
+    block_state.set_pricing_block(block.header.number);
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const receipts,
@@ -237,9 +238,11 @@ Result<void> process_monad_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
-    auto [state, code, _, _candidates] = std::move(block_state).release();
+    auto [state, code, _, candidates] = std::move(block_state).release();
 
+    StampContext const stamp_ctx{.candidates = &candidates};
     BlockCommitAncillaries const anc{
+        .stamps = traits::multi_block_cache_active() ? &stamp_ctx : nullptr,
         .code = code,
         .receipts = receipts,
         .transactions = block.transactions,

@@ -27,8 +27,13 @@ class PageCommitBuilder final : public CommitBuilder
 {
     Db &db_;
 
+    bytes32_t stamp_lookup_key(bytes32_t const &key) const override;
+    uint32_t stamp_read_weight(
+        Address const &, Incarnation, bytes32_t const &page_key) const override;
+
 public:
-    PageCommitBuilder(uint64_t block_number, Db &db);
+    PageCommitBuilder(
+        uint64_t block_number, Db &db, StampContext const *stamps = nullptr);
 
     // Materializes pages from slot deltas, writes per-page updates, and
     // populates the inherited `proposal_post_state_` with page-keyed
@@ -39,7 +44,7 @@ public:
 
 // Selects the builder matching the db encoding: PageCommitBuilder for a
 // page-encoded db, plain CommitBuilder otherwise.
-std::unique_ptr<CommitBuilder>
-make_commit_builder(uint64_t block_number, Db &db);
+std::unique_ptr<CommitBuilder> make_commit_builder(
+    uint64_t block_number, Db &db, StampContext const *stamps = nullptr);
 
 MONAD_NAMESPACE_END

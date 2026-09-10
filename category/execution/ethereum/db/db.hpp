@@ -26,7 +26,6 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
-#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/code.hpp>
 
@@ -75,13 +74,6 @@ struct Db
         bytes32_t const &block_id, CommitBuilder &builder,
         BlockHeader const &header, StateDeltas const &state_deltas,
         std::function<void(BlockHeader &)> populate_header_fn) = 0;
-
-    // Multi-block cache window boundaries as of the current prefix; the
-    // {0, 0} default plus all-zero stamps prices everything cold.
-    virtual PricingBoundaries pricing_boundaries()
-    {
-        return {0, 0};
-    }
 
     // Multi-block cache: value reads that also return the entry's consensus
     // stamp (0 = unstamped, prices cold). Stamps live only in memory; a db

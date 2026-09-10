@@ -36,9 +36,13 @@
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/db/stamp_log.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <algorithm>
 #include <cstring>
@@ -74,116 +78,117 @@ CommitBuilder::CommitBuilder(
 {
 }
 
-// One stamp record per key: the entry is stamped to this block (weight != 0)
-// or its stamp is dropped (weight == 0). prev values come from the stamps
-// memoized by the block's reads; the windows decrement them exactly.
+void CommitBuilder::push_state_update(UpdateList &&account_updates)
+{
+    state_update_ = &update_alloc_.emplace_back(Update{
+        .key = state_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(account_updates),
+        .version = static_cast<int64_t>(block_number_)});
+    updates_.push_front(*state_update_);
+}
+
+namespace
+{
+    // Candidate classes (lower stamps first): entry (a cold access to a live
+    // item), write renewal (a value-changing write to a cached item), read
+    // refresh (a cached read of a stale item).
+    constexpr uint8_t STAMP_CLASS_ENTRY = 1;
+    constexpr uint8_t STAMP_CLASS_RENEWAL = 2;
+    constexpr uint8_t STAMP_CLASS_REFRESH = 3;
+
+    struct AccountCandidate
+    {
+        uint8_t cls;
+        Address address;
+    };
+
+    struct PageCandidate
+    {
+        uint8_t cls;
+        uint32_t weight;
+        StorageKey key;
+    };
+
+    template <class Map, class Key>
+    void lower_class(Map &map, Key const &key, uint8_t const cls)
+    {
+        auto const [it, inserted] = map.try_emplace(key, cls);
+        if (!inserted && cls < it->second) {
+            it->second = cls;
+        }
+    }
+
+    uint8_t access_class(uint64_t const prev_stamp, uint64_t const block)
+    {
+        if (!cache_stamp_cached(prev_stamp, block)) {
+            return STAMP_CLASS_ENTRY;
+        }
+        return cache_stamp_stale(prev_stamp, block) ? STAMP_CLASS_REFRESH : 0;
+    }
+}
+
+// Selection is a pure function of the block's execution and the parent
+// state, so every node derives the same record: candidates sorted by
+// (class, weight, key), accounts cut at MAX_ACCOUNT_STAMPS_PER_BLOCK, pages
+// at the longest prefix whose occupied slots fit
+// MAX_STORAGE_SLOT_STAMPS_PER_BLOCK. Unselected candidates keep their old
+// stamp; items that die in the block are not candidates.
 void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
 {
     uint64_t const n = block_number_;
-    auto const &bounds = stamps_->boundaries;
-    ankerl::unordered_dense::segmented_set<Address> seen_accounts;
-    ankerl::unordered_dense::
-        segmented_set<StorageKey, BytesHashCompare<StorageKey>>
-            seen_storage;
-    auto &account_records = proposal_post_state_.account_stamps;
-    auto &storage_records = proposal_post_state_.storage_stamps;
-    auto const capped = [&] {
-        return account_records.size() + storage_records.size() >=
-               K_STAMP_CEILING;
-    };
-    auto const slot_weight = [](bytes32_t const &value) {
-        return value == bytes32_t{}
-                   ? uint32_t{0}
-                   : static_cast<uint32_t>(storage_page_t{value}.byte_size());
-    };
+    auto &stats = stamp_stats_;
 
-    // write-stamps: value-changing writes stamp unconditionally; deletions
-    // drop the stamp. Keys sorted for a deterministic record stream.
-    std::vector<Address> write_addrs;
+    ankerl::unordered_dense::segmented_map<Address, uint8_t> account_classes;
+    ankerl::unordered_dense::
+        segmented_map<StorageKey, uint8_t, BytesHashCompare<StorageKey>>
+            page_classes;
+
+    // written items and class 2 (write renewal) from the deltas
     for (auto const &[addr, delta] : state_deltas) {
-        write_addrs.push_back(addr);
-    }
-    std::sort(
-        write_addrs.begin(),
-        write_addrs.end(),
-        [](auto const &a, auto const &b) {
-            return std::memcmp(a.bytes, b.bytes, sizeof(a.bytes)) < 0;
-        });
-    for (auto const &addr : write_addrs) {
-        if (capped()) {
-            break;
+        if (addr == STAMP_LOG_ADDRESS) {
+            continue;
         }
-        StateDeltas::const_accessor it{};
-        MONAD_ASSERT(state_deltas.find(it, addr));
-        auto const &delta = it->second;
         auto const &pre = delta.account.first;
         auto const &post = delta.account.second;
         if (pre != post) {
-            account_records.push_back(AccountStampRecord{
-                .address = addr,
-                .prev_stamp = delta.account_stamp.value_or(0),
-                .prev_weight = pre.has_value() ? uint8_t{1} : uint8_t{0},
-                .weight = post.has_value() ? uint8_t{1} : uint8_t{0}});
-            seen_accounts.insert(addr);
+            ++stats.accounts_written;
+            if (pre.has_value() && post.has_value() &&
+                cache_stamp_cached(delta.account_stamp.value_or(0), n)) {
+                lower_class(account_classes, addr, STAMP_CLASS_RENEWAL);
+            }
         }
         if (!post.has_value()) {
-            // TODO: storage stamps under a deleted or reincarnated account
-            // are not enumerated here; their window weight leaks until the
-            // physical entries expire (overcharge direction, and extinct
-            // organically since Cancun)
             continue;
         }
-        bool const reincarnated =
-            pre.has_value() && pre->incarnation != post->incarnation;
-        std::vector<bytes32_t> keys;
         for (auto const &[key, slot] : delta.storage) {
-            if (slot.first != slot.second) {
-                keys.push_back(key);
+            if (slot.first == slot.second) {
+                continue;
             }
-        }
-        std::sort(keys.begin(), keys.end(), [](auto const &a, auto const &b) {
-            return std::memcmp(a.bytes, b.bytes, sizeof(a.bytes)) < 0;
-        });
-        for (auto const &key : keys) {
-            if (capped()) {
-                break;
+            // a reincarnated account never read its old pages, so their
+            // memoized stamps are 0 and cannot renew
+            auto const mit = delta.storage_stamps.find(key);
+            uint64_t const prev =
+                mit != delta.storage_stamps.end() ? mit->second : 0;
+            if (cache_stamp_cached(prev, n)) {
+                lower_class(
+                    page_classes,
+                    StorageKey{addr, post->incarnation, stamp_lookup_key(key)},
+                    STAMP_CLASS_RENEWAL);
             }
-            StorageDeltas::const_accessor sit{};
-            MONAD_ASSERT(delta.storage.find(sit, key));
-            auto const &[pre_value, post_value] = sit->second;
-            uint64_t prev_stamp = 0;
-            uint32_t prev_weight = 0;
-            if (!reincarnated) {
-                auto const mit = delta.storage_stamps.find(key);
-                prev_stamp =
-                    mit != delta.storage_stamps.end() ? mit->second : 0;
-                prev_weight = slot_weight(pre_value);
-            }
-            StorageKey const skey{addr, post->incarnation, key};
-            storage_records.push_back(StorageStampRecord{
-                .key = skey,
-                .prev_stamp = prev_stamp,
-                .prev_weight = prev_weight,
-                .weight = slot_weight(post_value)});
-            seen_storage.insert(skey);
         }
     }
+    stats.pages_written = proposal_post_state_.storage.size();
+    for (auto const &[key, page] : proposal_post_state_.storage) {
+        stats.slots_written += page.size();
+    }
 
-    // read-stamps: cold accesses of live pre-state entries stamp; warm-set
-    // (cached tier) reads re-stamp only when stale per the lazy refresh rule
+    // classes 1 and 3 from the journaled read candidates: first accesses of
+    // live pre-state items whose tier was not warm
     for (auto const &tx : *stamps_->candidates) {
-        if (capped()) {
-            break;
-        }
-        std::vector<Address> addrs = tx.accounts;
-        std::sort(addrs.begin(), addrs.end(), [](auto const &a, auto const &b) {
-            return std::memcmp(a.bytes, b.bytes, sizeof(a.bytes)) < 0;
-        });
-        for (auto const &addr : addrs) {
-            if (capped()) {
-                break;
-            }
-            if (seen_accounts.contains(addr)) {
+        for (auto const &addr : tx.accounts) {
+            if (addr == STAMP_LOG_ADDRESS) {
                 continue;
             }
             StateDeltas::const_accessor it{};
@@ -191,32 +196,15 @@ void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
                 !it->second.account.first.has_value()) {
                 continue;
             }
-            uint64_t const prev = it->second.account_stamp.value_or(0);
-            bool const cold = prev == 0 || prev < bounds.account;
-            if (!cold && !cache_stamp_refresh_due(prev, n, bounds.account)) {
-                continue;
+            uint8_t const cls =
+                access_class(it->second.account_stamp.value_or(0), n);
+            if (cls != 0) {
+                lower_class(account_classes, addr, cls);
             }
-            account_records.push_back(AccountStampRecord{
-                .address = addr,
-                .prev_stamp = prev,
-                .prev_weight = 1,
-                .weight = 1});
-            seen_accounts.insert(addr);
         }
-        std::vector<std::pair<Address, bytes32_t>> slots = tx.storage;
-        std::sort(slots.begin(), slots.end(), [](auto const &a, auto const &b) {
-            int const c = std::memcmp(
-                a.first.bytes, b.first.bytes, sizeof(a.first.bytes));
-            if (c != 0) {
-                return c < 0;
-            }
-            return std::memcmp(
-                       a.second.bytes, b.second.bytes, sizeof(a.second.bytes)) <
-                   0;
-        });
-        for (auto const &[addr, key] : slots) {
-            if (capped()) {
-                break;
+        for (auto const &[addr, key] : tx.storage) {
+            if (addr == STAMP_LOG_ADDRESS) {
+                continue;
             }
             StateDeltas::const_accessor it{};
             if (!state_deltas.find(it, addr)) {
@@ -225,49 +213,151 @@ void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
             auto const &delta = it->second;
             auto const &pre = delta.account.first;
             auto const &post = delta.account.second;
-            // stamp identity is (address, incarnation, key): only reads at
+            // stamp identity is (address, incarnation, page): only reads at
             // the pre-state incarnation qualify
             if (!pre.has_value() || !post.has_value() ||
                 pre->incarnation != post->incarnation) {
                 continue;
             }
-            StorageKey const skey{addr, pre->incarnation, key};
-            if (seen_storage.contains(skey)) {
-                continue;
-            }
-            bytes32_t pre_value{};
             {
                 StorageDeltas::const_accessor sit{};
-                if (!delta.storage.find(sit, key)) {
-                    continue;
+                if (!delta.storage.find(sit, key) ||
+                    sit->second.first == bytes32_t{}) {
+                    continue; // reads of nonexistent slots never stamp
                 }
-                pre_value = sit->second.first;
-            }
-            if (pre_value == bytes32_t{}) {
-                // reads of nonexistent slots never stamp
-                continue;
             }
             auto const mit = delta.storage_stamps.find(key);
-            uint64_t const prev =
-                mit != delta.storage_stamps.end() ? mit->second : 0;
-            bool const cold = prev == 0 || prev < bounds.storage;
-            if (!cold && !cache_stamp_refresh_due(prev, n, bounds.storage)) {
-                continue;
+            uint8_t const cls = access_class(
+                mit != delta.storage_stamps.end() ? mit->second : 0, n);
+            if (cls != 0) {
+                lower_class(
+                    page_classes,
+                    StorageKey{addr, pre->incarnation, stamp_lookup_key(key)},
+                    cls);
             }
-            uint32_t const w = slot_weight(pre_value);
-            storage_records.push_back(StorageStampRecord{
-                .key = skey,
-                .prev_stamp = prev,
-                .prev_weight = w,
-                .weight = w});
-            seen_storage.insert(skey);
         }
     }
 
+    // materialize, dropping items that die in this block
+    std::vector<AccountCandidate> accounts;
+    accounts.reserve(account_classes.size());
+    for (auto const &[addr, cls] : account_classes) {
+        auto const pit = proposal_post_state_.accounts.find(addr);
+        if (pit != proposal_post_state_.accounts.end() &&
+            !pit->second.has_value()) {
+            continue;
+        }
+        ++stats.account_candidates[cls - 1];
+        accounts.push_back({cls, addr});
+    }
+    std::vector<PageCandidate> pages;
+    pages.reserve(page_classes.size());
+    for (auto const &[key, cls] : page_classes) {
+        uint32_t weight = 0;
+        auto const pit = proposal_post_state_.storage.find(key);
+        if (pit != proposal_post_state_.storage.end()) {
+            if (pit->second.is_empty()) {
+                continue;
+            }
+            weight = static_cast<uint32_t>(pit->second.size());
+        }
+        else {
+            Address addr;
+            Incarnation inc{0, 0};
+            bytes32_t lookup;
+            std::memcpy(addr.bytes, key.bytes, sizeof(addr.bytes));
+            std::memcpy(&inc, key.bytes + sizeof(addr.bytes), sizeof(inc));
+            std::memcpy(
+                lookup.bytes,
+                key.bytes + sizeof(addr.bytes) + sizeof(inc),
+                sizeof(lookup.bytes));
+            weight = stamp_read_weight(addr, inc, lookup);
+            if (weight == 0) {
+                continue;
+            }
+        }
+        ++stats.page_candidates[cls - 1];
+        pages.push_back({cls, weight, key});
+    }
+
+    std::sort(
+        accounts.begin(), accounts.end(), [](auto const &a, auto const &b) {
+            if (a.cls != b.cls) {
+                return a.cls < b.cls;
+            }
+            return std::memcmp(
+                       a.address.bytes,
+                       b.address.bytes,
+                       sizeof(a.address.bytes)) < 0;
+        });
+    std::sort(pages.begin(), pages.end(), [](auto const &a, auto const &b) {
+        if (a.cls != b.cls) {
+            return a.cls < b.cls;
+        }
+        if (a.weight != b.weight) {
+            return a.weight < b.weight;
+        }
+        return std::memcmp(a.key.bytes, b.key.bytes, sizeof(a.key.bytes)) < 0;
+    });
+
+    auto &selected_accounts = proposal_post_state_.account_stamps;
+    auto &selected_pages = proposal_post_state_.storage_stamps;
+    size_t const n_accounts =
+        std::min<size_t>(accounts.size(), MAX_ACCOUNT_STAMPS_PER_BLOCK);
+    selected_accounts.reserve(n_accounts);
+    for (size_t i = 0; i < n_accounts; ++i) {
+        selected_accounts.push_back(accounts[i].address);
+    }
+    stats.account_cap_hit = accounts.size() > n_accounts;
+    stats.selected_accounts = n_accounts;
+    uint64_t slots = 0;
+    for (auto const &p : pages) {
+        if (slots + p.weight > MAX_STORAGE_SLOT_STAMPS_PER_BLOCK) {
+            stats.page_cap_hit = true;
+            break;
+        }
+        slots += p.weight;
+        selected_pages.push_back(p.key);
+    }
+    stats.selected_pages = selected_pages.size();
+    stats.selected_slots = slots;
+
+    // the stamp log record, as storage of STAMP_LOG_ADDRESS: one MIP-8 page
+    // leaf per 4 KB chunk in ring slot n mod CACHE_WINDOW_BLOCKS; always
+    // written so a stale record never survives in the slot
+    byte_string const &record = bytes_alloc_.emplace_back(
+        encode_stamp_log_record(n, selected_accounts, selected_pages));
+    stats.record_bytes = record.size();
+    stats.record_hash = to_bytes(keccak256(record));
+    size_t const log_pages = stamp_log_pages(record.size());
+    stats.log_pages = log_pages;
+    UpdateList page_updates;
+    for (size_t i = 0; i < log_pages; ++i) {
+        bytes32_t const page_key = stamp_log_page_key(n, i);
+        page_updates.push_front(update_alloc_.emplace_back(Update{
+            .key = hash_alloc_.emplace_back(
+                keccak256({page_key.bytes, sizeof(page_key.bytes)})),
+            .value = bytes_alloc_.emplace_back(
+                encode_storage_page_db(page_key, stamp_log_page(record, i))),
+            .incarnation = false,
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(n)}));
+    }
+    Account const log_account{.nonce = 1};
+    MONAD_ASSERT(state_update_ != nullptr);
+    state_update_->next.push_front(update_alloc_.emplace_back(Update{
+        .key = hash_alloc_.emplace_back(keccak256(
+            {STAMP_LOG_ADDRESS.bytes, sizeof(STAMP_LOG_ADDRESS.bytes)})),
+        .value = bytes_alloc_.emplace_back(
+            encode_account_db(STAMP_LOG_ADDRESS, log_account)),
+        .incarnation = false,
+        .next = std::move(page_updates),
+        .version = static_cast<int64_t>(n)}));
+
     vm::runtime::g_cache_shadow_stats.account_stamp_records.fetch_add(
-        account_records.size(), std::memory_order_relaxed);
+        n_accounts, std::memory_order_relaxed);
     vm::runtime::g_cache_shadow_stats.storage_stamp_records.fetch_add(
-        storage_records.size(), std::memory_order_relaxed);
+        selected_pages.size(), std::memory_order_relaxed);
 }
 
 CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
@@ -317,13 +407,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         }
     }
 
-    updates_.push_front(update_alloc_.emplace_back(Update{
-        .key = state_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(account_updates),
-        .version = static_cast<int64_t>(block_number_)}));
-
+    push_state_update(std::move(account_updates));
     if (stamps_ != nullptr) {
         add_stamp_records(state_deltas);
     }

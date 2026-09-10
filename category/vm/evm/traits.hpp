@@ -217,16 +217,16 @@ namespace monad
             return Rev >= MONAD_ETH_CANCUN;
         }
 
-        // CACHED_ACCESS_GAS is 1000 total; these are surcharges over the
-        // 100-gas warm base.
+        // Cached-tier surcharges over the 100-gas warm base: a cached first
+        // access totals 1100.
         static consteval int64_t cached_account_cost() noexcept
         {
-            return 900;
+            return 1000;
         }
 
         static consteval int64_t cached_storage_cost() noexcept
         {
-            return 900;
+            return 1000;
         }
 
         static consteval bool can_create_inside_delegated() noexcept
@@ -449,16 +449,16 @@ namespace monad
             return monad_pricing_version() >= 2;
         }
 
-        // CACHED_ACCESS_GAS is 1000 total; these are surcharges over the
-        // 100-gas warm base.
+        // Cached-tier surcharges over the 100-gas warm base: a cached first
+        // access totals 1100.
         static consteval int64_t cached_account_cost() noexcept
         {
-            return 900;
+            return 1000;
         }
 
         static consteval int64_t cached_storage_cost() noexcept
         {
-            return 900;
+            return 1000;
         }
 
         static consteval int64_t base_sstore_cost() noexcept

@@ -14,6 +14,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
+#include <category/vm/runtime/access.hpp>
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
@@ -119,8 +121,7 @@ State::State(
     : block_state_{block_state}
     , incarnation_{incarnation}
     , stamp_tracking_{block_state.stamp_tracking()}
-    , account_boundary_{block_state.account_boundary()}
-    , storage_boundary_{block_state.storage_boundary()}
+    , pricing_block_{block_state.block_number()}
     , relaxed_validation_{relaxed_validation}
     , rb_{this}
 {
@@ -445,15 +446,24 @@ vm::Host::AccessTier State::access_account_tier(Address const &address)
     if (account_state.access() == EVMC_ACCESS_WARM) {
         return vm::Host::AccessTier::warm;
     }
-    if (!stamp_tracking_) {
+    if (!stamp_tracking_ || address == STAMP_LOG_ADDRESS) {
         return vm::Host::AccessTier::cold;
     }
     auto &orig = original_account_state(address);
+    auto &shadow = vm::runtime::g_cache_shadow_stats;
+    shadow.first_accounts.fetch_add(1, std::memory_order_relaxed);
     if (orig.has_account()) {
+        // a non-warm access to a live account: the commit builder classes it
+        // as entry (cold) or refresh (cached and stale)
         account_state.mark_stamp_candidate();
     }
-    uint64_t const stamp = orig.stamp();
-    return stamp != 0 && stamp >= account_boundary_
+    else {
+        shadow.missing_accounts.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (orig.stamp() != 0) {
+        shadow.record_gap(shadow.account_gaps, pricing_block_ - orig.stamp());
+    }
+    return cache_stamp_cached(orig.stamp(), pricing_block_)
                ? vm::Host::AccessTier::cached
                : vm::Host::AccessTier::cold;
 }
@@ -483,7 +493,8 @@ State::access_storage_tier(Address const &address, bytes32_t const &key)
         if (warm_status == EVMC_ACCESS_WARM) {
             return vm::Host::AccessTier::warm;
         }
-        if (!stamp_tracking_ || !account_state.account_.has_value()) {
+        if (!stamp_tracking_ || !account_state.account_.has_value() ||
+            address == STAMP_LOG_ADDRESS) {
             return vm::Host::AccessTier::cold;
         }
         Incarnation const inc = account_state.account_->incarnation;
@@ -494,11 +505,19 @@ State::access_storage_tier(Address const &address, bytes32_t const &key)
             return vm::Host::AccessTier::cold;
         }
         bytes32_t const value = load_original_storage(address, orig, inc, key);
+        auto &shadow = vm::runtime::g_cache_shadow_stats;
+        shadow.first_storage.fetch_add(1, std::memory_order_relaxed);
         if (value != bytes32_t{}) {
             account_state.mark_stamp_candidate(key);
         }
+        else {
+            shadow.missing_storage.fetch_add(1, std::memory_order_relaxed);
+        }
         uint64_t const stamp = orig.storage_stamp(key).value_or(0);
-        return stamp != 0 && stamp >= storage_boundary_
+        if (stamp != 0) {
+            shadow.record_gap(shadow.storage_gaps, pricing_block_ - stamp);
+        }
+        return cache_stamp_cached(stamp, pricing_block_)
                    ? vm::Host::AccessTier::cached
                    : vm::Host::AccessTier::cold;
     }

@@ -71,8 +71,7 @@ class State
     // multi-block cache: copied from BlockState at construction; the access
     // tier is then two compares on in-hand data
     bool const stamp_tracking_;
-    uint64_t const account_boundary_;
-    uint64_t const storage_boundary_;
+    uint64_t const pricing_block_;
 
     bool const relaxed_validation_{false};
     ReserveBalance rb_;

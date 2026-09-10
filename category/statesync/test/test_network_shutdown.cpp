@@ -17,6 +17,7 @@
 #include <category/core/assert.h>
 #include <category/core/basic_formatter.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/statesync/statesync_server_network.hpp>
@@ -69,7 +70,7 @@ namespace
             // Initialize the on-disk DB format; the Db object is not needed
             // after this point.
             (void)monad::mpt::Db{
-                std::make_unique<monad::OnDiskMachine>(),
+                std::make_unique<monad::MonadOnDiskMachine>(),
                 monad::mpt::OnDiskDbConfig{
                     .append = false, .dbname_paths = {path}}};
         }

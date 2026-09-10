@@ -55,12 +55,8 @@ void monad_runloop_get_balance(
     MonadRunloop *, MonadRunloopAddress const *,
     MonadRunloopWord *result_balance);
 
-// Store current primary state root in `result_state_root`.
-void monad_runloop_get_primary_state_root(
-    MonadRunloop *, MonadRunloopWord *result_state_root);
-
-// Store current secondary state root in `result_state_root`.
-void monad_runloop_get_secondary_state_root(
+// Store current state root in `result_state_root`.
+void monad_runloop_get_state_root(
     MonadRunloop *, MonadRunloopWord *result_state_root);
 
 // Dump the current state of the database to stdout

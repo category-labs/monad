@@ -70,6 +70,7 @@
 #include <category/rpc/chain_context_buffer.hpp>
 #include <category/rpc/eth_simulate_block_hash_buffer.hpp>
 #include <category/rpc/lazy_block_hash.hpp>
+#include <category/rpc/utils/value_size.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -79,6 +80,7 @@
 #include <boost/outcome/try.hpp>
 #include <boost/scope_exit.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -129,6 +131,7 @@ namespace
         "failed to recover the grandparent transactions context";
     char const *const TRANSACTION_OUT_OF_BOUNDS_ERR_MSG =
         "transaction out of bounds";
+    namespace eth_simulate_json = monad::rpc::eth_simulateV1::json_fields;
     static ankerl::unordered_dense::segmented_set<Address>
         empty_senders_and_authorities{};
 
@@ -520,82 +523,6 @@ namespace
         }
     }
 
-    void store_output_header(
-        Block const &block, std::vector<Receipt> const &receipts,
-        bytes32_t const &block_hash, std::vector<bytes32_t> const &txn_hashes,
-        nlohmann::json &output)
-    {
-        auto const format_hex = [](auto const &b) {
-            return std::format("0x{}", evmc::hex(b));
-        };
-
-        BlockHeader const &header = block.header;
-
-        // TODO(dhil): Computing the correct information for some of these
-        // fields currently requires a roundtrip to the db. However, in
-        // simulation mode we only have readonly access to the db.
-
-        output["hash"] = format_hex(block_hash);
-        output["parentHash"] = format_hex(header.parent_hash);
-        output["sha3Uncles"] = format_hex(header.ommers_hash);
-        output["miner"] = format_hex(header.beneficiary);
-        {
-            auto const encoded = rlp::encode_block(block);
-            output["size"] = std::format("0x{:x}", encoded.size());
-        }
-        // TODO(dhil): We currently do not have a way to compute roots
-        // information in simulation mode.
-        output["stateRoot"] = format_hex(header.state_root);
-        output["transactionsRoot"] = format_hex(header.transactions_root);
-        output["receiptsRoot"] = format_hex(header.receipts_root);
-        // In the absence of withdrawals we default to `NULL_HASH`.
-        output["withdrawalsRoot"] =
-            format_hex(header.withdrawals_root.value_or(NULL_HASH));
-        {
-            Receipt::Bloom bloom = compute_bloom(receipts);
-            output["logsBloom"] =
-                format_hex(byte_string_view{bloom.data(), bloom.size()});
-        }
-        output["difficulty"] =
-            std::format("0x{}", to_string(header.difficulty, 16));
-        output["number"] = std::format("0x{:x}", header.number);
-        output["gasLimit"] = std::format("0x{:x}", header.gas_limit);
-        output["gasUsed"] = std::format("0x{:x}", header.gas_used);
-        output["timestamp"] = std::format("0x{:x}", header.timestamp);
-        output["extraData"] = format_hex(header.extra_data);
-        output["mixHash"] = format_hex(header.prev_randao);
-        output["nonce"] = std::format("0x0000000000000000");
-        output["baseFeePerGas"] = std::format(
-            "0x{}", to_string(header.base_fee_per_gas.value_or(0), 16));
-        {
-            output["uncles"] = nlohmann::json::array();
-            for (auto const &uncle : block.ommers) {
-                output["uncles"].emplace_back(format_hex(
-                    to_bytes(keccak256(rlp::encode_block_header(uncle)))));
-            }
-        }
-        {
-            output["transactions"] = nlohmann::json::array();
-            for (auto const &txn_hash : txn_hashes) {
-                output["transactions"].emplace_back(format_hex(txn_hash));
-            }
-        }
-        {
-            output["withdrawals"] = nlohmann::json::array();
-            for (auto const &withdrawal :
-                 block.withdrawals.value_or(std::vector<Withdrawal>{})) {
-                output["withdrawals"].emplace_back(nlohmann::json{
-                    {"index", std::format("0x{:x}", withdrawal.index)},
-                    {"validatorIndex",
-                     std::format("0x{:x}", withdrawal.validator_index)},
-                    {"amount", std::format("0x{:x}", withdrawal.amount)},
-                    {"recipient",
-                     std::format("0x{}", evmc::hex(withdrawal.recipient))},
-                });
-            }
-        }
-    }
-
     void eth_simulate_validate_inputs(
         size_t max_simulate_blocks, uint64_t default_timestamp_increment,
         std::vector<std::vector<Transaction>> const &calls,
@@ -668,11 +595,11 @@ namespace
             num_blocks <= max_simulate_blocks, "too many blocks");
     }
 
-    void save_eth_simulate_log_entry(
+    size_t save_eth_simulate_log_entry(
         Block const &block, std::vector<Receipt> const &receipts,
         std::vector<std::vector<CallFrame>> const &call_frames,
         bytes32_t const &block_hash, std::vector<bytes32_t> const &txn_hashes,
-        nlohmann::json &result)
+        size_t carried_size, size_t const soft_max_size, nlohmann::json &result)
     {
         MONAD_ASSERT_THROW(
             call_frames.size() == block.transactions.size(),
@@ -684,64 +611,166 @@ namespace
             txn_hashes.size() == block.transactions.size(),
             "transaction hashes size mismatch with transactions");
 
+        // NOTE(dhil): We may slightly over-estimate the size of the output
+        // JSON/CBOR here, because we are basing our estimate on the size of the
+        // in-memory representation.
+        carried_size += rpc::eth_simulateV1::log_entry_size(
+            block, receipts, call_frames, block_hash, txn_hashes);
+
+        MONAD_ASSERT_THROW(
+            carried_size <= soft_max_size,
+            "output size exceeds maximum allowed size");
+
         auto const format_hex = [](auto const &b) {
             return std::format("0x{}", evmc::hex(b));
         };
 
         auto entry = nlohmann::json::object();
 
-        entry["calls"] = nlohmann::json::array();
-        auto &txns = entry["calls"];
+        entry[eth_simulate_json::calls] = nlohmann::json::array();
+        auto &txns = entry[eth_simulate_json::calls];
 
         for (size_t tx_idx = 0; tx_idx < block.transactions.size(); ++tx_idx) {
-            MONAD_ASSERT_THROW(
-                call_frames[tx_idx].size() > 0,
-                "call frames size must be greater than 0");
             auto call_result = nlohmann::json::object();
 
-            call_result["status"] = std::format(
+            call_result[eth_simulate_json::status] = std::format(
                 "0x{:x}",
                 call_frames[tx_idx][0].status == EVMC_SUCCESS ? 1 : 0);
-            call_result["returnData"] =
+            call_result[eth_simulate_json::return_data] =
                 format_hex(call_frames[tx_idx][0].output);
-            call_result["gasUsed"] =
+            call_result[eth_simulate_json::gas_used] =
                 std::format("0x{:x}", call_frames[tx_idx][0].gas_used);
 
-            size_t log_index = 0;
+            size_t log_index_value = 0;
             if (call_frames[tx_idx][0].status == EVMC_SUCCESS) {
-                call_result["logs"] = nlohmann::json::array();
+                call_result[eth_simulate_json::logs] = nlohmann::json::array();
                 for (auto const &log : receipts[tx_idx].logs) {
-                    call_result["logs"].emplace_back(nlohmann::json{
-                        {"address", format_hex(log.address)},
-                        {"topics", nlohmann::json::array()},
-                        {"data", format_hex(log.data)},
-                        {"blockNumber",
-                         std::format("0x{:x}", block.header.number)},
-                        {
-                            "transactionHash",
-                            format_hex(txn_hashes[tx_idx]),
-                        },
-                        {"transactionIndex", std::format("0x{:x}", tx_idx)},
-                        {"blockHash", format_hex(block_hash)},
-                        {"logIndex", std::format("0x{:x}", log_index++)},
-                        // NOTE(dhil): Geth always emits logs with "removed"
-                        // fixed to `false`.
-                        {"removed", false},
-                    });
+                    call_result[eth_simulate_json::logs].emplace_back(
+                        nlohmann::json{
+                            {eth_simulate_json::address,
+                             format_hex(log.address)},
+                            {eth_simulate_json::topics,
+                             nlohmann::json::array()},
+                            {eth_simulate_json::data, format_hex(log.data)},
+                            {eth_simulate_json::block_number,
+                             std::format("0x{:x}", block.header.number)},
+                            {
+                                eth_simulate_json::transaction_hash,
+                                format_hex(txn_hashes[tx_idx]),
+                            },
+                            {
+                                eth_simulate_json::transaction_index,
+                                std::format("0x{:x}", tx_idx),
+                            },
+                            {eth_simulate_json::block_hash,
+                             format_hex(block_hash)},
+                            {
+                                eth_simulate_json::log_index,
+                                std::format("0x{:x}", log_index_value++),
+                            },
+                            // NOTE(dhil): Geth always emits logs with "removed"
+                            // fixed to `false`.
+                            {eth_simulate_json::removed, false},
+                        });
                     for (auto const &topic : log.topics) {
-                        call_result["logs"].back()["topics"].emplace_back(
-                            format_hex(topic));
+                        call_result[eth_simulate_json::logs]
+                            .back()[eth_simulate_json::topics]
+                            .emplace_back(format_hex(topic));
                     }
                 }
             }
             else {
-                call_result["error"] = {{"message", "execution reverted"}};
+                call_result[eth_simulate_json::error] = {
+                    {eth_simulate_json::message,
+                     eth_simulate_json::execution_reverted}};
             }
 
             txns.emplace_back(std::move(call_result));
         }
-        store_output_header(block, receipts, block_hash, txn_hashes, entry);
+
+        // Add the output header.
+        // TODO(dhil): Computing the correct information for some of these
+        // fields currently requires a roundtrip to the db. However, in
+        // simulation mode we only have readonly access to the db.
+
+        entry[eth_simulate_json::hash] = format_hex(block_hash);
+        entry[eth_simulate_json::parent_hash] =
+            format_hex(block.header.parent_hash);
+        entry[eth_simulate_json::sha3_uncles] =
+            format_hex(block.header.ommers_hash);
+        entry[eth_simulate_json::miner] = format_hex(block.header.beneficiary);
+        {
+            auto const encoded = rlp::encode_block(block);
+            entry[eth_simulate_json::size] =
+                std::format("0x{:x}", encoded.size());
+        }
+        // TODO(dhil): We currently do not have a way to compute roots
+        // information in simulation mode.
+        entry[eth_simulate_json::state_root] =
+            format_hex(block.header.state_root);
+        entry[eth_simulate_json::transactions_root] =
+            format_hex(block.header.transactions_root);
+        entry[eth_simulate_json::receipts_root] =
+            format_hex(block.header.receipts_root);
+        // In the absence of withdrawals we default to `NULL_HASH`.
+        entry[eth_simulate_json::withdrawals_root] =
+            format_hex(block.header.withdrawals_root.value_or(NULL_HASH));
+        {
+            Receipt::Bloom bloom = compute_bloom(receipts);
+            entry[eth_simulate_json::logs_bloom] =
+                format_hex(byte_string_view{bloom.data(), bloom.size()});
+        }
+        entry[eth_simulate_json::difficulty] =
+            std::format("0x{}", to_string(block.header.difficulty, 16));
+        entry[eth_simulate_json::number] =
+            std::format("0x{:x}", block.header.number);
+        entry[eth_simulate_json::gas_limit] =
+            std::format("0x{:x}", block.header.gas_limit);
+        entry[eth_simulate_json::gas_used] =
+            std::format("0x{:x}", block.header.gas_used);
+        entry[eth_simulate_json::timestamp] =
+            std::format("0x{:x}", block.header.timestamp);
+        entry[eth_simulate_json::extra_data] =
+            format_hex(block.header.extra_data);
+        entry[eth_simulate_json::mix_hash] =
+            format_hex(block.header.prev_randao);
+        entry[eth_simulate_json::nonce] = std::format("0x0000000000000000");
+        entry[eth_simulate_json::base_fee_per_gas] = std::format(
+            "0x{}", to_string(block.header.base_fee_per_gas.value_or(0), 16));
+        {
+            entry[eth_simulate_json::uncles] = nlohmann::json::array();
+            for (auto const &uncle : block.ommers) {
+                entry[eth_simulate_json::uncles].emplace_back(format_hex(
+                    to_bytes(keccak256(rlp::encode_block_header(uncle)))));
+            }
+        }
+        {
+            entry[eth_simulate_json::transactions] = nlohmann::json::array();
+            for (auto const &txn_hash : txn_hashes) {
+                entry[eth_simulate_json::transactions].emplace_back(
+                    format_hex(txn_hash));
+            }
+        }
+        {
+            entry[eth_simulate_json::withdrawals] = nlohmann::json::array();
+            for (auto const &withdrawal :
+                 block.withdrawals.value_or(std::vector<Withdrawal>{})) {
+                entry[eth_simulate_json::withdrawals].emplace_back(
+                    nlohmann::json{
+                        {eth_simulate_json::index,
+                         std::format("0x{:x}", withdrawal.index)},
+                        {eth_simulate_json::validator_index,
+                         std::format("0x{:x}", withdrawal.validator_index)},
+                        {eth_simulate_json::amount,
+                         std::format("0x{:x}", withdrawal.amount)},
+                        {eth_simulate_json::recipient,
+                         std::format("0x{}", evmc::hex(withdrawal.recipient))},
+                    });
+            }
+        }
+
         result.emplace_back(std::move(entry));
+        return carried_size;
     }
 
     template <Traits traits>
@@ -755,7 +784,7 @@ namespace
         mpt::RODb &db, vm::VM &vm, fiber::FiberGroup &tx_exec_pool,
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
-        uint64_t const gas_limit, size_t const max_calls,
+        uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
         bool emit_native_transfer_logs)
     {
         // TODO(dhil): Decide on the default timestamp increment.
@@ -792,6 +821,10 @@ namespace
             state_overrides,
             base_header,
             is_monad_trait_v<traits>);
+
+        // Calculate the maximum size of the in-memory structures that we are
+        // willing to materialize this simulation.
+        size_t const soft_max_size = padded_max_size(max_size);
 
         TrieRODb tdb{db};
         tdb.set_block_and_prefix(base_block_number, block_id);
@@ -846,6 +879,7 @@ namespace
         BlockHeader header = base_header;
         std::vector<std::vector<CallFrame>> const empty_call_frames{};
         uint64_t gas_consumed_so_far = 0;
+        size_t carried_size = sizeof(nlohmann::json::array_t);
 
         auto block_state = BlockState{tdb, vm};
         for (size_t block_idx = 0; block_idx < calls.size(); ++block_idx) {
@@ -917,12 +951,14 @@ namespace
                     rlp::encode_block_header(synthetic_block.header)));
                 block_hash_buffer.advance(synthetic_block_hash);
 
-                save_eth_simulate_log_entry(
+                carried_size = save_eth_simulate_log_entry(
                     synthetic_block,
                     receipts,
                     empty_call_frames,
                     synthetic_block_hash,
                     {},
+                    carried_size,
+                    soft_max_size,
                     result);
 
                 header = synthetic_block.header;
@@ -1071,8 +1107,15 @@ namespace
                     to_bytes(keccak256(rlp::encode_transaction(txn))));
             }
 
-            save_eth_simulate_log_entry(
-                block, receipts, call_frames, block_hash, txn_hashes, result);
+            carried_size = save_eth_simulate_log_entry(
+                block,
+                receipts,
+                call_frames,
+                block_hash,
+                txn_hashes,
+                carried_size,
+                soft_max_size,
+                result);
 
             header = current_header;
         }
@@ -1883,7 +1926,7 @@ struct monad_executor
         struct monad_block_override_vec const *const block_overrides,
         BlockHeader const &block_header, uint64_t const block_number,
         bytes32_t const &block_id, bytes32_t const &grandparent_id,
-        uint64_t const gas_limit, size_t const max_calls,
+        uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
         bool emit_native_transfer_logs,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
@@ -1913,6 +1956,7 @@ struct monad_executor
              &db = select_db(block_number),
              gas_limit = gas_limit,
              max_calls = max_calls,
+             max_size = max_size,
              emit_native_transfer_logs = emit_native_transfer_logs,
              fiber_group = &trace_block_group_,
              tx_exec_group = &trace_tx_exec_group_,
@@ -1982,6 +2026,7 @@ struct monad_executor
                                 *block_overrides,
                                 gas_limit,
                                 max_calls,
+                                max_size,
                                 emit_native_transfer_logs);
                             MONAD_ASSERT(false);
                         }
@@ -2007,6 +2052,7 @@ struct monad_executor
                                 *block_overrides,
                                 gas_limit,
                                 max_calls,
+                                max_size,
                                 emit_native_transfer_logs);
                             MONAD_ASSERT(false);
                         }
@@ -2264,7 +2310,7 @@ void monad_executor_eth_simulate_submit(
     uint8_t const *const rlp_block_id, size_t rlp_block_id_len,
     uint8_t const *const rlp_grandparent_block_id,
     size_t const rlp_grandparent_block_id_len, uint64_t gas_limit,
-    size_t max_calls,
+    size_t max_calls, size_t max_output_size,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
     bool emit_native_transfer_logs,
@@ -2328,6 +2374,7 @@ void monad_executor_eth_simulate_submit(
         grandparent_block_id,
         gas_limit,
         max_calls,
+        max_output_size,
         emit_native_transfer_logs,
         complete,
         user);

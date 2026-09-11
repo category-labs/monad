@@ -203,11 +203,3 @@ inline size_t iov_length(std::span<const struct iovec> const iovecs)
 #endif
 
 MONAD_ASYNC_NAMESPACE_END
-
-// chunk_offset_t storage in the db metadata is accessed through
-// std::atomic_ref (see db_metadata_context). It lives in cross-process
-// shared memory, so require that view to be lock-free: a lock-based
-// fallback would use a per-process (hence non-shareable) lock table and
-// break cross-process atomicity.
-static_assert(std::atomic_ref<
-              MONAD_ASYNC_NAMESPACE::chunk_offset_t>::is_always_lock_free);

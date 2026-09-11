@@ -101,7 +101,7 @@ int main(int const argc, char *const argv[])
     bool overwrite_keys_mode = false;
 
     try {
-        std::vector<std::filesystem::path> dbname_paths;
+        std::filesystem::path dbname_path;
         CLI::App cli(
             "Tool for stress testing concurrent RO DB instances",
             "read_only_db_stress_test");
@@ -142,10 +142,7 @@ int main(int const argc, char *const argv[])
                 timeout_seconds,
                 "Teardown the stress test after N seconds");
             cli.add_option(
-                   "--db",
-                   dbname_paths,
-                   "A comma-separated list of previously created database "
-                   "paths")
+                   "--db", dbname_path, "A previously created database path")
                 ->required();
             cli.add_flag(
                 "--overwrite-keys-mode",
@@ -175,10 +172,10 @@ int main(int const argc, char *const argv[])
             // construct RWDb
             auto const config =
                 overwrite_keys_mode
-                    ? OnDiskDbConfig{.compaction = true, .dbname_paths = {dbname_paths}, .file_size_db = 4, .fixed_history_length = 40}
+                    ? OnDiskDbConfig{.compaction = true, .dbname_path = dbname_path, .file_size_db = 4, .fixed_history_length = 40}
                     : OnDiskDbConfig{
                           .compaction = enable_compaction,
-                          .dbname_paths = {dbname_paths}};
+                          .dbname_path = dbname_path};
             Db rw_db{std::make_unique<StateMachineAlwaysMerkle>(), config};
             Node::SharedPtr rw_root = nullptr;
 
@@ -230,7 +227,7 @@ int main(int const argc, char *const argv[])
 
             auto random_sync_read = [&]() {
                 ReadOnlyOnDiskDbConfig const ro_config{
-                    .dbname_paths = {dbname_paths}};
+                    .dbname_path = dbname_path};
                 AsyncIOContext io_ctx{ro_config};
                 Db const ro_db{io_ctx};
 
@@ -282,7 +279,7 @@ int main(int const argc, char *const argv[])
 
             auto random_async_read = [&]() {
                 ReadOnlyOnDiskDbConfig const ro_config{
-                    .dbname_paths = {dbname_paths}};
+                    .dbname_path = dbname_path};
                 AsyncIOContext io_ctx{ro_config};
                 Db ro_db{io_ctx};
                 auto const async_ctx = async_context_create(ro_db);
@@ -382,7 +379,7 @@ int main(int const argc, char *const argv[])
 
             auto random_traverse = [&]() {
                 ReadOnlyOnDiskDbConfig const ro_config{
-                    .dbname_paths = {dbname_paths}};
+                    .dbname_path = dbname_path};
                 AsyncIOContext io_ctx{ro_config};
                 Db ro_db{io_ctx};
 
@@ -505,7 +502,7 @@ int main(int const argc, char *const argv[])
                 unsigned nfailed = 0;
                 while (!g_done) {
                     ReadOnlyOnDiskDbConfig const ro_config{
-                        .dbname_paths = dbname_paths};
+                        .dbname_path = dbname_path};
                     AsyncIOContext io_ctx{ro_config};
                     Db const ro_db{io_ctx};
                     auto const version = ro_db.get_earliest_version() + 1;
@@ -535,8 +532,7 @@ int main(int const argc, char *const argv[])
 
             auto async_read_nonblocking_rodb = [&] {
                 // RODb
-                RODb ro_db{
-                    ReadOnlyOnDiskDbConfig{.dbname_paths = dbname_paths}};
+                RODb ro_db{ReadOnlyOnDiskDbConfig{.dbname_path = dbname_path}};
 
                 constexpr unsigned num_fibers = 16;
                 monad::fiber::PriorityPool pool(

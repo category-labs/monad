@@ -35,7 +35,7 @@ struct RewindTest
 
 TEST_F(RewindTest, works)
 {
-    auto const path = this->state()->pool.devices()[0].current_path();
+    auto const path = this->state()->pool.device().current_path();
     std::cout << "DB is at " << path << ". Closing DB ..." << std::endl;
     auto &aux = this->state()->aux;
     auto &io = this->state()->io;
@@ -160,7 +160,7 @@ TEST_F(
 {
     // Test case to cover the case where fast writer is advanced to a newer
     // chunk than the latest root offset is at
-    auto const path = this->state()->pool.devices()[0].current_path();
+    auto const path = this->state()->pool.device().current_path();
     auto &aux = this->state()->aux;
     auto const latest_root_offset = aux.metadata_ctx().get_latest_root_offset();
     std::cout << "DB is at " << path << ". Last root offset ["

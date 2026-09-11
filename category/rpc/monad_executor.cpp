@@ -93,6 +93,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -1258,19 +1259,14 @@ struct monad_executor
     static mpt::ReadOnlyOnDiskDbConfig make_db_config(
         std::string const &triedb_path, uint64_t const node_lru_max_mem)
     {
-        std::vector<std::filesystem::path> paths;
-        if (std::filesystem::is_directory(triedb_path)) {
-            for (auto const &file :
-                 std::filesystem::directory_iterator(triedb_path)) {
-                paths.emplace_back(file.path());
-            }
-        }
-        else {
-            paths.emplace_back(triedb_path);
-        }
+        std::error_code ec;
+        MONAD_ASSERT_PRINTF(
+            !std::filesystem::is_directory(triedb_path, ec),
+            "%s is a directory, but a database is the single storage device it "
+            "lives on; name that device.",
+            triedb_path.c_str());
         return mpt::ReadOnlyOnDiskDbConfig{
-            .dbname_paths = std::move(paths),
-            .node_lru_max_mem = node_lru_max_mem};
+            .dbname_path = triedb_path, .node_lru_max_mem = node_lru_max_mem};
     }
 
     // The primary owns everything from its earliest version upward; only

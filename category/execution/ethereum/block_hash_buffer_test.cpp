@@ -214,7 +214,7 @@ TEST(BlockHashBufferTest, init_from_db)
     mpt::Db db{
         std::make_unique<OnDiskMachine>(),
         mpt::OnDiskDbConfig{
-            .append = false, .dbname_paths = {path}, .chunk_capacity = 24}};
+            .append = false, .dbname_path = path, .chunk_capacity = 24}};
     TrieDb tdb{db};
 
     BlockHashBufferFinalized expected;

@@ -169,7 +169,7 @@ namespace
 
         OnDiskDbWithFileAsyncFixture()
             : io_ctx(ReadOnlyOnDiskDbConfig{
-                  .dbname_paths = this->config.dbname_paths})
+                  .dbname_path = this->config.dbname_path})
             , ro_db(io_ctx)
             , ctx(async_context_create(ro_db))
         {
@@ -353,7 +353,7 @@ namespace
 
         ROOnDiskWithFileFixture()
             : ro_db(ReadOnlyOnDiskDbConfig{
-                  .dbname_paths = this->config.dbname_paths,
+                  .dbname_path = this->config.dbname_path,
                   .node_lru_max_mem = 100 * NodeCache::AVERAGE_NODE_SIZE})
             , pool(2, 16)
         {
@@ -398,7 +398,7 @@ TEST_F(OnDiskDbWithFileFixture, multiple_read_only_db_share_one_asyncio)
         make_update(kv[0].first, kv[0].second),
         make_update(kv[1].first, kv[1].second));
 
-    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
     Db rodb1{io_ctx};
     Db rodb2{io_ctx};
 
@@ -448,7 +448,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_single_thread)
         db_get_data(db, root, prefix, first_block_id).value(),
         0x05a697d6698c55ee3e4d472c4907bca2184648bcfdd0e023e7ff7089dc984e7e_bytes);
 
-    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
     Db ro_db{io_ctx};
     auto ro_root = ro_db.load_root_for_version(first_block_id);
     // Verify RO
@@ -710,7 +710,7 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
 TEST_F(OnDiskDbWithFileFixture, open_emtpy_rodb)
 {
     // construct RODb
-    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
     Db const ro_db{io_ctx};
     // RODb root is invalid
     EXPECT_EQ(ro_db.get_latest_version(), INVALID_BLOCK_NUM);
@@ -747,7 +747,7 @@ TEST_F(OnDiskDbWithFileFixture, DISABLED_read_only_db_concurrent)
 
     auto keep_query = [&]() {
         // construct RODb
-        AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+        AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
         Db const ro_db{io_ctx};
 
         uint64_t read_version = 0;
@@ -810,7 +810,7 @@ TEST_F(OnDiskDbWithFileFixture, DISABLED_read_only_db_concurrent)
 
 TEST_F(OnDiskDbWithFileFixture, upsert_but_not_write_root)
 {
-    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
     Db ro_db{io_ctx};
 
     // upsert not write root, rodb reads nothing
@@ -848,7 +848,7 @@ TEST(DbTest, history_length_adjustment_never_under_min)
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
-        .dbname_paths = {dbname}};
+        .dbname_path = dbname};
     Db db{std::make_unique<StateMachineAlwaysEmpty>(), config};
     Node::SharedPtr root{};
 
@@ -897,7 +897,7 @@ TEST(DbTest, history_length_adjustment_reclaims_with_active_secondary)
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
-        .dbname_paths = {dbname}};
+        .dbname_path = dbname};
     Db db{std::make_unique<StateMachineAlwaysEmpty>(), config};
 
     constexpr unsigned nkeys = 100;
@@ -968,7 +968,7 @@ TEST(DbTest, history_length_adjustment_trims_both_timelines)
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
-        .dbname_paths = {dbname},
+        .dbname_path = dbname,
         .chunk_capacity = 23}; // 8 MiB chunks, the smallest AsyncIO accepts
     Db db{std::make_unique<StateMachineAlwaysEmpty>(), config};
 
@@ -1146,7 +1146,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_as_version_expire)
     };
 
     {
-        AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+        AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
         Db ro_db{io_ctx};
         // Test both APIs
         test_traverse(ro_db, [&](auto &&...args) {
@@ -1156,7 +1156,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_as_version_expire)
             ro_db, [&](auto &&...args) { return ro_db.traverse(args...); });
     }
     {
-        RODb ro_db(ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}});
+        RODb ro_db(ReadOnlyOnDiskDbConfig{.dbname_path = dbname});
         test_traverse(
             ro_db, [&](auto &&...args) { return ro_db.traverse(args...); });
     }
@@ -1329,11 +1329,11 @@ TEST(DbTest, out_of_order_upserts_to_nonexist_earlier_version)
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
-        .dbname_paths = {dbname},
+        .dbname_path = dbname,
         .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
     Db db{std::make_unique<StateMachineAlwaysEmpty>(), config};
 
-    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
     Db rodb{io_ctx};
 
     constexpr size_t total_keys = 10000;
@@ -1390,10 +1390,10 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
-        .dbname_paths = {dbname},
+        .dbname_path = dbname,
         .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
     Db db{std::make_unique<StateMachineAlwaysMerkle>(), config};
-    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
     Db rodb{io_ctx};
 
     auto get_release_offsets = [](monad::byte_string_view const bytes)
@@ -2076,7 +2076,7 @@ TEST(DbTest, auto_expire_large_set)
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
-        .dbname_paths = {dbname},
+        .dbname_path = dbname,
         .fixed_history_length = history_len};
     Db db{std::make_unique<ExpireMachine>(), config};
     Node::SharedPtr root;
@@ -2148,7 +2148,7 @@ TEST(DbTest, auto_expire)
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
-        .dbname_paths = {dbname},
+        .dbname_path = dbname,
         .fixed_history_length = 5};
     Db db{std::make_unique<ExpireMachine>(), config};
     Node::SharedPtr root;
@@ -2361,7 +2361,7 @@ TEST_F(OnDiskDbWithFileFixture, copy_trie_to_different_version_modify_state)
         block_id,
         make_update(kv_alloc[0], kv_alloc[0]));
 
-    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
     Db rodb{io_ctx};
 
     // copy trie to a new version
@@ -2471,7 +2471,7 @@ TEST(DbTest, move_trie_version_forward_history_ring_wrap_around)
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
-        .dbname_paths = {dbname}};
+        .dbname_path = dbname};
     Db db{std::make_unique<StateMachineAlwaysEmpty>(), config};
     Node::SharedPtr root;
 
@@ -2577,7 +2577,7 @@ TEST_F(OnDiskDbWithFileFixture, history_ring_buffer_wrap_around)
 TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
 {
     EXPECT_EQ(db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
-    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
     Db ro_db{io_ctx};
     EXPECT_EQ(ro_db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
 
@@ -2713,7 +2713,7 @@ TEST_F(OnDiskDbWithFileFixture, move_trie_causes_discontinuous_history)
 TEST_F(OnDiskDbWithFileFixture, move_trie_version_forward_within_history_range)
 {
     EXPECT_EQ(db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
-    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
     Db const ro_db{io_ctx};
     EXPECT_EQ(ro_db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
 
@@ -2753,7 +2753,7 @@ TEST_F(
     move_trie_version_forward_clear_history_versions_out_of_range)
 {
     EXPECT_EQ(db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
-    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
     Db const ro_db{io_ctx};
     EXPECT_EQ(ro_db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
 
@@ -2802,7 +2802,7 @@ TEST_F(
 TEST_F(OnDiskDbWithFileFixture, reset_history_length_concurrent)
 {
     std::atomic<bool> done{false};
-    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
     Db ro_db{io_ctx};
     auto const prefix = 0x00_bytes;
 
@@ -2905,7 +2905,7 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_reset_history_length)
     EXPECT_TRUE(
         db.find(prefix + kv[1].first, min_block_num_before).has_value());
 
-    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
     Db const ro_db{io_ctx};
     EXPECT_EQ(ro_db.get_history_length(), MPT_TEST_HISTORY_LENGTH);
     EXPECT_TRUE(ro_db.find(prefix + kv[1].first, 0).has_error());

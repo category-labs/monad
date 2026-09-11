@@ -378,10 +378,10 @@ const _: () = {
 };
 
 impl TriedbHandle {
-    pub fn try_new(dbdir_path: &Path, node_lru_max_mem: u64) -> Option<Self> {
+    pub fn try_new(db_path: &Path, node_lru_max_mem: u64) -> Option<Self> {
         monad_cxx::init_cxx_logging(tracing::Level::WARN);
 
-        let path_str = dbdir_path.to_str()?;
+        let path_str = db_path.to_str()?;
         let path = CString::new(path_str).ok()?;
 
         let mut db_ptr = null_mut();

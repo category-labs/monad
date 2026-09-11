@@ -176,7 +176,7 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
 {
     auto const chunk_count = io_->chunk_count();
     MONAD_ASSERT(chunk_count >= 3);
-    auto &cnv_chunk = io_->storage_pool().chunk(storage_pool::cnv, 0);
+    auto cnv_chunk = io_->storage_pool().chunk(storage_pool::cnv, 0);
     auto const fdr = cnv_chunk.read_fd();
     auto const fdw = cnv_chunk.write_fd(0);
 
@@ -396,7 +396,7 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
             "Neither copy of the DB metadata is valid, and not opened for "
             "writing so stopping now.");
         for (uint32_t n = 0; n < chunk_count; n++) {
-            auto const &chunk = io_->storage_pool().chunk(storage_pool::seq, n);
+            auto const chunk = io_->storage_pool().chunk(storage_pool::seq, n);
             MONAD_ASSERT(
                 chunk.size() == 0,
                 "Trying to initialise new DB but storage pool contains "
@@ -409,8 +409,8 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
 
         // All cnv ring chunks go to ring_a; ring_b receives its half on
         // activate_secondary_header.
-        uint32_t const cnv_chunks_total = static_cast<uint32_t>(
-            io_->storage_pool().devices()[0].cnv_chunks());
+        uint32_t const cnv_chunks_total =
+            static_cast<uint32_t>(io_->storage_pool().device().cnv_chunks());
         MONAD_ASSERT(cnv_chunks_total > UpdateAux::cnv_chunks_for_db_metadata);
         uint32_t const ring_total =
             cnv_chunks_total - UpdateAux::cnv_chunks_for_db_metadata;
@@ -438,7 +438,7 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
         memset(tofill, 0xff, first_chunk.capacity());
 
         for (uint32_t n = 1; n <= ring_total; n++) {
-            auto &chunk = io_->storage_pool().chunk(storage_pool::cnv, n);
+            auto chunk = io_->storage_pool().chunk(storage_pool::cnv, n);
             auto const fdw = chunk.write_fd(chunk.capacity());
             MONAD_ASSERT(
                 -1 !=
@@ -489,7 +489,7 @@ void DbMetadataContext::map_ring_b_storage()
 
 uint32_t DbMetadataContext::ring_max_chunks_() const noexcept
 {
-    auto const cnv_chunks = io_->storage_pool().devices()[0].cnv_chunks();
+    auto const cnv_chunks = io_->storage_pool().device().cnv_chunks();
     if (cnv_chunks < 2) {
         MONAD_ABORT_PRINTF(
             "storage pool has %zu conventional chunk(s); at least 2 are "
@@ -911,7 +911,7 @@ namespace
             "corrupt or zeroed cnv_chunks[]. If this pool was migrated by a "
             "pre-fix binary, run 'monad-mpt --repair'.",
             slot_index);
-        auto &chunk = io.storage_pool().chunk(
+        auto chunk = io.storage_pool().chunk(
             MONAD_ASYNC_NAMESPACE::storage_pool::cnv, cnv_chunk_id);
         auto const fdr = chunk.read_fd();
         auto const fdw = chunk.write_fd(0);
@@ -1034,7 +1034,7 @@ void DbMetadataContext::sync_metadata_to_disk_()
     // Also fsync the underlying cnv chunk 0 FD so the filesystem journal
     // commits the msync'd pages (msync's durability guarantees across
     // filesystems/kernels are narrower than fsync's).
-    auto &cnv_chunk_0 =
+    auto cnv_chunk_0 =
         io_->storage_pool().chunk(MONAD_ASYNC_NAMESPACE::storage_pool::cnv, 0);
     auto const fdw = cnv_chunk_0.write_fd(0);
     MONAD_ASSERT_PRINTF(
@@ -1101,7 +1101,7 @@ void DbMetadataContext::sync_ring_data_to_disk_()
                 if (id == detail::db_metadata::NULL_CHUNK) {
                     continue;
                 }
-                auto &chunk = io_->storage_pool().chunk(
+                auto chunk = io_->storage_pool().chunk(
                     MONAD_ASYNC_NAMESPACE::storage_pool::cnv, id);
                 auto const fdw = chunk.write_fd(0);
                 MONAD_ASSERT_PRINTF(
@@ -1660,10 +1660,9 @@ void DbMetadataContext::init_new_pool(
     std::vector<uint32_t> chunks;
     chunks.reserve(chunk_count);
     for (uint32_t n = 0; n < chunk_count; n++) {
-        auto const chunk = io_->storage_pool().chunk(storage_pool::seq, n);
-        MONAD_ASSERT(chunk.zone_id().first == storage_pool::seq);
-        MONAD_ASSERT(chunk.zone_id().second == n);
-        MONAD_ASSERT(chunk.size() == 0); // chunks must actually be free
+        // chunks must actually be free
+        MONAD_ASSERT(
+            io_->storage_pool().chunk(storage_pool::seq, n).size() == 0);
         chunks.push_back(n);
     }
 
@@ -1775,7 +1774,7 @@ void DbMetadataContext::append(chunk_list const list, uint32_t const idx)
     do_(copies_[0].main);
     do_(copies_[1].main);
     if (list == chunk_list::free) {
-        auto const &chunk = io_->storage_pool().chunk(storage_pool::seq, idx);
+        auto const chunk = io_->storage_pool().chunk(storage_pool::seq, idx);
         auto const capacity = chunk.capacity();
         MONAD_ASSERT(chunk.size() == 0);
         copies_[0].main->free_capacity_add_(capacity);
@@ -1804,7 +1803,7 @@ void DbMetadataContext::remove(uint32_t const idx) noexcept
     do_(copies_[0].main);
     do_(copies_[1].main);
     if (is_free_list) {
-        auto const &chunk = io_->storage_pool().chunk(storage_pool::seq, idx);
+        auto const chunk = io_->storage_pool().chunk(storage_pool::seq, idx);
         auto const capacity = chunk.capacity();
         MONAD_ASSERT(chunk.size() == 0);
         copies_[0].main->free_capacity_sub_(capacity);

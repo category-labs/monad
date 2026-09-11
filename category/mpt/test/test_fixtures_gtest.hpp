@@ -77,7 +77,7 @@ namespace monad::test
             , config{OnDiskDbConfig{
                   .compaction = true,
                   .sq_thread_cpu = std::nullopt,
-                  .dbname_paths = {dbname},
+                  .dbname_path = dbname,
                   .fixed_history_length = MPT_TEST_HISTORY_LENGTH,
                   .chunk_capacity = 24}}
             , db{std::make_unique<StateMachineType>(), config}

@@ -29,8 +29,6 @@
 #include <boost/container/small_vector.hpp>
 #include <boost/outcome/try.hpp>
 
-#include <ankerl/unordered_dense.h>
-
 #include <cassert>
 #include <cerrno>
 #include <chrono>
@@ -178,7 +176,6 @@ namespace detail
 AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
     : owning_tid_(get_tl_tid())
     , storage_pool_{std::addressof(pool)}
-    , cnv_chunk_{pool.chunk(storage_pool::cnv, 0)}
     , uring_(rwbuf.ring())
     , wr_uring_(rwbuf.wr_ring())
     , rwbuf_(rwbuf)
@@ -203,43 +200,23 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
         "currently cannot create more than one AsyncIO per thread at a time");
     ts.instance = this;
 
-    auto const count = pool.chunks(storage_pool::seq);
-    std::vector<int> fds;
-    fds.reserve(count * 2 + 2);
-    fds.push_back(cnv_chunk_.io_uring_read_fd);
-    fds.push_back(cnv_chunk_.io_uring_write_fd);
-    for (size_t n = 0; n < count; n++) {
-        seq_chunks_.emplace_back(
-            pool.chunk(storage_pool::seq, static_cast<uint32_t>(n)));
-        MONAD_ASSERT_PRINTF(
-            seq_chunks_.back().chunk.capacity() >= MONAD_IO_BUFFERS_WRITE_SIZE,
-            "sequential chunk capacity %llu must equal or exceed i/o buffer "
-            "size %zu",
-            seq_chunks_.back().chunk.capacity(),
-            MONAD_IO_BUFFERS_WRITE_SIZE);
-        MONAD_ASSERT(
-            (seq_chunks_.back().chunk.capacity() %
-             MONAD_IO_BUFFERS_WRITE_SIZE) == 0);
-        fds.push_back(seq_chunks_[n].io_uring_read_fd);
-        fds.push_back(seq_chunks_[n].io_uring_write_fd);
-    }
+    seq_chunks_count_ = pool.chunks(storage_pool::seq);
+    auto cnv_chunk = pool.chunk(storage_pool::cnv, 0);
+    chunk_capacity_ = cnv_chunk.capacity();
+    MONAD_ASSERT_PRINTF(
+        chunk_capacity_ >= MONAD_IO_BUFFERS_WRITE_SIZE,
+        "chunk capacity %llu must equal or exceed i/o buffer size %zu",
+        chunk_capacity_,
+        MONAD_IO_BUFFERS_WRITE_SIZE);
+    MONAD_ASSERT((chunk_capacity_ % MONAD_IO_BUFFERS_WRITE_SIZE) == 0);
 
-    /* Annoyingly io_uring refuses duplicate file descriptors in its
-    registration, and for efficiency the zoned storage emulation returns the
-    same file descriptor for reads (and it may do so for writes depending). So
-    reduce to a minimum mapped set.
-    */
-    ankerl::unordered_dense::segmented_map<int, int> fd_to_iouring_map;
-    for (auto const fd : fds) {
-        MONAD_ASSERT(fd != -1);
-        fd_to_iouring_map[fd] = -1;
-    }
-    int idx = 0;
-    fds.clear();
-    for (auto &fd : fd_to_iouring_map) {
-        fd.second = idx++;
-        fds.push_back(fd.first);
-    }
+    // The registered set is the device's one descriptor, so both indices
+    // below are its index within that set.
+    std::vector<int> const fds{cnv_chunk.read_fd().first};
+    MONAD_ASSERT(fds[0] != -1);
+    MONAD_ASSERT(cnv_chunk.write_fd(0).first == fds[0]);
+    io_uring_read_fd_ = 0;
+    io_uring_write_fd_ = 0;
     // register files
     auto e = io_uring_register_files(
         &uring_.get_ring(), fds.data(), static_cast<unsigned int>(fds.size()));
@@ -265,18 +242,6 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
                 std::strerror(errno));
         }
         MONAD_ASSERT(!e);
-    }
-    auto replace_fds_with_iouring_fds = [&](auto &p) {
-        auto it = fd_to_iouring_map.find(p.io_uring_read_fd);
-        MONAD_ASSERT(it != fd_to_iouring_map.end());
-        p.io_uring_read_fd = it->second;
-        it = fd_to_iouring_map.find(p.io_uring_write_fd);
-        MONAD_ASSERT(it != fd_to_iouring_map.end());
-        p.io_uring_write_fd = it->second;
-    };
-    replace_fds_with_iouring_fds(cnv_chunk_);
-    for (auto &chnk : seq_chunks_) {
-        replace_fds_with_iouring_fds(chnk);
     }
 }
 
@@ -324,13 +289,14 @@ void AsyncIO::prepare_read_sqe_(
     memset(buffer.data(), 0xff, buffer.size());
 #endif
 
-    auto const &ci = seq_chunks_[chunk_and_offset.id];
+    auto const ci =
+        storage_pool_->chunk(storage_pool::seq, chunk_and_offset.id);
     io_uring_prep_read_fixed(
         sqe,
-        ci.io_uring_read_fd,
+        io_uring_read_fd_,
         buffer.data(),
         static_cast<unsigned int>(buffer.size()),
-        ci.chunk.read_fd().second + chunk_and_offset.offset,
+        ci.read_fd().second + chunk_and_offset.offset,
         0);
     sqe->flags |= IOSQE_FIXED_FILE;
     switch (prio) {
@@ -363,22 +329,23 @@ void AsyncIO::prepare_read_sqe_(
     }
 #endif
 
-    auto const &ci = seq_chunks_[chunk_and_offset.id];
+    auto const ci =
+        storage_pool_->chunk(storage_pool::seq, chunk_and_offset.id);
     if (buffers.size() == 1) {
         io_uring_prep_read(
             sqe,
-            ci.io_uring_read_fd,
+            io_uring_read_fd_,
             buffers.front().iov_base,
             static_cast<unsigned int>(buffers.front().iov_len),
-            ci.chunk.read_fd().second + chunk_and_offset.offset);
+            ci.read_fd().second + chunk_and_offset.offset);
     }
     else {
         io_uring_prep_readv(
             sqe,
-            ci.io_uring_read_fd,
+            io_uring_read_fd_,
             buffers.data(),
             static_cast<unsigned int>(buffers.size()),
-            ci.chunk.read_fd().second + chunk_and_offset.offset);
+            ci.read_fd().second + chunk_and_offset.offset);
     }
     sqe->flags |= IOSQE_FIXED_FILE;
     switch (prio) {
@@ -441,8 +408,8 @@ void AsyncIO::submit_request_(
     MONAD_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
     MONAD_ASSERT(buffer.size() <= WRITE_BUFFER_SIZE);
 
-    auto const &ci = seq_chunks_[chunk_and_offset.id];
-    auto const offset = ci.chunk.write_fd(buffer.size()).second;
+    auto ci = storage_pool_->chunk(storage_pool::seq, chunk_and_offset.id);
+    auto const offset = ci.write_fd(buffer.size()).second;
     /* Do sanity check to ensure initiator is definitely appending where
     they are supposed to be appending.
     */
@@ -461,7 +428,7 @@ void AsyncIO::submit_request_(
 
     io_uring_prep_write_fixed(
         sqe,
-        ci.io_uring_write_fd,
+        io_uring_write_fd_,
         buffer.data(),
         static_cast<unsigned int>(buffer.size()),
         offset,
@@ -774,17 +741,14 @@ void AsyncIO::dump_fd_to(size_t const which, std::filesystem::path const &path)
     MONAD_ASSERT_PRINTF(
         tofd != -1, "creat failed due to %s", std::strerror(errno));
     auto const untodfd = make_scope_exit([tofd]() noexcept { ::close(tofd); });
-    auto const fromfd = seq_chunks_[which].chunk.read_fd();
+    auto const chunk =
+        storage_pool_->chunk(storage_pool::seq, static_cast<uint32_t>(which));
+    auto const fromfd = chunk.read_fd();
     MONAD_ASSERT(fromfd.second <= std::numeric_limits<off64_t>::max());
     off64_t off_in = static_cast<off64_t>(fromfd.second);
     off64_t off_out = 0;
-    auto const copied = copy_file_range(
-        fromfd.first,
-        &off_in,
-        tofd,
-        &off_out,
-        seq_chunks_[which].chunk.size(),
-        0);
+    auto const copied =
+        copy_file_range(fromfd.first, &off_in, tofd, &off_out, chunk.size(), 0);
     MONAD_ASSERT_PRINTF(
         copied != -1, "copy_file_range failed due to %s", std::strerror(errno));
 }

@@ -191,7 +191,7 @@ TEST(DBTest, read_only)
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            mpt::OnDiskDbConfig{.dbname_paths = {name}, .chunk_capacity = 24}};
+            mpt::OnDiskDbConfig{.dbname_path = name, .chunk_capacity = 24}};
         TrieDb rw(db);
 
         Account const acct1{.nonce = 1};
@@ -213,7 +213,7 @@ TEST(DBTest, read_only)
             BlockHeader{.number = 1});
 
         mpt::AsyncIOContext io_ctx{
-            mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {name}}};
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_path = name}};
         mpt::Db ro_db{io_ctx};
         TrieDb ro{ro_db};
         ASSERT_EQ(ro.get_block_number(), 1);
@@ -707,13 +707,13 @@ TEST_F(OnDiskTrieDbWithFileFixture, get_transactions)
 
     { // nonblocking RODb
         mpt::RODb rodb{
-            mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {this->dbname}}};
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_path = this->dbname}};
         verify_transactions(rodb);
     }
 
     { // blocking read-only Db
         mpt::AsyncIOContext io_ctx{
-            mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {this->dbname}}};
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_path = this->dbname}};
         mpt::Db rodb{io_ctx};
         verify_transactions(rodb);
     }
@@ -734,7 +734,7 @@ TYPED_TEST(DBTest, to_json)
             return mpt::Db{
                 std::make_unique<OnDiskMachine>(),
                 mpt::OnDiskDbConfig{
-                    .dbname_paths = {dbname}, .chunk_capacity = 24}};
+                    .dbname_path = dbname, .chunk_capacity = 24}};
         }
         return mpt::Db{std::make_unique<InMemoryMachine>()};
     }();
@@ -816,7 +816,7 @@ TYPED_TEST(DBTest, to_json)
     if (this->on_disk) {
         // also test to_json from a read only db
         mpt::AsyncIOContext io_ctx{
-            mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
         mpt::Db ro_db{io_ctx};
         TrieDb ro{ro_db};
         EXPECT_EQ(expected_payload, ro.to_json());

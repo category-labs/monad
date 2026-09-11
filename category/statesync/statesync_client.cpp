@@ -40,15 +40,17 @@ using namespace monad::mpt;
 unsigned const MONAD_SQPOLL_DISABLED = unsigned(-1);
 
 monad_statesync_client_context *monad_statesync_client_context_create(
-    monad_chain_config const chain_config,
-    char const *const *const dbname_paths, size_t const len,
+    monad_chain_config const chain_config, char const *const dbname_path,
     unsigned const sq_thread_cpu, monad_statesync_client *const sync,
     void (*statesync_send_request)(
         monad_statesync_client *, monad_sync_request))
 {
-    std::vector<std::filesystem::path> const paths{
-        dbname_paths, dbname_paths + len};
-    MONAD_ASSERT(!paths.empty());
+    // Checked before constructing the path: std::filesystem::path faults on a
+    // null pointer rather than yielding something empty to diagnose.
+    MONAD_ASSERT_PRINTF(
+        dbname_path != nullptr && *dbname_path != '\0',
+        "dbname_path must name the database's storage device");
+    std::filesystem::path const path{dbname_path};
     // C ABI entry — runs in a foreign process; register the state machine
     // factories so the kind-driven Db ctor can resolve `ethereum`.
     // Idempotent: re-registration overwrites the prior factory.
@@ -56,7 +58,7 @@ monad_statesync_client_context *monad_statesync_client_context_create(
     register_monad_state_machines();
     return new monad_statesync_client_context{
         chain_config,
-        paths,
+        path,
         sq_thread_cpu == MONAD_SQPOLL_DISABLED
             ? std::nullopt
             : std::make_optional(sq_thread_cpu),

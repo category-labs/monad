@@ -37,7 +37,7 @@ using namespace monad::mpt;
 
 monad_statesync_client_context::monad_statesync_client_context(
     monad_chain_config const chain_config,
-    std::vector<std::filesystem::path> const dbname_paths,
+    std::filesystem::path const dbname_path,
     std::optional<unsigned> const sq_thread_cpu, unsigned const wr_buffers,
     monad_statesync_client *const sync,
     void (*statesync_send_request)(
@@ -51,7 +51,7 @@ monad_statesync_client_context::monad_statesync_client_context(
           .wr_buffers = wr_buffers,
           .uring_entries = 128,
           .sq_thread_cpu = sq_thread_cpu,
-          .dbname_paths = dbname_paths}}
+          .dbname_path = dbname_path}}
     , tdb{db} // open with latest finalized if valid, otherwise init as block 0
     , secondary_db{[this] {
         if (db.timeline_active(timeline_id::secondary)) {

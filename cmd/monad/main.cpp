@@ -76,7 +76,6 @@
 #include <string>
 #include <sys/sysinfo.h>
 #include <unistd.h>
-#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -144,7 +143,7 @@ try {
     unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
     bool disable_sq_thread_cpu = false;
     std::optional<unsigned> ro_sq_thread_cpu;
-    std::vector<fs::path> dbname_paths;
+    fs::path dbname_path;
     fs::path db_stats_file;
     fs::path snapshot;
     fs::path dump_snapshot;
@@ -187,10 +186,9 @@ try {
         "specified)");
     CLI::Option *const db_option = cli.add_option(
         "--db",
-        dbname_paths,
-        "A comma-separated list of previously created database paths. You can "
-        "configure the storage pool with one or more files/devices. If no "
-        "value is passed, the replay will run with an in-memory triedb");
+        dbname_path,
+        "A previously created database path. If no value is passed, the "
+        "replay will run with an in-memory triedb");
     cli.add_option(
            "--db-stats-file,--db_stats_file",
            db_stats_file,
@@ -304,7 +302,7 @@ try {
 
     MONAD_ASSERT(init_trusted_setup());
 
-    auto const db_in_memory = dbname_paths.empty();
+    auto const db_in_memory = dbname_path.empty();
     [[maybe_unused]] auto const load_start_time =
         std::chrono::steady_clock::now();
 
@@ -334,7 +332,7 @@ try {
                 .sq_thread_cpu = disable_sq_thread_cpu
                                      ? std::optional<unsigned>{}
                                      : std::optional<unsigned>{sq_thread_cpu},
-                .dbname_paths = dbname_paths,
+                .dbname_path = dbname_path,
                 .stats_file_path =
                     db_stats_file.empty()
                         ? std::optional<fs::path>{}
@@ -416,7 +414,7 @@ try {
             .triedb = &triedb,
             .network = &net.value(),
             .ro_sq_thread_cpu = ro_sq_thread_cpu,
-            .dbname_paths = dbname_paths});
+            .dbname_path = dbname_path});
     }
 
     LOG_INFO(
@@ -448,7 +446,7 @@ try {
 
     if (!db_in_memory) {
         mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
-            .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths = dbname_paths}};
+            .sq_thread_cpu = ro_sq_thread_cpu, .dbname_path = dbname_path}};
         mpt::Db rodb{io_ctx, monad::mpt::timeline_id::primary};
         initialized_headers_from_triedb = init_block_hash_buffer_from_triedb(
             rodb, start_block_num, block_hash_buffer);
@@ -605,7 +603,7 @@ try {
         LOG_INFO("Dump db of block: {}", block_num);
         mpt::AsyncIOContext io_ctx(mpt::ReadOnlyOnDiskDbConfig{
             .sq_thread_cpu = ro_sq_thread_cpu,
-            .dbname_paths = dbname_paths,
+            .dbname_path = dbname_path,
             .concurrent_read_io_limit = 128});
         mpt::Db db{io_ctx};
         TrieDb ro_db{db, false};

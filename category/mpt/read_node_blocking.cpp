@@ -54,7 +54,7 @@ Node::SharedPtr read_node_blocking(
     auto const unbuffer =
         make_scope_exit([buffer]() noexcept { ::free(buffer); });
 
-    auto const &chunk = pool.chunk(pool.seq, node_offset.id);
+    auto const chunk = pool.chunk(pool.seq, node_offset.id);
     auto const fd = chunk.read_fd();
     ssize_t const bytes_read = pread(
         fd.first,

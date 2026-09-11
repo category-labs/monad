@@ -61,8 +61,7 @@ fn add_client_prefixes_as_new_peers(ctx: *mut monad_statesync_client_context, cl
 /// checking
 pub struct StateSyncCtx {
     chain_config: monad_chain_config,
-    dbname_paths: *const *const ::std::os::raw::c_char,
-    len: usize,
+    dbname_path: *const ::std::os::raw::c_char,
     sq_thread_cpu: Option<::std::os::raw::c_uint>,
     request_ctx: StateSyncContext,
     statesync_send_request: ::std::option::Option<
@@ -77,8 +76,7 @@ impl StateSyncCtx {
     /// Initialize StateSyncCtx. There should only ever be *one* StateSyncCtx at any given time.
     pub fn new(
         chain_config: monad_chain_config,
-        dbname_paths: *const *const ::std::os::raw::c_char,
-        len: usize,
+        dbname_path: *const ::std::os::raw::c_char,
         sq_thread_cpu: Option<::std::os::raw::c_uint>,
         request_ctx: StateSyncContext,
         statesync_send_request: ::std::option::Option<
@@ -90,8 +88,7 @@ impl StateSyncCtx {
 
         Self {
             chain_config,
-            dbname_paths,
-            len,
+            dbname_path,
             sq_thread_cpu,
             request_ctx,
             statesync_send_request,
@@ -109,8 +106,7 @@ impl StateSyncCtx {
         *self.ctx.get_or_insert_with(|| unsafe {
             self::bindings::monad_statesync_client_context_create(
                 self.chain_config,
-                self.dbname_paths,
-                self.len,
+                self.dbname_path,
                 self.sq_thread_cpu
                     .unwrap_or(self::bindings::MONAD_SQPOLL_DISABLED),
                 (&mut self.request_ctx as *mut StateSyncContext).cast(),
@@ -125,8 +121,7 @@ impl StateSyncCtx {
         *self.ctx.get_or_insert_with(|| unsafe {
             let ctx = self::bindings::monad_statesync_client_context_create(
                 self.chain_config,
-                self.dbname_paths,
-                self.len,
+                self.dbname_path,
                 self.sq_thread_cpu
                     .unwrap_or(self::bindings::MONAD_SQPOLL_DISABLED),
                 (&mut self.request_ctx as *mut StateSyncContext).cast(),

@@ -62,12 +62,10 @@ struct monad_db_snapshot_loader
     uint64_t bytes_read;
 
     monad_db_snapshot_loader(
-        uint64_t const block, char const *const *const dbname_paths,
-        size_t const len, unsigned const sq_thread_cpu,
-        bool const load_to_secondary)
+        uint64_t const block, char const *const dbname_path,
+        unsigned const sq_thread_cpu, bool const load_to_secondary)
         : block{block}
-        , db{open_target_db(
-              dbname_paths, len, sq_thread_cpu, load_to_secondary)}
+        , db{open_target_db(dbname_path, sq_thread_cpu, load_to_secondary)}
         , bytes_read{0}
     {
     }
@@ -79,9 +77,14 @@ struct monad_db_snapshot_loader
 
 private:
     static monad::mpt::Db open_target_db(
-        char const *const *const dbname_paths, size_t const len,
-        unsigned const sq_thread_cpu, bool const load_to_secondary)
+        char const *const dbname_path, unsigned const sq_thread_cpu,
+        bool const load_to_secondary)
     {
+        // An empty path asks OnDiskDbConfig for an anonymous in-memory pool,
+        // which would load the snapshot into nothing and report success.
+        MONAD_ASSERT_PRINTF(
+            dbname_path != nullptr && *dbname_path != '\0',
+            "dbname_path must name the database's storage device");
         monad::mpt::Db primary{monad::mpt::OnDiskDbConfig{
             .append = true,
             .compaction = false,
@@ -92,7 +95,7 @@ private:
                 sq_thread_cpu == std::numeric_limits<unsigned>::max()
                     ? std::nullopt
                     : std::make_optional(sq_thread_cpu),
-            .dbname_paths = {dbname_paths, dbname_paths + len}}};
+            .dbname_path = dbname_path}};
         if (!load_to_secondary) {
             return primary;
         }
@@ -582,8 +585,8 @@ MONAD_ANONYMOUS_NAMESPACE_END
 //       eth_header
 // Each file holds one stream, empty or in the layout db_snapshot.h describes.
 bool monad_db_dump_snapshot(
-    char const *const *const dbname_paths, size_t const len,
-    unsigned const sq_thread_cpu, uint64_t const block,
+    char const *const dbname_path, unsigned const sq_thread_cpu,
+    uint64_t const block,
     uint64_t (*write)(
         uint64_t shard, monad_snapshot_type, unsigned char const *bytes,
         size_t len, void *user),
@@ -594,6 +597,9 @@ bool monad_db_dump_snapshot(
     using namespace monad;
     using namespace monad::mpt;
 
+    MONAD_ASSERT_PRINTF(
+        dbname_path != nullptr && *dbname_path != '\0',
+        "dbname_path must name the database's storage device");
     MONAD_ASSERT_PRINTF(
         total_shards >= 1, "total_shards must be >= 1, got %lu", total_shards);
     MONAD_ASSERT_PRINTF(
@@ -610,7 +616,7 @@ bool monad_db_dump_snapshot(
         .sq_thread_cpu = sq_thread_cpu != std::numeric_limits<unsigned>::max()
                              ? std::make_optional(sq_thread_cpu)
                              : std::nullopt,
-        .dbname_paths = {dbname_paths, dbname_paths + len},
+        .dbname_path = dbname_path,
         .concurrent_read_io_limit = dump_concurrency_limit};
     AsyncIOContext io_context{config};
     Db db{
@@ -680,16 +686,15 @@ bool monad_db_dump_snapshot(
 // state_machine_kind; a page-encoded target converts slot leaves to page
 // leaves on the fly. The target's kind must already be stamped on disk.
 monad_db_snapshot_loader *monad_db_snapshot_loader_create(
-    uint64_t const block, char const *const *const dbname_paths,
-    size_t const len, unsigned const sq_thread_cpu,
-    bool const load_to_secondary)
+    uint64_t const block, char const *const dbname_path,
+    unsigned const sq_thread_cpu, bool const load_to_secondary)
 {
     // The metadata-driven Db ctor and open_secondary_timeline() resolve the
     // persisted kind through the registry, so both factories must be present.
     monad::register_ethereum_state_machines();
     monad::register_monad_state_machines();
     auto *loader = new monad_db_snapshot_loader(
-        block, dbname_paths, len, sq_thread_cpu, load_to_secondary);
+        block, dbname_path, sq_thread_cpu, load_to_secondary);
     MONAD_ASSERT(
         loader->db.get_latest_version() == monad::mpt::INVALID_BLOCK_NUM,
         "database must be empty when loading snapshot");

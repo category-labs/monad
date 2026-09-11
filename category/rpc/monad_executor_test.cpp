@@ -162,7 +162,7 @@ namespace
             , db{std::make_unique<Machine>(),
                  mpt::OnDiskDbConfig{
                      .append = false,
-                     .dbname_paths = {dbname},
+                     .dbname_path = dbname,
                      .chunk_capacity = 24}}
             , tdb{db}
         {

@@ -485,7 +485,7 @@ private:
                 "metadata. If this pool was migrated by a pre-fix binary, run "
                 "'monad-mpt --repair'.",
                 n);
-            auto &chunk = io_->storage_pool().chunk(
+            auto chunk = io_->storage_pool().chunk(
                 MONAD_ASYNC_NAMESPACE::storage_pool::cnv, cnv_chunk_id);
             auto const fdr = chunk.read_fd();
             auto const fdw = chunk.write_fd(0);

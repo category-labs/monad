@@ -187,13 +187,9 @@ namespace
         std::string const &dbname, std::filesystem::path const &root,
         uint64_t const block, bool const load_to_secondary)
     {
-        char const *dbname_paths[] = {dbname.c_str()};
+        char const *const dbname_path = dbname.c_str();
         auto *const loader = monad_db_snapshot_loader_create(
-            block,
-            dbname_paths,
-            1,
-            static_cast<unsigned>(-1),
-            load_to_secondary);
+            block, dbname_path, static_cast<unsigned>(-1), load_to_secondary);
         for (auto const &dir : std::filesystem::directory_iterator{
                  root / std::to_string(block)}) {
             uint64_t const shard = std::stoull(dir.path().stem());
@@ -237,8 +233,7 @@ TEST(DbBinarySnapshot, Basic)
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{
-                .dbname_paths = {src_db.path}, .chunk_capacity = 24}};
+            OnDiskDbConfig{.dbname_path = {src_db.path}, .chunk_capacity = 24}};
         Node::SharedPtr root{};
         for (uint64_t i = 0; i < 100; ++i) {
             root = load_header(std::move(root), db, BlockHeader{.number = i});
@@ -286,10 +281,9 @@ TEST(DbBinarySnapshot, Basic)
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
                 snapshot_dir.path.c_str(), 100);
-        char const *dbname_paths[] = {src_db.path.c_str()};
+        char const *const dbname_path = src_db.path.c_str();
         EXPECT_TRUE(monad_db_dump_snapshot(
-            dbname_paths,
-            1,
+            dbname_path,
             static_cast<unsigned>(-1),
             100,
             monad_db_snapshot_write_filesystem,
@@ -306,7 +300,7 @@ TEST(DbBinarySnapshot, Basic)
             mpt::Db dest_init{
                 std::make_unique<OnDiskMachine>(),
                 OnDiskDbConfig{
-                    .dbname_paths = {dest_db.path}, .chunk_capacity = 24}};
+                    .dbname_path = {dest_db.path}, .chunk_capacity = 24}};
             // Stamp the kind so the snapshot loader's metadata-driven
             // Db ctor (via monad_db_snapshot_loader_create) can resolve
             // it.
@@ -315,10 +309,9 @@ TEST(DbBinarySnapshot, Basic)
                 .set_state_machine_kind(
                     timeline_id::primary, state_machine_kind::ethereum);
         }
-        char const *dbname_paths_new[] = {dest_db.path.c_str()};
+        char const *const dbname_path_new = dest_db.path.c_str();
         monad_db_snapshot_load_filesystem(
-            dbname_paths_new,
-            1,
+            dbname_path_new,
             static_cast<unsigned>(-1),
             snapshot_dir.path.c_str(),
             100,
@@ -327,7 +320,7 @@ TEST(DbBinarySnapshot, Basic)
 
     {
         AsyncIOContext io_context{
-            ReadOnlyOnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+            ReadOnlyOnDiskDbConfig{.dbname_path = {dest_db.path}}};
         mpt::Db db{io_context};
         TrieDb tdb{db};
         for (uint64_t i = 0; i < 100; ++i) {
@@ -363,8 +356,7 @@ TEST(DbBinarySnapshot, MultipleShards)
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{
-                .dbname_paths = {src_db.path}, .chunk_capacity = 24}};
+            OnDiskDbConfig{.dbname_path = {src_db.path}, .chunk_capacity = 24}};
         Node::SharedPtr root{};
         for (uint64_t i = 0; i < 100; ++i) {
             root = load_header(std::move(root), db, BlockHeader{.number = i});
@@ -420,10 +412,9 @@ TEST(DbBinarySnapshot, MultipleShards)
             auto *const context =
                 monad_db_snapshot_filesystem_write_user_context_create(
                     shard_root.c_str(), 100);
-            char const *dbname_paths[] = {src_db.path.c_str()};
+            char const *const dbname_path = src_db.path.c_str();
             EXPECT_TRUE(monad_db_dump_snapshot(
-                dbname_paths,
-                1,
+                dbname_path,
                 static_cast<unsigned>(-1),
                 100,
                 monad_db_snapshot_write_filesystem,
@@ -470,7 +461,7 @@ TEST(DbBinarySnapshot, MultipleShards)
             mpt::Db dest_init{
                 std::make_unique<OnDiskMachine>(),
                 OnDiskDbConfig{
-                    .dbname_paths = {dest_db.path}, .chunk_capacity = 24}};
+                    .dbname_path = {dest_db.path}, .chunk_capacity = 24}};
             // Stamp the kind so the snapshot loader's metadata-driven
             // Db ctor (via monad_db_snapshot_loader_create) can resolve
             // it.
@@ -479,10 +470,9 @@ TEST(DbBinarySnapshot, MultipleShards)
                 .set_state_machine_kind(
                     timeline_id::primary, state_machine_kind::ethereum);
         }
-        char const *dbname_paths_new[] = {dest_db.path.c_str()};
+        char const *const dbname_path_new = dest_db.path.c_str();
         monad_db_snapshot_load_filesystem(
-            dbname_paths_new,
-            1,
+            dbname_path_new,
             static_cast<unsigned>(-1),
             combined_root.path.c_str(),
             100,
@@ -490,7 +480,7 @@ TEST(DbBinarySnapshot, MultipleShards)
     }
     {
         AsyncIOContext io_context{
-            ReadOnlyOnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+            ReadOnlyOnDiskDbConfig{.dbname_path = {dest_db.path}}};
         mpt::Db db{io_context};
         TrieDb tdb{db};
         for (uint64_t i = 0; i < 100; ++i) {
@@ -592,8 +582,7 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
     {
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{
-                .dbname_paths = {dbname.path}, .chunk_capacity = 24}};
+            OnDiskDbConfig{.dbname_path = {dbname.path}, .chunk_capacity = 24}};
         load_header({}, db, BlockHeader{.number = 0});
         db.update_finalized_version(0);
         StateDeltas deltas;
@@ -624,10 +613,9 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
                 snapshot_dir.path.c_str(), BLOCK);
-        char const *dbpath[] = {dbname.path.c_str()};
+        char const *const dbpath = dbname.path.c_str();
         EXPECT_TRUE(monad_db_dump_snapshot(
             dbpath,
-            1,
             static_cast<unsigned>(-1),
             BLOCK,
             monad_db_snapshot_write_filesystem,
@@ -647,7 +635,7 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
                 std::make_unique<OnDiskMachine>(),
                 OnDiskDbConfig{
                     .append = true,
-                    .dbname_paths = {dbname.path},
+                    .dbname_path = {dbname.path},
                     .chunk_capacity = 24}};
             [[maybe_unused]] auto const secondary =
                 primary.activate_secondary_timeline(
@@ -659,7 +647,6 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
         // the slot snapshot is converted to page leaves on the fly.
         monad_db_snapshot_load_filesystem(
             dbpath,
-            1,
             static_cast<unsigned>(-1),
             snapshot_dir.path.c_str(),
             BLOCK,
@@ -672,7 +659,7 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
             std::make_unique<OnDiskMachine>(),
             OnDiskDbConfig{
                 .append = true,
-                .dbname_paths = {dbname.path},
+                .dbname_path = {dbname.path},
                 .chunk_capacity = 24}};
         {
             auto db2 = db.open_secondary_timeline(
@@ -795,7 +782,7 @@ namespace
 
         mpt::Db db1{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.dbname_paths = {dbname}, .chunk_capacity = 24}};
+            OnDiskDbConfig{.dbname_path = {dbname}, .chunk_capacity = 24}};
         // Activate before any TrieDb exists (requires worker_thread_use_count
         // == 1).
         mpt::Db db2 = db1.activate_secondary_timeline(
@@ -850,10 +837,9 @@ namespace
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
                 root.c_str(), PAGE_BLOCK);
-        char const *paths[] = {dbname.c_str()};
+        char const *const paths = dbname.c_str();
         EXPECT_TRUE(monad_db_dump_snapshot(
             paths,
-            1,
             static_cast<unsigned>(-1),
             PAGE_BLOCK,
             monad_db_snapshot_write_filesystem,
@@ -872,7 +858,7 @@ namespace
         using namespace monad::mpt;
         mpt::Db primary{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.dbname_paths = {dbname}, .chunk_capacity = 24}};
+            OnDiskDbConfig{.dbname_path = {dbname}, .chunk_capacity = 24}};
         [[maybe_unused]] auto const secondary =
             primary.activate_secondary_timeline(
                 std::make_unique<monad::MonadOnDiskMachine>());
@@ -888,9 +874,7 @@ namespace
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
             OnDiskDbConfig{
-                .append = true,
-                .dbname_paths = {dbname},
-                .chunk_capacity = 24}};
+                .append = true, .dbname_path = {dbname}, .chunk_capacity = 24}};
         {
             auto db2 = db.open_secondary_timeline(
                 std::make_unique<monad::MonadOnDiskMachine>());
@@ -1012,10 +996,9 @@ TEST(DbBinarySnapshot, SnapshotFormatV0OmitsStreamHeaders)
     }
 
     activate_page_secondary(page_db.path);
-    char const *dest_paths[] = {page_db.path.c_str()};
+    char const *const dest_path = page_db.path.c_str();
     monad_db_snapshot_load_filesystem(
-        dest_paths,
-        1,
+        dest_path,
         static_cast<unsigned>(-1),
         v0_dir.path.c_str(),
         PAGE_BLOCK,
@@ -1051,7 +1034,7 @@ TEST(DbBinarySnapshot, HeaderlessSnapshotRestores)
         mpt::Db dest_init{
             std::make_unique<OnDiskMachine>(),
             OnDiskDbConfig{
-                .dbname_paths = {slot_db.path}, .chunk_capacity = 24}};
+                .dbname_path = {slot_db.path}, .chunk_capacity = 24}};
         monad::mpt::test::DbAccessor::aux(dest_init)
             .metadata_ctx()
             .set_state_machine_kind(
@@ -1064,7 +1047,7 @@ TEST(DbBinarySnapshot, HeaderlessSnapshotRestores)
         /*load_to_secondary=*/false);
     {
         AsyncIOContext io_context{
-            ReadOnlyOnDiskDbConfig{.dbname_paths = {slot_db.path}}};
+            ReadOnlyOnDiskDbConfig{.dbname_path = {slot_db.path}}};
         mpt::Db db{io_context};
         TrieDb tdb{db};
         ASSERT_FALSE(tdb.is_page_encoded());
@@ -1121,8 +1104,7 @@ TEST(DbBinarySnapshot, DumpFromSecondaryPageDb)
     {
         mpt::Db db1{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{
-                .dbname_paths = {src_db.path}, .chunk_capacity = 24}};
+            OnDiskDbConfig{.dbname_path = {src_db.path}, .chunk_capacity = 24}};
         // Activate before any TrieDb exists (requires worker_thread_use_count
         // == 1). db2 is bound to the secondary timeline.
         mpt::Db db2 = db1.activate_secondary_timeline(
@@ -1165,10 +1147,9 @@ TEST(DbBinarySnapshot, DumpFromSecondaryPageDb)
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
                 snapshot_dir.path.c_str(), BLOCK);
-        char const *srcpath[] = {src_db.path.c_str()};
+        char const *const srcpath = src_db.path.c_str();
         EXPECT_TRUE(monad_db_dump_snapshot(
             srcpath,
-            1,
             static_cast<unsigned>(-1),
             BLOCK,
             monad_db_snapshot_write_filesystem,
@@ -1184,16 +1165,15 @@ TEST(DbBinarySnapshot, DumpFromSecondaryPageDb)
             mpt::Db dest_init{
                 std::make_unique<OnDiskMachine>(),
                 OnDiskDbConfig{
-                    .dbname_paths = {dest_db.path}, .chunk_capacity = 24}};
+                    .dbname_path = {dest_db.path}, .chunk_capacity = 24}};
             monad::mpt::test::DbAccessor::aux(dest_init)
                 .metadata_ctx()
                 .set_state_machine_kind(
                     timeline_id::primary, state_machine_kind::ethereum);
         }
-        char const *dest_path[] = {dest_db.path.c_str()};
+        char const *const dest_path = dest_db.path.c_str();
         monad_db_snapshot_load_filesystem(
             dest_path,
-            1,
             static_cast<unsigned>(-1),
             snapshot_dir.path.c_str(),
             BLOCK,
@@ -1203,7 +1183,7 @@ TEST(DbBinarySnapshot, DumpFromSecondaryPageDb)
     // Verify the target is slot-encoded and every slot round-trips.
     {
         AsyncIOContext io_context{
-            ReadOnlyOnDiskDbConfig{.dbname_paths = {dest_db.path}}};
+            ReadOnlyOnDiskDbConfig{.dbname_path = {dest_db.path}}};
         mpt::Db db{io_context};
         TrieDb tdb{db};
         ASSERT_FALSE(tdb.is_page_encoded());

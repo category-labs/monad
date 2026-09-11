@@ -243,7 +243,7 @@ MonadRunloopImpl::MonadRunloopImpl(
     char const *const db_path)
     : chain{monad_chain_from_chain_id(chain_id)}
     , ledger_dir{ledger_path}
-    , raw_db{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{.append = true, .compaction = true, .rewind_to_latest_finalized = true, .rd_buffers = 8192, .wr_buffers = 32, .uring_entries = 128, .sq_thread_cpu = sq_thread_cpu, .dbname_paths = {fs::path{db_path}}}}
+    , raw_db{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{.append = true, .compaction = true, .rewind_to_latest_finalized = true, .rd_buffers = 8192, .wr_buffers = 32, .uring_entries = 128, .sq_thread_cpu = sq_thread_cpu, .dbname_path = {fs::path{db_path}}}}
     , secondary_raw_db{get_secondary_raw_db(raw_db)}
     , triedb{raw_db, /*enable_multiblock_cache=*/true}
     , secondary_triedb{secondary_raw_db}
@@ -272,7 +272,7 @@ MonadRunloopImpl::MonadRunloopImpl(
     LOG_INFO("Init block number = {}", init_block_num);
 
     mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
-        .sq_thread_cpu = sq_thread_cpu, .dbname_paths = {fs::path{db_path}}}};
+        .sq_thread_cpu = sq_thread_cpu, .dbname_path = {fs::path{db_path}}}};
     mpt::Db rodb{io_ctx};
     bool const have_headers =
         init_block_hash_buffer_from_triedb(rodb, block_num, block_hash_buffer);

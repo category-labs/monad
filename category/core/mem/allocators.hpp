@@ -89,22 +89,30 @@ namespace allocators
         [[nodiscard]] constexpr T *allocate(size_t const no)
         {
             MONAD_ASSERT(no < size_t(-1) / sizeof(T));
+            void *p;
             if constexpr (alignof(T) > alignof(max_align_t)) {
-                return reinterpret_cast<T *>(
-                    std::aligned_alloc(alignof(T), no * sizeof(T)));
+                p = std::aligned_alloc(alignof(T), no * sizeof(T));
             }
-            return reinterpret_cast<T *>(std::malloc(no * sizeof(T)));
+            else {
+                p = std::malloc(no * sizeof(T));
+            }
+            MONAD_ASSERT(p != nullptr);
+            return reinterpret_cast<T *>(p);
         }
 
         template <class U>
         [[nodiscard]] constexpr T *allocate_overaligned(size_t const no)
         {
             MONAD_ASSERT(no < size_t(-1) / sizeof(T));
+            void *p;
             if constexpr (alignof(U) > alignof(max_align_t)) {
-                return reinterpret_cast<T *>(
-                    std::aligned_alloc(alignof(U), no * sizeof(T)));
+                p = std::aligned_alloc(alignof(U), no * sizeof(T));
             }
-            return reinterpret_cast<T *>(std::malloc(no * sizeof(T)));
+            else {
+                p = std::malloc(no * sizeof(T));
+            }
+            MONAD_ASSERT(p != nullptr);
+            return reinterpret_cast<T *>(p);
         }
 
         constexpr void deallocate(T *const p, size_t const)

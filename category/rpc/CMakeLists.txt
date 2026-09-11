@@ -34,6 +34,8 @@ add_library(
   "overrides.cpp" 
   "overrides.h" 
   "overrides.hpp"
+  "simulation_error.cpp"
+  "simulation_error.hpp"
   )
 
 target_include_directories(monad_rpc PUBLIC ${CATEGORY_MAIN_DIR})

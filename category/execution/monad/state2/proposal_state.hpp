@@ -38,10 +38,9 @@ class ProposalState
     uint64_t parent_block_;
     bytes32_t parent_id_;
     // stamp overlay as of this proposal: selected entries carry the block
-    // number; entries whose value died in this block (deleted account, emptied
-    // page) carry 0 so a read through the proposal chain prices exactly like
-    // a read after finalize, when the physical entry flips to the negative
-    // list and forgets its stamp
+    // number; the record's deaths carry 0, so a read through the proposal
+    // chain prices exactly like a read after finalize (a value flip alone
+    // keeps the physical entry's stamp; only a death record clears it)
     ankerl::unordered_dense::segmented_map<Address, uint64_t> stamped_accounts_;
     ankerl::unordered_dense::segmented_map<
         StorageKey, uint64_t, BytesHashCompare<StorageKey>>
@@ -56,15 +55,11 @@ public:
         , parent_block_(parent_block_number)
         , parent_id_(parent_id)
     {
-        for (auto const &[addr, acct] : post_state_.accounts) {
-            if (!acct.has_value()) {
-                stamped_accounts_[addr] = 0;
-            }
+        for (auto const &addr : post_state_.account_deaths) {
+            stamped_accounts_[addr] = 0;
         }
-        for (auto const &[key, page] : post_state_.storage) {
-            if (page.is_empty()) {
-                stamped_storage_[key] = 0;
-            }
+        for (auto const &key : post_state_.storage_deaths) {
+            stamped_storage_[key] = 0;
         }
         for (auto const &addr : post_state_.account_stamps) {
             stamped_accounts_[addr] = block_;

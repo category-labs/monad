@@ -93,6 +93,21 @@ struct Db
         return read_storage(address, incarnation, key);
     }
 
+    // Number of occupied slots of a storage page at the current read prefix
+    // (0 = the page does not exist). Exact on either encoding; a db without a
+    // probe reports 1 so callers fall back to per-slot rules.
+    virtual uint32_t
+    probe_page_occupancy(Address const &, Incarnation, bytes32_t const &)
+    {
+        return 1;
+    }
+
+    // stamped entries without a value (accounts, storage); measurement aid
+    virtual std::pair<size_t, size_t> stamped_negative_counts()
+    {
+        return {0, 0};
+    }
+
     virtual std::string print_stats()
     {
         return {};

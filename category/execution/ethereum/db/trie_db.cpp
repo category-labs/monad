@@ -57,13 +57,16 @@
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 
+#include <boost/fiber/future/promise.hpp>
 #include <evmc/evmc.hpp>
 
+#include <ankerl/unordered_dense.h>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -106,7 +109,52 @@ Node::SharedPtr const &TrieDb::get_root() const
     return curr_root_;
 }
 
-TrieDb::StampRebuildStats TrieDb::rebuild_stamp_cache()
+namespace
+{
+    void unpack_storage_key(
+        StorageKey const &key, Address &addr, Incarnation &inc,
+        bytes32_t &lookup)
+    {
+        std::memcpy(addr.bytes, key.bytes, sizeof(addr.bytes));
+        std::memcpy(&inc, key.bytes + sizeof(addr.bytes), sizeof(inc));
+        std::memcpy(
+            lookup.bytes,
+            key.bytes + sizeof(addr.bytes) + sizeof(inc),
+            sizeof(lookup.bytes));
+    }
+
+    // Run `fn(i)` for i in [0, n) across the pool in chunks, or inline.
+    template <class Fn>
+    void
+    parallel_for(fiber::PriorityPool *const pool, size_t const n, Fn const &fn)
+    {
+        if (pool == nullptr || n < 1024) {
+            for (size_t i = 0; i < n; ++i) {
+                fn(i);
+            }
+            return;
+        }
+        size_t const chunks = std::min<size_t>(n / 256, pool->num_fibers());
+        size_t const per_chunk = (n + chunks - 1) / chunks;
+        std::vector<boost::fibers::promise<void>> done(chunks);
+        for (size_t c = 0; c < chunks; ++c) {
+            pool->submit(c, [&, c] {
+                size_t const begin = c * per_chunk;
+                size_t const end = std::min(n, begin + per_chunk);
+                for (size_t i = begin; i < end; ++i) {
+                    fn(i);
+                }
+                done[c].set_value();
+            });
+        }
+        for (auto &d : done) {
+            d.get_future().wait();
+        }
+    }
+}
+
+TrieDb::StampRebuildStats
+TrieDb::rebuild_stamp_cache(fiber::PriorityPool *const pool)
 {
     StampRebuildStats stats;
     if (!cache_) {
@@ -188,12 +236,59 @@ TrieDb::StampRebuildStats TrieDb::rebuild_stamp_cache()
         }
     }
 
+    // Load every stamped item once, across the pool: accounts first (the
+    // storage pass needs their incarnations), then storage pages. Items that
+    // died or reincarnated since are not loaded and stay unstamped.
+    ankerl::unordered_dense::segmented_set<Address> addresses;
+    ankerl::unordered_dense::
+        segmented_set<StorageKey, BytesHashCompare<StorageKey>>
+            pages;
     for (auto const &rec : records) {
-        // load the stamped items so the stamps have resident entries; items
-        // that died or reincarnated since are skipped (never cached)
+        for (auto const &a : rec.accounts) {
+            addresses.insert(a);
+        }
+        for (auto const &k : rec.storage) {
+            if (pages.insert(k).second) {
+                Address addr;
+                Incarnation inc{0, 0};
+                bytes32_t lookup;
+                unpack_storage_key(k, addr, inc, lookup);
+                addresses.insert(addr);
+            }
+        }
+    }
+    std::vector<Address> const address_list(addresses.begin(), addresses.end());
+    parallel_for(pool, address_list.size(), [&](size_t const i) {
+        read_account(address_list[i]);
+    });
+    std::vector<StorageKey> const page_list(pages.begin(), pages.end());
+    parallel_for(pool, page_list.size(), [&](size_t const i) {
+        Address addr;
+        Incarnation inc{0, 0};
+        bytes32_t lookup;
+        unpack_storage_key(page_list[i], addr, inc, lookup);
+        auto const account = read_account(addr);
+        if (!account.has_value() || account->incarnation != inc) {
+            return;
+        }
+        storage_page_t page;
+        auto const status =
+            cache_->try_read_storage_page(addr, inc, lookup, page);
+        if (status != CacheReadStatus::Hit) {
+            load_storage_page(addr, inc, lookup, status);
+        }
+    });
+
+    // Replay in block order: selections, then deaths, last writer wins. The
+    // stamps and the live-list order end identical to a node that ran the
+    // blocks itself.
+    for (auto const &rec : records) {
         std::vector<Address> live_accounts;
         for (auto const &addr : rec.accounts) {
-            if (read_account(addr).has_value()) {
+            std::optional<Account> account;
+            if (cache_->try_read_account(addr, account) ==
+                    CacheReadStatus::Hit &&
+                account.has_value()) {
                 live_accounts.push_back(addr);
             }
         }
@@ -202,23 +297,16 @@ TrieDb::StampRebuildStats TrieDb::rebuild_stamp_cache()
             Address addr;
             Incarnation inc{0, 0};
             bytes32_t lookup;
-            std::memcpy(addr.bytes, key.bytes, sizeof(addr.bytes));
-            std::memcpy(&inc, key.bytes + sizeof(addr.bytes), sizeof(inc));
-            std::memcpy(
-                lookup.bytes,
-                key.bytes + sizeof(addr.bytes) + sizeof(inc),
-                sizeof(lookup.bytes));
-            auto const account = read_account(addr);
-            if (!account.has_value() || account->incarnation != inc) {
+            unpack_storage_key(key, addr, inc, lookup);
+            std::optional<Account> account;
+            if (cache_->try_read_account(addr, account) !=
+                    CacheReadStatus::Hit ||
+                !account.has_value() || account->incarnation != inc) {
                 continue;
             }
             storage_page_t page;
-            auto const status =
-                cache_->try_read_storage_page(addr, inc, lookup, page);
-            if (status != CacheReadStatus::Hit) {
-                page = load_storage_page(addr, inc, lookup, status);
-            }
-            if (page.is_empty()) {
+            if (cache_->try_read_storage_page(addr, inc, lookup, page) !=
+                CacheReadStatus::Hit) {
                 continue;
             }
             live_pages.push_back(key);
@@ -235,6 +323,100 @@ TrieDb::StampRebuildStats TrieDb::rebuild_stamp_cache()
         stats.pages += live_pages.size();
     }
     return stats;
+}
+
+bytes32_t
+TrieDb::peek_storage_slot(Address const &addr, bytes32_t const &slot_key)
+{
+    MONAD_ASSERT(!page_encoded_);
+    auto const res = db_.find(
+        curr_root_,
+        concat(
+            prefix_,
+            STATE_NIBBLE,
+            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+            NibblesView{keccak256({slot_key.bytes, sizeof(slot_key.bytes)})}),
+        block_number_);
+    if (res.has_error()) {
+        return {};
+    }
+    return decode_storage_leaf_to_page(res.value().node->value(), false)[0];
+}
+
+uint32_t TrieDb::probe_page_occupancy(
+    Address const &addr, Incarnation const inc, bytes32_t const &page_key)
+{
+    if (page_encoded_) {
+        return static_cast<uint32_t>(
+            read_storage_page(addr, inc, page_key).size());
+    }
+    // slot encoding: count the page's 128 concrete slots; cached per page
+    // until one of them is written (TrieDb::commit invalidates)
+    StorageKey const memo_key{addr, inc, page_key};
+    if (auto const it = probe_memo_.find(memo_key); it != probe_memo_.end()) {
+        return it->second;
+    }
+    uint32_t occupancy = 0;
+    for (unsigned w = 0; w < storage_page_t::SLOTS; ++w) {
+        bytes32_t const slot_key =
+            compute_slot_key(page_key, static_cast<uint8_t>(w));
+        bytes32_t value{};
+        auto const status =
+            cache_ ? cache_->try_read_storage(addr, inc, slot_key, 0, value)
+                   : CacheReadStatus::MissTruncated;
+        if (status != CacheReadStatus::Hit) {
+            value = peek_storage_slot(addr, slot_key);
+        }
+        if (value != bytes32_t{}) {
+            ++occupancy;
+        }
+    }
+    probe_memo_[memo_key] = occupancy;
+    return occupancy;
+}
+
+TrieDb::StampLogFootprint TrieDb::stamp_log_footprint()
+{
+    struct Count final : public TraverseMachine
+    {
+        StampLogFootprint fp;
+
+        bool down(unsigned char const branch, Node const &node) override
+        {
+            if (branch != INVALID_BRANCH && node.has_value()) {
+                ++fp.leaves;
+                fp.value_bytes += node.value().size();
+            }
+            return true;
+        }
+
+        void up(unsigned char, Node const &) override {}
+
+        std::unique_ptr<TraverseMachine> clone() const override
+        {
+            return std::make_unique<Count>(*this);
+        }
+    };
+
+    auto const cursor = db_.find(
+        curr_root_,
+        concat(
+            prefix_,
+            STATE_NIBBLE,
+            NibblesView{keccak256(
+                {STAMP_LOG_ADDRESS.bytes, sizeof(STAMP_LOG_ADDRESS.bytes)})}),
+        block_number_);
+    if (!cursor.has_value() || !cursor.value().is_valid()) {
+        return {};
+    }
+    Count count;
+    if (db_.is_on_disk() && !db_.is_read_only()) {
+        db_.traverse_blocking(cursor.value(), count, block_number_);
+    }
+    else {
+        db_.traverse(cursor.value(), count, block_number_);
+    }
+    return count.fp;
 }
 
 std::optional<Account> TrieDb::read_account(Address const &addr)
@@ -390,6 +572,12 @@ void TrieDb::commit(
     auto const block_number = header.number;
     MONAD_ASSERT(block_number <= std::numeric_limits<int64_t>::max());
 
+    auto const commit_begin = std::chrono::steady_clock::now();
+    auto since = [&](std::chrono::steady_clock::time_point const t) {
+        return std::chrono::duration_cast<std::chrono::microseconds>(
+                   std::chrono::steady_clock::now() - t)
+            .count();
+    };
     MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk() && block_id != proposal_block_id_) {
         auto const dest_prefix = proposal_prefix(block_id);
@@ -407,6 +595,7 @@ void TrieDb::commit(
         prefix_ = dest_prefix;
     }
     block_number_ = block_number;
+    auto const t_copy = since(commit_begin);
 
     curr_root_ = db_.upsert(
         std::move(curr_root_),
@@ -415,18 +604,49 @@ void TrieDb::commit(
         true,
         true,
         false);
+    auto const t_upsert = since(commit_begin);
 
     BlockHeader complete_header = header;
     MONAD_ASSERT(populate_header_fn);
     populate_header_fn(complete_header);
+    auto const t_header = since(commit_begin);
 
     builder.add_block_header(complete_header);
     curr_root_ = db_.upsert(
         std::move(curr_root_), builder.build(prefix_), block_number_, false);
+    auto const t_upsert2 = since(commit_begin);
 
     if (cache_) {
-        cache_->update_proposal_state(
-            builder.take_proposal_post_state(), header.number, block_id);
+        ProposalPostState post = builder.take_proposal_post_state();
+        // a write to any slot of a page invalidates its occupancy probe
+        for (auto const &[sk, page] : post.storage) {
+            Address addr;
+            Incarnation inc{0, 0};
+            bytes32_t lookup;
+            std::memcpy(addr.bytes, sk.bytes, sizeof(addr.bytes));
+            std::memcpy(&inc, sk.bytes + sizeof(addr.bytes), sizeof(inc));
+            std::memcpy(
+                lookup.bytes,
+                sk.bytes + sizeof(addr.bytes) + sizeof(inc),
+                sizeof(lookup.bytes));
+            probe_memo_.erase(StorageKey{
+                addr, inc, page_encoded_ ? lookup : compute_page_key(lookup)});
+        }
+        cache_->update_proposal_state(std::move(post), header.number, block_id);
+    }
+    auto const t_total = since(commit_begin);
+    if (t_total > 30'000) {
+        LOG_INFO(
+            "__slow_commit,bl={},copy={}us,upsert={}us,header={}us,upsert2={}"
+            "us,"
+            "proposal={}us,total={}us",
+            block_number,
+            t_copy,
+            t_upsert - t_copy,
+            t_header - t_upsert,
+            t_upsert2 - t_header,
+            t_total - t_upsert2,
+            t_total);
     }
 }
 

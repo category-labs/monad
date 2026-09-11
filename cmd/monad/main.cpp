@@ -408,9 +408,11 @@ try {
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - load_start_time));
 
+    fiber::PriorityPool priority_pool{nthreads, nfibers};
+
     if (mbc_measure) {
         auto const rebuild_begin = std::chrono::steady_clock::now();
-        auto const rebuilt = triedb.rebuild_stamp_cache();
+        auto const rebuilt = triedb.rebuild_stamp_cache(&priority_pool);
         LOG_INFO(
             "stamp log bootstrap: records = {}, accounts = {}, pages = {}, "
             "slots = {}, time = {}",
@@ -430,8 +432,6 @@ try {
         block_db_path,
         start_block_num,
         nblocks);
-
-    fiber::PriorityPool priority_pool{nthreads, nfibers};
 
     auto const start_time = std::chrono::steady_clock::now();
 
@@ -633,6 +633,39 @@ try {
             t.storage_gaps[3],
             t.storage_gaps[4],
             t.storage_gaps[5]);
+        LOG_INFO(
+            "multi-block cache emulation: probed pages = {}, occupancy buckets "
+            "(1, 2-4, 5-16, 17-64, 65-128) = {} {} {} {} {}, empty first "
+            "reads: "
+            "on live page = {}, on empty page = {}, unprobed = {} (sampled: "
+            "live = {}, empty = {}), negative stamps selected = {}, emulated "
+            "cap hits = {}",
+            t.probed_pages,
+            t.occupancy_buckets[0],
+            t.occupancy_buckets[1],
+            t.occupancy_buckets[2],
+            t.occupancy_buckets[3],
+            t.occupancy_buckets[4],
+            t.empty_on_live_page,
+            t.empty_page,
+            t.empty_unprobed,
+            t.sampled_live,
+            t.sampled_empty,
+            t.negative_stamps_selected,
+            t.emulated_cap_hits);
+        if (mbc_measure) {
+            auto const [stamped_empty_accounts, stamped_empty_storage] =
+                triedb.stamped_negative_counts();
+            auto const fp = triedb.stamp_log_footprint();
+            LOG_INFO(
+                "multi-block cache end state: stamped empty entries = {} "
+                "accounts, {} storage; stamp log footprint = {} leaves, {} "
+                "bytes",
+                stamped_empty_accounts,
+                stamped_empty_storage,
+                fp.leaves,
+                fp.value_bytes);
+        }
     }
 
     sync_server.reset();

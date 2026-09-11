@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -45,6 +46,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -133,24 +135,113 @@ namespace
 // at the longest prefix whose occupied slots fit
 // MAX_STORAGE_SLOT_STAMPS_PER_BLOCK. Unselected candidates keep their old
 // stamp; items that die in the block are not candidates.
+//
+// Liveness of a storage candidate is page-level: a non-warm access to a page
+// that exists qualifies even when the accessed slot is empty. On a
+// slot-encoded db that needs the occupancy probe, so the gate is exact only
+// on probed pages and falls back to the slot's own value elsewhere. Under the
+// negative-stamp experiment an empty page of an existing account qualifies
+// too. The same probe feeds the page-encoding emulation statistics.
 void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
 {
     uint64_t const n = block_number_;
     auto &stats = stamp_stats_;
+    auto const &opt = stamps_->options;
+    ::monad::Db *const db = stamps_->db;
 
     ankerl::unordered_dense::segmented_map<Address, uint8_t> account_classes;
     ankerl::unordered_dense::
         segmented_map<StorageKey, uint8_t, BytesHashCompare<StorageKey>>
             page_classes;
+    // emulation: page key (address, incarnation, slot key >> 7) -> class
+    ankerl::unordered_dense::
+        segmented_map<StorageKey, uint8_t, BytesHashCompare<StorageKey>>
+            grouped_classes;
+    // per-block occupancy memo (the db memoizes across blocks as well)
+    ankerl::unordered_dense::
+        segmented_map<StorageKey, uint32_t, BytesHashCompare<StorageKey>>
+            occupancy;
+
+    auto const page_of =
+        [&](Address const &addr, Incarnation const inc, bytes32_t const &key) {
+            return StorageKey{addr, inc, compute_page_key(key)};
+        };
+    auto const page_index_low = [](bytes32_t const &key) {
+        // slot key >> 7 < STAMP_PROBE_LOW_PAGES: the top 31 bytes are zero and
+        // the low byte is below 4 << 7
+        for (size_t i = 0; i + 1 < sizeof(key.bytes); ++i) {
+            if (key.bytes[i] != 0) {
+                return false;
+            }
+        }
+        return (key.bytes[31] >> storage_page_t::PAGE_KEY_SHIFT) <
+               STAMP_PROBE_LOW_PAGES;
+    };
+    auto const in_probe_scope = [&](bytes32_t const &key) {
+        return db != nullptr &&
+               (opt.probe == StampOptions::Probe::all ||
+                (opt.probe == StampOptions::Probe::low && page_index_low(key)));
+    };
+    auto const sampled = [&](bytes32_t const &key) {
+        if (db == nullptr || opt.sample_mask == 0) {
+            return false;
+        }
+        // mix the whole page key so small numeric keys (arrays, variables)
+        // are sampled at the same rate as keccak-scattered ones
+        uint64_t h = 0x9e3779b97f4a7c15ull;
+        for (size_t i = 0; i < sizeof(key.bytes); i += 8) {
+            uint64_t w = 0;
+            std::memcpy(&w, key.bytes + i, sizeof(w));
+            h ^= w >> storage_page_t::PAGE_KEY_SHIFT;
+            h *= 0xbf58476d1ce4e5b9ull;
+            h ^= h >> 31;
+        }
+        return (h & opt.sample_mask) == 0;
+    };
+    // occupancy of a page at the pre-state, nullopt when not probed
+    auto const probe = [&](Address const &addr,
+                           Incarnation const inc,
+                           bytes32_t const &key,
+                           bool const force) {
+        std::optional<uint32_t> result;
+        if (!force && !in_probe_scope(key)) {
+            return result;
+        }
+        StorageKey const pkey = page_of(addr, inc, key);
+        auto const [it, inserted] = occupancy.try_emplace(pkey, 0);
+        if (inserted) {
+            it->second =
+                db->probe_page_occupancy(addr, inc, compute_page_key(key));
+            ++stats.probed_pages;
+            if (it->second > 0) {
+                uint32_t const o = it->second;
+                size_t const b = o <= 1    ? 0
+                                 : o <= 4  ? 1
+                                 : o <= 16 ? 2
+                                 : o <= 64 ? 3
+                                           : 4;
+                ++stats.occupancy_buckets[b];
+            }
+        }
+        result = it->second;
+        return result;
+    };
 
     // written items, class 2 (write renewal) and deaths from the deltas. A
     // death is a cached item whose value is gone at the post-state; it is
     // logged so a bootstrapping node forgets the stamp too.
     auto &dead_accounts = proposal_post_state_.account_deaths;
     auto &dead_pages = proposal_post_state_.storage_deaths;
-    ankerl::unordered_dense::
-        segmented_set<StorageKey, BytesHashCompare<StorageKey>>
-            cached_written_pages;
+
+    struct WrittenPage
+    {
+        StorageKey slot_key;
+        Address addr;
+        Incarnation inc;
+        bytes32_t key;
+    };
+
+    std::vector<WrittenPage> cached_written;
     for (auto const &[addr, delta] : state_deltas) {
         if (addr == STAMP_LOG_ADDRESS) {
             continue;
@@ -184,15 +275,50 @@ void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
                 StorageKey const skey{
                     addr, post->incarnation, stamp_lookup_key(key)};
                 lower_class(page_classes, skey, STAMP_CLASS_RENEWAL);
-                cached_written_pages.insert(skey);
+                lower_class(
+                    grouped_classes,
+                    page_of(addr, post->incarnation, key),
+                    STAMP_CLASS_RENEWAL);
+                cached_written.push_back({skey, addr, post->incarnation, key});
             }
         }
     }
-    for (auto const &skey : cached_written_pages) {
-        auto const pit = proposal_post_state_.storage.find(skey);
-        if (pit != proposal_post_state_.storage.end() &&
-            pit->second.is_empty()) {
-            dead_pages.push_back(skey);
+    // Deaths of cached written entries: the entry dies when its page dies.
+    // On a probed page that is exact (post occupancy 0); on an unprobed page
+    // the slot's own emptiness decides (round-1 rule). Under the
+    // negative-stamp variant an emptied page keeps its stamp.
+    if (!opt.negative_stamps) {
+        for (auto const &w : cached_written) {
+            auto const pit = proposal_post_state_.storage.find(w.slot_key);
+            if (pit == proposal_post_state_.storage.end() ||
+                !pit->second.is_empty()) {
+                continue;
+            }
+            auto const occ = probe(w.addr, w.inc, w.key, false);
+            if (occ.has_value()) {
+                // post occupancy: pre occupancy minus emptied slots plus
+                // created ones on this page
+                int64_t post_occ = static_cast<int64_t>(*occ);
+                StateDeltas::const_accessor it{};
+                MONAD_ASSERT(state_deltas.find(it, w.addr));
+                for (auto const &[k, sl] : it->second.storage) {
+                    if (sl.first == sl.second ||
+                        compute_page_key(k) != compute_page_key(w.key)) {
+                        continue;
+                    }
+                    if (sl.first != bytes32_t{} && sl.second == bytes32_t{}) {
+                        --post_occ;
+                    }
+                    else if (
+                        sl.first == bytes32_t{} && sl.second != bytes32_t{}) {
+                        ++post_occ;
+                    }
+                }
+                if (post_occ > 0) {
+                    continue; // the page lives on: the slot keeps its stamp
+                }
+            }
+            dead_pages.push_back(w.slot_key);
         }
     }
     std::sort(
@@ -210,8 +336,11 @@ void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
         stats.slots_written += page.size();
     }
 
-    // classes 1 and 3 from the journaled read candidates: first accesses of
-    // live pre-state items whose tier was not warm
+    // classes 1 and 3 from the journaled read candidates: first accesses
+    // whose tier was not warm, of items live at the pre-state
+    ankerl::unordered_dense::
+        segmented_set<StorageKey, BytesHashCompare<StorageKey>>
+            negative_candidates;
     for (auto const &tx : *stamps_->candidates) {
         for (auto const &addr : tx.accounts) {
             if (addr == STAMP_LOG_ADDRESS) {
@@ -245,21 +374,46 @@ void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
                 pre->incarnation != post->incarnation) {
                 continue;
             }
+            bytes32_t pre_value{};
             {
                 StorageDeltas::const_accessor sit{};
-                if (!delta.storage.find(sit, key) ||
-                    sit->second.first == bytes32_t{}) {
-                    continue; // reads of nonexistent slots never stamp
+                if (!delta.storage.find(sit, key)) {
+                    continue;
+                }
+                pre_value = sit->second.first;
+            }
+            Incarnation const inc = pre->incarnation;
+            bool page_live = pre_value != bytes32_t{};
+            if (!page_live) {
+                // an empty slot: the page-level gate needs the probe
+                auto const occ = probe(addr, inc, key, false);
+                if (occ.has_value()) {
+                    page_live = *occ > 0;
+                    ++(page_live ? stats.empty_on_live_page : stats.empty_page);
+                }
+                else {
+                    ++stats.empty_unprobed;
+                    if (sampled(key)) {
+                        auto const s_occ = probe(addr, inc, key, true);
+                        ++(*s_occ > 0 ? stats.sampled_live
+                                      : stats.sampled_empty);
+                    }
+                }
+                if (!page_live && !opt.negative_stamps) {
+                    continue; // an empty page is never cached
                 }
             }
             auto const mit = delta.storage_stamps.find(key);
             uint8_t const cls = access_class(
                 mit != delta.storage_stamps.end() ? mit->second : 0, n);
-            if (cls != 0) {
-                lower_class(
-                    page_classes,
-                    StorageKey{addr, pre->incarnation, stamp_lookup_key(key)},
-                    cls);
+            if (cls == 0) {
+                continue;
+            }
+            StorageKey const skey{addr, inc, stamp_lookup_key(key)};
+            lower_class(page_classes, skey, cls);
+            lower_class(grouped_classes, page_of(addr, inc, key), cls);
+            if (!page_live) {
+                negative_candidates.insert(skey);
             }
         }
     }
@@ -276,18 +430,28 @@ void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
         ++stats.account_candidates[cls - 1];
         accounts.push_back({cls, addr});
     }
+    ankerl::unordered_dense::
+        segmented_set<StorageKey, BytesHashCompare<StorageKey>>
+            dying;
+    for (auto const &k : dead_pages) {
+        dying.insert(k);
+    }
     std::vector<PageCandidate> pages;
     pages.reserve(page_classes.size());
     for (auto const &[key, cls] : page_classes) {
-        uint32_t weight = 0;
+        if (dying.contains(key)) {
+            continue;
+        }
+        uint32_t weight = 1;
         auto const pit = proposal_post_state_.storage.find(key);
         if (pit != proposal_post_state_.storage.end()) {
-            if (pit->second.is_empty()) {
+            if (pit->second.is_empty() && !opt.negative_stamps) {
                 continue;
             }
-            weight = static_cast<uint32_t>(pit->second.size());
+            weight = std::max<uint32_t>(
+                1, static_cast<uint32_t>(pit->second.size()));
         }
-        else {
+        else if (!negative_candidates.contains(key)) {
             Address addr;
             Incarnation inc{0, 0};
             bytes32_t lookup;
@@ -297,26 +461,23 @@ void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
                 lookup.bytes,
                 key.bytes + sizeof(addr.bytes) + sizeof(inc),
                 sizeof(lookup.bytes));
-            weight = stamp_read_weight(addr, inc, lookup);
-            if (weight == 0) {
-                continue;
-            }
+            weight =
+                std::max<uint32_t>(1, stamp_read_weight(addr, inc, lookup));
         }
         ++stats.page_candidates[cls - 1];
         pages.push_back({cls, weight, key});
     }
 
-    std::sort(
-        accounts.begin(), accounts.end(), [](auto const &a, auto const &b) {
-            if (a.cls != b.cls) {
-                return a.cls < b.cls;
-            }
-            return std::memcmp(
-                       a.address.bytes,
-                       b.address.bytes,
-                       sizeof(a.address.bytes)) < 0;
-        });
-    std::sort(pages.begin(), pages.end(), [](auto const &a, auto const &b) {
+    auto const account_less = [](AccountCandidate const &a,
+                                 AccountCandidate const &b) {
+        if (a.cls != b.cls) {
+            return a.cls < b.cls;
+        }
+        return std::memcmp(
+                   a.address.bytes, b.address.bytes, sizeof(a.address.bytes)) <
+               0;
+    };
+    auto const page_less = [](PageCandidate const &a, PageCandidate const &b) {
         if (a.cls != b.cls) {
             return a.cls < b.cls;
         }
@@ -324,7 +485,9 @@ void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
             return a.weight < b.weight;
         }
         return std::memcmp(a.key.bytes, b.key.bytes, sizeof(a.key.bytes)) < 0;
-    });
+    };
+    std::sort(accounts.begin(), accounts.end(), account_less);
+    std::sort(pages.begin(), pages.end(), page_less);
 
     auto &selected_accounts = proposal_post_state_.account_stamps;
     auto &selected_pages = proposal_post_state_.storage_stamps;
@@ -344,11 +507,43 @@ void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
         }
         slots += p.weight;
         selected_pages.push_back(p.key);
+        if (negative_candidates.contains(p.key)) {
+            ++stats.negative_stamps_selected;
+        }
     }
     stats.selected_pages = selected_pages.size();
     stats.selected_slots = slots;
     stats.selected_account_keys = selected_accounts;
     stats.selected_storage_keys = selected_pages;
+
+    // page-encoding emulation: one candidate per page, weighted by its
+    // probed occupancy (1 when unprobed or empty), same selection rule
+    {
+        std::vector<PageCandidate> grouped;
+        grouped.reserve(grouped_classes.size());
+        for (auto const &[pkey, cls] : grouped_classes) {
+            uint32_t weight = 1;
+            if (auto const it = occupancy.find(pkey); it != occupancy.end()) {
+                weight = std::max<uint32_t>(1, it->second);
+            }
+            ++stats.grouped_page_candidates[cls - 1];
+            grouped.push_back({cls, weight, pkey});
+        }
+        std::sort(grouped.begin(), grouped.end(), page_less);
+        uint64_t weight_sum = 0;
+        for (auto const &g : grouped) {
+            if (weight_sum + g.weight > MAX_STORAGE_SLOT_STAMPS_PER_BLOCK) {
+                stats.emulated_cap_hit = true;
+                break;
+            }
+            weight_sum += g.weight;
+            ++stats.emulated_selected_pages;
+            if (g.weight > 1) {
+                stats.emulated_dense_weight += g.weight;
+            }
+        }
+        stats.emulated_selected_weight = weight_sum;
+    }
 
     // the stamp log record, as storage of STAMP_LOG_ADDRESS: one MIP-8 page
     // leaf per 4 KB chunk in ring slot n mod CACHE_WINDOW_BLOCKS; always

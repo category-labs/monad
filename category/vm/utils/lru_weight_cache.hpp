@@ -49,13 +49,15 @@ namespace monad::vm::utils
         std::atomic<int64_t> weight_;
         LruList lru_;
         HashMap hmap_;
-        // Stamp mode: the entry time field holds the consensus stamp,
-        // written only by set_stamp at finalize — find() and insert() never
-        // promote or write it. The list has a stamped region (stamp order,
-        // ahead of the boundary sentinel) and an unstamped region (insertion
-        // order, behind it); eviction drains unstamped entries first, then
-        // stamps oldest first, so a cached victim (stamp >= the evict floor)
-        // means the cached set outgrew the capacity; eviction asserts it.
+        // Stamp mode: an entry has a value flag (negative_) and a region
+        // flag (stamped_: the time field is its consensus stamp, written only
+        // by set_stamp at finalize). Stamped entries, with or without a value,
+        // sit at the head of the list in stamp order; unstamped live entries
+        // behind the boundary sentinel in insertion order; unstamped negative
+        // entries on the negative list. Eviction drains unstamped entries
+        // first, then stamps oldest first, so a cached victim (stamp >= the
+        // evict floor) means the cached set outgrew the capacity; eviction
+        // asserts it. The weight budget covers everything on the live list.
         bool const stamp_mode_{false};
         std::atomic<uint64_t> evict_floor_{0};
         // negative entries sit on their own count-budgeted list; the shared
@@ -63,6 +65,7 @@ namespace monad::vm::utils
         size_t const negative_max_{0};
         std::atomic<size_t> negative_size_{0};
         LruList negative_lru_;
+        std::atomic<size_t> stamped_negative_{0};
 
     public:
         using ConstAccessor = HashMap::const_accessor;
@@ -92,8 +95,8 @@ namespace monad::vm::utils
             if (!stamp_mode_) {
                 try_update_lru(lru_, &*acc);
             }
-            else if (acc->second.negative_) {
-                try_update_lru(negative_lru_, &*acc);
+            else if (acc->second.negative_ && !acc->second.stamped_) {
+                negative_lru_.try_update_unstamped_negative(&*acc);
             }
             return true;
         }
@@ -103,40 +106,63 @@ namespace monad::vm::utils
             return acc->second.negative_;
         }
 
-        // Consensus stamp of a live entry; 0 = unstamped (and for negative
-        // entries, whose time field is local recency).
+        // Consensus stamp of an entry; 0 = unstamped.
         uint64_t stamp_of(ConstAccessor const &acc) const
         {
-            if (acc->second.negative_) {
+            if (!acc->second.stamped_) {
                 return 0;
             }
             return static_cast<uint64_t>(
                 acc->second.lru_time_.load(std::memory_order_acquire));
         }
 
-        // Finalize path: set the consensus stamp of a resident live entry and
-        // move it to the front (the stamped region). Returns false when the
-        // entry is not resident or negative.
+        size_t stamped_negative_count() const
+        {
+            return stamped_negative_.load(std::memory_order_relaxed);
+        }
+
+        // Finalize path: set the consensus stamp of a resident entry (with or
+        // without a value) and move it to the front of the stamped region.
+        // Returns false when the entry is not resident.
         bool set_stamp(Key const &key, uint64_t const stamp)
         {
             ConstAccessor acc;
-            if (!hmap_.find(acc, key) || acc->second.negative_) {
+            if (!hmap_.find(acc, key)) {
                 return false;
             }
-            lru_.update_lru_stamped(&*acc, static_cast<int64_t>(stamp));
+            ListNode const *const node = &*acc;
+            auto const moved = lru_.stamp_from(
+                negative_lru_, node, static_cast<int64_t>(stamp));
+            if (moved == LruList::Moved::none) {
+                return false;
+            }
+            if (moved == LruList::Moved::from_negative_list) {
+                stamped_negative_.fetch_add(1, std::memory_order_relaxed);
+                negative_size_.fetch_sub(1, std::memory_order_acq_rel);
+                adjust_by_delta_weight(node->second.cache_weight_);
+            }
             return true;
         }
 
-        // Bootstrap path: forget the stamp of a resident live entry, moving
-        // it to the front of the unstamped region.
+        // Death record (finalize / bootstrap): forget the stamp of a resident
+        // entry; a live entry moves to the front of the unstamped region, an
+        // empty one to the negative list.
         bool clear_stamp(Key const &key)
         {
             ConstAccessor acc;
-            if (!hmap_.find(acc, key) || acc->second.negative_) {
+            if (!hmap_.find(acc, key)) {
                 return false;
             }
-            lru_.move_unstamped(&*acc);
-            return true;
+            ListNode const *const node = &*acc;
+            auto const moved = lru_.unstamp_to(negative_lru_, node);
+            if (moved == LruList::Moved::to_negative_list) {
+                stamped_negative_.fetch_sub(1, std::memory_order_relaxed);
+                weight_.fetch_sub(
+                    node->second.cache_weight_, std::memory_order_acq_rel);
+                trim_negative(
+                    1 + negative_size_.fetch_add(1, std::memory_order_acq_rel));
+            }
+            return moved != LruList::Moved::none;
         }
 
         void set_evict_floor(uint64_t const floor)
@@ -156,8 +182,13 @@ namespace monad::vm::utils
             if (!hmap_.insert(acc, {key, HashMapValue{value, weight, neg}})) {
                 ListNode *const node = &*acc;
                 bool const was_negative = node->second.negative_;
-                int64_t delta_weight = neg ? 0 : weight;
-                if (!was_negative) {
+                // the weight budget covers the live list: unstamped live
+                // entries and every stamped entry
+                bool const stamped = stamp_mode_ && node->second.stamped_;
+                bool const on_live_before = stamped || !was_negative;
+                bool const on_live_after = stamped || !neg;
+                int64_t delta_weight = on_live_after ? weight : 0;
+                if (on_live_before) {
                     delta_weight -= node->second.cache_weight_;
                 }
                 using std::swap;
@@ -168,7 +199,15 @@ namespace monad::vm::utils
                     try_update_lru(lru_, node);
                 }
                 else if (was_negative != neg) {
-                    transition(node, neg);
+                    if (stamped) {
+                        lru_.set_negative_flag(node, neg);
+                        stamped_negative_.fetch_add(
+                            neg ? 1 : static_cast<size_t>(-1),
+                            std::memory_order_relaxed);
+                    }
+                    else {
+                        transition(node, neg);
+                    }
                 }
                 acc.release();
                 if (delta_weight != 0) {
@@ -295,17 +334,21 @@ namespace monad::vm::utils
                     if (MONAD_UNLIKELY(!target)) {
                         break;
                     }
-                    if (stamp_mode_) {
-                        // the tail is the oldest-stamped entry, so a warm
-                        // victim means the warm set outgrew the physical
-                        // capacity — a consensus bug, not a perf bug
+                    if (stamp_mode_ && target->second.stamped_) {
+                        // unstamped entries drain first, then stamps oldest
+                        // first: a cached victim means the cached set
+                        // outgrew the physical capacity — a consensus bug,
+                        // not a perf bug
                         uint64_t const stamp =
                             static_cast<uint64_t>(target->second.lru_time_.load(
                                 std::memory_order_acquire));
                         MONAD_ASSERT(
-                            stamp == 0 ||
                             stamp <
-                                evict_floor_.load(std::memory_order_relaxed));
+                            evict_floor_.load(std::memory_order_relaxed));
+                        if (target->second.negative_) {
+                            stamped_negative_.fetch_sub(
+                                1, std::memory_order_relaxed);
+                        }
                     }
                     int64_t const n = evict(target);
                     weight_.fetch_sub(n, std::memory_order_acq_rel);
@@ -378,7 +421,8 @@ namespace monad::vm::utils
             mutable std::atomic<int64_t> lru_time_{0};
             Value value_;
             uint32_t cache_weight_;
-            mutable bool negative_{false};
+            mutable bool negative_{false}; // the key holds no value
+            mutable bool stamped_{false}; // stamped region; time is the stamp
 
             HashMapValue() = default;
 
@@ -399,6 +443,7 @@ namespace monad::vm::utils
                 , value_{std::move(x.value_)}
                 , cache_weight_{x.cache_weight_}
                 , negative_{x.negative_}
+                , stamped_{x.stamped_}
             {
             }
 
@@ -492,27 +537,78 @@ namespace monad::vm::utils
                 node->second.update_lru_time(0);
             }
 
-            // Stamp mode: move to the front and store the stamp verbatim in
-            // the time field.
-            void
-            update_lru_stamped(ListNode const *const node, int64_t const stamp)
+            enum class Moved
             {
-                std::unique_lock const l(mutex_);
-                if (node->second.is_in_list()) {
-                    delink(node);
-                    front_link(node);
-                    node->second.update_lru_time(stamp);
+                none, // not in any list (being evicted)
+                in_place, // already where it belongs
+                from_negative_list, // entered this (live) list
+                to_negative_list, // left this list for the negative list
+            };
+
+            // Stamp mode: stamp `node`, moving it to the front of the stamped
+            // region from wherever it is (this list's unstamped region, or
+            // the negative list `neg`).
+            Moved stamp_from(
+                LruList &neg, ListNode const *const node, int64_t const stamp)
+            {
+                std::scoped_lock const l(mutex_, neg.mutex_);
+                if (!node->second.is_in_list()) {
+                    return Moved::none;
                 }
+                bool const from_negative =
+                    node->second.negative_ && !node->second.stamped_;
+                (from_negative ? neg : *this).delink(node);
+                node->second.stamped_ = true;
+                front_link(node);
+                node->second.update_lru_time(stamp);
+                return from_negative ? Moved::from_negative_list
+                                     : Moved::in_place;
             }
 
-            // Stamp mode: forget the stamp and move behind the boundary.
-            void move_unstamped(ListNode const *const node)
+            // Stamp mode: forget the stamp; a live entry goes behind the
+            // boundary, an empty one to the negative list `neg`.
+            Moved unstamp_to(LruList &neg, ListNode const *const node)
+            {
+                std::scoped_lock const l(mutex_, neg.mutex_);
+                if (!node->second.is_in_list()) {
+                    return Moved::none;
+                }
+                if (!node->second.stamped_) {
+                    return Moved::in_place;
+                }
+                delink(node);
+                node->second.stamped_ = false;
+                if (node->second.negative_) {
+                    neg.front_link(node);
+                    node->second.update_lru_time(
+                        ListNode::second_type::wall_clock());
+                    return Moved::to_negative_list;
+                }
+                link_after(&boundary_, node);
+                node->second.update_lru_time(0);
+                return Moved::in_place;
+            }
+
+            // Stamp mode: change the value flag of a stamped entry in place.
+            void set_negative_flag(ListNode const *const node, bool const neg)
             {
                 std::unique_lock const l(mutex_);
-                if (node->second.is_in_list()) {
+                node->second.negative_ = neg;
+            }
+
+            // Rate-limited recency bump of an entry on the negative list,
+            // re-checked under the lock (a finalize may have stamped it).
+            void try_update_unstamped_negative(ListNode const *const node)
+            {
+                if (!node->second.check_lru_time(now())) {
+                    return;
+                }
+                std::unique_lock const l(mutex_);
+                if (node->second.is_in_list() && node->second.negative_ &&
+                    !node->second.stamped_) {
                     delink(node);
-                    link_after(&boundary_, node);
-                    node->second.update_lru_time(0);
+                    front_link(node);
+                    node->second.update_lru_time(next_allowed());
                 }
             }
 

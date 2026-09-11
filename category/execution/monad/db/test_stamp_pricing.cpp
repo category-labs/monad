@@ -383,7 +383,25 @@ TEST(StampLru, stamp_order_eviction_and_negative_list)
         EXPECT_EQ(cache.stamp_of(acc), 0); // unstamped until finalize
     }
 
-    // deletion flips the entry to the negative list in place
+    // deletion of a stamped entry only flips its value flag: the stamp
+    // survives until a death record (clear_stamp) forgets it
+    cache.insert(1, std::nullopt, /*negative=*/true);
+    {
+        LruCache<int, std::optional<int>>::ConstAccessor acc;
+        ASSERT_TRUE(cache.find(acc, 1));
+        EXPECT_TRUE(cache.is_negative(acc));
+        EXPECT_EQ(cache.stamp_of(acc), 2);
+    }
+    cache.insert(1, 11);
+    {
+        LruCache<int, std::optional<int>>::ConstAccessor acc;
+        ASSERT_TRUE(cache.find(acc, 1));
+        EXPECT_FALSE(cache.is_negative(acc));
+        EXPECT_EQ(cache.stamp_of(acc), 2);
+    }
+    EXPECT_TRUE(cache.clear_stamp(1));
+    // an unstamped entry flips between the negative list and the unstamped
+    // region, and stays unstamped
     cache.insert(1, std::nullopt, /*negative=*/true);
     {
         LruCache<int, std::optional<int>>::ConstAccessor acc;
@@ -391,13 +409,71 @@ TEST(StampLru, stamp_order_eviction_and_negative_list)
         EXPECT_TRUE(cache.is_negative(acc));
         EXPECT_EQ(cache.stamp_of(acc), 0);
     }
-    // and creation flips it back, unstamped
     cache.insert(1, 11);
     {
         LruCache<int, std::optional<int>>::ConstAccessor acc;
         ASSERT_TRUE(cache.find(acc, 1));
         EXPECT_FALSE(cache.is_negative(acc));
         EXPECT_EQ(cache.stamp_of(acc), 0);
+    }
+}
+
+TEST(StampLru, stamped_entries_survive_value_flips)
+{
+    LruCache<int, std::optional<int>> cache{
+        /*max_size=*/4, /*stamp_mode=*/true, /*negative_max=*/2};
+    cache.set_evict_floor(0);
+    // an empty (negative) entry can be stamped: it moves to the stamped
+    // region, keeps reporting no value, and no longer counts as negative
+    cache.insert(1, std::nullopt, /*negative=*/true);
+    EXPECT_TRUE(cache.set_stamp(1, 7));
+    {
+        LruCache<int, std::optional<int>>::ConstAccessor acc;
+        ASSERT_TRUE(cache.find(acc, 1));
+        EXPECT_TRUE(cache.is_negative(acc));
+        EXPECT_EQ(cache.stamp_of(acc), 7);
+    }
+    EXPECT_EQ(cache.stamped_negative_count(), 1u);
+    // a negative flood cannot touch it (it is on the live list)
+    for (int k = 100; k < 120; ++k) {
+        cache.insert(k, std::nullopt, /*negative=*/true);
+    }
+    {
+        LruCache<int, std::optional<int>>::ConstAccessor acc;
+        ASSERT_TRUE(cache.find(acc, 1));
+        EXPECT_EQ(cache.stamp_of(acc), 7);
+    }
+    // gaining a value keeps the stamp; losing it again keeps it too
+    cache.insert(1, 11);
+    {
+        LruCache<int, std::optional<int>>::ConstAccessor acc;
+        ASSERT_TRUE(cache.find(acc, 1));
+        EXPECT_FALSE(cache.is_negative(acc));
+        EXPECT_EQ(cache.stamp_of(acc), 7);
+    }
+    EXPECT_EQ(cache.stamped_negative_count(), 0u);
+    cache.insert(1, std::nullopt, /*negative=*/true);
+    {
+        LruCache<int, std::optional<int>>::ConstAccessor acc;
+        ASSERT_TRUE(cache.find(acc, 1));
+        EXPECT_TRUE(cache.is_negative(acc));
+        EXPECT_EQ(cache.stamp_of(acc), 7);
+    }
+    // only a death record forgets it: the empty entry lands on the negative
+    // list, where the next negative inserts push it out
+    EXPECT_TRUE(cache.clear_stamp(1));
+    {
+        LruCache<int, std::optional<int>>::ConstAccessor acc;
+        ASSERT_TRUE(cache.find(acc, 1));
+        EXPECT_EQ(cache.stamp_of(acc), 0);
+    }
+    EXPECT_EQ(cache.stamped_negative_count(), 0u);
+    for (int k = 200; k < 204; ++k) {
+        cache.insert(k, std::nullopt, /*negative=*/true);
+    }
+    {
+        LruCache<int, std::optional<int>>::ConstAccessor acc;
+        EXPECT_FALSE(cache.find(acc, 1));
     }
 }
 
@@ -421,6 +497,7 @@ TEST(StampDbCache, finalize_stamps_and_deletion_forgets)
     cache.set_block_and_prefix(10, bytes32_t{10});
     ProposalPostState del;
     del.accounts[b] = std::nullopt;
+    del.account_deaths = {b}; // the builder logs a cached account's death
     cache.update_proposal_state(std::move(del), 11, bytes32_t{11});
     cache.set_block_and_prefix(11, bytes32_t{11});
     ProposalPostState recreate;
@@ -530,8 +607,9 @@ TEST(StampBootstrap, restart_reproduces_stamps_from_the_log)
     read_block(
         3, {11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21}, {}, std::nullopt);
     read_block(4, {1}, {1, 2, 3, 4, 5, 6, 7, 8}, 21);
-    // block 5 zeroes slot 3 (a cached item dies: logged), block 6 recreates
-    // it (unstamped): a restarted node must not resurrect the stamp
+    // block 5 zeroes slot 3 (a cached item dies: logged — without a db
+    // probe the slot's own emptiness decides), block 6 recreates it
+    // (unstamped): a restarted node must not resurrect the stamp
     auto write_slot =
         [&](uint64_t const n, uint64_t const slot, bytes32_t const &value) {
             tdb.set_block_and_prefix(n - 1);

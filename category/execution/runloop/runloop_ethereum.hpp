@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/vm/vm.hpp>
 
@@ -34,6 +35,32 @@ struct MbcRunTotals : CacheTierStats
 {
     uint64_t account_stamps{0};
     uint64_t storage_stamps{0};
+    // page-encoding emulation and empty-read classification, summed over
+    // the blocks' StampBlockStats
+    uint64_t probed_pages{0};
+    uint64_t occupancy_buckets[5]{};
+    uint64_t empty_on_live_page{0};
+    uint64_t empty_page{0};
+    uint64_t empty_unprobed{0};
+    uint64_t sampled_live{0};
+    uint64_t sampled_empty{0};
+    uint64_t negative_stamps_selected{0};
+    uint64_t emulated_cap_hits{0};
+
+    void add_block(StampBlockStats const &st)
+    {
+        probed_pages += st.probed_pages;
+        for (size_t i = 0; i < 5; ++i) {
+            occupancy_buckets[i] += st.occupancy_buckets[i];
+        }
+        empty_on_live_page += st.empty_on_live_page;
+        empty_page += st.empty_page;
+        empty_unprobed += st.empty_unprobed;
+        sampled_live += st.sampled_live;
+        sampled_empty += st.sampled_empty;
+        negative_stamps_selected += st.negative_stamps_selected;
+        emulated_cap_hits += st.emulated_cap_hit ? 1 : 0;
+    }
 };
 
 extern MbcRunTotals g_mbc_totals;

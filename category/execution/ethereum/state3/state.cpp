@@ -507,10 +507,11 @@ State::access_storage_tier(Address const &address, bytes32_t const &key)
         }
         bytes32_t const value = load_original_storage(address, orig, inc, key);
         ++tier_stats_.first_storage;
-        if (value != bytes32_t{}) {
-            account_state.mark_stamp_candidate(key);
-        }
-        else {
+        // journaled whatever the slot holds: the commit builder decides with
+        // the page-level liveness gate (an empty slot on a live page is a
+        // candidate, an empty page only under the negative-stamp experiment)
+        account_state.mark_stamp_candidate(key);
+        if (value == bytes32_t{}) {
             ++tier_stats_.missing_storage;
         }
         uint64_t const stamp = orig.storage_stamp(key).value_or(0);

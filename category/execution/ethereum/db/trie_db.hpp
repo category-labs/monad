@@ -17,6 +17,7 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/fiber/priority_pool.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
@@ -32,6 +33,7 @@
 #include <category/mpt/state_machine.hpp>
 #include <category/vm/vm.hpp>
 
+#include <ankerl/unordered_dense.h>
 #include <nlohmann/json_fwd.hpp>
 
 #include <deque>
@@ -94,7 +96,26 @@ public:
         uint64_t slots{0};
     };
 
-    StampRebuildStats rebuild_stamp_cache();
+    // pool: trie reads are issued across its fibers; nullptr = serial
+    StampRebuildStats rebuild_stamp_cache(fiber::PriorityPool *pool = nullptr);
+
+    uint32_t probe_page_occupancy(
+        Address const &, Incarnation, bytes32_t const &page_key) override;
+
+    // Live footprint of the stamp log account at the current prefix.
+    struct StampLogFootprint
+    {
+        uint64_t leaves{0};
+        uint64_t value_bytes{0};
+    };
+
+    StampLogFootprint stamp_log_footprint();
+
+    std::pair<size_t, size_t> stamped_negative_counts() override
+    {
+        return cache_ ? cache_->stamped_negative_counts()
+                      : std::pair<size_t, size_t>{0, 0};
+    }
 
     virtual std::optional<Account>
     read_account_stamped(Address const &, uint64_t &stamp) override;
@@ -163,6 +184,14 @@ private:
     storage_page_t load_storage_page(
         Address const &, Incarnation, bytes32_t const &lookup_key,
         CacheReadStatus);
+
+    // slot encoding only: a slot's value without touching the cache
+    bytes32_t peek_storage_slot(Address const &, bytes32_t const &slot_key);
+
+    // probe results by page, valid until a slot of the page is written
+    ankerl::unordered_dense::segmented_map<
+        StorageKey, uint32_t, BytesHashCompare<StorageKey>>
+        probe_memo_;
 };
 
 MONAD_NAMESPACE_END

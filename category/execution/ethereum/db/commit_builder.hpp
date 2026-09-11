@@ -28,11 +28,16 @@
 
 MONAD_NAMESPACE_BEGIN
 
+struct Db;
+
 // Fixed-window cache inputs for one block's stamp selection: the journaled
-// per-transaction read candidates (write candidates come from the deltas).
+// per-transaction read candidates (write candidates come from the deltas),
+// the db to probe page occupancy on, and the measurement knobs.
 struct StampContext
 {
     BlockStampCandidates const *candidates;
+    Db *db{nullptr};
+    StampOptions options{};
 };
 
 // Per-block stamp bookkeeping for the measurement log line.
@@ -53,6 +58,24 @@ struct StampBlockStats
     uint64_t record_bytes{0};
     uint64_t log_pages{0};
     bytes32_t record_hash{};
+    // page-encoding emulation: candidates grouped by page, selection with
+    // probed occupancy as weight under the 5000-slot cap
+    uint64_t grouped_page_candidates[3]{0, 0, 0};
+    uint64_t emulated_selected_pages{0};
+    uint64_t emulated_selected_weight{0};
+    uint64_t emulated_dense_weight{0}; // from pages with occupancy > 1
+    bool emulated_cap_hit{false};
+    uint64_t probed_pages{0};
+    // occupancy of probed live pages: 1, 2-4, 5-16, 17-64, 65-128
+    uint64_t occupancy_buckets[5]{};
+    // empty first reads: on a probed live page / on a probed empty page /
+    // unprobed; and the sampled subset of the unprobed ones
+    uint64_t empty_on_live_page{0};
+    uint64_t empty_page{0};
+    uint64_t empty_unprobed{0};
+    uint64_t sampled_live{0};
+    uint64_t sampled_empty{0};
+    uint64_t negative_stamps_selected{0};
     // the selected keys, in selection order (a copy for debugging dumps)
     std::vector<Address> selected_account_keys;
     std::vector<StorageKey> selected_storage_keys;

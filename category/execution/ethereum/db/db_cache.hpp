@@ -118,27 +118,28 @@ public:
         std::vector<StorageKey> const &dead_storage, uint64_t const block)
     {
         apply_stamps(accounts, storage, block);
-        for (auto const &addr : dead_accounts) {
-            accounts_.clear_stamp(addr);
-        }
-        for (auto const &key : dead_storage) {
-            storage_.clear_stamp(key);
-        }
+        apply_deaths(dead_accounts, dead_storage);
     }
 
-    // Residency check (tests / debug): the entry is live and carries `stamp`.
+    // Residency check (tests / debug): the entry is resident with `stamp`.
     bool account_has_stamp(Address const &address, uint64_t const stamp)
     {
         AccountsCache::ConstAccessor acc{};
-        return accounts_.find(acc, address) && !accounts_.is_negative(acc) &&
-               accounts_.stamp_of(acc) == stamp;
+        return accounts_.find(acc, address) && accounts_.stamp_of(acc) == stamp;
     }
 
     bool storage_has_stamp(StorageKey const &key, uint64_t const stamp)
     {
         StorageCache::ConstAccessor acc{};
-        return storage_.find(acc, key) && !storage_.is_negative(acc) &&
-               storage_.stamp_of(acc) == stamp;
+        return storage_.find(acc, key) && storage_.stamp_of(acc) == stamp;
+    }
+
+    // stamped entries without a value (accounts, storage)
+    std::pair<size_t, size_t> stamped_negative_counts() const
+    {
+        return {
+            accounts_.stamped_negative_count(),
+            storage_.stamped_negative_count()};
     }
 
     // The optional stamp output is the entry's consensus stamp as of the
@@ -285,11 +286,11 @@ public:
         std::unique_ptr<ProposalState> const ps =
             proposals_.finalize(block_number, block_id);
         if (ps) {
-            insert_in_lru_caches(ps->post_state());
+            auto const &post = ps->post_state();
+            insert_in_lru_caches(post);
             apply_stamps(
-                ps->post_state().account_stamps,
-                ps->post_state().storage_stamps,
-                block_number);
+                post.account_stamps, post.storage_stamps, block_number);
+            apply_deaths(post.account_deaths, post.storage_deaths);
         }
         else {
             // Finalizing a truncated proposal. Clear LRU caches.  This is an
@@ -326,11 +327,25 @@ private:
         }
     }
 
+    // A death record forgets the stamp of an entry whose page died (or, for
+    // an account, whose account died); a value flip alone never does.
+    void apply_deaths(
+        std::vector<Address> const &dead_accounts,
+        std::vector<StorageKey> const &dead_storage)
+    {
+        for (auto const &addr : dead_accounts) {
+            accounts_.clear_stamp(addr);
+        }
+        for (auto const &key : dead_storage) {
+            storage_.clear_stamp(key);
+        }
+    }
+
     // Stamp the block's selected entries in selection order and advance the
-    // eviction floor. Every selected entry is live at the block's post-state
-    // (selection excludes entries that die in the block) and resident (the
-    // block's reads and writes put it there, and the LRU never evicts a
-    // cached entry), so a missing entry is a residency bug.
+    // eviction floor. Every selected entry is resident (the block's reads
+    // and writes put it there — an empty page as a negative entry — and the
+    // LRU never evicts a cached entry), so a missing entry is a residency
+    // bug.
     void apply_stamps(
         std::vector<Address> const &accounts,
         std::vector<StorageKey> const &storage, uint64_t const block)

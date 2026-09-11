@@ -30,20 +30,21 @@ MONAD_NAMESPACE_BEGIN
 
 // Default mode: a plain LRU with wall-clock rate-limited promotion on find.
 //
-// Stamp mode (multi-block cache): one hash map, two eviction lists. Live
-// entries sit on the live list, whose node time field holds the consensus
-// stamp (last selected access block), written only by set_stamp at finalize
-// — find() is read-only for them. The live list has two regions separated by
-// a fixed sentinel: stamped entries ahead of it in stamp order (set_stamp
-// moves an entry to the global head), unstamped entries behind it in
-// insertion order. Eviction takes the tail, so every unstamped entry goes
-// before any stamped one and the stamped region is drained oldest stamp
-// first: a cached entry (stamp >= the evict floor) can only be the victim
-// when the cached set itself outgrew the capacity, and evict() asserts it.
-// Negative entries ("this key holds nothing") sit on the negative list with
-// its own budget and wall-clock recency; a negative flood can only churn the
-// negative list. A value transition (create/delete at finalize) flips the
-// same entry between lists in place — one map, no cross-cache invalidation.
+// Stamp mode (multi-block cache): one hash map, two eviction lists. An
+// entry has a value flag (negative_: the key holds nothing) and a region
+// flag (stamped_: it carries a consensus stamp in the time field, written
+// only by set_stamp at finalize). Stamped entries — with or without a value
+// — sit at the head of the live list in stamp order; unstamped live entries
+// sit behind a fixed boundary sentinel in insertion order; unstamped
+// negative entries sit on the negative list with its own budget and
+// wall-clock recency. Eviction takes the live tail, so unstamped entries go
+// first and the stamped region drains oldest stamp first: a cached entry
+// (stamp >= the evict floor) can only be the victim when the cached set
+// itself outgrew the capacity, and evict() asserts it. A value transition
+// (create/delete at finalize) never moves a stamped entry — the stamp
+// survives until clear_stamp (a death record) — and flips an unstamped
+// entry between the negative list and the unstamped region in place: one
+// map, no cross-cache invalidation.
 template <
     class Key, class Value, class KeyHashCompare = tbb::tbb_hash_compare<Key>>
 class LruCache
@@ -76,6 +77,8 @@ class LruCache
     // stamp mode: boundary between the stamped region (ahead) and the
     // unstamped region (behind) of the live list; never evicted
     ListNode boundary_;
+    // stamped entries without a value (measurement aid)
+    std::atomic<size_t> stamped_negative_{0};
 
 /// STATS MACROS
 #ifdef MONAD_LRU_CACHE_STATS
@@ -131,8 +134,8 @@ public:
         if (!stamp_mode_) {
             try_update_lru(lru_, node);
         }
-        else if (node->negative_) {
-            try_update_lru(negative_lru_, node);
+        else if (node->negative_ && !node->stamped_) {
+            try_update_negative(node);
         }
         return true;
     }
@@ -142,21 +145,25 @@ public:
         return acc->second.node_->negative_;
     }
 
-    // Consensus stamp of a live entry; 0 = unstamped (and for negative
-    // entries, whose time field is local recency).
+    // Consensus stamp of an entry; 0 = unstamped.
     uint64_t stamp_of(ConstAccessor const &acc) const
     {
         ListNode const *const node = acc->second.node_;
-        if (node->negative_) {
+        if (!node->stamped_) {
             return 0;
         }
         return static_cast<uint64_t>(
             node->lru_time_.load(std::memory_order_acquire));
     }
 
-    // Finalize path: set the consensus stamp of a resident live entry and
-    // move it to the live-list front (the stamped region). Returns false when
-    // the entry is not resident or negative.
+    size_t stamped_negative_count() const
+    {
+        return stamped_negative_.load(std::memory_order_relaxed);
+    }
+
+    // Finalize path: set the consensus stamp of a resident entry (with or
+    // without a value) and move it to the front of the stamped region.
+    // Returns false when the entry is not resident.
     bool set_stamp(Key const &key, uint64_t const stamp)
     {
         ConstAccessor acc;
@@ -164,16 +171,38 @@ public:
             return false;
         }
         ListNode *const node = acc->second.node_;
-        if (node->negative_) {
-            return false;
+        bool from_negative_list = false;
+        {
+            std::unique_lock const l(mutex_);
+            if (!node->is_in_list()) {
+                return false; // being evicted concurrently
+            }
+            if (node->stamped_) {
+                lru_.update_lru(node, static_cast<int64_t>(stamp));
+                return true;
+            }
+            from_negative_list = node->negative_;
+            (from_negative_list ? negative_lru_ : lru_).delink(node);
+            node->stamped_ = true;
+            lru_.push_front(node);
+            node->update_lru_time(static_cast<int64_t>(stamp));
         }
-        std::unique_lock const l(mutex_);
-        lru_.update_lru(node, static_cast<int64_t>(stamp));
+        if (from_negative_list) {
+            // the entry now occupies live capacity
+            stamped_negative_.fetch_add(1, std::memory_order_relaxed);
+            negative_size_.fetch_sub(1, std::memory_order_acq_rel);
+            size_t const sz = 1 + size_.fetch_add(1, std::memory_order_acq_rel);
+            if (sz > max_size_ && evict()) {
+                size_.fetch_sub(1, std::memory_order_acq_rel);
+            }
+        }
         return true;
     }
 
-    // Bootstrap path: forget the stamp of a resident live entry, moving it
-    // to the front of the unstamped region (where a recreated entry lands).
+    // Death record (finalize / bootstrap): forget the stamp of a resident
+    // entry. A live entry moves to the front of the unstamped region, an
+    // empty one to the negative list — where an unstamped entry of that
+    // value would be.
     bool clear_stamp(Key const &key)
     {
         ConstAccessor acc;
@@ -181,14 +210,32 @@ public:
             return false;
         }
         ListNode *const node = acc->second.node_;
-        if (node->negative_) {
-            return false;
-        }
-        std::unique_lock const l(mutex_);
-        if (node->is_in_list()) {
+        bool to_negative_list = false;
+        {
+            std::unique_lock const l(mutex_);
+            if (!node->is_in_list() || !node->stamped_) {
+                return node->is_in_list();
+            }
             lru_.delink(node);
-            lru_.insert_after(&boundary_, node);
-            node->update_lru_time(0);
+            node->stamped_ = false;
+            to_negative_list = node->negative_;
+            if (to_negative_list) {
+                negative_lru_.push_front(node);
+                node->update_lru_time(ListNode::wall_clock());
+            }
+            else {
+                lru_.insert_after(&boundary_, node);
+                node->update_lru_time(0);
+            }
+        }
+        if (to_negative_list) {
+            stamped_negative_.fetch_sub(1, std::memory_order_relaxed);
+            size_.fetch_sub(1, std::memory_order_acq_rel);
+            size_t const sz =
+                1 + negative_size_.fetch_add(1, std::memory_order_acq_rel);
+            if (sz > negative_max_ && evict_negative()) {
+                negative_size_.fetch_sub(1, std::memory_order_acq_rel);
+            }
         }
         return true;
     }
@@ -253,14 +300,35 @@ private:
         }
     }
 
-    // Flip an entry between the live and negative lists in place (finalize
-    // path: the value was created or deleted).
+    void try_update_negative(ListNode *const node)
+    {
+        int64_t const t = ListNode::wall_clock();
+        if (node->check_lru_time(t, ListNode::LRU_UPDATE_PERIOD)) {
+            std::unique_lock const l(mutex_);
+            // re-check under the lock: a finalize may have stamped it
+            if (node->negative_ && !node->stamped_) {
+                STATS_EVENT_UPDATE_LRU();
+                negative_lru_.update_lru(node, t);
+            }
+        }
+    }
+
+    // Value transition at finalize (created or deleted). A stamped entry
+    // keeps its place and stamp and only changes its value flag; an unstamped
+    // one flips between the negative list and the unstamped region.
     void transition(ListNode *const node, bool const negative)
     {
         {
             std::unique_lock const l(mutex_);
             if (!node->is_in_list()) {
                 return; // being evicted concurrently
+            }
+            if (node->stamped_) {
+                node->negative_ = negative;
+                stamped_negative_.fetch_add(
+                    negative ? 1 : static_cast<size_t>(-1),
+                    std::memory_order_relaxed);
+                return;
             }
             (node->negative_ ? negative_lru_ : lru_).delink(node);
             node->negative_ = negative;
@@ -350,11 +418,15 @@ private:
             // unstamped entries drain first, then stamps oldest first, so a
             // cached victim means the cached set outgrew the physical
             // capacity — a consensus bug, not a perf bug
-            uint64_t const stamp = static_cast<uint64_t>(
-                target->lru_time_.load(std::memory_order_acquire));
-            MONAD_ASSERT(
-                stamp == 0 ||
-                stamp < evict_floor_.load(std::memory_order_relaxed));
+            if (target->stamped_) {
+                uint64_t const stamp = static_cast<uint64_t>(
+                    target->lru_time_.load(std::memory_order_acquire));
+                MONAD_ASSERT(
+                    stamp < evict_floor_.load(std::memory_order_relaxed));
+                if (target->negative_) {
+                    stamped_negative_.fetch_sub(1, std::memory_order_relaxed);
+                }
+            }
         }
         Accessor acc;
         bool const found = hmap_.find(acc, target->key_);
@@ -393,7 +465,8 @@ private:
         ListNode *next_{nullptr};
         Key key_;
         std::atomic<int64_t> lru_time_{0};
-        bool negative_{false};
+        bool negative_{false}; // the key holds no value
+        bool stamped_{false}; // in the stamped region; time is the stamp
 
         ListNode() = default;
 

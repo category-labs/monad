@@ -55,6 +55,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <memory>
+#include <string_view>
 #include <vector>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -130,6 +131,30 @@ bool mbc_measure_enabled()
         return env == nullptr || env[0] != '0';
     }();
     return enabled;
+}
+
+// MONAD_MBC_PROBE=none|low|all, MONAD_MBC_PROBE_SAMPLE=<power of two, 0 =
+// off>, MONAD_MBC_NEGATIVE_STAMPS=1
+StampOptions const &mbc_options()
+{
+    static StampOptions const options = [] {
+        StampOptions o;
+        if (char const *const p = std::getenv("MONAD_MBC_PROBE")) {
+            std::string_view const v{p};
+            o.probe = v == "none"  ? StampOptions::Probe::none
+                      : v == "all" ? StampOptions::Probe::all
+                                   : StampOptions::Probe::low;
+        }
+        if (char const *const p = std::getenv("MONAD_MBC_PROBE_SAMPLE")) {
+            uint64_t const n = std::strtoull(p, nullptr, 10);
+            o.sample_mask = n == 0 ? 0 : n - 1;
+        }
+        if (char const *const p = std::getenv("MONAD_MBC_NEGATIVE_STAMPS")) {
+            o.negative_stamps = p[0] == '1';
+        }
+        return o;
+    }();
+    return options;
 }
 
 // Process a single historical Ethereum block
@@ -238,11 +263,16 @@ Result<void> process_ethereum_block(
     CacheTierStats const tier = block_state.tier_stats();
     auto [state, code, _, candidates] = std::move(block_state).release();
 
-    StampContext const stamp_ctx{.candidates = &candidates};
+    StampContext const stamp_ctx{
+        .candidates = &candidates, .db = &db, .options = mbc_options()};
     CommitBuilder builder(
         block.header.number, mbc_tracking ? &stamp_ctx : nullptr);
-    builder.add_state_deltas(*state)
-        .add_code(code)
+    auto const build_begin = std::chrono::steady_clock::now();
+    builder.add_state_deltas(*state);
+    auto const build_time =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - build_begin);
+    builder.add_code(code)
         .add_receipts(receipts)
         .add_transactions(block.transactions, senders)
         .add_call_frames(call_frames)
@@ -250,6 +280,7 @@ Result<void> process_ethereum_block(
     if (block.withdrawals.has_value()) {
         builder.add_withdrawals(block.withdrawals.value());
     }
+    auto const db_commit_begin = std::chrono::steady_clock::now();
     db.commit(block_id, builder, block.header, *state, [&](BlockHeader &h) {
         // second stage: populate block header. The measurement arm writes the
         // stamp log into the state trie, so its state root cannot match
@@ -264,6 +295,9 @@ Result<void> process_ethereum_block(
         h.logs_bloom = compute_bloom(receipts);
         h.ommers_hash = compute_ommers_hash(block.ommers);
     });
+    auto const db_commit_time =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - db_commit_begin);
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);
@@ -333,10 +367,14 @@ Result<void> process_ethereum_block(
         g_mbc_totals.add(tier);
         g_mbc_totals.account_stamps += st.selected_accounts;
         g_mbc_totals.storage_stamps += st.selected_pages;
+        g_mbc_totals.add_block(st);
+        auto const [sna, sns] = db.stamped_negative_counts();
         LOG_INFO(
             "__mbc_block,bl={},aw={},pw={},sw={},ac1={},ac2={},ac3={},pc1={},"
             "pc2={},pc3={},sa={},sp={},ss={},da={},dp={},acap={},pcap={},rb={},"
-            "lp={},ha={},hp={},sg={},rh={}",
+            "lp={},ha={},hp={},sg={},ep1={},ep2={},ep3={},esp={},ew={},edw={},"
+            "ecap={},pp={},esl={},epg={},eun={},smpl={},smpe={},ns={},sne={},"
+            "tb={},tc={},rh={}",
             block.header.number,
             st.accounts_written,
             st.pages_written,
@@ -359,6 +397,23 @@ Result<void> process_ethereum_block(
             tier.cached_accounts,
             tier.cached_storage,
             tier.cached_accounts * 1500 + tier.cached_storage * 1000,
+            st.grouped_page_candidates[0],
+            st.grouped_page_candidates[1],
+            st.grouped_page_candidates[2],
+            st.emulated_selected_pages,
+            st.emulated_selected_weight,
+            st.emulated_dense_weight,
+            st.emulated_cap_hit ? 1 : 0,
+            st.probed_pages,
+            st.empty_on_live_page,
+            st.empty_page,
+            st.empty_unprobed,
+            st.sampled_live,
+            st.sampled_empty,
+            st.negative_stamps_selected,
+            sns,
+            build_time.count(),
+            db_commit_time.count(),
             st.record_hash);
     }
 

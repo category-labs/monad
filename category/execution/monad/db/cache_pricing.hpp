@@ -64,6 +64,29 @@ inline uint64_t cache_evict_floor(uint64_t const finalized)
                                            : 0;
 }
 
+// Measurement-arm knobs (env MONAD_MBC_*). The page-occupancy probe makes
+// the page-level liveness gate exact on a slot-encoded db and feeds the
+// page-encoding emulation; negative stamps are the design experiment of
+// stamping empty pages of existing accounts.
+struct StampOptions
+{
+    enum class Probe : uint8_t
+    {
+        none, // slot rule only: a page exists iff the accessed slot is set
+        low, // probe pages with index < 4, others count as occupancy 1
+        all, // probe every candidate page
+    };
+
+    Probe probe{Probe::low};
+    // probe 1 in (sample_mask + 1) of the empty reads on unprobed pages to
+    // classify them (empty slot on a live page vs empty page); 0 = none. A
+    // probe of an empty page costs 128 trie misses, so keep this sparse.
+    uint64_t sample_mask{4095};
+    bool negative_stamps{false};
+};
+
+inline constexpr uint64_t STAMP_PROBE_LOW_PAGES = 4;
+
 // Measurement counters of the cached tier, collected per transaction and
 // merged into the block for committed transactions only (a retried
 // execution counts once).

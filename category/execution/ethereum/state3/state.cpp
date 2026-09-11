@@ -445,6 +445,22 @@ evmc_page_storage_status State::update_page(
     return account_state.page_tracker_.update_page(key, status);
 }
 
+// Pre-Cancun always; from EIP-6780 only for an account created in this
+// transaction; never from EIP-8246.
+template <Traits traits>
+bool State::selfdestruct_to_self_burns([[maybe_unused]] Address const &address)
+{
+    if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
+        return true;
+    }
+    else if constexpr (traits::eip_8246_active()) {
+        return false;
+    }
+    else {
+        return is_current_incarnation(address);
+    }
+}
+
 template <Traits traits>
 std::pair<bool, uint256_t>
 State::selfdestruct(Address const &address, Address const &beneficiary)
@@ -452,19 +468,12 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
     auto &account_state = current_account_state(address);
     uint256_t const balance = get_balance(address);
 
-    if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
-        if (address != beneficiary) {
-            add_to_balance(beneficiary, balance);
-        }
+    if (address != beneficiary) {
+        add_to_balance(beneficiary, balance);
         subtract_from_balance(address, balance);
     }
-    else {
-        if (address != beneficiary || is_current_incarnation(address)) {
-            if (address != beneficiary) {
-                add_to_balance(beneficiary, balance);
-            }
-            subtract_from_balance(address, balance);
-        }
+    else if (selfdestruct_to_self_burns<traits>(address)) {
+        subtract_from_balance(address, balance);
     }
 
     bool const inserted = account_state.destruct();
@@ -474,6 +483,23 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
 }
 
 EXPLICIT_TRAITS_MEMBER(State::selfdestruct);
+
+// Zeros rather than erasures: a missing key falls back to the original map or
+// the block delta and could still read a pre-destruct value.
+void State::zero_storage(Address const &address, AccountState &account_state)
+{
+    auto const orig = original_.find(address);
+    MONAD_ASSERT(orig != original_.end());
+    AccountState::StorageMap zeroed{};
+    // Reads land only in the original map, writes in both.
+    for (auto const &kv : orig->second.storage_) {
+        zeroed = zeroed.insert({kv.first, bytes32_t{}});
+    }
+    for (auto const &kv : account_state.storage_) {
+        zeroed = zeroed.insert({kv.first, bytes32_t{}});
+    }
+    account_state.storage_ = std::move(zeroed);
+}
 
 // YP (87)
 template <Traits traits>
@@ -486,17 +512,35 @@ void State::destruct_suicides()
         MONAD_ASSERT(stack.size() == 1);
         MONAD_ASSERT(stack.version() == 0);
         auto &account_state = stack.current(0);
-        if (account_state.is_destructed()) {
-            auto &account = account_state.account_;
-            if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
-                account.reset();
-            }
-            else {
-                if (account->incarnation == incarnation_) {
-                    account.reset();
-                }
-            }
+        if (MONAD_LIKELY(!account_state.is_destructed())) {
+            continue;
         }
+        auto &account = account_state.account_;
+
+        if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
+            account.reset();
+            continue;
+        }
+
+        // EIP-6780: only an account created in this transaction is destroyed.
+        if (account->incarnation != incarnation_) {
+            continue;
+        }
+
+        if constexpr (!traits::eip_8246_active()) {
+            account.reset();
+            continue;
+        }
+
+        // EIP-8246: keep the account as balance-only. Mutate in place: the
+        // incarnation is the storage-generation key the commit builders read.
+        account->nonce = 0;
+        account->code_hash = NULL_HASH;
+        if (is_empty(*account)) { // EIP-161
+            account.reset();
+            continue;
+        }
+        zero_storage(it.first, account_state);
     }
 }
 

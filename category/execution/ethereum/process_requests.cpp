@@ -55,9 +55,6 @@ Result<byte_string> system_call(
     BlockHeader const &header, Address const &contract_address,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx)
 {
-    constexpr auto SYSTEM_ADDRESS =
-        0xfffffffffffffffffffffffffffffffffffffffe_address;
-
     // Per EIP-7002/EIP-7251: if there is no code at the predeploy address,
     // the block MUST be marked invalid.
     auto const hash = state.get_code_hash(contract_address);

@@ -37,7 +37,9 @@
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/status_code.h>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
@@ -51,6 +53,7 @@
 
 #include <test_resource_data.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -70,6 +73,22 @@ namespace
 
     constexpr auto a = 0x5353535353535353535353535353535353535353_address;
     constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
+
+    // Receipt-side logs (State::store_log) must match the expected frame logs,
+    // position aside; the frame alone would still pass with store_log deleted.
+    void expect_receipt_logs_match(
+        State &state, std::vector<CallFrame::Log> const &frame_logs)
+    {
+        ASSERT_EQ(state.logs().size(), frame_logs.size());
+        for (size_t i = 0; i < frame_logs.size(); ++i) {
+            EXPECT_EQ(state.logs()[i], frame_logs[i].log);
+        }
+    }
+
+    // The eip_7708_active() branches below only test anything if the matrix
+    // has revisions where the rule is on.
+    static_assert(EvmTraits<MONAD_ETH_AMSTERDAM>::eip_7708_active());
+    static_assert(MonadTraits<MONAD_NEXT>::eip_7708_active());
 }
 
 TEST(CallFrame, to_json)
@@ -208,7 +227,26 @@ TYPED_TEST(TraitsTest, execute_success)
         .logs = std::vector<CallFrame::Log>{},
     };
 
+    if constexpr (TestFixture::Trait::eip_7708_active()) {
+        // EIP-7708: the top-level value transfer emits a Transfer log on the
+        // consensus path (no trace_transfers needed), from SYSTEM_ADDRESS.
+        expected.logs->push_back(
+            {{
+                 .data =
+                     byte_string{store_be_as<bytes32_t>(uint256_t{0x10000})},
+                 .topics =
+                     std::vector{
+                         0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
+                         abi_encode_address(sender),
+                         abi_encode_address(ADDR_B),
+                     },
+                 .address = SYSTEM_ADDRESS,
+             },
+             0});
+    }
+
     EXPECT_EQ(call_frames[0], expected);
+    expect_receipt_logs_match(s, *expected.logs);
 }
 
 TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
@@ -696,6 +734,41 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
     EXPECT_EQ(call_frames[3].value, 0u); // First contract had zero balance
 }
 
+namespace
+{
+    // Expected traced logs for the given ERC-7528 synthetics: with EIP-7708
+    // active each is followed by its SYSTEM_ADDRESS twin.
+    template <class Traits>
+    std::vector<CallFrame::Log>
+    expected_transfer_logs(std::vector<CallFrame::Log> const &synthetics)
+    {
+        std::vector<CallFrame::Log> expected;
+        for (auto const &synthetic : synthetics) {
+            expected.push_back(synthetic);
+            if constexpr (Traits::eip_7708_active()) {
+                CallFrame::Log consensus = synthetic;
+                consensus.log.address = SYSTEM_ADDRESS;
+                expected.push_back(consensus);
+            }
+        }
+        return expected;
+    }
+
+    // Index of the nth ERC-7528 synthetic within a frame's log vector.
+    template <class Traits>
+    constexpr size_t synthetic_log_index(size_t const n)
+    {
+        return Traits::eip_7708_active() ? 2 * n : n;
+    }
+
+    // Number of traced log entries produced by n value transfers.
+    template <class Traits>
+    constexpr size_t transfer_log_count(size_t const n)
+    {
+        return Traits::eip_7708_active() ? 2 * n : n;
+    }
+}
+
 TYPED_TEST(TraitsTest, simulate_v1_trace)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -776,7 +849,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
         .gas_used = 21'000,
         .status = MONAD_STATUS_SUCCESS,
         .depth = 0,
-        .logs = std::vector<CallFrame::Log>{{
+        .logs = expected_transfer_logs<typename TestFixture::Trait>({{
             {
                 .data =
                     byte_string{store_be_as<bytes32_t, uint256_t>(1'000'000)},
@@ -786,13 +859,14 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
                         0x0000000000000000000000000000000000000000000000000000000000000100_bytes32,
                         0x0000000000000000000000000000000000000000000000000000000000000101_bytes32,
                     },
-                .address = 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address,
+                .address = SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
             },
             0,
-        }},
+        }}),
     };
 
     EXPECT_EQ(call_frames[0], expected);
+    expect_receipt_logs_match(s, *expected.logs);
 }
 
 TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
@@ -879,9 +953,11 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
     EXPECT_EQ(call_frames[1].type, CallType::SELFDESTRUCT);
     EXPECT_EQ(call_frames[1].value, 1000u);
 
-    // The synthetic Transfer log appears in the parent CALL frame
+    // The synthetic Transfer log appears in the parent CALL frame, followed by
+    // the consensus log once EIP-7708 is active.
+    using Trait = typename TestFixture::Trait;
     ASSERT_TRUE(call_frames[0].logs.has_value());
-    ASSERT_EQ(call_frames[0].logs->size(), 1);
+    ASSERT_EQ(call_frames[0].logs->size(), transfer_log_count<Trait>(1));
 
     CallFrame::Log const expected_log{
         {
@@ -892,12 +968,15 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
                     0x0000000000000000000000000000000000000000000000000000000000000101_bytes32,
                     0x0000000000000000000000000000000000000000000000000000000000000102_bytes32,
                 },
-            .address = 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address,
+            .address = SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
         },
         1, // position: after the selfdestruct sub-frame
     };
 
-    EXPECT_EQ(call_frames[0].logs->at(0), expected_log);
+    EXPECT_EQ(
+        *call_frames[0].logs, expected_transfer_logs<Trait>({expected_log}));
+    EXPECT_EQ(
+        call_frames[0].logs->at(synthetic_log_index<Trait>(0)), expected_log);
 }
 
 TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
@@ -1124,13 +1203,15 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
 
     EXPECT_EQ(result.status_code, EVMC_SUCCESS);
 
+    using Trait = typename TestFixture::Trait;
+
     ASSERT_EQ(call_frames.size(), 5);
     ASSERT_TRUE(call_frames[0].logs.has_value());
     ASSERT_EQ(call_frames[0].logs->size(), 0);
     EXPECT_EQ(call_frames[0].type, CallType::CALL);
 
     ASSERT_TRUE(call_frames[1].logs.has_value());
-    ASSERT_EQ(call_frames[1].logs->size(), 1);
+    ASSERT_EQ(call_frames[1].logs->size(), transfer_log_count<Trait>(1));
     EXPECT_EQ(call_frames[1].type, CallType::CALL);
 
     ASSERT_TRUE(call_frames[2].logs.has_value());
@@ -1138,7 +1219,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     EXPECT_EQ(call_frames[2].type, CallType::SELFDESTRUCT);
 
     ASSERT_TRUE(call_frames[3].logs.has_value());
-    ASSERT_EQ(call_frames[3].logs->size(), 2);
+    ASSERT_EQ(call_frames[3].logs->size(), transfer_log_count<Trait>(2));
     EXPECT_EQ(call_frames[3].type, CallType::CALL);
 
     ASSERT_TRUE(call_frames[4].logs.has_value());
@@ -1148,7 +1229,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     static constexpr auto transfer_signature =
         abi_encode_event_signature("Transfer(address,address,uint256)");
 
-    // call_frames[1].logs[0] should contain a Transfer event from
+    // The synthetic in call_frames[1] should be a Transfer event from
     // `SELFDESTRUCT_CONTRACT_ADDR` to `INTERMEDIARY_CONTRACT_ADDR` with value
     // 1'000'000 due to the selfdestruct.
     {
@@ -1163,13 +1244,15 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
                      "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
-        EXPECT_EQ(call_frames[1].logs->at(0).log.topics, expected_topics);
-        EXPECT_EQ(call_frames[1].logs->at(0).log.data, expected_data);
+        auto const &log =
+            call_frames[1].logs->at(synthetic_log_index<Trait>(0));
+        EXPECT_EQ(log.log.topics, expected_topics);
+        EXPECT_EQ(log.log.data, expected_data);
     }
 
     std::vector<CallFrame::Log> const &logs = *call_frames[3].logs;
 
-    // call_frames[3].logs[0] should contain a Transfer event from
+    // The first synthetic in call_frames[3] should be a Transfer event from
     // `INTERMEDIARY_CONTRACT_ADDR` to `SELFDESTRUCT_CONTRACT_ADDR` with value
     // 1'000'000 due to the call, which revives the selfdestruct contract.
     {
@@ -1183,10 +1266,11 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
                      "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
-        EXPECT_EQ(logs[0].log.topics, expected_topics);
-        EXPECT_EQ(logs[0].log.data, expected_data);
+        EXPECT_EQ(
+            logs[synthetic_log_index<Trait>(0)].log.topics, expected_topics);
+        EXPECT_EQ(logs[synthetic_log_index<Trait>(0)].log.data, expected_data);
     }
-    // call_frames[3].logs[1] should contain a Transfer event from
+    // The second synthetic in call_frames[3] should be a Transfer event from
     // `SELFDESTRUCT_CONTRACT_ADDR` to `INTERMEDIARY_CONTRACT_ADDR` with value
     // 1'000'000 due to the selfdestruct.
     {
@@ -1201,8 +1285,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
                      "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
-        EXPECT_EQ(logs[1].log.topics, expected_topics);
-        EXPECT_EQ(logs[1].log.data, expected_data);
+        EXPECT_EQ(
+            logs[synthetic_log_index<Trait>(1)].log.topics, expected_topics);
+        EXPECT_EQ(logs[synthetic_log_index<Trait>(1)].log.data, expected_data);
     }
 }
 
@@ -1380,6 +1465,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
 {
     static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BYZANTIUM);
 
+    using Trait = typename TestFixture::Trait;
+
     // This test checks that no events are emitted for self-transfers.
     // Furthermore, it checks that:
     // * CALL: emits an event with value to non-self
@@ -1522,21 +1609,24 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
             ASSERT_TRUE(call_frames[1].logs.has_value());
             EXPECT_EQ(call_frames[1].type, CallType::CALL);
             ASSERT_TRUE(call_frames[1].logs.has_value());
-            ASSERT_EQ(call_frames[1].logs->size(), 1);
+            ASSERT_EQ(
+                call_frames[1].logs->size(), transfer_log_count<Trait>(1));
 
             std::vector<bytes32_t> expected_topics{
                 abi_encode_event_signature("Transfer(address,address,uint256)"),
                 abi_encode_address(ADDR_A),
                 abi_encode_address(ADDR_B)};
 
-            EXPECT_EQ(call_frames[1].logs->at(0).log.topics, expected_topics);
+            auto const &synthetic =
+                call_frames[1].logs->at(synthetic_log_index<Trait>(0));
+            EXPECT_EQ(synthetic.log.topics, expected_topics);
 
             byte_string const expected_data =
                 from_hex("0x0000000000000000000000000000000000000000000000000"
                          "000000000000001")
                     .value();
 
-            EXPECT_EQ(call_frames[1].logs->at(0).log.data, expected_data);
+            EXPECT_EQ(synthetic.log.data, expected_data);
         }
         else { // CALLCODE, DELEGATECALL, or STATICCALL
             ASSERT_EQ(call_frames.size(), 2);

@@ -111,7 +111,7 @@ namespace
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
             mpt::OnDiskDbConfig{
-                .append = false, .dbname_paths = {path}, .chunk_capacity = 24}};
+                .append = false, .dbname_path = path, .chunk_capacity = 24}};
         monad::mpt::test::DbAccessor::aux(db)
             .metadata_ctx()
             .set_state_machine_kind(
@@ -225,11 +225,11 @@ namespace
             , sdb{make_server_machine(),
                   OnDiskDbConfig{
                       .append = true,
-                      .dbname_paths = {sdbname},
+                      .dbname_path = sdbname,
                       .chunk_capacity = 24}}
             , stdb{sdb}
             , sctx{stdb}
-            , io_ctx{mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {sdbname}}}
+            , io_ctx{mpt::ReadOnlyOnDiskDbConfig{.dbname_path = sdbname}}
             , ro{io_ctx}
             , revision_config{MIP_8_ACTIVE ? POST_MIP8 : PRE_MIP8}
         {
@@ -241,7 +241,7 @@ namespace
                 std::make_unique<OnDiskMachine>(),
                 OnDiskDbConfig{
                     .append = true,
-                    .dbname_paths = {cdbname},
+                    .dbname_path = cdbname,
                     .chunk_capacity = 24}};
             [[maybe_unused]] mpt::Db secondary =
                 primary.activate_secondary_timeline(
@@ -398,7 +398,7 @@ TYPED_TEST(StateSyncTestBothForks, sync_from_latest)
             std::make_unique<OnDiskMachine>(),
             OnDiskDbConfig{
                 .append = true,
-                .dbname_paths = {this->cdbname},
+                .dbname_path = this->cdbname,
                 .chunk_capacity = 24}};
         TrieDb tdb{db};
         // In dual-db set up, both primary and secondary should stay in
@@ -505,7 +505,7 @@ TEST_F(StateSyncFixture, sync_from_empty)
     mpt::Db cdb{
         std::make_unique<OnDiskMachine>(),
         mpt::OnDiskDbConfig{
-            .append = true, .dbname_paths = {cdbname}, .chunk_capacity = 24}};
+            .append = true, .dbname_path = cdbname, .chunk_capacity = 24}};
     TrieDb ctdb{cdb};
     ctdb.set_block_and_prefix(cdb.get_latest_finalized_version());
     EXPECT_EQ(ctdb.get_block_number(), 1'000'000);
@@ -542,7 +542,7 @@ TYPED_TEST(StateSyncTestBothForks, sync_from_some)
             std::make_unique<OnDiskMachine>(),
             OnDiskDbConfig{
                 .append = true,
-                .dbname_paths = {this->cdbname},
+                .dbname_path = this->cdbname,
                 .chunk_capacity = 24}};
         TrieDb tdb{db};
         auto db2_opt =
@@ -699,7 +699,7 @@ TYPED_TEST(StateSyncTestBothForks, sync_from_some)
     EXPECT_TRUE(monad_statesync_client_finalize(this->cctx));
 
     // find transaction trie
-    mpt::RODb cdb{ReadOnlyOnDiskDbConfig{.dbname_paths = {this->cdbname}}};
+    mpt::RODb cdb{ReadOnlyOnDiskDbConfig{.dbname_path = this->cdbname}};
     for (auto const nibble :
          {RECEIPT_NIBBLE,
           TRANSACTION_NIBBLE,
@@ -720,7 +720,7 @@ TYPED_TEST(StateSyncTestBothForks, deletion_proposal)
             std::make_unique<OnDiskMachine>(),
             OnDiskDbConfig{
                 .append = true,
-                .dbname_paths = {this->cdbname},
+                .dbname_path = this->cdbname,
                 .chunk_capacity = 24}};
         TrieDb tdb{db};
         auto db2_opt =
@@ -1058,9 +1058,7 @@ TEST_F(StateSyncFixture, sync_client_has_proposals)
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
             OnDiskDbConfig{
-                .append = true,
-                .dbname_paths = {cdbname},
-                .chunk_capacity = 24}};
+                .append = true, .dbname_path = cdbname, .chunk_capacity = 24}};
         TrieDb tdb{db};
         tdb.reset_root(load_header({}, db, BlockHeader{.number = 0}), 0);
         for (uint64_t n = 1; n <= 249; ++n) {

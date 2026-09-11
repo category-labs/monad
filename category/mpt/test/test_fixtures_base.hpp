@@ -487,9 +487,8 @@ namespace monad::test
                     abort();
                 }
                 ::close(fd);
-                std::filesystem::path temppath2(temppath);
                 return MONAD_ASYNC_NAMESPACE::storage_pool(
-                    {&temppath2, 1},
+                    temppath,
                     MONAD_ASYNC_NAMESPACE::storage_pool::mode::create_if_needed,
                     flags);
             }()};
@@ -522,17 +521,15 @@ namespace monad::test
 
             ~state_t()
             {
-                for (auto const &device : pool.devices()) {
-                    auto const path = device.current_path();
-                    if (std::filesystem::exists(path)) {
-                        std::filesystem::remove(path);
-                    }
+                auto const path = pool.device().current_path();
+                if (std::filesystem::exists(path)) {
+                    std::filesystem::remove(path);
                 }
             }
 
             std::ostream &print(std::ostream &s)
             {
-                auto const v = pool.devices().front().capacity();
+                auto const v = pool.device().capacity();
                 std::cout << "\n   Storage pool capacity = " << v.first
                           << " consumed = " << v.second
                           << " chunks = " << pool.chunks(pool.seq);

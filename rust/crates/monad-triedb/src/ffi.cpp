@@ -37,7 +37,6 @@
 #include <memory>
 #include <optional>
 #include <utility>
-#include <vector>
 
 struct TriedbRoInner
 {
@@ -55,11 +54,10 @@ struct TriedbRoInner
     std::optional<monad::mpt::AsyncContext> secondary_async_ctx;
 
     explicit TriedbRoInner(
-        std::vector<std::filesystem::path> dbname_paths,
-        uint64_t const node_lru_max_mem)
+        std::filesystem::path dbname_path, uint64_t const node_lru_max_mem)
         : io_ctx{monad::mpt::ReadOnlyOnDiskDbConfig{
               .disable_mismatching_storage_pool_check = true,
-              .dbname_paths = std::move(dbname_paths)}}
+              .dbname_path = std::move(dbname_path)}}
         , db{io_ctx}
         , async_ctx{db, node_lru_max_mem}
     {
@@ -115,16 +113,27 @@ int triedb_open(
         return -1;
     }
 
-    std::vector<std::filesystem::path> paths;
+    std::filesystem::path path;
     std::error_code ec;
 
     if (std::filesystem::is_block_file(dbdirpath, ec)) {
-        paths.emplace_back(dbdirpath);
+        path = dbdirpath;
     }
     else if (!ec) {
-        for (auto const &file :
-             std::filesystem::directory_iterator(dbdirpath, ec)) {
-            paths.emplace_back(file.path());
+        // A directory names the database by holding its one storage device.
+        // directory_iterator is single pass, so take the entry before
+        // advancing to test for a second one.
+        std::filesystem::directory_iterator dir{dbdirpath, ec};
+        if (!ec && dir != std::filesystem::directory_iterator{}) {
+            path = dir->path();
+            dir.increment(ec);
+            if (!ec && dir != std::filesystem::directory_iterator{}) {
+                LOG_ERROR(
+                    "Database path {} holds more than one entry, but a "
+                    "database has exactly one storage device.",
+                    dbdirpath);
+                return -2;
+            }
         }
     }
 
@@ -133,8 +142,13 @@ int triedb_open(
         return -2;
     }
 
+    if (path.empty()) {
+        LOG_ERROR("Database path {} names no storage device", dbdirpath);
+        return -2;
+    }
+
     try {
-        *db = new TriedbRoInner{std::move(paths), node_lru_max_mem};
+        *db = new TriedbRoInner{std::move(path), node_lru_max_mem};
     }
     catch (std::exception const &e) {
         std::cerr << e.what();

@@ -55,7 +55,6 @@
 #include <iostream>
 #include <iterator>
 #include <map>
-#include <memory>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -155,7 +154,7 @@ struct chunk_info_restore_t
     monad::mpt::detail::db_metadata::chunk_info_t const metadata;
     std::span<std::byte const> const compressed;
 
-    monad::async::storage_pool::chunk_t *chunk_ptr;
+    std::optional<monad::async::storage_pool::chunk_t> chunk;
     std::vector<std::byte> nonchunkstorage;
     std::future<size_t> decompression_thread;
     bool const is_uncompressed;
@@ -264,7 +263,7 @@ struct chunk_info_restore_t
                 throw std::runtime_error("ZSTD compression failed");
             }
             if (nonchunkstorage.empty()) {
-                auto [wfd, offset] = chunk_ptr->write_fd(written);
+                auto [wfd, offset] = chunk->write_fd(written);
                 if (::pwrite(
                         wfd,
                         decompressed.data(),
@@ -277,7 +276,7 @@ struct chunk_info_restore_t
         }
         else {
             if (nonchunkstorage.empty()) {
-                auto [wfd, offset] = chunk_ptr->write_fd(compressed.size());
+                auto [wfd, offset] = chunk->write_fd(compressed.size());
                 if (::pwrite(
                         wfd,
                         compressed.data(),
@@ -299,7 +298,7 @@ struct chunk_info_restore_t
 
 struct chunk_info_archive_t
 {
-    monad::async::storage_pool::chunk_t const *chunk_ptr;
+    monad::async::storage_pool::chunk_t const chunk;
     la_int64_t const metadata;
 
     void *compressed_storage{nullptr};
@@ -310,15 +309,14 @@ struct chunk_info_archive_t
     std::future<void> compression_thread;
 
     chunk_info_archive_t(
-        monad::async::storage_pool::chunk_t *chunk_ptr_,
-        la_int64_t const metadata_)
-        : chunk_ptr(std::move(chunk_ptr_))
+        monad::async::storage_pool::chunk_t chunk_, la_int64_t const metadata_)
+        : chunk(std::move(chunk_))
         , metadata(metadata_)
     {
     }
 
     chunk_info_archive_t(chunk_info_archive_t &&o) noexcept
-        : chunk_ptr(std::move(o.chunk_ptr))
+        : chunk(o.chunk)
         , metadata(o.metadata)
         , compressed_storage(o.compressed_storage)
         , compressed_storage_size(o.compressed_storage_size)
@@ -430,11 +428,10 @@ struct impl_t
     bool state_machine_explicit = false;
     std::optional<uint64_t> rewind_database_to;
     std::optional<uint64_t> reset_history_length;
-    bool create_chunk_increasing = false;
     bool debug_printing = false;
     std::filesystem::path archive_database;
     std::filesystem::path restore_database;
-    std::vector<std::filesystem::path> storage_paths;
+    std::filesystem::path storage_path;
     int compression_level = 3;
 
     std::optional<MONAD_ASYNC_NAMESPACE::storage_pool> pool;
@@ -479,13 +476,12 @@ public:
         do {
             auto const chunkid = item->index(aux.metadata_ctx().main());
             count++;
-            auto &chunk = pool->chunk(pool->seq, chunkid);
-            MONAD_ASSERT(chunk.zone_id().second == chunkid);
+            auto const chunk = pool->chunk(pool->seq, chunkid);
             if constexpr (!std::is_void_v<T>) {
                 if (list != nullptr) {
                     la_int64_t const metadata =
                         std::bit_cast<la_int64_t>(*item);
-                    list->emplace_back(std::addressof(chunk), metadata);
+                    list->emplace_back(chunk, metadata);
                 }
             }
             total_capacity += chunk.capacity();
@@ -728,8 +724,8 @@ public:
                 i.nonchunkstorage.resize(size_t(decompressed_len));
             }
             else {
-                i.chunk_ptr = std::addressof(pool->chunk(i.type, i.chunk_id));
-                if (decompressed_len > i.chunk_ptr->capacity()) {
+                i.chunk.emplace(pool->chunk(i.type, i.chunk_id));
+                if (decompressed_len > i.chunk->capacity()) {
                     std::stringstream ss;
                     ss << "DB archive " << restore_database << " chunk id "
                        << i.chunk_id << " uses "
@@ -737,7 +733,7 @@ public:
                        << " after decompression however the destination "
                           "pool's "
                           "chunk capacity is "
-                       << print_bytes(i.chunk_ptr->capacity())
+                       << print_bytes(i.chunk->capacity())
                        << ". You will need to configure a destination pool "
                           "with larger chunks.";
                     throw std::runtime_error(ss.str());
@@ -897,7 +893,7 @@ public:
                               "version.";
                         throw std::runtime_error(ss.str());
                     }
-                    auto &cnv_chunk =
+                    auto cnv_chunk =
                         pool->chunk(monad::async::storage_pool::cnv, 0);
                     auto [wfd, offset] = cnv_chunk.write_fd(0);
                     auto *new_metadata_map = ::mmap(
@@ -1269,10 +1265,10 @@ public:
             }
 
             auto map_chunk_into_memory = [this](chunk_info_archive_t &i) {
-                auto [fd2, offset] = i.chunk_ptr->read_fd();
+                auto [fd2, offset] = i.chunk.read_fd();
                 i.uncompressed_storage = ::mmap(
                     nullptr,
-                    i.chunk_ptr->size(),
+                    i.chunk.size(),
                     PROT_READ,
                     MAP_SHARED,
                     fd2,
@@ -1281,9 +1277,8 @@ public:
                     throw std::system_error(errno, std::system_category());
                 }
                 i.uncompressed = {
-                    (std::byte const *)i.uncompressed_storage,
-                    i.chunk_ptr->size()};
-                if (i.chunk_ptr->zone_id() == std::pair{pool->cnv, 0u}) {
+                    (std::byte const *)i.uncompressed_storage, i.chunk.size()};
+                if (i.chunk.zone_id() == std::pair{pool->cnv, 0u}) {
                     // The first conventional chunk is where
                     // triedb metadata is stored. It has two
                     // copies with the backup copy stored half
@@ -1307,8 +1302,7 @@ public:
             // secondary_timeline_active_ is set.
             std::vector<chunk_info_archive_t> cnv_infos;
             cnv_infos.reserve(pool->chunks(pool->cnv));
-            cnv_infos.emplace_back(
-                std::addressof(pool->chunk(pool->cnv, 0)), -1);
+            cnv_infos.emplace_back(pool->chunk(pool->cnv, 0), -1);
             map_chunk_into_memory(cnv_infos.back());
 
             std::vector<uint32_t> cnv_chunk_ids;
@@ -1357,21 +1351,19 @@ public:
             tocompress.push_back(&cnv_infos.back());
             for (size_t k = 1; k < cnv_chunk_ids.size(); k++) {
                 cnv_infos.emplace_back(
-                    std::addressof(pool->chunk(pool->cnv, cnv_chunk_ids[k])),
-                    -1);
+                    pool->chunk(pool->cnv, cnv_chunk_ids[k]), -1);
                 tocompress.push_back(&cnv_infos.back());
             }
             if (debug_printing) {
                 std::cerr << "Fast list:";
             }
             for (auto &i : fast) {
-                if (i.chunk_ptr->size() > 0) {
+                if (i.chunk.size() > 0) {
                     tocompress.push_back(&i);
                     MONAD_ASSERT(
-                        i.chunk_ptr->zone_id().second <
-                        pool->chunks(pool->seq));
+                        i.chunk.zone_id().second < pool->chunks(pool->seq));
                     if (debug_printing) {
-                        std::cerr << " " << i.chunk_ptr->zone_id().second;
+                        std::cerr << " " << i.chunk.zone_id().second;
                     }
                 }
             }
@@ -1379,13 +1371,12 @@ public:
                 std::cerr << "\nSlow list:";
             }
             for (auto &i : slow) {
-                if (i.chunk_ptr->size() > 0) {
+                if (i.chunk.size() > 0) {
                     tocompress.push_back(&i);
                     MONAD_ASSERT(
-                        i.chunk_ptr->zone_id().second <
-                        pool->chunks(pool->seq));
+                        i.chunk.zone_id().second < pool->chunks(pool->seq));
                     if (debug_printing) {
-                        std::cerr << " " << i.chunk_ptr->zone_id().second;
+                        std::cerr << " " << i.chunk.zone_id().second;
                     }
                 }
             }
@@ -1427,8 +1418,7 @@ public:
                         auto const unentry = monad::make_scope_exit(
                             [&]() noexcept { archive_entry_free(entry); });
                         std::string leafname;
-                        auto const [chunktype, chunkid] =
-                            i.chunk_ptr->zone_id();
+                        auto const [chunktype, chunkid] = i.chunk.zone_id();
                         if (chunktype == pool->cnv) {
                             leafname.append("cnv/");
                         }
@@ -1508,9 +1498,8 @@ int main_impl(
 3. A file on a filing system (use 'truncate -s 1T sparsefile' to create and
 set it to the desired size beforehand).
 
-The storage source order must be identical to database creation, as must be
-the source type, size and device id, otherwise the database cannot be
-opened.
+The storage source must be the same device the database was created on, of
+the same type, size and device id, otherwise the database cannot be opened.
 )");
     try {
         impl_t impl(cout, cerr);
@@ -1521,8 +1510,8 @@ opened.
             cli_ops_group->require_option(0, 1);
             cli.add_option(
                    "--storage",
-                   impl.storage_paths,
-                   "one or more sources of block storage (must be at least "
+                   impl.storage_path,
+                   "the source of block storage (must be at least "
                    "<chunk_capacity> + 4Kb long).")
                 ->required();
             cli.add_flag(
@@ -1640,11 +1629,6 @@ opened.
                     }
                     return "";
                 });
-            cli.add_flag(
-                "--chunk-increasing",
-                impl.create_chunk_increasing,
-                "if creating a new database, order the chunks sequentially "
-                "increasing instead of randomly mixed.");
             cli.add_option(
                    "--state-machine",
                    impl.state_machine,
@@ -1689,9 +1673,6 @@ opened.
             auto mode =
                 MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing;
             impl.flags.set_chunk_capacity(impl.chunk_capacity);
-            if (impl.create_chunk_increasing) {
-                impl.flags.interleave_chunks_evenly = true;
-            }
             impl.flags.open_read_only = true;
             impl.flags.open_read_only_allow_dirty =
                 impl.allow_dirty || !impl.archive_database.empty();
@@ -1712,11 +1693,8 @@ opened.
                 impl.flags.open_read_only_allow_dirty = false;
                 std::stringstream ss;
                 ss << "WARNING: --create-empty will destroy all "
-                      "existing data on";
-                for (auto const &i : impl.storage_paths) {
-                    ss << " " << i;
-                }
-                ss << ". Are you sure?\n";
+                      "existing data on "
+                   << impl.storage_path << ". Are you sure?\n";
                 impl.cli_ask_question(ss.str().c_str());
             }
             else if (impl.create_database) {
@@ -1731,11 +1709,8 @@ opened.
                 impl.flags.open_read_only_allow_dirty = false;
                 std::stringstream ss;
                 ss << "WARNING: --truncate will destroy all "
-                      "existing data on";
-                for (auto const &i : impl.storage_paths) {
-                    ss << " " << i;
-                }
-                ss << ". Are you sure?\n";
+                      "existing data on "
+                   << impl.storage_path << ". Are you sure?\n";
                 impl.cli_ask_question(ss.str().c_str());
             }
             else if (impl.rewind_database_to || impl.reset_history_length) {
@@ -1756,11 +1731,11 @@ opened.
             }
             if (mode == MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate) {
                 MONAD_ASYNC_NAMESPACE::storage_pool const pool{
-                    {impl.storage_paths}, mode, impl.flags};
+                    impl.storage_path, mode, impl.flags};
                 (void)pool;
                 mode = MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing;
             }
-            impl.pool.emplace(std::span{impl.storage_paths}, mode, impl.flags);
+            impl.pool.emplace(impl.storage_path, mode, impl.flags);
         }
 
         if (!impl.restore_database.empty()) {
@@ -1920,7 +1895,8 @@ opened.
             auto const default_width = int(cout.width());
             auto const default_prec = int(cout.precision());
             std::fixed(cout);
-            for (auto const &device : impl.pool->devices()) {
+            {
+                auto const &device = impl.pool->device();
                 auto const cap = device.capacity();
                 cout << "\n   " << std::setw(15) << print_bytes(cap.first)
                      << std::setw(15) << print_bytes(cap.second) << std::setw(6)

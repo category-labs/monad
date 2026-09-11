@@ -59,26 +59,13 @@ class AsyncIO final
 {
 private:
     friend class read_single_buffer_sender;
-    using _storage_pool = class storage_pool;
-    using chunk_t = _storage_pool::chunk_t;
-
-    struct chunk_ref_
-    {
-        chunk_t &chunk;
-        int io_uring_read_fd{-1}, io_uring_write_fd{-1}; // NOT POSIX fds!
-
-        constexpr explicit chunk_ref_(chunk_t &chunk_)
-            : chunk{chunk_}
-            , io_uring_read_fd{chunk.read_fd().first}
-            , io_uring_write_fd{chunk.write_fd(0).first}
-        {
-        }
-    };
-
     pid_t const owning_tid_;
     class storage_pool *storage_pool_{nullptr};
-    chunk_ref_ cnv_chunk_;
-    std::vector<chunk_ref_> seq_chunks_;
+    // The pool has one device, so every chunk is read and written through its
+    // descriptor: one registered-file index serves all of them. NOT POSIX fds.
+    int io_uring_read_fd_{-1}, io_uring_write_fd_{-1};
+    size_t seq_chunks_count_{0};
+    file_offset_t chunk_capacity_{0};
 
     monad::io::Ring &uring_, *wr_uring_{nullptr};
     monad::io::Buffers &rwbuf_;
@@ -154,17 +141,17 @@ public:
 
     size_t chunk_count() const noexcept
     {
-        return seq_chunks_.size();
+        return seq_chunks_count_;
     }
 
     file_offset_t chunk_capacity(size_t const id) const noexcept
     {
         MONAD_ASSERT_PRINTF(
-            id < seq_chunks_.size(),
+            id < seq_chunks_count_,
             "id %zu seq chunks size %zu",
             id,
-            seq_chunks_.size());
-        return seq_chunks_[id].chunk.capacity();
+            seq_chunks_count_);
+        return chunk_capacity_;
     }
 
     //! The instance for this thread
@@ -647,7 +634,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 272);
+static_assert(sizeof(AsyncIO) == 256);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

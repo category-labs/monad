@@ -103,7 +103,6 @@ public:
 
 struct DbStorageStats
 {
-    // Both summed across all storage-pool devices.
     uint64_t disk_capacity_bytes;
     uint64_t disk_used_bytes;
 };

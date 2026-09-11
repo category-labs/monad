@@ -304,7 +304,7 @@ int main(int const argc, char *argv[])
 
     unsigned n_slices = 20;
     bool append = false;
-    std::vector<std::filesystem::path> dbname_paths;
+    std::filesystem::path dbname_path;
     std::filesystem::path csv_stats_path;
     uint64_t key_offset = 0;
     unsigned sq_thread_cpu = 15;
@@ -336,10 +336,7 @@ int main(int const argc, char *argv[])
                 "--append",
                 append,
                 "append to the latest block in existing db");
-            cli.add_option(
-                "--db-names",
-                dbname_paths,
-                "db file names, can have more than one");
+            cli.add_option("--db-name", dbname_path, "db file name");
             cli.add_option(
                 "--csv-stats", csv_stats_path, "CSV stats file name");
             cli.add_option(
@@ -467,10 +464,10 @@ int main(int const argc, char *argv[])
             auto keccak_keys = std::vector<monad::byte_string>{keccak_cap};
             auto keccak_values = std::vector<monad::byte_string>{keccak_cap};
 
-            if (dbname_paths.empty()) {
-                dbname_paths.emplace_back("test.db");
+            if (dbname_path.empty()) {
+                dbname_path = "test.db";
             }
-            for (auto const &dbname_path : dbname_paths) {
+            {
                 if (!std::filesystem::exists(dbname_path)) {
                     int const fd = ::open(
                         dbname_path.c_str(),
@@ -492,7 +489,7 @@ int main(int const argc, char *argv[])
 
             { /* upsert test begin */
                 MONAD_ASYNC_NAMESPACE::storage_pool pool{
-                    {dbname_paths},
+                    dbname_path,
                     append
                         ? MONAD_ASYNC_NAMESPACE::storage_pool::mode::
                               open_existing
@@ -663,10 +660,7 @@ int main(int const argc, char *argv[])
                             end_test - begin_test)
                             .count()) /
                     1000000.0;
-                uint64_t bytes_used = 0;
-                for (auto const &device : pool.devices()) {
-                    bytes_used += device.capacity().second;
-                }
+                uint64_t const bytes_used = pool.device().capacity().second;
                 printf(
                     "\nTotal test time: %f secs. Total storage consumed: %f "
                     "Gb\n",
@@ -701,7 +695,7 @@ int main(int const argc, char *argv[])
                 MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flag{};
                 flag.open_read_only = true;
                 MONAD_ASYNC_NAMESPACE::storage_pool pool{
-                    {dbname_paths},
+                    dbname_path,
                     MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing,
                     flag};
                 auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{pool, rwbuf};

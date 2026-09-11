@@ -22,10 +22,8 @@
 
 #include <atomic>
 #include <filesystem>
-#include <mutex>
-#include <span>
+#include <type_traits>
 #include <variant>
-#include <vector>
 
 MONAD_ASYNC_NAMESPACE_BEGIN
 
@@ -97,7 +95,7 @@ public:
             // Preceding this is an array of uint32_t of chunk bytes used
 
             uint32_t spare_[12]; // set aside for flags later
-            uint32_t num_cnv_chunks; // number of cnv chunks per device
+            uint32_t num_cnv_chunks; // conventional chunks ahead of the rest
             uint32_t config_hash; // hash of this configuration
             uint32_t chunk_capacity;
             uint8_t magic[4]; // "MND0" for v1 of this metadata
@@ -192,44 +190,34 @@ public:
         std::pair<file_offset_t, file_offset_t> capacity() const;
     };
 
-    /*! \brief A zone chunk from storage, which is always managed by a shared
-    ptr. When the shared ptr count reaches zero, any file descriptors or other
-    resources associated with the chunk are released.
+    /*! \brief A chunk of storage, derived from its id and cheap to copy. It
+    borrows the pool's device -- including the descriptor every chunk reads
+    and writes through -- so it must not outlive the pool.
      */
     class chunk_t
     {
         friend class storage_pool;
 
         device_t &device_;
-        int read_fd_{-1}, write_fd_{-1};
         file_offset_t const offset_{file_offset_t(-1)},
             capacity_{file_offset_t(-1)};
         uint32_t const chunkid_within_device_{uint32_t(-1)};
         uint32_t const chunkid_within_zone_{uint32_t(-1)};
-        bool const owns_readfd_{false}, owns_writefd_{false},
-            append_only_{false};
+        bool const append_only_{false};
 
     public:
         constexpr chunk_t(
-            device_t &device, int const read_fd, int const write_fd,
-            file_offset_t const offset, file_offset_t const capacity,
-            uint32_t const chunkid_within_device,
-            uint32_t const chunkid_within_zone, bool const owns_readfd,
-            bool const owns_writefd, bool const append_only)
+            device_t &device, file_offset_t const offset,
+            file_offset_t const capacity, uint32_t const chunkid_within_device,
+            uint32_t const chunkid_within_zone, bool const append_only)
             : device_(device)
-            , read_fd_(read_fd)
-            , write_fd_(write_fd)
             , offset_(offset)
             , capacity_(capacity)
             , chunkid_within_device_(chunkid_within_device)
             , chunkid_within_zone_(chunkid_within_zone)
-            , owns_readfd_(owns_readfd)
-            , owns_writefd_(owns_writefd)
             , append_only_(append_only)
         {
         }
-
-        virtual ~chunk_t();
 
         //! \brief Returns the storage device this chunk is stored upon
         device_t &device() noexcept
@@ -259,7 +247,7 @@ public:
         //! with any offset which needs to be added to any i/o performed with it
         std::pair<int, file_offset_t> read_fd() const noexcept
         {
-            return {read_fd_, offset_};
+            return {device_.readwritefd_, offset_};
         }
 
         //! \brief Returns a file descriptor able to write to the chunk, along
@@ -320,8 +308,6 @@ public:
         //! How much to shift left a bit to set chunk capacity during creation.
         //! The maximum is 32 (4Gb).
         uint32_t chunk_capacity : 5;
-        //! Whether to interleave chunks evenly during creation
-        uint32_t interleave_chunks_evenly : 1;
         //! Whether to open the database read-only
         uint32_t open_read_only : 1;
         //! Whether to open the database read-only allowing a dirty closed
@@ -338,12 +324,11 @@ public:
         //! message directing the operator to run monad-mpt --upgrade.
         uint32_t allow_migration : 1;
 
-        //! Number of conventional chunks to allocate per device. Default is 3.
+        //! Number of conventional chunks to allocate. Default is 3.
         uint32_t num_cnv_chunks;
 
         constexpr creation_flags()
             : chunk_capacity(28)
-            , interleave_chunks_evenly(false)
             , open_read_only(false)
             , open_read_only_allow_dirty(false)
             , disable_mismatching_storage_pool_check(false)
@@ -364,19 +349,26 @@ public:
 private:
     bool const is_read_only_, is_read_only_allow_dirty_, is_migration_allowed_,
         is_newly_truncated_;
-    std::vector<device_t> devices_;
+    device_t device_;
+    // A chunk's whole geometry follows from its id, so these counts are all
+    // the pool keeps per chunk type.
+    uint32_t cnv_chunks_count_{0}, seq_chunks_count_{0};
 
-    // Lock protects everything below this
-    mutable std::mutex lock_;
-
-    std::vector<chunk_t> chunks_[2];
-
-    device_t make_device_(
+    static device_t make_device_(
         mode op, device_t::type_t_ type, std::filesystem::path const &path,
         int fd, std::variant<uint64_t, device_t const *> dev_no_or_dev,
         creation_flags flags);
 
-    void fill_chunks_(creation_flags const &flags);
+    // device_ has const members and so must be built before the constructor
+    // body runs; each of these opens one source into a ready device_t.
+    static device_t open_device_(
+        std::filesystem::path const &source, mode op, creation_flags flags);
+    static device_t reopen_device_read_only_(device_t const &src);
+    static device_t make_anonymous_device_(off_t len, creation_flags flags);
+
+    // Stamps the config hash on a blank device, aborts if an existing one
+    // disagrees, and establishes the chunk counts.
+    void adopt_device_(creation_flags const &flags);
 
     struct clone_as_read_only_tag_
     {
@@ -385,11 +377,10 @@ private:
     storage_pool(storage_pool const *src, clone_as_read_only_tag_);
 
 public:
-    //! \brief Constructs a storage pool from the list of backing storage
-    //! sources
+    //! \brief Constructs a storage pool from its backing storage source
     explicit storage_pool(
-        std::span<std::filesystem::path const> sources,
-        mode mode = mode::create_if_needed, creation_flags flags = {});
+        std::filesystem::path const &source, mode mode = mode::create_if_needed,
+        creation_flags flags = {});
 
     //! \brief Constructs a storage pool from a temporary anonymous inode.
     //! Useful for test code.
@@ -399,6 +390,11 @@ public:
     //! specific size. Useful for test code.
     explicit storage_pool(
         use_anonymous_sized_inode_tag, off_t len, creation_flags flags = {});
+
+    // Copying would double-close the device descriptor and double-unmap its
+    // metadata.
+    storage_pool(storage_pool const &) = delete;
+    storage_pool &operator=(storage_pool const &) = delete;
 
     ~storage_pool();
 
@@ -431,29 +427,28 @@ public:
         return is_newly_truncated_;
     }
 
-    //! \brief Returns a list of the backing storage devices
-    std::span<device_t const> devices() const noexcept
+    //! \brief Returns the backing storage device
+    device_t const &device() const noexcept
     {
-        return {devices_};
+        return device_;
     }
 
     //! \brief Returns the number of chunks for the specified type
     size_t chunks(chunk_type const which) const noexcept
     {
-        return chunks_[which].size();
+        return which == cnv ? cnv_chunks_count_ : seq_chunks_count_;
     }
 
-    //! \brief Get an existing chunk, if it is activated
-    chunk_t &chunk(chunk_type which, uint32_t id);
+    //! \brief The chunk of this type with this id, by value. It borrows the
+    //! pool's device, so it must not outlive the pool.
+    chunk_t chunk(chunk_type which, uint32_t id);
 
     //! \brief Clones an existing storage pool as read-only
     storage_pool clone_as_read_only() const;
-
-private:
-    //! \brief Activate a chunk (i.e. open file descriptors to it, if necessary)
-    chunk_t activate_chunk(
-        chunk_type which, device_t &device, uint32_t id_within_device,
-        uint32_t id_within_zone);
 };
+
+// chunk() builds one of these per i/o, so nothing may need running when one
+// goes away.
+static_assert(std::is_trivially_destructible_v<storage_pool::chunk_t>);
 
 MONAD_ASYNC_NAMESPACE_END

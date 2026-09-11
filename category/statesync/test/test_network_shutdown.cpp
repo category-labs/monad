@@ -71,7 +71,7 @@ namespace
             (void)monad::mpt::Db{
                 std::make_unique<monad::OnDiskMachine>(),
                 monad::mpt::OnDiskDbConfig{
-                    .append = false, .dbname_paths = {path}}};
+                    .append = false, .dbname_path = path}};
         }
 
         TempDb(TempDb const &) = delete;
@@ -119,7 +119,7 @@ TEST(StateSyncThread, shutdown_via_jthread_stop_token)
     TempDb const db_file;
 
     monad::mpt::AsyncIOContext io_ctx{
-        monad::mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {db_file.path}}};
+        monad::mpt::ReadOnlyOnDiskDbConfig{.dbname_path = db_file.path}};
     monad::mpt::Db db{io_ctx};
     monad::TrieDb triedb(db);
 
@@ -144,7 +144,7 @@ TEST(StateSyncThread, shutdown_via_jthread_stop_token)
             .triedb = &triedb,
             .network = &*net,
             .ro_sq_thread_cpu = std::nullopt,
-            .dbname_paths = {db_file.path}});
+            .dbname_path = db_file.path});
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
@@ -186,7 +186,7 @@ TEST(StateSyncThread, shutdown_during_reconnect)
     TempDb const db_file;
 
     monad::mpt::AsyncIOContext io_ctx{
-        monad::mpt::ReadOnlyOnDiskDbConfig{.dbname_paths = {db_file.path}}};
+        monad::mpt::ReadOnlyOnDiskDbConfig{.dbname_path = db_file.path}};
     monad::mpt::Db db{io_ctx};
     monad::TrieDb triedb(db);
 
@@ -211,7 +211,7 @@ TEST(StateSyncThread, shutdown_during_reconnect)
             .triedb = &triedb,
             .network = &*net,
             .ro_sq_thread_cpu = std::nullopt,
-            .dbname_paths = {db_file.path}});
+            .dbname_path = db_file.path});
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 

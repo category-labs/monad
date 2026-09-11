@@ -100,7 +100,7 @@ namespace
         OnDiskDbConfig config{
             .compaction = true,
             .sq_thread_cpu = std::nullopt,
-            .dbname_paths = {dbname},
+            .dbname_path = dbname,
             .fixed_history_length = MPT_TEST_HISTORY_LENGTH,
             .chunk_capacity = 24};
         Db db{std::make_unique<StateMachineAlwaysMerkle>(), config};
@@ -506,7 +506,7 @@ namespace
 
         // One AsyncIOContext for both timelines: an AsyncIO is
         // one-per-thread, and two RO-blocking Dbs can share one.
-        AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_paths = {dbname}}};
+        AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
         Db ro_primary{io_ctx};
         Db ro_secondary{io_ctx, timeline_id::secondary};
         auto const primary_ctx = async_context_create(ro_primary);
@@ -592,7 +592,7 @@ namespace
         }
 
         {
-            ReadOnlyOnDiskDbConfig const ro_config{.dbname_paths = {dbname}};
+            ReadOnlyOnDiskDbConfig const ro_config{.dbname_path = dbname};
             RODb const ro_primary{ro_config};
             EXPECT_TRUE(ro_primary.timeline_active(timeline_id::secondary));
             auto const ro_secondary = ro_primary.open_secondary_timeline();
@@ -1026,7 +1026,7 @@ namespace
         OnDiskDbConfig config{
             .compaction = true,
             .sq_thread_cpu = std::nullopt,
-            .dbname_paths = {dbname},
+            .dbname_path = dbname,
             .fixed_history_length = SHORT_HISTORY,
             .chunk_capacity = 24};
         Db db{std::make_unique<StateMachineAlwaysMerkle>(), config};

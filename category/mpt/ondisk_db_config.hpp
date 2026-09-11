@@ -19,7 +19,6 @@
 
 #include <filesystem>
 #include <optional>
-#include <vector>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -36,7 +35,7 @@ struct OnDiskDbConfig
     unsigned wr_buffers{4};
     unsigned uring_entries{512};
     std::optional<unsigned> sq_thread_cpu{0};
-    std::vector<std::filesystem::path> dbname_paths{};
+    std::filesystem::path dbname_path{};
     int64_t file_size_db{512}; // truncate files to this size
     unsigned concurrent_read_io_limit{1024};
     // fixed history length if contains value, otherwise rely on db to adjust
@@ -66,7 +65,7 @@ struct ReadOnlyOnDiskDbConfig
     // default to disable sqpoll kernel thread since now ReadOnlyDb uses
     // blocking read
     std::optional<unsigned> sq_thread_cpu{std::nullopt};
-    std::vector<std::filesystem::path> dbname_paths;
+    std::filesystem::path dbname_path;
     unsigned concurrent_read_io_limit{600};
     uint64_t node_lru_max_mem{100ul << 20}; // 100MB
 };

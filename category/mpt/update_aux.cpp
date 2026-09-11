@@ -224,7 +224,7 @@ void UpdateAux::rewind_to_match_offsets()
         io->storage_pool().chunk(storage_pool::seq, idx).destroy_contents();
         metadata_ctx_->append(chunk_list::free, idx);
     }
-    auto &fast_offset_chunk =
+    auto fast_offset_chunk =
         io->storage_pool().chunk(storage_pool::seq, fast_offset.id);
     MONAD_ASSERT(fast_offset_chunk.try_trim_contents(fast_offset.offset));
 
@@ -236,7 +236,7 @@ void UpdateAux::rewind_to_match_offsets()
         io->storage_pool().chunk(storage_pool::seq, idx).destroy_contents();
         metadata_ctx_->append(chunk_list::free, idx);
     }
-    auto &slow_offset_chunk =
+    auto slow_offset_chunk =
         io->storage_pool().chunk(storage_pool::seq, slow_offset.id);
     MONAD_ASSERT(slow_offset_chunk.try_trim_contents(slow_offset.offset));
 
@@ -452,7 +452,7 @@ void UpdateAux::init(AsyncIO &io_, std::optional<uint64_t> const history_len)
             reset_node_writers();
         }
     }
-    else { // resume from an existing db and underlying storage devices
+    else { // resume from an existing db and its underlying storage
         if (!io->is_read_only()) {
             // Reset/init node writer's offsets, destroy contents after
             // fast_offset.id chunck

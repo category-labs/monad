@@ -164,9 +164,9 @@ uint64_t monad_db_snapshot_write_filesystem(
 }
 
 void monad_db_snapshot_load_filesystem(
-    char const *const *const dbname_paths, size_t const len,
-    unsigned const sq_thread_cpu, char const *const snapshot_dir,
-    uint64_t const block, bool const load_to_secondary)
+    char const *const dbname_path, unsigned const sq_thread_cpu,
+    char const *const snapshot_dir, uint64_t const block,
+    bool const load_to_secondary)
 {
     std::filesystem::path const root{std::format("{}/{}", snapshot_dir, block)};
     MONAD_ASSERT(std::filesystem::is_directory(root));
@@ -174,7 +174,7 @@ void monad_db_snapshot_load_filesystem(
     // by monad_db_dump_snapshot from a slot db). If the target timeline is
     // page-encoded, the loader converts slot leaves to page leaves on the fly.
     monad_db_snapshot_loader *const loader = monad_db_snapshot_loader_create(
-        block, dbname_paths, len, sq_thread_cpu, load_to_secondary);
+        block, dbname_path, sq_thread_cpu, load_to_secondary);
 
     auto const do_mmap = [](std::filesystem::path const file) {
         using namespace monad;

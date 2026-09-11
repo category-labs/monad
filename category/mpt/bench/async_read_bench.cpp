@@ -118,7 +118,7 @@ int main(int const argc, char *const argv[])
     Stats total_stats;
 
     try {
-        std::vector<std::filesystem::path> dbname_paths;
+        std::filesystem::path dbname_path;
         CLI::App cli(
             "Benchmark for read-only db async reads and traversals",
             "async_read_bench");
@@ -157,10 +157,7 @@ int main(int const argc, char *const argv[])
                 cache_size,
                 "Size of the node cache (in number of nodes)");
             cli.add_option(
-                   "--db",
-                   dbname_paths,
-                   "A comma-separated list of previously created database "
-                   "paths")
+                   "--db", dbname_path, "A previously created database path")
                 ->required();
 
             cli.parse(argc, argv);
@@ -235,16 +232,13 @@ int main(int const argc, char *const argv[])
 
             // construct RWDb
             auto const config = OnDiskDbConfig{
-                .append = true,
-                .compaction = true,
-                .dbname_paths = {dbname_paths}};
+                .append = true, .compaction = true, .dbname_path = dbname_path};
             Db rw_db{std::make_unique<StateMachineAlwaysMerkle>(), config};
             auto rw_root =
                 rw_db.load_root_for_version(rw_db.get_latest_version());
 
             CollectKeys collect_keys(keys);
-            ReadOnlyOnDiskDbConfig const ro_config{
-                .dbname_paths = {dbname_paths}};
+            ReadOnlyOnDiskDbConfig const ro_config{.dbname_path = dbname_path};
             AsyncIOContext io_ctx{ro_config};
             Db ro_db{io_ctx};
 
@@ -306,7 +300,7 @@ int main(int const argc, char *const argv[])
 
             auto random_async_read = [&]() {
                 ReadOnlyOnDiskDbConfig const ro_config{
-                    .dbname_paths = {dbname_paths}};
+                    .dbname_path = dbname_path};
                 AsyncIOContext io_ctx{ro_config};
                 Db ro_db{io_ctx};
                 auto const async_ctx = async_context_create(ro_db, cache_size);
@@ -413,7 +407,7 @@ int main(int const argc, char *const argv[])
 
             auto random_traverse = [&]() {
                 ReadOnlyOnDiskDbConfig const ro_config{
-                    .dbname_paths = {dbname_paths}};
+                    .dbname_path = dbname_path};
                 AsyncIOContext io_ctx{ro_config};
                 Db ro_db{io_ctx};
 

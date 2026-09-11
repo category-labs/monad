@@ -93,6 +93,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -1258,18 +1259,39 @@ struct monad_executor
     static mpt::ReadOnlyOnDiskDbConfig make_db_config(
         std::string const &triedb_path, uint64_t const node_lru_max_mem)
     {
-        std::vector<std::filesystem::path> paths;
-        if (std::filesystem::is_directory(triedb_path)) {
-            for (auto const &file :
-                 std::filesystem::directory_iterator(triedb_path)) {
-                paths.emplace_back(file.path());
-            }
-        }
-        else {
-            paths.emplace_back(triedb_path);
+        std::filesystem::path path{triedb_path};
+        std::error_code ec;
+        if (std::filesystem::is_directory(path, ec)) {
+            // directory_iterator is single pass and its copies share the
+            // directory handle, so the entry has to be taken before the
+            // iterator is advanced to test for a second one.
+            std::filesystem::directory_iterator dir{path, ec};
+            MONAD_ASSERT_PRINTF(
+                !ec,
+                "cannot open the directory %s: %s",
+                triedb_path.c_str(),
+                ec.message().c_str());
+            MONAD_ASSERT_PRINTF(
+                dir != std::filesystem::directory_iterator{},
+                "%s is a directory holding nothing, but a database has exactly "
+                "one storage device.",
+                triedb_path.c_str());
+            auto entry = dir->path();
+            dir.increment(ec);
+            MONAD_ASSERT_PRINTF(
+                !ec,
+                "cannot list the directory %s: %s",
+                triedb_path.c_str(),
+                ec.message().c_str());
+            MONAD_ASSERT_PRINTF(
+                dir == std::filesystem::directory_iterator{},
+                "%s is a directory holding more than one entry, but a database "
+                "has exactly one storage device.",
+                triedb_path.c_str());
+            path = std::move(entry);
         }
         return mpt::ReadOnlyOnDiskDbConfig{
-            .dbname_paths = std::move(paths),
+            .dbname_path = std::move(path),
             .node_lru_max_mem = node_lru_max_mem};
     }
 

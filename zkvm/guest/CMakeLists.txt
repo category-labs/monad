@@ -456,8 +456,26 @@ else()
     )
     monad_compile_options(monad-zkvm-x86-test-runner)
     target_link_libraries(monad-zkvm-x86-test-runner
-        PRIVATE monad_execution zkevm-standards)
+        PRIVATE monad-zkvm-guest monad_execution zkevm-standards)
 
+endif()
+
+# ---- Guest sources, shared by both modes ----
+# The witness pipeline itself. Defined once, after the mode split: the two
+# modes differ only in what these sources compile against — the adapted
+# bare-metal targets on RISC-V, the host's monad_execution on x86 — so only
+# the dependency edge is conditional, never the target or its file list.
+add_library(monad-zkvm-guest OBJECT
+    "${CMAKE_CURRENT_SOURCE_DIR}/witness_block_hash_buffer.cpp"
+)
+monad_compile_options(monad-zkvm-guest)
+target_link_libraries(monad-zkvm-guest PRIVATE zkevm-standards)
+if(DEFINED MONAD_ZKVM_GUEST_TARGET)
+    monad_riscv_compile_options(monad-zkvm-guest)
+    target_link_libraries(monad-zkvm-guest
+        PRIVATE monad-core monad_execution_ethereum)
+else()
+    target_link_libraries(monad-zkvm-guest PRIVATE monad_execution)
 endif()
 
 # ---- eth-act zkEVM standards (header-only), shared by both modes ----

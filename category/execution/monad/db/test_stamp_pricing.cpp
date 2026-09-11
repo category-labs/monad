@@ -135,18 +135,28 @@ TEST(StampLogCodec, record_round_trip_and_page_layout)
     std::vector<Address> accounts{addr_of(1), addr_of(2)};
     std::vector<StorageKey> pages{
         StorageKey{addr_of(3), Incarnation{7, 9}, key_of(4)}};
-    auto const record = encode_stamp_log_record(21001234, accounts, pages);
-    EXPECT_EQ(record.size(), 16 + 20 * 2 + 60);
+    std::vector<Address> dead_accounts{addr_of(9)};
+    std::vector<StorageKey> dead_pages{
+        StorageKey{addr_of(3), Incarnation{7, 9}, key_of(5)},
+        StorageKey{addr_of(3), Incarnation{7, 9}, key_of(6)}};
+    auto const record = encode_stamp_log_record(
+        21001234, accounts, pages, dead_accounts, dead_pages);
+    EXPECT_EQ(record.size(), 24 + 20 * 3 + 60 * 3);
     auto const header = decode_stamp_log_header(record);
     ASSERT_TRUE(header.has_value());
     EXPECT_EQ(header->block, 21001234);
     EXPECT_EQ(header->n_accounts, 2);
     EXPECT_EQ(header->n_pages, 1);
+    EXPECT_EQ(header->n_dead_accounts, 1);
+    EXPECT_EQ(header->n_dead_pages, 2);
     EXPECT_EQ(header->record_bytes(), record.size());
     auto const decoded = decode_stamp_log_record(record);
     ASSERT_TRUE(decoded.has_value());
     EXPECT_EQ(decoded->accounts, accounts);
     EXPECT_TRUE(decoded->storage[0] == pages[0]);
+    EXPECT_EQ(decoded->dead_accounts, dead_accounts);
+    ASSERT_EQ(decoded->dead_storage.size(), 2u);
+    EXPECT_TRUE(decoded->dead_storage[1] == dead_pages[1]);
     // truncated input is rejected
     EXPECT_FALSE(decode_stamp_log_record(byte_string_view{record}.substr(0, 40))
                      .has_value());
@@ -156,7 +166,7 @@ TEST(StampLogCodec, record_round_trip_and_page_layout)
     for (uint64_t i = 0; i < 300; ++i) {
         many.push_back(addr_of(i * 7919 + 1)); // includes zero-heavy words
     }
-    auto const big = encode_stamp_log_record(5, many, {});
+    auto const big = encode_stamp_log_record(5, many, {}, {}, {});
     ASSERT_GT(big.size(), STAMP_LOG_PAGE_BYTES);
     ASSERT_EQ(stamp_log_pages(big.size()), 2);
     byte_string reassembled;
@@ -262,9 +272,38 @@ TEST(StampSelection, classes_caps_order_and_dead_items)
     EXPECT_EQ(stats.selected_slots, 4);
     EXPECT_EQ(stats.pages_written, 4); // slots 3, 4, 5, 6
     EXPECT_EQ(stats.slots_written, 3); // slot 4 is now empty
+    // deaths: nothing here was cached and died (7004 was cold, slot 4 cold)
+    EXPECT_EQ(stats.dead_accounts, 0);
+    EXPECT_EQ(stats.dead_pages, 0);
     EXPECT_EQ(
-        stats.record_bytes, 16 + 20 * MAX_ACCOUNT_STAMPS_PER_BLOCK + 60 * 4);
+        stats.record_bytes, 24 + 20 * MAX_ACCOUNT_STAMPS_PER_BLOCK + 60 * 4);
     EXPECT_EQ(stats.log_pages, stamp_log_pages(stats.record_bytes));
+}
+
+TEST(StampSelection, cached_items_that_die_are_logged)
+{
+    uint64_t const n = 20000;
+    StateDeltas deltas;
+    BlockStampCandidates candidates;
+    // cached account deleted, cached slot zeroed: both logged as deaths; a
+    // cold slot zeroed and a cached slot rewritten are not
+    add_account_change(
+        deltas, addr_of(1), n - 10, Account{.nonce = 1}, std::nullopt);
+    Address const c = addr_of(2);
+    add_account(deltas, c, n - 10);
+    add_slot(deltas, c, key_of(1), VALUE, bytes32_t{}, n - 10);
+    add_slot(deltas, c, key_of(2), VALUE, bytes32_t{}, 0);
+    add_slot(deltas, c, key_of(3), VALUE, key_of(7), n - 10);
+    auto const [post, stats] = build(n, deltas, candidates);
+    EXPECT_EQ(stats.dead_accounts, 1);
+    EXPECT_EQ(stats.dead_pages, 1);
+    ASSERT_EQ(post.account_deaths.size(), 1u);
+    EXPECT_EQ(post.account_deaths[0], addr_of(1));
+    ASSERT_EQ(post.storage_deaths.size(), 1u);
+    EXPECT_TRUE((post.storage_deaths[0] == StorageKey{c, INC, key_of(1)}));
+    // the rewritten cached slot is a renewal, the dead ones are not selected
+    ASSERT_EQ(post.storage_stamps.size(), 1u);
+    EXPECT_TRUE((post.storage_stamps[0] == StorageKey{c, INC, key_of(3)}));
 }
 
 TEST(StampSelection, slot_weighted_page_cap_and_determinism)
@@ -491,8 +530,26 @@ TEST(StampBootstrap, restart_reproduces_stamps_from_the_log)
     read_block(
         3, {11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21}, {}, std::nullopt);
     read_block(4, {1}, {1, 2, 3, 4, 5, 6, 7, 8}, 21);
+    // block 5 zeroes slot 3 (a cached item dies: logged), block 6 recreates
+    // it (unstamped): a restarted node must not resurrect the stamp
+    auto write_slot =
+        [&](uint64_t const n, uint64_t const slot, bytes32_t const &value) {
+            tdb.set_block_and_prefix(n - 1);
+            StateDeltas deltas;
+            uint64_t stamp = 0;
+            auto const acct = tdb.read_account_stamped(addr_of(1), stamp);
+            add_account(deltas, addr_of(1), stamp, acct);
+            uint64_t sstamp = 0;
+            auto const pre =
+                tdb.read_storage_stamped(addr_of(1), INC, key_of(slot), sstamp);
+            add_slot(deltas, addr_of(1), key_of(slot), pre, value, sstamp);
+            commit_block(tdb, n, deltas, {});
+        };
+    write_slot(5, 3, bytes32_t{});
+    write_slot(6, 3, VALUE);
+    uint64_t const final_block = 6;
 
-    tdb.set_block_and_prefix(4);
+    tdb.set_block_and_prefix(final_block);
     uint64_t stamp = 0;
     tdb.read_account_stamped(addr_of(1), stamp);
     EXPECT_EQ(stamp, 2); // fresh cached read did not re-stamp
@@ -500,17 +557,21 @@ TEST(StampBootstrap, restart_reproduces_stamps_from_the_log)
     EXPECT_EQ(stamp, 3);
     tdb.read_account_stamped(addr_of(25), stamp);
     EXPECT_EQ(stamp, 0);
-    tdb.read_storage_stamped(addr_of(1), INC, key_of(3), stamp);
+    tdb.read_storage_stamped(addr_of(1), INC, key_of(2), stamp);
     EXPECT_EQ(stamp, 4);
+    tdb.read_storage_stamped(addr_of(1), INC, key_of(3), stamp);
+    EXPECT_EQ(stamp, 0); // died at 5, recreated unstamped at 6
     EXPECT_FALSE(tdb.read_account_stamped(addr_of(21), stamp).has_value());
 
     // a fresh node over the same state rebuilds every stamp from the ring
     // (an in-memory db has no persisted root, so hand it over explicitly)
     TrieDb restarted{db, /*enable_multiblock_cache=*/true};
-    restarted.reset_root(tdb.get_root(), 4);
+    restarted.reset_root(tdb.get_root(), final_block);
     auto const rebuilt = restarted.rebuild_stamp_cache();
-    EXPECT_EQ(rebuilt.records, 4); // blocks 1..4 each wrote a record
+    EXPECT_EQ(rebuilt.records, 6); // blocks 1..6 each wrote a record
     EXPECT_EQ(rebuilt.accounts, 20); // 21 died after its stamp
+    // slot 3 is loaded by block 4's record and forgotten again by block 5's
+    // death record
     EXPECT_EQ(rebuilt.pages, 8);
     EXPECT_EQ(rebuilt.slots, 8);
     for (uint64_t i = 1; i <= 30; ++i) {

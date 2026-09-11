@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -72,6 +73,7 @@ class State
     // tier is then two compares on in-hand data
     bool const stamp_tracking_;
     uint64_t const pricing_block_;
+    CacheTierStats tier_stats_{};
 
     bool const relaxed_validation_{false};
     ReserveBalance rb_;
@@ -87,6 +89,11 @@ class State
 
 public:
     OriginalAccountState &original_account_state(Address const &);
+
+    CacheTierStats const &tier_stats() const
+    {
+        return tier_stats_;
+    }
 
 private:
     AccountState const &recent_account_state(Address const &);

@@ -15,8 +15,6 @@
 
 #include "commit_builder.hpp"
 
-#include <category/vm/runtime/access.hpp>
-
 #include <category/core/assert.h>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -145,18 +143,29 @@ void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
         segmented_map<StorageKey, uint8_t, BytesHashCompare<StorageKey>>
             page_classes;
 
-    // written items and class 2 (write renewal) from the deltas
+    // written items, class 2 (write renewal) and deaths from the deltas. A
+    // death is a cached item whose value is gone at the post-state; it is
+    // logged so a bootstrapping node forgets the stamp too.
+    auto &dead_accounts = proposal_post_state_.account_deaths;
+    auto &dead_pages = proposal_post_state_.storage_deaths;
+    ankerl::unordered_dense::
+        segmented_set<StorageKey, BytesHashCompare<StorageKey>>
+            cached_written_pages;
     for (auto const &[addr, delta] : state_deltas) {
         if (addr == STAMP_LOG_ADDRESS) {
             continue;
         }
         auto const &pre = delta.account.first;
         auto const &post = delta.account.second;
+        bool const account_cached =
+            cache_stamp_cached(delta.account_stamp.value_or(0), n);
         if (pre != post) {
             ++stats.accounts_written;
-            if (pre.has_value() && post.has_value() &&
-                cache_stamp_cached(delta.account_stamp.value_or(0), n)) {
+            if (pre.has_value() && post.has_value() && account_cached) {
                 lower_class(account_classes, addr, STAMP_CLASS_RENEWAL);
+            }
+            if (pre.has_value() && !post.has_value() && account_cached) {
+                dead_accounts.push_back(addr);
             }
         }
         if (!post.has_value()) {
@@ -167,18 +176,35 @@ void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
                 continue;
             }
             // a reincarnated account never read its old pages, so their
-            // memoized stamps are 0 and cannot renew
+            // memoized stamps are 0 and cannot renew or die here
             auto const mit = delta.storage_stamps.find(key);
             uint64_t const prev =
                 mit != delta.storage_stamps.end() ? mit->second : 0;
             if (cache_stamp_cached(prev, n)) {
-                lower_class(
-                    page_classes,
-                    StorageKey{addr, post->incarnation, stamp_lookup_key(key)},
-                    STAMP_CLASS_RENEWAL);
+                StorageKey const skey{
+                    addr, post->incarnation, stamp_lookup_key(key)};
+                lower_class(page_classes, skey, STAMP_CLASS_RENEWAL);
+                cached_written_pages.insert(skey);
             }
         }
     }
+    for (auto const &skey : cached_written_pages) {
+        auto const pit = proposal_post_state_.storage.find(skey);
+        if (pit != proposal_post_state_.storage.end() &&
+            pit->second.is_empty()) {
+            dead_pages.push_back(skey);
+        }
+    }
+    std::sort(
+        dead_accounts.begin(),
+        dead_accounts.end(),
+        [](auto const &a, auto const &b) {
+            return std::memcmp(a.bytes, b.bytes, sizeof(a.bytes)) < 0;
+        });
+    std::sort(
+        dead_pages.begin(), dead_pages.end(), [](auto const &a, auto const &b) {
+            return std::memcmp(a.bytes, b.bytes, sizeof(a.bytes)) < 0;
+        });
     stats.pages_written = proposal_post_state_.storage.size();
     for (auto const &[key, page] : proposal_post_state_.storage) {
         stats.slots_written += page.size();
@@ -321,12 +347,17 @@ void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
     }
     stats.selected_pages = selected_pages.size();
     stats.selected_slots = slots;
+    stats.selected_account_keys = selected_accounts;
+    stats.selected_storage_keys = selected_pages;
 
     // the stamp log record, as storage of STAMP_LOG_ADDRESS: one MIP-8 page
     // leaf per 4 KB chunk in ring slot n mod CACHE_WINDOW_BLOCKS; always
     // written so a stale record never survives in the slot
-    byte_string const &record = bytes_alloc_.emplace_back(
-        encode_stamp_log_record(n, selected_accounts, selected_pages));
+    byte_string const &record =
+        bytes_alloc_.emplace_back(encode_stamp_log_record(
+            n, selected_accounts, selected_pages, dead_accounts, dead_pages));
+    stats.dead_accounts = dead_accounts.size();
+    stats.dead_pages = dead_pages.size();
     stats.record_bytes = record.size();
     stats.record_hash = to_bytes(keccak256(record));
     size_t const log_pages = stamp_log_pages(record.size());
@@ -353,11 +384,6 @@ void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
         .incarnation = false,
         .next = std::move(page_updates),
         .version = static_cast<int64_t>(n)}));
-
-    vm::runtime::g_cache_shadow_stats.account_stamp_records.fetch_add(
-        n_accounts, std::memory_order_relaxed);
-    vm::runtime::g_cache_shadow_stats.storage_stamp_records.fetch_add(
-        selected_pages.size(), std::memory_order_relaxed);
 }
 
 CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)

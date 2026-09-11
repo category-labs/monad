@@ -68,6 +68,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <format>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -169,6 +170,23 @@ TrieDb::StampRebuildStats TrieDb::rebuild_stamp_cache()
     std::sort(records.begin(), records.end(), [](auto const &a, auto const &b) {
         return a.block < b.block;
     });
+    if (char const *const dump = std::getenv("MONAD_MBC_DUMP")) {
+        // debug aid: the ring as read, in the same format as the per-block
+        // record dump of the runloop
+        std::ofstream out(std::string{dump} + ".ring");
+        for (auto const &rec : records) {
+            for (auto const &a : rec.accounts) {
+                out << rec.block << " A " << fmt::format("{}", a) << '\n';
+            }
+            for (auto const &k : rec.storage) {
+                out << rec.block << " S 0x";
+                for (auto const b : k.bytes) {
+                    out << fmt::format("{:02x}", b);
+                }
+                out << '\n';
+            }
+        }
+    }
 
     for (auto const &rec : records) {
         // load the stamped items so the stamps have resident entries; items
@@ -206,7 +224,12 @@ TrieDb::StampRebuildStats TrieDb::rebuild_stamp_cache()
             live_pages.push_back(key);
             stats.slots += page.size();
         }
-        cache_->rebuild_stamps(live_accounts, live_pages, rec.block);
+        cache_->rebuild_stamps(
+            live_accounts,
+            live_pages,
+            rec.dead_accounts,
+            rec.dead_storage,
+            rec.block);
         ++stats.records;
         stats.accounts += live_accounts.size();
         stats.pages += live_pages.size();

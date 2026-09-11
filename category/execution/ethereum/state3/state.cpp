@@ -15,7 +15,6 @@
 
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/db/cache_pricing.hpp>
-#include <category/vm/runtime/access.hpp>
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
@@ -450,22 +449,24 @@ vm::Host::AccessTier State::access_account_tier(Address const &address)
         return vm::Host::AccessTier::cold;
     }
     auto &orig = original_account_state(address);
-    auto &shadow = vm::runtime::g_cache_shadow_stats;
-    shadow.first_accounts.fetch_add(1, std::memory_order_relaxed);
+    ++tier_stats_.first_accounts;
     if (orig.has_account()) {
         // a non-warm access to a live account: the commit builder classes it
         // as entry (cold) or refresh (cached and stale)
         account_state.mark_stamp_candidate();
     }
     else {
-        shadow.missing_accounts.fetch_add(1, std::memory_order_relaxed);
+        ++tier_stats_.missing_accounts;
     }
     if (orig.stamp() != 0) {
-        shadow.record_gap(shadow.account_gaps, pricing_block_ - orig.stamp());
+        CacheTierStats::record_gap(
+            tier_stats_.account_gaps, pricing_block_ - orig.stamp());
     }
-    return cache_stamp_cached(orig.stamp(), pricing_block_)
-               ? vm::Host::AccessTier::cached
-               : vm::Host::AccessTier::cold;
+    if (cache_stamp_cached(orig.stamp(), pricing_block_)) {
+        ++tier_stats_.cached_accounts;
+        return vm::Host::AccessTier::cached;
+    }
+    return vm::Host::AccessTier::cold;
 }
 
 template <Traits traits>
@@ -505,21 +506,23 @@ State::access_storage_tier(Address const &address, bytes32_t const &key)
             return vm::Host::AccessTier::cold;
         }
         bytes32_t const value = load_original_storage(address, orig, inc, key);
-        auto &shadow = vm::runtime::g_cache_shadow_stats;
-        shadow.first_storage.fetch_add(1, std::memory_order_relaxed);
+        ++tier_stats_.first_storage;
         if (value != bytes32_t{}) {
             account_state.mark_stamp_candidate(key);
         }
         else {
-            shadow.missing_storage.fetch_add(1, std::memory_order_relaxed);
+            ++tier_stats_.missing_storage;
         }
         uint64_t const stamp = orig.storage_stamp(key).value_or(0);
         if (stamp != 0) {
-            shadow.record_gap(shadow.storage_gaps, pricing_block_ - stamp);
+            CacheTierStats::record_gap(
+                tier_stats_.storage_gaps, pricing_block_ - stamp);
         }
-        return cache_stamp_cached(stamp, pricing_block_)
-                   ? vm::Host::AccessTier::cached
-                   : vm::Host::AccessTier::cold;
+        if (cache_stamp_cached(stamp, pricing_block_)) {
+            ++tier_stats_.cached_storage;
+            return vm::Host::AccessTier::cached;
+        }
+        return vm::Host::AccessTier::cold;
     }
 }
 

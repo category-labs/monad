@@ -105,14 +105,25 @@ public:
     {
     }
 
-    // Bootstrap: apply one block's stamp log record (its selected keys in
-    // selection order) to resident entries, oldest block first, so the
-    // live-list order ends identical to a continuously running node's.
+    // Bootstrap: apply one block's stamp log record, oldest block first —
+    // its selected keys in selection order, then its deaths — to resident
+    // entries, so the stamps and live-list order end identical to a
+    // continuously running node's. A key that died and was recreated
+    // inside the window is live now but must come back unstamped, exactly
+    // as the live node's entry did when its value flipped.
     void rebuild_stamps(
         std::vector<Address> const &accounts,
-        std::vector<StorageKey> const &storage, uint64_t const block)
+        std::vector<StorageKey> const &storage,
+        std::vector<Address> const &dead_accounts,
+        std::vector<StorageKey> const &dead_storage, uint64_t const block)
     {
         apply_stamps(accounts, storage, block);
+        for (auto const &addr : dead_accounts) {
+            accounts_.clear_stamp(addr);
+        }
+        for (auto const &key : dead_storage) {
+            storage_.clear_stamp(key);
+        }
     }
 
     // Residency check (tests / debug): the entry is live and carries `stamp`.

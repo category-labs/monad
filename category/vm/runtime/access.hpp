@@ -26,45 +26,12 @@
 
 #include <evmc/evmc.hpp>
 
-#include <atomic>
-
 namespace monad::vm::runtime
 {
-    // Shadow measurement (evm traits experiment): accesses the multi-block
-    // cache would have priced "cached" are counted here while the original
-    // cold cost is still charged, keeping the execution trace identical.
-    struct CacheShadowStats
-    {
-        std::atomic<uint64_t> cached_accounts{0};
-        std::atomic<uint64_t> cached_storage{0};
-        std::atomic<uint64_t> saved_gas{0};
-        // stamp-record volume (filled by the commit builder)
-        std::atomic<uint64_t> account_stamp_records{0};
-        std::atomic<uint64_t> storage_stamp_records{0};
-        // first (non-warm) accesses per block and how many hit no trie leaf
-        std::atomic<uint64_t> first_accounts{0};
-        std::atomic<uint64_t> missing_accounts{0};
-        std::atomic<uint64_t> first_storage{0};
-        std::atomic<uint64_t> missing_storage{0};
-        // inter-touch gap (block - stamp) of stamped items at their first
-        // access: buckets <=100, <=250, <=500, <=1000, <=2000, >2000
-        static constexpr uint64_t GAP_BOUNDS[] = {100, 250, 500, 1000, 2000};
-        std::atomic<uint64_t> account_gaps[6]{};
-        std::atomic<uint64_t> storage_gaps[6]{};
-
-        static void
-        record_gap(std::atomic<uint64_t> (&buckets)[6], uint64_t const gap)
-        {
-            size_t i = 0;
-            while (i < 5 && gap > GAP_BOUNDS[i]) {
-                ++i;
-            }
-            buckets[i].fetch_add(1, std::memory_order_relaxed);
-        }
-    };
-
-    inline CacheShadowStats g_cache_shadow_stats;
-
+    // Ethereum traits run the cached tier in shadow: the tier is computed
+    // (and counted by the state layer per committed transaction) while the
+    // original cold cost is still charged, keeping the execution trace
+    // identical to mainnet. Monad traits charge the cached cost.
     template <Traits traits>
     [[gnu::always_inline]] inline int64_t
     account_access_cost(Context *ctx, evmc::address const &address) noexcept
@@ -76,13 +43,6 @@ namespace monad::vm::runtime
                 return traits::cold_account_cost();
             case Host::AccessTier::cached:
                 if constexpr (is_evm_trait_v<traits>) {
-                    g_cache_shadow_stats.cached_accounts.fetch_add(
-                        1, std::memory_order_relaxed);
-                    g_cache_shadow_stats.saved_gas.fetch_add(
-                        static_cast<uint64_t>(
-                            traits::cold_account_cost() -
-                            traits::cached_account_cost()),
-                        std::memory_order_relaxed);
                     return traits::cold_account_cost();
                 }
                 else {
@@ -113,13 +73,6 @@ namespace monad::vm::runtime
                 return traits::cold_storage_cost();
             case Host::AccessTier::cached:
                 if constexpr (is_evm_trait_v<traits>) {
-                    g_cache_shadow_stats.cached_storage.fetch_add(
-                        1, std::memory_order_relaxed);
-                    g_cache_shadow_stats.saved_gas.fetch_add(
-                        static_cast<uint64_t>(
-                            traits::cold_storage_cost() -
-                            traits::cached_storage_cost()),
-                        std::memory_order_relaxed);
                     return traits::cold_storage_cost();
                 }
                 else {

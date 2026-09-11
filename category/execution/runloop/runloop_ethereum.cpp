@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
@@ -44,7 +45,6 @@
 #include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/runtime/access.hpp>
 
 #include <boost/outcome/try.hpp>
 
@@ -53,6 +53,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
 #include <memory>
 #include <vector>
 
@@ -87,6 +88,38 @@ void log_tps(
 };
 
 #pragma GCC diagnostic pop
+
+// Debug aid: MONAD_MBC_DUMP=<file> appends every block's selected stamp keys
+// (one line per key) so two runs can be diffed key by key.
+void dump_stamp_record(uint64_t const block, StampBlockStats const &st)
+{
+    static char const *const path = std::getenv("MONAD_MBC_DUMP");
+    if (path == nullptr) {
+        return;
+    }
+    static std::ofstream out(path, std::ios::app);
+    for (auto const &a : st.selected_account_keys) {
+        out << block << " A " << fmt::format("{}", a) << '\n';
+    }
+    for (auto const &k : st.selected_storage_keys) {
+        out << block << " S 0x";
+        for (auto const b : k.bytes) {
+            out << fmt::format("{:02x}", b);
+        }
+        out << '\n';
+    }
+    out.flush();
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_NAMESPACE_BEGIN
+
+MbcRunTotals g_mbc_totals;
+
+MONAD_NAMESPACE_END
+
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 // Multi-block cache measurement arm toggle: MONAD_MBC_MEASURE=0 keeps the
 // cache machinery dormant so the same binary provides the baseline.
@@ -178,10 +211,6 @@ Result<void> process_ethereum_block(
     }
     BlockState block_state(db, vm, nullptr, mbc_tracking);
     block_state.set_pricing_block(block.header.number);
-    auto const &shadow = vm::runtime::g_cache_shadow_stats;
-    uint64_t const shadow_accounts_before = shadow.cached_accounts.load();
-    uint64_t const shadow_storage_before = shadow.cached_storage.load();
-    uint64_t const shadow_gas_before = shadow.saved_gas.load();
 
     ChainContext<traits> const chain_ctx{};
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
@@ -206,6 +235,7 @@ Result<void> process_ethereum_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
+    CacheTierStats const tier = block_state.tier_stats();
     auto [state, code, _, candidates] = std::move(block_state).release();
 
     StampContext const stamp_ctx{.candidates = &candidates};
@@ -295,12 +325,18 @@ Result<void> process_ethereum_block(
 
     if (mbc_tracking) {
         // fixed-window cache per-block line: written items, candidates per
-        // class, selection, caps, log size, cached-tier hits and gas saved
+        // class, selection, deaths, caps, log size, cached-tier hits of the
+        // committed transactions and the gas they save (ethereum constants:
+        // 1500 per account, 1000 per page; monad: 9000 / 7000)
         auto const &st = builder.stamp_stats();
+        dump_stamp_record(block.header.number, st);
+        g_mbc_totals.add(tier);
+        g_mbc_totals.account_stamps += st.selected_accounts;
+        g_mbc_totals.storage_stamps += st.selected_pages;
         LOG_INFO(
             "__mbc_block,bl={},aw={},pw={},sw={},ac1={},ac2={},ac3={},pc1={},"
-            "pc2={},pc3={},sa={},sp={},ss={},acap={},pcap={},rb={},lp={},"
-            "ha={},hp={},sg={},rh={}",
+            "pc2={},pc3={},sa={},sp={},ss={},da={},dp={},acap={},pcap={},rb={},"
+            "lp={},ha={},hp={},sg={},rh={}",
             block.header.number,
             st.accounts_written,
             st.pages_written,
@@ -314,13 +350,15 @@ Result<void> process_ethereum_block(
             st.selected_accounts,
             st.selected_pages,
             st.selected_slots,
+            st.dead_accounts,
+            st.dead_pages,
             st.account_cap_hit ? 1 : 0,
             st.page_cap_hit ? 1 : 0,
             st.record_bytes,
             st.log_pages,
-            shadow.cached_accounts.load() - shadow_accounts_before,
-            shadow.cached_storage.load() - shadow_storage_before,
-            shadow.saved_gas.load() - shadow_gas_before,
+            tier.cached_accounts,
+            tier.cached_storage,
+            tier.cached_accounts * 1500 + tier.cached_storage * 1000,
             st.record_hash);
     }
 

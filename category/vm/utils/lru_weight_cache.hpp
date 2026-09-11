@@ -127,6 +127,18 @@ namespace monad::vm::utils
             return true;
         }
 
+        // Bootstrap path: forget the stamp of a resident live entry, moving
+        // it to the front of the unstamped region.
+        bool clear_stamp(Key const &key)
+        {
+            ConstAccessor acc;
+            if (!hmap_.find(acc, key) || acc->second.negative_) {
+                return false;
+            }
+            lru_.move_unstamped(&*acc);
+            return true;
+        }
+
         void set_evict_floor(uint64_t const floor)
         {
             evict_floor_.store(floor, std::memory_order_relaxed);
@@ -490,6 +502,17 @@ namespace monad::vm::utils
                     delink(node);
                     front_link(node);
                     node->second.update_lru_time(stamp);
+                }
+            }
+
+            // Stamp mode: forget the stamp and move behind the boundary.
+            void move_unstamped(ListNode const *const node)
+            {
+                std::unique_lock const l(mutex_);
+                if (node->second.is_in_list()) {
+                    delink(node);
+                    link_after(&boundary_, node);
+                    node->second.update_lru_time(0);
                 }
             }
 

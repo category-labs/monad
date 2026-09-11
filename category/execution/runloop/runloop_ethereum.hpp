@@ -17,6 +17,7 @@
 
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/vm/vm.hpp>
 
 #include <cstdint>
@@ -26,6 +27,16 @@
 #include <signal.h>
 
 MONAD_NAMESPACE_BEGIN
+
+// Fixed-window cache run totals of the measurement arm (committed
+// transactions only), printed by main at the end of the run.
+struct MbcRunTotals : CacheTierStats
+{
+    uint64_t account_stamps{0};
+    uint64_t storage_stamps{0};
+};
+
+extern MbcRunTotals g_mbc_totals;
 
 struct Chain;
 struct Db;

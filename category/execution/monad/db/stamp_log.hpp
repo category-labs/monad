@@ -15,12 +15,16 @@
 
 #pragma once
 
-// The stamp log: block b writes its selected stamps as storage of
-// STAMP_LOG_ADDRESS. The record is split into 32-byte words; word w of page i
-// lives at slot key ((b mod CACHE_WINDOW_BLOCKS) * STAMP_LOG_PAGES_PER_SLOT +
-// i) * 128 + w, so each 4 KB chunk is one MIP-8 page and ring slot
-// b mod CACHE_WINDOW_BLOCKS is overwritten every window. Bytes beyond the
-// record length are ignored by readers.
+// The stamp log: block b writes its selected stamps, and the cached items
+// that died in it, as storage of STAMP_LOG_ADDRESS. The record is split into
+// 32-byte words; word w of page i lives at slot key
+// ((b mod CACHE_WINDOW_BLOCKS) * STAMP_LOG_PAGES_PER_SLOT + i) * 128 + w, so
+// each 4 KB chunk is one MIP-8 page and ring slot b mod CACHE_WINDOW_BLOCKS
+// is overwritten every window. Bytes beyond the record length are ignored by
+// readers. Deaths are logged so that a node bootstrapping from the ring
+// forgets exactly the stamps a continuously running node forgot: without
+// them an item stamped, emptied and recreated inside the window would come
+// back cached on restart and cold on the live node.
 
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
@@ -36,36 +40,42 @@
 MONAD_NAMESPACE_BEGIN
 
 inline constexpr uint64_t STAMP_LOG_PAGES_PER_SLOT = 128;
-inline constexpr size_t STAMP_LOG_HEADER_BYTES = 16;
+inline constexpr size_t STAMP_LOG_HEADER_BYTES = 24;
 inline constexpr size_t STAMP_LOG_PAGE_BYTES =
     storage_page_t::SLOTS * storage_page_t::SLOT_SIZE;
 
 struct StampLogRecord
 {
     uint64_t block;
-    std::vector<Address> accounts;
+    std::vector<Address> accounts; // selected, in selection order
     std::vector<StorageKey> storage;
+    std::vector<Address> dead_accounts; // cached items that died, key order
+    std::vector<StorageKey> dead_storage;
 };
 
-// block_number (u64 LE) || n_accounts (u32 LE) || n_pages (u32 LE) ||
-// account keys (20 bytes each) || page keys (60 bytes each), in selection
-// order.
+// block_number (u64 LE) || n_accounts || n_pages || n_dead_accounts ||
+// n_dead_pages (u32 LE each) || account keys (20 bytes each) || page keys (60
+// bytes each) || dead account keys || dead page keys.
 byte_string encode_stamp_log_record(
     uint64_t block, std::vector<Address> const &accounts,
-    std::vector<StorageKey> const &storage);
+    std::vector<StorageKey> const &storage,
+    std::vector<Address> const &dead_accounts,
+    std::vector<StorageKey> const &dead_storage);
 
-// Header of a record: (block, n_accounts, n_pages); nullopt when shorter
-// than a header.
+// Header of a record; nullopt when shorter than a header.
 struct StampLogHeader
 {
     uint64_t block;
     uint32_t n_accounts;
     uint32_t n_pages;
+    uint32_t n_dead_accounts;
+    uint32_t n_dead_pages;
 
     size_t record_bytes() const
     {
-        return STAMP_LOG_HEADER_BYTES + 20 * size_t{n_accounts} +
-               StorageKey::k_bytes * size_t{n_pages};
+        return STAMP_LOG_HEADER_BYTES +
+               20 * (size_t{n_accounts} + size_t{n_dead_accounts}) +
+               StorageKey::k_bytes * (size_t{n_pages} + size_t{n_dead_pages});
     }
 };
 

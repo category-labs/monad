@@ -172,6 +172,27 @@ public:
         return true;
     }
 
+    // Bootstrap path: forget the stamp of a resident live entry, moving it
+    // to the front of the unstamped region (where a recreated entry lands).
+    bool clear_stamp(Key const &key)
+    {
+        ConstAccessor acc;
+        if (!hmap_.find(acc, key)) {
+            return false;
+        }
+        ListNode *const node = acc->second.node_;
+        if (node->negative_) {
+            return false;
+        }
+        std::unique_lock const l(mutex_);
+        if (node->is_in_list()) {
+            lru_.delink(node);
+            lru_.insert_after(&boundary_, node);
+            node->update_lru_time(0);
+        }
+        return true;
+    }
+
     void set_evict_floor(uint64_t const floor)
     {
         evict_floor_.store(floor, std::memory_order_relaxed);

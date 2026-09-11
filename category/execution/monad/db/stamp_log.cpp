@@ -59,20 +59,28 @@ namespace
 
 byte_string encode_stamp_log_record(
     uint64_t const block, std::vector<Address> const &accounts,
-    std::vector<StorageKey> const &storage)
+    std::vector<StorageKey> const &storage,
+    std::vector<Address> const &dead_accounts,
+    std::vector<StorageKey> const &dead_storage)
 {
     byte_string out;
     out.reserve(
-        STAMP_LOG_HEADER_BYTES + 20 * accounts.size() +
-        StorageKey::k_bytes * storage.size());
+        STAMP_LOG_HEADER_BYTES + 20 * (accounts.size() + dead_accounts.size()) +
+        StorageKey::k_bytes * (storage.size() + dead_storage.size()));
     put_u64(out, block);
     put_u32(out, static_cast<uint32_t>(accounts.size()));
     put_u32(out, static_cast<uint32_t>(storage.size()));
-    for (auto const &a : accounts) {
-        out.append(a.bytes, sizeof(a.bytes));
+    put_u32(out, static_cast<uint32_t>(dead_accounts.size()));
+    put_u32(out, static_cast<uint32_t>(dead_storage.size()));
+    for (auto const *const v : {&accounts, &dead_accounts}) {
+        for (auto const &a : *v) {
+            out.append(a.bytes, sizeof(a.bytes));
+        }
     }
-    for (auto const &k : storage) {
-        out.append(k.bytes, sizeof(k.bytes));
+    for (auto const *const v : {&storage, &dead_storage}) {
+        for (auto const &k : *v) {
+            out.append(k.bytes, sizeof(k.bytes));
+        }
     }
     return out;
 }
@@ -85,7 +93,9 @@ std::optional<StampLogHeader> decode_stamp_log_header(byte_string_view const in)
     return StampLogHeader{
         .block = get_u64(in.data()),
         .n_accounts = get_u32(in.data() + 8),
-        .n_pages = get_u32(in.data() + 12)};
+        .n_pages = get_u32(in.data() + 12),
+        .n_dead_accounts = get_u32(in.data() + 16),
+        .n_dead_pages = get_u32(in.data() + 20)};
 }
 
 std::optional<StampLogRecord> decode_stamp_log_record(byte_string_view const in)
@@ -97,20 +107,28 @@ std::optional<StampLogRecord> decode_stamp_log_record(byte_string_view const in)
     StampLogRecord rec;
     rec.block = header->block;
     unsigned char const *p = in.data() + STAMP_LOG_HEADER_BYTES;
-    rec.accounts.reserve(header->n_accounts);
-    for (uint32_t i = 0; i < header->n_accounts; ++i) {
-        Address a;
-        std::memcpy(a.bytes, p, sizeof(a.bytes));
-        p += sizeof(a.bytes);
-        rec.accounts.push_back(a);
-    }
-    rec.storage.reserve(header->n_pages);
-    for (uint32_t i = 0; i < header->n_pages; ++i) {
-        StorageKey k;
-        std::memcpy(k.bytes, p, sizeof(k.bytes));
-        p += sizeof(k.bytes);
-        rec.storage.push_back(k);
-    }
+    auto const read_accounts = [&](std::vector<Address> &out, uint32_t n) {
+        out.reserve(n);
+        for (uint32_t i = 0; i < n; ++i) {
+            Address a;
+            std::memcpy(a.bytes, p, sizeof(a.bytes));
+            p += sizeof(a.bytes);
+            out.push_back(a);
+        }
+    };
+    auto const read_pages = [&](std::vector<StorageKey> &out, uint32_t n) {
+        out.reserve(n);
+        for (uint32_t i = 0; i < n; ++i) {
+            StorageKey k;
+            std::memcpy(k.bytes, p, sizeof(k.bytes));
+            p += sizeof(k.bytes);
+            out.push_back(k);
+        }
+    };
+    read_accounts(rec.accounts, header->n_accounts);
+    read_accounts(rec.dead_accounts, header->n_dead_accounts);
+    read_pages(rec.storage, header->n_pages);
+    read_pages(rec.dead_storage, header->n_dead_pages);
     return rec;
 }
 

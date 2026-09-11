@@ -52,11 +52,16 @@ struct ProposalPostState
     AccountPostState accounts;
     StoragePostState storage;
     // Fixed-window cache: the block's selected stamps in selection order
-    // (class, weight, key) — exactly the content of its stamp log record.
-    // Every listed entry is stamped to the block number at finalize; stamps
-    // are lost only through value transitions (deletion, emptied page).
+    // (class, weight, key), and the cached entries whose value died in the
+    // block (key order) — together the content of its stamp log record.
+    // Every selected entry is stamped to the block number at finalize; a
+    // stamp is lost only through a value transition (deletion, emptied
+    // page), which the physical cache applies by itself and the log records
+    // for bootstrapping nodes.
     std::vector<Address> account_stamps;
     std::vector<StorageKey> storage_stamps;
+    std::vector<Address> account_deaths;
+    std::vector<StorageKey> storage_deaths;
 };
 
 MONAD_NAMESPACE_END

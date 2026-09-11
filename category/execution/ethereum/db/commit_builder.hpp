@@ -46,11 +46,16 @@ struct StampBlockStats
     uint64_t selected_accounts{0};
     uint64_t selected_pages{0};
     uint64_t selected_slots{0};
+    uint64_t dead_accounts{0};
+    uint64_t dead_pages{0};
     bool account_cap_hit{false};
     bool page_cap_hit{false};
     uint64_t record_bytes{0};
     uint64_t log_pages{0};
     bytes32_t record_hash{};
+    // the selected keys, in selection order (a copy for debugging dumps)
+    std::vector<Address> selected_account_keys;
+    std::vector<StorageKey> selected_storage_keys;
 };
 
 struct CallFrame;

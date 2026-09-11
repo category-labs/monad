@@ -53,7 +53,6 @@
 #include <category/statesync/statesync_server_network.hpp>
 #include <category/statesync/statesync_thread.hpp>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/runtime/access.hpp>
 #include <category/vm/vm.hpp>
 
 #include <CLI/CLI.hpp>
@@ -601,41 +600,39 @@ try {
                  std::max(1UL, static_cast<uint64_t>(elapsed.count()))),
             vm.print_compiler_stats(),
             vm.print_total_counts());
-        auto const &shadow = vm::runtime::g_cache_shadow_stats;
-        uint64_t const cached_accounts = shadow.cached_accounts.load();
-        uint64_t const cached_storage = shadow.cached_storage.load();
+        auto const &t = g_mbc_totals;
         LOG_INFO(
             "multi-block cache shadow: cached_accounts = {}, cached_storage "
             "= {}, saved_gas = {} (ethereum constants), saved_gas_monad = {} "
             "(10100-1100 per account, 8100-1100 per page), account_stamps = "
             "{}, storage_stamps = {}",
-            cached_accounts,
-            cached_storage,
-            shadow.saved_gas.load(),
-            cached_accounts * 9000 + cached_storage * 7000,
-            shadow.account_stamp_records.load(),
-            shadow.storage_stamp_records.load());
+            t.cached_accounts,
+            t.cached_storage,
+            t.cached_accounts * 1500 + t.cached_storage * 1000,
+            t.cached_accounts * 9000 + t.cached_storage * 7000,
+            t.account_stamps,
+            t.storage_stamps);
         LOG_INFO(
             "multi-block cache first accesses: accounts = {} (missing = {}), "
             "storage = {} (missing = {}); gap buckets (<=100, <=250, <=500, "
             "<=1000, <=2000, >2000): accounts = {} {} {} {} {} {}, storage = "
             "{} {} {} {} {} {}",
-            shadow.first_accounts.load(),
-            shadow.missing_accounts.load(),
-            shadow.first_storage.load(),
-            shadow.missing_storage.load(),
-            shadow.account_gaps[0].load(),
-            shadow.account_gaps[1].load(),
-            shadow.account_gaps[2].load(),
-            shadow.account_gaps[3].load(),
-            shadow.account_gaps[4].load(),
-            shadow.account_gaps[5].load(),
-            shadow.storage_gaps[0].load(),
-            shadow.storage_gaps[1].load(),
-            shadow.storage_gaps[2].load(),
-            shadow.storage_gaps[3].load(),
-            shadow.storage_gaps[4].load(),
-            shadow.storage_gaps[5].load());
+            t.first_accounts,
+            t.missing_accounts,
+            t.first_storage,
+            t.missing_storage,
+            t.account_gaps[0],
+            t.account_gaps[1],
+            t.account_gaps[2],
+            t.account_gaps[3],
+            t.account_gaps[4],
+            t.account_gaps[5],
+            t.storage_gaps[0],
+            t.storage_gaps[1],
+            t.storage_gaps[2],
+            t.storage_gaps[3],
+            t.storage_gaps[4],
+            t.storage_gaps[5]);
     }
 
     sync_server.reset();

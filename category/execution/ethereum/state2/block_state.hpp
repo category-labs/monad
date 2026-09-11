@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/vm/vm.hpp>
 
 #include <ankerl/unordered_dense.h>
@@ -65,6 +66,7 @@ class BlockState final
     bool const stamp_tracking_;
     uint64_t block_number_{0};
     BlockStampCandidates stamp_candidates_;
+    CacheTierStats tier_stats_{};
 
 public:
     BlockState(
@@ -84,6 +86,12 @@ public:
     uint64_t block_number() const
     {
         return block_number_;
+    }
+
+    // cached-tier counters of the committed transactions
+    CacheTierStats const &tier_stats() const
+    {
+        return tier_stats_;
     }
 
     // the block being executed: an entry prices cached iff its stamp (as of

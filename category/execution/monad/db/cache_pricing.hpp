@@ -64,4 +64,47 @@ inline uint64_t cache_evict_floor(uint64_t const finalized)
                                            : 0;
 }
 
+// Measurement counters of the cached tier, collected per transaction and
+// merged into the block for committed transactions only (a retried
+// execution counts once).
+struct CacheTierStats
+{
+    // inter-touch gap (block - stamp) buckets of stamped items at their
+    // first access: <=100, <=250, <=500, <=1000, <=2000, >2000
+    static constexpr uint64_t GAP_BOUNDS[] = {100, 250, 500, 1000, 2000};
+    static constexpr size_t GAP_BUCKETS = 6;
+
+    uint64_t cached_accounts{0}; // first accesses priced cached
+    uint64_t cached_storage{0};
+    uint64_t first_accounts{0}; // first accesses of the transaction
+    uint64_t missing_accounts{0}; // of which the item had no trie leaf
+    uint64_t first_storage{0};
+    uint64_t missing_storage{0};
+    uint64_t account_gaps[GAP_BUCKETS]{};
+    uint64_t storage_gaps[GAP_BUCKETS]{};
+
+    static void record_gap(uint64_t (&buckets)[GAP_BUCKETS], uint64_t const gap)
+    {
+        size_t i = 0;
+        while (i < GAP_BUCKETS - 1 && gap > GAP_BOUNDS[i]) {
+            ++i;
+        }
+        ++buckets[i];
+    }
+
+    void add(CacheTierStats const &o)
+    {
+        cached_accounts += o.cached_accounts;
+        cached_storage += o.cached_storage;
+        first_accounts += o.first_accounts;
+        missing_accounts += o.missing_accounts;
+        first_storage += o.first_storage;
+        missing_storage += o.missing_storage;
+        for (size_t i = 0; i < GAP_BUCKETS; ++i) {
+            account_gaps[i] += o.account_gaps[i];
+            storage_gaps[i] += o.storage_gaps[i];
+        }
+    }
+};
+
 MONAD_NAMESPACE_END

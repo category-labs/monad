@@ -231,6 +231,7 @@ bool BlockState::can_merge(State &state) const
 void BlockState::merge(State const &state)
 {
     if (stamp_tracking_) {
+        tier_stats_.add(state.tier_stats());
         // commit order: merge() runs serially in transaction order
         TxStampCandidates tx;
         for (auto const &[address, stack] : state.current()) {

@@ -159,6 +159,9 @@ CommitBuilder &CommitBuilder::add_receipts(std::vector<Receipt> const &receipts)
         auto const &encoded_receipt = bytes_alloc_.emplace_back(
             encode_receipt_db(receipt, log_index_begin));
         log_index_begin += receipt.logs.size();
+#if KVDB_PROTO
+        kv_receipts_.push_back(byte_string_view{encoded_receipt});
+#endif
 
         receipt_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{rlp_index},
@@ -195,16 +198,23 @@ CommitBuilder &CommitBuilder::add_transactions(
             bytes_alloc_.emplace_back(rlp::encode_unsigned(i));
 
         auto const encoded_tx = rlp::encode_transaction(transactions[i]);
+        auto const &encoded_txn_db = bytes_alloc_.emplace_back(
+            encode_transaction_db(encoded_tx, senders[i]));
         txn_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{rlp_index},
-            .value = bytes_alloc_.emplace_back(
-                encode_transaction_db(encoded_tx, senders[i])),
+            .value = encoded_txn_db,
             .incarnation = false,
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
 
+        auto const &txn_hash = hash_alloc_.emplace_back(keccak256(encoded_tx));
+#if KVDB_PROTO
+        kv_transactions_.push_back(byte_string_view{encoded_txn_db});
+        kv_tx_hashes_.push_back(
+            byte_string_view{txn_hash.bytes, sizeof(txn_hash.bytes)});
+#endif
         txn_hash_updates.push_front(update_alloc_.emplace_back(Update{
-            .key = NibblesView{hash_alloc_.emplace_back(keccak256(encoded_tx))},
+            .key = NibblesView{txn_hash},
             .value = bytes_alloc_.emplace_back(
                 rlp::encode_list2(encoded_block_number, rlp_index)),
             .incarnation = false,
@@ -241,6 +251,9 @@ CommitBuilder &CommitBuilder::add_call_frames(
     for (uint32_t i = 0; i < static_cast<uint32_t>(call_frames.size()); ++i) {
         byte_string_view frame_view =
             bytes_alloc_.emplace_back(rlp::encode_call_frames(call_frames[i]));
+#if KVDB_PROTO
+        kv_call_frames_.push_back(frame_view); // full encoding, before chunking
+#endif
         uint8_t chunk_index = 0;
         auto const call_frame_prefix =
             serialize_as_big_endian<sizeof(uint32_t)>(i);
@@ -273,9 +286,14 @@ CommitBuilder &CommitBuilder::add_call_frames(
 
 CommitBuilder &CommitBuilder::add_ommers(std::vector<BlockHeader> const &ommers)
 {
+    auto const &encoded_ommers =
+        bytes_alloc_.emplace_back(rlp::encode_ommers(ommers));
+#if KVDB_PROTO
+    kv_ommers_ = byte_string_view{encoded_ommers};
+#endif
     updates_.push_front(update_alloc_.emplace_back(Update{
         .key = ommer_nibbles,
-        .value = bytes_alloc_.emplace_back(rlp::encode_ommers(ommers)),
+        .value = encoded_ommers,
         .incarnation = true,
         .next = UpdateList{},
         .version = static_cast<int64_t>(block_number_)}));
@@ -292,10 +310,14 @@ CommitBuilder::add_withdrawals(std::vector<Withdrawal> const &withdrawals)
         auto const &rlp_index =
             bytes_alloc_.emplace_back(rlp::encode_unsigned(i));
 
+        auto const &encoded_withdrawal = bytes_alloc_.emplace_back(
+            rlp::encode_withdrawal(withdrawals[i]));
+#if KVDB_PROTO
+        kv_withdrawals_.push_back(byte_string_view{encoded_withdrawal});
+#endif
         withdrawal_updates.push_front(update_alloc_.emplace_back(Update{
             .key = NibblesView{rlp_index},
-            .value = bytes_alloc_.emplace_back(
-                rlp::encode_withdrawal(withdrawals[i])),
+            .value = encoded_withdrawal,
             .incarnation = false,
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));

@@ -513,3 +513,433 @@ impl Drop for ValidatorSet<'_> {
         unsafe { ffi::triedb_free_valset(self.ptr.as_ptr()) }
     }
 }
+
+// ── KV-DB prototype: RPC read side ──────────────────────────────────────────
+// The flat-page KV store is the read authority for state and per-block data.
+// This is a thin, safe wrapper over the C ABI in include/ffi.h; it deliberately
+// does no interpretation of the bytes it returns (no RLP, no alloy types) so
+// the decode policy stays with the caller.
+
+/// Per-block blob categories. Some are stored as a table of independently
+/// addressable entries (`Receipts`, `Transactions` and `CallFrames` indexed by
+/// tx position, `Withdrawals` by withdrawal position) -- read those with
+/// [`BlockGuard::table_blob`], never [`BlockGuard::block_blob`]. The rest are a
+/// single blob per block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum BlobCategory {
+    Receipts = 0,
+    Transactions = 1,
+    Header = 2,
+    CallFrames = 3,
+    Ommers = 4,
+    Withdrawals = 5,
+    TxHashes = 6,
+}
+
+impl BlobCategory {
+    /// True for the categories stored as a table of per-index entries.
+    pub fn is_table(self) -> bool {
+        matches!(
+            self,
+            Self::Receipts | Self::Transactions | Self::CallFrames | Self::Withdrawals
+        )
+    }
+}
+
+/// An account exactly as KV stores it. No RLP is involved in either direction:
+/// KV holds a fixed record, so this crosses the FFI as a packed struct.
+///
+/// `code_hash` is the raw hash; it equals `keccak256("")` when the account has
+/// no code, which is the case the triedb RLP path reports as `None`. Mapping
+/// that to an `Option` is left to the caller so this crate stays free of
+/// alloy types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KvAccount {
+    /// Big-endian, so this never depends on the C++ `uint256` representation.
+    pub balance_be: [u8; 32],
+    pub code_hash: [u8; 32],
+    pub nonce: u64,
+}
+
+/// Read-only handle on the KV store. Independent of [`TriedbHandle`] -- a
+/// different backend over the same device.
+///
+/// Execution must already be running when this is opened: it attaches exec's
+/// existing hazard-pointer segment and metadata mapping. If exec restarts, this
+/// handle is stale and the process must be restarted too (the segment is
+/// recreated fresh, orphaning our mapping).
+#[derive(Debug)]
+pub struct KvHandle {
+    ptr: *mut ffi::KvReaderHandle,
+}
+
+// Every read is a `pread` plus atomics: there is no shared mutable state in the
+// reader besides the hazard slots, whose pool is built for concurrent readers
+// (each caller takes its own slot). So the handle is safe to share across the
+// RPC's worker threads.
+unsafe impl Send for KvHandle {}
+unsafe impl Sync for KvHandle {}
+
+impl KvHandle {
+    /// Attach the store read-only. `kvhdr_path` is the `.kvhdr` sidecar; the
+    /// backing device comes from `$KVDB_DEVICE`. `None` if exec is not up or the
+    /// header/metadata does not match this build.
+    pub fn try_new(kvhdr_path: &Path) -> Option<Self> {
+        let path = CString::new(kvhdr_path.to_str()?).ok()?;
+        let mut ptr = null_mut();
+        let result = unsafe { ffi::kv_open(path.as_c_str().as_ptr(), &mut ptr) };
+        if result != 0 {
+            debug!("kv_open failed: {}", result);
+            return None;
+        }
+        Some(Self { ptr })
+    }
+
+    /// Pin `block` so its data cannot be reclaimed while the returned guard
+    /// lives. `None` means the block is not retained (already pruned, or never
+    /// existed) -- the request should be failed rather than retried in a loop.
+    ///
+    /// `id` is an undecided block's proposal id. `None` takes the finalized
+    /// block at that height, whose block-map entry finalization made unique; an
+    /// undecided height can hold several proposals, so there the id is required
+    /// to say which one.
+    ///
+    /// Takes `&Arc<Self>` so the guard can outlive the call and be held for a
+    /// whole request without borrowing the handle.
+    pub fn try_protect_block(
+        self: &Arc<Self>,
+        block: u64,
+        id: Option<&[u8; 32]>,
+    ) -> Option<BlockGuard> {
+        let id_ptr = id.map_or(null(), |id| id.as_ptr());
+        let handle = unsafe { ffi::kv_try_protect_block(self.ptr, block, id_ptr) };
+        if handle < 0 {
+            return None;
+        }
+        Some(BlockGuard {
+            kv: Arc::clone(self),
+            handle,
+        })
+    }
+
+    /// Code by hash. Needs no pinned block: the code store is grow-only and is
+    /// never reclaimed.
+    pub fn code(&self, code_hash: &[u8; 32]) -> Option<Vec<u8>> {
+        let mut ptr = null();
+        let mut len = 0u64;
+        let found = unsafe { ffi::kv_read_code(self.ptr, code_hash.as_ptr(), &mut ptr, &mut len) };
+        if !found {
+            return None;
+        }
+        Some(take_buf(ptr, len))
+    }
+
+    /// Locate a transaction by hash: `(block, tx_index)`. Resolution only --
+    /// pin the returned block before reading its data.
+    ///
+    /// Needs no block pin of its own. The index is a COW tree whose superseded
+    /// roots are reclaimed, so the walk is protected -- by a transient hazard
+    /// on the index root, taken and released inside this call.
+    pub fn resolve_tx_hash(&self, hash: &[u8; 32]) -> Option<(u64, u32)> {
+        let mut block = 0u64;
+        let mut tx_index = 0u32;
+        let found =
+            unsafe { ffi::kv_resolve_tx_hash(self.ptr, hash.as_ptr(), &mut block, &mut tx_index) };
+        found.then_some((block, tx_index))
+    }
+
+    /// Resolve a block hash to its number. Hazard-protected internally, as
+    /// [`Self::resolve_tx_hash`] is.
+    pub fn resolve_block_hash(&self, hash: &[u8; 32]) -> Option<u64> {
+        let mut number = 0u64;
+        let found = unsafe { ffi::kv_resolve_block_hash(self.ptr, hash.as_ptr(), &mut number) };
+        found.then_some(number)
+    }
+
+    /// Finalized tip.
+    pub fn finalized_block(&self) -> Option<u64> {
+        cursor(unsafe { ffi::kv_finalized_block(self.ptr) })
+    }
+
+    /// Oldest block still retained; reads below this fail to pin.
+    pub fn earliest_block(&self) -> Option<u64> {
+        cursor(unsafe { ffi::kv_earliest_block(self.ptr) })
+    }
+
+    /// Latest proposed block (the `latest` tag). `None` until consensus stamps it.
+    pub fn proposed_block(&self) -> Option<u64> {
+        cursor(unsafe { ffi::kv_proposed_block(self.ptr) })
+    }
+
+    /// Latest voted block (the `safe` tag). `None` until consensus stamps it.
+    pub fn voted_block(&self) -> Option<u64> {
+        cursor(unsafe { ffi::kv_voted_block(self.ptr) })
+    }
+
+    /// All four tag cursors as one consistent snapshot, which is what block-tag
+    /// resolution needs -- it reads finalized, voted and proposed together and
+    /// must not mix two different moments. `None` means no stable `(block, id)`
+    /// pair could be read, in which case the caller should keep what it had.
+    pub fn tags(&self) -> Option<KvTags> {
+        let mut raw = ffi::kv_tags {
+            finalized: 0,
+            earliest: 0,
+            proposed: 0,
+            proposed_id: [0; 32],
+            voted: 0,
+            voted_id: [0; 32],
+        };
+        if !unsafe { ffi::kv_read_tags(self.ptr, &mut raw) } {
+            return None;
+        }
+        Some(KvTags {
+            finalized: cursor(raw.finalized),
+            earliest: cursor(raw.earliest),
+            proposed: cursor(raw.proposed).map(|block| (block, raw.proposed_id)),
+            voted: cursor(raw.voted).map(|block| (block, raw.voted_id)),
+        })
+    }
+}
+
+/// KV's block-tag cursors. The proposed and voted heads carry their block ids,
+/// since a height can hold several proposals and only the id says which one is
+/// canonical.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KvTags {
+    pub finalized: Option<u64>,
+    pub earliest: Option<u64>,
+    pub proposed: Option<(u64, [u8; 32])>,
+    pub voted: Option<(u64, [u8; 32])>,
+}
+
+impl Drop for KvHandle {
+    fn drop(&mut self) {
+        unsafe { ffi::kv_close(self.ptr) };
+    }
+}
+
+/// A pinned block. All reads through it see one consistent snapshot, and that
+/// snapshot cannot be reclaimed until the guard is dropped -- which happens on
+/// every path out of a request, including error and cancellation.
+#[derive(Debug)]
+pub struct BlockGuard {
+    kv: Arc<KvHandle>,
+    handle: i64,
+}
+
+impl BlockGuard {
+    /// `None` if the account does not exist at this block.
+    pub fn account(&self, addr: &[u8; 20]) -> Option<KvAccount> {
+        let mut raw = ffi::kv_account {
+            balance: [0u8; 32],
+            code_hash: [0u8; 32],
+            nonce: 0,
+        };
+        let found =
+            unsafe { ffi::kv_read_account(self.kv.ptr, self.handle, addr.as_ptr(), &mut raw) };
+        found.then_some(KvAccount {
+            balance_be: raw.balance,
+            code_hash: raw.code_hash,
+            nonce: raw.nonce,
+        })
+    }
+
+    /// Slot value, all-zero when unset (KV stores no zero slots, so absent and
+    /// zero are the same answer).
+    pub fn storage(&self, addr: &[u8; 20], key: &[u8; 32]) -> [u8; 32] {
+        let mut out = [0u8; 32];
+        unsafe {
+            ffi::kv_read_storage(
+                self.kv.ptr,
+                self.handle,
+                addr.as_ptr(),
+                key.as_ptr(),
+                out.as_mut_ptr(),
+            )
+        };
+        out
+    }
+
+    /// A whole-block blob. Panics on a table category, which must go through
+    /// [`Self::table_blob`] -- reading a table as a single blob is not
+    /// meaningful.
+    pub fn block_blob(&self, category: BlobCategory) -> Option<Vec<u8>> {
+        assert!(
+            !category.is_table(),
+            "{category:?} is a table; use table_blob"
+        );
+        let mut ptr = null();
+        let mut len = 0u64;
+        let found = unsafe {
+            ffi::kv_read_block_blob(self.kv.ptr, self.handle, category as u32, &mut ptr, &mut len)
+        };
+        found.then(|| take_buf(ptr, len))
+    }
+
+    /// One entry of a table category, by its index within the block.
+    pub fn table_blob(&self, category: BlobCategory, index: u32) -> Option<Vec<u8>> {
+        let mut ptr = null();
+        let mut len = 0u64;
+        let found = unsafe {
+            ffi::kv_read_tx_blob(
+                self.kv.ptr,
+                self.handle,
+                category as u32,
+                index,
+                &mut ptr,
+                &mut len,
+            )
+        };
+        found.then(|| take_buf(ptr, len))
+    }
+
+    /// Whether this block carries the category at all.
+    pub fn blob_present(&self, category: BlobCategory) -> bool {
+        unsafe { ffi::kv_blob_present(self.kv.ptr, self.handle, category as u32) }
+    }
+
+    /// How many entries a table category holds; `None` if the category is
+    /// absent or is not a table.
+    pub fn table_count(&self, category: BlobCategory) -> Option<u64> {
+        let n = unsafe { ffi::kv_table_count(self.kv.ptr, self.handle, category as u32) };
+        (n >= 0).then_some(n as u64)
+    }
+}
+
+impl Drop for BlockGuard {
+    fn drop(&mut self) {
+        unsafe { ffi::kv_end_block_protection(self.kv.ptr, self.handle) };
+    }
+}
+
+/// Copy a buffer the C side handed us into a `Vec`, then release it. An empty
+/// blob arrives as a null pointer with length 0.
+fn take_buf(ptr: *const u8, len: u64) -> Vec<u8> {
+    let out = if ptr.is_null() || len == 0 {
+        Vec::new()
+    } else {
+        unsafe { std::slice::from_raw_parts(ptr, len as usize) }.to_vec()
+    };
+    unsafe { ffi::kv_free(ptr) };
+    out
+}
+
+/// Metadata cursors use `u64::MAX` for "not set yet".
+fn cursor(v: u64) -> Option<u64> {
+    (v != u64::MAX).then_some(v)
+}
+
+#[cfg(test)]
+mod kv_tests {
+    use super::*;
+
+    /// Cross-process smoke test of the KV read side: this test binary is a
+    /// second process reading the store while execution writes it.
+    ///
+    /// Requires exec to be RUNNING against the same store (it owns the hazard
+    /// segment and metadata this attaches to). Set `KVDB_IMAGE` to the `.kvhdr`
+    /// sidecar and `KVDB_DEVICE` to the backing file/device, then run while a
+    /// replay is in flight. Skipped when `KVDB_IMAGE` is unset, so a normal
+    /// `cargo test` is unaffected.
+    ///
+    /// Correctness of the reads themselves is covered on the C++ side against
+    /// triedb; what this pins down is the FFI plumbing -- pointer and lifetime
+    /// handling, the packed `kv_account` layout, buffer ownership -- plus the
+    /// one thing only a separate process can show: that attaching exec's shared
+    /// segment from outside exec actually works.
+    #[test]
+    fn kv_reader_cross_process() {
+        let Ok(img) = std::env::var("KVDB_IMAGE") else {
+            eprintln!("KVDB_IMAGE unset; skipping");
+            return;
+        };
+
+        let kv =
+            Arc::new(KvHandle::try_new(Path::new(&img)).expect("kv_open (is exec running?)"));
+
+        let finalized = kv.finalized_block().expect("finalized cursor");
+        let earliest = kv.earliest_block().expect("earliest cursor");
+        assert!(earliest <= finalized, "{earliest} > {finalized}");
+        eprintln!("retained window: [{earliest}, {finalized}]");
+
+        let guard = kv
+            .try_protect_block(finalized, None)
+            .expect("pin the finalized tip");
+
+        // Reads must be repeatable through one pin.
+        let addr = [0u8; 20];
+        assert_eq!(guard.account(&addr), guard.account(&addr));
+        let slot = [0u8; 32];
+        assert_eq!(guard.storage(&addr, &slot), guard.storage(&addr, &slot));
+
+        // Whole-block categories: present ones must be non-empty.
+        for category in [
+            BlobCategory::Header,
+            BlobCategory::Ommers,
+            BlobCategory::TxHashes,
+        ] {
+            if guard.blob_present(category) {
+                let blob = guard.block_blob(category).expect("present blob reads");
+                assert!(!blob.is_empty(), "{category:?} present but empty");
+            }
+        }
+
+        // Per-tx tables must cover exactly the block's tx count, every entry
+        // must be non-empty, and every tx hash must resolve back to its own
+        // position in this block.
+        let per_tx = [
+            BlobCategory::Receipts,
+            BlobCategory::Transactions,
+            BlobCategory::CallFrames,
+        ];
+        if let Some(hashes) = guard.block_blob(BlobCategory::TxHashes) {
+            assert_eq!(hashes.len() % 32, 0, "tx-hash blob is not a hash multiple");
+            let ntx = hashes.len() / 32;
+            eprintln!("block {finalized}: {ntx} txs");
+
+            for category in per_tx {
+                if guard.blob_present(category) {
+                    assert_eq!(
+                        guard.table_count(category),
+                        Some(ntx as u64),
+                        "{category:?} table does not cover every tx"
+                    );
+                }
+            }
+
+            for i in 0..ntx {
+                let mut hash = [0u8; 32];
+                hash.copy_from_slice(&hashes[i * 32..(i + 1) * 32]);
+                assert_eq!(
+                    kv.resolve_tx_hash(&hash),
+                    Some((finalized, i as u32)),
+                    "tx {i} did not resolve to its own position"
+                );
+                for category in per_tx {
+                    if guard.blob_present(category) {
+                        let blob = guard.table_blob(category, i as u32).expect("entry reads");
+                        assert!(!blob.is_empty(), "{category:?}[{i}] empty");
+                    }
+                }
+            }
+        }
+
+        // A table category must not be read as one blob.
+        assert!(
+            std::panic::catch_unwind(|| guard.block_blob(BlobCategory::Receipts)).is_err(),
+            "reading a table as a whole blob should panic"
+        );
+
+        // Below the retained floor there is nothing to pin.
+        if earliest > 0 {
+            assert!(
+                kv.try_protect_block(earliest - 1, None).is_none(),
+                "pinned a block below the retained floor"
+            );
+        }
+
+        drop(guard); // releases the pin
+        eprintln!("kv_reader_cross_process ok");
+    }
+}

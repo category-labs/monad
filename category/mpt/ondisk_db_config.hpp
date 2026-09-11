@@ -49,6 +49,14 @@ struct OnDiskDbConfig
     // deactivation the chunks are returned to the primary. Must be a power
     // of 2. Each chunk can hold 1 << 24 = 16777216 historical entries.
     uint32_t root_offsets_chunk_count{2};
+    // If non-zero and less than the physical device size, bound the storage
+    // pool to the byte range [0, device_usable_size), leaving the remainder of
+    // the device for another consumer.
+    // kvdb_base: left 0 (full device) so existing triedb archives restore
+    // unchanged. KV is kept out of triedb's range by the trie.cpp allocation
+    // guard, not by shrinking the pool. The usable_size feature stays available
+    // for a future bounded-archive workflow.
+    uint64_t device_usable_size{0};
 };
 
 struct ReadOnlyOnDiskDbConfig
@@ -65,6 +73,14 @@ struct ReadOnlyOnDiskDbConfig
     std::vector<std::filesystem::path> dbname_paths;
     unsigned concurrent_read_io_limit{600};
     uint64_t node_lru_max_mem{100ul << 20}; // 100MB
+    // If non-zero and less than the physical device size, bound the storage
+    // pool to the byte range [0, device_usable_size). Must match the value used
+    // when the pool was opened for writing, as it feeds the pool identity hash.
+    // kvdb_base: left 0 (full device) so existing triedb archives restore
+    // unchanged. KV is kept out of triedb's range by the trie.cpp allocation
+    // guard, not by shrinking the pool. The usable_size feature stays available
+    // for a future bounded-archive workflow.
+    uint64_t device_usable_size{0};
 };
 
 MONAD_MPT_NAMESPACE_END

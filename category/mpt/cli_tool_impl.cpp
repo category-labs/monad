@@ -1682,6 +1682,9 @@ opened.
             impl.flags.num_cnv_chunks =
                 impl.root_offsets_chunk_count +
                 monad::mpt::UpdateAux::cnv_chunks_for_db_metadata;
+            // kvdb_base: triedb's pool is NOT bounded (full device), so existing
+            // archives restore unchanged. KV stays out of triedb's range via the
+            // trie.cpp allocation guard, not by shrinking the pool.
             if (!impl.restore_database.empty()) {
                 if (!impl.archive_database.empty()) {
                     impl.cli_ask_question(

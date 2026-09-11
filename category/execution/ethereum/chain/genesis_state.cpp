@@ -105,6 +105,7 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
         *builder,
         genesis.header,
         deltas,
+        code_map,
         [&](BlockHeader &h) {
             h.receipts_root = db.receipts_root();
             h.state_root = db.state_root();

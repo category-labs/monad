@@ -196,6 +196,7 @@ void find_notify_fiber_future(
     for (; node_prefix_index < node->path_nibbles_len();
          ++node_prefix_index, ++prefix_index) {
         if (prefix_index >= key.nibble_size()) {
+            KVDB_TRIE_NOTFOUND(); // key ends inside a node path: no value
             promise.set_value(
                 {NodeCursor{node, node_prefix_index},
                  find_result::key_ends_earlier_than_node_failure});
@@ -203,6 +204,7 @@ void find_notify_fiber_future(
         }
         if (key.get(prefix_index) !=
             node->path_nibble_view().get(node_prefix_index)) {
+            KVDB_TRIE_NOTFOUND(); // nibble mismatch: no value
             promise.set_value(
                 {NodeCursor{node, node_prefix_index},
                  find_result::key_mismatch_failure});
@@ -210,6 +212,7 @@ void find_notify_fiber_future(
         }
     }
     if (prefix_index == key.nibble_size()) {
+        KVDB_TRIE_FOUND(); // reached the value
         promise.set_value(
             {NodeCursor{node, node_prefix_index}, find_result::success});
         return;
@@ -221,17 +224,32 @@ void find_notify_fiber_future(
             key.substr(static_cast<unsigned char>(prefix_index) + 1u);
         auto const child_index = node->to_child_index(branch);
         if (auto const &next = node->next(child_index); next != nullptr) {
+            KVDB_TRIE_HIT(); // resident child, no device I/O (depth++)
             find_notify_fiber_future(aux, std::move(promise), next, next_key);
             return;
         }
         if (aux.io->owning_thread_id() != get_tl_tid()) {
+            // Not on the io thread: bail so the caller retries here on the io
+            // thread. The retry lands on the hit or read branch and is counted
+            // there, so this path is intentionally not counted.
             promise.set_value(
                 {NodeCursor{node, node_prefix_index},
                  find_result::need_to_continue_in_io_thread});
             return;
         }
-        auto cont = [&aux, p = std::move(promise), next_key](
-                        NodeCursor const &node_cursor) mutable -> result<void> {
+        KVDB_TRIE_IO(); // child not resident, one device read (depth++, io++)
+        auto cont = [&aux, p = std::move(promise), next_key
+#if KVDB_PROTO
+                     ,
+                     saved = ::monad::kvdb_metrics::cur_trie
+#endif
+        ](NodeCursor const &node_cursor) mutable -> result<void> {
+#if KVDB_PROTO
+            // Restore this descent's bucket + depth: the device miss above
+            // yielded the worker thread to other in-flight finds before this
+            // continuation resumed the descent.
+            ::monad::kvdb_metrics::cur_trie = saved;
+#endif
             find_notify_fiber_future(aux, std::move(p), node_cursor, next_key);
             return success();
         };
@@ -240,6 +258,7 @@ void find_notify_fiber_future(
             *aux.io, std::move(receiver), receiver.bytes_to_read);
     }
     else {
+        KVDB_TRIE_NOTFOUND(); // no branch for this nibble: no value
         promise.set_value(
             {NodeCursor{node, node_prefix_index},
              find_result::branch_not_exist_failure});

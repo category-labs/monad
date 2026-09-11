@@ -100,6 +100,19 @@ struct Db::Impl
     virtual timeline_id tid() const = 0;
 
     virtual mpt::state_machine_kind state_machine_type() const = 0;
+
+#if KVDB_PROTO
+    virtual void
+    post_to_io_thread(std::move_only_function<void(async::AsyncIO &)>)
+    {
+        MONAD_ABORT("post_to_io_thread: no io service thread for this Db impl");
+    }
+
+    // Register (empty => unregister) a per-iteration hook the io service loop
+    // calls to reap the KV store's OWN io_uring ring, so KV reads pipeline
+    // instead of draining per lookup. Default no-op for impls with no io thread.
+    virtual void set_kv_poll_hook(std::function<bool()>) {}
+#endif
 };
 
 AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
@@ -108,6 +121,7 @@ AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
         pool_options.open_read_only = true;
         pool_options.disable_mismatching_storage_pool_check =
             options.disable_mismatching_storage_pool_check;
+        pool_options.usable_size = options.device_usable_size;
         MONAD_ASSERT(!options.dbname_paths.empty());
         return async::storage_pool{
             options.dbname_paths,
@@ -130,6 +144,7 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
     : pool{[&] -> async::storage_pool {
         async::storage_pool::creation_flags pool_options;
         pool_options.num_cnv_chunks = options.root_offsets_chunk_count + 1;
+        pool_options.usable_size = options.device_usable_size;
         auto const len = options.file_size_db * 1024 * 1024 * 1024 + 24576;
         if (options.dbname_paths.empty()) {
             return async::storage_pool{
@@ -421,11 +436,25 @@ public:
         uint64_t version;
     };
 
+#if KVDB_PROTO
+    // KV-DB prototype: run an arbitrary caller-supplied task on the io service
+    // thread with access to the shared AsyncIO (see Db::post_to_io_thread).
+    struct KvIoTask
+    {
+        std::move_only_function<void(async::AsyncIO &)> fn;
+    };
+#endif
+
     using Comms = std::variant<
         std::monostate, fiber_find_request_t, FiberUpsertRequest,
         FiberLoadAllFromBlockRequest, FiberTraverseRequest, MoveSubtrieRequest,
         FiberLoadRootVersionRequest, FiberCopyTrieRequest,
-        RODbFiberFindOwningNodeRequest>;
+        RODbFiberFindOwningNodeRequest
+#if KVDB_PROTO
+        ,
+        KvIoTask
+#endif
+        >;
 
 private:
     ::moodycamel::ConcurrentQueue<Comms> comms_;
@@ -438,6 +467,14 @@ private:
         AsyncIOContext async_io;
         UpdateAux aux;
         std::atomic<bool> sleeping{false}, done{false};
+#if KVDB_PROTO
+        // KV-DB prototype: per-iteration hook reaping the KV store's own
+        // io_uring ring. Published once (release) after kv_poll_hook is set; the
+        // loop reads it (acquire). kv_poll_hook() returns true while KV has ops
+        // in flight, keeping the loop spinning instead of idle-sleeping.
+        std::atomic<bool> kv_hook_ready{false};
+        std::function<bool()> kv_poll_hook;
+#endif
 
         DbAsyncWorker(
             OnDiskDbServiceThread *const parent,
@@ -517,6 +554,15 @@ private:
                     did_nothing = false;
                 }
                 async_io.io.poll_nonblocking(1);
+#if KVDB_PROTO
+                // Reap the KV store's own io_uring ring (non-blocking) so KV
+                // reads from the parallel exec fibers pipeline. Returns true
+                // while KV ops are in flight, which keeps the loop spinning.
+                if (kv_hook_ready.load(std::memory_order_acquire) &&
+                    kv_poll_hook()) {
+                    did_nothing = false;
+                }
+#endif
                 if (did_nothing && async_io.io.io_in_flight() > 0) {
                     did_nothing = false;
                 }
@@ -553,6 +599,14 @@ private:
                 bool did_nothing = true;
                 if (parent->comms_.try_dequeue(request)) {
                     if (auto *req = std::get_if<1>(&request); req != nullptr) {
+                        // Begin a trie descent for this lookup kind (selects the
+                        // found/not-found buckets, resets depth/io).
+                        KVDB_TRIE_BEGIN(req->kind);
+                        // Count the resident entry root (a node cache hit): the
+                        // descent is handed this root and starts at its child, so
+                        // without this the trie undercounts by one root per find
+                        // versus kv (whose descent reads its own root).
+                        KVDB_TRIE_HIT();
                         find_notify_fiber_future(
                             aux, std::move(req->promise), req->start, req->key);
                     }
@@ -622,9 +676,27 @@ private:
                             req->write_root);
                         req->promise.set_value(std::move(root));
                     }
+#if KVDB_PROTO
+                    else if (auto *req = std::get_if<KvIoTask>(&request);
+                             req != nullptr) {
+                        // KV-DB prototype: kick off a caller task on this
+                        // thread with the shared AsyncIO; its async reads are
+                        // driven by the poll_nonblocking below.
+                        req->fn(async_io.io);
+                    }
+#endif
                     did_nothing = false;
                 }
                 async_io.io.poll_nonblocking(1);
+#if KVDB_PROTO
+                // Reap the KV store's own io_uring ring (non-blocking) so KV
+                // reads from the parallel exec fibers pipeline. Returns true
+                // while KV ops are in flight, which keeps the loop spinning.
+                if (kv_hook_ready.load(std::memory_order_acquire) &&
+                    kv_poll_hook()) {
+                    did_nothing = false;
+                }
+#endif
                 if (did_nothing && async_io.io.io_in_flight() > 0) {
                     did_nothing = false;
                 }
@@ -714,6 +786,22 @@ public:
         }
     }
 
+#if KVDB_PROTO
+    void set_kv_poll_hook(std::function<bool()> hook)
+    {
+        MONAD_ASSERT(worker_ != nullptr);
+        if (hook) {
+            // Publish: write the fn, then release the ready flag; the io loop
+            // reads the flag (acquire) before ever touching the fn.
+            worker_->kv_poll_hook = std::move(hook);
+            worker_->kv_hook_ready.store(true, std::memory_order_release);
+        }
+        else {
+            worker_->kv_hook_ready.store(false, std::memory_order_release);
+        }
+    }
+#endif
+
     UpdateAux &aux()
     {
         MONAD_ASSERT(worker_ != nullptr);
@@ -798,10 +886,39 @@ public:
         }
         ::boost::fibers::promise<find_cursor_result_type> promise;
         auto fut = promise.get_future();
+#if KVDB_PROTO
+        // Consume-and-clear the exec-fiber lookup-kind tag (set by TrieDb's
+        // read_account/read_storage/read_code) into this request. Same fiber, no
+        // yield since it was set.
+        ::monad::kvdb_metrics::LookupKind const kind =
+            ::monad::kvdb_metrics::find_kind;
+        ::monad::kvdb_metrics::find_kind =
+            ::monad::kvdb_metrics::LookupKind::other;
+#endif
         worker_thread_->submit(fiber_find_request_t{
-            .promise = std::move(promise), .start = start, .key = key});
+            .promise = std::move(promise),
+            .start = start,
+            .key = key,
+#if KVDB_PROTO
+            .kind = kind,
+#endif
+        });
         return fut.get();
     }
+
+#if KVDB_PROTO
+    virtual void post_to_io_thread(
+        std::move_only_function<void(async::AsyncIO &)> fn) override
+    {
+        worker_thread_->submit(
+            OnDiskDbServiceThread::KvIoTask{.fn = std::move(fn)});
+    }
+
+    virtual void set_kv_poll_hook(std::function<bool()> hook) override
+    {
+        worker_thread_->set_kv_poll_hook(std::move(hook));
+    }
+#endif
 
     // threadsafe
     virtual Node::SharedPtr upsert_fiber_blocking(
@@ -1180,6 +1297,34 @@ Node::SharedPtr Db::upsert(
         can_write_to_fast,
         write_root);
 }
+
+#if KVDB_PROTO
+void Db::post_to_io_thread(std::move_only_function<void(async::AsyncIO &)> fn)
+{
+    MONAD_ASSERT(impl_);
+    impl_->post_to_io_thread(std::move(fn));
+}
+
+void Db::set_kv_poll_hook(std::function<bool()> hook)
+{
+    MONAD_ASSERT(impl_);
+    impl_->set_kv_poll_hook(std::move(hook));
+}
+
+void Db::clear_kv_poll_hook()
+{
+    // Unregister, then post a barrier task and wait for it. Once it runs on the
+    // io thread we know the loop has observed ready=false and is not mid-hook,
+    // so the caller may safely destroy the KV state the hook referenced.
+    MONAD_ASSERT(impl_);
+    impl_->set_kv_poll_hook({});
+    ::boost::fibers::promise<void> p;
+    auto f = p.get_future();
+    impl_->post_to_io_thread(
+        [p = std::move(p)](async::AsyncIO &) mutable { p.set_value(); });
+    f.get();
+}
+#endif
 
 Node::SharedPtr Db::copy_trie(
     Node::SharedPtr src_root, NibblesView const src_prefix,

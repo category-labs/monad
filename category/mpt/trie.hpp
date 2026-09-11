@@ -474,6 +474,13 @@ struct fiber_find_request_t
     ::boost::fibers::promise<find_cursor_result_type> promise{};
     NodeCursor start{};
     NibblesView key{};
+#if KVDB_PROTO
+    // KV-DB prototype: routes this find's node reads to the per-lookup-type
+    // metric bucket (account / storage / code / other). Set by find_fiber_blocking
+    // from the exec-fiber find_kind tag; read in rwdb_run.
+    ::monad::kvdb_metrics::LookupKind kind{
+        ::monad::kvdb_metrics::LookupKind::other};
+#endif
 };
 #ifdef __GNUC__
     #pragma GCC diagnostic pop

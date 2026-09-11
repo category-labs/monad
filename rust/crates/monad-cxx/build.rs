@@ -14,6 +14,13 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 fn main() {
+    // libmonad_execution.so is built from category/, so a change there has to
+    // rerun this script. Without it cargo reruns only when this crate's own
+    // files change, and the shared library keeps the C++ it was first built
+    // with -- while monad-triedb, which does declare this, rebuilds against the
+    // new headers. The mismatch surfaces as an undefined symbol at load time.
+    println!("cargo:rerun-if-changed=../../../category");
+
     if monad_build::should_build_execution() {
         monad_build::MonadCMake::new(
             monad_build::repository_root(),

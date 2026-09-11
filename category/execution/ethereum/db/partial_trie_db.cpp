@@ -821,7 +821,7 @@ void PartialTrieDb::set_block_and_prefix(
 
 void PartialTrieDb::commit(
     bytes32_t const &, CommitBuilder &, BlockHeader const &header,
-    StateDeltas const &deltas,
+    StateDeltas const &deltas, Code const &,
     std::function<void(BlockHeader &)> populate_header_fn)
 {
     block_number_ = header.number;

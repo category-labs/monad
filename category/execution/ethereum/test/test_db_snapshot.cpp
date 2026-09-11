@@ -685,7 +685,7 @@ TEST(DbBinarySnapshot, DumpFromSecondaryPageDb)
         builder.add_state_deltas(deltas).add_code(Code{});
         BlockHeader const header{.number = BLOCK};
         tdb2.commit(
-            bytes32_t{BLOCK}, builder, header, deltas, [&](BlockHeader &h) {
+            bytes32_t{BLOCK}, builder, header, deltas, Code{}, [&](BlockHeader &h) {
                 h.receipts_root = tdb2.receipts_root();
                 h.state_root = tdb2.state_root();
                 h.withdrawals_root = tdb2.withdrawals_root();

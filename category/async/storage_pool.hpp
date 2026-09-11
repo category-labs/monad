@@ -336,6 +336,9 @@ public:
         //! Number of conventional chunks to allocate per device. Default is 3.
         uint32_t num_cnv_chunks;
 
+        //! If non-zero and < physical size, bound the pool to [0, usable_size).
+        uint64_t usable_size{0};
+
         constexpr creation_flags()
             : chunk_capacity(28)
             , interleave_chunks_evenly(false)

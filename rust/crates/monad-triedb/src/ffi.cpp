@@ -16,6 +16,7 @@
 #include "ffi.h"
 
 #include <category/core/byte_string.hpp>
+#include <category/core/config.hpp>
 #include <category/core/log.hpp>
 #include <category/core/nibble.h>
 #include <category/execution/ethereum/db/util.hpp>
@@ -574,3 +575,204 @@ validator_set *triedb_read_valset(
 
     return valset;
 }
+
+#if KVDB_PROTO
+// KV-DB prototype (RPC read side). KvReaderHandle is an opaque alias for
+// monad::KvReader (defined in trie_db.cpp); we round-trip it as an opaque
+// pointer. See trie_db.hpp for the two-hazard protocol.
+//
+// These are declared here rather than by including trie_db.hpp: that header
+// pulls in the execution internals (and their third_party include paths), which
+// this crate's build does not carry. Only the entry points are needed, and a
+// signature that drifts from trie_db.hpp fails loudly at link time.
+namespace monad
+{
+    struct KvReader;
+
+    KvReader *kv_reader_open(char const *kvhdr_path);
+    void kv_reader_close(KvReader *);
+    int64_t
+    kv_reader_protect_block(KvReader *, uint64_t block, unsigned char const *id);
+    void kv_reader_end_protect(KvReader *, int64_t handle);
+    bool kv_reader_account(
+        KvReader *, int64_t handle, unsigned char const *addr,
+        unsigned char *out_balance_be, unsigned char *out_code_hash,
+        uint64_t *out_nonce);
+    void kv_reader_storage(
+        KvReader *, int64_t handle, unsigned char const *addr,
+        unsigned char const *key, unsigned char *out32);
+    bool kv_reader_code(
+        KvReader *, unsigned char const *code_hash, unsigned char const **out,
+        uint64_t *out_len);
+    bool kv_reader_block_blob(
+        KvReader *, int64_t handle, uint32_t category,
+        unsigned char const **out, uint64_t *out_len);
+    bool kv_reader_tx_blob(
+        KvReader *, int64_t handle, uint32_t category, uint32_t tx_index,
+        unsigned char const **out, uint64_t *out_len);
+    bool kv_reader_blob_present(KvReader *, int64_t handle, uint32_t category);
+    int64_t kv_reader_table_count(
+        KvReader *, int64_t handle, uint32_t category);
+    void kv_reader_free(unsigned char const *);
+    bool kv_reader_resolve_tx_hash(
+        KvReader *, unsigned char const *hash, uint64_t *out_block,
+        uint32_t *out_tx_index);
+    bool kv_reader_resolve_block_hash(
+        KvReader *, unsigned char const *hash, uint64_t *out_number);
+    uint64_t kv_reader_cursor(KvReader *, int which);
+    bool kv_reader_tags(
+        KvReader *, uint64_t *finalized, uint64_t *earliest,
+        uint64_t *proposed, unsigned char *proposed_id, uint64_t *voted,
+        unsigned char *voted_id);
+}
+int kv_open(char const *const kvhdr_path, KvReaderHandle **const out)
+{
+    if (kvhdr_path == nullptr || out == nullptr) {
+        return -1;
+    }
+    monad::KvReader *const r = monad::kv_reader_open(kvhdr_path);
+    if (r == nullptr) {
+        return -2;
+    }
+    *out = reinterpret_cast<KvReaderHandle *>(r);
+    return 0;
+}
+
+int kv_close(KvReaderHandle *const h)
+{
+    monad::kv_reader_close(reinterpret_cast<monad::KvReader *>(h));
+    return 0;
+}
+
+int64_t kv_try_protect_block(
+    KvReaderHandle *const h, uint64_t const block, uint8_t const *const id)
+{
+    return monad::kv_reader_protect_block(
+        reinterpret_cast<monad::KvReader *>(h), block, id);
+}
+
+void kv_end_block_protection(KvReaderHandle *const h, int64_t const handle)
+{
+    monad::kv_reader_end_protect(
+        reinterpret_cast<monad::KvReader *>(h), handle);
+}
+
+namespace
+{
+    monad::KvReader *kvr(KvReaderHandle *const h)
+    {
+        return reinterpret_cast<monad::KvReader *>(h);
+    }
+}
+
+bool kv_read_account(
+    KvReaderHandle *const h, int64_t const handle, uint8_t const *const addr,
+    kv_account *const out)
+{
+    if (h == nullptr || out == nullptr || handle < 0) {
+        return false;
+    }
+    return monad::kv_reader_account(
+        kvr(h), handle, addr, out->balance, out->code_hash, &out->nonce);
+}
+
+void kv_read_storage(
+    KvReaderHandle *const h, int64_t const handle, uint8_t const *const addr,
+    uint8_t const *const key, uint8_t *const out_value)
+{
+    monad::kv_reader_storage(kvr(h), handle, addr, key, out_value);
+}
+
+bool kv_read_code(
+    KvReaderHandle *const h, uint8_t const *const code_hash,
+    uint8_t const **const value, uint64_t *const len)
+{
+    return monad::kv_reader_code(kvr(h), code_hash, value, len);
+}
+
+bool kv_read_block_blob(
+    KvReaderHandle *const h, int64_t const handle, uint32_t const category,
+    uint8_t const **const value, uint64_t *const len)
+{
+    if (handle < 0) {
+        return false;
+    }
+    return monad::kv_reader_block_blob(kvr(h), handle, category, value, len);
+}
+
+bool kv_read_tx_blob(
+    KvReaderHandle *const h, int64_t const handle, uint32_t const category,
+    uint32_t const tx_index, uint8_t const **const value,
+    uint64_t *const len)
+{
+    if (handle < 0) {
+        return false;
+    }
+    return monad::kv_reader_tx_blob(
+        kvr(h), handle, category, tx_index, value, len);
+}
+
+bool kv_blob_present(
+    KvReaderHandle *const h, int64_t const handle, uint32_t const category)
+{
+    if (handle < 0) {
+        return false;
+    }
+    return monad::kv_reader_blob_present(kvr(h), handle, category);
+}
+
+int64_t kv_table_count(
+    KvReaderHandle *const h, int64_t const handle, uint32_t const category)
+{
+    if (handle < 0) {
+        return -1;
+    }
+    return monad::kv_reader_table_count(kvr(h), handle, category);
+}
+
+void kv_free(uint8_t const *const value)
+{
+    monad::kv_reader_free(value);
+}
+
+bool kv_resolve_tx_hash(
+    KvReaderHandle *const h, uint8_t const *const hash,
+    uint64_t *const block, uint32_t *const tx_index)
+{
+    return monad::kv_reader_resolve_tx_hash(kvr(h), hash, block, tx_index);
+}
+
+bool kv_resolve_block_hash(
+    KvReaderHandle *const h, uint8_t const *const hash,
+    uint64_t *const number)
+{
+    return monad::kv_reader_resolve_block_hash(kvr(h), hash, number);
+}
+
+uint64_t kv_finalized_block(KvReaderHandle *const h)
+{
+    return monad::kv_reader_cursor(kvr(h), 0);
+}
+
+uint64_t kv_earliest_block(KvReaderHandle *const h)
+{
+    return monad::kv_reader_cursor(kvr(h), 1);
+}
+
+uint64_t kv_proposed_block(KvReaderHandle *const h)
+{
+    return monad::kv_reader_cursor(kvr(h), 2);
+}
+
+bool kv_read_tags(KvReaderHandle *const h, kv_tags *const out)
+{
+    return monad::kv_reader_tags(
+        kvr(h), &out->finalized, &out->earliest, &out->proposed,
+        out->proposed_id, &out->voted, out->voted_id);
+}
+
+uint64_t kv_voted_block(KvReaderHandle *const h)
+{
+    return monad::kv_reader_cursor(kvr(h), 3);
+}
+#endif // KVDB_PROTO

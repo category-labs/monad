@@ -34,6 +34,27 @@ impl MonadCMake {
     {
         let mut cmake = cmake::Config::new(path);
 
+        // Default target arch, applied to every language including the
+        // assembler: category/core/keccak_impl.S selects an implementation on
+        // __AVX2__ / __AVX512F__ and #errors out if neither is enabled, so the
+        // arch must reach the assembler and not just C/C++.
+        //
+        // The repo's toolchain files cannot supply it on this path: they set
+        // CMAKE_<LANG>_FLAGS_INIT, which only seeds a flags variable that is
+        // not already set, while this crate always passes -DCMAKE_<LANG>_FLAGS=
+        // explicitly and so pre-empts the seeding.
+        //
+        // This is only a default. It is emitted BEFORE the flags from
+        // $CFLAGS / $CXXFLAGS / $ASMFLAGS, and for gcc/clang the last -march
+        // wins, so an explicitly configured arch still takes effect -- which is
+        // how the Dockerfiles and CI workflows set it (all three, to haswell).
+        // Use those variables to build for a different arch.
+        const DEFAULT_ARCH: &str = "-march=haswell";
+        cmake
+            .cflag(DEFAULT_ARCH)
+            .cxxflag(DEFAULT_ARCH)
+            .asmflag(DEFAULT_ARCH);
+
         match linkage {
             MonadCMakeLinkage::Static => {}
             MonadCMakeLinkage::Dynamic => {

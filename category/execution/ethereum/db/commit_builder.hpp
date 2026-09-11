@@ -47,9 +47,50 @@ protected:
     // page keyed by storage page key.
     ProposalPostState proposal_post_state_;
 
+#if KVDB_PROTO
+    // KV reuse: the already-encoded, DB-format values the KV blob writer stores
+    // verbatim (byte-identical to triedb), so it never re-encodes on the commit
+    // critical path. Views into bytes_alloc_/hash_alloc_ (a deque: refs stay
+    // valid across push_back and across build(), which does not clear them).
+    // Per-tx categories are indexed by tx position. Filled by the add_* below.
+    std::vector<byte_string_view> kv_receipts_;
+    std::vector<byte_string_view> kv_transactions_;
+    std::vector<byte_string_view> kv_call_frames_; // full per-tx encoding (unchunked)
+    std::vector<byte_string_view> kv_tx_hashes_; // keccak(encoded_tx), 32B each
+    std::vector<byte_string_view> kv_withdrawals_;
+    byte_string_view kv_ommers_;
+#endif
+
 public:
     explicit CommitBuilder(uint64_t block_number);
     virtual ~CommitBuilder() = default;
+
+#if KVDB_PROTO
+    std::vector<byte_string_view> const &kv_receipts() const
+    {
+        return kv_receipts_;
+    }
+    std::vector<byte_string_view> const &kv_transactions() const
+    {
+        return kv_transactions_;
+    }
+    std::vector<byte_string_view> const &kv_call_frames() const
+    {
+        return kv_call_frames_;
+    }
+    std::vector<byte_string_view> const &kv_tx_hashes() const
+    {
+        return kv_tx_hashes_;
+    }
+    std::vector<byte_string_view> const &kv_withdrawals() const
+    {
+        return kv_withdrawals_;
+    }
+    byte_string_view kv_ommers() const
+    {
+        return kv_ommers_;
+    }
+#endif
 
     virtual CommitBuilder &add_state_deltas(StateDeltas const &);
 

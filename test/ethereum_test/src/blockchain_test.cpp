@@ -326,6 +326,7 @@ Result<BlockExecOutput> execute(
         *builder,
         block.header,
         *state,
+        code,
         [&](BlockHeader &h) {
             h.receipts_root = db.receipts_root();
             h.state_root = db.state_root();

@@ -105,19 +105,14 @@ std::pair<file_offset_t, file_offset_t> storage_pool::device_t::capacity() const
             file_offset_t(stat.st_size), file_offset_t(stat.st_blocks) * 512};
     }
     case device_t::type_t_::block_device: {
-        file_offset_t capacity;
         // Start with the pool metadata on the device
         file_offset_t used =
             round_up_align<CPU_PAGE_BITS>(metadata_->total_size(size_of_file_));
         // Add the capacity of the cnv chunk
         used += metadata_->chunk_capacity;
-        MONAD_ASSERT_PRINTF(
-            !ioctl(
-                readwritefd_,
-                _IOR(0x12, 114, size_t) /*BLKGETSIZE64*/,
-                &capacity),
-            "failed due to %s",
-            std::strerror(errno));
+        // Report the pool's actual (possibly usable_size-bounded) extent rather
+        // than the raw physical device size from BLKGETSIZE64.
+        file_offset_t const capacity = size_of_file_;
         auto const chunks = this->chunks();
         auto const useds = metadata_->chunk_bytes_used(size_of_file_);
         for (size_t n = 0; n < chunks; n++) {
@@ -382,6 +377,11 @@ storage_pool::device_t storage_pool::make_device_(
         MONAD_ABORT("zonefs support isn't implemented yet");
     default:
         abort();
+    }
+    if (flags.usable_size != 0 &&
+        flags.usable_size < static_cast<uint64_t>(stat.st_size)) {
+        MONAD_ASSERT((flags.usable_size % 4096) == 0);
+        stat.st_size = static_cast<off_t>(flags.usable_size);
     }
     if (stat.st_size < CPU_PAGE_SIZE) {
         MONAD_ABORT_PRINTF(

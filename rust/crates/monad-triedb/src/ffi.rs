@@ -26,6 +26,14 @@ pub(crate) use self::bindings::{
     triedb_latest_voted_version, triedb_open, triedb_poll, triedb_read, triedb_read_valset,
     triedb_traverse, TriedbRoInner,
 };
+// KV-DB prototype (RPC read side): the flat-page KV store's reader.
+pub(crate) use self::bindings::{
+    kv_blob_present, kv_close, kv_earliest_block, kv_end_block_protection, kv_finalized_block,
+    kv_free, kv_open, kv_proposed_block, kv_read_account, kv_read_block_blob, kv_read_code,
+    kv_read_storage, kv_read_tags, kv_read_tx_blob, kv_resolve_block_hash, kv_resolve_tx_hash,
+    kv_table_count, kv_try_protect_block, kv_voted_block, KvReaderHandle,
+};
+pub use self::bindings::{kv_account, kv_tags};
 pub use self::bindings::{validator_data, validator_set};
 
 #[allow(

@@ -50,7 +50,7 @@ namespace test
         if (withdrawals.has_value()) {
             builder->add_withdrawals(withdrawals.value());
         }
-        db.commit(block_id, *builder, header, deltas, [&](BlockHeader &h) {
+        db.commit(block_id, *builder, header, deltas, Code{}, [&](BlockHeader &h) {
             h.receipts_root = db.receipts_root();
             h.state_root = db.state_root();
             h.withdrawals_root = db.withdrawals_root();

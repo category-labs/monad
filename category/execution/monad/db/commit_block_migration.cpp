@@ -74,7 +74,7 @@ void commit_block(
         builder->add_state_deltas(state);
         add_common_deltas(*builder);
         canonical_db = &primary_db;
-        primary_db.commit(block_id, *builder, header, state, populate_header);
+        primary_db.commit(block_id, *builder, header, state, anc.code, populate_header);
         return;
     }
 
@@ -99,14 +99,14 @@ void commit_block(
     bool const primary_is_canonical = !traits::mip_8_active();
     canonical_db = primary_is_canonical ? &primary_db : secondary_db;
     if (primary_is_canonical) {
-        primary_db.commit(block_id, *builder, header, state, populate_header);
+        primary_db.commit(block_id, *builder, header, state, anc.code, populate_header);
         secondary_db->commit(
-            block_id, *builder2, header, state, populate_header);
+            block_id, *builder2, header, state, anc.code, populate_header);
     }
     else {
         secondary_db->commit(
-            block_id, *builder2, header, state, populate_header);
-        primary_db.commit(block_id, *builder, header, state, populate_header);
+            block_id, *builder2, header, state, anc.code, populate_header);
+        primary_db.commit(block_id, *builder, header, state, anc.code, populate_header);
     }
 }
 

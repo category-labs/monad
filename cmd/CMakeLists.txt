@@ -39,6 +39,11 @@ add_executable(monad-cli monad_cli.cpp)
 monad_compile_options(monad-cli)
 target_link_libraries(monad-cli PUBLIC monad_execution CLI11::CLI11)
 
+# KV DB prototype: standalone snapshot -> KV bulk-build utility.
+add_executable(kvbuild kvbuild/main.cpp)
+monad_compile_options(kvbuild)
+target_link_libraries(kvbuild PRIVATE monad_execution)
+
 target_compile_definitions(monad PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
 target_compile_definitions(monad-cli
                            PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")

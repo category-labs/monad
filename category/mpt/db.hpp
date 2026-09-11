@@ -36,6 +36,10 @@
 #include <memory>
 #include <optional>
 
+#if KVDB_PROTO
+    #include <functional>
+#endif
+
 MONAD_MPT_NAMESPACE_BEGIN
 
 struct OnDiskDbConfig;
@@ -146,6 +150,22 @@ public:
         Node::SharedPtr root, UpdateList, uint64_t block_id,
         bool enable_compaction = true, bool can_write_to_fast = true,
         bool write_root = true);
+
+#if KVDB_PROTO
+    // KV-DB prototype hook: run `fn` on this Db's io service thread (the one
+    // that owns the io_uring), handing it the shared AsyncIO. A caller-layer
+    // async op (the KV B+tree descent) submits its reads on that AsyncIO and is
+    // driven to completion by the service loop's poll. KV-agnostic — the caller
+    // owns its own promise/result and fulfills it from within `fn`'s chain.
+    void post_to_io_thread(std::move_only_function<void(async::AsyncIO &)> fn);
+
+    // Register (empty => unregister) a hook the io service loop invokes each
+    // iteration to reap the KV store's OWN io_uring ring (returns true while KV
+    // ops are in flight). clear_ blocks until the io thread has stopped calling
+    // it, so KV state the hook referenced can then be destroyed.
+    void set_kv_poll_hook(std::function<bool()> hook);
+    void clear_kv_poll_hook();
+#endif
 
     void update_finalized_version(uint64_t version);
     void update_verified_version(uint64_t version);

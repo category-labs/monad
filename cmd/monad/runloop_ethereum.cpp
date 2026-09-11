@@ -188,7 +188,7 @@ Result<void> process_ethereum_block(
     if (block.withdrawals.has_value()) {
         builder.add_withdrawals(block.withdrawals.value());
     }
-    db.commit(block_id, builder, block.header, *state, [&](BlockHeader &h) {
+    db.commit(block_id, builder, block.header, *state, code, [&](BlockHeader &h) {
         // second stage: populate block header
         h.receipts_root = db.receipts_root();
         h.state_root = db.state_root();

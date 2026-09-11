@@ -203,6 +203,18 @@ Result<void> process_monad_block(
         .senders = senders,
         .authorities = recovered_authorities};
 
+#if KVDB_PROTO
+    // Stamp the consensus commit-state cursors, which this replay driver
+    // otherwise never touches -- only runloop_monad.cpp does, so without this
+    // the proposed/voted tags stay unset and everything reading them (KV's
+    // (block, id) publication, RPC's `latest`/`safe` resolution) is dark.
+    // Same points in the block as the real runloop: voted names the parent
+    // before execution, proposed names this block after commit.
+    if (block.header.number > 0) {
+        db.update_voted_metadata(block.header.number - 1, parent_block_id);
+    }
+#endif
+
     // Core execution: transaction-level EVM execution that tracks state
     // changes but does not commit them
     db.set_block_and_prefix(block.header.number - 1, parent_block_id);
@@ -259,10 +271,61 @@ Result<void> process_monad_block(
     BOOST_OUTCOME_TRY(
         validate_output_header(block.header, exec_output.eth_header));
 
+#if KVDB_PROTO
+    // kvdb_base sibling-fork test knob: for every $KVDB_SIBLING_EVERY-th block,
+    // commit $KVDB_SIBLING_WIDTH-1 extra proposals at this height under synthetic
+    // sibling ids (id^1 .. id^(width-1)) on the SAME parent, forming a width-way
+    // fork in both triedb and KV. The real id is finalized below, which keeps it
+    // and unlinks the losers. Each sibling commit's undecided (up) check
+    // validates it vs triedb; the historical (mv) check then confirms the
+    // finalized block reads back the winner; the fork counters prove the fork.
+    // width <= 256 (siblings differ in the last id byte).
+    static char const *const kvdb_sib_every = std::getenv("KVDB_SIBLING_EVERY");
+    static uint64_t const kvdb_sib_every_v =
+        kvdb_sib_every ? std::strtoull(kvdb_sib_every, nullptr, 10) : 0;
+    static char const *const kvdb_sib_width = std::getenv("KVDB_SIBLING_WIDTH");
+    static uint64_t const kvdb_sib_width_v =
+        kvdb_sib_width ? std::strtoull(kvdb_sib_width, nullptr, 10) : 2;
+    if (kvdb_sib_every_v != 0 &&
+        (block.header.number % kvdb_sib_every_v) == 0) {
+        for (uint64_t j = 1; j < kvdb_sib_width_v; ++j) {
+            bytes32_t sib_id = block_id;
+            // Diverge in a high byte so sibling ids branch at the first nibble,
+            // like real (hash) block ids. (Diverging only in the last byte makes
+            // the ids share a long prefix -- with replay's bytes32(number) ids
+            // that is a mostly-zero prefix -- which trips a triedb edge case at
+            // 3+ same-version proposals; production hash ids never do this.)
+            sib_id.bytes[0] ^= static_cast<unsigned char>(j); // distinct id
+            db.set_block_and_prefix(block.header.number - 1, parent_block_id);
+            commit_block<traits>(db, nullptr, sib_id, block.header, *state, anc);
+        }
+        // Reposition on the real proposal so finalize(real id) resolves it.
+        db.set_block_and_prefix(block.header.number, block_id);
+    }
+#endif
+
+#if KVDB_PROTO
+    // This block is now committed as a proposal: name it the proposed head.
+    db.update_proposed_metadata(block.header.number, block_id);
+#endif
+
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer
+#if KVDB_PROTO
+    // kvdb_base test knob: $KVDB_FINALIZE_UPTO caps finalization at a block
+    // number, leaving later blocks as undecided proposals (a chain of open
+    // proposals) so the KV undecided-proposal path is exercised.
+    static char const *const kvdb_fin_upto = std::getenv("KVDB_FINALIZE_UPTO");
+    static uint64_t const kvdb_fin_upto_v =
+        kvdb_fin_upto ? std::strtoull(kvdb_fin_upto, nullptr, 10) : ~uint64_t{0};
+    if (block.header.number <= kvdb_fin_upto_v) {
+        db.finalize(block.header.number, block_id);
+        db.update_verified_block(block.header.number);
+    }
+#else
     db.finalize(block.header.number, block_id);
     db.update_verified_block(block.header.number);
+#endif
     exec_output.eth_block_hash =
         to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
     block_hash_buffer.set(

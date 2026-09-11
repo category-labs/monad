@@ -1450,6 +1450,20 @@ node_writer_unique_ptr_type replace_node_writer_to_start_at_new_chunk(
     auto const *ci_ = aux.metadata_ctx().main()->free_list_end();
     MONAD_ASSERT(ci_ != nullptr); // we are out of free blocks!
     auto const idx = ci_->index(aux.metadata_ctx().main());
+#if KVDB_PROTO
+    // KV-DB prototype guard: seq chunks [KVDB_FIRST_SEQ_CHUNK, end) hold the KV
+    // image, written by direct index so they look "free" to this allocator.
+    // triedb must never claim a write chunk there or it would silently
+    // overwrite KV data. Fail loud instead of corrupting. This is the claim
+    // site (before any write is directed at the chunk); only reachable on very
+    // long runs where triedb growth reaches the KV region.
+    MONAD_ASSERT_PRINTF(
+        static_cast<uint32_t>(idx) < KVDB_FIRST_SEQ_CHUNK,
+        "KVDB_PROTO: triedb claimed seq chunk %u for writing, which is inside "
+        "the KV region [%u, end); aborting to avoid overwriting KV data",
+        static_cast<unsigned>(idx),
+        static_cast<unsigned>(KVDB_FIRST_SEQ_CHUNK));
+#endif
     chunk_offset_t const offset_of_new_writer{idx, 0};
     // Pad buffer of existing node write that is about to get initiated so it's
     // O_DIRECT i/o aligned

@@ -161,6 +161,34 @@ namespace monad::vm::utils::evm_as::internal
                         std::format("0x{}", monad::to_hex(push.address)));
                     return true;
                 },
+                [&](Eip8024I const &i8) -> bool {
+                    // Mirrors the DUP/SWAP handling in the PlainI case above:
+                    // without it the vstack would not track this instruction
+                    // and every later annotation would be wrong.
+                    if (!compiler::eip8024_immediate_valid(i8.opcode, i8.imm)) {
+                        return false;
+                    }
+                    auto const effect =
+                        compiler::eip8024_stack_effect(i8.opcode, i8.imm);
+                    if (effect.min_stack > ctx.vstack.size()) {
+                        // Stack underflow
+                        return false;
+                    }
+                    auto const top = ctx.vstack.size() - 1;
+                    if (i8.opcode == compiler::EvmOpCode::DUPN) {
+                        auto const n = compiler::eip8024_decode_single(i8.imm);
+                        ctx.vstack.push_back(ctx.vstack[ctx.vstack.size() - n]);
+                        return true;
+                    }
+                    if (i8.opcode == compiler::EvmOpCode::SWAPN) {
+                        auto const n = compiler::eip8024_decode_single(i8.imm);
+                        std::swap(ctx.vstack[top], ctx.vstack[top - n]);
+                        return true;
+                    }
+                    auto const [n, m] = compiler::eip8024_decode_pair(i8.imm);
+                    std::swap(ctx.vstack[top - n], ctx.vstack[top - m]);
+                    return true;
+                },
                 [](auto const &) -> bool { return false; }},
             inst);
     }
@@ -254,6 +282,10 @@ namespace monad::vm::utils::evm_as
                         emit_byte(mc::EvmOpCode::JUMPDEST);
                     },
                     [&](InvalidI const &) -> void { emit_byte(0xFE); },
+                    [&](Eip8024I const &eip8024) -> void {
+                        emit_byte(eip8024.opcode);
+                        emit_byte(eip8024.imm);
+                    },
                     [&](auto const &) -> void { MONAD_ABORT(); }}
 
                 ,
@@ -432,6 +464,30 @@ namespace monad::vm::utils::evm_as
                             first = false;
                         }
                         return 0;
+                    },
+                    [&](Eip8024I const &eip8024) -> size_t {
+                        // A disallowed immediate behaves as INVALID (mirrors
+                        // basic_blocks.hpp). Print it as INVALID rather than
+                        // decoding, which would otherwise trip an assert.
+                        if (!mc::eip8024_immediate_valid(
+                                eip8024.opcode, eip8024.imm)) {
+                            os << "INVALID";
+                            return 7;
+                        }
+                        auto const info =
+                            mc::opcode_table<traits>[eip8024.opcode];
+                        std::string operand;
+                        if (eip8024.opcode == mc::EvmOpCode::EXCHANGE) {
+                            auto const [n, m] =
+                                mc::eip8024_decode_pair(eip8024.imm);
+                            operand = std::format("{}, {}", +n, +m);
+                        }
+                        else {
+                            operand = std::format(
+                                "{}", +mc::eip8024_decode_single(eip8024.imm));
+                        }
+                        os << info.name << ' ' << operand;
+                        return info.name.size() + 1 + operand.size();
                     }},
                 ins);
             if (config.annotate && length > 0) {

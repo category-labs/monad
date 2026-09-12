@@ -42,7 +42,7 @@ test -f "$ELF" || {
     exit 1
 }
 
-BUILD_ROOT=$HERE/target/elf/riscv64ima-zisk-zkvm-elf/release/build
+BUILD_ROOT=$HERE/target/guest-build
 MANIFEST=${MONAD_ZKVM_MANIFEST:-$ELF.build.json}
 
 python3 "$HERE/audit-official-build.py" \

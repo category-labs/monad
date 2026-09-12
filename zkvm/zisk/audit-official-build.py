@@ -56,6 +56,63 @@ REQUIRED_FLAGS = (
 )
 
 
+def strip_comments(src: str) -> str:
+    """Remove C/C++ comments before inspecting function bodies."""
+    out, i, n = [], 0, len(src)
+    while i < n:
+        if src.startswith("//", i):
+            j = src.find("\n", i)
+            i = n if j < 0 else j
+        elif src.startswith("/*", i):
+            j = src.find("*/", i + 2)
+            out.append(" ")
+            i = n if j < 0 else j + 2
+        else:
+            out.append(src[i])
+            i += 1
+    return "".join(out)
+
+
+def delete_overloads(src: str) -> dict[str, str | None]:
+    """Map delete signatures to bodies, or None for declarations.
+
+    Normalise parameter names and whitespace before matching overloads.
+    """
+    src = strip_comments(src)
+    found: dict[str, str | None] = {}
+    for m in re.finditer(r"operator\s+delete\s*(\[\s*\])?\s*\(", src):
+        array = "[]" if m.group(1) else ""
+        depth, i, n = 1, m.end(), len(src)
+        while i < n and depth:
+            depth += (src[i] == "(") - (src[i] == ")")
+            i += 1
+        if depth:
+            fail("unbalanced parameter list after an operator delete")
+        params = []
+        for p in src[m.end() : i - 1].split(","):
+            p = p.strip()
+            if not p:
+                continue
+            # Strip trailing parameter names, preserving types such as size_t.
+            p = re.sub(r"(?<=[*&])\s*[A-Za-z_]\w*\s*$", "", p)
+            p = re.sub(r"\s+[A-Za-z_]\w*\s*$", "", p)
+            params.append(re.sub(r"\s+", "", p))
+        key = f"operator delete{array}({','.join(params)})"
+        rest = src[i:]
+        j = re.match(r"\s*(noexcept\s*)?", rest).end()
+        if j < len(rest) and rest[j] == "{":
+            depth, k = 1, j + 1
+            while k < len(rest) and depth:
+                depth += (rest[k] == "{") - (rest[k] == "}")
+                k += 1
+            if depth:
+                fail(f"unbalanced body for {key}")
+            found[key] = rest[j + 1 : k - 1]
+        else:
+            found.setdefault(key, None)
+    return found
+
+
 def fail(message: str) -> None:
     raise SystemExit(f"official-build audit failed: {message}")
 
@@ -221,7 +278,61 @@ def main() -> int:
     guest_flags = list(build_dir.glob("**/monad-zkvm-guest-zisk.dir/flags.make"))
     if len(guest_flags) != 1:
         fail(f"expected one guest flags.make, found {len(guest_flags)}")
-    check_flags(guest_flags[0].read_text(errors="replace"), "guest compile command")
+    guest_text = guest_flags[0].read_text(errors="replace")
+    check_flags(guest_text, "guest compile command")
+
+    # Check header inclusion and empty definitions: removed calls let the linker
+    # discard delete symbols, so the ELF alone cannot validate the const claim.
+    if "-include" not in guest_text or "nodelete.hpp" not in guest_text:
+        fail("guest compile command omits -include nodelete.hpp")
+    libstdcxx = (args.repo / "zkvm" / "core" / "libstdcxx.cpp").read_text(
+        errors="replace"
+    )
+    # Discover overloads from both files so new ones are checked too.
+    declared = delete_overloads(
+        (args.repo / "zkvm" / "guest" / "nodelete.hpp").read_text(errors="replace")
+    )
+    defined = delete_overloads(libstdcxx)
+    if not declared:
+        fail("nodelete.hpp declares no operator delete; the assertion is gone")
+    for key, body in sorted(defined.items()):
+        if body is not None and body.strip():
+            fail(
+                f"libstdcxx.cpp defines {key} with a body; nodelete.hpp asserts "
+                "the family does nothing"
+            )
+    for key in sorted(declared):
+        if key not in defined or defined[key] is None:
+            fail(
+                f"nodelete.hpp declares {key} a no-op and libstdcxx.cpp does not "
+                "define it; the attribute then speaks for a definition elsewhere"
+            )
+    libc = strip_comments(
+        (args.repo / "zkvm" / "core" / "libc.cpp").read_text(errors="replace")
+    )
+    free_body = re.search(r"void free\(void \*(\w+)\)\s*\{(.*?)\n\}", libc, re.S)
+    if free_body is None or free_body.group(2).split() != [
+        f"(void){free_body.group(1)};"
+    ]:
+        fail(
+            "nodelete.hpp declares free a no-op and libc.cpp no longer "
+            "defines it so"
+        )
+    nm = compiler.with_name(compiler.name.replace("g++", "nm"))
+    if not nm.exists():
+        fail(f"nm not found beside compiler: {nm}")
+    for line in subprocess.check_output(
+        [str(nm), "--print-size", "--defined-only", str(elf)], text=True
+    ).splitlines():
+        fields = line.split()
+        if len(fields) == 4 and (
+            fields[3].startswith(("_Zdl", "_Zda")) or fields[3] == "free"
+        ):
+            if int(fields[1], 16) != 4:
+                fail(
+                    f"{fields[3]} is {int(fields[1], 16)} bytes; nodelete.hpp "
+                    "asserts it is a no-op"
+                )
 
     readelf = compiler.with_name(compiler.name.replace("g++", "readelf"))
     if not readelf.is_file():

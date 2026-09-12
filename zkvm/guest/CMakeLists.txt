@@ -129,6 +129,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         string(APPEND CMAKE_C_FLAGS " -mtune=generic-ooo")
         string(APPEND CMAKE_CXX_FLAGS " -mtune=generic-ooo")
 
+        # Expose the no-op operator delete declarations to every ZisK C++ file.
+        string(APPEND CMAKE_CXX_FLAGS
+               " -include ${CMAKE_CURRENT_SOURCE_DIR}/nodelete.hpp")
+
         # Lower eligible block memory operations, including struct copies,
         # directly to ZisK DMA. Requires Zicsr and the patched compiler built by
         # zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh.

@@ -180,6 +180,42 @@ def main() -> int:
         fail(f"expected one guest flags.make, found {len(guest_flags)}")
     check_flags(guest_flags[0].read_text(errors="replace"), "guest compile command")
 
+    # nodelete.hpp asserts at every call site that the operator delete family does
+    # nothing, so an official artifact must not hold a version of them that does
+    # something. The ELF alone cannot say: once the attribute has removed every
+    # call, --gc-sections drops the symbols whether they were empty or not. So
+    # check both ends -- that the assertion was made, and that what it speaks for
+    # is still true.
+    if "-include" not in guest_text or "nodelete.hpp" not in guest_text:
+        fail("guest compile command omits -include nodelete.hpp")
+    libstdcxx = (args.repo / "zkvm" / "core" / "libstdcxx.cpp").read_text(
+        errors="replace"
+    )
+    for sig in (
+        "void operator delete(void *) noexcept {}",
+        "void operator delete[](void *) noexcept {}",
+        "void operator delete(void *, std::size_t) noexcept {}",
+        "void operator delete[](void *, std::size_t) noexcept {}",
+    ):
+        if sig not in libstdcxx:
+            fail(
+                "nodelete.hpp declares this a no-op and libstdcxx.cpp no longer "
+                f"defines it so: {sig}"
+            )
+    nm = compiler.with_name(compiler.name.replace("g++", "nm"))
+    if not nm.exists():
+        fail(f"nm not found beside compiler: {nm}")
+    for line in subprocess.check_output(
+        [str(nm), "--print-size", "--defined-only", str(elf)], text=True
+    ).splitlines():
+        fields = line.split()
+        if len(fields) == 4 and fields[3].startswith(("_Zdl", "_Zda")):
+            if int(fields[1], 16) != 4:
+                fail(
+                    f"{fields[3]} is {int(fields[1], 16)} bytes; nodelete.hpp "
+                    "asserts it is a no-op"
+                )
+
     readelf = compiler.with_name(compiler.name.replace("g++", "readelf"))
     if not readelf.is_file():
         fail(f"readelf not found beside compiler: {readelf}")

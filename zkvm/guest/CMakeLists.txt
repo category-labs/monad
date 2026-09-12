@@ -173,6 +173,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         string(APPEND CMAKE_C_FLAGS " -mtune=generic-ooo")
         string(APPEND CMAKE_CXX_FLAGS " -mtune=generic-ooo")
 
+        # Every C++ TU is told that operator delete does nothing, because the
+        # definitions that say so are alone in libstdcxx.cpp and nothing else can
+        # see them. C is excluded: the header declares a C++ operator.
+        string(APPEND CMAKE_CXX_FLAGS
+               " -include ${CMAKE_CURRENT_SOURCE_DIR}/nodelete.hpp")
+
         # Block memory operations through ZisK's DMA precompile, rather than a
         # call into the ziskos mem* thunk or an inline load/store run.
         #

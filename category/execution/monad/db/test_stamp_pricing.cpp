@@ -477,6 +477,37 @@ TEST(StampLru, stamped_entries_survive_value_flips)
     }
 }
 
+TEST(StampLru, expired_stamps_leave_the_stamped_region)
+{
+    LruCache<int, std::optional<int>> cache{
+        /*max_size=*/4, /*stamp_mode=*/true, /*negative_max=*/2};
+    cache.set_evict_floor(0);
+    cache.insert(1, 1);
+    cache.set_stamp(1, 1);
+    cache.insert(2, 2);
+    cache.set_stamp(2, 2);
+    cache.insert(3, 3); // unstamped
+    cache.insert(4, 4); // unstamped
+    // the window moves past both stamps: they are demoted behind every
+    // fresh unstamped entry and go first under pressure
+    cache.set_evict_floor(3);
+    cache.demote_expired(3);
+    {
+        LruCache<int, std::optional<int>>::ConstAccessor acc;
+        ASSERT_TRUE(cache.find(acc, 1));
+        EXPECT_EQ(cache.stamp_of(acc), 0);
+    }
+    cache.insert(5, 5);
+    cache.insert(6, 6);
+    LruCache<int, std::optional<int>>::ConstAccessor acc;
+    EXPECT_FALSE(cache.find(acc, 1));
+    EXPECT_FALSE(cache.find(acc, 2));
+    EXPECT_TRUE(cache.find(acc, 3));
+    EXPECT_TRUE(cache.find(acc, 4));
+    EXPECT_TRUE(cache.find(acc, 5));
+    EXPECT_TRUE(cache.find(acc, 6));
+}
+
 TEST(StampDbCache, finalize_stamps_and_deletion_forgets)
 {
     DbCache cache;

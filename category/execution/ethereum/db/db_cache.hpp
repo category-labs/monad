@@ -362,8 +362,11 @@ private:
                 "stamped storage entry not resident at block %lu",
                 block);
         }
-        accounts_.set_evict_floor(cache_evict_floor(block));
-        storage_.set_evict_floor(cache_evict_floor(block));
+        uint64_t const floor = cache_evict_floor(block);
+        accounts_.set_evict_floor(floor);
+        storage_.set_evict_floor(floor);
+        accounts_.demote_expired(floor);
+        storage_.demote_expired(floor);
     }
 };
 

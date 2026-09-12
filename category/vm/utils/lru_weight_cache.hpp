@@ -170,6 +170,36 @@ namespace monad::vm::utils
             evict_floor_.store(floor, std::memory_order_relaxed);
         }
 
+        // Finalize path, after the floor advanced: entries whose stamp fell
+        // below it leave the stamped region (live ones to the unstamped
+        // region, empty ones to the negative list), so the stamped region is
+        // exactly the cached set and expired stamps cannot crowd out fresh
+        // inserts.
+        void demote_expired(uint64_t const floor)
+        {
+            int64_t weight_out = 0;
+            size_t to_negative = 0;
+            lru_.demote_expired(
+                negative_lru_, floor, [&](ListNode const *const node) {
+                    weight_out += node->second.cache_weight_;
+                    ++to_negative;
+                });
+            if (to_negative != 0) {
+                stamped_negative_.fetch_sub(
+                    to_negative, std::memory_order_relaxed);
+                weight_.fetch_sub(weight_out, std::memory_order_acq_rel);
+                size_t const sz = negative_size_.fetch_add(
+                                      to_negative, std::memory_order_acq_rel) +
+                                  to_negative;
+                for (size_t i = negative_max_; i < sz; ++i) {
+                    if (!evict_negative()) {
+                        break;
+                    }
+                    negative_size_.fetch_sub(1, std::memory_order_acq_rel);
+                }
+            }
+        }
+
         /// Insert `value` with `weight` under `key`. Overwrites if there is
         /// already a value under `key`. In stamp mode `negative` selects the
         /// list; a changed flag flips the entry in place.
@@ -272,8 +302,8 @@ namespace monad::vm::utils
                 if (!stamp_mode_) {
                     try_update_lru(lru_, &*acc);
                 }
-                else if (acc->second.negative_) {
-                    try_update_lru(negative_lru_, &*acc);
+                else if (acc->second.negative_ && !acc->second.stamped_) {
+                    negative_lru_.try_update_unstamped_negative(&*acc);
                 }
                 return false;
             }
@@ -587,6 +617,36 @@ namespace monad::vm::utils
                 link_after(&boundary_, node);
                 node->second.update_lru_time(0);
                 return Moved::in_place;
+            }
+
+            // Stamp mode: move every stamped entry with stamp < floor out of
+            // the stamped region (they are its tail): live ones behind the
+            // boundary, empty ones onto `neg`, reporting each of the latter.
+            template <class OnNegative>
+            void demote_expired(
+                LruList &neg, uint64_t const floor, OnNegative const &on_neg)
+            {
+                std::scoped_lock const l(mutex_, neg.mutex_);
+                while (true) {
+                    ListNode const *const node = boundary_.second.prev_;
+                    if (node == &base_ || !node->second.stamped_ ||
+                        static_cast<uint64_t>(node->second.lru_time_.load(
+                            std::memory_order_acquire)) >= floor) {
+                        break;
+                    }
+                    delink(node);
+                    node->second.stamped_ = false;
+                    if (node->second.negative_) {
+                        neg.front_link(node);
+                        node->second.update_lru_time(
+                            ListNode::second_type::wall_clock());
+                        on_neg(node);
+                    }
+                    else {
+                        link_after(base_.second.prev_, node); // the tail
+                        node->second.update_lru_time(0);
+                    }
+                }
             }
 
             // Stamp mode: change the value flag of a stamped entry in place.

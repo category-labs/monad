@@ -245,6 +245,53 @@ public:
         evict_floor_.store(floor, std::memory_order_relaxed);
     }
 
+    // Finalize path, after the floor advanced: entries whose stamp fell
+    // below it are no longer cached and leave the stamped region — a live
+    // one to the tail of the unstamped region (untouched for a window, it
+    // is the coldest entry there), an empty one to the negative list — so
+    // the stamped region is exactly the cached set and expired stamps cannot
+    // crowd out fresh inserts. The stamped region is in stamp order, so the
+    // expired entries are exactly its tail.
+    void demote_expired(uint64_t const floor)
+    {
+        size_t to_negative = 0;
+        {
+            std::unique_lock const l(mutex_);
+            while (true) {
+                ListNode *const node = boundary_.prev_;
+                if (node == &lru_.head_ || !node->stamped_ ||
+                    static_cast<uint64_t>(node->lru_time_.load(
+                        std::memory_order_acquire)) >= floor) {
+                    break;
+                }
+                lru_.delink(node);
+                node->stamped_ = false;
+                if (node->negative_) {
+                    negative_lru_.push_front(node);
+                    node->update_lru_time(ListNode::wall_clock());
+                    ++to_negative;
+                }
+                else {
+                    lru_.insert_after(lru_.tail_.prev_, node);
+                    node->update_lru_time(0);
+                }
+            }
+        }
+        if (to_negative != 0) {
+            stamped_negative_.fetch_sub(to_negative, std::memory_order_relaxed);
+            size_.fetch_sub(to_negative, std::memory_order_acq_rel);
+            size_t const sz = negative_size_.fetch_add(
+                                  to_negative, std::memory_order_acq_rel) +
+                              to_negative;
+            for (size_t i = negative_max_; i < sz; ++i) {
+                if (!evict_negative()) {
+                    break;
+                }
+                negative_size_.fetch_sub(1, std::memory_order_acq_rel);
+            }
+        }
+    }
+
     bool insert(Key const &key, Value const &value, bool const negative = false)
     {
         Accessor acc;

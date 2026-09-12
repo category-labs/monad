@@ -90,6 +90,24 @@ impl Backend {
         emit_rerun_directives(&zkvm_dir, &repo_root);
 
         let mut cfg = cmake::Config::new(&guest_dir);
+        // Reuse CMake outputs across commits, separately for each backend,
+        // toolchain path and official-profile setting.
+        // Store them under zkvm/<backend>/target/guest-build.
+        let mut key = format!("{}-{}", self.name(), riscv_toolchain_dir());
+        if env::var_os("MONAD_ZKVM_OFFICIAL_PROFILE").is_some() {
+            key.push_str("-official");
+        }
+        let key: String = key
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+            .collect();
+        cfg.out_dir(
+            repo_root
+                .join("zkvm")
+                .join(self.name())
+                .join("target/guest-build")
+                .join(&key),
+        );
         cfg.target(self.guest_triple())
             .define("MONAD_ZKVM_GUEST_TARGET", self.name())
             .define("CMAKE_TOOLCHAIN_FILE", &toolchain)
@@ -416,9 +434,7 @@ fn emit_rerun_directives(zkvm_dir: &Path, repo_root: &Path) {
             println!("cargo:rerun-if-changed={}", p.display());
         }
     }
-    // `rerun-if-changed=<dir>` watches only the directory's own mtime, which
-    // doesn't update when files inside are edited. Walk and emit per-file
-    // paths so edits to ffi.cpp / headers / cmake actually trigger a rebuild.
+    // Track source, header and CMake files explicitly so edits trigger a rebuild.
     for sub in ["guest", "core", "category"] {
         walk_emit(&zkvm_dir.join(sub));
     }

@@ -23,6 +23,7 @@
 #include <category/core/cases.hpp>
 #include <category/core/config.hpp>
 #include <category/core/rlp/encode.hpp>
+#include <category/core/zisk_codegen.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
@@ -625,7 +626,7 @@ private:
     inline node_rlp_span child_ref(NodeId const id, node_rlp_span dest)
     {
         if (id == NULL_ID) {
-            dest.back() = 0x80; // RLP empty string
+            dest.back() = zx(0x80); // RLP empty string
             return dest.shrink(1);
         }
         // Pre-state (priming) reads bound-check and resolve against the blob;
@@ -661,7 +662,7 @@ private:
     {
         static_assert(HASH_RLP_LEN == KECCAK256_SIZE + 1);
         auto const hash_span = dest.last(HASH_RLP_LEN);
-        hash_span[0] = 0xa0;
+        hash_span[0] = zx(0xa0);
         std::memcpy(hash_span.data() + 1, hash32.bytes, KECCAK256_SIZE);
         return dest.shrink(HASH_RLP_LEN);
     }

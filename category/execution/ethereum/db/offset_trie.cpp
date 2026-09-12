@@ -317,7 +317,7 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
         node,
         Cases{
             [&, wrap](BranchView b) -> node_rlp_span {
-                dest.back() = 0x80; // empty branch value — last list element
+                dest.back() = zx(0x80); // empty branch value, last element
                 dest = dest.shrink(1);
                 std::array<node_id_wire_t, 16> const children = b.children();
 
@@ -401,7 +401,7 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 MONAD_DEBUG_ASSERT(account_len > 55 && account_len <= 0xFF);
                 dest.back() = static_cast<unsigned char>(account_len);
                 dest = dest.shrink(1);
-                dest.back() = 0xB8;
+                dest.back() = zx(0xB8);
                 dest = dest.shrink(1);
                 dest = encode_path(dest, l.path(), /*terminating=*/true);
                 return wrap(dest);

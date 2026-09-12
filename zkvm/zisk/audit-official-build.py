@@ -225,7 +225,7 @@ def main() -> int:
     data = elf.read_bytes()
     candidates: list[tuple[int, pathlib.Path, dict[str, object], bytes]] = []
     for profile_path in args.build_root.resolve().glob(
-        "*/out/build/monad-zkvm-official-profile.json"
+        "*/build/monad-zkvm-official-profile.json"
     ):
         profile = json.loads(profile_path.read_text())
         features = str(profile.get("features_csv", ""))

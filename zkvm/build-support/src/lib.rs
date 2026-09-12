@@ -23,6 +23,8 @@ use std::{
     process::Command,
 };
 
+mod toolchain;
+
 #[derive(Clone, Copy, Debug)]
 pub enum Backend {
     Zisk,
@@ -62,13 +64,32 @@ impl Backend {
         emit_rerun_directives(&repo_root);
 
         let mut cfg = cmake::Config::new(&guest_dir);
+        // Reuse objects across commits, but not after a compiler rebuild.
+        // Include GCC's frontends: rebuilding them need not change the driver.
+        // Store them under zkvm/<backend>/target/guest-build.
+        let toolchain_dir = riscv_toolchain_dir();
+        let mut key = format!(
+            "{}-{}",
+            self.name(),
+            toolchain::fingerprint(&riscv_gcc(&toolchain_dir))
+        );
+        if env::var_os("MONAD_ZKVM_OFFICIAL_PROFILE").is_some() {
+            key.push_str("-official");
+        }
+        cfg.out_dir(
+            repo_root
+                .join("zkvm")
+                .join(self.name())
+                .join("target/guest-build")
+                .join(&key),
+        );
         // SP1's caller targets the host. Set the guest triple explicitly so
         // cmake-rs selects RISC-V flags instead of host flags such as -m64.
         // The guest CMakeLists.txt supplies the remaining bare-metal flags.
         cfg.target(self.guest_triple())
             .define("MONAD_ZKVM_GUEST_TARGET", self.name())
             .define("CMAKE_TOOLCHAIN_FILE", &toolchain)
-            .define("RISCV_TOOLCHAIN_DIR", riscv_toolchain_dir())
+            .define("RISCV_TOOLCHAIN_DIR", &toolchain_dir)
             .profile("Release")
             .build_target(&self.guest_target());
 
@@ -362,7 +383,6 @@ fn riscv_toolchain_dir() -> String {
 }
 
 // Match the compiler prefixes accepted by riscv64-elf.cmake.
-#[cfg(any(feature = "sp1", test))]
 fn riscv_gcc(toolchain_dir: &str) -> PathBuf {
     let bin = Path::new(toolchain_dir).join("bin");
     for prefix in ["riscv64-none-elf-", "riscv64-unknown-elf-", "riscv-none-elf-"] {

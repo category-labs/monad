@@ -27,6 +27,9 @@ jobs:
           python3 nix/check-zisk.py --repo .
           python3 -m unittest discover -s nix -p 'test_*.py'
 
+      - name: Test guest build support
+        run: cargo test --locked --manifest-path zkvm/build-support/Cargo.toml
+
       - name: Build `build_zk` stage
         uses: ./.github/actions/docker-stage
         with:

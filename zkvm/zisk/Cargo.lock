@@ -948,7 +948,9 @@ dependencies = [
 name = "monad-zkvm-build-support"
 version = "0.1.0"
 dependencies = [
+ "cc",
  "cmake",
+ "shlex",
 ]
 
 [[package]]

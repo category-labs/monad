@@ -13,11 +13,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Exercise CMake's profile serialization."""
+"""Exercise CMake's profile serialization and force-include configuration."""
 
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -73,6 +74,25 @@ class ProfileGenerationTests(unittest.TestCase):
             with self.subTest(template=template):
                 _, _, output = self.generate(template, "plain-value")
                 self.assertEqual(output, (self.root / "plain.json").read_text())
+
+    def test_force_include_from_checkout_with_spaces(self):
+        # Use the guest's actual option and header with a small native build.
+        source = (GUEST / "CMakeLists.txt").read_text()
+        option = re.search(
+            r'string\(APPEND CMAKE_CXX_FLAGS\s+" -include [^\n]+\)', source,
+        )
+        self.assertIsNotNone(option)
+        shutil.copy2(GUEST / "nodelete.hpp", self.root)
+        (self.root / "probe.cpp").write_text("std::size_t probe() { return 0; }\n")
+        (self.root / "CMakeLists.txt").write_text(
+            "cmake_minimum_required(VERSION 3.20)\n"
+            "project(profile_probe LANGUAGES CXX)\n"
+            + option.group() + "\n"
+            + "add_library(probe OBJECT probe.cpp)\n"
+        )
+        self.run_cmake("-S", self.root, "-B", self.root / "build")
+        self.run_cmake("--build", self.root / "build")
+
 
 if __name__ == "__main__":
     unittest.main()

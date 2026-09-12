@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/likely.h>
@@ -32,27 +34,68 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <utility>
 #include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
 // Encode
-byte_string encode_topics(std::vector<bytes32_t> const &topics)
+
+namespace
 {
-    byte_string result{};
-    for (auto const &i : topics) {
-        result += encode_bytes32(i);
+    size_t log_payload_size(Receipt::Log const &log)
+    {
+        size_t const topics_payload =
+            log.topics.size() * (1 + sizeof(bytes32_t));
+        return (1 + sizeof(Address)) + list_header_size(topics_payload) +
+               topics_payload + encoded_string_size(log.data);
     }
-    return encode_list2(result);
+
+    size_t encoded_log_size(Receipt::Log const &log)
+    {
+        size_t const payload = log_payload_size(log);
+        return list_header_size(payload) + payload;
+    }
+
+    // Write directly into the pre-sized buffer. Address and topic headers
+    // have fixed one-byte encodings for their 20- and 32-byte payloads.
+    void append_log(unsigned char *&cursor, Receipt::Log const &log)
+    {
+        static_assert(sizeof(bytes32_t) == 32);
+        static_assert(sizeof(Address) == 20);
+        constexpr unsigned char address_header = 0x80 + sizeof(Address);
+        constexpr unsigned char topic_header = 0x80 + sizeof(bytes32_t);
+
+        size_t const topics_payload =
+            log.topics.size() * (1 + sizeof(bytes32_t));
+
+        append_list_header(cursor, log_payload_size(log));
+        *cursor++ = static_cast<unsigned char>(address_header);
+        std::memcpy(cursor, log.address.bytes, sizeof(log.address.bytes));
+        cursor += sizeof(log.address.bytes);
+        append_list_header(cursor, topics_payload);
+        for (auto const &i : log.topics) {
+            *cursor++ = static_cast<unsigned char>(topic_header);
+            std::memcpy(cursor, i.bytes, sizeof(i.bytes));
+            cursor += sizeof(i.bytes);
+        }
+        append_string2(cursor, log.data);
+    }
 }
 
 byte_string encode_log(Receipt::Log const &log)
 {
-    return encode_list2(
-        encode_address(log.address),
-        encode_topics(log.topics),
-        encode_string2(log.data));
+    byte_string result{};
+    result.resize_and_overwrite(
+        encoded_log_size(log),
+        [&log](unsigned char *const buffer, size_t const buffer_size) {
+            unsigned char *cursor = buffer;
+            append_log(cursor, log);
+            MONAD_ASSERT(cursor == buffer + buffer_size);
+            return buffer_size;
+        });
+    return result;
 }
 
 byte_string encode_bloom(Receipt::Bloom const &bloom)
@@ -62,26 +105,55 @@ byte_string encode_bloom(Receipt::Bloom const &bloom)
 
 byte_string encode_receipt(Receipt const &receipt)
 {
-    byte_string log_result{};
-
+    // Size all nested lists before allocating, then write each log once.
+    size_t logs_payload = 0;
     for (auto const &i : receipt.logs) {
-        log_result += encode_log(i);
+        logs_payload += encoded_log_size(i);
     }
 
-    auto receipt_bytes = encode_list2(
-        encode_unsigned(receipt.status),
-        encode_unsigned(receipt.gas_used),
-        encode_bloom(receipt.bloom),
-        encode_list2(log_result));
+    // Small integer encodings stay inline; append the bloom without a copy.
+    auto const status = encode_unsigned(receipt.status);
+    auto const gas_used = encode_unsigned(receipt.gas_used);
+    auto const bloom = to_byte_string_view(receipt.bloom);
 
-    if (receipt.type == TransactionType::eip1559 ||
-        receipt.type == TransactionType::eip2930 ||
-        receipt.type == TransactionType::eip4844 ||
-        receipt.type == TransactionType::eip7702) {
-        receipt_bytes.insert(
-            receipt_bytes.begin(), static_cast<unsigned char>(receipt.type));
-    }
-    return receipt_bytes;
+    size_t const payload = status.size() + gas_used.size() +
+                           encoded_string_size(bloom) +
+                           list_header_size(logs_payload) + logs_payload;
+
+    bool const typed = receipt.type == TransactionType::eip1559 ||
+                       receipt.type == TransactionType::eip2930 ||
+                       receipt.type == TransactionType::eip4844 ||
+                       receipt.type == TransactionType::eip7702;
+
+    // Every byte is overwritten, so avoid resize()'s initial zero-fill.
+    // Unchecked writes rely on exact sizes; the final assert checks the cursor.
+    byte_string result{};
+    result.resize_and_overwrite(
+        static_cast<size_t>(typed) + list_header_size(payload) + payload,
+        [&](unsigned char *const buffer, size_t const buffer_size) {
+            unsigned char *cursor = buffer;
+            if (typed) {
+                *cursor++ = static_cast<unsigned char>(receipt.type);
+            }
+            append_list_header(cursor, payload);
+            auto const append_encoded = [&cursor](
+                                            byte_string const &encoded_bytes) {
+                // Encoded RLP, not a string: nothing to NUL-terminate.
+                // NOLINTNEXTLINE(bugprone-not-null-terminated-result)
+                std::memcpy(cursor, encoded_bytes.data(), encoded_bytes.size());
+                cursor += encoded_bytes.size();
+            };
+            append_encoded(status);
+            append_encoded(gas_used);
+            append_string2(cursor, bloom);
+            append_list_header(cursor, logs_payload);
+            for (auto const &i : receipt.logs) {
+                append_log(cursor, i);
+            }
+            MONAD_ASSERT(cursor == buffer + buffer_size);
+            return buffer_size;
+        });
+    return result;
 }
 
 // Decode

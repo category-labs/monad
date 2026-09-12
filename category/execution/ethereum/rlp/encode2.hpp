@@ -43,46 +43,109 @@ inline byte_string to_big_compact(unsigned_integral auto n)
         zeroless_view({reinterpret_cast<unsigned char *>(&n), sizeof(n)}));
 }
 
+// Size helpers and cursor-based writers avoid temporary nested encodings.
+// Writers require enough space, as computed by the matching size helpers.
+
+// Built-in unsigned types only; wider integers use separate overloads.
+inline size_t big_compact_size(std::unsigned_integral auto const byte_count)
+{
+    return (static_cast<size_t>(std::bit_width(byte_count)) + 7) / 8;
+}
+
+// The length of the header encode_list2 writes ahead of encoded_item payload
+// this size.
+inline size_t list_header_size(size_t const payload)
+{
+    return payload > 55 ? 1 + big_compact_size(payload) : 1;
+}
+
+// encode_string2's length, header included.
+inline size_t encoded_string_size(byte_string_view const string_view)
+{
+    size_t const size = string_view.size();
+    if (size == 1 && string_view[0] <= 0x7f) {
+        return 1;
+    }
+    return (size > 55 ? 1 + big_compact_size(size) : 1) + size;
+}
+
+// Append the long-form prefix and big-endian payload length.
+inline void append_length(
+    unsigned char *&cursor, unsigned char const base, size_t const size)
+{
+    size_t const byte_count = big_compact_size(size);
+    *cursor++ = static_cast<unsigned char>(base + byte_count);
+    for (size_t i = byte_count; i-- > 0;) {
+        *cursor++ = static_cast<unsigned char>(size >> (i * 8));
+    }
+}
+
+// encode_list2's header, written ahead of encoded_item payload the caller owns.
+inline void append_list_header(unsigned char *&cursor, size_t const payload)
+{
+    if (payload > 55) {
+        append_length(cursor, 0xf7, payload);
+        return;
+    }
+    *cursor++ = static_cast<unsigned char>(0xc0 + payload);
+}
+
+// encode_string2, appended rather than returned.
+inline void
+append_string2(unsigned char *&cursor, byte_string_view const string_view)
+{
+    size_t const size = string_view.size();
+    if (size == 1 && string_view[0] <= 0x7f) {
+        *cursor++ = string_view[0];
+        return;
+    }
+    if (size > 55) {
+        append_length(cursor, 0xb7, size);
+    }
+    else {
+        *cursor++ = static_cast<unsigned char>(0x80 + size);
+    }
+    std::memcpy(cursor, string_view.data(), size);
+    cursor += size;
+}
+
 inline byte_string encode_string2(byte_string_view const string_view)
 {
     byte_string result;
-    uint32_t const size = static_cast<uint32_t>(string_view.size());
-    if (size == 1 && string_view[0] <= 0x7f) {
-        result = string_view;
-    }
-    else if (size > 55) {
-        auto const size_str = to_big_compact(size);
-        MONAD_ASSERT(size_str.size() <= 8u);
-        result.push_back(0xb7 + static_cast<unsigned char>(size_str.size()));
-        result += size_str;
-        result += string_view;
-    }
-    else {
-        result.push_back(0x80 + static_cast<unsigned char>(size));
-        result += string_view;
-    }
+    result.resize_and_overwrite(
+        encoded_string_size(string_view),
+        [string_view](unsigned char *const buffer, size_t const byte_count) {
+            unsigned char *cursor = buffer;
+            append_string2(cursor, string_view);
+            MONAD_ASSERT(cursor == buffer + byte_count);
+            return byte_count;
+        });
     return result;
 }
 
 template <std::convertible_to<byte_string>... Args>
 byte_string encode_list2(Args const &...args)
 {
-    size_t const size = (args.size() + ... + size_t{0});
+    size_t const payload = (args.size() + ... + size_t{0});
+
     byte_string result;
-    if (size > 55) {
-        auto const size_str = to_big_compact(size);
-        MONAD_ASSERT(size_str.size() <= 8u);
-        result +=
-            (static_cast<unsigned char>(0xf7) +
-             static_cast<unsigned char>(size_str.size()));
-        result += size_str;
-    }
-    else {
-        result +=
-            (static_cast<unsigned char>(0xc0) +
-             static_cast<unsigned char>(size));
-    }
-    ([&] { result += args; }(), ...);
+    result.resize_and_overwrite(
+        list_header_size(payload) + payload,
+        [&](unsigned char *const buffer, size_t const byte_count) {
+            unsigned char *cursor = buffer;
+            append_list_header(cursor, payload);
+            [[maybe_unused]] auto const append_encoded =
+                [&cursor](auto const &encoded_item) {
+                    // Encoded RLP, not a string: nothing to NUL-terminate.
+                    // NOLINTNEXTLINE(bugprone-not-null-terminated-result)
+                    std::memcpy(
+                        cursor, encoded_item.data(), encoded_item.size());
+                    cursor += encoded_item.size();
+                };
+            (append_encoded(args), ...);
+            MONAD_ASSERT(cursor == buffer + byte_count);
+            return byte_count;
+        });
     return result;
 }
 

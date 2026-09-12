@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/likely.h>
@@ -32,27 +34,72 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <utility>
 #include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
 // Encode
-byte_string encode_topics(std::vector<bytes32_t> const &topics)
+
+namespace
 {
-    byte_string result{};
-    for (auto const &i : topics) {
-        result += encode_bytes32(i);
+    size_t log_payload_len(Receipt::Log const &log)
+    {
+        size_t const topics_payload =
+            log.topics.size() * (1 + sizeof(bytes32_t));
+        return (1 + sizeof(Address)) + list_header_size(topics_payload) +
+               topics_payload + encoded_string_size(log.data);
     }
-    return encode_list2(result);
+
+    size_t log_len(Receipt::Log const &log)
+    {
+        size_t const payload = log_payload_len(log);
+        return list_header_size(payload) + payload;
+    }
+
+    // A log, appended in place. The nested encoding is written directly into
+    // the caller's buffer: every length below is known before a byte is
+    // emitted, so no part of it has to be built in a temporary first.
+    //
+    // An address is always 20 bytes and a topic always 32, so both headers are
+    // constants -- 0x80 + 20 and 0x80 + 32 -- never in the long form and never
+    // in the single-byte form.
+    void append_log(unsigned char *&p, Receipt::Log const &log)
+    {
+        static_assert(sizeof(bytes32_t) == 32);
+        static_assert(sizeof(Address) == 20);
+        constexpr unsigned char address_header = 0x80 + sizeof(Address);
+        constexpr unsigned char topic_header = 0x80 + sizeof(bytes32_t);
+
+        size_t const topics_payload =
+            log.topics.size() * (1 + sizeof(bytes32_t));
+
+        append_list_header(p, log_payload_len(log));
+        *p++ = address_header;
+        std::memcpy(p, log.address.bytes, sizeof(log.address.bytes));
+        p += sizeof(log.address.bytes);
+        append_list_header(p, topics_payload);
+        for (auto const &i : log.topics) {
+            *p++ = topic_header;
+            std::memcpy(p, i.bytes, sizeof(i.bytes));
+            p += sizeof(i.bytes);
+        }
+        append_string2(p, log.data);
+    }
 }
 
 byte_string encode_log(Receipt::Log const &log)
 {
-    return encode_list2(
-        encode_address(log.address),
-        encode_topics(log.topics),
-        encode_string2(log.data));
+    byte_string result{};
+    result.resize_and_overwrite(
+        log_len(log), [&log](unsigned char *const buf, size_t const n) {
+            unsigned char *p = buf;
+            append_log(p, log);
+            MONAD_ASSERT(p == buf + n);
+            return n;
+        });
+    return result;
 }
 
 byte_string encode_bloom(Receipt::Bloom const &bloom)
@@ -62,25 +109,66 @@ byte_string encode_bloom(Receipt::Bloom const &bloom)
 
 byte_string encode_receipt(Receipt const &receipt)
 {
-    byte_string log_result{};
-
+    // Assembled in a single buffer. The logs are the bulk of a receipt, and
+    // composing this through encode_list2 copies them end to end three times
+    // over -- once to close the log list, once into the receipt's own list,
+    // and once more to put the type byte in front -- each copy through a
+    // fresh allocation, because encode_list2 takes its arguments by reference
+    // and so cannot write a header ahead of a payload it does not own. Every
+    // length here is known before a byte is emitted, so the type byte and
+    // both headers go down first and every log byte is written exactly once.
+    size_t logs_payload = 0;
     for (auto const &i : receipt.logs) {
-        log_result += encode_log(i);
+        logs_payload += log_len(i);
     }
 
-    auto const receipt_bytes = encode_list2(
-        encode_unsigned(receipt.status),
-        encode_unsigned(receipt.gas_used),
-        encode_bloom(receipt.bloom),
-        encode_list2(log_result));
+    // status and gas_used stay temporaries: both encode to under ten bytes and
+    // live in the string's inline buffer, so neither allocates. A bloom is a
+    // fixed 256 and would, so it is appended from the receipt's own storage.
+    auto const status = encode_unsigned(receipt.status);
+    auto const gas_used = encode_unsigned(receipt.gas_used);
+    auto const bloom = to_byte_string_view(receipt.bloom);
 
-    if (receipt.type == TransactionType::eip1559 ||
-        receipt.type == TransactionType::eip2930 ||
-        receipt.type == TransactionType::eip4844 ||
-        receipt.type == TransactionType::eip7702) {
-        return static_cast<unsigned char>(receipt.type) + receipt_bytes;
-    }
-    return receipt_bytes;
+    size_t const payload = status.size() + gas_used.size() +
+                           encoded_string_size(bloom) +
+                           list_header_size(logs_payload) + logs_payload;
+
+    bool const typed = receipt.type == TransactionType::eip1559 ||
+                       receipt.type == TransactionType::eip2930 ||
+                       receipt.type == TransactionType::eip4844 ||
+                       receipt.type == TransactionType::eip7702;
+
+    // Sized once and written through a cursor. Every length above is exact,
+    // so there is no capacity test and no size store per byte -- and
+    // resize_and_overwrite rather than resize, because resize would zero every
+    // byte first and each one is about to be written anyway.
+    //
+    // The assert is what keeps the arithmetic honest: land anywhere but the
+    // end and the block fails here rather than at the receipts root.
+    byte_string result{};
+    result.resize_and_overwrite(
+        static_cast<size_t>(typed) + list_header_size(payload) + payload,
+        [&](unsigned char *const buf, size_t const n) {
+            unsigned char *p = buf;
+            if (typed) {
+                *p++ = static_cast<unsigned char>(receipt.type);
+            }
+            append_list_header(p, payload);
+            auto const put = [&p](byte_string const &b) {
+                std::memcpy(p, b.data(), b.size());
+                p += b.size();
+            };
+            put(status);
+            put(gas_used);
+            append_string2(p, bloom);
+            append_list_header(p, logs_payload);
+            for (auto const &i : receipt.logs) {
+                append_log(p, i);
+            }
+            MONAD_ASSERT(p == buf + n);
+            return n;
+        });
+    return result;
 }
 
 // Decode

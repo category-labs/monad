@@ -84,47 +84,116 @@ inline byte_string to_big_compact(uint256_t const &n)
     return byte_string{byte_string_view{be + (w * 8 - len), len}};
 }
 
+// RLP in two halves: three functions that answer "how long would that be"
+// without building it, and three that write into a caller's buffer instead of
+// returning a fresh one. This is where the encoding lives. encode_string2 and
+// encode_list2 below are their first callers, and the 0x7f, 0x80, 0xb7, 0xc0
+// and 0xf7 boundaries appear nowhere else.
+//
+// Every RLP structure knows its own lengths -- a list's is the sum of its
+// children's -- so a caller that reaches for these directly sizes one buffer
+// and writes each byte exactly once, rather than materialising every nested
+// list so that its parent can measure it. receipt_rlp.cpp does.
+
+// to_big_compact's length. Built-in types only: uint128_t and uint256_t satisfy
+// the concept above but not std::bit_width, and an overload for them belongs
+// beside to_big_compact's own if one is ever wanted.
+inline size_t big_compact_size(std::unsigned_integral auto const n)
+{
+    return (static_cast<size_t>(std::bit_width(n)) + 7) / 8;
+}
+
+// The length of the header encode_list2 writes ahead of a payload this size.
+inline size_t list_header_size(size_t const payload)
+{
+    return payload > 55 ? 1 + big_compact_size(payload) : 1;
+}
+
+// encode_string2's length, header included.
+inline size_t encoded_string_size(byte_string_view const string_view)
+{
+    size_t const size = string_view.size();
+    if (size == 1 && string_view[0] <= 0x7f) {
+        return 1;
+    }
+    return (size > 55 ? 1 + big_compact_size(size) : 1) + size;
+}
+
+// A long-form length: the prefix byte, which carries the count of the bytes
+// after it, then the length itself big-endian.
+inline void
+append_length(unsigned char *&p, unsigned char const base, size_t const size)
+{
+    size_t const n = big_compact_size(size);
+    *p++ = static_cast<unsigned char>(base + n);
+    for (size_t i = n; i-- > 0;) {
+        *p++ = static_cast<unsigned char>(size >> (i * 8));
+    }
+}
+
+// encode_list2's header, written ahead of a payload the caller owns.
+inline void append_list_header(unsigned char *&p, size_t const payload)
+{
+    if (payload > 55) {
+        append_length(p, 0xf7, payload);
+        return;
+    }
+    *p++ = static_cast<unsigned char>(0xc0 + payload);
+}
+
+// encode_string2, appended rather than returned.
+inline void
+append_string2(unsigned char *&p, byte_string_view const string_view)
+{
+    size_t const size = string_view.size();
+    if (size == 1 && string_view[0] <= 0x7f) {
+        *p++ = string_view[0];
+        return;
+    }
+    if (size > 55) {
+        append_length(p, 0xb7, size);
+    }
+    else {
+        *p++ = static_cast<unsigned char>(0x80 + size);
+    }
+    std::memcpy(p, string_view.data(), size);
+    p += size;
+}
+
 inline byte_string encode_string2(byte_string_view const string_view)
 {
     byte_string result;
-    uint32_t const size = static_cast<uint32_t>(string_view.size());
-    if (size == 1 && string_view[0] <= 0x7f) {
-        result = string_view;
-    }
-    else if (size > 55) {
-        auto const size_str = to_big_compact(size);
-        MONAD_ASSERT(size_str.size() <= 8u);
-        result.push_back(0xb7 + static_cast<unsigned char>(size_str.size()));
-        result += size_str;
-        result += string_view;
-    }
-    else {
-        result.push_back(0x80 + static_cast<unsigned char>(size));
-        result += string_view;
-    }
+    result.resize_and_overwrite(
+        encoded_string_size(string_view),
+        [string_view](unsigned char *const buf, size_t const n) {
+            unsigned char *p = buf;
+            append_string2(p, string_view);
+            MONAD_ASSERT(p == buf + n);
+            return n;
+        });
     return result;
 }
 
 template <std::convertible_to<byte_string>... Args>
 byte_string encode_list2(Args const &...args)
 {
-    size_t size = 0;
-    ([&] { size += args.size(); }(), ...);
+    size_t payload = 0;
+    ([&] { payload += args.size(); }(), ...);
+
     byte_string result;
-    if (size > 55) {
-        auto const size_str = to_big_compact(size);
-        MONAD_ASSERT(size_str.size() <= 8u);
-        result +=
-            (static_cast<unsigned char>(0xf7) +
-             static_cast<unsigned char>(size_str.size()));
-        result += size_str;
-    }
-    else {
-        result +=
-            (static_cast<unsigned char>(0xc0) +
-             static_cast<unsigned char>(size));
-    }
-    ([&] { result += args; }(), ...);
+    result.resize_and_overwrite(
+        list_header_size(payload) + payload,
+        [&](unsigned char *const buf, size_t const n) {
+            unsigned char *p = buf;
+            append_list_header(p, payload);
+            auto const put = [&p](auto const &a) {
+                std::memcpy(p, a.data(), a.size());
+                p += a.size();
+            };
+            (put(args), ...);
+            MONAD_ASSERT(p == buf + n);
+            return n;
+        });
     return result;
 }
 

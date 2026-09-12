@@ -485,12 +485,17 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         list(JOIN _monad_zkvm_official_features "," _official_features_csv)
         string(SHA256 _official_build_signature
             "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}\n${_dma_patch_sha}")
-        add_compile_definitions(
-            MONAD_ZKVM_OFFICIAL_PROFILE=1
-            MONAD_ZKVM_BUILD_COMMIT="${MONAD_ZKVM_GIT_COMMIT}"
-            MONAD_ZKVM_BUILD_SIGNATURE="${_official_build_signature}"
-            MONAD_ZKVM_BUILD_FEATURES="${_official_features_csv}"
-            MONAD_ZKVM_RUNTIME_VERSION="${_monad_zkvm_runtime_version}")
+        # OFFICIAL_PROFILE is a feature switch and belongs to every translation unit. The four
+        # STAMPS do not: execute_witness.cpp is their only reader, and as a directory-wide definition they put
+        # the commit sha on the command line of every file, so a new commit invalidates the whole
+        # build. Measured on a warm tree: 31 s to rebuild for a changed commit alone, against 6 s
+        # when only the file that reads them is recompiled. Attached to that file below.
+        add_compile_definitions(MONAD_ZKVM_OFFICIAL_PROFILE=1)
+        set(_monad_zkvm_stamp_defs
+            "MONAD_ZKVM_BUILD_COMMIT=\"${MONAD_ZKVM_GIT_COMMIT}\""
+            "MONAD_ZKVM_BUILD_SIGNATURE=\"${_official_build_signature}\""
+            "MONAD_ZKVM_BUILD_FEATURES=\"${_official_features_csv}\""
+            "MONAD_ZKVM_RUNTIME_VERSION=\"${_monad_zkvm_runtime_version}\"")
         file(WRITE "${CMAKE_BINARY_DIR}/monad-zkvm-official-profile.json"
             "{\n"
             "  \"schema\": 2,\n"
@@ -625,6 +630,13 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # validate_block.cpp carries the validators and the BlockError
     # value_mappings() the shadow used to provide alone.
+
+    # The stamps land on the one file that reads them, not on the directory. Unset off the
+    # official profile, where the guard below makes this a no-op.
+    if(_monad_zkvm_stamp_defs)
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
+            PROPERTIES COMPILE_DEFINITIONS "${_monad_zkvm_stamp_defs}")
+    endif()
 
     # Reduced guest deps not present in the inherited host link list.
     target_link_libraries(monad_execution_ethereum

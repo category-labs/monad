@@ -408,12 +408,15 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}" "<guest>"
                _official_signed_inputs "${_official_signed_inputs}")
         string(SHA256 _official_build_signature "${_official_signed_inputs}")
-        add_compile_definitions(
-            MONAD_ZKVM_OFFICIAL_PROFILE=1
-            MONAD_ZKVM_BUILD_COMMIT="${MONAD_ZKVM_GIT_COMMIT}"
-            MONAD_ZKVM_BUILD_SIGNATURE="${_official_build_signature}"
-            MONAD_ZKVM_BUILD_FEATURES="${_official_features_csv}"
-            MONAD_ZKVM_RUNTIME_VERSION="${_monad_zkvm_runtime_version}")
+        # Keep the feature switch global, but attach build identity only to
+        # execute_witness.cpp, its sole reader. A new commit then recompiles
+        # that file without invalidating every object.
+        add_compile_definitions(MONAD_ZKVM_OFFICIAL_PROFILE=1)
+        set(_monad_zkvm_stamp_defs
+            "MONAD_ZKVM_BUILD_COMMIT=\"${MONAD_ZKVM_GIT_COMMIT}\""
+            "MONAD_ZKVM_BUILD_SIGNATURE=\"${_official_build_signature}\""
+            "MONAD_ZKVM_BUILD_FEATURES=\"${_official_features_csv}\""
+            "MONAD_ZKVM_RUNTIME_VERSION=\"${_monad_zkvm_runtime_version}\"")
         file(WRITE "${CMAKE_BINARY_DIR}/monad-zkvm-official-profile.json"
             "{\n"
             "  \"schema\": 2,\n"
@@ -544,6 +547,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # validate_block.cpp carries the validators and the BlockError
     # value_mappings() the shadow used to provide alone.
+
+    # Only the official profile supplies these build stamps.
+    if(_monad_zkvm_stamp_defs)
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
+            PROPERTIES COMPILE_DEFINITIONS "${_monad_zkvm_stamp_defs}")
+    endif()
 
     # Reduced guest deps not present in the inherited host link list.
     target_link_libraries(monad_execution_ethereum

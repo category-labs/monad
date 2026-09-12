@@ -22,6 +22,7 @@
 #include <category/core/likely.h>
 #include <category/core/rlp/config.hpp>
 #include <category/core/runtime/unaligned.hpp>
+#include <category/core/zisk_codegen.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -96,14 +97,14 @@ encode_string(std::span<unsigned char> d, byte_string_view const s)
         d = d.subspan(1);
     }
     else if (s.size() <= 55) {
-        d[0] = 0x80 + static_cast<unsigned char>(s.size());
+        d[0] = zx(0x80 + s.size());
         d = d.subspan(1);
         MONAD_ASSUME(d.size() >= s.size());
         std::copy(s.begin(), s.end(), d.data());
         d = d.subspan(s.size());
     }
     else {
-        d[0] = 0xB7 + static_cast<unsigned char>(impl::length_length(s.size()));
+        d[0] = zx(0xB7 + impl::length_length(s.size()));
         d = d.subspan(1);
         d = impl::encode_length(d, s.size());
         MONAD_ASSUME(d.size() >= s.size());
@@ -131,12 +132,11 @@ encode_list_prefix(std::span<unsigned char> d, size_t const payload_size)
 {
     MONAD_ASSUME(d.size() > 0);
     if (payload_size <= 55) {
-        d[0] = 0xC0 + static_cast<unsigned char>(payload_size);
+        d[0] = zx(0xC0 + payload_size);
         return d.subspan(1);
     }
     else {
-        d[0] = 0xF7 +
-               static_cast<unsigned char>(impl::length_length(payload_size));
+        d[0] = zx(0xF7 + impl::length_length(payload_size));
         return impl::encode_length(d.subspan(1), payload_size);
     }
 }
@@ -149,7 +149,7 @@ constexpr std::span<unsigned char> encode_list_prefix_compact(
         return encode_list_prefix(d, payload_size);
     }
     MONAD_ASSUME(d.size() > 0);
-    d[0] = 0xF7 + static_cast<unsigned char>(impl::length_length(payload_size));
+    d[0] = zx(0xF7 + impl::length_length(payload_size));
     return impl::encode_length_compact(d.subspan(1), payload_size);
 }
 

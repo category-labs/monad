@@ -16,10 +16,7 @@ below, as `docker/Dockerfile` does.
 
 ```shell
 nix build ./nix#toolchainEnv
-cmake -B build-zkvm -S zkvm/guest \
-    -DCMAKE_TOOLCHAIN_FILE=$PWD/category/core/toolchains/riscv64-elf.cmake \
-    -DRISCV_TOOLCHAIN_DIR=$PWD/result \
-    -DCMAKE_BUILD_TYPE=Release
+RISCV_TOOLCHAIN_DIR=$PWD/result zkvm/zisk/build.sh --archive
 ```
 
 ## Why nix

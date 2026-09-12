@@ -22,6 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check reference guest build inputs
+        run: |
+          python3 nix/check-zisk.py --repo .
+          python3 -m unittest discover -s nix -p 'test_*.py'
+
       - name: Build `build_zk` stage
         uses: ./.github/actions/docker-stage
         with:

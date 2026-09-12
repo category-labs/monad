@@ -34,13 +34,14 @@ MONAD_NAMESPACE_BEGIN
 // entry has a value flag (negative_: the key holds nothing) and a region
 // flag (stamped_: it carries a consensus stamp in the time field, written
 // only by set_stamp at finalize). Stamped entries — with or without a value
-// — sit at the head of the live list in stamp order; unstamped live entries
-// sit behind a fixed boundary sentinel in insertion order; unstamped
-// negative entries sit on the negative list with its own budget and
-// wall-clock recency. Eviction takes the live tail, so unstamped entries go
-// first and the stamped region drains oldest stamp first: a cached entry
-// (stamp >= the evict floor) can only be the victim when the cached set
-// itself outgrew the capacity, and evict() asserts it. A value transition
+// — sit at the head of the live list in stamp order and never move on a
+// read; unstamped live entries sit behind a fixed boundary sentinel and
+// unstamped negative entries on the negative list, both plain wall-clock
+// LRUs (a read promotes, rate limited), so an entry a block reads survives
+// the block's own inserts until finalize stamps it. Eviction takes the live
+// tail, so unstamped entries go first and the stamped region — kept equal
+// to the cached set by demote_expired — is never reached while the cached
+// set fits the capacity; evict() asserts it. A value transition
 // (create/delete at finalize) never moves a stamped entry — the stamp
 // survives until clear_stamp (a death record) — and flips an unstamped
 // entry between the negative list and the unstamped region in place: one
@@ -134,8 +135,12 @@ public:
         if (!stamp_mode_) {
             try_update_lru(lru_, node);
         }
-        else if (node->negative_ && !node->stamped_) {
-            try_update_negative(node);
+        else if (!node->stamped_) {
+            // the unstamped regions are plain LRUs: a read promotes (rate
+            // limited), so an entry read in this block cannot be the victim
+            // of the block's own inserts before finalize stamps it. Stamped
+            // entries never move on a read: their order is the stamp order.
+            try_update_unstamped(node);
         }
         return true;
     }
@@ -347,16 +352,25 @@ private:
         }
     }
 
-    void try_update_negative(ListNode *const node)
+    void try_update_unstamped(ListNode *const node)
     {
         int64_t const t = ListNode::wall_clock();
-        if (node->check_lru_time(t, ListNode::LRU_UPDATE_PERIOD)) {
-            std::unique_lock const l(mutex_);
-            // re-check under the lock: a finalize may have stamped it
-            if (node->negative_ && !node->stamped_) {
-                STATS_EVENT_UPDATE_LRU();
-                negative_lru_.update_lru(node, t);
-            }
+        if (!node->check_lru_time(t, ListNode::LRU_UPDATE_PERIOD)) {
+            return;
+        }
+        std::unique_lock const l(mutex_);
+        // re-check under the lock: a finalize may have stamped it
+        if (node->stamped_ || !node->is_in_list()) {
+            return;
+        }
+        STATS_EVENT_UPDATE_LRU();
+        if (node->negative_) {
+            negative_lru_.update_lru(node, t);
+        }
+        else {
+            lru_.delink(node);
+            lru_.insert_after(&boundary_, node);
+            node->update_lru_time(t);
         }
     }
 

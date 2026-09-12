@@ -488,8 +488,9 @@ TEST(StampLru, expired_stamps_leave_the_stamped_region)
     cache.set_stamp(2, 2);
     cache.insert(3, 3); // unstamped
     cache.insert(4, 4); // unstamped
-    // the window moves past both stamps: they are demoted behind every
-    // fresh unstamped entry and go first under pressure
+    // the window moves past both stamps: they are demoted to the cold end
+    // of the unstamped region (2 behind 1) and go first under pressure —
+    // unless read again: the read of 1 promotes it like any unstamped entry
     cache.set_evict_floor(3);
     cache.demote_expired(3);
     {
@@ -497,15 +498,38 @@ TEST(StampLru, expired_stamps_leave_the_stamped_region)
         ASSERT_TRUE(cache.find(acc, 1));
         EXPECT_EQ(cache.stamp_of(acc), 0);
     }
-    cache.insert(5, 5);
-    cache.insert(6, 6);
+    cache.insert(5, 5); // evicts 2 (coldest demoted entry)
+    cache.insert(6, 6); // evicts 3 (oldest never-read unstamped entry)
     LruCache<int, std::optional<int>>::ConstAccessor acc;
-    EXPECT_FALSE(cache.find(acc, 1));
+    EXPECT_TRUE(cache.find(acc, 1));
     EXPECT_FALSE(cache.find(acc, 2));
-    EXPECT_TRUE(cache.find(acc, 3));
+    EXPECT_FALSE(cache.find(acc, 3));
     EXPECT_TRUE(cache.find(acc, 4));
     EXPECT_TRUE(cache.find(acc, 5));
     EXPECT_TRUE(cache.find(acc, 6));
+}
+
+TEST(StampLru, a_read_protects_an_unstamped_entry_until_finalize)
+{
+    LruCache<int, std::optional<int>> cache{
+        /*max_size=*/3, /*stamp_mode=*/true, /*negative_max=*/2};
+    cache.set_evict_floor(0);
+    cache.insert(1, 1); // oldest unstamped
+    cache.insert(2, 2);
+    cache.insert(3, 3);
+    // the block reads 1: it is promoted ahead of 2 and 3, so the block's
+    // own inserts evict those first and finalize can still stamp it
+    {
+        LruCache<int, std::optional<int>>::ConstAccessor acc;
+        ASSERT_TRUE(cache.find(acc, 1));
+    }
+    cache.insert(4, 4);
+    cache.insert(5, 5);
+    EXPECT_TRUE(cache.set_stamp(1, 7));
+    LruCache<int, std::optional<int>>::ConstAccessor acc;
+    EXPECT_TRUE(cache.find(acc, 1));
+    EXPECT_FALSE(cache.find(acc, 2));
+    EXPECT_FALSE(cache.find(acc, 3));
 }
 
 TEST(StampDbCache, finalize_stamps_and_deletion_forgets)

@@ -95,8 +95,15 @@ namespace monad::vm::utils
             if (!stamp_mode_) {
                 try_update_lru(lru_, &*acc);
             }
-            else if (acc->second.negative_ && !acc->second.stamped_) {
-                negative_lru_.try_update_unstamped_negative(&*acc);
+            else if (!acc->second.stamped_) {
+                // the unstamped regions are plain LRUs (a read promotes,
+                // rate limited); stamped entries never move on a read
+                if (acc->second.negative_) {
+                    negative_lru_.try_update_unstamped_negative(&*acc);
+                }
+                else {
+                    lru_.try_update_unstamped_live(&*acc);
+                }
             }
             return true;
         }
@@ -654,6 +661,22 @@ namespace monad::vm::utils
             {
                 std::unique_lock const l(mutex_);
                 node->second.negative_ = neg;
+            }
+
+            // Rate-limited promotion of an unstamped live entry to the front
+            // of the unstamped region, re-checked under the lock.
+            void try_update_unstamped_live(ListNode const *const node)
+            {
+                if (!node->second.check_lru_time(now())) {
+                    return;
+                }
+                std::unique_lock const l(mutex_);
+                if (node->second.is_in_list() && !node->second.negative_ &&
+                    !node->second.stamped_) {
+                    delink(node);
+                    link_after(&boundary_, node);
+                    node->second.update_lru_time(next_allowed());
+                }
             }
 
             // Rate-limited recency bump of an entry on the negative list,

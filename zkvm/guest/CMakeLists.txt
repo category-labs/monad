@@ -248,6 +248,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         string(APPEND CMAKE_C_FLAGS " -mtune=generic-ooo")
         string(APPEND CMAKE_CXX_FLAGS " -mtune=generic-ooo")
 
+        # Every C++ TU is told that operator delete does nothing, because the
+        # definitions that say so are alone in libstdcxx.cpp and nothing else can
+        # see them. C is excluded: the header declares a C++ operator.
+        string(APPEND CMAKE_CXX_FLAGS
+               " -include ${CMAKE_CURRENT_SOURCE_DIR}/nodelete.hpp")
+
         # ZisK 1.1 transpiles the RISC-V B extension; 1.0 did not. Zbb and Zbs
         # are wired unconditionally, so widening -march lets gcc emit rev8,
         # cpop, clz, andn and the single-bit ops instead of open-coding them --

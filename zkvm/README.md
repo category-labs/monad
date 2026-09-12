@@ -15,6 +15,7 @@ zkvm/
 ├── boost/, quill/        # replacements for host-only library headers
 ├── guest/                # shared C++ witness executor
 │   ├── execute_witness.cpp
+│   ├── build_identity.cpp  # the ELF's commit marker
 │   ├── execute_block.cpp
 │   ├── x86_test_runner.cpp
 │   └── CMakeLists.txt
@@ -36,8 +37,9 @@ for its runtime, I/O, and accelerators.
 
 - Initialize the repository's submodules with
   `git submodule update --init --recursive`.
-- Install CMake, a build tool such as Make or Ninja, and Boost headers with
-  their CMake package configuration.
+- Install CMake, Python 3.9 or later, a build tool such as Make or Ninja,
+  and Boost headers with their CMake package configuration. Python also
+  fingerprints the toolchain for direct Cargo builds.
 - Use a `riscv64-unknown-elf` or `riscv64-none-elf` GCC toolchain with newlib
   and C++23 support. Set `RISCV_TOOLCHAIN_DIR` in the environment or in a
   local, gitignored `zkvm/.cargo/config.toml`:
@@ -66,13 +68,16 @@ Start each section's commands from the repository root unless stated otherwise.
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
 
+`zkvm/zisk/b
 `zkvm/zisk/build.sh` builds the guest using locally installed tools.
 `--official` requires a clean worktree and the reference compiler settings,
 and embeds the source commit in the ELF. Development builds carry a
 `monad-zkvm-dev` marker.
 
-```sh
-# 1. Build the guest ELF.
+`--archive` builds only the C++ archive through the shared build helper.
+Development builds accept `-DNAME=VALUE` for CMake experiments.
+
+ild the guest ELF.
 zkvm/zisk/build.sh
 cd zkvm/zisk
 #  → target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk

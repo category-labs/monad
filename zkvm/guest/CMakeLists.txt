@@ -358,7 +358,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     endif()
 
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
-        add_compile_definitions(MONAD_ZKVM_OFFICIAL_PROFILE=1 ${_monad_zkvm_stamp_defs})
+        add_compile_definitions(MONAD_ZKVM_OFFICIAL_PROFILE=1)
     else()
         add_compile_definitions(MONAD_ZKVM_DEV_PROFILE=1)
     endif()
@@ -453,6 +453,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # validate_block.cpp carries the validators and the BlockError
     # value_mappings() the shadow used to provide alone.
+
+    # Only the official profile supplies these build stamps.
+    if(_monad_zkvm_stamp_defs)
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/build_identity.cpp"
+            PROPERTIES COMPILE_DEFINITIONS "${_monad_zkvm_stamp_defs}")
+    endif()
 
     # Reduced guest deps not present in the inherited host link list.
     target_link_libraries(monad_execution_ethereum
@@ -576,6 +582,7 @@ endif()
 # the dependency edge is conditional, never the target or its file list.
 add_library(monad-zkvm-guest OBJECT
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_block.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/build_identity.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/witness_block_hash_buffer.cpp"
 )

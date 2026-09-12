@@ -20,8 +20,10 @@
 use std::{
     env,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
 };
+
+mod toolchain;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Backend {
@@ -55,20 +57,50 @@ impl Backend {
     fn build_guest_archive(self) -> PathBuf {
         let manifest = manifest_dir();
         let repo_root = locate_repo_root(&manifest);
+        emit_rerun_directives(&repo_root);
+        if matches!(self, Self::Zisk) {
+            return build_zisk_archive(&repo_root);
+        }
+
         let zkvm_dir = repo_root.join("zkvm");
         let guest_dir = zkvm_dir.join("guest");
         let toolchain = repo_root.join("category/core/toolchains/riscv64-elf.cmake");
 
-        emit_rerun_directives(&repo_root);
-
         let mut cfg = cmake::Config::new(&guest_dir);
+        // Reuse objects across commits, but not after a compiler rebuild.
+        // Include GCC's frontends: rebuilding them need not change the driver.
+        // Store them under zkvm/<backend>/target/guest-build.
+        let toolchain_dir = riscv_toolchain_dir();
+        let mut key = format!(
+            "{}-{}",
+            self.name(),
+            toolchain::fingerprint(&riscv_gcc(&toolchain_dir))
+        );
+        if env::var_os("MONAD_ZKVM_OFFICIAL_PROFILE").is_some() {
+            key.push_str("-official");
+        }
+        // Each set of extra definitions configures a cache of its own: a
+        // definition dropped from the set would otherwise stay in CMakeCache.
+        let extra = extra_cmake_definitions();
+        if !extra.is_empty() {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(&extra, &mut h);
+            key.push_str(&format!("-defs{:016x}", std::hash::Hasher::finish(&h)));
+        }
+        cfg.out_dir(
+            repo_root
+                .join("zkvm")
+                .join(self.name())
+                .join("target/guest-build")
+                .join(&key),
+        );
         // SP1's caller targets the host. Set the guest triple explicitly so
         // cmake-rs selects RISC-V flags instead of host flags such as -m64.
         // The guest CMakeLists.txt supplies the remaining bare-metal flags.
         cfg.target(self.guest_triple())
             .define("MONAD_ZKVM_GUEST_TARGET", self.name())
             .define("CMAKE_TOOLCHAIN_FILE", &toolchain)
-            .define("RISCV_TOOLCHAIN_DIR", riscv_toolchain_dir())
+            .define("RISCV_TOOLCHAIN_DIR", &toolchain_dir)
             .profile("Release")
             .build_target(&self.guest_target());
 
@@ -95,6 +127,10 @@ impl Backend {
             }
         }
 
+        for (name, value) in &extra {
+            cfg.define(name, value);
+        }
+
         cfg.build().join("build")
     }
 
@@ -102,6 +138,11 @@ impl Backend {
     /// Used by ZisK, where `ziskos` supplies `_start`.
     pub fn build_guest_lib(self) {
         let build_dir = self.build_guest_archive();
+        if let Some(path) = env::var_os("MONAD_ZKVM_ARCHIVE_PATH_FILE") {
+            let archive = build_dir.join(format!("lib{}.a", self.guest_target()));
+            std::fs::write(path, archive.as_os_str().as_encoded_bytes())
+                .expect("cannot report the guest archive path");
+        }
 
         if let Self::Zisk = self {
             let align_ld = manifest_dir().join("align.ld");
@@ -229,6 +270,30 @@ fn sp1_zkevm_dir() -> PathBuf {
     zkevm
 }
 
+/// Share ZisK's CMake configuration with the standalone archive build.
+fn build_zisk_archive(repo_root: &Path) -> PathBuf {
+    let script = repo_root.join("zkvm/build-support/build_archive.py");
+    println!("cargo:rerun-if-changed={}", script.display());
+    let out = Command::new("python3")
+        .arg(script)
+        .arg("--cargo")
+        .stderr(Stdio::inherit())
+        .output()
+        .expect("Python 3 is required to build the ZisK archive");
+    assert!(out.status.success(), "ZisK archive build failed");
+    let output = String::from_utf8(out.stdout).expect("archive build output is not UTF-8");
+    let mut lines = output.lines();
+    let archive = PathBuf::from(lines.next().expect("archive build returned no path"));
+    for directive in lines {
+        assert!(directive.starts_with("cargo:"), "invalid build directive");
+        println!("{directive}");
+    }
+    archive
+        .parent()
+        .expect("archive has no directory")
+        .to_path_buf()
+}
+
 /// Use Git HEAD, rejecting a mismatched supplied SHA or reported tracked changes.
 /// Without a usable HEAD, require MONAD_ZKVM_GIT_COMMIT (e.g. source archives).
 fn official_build_commit(repo_root: &Path) -> String {
@@ -282,8 +347,43 @@ fn locate_repo_root(manifest: &Path) -> PathBuf {
         .to_path_buf()
 }
 
+/// Further CMake definitions for a development build, from
+/// MONAD_ZKVM_CMAKE_ARGS as shell-quoted `-DNAME=VALUE` words (build.sh passes
+/// its own -D arguments there). The official profile fixes its configuration
+/// and refuses them.
+fn extra_cmake_definitions() -> Vec<(String, String)> {
+    let Ok(args) = env::var("MONAD_ZKVM_CMAKE_ARGS") else {
+        return Vec::new();
+    };
+    parse_cmake_definitions(&args, env::var_os("MONAD_ZKVM_OFFICIAL_PROFILE").is_some())
+}
+
+fn parse_cmake_definitions(args: &str, official: bool) -> Vec<(String, String)> {
+    let words = shlex::split(args).expect("invalid quoting in MONAD_ZKVM_CMAKE_ARGS");
+    assert!(
+        words.is_empty() || !official,
+        "MONAD_ZKVM_CMAKE_ARGS is refused by the official profile"
+    );
+    words
+        .iter()
+        .map(|word| {
+            let def = word.strip_prefix("-D").unwrap_or_else(|| {
+                panic!("MONAD_ZKVM_CMAKE_ARGS takes -DNAME=VALUE words, got `{word}`")
+            });
+            let (name, value) = def.split_once('=').unwrap_or_else(|| {
+                panic!("MONAD_ZKVM_CMAKE_ARGS takes -DNAME=VALUE words, got `{word}`")
+            });
+            // -DNAME:TYPE=VALUE: cmake-rs takes the name alone.
+            let name = name.split(':').next().unwrap_or(name);
+            (name.to_string(), value.to_string())
+        })
+        .collect()
+}
+
 fn emit_rerun_directives(repo_root: &Path) {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_CMAKE_ARGS");
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_ARCHIVE_PATH_FILE");
     println!("cargo:rerun-if-env-changed=RISCV_TOOLCHAIN_DIR");
     println!("cargo:rerun-if-env-changed=MONAD_ZKVM_OFFICIAL_PROFILE");
     println!("cargo:rerun-if-env-changed=MONAD_ZKVM_GIT_COMMIT");
@@ -362,7 +462,6 @@ fn riscv_toolchain_dir() -> String {
 }
 
 // Match the compiler prefixes accepted by riscv64-elf.cmake.
-#[cfg(any(feature = "sp1", test))]
 fn riscv_gcc(toolchain_dir: &str) -> PathBuf {
     let bin = Path::new(toolchain_dir).join("bin");
     for prefix in ["riscv64-none-elf-", "riscv64-unknown-elf-", "riscv-none-elf-"] {
@@ -381,6 +480,38 @@ fn riscv_gcc(toolchain_dir: &str) -> PathBuf {
 mod tests {
     use super::*;
     use std::{fs, time::SystemTime};
+
+    #[test]
+    fn cmake_definitions_preserve_argument_boundaries() {
+        let args = r#"'-DCMAKE_CXX_FLAGS=-O2 -g' '-DPATH:PATH=/tmp/with spaces' '-DNOTE=it'"'"'s \"quoted\"' '-DEMPTY=' '-DLIST=a;b'"#;
+        assert_eq!(
+            parse_cmake_definitions(args, false),
+            vec![
+                ("CMAKE_CXX_FLAGS".into(), "-O2 -g".into()),
+                ("PATH".into(), "/tmp/with spaces".into()),
+                ("NOTE".into(), r#"it's \"quoted\""#.into()),
+                ("EMPTY".into(), "".into()),
+                ("LIST".into(), "a;b".into()),
+            ]
+        );
+        assert!(parse_cmake_definitions("  ", true).is_empty());
+        assert_eq!(
+            parse_cmake_definitions("-DFOO=ON", false),
+            vec![("FOO".into(), "ON".into())]
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid quoting")]
+    fn cmake_definitions_reject_unclosed_quotes() {
+        parse_cmake_definitions("'-DFOO=ON", false);
+    }
+
+    #[test]
+    #[should_panic(expected = "refused by the official profile")]
+    fn official_profile_rejects_cmake_definitions() {
+        parse_cmake_definitions("'-DFOO=ON'", true);
+    }
 
     #[test]
     fn accepts_cmake_compiler_prefixes_in_order() {

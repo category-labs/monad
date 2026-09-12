@@ -90,6 +90,31 @@ impl Backend {
         emit_rerun_directives(&zkvm_dir, &repo_root);
 
         let mut cfg = cmake::Config::new(&guest_dir);
+        // Build in a STABLE directory instead of cargo's OUT_DIR. Cargo derives OUT_DIR from a
+        // fingerprint that changes with the sources, so every commit got an empty cmake tree and
+        // recompiled the guest whole: measured on this worktree, 347 abandoned build directories,
+        // 324 MB, and ~45 s per commit where an incremental build costs 6 s.
+        //
+        // Keyed by what would make two trees incompatible -- the backend, the compiler, and
+        // whether the official profile is on -- and NOT by the commit, which is the point. The
+        // commit still reaches the binary as a compile definition on ffi.cpp alone.
+        //
+        // Under the cargo target directory so `cargo clean` still removes it.
+        let mut key = format!("{}-{}", self.name(), riscv_toolchain_dir());
+        if env::var_os("MONAD_ZKVM_OFFICIAL_PROFILE").is_some() {
+            key.push_str("-official");
+        }
+        let key: String = key
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+            .collect();
+        cfg.out_dir(
+            repo_root
+                .join("zkvm")
+                .join(self.name())
+                .join("target/guest-build")
+                .join(&key),
+        );
         cfg.target(self.guest_triple())
             .define("MONAD_ZKVM_GUEST_TARGET", self.name())
             .define("CMAKE_TOOLCHAIN_FILE", &toolchain)

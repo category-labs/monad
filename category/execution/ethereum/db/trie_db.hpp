@@ -65,8 +65,8 @@ public:
     // stamp_mode false keeps the pre-feature wall-clock LRU promotion (the
     // baseline measurement arm); true runs the stamp-ordered caches.
     explicit TrieDb(
-        mpt::Db &, bool enable_multiblock_cache = false,
-        bool stamp_mode = true);
+        mpt::Db &, bool enable_multiblock_cache = false, bool stamp_mode = true,
+        DbCacheSizes const &sizes = {});
     ~TrieDb();
 
     bool is_page_encoded() const override

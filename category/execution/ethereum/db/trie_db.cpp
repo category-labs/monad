@@ -85,13 +85,14 @@ MONAD_NAMESPACE_BEGIN
 using namespace monad::mpt;
 
 TrieDb::TrieDb(
-    mpt::Db &db, bool const enable_multiblock_cache, bool const stamp_mode)
+    mpt::Db &db, bool const enable_multiblock_cache, bool const stamp_mode,
+    DbCacheSizes const &sizes)
     : db_{db}
     , block_number_{db.get_latest_finalized_version()}
     , proposal_block_id_{bytes32_t{}}
     , prefix_{finalized_nibbles}
     , curr_root_{db.load_root_for_version(block_number_)}
-    , cache_{enable_multiblock_cache ? std::make_unique<DbCache>(stamp_mode) : nullptr}
+    , cache_{enable_multiblock_cache ? std::make_unique<DbCache>(stamp_mode, sizes) : nullptr}
     , page_encoded_{db_.state_machine_type() == mpt::state_machine_kind::monad}
 {
 }

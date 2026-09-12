@@ -64,6 +64,15 @@ enum class CacheReadStatus
 // ("this key holds nothing") sit on a count-budgeted negative list of the
 // same map — a value transition flips the entry in place, so the two can
 // never disagree and a deleted entry forgets its stamp.
+// Physical cache capacities; the defaults are the production sizes, tests
+// and the measurement harness (MONAD_MBC_*_CACHE env) shrink them.
+struct DbCacheSizes
+{
+    size_t account_entries{10'000'000};
+    uint32_t storage_bytes{1024u * 1024 * 1024};
+    size_t negative_entries{2'000'000};
+};
+
 class DbCache final
 {
     using AddressHashCompare = BytesHashCompare<Address>;
@@ -102,6 +111,15 @@ public:
               std::chrono::milliseconds{200},
               stamp_mode,
               negative_capacity}
+    {
+    }
+
+    DbCache(bool const stamp_mode, DbCacheSizes const &sizes)
+        : DbCache{
+              stamp_mode,
+              sizes.account_entries,
+              sizes.storage_bytes,
+              sizes.negative_entries}
     {
     }
 
@@ -357,10 +375,25 @@ private:
         }
         for (auto const &key : storage) {
             bool const stamped = storage_.set_stamp(key, block);
-            MONAD_ASSERT_PRINTF(
-                stamped,
-                "stamped storage entry not resident at block %lu",
-                block);
+            if (MONAD_UNLIKELY(!stamped)) {
+                std::string hex;
+                for (auto const b : key.bytes) {
+                    hex += std::format("{:02x}", b);
+                }
+                StorageCache::ConstAccessor acc{};
+                bool const found = storage_.find(acc, key);
+                MONAD_ASSERT_PRINTF(
+                    false,
+                    "stamped storage entry not resident at block %lu: key %s, "
+                    "in map %d%s, live entries %zu, weight %lu",
+                    block,
+                    hex.c_str(),
+                    found,
+                    found ? (storage_.is_negative(acc) ? " (empty)" : " (live)")
+                          : "",
+                    storage_.size(),
+                    storage_.approx_weight());
+            }
         }
         uint64_t const floor = cache_evict_floor(block);
         accounts_.set_evict_floor(floor);

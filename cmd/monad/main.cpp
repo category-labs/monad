@@ -348,10 +348,25 @@ try {
         char const *const env = std::getenv("MONAD_MBC_MEASURE");
         return env == nullptr || env[0] != '0';
     }();
+    // measurement aid: shrink the physical caches to reach eviction pressure
+    // early (MONAD_MBC_ACCOUNT_CACHE entries, MONAD_MBC_STORAGE_CACHE_MB,
+    // MONAD_MBC_NEGATIVE_CACHE entries)
+    DbCacheSizes cache_sizes{};
+    if (char const *const p = std::getenv("MONAD_MBC_ACCOUNT_CACHE")) {
+        cache_sizes.account_entries = std::strtoull(p, nullptr, 10);
+    }
+    if (char const *const p = std::getenv("MONAD_MBC_STORAGE_CACHE_MB")) {
+        cache_sizes.storage_bytes =
+            static_cast<uint32_t>(std::strtoull(p, nullptr, 10) << 20);
+    }
+    if (char const *const p = std::getenv("MONAD_MBC_NEGATIVE_CACHE")) {
+        cache_sizes.negative_entries = std::strtoull(p, nullptr, 10);
+    }
     TrieDb triedb{
         raw_db,
         /*enable_multiblock_cache=*/true,
-        /*stamp_mode=*/mbc_measure};
+        /*stamp_mode=*/mbc_measure,
+        cache_sizes};
     LOG_INFO(
         "triedb page_encoded = {}, multi-block cache measure = {}",
         triedb.is_page_encoded(),

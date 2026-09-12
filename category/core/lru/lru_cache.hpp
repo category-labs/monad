@@ -252,11 +252,11 @@ public:
 
     // Finalize path, after the floor advanced: entries whose stamp fell
     // below it are no longer cached and leave the stamped region — a live
-    // one to the tail of the unstamped region (untouched for a window, it
-    // is the coldest entry there), an empty one to the negative list — so
-    // the stamped region is exactly the cached set and expired stamps cannot
-    // crowd out fresh inserts. The stamped region is in stamp order, so the
-    // expired entries are exactly its tail.
+    // one to the front of the unstamped region (it was touched within the
+    // last window, more recently than most entries there), an empty one to
+    // the negative list — so the stamped region is exactly the cached set
+    // and expired stamps cannot crowd out fresh inserts. The stamped region
+    // is in stamp order, so the expired entries are exactly its tail.
     void demote_expired(uint64_t const floor)
     {
         size_t to_negative = 0;
@@ -277,8 +277,8 @@ public:
                     ++to_negative;
                 }
                 else {
-                    lru_.insert_after(lru_.tail_.prev_, node);
-                    node->update_lru_time(0);
+                    lru_.insert_after(&boundary_, node);
+                    node->update_lru_time(ListNode::wall_clock());
                 }
             }
         }

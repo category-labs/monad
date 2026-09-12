@@ -488,9 +488,9 @@ TEST(StampLru, expired_stamps_leave_the_stamped_region)
     cache.set_stamp(2, 2);
     cache.insert(3, 3); // unstamped
     cache.insert(4, 4); // unstamped
-    // the window moves past both stamps: they are demoted to the cold end
-    // of the unstamped region (2 behind 1) and go first under pressure —
-    // unless read again: the read of 1 promotes it like any unstamped entry
+    // the window moves past both stamps: they leave the stamped region for
+    // the front of the unstamped one (touched within the window, they are
+    // more recent than 3 and 4), which the next inserts evict first
     cache.set_evict_floor(3);
     cache.demote_expired(3);
     {
@@ -498,13 +498,13 @@ TEST(StampLru, expired_stamps_leave_the_stamped_region)
         ASSERT_TRUE(cache.find(acc, 1));
         EXPECT_EQ(cache.stamp_of(acc), 0);
     }
-    cache.insert(5, 5); // evicts 2 (coldest demoted entry)
-    cache.insert(6, 6); // evicts 3 (oldest never-read unstamped entry)
+    cache.insert(5, 5); // evicts 3
+    cache.insert(6, 6); // evicts 4
     LruCache<int, std::optional<int>>::ConstAccessor acc;
     EXPECT_TRUE(cache.find(acc, 1));
-    EXPECT_FALSE(cache.find(acc, 2));
+    EXPECT_TRUE(cache.find(acc, 2));
     EXPECT_FALSE(cache.find(acc, 3));
-    EXPECT_TRUE(cache.find(acc, 4));
+    EXPECT_FALSE(cache.find(acc, 4));
     EXPECT_TRUE(cache.find(acc, 5));
     EXPECT_TRUE(cache.find(acc, 6));
 }

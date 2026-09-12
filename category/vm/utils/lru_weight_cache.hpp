@@ -178,10 +178,11 @@ namespace monad::vm::utils
         }
 
         // Finalize path, after the floor advanced: entries whose stamp fell
-        // below it leave the stamped region (live ones to the unstamped
-        // region, empty ones to the negative list), so the stamped region is
-        // exactly the cached set and expired stamps cannot crowd out fresh
-        // inserts.
+        // below it leave the stamped region (live ones to the front of the
+        // unstamped region — touched within the last window, they are more
+        // recent than most entries there — empty ones to the negative list),
+        // so the stamped region is exactly the cached set and expired stamps
+        // cannot crowd out fresh inserts.
         void demote_expired(uint64_t const floor)
         {
             int64_t weight_out = 0;
@@ -650,8 +651,8 @@ namespace monad::vm::utils
                         on_neg(node);
                     }
                     else {
-                        link_after(base_.second.prev_, node); // the tail
-                        node->second.update_lru_time(0);
+                        link_after(&boundary_, node);
+                        node->second.update_lru_time(next_allowed());
                     }
                 }
             }

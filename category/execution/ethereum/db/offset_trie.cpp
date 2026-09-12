@@ -295,7 +295,7 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
         compact_encode_raw(d.last(path_len).data(), path, terminating);
         d = d.shrink(path_len);
         if (path_len > 1) {
-            d.back() = static_cast<unsigned char>(0x80 + path_len);
+            d.back() = zx(0x80 + path_len);
             d = d.shrink(1);
         }
         return d;
@@ -312,7 +312,7 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
         node,
         Cases{
             [&, wrap](BranchView b) -> node_rlp_span {
-                dest.back() = 0x80; // empty branch value — last list element
+                dest.back() = zx(0x80); // empty branch value, last element
                 dest = dest.shrink(1);
                 std::array<node_id_wire_t, 16> const children = b.children();
 
@@ -396,7 +396,7 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 MONAD_DEBUG_ASSERT(account_len > 55 && account_len <= 0xFF);
                 dest.back() = static_cast<unsigned char>(account_len);
                 dest = dest.shrink(1);
-                dest.back() = 0xB8;
+                dest.back() = zx(0xB8);
                 dest = dest.shrink(1);
                 dest = encode_path(dest, l.path(), /*terminating=*/true);
                 return wrap(dest);
@@ -415,7 +415,7 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // The outer wrap collapses to no prefix only when it wraps
                 // a single byte <=0x7F, i.e. zl itself is one byte <=0x7F.
                 if (!(val.size() == 1 && val[0] <= 0x7F)) {
-                    dest.back() = static_cast<unsigned char>(0x80 + val_len);
+                    dest.back() = zx(0x80 + val_len);
                     dest = dest.shrink(1);
                 }
                 dest = encode_path(dest, l.path(), /*terminating=*/true);
@@ -523,7 +523,7 @@ void append_acct(
 
 void append_digest(byte_string &out, bytes32_t const &hash)
 {
-    out.push_back(DIGEST);
+    out.push_back(zx(DIGEST));
     out.append(hash.bytes, 32);
 }
 

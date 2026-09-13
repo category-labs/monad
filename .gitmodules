@@ -37,7 +37,7 @@
 	url = https://github.com/nlohmann/json.git
 [submodule "core/third_party/unordered_dense"]
 	path = third_party/unordered_dense
-	url = https://github.com/martinus/unordered_dense.git
+	url = https://github.com/anne-laure-s/unordered_dense.git
 [submodule "third_party/BLAKE3"]
 	path = third_party/BLAKE3
 	url = https://github.com/BLAKE3-team/BLAKE3.git

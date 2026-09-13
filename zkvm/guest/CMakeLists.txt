@@ -229,6 +229,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     add_subdirectory("${THIRD_PARTY_DIR}/unordered_dense" unordered_dense)
 
+    # Avoid soft-float calls with a guest-only header using integer load-factor
+    # arithmetic. Leave the unordered_dense submodule unchanged.
+    include("${CMAKE_CURRENT_SOURCE_DIR}/unordered_dense_derive.cmake")
+    monad_zkvm_unordered_dense_derive(unordered_dense "${THIRD_PARTY_DIR}"
+        "${CMAKE_CURRENT_BINARY_DIR}/unordered_dense-nofloat")
+
     # cthash — header-only constexpr hashing, used by abi_signatures.hpp
     # for compile-time ABI selector derivation. Has its own add_subdirectory
     # CMakeLists, exposes the include dir on the cthash target.

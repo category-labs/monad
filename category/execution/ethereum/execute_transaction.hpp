@@ -43,6 +43,7 @@ struct EvmcHost;
 class ExecutionEventRecorder;
 class State;
 struct Transaction;
+struct TransactionStats;
 
 template <Traits traits>
 class ExecuteTransactionNoValidation
@@ -64,7 +65,8 @@ public:
         Chain const &, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &);
 
-    evmc::Result operator()(State &, EvmcHost<traits> &);
+    evmc::Result
+    operator()(State &, EvmcHost<traits> &, TransactionStats *stats = nullptr);
 };
 
 template <Traits traits>
@@ -87,8 +89,9 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     ExecutionEventRecorder *exec_recorder_;
     bool trace_transfers_;
 
-    Result<evmc::Result> execute_impl2(State &);
-    Receipt execute_final(State &, evmc::Result const &);
+    Result<evmc::Result> execute_impl2(State &, TransactionStats &);
+    Receipt
+    execute_final(State &, TransactionStats const &, evmc::Result const &);
 
 public:
     ExecuteTransaction(

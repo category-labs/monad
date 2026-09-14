@@ -13,9 +13,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# Generate a guest-only header with integer capacity thresholds and 64-bit
-# bucket fields; leave the submodule unchanged. Integer thresholds avoid
-# soft-float calls but can differ from float rounding from 2^24 buckets onward.
+# Generate a guest-only header with 64-bit buckets and integer capacity
+# thresholds. A 40% load factor (upstream: 80%) reduces insertion collisions
+# at the cost of more buckets. Iteration still follows the dense value vector.
+# Skip the initial bucket clear only after a fresh allocation (checked below).
+# Write the derived header in the build tree; leave the submodule unchanged.
 
 function(monad_zkvm_unordered_dense_derive target third_party_dir out_dir)
     set(_src "${third_party_dir}/unordered_dense/include/ankerl/unordered_dense.h")
@@ -29,27 +31,28 @@ function(monad_zkvm_unordered_dense_derive target third_party_dir out_dir)
 
     file(READ "${_src}" _text)
 
-    # Require the 0.8 default assumed by the integer formulas.
-    # Guest callers must not change max_load_factor: this guard checks only
-    # the upstream default, not calls to the public setter.
+    # Keep the pinned 0.8 default as an upstream-change guard.
+    # The rewritten thresholds use a fixed 0.4 ratio; guest callers must not
+    # change max_load_factor(), whose setter is not covered by this check.
     string(FIND "${_text}"
         "static constexpr float default_max_load_factor = 0.8F;" _pos)
     if(_pos EQUAL -1)
         message(FATAL_ERROR
             "unordered_dense's default_max_load_factor is no longer 0.8F. The "
-            "integer substitution in ${CMAKE_CURRENT_LIST_FILE} assumes it. "
-            "Re-derive the numerator/denominator before bumping the submodule.")
+            "substitution in ${CMAKE_CURRENT_LIST_FILE} overrides it with a "
+            "ratio of its own, so re-read the two expressions and confirm they "
+            "are still the load-factor sites before bumping the submodule.")
     endif()
 
     # Require both expected expressions so upstream changes cannot skip the patch.
     set(_from_shifts
         "static_cast<size_t>(static_cast<float>(calc_num_buckets(shifts)) * max_load_factor())")
     set(_to_shifts
-        "static_cast<size_t>((static_cast<uint64_t>(calc_num_buckets(shifts)) * 4) / 5)")
+        "static_cast<size_t>((static_cast<uint64_t>(calc_num_buckets(shifts)) * 2) / 5)")
     set(_from_capacity
         "static_cast<value_idx_type>(static_cast<float>(m_num_buckets) * max_load_factor())")
     set(_to_capacity
-        "static_cast<value_idx_type>((static_cast<uint64_t>(m_num_buckets) * 4) / 5)")
+        "static_cast<value_idx_type>((static_cast<uint64_t>(m_num_buckets) * 2) / 5)")
 
     # ZisK charges less for aligned 64-bit accesses and native index arithmetic
     # than for 32-bit operations. Buckets grow from 8 to 16 bytes, and
@@ -60,8 +63,35 @@ function(monad_zkvm_unordered_dense_derive target third_party_dir out_dir)
     set(_to_bucket [==[    uint64_t m_dist_and_fingerprint; // upper bits: probe distance; low byte: hash fingerprint
     uint64_t m_value_idx;            // index into the m_values vector.]==])
 
+    # increase_size(), rehash() and reserve() refill freshly allocated buckets.
+    # The guest's bump allocator never reuses memory; on ZisK, reads before
+    # any write are constrained to zero. Only this initial clear is redundant;
+    # clear_buckets() must still clear reused arrays.
+    #
+    # Remove allocation/refill pairs from a temporary copy, then reject any
+    # remaining refill call. Bracket arguments preserve regex escapes; matching
+    # pairs avoids CMake's semicolon splitting of MATCHALL result lists.
+    string(REGEX REPLACE
+        [=[allocate_buckets_from_shift\(\)[^;]*;[^;]*clear_and_fill_buckets_from_values\(\)[^;]*;]=]
+        "" _cf_probe "${_text}")
+    string(FIND "${_cf_probe}" "clear_and_fill_buckets_from_values();" _cf_leftover)
+    if(NOT _cf_leftover EQUAL -1)
+        message(FATAL_ERROR
+            "unordered_dense: a call of clear_and_fill_buckets_from_values() no "
+            "longer follows allocate_buckets_from_shift(). Dropping its "
+            "clear_buckets() in ${CMAKE_CURRENT_LIST_FILE} is sound only while "
+            "every caller has just allocated fresh bump memory, which ZisK's "
+            "memory AIR then constrains to read zero. Re-read the new caller.")
+    endif()
+
+    set(_from_fill [==[    void clear_and_fill_buckets_from_values() {
+        clear_buckets();
+        for (value_idx_type value_idx = 0,]==])
+    set(_to_fill [==[    void clear_and_fill_buckets_from_values() {
+        for (value_idx_type value_idx = 0,]==])
+
     foreach(_pair "_from_shifts;_to_shifts" "_from_capacity;_to_capacity"
-                  "_from_bucket;_to_bucket")
+                  "_from_bucket;_to_bucket" "_from_fill;_to_fill")
         list(GET _pair 0 _from_var)
         list(GET _pair 1 _to_var)
         string(FIND "${_text}" "${${_from_var}}" _found)

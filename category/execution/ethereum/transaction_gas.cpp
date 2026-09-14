@@ -90,7 +90,9 @@ CalldataTokens tokens_in_calldata(Transaction const &tx) noexcept
     // Word-at-a-time zero counting (EIP-2028 prices zero and nonzero calldata
     // bytes differently). Byte heads and tails keep every load aligned: the
     // zkVM targets fault on misaligned loads, and the byte loop on <8-byte
-    // remainders costs less than any masking cleverness.
+    // remainders costs less than any masking cleverness. The word loop sums the
+    // nonzero mask's BITS and converts once, so neither the shift nor the
+    // subtraction is paid per word.
     auto const *p = tx.data.data();
     size_t n = tx.data.size();
     uint64_t zeros = 0;
@@ -99,10 +101,13 @@ CalldataTokens tokens_in_calldata(Transaction const &tx) noexcept
         ++p;
         --n;
     }
+    size_t const words = n >> 3;
+    uint64_t nonzero_bits = 0;
     for (; n >= 8; p += 8, n -= 8) {
-        zeros += bits::count_zero_bytes(
-            *reinterpret_cast<uint64_t const *>(p));
+        nonzero_bits +=
+            bits::nonzero_byte_bits(*reinterpret_cast<uint64_t const *>(p));
     }
+    zeros += (words * 8u) - (nonzero_bits >> 3);
     for (; n != 0; ++p, --n) {
         zeros += (*p == 0x00);
     }

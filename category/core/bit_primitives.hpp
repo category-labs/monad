@@ -206,6 +206,31 @@ namespace monad::bits
 #endif
     }
 
+    // Eight per nonzero byte of x and zero per zero byte: the population of the
+    // byte-wise nonzero mask. A caller summing this over many words does the
+    // one division at the end rather than once per word.
+    //
+    // uint64_t and not unsigned, because an `unsigned` return costs the caller
+    // an slli/srli pair to zero-extend before it can accumulate into a word.
+    [[gnu::always_inline]] inline uint64_t
+    nonzero_byte_bits(uint64_t const x) noexcept
+    {
+#if defined(__riscv_zbb) && __riscv_xlen == 64
+        // Zbb's orc.b sets each result byte to 0xFF when the source byte is
+        // nonzero, which is the mask zero_byte_mask above spends five
+        // operations to build. ZisK transpiles it to a single BinaryE
+        // instruction -- the same AIR as the bext and clz this guest already
+        // emits -- so the pair below is 112 cells against the 377 the
+        // and/add/or/or/not/srl/cpop chain costs. The xlen test
+        // is not decoration: rv32 Zbb has orc.b but no __builtin for the
+        // 64-bit form, and SP1's guest is rv32.
+        return static_cast<uint64_t>(
+            __builtin_popcountll(__builtin_riscv_orc_b_64(x)));
+#else
+        return static_cast<uint64_t>(8u - count_zero_bytes(x)) << 3u;
+#endif
+    }
+
     // Fixed-size 32-byte copy for KNOWN-aligned sources and arbitrary
     // destinations, inline. On rv32 (SP1) a 32-byte copy with unknown
     // destination alignment is a memcpy CALL (~18 cycles of overhead on a

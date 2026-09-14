@@ -593,3 +593,55 @@ TEST(Rlp_Transaction, DecodeEip4844BlobHashListTrailingBytes)
         EXPECT_TRUE(result.has_error()) << trailing.size();
     }
 }
+
+TEST(Rlp_Transaction, DecodeEip2718TrailingBytes)
+{
+    Transaction const t{
+        .sc = {.signature = {.r = 1, .s = 1, .y_parity = false}, .chain_id = 1},
+        .nonce = 0,
+        .max_fee_per_gas = 1,
+        .gas_limit = 21'000,
+        .value = 0,
+        .to = 0x3535353535353535353535353535353535353535_address,
+        .type = TransactionType::eip1559,
+        .max_priority_fee_per_gas = 1};
+    auto const encoded = encode_transaction(t);
+    ASSERT_EQ(encoded[0], 0x02);
+
+    // Extra RLP item inside the transaction list, after `s`.
+    {
+        byte_string_view payload_view{encoded};
+        payload_view.remove_prefix(1);
+        auto const payload = parse_list_metadata(payload_view);
+        ASSERT_FALSE(payload.has_error());
+        auto const bad =
+            byte_string{0x02} +
+            encode_list2(byte_string{payload.value()} + encode_unsigned(1u));
+        byte_string_view enc{bad};
+        auto const result = decode_transaction_eip2718(enc);
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), DecodeError::InputTooLong);
+    }
+
+    // Bytes after the envelope. Unlike a legacy transaction, whose list is
+    // followed directly by the next transaction in a block body, a typed
+    // transaction is always isolated by its string wrapper, so the envelope
+    // must be the whole input.
+    {
+        auto const bad = encoded + byte_string{0xde, 0xad};
+        byte_string_view enc{bad};
+        auto const result = decode_transaction_eip2718(enc);
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), DecodeError::InputTooLong);
+    }
+
+    // The same garbage inside the block body's string wrapper.
+    {
+        auto const body =
+            encode_list2(encode_string2(encoded + byte_string{0xde, 0xad}));
+        byte_string_view enc{body};
+        auto const result = decode_transaction_list(enc, nullptr);
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), DecodeError::InputTooLong);
+    }
+}

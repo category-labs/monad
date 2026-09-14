@@ -221,10 +221,16 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     add_subdirectory("${THIRD_PARTY_DIR}/unordered_dense" unordered_dense)
 
-    # Use the fork's fixed 4/5 load factor to avoid soft-float capacity calculations.
+    # Use integer 2/5 capacity thresholds to reduce probes and soft-float calls.
     target_compile_definitions(unordered_dense INTERFACE
         ANKERL_UNORDERED_DENSE_FIXED_LOAD_FACTOR=1
-        ANKERL_UNORDERED_DENSE_64BIT_BUCKETS=1)
+        ANKERL_UNORDERED_DENSE_64BIT_BUCKETS=1
+        ANKERL_UNORDERED_DENSE_LOW_OCCUPANCY=1)
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        # ZisK's bump allocator never reuses memory; fresh buckets read as zero.
+        target_compile_definitions(unordered_dense INTERFACE
+            ANKERL_UNORDERED_DENSE_ZERO_INITIALIZED_BUCKETS=1)
+    endif()
 
     # cthash — header-only constexpr hashing, used by abi_signatures.hpp
     # for compile-time ABI selector derivation. Has its own add_subdirectory

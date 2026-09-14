@@ -13,6 +13,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+monad_add_test_death(
+  rescan_death_no_mode_test
+  SOURCES
+  "rescan_death_no_mode.cpp"
+  LINK_LIBRARIES
+  monad_execution
+  FAIL_REGEX
+  ".*run 'monad-mpt --rescan-devices.*")
+add_trie_test(TARGET rescan_devices_test SOURCES "rescan_devices_test.cpp")
 add_trie_test(TARGET append_test SOURCES "append_test.cpp")
 add_trie_test(TARGET big_endian_serialization_test SOURCES
               "big_endian_serialization_test.cpp")

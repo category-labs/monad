@@ -507,6 +507,7 @@ void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
         }
         slots += p.weight;
         selected_pages.push_back(p.key);
+        stats.selected_storage_classes.push_back(p.cls);
         if (negative_candidates.contains(p.key)) {
             ++stats.negative_stamps_selected;
         }

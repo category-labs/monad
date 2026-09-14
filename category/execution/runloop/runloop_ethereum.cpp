@@ -102,12 +102,12 @@ void dump_stamp_record(uint64_t const block, StampBlockStats const &st)
     for (auto const &a : st.selected_account_keys) {
         out << block << " A " << fmt::format("{}", a) << '\n';
     }
-    for (auto const &k : st.selected_storage_keys) {
+    for (size_t i = 0; i < st.selected_storage_keys.size(); ++i) {
         out << block << " S 0x";
-        for (auto const b : k.bytes) {
+        for (auto const b : st.selected_storage_keys[i].bytes) {
             out << fmt::format("{:02x}", b);
         }
-        out << '\n';
+        out << " c" << static_cast<int>(st.selected_storage_classes[i]) << '\n';
     }
     out.flush();
 }

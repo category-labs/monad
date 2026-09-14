@@ -463,57 +463,67 @@ private:
         }
     }
 
+    // Evict the tail of `list`. The map accessor is taken before the node
+    // leaves the list, and the node is delinked only if it is still the tail
+    // once the accessor is held: a reader that found the entry in the map
+    // therefore either sees it in the list (and can promote it, after which
+    // the eviction moves on to the new tail) or does not find it at all. An
+    // entry a block read can thus never vanish before finalize stamps it.
+    // Returns false when the list is empty.
+    bool evict_from(LruList &list, ListNode *const skip)
+    {
+        while (true) {
+            Key key;
+            ListNode *target;
+            {
+                std::unique_lock const l(mutex_);
+                target = list.tail_skipping(skip);
+                if (target == nullptr) {
+                    return false;
+                }
+                key = target->key_;
+            }
+            Accessor acc;
+            if (!hmap_.find(acc, key) || acc->second.node_ != target) {
+                continue; // evicted by another thread meanwhile
+            }
+            bool stamped_negative = false;
+            {
+                std::unique_lock const l(mutex_);
+                if (!target->is_in_list() ||
+                    list.tail_skipping(skip) != target) {
+                    continue; // promoted (or gone) meanwhile: retry
+                }
+                STATS_EVENT_EVICT();
+                if (stamp_mode_ && target->stamped_) {
+                    // unstamped entries drain first, then stamps oldest first,
+                    // so a cached victim means the cached set outgrew the
+                    // physical capacity — a consensus bug, not a perf bug
+                    uint64_t const stamp = static_cast<uint64_t>(
+                        target->lru_time_.load(std::memory_order_acquire));
+                    MONAD_ASSERT(
+                        stamp < evict_floor_.load(std::memory_order_relaxed));
+                    stamped_negative = target->negative_;
+                }
+                list.delink(target);
+            }
+            if (stamped_negative) {
+                stamped_negative_.fetch_sub(1, std::memory_order_relaxed);
+            }
+            hmap_.erase(acc);
+            pool_.delete_obj(target);
+            return true;
+        }
+    }
+
     bool evict()
     {
-        ListNode *target;
-        {
-            std::unique_lock const l(mutex_);
-            STATS_EVENT_EVICT();
-            target =
-                stamp_mode_ ? lru_.evict_skipping(&boundary_) : lru_.evict();
-        }
-        if (!target) {
-            return false;
-        }
-        if (stamp_mode_) {
-            // unstamped entries drain first, then stamps oldest first, so a
-            // cached victim means the cached set outgrew the physical
-            // capacity — a consensus bug, not a perf bug
-            if (target->stamped_) {
-                uint64_t const stamp = static_cast<uint64_t>(
-                    target->lru_time_.load(std::memory_order_acquire));
-                MONAD_ASSERT(
-                    stamp < evict_floor_.load(std::memory_order_relaxed));
-                if (target->negative_) {
-                    stamped_negative_.fetch_sub(1, std::memory_order_relaxed);
-                }
-            }
-        }
-        Accessor acc;
-        bool const found = hmap_.find(acc, target->key_);
-        MONAD_ASSERT(found);
-        hmap_.erase(acc);
-        pool_.delete_obj(target);
-        return true;
+        return evict_from(lru_, stamp_mode_ ? &boundary_ : nullptr);
     }
 
     bool evict_negative()
     {
-        ListNode *target;
-        {
-            std::unique_lock const l(mutex_);
-            STATS_EVENT_EVICT();
-            target = negative_lru_.evict();
-        }
-        if (!target) {
-            return false;
-        }
-        Accessor acc;
-        bool const found = hmap_.find(acc, target->key_);
-        MONAD_ASSERT(found);
-        hmap_.erase(acc);
-        pool_.delete_obj(target);
-        return true;
+        return evict_from(negative_lru_, nullptr);
     }
 
     /// ListNode
@@ -604,19 +614,15 @@ private:
             pos->next_ = node;
         }
 
-        // Evict the tail, or the node before `skip` when the tail is the
-        // sentinel `skip` itself.
-        ListNode *evict_skipping(ListNode *const skip)
+        // The tail, or the node before `skip` when the tail is the sentinel
+        // `skip` itself; nullptr when empty. Does not delink.
+        ListNode *tail_skipping(ListNode *const skip)
         {
             ListNode *target = tail_.prev_;
-            if (target == skip) {
+            if (skip != nullptr && target == skip) {
                 target = skip->prev_;
             }
-            if (target == &head_) {
-                return nullptr;
-            }
-            delink(target);
-            return target;
+            return target == &head_ ? nullptr : target;
         }
 
         void clear(Pool &pool)
@@ -632,15 +638,6 @@ private:
             tail_.prev_ = &head_;
         }
 
-        ListNode *evict()
-        {
-            ListNode *const target = tail_.prev_;
-            if (target == &head_) {
-                return nullptr;
-            }
-            delink(target);
-            return target;
-        }
     }; /// LruList
 
     /// HashMapValue

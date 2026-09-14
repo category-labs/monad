@@ -307,7 +307,7 @@ public:
             auto const &post = ps->post_state();
             insert_in_lru_caches(post);
             apply_stamps(
-                post.account_stamps, post.storage_stamps, block_number);
+                post.account_stamps, post.storage_stamps, block_number, &post);
             apply_deaths(post.account_deaths, post.storage_deaths);
         }
         else {
@@ -366,7 +366,8 @@ private:
     // bug.
     void apply_stamps(
         std::vector<Address> const &accounts,
-        std::vector<StorageKey> const &storage, uint64_t const block)
+        std::vector<StorageKey> const &storage, uint64_t const block,
+        ProposalPostState const *const post = nullptr)
     {
         for (auto const &addr : accounts) {
             bool const stamped = accounts_.set_stamp(addr, block);
@@ -382,17 +383,20 @@ private:
                 }
                 StorageCache::ConstAccessor acc{};
                 bool const found = storage_.find(acc, key);
-                MONAD_ASSERT_PRINTF(
-                    false,
-                    "stamped storage entry not resident at block %lu: key %s, "
-                    "in map %d%s, live entries %zu, weight %lu",
+                std::string const detail = std::format(
+                    "stamped storage entry not resident at block {}: key {}, "
+                    "in map {}{}, written this block {}, live entries {}, "
+                    "weight {}, negatives {}",
                     block,
-                    hex.c_str(),
+                    hex,
                     found,
                     found ? (storage_.is_negative(acc) ? " (empty)" : " (live)")
                           : "",
+                    post != nullptr && post->storage.contains(key),
                     storage_.size(),
-                    storage_.approx_weight());
+                    storage_.approx_weight(),
+                    storage_.negative_count());
+                MONAD_ASSERT_PRINTF(false, "%s", detail.c_str());
             }
         }
         uint64_t const floor = cache_evict_floor(block);

@@ -22,6 +22,7 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -126,6 +127,11 @@ namespace monad::vm::utils
         size_t stamped_negative_count() const
         {
             return stamped_negative_.load(std::memory_order_relaxed);
+        }
+
+        size_t negative_count() const
+        {
+            return negative_size_.load(std::memory_order_relaxed);
         }
 
         // Finalize path: set the consensus stamp of a resident entry (with or
@@ -368,30 +374,55 @@ namespace monad::vm::utils
             if (delta_weight + pre_weight > max_weight_) {
                 int64_t evicted_weight = 0;
                 while (evicted_weight < delta_weight) {
-                    ListNode const *target = lru_.evict();
-                    if (MONAD_UNLIKELY(!target)) {
+                    auto const n = evict_from(lru_);
+                    if (MONAD_UNLIKELY(!n.has_value())) {
                         break;
                     }
-                    if (stamp_mode_ && target->second.stamped_) {
-                        // unstamped entries drain first, then stamps oldest
-                        // first: a cached victim means the cached set
-                        // outgrew the physical capacity — a consensus bug,
-                        // not a perf bug
-                        uint64_t const stamp =
-                            static_cast<uint64_t>(target->second.lru_time_.load(
-                                std::memory_order_acquire));
-                        MONAD_ASSERT(
-                            stamp <
-                            evict_floor_.load(std::memory_order_relaxed));
-                        if (target->second.negative_) {
-                            stamped_negative_.fetch_sub(
-                                1, std::memory_order_relaxed);
-                        }
-                    }
-                    int64_t const n = evict(target);
-                    weight_.fetch_sub(n, std::memory_order_acq_rel);
-                    evicted_weight += n;
+                    weight_.fetch_sub(*n, std::memory_order_acq_rel);
+                    evicted_weight += *n;
                 }
+            }
+        }
+
+        // Evict the tail of `list` and return its weight, or nullopt when the
+        // list is empty. The map accessor is taken before the node leaves the
+        // list, and the node is delinked only if it is still the tail once
+        // the accessor is held: a reader that found the entry in the map
+        // either sees it in the list (and can promote it, after which the
+        // eviction moves on to the new tail) or does not find it at all, so
+        // an entry a block read can never vanish before finalize stamps it.
+        std::optional<uint32_t> evict_from(LruList &list)
+        {
+            while (true) {
+                auto const candidate = list.tail_candidate();
+                if (!candidate.has_value()) {
+                    return std::nullopt;
+                }
+                auto const &[key, target] = *candidate;
+                Accessor acc;
+                if (!hmap_.find(acc, key) || &*acc != target) {
+                    continue; // evicted by another thread meanwhile
+                }
+                if (!list.remove_if_tail(target)) {
+                    continue; // promoted (or gone) meanwhile: retry
+                }
+                if (stamp_mode_ && target->second.stamped_) {
+                    // unstamped entries drain first, then stamps oldest
+                    // first: a cached victim means the cached set outgrew
+                    // the physical capacity — a consensus bug, not a perf bug
+                    uint64_t const stamp =
+                        static_cast<uint64_t>(target->second.lru_time_.load(
+                            std::memory_order_acquire));
+                    MONAD_ASSERT(
+                        stamp < evict_floor_.load(std::memory_order_relaxed));
+                    if (target->second.negative_) {
+                        stamped_negative_.fetch_sub(
+                            1, std::memory_order_relaxed);
+                    }
+                }
+                uint32_t const wt = acc->second.cache_weight_;
+                hmap_.erase(acc);
+                return wt;
             }
         }
 
@@ -433,22 +464,7 @@ namespace monad::vm::utils
 
         bool evict_negative()
         {
-            ListNode const *const target = negative_lru_.evict();
-            if (!target) {
-                return false;
-            }
-            evict(target);
-            return true;
-        }
-
-        uint32_t evict(ListNode const *const target)
-        {
-            Accessor acc;
-            bool const found = hmap_.find(acc, target->first);
-            MONAD_ASSERT(found);
-            uint32_t const wt = acc->second.cache_weight_;
-            hmap_.erase(acc);
-            return wt;
+            return evict_from(negative_lru_).has_value();
         }
 
         /// HashMapValue
@@ -721,21 +737,30 @@ namespace monad::vm::utils
                 return true;
             }
 
-            // The tail, skipping the boundary sentinel: unstamped entries
-            // drain first, then the stamped region oldest stamp first.
-            ListNode const *evict()
+            // The tail, skipping the boundary sentinel (unstamped entries
+            // drain first, then the stamped region oldest stamp first), with
+            // a copy of its key; nullopt when empty. Does not delink.
+            std::optional<std::pair<Key, ListNode const *>> tail_candidate()
             {
                 std::unique_lock const l(mutex_);
-                ListNode const *target = base_.second.prev_;
-                if (target == &boundary_) {
-                    target = boundary_.second.prev_;
+                ListNode const *const target = tail_locked();
+                if (target == nullptr) {
+                    return std::nullopt;
                 }
-                if (target == &base_) {
-                    return nullptr;
+                return std::make_pair(target->first, target);
+            }
+
+            // Delink `node` iff it is still the tail (nothing promoted or
+            // removed it since tail_candidate).
+            bool remove_if_tail(ListNode const *const node)
+            {
+                std::unique_lock const l(mutex_);
+                if (!node->second.is_in_list() || tail_locked() != node) {
+                    return false;
                 }
-                delink(target);
-                target->second.prev_ = nullptr;
-                return target;
+                delink(node);
+                node->second.prev_ = nullptr;
+                return true;
             }
 
             bool
@@ -764,6 +789,15 @@ namespace monad::vm::utils
             }
 
         private:
+            ListNode const *tail_locked() const
+            {
+                ListNode const *target = base_.second.prev_;
+                if (with_boundary_ && target == &boundary_) {
+                    target = boundary_.second.prev_;
+                }
+                return target == &base_ ? nullptr : target;
+            }
+
             void delink(ListNode const *const node)
             {
                 ListNode const *const prev = node->second.prev_;

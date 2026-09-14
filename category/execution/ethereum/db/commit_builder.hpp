@@ -76,9 +76,11 @@ struct StampBlockStats
     uint64_t sampled_live{0};
     uint64_t sampled_empty{0};
     uint64_t negative_stamps_selected{0};
-    // the selected keys, in selection order (a copy for debugging dumps)
+    // the selected keys, in selection order, with their classes (a copy for
+    // debugging dumps)
     std::vector<Address> selected_account_keys;
     std::vector<StorageKey> selected_storage_keys;
+    std::vector<uint8_t> selected_storage_classes;
 };
 
 struct CallFrame;

@@ -58,11 +58,26 @@ using namespace MONAD_ASYNC_NAMESPACE;
 // root_offsets_ring_t::SIZE_ = 65536; MONAD008 dropped it to 32, shrinking
 // sizeof(db_metadata) from 528512 to 4480 bytes and shifting chunk_info[]
 // and the db_offsets/consensus block accordingly.
-static constexpr size_t MONAD007_DB_METADATA_SIZE = 528512;
+static constexpr size_t MONAD007_DB_METADATA_SIZE =
+    detail::db_metadata::MONAD007_HEADER_BYTES;
 static constexpr size_t MONAD007_DB_OFFSETS_OFFSET = 524328;
 static constexpr size_t MONAD007_DB_OFFSETS_THROUGH_BLOCK_IDS_BYTES = 128;
 static constexpr size_t MONAD007_LIST_TRIPLE_OFFSET = 528488;
 static constexpr size_t DB_METADATA_LIST_TRIPLE_BYTES = 24;
+
+// storage_pool documents min_chunk_capacity as the smallest capacity a pool
+// carrying a database can have, and samples chunk starts at that stride when a
+// device's own geometry is unknown. check_chunk_info_fits_ below is what makes
+// that true at open time, by refusing a pool whose conventional chunk 0 cannot
+// hold the header; these two bounds keep min_chunk_capacity the smallest
+// power of two that survives it, so that it divides every real capacity and
+// the stride skips no chunk.
+static_assert(
+    storage_pool::min_chunk_capacity / 2 >=
+    detail::db_metadata::MONAD007_HEADER_BYTES);
+static_assert(
+    storage_pool::min_chunk_capacity / 4 <
+    detail::db_metadata::MONAD007_HEADER_BYTES);
 
 namespace detail
 {
@@ -194,12 +209,7 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
     metadata_mmap_size_ = cnv_chunk.capacity() / 2;
     db_map_size_ = sizeof(detail::db_metadata) +
                    chunk_count * sizeof(detail::db_metadata::chunk_info_t);
-    MONAD_ASSERT(
-        metadata_mmap_size_ >=
-            MONAD007_DB_METADATA_SIZE +
-                chunk_count * sizeof(detail::db_metadata::chunk_info_t),
-        "cnv chunk 0 is too small to hold a MONAD007 metadata header plus "
-        "chunk_info[]; pool configuration is incompatible with this build");
+    check_chunk_info_fits_(chunk_count, metadata_mmap_size_);
 
     // mmap both metadata copies
     copies_[0].main = start_lifetime_as<detail::db_metadata>(::mmap(
@@ -238,7 +248,10 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
                 can_write_to_map_,
                 "First copy of metadata corrupted, but not opened for "
                 "healing");
-            db_copy(copies_[0].main, copies_[1].main, db_map_size_);
+            db_copy(
+                copies_[0].main,
+                copies_[1].main,
+                db_map_size_of_(copies_[1].main));
         }
     }
 
@@ -355,11 +368,17 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
                  detail::db_metadata::MAGIC_STRING_LEN)) {
         if (can_write_to_map_) {
             if (copies_[0].main->is_dirty().load(std::memory_order_acquire)) {
-                db_copy(copies_[0].main, copies_[1].main, db_map_size_);
+                db_copy(
+                    copies_[0].main,
+                    copies_[1].main,
+                    db_map_size_of_(copies_[1].main));
             }
             else if (copies_[1].main->is_dirty().load(
                          std::memory_order_acquire)) {
-                db_copy(copies_[1].main, copies_[0].main, db_map_size_);
+                db_copy(
+                    copies_[1].main,
+                    copies_[0].main,
+                    db_map_size_of_(copies_[0].main));
             }
         }
         else {
@@ -457,6 +476,8 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
         map_ring_a_storage();
         map_ring_b_storage();
         replay_pending_shrink_grow_();
+        reconcile_chunk_count_();
+        record_device_sizes_();
     }
 }
 #if defined(__GNUC__) && !defined(__clang__)
@@ -505,6 +526,129 @@ uint32_t DbMetadataContext::ring_max_chunks_() const noexcept
 size_t DbMetadataContext::map_bytes_per_chunk_() const noexcept
 {
     return io_->storage_pool().chunk(storage_pool::cnv, 0).capacity() / 2;
+}
+
+void DbMetadataContext::check_chunk_info_fits_(
+    size_t const target, size_t const metadata_mmap_size)
+{
+    MONAD_ASSERT_PRINTF(
+        target <= MONAD_ASYNC_NAMESPACE::chunk_offset_t::max_id,
+        "The storage pool provides %zu sequential chunks, beyond the %llu the "
+        "20 bit chunk id space allows. If devices were just added, they are "
+        "too many for this pool; use fewer or larger ones.",
+        target,
+        static_cast<unsigned long long>(
+            MONAD_ASYNC_NAMESPACE::chunk_offset_t::max_id));
+    auto const needed = MONAD007_DB_METADATA_SIZE +
+                        target * sizeof(detail::db_metadata::chunk_info_t);
+    MONAD_ASSERT_PRINTF(
+        metadata_mmap_size >= needed,
+        "The storage pool provides %zu sequential chunks, needing %zu bytes "
+        "of metadata, but conventional chunk 0 only provides %zu. If devices "
+        "were just added, this pool's chunk capacity is too small to describe "
+        "that many chunks.",
+        target,
+        needed,
+        metadata_mmap_size);
+}
+
+size_t DbMetadataContext::db_map_size_of_(
+    detail::db_metadata const *const m) const noexcept
+{
+    auto const ret =
+        sizeof(detail::db_metadata) +
+        size_t(m->chunk_info_count) * sizeof(detail::db_metadata::chunk_info_t);
+    MONAD_ASSERT(ret <= metadata_mmap_size_);
+    return ret;
+}
+
+void DbMetadataContext::do_add_devices_body_(uint32_t const target_chunk_count)
+{
+    for (auto const &copy : copies_) {
+        auto *const m = copy.main;
+        auto const from = static_cast<uint32_t>(m->chunk_info_count);
+        if (from == target_chunk_count) {
+            continue;
+        }
+        MONAD_ASSERT(from < target_chunk_count);
+        uint64_t added = 0;
+        for (uint32_t n = from; n < target_chunk_count; n++) {
+            auto const &chunk = io_->storage_pool().chunk(storage_pool::seq, n);
+            MONAD_ASSERT_PRINTF(
+                chunk.size() == 0,
+                "sequential chunk %u on a joining device already holds %zu "
+                "bytes; refusing to add a device which is not blank",
+                n,
+                size_t(chunk.size()));
+            added += chunk.capacity();
+        }
+        m->extend_chunk_info_(target_chunk_count, added);
+    }
+}
+
+void DbMetadataContext::record_device_sizes_()
+{
+    if (io_->storage_pool().is_read_only()) {
+        return;
+    }
+    auto const devices = io_->storage_pool().devices();
+    auto const recorded = std::min(
+        devices.size(), size_t(detail::db_metadata::MAX_RECORDED_DEVICES));
+    for (auto const &copy : copies_) {
+        auto *const m = copy.main;
+        auto const g = m->hold_dirty();
+        for (size_t n = 0; n < recorded; n++) {
+            m->device_sizes[n] = devices[n].size_bytes();
+        }
+    }
+    // Synced like every other mutation here, and for a sharper reason: this is
+    // the only record of a device's pre-extend size, and losing it refuses the
+    // next extend outright.
+    sync_metadata_to_disk_();
+}
+
+void DbMetadataContext::reconcile_chunk_count_()
+{
+    auto const pool_chunks = io_->chunk_count();
+    auto const described =
+        static_cast<size_t>(copies_[0].main->chunk_info_count);
+    if (described == pool_chunks) {
+        if (io_->storage_pool().is_adding_devices()) {
+            LOG_INFO(
+                "DB metadata already describes all {} sequential chunks; the "
+                "device add was already completed by an earlier run.",
+                described);
+        }
+        return;
+    }
+    MONAD_ASSERT_PRINTF(
+        described < pool_chunks,
+        "DB metadata describes %zu sequential chunks but the storage pool "
+        "only provides %zu. A storage device appears to be missing.",
+        described,
+        pool_chunks);
+    MONAD_ASSERT_PRINTF(
+        io_->storage_pool().is_adding_devices(),
+        "The storage pool provides %zu sequential chunks but the DB metadata "
+        "describes only %zu. If storage was added, by attaching a device or by "
+        "extending one in place, run 'monad-mpt --rescan-devices' with the "
+        "daemon stopped to take it up.",
+        pool_chunks,
+        described);
+    MONAD_ASSERT(can_write_to_map_);
+    auto const target = static_cast<uint32_t>(pool_chunks);
+    LOG_INFO(
+        "Growing DB metadata from {} to {} sequential chunks after a device "
+        "add",
+        described,
+        target);
+    set_pending_shrink_grow_(
+        detail::db_metadata::PENDING_OP_ADD_DEVICES, target);
+    sync_metadata_to_disk_();
+    do_add_devices_body_(target);
+    sync_metadata_to_disk_();
+    clear_pending_shrink_grow_();
+    sync_metadata_to_disk_();
 }
 
 // Version metadata getters
@@ -1002,6 +1146,20 @@ void DbMetadataContext::replay_pending_shrink_grow_()
             "primary_ring_idx = {}) after unclean shutdown",
             op_param);
         do_promote_secondary_to_primary_body_(static_cast<uint8_t>(op_param));
+    }
+    else if (op_kind == detail::db_metadata::PENDING_OP_ADD_DEVICES) {
+        MONAD_ASSERT_PRINTF(
+            op_param == io_->chunk_count(),
+            "An interrupted device add targeted %u sequential chunks but the "
+            "storage pool provides %zu. Re-attach the devices which were "
+            "being added and reopen to let the operation complete.",
+            op_param,
+            io_->chunk_count());
+        LOG_INFO(
+            "Replaying in-flight chunk_info growth (target {} sequential "
+            "chunks) after unclean shutdown",
+            op_param);
+        do_add_devices_body_(op_param);
     }
     else {
         MONAD_ABORT_PRINTF(
@@ -1733,6 +1891,7 @@ void DbMetadataContext::init_new_pool(
         memset(
             m->future_variables_unused, 0, sizeof(m->future_variables_unused));
     }
+    record_device_sizes_();
 
     std::atomic_signal_fence(
         std::memory_order_seq_cst); // no compiler reordering here

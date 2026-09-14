@@ -13,6 +13,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+monad_add_test_death(
+  add_devices_death_no_mode_test
+  SOURCES
+  "add_devices_death_no_mode.cpp"
+  LINK_LIBRARIES
+  monad_execution
+  FAIL_REGEX
+  ".*run 'monad-mpt --rescan-devices.*")
+add_trie_test(TARGET add_devices_test SOURCES "add_devices_test.cpp")
 add_trie_test(TARGET append_test SOURCES "append_test.cpp")
 add_trie_test(TARGET big_endian_serialization_test SOURCES
               "big_endian_serialization_test.cpp")
@@ -35,6 +44,7 @@ add_trie_test(TARGET db_test SOURCES "db_test.cpp")
 add_trie_test(TARGET encode_branch_test SOURCES "encode_branch_test.cpp")
 add_trie_test(TARGET encode_two_pieces_test SOURCES
               "encode_two_pieces_test.cpp")
+add_trie_test(TARGET device_resize_test SOURCES "device_resize_test.cpp")
 add_trie_test(TARGET dual_timeline_test SOURCES "dual_timeline_test.cpp")
 add_trie_test(TARGET load_all_test SOURCES "load_all_test.cpp")
 add_trie_test(TARGET many_nested_updates SOURCES "many_nested_updates.cpp"

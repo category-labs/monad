@@ -506,8 +506,33 @@ static void keccak256_sponge(void const *const in, size_t len, uint8_t out[32])
         }
         last[len] = 0x01;
         auto const *const w = reinterpret_cast<uint64_t const *>(last);
-        for (size_t i = 0; i < WORDS; ++i) {
-            st[i] ^= w[i];
+        // Skip zero lanes beyond the domain byte. Each branch uses a constant
+        // lane count to preserve loop unrolling; a runtime count measured
+        // worse.
+        if (len <= 31) {
+            for (size_t i = 0; i < 4; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else if (len <= 63) {
+            for (size_t i = 0; i < 8; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else if (len <= 95) {
+            for (size_t i = 0; i < 12; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else if (len <= 127) {
+            for (size_t i = 0; i < 16; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else {
+            for (size_t i = 0; i < WORDS; ++i) {
+                st[i] ^= w[i];
+            }
         }
         // The high pad bit goes into the state, not into `last`, for the reason
         // the `first` arm above already gives: byte RATE-1 is byte 7 of lane 16,

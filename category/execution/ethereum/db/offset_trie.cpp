@@ -108,6 +108,12 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // Once the region is fully read and root claimed, zero means no orphan
     // remains, without scanning the marks again.
     size_t unclaimed_bytes = static_cast<size_t>(region_end - node.bytes());
+
+    // Reuse a valid entry as Keccak output, then copy it into the cache.
+    // This avoids reinitializing the entry for every node.
+    NodeCacheEntry hash_entry{};
+    hash_entry.hash_valid = true;
+
     // Cache the size so possible aliasing with mark stores does not
     // force GCC to reload it for each child.
     size_t const blob_size = blob_.size();
@@ -180,11 +186,12 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     // parent, so caching their hash would make child_ref
                     // emit a 32-byte ref where the trie inlines it.
                     if (rem.rlp_size() >= 32) {
-                        bytes32_t h;
                         monad_keccak256(
-                            rem.rlp_data(), rem.rlp_size(), h.bytes);
+                            rem.rlp_data(),
+                            rem.rlp_size(),
+                            hash_entry.hash.bytes);
                         hashes_.insert_or_assign(
-                            NodeId{node_offset}, NodeCacheEntry{h, true});
+                            NodeId{node_offset}, hash_entry);
                     }
                 }});
 

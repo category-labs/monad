@@ -637,11 +637,24 @@ namespace
 
 void append_branch(byte_string &out, std::array<NodeId, 16> const &children)
 {
-    out.reserve(out.size() + 1 + 16 * sizeof(node_id_wire_t));
-    out.push_back(BRANCH);
-    for (NodeId const c : children) {
-        append_node_id(out, c);
+    // Pack child IDs in pairs into an aligned buffer, then append it once.
+    // Avoids repeated string updates and unaligned per-child stores.
+    static_assert(std::endian::native == std::endian::little);
+    static_assert(sizeof(node_id_wire_t) == 4);
+    alignas(8) unsigned char buf[16 * sizeof(node_id_wire_t)];
+    for (unsigned i = 0; i < 16; i += 2) {
+        auto const lo = static_cast<node_id_wire_t>(children[i]);
+        auto const hi = static_cast<node_id_wire_t>(children[i + 1]);
+        // Ensure both IDs fit in the 32-bit wire format.
+        MONAD_ASSERT(static_cast<uint64_t>(children[i]) == lo);
+        MONAD_ASSERT(static_cast<uint64_t>(children[i + 1]) == hi);
+        uint64_t const w =
+            static_cast<uint64_t>(lo) | (static_cast<uint64_t>(hi) << 32);
+        __builtin_memcpy(buf + i * sizeof(node_id_wire_t), &w, sizeof(w));
     }
+    out.reserve(out.size() + 1 + sizeof(buf));
+    out.push_back(BRANCH);
+    out.append(buf, sizeof(buf));
 }
 
 void append_ext(byte_string &out, NibblesView const path, NodeId const child)

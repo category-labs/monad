@@ -135,6 +135,13 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // claims it as a child.
     // A child whose byte is clear is either previously unseen/invalid or
     // already claimed by a different parent.
+
+    // Reuse one CachedHash for the sweep: Keccak overwrites the hash directly,
+    // avoiding per-node zeroing and an intermediate copy. All entries are
+    // valid.
+    CachedHash ch{};
+    ch.valid = true;
+
     auto const is_valid_offset = [&](NodeId c) {
         if (c == NULL_ID) {
             return;
@@ -210,11 +217,9 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     // emit a 32-byte ref where the trie inlines it.
                     if (rem.rlp_size() >= 32) {
                         MONAD_KECCAK_SITE(TRIE_PRIME, rem.rlp_size());
-                        bytes32_t h;
                         monad_keccak256(
-                            rem.rlp_data(), rem.rlp_size(), h.bytes);
-                        hashes_.insert_or_assign(
-                            NodeId{node_offset}, CachedHash{h, true});
+                            rem.rlp_data(), rem.rlp_size(), ch.h.bytes);
+                        hashes_.insert_or_assign(NodeId{node_offset}, ch);
                     }
                 }});
 

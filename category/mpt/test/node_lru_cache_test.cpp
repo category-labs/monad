@@ -102,3 +102,76 @@ TEST(NodeCache, works)
     ASSERT_TRUE(node_cache.find(acc, virtual_chunk_offset_t(1, 0, 0)));
     EXPECT_EQ(get_acc_value(), 0xdead);
 }
+
+TEST(NodeCache, counts_hits_misses_and_evictions)
+{
+    NodeCache node_cache(2 * NodeCache::AVERAGE_NODE_SIZE);
+    NodeCache::ConstAccessor acc;
+
+    auto make_node = [] {
+        monad::byte_string value(84, 0);
+        return monad::mpt::make_node(0, {}, {}, std::move(value), 0, 0);
+    };
+
+    EXPECT_FALSE(node_cache.find(acc, virtual_chunk_offset_t(1, 0, 1)));
+    node_cache.insert(virtual_chunk_offset_t(1, 0, 1), make_node());
+    node_cache.insert(virtual_chunk_offset_t(2, 0, 1), make_node());
+    ASSERT_TRUE(node_cache.find(acc, virtual_chunk_offset_t(1, 0, 1)));
+    EXPECT_EQ(node_cache.stats().evictions, 0u);
+
+    // Third node exceeds the byte budget and evicts the LRU tail.
+    node_cache.insert(virtual_chunk_offset_t(3, 0, 1), make_node());
+
+    auto const stats = node_cache.stats();
+    EXPECT_EQ(stats.hits, 1u);
+    EXPECT_EQ(stats.misses, 1u);
+    EXPECT_EQ(stats.evictions, 1u);
+}
+
+// Overwriting a key replaces an entry already counted against the budget, so
+// it must not evict anything to make room it does not need.
+TEST(NodeCache, overwriting_a_key_does_not_evict_to_make_room)
+{
+    NodeCache node_cache(2 * NodeCache::AVERAGE_NODE_SIZE);
+    NodeCache::ConstAccessor acc;
+
+    auto make_node = [] {
+        monad::byte_string value(84, 0);
+        return monad::mpt::make_node(0, {}, {}, std::move(value), 0, 0);
+    };
+
+    node_cache.insert(virtual_chunk_offset_t(1, 0, 1), make_node());
+    node_cache.insert(virtual_chunk_offset_t(2, 0, 1), make_node());
+    auto const full = node_cache.used_bytes();
+    ASSERT_EQ(node_cache.size(), 2);
+    ASSERT_EQ(node_cache.stats().evictions, 0u);
+
+    // Same key, same size: the budget is unchanged, so the other entry stays.
+    node_cache.insert(virtual_chunk_offset_t(1, 0, 1), make_node());
+
+    EXPECT_EQ(node_cache.used_bytes(), full);
+    EXPECT_EQ(node_cache.size(), 2);
+    EXPECT_EQ(node_cache.stats().evictions, 0u);
+    EXPECT_TRUE(node_cache.find(acc, virtual_chunk_offset_t(2, 0, 1)));
+}
+
+TEST(NodeCache, reports_used_bytes_tracking_the_byte_budget)
+{
+    NodeCache node_cache(4 * NodeCache::AVERAGE_NODE_SIZE);
+
+    auto make_node = [] {
+        monad::byte_string value(84, 0);
+        return monad::mpt::make_node(0, {}, {}, std::move(value), 0, 0);
+    };
+
+    EXPECT_EQ(node_cache.used_bytes(), 0u);
+
+    auto const first = make_node();
+    auto const first_size = first->get_mem_size();
+    node_cache.insert(virtual_chunk_offset_t(1, 0, 1), first);
+    EXPECT_EQ(node_cache.used_bytes(), first_size);
+
+    auto const second = make_node();
+    node_cache.insert(virtual_chunk_offset_t(2, 0, 1), second);
+    EXPECT_EQ(node_cache.used_bytes(), first_size + second->get_mem_size());
+}

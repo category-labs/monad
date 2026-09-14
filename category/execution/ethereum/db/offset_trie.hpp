@@ -553,11 +553,19 @@ class OffsetTrie
         bytes32_t h;
         // A word and not a bool. The flag is read on every hash lookup and
         // written on every insert, and ZisK charges a 1-byte read 41 cells and
-        // a 1-byte write 66, against 16 and 18 for an aligned word.
-        // The pair's alignment pads it to 48 bytes either way, so the width is
-        // free.
+        // a 1-byte write 66, against 16 and 18 for an aligned word. The width
+        // is free: the padding below fixes the pair at 64 bytes either way.
         uint64_t valid;
+        // Pad std::pair<NodeId, CachedHash> to 64 bytes so unordered_dense can
+        // convert between entry indices and addresses using shifts instead of
+        // multiplication or division by 48. Trades extra memory for cheaper
+        // indexing.
+        [[maybe_unused]] uint64_t pad_[2];
     };
+
+    // Asserted, because losing it is silent: the index arithmetic goes back to
+    // a reciprocal multiply and nothing else changes -- just a slower guest.
+    static_assert(sizeof(std::pair<NodeId, CachedHash>) == 64);
 
     ankerl::unordered_dense::map<NodeId, CachedHash, NodeIdHash> hashes_{};
 

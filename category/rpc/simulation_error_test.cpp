@@ -58,6 +58,10 @@ TEST(SimulationErrorTest, SimulationDomain)
             "the block gap must be exactly 1 after filling in synthetic "
             "blocks"},
         TestCase{SimulationError::GasLimitExceeded, "gas limit exceeded"},
+        TestCase{
+            SimulationError::StateOverrideFailure,
+            "failed to apply state override"},
+        TestCase{SimulationError::InternalError, "internal error"},
     };
 
     for (auto const &test_case : test_cases) {

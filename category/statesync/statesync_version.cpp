@@ -13,7 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/statesync/statesync_version.h>
+
+// Page records put no page-key shift on the wire: both peers agree on it by
+// protocol version, so a shift change needs a new version.
+static_assert(monad::storage_page_t::PAGE_KEY_SHIFT == 7);
 
 uint32_t monad_statesync_version()
 {

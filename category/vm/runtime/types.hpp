@@ -318,9 +318,11 @@ namespace monad::vm::runtime
                 return static_cast<int64_t>(*word_count >> 1);
             }
             else {
-                // V1 memory version
+                // V1: 3c + floor(c*c/512) = floor(c*(c + 1536)/512).
+                // Factoring saves arithmetic; callers provide Bin<25> counts,
+                // so the product fits in uint64_t.
                 auto const c = static_cast<uint64_t>(*word_count);
-                return static_cast<int64_t>((c * c) / 512 + (3 * c));
+                return static_cast<int64_t>((c * (c + 1536)) >> 9);
             }
         }
 

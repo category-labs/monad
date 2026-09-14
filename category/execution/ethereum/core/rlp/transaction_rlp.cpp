@@ -361,7 +361,7 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
     BOOST_OUTCOME_TRY(txn.sc.signature.r, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(txn.sc.signature.s, decode_unsigned<uint256_t>(payload));
 
-    if (MONAD_UNLIKELY(!payload.empty())) {
+    if (MONAD_UNLIKELY(!payload.empty() || !enc.empty())) {
         return DecodeError::InputTooLong;
     }
 

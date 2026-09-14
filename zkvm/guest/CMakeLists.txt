@@ -491,8 +491,16 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         endforeach()
         string(SHA256 _dma_patch_sha "${_dma_patch_sha}")
         list(JOIN _monad_zkvm_official_features "," _official_features_csv)
-        string(SHA256 _official_build_signature
+        # The guest's own flags carry one absolute path, the force-include of nodelete.hpp above,
+        # so the source root is folded to a placeholder before the hash is taken. A signature over
+        # the literal path gives two checkouts of one commit -- same compiler, same patches, same
+        # flags -- two different identities, which is exactly the comparison it exists to make.
+        # The fold applies to the signature alone; every compile command keeps the real path.
+        set(_official_signed_inputs
             "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}\n${_dma_patch_sha}")
+        string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}" "<guest>"
+               _official_signed_inputs "${_official_signed_inputs}")
+        string(SHA256 _official_build_signature "${_official_signed_inputs}")
         # OFFICIAL_PROFILE is a feature switch and belongs to every translation unit. The four
         # STAMPS do not: execute_witness.cpp is their only reader, and as a directory-wide definition they put
         # the commit sha on the command line of every file, so a new commit invalidates the whole

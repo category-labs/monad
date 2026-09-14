@@ -72,6 +72,9 @@ add_library(
   "update_aux.cpp"
   "util.hpp")
 target_include_directories(monad_trie PUBLIC ${CATEGORY_MAIN_DIR})
+if(COMMAND monad_target_include_boost_outcome_status_code_overlay)
+  monad_target_include_boost_outcome_status_code_overlay(monad_trie)
+endif()
 target_include_directories(monad_trie PRIVATE "third_party")
 monad_compile_options(monad_trie)
 target_link_libraries(monad_trie PRIVATE Boost::boost)

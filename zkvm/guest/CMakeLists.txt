@@ -410,8 +410,14 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         endforeach()
         string(SHA256 _dma_patch_sha "${_dma_patch_sha}")
         list(JOIN _monad_zkvm_official_features "," _official_features_csv)
-        string(SHA256 _official_build_signature
+        # Normalise the guest source path (e.g. in -include nodelete.hpp) so
+        # build signatures do not depend on the checkout location.
+        # Compilation still uses the original flags and paths.
+        set(_official_signed_inputs
             "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}\n${_dma_patch_sha}")
+        string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}" "<guest>"
+               _official_signed_inputs "${_official_signed_inputs}")
+        string(SHA256 _official_build_signature "${_official_signed_inputs}")
         # Keep the feature switch global, but attach build identity only to
         # execute_witness.cpp, its sole reader. A new commit then recompiles
         # that file without invalidating every object.

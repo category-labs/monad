@@ -142,6 +142,13 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // Once the region is fully read and root claimed, zero means no orphan
     // remains, without scanning node_offsets again.
     size_t unclaimed = static_cast<size_t>(region_end - node.bytes());
+
+    // Reuse one CachedHash for the sweep: Keccak overwrites the hash directly,
+    // avoiding per-node zeroing and an intermediate copy. All entries are
+    // valid.
+    CachedHash ch{};
+    ch.valid = true;
+
     auto const is_valid_offset = [&](NodeId c) {
         if (c == NULL_ID) {
             return;
@@ -215,11 +222,9 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     // emit a 32-byte ref where the trie inlines it.
                     if (rem.rlp_size() >= 32) {
                         MONAD_KECCAK_SITE(TRIE_PRIME, rem.rlp_size());
-                        bytes32_t h;
                         monad_keccak256(
-                            rem.rlp_data(), rem.rlp_size(), h.bytes);
-                        hashes_.insert_or_assign(
-                            NodeId{node_offset}, CachedHash{h, true});
+                            rem.rlp_data(), rem.rlp_size(), ch.h.bytes);
+                        hashes_.insert_or_assign(NodeId{node_offset}, ch);
                     }
                 }});
 

@@ -553,8 +553,41 @@ static void keccak256_sponge(void const *const in, size_t len, uint8_t out[32])
         }
         last[len] = 0x01;
         auto const *const w = reinterpret_cast<uint64_t const *>(last);
-        for (size_t i = 0; i < WORDS; ++i) {
-            st[i] ^= w[i];
+        // `len` is a remainder under one rate block, so the padded block is
+        // zero above byte `len` and so is the buffer: the lanes past the one
+        // holding the domain byte xor zero into the state and can be skipped.
+        // That is 6.6 lanes a call here, each a load, a load, an xor and a
+        // store.
+        //
+        // The count has to stay a LITERAL. Folding exactly `len / 8 + 1` lanes
+        // was measured at +0.0518 % COST: a runtime trip count loses the
+        // unrolling, and the loop gcc emits instead costs more than the lanes
+        // it skips. So the ladder picks among fully unrolled folds, and each
+        // arm covers every lane up to and including `len / 8`.
+        if (len <= 31) {
+            for (size_t i = 0; i < 4; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else if (len <= 63) {
+            for (size_t i = 0; i < 8; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else if (len <= 95) {
+            for (size_t i = 0; i < 12; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else if (len <= 127) {
+            for (size_t i = 0; i < 16; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else {
+            for (size_t i = 0; i < WORDS; ++i) {
+                st[i] ^= w[i];
+            }
         }
         // The high pad bit goes into the state, not into `last`, for the reason
         // the `first` arm above already gives: byte RATE-1 is byte 7 of lane 16,

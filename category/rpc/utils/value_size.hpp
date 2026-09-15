@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -31,22 +32,6 @@ struct Block;
 struct CallFrame;
 struct Receipt;
 struct bytes32_t;
-struct uint256_t;
-
-size_t value_size(size_t);
-size_t value_size(uint256_t const &);
-
-size_t value_size(Address const &);
-size_t value_size(bytes32_t const &);
-size_t value_size(byte_string_view const &);
-size_t value_size(byte_string const &);
-size_t value_size(byte_string_fixed<8> const &);
-size_t value_size(byte_string_fixed<256> const &);
-
-size_t value_size(std::optional<Address> const &);
-size_t value_size(std::optional<bytes32_t> const &);
-size_t value_size(std::optional<uint64_t> const &);
-size_t value_size(std::optional<uint256_t> const &);
 
 // Given a requested maximum size, this function returns a slightly larger size
 // to provide headroom for some bookkeeping to manage the RPC request resource
@@ -108,8 +93,9 @@ namespace rpc::eth_simulateV1
     // Estimates the in-memory contribution of one eth_simulateV1 output entry.
     size_t log_entry_size(
         Block const &block, std::vector<Receipt> const &receipts,
-        std::vector<std::vector<CallFrame>> const &call_frames,
-        bytes32_t const &block_hash, std::vector<bytes32_t> const &txn_hashes);
+        std::span<std::vector<CallFrame> const> const call_frames,
+        bytes32_t const &block_hash,
+        std::span<bytes32_t const> const txn_hashes);
 }
 
 MONAD_NAMESPACE_END

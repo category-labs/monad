@@ -392,7 +392,7 @@ namespace monad::vm::compiler::native
         auto &e = at(top_index_);
 
         auto const rem = e->stack_indices_.erase(top_index_);
-        MONAD_DEBUG_ASSERT(rem == 1);
+        MONAD_ASSERT(rem == 1);
 
         // Note that it's valid for stack indices to become negative here.
         top_index_ -= 1;
@@ -404,7 +404,7 @@ namespace monad::vm::compiler::native
     {
         top_index_ += 1;
         auto [_, ins] = e->stack_indices_.insert(top_index_);
-        MONAD_DEBUG_ASSERT(ins);
+        MONAD_ASSERT(ins);
         at(top_index_) = std::move(e);
     }
 
@@ -464,25 +464,37 @@ namespace monad::vm::compiler::native
 
     void Stack::swap(int32_t const swap_index)
     {
+        // swap is the top-anchored special case of exchange.
         MONAD_ASSERT(swap_index < top_index_);
+        exchange(top_index_, swap_index);
+    }
 
-        auto t = top();
-        auto &e = at(swap_index);
+    void Stack::exchange(int32_t const index_a, int32_t const index_b)
+    {
+        MONAD_ASSERT(index_a != index_b);
+        MONAD_ASSERT(index_a <= top_index_);
+        MONAD_ASSERT(index_b <= top_index_);
 
-        auto const rem_t = t->stack_indices_.erase(top_index_);
-        MONAD_DEBUG_ASSERT(rem_t == 1);
+        // Erase both indices before inserting the swapped ones: when the two
+        // positions alias one duplicated element, inserting first would
+        // collide.
+        auto a = at(index_a);
+        auto &b = at(index_b);
 
-        auto const rem_e = e->stack_indices_.erase(swap_index);
-        MONAD_DEBUG_ASSERT(rem_e == 1);
+        auto const rem_a = a->stack_indices_.erase(index_a);
+        MONAD_ASSERT(rem_a == 1);
 
-        auto const ins_t = t->stack_indices_.insert(swap_index);
-        MONAD_DEBUG_ASSERT(ins_t.second);
+        auto const rem_b = b->stack_indices_.erase(index_b);
+        MONAD_ASSERT(rem_b == 1);
 
-        auto const ins_e = e->stack_indices_.insert(top_index_);
-        MONAD_DEBUG_ASSERT(ins_e.second);
+        auto const ins_a = a->stack_indices_.insert(index_b);
+        MONAD_ASSERT(ins_a.second);
 
-        at(top_index_) = std::move(e);
-        e = std::move(t);
+        auto const ins_b = b->stack_indices_.insert(index_a);
+        MONAD_ASSERT(ins_b.second);
+
+        at(index_a) = std::move(b);
+        b = std::move(a);
     }
 
     DeferredComparison Stack::discharge_deferred_comparison()

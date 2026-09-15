@@ -58,6 +58,29 @@ namespace monad::vm::utils::evm_as
         uint256_t imm;
     };
 
+    // EIP-8024 DUPN/SWAPN/EXCHANGE with logical operands; m is zero except for
+    // EXCHANGE. Encoded at emission.
+    struct Eip8024I
+    {
+        constexpr explicit Eip8024I(
+            compiler::EvmOpCode const opcode, uint8_t const n,
+            uint8_t const m = 0)
+            : opcode(opcode)
+            , n(n)
+            , m(m)
+        {
+            MONAD_ASSERT(compiler::is_eip8024_opcode(opcode));
+            MONAD_ASSERT(
+                opcode == compiler::EvmOpCode::EXCHANGE
+                    ? compiler::eip8024_pair_operand_valid(n, m)
+                    : compiler::eip8024_single_operand_valid(n) && m == 0);
+        }
+
+        compiler::EvmOpCode opcode;
+        uint8_t n;
+        uint8_t m;
+    };
+
     // NOTE: Below PushLabelI, PushAddressI, JumpdestI, CommentI, InvalidI have
     // explicit rule of five implementations rather than the default
     // compiler generated ones. The reason being that there is a
@@ -240,15 +263,15 @@ namespace monad::vm::utils::evm_as
     template <typename T>
     concept instruction_type =
         std::is_same_v<T, PlainI> || std::is_same_v<T, PushI> ||
-        std::is_same_v<T, PushLabelI> || std::is_same_v<T, PushAddressI> ||
-        std::is_same_v<T, JumpdestI> || std::is_same_v<T, CommentI> ||
-        std::is_same_v<T, InvalidI>;
+        std::is_same_v<T, Eip8024I> || std::is_same_v<T, PushLabelI> ||
+        std::is_same_v<T, PushAddressI> || std::is_same_v<T, JumpdestI> ||
+        std::is_same_v<T, CommentI> || std::is_same_v<T, InvalidI>;
 
     struct Instruction
     {
         using T = std::variant<
-            PlainI, PushI, JumpdestI, PushLabelI, PushAddressI, CommentI,
-            InvalidI>;
+            PlainI, PushI, Eip8024I, JumpdestI, PushLabelI, PushAddressI,
+            CommentI, InvalidI>;
 
         static bool is_jumpdest(T const ins)
         {
@@ -270,6 +293,11 @@ namespace monad::vm::utils::evm_as
             return std::holds_alternative<PushI>(ins);
         }
 
+        static bool is_eip8024(T const ins)
+        {
+            return std::holds_alternative<Eip8024I>(ins);
+        }
+
         static bool is_push_label(T const ins)
         {
             return std::holds_alternative<PushLabelI>(ins);
@@ -288,6 +316,11 @@ namespace monad::vm::utils::evm_as
         static PushI as_push(T const ins)
         {
             return std::get<PushI>(ins);
+        }
+
+        static Eip8024I as_eip8024(T const ins)
+        {
+            return std::get<Eip8024I>(ins);
         }
 
         static PlainI as_plain(T const ins)

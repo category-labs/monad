@@ -260,11 +260,18 @@ namespace
             emit.push(instr.immediate_value());
             break;
         case Dup:
+        case DupN:
             emit.dup(instr.index());
             break;
         case Swap:
+        case SwapN:
             emit.swap(instr.index());
             break;
+        case Exchange: {
+            auto const [n, m] = instr.exchange_indices();
+            emit.exchange(n, m);
+            break;
+        }
         case Log:
             switch (instr.index()) {
             case 0:

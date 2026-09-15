@@ -161,6 +161,29 @@ namespace monad::vm::utils::evm_as::internal
                         std::format("0x{}", monad::to_hex(push.address)));
                     return true;
                 },
+                [&](Eip8024I const &i8) -> bool {
+                    // Mirrors the DUP/SWAP handling in the PlainI case above:
+                    // without it the vstack would not track this instruction
+                    // and every later annotation would be wrong.
+                    auto const effect =
+                        compiler::eip8024_stack_effect(i8.opcode, {i8.n, i8.m});
+                    if (effect.min_stack > ctx.vstack.size()) {
+                        // Stack underflow
+                        return false;
+                    }
+                    auto const top = ctx.vstack.size() - 1;
+                    if (i8.opcode == compiler::EvmOpCode::DUPN) {
+                        ctx.vstack.push_back(
+                            ctx.vstack[ctx.vstack.size() - i8.n]);
+                        return true;
+                    }
+                    if (i8.opcode == compiler::EvmOpCode::SWAPN) {
+                        std::swap(ctx.vstack[top], ctx.vstack[top - i8.n]);
+                        return true;
+                    }
+                    std::swap(ctx.vstack[top - i8.n], ctx.vstack[top - i8.m]);
+                    return true;
+                },
                 [](auto const &) -> bool { return false; }},
             inst);
     }
@@ -254,6 +277,11 @@ namespace monad::vm::utils::evm_as
                         emit_byte(mc::EvmOpCode::JUMPDEST);
                     },
                     [&](InvalidI const &) -> void { emit_byte(0xFE); },
+                    [&](Eip8024I const &eip8024) -> void {
+                        emit_byte(eip8024.opcode);
+                        emit_byte(mc::eip8024_immediate(
+                            eip8024.opcode, {eip8024.n, eip8024.m}));
+                    },
                     [&](auto const &) -> void { MONAD_ABORT(); }}
 
                 ,
@@ -432,6 +460,16 @@ namespace monad::vm::utils::evm_as
                             first = false;
                         }
                         return 0;
+                    },
+                    [&](Eip8024I const &eip8024) -> size_t {
+                        auto const info =
+                            mc::opcode_table<traits>[eip8024.opcode];
+                        auto const operand =
+                            eip8024.opcode == mc::EvmOpCode::EXCHANGE
+                                ? std::format("{}, {}", +eip8024.n, +eip8024.m)
+                                : std::format("{}", +eip8024.n);
+                        os << info.name << ' ' << operand;
+                        return info.name.size() + 1 + operand.size();
                     }},
                 ins);
             if (config.annotate && length > 0) {

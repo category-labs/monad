@@ -26,12 +26,12 @@
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
+#include <test/vm/utils/mocked_host.hpp>
 #include <test/vm/utils/test_message.hpp>
 
 #include <monadml_evm/monadml_evm.hpp>
 
 #include <evmc/evmc.hpp>
-#include <evmc/mocked_host.hpp>
 
 #include <gtest/gtest.h>
 
@@ -96,7 +96,7 @@ namespace monad::vm::compiler::test
         monad::vm::test::TestMessage test_msg_;
         evmc_message &msg_{*test_msg_};
 
-        evmc::MockedHost host_;
+        vm::test::MockedHost host_;
 
         evmc::Result result_;
 

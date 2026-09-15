@@ -24,6 +24,7 @@ target_sources(vm-unit-tests PRIVATE
     evm-as_tests.cpp
     monad_vm_interface_tests.cpp
     monad_vm_memory_pool_tests.cpp
+    mocked_host_tests.cpp
     utils_tests.cpp
     uint256_tests.cpp
     uint128_tests.cpp
@@ -69,7 +70,6 @@ target_link_libraries(vm-unit-tests
     PRIVATE monad-vm::monad-vm-interpreter
     PRIVATE monad-vm::monad-vm-utils
     PRIVATE GTest::gtest
-    PRIVATE evmc::mocked_host
     PRIVATE monad_execution
     PRIVATE monad_core
     PRIVATE quill::quill

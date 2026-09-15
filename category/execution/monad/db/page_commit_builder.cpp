@@ -31,19 +31,34 @@ MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
 
-PageCommitBuilder::PageCommitBuilder(uint64_t const block_number, monad::Db &db)
-    : CommitBuilder{block_number}
+PageCommitBuilder::PageCommitBuilder(
+    uint64_t const block_number, monad::Db &db,
+    StampContext const *const stamps)
+    : CommitBuilder{block_number, stamps}
     , db_{db}
 {
 }
 
-std::unique_ptr<CommitBuilder>
-make_commit_builder(uint64_t const block_number, monad::Db &db)
+bytes32_t PageCommitBuilder::stamp_lookup_key(bytes32_t const &key) const
+{
+    return compute_page_key(key);
+}
+
+uint32_t PageCommitBuilder::stamp_read_weight(
+    Address const &addr, Incarnation const inc, bytes32_t const &page_key) const
+{
+    return static_cast<uint32_t>(
+        db_.read_storage_page(addr, inc, page_key).size());
+}
+
+std::unique_ptr<CommitBuilder> make_commit_builder(
+    uint64_t const block_number, monad::Db &db,
+    StampContext const *const stamps)
 {
     if (db.is_page_encoded()) {
-        return std::make_unique<PageCommitBuilder>(block_number, db);
+        return std::make_unique<PageCommitBuilder>(block_number, db, stamps);
     }
-    return std::make_unique<CommitBuilder>(block_number);
+    return std::make_unique<CommitBuilder>(block_number, stamps);
 }
 
 CommitBuilder &
@@ -123,12 +138,10 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         }
     }
 
-    updates_.push_front(update_alloc_.emplace_back(Update{
-        .key = state_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(account_updates),
-        .version = static_cast<int64_t>(block_number_)}));
+    push_state_update(std::move(account_updates));
+    if (stamps_ != nullptr) {
+        add_stamp_records(state_deltas);
+    }
 
     return *this;
 }

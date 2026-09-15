@@ -70,7 +70,8 @@ void commit_block(
 
     if (secondary_db == nullptr) {
         MONAD_ASSERT(primary_db.is_page_encoded() == traits::mip_8_active());
-        auto builder = make_commit_builder(header.number, primary_db);
+        auto builder =
+            make_commit_builder(header.number, primary_db, anc.stamps);
         builder->add_state_deltas(state);
         add_common_deltas(*builder);
         canonical_db = &primary_db;
@@ -90,11 +91,13 @@ void commit_block(
     Db *const other_db =
         canonical_db == &primary_db ? secondary_db : &primary_db;
 
-    auto canonical_builder = make_commit_builder(header.number, *canonical_db);
+    auto canonical_builder =
+        make_commit_builder(header.number, *canonical_db, anc.stamps);
     canonical_builder->add_state_deltas(state);
     add_common_deltas(*canonical_builder);
 
-    auto other_builder = make_commit_builder(header.number, *other_db);
+    auto other_builder =
+        make_commit_builder(header.number, *other_db, anc.stamps);
     other_builder->add_state_deltas(state);
     add_common_deltas(*other_builder);
 

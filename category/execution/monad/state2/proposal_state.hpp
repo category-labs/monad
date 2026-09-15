@@ -34,14 +34,16 @@ MONAD_NAMESPACE_BEGIN
 class ProposalState
 {
     ProposalPostState post_state_;
+    uint64_t block_;
     uint64_t parent_block_;
     bytes32_t parent_id_;
 
 public:
     ProposalState(
-        ProposalPostState post_state, uint64_t const parent_block_number,
-        bytes32_t const &parent_id)
+        ProposalPostState post_state, uint64_t const block_number,
+        uint64_t const parent_block_number, bytes32_t const &parent_id)
         : post_state_(std::move(post_state))
+        , block_(block_number)
         , parent_block_(parent_block_number)
         , parent_id_(parent_id)
     {
@@ -63,6 +65,26 @@ public:
         auto const it = post_state_.accounts.find(address);
         if (it != post_state_.accounts.end()) {
             result = it->second;
+            return true;
+        }
+        return false;
+    }
+
+    bool try_read_account_stamp(Address const &address, uint64_t &stamp) const
+    {
+        auto const it = post_state_.account_stamps.find(address);
+        if (it != post_state_.account_stamps.end()) {
+            stamp = it->second;
+            return true;
+        }
+        return false;
+    }
+
+    bool try_read_storage_stamp(StorageKey const &key, uint64_t &stamp) const
+    {
+        auto const it = post_state_.storage_stamps.find(key);
+        if (it != post_state_.storage_stamps.end()) {
+            stamp = it->second;
             return true;
         }
         return false;
@@ -146,6 +168,24 @@ public:
         return try_read(fn);
     }
 
+    TryReadResult
+    try_read_account_stamp(Address const &address, uint64_t &stamp) const
+    {
+        auto const fn = [&address, &stamp](ProposalState const &ps) {
+            return ps.try_read_account_stamp(address, stamp);
+        };
+        return try_read(fn, MAX_PROPOSAL_MAP_SIZE + 1);
+    }
+
+    TryReadResult
+    try_read_storage_stamp(StorageKey const &key, uint64_t &stamp) const
+    {
+        auto const fn = [&key, &stamp](ProposalState const &ps) {
+            return ps.try_read_storage_stamp(key, stamp);
+        };
+        return try_read(fn, MAX_PROPOSAL_MAP_SIZE + 1);
+    }
+
     void
     set_block_and_prefix(uint64_t const block_number, bytes32_t const &block_id)
     {
@@ -166,7 +206,10 @@ public:
                 .insert(
                     {key,
                      std::unique_ptr<ProposalState>(new ProposalState(
-                         std::move(post_state), block_, block_id_))})
+                         std::move(post_state),
+                         block_number,
+                         block_,
+                         block_id_))})
                 .second == true);
         block_ = block_number;
         block_id_ = block_id;
@@ -197,11 +240,11 @@ public:
 
 private:
     template <class Func>
-    TryReadResult try_read(Func const try_read_fn) const
+    TryReadResult
+    try_read(Func const try_read_fn, size_t const depth_limit = 5) const
     {
         bool truncated = false;
-        constexpr int DEPTH_LIMIT = 5;
-        int depth = 1;
+        size_t depth = 1;
         bytes32_t block_id = block_id_;
         uint64_t block_number = block_;
         if (block_id == finalized_block_id_ ||
@@ -213,7 +256,8 @@ private:
             return {false, truncated};
         }
         while (true) {
-            if (block_id == finalized_block_id_) {
+            if (block_id == finalized_block_id_ ||
+                (block_number == finalized_block_ && block_id == bytes32_t{})) {
                 // stop if reached last finalized without match in proposal map
                 return {false, truncated};
             }
@@ -228,7 +272,7 @@ private:
             if (try_read_fn(*ps)) {
                 return {true, truncated};
             }
-            if (++depth > DEPTH_LIMIT) {
+            if (++depth > depth_limit) {
                 truncated = true;
                 return {false, truncated};
             }

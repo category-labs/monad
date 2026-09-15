@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/vm/vm.hpp>
 
 #include <ankerl/unordered_dense.h>
@@ -60,24 +61,66 @@ class BlockState final
     /// incarnation (which, by definition, has no pre-state storage), so
     /// the slots they wipe are not pre-state reads and must not be added.
     SelfDestructStorageReads self_destruct_storage_reads_;
+    // multi-block cache: when tracking, reads memoize consensus stamps and
+    // merge() collects the per-transaction stamp candidates in commit order
+    bool const stamp_tracking_;
+    uint64_t block_number_{0};
+    CachePricing cache_pricing_{};
+    BlockStampCandidates stamp_candidates_;
 
 public:
-    BlockState(Db &, vm::VM &, Db *secondary_db = nullptr);
+    BlockState(
+        Db &, vm::VM &, Db *secondary_db = nullptr,
+        bool stamp_tracking = false);
 
     vm::VM &vm()
     {
         return vm_;
     }
 
-    std::optional<Account> read_account(Address const &);
+    bool stamp_tracking() const
+    {
+        return stamp_tracking_;
+    }
 
-    bytes32_t read_storage(Address const &, Incarnation, bytes32_t const &key);
+    uint64_t block_number() const
+    {
+        return block_number_;
+    }
+
+    // the block being executed: an entry prices cached iff its stamp (as of
+    // the parent block) lies within its ring's eligible record range
+    void set_pricing_block(uint64_t const block_number)
+    {
+        block_number_ = block_number;
+        if (stamp_tracking_) {
+            cache_pricing_ = db_.read_cache_pricing();
+        }
+    }
+
+    std::optional<Account>
+    read_account(Address const &, uint64_t *stamp = nullptr);
+
+    bytes32_t read_storage(
+        Address const &, Incarnation, bytes32_t const &key,
+        uint64_t *stamp = nullptr);
 
     vm::SharedVarcode read_code(bytes32_t const &);
 
     bool can_merge(State &) const;
 
-    void merge(State const &);
+    void
+    merge(State const &, std::optional<uint64_t> charged_gas = std::nullopt);
+
+    CachePricing const &cache_pricing() const
+    {
+        return cache_pricing_;
+    }
+
+    BlockStampCandidates take_stamp_candidates()
+    {
+        return std::move(stamp_candidates_);
+    }
 
     struct ReleasedState
     {

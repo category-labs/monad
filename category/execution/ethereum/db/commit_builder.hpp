@@ -20,12 +20,22 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/mpt/update.hpp>
 
 #include <deque>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
+
+class Db;
+
+// Per-transaction read and write nominations, with charged-gas allowances.
+struct StampContext
+{
+    BlockStampCandidates const *candidates;
+    Db *db{nullptr};
+};
 
 struct CallFrame;
 struct Transaction;
@@ -46,9 +56,41 @@ protected:
     // storage slot key, Paged based storage fills it with the actual storage
     // page keyed by storage page key.
     ProposalPostState proposal_post_state_;
+    StampContext const *stamps_{nullptr};
+    // the state subtrie update pushed by add_state_deltas; the stamp log
+    // account is appended to its nested account list
+    mpt::Update *state_update_{nullptr};
+
+    // Class the block's candidates (entry / write renewal / read refresh),
+    // select by (class, weight, kind, key) under each transaction allowance,
+    // record the selection in the proposal post-state, and write the stamp log
+    // record as storage of STAMP_LOG_ADDRESS into the state update.
+    void add_stamp_records(StateDeltas const &);
+
+    void push_state_update(mpt::UpdateList &&account_updates);
+
+    // Encoding hooks for stamp selection: the storage lookup key of a raw
+    // slot key and the occupied-slot weight of a page that the block did not
+    // write (slot encoding: the slot itself, weight 1).
+    virtual bytes32_t stamp_lookup_key(bytes32_t const &key) const
+    {
+        return key;
+    }
+
+    virtual uint32_t
+    stamp_read_weight(Address const &, Incarnation, bytes32_t const &) const
+    {
+        return 1;
+    }
+
+    virtual bool stamp_page_encoded() const
+    {
+        return false;
+    }
 
 public:
-    explicit CommitBuilder(uint64_t block_number);
+    explicit CommitBuilder(
+        uint64_t block_number, StampContext const *stamps = nullptr);
     virtual ~CommitBuilder() = default;
 
     virtual CommitBuilder &add_state_deltas(StateDeltas const &);

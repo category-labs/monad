@@ -20,6 +20,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/runtime/access.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/data.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -40,11 +41,7 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
-        auto const access_status =
-            ctx->host->access_account(ctx->context, &address);
-        if (access_status == EVMC_ACCESS_COLD) {
-            ctx->deduct_gas(traits::cold_account_cost());
-        }
+        ctx->deduct_gas(account_access_cost<traits>(ctx, address));
 
         auto const balance = static_cast<bytes32_t>(
             ctx->host->get_balance(ctx->context, &address));
@@ -138,11 +135,7 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
-        auto const access_status =
-            ctx->host->access_account(ctx->context, &address);
-        if (access_status == EVMC_ACCESS_COLD) {
-            ctx->deduct_gas(traits::cold_account_cost());
-        }
+        ctx->deduct_gas(account_access_cost<traits>(ctx, address));
 
         if (*size > 0) {
             auto const offset = clamp_cast<uint32_t>(*offset_ptr);
@@ -200,11 +193,7 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
-        auto const access_status =
-            ctx->host->access_account(ctx->context, &address);
-        if (access_status == EVMC_ACCESS_COLD) {
-            ctx->deduct_gas(traits::cold_account_cost());
-        }
+        ctx->deduct_gas(account_access_cost<traits>(ctx, address));
 
         auto const hash = static_cast<bytes32_t>(
             ctx->host->get_code_hash(ctx->context, &address));
@@ -221,11 +210,7 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
-        auto const access_status =
-            ctx->host->access_account(ctx->context, &address);
-        if (access_status == EVMC_ACCESS_COLD) {
-            ctx->deduct_gas(traits::cold_account_cost());
-        }
+        ctx->deduct_gas(account_access_cost<traits>(ctx, address));
 
         *result_ptr = ctx->host->get_code_size(ctx->context, &address);
     }

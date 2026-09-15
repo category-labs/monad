@@ -26,6 +26,8 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
+#include <category/execution/monad/db/stamp_log.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/code.hpp>
 
@@ -74,6 +76,42 @@ struct Db
         bytes32_t const &block_id, CommitBuilder &builder,
         BlockHeader const &header, StateDeltas const &state_deltas,
         std::function<void(BlockHeader &)> populate_header_fn) = 0;
+
+    // Multi-block cache: value reads that also return the entry's consensus
+    // stamp (0 = unstamped, prices cold). Stamps live only in memory; a db
+    // with no cache serves everything cold.
+    virtual std::optional<Account>
+    read_account_stamped(Address const &address, uint64_t &stamp)
+    {
+        stamp = 0;
+        return read_account(address);
+    }
+
+    virtual bytes32_t read_storage_stamped(
+        Address const &address, Incarnation const incarnation,
+        bytes32_t const &key, uint64_t &stamp)
+    {
+        stamp = 0;
+        return read_storage(address, incarnation, key);
+    }
+
+    // Reserved cache-log leaves are always page encoded, including when the
+    // application's ordinary storage is slot encoded.
+    virtual std::optional<storage_page_t>
+    read_cache_ring_page(bytes32_t const &)
+    {
+        return std::nullopt;
+    }
+
+    CachePricing read_cache_pricing()
+    {
+        CachePageReader const read = [this](bytes32_t const &key) {
+            return read_cache_ring_page(key);
+        };
+        return {
+            read_cache_cursor(ACCOUNT_RING, read).view,
+            read_cache_cursor(STORAGE_RING, read).view};
+    }
 
     virtual std::string print_stats()
     {

@@ -20,6 +20,7 @@
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/likely.h>
 #include <category/core/log.hpp>
 #include <category/crypto/keccak.h>
 #include <category/execution/ethereum/core/account.hpp>
@@ -43,7 +44,9 @@
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/execution/monad/db/page_commit_builder.hpp>
+#include <category/execution/monad/db/stamp_log.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -54,8 +57,10 @@
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 
+#include <boost/fiber/future/promise.hpp>
 #include <evmc/evmc.hpp>
 
+#include <ankerl/unordered_dense.h>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
@@ -77,13 +82,15 @@ MONAD_NAMESPACE_BEGIN
 
 using namespace monad::mpt;
 
-TrieDb::TrieDb(mpt::Db &db, bool const enable_multiblock_cache)
+TrieDb::TrieDb(
+    mpt::Db &db, bool const enable_multiblock_cache, bool const stamp_mode,
+    DbCacheSizes const &sizes)
     : db_{db}
     , block_number_{db.get_latest_finalized_version()}
     , proposal_block_id_{bytes32_t{}}
     , prefix_{finalized_nibbles}
     , curr_root_{db.load_root_for_version(block_number_)}
-    , cache_{enable_multiblock_cache ? std::make_unique<DbCache>() : nullptr}
+    , cache_{enable_multiblock_cache ? std::make_unique<DbCache>(stamp_mode, sizes) : nullptr}
     , page_encoded_{db_.state_machine_type() == mpt::state_machine_kind::monad}
 {
 }
@@ -101,11 +108,194 @@ Node::SharedPtr const &TrieDb::get_root() const
     return curr_root_;
 }
 
+namespace
+{
+    void unpack_storage_key(
+        StorageKey const &key, Address &addr, Incarnation &inc,
+        bytes32_t &lookup)
+    {
+        std::memcpy(addr.bytes, key.bytes, sizeof(addr.bytes));
+        std::memcpy(&inc, key.bytes + sizeof(addr.bytes), sizeof(inc));
+        std::memcpy(
+            lookup.bytes,
+            key.bytes + sizeof(addr.bytes) + sizeof(inc),
+            sizeof(lookup.bytes));
+    }
+
+    // Run `fn(i)` for i in [0, n) across the pool in chunks, or inline.
+    template <class Fn>
+    void
+    parallel_for(fiber::PriorityPool *const pool, size_t const n, Fn const &fn)
+    {
+        if (pool == nullptr || n < 1024) {
+            for (size_t i = 0; i < n; ++i) {
+                fn(i);
+            }
+            return;
+        }
+        size_t const chunks = std::min<size_t>(n / 256, pool->num_fibers());
+        size_t const per_chunk = (n + chunks - 1) / chunks;
+        std::vector<boost::fibers::promise<void>> done(chunks);
+        for (size_t c = 0; c < chunks; ++c) {
+            pool->submit(c, [&, c] {
+                size_t const begin = c * per_chunk;
+                size_t const end = std::min(n, begin + per_chunk);
+                for (size_t i = begin; i < end; ++i) {
+                    fn(i);
+                }
+                done[c].set_value();
+            });
+        }
+        for (auto &d : done) {
+            d.get_future().wait();
+        }
+    }
+}
+
+std::optional<storage_page_t> TrieDb::read_cache_ring_page(bytes32_t const &key)
+{
+    auto const res = db_.find(
+        curr_root_,
+        concat(
+            prefix_,
+            STATE_NIBBLE,
+            NibblesView{keccak256(
+                {STAMP_LOG_ADDRESS.bytes, sizeof(STAMP_LOG_ADDRESS.bytes)})},
+            NibblesView{keccak256({key.bytes, sizeof(key.bytes)})}),
+        block_number_);
+    if (res.has_error()) {
+        return std::nullopt;
+    }
+    auto const decoded = decode_storage_page_leaf(res.value().node->value());
+    MONAD_ASSERT(decoded.has_value() && decoded.value().page_key == key);
+    return decoded.value().page;
+}
+
+TrieDb::StampRebuildStats
+TrieDb::rebuild_stamp_cache(fiber::PriorityPool *const pool)
+{
+    StampRebuildStats stats;
+    if (!cache_) {
+        return stats;
+    }
+    MONAD_ASSERT(prefix_ == finalized_nibbles);
+    auto const log_account = read_account(STAMP_LOG_ADDRESS);
+    MONAD_ASSERT_PRINTF(
+        !log_account || log_account->nonce == 3,
+        "unsupported cache log format; restore a pre-activation snapshot");
+    CachePageReader const read = [this](bytes32_t const &key) {
+        return read_cache_ring_page(key);
+    };
+    ProposalPostState post;
+    post.cache_updated = true;
+    post.cache_pricing = read_cache_pricing();
+    visit_cache_ring(
+        ACCOUNT_RING,
+        read,
+        [&](CacheRingRecord const &record, uint64_t stamp, bool deleted) {
+            Address address;
+            std::memcpy(address.bytes, record.key.bytes, 20);
+            if (deleted) {
+                post.account_stamps.erase(address);
+            }
+            else {
+                post.account_stamps[address] = stamp;
+            }
+            ++stats.records;
+        });
+    visit_cache_ring(
+        STORAGE_RING,
+        read,
+        [&](CacheRingRecord const &record, uint64_t stamp, bool deleted) {
+            if (deleted) {
+                post.storage_stamps.erase(record.key);
+            }
+            else {
+                post.storage_stamps[record.key] = stamp;
+            }
+            ++stats.records;
+        });
+    stats.expected_accounts = post.account_stamps.size();
+    stats.expected_pages = post.storage_stamps.size();
+    ankerl::unordered_dense::segmented_set<Address> addresses;
+    for (auto const &[key, stamp] : post.account_stamps) {
+        addresses.insert(key);
+    }
+    for (auto const &[key, stamp] : post.storage_stamps) {
+        Address address;
+        Incarnation inc{0, 0};
+        bytes32_t lookup;
+        unpack_storage_key(key, address, inc, lookup);
+        addresses.insert(address);
+    }
+    std::vector<Address> const account_keys(addresses.begin(), addresses.end());
+    std::vector<std::optional<Account>> accounts(account_keys.size());
+    parallel_for(pool, account_keys.size(), [&](size_t i) {
+        accounts[i] = read_account(account_keys[i]);
+    });
+    for (size_t i = 0; i < account_keys.size(); ++i) {
+        post.accounts.emplace(account_keys[i], accounts[i]);
+    }
+    for (auto const &entry : post.account_stamps) {
+        if (post.accounts.at(entry.first)) {
+            ++stats.accounts;
+        }
+        else {
+            ++stats.absent_accounts;
+        }
+    }
+    std::vector<StorageKey> page_keys;
+    for (auto const &[key, stamp] : post.storage_stamps) {
+        page_keys.push_back(key);
+    }
+    std::vector<storage_page_t> pages(page_keys.size());
+    parallel_for(pool, page_keys.size(), [&](size_t i) {
+        Address address;
+        Incarnation inc{0, 0};
+        bytes32_t lookup;
+        unpack_storage_key(page_keys[i], address, inc, lookup);
+        auto const &account = post.accounts.at(address);
+        if (account && account->incarnation == inc) {
+            pages[i] = load_storage_page(
+                address, inc, lookup, CacheReadStatus::MissTruncated);
+        }
+    });
+    for (size_t i = 0; i < page_keys.size(); ++i) {
+        if (pages[i].is_empty()) {
+            ++stats.absent_or_reincarnated_pages;
+        }
+        else {
+            ++stats.pages;
+            stats.slots += pages[i].size();
+            post.storage.emplace(page_keys[i], std::move(pages[i]));
+        }
+    }
+    cache_->rebuild_stamps(post);
+    return stats;
+}
+
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
+    uint64_t stamp = 0;
+    return read_account_stamped(addr, stamp);
+}
+
+std::optional<Account>
+TrieDb::read_account_stamped(Address const &addr, uint64_t &stamp)
+{
+    stamp = 0;
     std::optional<Account> result;
-    auto const status = cache_ ? cache_->try_read_account(addr, result)
+    auto const status = cache_ ? cache_->try_read_account(addr, result, &stamp)
                                : CacheReadStatus::MissTruncated;
+    if (stamp == CACHE_STAMP_UNKNOWN) {
+        CachePageReader const read = [this](bytes32_t const &key) {
+            return read_cache_ring_page(key);
+        };
+        stamp = resolve_cache_stamp(
+            ACCOUNT_RING,
+            read,
+            StorageKey{addr, Incarnation{0, 0}, bytes32_t{}});
+    }
     if (status == CacheReadStatus::Hit) {
         return result;
     }
@@ -134,13 +324,35 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 bytes32_t TrieDb::read_storage(
     Address const &addr, Incarnation const incarnation, bytes32_t const &key)
 {
+    uint64_t stamp = 0;
+    return read_storage_stamped(addr, incarnation, key, stamp);
+}
+
+bytes32_t TrieDb::read_storage_stamped(
+    Address const &addr, Incarnation const incarnation, bytes32_t const &key,
+    uint64_t &stamp)
+{
+    stamp = 0;
+    if (MONAD_UNLIKELY(addr == STAMP_LOG_ADDRESS)) {
+        // Stamp log leaves use page encoding even on slot-encoded databases.
+        // They are read directly by bootstrap, outside ordinary storage reads.
+        return {};
+    }
     bytes32_t const lookup_key = storage_lookup_key(key);
     uint8_t const lookup_offset = page_encoded_ ? compute_slot_offset(key) : 0;
     bytes32_t result{};
     auto const status =
-        cache_ ? cache_->try_read_storage(
-                     addr, incarnation, lookup_key, lookup_offset, result)
-               : CacheReadStatus::MissTruncated;
+        cache_
+            ? cache_->try_read_storage(
+                  addr, incarnation, lookup_key, lookup_offset, result, &stamp)
+            : CacheReadStatus::MissTruncated;
+    if (stamp == CACHE_STAMP_UNKNOWN) {
+        CachePageReader const read = [this](bytes32_t const &key) {
+            return read_cache_ring_page(key);
+        };
+        stamp = resolve_cache_stamp(
+            STORAGE_RING, read, StorageKey{addr, incarnation, lookup_key});
+    }
     if (status == CacheReadStatus::Hit) {
         return result;
     }
@@ -154,6 +366,9 @@ storage_page_t TrieDb::read_storage_page(
 {
     if (!page_encoded_) {
         MONAD_ABORT("read_storage_page is only valid on a page-encoded TrieDb");
+    }
+    if (MONAD_UNLIKELY(addr == STAMP_LOG_ADDRESS)) {
+        return {};
     }
     storage_page_t result;
     auto const status =
@@ -321,7 +536,11 @@ void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
     block_number_ = block_number;
     db_.update_finalized_version(block_number);
     if (cache_) {
-        cache_->on_finalize(block_number, block_id);
+        bool const rebuild = cache_->on_finalize(block_number, block_id);
+        cache_->set_block_and_prefix(block_number, bytes32_t{});
+        if (rebuild) {
+            rebuild_stamp_cache();
+        }
     }
 }
 

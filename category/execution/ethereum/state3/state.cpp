@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
@@ -55,10 +56,31 @@ OriginalAccountState &State::original_account_state(Address const &address)
     auto it = original_.find(address);
     if (it == original_.end()) {
         // block state
-        auto const account = block_state_.read_account(address);
+        uint64_t stamp = 0;
+        auto const account = block_state_.read_account(
+            address, stamp_tracking_ ? &stamp : nullptr);
         it = original_.try_emplace(address, account).first;
+        it->second.set_stamp(stamp);
     }
     return it->second;
+}
+
+bytes32_t State::load_original_storage(
+    Address const &address, OriginalAccountState &orig,
+    Incarnation const incarnation, bytes32_t const &key)
+{
+    auto &storage = orig.storage_;
+    if (auto const *const it = storage.find(key); it) {
+        return *it;
+    }
+    uint64_t stamp = 0;
+    bytes32_t const value = block_state_.read_storage(
+        address, incarnation, key, stamp_tracking_ ? &stamp : nullptr);
+    storage = storage.insert({key, value});
+    if (stamp_tracking_) {
+        orig.set_storage_stamp(key, stamp);
+    }
+    return value;
 }
 
 AccountState const &State::recent_account_state(Address const &address)
@@ -97,6 +119,8 @@ State::State(
     bool const relaxed_validation)
     : block_state_{block_state}
     , incarnation_{incarnation}
+    , stamp_tracking_{block_state.stamp_tracking()}
+    , cache_pricing_{block_state.cache_pricing()}
     , relaxed_validation_{relaxed_validation}
     , rb_{this}
 {
@@ -280,16 +304,8 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         auto &account_state = it2->second;
         auto const &account = account_state.account_;
         MONAD_ASSERT(account.has_value());
-        auto &storage = account_state.storage_;
-        if (auto const *const it3 = storage.find(key); it3) {
-            return *it3;
-        }
-        else {
-            bytes32_t const value = block_state_.read_storage(
-                address, account.value().incarnation, key);
-            storage = storage.insert({key, value});
-            return value;
-        }
+        return load_original_storage(
+            address, account_state, account.value().incarnation, key);
     }
     else {
         auto const &account_state = it->second.recent();
@@ -308,16 +324,8 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
                 original_account.value().incarnation) {
             return {};
         }
-        auto &original_storage = original_account_state.storage_;
-        if (auto const *const it3 = original_storage.find(key); it3) {
-            return *it3;
-        }
-        else {
-            bytes32_t const value = block_state_.read_storage(
-                address, account.value().incarnation, key);
-            original_storage = original_storage.insert({key, value});
-            return value;
-        }
+        return load_original_storage(
+            address, original_account_state, account.value().incarnation, key);
     }
 }
 
@@ -385,17 +393,11 @@ evmc_storage_status State::set_storage(
     // original
     {
         auto &orig_account_state = original_account_state(address);
-        auto &storage = orig_account_state.storage_;
-        if (auto const *const it = storage.find(key); it) {
-            original_value = *it;
-        }
-        else {
-            Incarnation const incarnation = account_state.account_->incarnation;
-            bytes32_t const value =
-                block_state_.read_storage(address, incarnation, key);
-            storage = storage.insert({key, value});
-            original_value = value;
-        }
+        original_value = load_original_storage(
+            address,
+            orig_account_state,
+            account_state.account_->incarnation,
+            key);
     }
     // state
     {
@@ -436,6 +438,95 @@ State::access_storage(Address const &address, bytes32_t const &key)
 }
 
 EXPLICIT_TRAITS_MEMBER(State::access_storage);
+
+vm::Host::AccessTier State::access_account_tier(Address const &address)
+{
+    auto &account_state = current_account_state(address);
+    if (account_state.access() == EVMC_ACCESS_WARM) {
+        return vm::Host::AccessTier::warm;
+    }
+    if (!stamp_tracking_ || address == STAMP_LOG_ADDRESS) {
+        return vm::Host::AccessTier::cold;
+    }
+    auto &orig = original_account_state(address);
+    if (orig.has_account()) {
+        // a non-warm access to a live account: the commit builder classes it
+        // as entry (cold) or refresh (cached and stale)
+        account_state.mark_stamp_candidate();
+    }
+    if (orig.has_account() &&
+        cache_stamp_cached(orig.stamp(), cache_pricing_.accounts)) {
+        return vm::Host::AccessTier::cached;
+    }
+    return vm::Host::AccessTier::cold;
+}
+
+template <Traits traits>
+vm::Host::AccessTier
+State::access_storage_tier(Address const &address, bytes32_t const &key)
+{
+    if constexpr (!traits::multi_block_cache_active()) {
+        return access_storage<traits>(address, key) == EVMC_ACCESS_COLD
+                   ? vm::Host::AccessTier::cold
+                   : vm::Host::AccessTier::warm;
+    }
+    else {
+        auto &account_state = current_account_state(address);
+        auto const slot_status = account_state.access_storage(key);
+        // monad prices warmth at page granularity (mip-8), ethereum at slot
+        // granularity (eip-2929); the cached/cold split is page-based in both
+        auto const warm_status = [&] {
+            if constexpr (traits::mip_8_active()) {
+                return account_state.page_tracker_.access_page(key);
+            }
+            else {
+                return slot_status;
+            }
+        }();
+        if (warm_status == EVMC_ACCESS_WARM) {
+            return vm::Host::AccessTier::warm;
+        }
+        if (!stamp_tracking_ || !account_state.account_.has_value() ||
+            address == STAMP_LOG_ADDRESS) {
+            return vm::Host::AccessTier::cold;
+        }
+        Incarnation const inc = account_state.account_->incarnation;
+        auto &orig = original_account_state(address);
+        // stamp identity is (address, incarnation, key): a fresh incarnation
+        // has no pre-state leaf and never stamps
+        if (!orig.has_account() || orig.account_->incarnation != inc) {
+            return vm::Host::AccessTier::cold;
+        }
+        auto const value = load_original_storage(address, orig, inc, key);
+        // journaled whatever the slot holds: the commit builder decides with
+        // the page-level liveness gate (an empty slot on a live page is a
+        // candidate, an empty page is excluded)
+        account_state.mark_stamp_candidate(key);
+        uint64_t const stamp = orig.storage_stamp(key).value_or(0);
+        if (cache_stamp_cached(stamp, cache_pricing_.storage)) {
+            bool live = value != bytes32_t{};
+            if constexpr (traits::mip_8_active()) {
+                // A zero slot can belong to a live page. Record reads of
+                // neighbors as validation dependencies so speculative
+                // execution cannot price an inconsistent page snapshot.
+                for (uint16_t offset = 0; !live && offset < 128; ++offset) {
+                    auto neighbor = key;
+                    neighbor.bytes[31] = static_cast<uint8_t>(
+                        (key.bytes[31] & 0x80) | offset);
+                    live = load_original_storage(address, orig, inc, neighbor) !=
+                           bytes32_t{};
+                }
+            }
+            if (!live) {
+                return vm::Host::AccessTier::cold;
+            }
+            return vm::Host::AccessTier::cached;
+        }
+        return vm::Host::AccessTier::cold;
+    }
+}
+
+EXPLICIT_TRAITS_MEMBER(State::access_storage_tier);
 
 evmc_page_storage_status State::update_page(
     Address const &address, bytes32_t const &key,

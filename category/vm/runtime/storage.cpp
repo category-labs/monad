@@ -20,6 +20,8 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/host.hpp>
+#include <category/vm/runtime/access.hpp>
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/storage_costs.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -40,11 +42,8 @@ namespace monad::vm::runtime
 
         auto key = store_be_as<bytes32_t>(*key_ptr);
 
-        auto const access_status =
-            ctx->host->access_storage(ctx->context, &ctx->env.recipient, &key);
-        if (access_status == EVMC_ACCESS_COLD) {
-            ctx->deduct_gas(traits::cold_storage_cost());
-        }
+        ctx->deduct_gas(
+            storage_access_cost<traits>(ctx, ctx->env.recipient, key));
 
         auto const value =
             ctx->host->get_storage(ctx->context, &ctx->env.recipient, &key);
@@ -76,11 +75,8 @@ namespace monad::vm::runtime
         auto value = store_be_as<bytes32_t>(*value_ptr);
 
         if constexpr (traits::mip_8_active()) {
-            auto const access_status = ctx->host->access_storage(
-                ctx->context, &ctx->env.recipient, &key);
-            if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(traits::cold_storage_cost());
-            }
+            ctx->deduct_gas(
+                storage_access_cost<traits>(ctx, ctx->env.recipient, key));
 
             auto const storage_status = ctx->host->set_storage(
                 ctx->context, &ctx->env.recipient, &key, &value);
@@ -100,10 +96,10 @@ namespace monad::vm::runtime
             ctx->deduct_gas(gas_used);
         }
         else {
-            auto const access_status = ctx->host->access_storage(
-                ctx->context, &ctx->env.recipient, &key);
-            if (access_status == EVMC_ACCESS_COLD) {
-                ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
+            if (auto const cost =
+                    storage_access_cost<traits>(ctx, ctx->env.recipient, key);
+                cost != 0) {
+                ctx->deduct_gas(cost + min_gas);
             }
 
             auto const storage_status = ctx->host->set_storage(

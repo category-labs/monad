@@ -341,9 +341,9 @@ try {
         }
     }();
 
-    TrieDb triedb{
-        raw_db,
-        /*enable_multiblock_cache=*/true};
+    bool const stamp_cache_mode =
+        dynamic_cast<MonadChain const *>(chain.get()) != nullptr;
+    TrieDb triedb{raw_db, /*enable_multiblock_cache=*/true, stamp_cache_mode};
 
     // Dual-timeline: open the secondary alongside the primary. The primary
     // always owns the latest state; a secondary is optional.
@@ -359,7 +359,8 @@ try {
         raw_db.timeline_active(monad::mpt::timeline_id::secondary)) {
         secondary_raw_db = raw_db.open_secondary_timeline();
         MONAD_ASSERT(secondary_raw_db.has_value());
-        secondary_db.emplace(*secondary_raw_db);
+        secondary_db.emplace(
+            *secondary_raw_db, /*enable_multiblock_cache=*/true);
         MONAD_ASSERT(
             secondary_db->is_page_encoded() != triedb.is_page_encoded(),
             "dual-timeline dbs must pair one slot and one page encoding");
@@ -427,6 +428,12 @@ try {
         nblocks);
 
     fiber::PriorityPool priority_pool{nthreads, nfibers};
+    if (stamp_cache_mode) {
+        triedb.rebuild_stamp_cache(&priority_pool);
+        if (secondary_db) {
+            secondary_db->rebuild_stamp_cache(&priority_pool);
+        }
+    }
 
     auto const start_time = std::chrono::steady_clock::now();
 

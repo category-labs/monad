@@ -57,7 +57,7 @@ namespace
 
 TEST(DbCacheTest, unknown_proposal_cursor_is_miss_truncated)
 {
-    DbCache cache;
+    DbCache cache{false};
     cache.set_block_and_prefix(3, bytes32_t{9});
 
     // proposal id has nothing.
@@ -70,7 +70,7 @@ TEST(DbCacheTest, unknown_proposal_cursor_is_miss_truncated)
 TEST(DbCacheTest, write_beyond_depth_limit_is_miss_truncated)
 {
 
-    DbCache cache;
+    DbCache cache{false};
     cache.update_proposal_state(
         make_post_state(ADDR, KEY, VALUE2), 1, bytes32_t{1});
 
@@ -100,7 +100,7 @@ TEST(DbCacheTest, write_beyond_depth_limit_is_miss_truncated)
 
 TEST(DbCacheTest, proposal_write_shadows_readthrough_entry)
 {
-    DbCache cache;
+    DbCache cache{false};
     cache.update_proposal_state(
         make_post_state(OTHER_ADDR, OTHER_KEY, VALUE2), 1, bytes32_t{1});
     cache.set_block_and_prefix(1, bytes32_t{1});
@@ -133,7 +133,7 @@ TEST(DbCacheTest, proposal_write_shadows_readthrough_entry)
 
 TEST(DbCacheTest, finalization_write_overwrites_readthrough_entry)
 {
-    DbCache cache;
+    DbCache cache{false};
     cache.update_proposal_state(
         make_post_state(OTHER_ADDR, OTHER_KEY, VALUE2), 1, bytes32_t{1});
     cache.set_block_and_prefix(1, bytes32_t{1});
@@ -170,4 +170,29 @@ TEST(DbCacheTest, finalization_write_overwrites_readthrough_entry)
     EXPECT_EQ(
         cache.try_read_storage(ADDR, INC, KEY, 0, slot), CacheReadStatus::Hit);
     EXPECT_EQ(slot, VALUE2);
+}
+
+TEST(DbCacheTest, finalization_without_stamps_keeps_plain_cache_values)
+{
+    DbCache cache{false, 16, 4096, 4};
+    cache.update_proposal_state(
+        make_post_state(ADDR, KEY, VALUE1), 1, bytes32_t{1});
+    cache.on_finalize(1, bytes32_t{1});
+    cache.set_block_and_prefix(1, bytes32_t{1});
+    bytes32_t value;
+    uint64_t stamp = 99;
+    EXPECT_EQ(
+        cache.try_read_storage(ADDR, INC, KEY, 0, value, &stamp),
+        CacheReadStatus::Hit);
+    EXPECT_EQ(value, VALUE1);
+    EXPECT_EQ(stamp, 0);
+    cache.update_proposal_state(
+        make_post_state(ADDR, KEY, VALUE2), 2001, bytes32_t{2});
+    cache.on_finalize(2001, bytes32_t{2});
+    cache.set_block_and_prefix(2001, bytes32_t{2});
+    EXPECT_EQ(
+        cache.try_read_storage(ADDR, INC, KEY, 0, value, &stamp),
+        CacheReadStatus::Hit);
+    EXPECT_EQ(value, VALUE2);
+    EXPECT_EQ(stamp, 0);
 }

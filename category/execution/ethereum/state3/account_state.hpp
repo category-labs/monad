@@ -32,6 +32,7 @@
 #include <immer/map.hpp>
 #pragma GCC diagnostic pop
 
+#include <bit>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -155,7 +156,7 @@ public:
     }
 };
 
-static_assert(sizeof(AccountState) == 160);
+static_assert(sizeof(AccountState) == 176);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the
@@ -164,6 +165,11 @@ class OriginalAccountState final : public AccountState
 {
     bool validate_exact_balance_{false};
     uint256_t min_balance_{0};
+    // multi-block cache: consensus stamps as of the parent block, carried by
+    // the stamped reads that materialized the account / slot values, so the
+    // access tier is two compares on in-hand data
+    uint64_t stamp_{0};
+    StorageMap storage_stamps_{};
 
 public:
     explicit OriginalAccountState(std::optional<Account> &&account)
@@ -184,6 +190,31 @@ public:
     [[nodiscard]] uint256_t const &min_balance() const
     {
         return min_balance_;
+    }
+
+    [[nodiscard]] uint64_t stamp() const
+    {
+        return stamp_;
+    }
+
+    void set_stamp(uint64_t const stamp)
+    {
+        stamp_ = stamp;
+    }
+
+    // stamps are stored as bytes32 values keyed like the storage map
+    std::optional<uint64_t> storage_stamp(bytes32_t const &key) const
+    {
+        if (auto const *const it = storage_stamps_.find(key); it) {
+            return static_cast<uint64_t>(std::bit_cast<uint256_t>(*it));
+        }
+        return std::nullopt;
+    }
+
+    void set_storage_stamp(bytes32_t const &key, uint64_t const stamp)
+    {
+        storage_stamps_ =
+            storage_stamps_.insert({key, to_bytes(uint256_t{stamp})});
     }
 
     void set_validate_exact_balance()

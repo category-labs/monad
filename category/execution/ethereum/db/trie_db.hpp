@@ -17,6 +17,7 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/fiber/priority_pool.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
@@ -32,6 +33,7 @@
 #include <category/mpt/state_machine.hpp>
 #include <category/vm/vm.hpp>
 
+#include <ankerl/unordered_dense.h>
 #include <nlohmann/json_fwd.hpp>
 
 #include <deque>
@@ -60,7 +62,11 @@ class TrieDb final : public ::monad::Db
     bool const page_encoded_;
 
 public:
-    explicit TrieDb(mpt::Db &, bool enable_multiblock_cache = false);
+    // stamp_mode false keeps wall-clock LRU promotion; true orders protected
+    // cache entries by consensus stamp.
+    explicit TrieDb(
+        mpt::Db &, bool enable_multiblock_cache = false, bool stamp_mode = true,
+        DbCacheSizes const &sizes = {});
     ~TrieDb();
 
     bool is_page_encoded() const override
@@ -77,6 +83,33 @@ public:
     virtual storage_page_t read_storage_page(
         Address const &, Incarnation, bytes32_t const &page_key) override;
     virtual vm::SharedIntercode read_code(bytes32_t const &) override;
+
+    // Bootstrap the cached set from the finalized state alone: read the
+    // two rings of STAMP_LOG_ADDRESS, replay their records in append order
+    // (last writer wins), and load every stamped item into the cache with
+    // its stamp. Returns a summary of the reconstructed cache.
+    struct StampRebuildStats
+    {
+        uint64_t records{0};
+        uint64_t accounts{0};
+        uint64_t pages{0};
+        uint64_t slots{0};
+        uint64_t expected_accounts{0};
+        uint64_t expected_pages{0};
+        uint64_t absent_accounts{0};
+        uint64_t absent_or_reincarnated_pages{0};
+    };
+
+    // pool: trie reads are issued across its fibers; nullptr = serial
+    StampRebuildStats rebuild_stamp_cache(fiber::PriorityPool *pool = nullptr);
+    std::optional<storage_page_t>
+    read_cache_ring_page(bytes32_t const &) override;
+
+    virtual std::optional<Account>
+    read_account_stamped(Address const &, uint64_t &stamp) override;
+    virtual bytes32_t read_storage_stamped(
+        Address const &, Incarnation, bytes32_t const &key,
+        uint64_t &stamp) override;
     virtual void set_block_and_prefix(
         uint64_t block_number,
         bytes32_t const &block_id = bytes32_t{}) override;

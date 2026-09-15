@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -34,11 +35,19 @@
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/db/stamp_log.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 
+#include <ankerl/unordered_dense.h>
+
+#include <algorithm>
+#include <cstring>
 #include <limits>
+#include <optional>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -62,9 +71,261 @@ namespace
     }
 }
 
-CommitBuilder::CommitBuilder(uint64_t const block_number)
+CommitBuilder::CommitBuilder(
+    uint64_t const block_number, StampContext const *const stamps)
     : block_number_{block_number}
+    , stamps_{stamps}
 {
+}
+
+void CommitBuilder::push_state_update(UpdateList &&account_updates)
+{
+    state_update_ = &update_alloc_.emplace_back(Update{
+        .key = state_nibbles,
+        .value = byte_string_view{},
+        .incarnation = false,
+        .next = std::move(account_updates),
+        .version = static_cast<int64_t>(block_number_)});
+    updates_.push_front(*state_update_);
+}
+
+namespace
+{
+    struct CacheCandidate
+    {
+        CacheRingKind kind;
+        uint8_t cls;
+        uint32_t weight;
+        StorageKey key;
+    };
+
+    void unpack_cache_key(
+        StorageKey const &key, Address &address, Incarnation &inc,
+        bytes32_t &lookup)
+    {
+        std::memcpy(address.bytes, key.bytes, 20);
+        std::memcpy(&inc, key.bytes + 20, 8);
+        std::memcpy(lookup.bytes, key.bytes + 28, 32);
+    }
+}
+
+void CommitBuilder::add_stamp_records(StateDeltas const &state_deltas)
+{
+    MONAD_ASSERT(stamps_->db != nullptr && stamps_->candidates != nullptr);
+    auto &db = *stamps_->db;
+    CachePageReader const read = [&db](bytes32_t const &key) {
+        return db.read_cache_ring_page(key);
+    };
+    CacheRingWriter account_ring{ACCOUNT_RING, read};
+    CacheRingWriter storage_ring{STORAGE_RING, read};
+    CachePricing const parent{account_ring.view(), storage_ring.view()};
+    auto &post = proposal_post_state_;
+
+    StoragePostState read_pages;
+    auto const final_page =
+        [&](StorageKey const &key) -> storage_page_t const & {
+        if (auto it = post.storage.find(key); it != post.storage.end()) {
+            return it->second;
+        }
+        auto [it, inserted] = read_pages.try_emplace(key);
+        if (inserted) {
+            Address address;
+            Incarnation inc{0, 0};
+            bytes32_t lookup;
+            unpack_cache_key(key, address, inc, lookup);
+            it->second =
+                stamp_page_encoded()
+                    ? db.read_storage_page(address, inc, lookup)
+                    : storage_page_t{db.read_storage(address, inc, lookup)};
+        }
+        return it->second;
+    };
+
+    for (auto const &tx : *stamps_->candidates) {
+        ankerl::unordered_dense::segmented_map<Address, uint8_t> accounts;
+        ankerl::unordered_dense::
+            segmented_map<StorageKey, uint8_t, BytesHashCompare<StorageKey>>
+                pages;
+        auto const lower = [](auto &map, auto const &key, uint8_t cls) {
+            auto [it, inserted] = map.try_emplace(key, cls);
+            if (!inserted) {
+                it->second = std::min(it->second, cls);
+            }
+        };
+        auto const classify = [](uint64_t stamp,
+                                 CacheRingView const &view,
+                                 bool written) -> uint8_t {
+            if (!cache_stamp_cached(stamp, view)) {
+                return 1;
+            }
+            if (!cache_stamp_stale(stamp, view)) {
+                return 0;
+            }
+            return written ? 2 : 3;
+        };
+        auto const account_candidate = [&](Address const &address,
+                                           bool written) {
+            if (address == STAMP_LOG_ADDRESS) {
+                return;
+            }
+            StateDeltas::const_accessor it;
+            if (!state_deltas.find(it, address) || !it->second.account.first ||
+                !it->second.account.second) {
+                return;
+            }
+            auto const cls = classify(
+                it->second.account_stamp.value_or(0), parent.accounts, written);
+            if (cls) {
+                lower(accounts, address, cls);
+            }
+        };
+        auto const storage_candidate = [&](Address const &address,
+                                           bytes32_t const &slot,
+                                           bool written) {
+            if (address == STAMP_LOG_ADDRESS) {
+                return;
+            }
+            StateDeltas::const_accessor it;
+            if (!state_deltas.find(it, address)) {
+                return;
+            }
+            auto const &delta = it->second;
+            auto const &before = delta.account.first;
+            auto const &after = delta.account.second;
+            if (!before || !after ||
+                before->incarnation != after->incarnation) {
+                return;
+            }
+            auto const sit = delta.storage_stamps.find(slot);
+            auto const cls = classify(
+                sit == delta.storage_stamps.end() ? 0 : sit->second,
+                parent.storage,
+                written);
+            if (!cls) {
+                return;
+            }
+            StorageDeltas::const_accessor value;
+            if (!delta.storage.find(value, slot)) {
+                return;
+            }
+            bool live = value->second.first != bytes32_t{};
+            value.release();
+            auto const lookup = stamp_lookup_key(slot);
+            if (!live && stamp_page_encoded()) {
+                live =
+                    stamp_read_weight(address, before->incarnation, lookup) > 0;
+            }
+            if (live) {
+                lower(
+                    pages,
+                    StorageKey{address, before->incarnation, lookup},
+                    cls);
+            }
+        };
+        for (auto const &address : tx.accounts) {
+            account_candidate(address, false);
+        }
+        for (auto const &address : tx.written_accounts) {
+            account_candidate(address, true);
+        }
+        for (auto const &[address, slot] : tx.storage) {
+            storage_candidate(address, slot, false);
+        }
+        for (auto const &[address, slot] : tx.written_storage) {
+            storage_candidate(address, slot, true);
+        }
+
+        std::vector<CacheCandidate> candidates;
+        candidates.reserve(accounts.size() + pages.size());
+        for (auto const &[address, cls] : accounts) {
+            if (post.account_stamps.contains(address)) {
+                continue;
+            }
+            StorageKey key{};
+            std::memcpy(key.bytes, address.bytes, 20);
+            candidates.push_back({CacheRingKind::accounts, cls, 1, key});
+        }
+        for (auto const &[key, cls] : pages) {
+            if (post.storage_stamps.contains(key)) {
+                continue;
+            }
+            auto const weight = static_cast<uint32_t>(final_page(key).size());
+            if (weight) {
+                candidates.push_back(
+                    {CacheRingKind::storage, cls, weight, key});
+            }
+        }
+        std::sort(
+            candidates.begin(),
+            candidates.end(),
+            [](auto const &a, auto const &b) {
+                if (a.cls != b.cls) {
+                    return a.cls < b.cls;
+                }
+                if (a.weight != b.weight) {
+                    return a.weight < b.weight;
+                }
+                if (a.kind != b.kind) {
+                    return a.kind < b.kind;
+                }
+                return std::memcmp(a.key.bytes, b.key.bytes, 60) < 0;
+            });
+        uint64_t remaining = cache_tx_credits(tx.charged_gas);
+        for (auto const &candidate : candidates) {
+            // Reject an oversized item, but permit a later lighter class to
+            // use remaining credits. A later transaction may nominate it again.
+            if (candidate.weight > remaining) {
+                continue;
+            }
+            remaining -= candidate.weight;
+            CacheRingRecord const record{
+                candidate.key, static_cast<uint8_t>(candidate.weight)};
+            if (candidate.kind == CacheRingKind::accounts) {
+                Address address;
+                std::memcpy(address.bytes, candidate.key.bytes, 20);
+                post.account_stamps[address] = account_ring.append(record);
+            }
+            else {
+                post.storage_stamps[candidate.key] =
+                    storage_ring.append(record);
+                // Full selected read-only values survive until finalization;
+                // insertion never depends on an opportunistic read-through hit.
+                if (!post.storage.contains(candidate.key)) {
+                    post.storage.emplace(
+                        candidate.key, final_page(candidate.key));
+                }
+            }
+        }
+    }
+    post.cache_updated = true;
+    post.cache_pricing = {account_ring.view(), storage_ring.view()};
+    CachePageUpdates updates;
+    account_ring.finish(updates);
+    storage_ring.finish(updates);
+    if (updates.empty()) {
+        return;
+    }
+    UpdateList page_updates;
+    for (auto const &[page_key, page] : updates) {
+        page_updates.push_front(update_alloc_.emplace_back(Update{
+            .key = hash_alloc_.emplace_back(
+                keccak256({page_key.bytes, sizeof(page_key.bytes)})),
+            .value = bytes_alloc_.emplace_back(
+                encode_storage_page_db(page_key, page)),
+            .incarnation = false,
+            .next = UpdateList{},
+            .version = static_cast<int64_t>(block_number_)}));
+    }
+    Account const log_account{.nonce = 3};
+    MONAD_ASSERT(state_update_ != nullptr);
+    state_update_->next.push_front(update_alloc_.emplace_back(Update{
+        .key = hash_alloc_.emplace_back(keccak256(
+            {STAMP_LOG_ADDRESS.bytes, sizeof(STAMP_LOG_ADDRESS.bytes)})),
+        .value = bytes_alloc_.emplace_back(
+            encode_account_db(STAMP_LOG_ADDRESS, log_account)),
+        .incarnation = false,
+        .next = std::move(page_updates),
+        .version = static_cast<int64_t>(block_number_)}));
 }
 
 CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
@@ -114,12 +375,10 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         }
     }
 
-    updates_.push_front(update_alloc_.emplace_back(Update{
-        .key = state_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(account_updates),
-        .version = static_cast<int64_t>(block_number_)}));
+    push_state_update(std::move(account_updates));
+    if (stamps_ != nullptr) {
+        add_stamp_records(state_deltas);
+    }
 
     return *this;
 }

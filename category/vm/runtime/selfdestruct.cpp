@@ -19,6 +19,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/runtime/access.hpp>
 #include <category/vm/runtime/selfdestruct.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -38,11 +39,10 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
-        auto const access_status =
-            ctx->host->access_account(ctx->context, &address);
-        if (access_status == EVMC_ACCESS_COLD) {
+        if (auto const cost = account_access_cost<traits>(ctx, address);
+            cost != 0) {
             // +100 for the warm account access cost.
-            ctx->deduct_gas(traits::cold_account_cost() + 100);
+            ctx->deduct_gas(cost + 100);
         }
 
         auto const non_zero_transfer = [ctx] {

@@ -300,7 +300,9 @@ Result<BlockExecOutput> propose_block(
     BlockExecOutput exec_output;
     BlockMetrics block_metrics;
 
-    BlockState block_state(db, vm, secondary_db);
+    BlockState block_state(
+        db, vm, secondary_db, traits::multi_block_cache_active());
+    block_state.set_pricing_block(block.header.number);
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const results,
@@ -323,13 +325,16 @@ Result<BlockExecOutput> propose_block(
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
+    auto candidates = block_state.take_stamp_candidates();
     auto [state, code, _] = std::move(block_state).release();
     MONAD_ASSERT(state);
 
     // Allow overriding the state deltas for testing purposes:
     runloop_override.preprocess_state_deltas(&state);
 
+    StampContext const stamp_ctx{.candidates = &candidates, .db = &db};
     BlockCommitAncillaries const anc{
+        .stamps = traits::multi_block_cache_active() ? &stamp_ctx : nullptr,
         .code = code,
         .receipts = results,
         .transactions = block.transactions,

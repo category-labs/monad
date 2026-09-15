@@ -97,18 +97,34 @@ public:
 
     virtual std::optional<Account> read_account(Address const &address) override
     {
-        auto acct = triedb_.read_account(address);
+        uint64_t stamp = 0;
+        return read_account_stamped(address, stamp);
+    }
+
+    std::optional<Account>
+    read_account_stamped(Address const &address, uint64_t &stamp) override
+    {
+        auto acct = triedb_.read_account_stamped(address, stamp);
         auto const over_it = account_override_.find(address);
         if (over_it == account_override_.end()) {
             return acct;
         }
-        Account ret;
-        if (acct.has_value()) {
-            ret = *acct;
-        }
-        auto const &over = over_it->second;
-        ret.balance = over.balance;
+        Account ret = acct.value_or(Account{});
+        ret.balance = over_it->second.balance;
         return ret;
+    }
+
+    std::optional<storage_page_t>
+    read_cache_ring_page(bytes32_t const &key) override
+    {
+        return triedb_.read_cache_ring_page(key);
+    }
+
+    bytes32_t read_storage_stamped(
+        Address const &address, Incarnation const incarnation,
+        bytes32_t const &key, uint64_t &stamp) override
+    {
+        return triedb_.read_storage_stamped(address, incarnation, key, stamp);
     }
 
     virtual bytes32_t read_storage(
@@ -246,7 +262,7 @@ MonadRunloopImpl::MonadRunloopImpl(
     , raw_db{std::make_unique<OnDiskMachine>(), mpt::OnDiskDbConfig{.append = true, .compaction = true, .rewind_to_latest_finalized = true, .rd_buffers = 8192, .wr_buffers = 32, .uring_entries = 128, .sq_thread_cpu = sq_thread_cpu, .dbname_paths = {fs::path{db_path}}}}
     , secondary_raw_db{get_secondary_raw_db(raw_db)}
     , triedb{raw_db, /*enable_multiblock_cache=*/true}
-    , secondary_triedb{secondary_raw_db}
+    , secondary_triedb{secondary_raw_db, /*enable_multiblock_cache=*/true}
     , runloop_db{triedb, account_override}
     , secondary_runloop_db{secondary_triedb, account_override}
     , vm{}
@@ -264,6 +280,9 @@ MonadRunloopImpl::MonadRunloopImpl(
     else {
         LOG_INFO("loading from previous DB state");
     }
+
+    triedb.rebuild_stamp_cache(&priority_pool);
+    secondary_triedb.rebuild_stamp_cache(&priority_pool);
 
     uint64_t const init_block_num = triedb.get_block_number();
     block_num = init_block_num + 1;

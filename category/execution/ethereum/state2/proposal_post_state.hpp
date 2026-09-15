@@ -21,11 +21,14 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
 #include <ankerl/unordered_dense.h>
 
+#include <cstdint>
 #include <optional>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -49,6 +52,12 @@ struct ProposalPostState
 {
     AccountPostState accounts;
     StoragePostState storage;
+    ankerl::unordered_dense::segmented_map<Address, uint64_t> account_stamps;
+    ankerl::unordered_dense::segmented_map<
+        StorageKey, uint64_t, BytesHashCompare<StorageKey>>
+        storage_stamps;
+    CachePricing cache_pricing{};
+    bool cache_updated{false};
 };
 
 MONAD_NAMESPACE_END

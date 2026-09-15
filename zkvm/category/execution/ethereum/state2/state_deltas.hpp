@@ -27,6 +27,7 @@
 
 #include <optional>
 #include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -97,9 +98,27 @@ struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
+    std::optional<uint64_t> account_stamp{};
+    ankerl::unordered_dense::segmented_map<bytes32_t, uint64_t>
+        storage_stamps{};
 };
 
 using StateDeltas = detail::HashMapWithAccessor<Address, StateDelta>;
+
+// Multi-block cache stamp candidates of one transaction, in access order:
+// first accesses whose tier was not warm. Storage keys are raw slot keys;
+// the commit builder maps them to the storage encoding and applies the
+// pre-state liveness and refresh gates.
+struct TxStampCandidates
+{
+    uint64_t charged_gas{0};
+    std::vector<Address> accounts;
+    std::vector<std::pair<Address, bytes32_t>> storage;
+    std::vector<Address> written_accounts;
+    std::vector<std::pair<Address, bytes32_t>> written_storage;
+};
+
+using BlockStampCandidates = std::vector<TxStampCandidates>;
 
 using Code = detail::HashMapWithAccessor<bytes32_t, vm::SharedIntercode>;
 

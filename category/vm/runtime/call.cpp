@@ -22,6 +22,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/runtime/access.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/call.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -81,11 +82,7 @@ namespace monad::vm::runtime
 
         auto const dest_address = address_from_uint256(address);
 
-        auto const access_status =
-            ctx->host->access_account(ctx->context, &dest_address);
-        if (access_status == EVMC_ACCESS_COLD) {
-            ctx->deduct_gas(traits::cold_account_cost());
-        }
+        ctx->deduct_gas(account_access_cost<traits>(ctx, dest_address));
 
         auto const code_address = [&]() -> Address {
             if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
@@ -94,12 +91,9 @@ namespace monad::vm::runtime
                 // current authority.
                 if (auto delegate_address = evm::resolve_delegation(
                         ctx->host, ctx->context, dest_address)) {
-                    auto const access_status = ctx->host->access_account(
-                        ctx->context, &*delegate_address);
-                    ctx->gas_remaining -= (access_status == EVMC_ACCESS_COLD
-                                               ? traits::cold_account_cost()
-                                               : 0) +
-                                          100;
+                    ctx->gas_remaining -=
+                        account_access_cost<traits>(ctx, *delegate_address) +
+                        100;
                     return *delegate_address;
                 }
             }

@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/execution/monad/db/cache_pricing.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -68,6 +69,11 @@ class State
 
     std::deque<Set<Address>> dirty_;
 
+    // multi-block cache: copied from BlockState at construction; the access
+    // tier is then two compares on in-hand data
+    bool const stamp_tracking_;
+    CachePricing const cache_pricing_;
+
     bool const relaxed_validation_{false};
     ReserveBalance rb_;
 
@@ -87,6 +93,10 @@ private:
     AccountState const &recent_account_state(Address const &);
 
     AccountState &current_account_state(Address const &);
+
+    bytes32_t load_original_storage(
+        Address const &, OriginalAccountState &, Incarnation,
+        bytes32_t const &key);
 
     std::optional<Account> const &recent_account(Address const &);
 
@@ -171,6 +181,12 @@ public:
 
     template <Traits traits>
     evmc_access_status access_storage(Address const &, bytes32_t const &key);
+
+    vm::Host::AccessTier access_account_tier(Address const &);
+
+    template <Traits traits>
+    vm::Host::AccessTier
+    access_storage_tier(Address const &, bytes32_t const &key);
 
     evmc_page_storage_status update_page(
         Address const &, bytes32_t const &key, evmc_storage_status status);

@@ -393,13 +393,24 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // Priming already validated all child IDs as blob offsets;
                 // only mutation needs the overlay check. get_original also
                 // checks bounds before access.
-                auto const digest_at = [this](uint64_t const w) {
+                //
+                // Opaque so the bound stays in a register: gcc rebuilds
+                // OVERLAY_BASE - 2 on every test rather than keep it live
+                // across the child_ref call. Guarded like zx(), and for the
+                // same reason.
+                uint64_t overlay_bound = OVERLAY_BASE;
+#if defined(MONAD_ZKVM_ZISK)
+                if constexpr (!priming_pass) {
+                    asm("" : "+r"(overlay_bound));
+                }
+#endif
+                auto const digest_at = [&](uint64_t const w) {
                     if constexpr (priming_pass) {
                         return w != 0 &&
                                get_original(NodeId{w}).tag() == Tag::DIGEST;
                     }
                     else {
-                        return w != 0 && w < OVERLAY_BASE &&
+                        return w != 0 && w < overlay_bound &&
                                get_original(NodeId{w}).tag() == Tag::DIGEST;
                     }
                 };

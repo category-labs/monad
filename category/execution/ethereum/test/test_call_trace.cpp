@@ -1355,6 +1355,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
     ASSERT_TRUE(call_frames[2].logs.has_value());
     ASSERT_EQ(call_frames[2].logs->size(), 0);
     EXPECT_EQ(call_frames[2].type, CallType::SELFDESTRUCT);
+    // The frame reports the balance read before the guard, at every revision.
+    EXPECT_EQ(call_frames[2].value, 1'000'000);
 
     ASSERT_TRUE(call_frames[3].logs.has_value());
     ASSERT_EQ(call_frames[3].logs->size(), 0);
@@ -1363,6 +1365,15 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
     ASSERT_TRUE(call_frames[4].logs.has_value());
     ASSERT_EQ(call_frames[4].logs->size(), 0);
     EXPECT_EQ(call_frames[4].type, CallType::SELFDESTRUCT);
+    // Destructs to itself twice with matching incarnations. Pre-8246 the first
+    // burns the balance, so this frame reports zero; under EIP-8246 nothing is
+    // destroyed and it sees the full balance.
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        EXPECT_EQ(call_frames[4].value, 1'000'000);
+    }
+    else {
+        EXPECT_EQ(call_frames[4].value, 0);
+    }
 }
 
 TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)

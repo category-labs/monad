@@ -37,6 +37,7 @@
 
 #include <evmc/evmc.h>
 
+#include <immer/map_transient.hpp>
 #include <immer/vector.hpp>
 
 #include <algorithm>
@@ -446,25 +447,32 @@ evmc_page_storage_status State::update_page(
 }
 
 template <Traits traits>
+bool State::selfdestruct_to_self_burns([[maybe_unused]] Address const &address)
+{
+    if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
+        return true;
+    }
+    else if constexpr (traits::eip_8246_active()) {
+        return false;
+    }
+    else {
+        return is_current_incarnation(address);
+    }
+}
+
+template <Traits traits>
 std::pair<bool, uint256_t>
 State::selfdestruct(Address const &address, Address const &beneficiary)
 {
     auto &account_state = current_account_state(address);
     uint256_t const balance = get_balance(address);
 
-    if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
-        if (address != beneficiary) {
-            add_to_balance(beneficiary, balance);
-        }
+    if (address != beneficiary) {
+        add_to_balance(beneficiary, balance);
         subtract_from_balance(address, balance);
     }
-    else {
-        if (address != beneficiary || is_current_incarnation(address)) {
-            if (address != beneficiary) {
-                add_to_balance(beneficiary, balance);
-            }
-            subtract_from_balance(address, balance);
-        }
+    else if (selfdestruct_to_self_burns<traits>(address)) {
+        subtract_from_balance(address, balance);
     }
 
     bool const inserted = account_state.destruct();
@@ -474,6 +482,23 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
 }
 
 EXPLICIT_TRAITS_MEMBER(State::selfdestruct);
+
+// Overwrite every slot this transaction touched with zero: a slot only read has
+// an entry in the original map, a slot written has one in both. Zero rather
+// than remove, since a missing entry reads through to the pre-destruct value.
+void State::zero_storage(Address const &address, AccountState &account_state)
+{
+    auto const orig = original_.find(address);
+    MONAD_ASSERT(orig != original_.end());
+    auto zeroed = AccountState::StorageMap{}.transient();
+    for (auto const &kv : orig->second.storage_) {
+        zeroed.set(kv.first, bytes32_t{});
+    }
+    for (auto const &kv : account_state.storage_) {
+        zeroed.set(kv.first, bytes32_t{});
+    }
+    account_state.storage_ = zeroed.persistent();
+}
 
 // YP (87)
 template <Traits traits>
@@ -486,17 +511,35 @@ void State::destruct_suicides()
         MONAD_ASSERT(stack.size() == 1);
         MONAD_ASSERT(stack.version() == 0);
         auto &account_state = stack.current(0);
-        if (account_state.is_destructed()) {
-            auto &account = account_state.account_;
-            if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
-                account.reset();
-            }
-            else {
-                if (account->incarnation == incarnation_) {
-                    account.reset();
-                }
-            }
+        if (MONAD_LIKELY(!account_state.is_destructed())) {
+            continue;
         }
+        auto &account = account_state.account_;
+
+        if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
+            account.reset();
+            continue;
+        }
+
+        // EIP-6780: only an account created in this transaction is destroyed.
+        if (account->incarnation != incarnation_) {
+            continue;
+        }
+
+        if constexpr (!traits::eip_8246_active()) {
+            account.reset();
+            continue;
+        }
+
+        // EIP-8246: nonce reset, code and storage cleared, balance unchanged.
+        // Leaving the incarnation as is will clear the old storage.
+        account->nonce = 0;
+        account->code_hash = NULL_HASH;
+        if (is_empty(*account)) { // EIP-161
+            account.reset();
+            continue;
+        }
+        zero_storage(it.first, account_state);
     }
 }
 

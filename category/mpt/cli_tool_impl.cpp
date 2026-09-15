@@ -39,6 +39,7 @@
 #include <CLI/CLI.hpp>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cctype>
 #include <cerrno>
@@ -78,6 +79,52 @@
 #include <time.h>
 #include <unistd.h>
 #include <zstd.h>
+
+// What the database on a device says about itself.
+struct device_database
+{
+    // The size the device reported at the last writable open, which is no
+    // longer its current size if it has since been extended. Nothing if none
+    // was recorded, i.e. a database written before the field existed.
+    std::optional<MONAD_ASYNC_NAMESPACE::file_offset_t> recorded_size;
+};
+
+// Nothing if the device carries no database at all.
+//
+// db_metadata's first copy is read straight off the device without opening
+// the pool, which is the only way round the circularity: the device whose
+// previous size is being recovered has no footer at its end until this has
+// answered.
+//
+// Only that copy is read, so a corrupt one reads as no database even when the
+// second still holds one. The second sits at half the conventional chunk
+// capacity, which only the footer states, and that footer is the very thing
+// the extend stranded. Nor is there a pool open to heal one copy from the
+// other, since a pool with an extended device cannot be opened at all.
+std::optional<device_database>
+read_device_database(std::filesystem::path const &device)
+{
+    using MONAD_MPT_NAMESPACE::detail::db_metadata;
+    int const fd = ::open(device.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd == -1) {
+        return std::nullopt;
+    }
+    auto const unfd = monad::make_scope_exit([fd]() noexcept { ::close(fd); });
+    alignas(db_metadata) std::array<std::byte, sizeof(db_metadata)> buffer{};
+    if (::pread(fd, buffer.data(), buffer.size(), 0) !=
+        ssize_t(buffer.size())) {
+        return std::nullopt;
+    }
+    auto const *const m = monad::start_lifetime_as<db_metadata>(buffer.data());
+    if (0 !=
+        memcmp(m->magic, db_metadata::MAGIC, db_metadata::MAGIC_STRING_LEN)) {
+        return std::nullopt;
+    }
+    if (m->recorded_device_size == 0) {
+        return device_database{};
+    }
+    return device_database{.recorded_size = m->recorded_device_size};
+}
 
 std::string print_bytes(MONAD_ASYNC_NAMESPACE::file_offset_t const bytes_)
 {
@@ -432,6 +479,10 @@ struct impl_t
     std::filesystem::path archive_database;
     std::filesystem::path restore_database;
     std::filesystem::path storage_path;
+    bool rescan_devices = false;
+    // What --rescan-devices classified the storage as, kept so the summary
+    // after the pool is open can report how much the device grew by.
+    MONAD_ASYNC_NAMESPACE::storage_pool::rescan_preview rescan{};
     int compression_level = 3;
 
     std::optional<MONAD_ASYNC_NAMESPACE::storage_pool> pool;
@@ -1499,7 +1550,9 @@ int main_impl(
 set it to the desired size beforehand).
 
 The storage source must be the same device the database was created on, of
-the same type, size and device id, otherwise the database cannot be opened.
+the same type and device id, otherwise the database cannot be opened. An
+existing database can take up more storage with --rescan-devices, after that
+device has been extended in place.
 )");
     try {
         impl_t impl(cout, cerr);
@@ -1569,6 +1622,19 @@ the same type, size and device id, otherwise the database cannot be opened.
                 "sentinel, which would make a later --activate-secondary wipe "
                 "the metadata. Normalises it so activation is safe. Run with "
                 "the daemon stopped.");
+            cli_ops_group->add_flag(
+                "--rescan-devices",
+                impl.rescan_devices,
+                "reconcile an existing database with the storage it is now "
+                "given: take up the space its device gained from being "
+                "extended in place. --storage must name the database's own "
+                "device, which keeps its contents. Taking up an extended "
+                "device needs the size the database recorded for it, which "
+                "every writable open writes, so only extend a device of a "
+                "database this release has already opened. Run with the daemon "
+                "stopped. An interrupted run is finished by re-running the "
+                "identical command, which resumes it from wherever it "
+                "stopped.");
             cli_ops_group->add_option(
                 "--reset-history-length",
                 impl.reset_history_length,
@@ -1679,6 +1745,27 @@ the same type, size and device id, otherwise the database cannot be opened.
             impl.flags.num_cnv_chunks =
                 impl.root_offsets_chunk_count +
                 monad::mpt::UpdateAux::cnv_chunks_for_db_metadata;
+            // What db_metadata costs, so the pool can refuse a device set the
+            // database could not describe before it writes any footer.
+            impl.flags.metadata_budget =
+                MONAD_ASYNC_NAMESPACE::storage_pool::db_metadata_budget{
+                    .header_bytes =
+                        monad::mpt::detail::db_metadata::MONAD007_HEADER_BYTES,
+                    .bytes_per_chunk =
+                        sizeof(monad::mpt::detail::db_metadata::chunk_info_t)};
+            // --restore sets truncate_database below, so this must run first:
+            // otherwise --rescan-devices --restore would fall into the truncate
+            // branch further down and destroy the pool before this guard is
+            // ever reached.
+            bool const restore_or_archive_requested =
+                !impl.restore_database.empty() ||
+                !impl.archive_database.empty();
+            if (impl.rescan_devices && restore_or_archive_requested) {
+                cerr << "FATAL: --rescan-devices cannot be combined with "
+                        "--restore or --archive. Take up the storage first, "
+                        "then run the archive or restore separately.\n";
+                return 1;
+            }
             if (!impl.restore_database.empty()) {
                 if (!impl.archive_database.empty()) {
                     impl.cli_ask_question(
@@ -1723,6 +1810,81 @@ the same type, size and device id, otherwise the database cannot be opened.
                 impl.flags.open_read_only_allow_dirty = false;
                 impl.flags.allow_migration = true;
             }
+            else if (impl.rescan_devices) {
+                // The pool constructor aborts on a path it cannot open, so a
+                // mistyped argument has to be caught here to be reported
+                // rather than dumped as a crash.
+                auto const &p = impl.storage_path;
+                std::error_code ec;
+                auto const status = std::filesystem::status(p, ec);
+                if (ec) {
+                    cerr << "FATAL: cannot examine " << p << ": "
+                         << ec.message() << "\n";
+                    return 1;
+                }
+                if (status.type() != std::filesystem::file_type::regular &&
+                    status.type() != std::filesystem::file_type::block) {
+                    cerr << "FATAL: " << p
+                         << " is neither a file nor a block device, so it "
+                            "cannot be a source of block storage.\n";
+                    return 1;
+                }
+                if (-1 == ::access(p.c_str(), R_OK | W_OK)) {
+                    cerr << "FATAL: " << p << " is not readable and "
+                         << "writable: " << strerror(errno) << "\n";
+                    return 1;
+                }
+                // Classify before prompting, so every refusal is raised before
+                // the operator is asked to confirm anything.
+                //
+                // A rescan takes up storage for a database that is already
+                // there. Refuse an absent one here, before the pool is opened:
+                // UpdateAux's constructor initialises a database onto any pool
+                // that has none, which would both destroy the evidence that
+                // the wrong device was named and let an identical re-run
+                // report success on the empty database it just created.
+                auto const database = read_device_database(p);
+                if (!database.has_value()) {
+                    cerr << "FATAL: " << p
+                         << " holds no database, and --rescan-devices takes up "
+                            "storage for one that is already there. Name the "
+                            "device the database was last opened with.\n";
+                    return 1;
+                }
+                // The size db_metadata recorded for the device is the only
+                // thing which can locate the metadata an extend stranded. The
+                // pool checks it against its own hash, and refuses rather than
+                // guessing where it does not hold up.
+                auto const recorded_size = database->recorded_size;
+                auto const preview =
+                    MONAD_ASYNC_NAMESPACE::storage_pool::preview_rescan(
+                        p, recorded_size, impl.flags.metadata_budget);
+                std::stringstream ss;
+                ss << "WARNING: --rescan-devices";
+                if (preview.grown_previous_size != 0) {
+                    ss << " will relocate the pool metadata of " << p
+                       << ", which was extended in place; its contents are "
+                          "kept. This cannot be undone without a full "
+                          "--archive and --restore. Are you sure?\n";
+                }
+                else {
+                    cout << "The pool already spans " << p
+                         << " at its current size; a metadata growth an "
+                            "earlier run left incomplete will be finished.\n";
+                    ss << " will destroy nothing; it will only finish work an "
+                          "earlier run left incomplete. Are you sure?\n";
+                }
+                impl.cli_ask_question(ss.str().c_str());
+                mode = MONAD_ASYNC_NAMESPACE::storage_pool::mode::rescan;
+                impl.flags.open_read_only = false;
+                impl.flags.open_read_only_allow_dirty = false;
+                // The recorded size, not the preview's validated one: the
+                // open re-validates from scratch, and flattening "nothing
+                // grew" to zero here would re-engage the optional the pool
+                // uses to tell a missing record from a bad one.
+                impl.flags.recorded_size_of_grown_device = recorded_size;
+                impl.rescan = preview;
+            }
             else if (
                 impl.activate_secondary || impl.deactivate_secondary ||
                 impl.promote_secondary || impl.repair_database) {
@@ -1747,7 +1909,8 @@ the same type, size and device id, otherwise the database cannot be opened.
         bool const needs_write_ring =
             impl.rewind_database_to || impl.reset_history_length ||
             impl.activate_secondary || impl.deactivate_secondary ||
-            impl.promote_secondary || impl.repair_database;
+            impl.promote_secondary || impl.repair_database ||
+            impl.rescan_devices;
         auto wr_ring(
             needs_write_ring
                 ? std::optional<monad::io::Ring>(monad::io::RingConfig{4})
@@ -1800,6 +1963,29 @@ the same type, size and device id, otherwise the database cannot be opened.
                      << " to discard its contents and restamp it.\n";
                 return 1;
             }
+        }
+
+        if (impl.rescan_devices) {
+            // Counted from the pool's own chunk count rather than from what
+            // this run relocated, so the totals stay right when the run was a
+            // resume, which relocates nothing.
+            cout << "Rescan complete.\n";
+            if (impl.rescan.grown_previous_size != 0) {
+                cout << "  " << impl.storage_path
+                     << " was extended in place, from "
+                     << impl.rescan.grown_previous_size << " bytes: "
+                     << impl.pool->device().chunks() -
+                            impl.rescan.grown_previous_chunks
+                     << " more sequential chunks.\n";
+            }
+            cout << "  "
+                 << impl.pool->chunks(MONAD_ASYNC_NAMESPACE::storage_pool::seq)
+                 << " sequential chunks in total. Free space is now "
+                 << aux.metadata_ctx().get_lower_bound_free_space()
+                 << " bytes.\n";
+            cout << "  New chunks join the tail of the free list, so they are "
+                    "allocated after all currently free chunks. Existing data "
+                    "is not redistributed.\n";
         }
 
         // Secondary timeline lifecycle. These execute against the open

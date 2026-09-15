@@ -22,6 +22,7 @@
 #include <category/async/io.hpp>
 #include <category/async/storage_pool.hpp>
 #include <category/async/util.hpp>
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/io/buffers.hpp>
@@ -41,7 +42,10 @@
 #include <category/mpt/update.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <csignal>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -56,6 +60,7 @@
 #include <utility>
 #include <vector>
 
+#include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -276,6 +281,46 @@ namespace
 
     ::testing::Environment *const sweep_stale_temp_pools =
         ::testing::AddGlobalTestEnvironment(new SweepStaleTempPools);
+
+    // Whether a database has been stamped on the device, read raw so that
+    // asking the question does not itself create one.
+    bool device_carries_db_metadata(char const *const path)
+    {
+        using monad::mpt::detail::db_metadata;
+        int const fd = ::open(path, O_RDONLY | O_CLOEXEC);
+        MONAD_ASSERT(fd != -1);
+        auto const unfd =
+            monad::make_scope_exit([fd]() noexcept { ::close(fd); });
+        std::array<char, db_metadata::MAGIC_STRING_LEN> magic{};
+        return ::pread(fd, magic.data(), magic.size(), 0) ==
+                   ssize_t(magic.size()) &&
+               0 == memcmp(
+                        magic.data(),
+                        db_metadata::MAGIC,
+                        db_metadata::MAGIC_STRING_LEN);
+    }
+
+    // A death test's child aborts by design, so its scope guards never run and
+    // the pool file it built -- tens of megabytes of real blocks -- would be
+    // left to the age-based sweep above. The handler runs in the aborting
+    // process, so the path has to sit in a fixed buffer.
+    char abort_unlink_path[64];
+
+    extern "C" void unlink_fixture_then_die(int const sig)
+    {
+        if (abort_unlink_path[0] != '\0') {
+            (void)::unlink(abort_unlink_path);
+        }
+        (void)::signal(sig, SIG_DFL);
+        (void)::raise(sig);
+    }
+
+    void unlink_on_abort(char const *const path)
+    {
+        MONAD_ASSERT(std::strlen(path) < sizeof(abort_unlink_path));
+        std::strncpy(abort_unlink_path, path, sizeof(abort_unlink_path) - 1);
+        (void)::signal(SIGABRT, unlink_fixture_then_die);
+    }
 
     // Tests here pass --root-offsets-chunk-count 2 rather than the CLI's
     // production default of 16, which cuts what --create writes by 8x. Two is
@@ -2168,4 +2213,358 @@ TEST(cli_tool, upgrade_requires_storage)
     int const retcode = main_impl(cout, cerr, args);
     ASSERT_NE(0, retcode);
     EXPECT_TRUE(cerr.str().starts_with("FATAL:"));
+}
+
+// The whole feature through the tool, on exactly the state lvextend leaves:
+// a database written, closed, and its only device made larger.
+TEST(cli_tool, rescan_devices_takes_up_an_extended_device)
+{
+    char path0[] = "cli_tool_tmp_ext0_XXXXXX";
+    make_temp_pool(path0);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(path0); });
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            path0,
+            "--create",
+            "--root-offsets-chunk-count",
+            "2",
+            "--chunk-capacity",
+            "24"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+
+    monad::byte_string const key =
+        monad::byte_string(32, static_cast<uint8_t>(0x3c));
+    monad::byte_string const value =
+        monad::byte_string(64, static_cast<uint8_t>(0xc3));
+    {
+        monad::mpt::OnDiskDbConfig const config{
+            .dbname_path = path0,
+            .fixed_history_length = MPT_TEST_HISTORY_LENGTH,
+            .chunk_capacity = 24};
+        monad::mpt::Db db{std::make_unique<StateMachineAlwaysMerkle>(), config};
+        upsert_one(db, key, value, nullptr);
+    }
+
+    uint64_t free_before = 0;
+    size_t chunks_before = 0;
+    {
+        MONAD_ASYNC_NAMESPACE::storage_pool pool{path0};
+        chunks_before = pool.chunks(MONAD_ASYNC_NAMESPACE::storage_pool::seq);
+        monad::io::Ring ring;
+        auto buffers = monad::io::make_buffers_for_read_only(
+            ring,
+            1,
+            MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
+        MONAD_ASYNC_NAMESPACE::AsyncIO io{pool, buffers};
+        monad::mpt::UpdateAux const aux{io};
+        free_before = aux.metadata_ctx().get_lower_bound_free_space();
+    }
+
+    ASSERT_EQ(0, ::truncate(path0, 10ULL * 1024 * 1024 * 1024));
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", path0, "--rescan-devices", "--yes"};
+        int const retcode = std::async(std::launch::async, [&] {
+                                return main_impl(cout, cerr, args);
+                            }).get();
+        ASSERT_EQ(0, retcode) << cerr.str();
+        EXPECT_NE(std::string::npos, cout.str().find("was extended in place"));
+    }
+
+    // The relocation moved the bytes-used array; a read of a pre-grow key
+    // cannot tell whether the entries survived, because the nodes have not
+    // moved. Allocating again is what would land on a chunk the pool wrongly
+    // believes empty, so upsert onto the grown metadata first.
+    monad::byte_string const key_after =
+        monad::byte_string(32, static_cast<uint8_t>(0x5a));
+    monad::byte_string const value_after =
+        monad::byte_string(96, static_cast<uint8_t>(0xa5));
+    {
+        // append, or the open resets the database it is meant to extend.
+        monad::mpt::OnDiskDbConfig const config{
+            .append = true,
+            .dbname_path = path0,
+            .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
+        monad::mpt::Db db{std::make_unique<StateMachineAlwaysMerkle>(), config};
+        auto v0_root = db.load_root_for_version(0);
+        ASSERT_NE(v0_root, nullptr)
+            << "version 0's root is unreachable after the grow";
+        monad::mpt::UpdateList ul;
+        auto u = monad::mpt::make_update(
+            monad::mpt::NibblesView{key_after},
+            monad::byte_string_view{value_after});
+        ul.push_front(u);
+        db.upsert(std::move(v0_root), std::move(ul), 1);
+    }
+
+    std::async(std::launch::async, [&] {
+        MONAD_ASYNC_NAMESPACE::storage_pool pool{path0};
+        EXPECT_GT(
+            pool.chunks(MONAD_ASYNC_NAMESPACE::storage_pool::seq),
+            chunks_before);
+        monad::io::Ring ring;
+        auto buffers = monad::io::make_buffers_for_read_only(
+            ring,
+            1,
+            MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
+        MONAD_ASYNC_NAMESPACE::AsyncIO io{pool, buffers};
+        monad::mpt::UpdateAux const aux{io};
+        EXPECT_GT(aux.metadata_ctx().get_lower_bound_free_space(), free_before);
+
+        monad::mpt::Node::SharedPtr const root_ptr{read_node_blocking(
+            aux,
+            aux.metadata_ctx().get_latest_root_offset(),
+            aux.metadata_ctx().db_history_max_version(),
+            monad::mpt::timeline_id::primary)};
+        monad::mpt::NodeCursor const root(root_ptr);
+        for (auto const &[label, k] :
+             {std::pair{"pre-grow", key}, std::pair{"post-grow", key_after}}) {
+            auto const ret = monad::mpt::find_blocking(
+                aux,
+                root,
+                monad::mpt::NibblesView{k},
+                aux.metadata_ctx().db_history_max_version(),
+                monad::mpt::timeline_id::primary);
+            EXPECT_EQ(ret.second, monad::mpt::find_result::success) << label;
+        }
+    }).get();
+}
+
+// A pool laid down before db_metadata carried device sizes records none, and
+// nothing else can say where an extend left the metadata, so the extend cannot
+// be taken up. Zeroing the array reproduces that pool exactly, since zero is
+// the not-recorded sentinel.
+TEST(cli_tool, rescan_devices_refuses_without_a_recorded_size)
+{
+    // The refusal below is reached through main_impl, which logs through
+    // quill: a forked death-test child inherits its queues but not its
+    // backend thread, and blocks forever on the first log line. Re-exec
+    // instead, which re-runs this body in the child up to the abort.
+    testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    char path0[] = "cli_tool_tmp_der0_XXXXXX";
+    make_temp_pool(path0);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(path0); });
+    unlink_on_abort(path0);
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            path0,
+            "--create",
+            "--root-offsets-chunk-count",
+            "2",
+            "--chunk-capacity",
+            "24"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+
+    MONAD_ASYNC_NAMESPACE::file_offset_t size_before = 0;
+    MONAD_ASYNC_NAMESPACE::file_offset_t half_capacity = 0;
+    size_t chunks_before = 0;
+    {
+        MONAD_ASYNC_NAMESPACE::storage_pool pool{path0};
+        chunks_before = pool.chunks(MONAD_ASYNC_NAMESPACE::storage_pool::seq);
+        size_before = pool.device().size_bytes();
+        half_capacity =
+            pool.chunk(MONAD_ASYNC_NAMESPACE::storage_pool::cnv, 0).capacity() /
+            2;
+    }
+
+    // Both metadata copies, so nothing heals the sentinel back.
+    {
+        int const fd = ::open(path0, O_RDWR);
+        ASSERT_NE(fd, -1);
+        auto const unfd =
+            monad::make_scope_exit([fd]() noexcept { ::close(fd); });
+        uint64_t const zero = 0;
+        for (unsigned which = 0; which < 2; which++) {
+            ASSERT_EQ(
+                ssize_t(sizeof(zero)),
+                ::pwrite(
+                    fd,
+                    &zero,
+                    sizeof(zero),
+                    static_cast<off_t>(
+                        which * half_capacity +
+                        offsetof(
+                            monad::mpt::detail::db_metadata,
+                            recorded_device_size))));
+        }
+        ASSERT_EQ(0, ::fsync(fd));
+
+        // Read back what is genuinely on disk: if the offset arithmetic were
+        // wrong the recorded size would survive and answer for itself, and the
+        // refusal below would never be reached.
+        for (unsigned which = 0; which < 2; which++) {
+            uint64_t readback = ~uint64_t{0};
+            ASSERT_EQ(
+                ssize_t(sizeof(readback)),
+                ::pread(
+                    fd,
+                    &readback,
+                    sizeof(readback),
+                    static_cast<off_t>(
+                        which * half_capacity +
+                        offsetof(
+                            monad::mpt::detail::db_metadata,
+                            recorded_device_size))));
+            ASSERT_EQ(readback, 0u)
+                << "copy " << which << " still records a device size";
+        }
+    }
+
+    ASSERT_EQ(0, ::truncate(path0, 10ULL * 1024 * 1024 * 1024));
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", path0, "--rescan-devices", "--yes"};
+        ASSERT_DEATH(
+            { (void)main_impl(cout, cerr, args); },
+            "must be opened writable once before its device is extended");
+    }
+
+    // Refused before anything was written, so the extend can still be undone.
+    ASSERT_EQ(0, ::truncate(path0, static_cast<off_t>(size_before)));
+    std::async(std::launch::async, [&] {
+        MONAD_ASYNC_NAMESPACE::storage_pool const pool{path0};
+        EXPECT_EQ(
+            pool.chunks(MONAD_ASYNC_NAMESPACE::storage_pool::seq),
+            chunks_before);
+    }).get();
+}
+
+// A pool carrying no database is the shape a mistyped device argument takes,
+// and UpdateAux would initialise one onto it. The refusal has to come before
+// that, or the evidence is gone and an identical re-run -- what the help text
+// prescribes after an interrupted run -- reports success on the empty database
+// the first attempt created.
+TEST(cli_tool, rescan_devices_refuses_a_pool_without_a_database)
+{
+    using monad::mpt::detail::db_metadata;
+
+    char path0[] = "cli_tool_tmp_nodb0_XXXXXX";
+    make_temp_pool(path0);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(path0); });
+    {
+        MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flags;
+        flags.set_chunk_capacity(24);
+        MONAD_ASYNC_NAMESPACE::storage_pool const pool{
+            std::filesystem::path{path0},
+            MONAD_ASYNC_NAMESPACE::storage_pool::mode::create_if_needed,
+            flags};
+    }
+    ASSERT_FALSE(device_carries_db_metadata(path0));
+
+    for (unsigned attempt = 0; attempt < 2; attempt++) {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", path0, "--rescan-devices", "--yes"};
+        EXPECT_EQ(1, main_impl(cout, cerr, args)) << "attempt " << attempt;
+        EXPECT_NE(cerr.str().find("holds no database"), std::string::npos)
+            << "attempt " << attempt << ": " << cerr.str();
+        EXPECT_FALSE(device_carries_db_metadata(path0))
+            << "attempt " << attempt << " initialised a database";
+    }
+}
+
+TEST(cli_tool, rescan_devices_argument_cross_checks)
+{
+    char path0[] = "cli_tool_tmp_axc0_XXXXXX";
+    make_temp_pool(path0);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(path0); });
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            path0,
+            "--create",
+            "--root-offsets-chunk-count",
+            "2",
+            "--chunk-capacity",
+            "24"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args));
+    }
+    // A mistyped path is reported, not turned into an abort inside the pool.
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            "/nonexistent-device",
+            "--rescan-devices",
+            "--yes"};
+        EXPECT_NE(0, main_impl(cout, cerr, args));
+        EXPECT_NE(std::string::npos, cerr.str().find("cannot examine"));
+    }
+    // Mutually exclusive with the other mutating operations.
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            path0,
+            "--rescan-devices",
+            "--truncate",
+            "--yes"};
+        EXPECT_NE(0, main_impl(cout, cerr, args));
+    }
+    // --restore sits outside the exclusive group and sets truncate_database,
+    // so it needs its own refusal or it would destroy the pool.
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            path0,
+            "--rescan-devices",
+            "--restore",
+            "/nonexistent-archive",
+            "--yes"};
+        EXPECT_NE(0, main_impl(cout, cerr, args));
+        EXPECT_NE(
+            std::string::npos,
+            cerr.str().find("cannot be combined with --restore"));
+    }
+    // --archive sits outside the exclusive group too and shares the guard.
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            path0,
+            "--rescan-devices",
+            "--archive",
+            "/nonexistent-archive-dest",
+            "--yes"};
+        EXPECT_NE(0, main_impl(cout, cerr, args));
+        EXPECT_NE(
+            std::string::npos,
+            cerr.str().find("cannot be combined with --restore"));
+    }
 }

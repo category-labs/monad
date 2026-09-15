@@ -13,6 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/statesync/statesync_messages.h>
+// chain_config.h is not needed by the statesync C API; it is included so the
+// bindings keep exporting monad_chain_config for Rust callers.
+#include <category/execution/ethereum/chain/chain_config.h>
 #include <category/statesync/statesync_client.h>
+#include <category/statesync/statesync_messages.h>
 #include <category/statesync/statesync_version.h>

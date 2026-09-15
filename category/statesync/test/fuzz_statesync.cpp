@@ -255,15 +255,7 @@ namespace
         update_storage(deltas, state, db, n, true);
     }
 
-    std::unique_ptr<OnDiskMachine> make_on_disk_machine(bool const page_encoded)
-    {
-        if (page_encoded) {
-            return std::make_unique<MonadOnDiskMachine>();
-        }
-        return std::make_unique<OnDiskMachine>();
-    }
-
-    std::filesystem::path tmp_dbname(bool const page_encoded)
+    std::filesystem::path tmp_dbname()
     {
         std::filesystem::path dbname(
             MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
@@ -276,35 +268,30 @@ namespace
         ::close(fd);
         char const *const path = dbname.c_str();
         mpt::Db db{
-            make_on_disk_machine(page_encoded),
+            std::make_unique<MonadOnDiskMachine>(),
             mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
         monad::mpt::test::DbAccessor::aux(db)
             .metadata_ctx()
             .set_state_machine_kind(
-                timeline_id::primary,
-                page_encoded ? state_machine_kind::monad
-                             : state_machine_kind::ethereum);
+                timeline_id::primary, state_machine_kind::monad);
         return dbname;
     }
 
-    void run_fuzz(
-        monad_chain_config const chain, bool const page_encoded,
-        std::span<uint8_t const> raw)
+    void run_fuzz(std::span<uint8_t const> raw)
     {
-        std::filesystem::path const cdbname{tmp_dbname(page_encoded)};
+        std::filesystem::path const cdbname{tmp_dbname()};
         char const *const cdbname_str = cdbname.c_str();
         monad_statesync_client client;
         monad_statesync_client_context *const cctx =
             monad_statesync_client_context_create(
-                chain,
                 &cdbname_str,
                 1,
                 static_cast<unsigned>(get_nprocs() - 1),
                 &client,
                 &statesync_send_request);
-        std::filesystem::path sdbname{tmp_dbname(page_encoded)};
+        std::filesystem::path sdbname{tmp_dbname()};
         mpt::Db sdb{
-            make_on_disk_machine(page_encoded),
+            std::make_unique<MonadOnDiskMachine>(),
             OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}};
         TrieDb stdb{sdb};
         std::unique_ptr<monad_statesync_server_context> sctx =
@@ -411,11 +398,7 @@ LLVMFuzzerTestOneInput(uint8_t const *const data, size_t const size)
 
     init_root_logger(quill::LogLevel::Error);
 
-    // Fuzz both encodings each input, until slot encoding is retired:
-    // MONAD_TESTNET is pre-mip_8 (slot), MONAD_DEVNET is mip_8-active (page).
-    std::span<uint8_t const> const raw{data, size};
-    run_fuzz(CHAIN_CONFIG_MONAD_TESTNET, false, raw);
-    run_fuzz(CHAIN_CONFIG_MONAD_DEVNET, true, raw);
+    run_fuzz(std::span<uint8_t const>{data, size});
 
     return 0;
 }

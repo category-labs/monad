@@ -346,13 +346,13 @@ try {
         /*enable_multiblock_cache=*/true};
 
     // Dual-timeline: open the secondary alongside the primary. The primary
-    // always owns the latest state; a secondary is optional.
-    // runloop_monad: writes every block to every open db.
-    // runloop_monad_ethblocks:
+    // always owns the latest state; a secondary is optional and only
+    // runloop_monad_ethblocks consumes it:
     //             before mip8 fork: writes every block to every open db
     //             after mip8 fork: asserts primary db must be page-encoded,
     //             writes to primary db only, freeze secondary slot db if
     //             secondary db is active.
+    // runloop_monad requires a single page-encoded timeline and asserts it.
     std::optional<mpt::Db> secondary_raw_db;
     std::optional<TrieDb> secondary_db;
     if (!db_in_memory &&
@@ -396,9 +396,9 @@ try {
 
     std::unique_ptr<monad::StateSyncServer> sync_server;
     if (!statesync.empty()) {
-        // Works for either encoding: a page-encoded primary expands each
-        // page leaf into slot-format upserts in the server traversal, so no
-        // protocol changes are needed.
+        // Requires a page-encoded primary (asserted by the server context).
+        // The server traversal expands each page leaf into slot-format
+        // upserts, so the wire protocol is unchanged.
         sync_server = monad::make_statesync_server(monad::StateSyncServerConfig{
             .triedb = &triedb,
             .network = &net.value(),
@@ -518,31 +518,11 @@ try {
                     exec_recorder);
             }
             else {
-                // TODO: Remove this check once dual-db is deprecated.
-                // Live monad requires a page-encoded timeline, either as
-                // primary (Phase C) or secondary (Phase A/B dual-db).
-                if (chain_config == CHAIN_CONFIG_MONAD_TESTNET ||
-                    chain_config == CHAIN_CONFIG_MONAD_MAINNET) {
-                    bool const primary_is_page = db.is_page_encoded();
-                    bool const secondary_active = secondary_db.has_value();
-                    MONAD_ASSERT_PRINTF(
-                        primary_is_page || secondary_active,
-                        "live monad requires a page-encoded timeline "
-                        "(as primary or secondary) on %s; "
-                        "primary_is_page=%d secondary_active=%d",
-                        chain_config == CHAIN_CONFIG_MONAD_TESTNET
-                            ? "monad_testnet"
-                            : "monad_mainnet", // TODO: remove at release2
-                        primary_is_page,
-                        secondary_active);
-                }
-
                 return runloop_monad(
                     dynamic_cast<MonadChain const &>(*chain),
                     block_db_path,
                     raw_db,
                     db,
-                    secondary_db.has_value() ? &*secondary_db : nullptr,
                     vm,
                     block_hash_buffer,
                     priority_pool,

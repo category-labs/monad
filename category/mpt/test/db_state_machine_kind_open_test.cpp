@@ -90,7 +90,7 @@ namespace
         OnDiskDbConfig const create_config{
             .compaction = true,
             .sq_thread_cpu = std::nullopt,
-            .dbname_paths = {dbname},
+            .dbname_path = dbname,
             .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
 
         // Stage 1: open with the SM-owning test ctor, stamp the kind on
@@ -132,7 +132,7 @@ namespace
         OnDiskDbConfig const create_config{
             .compaction = true,
             .sq_thread_cpu = std::nullopt,
-            .dbname_paths = {dbname},
+            .dbname_path = dbname,
             .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
 
         // Stage 1: open + activate secondary via the test API, stamp both
@@ -199,7 +199,7 @@ namespace
         OnDiskDbConfig const create_config{
             .compaction = true,
             .sq_thread_cpu = std::nullopt,
-            .dbname_paths = {dbname},
+            .dbname_path = dbname,
             .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
 
         {

@@ -33,7 +33,7 @@ struct StateSyncServerConfig
     monad::TrieDb *triedb;
     monad_statesync_server_network *network;
     std::optional<int> ro_sq_thread_cpu;
-    std::vector<std::filesystem::path> dbname_paths;
+    std::filesystem::path dbname_path;
 };
 
 struct monad_statesync_server_deleter

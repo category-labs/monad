@@ -20,7 +20,7 @@
 #include <category/vm/runtime/detail.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <monad/test/traits_test.hpp>
-#include <test/vm/unit/runtime/mocked_host.hpp>
+#include <test/vm/utils/mocked_host.hpp>
 #include <test/vm/utils/test_context.hpp>
 
 #include <gtest/gtest.h>

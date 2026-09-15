@@ -23,13 +23,13 @@
 #include <category/vm/varcode_cache.hpp>
 #include <category/vm/vm.hpp>
 
+#include <test/vm/utils/mocked_host.hpp>
 #include <test/vm/utils/test_context.hpp>
 #include <test/vm/utils/test_message.hpp>
 
 #include <asmjit/core/jitruntime.h>
 
 #include <evmc/evmc.hpp>
-#include <evmc/mocked_host.hpp>
 
 #include <gtest/gtest.h>
 
@@ -416,7 +416,7 @@ TEST(MonadVmInterface, try_insert_varcode)
 TEST(MonadVmInterface, execute_bytecode_raw)
 {
     VM vm;
-    evmc::MockedHost host;
+    test::MockedHost host;
 
     auto [bytecode0, hash0] = make_bytecode(0);
 
@@ -438,7 +438,7 @@ TEST(MonadVmInterface, execute_bytecode_raw)
 TEST(MonadVmInterface, execute_intercode_raw)
 {
     VM vm;
-    evmc::MockedHost host;
+    test::MockedHost host;
 
     auto [bytecode0, hash0] = make_bytecode(0);
     auto icode0 = make_shared_intercode(bytecode0);
@@ -460,7 +460,7 @@ TEST(MonadVmInterface, execute_intercode_raw)
 TEST(MonadVmInterface, execute_native_entrypoint_raw)
 {
     VM vm;
-    evmc::MockedHost host;
+    test::MockedHost host;
 
     auto [bytecode0, hash0] = make_bytecode(0);
     auto icode0 = make_shared_intercode(bytecode0);
@@ -485,7 +485,7 @@ TEST(MonadVmInterface, execute_native_entrypoint_raw)
 static void test_execute_raw(VM::Mode const mode)
 {
     VM vm{mode};
-    evmc::MockedHost host;
+    test::MockedHost host;
 
     test::TestMessage msg{};
     msg->gas = 100'000'000;

@@ -30,8 +30,8 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string_view>
-#include <tuple>
 #include <vector>
 
 #include <evmc/evmc.h>
@@ -48,48 +48,42 @@ size_t value_size(size_t x)
 {
     // The image of bit_width is [0, 64] for size_t on typical platforms, so it
     // is safe to interpret its return value as an element of size_t.
-    return sizeof(nlohmann::json::value_t) +
-           (x == 0 ? 3 : 2 + (static_cast<size_t>(std::bit_width(x)) + 3) / 4);
+    return x == 0 ? 3 : 2 + (static_cast<size_t>(std::bit_width(x)) + 3) / 4;
 }
 
 size_t value_size(uint256_t const &x)
 {
-    return sizeof(nlohmann::json::value_t) +
-           (x == 0 ? 3 : 2 + (monad::bit_width(x) + 3) / 4);
+    return x == 0 ? 3 : 2 + (monad::bit_width(x) + 3) / 4;
 }
 
 size_t value_size(Address const &)
 {
-    return sizeof(nlohmann::json::value_t) +
-           (2 * sizeof(Address) + 2 /* 0xABCDEF.... */);
+    return 2 * sizeof(Address) + 2 /* 0xABCDEF.... */;
 }
 
 size_t value_size(bytes32_t const &)
 {
-    return sizeof(nlohmann::json::value_t) +
-           (2 * sizeof(bytes32_t) + 2 /* 0xABCDEF.... */);
+    return 2 * sizeof(bytes32_t) + 2 /* 0xABCDEF.... */;
 }
 
 size_t value_size(byte_string_view const &x)
 {
-    return sizeof(nlohmann::json::value_t) +
-           (x.size() * 2 + 2 /* 0xABCDEF.... */);
+    return x.size() * 2 + 2 /* 0xABCDEF.... */;
 }
 
 size_t value_size(byte_string const &x)
 {
-    return sizeof(nlohmann::json::value_t) +
-           (x.size() * 2 + 2 /* 0xABCDEF.... */);
+    return x.size() * 2 + 2 /* 0xABCDEF.... */;
 }
 
 size_t value_size(byte_string_fixed<8> const &)
 {
-    return sizeof(nlohmann::json::value_t) + 18; // 0x0000...
+    return 18; // 0x0000...
 }
 
 size_t value_size(byte_string_fixed<256> const &)
 {
-    return sizeof(nlohmann::json::value_t) + 514; // 0x0000...
+    return 514; // 0x0000...
 }
 
 size_t value_size(std::optional<Address> const &x)
@@ -98,7 +92,7 @@ size_t value_size(std::optional<Address> const &x)
         return value_size(x.value());
     }
     else {
-        return sizeof(nlohmann::json::value_t) + 3; // 0x0
+        return 3; // 0x0
     }
 }
 
@@ -108,7 +102,7 @@ size_t value_size(std::optional<bytes32_t> const &x)
         return value_size(x.value());
     }
     else {
-        return sizeof(nlohmann::json::value_t) + 3; // 0x0
+        return 3; // 0x0
     }
 }
 
@@ -118,7 +112,7 @@ size_t value_size(std::optional<uint64_t> const &x)
         return value_size(x.value());
     }
     else {
-        return sizeof(nlohmann::json::value_t) + 3; // 0x0
+        return 3; // 0x0
     }
 }
 
@@ -128,7 +122,7 @@ size_t value_size(std::optional<uint256_t> const &x)
         return value_size(x.value());
     }
     else {
-        return sizeof(nlohmann::json::value_t) + 3; // 0x0
+        return 3; // 0x0
     }
 }
 
@@ -179,8 +173,9 @@ namespace rpc::eth_simulateV1
 {
     size_t log_entry_size(
         Block const &block, std::vector<Receipt> const &receipts,
-        std::vector<std::vector<CallFrame>> const &call_frames,
-        bytes32_t const &block_hash, std::vector<bytes32_t> const &txn_hashes)
+        std::span<std::vector<CallFrame> const> const call_frames,
+        bytes32_t const &block_hash,
+        std::span<bytes32_t const> const txn_hashes)
     {
 
         size_t carried_size =
@@ -284,7 +279,7 @@ namespace rpc::eth_simulateV1
              value_size(block.header.receipts_root)) +
             (eth_simulate_json::withdrawals_root.size() +
              sizeof(nlohmann::json::value_t) +
-             value_size(block.header.withdrawals_root)) +
+             value_size(block.header.withdrawals_root.value_or(NULL_HASH))) +
             (eth_simulate_json::logs_bloom.size() +
              sizeof(nlohmann::json::value_t) +
              value_size(block.header.logs_bloom)) +
@@ -313,7 +308,7 @@ namespace rpc::eth_simulateV1
              value_size(block.header.nonce)) +
             (eth_simulate_json::base_fee_per_gas.size() +
              sizeof(nlohmann::json::value_t) +
-             value_size(block.header.base_fee_per_gas)) +
+             value_size(block.header.base_fee_per_gas.value_or(0))) +
             (eth_simulate_json::uncles.size() +
              sizeof(nlohmann::json::array_t) +
              block.ommers.size() * (sizeof(nlohmann::json::value_t) +

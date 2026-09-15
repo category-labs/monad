@@ -22,10 +22,10 @@
 #include <category/core/keccak.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/transmute.hpp>
+#include <test/vm/utils/mocked_host.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
-#include <evmc/mocked_host.hpp>
 
 #include <array>
 #include <cstdint>
@@ -172,9 +172,8 @@ namespace monad::vm::compiler::test
         auto const codehash = keccak256({code.data(), code.size()});
         bytes32_t codehash_bytes;
         std::copy(codehash.bytes, codehash.bytes + 32, codehash_bytes.bytes);
-        auto const account = evmc::MockedAccount{
-            .nonce = 0,
-            .code = evmc::bytes(code.data(), code.size()),
+        auto const account = vm::test::MockedAccount{
+            .code = byte_string(code.data(), code.size()),
             .codehash = codehash_bytes,
             .balance = {},
             .storage = {},

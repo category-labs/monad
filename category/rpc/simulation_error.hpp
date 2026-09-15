@@ -37,6 +37,14 @@ MONAD_NAMESPACE_BEGIN
 enum class SimulationError
 {
     Success = 0,
+    InvalidInput,
+    InvalidData,
+    WithdrawalsNotSupported,
+    BlockNumbersNotIncreasing,
+    BlockTimestampsNotMonotonic,
+    SimulationHeaderNotAfterBase,
+    TransactionsContextUnavailable,
+    InvalidBlockGap,
     GasLimitExceeded,
 };
 

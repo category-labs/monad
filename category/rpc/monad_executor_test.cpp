@@ -5262,7 +5262,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_input)
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
-    ASSERT_STREQ(ctx.result->message, "empty input");
+    ASSERT_STREQ(ctx.result->message, "invalid input");
 
     monad_block_override_vec_destroy(bo_overrides);
     monad_state_override_vec_destroy(so_overrides);

@@ -70,7 +70,7 @@
 #include <category/rpc/chain_context_buffer.hpp>
 #include <category/rpc/eth_simulate_block_hash_buffer.hpp>
 #include <category/rpc/lazy_block_hash.hpp>
-#include <category/rpc/utils/value_size.hpp>
+#include <category/rpc/utils/response_size.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/status_code.h>
 #include <category/vm/evm/switch_traits.hpp>

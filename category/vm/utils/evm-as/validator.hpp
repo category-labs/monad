@@ -167,6 +167,24 @@ namespace monad::vm::utils::evm_as::internal
             return true;
         }
 
+        bool operator()(Eip8024I const &eip8024)
+        {
+            // The stack effect is operand-dependent, and the opcode-table
+            // min_stack is a placeholder, so compute it from the operand.
+            auto const [min_stack, stack_increase] =
+                compiler::eip8024_stack_effect(
+                    eip8024.opcode, {eip8024.n, eip8024.m});
+
+            if (vstack_size < min_stack) {
+                error(pos, "Stack underflow");
+                return false;
+            }
+
+            vstack_size = (vstack_size - min_stack) + stack_increase;
+
+            return check_stackoverflow();
+        }
+
         bool operator()(auto const &)
         {
             return true;

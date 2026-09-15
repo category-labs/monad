@@ -55,9 +55,6 @@ Result<byte_string> system_call(
     BlockHeader const &header, Address const &contract_address,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx)
 {
-    constexpr auto SYSTEM_ADDRESS =
-        0xfffffffffffffffffffffffffffffffffffffffe_address;
-
     // Per EIP-7002/EIP-7251: if there is no code at the predeploy address,
     // the block MUST be marked invalid.
     auto const hash = state.get_code_hash(contract_address);
@@ -70,7 +67,7 @@ Result<byte_string> system_call(
 
     evmc_tx_context const tx_context = {
         .tx_gas_price = {},
-        .tx_origin = SYSTEM_ADDRESS,
+        .tx_origin = ETH_SYSTEM_ADDRESS,
         .block_coinbase = header.beneficiary,
         .block_number = static_cast<int64_t>(header.number),
         .block_timestamp = static_cast<int64_t>(header.timestamp),
@@ -97,7 +94,7 @@ Result<byte_string> system_call(
         .depth = 0,
         .gas = 30'000'000, // as per eip-7002, eip-7251
         .recipient = contract_address,
-        .sender = SYSTEM_ADDRESS,
+        .sender = ETH_SYSTEM_ADDRESS,
         .input_data = nullptr,
         .input_size = 0,
         .value = {},

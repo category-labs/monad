@@ -35,8 +35,8 @@ add_library(
   "overrides.h" 
   "overrides.hpp"
   # rpc/utils
-  "utils/value_size.hpp"
-  "utils/value_size.cpp"
+  "utils/response_size.hpp"
+  "utils/response_size.cpp"
   )
 
 target_include_directories(monad_rpc PUBLIC ${CATEGORY_MAIN_DIR})

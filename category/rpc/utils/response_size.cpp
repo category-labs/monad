@@ -22,7 +22,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
-#include <category/rpc/utils/value_size.hpp>
+#include <category/rpc/utils/response_size.hpp>
 #include <category/vm/evm/status_code.h>
 
 #include <bit>

@@ -15,12 +15,9 @@
 
 #pragma once
 
-#include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 
 #include <cstddef>
-#include <cstdint>
-#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -36,7 +33,7 @@ struct bytes32_t;
 // Given a requested maximum size, this function returns a slightly larger size
 // to provide headroom for some bookkeeping to manage the RPC request resource
 // consumption.
-size_t padded_max_size(size_t const);
+size_t padded_max_size(size_t);
 
 namespace rpc::eth_simulateV1
 {

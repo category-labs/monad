@@ -77,6 +77,122 @@ pub struct StorageStats {
     pub disk_used_bytes: u64,
 }
 
+/// Lifetime totals of the trie updates performed by the process writing the
+/// db, read from the statistics sidecar that process publishes. They restart
+/// at zero when that process does. `fast` and `slow` name the two node rings.
+/// No `Default`: substituting zeros for a lost sample reads as a counter reset
+/// to anything computing a rate over these.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)]
+pub struct UpdateStats {
+    pub nodes_created_or_updated: u64,
+    pub nreads_compaction: u64,
+    pub nreads_before_compact_offset_fast: u64,
+    pub nreads_before_compact_offset_slow: u64,
+    pub nreads_after_compact_offset_fast: u64,
+    pub nreads_after_compact_offset_slow: u64,
+    pub bytes_read_before_compact_offset_fast: u64,
+    pub bytes_read_before_compact_offset_slow: u64,
+    pub bytes_read_after_compact_offset_fast: u64,
+    pub bytes_read_after_compact_offset_slow: u64,
+    pub compacted_nodes_in_fast: u64,
+    pub compacted_nodes_in_slow: u64,
+    pub nodes_copied_fast_to_fast_for_fast: u64,
+    pub nodes_copied_fast_to_fast_for_slow: u64,
+    pub nodes_copied_slow_to_fast_for_slow: u64,
+    pub compacted_bytes_in_fast: u64,
+    pub compacted_bytes_in_slow: u64,
+    pub bytes_copied_slow_to_fast_for_slow: u64,
+    pub nodes_updated_expire: u64,
+    pub nreads_expire: u64,
+}
+
+// The only place a counter added upstream would otherwise be dropped in
+// silence: every C++ layer fails to compile or trips a static_assert, while
+// this struct and the copy below would keep building unchanged.
+const _: () =
+    assert!(std::mem::size_of::<ffi::triedb_update_stats>() == std::mem::size_of::<UpdateStats>());
+
+/// Reader for the statistics sidecar published by a writing db (see the
+/// execution binary's `--db-stats-file`). Independent of [`TriedbHandle`]:
+/// the sidecar is a separate path, is absent unless the writer was
+/// configured with one, and carries counters no read-only db handle can see.
+#[derive(Debug)]
+pub struct TriedbStatsReader {
+    ptr: *mut ffi::TriedbStatsReader,
+}
+
+impl TriedbStatsReader {
+    /// None if the sidecar is absent or is not one this build understands.
+    pub fn try_new(path: &Path) -> Option<Self> {
+        let Some(path_str) = path.to_str() else {
+            error!("triedb stats sidecar path is not utf-8: {}", path.display());
+            return None;
+        };
+        let Ok(c_path) = CString::new(path_str) else {
+            error!(
+                "triedb stats sidecar path contains a nul: {}",
+                path.display()
+            );
+            return None;
+        };
+
+        let mut ptr = null_mut();
+        let result = unsafe { ffi::triedb_stats_open(c_path.as_c_str().as_ptr(), &mut ptr) };
+        if result != 0 {
+            debug!(
+                "triedb stats sidecar {} unavailable: {}",
+                path.display(),
+                result
+            );
+            return None;
+        }
+
+        Some(Self { ptr })
+    }
+
+    /// None if the writing db predates the counters, or if it kept
+    /// republishing them for the whole retry budget. All-zero is a valid
+    /// reading from a writer that has not upserted yet.
+    pub fn update_stats(&self) -> Option<UpdateStats> {
+        // Plain C struct of u64 counters: zeroed is a valid value, and the
+        // reader overwrites all of it or none of it.
+        let mut out: ffi::triedb_update_stats = unsafe { std::mem::zeroed() };
+        if !unsafe { ffi::triedb_update_stats_read(self.ptr, &mut out) } {
+            return None;
+        }
+
+        Some(UpdateStats {
+            nodes_created_or_updated: out.nodes_created_or_updated,
+            nreads_compaction: out.nreads_compaction,
+            nreads_before_compact_offset_fast: out.nreads_before_compact_offset_fast,
+            nreads_before_compact_offset_slow: out.nreads_before_compact_offset_slow,
+            nreads_after_compact_offset_fast: out.nreads_after_compact_offset_fast,
+            nreads_after_compact_offset_slow: out.nreads_after_compact_offset_slow,
+            bytes_read_before_compact_offset_fast: out.bytes_read_before_compact_offset_fast,
+            bytes_read_before_compact_offset_slow: out.bytes_read_before_compact_offset_slow,
+            bytes_read_after_compact_offset_fast: out.bytes_read_after_compact_offset_fast,
+            bytes_read_after_compact_offset_slow: out.bytes_read_after_compact_offset_slow,
+            compacted_nodes_in_fast: out.compacted_nodes_in_fast,
+            compacted_nodes_in_slow: out.compacted_nodes_in_slow,
+            nodes_copied_fast_to_fast_for_fast: out.nodes_copied_fast_to_fast_for_fast,
+            nodes_copied_fast_to_fast_for_slow: out.nodes_copied_fast_to_fast_for_slow,
+            nodes_copied_slow_to_fast_for_slow: out.nodes_copied_slow_to_fast_for_slow,
+            compacted_bytes_in_fast: out.compacted_bytes_in_fast,
+            compacted_bytes_in_slow: out.compacted_bytes_in_slow,
+            bytes_copied_slow_to_fast_for_slow: out.bytes_copied_slow_to_fast_for_slow,
+            nodes_updated_expire: out.nodes_updated_expire,
+            nreads_expire: out.nreads_expire,
+        })
+    }
+}
+
+impl Drop for TriedbStatsReader {
+    fn drop(&mut self) {
+        unsafe { ffi::triedb_stats_close(self.ptr) };
+    }
+}
+
 struct SenderContext {
     sender: Sender<Option<Vec<u8>>>,
     completed_counter: Arc<AtomicUsize>,
@@ -594,5 +710,105 @@ mod migration_phase_tests {
         // monitoring path.
         assert_eq!(MigrationPhase::from_code(4), MigrationPhase::Legacy);
         assert_eq!(MigrationPhase::from_code(255), MigrationPhase::Legacy);
+    }
+}
+
+#[cfg(test)]
+mod update_stats_tests {
+    use std::{fs, path::PathBuf};
+
+    use super::{TriedbStatsReader, UpdateStats};
+
+    const MAGIC: u64 = 0x4d4f_4e41_4453_5453;
+    const FORMAT_VERSION: u32 = 1;
+    const FIELDS: usize = 20;
+    const PAYLOAD_SIZE: u32 = (FIELDS * 8) as u32;
+
+    fn sidecar_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("monad_db_stats_rs_{}_{name}", std::process::id()))
+    }
+
+    struct RemoveOnDrop(PathBuf);
+
+    impl Drop for RemoveOnDrop {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+
+    fn write_sidecar(path: &PathBuf, seq: u32, values: impl Fn(usize) -> u64) {
+        let mut bytes = Vec::with_capacity(24 + FIELDS * 8);
+        bytes.extend_from_slice(&MAGIC.to_ne_bytes());
+        bytes.extend_from_slice(&FORMAT_VERSION.to_ne_bytes());
+        bytes.extend_from_slice(&PAYLOAD_SIZE.to_ne_bytes());
+        bytes.extend_from_slice(&seq.to_ne_bytes());
+        bytes.extend_from_slice(&0u32.to_ne_bytes());
+        for i in 0..FIELDS {
+            bytes.extend_from_slice(&values(i).to_ne_bytes());
+        }
+        fs::write(path, &bytes).unwrap();
+    }
+
+    // The state a scraper hits when it samples mid-publish: the reader is open
+    // and healthy, and the answer is simply "not this time".
+    #[test]
+    fn update_stats_is_none_while_a_publish_is_in_flight() {
+        let path = sidecar_path("publish_in_flight");
+        let _cleanup = RemoveOnDrop(path.clone());
+        write_sidecar(&path, 1, |_| 7);
+
+        let reader = TriedbStatsReader::try_new(&path).expect("sidecar should open");
+        assert!(reader.update_stats().is_none());
+    }
+
+    #[test]
+    fn try_new_returns_none_when_the_sidecar_is_absent() {
+        let path = sidecar_path("absent");
+        let _ = fs::remove_file(&path);
+        assert!(TriedbStatsReader::try_new(&path).is_none());
+    }
+
+    #[test]
+    fn every_counter_reads_back_from_its_own_field() {
+        // Field n on the wire carries n + 1, so a counter wired to the wrong
+        // offset reports a neighbour's value instead of its own.
+        assert_eq!(
+            std::mem::size_of::<super::UpdateStats>(),
+            FIELDS * 8,
+            "a counter was added without extending this fixture"
+        );
+
+        let path = sidecar_path("field_mapping");
+        let _cleanup = RemoveOnDrop(path.clone());
+        write_sidecar(&path, 2, |i| i as u64 + 1);
+
+        let reader = TriedbStatsReader::try_new(&path).expect("sidecar should open");
+        let stats = reader.update_stats().expect("counters should be present");
+
+        assert_eq!(
+            stats,
+            UpdateStats {
+                nodes_created_or_updated: 1,
+                nreads_compaction: 2,
+                nreads_before_compact_offset_fast: 3,
+                nreads_before_compact_offset_slow: 4,
+                nreads_after_compact_offset_fast: 5,
+                nreads_after_compact_offset_slow: 6,
+                bytes_read_before_compact_offset_fast: 7,
+                bytes_read_before_compact_offset_slow: 8,
+                bytes_read_after_compact_offset_fast: 9,
+                bytes_read_after_compact_offset_slow: 10,
+                compacted_nodes_in_fast: 11,
+                compacted_nodes_in_slow: 12,
+                nodes_copied_fast_to_fast_for_fast: 13,
+                nodes_copied_fast_to_fast_for_slow: 14,
+                nodes_copied_slow_to_fast_for_slow: 15,
+                compacted_bytes_in_fast: 16,
+                compacted_bytes_in_slow: 17,
+                bytes_copied_slow_to_fast_for_slow: 18,
+                nodes_updated_expire: 19,
+                nreads_expire: 20,
+            }
+        );
     }
 }

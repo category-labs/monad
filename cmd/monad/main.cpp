@@ -145,6 +145,7 @@ try {
     bool disable_sq_thread_cpu = false;
     std::optional<unsigned> ro_sq_thread_cpu;
     std::vector<fs::path> dbname_paths;
+    fs::path db_stats_file;
     fs::path snapshot;
     fs::path dump_snapshot;
     std::string statesync;
@@ -184,12 +185,20 @@ try {
         ro_sq_thread_cpu,
         "sq_thread_cpu for the read only db (optional, disables SQPOLL if not "
         "specified)");
-    cli.add_option(
+    CLI::Option *const db_option = cli.add_option(
         "--db",
         dbname_paths,
         "A comma-separated list of previously created database paths. You can "
         "configure the storage pool with one or more files/devices. If no "
         "value is passed, the replay will run with an in-memory triedb");
+    cli.add_option(
+           "--db-stats-file,--db_stats_file",
+           db_stats_file,
+           "Path of a file to publish triedb update counters into, for a "
+           "metrics scraper in another process to read. Must be on a "
+           "filesystem shared with that process; a tmpfs avoids writing it "
+           "back to disk")
+        ->needs(db_option);
     cli.add_option(
         "--dump-snapshot,--dump_snapshot",
         dump_snapshot,
@@ -325,7 +334,11 @@ try {
                 .sq_thread_cpu = disable_sq_thread_cpu
                                      ? std::optional<unsigned>{}
                                      : std::optional<unsigned>{sq_thread_cpu},
-                .dbname_paths = dbname_paths}};
+                .dbname_paths = dbname_paths,
+                .stats_file_path =
+                    db_stats_file.empty()
+                        ? std::optional<fs::path>{}
+                        : std::optional<fs::path>{db_stats_file}}};
         }
         // In memory db: initialize state machine based on chain revision
         auto const *const monad_chain =

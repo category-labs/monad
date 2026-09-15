@@ -64,6 +64,51 @@ typedef struct triedb_storage_stats
 
 void triedb_storage_stats_read(TriedbRoInner *, triedb_storage_stats *out);
 
+// Reader for the statistics sidecar a writing db publishes (the execution
+// binary's --db-stats-file). Independent of the db handle: the sidecar is a
+// separate path with its own lifetime, it is absent unless the writer was
+// configured with one, and it carries counters that live in the writing
+// process and so cannot be reached through a read-only db.
+typedef struct TriedbStatsReader TriedbStatsReader;
+
+// 0 on success, nonzero on failure: the file is absent, unreadable, or not a
+// sidecar of a layout this build understands, or the arguments are bad
+// (`*out` must be null on entry).
+int triedb_stats_open(char const *path, TriedbStatsReader **);
+void triedb_stats_close(TriedbStatsReader *);
+
+// Lifetime totals of the writing process's trie updates. They restart at zero
+// when that process does. `fast` and `slow` name the two node rings.
+typedef struct triedb_update_stats
+{
+    uint64_t nodes_created_or_updated;
+    uint64_t nreads_compaction;
+    uint64_t nreads_before_compact_offset_fast;
+    uint64_t nreads_before_compact_offset_slow;
+    uint64_t nreads_after_compact_offset_fast;
+    uint64_t nreads_after_compact_offset_slow;
+    uint64_t bytes_read_before_compact_offset_fast;
+    uint64_t bytes_read_before_compact_offset_slow;
+    uint64_t bytes_read_after_compact_offset_fast;
+    uint64_t bytes_read_after_compact_offset_slow;
+    uint64_t compacted_nodes_in_fast;
+    uint64_t compacted_nodes_in_slow;
+    uint64_t nodes_copied_fast_to_fast_for_fast;
+    uint64_t nodes_copied_fast_to_fast_for_slow;
+    uint64_t nodes_copied_slow_to_fast_for_slow;
+    uint64_t compacted_bytes_in_fast;
+    uint64_t compacted_bytes_in_slow;
+    uint64_t bytes_copied_slow_to_fast_for_slow;
+    uint64_t nodes_updated_expire;
+    uint64_t nreads_expire;
+} triedb_update_stats;
+
+// False if the arguments are bad, the writer predates these counters, or it
+// kept republishing them for the whole retry budget; `out` is left untouched.
+// All-zero is a legitimate reading from a writer that has not upserted yet,
+// so it cannot double as the failure signal.
+bool triedb_update_stats_read(TriedbStatsReader *, triedb_update_stats *out);
+
 // Compute the storage page key for a 32-byte slot key on a page-encoded db:
 // page_key = slot >> 7. Writes the 32-byte big-endian page key (the key the
 // storage trie is looked up by) to out_page_key.

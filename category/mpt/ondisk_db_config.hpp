@@ -53,6 +53,10 @@ struct OnDiskDbConfig
     // when the pool is created. Smaller chunks give tests finer disk-usage
     // granularity on small db files.
     uint32_t chunk_capacity{28};
+    // When set, the db maps this path shared and writes the trie update
+    // counters into it after every upsert, for an out-of-process scraper to
+    // read. See category/mpt/db_stats_shm.hpp.
+    std::optional<std::filesystem::path> stats_file_path{std::nullopt};
 };
 
 struct ReadOnlyOnDiskDbConfig

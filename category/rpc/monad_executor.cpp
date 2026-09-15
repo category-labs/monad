@@ -70,6 +70,7 @@
 #include <category/rpc/chain_context_buffer.hpp>
 #include <category/rpc/eth_simulate_block_hash_buffer.hpp>
 #include <category/rpc/lazy_block_hash.hpp>
+#include <category/rpc/simulation_error.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/status_code.h>
 #include <category/vm/evm/switch_traits.hpp>
@@ -1041,16 +1042,20 @@ namespace
 
             // Check whether the gas limit has been exceeded.
             // Gas accumulator overflow check.
-            MONAD_ASSERT_THROW(
-                !(gas_used > 0 &&
-                  gas_consumed_so_far >
-                      std::numeric_limits<uint64_t>::max() - gas_used),
-                "gas limit exceeded");
+            if (MONAD_UNLIKELY(
+                    gas_used > 0 &&
+                    gas_consumed_so_far >
+                        std::numeric_limits<uint64_t>::max() - gas_used)) {
+                return Result<nlohmann::json>::error_type{
+                    SimulationError::GasLimitExceeded};
+            }
             // No overflow. Add the consumed gas.
             gas_consumed_so_far += gas_used;
             // We may have exceeded the gas limit.
-            MONAD_ASSERT_THROW(
-                gas_consumed_so_far <= gas_limit, "gas limit exceeded");
+            if (MONAD_UNLIKELY(gas_consumed_so_far > gas_limit)) {
+                return Result<nlohmann::json>::error_type{
+                    SimulationError::GasLimitExceeded};
+            }
 
             // Patch up the block header for results reporting.
             block.header.gas_used = gas_used;
@@ -2014,8 +2019,9 @@ struct monad_executor
                     }();
 
                     if (MONAD_UNLIKELY(res.has_error())) {
-                        result->status_code = EVMC_REJECTED;
-                        result->message = strdup(res.error().message().c_str());
+                        auto const error = simulation_error_info(res.error());
+                        result->status_code = error.status_code;
+                        result->message = strdup(error.message.c_str());
                         MONAD_ASSERT(result->message);
                         complete(result, user);
                         return;

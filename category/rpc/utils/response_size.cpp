@@ -27,26 +27,21 @@
 
 #include <bit>
 #include <cstddef>
-#include <cstdint>
 #include <limits>
-#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 
-MONAD_NAMESPACE_BEGIN
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-namespace
-{
-    namespace eth_simulate_json = rpc::eth_simulateV1::json_fields;
-}
+namespace eth_simulate_json = rpc::eth_simulateV1::json_fields;
 
 size_t value_size(size_t const x)
 {
-    // The image of bit_width is [0, 64] for size_t on typical platforms, so it
-    // is safe to interpret its return value as an element of size_t.
+    // The image of bit_width is [0, 64] for size_t on typical platforms, so
+    // it is safe to interpret its return value as an element of size_t.
     return x == 0 ? 3 : 2 + (static_cast<size_t>(std::bit_width(x)) + 3) / 4;
 }
 
@@ -65,11 +60,6 @@ size_t value_size(bytes32_t const &)
     return 2 * sizeof(bytes32_t) + 2 /* 0xABCDEF.... */;
 }
 
-size_t value_size(byte_string_view const &x)
-{
-    return x.size() * 2 + 2 /* 0xABCDEF.... */;
-}
-
 size_t value_size(byte_string const &x)
 {
     return x.size() * 2 + 2 /* 0xABCDEF.... */;
@@ -85,47 +75,11 @@ size_t value_size(byte_string_fixed<256> const &)
     return 514; // 0x0000...
 }
 
-size_t value_size(std::optional<Address> const &x)
-{
-    if (x.has_value()) {
-        return value_size(x.value());
-    }
-    else {
-        return 3; // 0x0
-    }
-}
+MONAD_ANONYMOUS_NAMESPACE_END
 
-size_t value_size(std::optional<bytes32_t> const &x)
-{
-    if (x.has_value()) {
-        return value_size(x.value());
-    }
-    else {
-        return 3; // 0x0
-    }
-}
+MONAD_NAMESPACE_BEGIN
 
-size_t value_size(std::optional<uint64_t> const &x)
-{
-    if (x.has_value()) {
-        return value_size(x.value());
-    }
-    else {
-        return 3; // 0x0
-    }
-}
-
-size_t value_size(std::optional<uint256_t> const &x)
-{
-    if (x.has_value()) {
-        return value_size(x.value());
-    }
-    else {
-        return 3; // 0x0
-    }
-}
-
-size_t padded_max_size(size_t max_size)
+size_t padded_max_size(size_t const max_size)
 {
     // We use the size of the in-memory structures to bound the memory
     // consumption. This estimator is inaccurate as the RPC
@@ -178,10 +132,10 @@ namespace rpc::eth_simulateV1
     {
 
         size_t carried_size =
+            sizeof(nlohmann::json::object_t) +
             // Shallow size estimation for the calls field. The cost of nested
             // objects is computed below.
-            eth_simulate_json::calls.size() + sizeof(nlohmann::json::value_t) +
-            sizeof(nlohmann::json::array_t) +
+            eth_simulate_json::calls.size() + sizeof(nlohmann::json::array_t) +
             sizeof(nlohmann::json::object_t) * block.transactions.size();
 
         // Calculate the size of the nested objects within the call array.

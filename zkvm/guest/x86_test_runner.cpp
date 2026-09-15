@@ -33,7 +33,13 @@
 #include <string_view>
 #include <vector>
 
-extern "C" void monad_zkvm_execute_witness(void);
+// The guest entry to drive. Defaults to the witness executor; the precompile
+// test runner compiles this file with -DMONAD_ZKVM_X86_ENTRY set to the
+// precompile-vector entry instead.
+#ifndef MONAD_ZKVM_X86_ENTRY
+    #define MONAD_ZKVM_X86_ENTRY monad_zkvm_execute_witness
+#endif
+extern "C" void MONAD_ZKVM_X86_ENTRY(void);
 
 namespace
 {
@@ -61,7 +67,10 @@ write_output(std::uint8_t const *const output, std::size_t const size)
         std::fwrite(output, 1, size, stdout);
     }
     else {
-        std::ofstream out{g_output_path, std::ios::binary};
+        // Opened once — the guest may emit its output in several
+        // write_output calls (e.g. the precompile harness), and reopening
+        // would truncate the earlier chunks.
+        static std::ofstream out{g_output_path, std::ios::binary};
         out.write(
             reinterpret_cast<char const *>(output),
             static_cast<std::streamsize>(size));
@@ -97,6 +106,6 @@ int main(int const argc, char **const argv)
     g_input.assign(
         std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{});
 
-    monad_zkvm_execute_witness();
+    MONAD_ZKVM_X86_ENTRY();
     return 0;
 }

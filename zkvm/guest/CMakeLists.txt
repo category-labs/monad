@@ -58,7 +58,57 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     string(APPEND CMAKE_CXX_FLAGS
         " -mcmodel=medany -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti")
 
+    # ZisK-only codegen tuning, duplicated from Polygon's ziskethone guest
+    # (github.com/0xPolygonHermez/ziskethone, cpp-guest/zisk/toolchain.cmake +
+    # cpp-guest/zisk/CMakeLists.txt).
+    #  - -march adds Zbb/Zbs/Zbkb, transpiled natively by ZisK >= v1.2.0-alpha.
+    #  - -mtune=size was ziskethone's dominant single win (-13% block cost);
+    #    -funroll-loops + the widened inliner --params cut call/loop overhead
+    #    on hot paths; -fno-schedule-insns* drops scheduling that only helps
+    #    real pipelines; -fno-jump-tables avoids indirect jumps. Combined
+    #    measurement upstream: -16% block cost / -21.6% steps. -flto was
+    #    rejected there (marginal gain, overran the ZisK RAM ceiling).
+    #  - -fno-pic: cmake-rs injects cc-rs's -fPIC, but the guest is a
+    #    statically linked fixed-address ELF, so PIC only buys GOT
+    #    indirections on global accesses.
+    #
+    # These are appended (not set via CMAKE_*_FLAGS_INIT) because cmake-rs
+    # overrides CMAKE_*_FLAGS, and the -march must land after cc-rs's
+    # -march=rv64ima — the last flag wins.
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        set(_zisk_march "-march=rv64ima_zicsr_zbb_zbs_zbkb -mabi=lp64")
+        string(JOIN " " _zisk_opt
+            "-fno-pic"
+            "-mtune=size"
+            "-funroll-loops"
+            "--param=max-inline-insns-single=1600"
+            "--param=max-inline-insns-auto=533"
+            "--param=inline-unit-growth=266"
+            "--param=max-inline-recursive-depth=6"
+            "--param=max-completely-peeled-insns=400"
+            "--param=large-function-growth=280"
+            "--param=large-unit-insns=30000"
+            "-fno-schedule-insns"
+            "-fno-schedule-insns2"
+            "-fno-jump-tables")
+        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} ${_zisk_opt}")
+        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} ${_zisk_opt}")
+        string(APPEND CMAKE_ASM_FLAGS " ${_zisk_march}")
+    endif()
+
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
+
+    # Expose the backend as a compile definition, for the places where the two
+    # diverge: the ripemd160 accelerators place the digest at opposite ends of
+    # their 32-byte output word, so the precompile shim normalises them
+    # differently (zkvm/category/execution/ethereum/precompiles_impl.hpp), and
+    # the Keccak-f[1600] precompile is reached by a different entry on each
+    # (zkvm/category/crypto/keccakf1600.h).
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "sp1")
+        add_compile_definitions(MONAD_ZKVM_SP1)
+    elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        add_compile_definitions(MONAD_ZKVM_ZISK)
+    endif()
 
     # Repo + third-party paths.
     set(MONAD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
@@ -430,6 +480,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # ---- Final guest static archive ----
     add_library(${_guest_target} STATIC
         $<TARGET_OBJECTS:monad-zkvm-guest>
+        # Precompile golden-vector test entry (monad_zkvm_run_precompile_tests).
+        # Pulled into the archive so a test binary can link it; dead-stripped
+        # from the witness binary, which references only the witness entry.
+        $<TARGET_OBJECTS:monad-zkvm-precompile-test>
         $<TARGET_OBJECTS:monad-core>
         $<TARGET_OBJECTS:monad-zkvm-core>
         $<TARGET_OBJECTS:monad_precompiles>
@@ -458,7 +512,28 @@ else()
     target_link_libraries(monad-zkvm-x86-test-runner
         PRIVATE monad-zkvm-guest monad_execution zkevm-standards)
 
+    # Precompile golden-vector test runner: same x86 driver, but its entry is
+    # the precompile-vector harness instead of the witness executor.
+    add_executable(monad-zkvm-x86-precompile-test
+        "${CMAKE_CURRENT_SOURCE_DIR}/x86_test_runner.cpp"
+    )
+    monad_compile_options(monad-zkvm-x86-precompile-test)
+    target_compile_definitions(monad-zkvm-x86-precompile-test PRIVATE
+        MONAD_ZKVM_X86_ENTRY=monad_zkvm_run_precompile_tests)
+    target_link_libraries(monad-zkvm-x86-precompile-test
+        PRIVATE monad-zkvm-precompile-test monad_execution zkevm-standards)
+
 endif()
+
+# ---- eth-act zkEVM standards (header-only), shared by both modes ----
+# The vendored zkevm-standards submodule: io-interface/zkvm_io.h (the guest's
+# read_input / write_output ABI) and c-interface-accelerators/
+# zkvm_accelerators.h (the crypto accelerator ABI the RISC-V shadows call).
+# Targets take it as a link dependency rather than adding the include dir
+# by hand; monad_riscv_compile_options links it for every bare-metal target.
+add_library(zkevm-standards INTERFACE)
+target_include_directories(zkevm-standards
+    INTERFACE "${THIRD_PARTY_DIR}/zkevm-standards/standards")
 
 # ---- Guest sources, shared by both modes ----
 # The witness pipeline itself. Defined once, after the mode split: the two
@@ -471,22 +546,21 @@ add_library(monad-zkvm-guest OBJECT
     "${CMAKE_CURRENT_SOURCE_DIR}/ffi.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/witness_block_hash_buffer.cpp"
 )
-monad_compile_options(monad-zkvm-guest)
-target_link_libraries(monad-zkvm-guest PRIVATE zkevm-standards)
-if(DEFINED MONAD_ZKVM_GUEST_TARGET)
-    monad_riscv_compile_options(monad-zkvm-guest)
-    target_link_libraries(monad-zkvm-guest
-        PRIVATE monad-core monad_execution_ethereum)
-else()
-    target_link_libraries(monad-zkvm-guest PRIVATE monad_execution)
-endif()
 
-# ---- eth-act zkEVM standards (header-only), shared by both modes ----
-# The vendored zkevm-standards submodule: io-interface/zkvm_io.h (the guest's
-# read_input / write_output ABI) and c-interface-accelerators/
-# zkvm_accelerators.h (the crypto accelerator ABI the RISC-V shadows call).
-# Targets take it as a link dependency rather than adding the include dir
-# by hand; monad_riscv_compile_options links it for every bare-metal target.
-add_library(zkevm-standards INTERFACE)
-target_include_directories(zkevm-standards
-    INTERFACE "${THIRD_PARTY_DIR}/zkevm-standards/standards")
+# The precompile golden-vector test entry (monad_zkvm_run_precompile_tests),
+# kept apart from the witness pipeline so that library stays test-free.
+add_library(monad-zkvm-precompile-test OBJECT
+    "${CMAKE_CURRENT_SOURCE_DIR}/../test/precompile_tests/precompile_test.cpp"
+)
+
+foreach(tgt monad-zkvm-guest monad-zkvm-precompile-test)
+    monad_compile_options(${tgt})
+    target_link_libraries(${tgt} PRIVATE zkevm-standards)
+    if(DEFINED MONAD_ZKVM_GUEST_TARGET)
+        monad_riscv_compile_options(${tgt})
+        target_link_libraries(${tgt}
+            PRIVATE monad-core monad_execution_ethereum)
+    else()
+        target_link_libraries(${tgt} PRIVATE monad_execution)
+    endif()
+endforeach()

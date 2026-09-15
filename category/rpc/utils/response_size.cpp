@@ -34,7 +34,6 @@
 #include <string_view>
 #include <vector>
 
-#include <evmc/evmc.h>
 #include <nlohmann/json.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -44,7 +43,7 @@ namespace
     namespace eth_simulate_json = rpc::eth_simulateV1::json_fields;
 }
 
-size_t value_size(size_t x)
+size_t value_size(size_t const x)
 {
     // The image of bit_width is [0, 64] for size_t on typical platforms, so it
     // is safe to interpret its return value as an element of size_t.

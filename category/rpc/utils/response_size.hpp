@@ -36,7 +36,7 @@ struct bytes32_t;
 // Given a requested maximum size, this function returns a slightly larger size
 // to provide headroom for some bookkeeping to manage the RPC request resource
 // consumption.
-size_t padded_max_size(size_t);
+size_t padded_max_size(size_t const);
 
 namespace rpc::eth_simulateV1
 {

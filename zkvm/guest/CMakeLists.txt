@@ -582,7 +582,22 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_riscv_compile_options(monad_execution_native)
 
     # ---- Final guest static archive ----
+    # Run rollback tests through the guest entry point instead of a witness.
+    option(MONAD_ZKVM_SELFTEST "guest entry runs the state self-test instead of a witness" OFF)
+    if(MONAD_ZKVM_SELFTEST)
+        add_compile_definitions(MONAD_ZKVM_SELFTEST)
+    endif()
+
+    # Keep test globals and the stub vtable out of normal guest archives:
+    # section garbage collection alone did not remove them from the binary.
+    set(_selftest_sources "")
+    if(MONAD_ZKVM_SELFTEST)
+        set(_selftest_sources
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../category/execution/ethereum/state3/test/revert_semantics_test.cpp")
+    endif()
+
     add_library(${_guest_target} STATIC
+        ${_selftest_sources}
         $<TARGET_OBJECTS:monad-zkvm-guest>
         $<TARGET_OBJECTS:monad-core>
         $<TARGET_OBJECTS:monad-zkvm-core>

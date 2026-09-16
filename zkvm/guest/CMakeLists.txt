@@ -816,7 +816,26 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_riscv_compile_options(monad_execution_native)
 
     # ---- Final guest static archive ----
+    # Revert-semantics self-test. In the archive like the precompile golden vectors above, so a
+    # binary can link it and the witness binary dead-strips it. With MONAD_ZKVM_SELFTEST=ON the
+    # witness entry calls it instead of reading a witness, which is what lets it run under ziskemu
+    # on a machine where the node's host build cannot: that build requires __AVX2__.
+    option(MONAD_ZKVM_SELFTEST "guest entry runs the state self-test instead of a witness" OFF)
+    if(MONAD_ZKVM_SELFTEST)
+        add_compile_definitions(MONAD_ZKVM_SELFTEST)
+    endif()
+
+    # Compiled ONLY under the option. Measured: adding it to the archive unconditionally changed
+    # the witness binary's sha -- its static globals and the stub's vtable survive --gc-sections --
+    # so "in the archive, dead-stripped from the witness binary" does not hold for this file.
+    set(_selftest_sources "")
+    if(MONAD_ZKVM_SELFTEST)
+        set(_selftest_sources
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../category/execution/ethereum/state3/test/revert_semantics_test.cpp")
+    endif()
+
     add_library(${_guest_target} STATIC
+        ${_selftest_sources}
         $<TARGET_OBJECTS:monad-zkvm-guest>
         # Linked only by the precompile test binary.
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/precompile_tests/precompile_test.cpp"

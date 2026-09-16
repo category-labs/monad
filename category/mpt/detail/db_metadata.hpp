@@ -27,6 +27,7 @@
 #include "unsigned_20.hpp"
 
 #include <atomic>
+#include <cstddef>
 #include <type_traits>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -36,6 +37,7 @@ class UpdateAux;
 namespace test
 {
     struct DbMetadataTestAccess; // test-only access to ring internals
+    struct AddDevicesTestAccess; // test-only access to growth internals
 }
 
 namespace detail
@@ -82,6 +84,14 @@ namespace detail
         // Previous magic supported via on-the-fly migration (see
         // DbMetadataContext constructor).
         static constexpr char const *PREVIOUS_MAGIC = "MONAD007";
+
+        // Fixed header of the MONAD007 layout, whose root_offsets_ring_t held
+        // 65536 slots. Still the largest of any format this code can read, so
+        // every pool must reserve it: migration relocates chunk_info[] in
+        // place rather than remapping. It is therefore also the header half of
+        // the budget storage_pool checks a device set against, which is why it
+        // is public rather than local to db_metadata_context.cpp.
+        static constexpr size_t MONAD007_HEADER_BYTES = 528512;
 
         friend class MONAD_MPT_NAMESPACE::DbMetadataContext;
         friend class MONAD_MPT_NAMESPACE::UpdateAux;
@@ -258,24 +268,46 @@ namespace detail
             PENDING_OP_ACTIVATE = 1, // activate_secondary_header
             PENDING_OP_DEACTIVATE = 2, // deactivate_secondary_header
             PENDING_OP_PROMOTE = 3, // promote_secondary_to_primary_header
+            PENDING_OP_ADD_DEVICES = 4 // chunk_info[] growth after a device add
         };
 
         struct pending_shrink_grow_t
         {
             uint32_t op_kind; // pending_op_kind
             // op-specific param: target primary cnv_chunks_len for
-            // ACTIVATE/DEACTIVATE; target primary_ring_idx for PROMOTE.
+            // ACTIVATE/DEACTIVATE; target primary_ring_idx for PROMOTE;
+            // target chunk_info_count for ADD_DEVICES.
             uint32_t op_param;
         } pending_shrink_grow;
 
         static_assert(sizeof(pending_shrink_grow_t) == 8);
+
+        // How many devices device_sizes below can describe. A pool with more
+        // devices than this records nothing for those past the end, so
+        // monad-mpt --rescan-devices refuses to take one of them up extended
+        // in place.
+        static constexpr size_t MAX_RECORDED_DEVICES = 64;
+
+        // The *recorded* size in bytes of each storage pool device, indexed by
+        // its position in the device list: what the device reported at the last
+        // writable open, which is no longer its current size once it has been
+        // extended in place. Zero means not recorded: a pool predating this
+        // field, or a device at or beyond MAX_RECORDED_DEVICES. An extend
+        // strands the device's footer mid-device, so the device stops reporting
+        // its own former geometry and this becomes the only record of it;
+        // monad-mpt --rescan-devices refuses to take up an extended device
+        // without it. Carved from the padding below, which both a fresh pool
+        // and the MONAD007 migration zero, so the sentinel holds on every pool
+        // that already exists.
+        uint64_t device_sizes[MAX_RECORDED_DEVICES];
 
         // padding for adding future atomics without requiring DB reset.
         // Sized so sizeof(db_metadata) stays at 4480 regardless of how
         // timeline_state_t grows in subsequent PRs.
         uint8_t future_variables_unused
             [4040 - sizeof(root_offsets_ring_t) - 2 * sizeof(timeline_state_t) -
-             16 - sizeof(pending_shrink_grow_t)];
+             16 - sizeof(pending_shrink_grow_t) -
+             MAX_RECORDED_DEVICES * sizeof(uint64_t)];
 
         // used to know if the metadata was being
         // updated when the process suddenly exited
@@ -305,7 +337,14 @@ namespace detail
 
         struct chunk_info_t
         {
-            static constexpr uint32_t INVALID_CHUNK_ID = 0xfffff;
+            // The links below carry chunk_offset_t's own chunk id, whose top
+            // value can never be a real chunk id, so it marks an absent link.
+            static constexpr uint32_t INVALID_CHUNK_ID = static_cast<uint32_t>(
+                MONAD_ASYNC_NAMESPACE::chunk_offset_t::max_id);
+            // Frozen by the on-disk format: every existing pool's free list
+            // terminates on this value, so widening chunk_offset_t's id field
+            // would reinterpret those terminators rather than migrate them.
+            static_assert(INVALID_CHUNK_ID == 0xfffff);
             uint64_t prev_chunk_id : 20; // same bits as from chunk_offset_t
             uint64_t in_fast_list : 1;
             uint64_t in_slow_list : 1;
@@ -586,6 +625,56 @@ namespace detail
             capacity_in_free_list -= bytes;
         }
 
+        // Grow chunk_info[] to `to` entries, append every new entry to the
+        // free list continuing insertion counts from the current tail, and
+        // fold in the new chunks' capacity. All of it in one dirty scope, so
+        // a crash part-way through is caught by dirty-bit recovery rather
+        // than leaving a half-linked list or an understated capacity.
+        void extend_chunk_info_(
+            uint32_t const to, uint64_t const added_capacity_bytes) noexcept
+        {
+            auto const g = hold_dirty();
+            auto const from = uint32_t(chunk_info_count);
+            MONAD_ASSERT(to >= from);
+            MONAD_ASSERT((to & ~0xfffffU) == 0);
+            chunk_info_count = to & 0xfffffU;
+            for (uint32_t n = from; n < to; n++) {
+                chunk_info_t info;
+                info.in_fast_list = 0;
+                info.in_slow_list = 0;
+                info.unused0_ = 0;
+                info.next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
+                if (free_list.end == NULL_CHUNK) {
+                    MONAD_ASSERT(free_list.begin == NULL_CHUNK);
+                    info.prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
+                    info.insertion_count0_ = 0;
+                    info.insertion_count1_ = 0;
+                    free_list.begin = free_list.end = n;
+                }
+                else {
+                    MONAD_ASSERT((free_list.end & ~0xfffffU) == 0);
+                    auto *const tail = at_(free_list.end);
+                    uint32_t const insertion_count =
+                        uint32_t(tail->insertion_count()) + 1;
+                    MONAD_ASSERT(
+                        insertion_count < virtual_chunk_offset_t::MAX_COUNT,
+                        "Chunk count overflow detected. The 20-bit address "
+                        "space for chunk count has been exhausted. Please "
+                        "perform a database reset.");
+                    info.insertion_count0_ = insertion_count & 0x3ff;
+                    info.insertion_count1_ = insertion_count >> 10 & 0x3ff;
+                    info.prev_chunk_id = free_list.end & 0xfffffU;
+                    MONAD_ASSERT(
+                        tail->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID);
+                    tail->next_chunk_id = n & 0xfffffU;
+                    free_list.end = n;
+                }
+                std::atomic_ref<chunk_info_t>(chunk_info[n])
+                    .store(info, std::memory_order_release);
+            }
+            capacity_in_free_list += added_capacity_bytes;
+        }
+
         void advance_db_offsets_to_(
             db_offsets_info_t const &offsets_to_apply) noexcept
         {
@@ -604,6 +693,13 @@ namespace detail
     // chunk_info[] budget for any given chunk_count.
     static_assert(sizeof(db_metadata) == 4480);
     static_assert(alignof(db_metadata) == 8);
+    // device_sizes reads zero on a pool that predates it only while it stays
+    // inside the window the MONAD007 migration zeroes.
+    static_assert(
+        offsetof(db_metadata, device_sizes) >
+        offsetof(db_metadata, secondary_timeline));
+    static_assert(
+        offsetof(db_metadata, device_sizes) < offsetof(db_metadata, free_list));
 
     inline void atomic_memcpy(
         void *__restrict__ const dest_, void const *__restrict__ const src_,

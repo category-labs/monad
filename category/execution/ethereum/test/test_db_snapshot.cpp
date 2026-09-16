@@ -46,6 +46,7 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <set>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -219,6 +220,8 @@ namespace
     }
 }
 
+// Dumps in the default layout, which is what a slot-encoded source with many
+// accounts per shard restores through the checksum-verifying loader.
 TEST(DbBinarySnapshot, Basic)
 {
     using namespace monad;
@@ -293,7 +296,8 @@ TEST(DbBinarySnapshot, Basic)
             2048, // dump_concurrency_limit
             1, // total_shards
             0, // shard_number
-            /*dump_from_secondary=*/false));
+            /*dump_from_secondary=*/false,
+            MONAD_SNAPSHOT_FORMAT_V0));
 
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
 
@@ -424,7 +428,8 @@ TEST(DbBinarySnapshot, MultipleShards)
                 2048, // dump_concurrency_limit
                 NUM_SHARDS,
                 shard,
-                /*dump_from_secondary=*/false));
+                /*dump_from_secondary=*/false,
+                MONAD_SNAPSHOT_FORMAT_V1));
 
             monad_db_snapshot_filesystem_write_user_context_destroy(context);
         }
@@ -625,7 +630,8 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
             2048,
             1,
             0,
-            /*dump_from_secondary=*/false));
+            /*dump_from_secondary=*/false,
+            MONAD_SNAPSHOT_FORMAT_V1));
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
 
         // The loader opens (does not activate) the secondary, so activate it
@@ -827,7 +833,8 @@ namespace
     }
 
     void dump_page_source(
-        std::string const &dbname, std::filesystem::path const &root)
+        std::string const &dbname, std::filesystem::path const &root,
+        monad_snapshot_format const format)
     {
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
@@ -843,7 +850,8 @@ namespace
             2048,
             1,
             0,
-            /*dump_from_secondary=*/true));
+            /*dump_from_secondary=*/true,
+            format));
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
     }
 
@@ -902,14 +910,15 @@ namespace
     }
 }
 
-// Every stream a shard writes opens with a header naming its version and kind.
+// Under v1 every stream a shard writes opens with a header naming its version
+// and kind.
 TEST(DbBinarySnapshot, SnapshotStreamHeaders)
 {
     TempDb const src_db;
     TempDir const snapshot_dir;
 
     build_page_source(src_db.path);
-    dump_page_source(src_db.path, snapshot_dir.path);
+    dump_page_source(src_db.path, snapshot_dir.path, MONAD_SNAPSHOT_FORMAT_V1);
 
     std::array<size_t, MONAD_SNAPSHOT_FILES_PER_SHARD> headers_checked{};
     for (auto const &dir : std::filesystem::directory_iterator{
@@ -929,8 +938,79 @@ TEST(DbBinarySnapshot, SnapshotStreamHeaders)
     }
 }
 
-// A snapshot with no stream headers at all — the layout dumped before they
-// existed — still restores into either encoding.
+// A v0 dump holds the same records as a v1 dump of the same database, minus
+// every stream header, and restores through the loader an operator uses.
+// Stream contents are compared by shape rather than byte for byte: a dump
+// emits records in i/o completion order (see Db::traverse), so two dumps of
+// one database may order a stream's records differently. The restore is what
+// pins the records themselves.
+TEST(DbBinarySnapshot, SnapshotFormatV0OmitsStreamHeaders)
+{
+    using namespace monad;
+
+    TempDb const src_db;
+    TempDb const page_db;
+    TempDir const v0_dir;
+    TempDir const v1_dir;
+
+    bytes32_t const source_root = build_page_source(src_db.path);
+    dump_page_source(src_db.path, v0_dir.path, MONAD_SNAPSHOT_FORMAT_V0);
+    dump_page_source(src_db.path, v1_dir.path, MONAD_SNAPSHOT_FORMAT_V1);
+
+    auto const shard_dirs = [](std::filesystem::path const &version_dir) {
+        std::set<std::filesystem::path> dirs;
+        for (auto const &dir :
+             std::filesystem::directory_iterator{version_dir}) {
+            dirs.emplace(dir.path().stem());
+        }
+        return dirs;
+    };
+    auto const v0_block = v0_dir.path / std::to_string(PAGE_BLOCK);
+    auto const v1_block = v1_dir.path / std::to_string(PAGE_BLOCK);
+    ASSERT_EQ(shard_dirs(v0_block), shard_dirs(v1_block));
+
+    std::array<size_t, MONAD_SNAPSHOT_FILES_PER_SHARD> streams_compared{};
+    for (auto const &shard : shard_dirs(v1_block)) {
+        for (auto const &[name, kind] : STREAM_FILES) {
+            auto const framed = read_file(v1_block / shard / name);
+            auto const plain = read_file(v0_block / shard / name);
+            if (framed.empty()) {
+                EXPECT_TRUE(plain.empty()) << name;
+                continue;
+            }
+            // A v0 stream short of the magic cannot be compared below, and
+            // the size check above is non-fatal, so stop here rather than
+            // read past the end of a stream a regression left empty.
+            ASSERT_GE(plain.size(), sizeof(MONAD_SNAPSHOT_STREAM_MAGIC))
+                << name;
+            // Asserts the v1 header is well formed and of this stream's kind.
+            EXPECT_EQ(strip_stream_header(framed, kind).size(), plain.size())
+                << name;
+            EXPECT_NE(
+                unaligned_load<uint32_t>(plain.data()),
+                MONAD_SNAPSHOT_STREAM_MAGIC)
+                << name;
+            ++streams_compared.at(kind);
+        }
+    }
+    for (auto const &[name, kind] : STREAM_FILES) {
+        EXPECT_GT(streams_compared.at(kind), 0u) << name;
+    }
+
+    activate_page_secondary(page_db.path);
+    char const *dest_paths[] = {page_db.path.c_str()};
+    monad_db_snapshot_load_filesystem(
+        dest_paths,
+        1,
+        static_cast<unsigned>(-1),
+        v0_dir.path.c_str(),
+        PAGE_BLOCK,
+        /*load_to_secondary=*/true);
+    verify_page_restore(page_db.path, source_root);
+}
+
+// A headerless snapshot — equivalently a v0 dump — restores into both the page
+// and slot encodings.
 TEST(DbBinarySnapshot, HeaderlessSnapshotRestores)
 {
     using namespace monad;
@@ -942,7 +1022,7 @@ TEST(DbBinarySnapshot, HeaderlessSnapshotRestores)
     TempDir const snapshot_dir;
 
     bytes32_t const source_root = build_page_source(src_db.path);
-    dump_page_source(src_db.path, snapshot_dir.path);
+    dump_page_source(src_db.path, snapshot_dir.path, MONAD_SNAPSHOT_FORMAT_V1);
     strip_stream_headers(snapshot_dir.path / std::to_string(PAGE_BLOCK));
 
     activate_page_secondary(page_db.path);
@@ -1080,7 +1160,8 @@ TEST(DbBinarySnapshot, DumpFromSecondaryPageDb)
             2048,
             1,
             0,
-            /*dump_from_secondary=*/true));
+            /*dump_from_secondary=*/true,
+            MONAD_SNAPSHOT_FORMAT_V1));
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
 
         {

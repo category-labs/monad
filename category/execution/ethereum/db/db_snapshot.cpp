@@ -119,6 +119,22 @@ uint64_t get_shard(monad::mpt::NibblesView const path)
     return ret;
 }
 
+// A format is stamped into every stream header unchecked, so a value from
+// outside the enum would leave a complete, checksummed dump that no reader
+// accepts. Reject it before the dump writes anything. The switch has no
+// default label so that a new format is a build error here rather than a
+// silently mis-framed artifact.
+void check_snapshot_format(monad_snapshot_format const format)
+{
+    switch (format) {
+    case MONAD_SNAPSHOT_FORMAT_V0:
+    case MONAD_SNAPSHOT_FORMAT_V1:
+        return;
+    }
+    MONAD_ABORT_PRINTF(
+        "unknown monad_snapshot_format %d", static_cast<int>(format));
+}
+
 // When the target is page-encoded, drain the accumulator into per-account
 // `next` lists. Each page becomes one Update keyed by keccak256(page_key)
 // with value encode_storage_page_db(page_key, page) (or std::nullopt if the
@@ -334,13 +350,15 @@ using SnapshotWriteFn = uint64_t (*)(
 // Writes the records of every stream of one dump, and is shared by every clone
 // of the traverse machine as well as by the eth-header writes outside it.
 //
-// Every record goes through here so that no stream can be opened without its
-// header: a stream missing one is indistinguishable from a stream written
-// before headers existed, so it would load without complaint.
+// Every record goes through here so that a framed stream cannot be opened
+// without its header: such a stream is byte for byte a valid
+// MONAD_SNAPSHOT_FORMAT_V0 stream, so it would load without complaint rather
+// than fail.
 class SnapshotStreamWriter
 {
     SnapshotWriteFn const write_;
     void *const user_;
+    monad_snapshot_format const format_;
     std::array<
         std::array<bool, MONAD_SNAPSHOT_FILES_PER_SHARD>, MONAD_SNAPSHOT_SHARDS>
         header_written_{};
@@ -353,13 +371,16 @@ class SnapshotStreamWriter
     void write_stream_header_once(
         uint64_t const shard, monad_snapshot_type const kind)
     {
+        if (format_ == MONAD_SNAPSHOT_FORMAT_V0) {
+            return;
+        }
         auto &written = header_written_.at(shard).at(kind);
         if (written) {
             return;
         }
         monad_snapshot_stream_header const header{
             .magic = MONAD_SNAPSHOT_STREAM_MAGIC,
-            .version = MONAD_SNAPSHOT_STREAM_VERSION,
+            .version = static_cast<uint8_t>(format_),
             .kind = static_cast<uint8_t>(kind),
             .reserved = 0,
             .guard = MONAD_SNAPSHOT_STREAM_GUARD};
@@ -372,9 +393,12 @@ class SnapshotStreamWriter
     }
 
 public:
-    SnapshotStreamWriter(SnapshotWriteFn const write, void *const user)
+    SnapshotStreamWriter(
+        SnapshotWriteFn const write, void *const user,
+        monad_snapshot_format const format)
         : write_{write}
         , user_{user}
+        , format_{format}
     {
     }
 
@@ -565,7 +589,7 @@ bool monad_db_dump_snapshot(
         size_t len, void *user),
     void *const user, unsigned const dump_concurrency_limit,
     uint64_t const total_shards, uint64_t const shard_number,
-    bool const dump_from_secondary)
+    bool const dump_from_secondary, monad_snapshot_format const format)
 {
     using namespace monad;
     using namespace monad::mpt;
@@ -577,6 +601,7 @@ bool monad_db_dump_snapshot(
         "shard_number (%lu) must be < total_shards (%lu)",
         shard_number,
         total_shards);
+    check_snapshot_format(format);
 
     // Set all queue sizes to dump_concurrency_limit to avoid double queuing
     ReadOnlyOnDiskDbConfig const config{
@@ -592,7 +617,7 @@ bool monad_db_dump_snapshot(
         io_context,
         dump_from_secondary ? timeline_id::secondary : timeline_id::primary};
 
-    SnapshotStreamWriter writer{write, user};
+    SnapshotStreamWriter writer{write, user, format};
     for (uint64_t b = block < 256 ? 0 : block - 255; b <= block; ++b) {
         uint64_t const header_shard = block - b;
         if (header_shard % total_shards != shard_number) {

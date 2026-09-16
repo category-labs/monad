@@ -408,7 +408,9 @@ monad_compile_options(monad_execution_runloop)
 # unit tests
 # ##############################################################################
 if(NOT CMAKE_CROSSCOMPILING)
-  monad_add_test_folder("ethereum")
+  # The guest's MONAD_ZKVM_SELFTEST entry point, with no gtest case.
+  monad_add_test_folder("ethereum"
+    EXCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/ethereum/state3/test/revert_semantics_test.cpp")
   monad_add_test_folder("monad")
 
   add_executable(

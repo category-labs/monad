@@ -36,6 +36,14 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
+// chunk_offset_t storage in the db metadata is accessed through
+// std::atomic_ref (see the root_offsets accessors below). It lives in
+// cross-process shared memory, so require that view to be lock-free: a
+// lock-based fallback would use a per-process (hence non-shareable) lock
+// table and break cross-process atomicity.
+static_assert(std::atomic_ref<
+              MONAD_ASYNC_NAMESPACE::chunk_offset_t>::is_always_lock_free);
+
 // Owns mmap'd metadata regions for a single DB within a storage pool.
 // Handles the storage-level lifecycle: mmap, dirty recovery, magic validation,
 // new pool initialization of metadata and root_offsets storage, and munmap.

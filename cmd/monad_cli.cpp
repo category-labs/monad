@@ -811,6 +811,17 @@ std::optional<uint64_t> resolve_snapshot_version(
     return value;
 }
 
+char const *snapshot_format_name(monad_snapshot_format const format)
+{
+    switch (format) {
+    case MONAD_SNAPSHOT_FORMAT_V0:
+        return "v0";
+    case MONAD_SNAPSHOT_FORMAT_V1:
+        return "v1";
+    }
+    MONAD_ABORT("unhandled monad_snapshot_format");
+}
+
 MONAD_ANONYMOUS_NAMESPACE_END
 
 int main(int const argc, char *argv[])
@@ -826,6 +837,10 @@ int main(int const argc, char *argv[])
     bool use_secondary = false;
     uint64_t total_shards = 1;
     uint64_t shard_number = 0;
+    monad_snapshot_format snapshot_format = MONAD_SNAPSHOT_FORMAT_V0;
+    std::unordered_map<std::string, monad_snapshot_format> const
+        snapshot_format_map{
+            {"v0", MONAD_SNAPSHOT_FORMAT_V0}, {"v1", MONAD_SNAPSHOT_FORMAT_V1}};
 
     CLI::App cli{
         "Inspection and snapshot tooling for a Monad execution database.",
@@ -881,6 +896,18 @@ int main(int const argc, char *argv[])
             "Shard number for this node (0 to total_shards-1, default: 0). "
             "Each "
             "shard writes its portion of data and headers.")
+        ->needs(dump_binary_snapshot_option);
+    cli_group
+        ->add_option(
+            "--snapshot-format,--snapshot_format",
+            snapshot_format,
+            "Stream layout to write: v0 (default) omits the per-stream header, "
+            "so the dump also restores on binaries that predate it; v1 writes "
+            "a versioned header per stream and restores only on binaries that "
+            "know it. A load detects the layout on disk, so this applies to "
+            "dumps only.")
+        ->transform(
+            CLI::CheckedTransformer(snapshot_format_map, CLI::ignore_case))
         ->needs(dump_binary_snapshot_option);
     cli_group
         ->add_option(
@@ -1036,7 +1063,8 @@ int main(int const argc, char *argv[])
             dump_concurrency_limit,
             total_shards,
             shard_number,
-            use_secondary);
+            use_secondary,
+            snapshot_format);
         // Finalize (flush/close the data files and write the checksums) before
         // logging success: destroy asserts on a write/checksum failure, so
         // doing it first keeps a late failure from being preceded by a
@@ -1044,11 +1072,12 @@ int main(int const argc, char *argv[])
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
         LOG_INFO(
             "snapshot dump success={} version={} directory={} "
-            "dump_from_secondary={} elapsed={}",
+            "dump_from_secondary={} format={} elapsed={}",
             success,
             resolved_version,
             dump_binary_snapshot.value(),
             use_secondary,
+            snapshot_format_name(snapshot_format),
             std::chrono::steady_clock::now() - begin);
         return success == false;
     }

@@ -49,8 +49,23 @@
     #include <category/crypto/keccak.h>
 #endif
 
+#ifdef MONAD_ZKVM_SELFTEST
+extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void);
+#endif
+
 extern "C" void monad_zkvm_execute_witness(void)
 {
+#ifdef MONAD_ZKVM_SELFTEST
+    // Return the failure bitmask instead of reading a witness. Pad to the
+    // 32-byte output expected by the harness.
+    {
+        std::uint32_t const failures = monad_zkvm_revert_semantics_test();
+        unsigned char out[32]{};
+        __builtin_memcpy(out, &failures, sizeof(failures));
+        write_output(out, sizeof(out));
+        return;
+    }
+#endif
     std::uint8_t const *input = nullptr;
     std::size_t input_len = 0;
     read_input(&input, &input_len);

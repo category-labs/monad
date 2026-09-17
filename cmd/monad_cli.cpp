@@ -818,6 +818,8 @@ char const *snapshot_format_name(monad_snapshot_format const format)
         return "v0";
     case MONAD_SNAPSHOT_FORMAT_V1:
         return "v1";
+    case MONAD_SNAPSHOT_FORMAT_V2:
+        return "v2";
     }
     MONAD_ABORT("unhandled monad_snapshot_format");
 }
@@ -840,7 +842,9 @@ int main(int const argc, char *argv[])
     monad_snapshot_format snapshot_format = MONAD_SNAPSHOT_FORMAT_V0;
     std::unordered_map<std::string, monad_snapshot_format> const
         snapshot_format_map{
-            {"v0", MONAD_SNAPSHOT_FORMAT_V0}, {"v1", MONAD_SNAPSHOT_FORMAT_V1}};
+            {"v0", MONAD_SNAPSHOT_FORMAT_V0},
+            {"v1", MONAD_SNAPSHOT_FORMAT_V1},
+            {"v2", MONAD_SNAPSHOT_FORMAT_V2}};
 
     CLI::App cli{
         "Inspection and snapshot tooling for a Monad execution database.",
@@ -901,10 +905,13 @@ int main(int const argc, char *argv[])
         ->add_option(
             "--snapshot-format,--snapshot_format",
             snapshot_format,
-            "Stream layout to write: v0 (default) omits the per-stream header, "
-            "so the dump also restores on binaries that predate it; v1 writes "
-            "a versioned header per stream and restores only on binaries that "
-            "know it. A load detects the layout on disk, so this applies to "
+            "Stream layout to write: v0 (default) omits the per-stream "
+            "header, so the dump also restores on binaries that predate it; "
+            "v1 writes a versioned header per stream and restores only on "
+            "binaries that know it; v2 also groups a storage stream by source "
+            "leaf, which lets a page-encoded target restore it without "
+            "holding a whole shard, and restores only on binaries that know "
+            "grouping. A load detects the layout on disk, so this applies to "
             "dumps only.")
         ->transform(
             CLI::CheckedTransformer(snapshot_format_map, CLI::ignore_case))

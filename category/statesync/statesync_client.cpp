@@ -91,6 +91,11 @@ bool monad_statesync_client_has_reached_target(
     return true;
 }
 
+// `version` is what the caller declares this client can decode, not the result
+// of a handshake: production passes monad_statesync_version(), this build's own
+// newest, so the page-record branch is the only one taken there. Peer version
+// negotiation lives in bft and gates what a *server* sends; it does not reach
+// here. Tests pass a lower value to exercise the older branch.
 void monad_statesync_client_handle_new_peer(
     monad_statesync_client_context *const ctx, uint64_t const prefix,
     uint32_t const version)
@@ -99,7 +104,12 @@ void monad_statesync_client_handle_new_peer(
     auto &ptr = ctx->protocol.at(prefix);
     // TODO: handle switching peers
     MONAD_ASSERT(!ptr);
-    ptr = std::make_unique<StatesyncProtocolV1_2>();
+    if (version >= MONAD_STATESYNC_VERSION_1_3) {
+        ptr = std::make_unique<StatesyncProtocolV1_3>(version);
+    }
+    else {
+        ptr = std::make_unique<StatesyncProtocolV1_2>(version);
+    }
 }
 
 void monad_statesync_client_handle_target(

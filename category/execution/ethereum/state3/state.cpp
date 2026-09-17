@@ -415,10 +415,10 @@ void State::pop_reject()
         case Undo::Kind::Slot: {
             SlotUndo const &sl = undo_slots_[u.aux];
             if (sl.had_value) {
-                row.storage_ = row.storage_.insert({sl.key, sl.value});
+                row.storage_.upsert(sl.key, sl.value);
             }
             else {
-                row.storage_ = row.storage_.erase(sl.key);
+                row.storage_.erase(sl.key);
             }
             break;
         }
@@ -426,10 +426,10 @@ void State::pop_reject()
         case Undo::Kind::Transient: {
             SlotUndo const &sl = undo_slots_[u.aux];
             if (sl.had_value) {
-                row.transient_storage_ = row.transient_storage_.insert({sl.key, sl.value});
+                row.transient_storage_.upsert(sl.key, sl.value);
             }
             else {
-                row.transient_storage_ = row.transient_storage_.erase(sl.key);
+                row.transient_storage_.erase(sl.key);
             }
             break;
         }

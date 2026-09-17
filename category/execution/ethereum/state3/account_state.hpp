@@ -26,15 +26,10 @@
 
 #include <evmc/evmc.h>
 
-// TODO immer known to trigger incorrect warning
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#include <immer/map.hpp>
-#pragma GCC diagnostic pop
-
 #include <cstdint>
 #include <optional>
 #include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -47,11 +42,76 @@ namespace trace
     struct StateDiffTracer;
 }
 
+// Mutable slots with linear lookup; undo records save only written slots.
+// Appending preserves indices, but reallocation can invalidate pointers
+// and erase can move the last entry.
+class FlatStorage
+{
+    std::vector<std::pair<bytes32_t, bytes32_t>> v_{};
+
+public:
+    [[nodiscard]] bytes32_t const *find(bytes32_t const &key) const
+    {
+        for (auto const &e : v_) {
+            if (__builtin_memcmp(e.first.bytes, key.bytes, sizeof(key.bytes)) ==
+                0) {
+                return &e.second;
+            }
+        }
+        return nullptr;
+    }
+
+    void upsert(bytes32_t const &key, bytes32_t const &value)
+    {
+        for (auto &e : v_) {
+            if (__builtin_memcmp(e.first.bytes, key.bytes, sizeof(key.bytes)) ==
+                0) {
+                e.second = value;
+                return;
+            }
+        }
+        v_.emplace_back(key, value);
+    }
+
+    // Restore absence after a reverted insertion: keeping the original value
+    // here would still include the slot in the commit set.
+    void erase(bytes32_t const &key)
+    {
+        for (auto &e : v_) {
+            if (__builtin_memcmp(e.first.bytes, key.bytes, sizeof(key.bytes)) ==
+                0) {
+                e = v_.back();
+                v_.pop_back();
+                return;
+            }
+        }
+    }
+
+    [[nodiscard]] bool empty() const
+    {
+        return v_.empty();
+    }
+
+    [[nodiscard]] std::size_t size() const
+    {
+        return v_.size();
+    }
+
+    [[nodiscard]] auto begin() const
+    {
+        return v_.begin();
+    }
+
+    [[nodiscard]] auto end() const
+    {
+        return v_.end();
+    }
+};
+
 class AccountState : public AccountSubstate
 {
 public: // TODO
-    using StorageMap = immer::map<
-        bytes32_t, bytes32_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
+    using StorageMap = FlatStorage;
 
 protected:
     std::optional<Account> account_{};
@@ -151,12 +211,12 @@ public:
 
     void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
     {
-        transient_storage_ = transient_storage_.insert({key, value});
+        transient_storage_.upsert(key, value);
     }
 };
 
 // Guard against unintended growth of the per-account state.
-static_assert(sizeof(AccountState) == 168);
+static_assert(sizeof(AccountState) == 184);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

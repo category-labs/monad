@@ -205,6 +205,9 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState block_state{db, vm};
         State state{block_state, Incarnation{0, 0}};
+        // Load before push so rejection restores fields rather than erasing the
+        // row.
+        state.set_nonce(addr(1), state.get_nonce(addr(1)));
         state.push();
         state.set_nonce(addr(1), 8); // parent
         state.push();
@@ -247,6 +250,9 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState block_state{db, vm};
         State state{block_state, Incarnation{0, 0}};
+        // Load before push so rejection restores fields rather than erasing the
+        // row.
+        state.set_nonce(addr(1), state.get_nonce(addr(1)));
         state.push();
         state.set_nonce(addr(1), 8);
         state.set_nonce(addr(1), 9);
@@ -273,6 +279,11 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         check(
             !state.account_exists(addr(2)),
             "4: reject erases a row the frame created");
+        // An absent account is not enough: a leftover row would still be
+        // committed. Require the Created record to erase the row itself.
+        check(
+            state.current().find(addr(2)) == state.current().end(),
+            "4: and the ROW itself is gone from current_, not merely emptied");
     }
 
     current_case = 5;
@@ -284,6 +295,9 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState block_state{db, vm};
         State state{block_state, Incarnation{0, 0}};
+        // Load before push so rejection restores fields rather than erasing the
+        // row.
+        state.set_nonce(addr(1), state.get_nonce(addr(1)));
         state.push();
         state.selfdestruct<EvmTraits<EvmRevision::Shanghai>>(addr(1), addr(3));
         check(state.is_destructed(addr(1)), "5: destructed inside the frame");
@@ -304,6 +318,9 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState block_state{db, vm};
         State state{block_state, Incarnation{0, 0}};
+        // Load before push so rejection restores fields rather than erasing the
+        // row.
+        state.set_nonce(addr(1), state.get_nonce(addr(1)));
         state.push();
         state.set_storage(addr(1), key(5), key(99));
         state.set_transient_storage(addr(1), key(6), key(77));
@@ -331,6 +348,9 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState block_state{db, vm};
         State state{block_state, Incarnation{0, 0}};
+        // Load before push so rejection restores fields rather than erasing the
+        // row.
+        state.set_nonce(addr(1), state.get_nonce(addr(1)));
         state.push();
         check(
             state.access_account(addr(1)) == AccessStatus::Cold,
@@ -391,6 +411,9 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState block_state{db, vm};
         State state{block_state, Incarnation{0, 0}};
+        // Load before push so rejection restores fields rather than erasing the
+        // row.
+        state.set_nonce(addr(1), state.get_nonce(addr(1)));
         state.push();
         state.set_storage(addr(1), key(5), key(1));
         state.set_storage(addr(1), key(5), key(2));
@@ -412,6 +435,9 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState block_state{db, vm};
         State state{block_state, Incarnation{0, 0}};
+        // Load before push so rejection restores fields rather than erasing the
+        // row.
+        state.set_nonce(addr(1), state.get_nonce(addr(1)));
         state.push();
         state.set_storage(addr(1), key(5), key(7)); // parent
         state.push();
@@ -444,6 +470,9 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         BlockState block_state{db, vm};
         State state{block_state, Incarnation{0, 0}};
         check(!state.is_touched(addr(1)), "11: not touched to begin with");
+        // Load before push so rejection restores fields rather than erasing the
+        // row.
+        state.access_account(addr(1));
         state.push();
         state.add_to_balance(addr(1), 50);
         state.push();
@@ -471,6 +500,9 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         vm::VM vm;
         BlockState block_state{db, vm};
         State state{block_state, Incarnation{0, 0}};
+        // Load before push so rejection restores fields rather than erasing the
+        // row.
+        state.access_account(addr(1));
         state.push();
         unsigned char const code[] = {0x60, 0x00, 0x60, 0x00, 0xf3};
         state.set_code(addr(1), byte_string_view{code, sizeof(code)});
@@ -492,6 +524,10 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         BlockState block_state{db, vm};
         State state{block_state, Incarnation{0, 0}};
         check(!state.account_exists(addr(9)), "13: absent to begin with");
+        // Load before push so rejection restores fields rather than erasing the
+        // row. access_account leaves account_ absent, which is what this case
+        // needs.
+        state.access_account(addr(9));
         state.push();
         state.set_nonce(addr(9), 5);
         check(state.account_exists(addr(9)), "13: the mutator materialised it");
@@ -500,6 +536,61 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
         check(
             !state.account_exists(addr(9)),
             "13: reject leaves NO account, not an empty one");
+    }
+
+    current_case = 14;
+    // 14. Restore PageTracker directly; Ethereum traits never activate MIP-8.
+    {
+        StubDb db;
+        db.put_account(1, Account{.nonce = 1});
+        vm::VM vm;
+        BlockState block_state{db, vm};
+        State state{block_state, Incarnation{0, 0}};
+        // Load before push so rejection restores fields rather than erasing the
+        // row.
+        state.access_account(addr(1));
+        state.push();
+        auto const first =
+            state.update_page(addr(1), key(5), StorageStatus::Added);
+        state.pop_reject();
+        state.push();
+        auto const again =
+            state.update_page(addr(1), key(5), StorageStatus::Added);
+        check(
+            again.first_page_write == first.first_page_write &&
+                again.grew_state == first.grew_state,
+            "14: after a reject the page map is as it was, so the same update "
+            "answers the same");
+        state.pop_accept();
+    }
+
+    current_case = 15;
+    // 15. Restore an existing account's incarnation, not just its fields.
+    {
+        StubDb db;
+        db.put_account(
+            1, Account{.balance = 5, .code_hash = NULL_HASH, .nonce = 0});
+        vm::VM vm;
+        BlockState block_state{db, vm};
+        State state{block_state, Incarnation{1, 0}};
+        check(
+            !state.is_current_incarnation(addr(1)),
+            "15: a foreign incarnation to begin with");
+        // Load before push so rejection restores fields rather than erasing the
+        // row.
+        state.access_account(addr(1));
+        state.push();
+        state.set_to_state_incarnation(addr(1));
+        check(
+            state.is_current_incarnation(addr(1)),
+            "15: moved to this state's incarnation");
+        state.pop_reject();
+        check(
+            !state.is_current_incarnation(addr(1)),
+            "15: reject puts the old incarnation back");
+        check(
+            state.get_balance(addr(1)) == 5,
+            "15: and leaves the rest of the account alone");
     }
 
     return failures;

@@ -45,13 +45,15 @@ MONAD_NAMESPACE_BEGIN
 class BlockState;
 
 // Per-frame dirty accounts, deduplicated by linear scan for typically small
-// lists. Only the first insertion triggers an undo record for that account.
+// lists.
 class DirtyAccounts
 {
     std::vector<Address> v_{};
 
 public:
-    // Returns true on first insertion, so the caller can journal the account.
+    // Returns true on first insertion; no caller reads it. The scan is what
+    // keeps the list free of duplicates, for pop_accept's merge and for the
+    // reserve-balance hook.
     bool emplace(Address const &a)
     {
         for (auto const &x : v_) {
@@ -87,18 +89,97 @@ class State
     // Accounts are mutated in place and restored from the undo log on rollback.
     Map<Address, AccountState> current_{};
 
-    // Save each account on first touch per frame. A frame marks the log size:
-    // rejection replays backwards to its mark; acceptance keeps records for
-    // parent rollback. Use addresses because map erasure can move entries.
+    // Save mutations in order; rejection replays backwards to the frame mark,
+    // while acceptance keeps records for parent rollback. Repeated writes are
+    // recorded separately, so the oldest value is restored last.
+    //
+    // All kinds share one log to preserve order (e.g. undo writes before
+    // creation).
+    // aux indexes the matching payload vector. Use addresses because map
+    // erasure
+    // can move entries.
     struct Undo
     {
+        enum class Kind : unsigned char
+        {
+            // Erase the entry created in current_.
+            Created,
+            // undo_accts_[aux]: previous account_, including presence and
+            // incarnation.
+            AccountWhole,
+            // undo_words_[aux]: previous balance, copied as raw bytes.
+            Balance,
+            // undo_words_[aux]
+            CodeHash,
+            // undo_u64_[aux]
+            Nonce,
+            // Recorded only on a false-to-true transition.
+            FlagTouched,
+            FlagDestructed,
+            FlagAccessed,
+            // undo_words_[aux]: appended warm-slot key.
+            WarmSlot,
+            // undo_slots_[aux]
+            Slot,
+            Transient,
+            // undo_pages_[aux]: previous page-tracker handle.
+            Pages,
+        };
+
         Address addr;
-        // Previous state, or nullopt to erase an entry created in current_.
-        std::optional<AccountState> prev;
+        Kind kind;
+        std::uint32_t aux;
     };
 
+    struct SlotUndo
+    {
+        bytes32_t key;
+        bytes32_t value;
+        // If absent before the write, erase the slot on rollback; keeping it
+        // would incorrectly include it in the commit set.
+        bool had_value;
+    };
+
+    // Record a new current_ entry so rollback can erase it.
+    void journal_created(Address const &address);
+
+    void journal_account(Address const &address, AccountState const &row);
+    void journal_balance(Address const &address, uint256_t const &prev);
+    void journal_code_hash(Address const &address, bytes32_t const &prev);
+    void journal_nonce(Address const &address, std::uint64_t prev);
+    void journal_flag(Address const &address, Undo::Kind which);
+    void journal_warm_slot(Address const &address, bytes32_t const &key);
+    void journal_slot(
+        Address const &address, AccountState const &row, bytes32_t const &key);
+    void journal_transient(
+        Address const &address, AccountState const &row, bytes32_t const &key);
+    void journal_pages(Address const &address, AccountState const &row);
+
+    // True when a frame is open, i.e. when anything could still roll back.
+    [[nodiscard]] bool journalling() const
+    {
+        return !undo_marks_.empty();
+    }
+
     std::vector<Undo> undo_{};
-    std::vector<size_t> undo_marks_{};
+    std::vector<std::optional<Account>> undo_accts_{};
+    std::vector<bytes32_t> undo_words_{};
+    std::vector<std::uint64_t> undo_u64_{};
+    std::vector<SlotUndo> undo_slots_{};
+    std::vector<PageTracker> undo_pages_{};
+
+    // Each open frame's watermark in all six vectors.
+    struct UndoMark
+    {
+        size_t log;
+        size_t accts;
+        size_t words;
+        size_t u64;
+        size_t slots;
+        size_t pages;
+    };
+
+    std::vector<UndoMark> undo_marks_{};
 
     // Logs are append-only. Each frame saves the current size so reverting
     // can discard its logs without persistent-vector snapshots.
@@ -171,10 +252,6 @@ public:
     // frame-local metadata immediately before pop_accept() or pop_reject();
     // callers must not retain references beyond the frame pop.
     DirtyAccounts const &current_frame_dirty_accounts() const;
-
-    // Save undo state when an account first enters the frame's dirty list.
-    void journal_first_touch(
-        Address const &address, AccountState const &row, bool created);
 
     ////////////////////////////////////////
 

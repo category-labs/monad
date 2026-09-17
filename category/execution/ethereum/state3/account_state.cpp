@@ -37,7 +37,7 @@ monad_storage_status AccountState::zero_out_key(
         return MONAD_STORAGE_MODIFIED_DELETED;
     }();
 
-    storage_ = storage_.insert({key, bytes32_t{}});
+    storage_.upsert(key, bytes32_t{});
 
     return status;
 }
@@ -65,7 +65,7 @@ monad_storage_status AccountState::set_current_value(
         return MONAD_STORAGE_ASSIGNED;
     }();
 
-    storage_ = storage_.insert({key, value});
+    storage_.upsert(key, value);
 
     return status;
 }

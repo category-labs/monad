@@ -460,11 +460,10 @@ void State::pop_reject()
         case Undo::Kind::Slot: {
             SlotUndo const &slot_undo = undo_slots_[undo_record.payload_index];
             if (slot_undo.had_value) {
-                row.storage_ =
-                    row.storage_.insert({slot_undo.key, slot_undo.value});
+                row.storage_.upsert(slot_undo.key, slot_undo.value);
             }
             else {
-                row.storage_ = row.storage_.erase(slot_undo.key);
+                row.storage_.erase(slot_undo.key);
             }
             break;
         }
@@ -472,12 +471,10 @@ void State::pop_reject()
         case Undo::Kind::Transient: {
             SlotUndo const &slot_undo = undo_slots_[undo_record.payload_index];
             if (slot_undo.had_value) {
-                row.transient_storage_ = row.transient_storage_.insert(
-                    {slot_undo.key, slot_undo.value});
+                row.transient_storage_.upsert(slot_undo.key, slot_undo.value);
             }
             else {
-                row.transient_storage_ =
-                    row.transient_storage_.erase(slot_undo.key);
+                row.transient_storage_.erase(slot_undo.key);
             }
             break;
         }
@@ -860,14 +857,14 @@ void State::zero_storage(Address const &address, AccountState &account_state)
 {
     auto const orig = original_.find(address);
     MONAD_ASSERT(orig != original_.end());
-    auto zeroed = AccountState::StorageMap{}.transient();
+    AccountState::StorageMap zeroed;
     for (auto const &kv : orig->second.prestate_storage_) {
-        zeroed.set(kv.first, bytes32_t{});
+        zeroed.upsert(kv.first, bytes32_t{});
     }
     for (auto const &kv : account_state.storage_) {
-        zeroed.set(kv.first, bytes32_t{});
+        zeroed.upsert(kv.first, bytes32_t{});
     }
-    account_state.storage_ = zeroed.persistent();
+    account_state.storage_ = std::move(zeroed);
 }
 
 // YP (87)

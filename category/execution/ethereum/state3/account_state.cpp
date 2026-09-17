@@ -38,7 +38,7 @@ StorageStatus AccountState::zero_out_key(
         return StorageStatus::ModifiedDeleted;
     }();
 
-    storage_ = storage_.insert({key, bytes32_t{}});
+    storage_.upsert(key, bytes32_t{});
 
     return status;
 }
@@ -66,7 +66,7 @@ StorageStatus AccountState::set_current_value(
         return StorageStatus::Assigned;
     }();
 
-    storage_ = storage_.insert({key, value});
+    storage_.upsert(key, value);
 
     return status;
 }

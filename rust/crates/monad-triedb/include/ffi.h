@@ -29,7 +29,7 @@ extern "C"
 typedef struct TriedbRoInner TriedbRoInner;
 
 int triedb_open(
-    char const *dbdirpath, TriedbRoInner **, uint64_t node_lru_max_mem);
+    char const *dbpath, TriedbRoInner **, uint64_t node_lru_max_mem);
 int triedb_close(TriedbRoInner *);
 
 // returns -1 if key not found

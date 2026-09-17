@@ -39,7 +39,6 @@
 #include <memory>
 #include <optional>
 #include <utility>
-#include <vector>
 
 struct TriedbRoInner
 {
@@ -57,11 +56,10 @@ struct TriedbRoInner
     std::optional<monad::mpt::AsyncContext> secondary_async_ctx;
 
     explicit TriedbRoInner(
-        std::vector<std::filesystem::path> dbname_paths,
-        uint64_t const node_lru_max_mem)
+        std::filesystem::path dbname_path, uint64_t const node_lru_max_mem)
         : io_ctx{monad::mpt::ReadOnlyOnDiskDbConfig{
               .disable_mismatching_storage_pool_check = true,
-              .dbname_paths = std::move(dbname_paths)}}
+              .dbname_path = std::move(dbname_path)}}
         , db{io_ctx}
         , async_ctx{db, node_lru_max_mem}
     {
@@ -111,32 +109,27 @@ namespace
 }
 
 int triedb_open(
-    char const *dbdirpath, TriedbRoInner **db, uint64_t const node_lru_max_mem)
+    char const *dbpath, TriedbRoInner **db, uint64_t const node_lru_max_mem)
 {
-    if (dbdirpath == nullptr || db == nullptr || *db != nullptr) {
+    if (dbpath == nullptr || db == nullptr || *db != nullptr) {
         return -1;
     }
 
-    std::vector<std::filesystem::path> paths;
     std::error_code ec;
-
-    if (std::filesystem::is_block_file(dbdirpath, ec)) {
-        paths.emplace_back(dbdirpath);
+    if (std::filesystem::is_directory(dbpath, ec)) {
+        LOG_ERROR(
+            "Database path {} is a directory, but a database is the single "
+            "storage device it lives on; name that device.",
+            dbpath);
+        return -2;
     }
-    else if (!ec) {
-        for (auto const &file :
-             std::filesystem::directory_iterator(dbdirpath, ec)) {
-            paths.emplace_back(file.path());
-        }
-    }
-
     if (ec) {
-        LOG_ERROR("Failed to inspect database path: {} ({})", dbdirpath, ec);
+        LOG_ERROR("Failed to inspect database path: {} ({})", dbpath, ec);
         return -2;
     }
 
     try {
-        *db = new TriedbRoInner{std::move(paths), node_lru_max_mem};
+        *db = new TriedbRoInner{dbpath, node_lru_max_mem};
     }
     catch (std::exception const &e) {
         std::cerr << e.what();

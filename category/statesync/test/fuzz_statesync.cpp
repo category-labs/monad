@@ -277,7 +277,7 @@ namespace
         char const *const path = dbname.c_str();
         mpt::Db db{
             make_on_disk_machine(page_encoded),
-            mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
+            mpt::OnDiskDbConfig{.append = false, .dbname_path = path}};
         monad::mpt::test::DbAccessor::aux(db)
             .metadata_ctx()
             .set_state_machine_kind(
@@ -297,20 +297,19 @@ namespace
         monad_statesync_client_context *const cctx =
             monad_statesync_client_context_create(
                 chain,
-                &cdbname_str,
-                1,
+                cdbname_str,
                 static_cast<unsigned>(get_nprocs() - 1),
                 &client,
                 &statesync_send_request);
         std::filesystem::path sdbname{tmp_dbname(page_encoded)};
         mpt::Db sdb{
             make_on_disk_machine(page_encoded),
-            OnDiskDbConfig{.append = true, .dbname_paths = {sdbname}}};
+            OnDiskDbConfig{.append = true, .dbname_path = sdbname}};
         TrieDb stdb{sdb};
         std::unique_ptr<monad_statesync_server_context> sctx =
             std::make_unique<monad_statesync_server_context>(stdb);
         mpt::AsyncIOContext io_ctx{
-            ReadOnlyOnDiskDbConfig{.dbname_paths{sdbname}}};
+            ReadOnlyOnDiskDbConfig{.dbname_path{sdbname}}};
         mpt::Db ro{io_ctx};
         sctx->ro = &ro;
         monad_statesync_server_network net{

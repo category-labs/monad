@@ -32,7 +32,7 @@ StateSyncServer::StateSyncServer(StateSyncServerConfig const &config)
 
         mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
             .sq_thread_cpu = config.ro_sq_thread_cpu,
-            .dbname_paths = config.dbname_paths}};
+            .dbname_path = config.dbname_path}};
         mpt::Db ro{io_ctx};
         ctx->ro = &ro;
 

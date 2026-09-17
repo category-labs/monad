@@ -260,7 +260,7 @@ set it to the desired size beforehand).
         try {
             bool destroy_and_fill = false;
             unsigned destroy_and_really_fill_count = 0;
-            std::vector<std::filesystem::path> storage_paths;
+            std::filesystem::path storage_path;
             monad::io::RingConfig ringconfig{128};
             unsigned concurrent_io = 2048;
             unsigned concurrent_read_io_limit = 0;
@@ -270,9 +270,8 @@ set it to the desired size beforehand).
             unsigned duration_secs = 30;
             cli.add_option(
                    "--storage",
-                   storage_paths,
-                   "one or more sources of block storage (must be at least "
-                   "256Mb + "
+                   storage_path,
+                   "the source of block storage (must be at least 256Mb + "
                    "4Kb long).")
                 ->required();
             cli.add_flag(
@@ -373,10 +372,8 @@ set it to the desired size beforehand).
                 destroy_and_fill
                     ? MONAD_ASYNC_NAMESPACE::storage_pool::mode::truncate
                     : MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing;
-            MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flags{};
-            flags.interleave_chunks_evenly = true;
-            MONAD_ASYNC_NAMESPACE::storage_pool pool{
-                {storage_paths}, mode, flags};
+            MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags const flags{};
+            MONAD_ASYNC_NAMESPACE::storage_pool pool{storage_path, mode, flags};
 
             monad::io::Ring ring(ringconfig);
             monad::io::Buffers rwbuf = monad::io::make_buffers_for_read_only(

@@ -30,8 +30,8 @@ struct monad_statesync_client_context;
 
 // chain_config must be a Monad chain
 struct monad_statesync_client_context *monad_statesync_client_context_create(
-    enum monad_chain_config chain_config, char const *const *dbname_paths,
-    size_t len, unsigned sq_thread_cpu, struct monad_statesync_client *,
+    enum monad_chain_config chain_config, char const *dbname_path,
+    unsigned sq_thread_cpu, struct monad_statesync_client *,
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request));
 

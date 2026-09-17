@@ -109,9 +109,9 @@ AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
         pool_options.open_read_only = true;
         pool_options.disable_mismatching_storage_pool_check =
             options.disable_mismatching_storage_pool_check;
-        MONAD_ASSERT(!options.dbname_paths.empty());
+        MONAD_ASSERT(!options.dbname_path.empty());
         return async::storage_pool{
-            options.dbname_paths,
+            options.dbname_path,
             async::storage_pool::mode::open_existing,
             pool_options};
     }()}
@@ -133,27 +133,27 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
         pool_options.num_cnv_chunks = options.root_offsets_chunk_count + 1;
         pool_options.set_chunk_capacity(options.chunk_capacity);
         auto const len = options.file_size_db * 1024 * 1024 * 1024 + 24576;
-        if (options.dbname_paths.empty()) {
+        if (options.dbname_path.empty()) {
             return async::storage_pool{
                 async::use_anonymous_sized_inode_tag{}, len, pool_options};
         }
         // initialize db file on disk
-        for (auto const &dbname_path : options.dbname_paths) {
-            if (!std::filesystem::exists(dbname_path)) {
-                int const fd = ::open(
-                    dbname_path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
-                MONAD_ASSERT_PRINTF(
-                    fd != -1, "open failed due to %s", strerror(errno));
-                auto const unfd =
-                    monad::make_scope_exit([fd]() noexcept { ::close(fd); });
-                MONAD_ASSERT_PRINTF(
-                    ::ftruncate(fd, len) != -1,
-                    "ftruncate failed due to %s",
-                    strerror(errno));
-            }
+        if (!std::filesystem::exists(options.dbname_path)) {
+            int const fd = ::open(
+                options.dbname_path.c_str(),
+                O_CREAT | O_RDWR | O_CLOEXEC,
+                0600);
+            MONAD_ASSERT_PRINTF(
+                fd != -1, "open failed due to %s", strerror(errno));
+            auto const unfd =
+                monad::make_scope_exit([fd]() noexcept { ::close(fd); });
+            MONAD_ASSERT_PRINTF(
+                ::ftruncate(fd, len) != -1,
+                "ftruncate failed due to %s",
+                strerror(errno));
         }
         return async::storage_pool{
-            options.dbname_paths,
+            options.dbname_path,
             options.append ? async::storage_pool::mode::open_existing
                            : async::storage_pool::mode::truncate,
             pool_options};
@@ -1376,13 +1376,8 @@ DbStorageStats Db::get_storage_stats() const
     if (!is_on_disk()) {
         return {0, 0};
     }
-    uint64_t capacity = 0;
-    uint64_t used = 0;
-    for (auto const &dev : impl_->aux().io->storage_pool().devices()) {
-        auto const [c, u] = dev.capacity();
-        capacity += c;
-        used += u;
-    }
+    auto const [capacity, used] =
+        impl_->aux().io->storage_pool().device().capacity();
     return {capacity, used};
 }
 

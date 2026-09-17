@@ -24,16 +24,12 @@
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/core/test_util/temp_file_cleanup.hpp>
 
-#include <array>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <stdio.h>
-#include <utility>
 #include <vector>
 
 #include <stdlib.h>
@@ -45,28 +41,25 @@ namespace
 
     inline void print_pool_statistics(storage_pool &pool)
     {
-        std::cout << "Pool has " << pool.devices().size() << " devices:";
-        for (size_t n = 0; n < pool.devices().size(); n++) {
-            auto const &device = pool.devices()[n];
-            auto const capacity = device.capacity();
-            std::cout << "\n   " << (n + 1) << ". chunks = " << device.chunks()
-                      << " capacity = " << capacity.first
-                      << " used = " << capacity.second
-                      << " path = " << device.current_path();
-        }
+        auto const &device = pool.device();
+        auto const capacity = device.capacity();
+        std::cout << "Pool device: chunks = " << device.chunks()
+                  << " capacity = " << capacity.first
+                  << " used = " << capacity.second
+                  << " path = " << device.current_path();
         std::cout << "\n\n    Total conventional chunks = "
                   << pool.chunks(storage_pool::cnv);
         std::cout << "\nTotal sequential write chunks = "
                   << pool.chunks(storage_pool::seq);
         std::cout << "\n   First conventional chunk ";
         {
-            auto const &chunk = pool.chunk(storage_pool::cnv, 0);
+            auto const chunk = pool.chunk(storage_pool::cnv, 0);
             std::cout << "has capacity = " << chunk.capacity()
                       << " used = " << chunk.size();
         }
         std::cout << "\n   First sequential chunk ";
         {
-            auto const &chunk = pool.chunk(storage_pool::seq, 0);
+            auto const chunk = pool.chunk(storage_pool::seq, 0);
             std::cout << "has capacity = " << chunk.capacity()
                       << " used = " << chunk.size();
         }
@@ -138,9 +131,8 @@ namespace
         fd = chunk3.write_fd(buffer.size());
         EXPECT_EQ(
             fd.second,
-            chunk1.capacity() * 2 + chunk1.capacity() *
-                                        pool.chunks(storage_pool::seq) /
-                                        pool.devices().size());
+            chunk1.capacity() * 2 +
+                chunk1.capacity() * pool.chunks(storage_pool::seq));
         MONAD_ASSERT(
             -1 != ::pwrite(
                       fd.first,
@@ -155,8 +147,7 @@ namespace
         EXPECT_EQ(
             fd.second,
             chunk1.capacity() * 2 +
-                chunk1.capacity() * pool.chunks(storage_pool::seq) /
-                    pool.devices().size() +
+                chunk1.capacity() * pool.chunks(storage_pool::seq) +
                 buffer.size());
         MONAD_ASSERT(
             -1 != ::pwrite(
@@ -245,133 +236,14 @@ namespace
     {
         ASSERT_DEATH(
             ({
-                std::filesystem::path const devs[] = {
-                    "/dev/mapper/raid0-rawblk0", "/dev/mapper/raid0-rawblk1"};
-                storage_pool const pool(devs, storage_pool::mode::truncate);
+                storage_pool const pool(
+                    "/dev/mapper/raid0-rawblk0", storage_pool::mode::truncate);
             }),
             "open failed");
     }
 
-    TEST(StoragePool, device_interleaving)
-    {
-        std::array<std::vector<size_t>, 3> gaps;
-        auto do_test = [&](bool enable_interleaving) {
-            gaps[0].clear();
-            gaps[1].clear();
-            gaps[2].clear();
-            auto create_temp_file =
-                [](file_offset_t length) -> std::filesystem::path {
-                monad::test::remove_stale_temp_files_once(
-                    working_temporary_directory(), "monad_storage_pool_test_");
-                std::filesystem::path ret(
-                    working_temporary_directory() /
-                    "monad_storage_pool_test_XXXXXX");
-                int const fd = ::mkstemp((char *)ret.native().data());
-                MONAD_ASSERT(fd != -1);
-                MONAD_ASSERT(
-                    -1 != ::ftruncate(fd, static_cast<off_t>(length + 16384)));
-                ::close(fd);
-                return ret;
-            };
-            static constexpr file_offset_t BLKSIZE = 256 * 1024 * 1024;
-            std::filesystem::path devs[] = {
-                create_temp_file(22 * BLKSIZE),
-                create_temp_file(12 * BLKSIZE),
-                create_temp_file(7 * BLKSIZE)};
-            auto const undevs = monad::make_scope_exit([&]() noexcept {
-                for (auto const &p : devs) {
-                    std::filesystem::remove(p);
-                }
-            });
-            storage_pool::creation_flags flags;
-            flags.interleave_chunks_evenly = enable_interleaving;
-            storage_pool pool(
-                devs, storage_pool::mode::create_if_needed, flags);
-            std::array<size_t, 3> counts{0, 0, 0};
-            std::array<std::vector<size_t>, 3> indices;
-            for (size_t n = 0; n < pool.chunks(storage_pool::seq); n++) {
-                auto &p =
-                    pool.chunk(storage_pool::seq, static_cast<uint32_t>(n));
-                auto const device_idx = static_cast<unsigned long>(
-                    &p.device() - pool.devices().data());
-                counts[device_idx]++;
-                indices[device_idx].push_back(n);
-            }
-            EXPECT_EQ(counts[0], 19);
-            EXPECT_EQ(counts[1], 9);
-            EXPECT_EQ(counts[2], 4);
-            std::cout << "\n   Device 0 appears at";
-            for (size_t n = 0; n < indices[0].size(); n++) {
-                std::cout << " " << indices[0][n];
-                if (n > 0) {
-                    gaps[0].push_back(indices[0][n] - indices[0][n - 1]);
-                    EXPECT_LE(gaps[0].back(), 3);
-                }
-            }
-            std::cout << "\n   Device 1 appears at";
-            for (size_t n = 0; n < indices[1].size(); n++) {
-                std::cout << " " << indices[1][n];
-                if (n > 0) {
-                    gaps[1].push_back(indices[1][n] - indices[1][n - 1]);
-                    EXPECT_LE(gaps[1].back(), 5);
-                }
-            }
-            std::cout << "\n   Device 2 appears at";
-            for (size_t n = 0; n < indices[2].size(); n++) {
-                std::cout << " " << indices[2][n];
-                if (n > 0) {
-                    gaps[2].push_back(indices[2][n] - indices[2][n - 1]);
-                    EXPECT_LE(gaps[2].back(), 8);
-                }
-            }
-            std::cout << "\n";
-        };
-        auto print_stddev = [](size_t devid, std::vector<size_t> const &vals) {
-            double mean = 0;
-            for (auto const &i : vals) {
-                mean += static_cast<double>(i);
-            }
-            mean /= static_cast<double>(vals.size());
-            double variance = 0;
-            for (auto const &i : vals) {
-                variance += pow(static_cast<double>(i) - mean, 2);
-            }
-            variance /= static_cast<double>(vals.size());
-            std::cout << "\n   Device " << devid
-                      << " incidence gap mean = " << mean
-                      << " stddev = " << sqrt(variance)
-                      << " 95% confidence interval = +/- "
-                      << (1.96 * sqrt(variance) / sqrt(double(vals.size())))
-                      << std::endl;
-            return std::pair{mean, variance};
-        };
-        // Default is non-interleaved
-        std::cout << "Checking the default is NOT interleaved chunks ...";
-        do_test(false);
-        auto stats = print_stddev(0, gaps[0]);
-        EXPECT_EQ(stats.first, 1);
-        EXPECT_EQ(stats.second, 0);
-        stats = print_stddev(1, gaps[1]);
-        EXPECT_EQ(stats.first, 1);
-        EXPECT_EQ(stats.second, 0);
-        stats = print_stddev(2, gaps[2]);
-        EXPECT_EQ(stats.first, 1);
-        EXPECT_EQ(stats.second, 0);
-
-        // Set interleaved
-        std::cout
-            << "\n\nChecking turning on interleaved chunks does do so ...";
-        do_test(true);
-        stats = print_stddev(0, gaps[0]);
-        EXPECT_GE(stats.first, 1.6);
-        EXPECT_GE(stats.second, 0.45);
-        stats = print_stddev(1, gaps[1]);
-        EXPECT_GE(stats.first, 3.5);
-        EXPECT_GE(stats.second, 0.75);
-        stats = print_stddev(2, gaps[2]);
-        EXPECT_GE(stats.first, 8);
-    }
-
+    // The config hash folds the device's identity, so a pool copied bytewise
+    // onto another device is refused rather than silently adopted.
     TEST(StoragePool, config_hash_differs)
     {
         auto create_temp_file =
@@ -388,25 +260,30 @@ namespace
             ::close(fd);
             return ret;
         };
-        static constexpr file_offset_t BLKSIZE = 256 * 1024 * 1024;
-        std::filesystem::path devs[] = {
-            create_temp_file(20 * BLKSIZE),
-            create_temp_file(10 * BLKSIZE),
-            create_temp_file(5 * BLKSIZE)};
+        // copy_file does not preserve holes, so the pool is sized at the
+        // smallest a pool can be, the conventional chunks plus one, to keep
+        // what this writes to 64 Mb.
+        static constexpr uint32_t CHUNK_CAPACITY_BITS = 24;
+        static constexpr file_offset_t BLKSIZE = 1ULL << CHUNK_CAPACITY_BITS;
+        storage_pool::creation_flags flags;
+        flags.set_chunk_capacity(CHUNK_CAPACITY_BITS);
+        auto const dev = create_temp_file(4 * BLKSIZE);
+        auto const copy = create_temp_file(4 * BLKSIZE);
         auto const undevs = monad::make_scope_exit([&]() noexcept {
-            for (auto const &p : devs) {
-                std::filesystem::remove(p);
-            }
+            std::filesystem::remove(dev);
+            std::filesystem::remove(copy);
         });
         {
-            storage_pool const _{devs};
+            storage_pool const _{
+                dev, storage_pool::mode::create_if_needed, flags};
         }
-        std::filesystem::path const devs2[] = {devs[0], devs[1]};
+        std::filesystem::copy_file(
+            dev, copy, std::filesystem::copy_options::overwrite_existing);
         ASSERT_DEATH(
-            storage_pool{devs2},
+            (storage_pool{copy, storage_pool::mode::open_existing, flags}),
             "was initialised with a configuration different to this storage "
             "pool");
-        storage_pool{devs2, storage_pool::mode::truncate};
+        storage_pool{copy, storage_pool::mode::truncate, flags};
     }
 
     TEST(StoragePool, clone_content)

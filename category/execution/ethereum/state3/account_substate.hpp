@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 
@@ -27,8 +28,7 @@ MONAD_NAMESPACE_BEGIN
 // YP 6.1
 class AccountSubstate
 {
-    // Warm-slot sets are typically small: linear lookup avoids hashing,
-    // and copying the vector for undo remains cheap.
+    // Warm-slot sets are typically small: linear lookup avoids hashing.
     using Set = std::vector<bytes32_t>;
 
     bool destructed_{false}; // A_s
@@ -69,10 +69,12 @@ public:
         return inserted;
     }
 
-    // A_t
-    void touch()
+    // A_t. Returns true only on transition, so the journal records it once.
+    bool touch()
     {
+        bool const inserted = !touched_;
         touched_ = true;
+        return inserted;
     }
 
     // A_a
@@ -96,6 +98,34 @@ public:
         }
         accessed_storage_.push_back(key);
         return EVMC_ACCESS_COLD;
+    }
+
+    // Undo operations, for the journal only. Each reverses exactly one
+    // journalled transition.
+    void undo_touched()
+    {
+        touched_ = false;
+    }
+
+    void undo_destructed()
+    {
+        destructed_ = false;
+    }
+
+    void undo_accessed()
+    {
+        accessed_ = false;
+    }
+
+    // Warm slots are appended; reverse replay must remove the last key.
+    void undo_warm_slot(bytes32_t const &key)
+    {
+        MONAD_ASSERT(!accessed_storage_.empty());
+        MONAD_ASSERT(
+            __builtin_memcmp(
+                accessed_storage_.back().bytes, key.bytes, sizeof(key.bytes)) ==
+            0);
+        accessed_storage_.pop_back();
     }
 };
 

@@ -88,10 +88,9 @@ AccountState &State::current_account_state(Address const &address)
         if (memo_epoch_ != frame_epoch_) {
             if (!dirty_.empty()) {
                 MONAD_GUEST_SITE(DIRTY_EMPLACE);
-                // A cached account still needs an undo record on first touch.
-                if (dirty_.back().emplace(address)) {
-                    journal_first_touch(address, *memo_val_, false);
-                }
+                // Track the account only; each mutation records its own undo
+                // state.
+                dirty_.back().emplace(address);
             }
             memo_epoch_ = frame_epoch_;
         }
@@ -107,25 +106,142 @@ AccountState &State::current_account_state(Address const &address)
         auto const &account_state = original_account_state(address);
         it = current_.try_emplace(address, account_state).first;
         created = true;
+        // Record creation separately from dirty tracking.
+        journal_created(address);
     }
     if (!dirty_.empty()) {
         MONAD_GUEST_SITE(DIRTY_EMPLACE);
-        if (dirty_.back().emplace(address)) {
-            journal_first_touch(address, it->second, created);
-        }
+        dirty_.back().emplace(address);
     }
+    (void)created;
     memo_addr_ = address;
     memo_val_ = &it->second;
     memo_epoch_ = frame_epoch_;
     return it->second;
 }
 
-// Save the previous state, or an erase marker for a newly created map entry.
-void State::journal_first_touch(
-    Address const &address, AccountState const &row, bool const created)
+// Save each mutation separately. Outside a frame, no undo record is needed.
+void State::journal_created(Address const &address)
 {
+    if (!journalling()) {
+        return;
+    }
+    undo_.push_back(Undo{address, Undo::Kind::Created, 0});
+}
+
+void State::journal_account(Address const &address, AccountState const &row)
+{
+    if (!journalling()) {
+        return;
+    }
     undo_.push_back(Undo{
-        address, created ? std::nullopt : std::optional<AccountState>{row}});
+        address,
+        Undo::Kind::AccountWhole,
+        static_cast<std::uint32_t>(undo_accts_.size())});
+    undo_accts_.push_back(row.account_);
+}
+
+void State::journal_balance(Address const &address, uint256_t const &prev)
+{
+    if (!journalling()) {
+        return;
+    }
+    bytes32_t w;
+    // Raw bytes, saved and restored verbatim. Nothing reads them as a number in
+    // between, so this is a copy and not a conversion.
+    static_assert(sizeof(w.bytes) == sizeof(prev));
+    __builtin_memcpy(w.bytes, &prev, sizeof(w.bytes));
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::Balance,
+        static_cast<std::uint32_t>(undo_words_.size())});
+    undo_words_.push_back(w);
+}
+
+void State::journal_code_hash(Address const &address, bytes32_t const &prev)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::CodeHash,
+        static_cast<std::uint32_t>(undo_words_.size())});
+    undo_words_.push_back(prev);
+}
+
+void State::journal_nonce(Address const &address, std::uint64_t const prev)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::Nonce,
+        static_cast<std::uint32_t>(undo_u64_.size())});
+    undo_u64_.push_back(prev);
+}
+
+void State::journal_flag(Address const &address, Undo::Kind const which)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.push_back(Undo{address, which, 0});
+}
+
+void State::journal_warm_slot(Address const &address, bytes32_t const &key)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::WarmSlot,
+        static_cast<std::uint32_t>(undo_words_.size())});
+    undo_words_.push_back(key);
+}
+
+void State::journal_slot(
+    Address const &address, AccountState const &row, bytes32_t const &key)
+{
+    if (!journalling()) {
+        return;
+    }
+    bytes32_t const *const prev = row.storage_.find(key);
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::Slot,
+        static_cast<std::uint32_t>(undo_slots_.size())});
+    undo_slots_.push_back(
+        SlotUndo{key, prev ? *prev : bytes32_t{}, prev != nullptr});
+}
+
+void State::journal_transient(
+    Address const &address, AccountState const &row, bytes32_t const &key)
+{
+    if (!journalling()) {
+        return;
+    }
+    bytes32_t const *const prev = row.transient_storage_.find(key);
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::Transient,
+        static_cast<std::uint32_t>(undo_slots_.size())});
+    undo_slots_.push_back(
+        SlotUndo{key, prev ? *prev : bytes32_t{}, prev != nullptr});
+}
+
+void State::journal_pages(Address const &address, AccountState const &row)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.push_back(Undo{
+        address,
+        Undo::Kind::Pages,
+        static_cast<std::uint32_t>(undo_pages_.size())});
+    undo_pages_.push_back(row.page_tracker_);
 }
 
 std::optional<Account> &State::current_account(Address const &address)
@@ -174,7 +290,13 @@ void State::push()
 
     ++version_;
     dirty_.emplace_back();
-    undo_marks_.push_back(undo_.size());
+    undo_marks_.push_back(UndoMark{
+        undo_.size(),
+        undo_accts_.size(),
+        undo_words_.size(),
+        undo_u64_.size(),
+        undo_slots_.size(),
+        undo_pages_.size()});
     log_marks_.push_back(logs_.size());
 }
 
@@ -198,6 +320,11 @@ void State::pop_accept()
     // No open frame can roll back these records; release them.
     if (undo_marks_.empty()) {
         undo_.clear();
+        undo_accts_.clear();
+        undo_words_.clear();
+        undo_u64_.clear();
+        undo_slots_.clear();
+        undo_pages_.clear();
     }
 
     // Accepted: the frame's logs stay where they are, only its watermark goes.
@@ -224,23 +351,105 @@ void State::pop_reject()
     // pointer.
     memo_val_ = nullptr;
 
-    // Replay backwards so nested changes are undone before earlier ones.
-    size_t const mark = undo_marks_.back();
+    // Replay backwards to restore the earliest values last.
+    UndoMark const mark = undo_marks_.back();
     undo_marks_.pop_back();
-    while (undo_.size() > mark) {
+    while (undo_.size() > mark.log) {
         Undo &u = undo_.back();
-        if (!u.prev) {
+        if (u.kind == Undo::Kind::Created) {
             current_.erase(u.addr);
+            undo_.pop_back();
+            continue;
         }
-        else {
-            auto const it = current_.find(u.addr);
-            MONAD_ASSERT(it != current_.end());
-            it->second = std::move(*u.prev);
+        // Creation precedes mutations, so reverse replay restores the fields
+        // before erasing their entry.
+        auto const it = current_.find(u.addr);
+        MONAD_ASSERT(it != current_.end());
+        AccountState &row = it->second;
+        switch (u.kind) {
+        case Undo::Kind::Created:
+            break; // handled above
+
+        case Undo::Kind::AccountWhole:
+            row.account_ = std::move(undo_accts_[u.aux]);
+            break;
+
+        case Undo::Kind::Balance:
+            // Account-clearing cleanup runs outside frames; the account still
+            // exists.
+            MONAD_ASSERT(row.account_.has_value());
+            __builtin_memcpy(
+                &row.account_->balance,
+                undo_words_[u.aux].bytes,
+                sizeof(undo_words_[u.aux].bytes));
+            break;
+
+        case Undo::Kind::CodeHash:
+            MONAD_ASSERT(row.account_.has_value());
+            row.account_->code_hash = undo_words_[u.aux];
+            break;
+
+        case Undo::Kind::Nonce:
+            MONAD_ASSERT(row.account_.has_value());
+            row.account_->nonce = undo_u64_[u.aux];
+            break;
+
+        case Undo::Kind::FlagTouched:
+            row.undo_touched();
+            break;
+
+        case Undo::Kind::FlagDestructed:
+            row.undo_destructed();
+            break;
+
+        case Undo::Kind::FlagAccessed:
+            row.undo_accessed();
+            break;
+
+        case Undo::Kind::WarmSlot:
+            row.undo_warm_slot(undo_words_[u.aux]);
+            break;
+
+        case Undo::Kind::Slot: {
+            SlotUndo const &sl = undo_slots_[u.aux];
+            if (sl.had_value) {
+                row.storage_ = row.storage_.insert({sl.key, sl.value});
+            }
+            else {
+                row.storage_ = row.storage_.erase(sl.key);
+            }
+            break;
+        }
+
+        case Undo::Kind::Transient: {
+            SlotUndo const &sl = undo_slots_[u.aux];
+            if (sl.had_value) {
+                row.transient_storage_ = row.transient_storage_.insert({sl.key, sl.value});
+            }
+            else {
+                row.transient_storage_ = row.transient_storage_.erase(sl.key);
+            }
+            break;
+        }
+
+        case Undo::Kind::Pages:
+            row.page_tracker_ = std::move(undo_pages_[u.aux]);
+            break;
         }
         undo_.pop_back();
     }
+    undo_accts_.resize(mark.accts);
+    undo_words_.resize(mark.words);
+    undo_u64_.resize(mark.u64);
+    undo_slots_.resize(mark.slots);
+    undo_pages_.resize(mark.pages);
     if (undo_marks_.empty()) {
         undo_.clear();
+        undo_accts_.clear();
+        undo_words_.clear();
+        undo_u64_.clear();
+        undo_slots_.clear();
+        undo_pages_.clear();
     }
 
     rb_.on_pop_reject(accounts.span());
@@ -402,9 +611,14 @@ bool State::is_touched(Address const &address)
 
 void State::set_nonce(Address const &address, uint64_t const nonce)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
+        journal_account(address, account_state);
         account = Account{.incarnation = incarnation_};
+    }
+    else {
+        journal_nonce(address, account->nonce);
     }
     account.value().nonce = nonce;
 }
@@ -414,6 +628,7 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
+        journal_account(address, account_state);
         account = Account{.incarnation = incarnation_};
     }
 
@@ -422,8 +637,11 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
             account.value().balance,
         "balance overflow");
 
+    journal_balance(address, account.value().balance);
     account.value().balance += delta;
-    account_state.touch();
+    if (account_state.touch()) {
+        journal_flag(address, Undo::Kind::FlagTouched);
+    }
     rb_.on_credit(address);
 }
 
@@ -433,13 +651,17 @@ void State::subtract_from_balance(
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
+        journal_account(address, account_state);
         account = Account{.incarnation = incarnation_};
     }
 
     MONAD_ASSERT_THROW(delta <= account.value().balance, "balance underflow");
 
+    journal_balance(address, account.value().balance);
     account.value().balance -= delta;
-    account_state.touch();
+    if (account_state.touch()) {
+        journal_flag(address, Undo::Kind::FlagTouched);
+    }
     rb_.on_debit(address);
 }
 
@@ -466,6 +688,7 @@ monad_storage_status State::set_storage(
     }
     // state
     {
+        journal_slot(address, account_state, key);
         auto const result =
             account_state.set_storage(key, value, original_value);
         return result;
@@ -475,19 +698,27 @@ monad_storage_status State::set_storage(
 void State::set_transient_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
-    current_account_state(address).set_transient_storage(key, value);
+    auto &account_state = current_account_state(address);
+    journal_transient(address, account_state, key);
+    account_state.set_transient_storage(key, value);
 }
 
 void State::touch(Address const &address)
 {
     auto &account_state = current_account_state(address);
-    account_state.touch();
+    if (account_state.touch()) {
+        journal_flag(address, Undo::Kind::FlagTouched);
+    }
 }
 
 monad_access_status State::access_account(Address const &address)
 {
     auto &account_state = current_account_state(address);
-    return account_state.access();
+    auto const status = account_state.access();
+    if (status == MONAD_ACCESS_COLD) {
+        journal_flag(address, Undo::Kind::FlagAccessed);
+    }
+    return status;
 }
 
 template <Traits traits>
@@ -496,7 +727,11 @@ State::access_storage(Address const &address, bytes32_t const &key)
 {
     auto &account_state = current_account_state(address);
     auto const slot_status = account_state.access_storage(key);
+    if (slot_status == MONAD_ACCESS_COLD) {
+        journal_warm_slot(address, key);
+    }
     if constexpr (traits::mip_8_active()) {
+        journal_pages(address, account_state);
         return account_state.page_tracker_.access_page(key);
     }
     return slot_status;
@@ -509,6 +744,7 @@ monad_page_storage_status State::update_page(
     monad_storage_status const status)
 {
     auto &account_state = current_account_state(address);
+    journal_pages(address, account_state);
     return account_state.page_tracker_.update_page(key, status);
 }
 
@@ -535,6 +771,9 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
     }
 
     bool const inserted = account_state.destruct();
+    if (inserted) {
+        journal_flag(address, Undo::Kind::FlagDestructed);
+    }
     // Recompute reserve-balance status after setting the destructed flag.
     rb_.on_debit(address);
     return {inserted, balance};
@@ -570,8 +809,12 @@ EXPLICIT_TRAITS_MEMBER(State::destruct_suicides);
 void State::destruct_touched_dead()
 {
     MONAD_ASSERT(!version_);
-    // All frames must be closed, including those that touched no accounts.
-    MONAD_ASSERT(undo_.empty() && undo_marks_.empty());
+    // All frames must be closed, including those that touched no accounts: an
+    // unbalanced push leaves a mark behind even when no row was touched.
+    MONAD_ASSERT(
+        undo_.empty() && undo_accts_.empty() && undo_words_.empty() &&
+        undo_u64_.empty() && undo_slots_.empty() && undo_pages_.empty() &&
+        undo_marks_.empty());
 
     for (auto &it : current_) {
         auto &account_state = it.second;
@@ -647,13 +890,17 @@ void State::set_code(Address const &address, byte_string_view const code)
 
     auto const code_hash = to_bytes(keccak256(code));
     code_[code_hash] = vm().try_insert_varcode_raw(code_hash, code);
+    journal_code_hash(address, account.value().code_hash);
     account.value().code_hash = code_hash;
     rb_.on_set_code(address, code);
 }
 
 void State::create_contract(Address const &address)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
+    // Save account_ to restore presence and incarnation on rollback.
+    journal_account(address, account_state);
     if (MONAD_UNLIKELY(account.has_value())) {
         // EIP-684
         MONAD_ASSERT(account->nonce == 0);
@@ -680,7 +927,11 @@ void State::create_contract(Address const &address)
  */
 void State::create_account_no_rollback(Address const &address)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
+    // The name refers to SELFDESTRUCT protection; frame rejection still
+    // restores the previous account.
+    journal_account(address, account_state);
     MONAD_ASSERT(!account.has_value());
     account = Account{
         .incarnation = Incarnation{
@@ -706,7 +957,9 @@ void State::store_log(Receipt::Log &&log)
 
 void State::set_to_state_incarnation(Address const &address)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
+    journal_account(address, account_state);
     if (MONAD_UNLIKELY(!account.has_value())) {
         account = Account{.incarnation = incarnation_};
     }

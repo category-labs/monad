@@ -154,8 +154,7 @@ public:
     }
 };
 
-// Guard against size growth: each account is copied into the undo log
-// on its first mutable access per frame.
+// Guard against unintended growth of the per-account state.
 static_assert(sizeof(AccountState) == 168);
 
 // RELAXED MERGE

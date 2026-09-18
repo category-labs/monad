@@ -1,6 +1,8 @@
 # monad zkVM guest
 
-Phase 0 scaffold for executing monad witnesses inside a zero-knowledge VM.
+Executes monad witnesses inside a zero-knowledge VM: the guest ingests a
+reth-format execution witness, rebuilds the partial state trie, runs the block
+it carries, and commits the roots.
 The C++ guest library is shared across backends. On ZisK a Rust guest crate
 owns the entrypoint and the input/output ABI (via ziskos); on SP1 the
 entrypoint (`program/main.c`) and the IO/accelerator ABI come from `libzkevm.a`,
@@ -15,7 +17,7 @@ zkvm/
 │   └── zkvm_halt.h
 ├── category/             # mirror tree shadowing host headers (BEFORE include path)
 ├── guest/                # C++ library called from every backend
-│   ├── ffi.cpp           # stub monad_zkvm_execute_witness (Phase 0)
+│   ├── ffi.cpp           # monad_zkvm_execute_witness: witness in, roots out
 │   └── CMakeLists.txt
 ├── build-support/        # guest-build helpers (build_guest_lib / build_guest_elf)
 ├── zisk/                 # ZisK guest crate
@@ -48,12 +50,20 @@ SP1 zkEVM SDK source at build time.
 
   (cargo merges `.cargo/config.toml` up the tree, so this one file covers both
   `zkvm/zisk` and `zkvm/sp1/script`.)
-- [ZisK](https://github.com/0xPolygonHermez/zisk) ≥ v0.18.0
-  (`ziskup` from <https://github.com/0xPolygonHermez/zisk>) — installs
-  `cargo-zisk`, `ziskemu`.
-- [SP1](https://docs.succinct.xyz/) ≥ v6.2.x (`sp1up` from
+- [ZisK](https://github.com/0xPolygonHermez/zisk) at **tag v1.1.0-alpha**,
+  which is what `zkvm/zisk/Cargo.toml` pins `ziskos` to (`ziskup` from
+  <https://github.com/0xPolygonHermez/zisk>) — installs `cargo-zisk`,
+  `ziskemu`. Not a floor to round down from: the guest links that `ziskos`, so
+  a `cargo-zisk` or `ziskemu` from another release is a different precompile
+  set and a different cost model, and every cell figure quoted in this tree is
+  measured against this one.
+- [SP1](https://docs.succinct.xyz/) at **v6.3.1**, pinned twice — `sp1-sdk` in
+  `zkvm/sp1/script/Cargo.toml` and the `sp1-build` git tag in
+  `zkvm/build-support/Cargo.toml`, the second being the source `libzkevm.a` is
+  compiled from (`sp1up` from
   <https://docs.succinct.xyz/getting-started/install.html>) — installs
-  `cargo-prove` and the `+succinct` rust toolchain.
+  `cargo-prove` and the `+succinct` rust toolchain, which `sp1-build` needs to
+  cross-compile that staticlib.
 
 ## ZisK
 
@@ -102,8 +112,8 @@ ziskemu \
 xxd /tmp/zkvm-output.bin | head -2
 ```
 
-For proving, see ZisK's docs (`cargo-zisk prove ...`); the proving flow is
-not exercised by Phase 0.
+For proving, see ZisK's docs (`cargo-zisk prove ...`); nothing above proves,
+it only executes under the emulator.
 
 ## SP1
 
@@ -133,22 +143,32 @@ whole-program pass. **Any binary built for real proving should be compiled with
 `--profile prover`**, which restores fat LTO + a single codegen unit for the
 fastest proving runtime. Execution-only and mock-prover runs don't need it.
 
-The `--input` path is read as raw bytes — no length prefix needed (SP1
-takes care of framing internally via `SP1Stdin::write_vec`).
+The `--input` path is read as raw bytes and handed over verbatim with
+`SP1Stdin::write_slice` — no length prefix, and **not** `write_vec`, which
+prepends framing that libzkevm's `read_input` (`read_vec_raw`) does not strip
+and which would therefore corrupt the RLP. The ZisK framing above is the
+emulator's own convention and has no counterpart here.
 
 ## Iterating on the C++ guest in isolation
 
 The C++ guest library can be built independently of either Rust crate, for
-fast iteration on `pipeline.cpp` / `execute_block_zkvm` (post-Phase 0):
+fast iteration on `ffi.cpp` / `execute_block_zkvm`:
 
 ```sh
 cmake -B build-zkvm -S zkvm \
     -DCMAKE_TOOLCHAIN_FILE=$PWD/category/core/toolchains/riscv64-elf.cmake \
     -DRISCV_TOOLCHAIN_DIR=$HOME/riscv_gcc \
-    -DMONAD_ZKVM_BACKEND=zisk \   # or sp1
+    -DMONAD_ZKVM_GUEST_TARGET=zisk \
     -DCMAKE_BUILD_TYPE=Release
-cmake --build build-zkvm --target monad-zkvm-guest
+cmake --build build-zkvm --target monad-zkvm-guest-zisk
 ```
+
+`MONAD_ZKVM_GUEST_TARGET` is `zisk` or `sp1`, and **defining it at all is what
+selects cross-compile mode** — left undefined, `zkvm/guest/CMakeLists.txt` takes
+its host-x86 branch, which expects to be an `add_subdirectory` of the root
+project and will not configure standalone. It also names the archive, so the
+target to build is `monad-zkvm-guest-<suffix>`; `monad-zkvm-guest` alone is the
+cmake *project* name and not a target.
 
 The Rust crates pick this same target up through the
 [`zkvm/build-support`](build-support/src/lib.rs) crate, which both

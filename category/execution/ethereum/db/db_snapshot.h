@@ -34,8 +34,7 @@ static_assert(MONAD_SNAPSHOT_SHARDS == 256);
 // (active shards) * MONAD_SNAPSHOT_FILES_PER_SHARD descriptors at its peak.
 inline constexpr unsigned MONAD_SNAPSHOT_FILES_PER_SHARD = 4;
 
-// Every non-empty stream of a shard opens with monad_snapshot_stream_header,
-// followed by that stream's records:
+// A shard's four streams hold these records:
 //
 //   eth_header := rlp(header)
 //   account    := encode_account_db(address, account) ...
@@ -48,9 +47,12 @@ inline constexpr unsigned MONAD_SNAPSHOT_FILES_PER_SHARD = 4;
 // than from the stream header, so they do not depend on whether the header is
 // present.
 //
-// A dump always writes the header, but a reader must also accept a stream that
-// lacks one and parse its records from byte 0: that is how a snapshot written
-// before the header existed is recognised.
+// Every non-empty stream opens with monad_snapshot_stream_header, except under
+// MONAD_SNAPSHOT_FORMAT_V0, which writes the records alone. A reader detects
+// the header by its magic and otherwise parses from byte 0, which is how it
+// recognises a snapshot written before the header existed. V0 buys the
+// opposite direction: a binary predating the header restores a V0 dump because
+// there is no header in it, not because of anything a reader here does.
 //
 // Scalars are native-endian, which the format takes to be little-endian.
 inline constexpr uint32_t MONAD_SNAPSHOT_STREAM_MAGIC = 0x5347534d; // "MSGS"
@@ -99,6 +101,20 @@ enum monad_snapshot_type
     MONAD_SNAPSHOT_CODE
 };
 
+// The stream layout a dump writes, which decides how old a binary can still
+// restore the result rather than what the running binary can read. V0 predates
+// the stream header and is the only layout a binary older than the header
+// accepts; an enumerator above V0 is written verbatim as the header's version.
+// A reader here takes a headerless stream or one whose version it was built
+// for, and nothing widens that as versions accumulate, so adding a format
+// means deciding there and then what read_stream_header does with the older
+// one.
+enum monad_snapshot_format
+{
+    MONAD_SNAPSHOT_FORMAT_V0 = 0,
+    MONAD_SNAPSHOT_FORMAT_V1 = 1
+};
+
 bool monad_db_dump_snapshot(
     char const *const *dbname_paths, size_t len, unsigned sq_thread_cpu,
     uint64_t block,
@@ -106,7 +122,8 @@ bool monad_db_dump_snapshot(
         uint64_t shard, enum monad_snapshot_type, unsigned char const *bytes,
         size_t len, void *user),
     void *user, unsigned dump_concurrency_limit, uint64_t total_shards,
-    uint64_t shard_number, bool dump_from_secondary);
+    uint64_t shard_number, bool dump_from_secondary,
+    enum monad_snapshot_format format);
 
 struct monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     uint64_t block, char const *const *dbname_paths, size_t len,
@@ -126,4 +143,8 @@ void monad_db_snapshot_loader_destroy(struct monad_db_snapshot_loader *);
 // The dumper indexes per-kind state by monad_snapshot_type, so a new kind needs
 // a wider array rather than a runtime out_of_range mid-dump.
 static_assert(MONAD_SNAPSHOT_CODE + 1 == MONAD_SNAPSHOT_FILES_PER_SHARD);
+
+// A format is written verbatim as the header's version field, so the newest
+// format and the newest stream version move together.
+static_assert(MONAD_SNAPSHOT_FORMAT_V1 == MONAD_SNAPSHOT_STREAM_VERSION);
 #endif

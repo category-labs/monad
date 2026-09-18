@@ -29,6 +29,8 @@ target_sources(monad-vm-evm PRIVATE
     "status_code.h"
     "switch_traits.hpp"
     "traits.hpp"
+    "tx_context.cpp"
+    "tx_context.hpp"
 
     # Monad specifics
     "monad/revision.h"

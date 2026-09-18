@@ -41,6 +41,14 @@ namespace
         switch (error) {
         case SimulationError::Success:
             return EVMC_SUCCESS;
+        case SimulationError::InvalidInput:
+        case SimulationError::InvalidData:
+        case SimulationError::WithdrawalsNotSupported:
+        case SimulationError::BlockNumbersNotIncreasing:
+        case SimulationError::BlockTimestampsNotMonotonic:
+        case SimulationError::SimulationHeaderNotAfterBase:
+        case SimulationError::TransactionsContextUnavailable:
+        case SimulationError::InvalidBlockGap:
         case SimulationError::GasLimitExceeded:
             return EVMC_INTERNAL_ERROR;
         }
@@ -112,6 +120,27 @@ quick_status_code_from_enum<monad::SimulationError>::value_mappings()
 
     static std::initializer_list<mapping> const v = {
         {SimulationError::Success, "success", {errc::success}},
+        {SimulationError::InvalidInput, "invalid input", {}},
+        {SimulationError::InvalidData, "invalid data", {}},
+        {SimulationError::WithdrawalsNotSupported,
+         "Withdrawals are not supported on Monad",
+         {}},
+        {SimulationError::BlockNumbersNotIncreasing,
+         "block numbers must be strictly increasing",
+         {}},
+        {SimulationError::BlockTimestampsNotMonotonic,
+         "block timestamps must be monotonically increasing",
+         {}},
+        {SimulationError::SimulationHeaderNotAfterBase,
+         "simulation header number must be greater than the base header "
+         "number",
+         {}},
+        {SimulationError::TransactionsContextUnavailable,
+         "failed to recover the transactions context",
+         {}},
+        {SimulationError::InvalidBlockGap,
+         "the block gap must be exactly 1 after filling in synthetic blocks",
+         {}},
         {SimulationError::GasLimitExceeded, "gas limit exceeded", {}}};
 
     return v;

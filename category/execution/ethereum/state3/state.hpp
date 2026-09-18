@@ -39,6 +39,18 @@
 #include <span>
 #include <vector>
 
+// Here and not in state.cpp, because dirty_mark below is an inline member and
+// every translation unit that includes this header compiles it. With the shim
+// TU-local, any such unit failed to build unless MONAD_ZKVM_NO_DIRTY_ACCOUNTS
+// happened to be on and took the other branch -- which the official profile
+// forces, so the break was invisible to every artifact anyone built.
+#ifdef MONAD_ZKVM_KECCAK_SITES
+    #include <category/core/keccak_sites.hpp>
+#else
+    #define MONAD_GUEST_SITE(s) ((void)0)
+    #define MONAD_GUEST_ADD2(s, v) ((void)0)
+#endif
+
 MONAD_NAMESPACE_BEGIN
 
 class BlockState;

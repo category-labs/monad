@@ -164,9 +164,11 @@ public:
         return static_cast<bool>(table_);
     }
 
-    // Call after appending one entry to the vector.
+    // Call after appending an entry. Inline the no-op path when no index
+    // exists and the vector is still below MIN_INDEXED_ENTRIES.
     template <typename Entry>
-    void on_insert(std::vector<Entry> const &entries)
+    [[gnu::always_inline]] inline void
+    on_insert(std::vector<Entry> const &entries)
     {
         std::size_t const size = entries.size();
         if (table_) {

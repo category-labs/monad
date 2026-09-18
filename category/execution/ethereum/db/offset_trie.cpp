@@ -301,16 +301,11 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
         return d;
     };
     // Prepend the list header for payload [s.end(), dest.end()); return the
-    // final span. encode_list_prefix can transiently write up to 8 bytes,
-    // so build the header in a local and copy only its real length into
-    // place.
+    // final span.
     auto const wrap = [](OffsetTrie::node_rlp_span const s) {
         size_t const payload_len = s.rlp_size();
-        unsigned char hdr[9];
-        auto const rest =
-            rlp::encode_list_prefix(std::span<unsigned char>{hdr}, payload_len);
-        size_t const hdr_len = sizeof(hdr) - rest.size();
-        std::memcpy(s.last(hdr_len).data(), hdr, hdr_len);
+        size_t const hdr_len = rlp::list_length(payload_len) - payload_len;
+        rlp::encode_list_prefix_compact(s.last(hdr_len), payload_len);
         return s.shrink(hdr_len);
     };
     return match(

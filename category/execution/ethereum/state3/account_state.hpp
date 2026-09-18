@@ -41,17 +41,30 @@ namespace trace
     struct StateDiffTracer;
 }
 
-// Mutable slots with linear lookup; undo records save only written slots.
+// Mutable slots; undo records save only written slots.
 // Appending preserves indices, but reallocation can invalidate pointers
 // and erase can move the last entry.
 class FlatStorage
 {
     std::vector<std::pair<bytes32_t, bytes32_t>> entries_{};
 
+#ifdef MONAD_ZKVM_ZISK
+    // Small rows use linear scans; erase invalidates indexed positions.
+    SlotIndex slot_index_{};
+#endif
+
 public:
     [[nodiscard]] bytes32_t const *find(bytes32_t const &key) const
     {
         std::uint64_t const tail = key_tail(key);
+#ifdef MONAD_ZKVM_ZISK
+        if (slot_index_) {
+            std::uint32_t const position_plus_one =
+                slot_index_.lookup(key, tail, entries_);
+            return position_plus_one ? &entries_[position_plus_one - 1].second
+                                     : nullptr;
+        }
+#endif
         for (auto const &entry : entries_) {
             if (key_equals(key, tail, entry.first)) {
                 return &entry.second;
@@ -63,6 +76,19 @@ public:
     void upsert(bytes32_t const &key, bytes32_t const &value)
     {
         std::uint64_t const tail = key_tail(key);
+#ifdef MONAD_ZKVM_ZISK
+        if (slot_index_) {
+            if (std::uint32_t const position_plus_one =
+                    slot_index_.lookup(key, tail, entries_);
+                position_plus_one != 0) {
+                entries_[position_plus_one - 1].second = value;
+                return;
+            }
+            entries_.emplace_back(key, value);
+            slot_index_.on_insert(entries_);
+            return;
+        }
+#endif
         for (auto &entry : entries_) {
             if (key_equals(key, tail, entry.first)) {
                 entry.second = value;
@@ -70,6 +96,9 @@ public:
             }
         }
         entries_.emplace_back(key, value);
+#ifdef MONAD_ZKVM_ZISK
+        slot_index_.on_insert(entries_);
+#endif
     }
 
     // Restore absence after a reverted insertion: keeping the original value
@@ -81,6 +110,9 @@ public:
             if (key_equals(key, tail, entry.first)) {
                 entry = entries_.back();
                 entries_.pop_back();
+#ifdef MONAD_ZKVM_ZISK
+                slot_index_.reset();
+#endif
                 return;
             }
         }
@@ -222,7 +254,12 @@ public:
 };
 
 // Guard against unintended growth of the per-account state.
+#ifdef MONAD_ZKVM_ZISK
+// Two FlatStorage index pointers add 16 bytes in the ZisK guest.
+static_assert(sizeof(AccountState) == 208);
+#else
 static_assert(sizeof(AccountState) == 192);
+#endif
 
 // Cache original slot values on first read; entries are never overwritten
 // or rolled back. Append-only storage preserves indices, though vector

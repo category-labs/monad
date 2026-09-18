@@ -41,6 +41,14 @@
 #include <vector>
 #include <optional>
 
+// Fallback for builds without guest-site instrumentation.
+#ifdef MONAD_ZKVM_KECCAK_SITES
+    #include <category/core/keccak_sites.hpp>
+#else
+    #define MONAD_GUEST_SITE(s) ((void)0)
+    #define MONAD_GUEST_ADD2(s, v) ((void)0)
+#endif
+
 MONAD_NAMESPACE_BEGIN
 
 class BlockState;

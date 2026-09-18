@@ -257,16 +257,23 @@ static_assert(sizeof(AccountState) == 216);
 // original and current balances can be adjusted
 // Cache original slot values on first read; entries are never overwritten
 // or rolled back. Append-only storage preserves indices, though vector
-// reallocation may invalidate pointers. Lookup uses a linear scan.
+// reallocation may invalidate pointers.
 class PrestateStorage
 {
     // [(slot identifier, original value)]
     std::vector<std::pair<bytes32_t, bytes32_t>> v_{};
 
+    // Append-only entries keep indexed positions stable.
+    SlotIndex idx_{};
+
 public:
     bytes32_t const *find(bytes32_t const &k) const
     {
         std::uint64_t const tail = key_tail(k);
+        if (idx_) {
+            std::uint32_t const p = idx_.lookup(k, tail, v_);
+            return p ? &v_[p - 1].second : nullptr;
+        }
         for (auto const &e : v_) {
             if (key_equals(k, tail, e.first)) {
                 return &e.second;
@@ -278,6 +285,7 @@ public:
     void insert(bytes32_t const &k, bytes32_t const &v)
     {
         v_.emplace_back(k, v);
+        idx_.on_insert(v_);
     }
 
     bool empty() const

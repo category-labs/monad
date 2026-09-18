@@ -70,7 +70,15 @@ template <Traits traits>
     using BOOST_OUTCOME_V2_NAMESPACE::success;
 
     // YP (70): total cost = value + gas_cost (+ blob_fee).
+    //
+    // When gas is metered but not priced there is no gas term, and dropping it
+    // here is not optional: it has to move in the same change as
+    // irrevocable_change's deduction, for the reason the comment on the
+    // balance check below gives.
     Result<uint256_t> const v0_r = [&]() -> Result<uint256_t> {
+        if constexpr (!gas_is_priced()) {
+            return tx.value;
+        }
         BOOST_OUTCOME_TRY(
             uint256_t const gas_fee,
             max_gas_cost(tx.gas_limit, tx.max_fee_per_gas));
@@ -128,6 +136,10 @@ template <Traits traits>
     // note this passes because `v0` includes gas which is later deducted in
     // `irrevocable_change` before relaxed merge logic in `sender_has_balance`
     // this is fragile as it depends on values in two locations matching
+    //
+    // Which is why gas_is_priced() gates BOTH: what is checked here and what
+    // irrevocable_change deducts have to agree, and when gas is not priced
+    // both are value alone.
     if (MONAD_UNLIKELY(state.get_balance(sender) < v0)) {
         return TransactionError::InsufficientBalance;
     }

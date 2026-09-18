@@ -58,8 +58,11 @@ Result<void> static_validate_transaction(
         }
     }
 
-    // EIP-4844
-    if constexpr (!traits::eip_4844_active()) {
+    // EIP-4844. Widened when gas is not priced: rejecting the type is one
+    // line and makes every blob-gas path unreachable, where unpicking
+    // calc_blob_fee, get_total_blob_gas and the rest would touch code the
+    // mainnet corpus exercises for a feature this chain does not have.
+    if constexpr (!traits::eip_4844_active() || !gas_is_priced()) {
         if (MONAD_UNLIKELY(tx.type == TransactionType::eip4844)) {
             return TransactionError::TypeNotSupported;
         }
@@ -100,14 +103,21 @@ Result<void> static_validate_transaction(
         return TransactionError::TypeNotSupported;
     }
 
-    // EIP-1559
-    if (MONAD_UNLIKELY(tx.max_fee_per_gas < base_fee_per_gas.value_or(0))) {
-        return TransactionError::MaxFeeLessThanBase;
-    }
+    // EIP-1559. Without a base fee or a priority fee these compare nothing.
+    //
+    // MaxFeeLessThanBase is also what stops priority_fee_per_gas underflowing
+    // its uint256 subtraction, and gas_price is not only called from the sites
+    // above -- tx_context feeds it to the GASPRICE opcode. Dropping this
+    // without the arm in tx_context.cpp would have GASPRICE report about 2^256
+    // and the proof attest to it.
+    if constexpr (gas_is_priced()) {
+        if (MONAD_UNLIKELY(tx.max_fee_per_gas < base_fee_per_gas.value_or(0))) {
+            return TransactionError::MaxFeeLessThanBase;
+        }
 
-    // EIP-1559
-    if (MONAD_UNLIKELY(tx.max_priority_fee_per_gas > tx.max_fee_per_gas)) {
-        return TransactionError::PriorityFeeGreaterThanMax;
+        if (MONAD_UNLIKELY(tx.max_priority_fee_per_gas > tx.max_fee_per_gas)) {
+            return TransactionError::PriorityFeeGreaterThanMax;
+        }
     }
 
     // EIP-3860
@@ -136,9 +146,14 @@ Result<void> static_validate_transaction(
     }
 
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
-        // EIP-7623
-        if (MONAD_UNLIKELY(floor_data_gas(tokens) > tx.gas_limit)) {
-            return TransactionError::IntrinsicGasGreaterThanLimit;
+        // EIP-7623. Gated with the floor itself in execute_final: this gate
+        // exists only to keep gas_used <= gas_limit true across the raise the
+        // floor performs, so with no floor it would reject transactions for a
+        // rule that is no longer applied.
+        if constexpr (gas_is_priced()) {
+            if (MONAD_UNLIKELY(floor_data_gas(tokens) > tx.gas_limit)) {
+                return TransactionError::IntrinsicGasGreaterThanLimit;
+            }
         }
 
         // EIP-7702
@@ -154,9 +169,13 @@ Result<void> static_validate_transaction(
         return TransactionError::NonceExceedsMax;
     }
 
-    // EIP-1559: check gas_limit * max_fee_per_gas doesn't overflow uint256
-    if (MONAD_UNLIKELY(!max_gas_cost(tx.gas_limit, tx.max_fee_per_gas))) {
-        return TransactionError::GasLimitOverflow;
+    // EIP-1559: check gas_limit * max_fee_per_gas doesn't overflow uint256.
+    // That product exists only inside v0, which R5 removed when gas is not
+    // priced -- so there is nothing left to overflow.
+    if constexpr (gas_is_priced()) {
+        if (MONAD_UNLIKELY(!max_gas_cost(tx.gas_limit, tx.max_fee_per_gas))) {
+            return TransactionError::GasLimitOverflow;
+        }
     }
 
     // EIP-2

@@ -30,7 +30,10 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
+#include <category/vm/evm/access_status.h>
 #include <category/vm/evm/delegation.hpp>
+#include <category/vm/evm/page_storage_status.h>
+#include <category/vm/evm/storage_status.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -207,7 +210,7 @@ struct EvmcHost final : public EvmcHostBase
             if (is_precompile<traits>(address)) {
                 return EVMC_ACCESS_WARM;
             }
-            return state_.access_account(address);
+            return to_evmc_access_status(state_.access_account(address));
         }
         MONAD_CATCH(...)
         {
@@ -222,7 +225,8 @@ struct EvmcHost final : public EvmcHostBase
     {
         MONAD_TRY
         {
-            return state_.access_storage<traits>(address, key);
+            return to_evmc_access_status(
+                state_.access_storage<traits>(address, key));
         }
         MONAD_CATCH(...)
         {
@@ -238,7 +242,8 @@ struct EvmcHost final : public EvmcHostBase
         if constexpr (traits::mip_8_active()) {
             MONAD_TRY
             {
-                return state_.update_page(address, key, status);
+                return to_evmc_page_storage_status(state_.update_page(
+                    address, key, from_evmc_storage_status(status)));
             }
             MONAD_CATCH(...)
             {

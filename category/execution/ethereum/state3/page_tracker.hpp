@@ -18,8 +18,9 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
-
-#include <evmc/evmc.h>
+#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/page_storage_status.h>
+#include <category/vm/evm/storage_status.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
@@ -50,25 +51,25 @@ class PageTracker
     }
 
 public:
-    evmc_access_status access_page(bytes32_t const &key)
+    monad_access_status access_page(bytes32_t const &key)
     {
         auto const pkey = compute_page_key(key);
         PageState s = lookup_page_state(pkey);
         if (s.accessed) {
-            return EVMC_ACCESS_WARM;
+            return MONAD_ACCESS_WARM;
         }
         s.accessed = true;
         pages_ = pages_.set(pkey, s);
-        return EVMC_ACCESS_COLD;
+        return MONAD_ACCESS_COLD;
     }
 
-    evmc_page_storage_status
-    update_page(bytes32_t const &key, evmc_storage_status status)
+    monad_page_storage_status
+    update_page(bytes32_t const &key, monad_storage_status const status)
     {
         auto const pkey = compute_page_key(key);
         PageState ps = lookup_page_state(pkey);
 
-        bool const value_changed = (status != EVMC_STORAGE_ASSIGNED);
+        bool const value_changed = (status != MONAD_STORAGE_ASSIGNED);
         bool first_page_write = false;
         if (!ps.dirty) {
             first_page_write = value_changed;
@@ -76,14 +77,14 @@ public:
         }
 
         switch (status) {
-        case EVMC_STORAGE_ADDED:
-        case EVMC_STORAGE_DELETED_ADDED:
-        case EVMC_STORAGE_DELETED_RESTORED:
+        case MONAD_STORAGE_ADDED:
+        case MONAD_STORAGE_DELETED_ADDED:
+        case MONAD_STORAGE_DELETED_RESTORED:
             ++ps.current_growth;
             break;
-        case EVMC_STORAGE_DELETED:
-        case EVMC_STORAGE_MODIFIED_DELETED:
-        case EVMC_STORAGE_ADDED_DELETED:
+        case MONAD_STORAGE_DELETED:
+        case MONAD_STORAGE_MODIFIED_DELETED:
+        case MONAD_STORAGE_ADDED_DELETED:
             --ps.current_growth;
             break;
         default:

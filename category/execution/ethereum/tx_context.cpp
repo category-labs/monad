@@ -35,9 +35,23 @@ evmc_tx_context get_tx_context(
     Transaction const &tx, Address const &sender, BlockHeader const &hdr,
     uint256_t const &chain_id, BlobSchedule const &blob_schedule)
 {
+    // What the GASPRICE opcode reports, and the one consumer of gas_price that
+    // survives when gas is metered but not priced.
+    //
+    // It cannot go through gas_price here: that computes max_fee - base_fee as
+    // a uint256, and MaxFeeLessThanBase is the only thing that stopped the
+    // subtraction underflowing -- and validate_transaction no longer applies
+    // it. Reporting max_fee_per_gas instead is exactly gas_price's pre-London
+    // branch: no subtraction, and GASPRICE reports the cap the sender declared.
+    //
+    // .block_base_fee and .blob_base_fee below need nothing: both already go
+    // through value_or(0), so a header with no base fee makes BASEFEE and
+    // BLOBBASEFEE read zero, which is the right answer.
     return {
         .tx_gas_price = store_be_as<bytes32_t>(
-            gas_price<traits>(tx, hdr.base_fee_per_gas.value_or(0))),
+            gas_is_priced()
+                ? gas_price<traits>(tx, hdr.base_fee_per_gas.value_or(0))
+                : tx.max_fee_per_gas),
         .tx_origin = sender,
         .block_coinbase = hdr.beneficiary,
         .block_number = static_cast<int64_t>(hdr.number),

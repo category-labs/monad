@@ -58,6 +58,33 @@ uint64_t intrinsic_gas(Transaction const &) noexcept;
 template <Traits traits>
 uint64_t intrinsic_gas_counted(Transaction const &, CalldataTokens) noexcept;
 
+/// Whether gas is PRICED, as distinct from METERED.
+///
+/// False on the L2 prototype. The interpreter still counts every opcode, so
+/// gas_used stays gas_limit minus what was left and is the gas genuinely
+/// consumed -- receipts and the header's gas_used remain verifiable exactly as
+/// they are. What goes is the economics: no up-front purchase, no refund
+/// credit, no beneficiary payment, no base or priority fee, no blob gas, no
+/// calldata floor.
+///
+/// A predicate read through `if constexpr` rather than #ifdef at each site, for
+/// three reasons: the lever is defined once; both branches stay syntactically
+/// checked in both configurations, so an L2 build cannot rot the L1 path; and
+/// an OFF build is identical because the dead branch is eliminated.
+///
+/// Not the split-instantiation pattern CLAUDE.md prefers (compute_gas_refund is
+/// declared once and defined twice, real for EvmTraits and zero for Monad).
+/// That works because the dimension there is a TRAITS VALUE and the linker
+/// picks. Here the dimension is the build, so there is nothing to pick between.
+inline constexpr bool gas_is_priced() noexcept
+{
+#ifdef MONAD_ZKVM_L2
+    return false;
+#else
+    return true;
+#endif
+}
+
 uint64_t floor_data_gas(Transaction const &) noexcept;
 uint64_t floor_data_gas(CalldataTokens) noexcept;
 

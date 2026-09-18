@@ -148,6 +148,8 @@ add_library(
   "ethereum/execute_transaction.cpp"
   "ethereum/execute_transaction.hpp"
   "ethereum/fmt/event_trace_fmt.hpp"
+  "ethereum/namespace_anchor.cpp"
+  "ethereum/namespace_anchor.hpp"
   "ethereum/process_requests.cpp"
   "ethereum/process_requests.hpp"
   "ethereum/reserve_balance.cpp"

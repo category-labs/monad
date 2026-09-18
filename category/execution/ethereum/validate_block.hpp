@@ -59,7 +59,10 @@ enum class BlockError
     SystemCallMissingCode,
     SystemCallFailed,
     InvalidRequestsHash,
-    InvalidDepositLog
+    InvalidDepositLog,
+    /// A log at the namespace spoke carrying the message topic that does not
+    /// decode: the deployed contract no longer matches namespace_anchor.cpp.
+    InvalidNamespaceLog
 };
 
 struct Chain;

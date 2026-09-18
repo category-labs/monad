@@ -32,13 +32,12 @@
 
 #include <ankerl/unordered_dense.h>
 
-
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <optional>
 #include <span>
 #include <vector>
-#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -46,29 +45,36 @@ class BlockState;
 
 // A call frame's dirty-account list.
 //
-// MEASURED over 200 mainnet blocks (25815000-25815199): 2.25 accounts at the moment of insert
-// (insert-weighted) and 2.54 by the time the frame closes, across 2,798 frames and 7,099 inserts
-// per block. There is no tail to guard against -- weighting by insert LOWERS the mean, so the
-// large frames one would worry about do not exist here.
+// MEASURED over 200 mainnet blocks (25815000-25815199): 2.25 accounts at the
+// moment of insert (insert-weighted) and 2.54 by the time the frame closes,
+// across 2,798 frames and 7,099 inserts per block. There is no tail to guard
+// against -- weighting by insert LOWERS the mean, so the large frames one would
+// worry about do not exist here.
 //
-// A hash set charged 189 steps per insert -- a 20-byte hash plus a probe -- to deduplicate two
-// entries. A linear scan over the same two is a pair of 20-byte compares.
+// A hash set charged 189 steps per insert -- a 20-byte hash plus a probe -- to
+// deduplicate two entries. A linear scan over the same two is a pair of 20-byte
+// compares.
 //
-// Deduplication is not optional WHILE THE LIST IS READ: a repeated entry would be handed to
-// pop_accept's merge twice. It has nothing to do with the undo log any more -- that carries typed
-// records keyed by row and replays backwards on its own, which is why pop_reject moves this list out
-// and never looks at it. The claim three lines up that pop_reject depends on the deduplication was
-// left behind by the change that introduced typed records; it is not true today.
+// Deduplication is not optional WHILE THE LIST IS READ: a repeated entry would
+// be handed to pop_accept's merge twice. It has nothing to do with the undo log
+// any more -- that carries typed records keyed by row and replays backwards on
+// its own, which is why pop_reject moves this list out and never looks at it.
+// The claim three lines up that pop_reject depends on the deduplication was
+// left behind by the change that introduced typed records; it is not true
+// today.
 //
-// Under MONAD_ZKVM_NO_DIRTY_ACCOUNTS the list is write-only and compiles away. What reads it:
-// pop_accept, to hand the addresses to the PARENT's copy of the same list -- self-referential, so it
-// disappears with the list -- and State::current_frame_dirty_accounts, whose only caller is
-// trace/state_tracer.cpp, which zkvm/guest/CMakeLists.txt excludes from the guest. Neither the
-// accessor nor StateTracer has a symbol in the shipped ELF. pop_reject DOES read it, through
-// rb_.on_pop_reject(accounts.span()) -- an earlier version of this comment said it read nothing --
-// but under the flag that span is empty, so the call stands and does nothing.
+// Under MONAD_ZKVM_NO_DIRTY_ACCOUNTS the list is write-only and compiles away.
+// What reads it: pop_accept, to hand the addresses to the PARENT's copy of the
+// same list -- self-referential, so it disappears with the list -- and
+// State::current_frame_dirty_accounts, whose only caller is
+// trace/state_tracer.cpp, which zkvm/guest/CMakeLists.txt excludes from the
+// guest. Neither the accessor nor StateTracer has a symbol in the shipped ELF.
+// pop_reject DOES read it, through rb_.on_pop_reject(accounts.span()) -- an
+// earlier version of this comment said it read nothing -- but under the flag
+// that span is empty, so the call stands and does nothing.
 //
-// The flag is declared only in the guest's CMakeLists, so the host keeps the list and its tracer.
+// The flag is declared only in the guest's CMakeLists, so the host keeps the
+// list and its tracer.
 #if defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
 
 class DirtyAccounts
@@ -76,15 +82,38 @@ class DirtyAccounts
     static constexpr Address const *nothing_ = nullptr;
 
 public:
-    // Kept: emplace's return value said whether the address was new to the frame, and nothing has
-    // read that since typed records replaced the row snapshot.
-    bool emplace(Address const &) { return true; }
+    // Kept: emplace's return value said whether the address was new to the
+    // frame, and nothing has read that since typed records replaced the row
+    // snapshot.
+    bool emplace(Address const &)
+    {
+        return true;
+    }
 
-    Address const *begin() const { return nothing_; }
-    Address const *end() const { return nothing_; }
-    std::size_t size() const { return 0; }
-    bool empty() const { return true; }
-    std::span<Address const> span() const { return {}; }
+    Address const *begin() const
+    {
+        return nothing_;
+    }
+
+    Address const *end() const
+    {
+        return nothing_;
+    }
+
+    std::size_t size() const
+    {
+        return 0;
+    }
+
+    bool empty() const
+    {
+        return true;
+    }
+
+    std::span<Address const> span() const
+    {
+        return {};
+    }
 };
 
 #else
@@ -94,9 +123,10 @@ class DirtyAccounts
     std::vector<Address> v_{};
 
 public:
-    // Returns whether the address was NEW to this frame. Nothing reads that any more -- it used to
-    // drive the row snapshot, which typed records replaced -- so the scan now only keeps the list
-    // free of duplicates for pop_accept's merge and for the reserve-balance hook.
+    // Returns whether the address was NEW to this frame. Nothing reads that any
+    // more -- it used to drive the row snapshot, which typed records replaced
+    // -- so the scan now only keeps the list free of duplicates for
+    // pop_accept's merge and for the reserve-balance hook.
     bool emplace(Address const &a)
     {
         for (auto const &x : v_) {
@@ -108,11 +138,30 @@ public:
         return true;
     }
 
-    std::vector<Address>::const_iterator begin() const { return v_.begin(); }
-    std::vector<Address>::const_iterator end() const { return v_.end(); }
-    std::size_t size() const { return v_.size(); }
-    bool empty() const { return v_.empty(); }
-    std::span<Address const> span() const { return v_; }
+    std::vector<Address>::const_iterator begin() const
+    {
+        return v_.begin();
+    }
+
+    std::vector<Address>::const_iterator end() const
+    {
+        return v_.end();
+    }
+
+    std::size_t size() const
+    {
+        return v_.size();
+    }
+
+    bool empty() const
+    {
+        return v_.empty();
+    }
+
+    std::span<Address const> span() const
+    {
+        return v_;
+    }
 };
 
 #endif
@@ -132,14 +181,15 @@ class State
     Map<Address, OriginalAccountState> original_{};
 
     // One row per touched account, mutated in place. What used to be
-    // VersionStack<AccountState> -- a deque of (version, AccountState) with copy-on-write per
-    // frame -- is now a single row plus the undo log below.
+    // VersionStack<AccountState> -- a deque of (version, AccountState) with
+    // copy-on-write per frame -- is now a single row plus the undo log below.
     //
-    // A journal, not a version stack. Rollback used to require every container on a row to be
-    // PERSISTENT -- and persistence cost 2.1 M steps a block in per-access hashing and tree
-    // descent. The journal buys the same rollback without asking anything of the containers, so
-    // the row's slots, transient slots and warm-slot set are all flat now. Only the page map is
-    // still immer.
+    // A journal, not a version stack. Rollback used to require every container
+    // on a row to be PERSISTENT -- and persistence cost 2.1 M steps a block in
+    // per-access hashing and tree descent. The journal buys the same rollback
+    // without asking anything of the containers, so the row's slots, transient
+    // slots and warm-slot set are all flat now. Only the page map is still
+    // immer.
     Map<Address, AccountState> current_{};
 
     // Undo log. A frame is a MARK, not a copy.
@@ -148,52 +198,60 @@ class State
     //   pop_reject()  replays the records above that mark, backwards
     //   pop_accept()  drops the mark, leaving the records to the parent frame
     //
-    // A record covers ONE mutation, and carries only what that mutation overwrote. The row-wide
-    // snapshot it replaces cost 201 steps per first touch (1.43 M a block, measured) to copy 184
-    // bytes plus two vector allocations, most of which the frame never went on to change.
+    // A record covers ONE mutation, and carries only what that mutation
+    // overwrote. The row-wide snapshot it replaces cost 201 steps per first
+    // touch (1.43 M a block, measured) to copy 184 bytes plus two vector
+    // allocations, most of which the frame never went on to change.
     //
-    // ONE log for every kind, with payloads in side vectors that `aux` indexes. One log and not one
-    // per kind because the order BETWEEN kinds is load-bearing: a row created and then written must
-    // have its slots and fields restored before the row is erased, and a single backwards replay is
-    // what guarantees that.
+    // ONE log for every kind, with payloads in side vectors that `aux` indexes.
+    // One log and not one per kind because the order BETWEEN kinds is
+    // load-bearing: a row created and then written must have its slots and
+    // fields restored before the row is erased, and a single backwards replay
+    // is what guarantees that.
     //
-    // Every real mutation is journalled -- not the frame's first change of each field. Deduplicating
-    // would need per-field state per frame, and nested frames make that subtle; duplicates are
-    // already correct, because replayed backwards the oldest value lands last. If the entry volume
-    // ever costs more than the copying it saved, the profile will say so.
+    // Every real mutation is journalled -- not the frame's first change of each
+    // field. Deduplicating would need per-field state per frame, and nested
+    // frames make that subtle; duplicates are already correct, because replayed
+    // backwards the oldest value lands last. If the entry volume ever costs
+    // more than the copying it saved, the profile will say so.
     //
-    // Keyed by Address rather than by pointer: erase() moves a row, and a revert is rare enough that
-    // a map lookup per record costs nothing next to being wrong.
+    // Keyed by Address rather than by pointer: erase() moves a row, and a
+    // revert is rare enough that a map lookup per record costs nothing next to
+    // being wrong.
     struct Undo
     {
         enum class Kind : unsigned char
         {
-            // The frame CREATED the row. Nothing to restore, so the record says erase.
+            // The frame CREATED the row. Nothing to restore, so the record says
+            // erase.
             Created,
-            // undo_accts_[aux]: account_ as it was. For the transitions the narrow kinds below
-            // cannot express -- appearing, being cleared, a new incarnation -- all of them rare.
+            // undo_accts_[aux]: account_ as it was. For the transitions the
+            // narrow kinds below cannot express -- appearing, being cleared, a
+            // new incarnation -- all of them rare.
             AccountWhole,
-            // undo_words_[aux]: the raw bytes of the previous balance. Stored and restored verbatim,
-            // never interpreted, so no endian conversion is involved.
+            // undo_words_[aux]: the raw bytes of the previous balance. Stored
+            // and restored verbatim, never interpreted, so no endian conversion
+            // is involved.
             Balance,
             // undo_words_[aux]
             CodeHash,
             // undo_u64_[aux]
             Nonce,
-            // The flag was false. Pushed only on a real transition, so a second touch() in the same
-            // frame adds nothing.
+            // The flag was false. Pushed only on a real transition, so a second
+            // touch() in the same frame adds nothing.
             FlagTouched,
             FlagDestructed,
             FlagAccessed,
-            // undo_words_[aux]: the warm-slot key that was appended. Replaces copying the whole
-            // A_K vector: a frame warms a few of the keys a row holds.
+            // undo_words_[aux]: the warm-slot key that was appended. Replaces
+            // copying the whole A_K vector: a frame warms a few of the keys a
+            // row holds.
             WarmSlot,
             // undo_slots_[aux]
             Slot,
             Transient,
-            // undo_pages_[aux]: the page map's handle. Unreachable on the Ethereum traits
-            // (mip_8_active() is false there), so this is correctness for the Monad traits at no
-            // cost here.
+            // undo_pages_[aux]: the page map's handle. Unreachable on the
+            // Ethereum traits (mip_8_active() is false there), so this is
+            // correctness for the Monad traits at no cost here.
             Pages,
         };
 
@@ -213,9 +271,9 @@ class State
         // zero-extension, where a register-width index is not.
         std::uint64_t aux;
 #ifdef MONAD_ZKVM_KECCAK_SITES
-        // Diagnostic: left behind by a frame that was ACCEPTED, so replaying it means a parent
-        // revert is undoing work an accepted child did -- the nested combination a mainnet corpus
-        // exercises only by accident.
+        // Diagnostic: left behind by a frame that was ACCEPTED, so replaying it
+        // means a parent revert is undoing work an accepted child did -- the
+        // nested combination a mainnet corpus exercises only by accident.
         bool promoted{false};
 #endif
     };
@@ -228,9 +286,10 @@ class State
     {
         bytes32_t key;
         bytes32_t value;
-        // False when the slot was absent. Restoring then means removing it again, not writing the
-        // pre-state value back: BlockState commits every slot the overlay lists, so a slot left
-        // behind by a reverted write would join the commit set.
+        // False when the slot was absent. Restoring then means removing it
+        // again, not writing the pre-state value back: BlockState commits every
+        // slot the overlay lists, so a slot left behind by a reverted write
+        // would join the commit set.
         bool had_value;
         // Same reason as Undo::pad_: 32 + 32 + 1 is 65, and an odd element size
         // makes size() a bare multiply.
@@ -239,8 +298,9 @@ class State
 
     static_assert(sizeof(SlotUndo) == 128);
 
-    // Pushed where the dirty-set insert reports the row as new to the frame, and now ONLY for a row
-    // the frame created: an existing row needs no snapshot, because each mutation journals itself.
+    // Pushed where the dirty-set insert reports the row as new to the frame,
+    // and now ONLY for a row the frame created: an existing row needs no
+    // snapshot, because each mutation journals itself.
     void journal_created(Address const &address);
 
     void journal_account(Address const &address, AccountState const &row);
@@ -250,8 +310,7 @@ class State
     void journal_flag(Address const &address, Undo::Kind which);
     void journal_warm_slot(Address const &address, bytes32_t const &key);
     void journal_slot(
-        Address const &address, bytes32_t const &key,
-        bytes32_t const *prev);
+        Address const &address, bytes32_t const &key, bytes32_t const *prev);
     void journal_transient(
         Address const &address, AccountState const &row, bytes32_t const &key);
     void journal_pages(Address const &address, AccountState const &row);
@@ -359,24 +418,26 @@ class State
     }
 #endif
 
-    // One-entry memo for current_account_state(). Measured over 200 mainnet blocks
-    // (25815000-25815199), 20,066 calls per block: 64.9% repeat the previous address, and 70.0% of
-    // the dirty-set inserts it made were already present. Those two operations cost 2.65M and 2.43M
-    // steps per block. Same shape as the single-entry sroot_ cache in PartialTrieDb.
+    // One-entry memo for current_account_state(). Measured over 200 mainnet
+    // blocks (25815000-25815199), 20,066 calls per block: 64.9% repeat the
+    // previous address, and 70.0% of the dirty-set inserts it made were already
+    // present. Those two operations cost 2.65M and 2.43M steps per block. Same
+    // shape as the single-entry sroot_ cache in PartialTrieDb.
     //
-    // memo_val_ points into current_, whose segmented buckets do not move on insert; the ONE place
-    // that can move an element is the erase loop in pop_reject(), which clears the memo.
+    // memo_val_ points into current_, whose segmented buckets do not move on
+    // insert; the ONE place that can move an element is the erase loop in
+    // pop_reject(), which clears the memo.
     //
-    // The epoch is what makes skipping the dirty-set insert safe, and version_ could not: frame
-    // indices recur (push->1, pop->0, push->1), so a version_ stamp would skip an insert that the
-    // second frame 1 genuinely needs. The epoch only ever increases.
-    // alignas(8) because the key is READ as two 8-byte words and an Address is
-    // 20 bytes: unaligned, this member lands at offset 428 of State, which is
-    // 4 mod 8, so BOTH reads straddle a word boundary. ZisK charges 191 cells
-    // for a word-crossing 8-byte read against 16 for an aligned one, and
-    // current_account_state, recent_account_state and get_storage between them
-    // do 107,273 of these a block. Four bytes of padding, and every later
-    // member stays 8-aligned.
+    // The epoch is what makes skipping the dirty-set insert safe, and version_
+    // could not: frame indices recur (push->1, pop->0, push->1), so a version_
+    // stamp would skip an insert that the second frame 1 genuinely needs. The
+    // epoch only ever increases. alignas(8) because the key is READ as two
+    // 8-byte words and an Address is 20 bytes: unaligned, this member lands at
+    // offset 428 of State, which is 4 mod 8, so BOTH reads straddle a word
+    // boundary. ZisK charges 191 cells for a word-crossing 8-byte read against
+    // 16 for an aligned one, and current_account_state, recent_account_state
+    // and get_storage between them do 107,273 of these a block. Four bytes of
+    // padding, and every later member stays 8-aligned.
     alignas(8) Address memo_addr_{};
     AccountState *memo_val_{nullptr};
     std::uint64_t memo_epoch_{0};
@@ -398,12 +459,13 @@ public:
     OriginalAccountState &original_account_state(Address const &);
 
 private:
-    // The one-entry memo, for reads: answer from it, never replace it. A read does no dirty
-    // insert, so populating it would have to leave memo_epoch_ at a value frame_epoch_ can never
-    // take -- and it would evict the entry current_account_state is about to want. It also would
-    // not buy anything: measured over five blocks, get_storage names the memoised address 99.9 %
-    // of the time and recent_account_state 87.3 %, both against a memo only the mutation path
-    // fills. What populating here could add is the rounding.
+    // The one-entry memo, for reads: answer from it, never replace it. A read
+    // does no dirty insert, so populating it would have to leave memo_epoch_ at
+    // a value frame_epoch_ can never take -- and it would evict the entry
+    // current_account_state is about to want. It also would not buy anything:
+    // measured over five blocks, get_storage names the memoised address 99.9 %
+    // of the time and recent_account_state 87.3 %, both against a memo only the
+    // mutation path fills. What populating here could add is the rounding.
     [[nodiscard]] AccountState *memoised(Address const &address)
     {
         if (memo_val_ != nullptr &&
@@ -416,9 +478,10 @@ private:
 
     AccountState const &recent_account_state(Address const &);
 
-    // The row a read should see, and the original row behind it, resolved in ONE address lookup.
-    // Callers needing both used to ask twice -- and three times when there was no current row,
-    // because recent_account_state goes to original_ itself and the caller then asked again.
+    // The row a read should see, and the original row behind it, resolved in
+    // ONE address lookup. Callers needing both used to ask twice -- and three
+    // times when there was no current row, because recent_account_state goes to
+    // original_ itself and the caller then asked again.
     struct RowPair
     {
         AccountState const *recent;

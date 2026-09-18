@@ -60,24 +60,26 @@
 #include <utility>
 
 #ifdef MONAD_ZKVM_OFFICIAL_PROFILE
-#if !defined(MONAD_ZKVM_ZISK_DMA_LOWERING) || !defined(MONAD_VM_TABLE_ARG) || \
-    !defined(MONAD_ZKVM_KECCAKF_MEMO) || !MONAD_ZKVM_KECCAKF_MEMO ||          \
-    !defined(MONAD_VM_FUSE_JUMPDEST) || !defined(MONAD_VM_FUSE_PUSH1OP) ||    \
-    !defined(MONAD_VM_FUSE_PUSH2JUMP) || !defined(MONAD_VM_FUSE_TESTJUMPI)
-#error "official ZisK profile is missing a required compile-time feature"
-#endif
+    #if !defined(MONAD_ZKVM_ZISK_DMA_LOWERING) ||                              \
+        !defined(MONAD_VM_TABLE_ARG) || !defined(MONAD_ZKVM_KECCAKF_MEMO) ||   \
+        !MONAD_ZKVM_KECCAKF_MEMO || !defined(MONAD_VM_FUSE_JUMPDEST) ||        \
+        !defined(MONAD_VM_FUSE_PUSH1OP) ||                                     \
+        !defined(MONAD_VM_FUSE_PUSH2JUMP) || !defined(MONAD_VM_FUSE_TESTJUMPI)
+        #error                                                                 \
+            "official ZisK profile is missing a required compile-time feature"
+    #endif
 // Kept by zkvm/zisk/align.ld. The post-link audit requires this exact marker,
 // so a manifest cannot be attached to an ELF built from a stale CMake cache.
 extern "C" [[gnu::used, gnu::section(".monad_zkvm_profile")]]
 unsigned char const monad_zkvm_official_profile[] =
-    "monad-zkvm-official-v1;dma=1;table_arg=1;keccakf_memo=1;fuse=1;commit="
-    MONAD_ZKVM_BUILD_COMMIT ";signature=" MONAD_ZKVM_BUILD_SIGNATURE;
+    "monad-zkvm-official-v1;dma=1;table_arg=1;keccakf_memo=1;fuse=1;"
+    "commit=" MONAD_ZKVM_BUILD_COMMIT ";signature=" MONAD_ZKVM_BUILD_SIGNATURE;
 #endif
 
 #ifdef MONAD_ZKVM_KECCAK_SITES
-#include <category/core/keccak_sites.hpp>
+    #include <category/core/keccak_sites.hpp>
 #else
-#define MONAD_KECCAK_SITE(s, len) ((void)0)
+    #define MONAD_KECCAK_SITE(s, len) ((void)0)
 #endif
 
 namespace
@@ -112,9 +114,9 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void);
 extern "C" void monad_zkvm_execute_witness(void)
 {
 #ifdef MONAD_ZKVM_SELFTEST
-    // Self-test build: no witness is read. The first four output bytes are a bitmask -- bit N set
-    // means case N failed, all zero means every case passed. Padded to 32 so the harness that
-    // reads a root can read this too.
+    // Self-test build: no witness is read. The first four output bytes are a
+    // bitmask -- bit N set means case N failed, all zero means every case
+    // passed. Padded to 32 so the harness that reads a root can read this too.
     {
         std::uint32_t const failures = monad_zkvm_revert_semantics_test();
         unsigned char out[32]{};
@@ -163,12 +165,11 @@ extern "C" void monad_zkvm_execute_witness(void)
             // `size()` bytes at code() are verbatim -- but the padding is what
             // makes the alignment hold, so an assert here is what would catch a
             // change to it.
-            MONAD_ASSERT(
-                (reinterpret_cast<uintptr_t>(code->code()) & 7) == 0);
+            MONAD_ASSERT((reinterpret_cast<uintptr_t>(code->code()) & 7) == 0);
             MONAD_DEBUG_ASSERT(
                 std::memcmp(
-                    code->code(), bytes.value().data(),
-                    bytes.value().size()) == 0);
+                    code->code(), bytes.value().data(), bytes.value().size()) ==
+                0);
             MONAD_KECCAK_SITE(CODE_INDEX, bytes.value().size());
             // Without the Keccak-f memo. Bytecode is 28,451 of the block's
             // 120,701 permutations and the 395 bodies are all distinct, so not
@@ -198,8 +199,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     // transactions-root check can be made against those bytes rather than
     // against a re-encoding of what was decoded from them.
     std::vector<monad::byte_string_view> raw_transactions;
-    auto block_result =
-        monad::rlp::decode_block(block_view, &raw_transactions);
+    auto block_result = monad::rlp::decode_block(block_view, &raw_transactions);
     MONAD_ASSERT(block_result.has_value());
     MONAD_ASSERT(block_view.empty());
     auto const &block = block_result.value();
@@ -272,7 +272,12 @@ extern "C" void monad_zkvm_execute_witness(void)
         chain.get_revision(block.header.number, block.header.timestamp);
     auto const root_result = [&]() -> monad::Result<monad::bytes32_t> {
         SWITCH_EVM_TRAITS(
-            dispatch, chain, block, raw_transactions, pdb, vm,
+            dispatch,
+            chain,
+            block,
+            raw_transactions,
+            pdb,
+            vm,
             block_hash_buffer);
         // SWITCH_EVM_TRAITS only covers Byzantium+; older revisions fall
         // through. execute_block_zkvm's static_assert requires
@@ -287,13 +292,14 @@ extern "C" void monad_zkvm_execute_witness(void)
     // encoding -- with the state root THIS RUN COMPUTED sealed into it, not the
     // one the witness supplied.
     //
-    // That is what makes a single published value sufficient. The header commits
-    // to every root it carries, so pinning its hash against the canonical chain
-    // pins the state root through it: a computed root that differs by one bit
-    // gives a different header, a different hash, and a rejected proof. The
-    // parent is bound the same way -- parent_hash is a field of this header, and
-    // the ancestor walk above asserts the supplied parent hashes to it and that
-    // its state_root is the pre-state trie's own root.
+    // That is what makes a single published value sufficient. The header
+    // commits to every root it carries, so pinning its hash against the
+    // canonical chain pins the state root through it: a computed root that
+    // differs by one bit gives a different header, a different hash, and a
+    // rejected proof. The parent is bound the same way -- parent_hash is a
+    // field of this header, and the ancestor walk above asserts the supplied
+    // parent hashes to it and that its state_root is the pre-state trie's own
+    // root.
     //
     // Encoding the witness's header instead would have left the verifier to
     // notice that the two disagree, which is a check nobody has written.
@@ -328,10 +334,11 @@ extern "C" void monad_zkvm_execute_witness(void)
     write_output(pre_state_root.bytes, sizeof(pre_state_root.bytes));
     write_output(block_hash.bytes, sizeof(block_hash.bytes));
 #ifdef MONAD_ZKVM_KECCAK_SITES
-    // Diagnostic tail, AFTER the three public values so their offsets are unchanged and the
-    // verifier reads them exactly as before. A run that reports its keccak breakdown is therefore
-    // still a run whose roots are checked -- which is the whole point of putting the counters here
-    // rather than in a printf the guest cannot do.
+    // Diagnostic tail, AFTER the three public values so their offsets are
+    // unchanged and the verifier reads them exactly as before. A run that
+    // reports its keccak breakdown is therefore still a run whose roots are
+    // checked -- which is the whole point of putting the counters here rather
+    // than in a printf the guest cannot do.
     write_output(monad::keccak_sites::bytes(), monad::keccak_sites::size());
 #endif
 }

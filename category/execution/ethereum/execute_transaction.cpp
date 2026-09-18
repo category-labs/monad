@@ -518,10 +518,11 @@ Result<Receipt> ExecuteTransaction<traits>::execute(SequentialExecutionToken)
     auto result = execute_impl2(state);
 
 #ifdef MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE
-    // What the token asserts, computed. An arm built with this on and run over the corpus is
-    // what turns "no mechanism could make this fail" into a statement that had the chance to be
-    // wrong. The order matters: can_merge is checked before the error return, exactly where
-    // operator() checks it, so a failing transaction is not a hole in the coverage.
+    // What the token asserts, computed. An arm built with this on and run over
+    // the corpus is what turns "no mechanism could make this fail" into a
+    // statement that had the chance to be wrong. The order matters: can_merge
+    // is checked before the error return, exactly where operator() checks it,
+    // so a failing transaction is not a hole in the coverage.
     MONAD_ASSERT(block_state_.can_merge(state));
 #endif
 

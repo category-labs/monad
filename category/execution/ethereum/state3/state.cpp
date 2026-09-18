@@ -48,10 +48,10 @@
 #include <vector>
 
 #ifdef MONAD_ZKVM_KECCAK_SITES
-#include <category/core/keccak_sites.hpp>
+    #include <category/core/keccak_sites.hpp>
 #else
-#define MONAD_GUEST_SITE(s) ((void)0)
-#define MONAD_GUEST_ADD2(s, v) ((void)0)
+    #define MONAD_GUEST_SITE(s) ((void)0)
+    #define MONAD_GUEST_ADD2(s, v) ((void)0)
 #endif
 
 MONAD_NAMESPACE_BEGIN
@@ -85,16 +85,19 @@ AccountState &State::current_account_state(Address const &address)
 {
     MONAD_GUEST_SITE(ACCT_LOOKUP);
 
-    // Repeat access to the same account is the common case (64.9% measured), and both the map
-    // lookup and the dirty-set insert are then already done. The insert is idempotent, so skipping
-    // it leaves the frame's dirty set identical -- provided the epoch says we are still in the
-    // frame that recorded it.
+    // Repeat access to the same account is the common case (64.9% measured),
+    // and both the map lookup and the dirty-set insert are then already done.
+    // The insert is idempotent, so skipping it leaves the frame's dirty set
+    // identical -- provided the epoch says we are still in the frame that
+    // recorded it.
     if (memo_val_ != nullptr &&
-        __builtin_memcmp(address.bytes, memo_addr_.bytes, sizeof(address.bytes)) == 0) {
+        __builtin_memcmp(
+            address.bytes, memo_addr_.bytes, sizeof(address.bytes)) == 0) {
         MONAD_GUEST_SITE(ACCT_MEMO_HIT);
         if (memo_epoch_ != frame_epoch_) {
-            // Dirty tracking only. A memo hit is a row that already exists, and an existing row
-            // needs no record on first touch now that each mutation journals itself.
+            // Dirty tracking only. A memo hit is a row that already exists, and
+            // an existing row needs no record on first touch now that each
+            // mutation journals itself.
             dirty_mark(address);
             memo_epoch_ = frame_epoch_;
         }
@@ -111,8 +114,9 @@ AccountState &State::current_account_state(Address const &address)
         it = current_.try_emplace(address, account_state).first;
         it->second.orig_ = &account_state;
         created = true;
-        // Journalled here rather than off the dirty-set insert: the record says "this row did not
-        // exist", which is a fact about creating it, not about the frame's bookkeeping.
+        // Journalled here rather than off the dirty-set insert: the record says
+        // "this row did not exist", which is a fact about creating it, not
+        // about the frame's bookkeeping.
         journal_created(address);
     }
     dirty_mark(address);
@@ -123,9 +127,9 @@ AccountState &State::current_account_state(Address const &address)
     return it->second;
 }
 
-// One record per MUTATION, carrying only what that mutation overwrote. Every helper is a no-op
-// when no frame is open: outside a frame nothing can roll back, and journalling there would grow
-// the log for the whole block.
+// One record per MUTATION, carrying only what that mutation overwrote. Every
+// helper is a no-op when no frame is open: outside a frame nothing can roll
+// back, and journalling there would grow the log for the whole block.
 void State::journal_created(Address const &address)
 {
     if (!journalling()) {
@@ -139,10 +143,7 @@ void State::journal_account(Address const &address, AccountState const &row)
     if (!journalling()) {
         return;
     }
-    undo_.emplace_back(
-        address,
-        Undo::Kind::AccountWhole,
-        undo_accts_.size());
+    undo_.emplace_back(address, Undo::Kind::AccountWhole, undo_accts_.size());
     undo_accts_.push_back(row.account_);
 }
 
@@ -152,14 +153,11 @@ void State::journal_balance(Address const &address, uint256_t const &prev)
         return;
     }
     bytes32_t w;
-    // Raw bytes, saved and restored verbatim. Nothing reads them as a number in between, so this
-    // is a copy and not a conversion.
+    // Raw bytes, saved and restored verbatim. Nothing reads them as a number in
+    // between, so this is a copy and not a conversion.
     static_assert(sizeof(w.bytes) == sizeof(prev));
     __builtin_memcpy(w.bytes, &prev, sizeof(w.bytes));
-    undo_.emplace_back(
-        address,
-        Undo::Kind::Balance,
-        undo_words_.size());
+    undo_.emplace_back(address, Undo::Kind::Balance, undo_words_.size());
     undo_words_.push_back(w);
 }
 
@@ -168,10 +166,7 @@ void State::journal_code_hash(Address const &address, bytes32_t const &prev)
     if (!journalling()) {
         return;
     }
-    undo_.emplace_back(
-        address,
-        Undo::Kind::CodeHash,
-        undo_words_.size());
+    undo_.emplace_back(address, Undo::Kind::CodeHash, undo_words_.size());
     undo_words_.push_back(prev);
 }
 
@@ -180,10 +175,7 @@ void State::journal_nonce(Address const &address, std::uint64_t const prev)
     if (!journalling()) {
         return;
     }
-    undo_.emplace_back(
-        address,
-        Undo::Kind::Nonce,
-        undo_u64_.size());
+    undo_.emplace_back(address, Undo::Kind::Nonce, undo_u64_.size());
     undo_u64_.push_back(prev);
 }
 
@@ -200,10 +192,7 @@ void State::journal_warm_slot(Address const &address, bytes32_t const &key)
     if (!journalling()) {
         return;
     }
-    undo_.emplace_back(
-        address,
-        Undo::Kind::WarmSlot,
-        undo_words_.size());
+    undo_.emplace_back(address, Undo::Kind::WarmSlot, undo_words_.size());
     undo_words_.push_back(key);
 }
 
@@ -211,18 +200,13 @@ void State::journal_warm_slot(Address const &address, bytes32_t const &key)
 // journal record, the status computation and the write all wanted it, and each
 // used to look it up again.
 void State::journal_slot(
-    Address const &address, bytes32_t const &key,
-    bytes32_t const *const prev)
+    Address const &address, bytes32_t const &key, bytes32_t const *const prev)
 {
     if (!journalling()) {
         return;
     }
-    undo_.emplace_back(
-        address,
-        Undo::Kind::Slot,
-        undo_slots_.size());
-    undo_slots_.emplace_back(
-        key, prev ? *prev : bytes32_t{}, prev != nullptr);
+    undo_.emplace_back(address, Undo::Kind::Slot, undo_slots_.size());
+    undo_slots_.emplace_back(key, prev ? *prev : bytes32_t{}, prev != nullptr);
 }
 
 void State::journal_transient(
@@ -232,12 +216,8 @@ void State::journal_transient(
         return;
     }
     bytes32_t const *const prev = row.transient_storage_.find(key);
-    undo_.emplace_back(
-        address,
-        Undo::Kind::Transient,
-        undo_slots_.size());
-    undo_slots_.emplace_back(
-        key, prev ? *prev : bytes32_t{}, prev != nullptr);
+    undo_.emplace_back(address, Undo::Kind::Transient, undo_slots_.size());
+    undo_slots_.emplace_back(key, prev ? *prev : bytes32_t{}, prev != nullptr);
 }
 
 void State::journal_pages(Address const &address, AccountState const &row)
@@ -245,10 +225,7 @@ void State::journal_pages(Address const &address, AccountState const &row)
     if (!journalling()) {
         return;
     }
-    undo_.emplace_back(
-        address,
-        Undo::Kind::Pages,
-        undo_pages_.size());
+    undo_.emplace_back(address, Undo::Kind::Pages, undo_pages_.size());
     undo_pages_.push_back(row.page_tracker_);
 }
 
@@ -342,17 +319,19 @@ void State::pop_accept()
     }
 #endif
 
-    // Accepted: the rows keep the values this frame gave them. What the parent needs is the
-    // knowledge that they changed -- so its dirty list gains them, and this frame's undo records
-    // simply stay in the log under the parent's mark. Replayed backwards they restore the
-    // pre-PARENT value, because a row this frame was the first to touch was, by construction,
-    // untouched by the parent too.
+    // Accepted: the rows keep the values this frame gave them. What the parent
+    // needs is the knowledge that they changed -- so its dirty list gains them,
+    // and this frame's undo records simply stay in the log under the parent's
+    // mark. Replayed backwards they restore the pre-PARENT value, because a row
+    // this frame was the first to touch was, by construction, untouched by the
+    // parent too.
     dirty_promote_to_parent();
     undo_marks_.pop_back();
-    // With no mark left there is nothing that could roll back past this point, so the records are
-    // dead. Dropping them is not housekeeping: without it the log grows by one 160-byte record per
-    // account per frame for the whole block, and the invariant at the end of the block -- that an
-    // empty log means every frame closed -- would never hold.
+    // With no mark left there is nothing that could roll back past this point,
+    // so the records are dead. Dropping them is not housekeeping: without it
+    // the log grows by one 160-byte record per account per frame for the whole
+    // block, and the invariant at the end of the block -- that an empty log
+    // means every frame closed -- would never hold.
     if (undo_marks_.empty()) {
         undo_.clear();
         undo_accts_.clear();
@@ -382,12 +361,12 @@ void State::pop_reject()
     logs_.resize(log_marks_.back());
     log_marks_.pop_back();
 
-    // erase() moves the last element into the hole, and a restore rewrites a row in place, so any
-    // pointer into current_ is stale from here on.
+    // erase() moves the last element into the hole, and a restore rewrites a
+    // row in place, so any pointer into current_ is stale from here on.
     memo_val_ = nullptr;
 
-    // Replay BACKWARDS: a row touched by this frame and by one nested inside it carries two
-    // records, and the older value has to land last.
+    // Replay BACKWARDS: a row touched by this frame and by one nested inside it
+    // carries two records, and the older value has to land last.
     UndoMark const mark = undo_marks_.back();
     undo_marks_.pop_back();
     while (undo_.size() > mark.log) {
@@ -404,9 +383,10 @@ void State::pop_reject()
             undo_.pop_back();
             continue;
         }
-        // Every other kind edits a row in place, and the row is still here: a Created record for
-        // the same address is always EARLIER in the log than any mutation of it, and replay runs
-        // backwards, so the erase has not happened yet.
+        // Every other kind edits a row in place, and the row is still here: a
+        // Created record for the same address is always EARLIER in the log than
+        // any mutation of it, and replay runs backwards, so the erase has not
+        // happened yet.
         auto const it = current_.find(u.addr);
         MONAD_ASSERT(it != current_.end());
         AccountState &row = it->second;
@@ -419,9 +399,10 @@ void State::pop_reject()
             break;
 
         case Undo::Kind::Balance:
-            // The account exists: the only paths that clear it run outside every frame
-            // (destruct_suicides and destruct_touched_dead both assert !version_), so nothing can
-            // have removed it between this mutation and its replay.
+            // The account exists: the only paths that clear it run outside
+            // every frame (destruct_suicides and destruct_touched_dead both
+            // assert !version_), so nothing can have removed it between this
+            // mutation and its replay.
             MONAD_ASSERT(row.account_.has_value());
             __builtin_memcpy(
                 &row.account_->balance,
@@ -514,7 +495,8 @@ State::RowPair State::rows_for_read(Address const &address)
         MONAD_ASSERT(it->second.orig_ != nullptr);
         return {&it->second, it->second.orig_};
     }
-    // No current row: the original row IS the row a read sees, so one lookup answers both.
+    // No current row: the original row IS the row a read sees, so one lookup
+    // answers both.
     auto &orig = original_account_state(address);
     return {&orig, &orig};
 }
@@ -556,9 +538,10 @@ uint64_t State::get_nonce(Address const &address)
 uint256_t State::get_balance(Address const &address)
 {
 #if defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
-    // Reading a balance is a read. The only reason this went through rows_for_read -- which resolves
-    // the ORIGINAL row as well as the recent one -- was to stamp a merge constraint on it, and the
-    // sole reader of those constraints is can_merge, which the sequential path does not call.
+    // Reading a balance is a read. The only reason this went through
+    // rows_for_read -- which resolves the ORIGINAL row as well as the recent
+    // one -- was to stamp a merge constraint on it, and the sole reader of
+    // those constraints is can_merge, which the sequential path does not call.
     // get_nonce, three functions up, already reads through the cheap accessor.
     auto const &account = recent_account(address);
 #else
@@ -876,9 +859,9 @@ EXPLICIT_TRAITS_MEMBER(State::destruct_suicides);
 void State::destruct_touched_dead()
 {
     MONAD_ASSERT(!version_);
-    // Every frame closed: asserted once on the journal rather than once per row on a
-    // version stack that no longer exists. Stronger, too -- an unbalanced push leaves a
-    // mark behind even when no row was touched.
+    // Every frame closed: asserted once on the journal rather than once per row
+    // on a version stack that no longer exists. Stronger, too -- an unbalanced
+    // push leaves a mark behind even when no row was touched.
     MONAD_ASSERT(
         undo_.empty() && undo_accts_.empty() && undo_words_.empty() &&
         undo_u64_.empty() && undo_slots_.empty() && undo_pages_.empty() &&
@@ -967,8 +950,9 @@ void State::create_contract(Address const &address)
 {
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
-    // Incarnation has no narrow record of its own: it changes on contract creation only, which is
-    // rare enough that the whole-account record is cheaper than a kind nobody else uses.
+    // Incarnation has no narrow record of its own: it changes on contract
+    // creation only, which is rare enough that the whole-account record is
+    // cheaper than a kind nobody else uses.
     journal_account(address, account_state);
     if (MONAD_UNLIKELY(account.has_value())) {
         // EIP-684
@@ -998,8 +982,9 @@ void State::create_account_no_rollback(Address const &address)
 {
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
-    // "no rollback" names the incarnation trick that keeps this account out of SELFDESTRUCT, not an
-    // exemption from the journal: a frame that rejects has always undone this.
+    // "no rollback" names the incarnation trick that keeps this account out of
+    // SELFDESTRUCT, not an exemption from the journal: a frame that rejects has
+    // always undone this.
     journal_account(address, account_state);
     MONAD_ASSERT(!account.has_value());
     account = Account{
@@ -1103,10 +1088,12 @@ bool State::record_balance_constraint_for_debit(
     Address const &address, uint256_t const &debit)
 {
 #if defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
-    // What the caller uses is the RETURN VALUE -- whether the sender can cover the debit -- and that
-    // is semantic and unchanged. Everything else in this function writes a constraint for can_merge
-    // to read later: the original-row resolution, the uint256 subtraction, set_min_balance and
-    // set_validate_exact_balance. On the sequential path can_merge never runs, so none of it is read.
+    // What the caller uses is the RETURN VALUE -- whether the sender can cover
+    // the debit -- and that is semantic and unchanged. Everything else in this
+    // function writes a constraint for can_merge to read later: the
+    // original-row resolution, the uint256 subtraction, set_min_balance and
+    // set_validate_exact_balance. On the sequential path can_merge never runs,
+    // so none of it is read.
     auto const &account = recent_account(address);
     uint256_t const balance = account.has_value() ? account->balance : 0;
     return balance >= debit;

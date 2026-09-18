@@ -109,6 +109,8 @@ add_library(
   "nibble.h"
   "path_util.c"
   "path_util.h"
+  "poseidon2.cpp"
+  "poseidon2.hpp"
   "result.hpp"
   "seeded_fast_hash.cpp"
   "seeded_fast_hash.hpp"

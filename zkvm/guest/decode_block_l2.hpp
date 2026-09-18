@@ -27,6 +27,36 @@
 // be a coin flip. Uniform string framing is what removes the ambiguity, and it
 // is also why a ciphertext leaf can never be mistaken for a legacy list.
 
+// The L2's block shape, stated here because this is the file that enforces it.
+// It is narrower than Ethereum's, and every omission has the same cause: a
+// field the prover writes, whose only check would be against a header the
+// prover also wrote, is not authenticated by anything. On the Ethereum arm the
+// published block hash is pinned against the canonical chain and that closes
+// the loop; an L2 has no canonical chain to pin against -- the hub is what
+// decides -- so a self-consistent header proves nothing about its own
+// contents.
+//
+//   withdrawals   rejected unless empty. process_withdrawal credits each
+//                 recipient directly, so an entry is balance created from
+//                 nothing. An authenticated deposit path is what would let
+//                 value in, and it does not exist yet.
+//   ommers        rejected. No meaning here, and the list apply_block_reward's
+//                 ommer credits iterate.
+//   requests_hash rejected. EIP-7685 is for a beacon chain this one lacks, the
+//                 epilogue computes no hash to compare against, and under
+//                 Prague the machinery would fail every block for want of
+//                 predeploys.
+//
+// Gated out of the epilogue for the same reason: apply_block_reward, which
+// credits header.beneficiary, and process_requests.
+//
+// Still reaching the EVM from the prover's header, and not closed: COINBASE
+// reads header.beneficiary, and EIP-4788 writes header.parent_beacon_block_root
+// into the beacon-roots contract. Neither creates value -- a transfer still
+// needs a signature and a funded sender -- but both are prover-chosen inputs a
+// contract can branch on, and they are only as sound as the hub's check that
+// the inputs were the ones it authorised.
+
 #pragma once
 
 #include <category/core/byte_string.hpp>

@@ -283,6 +283,25 @@ cannot authenticate rather than implementing it — withdrawals are decoded but
 never credited, the requests hash is accepted but never recomputed, a blob
 transaction executes with no blob fee.
 
+Two more things it has to do, both found by measuring a real corpus rather than
+by reading, and both cases where agreeing between the arms is not enough
+because without them both arms REFUSE:
+
+- **The blob schedule becomes mainnet's.** A blob base fee is exponential in
+  `excess_blob_gas` over the schedule's update fraction, and
+  `MONAD_BLOB_SCHEDULE` keeps Cancun's. A mainnet Osaka header carries an
+  `excess_blob_gas` scaled to BPO2's fraction, 3.5x larger; read against
+  Cancun's it comes out around 1e23 wei, so every blob transaction fails
+  `static_validate_transaction`'s `max_fee_per_blob_gas` test and takes its
+  block down. Measured: `excess_blob_gas` 176,746,387 gives 9.8e22 against
+  Cancun's fraction and 3,709,274 against BPO2's.
+- **EIP-7623's floor raises `gas_used` again, with nothing debited for it.**
+  `execute_block_zkvm` checks cumulative gas against `header.gas_used` and
+  `receipts_root` binds each receipt's, both against a header written under L1
+  rules. The L2 reports the gas CONSUMED where the header reports the gas
+  CHARGED, so a Prague-or-later block with a floor-bound transaction fails
+  `InvalidGasUsed` or `WrongMerkleRoot` — for no reason to do with the cipher.
+
 It goes in **both** arms, so it cannot bias the comparison, and it creates no
 balance in either: the epilogue still skips `process_withdrawal`, so the P1
 this lever reaches into stays closed. What it does cost is that the roots those

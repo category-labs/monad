@@ -17,8 +17,10 @@
 
 #include <category/core/assert.h>
 #include <category/execution/ethereum/chain/blob_schedule.hpp>
+#include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <zkvm/guest/l2_config.hpp>
 
 MONAD_NAMESPACE_BEGIN
@@ -34,8 +36,29 @@ monad_eth_revision MonadL2::get_revision(uint64_t, uint64_t) const
     return L2_REVISION;
 }
 
-BlobSchedule MonadL2::get_blob_schedule(uint64_t) const
+BlobSchedule MonadL2::get_blob_schedule(uint64_t const timestamp) const
 {
+    if constexpr (l2_allows_l1_shape()) {
+        // Diagnostic only, and it is not enough that both arms agree here --
+        // without it both REFUSE, and a differential needs two roots to
+        // compare.
+        //
+        // MONAD_BLOB_SCHEDULE keeps Cancun's update fraction, and a blob base
+        // fee is exponential in excess_blob_gas over that fraction. A mainnet
+        // Osaka header carries an excess_blob_gas scaled to the BPO2 fraction,
+        // which is 3.5x larger; read against Cancun's it comes out around
+        // 1e23 wei, so every blob transaction fails
+        // static_validate_transaction's max_fee_per_blob_gas test and takes
+        // its block with it. Measured on the corpus: excess_blob_gas
+        // 176,746,387 gives 9.8e22 against Cancun's fraction and 3,709,274
+        // against BPO2's.
+        //
+        // So the L1 rule is used for an L1 block, which is what this lever
+        // means everywhere else too. Delegated rather than transcribed: a
+        // second copy of that timestamp ladder would be one more thing to
+        // keep in step with a fork schedule this chain otherwise ignores.
+        return EthereumMainnet{}.get_blob_schedule(timestamp);
+    }
     // Read per transaction, so it has to be a real value. Zero limits mean a
     // blob transaction is rejected, which is what an L2 without blobs wants,
     // and the nonzero update fraction is there because the shared transaction

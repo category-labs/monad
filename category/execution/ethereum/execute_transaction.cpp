@@ -407,6 +407,29 @@ Receipt ExecuteTransaction<traits>::execute_final(
     // the opposite of what "the gas actually used" is for. Its validation gate
     // in validate_transaction goes with it: that gate exists only to keep
     // gas_used <= gas_limit true across this raise.
+    // The raise WITHOUT the debit, and only under the diagnostic lever. Its
+    // purpose is narrow: execute_block_zkvm checks cumulative gas against
+    // header.gas_used, and receipts_root binds each receipt's gas_used, both
+    // against a header written under L1 rules. A mainnet Prague-or-later block
+    // whose transactions hit this floor therefore fails InvalidGasUsed or
+    // WrongMerkleRoot on an L2 guest -- not because the cipher did anything,
+    // but because the L2 reports the gas consumed where the header reports the
+    // gas charged.
+    //
+    // So under l2_allows_l1_shape the counter is raised to match the header and
+    // nothing is debited for it. That is the opposite of what the branch wants
+    // in general, which is why it is the lever's and not a rule: gas_used then
+    // exceeds what the transaction consumed, and "the gas actually used" stops
+    // being what this number means.
+    if constexpr (!gas_is_priced() && l2_allows_l1_shape()) {
+        if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+            auto const floor_gas = floor_data_gas(tokens_);
+            if (gas_used < floor_gas) {
+                gas_used = floor_gas;
+            }
+        }
+    }
+
     if constexpr (gas_is_priced()) {
         if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
             auto const gas_cost =

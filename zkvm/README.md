@@ -122,18 +122,51 @@ xxd /tmp/zkvm-output.bin | head -2
 | 96 | 32 | message anchor — `MONAD_ZKVM_L2` only |
 | 128 | 8 | block number, big-endian u64 — `MONAD_ZKVM_L2` only |
 
-The third value is sufficient on its own: the computed root is sealed into the
-header before it is hashed, so pinning the hash against the canonical chain at
-that height pins the state root, the parent, and every other header field in
-one comparison. The first two are published because they are useful to a caller
-and to the corpus gate.
+On the **Ethereum** arm the third value is sufficient on its own: the computed
+root is sealed into the header before it is hashed, so pinning the hash against
+the canonical chain at that height pins the state root, the parent, and every
+other header field in one comparison. The first two are published because they
+are useful to a caller and to the corpus gate.
 
-On an L2 build the last two give a verifier the tuple the L1 hub checks —
-`stateTransitionDigest(chainId, blockNumber, newStateRoot, namespaceAnchor)`,
-with `chainId` compiled into the guest — without it having to carry the header.
-Neither adds anything to trust: the block number is a header field, and the
-anchor is a deterministic function of the block's logs, which `receipts_root`
-commits to.
+### What the L1 hub must check, and what this branch does not establish
+
+That argument does not carry over to the L2, and the difference is the whole
+soundness question. It rests on there being a canonical chain to pin the hash
+against. An L2 has none — the hub is what decides which block is canonical —
+so publishing the hash of a header the prover wrote authenticates nothing by
+itself. A prover can build any header, seal its own computed root into it, and
+emit a perfectly consistent proof of a transition nobody asked for.
+
+So a hub verifying one of these proofs has to check all of:
+
+1. **Chain and height** — `chainId`, which is compiled into the guest, and the
+   published block number is the next height it expects for that namespace.
+2. **The pre-state it accepted** — the published pre-state root at offset 32
+   equals the post-state root the hub last accepted for this namespace. Without
+   this a proof is a transition from *some* state, not from *the* state, and a
+   prover picks the starting point.
+3. **The inputs it authorised** — the ciphertext list the guest executed is the
+   one published to the data availability the hub trusts. The published block
+   hash is `keccak256` of the header with this run's computed state root sealed
+   in, so it already commits to `transactions_root` along with every other
+   header field. The hub opens that commitment by being handed the header
+   preimage, checking its hash against the published value, and reading the
+   transactions root out of it — one comparison binds the lot. A header is a
+   few hundred bytes, and the operator has it.
+4. **The operator** — a signature over
+   `stateTransitionDigest(chainId, blockNumber, newStateRoot, namespaceAnchor)`.
+
+What the output has to publish, then, is whatever the header does NOT carry:
+the pre-state root, because a header holds the post-state root only, and the
+anchor, because it is a function of the block's logs and the hub has no
+receipts to recompute it from. Both are there. The post-state root and the
+block number are published as well, and those two are conveniences — the
+sealed header carries them and the hash ties them to what was published.
+
+So the gap is not in the output format; it is that none of the four checks
+above exists. The L2's soundness is conditional on an L1 side this branch does
+not contain, and on the operator actually handing over the header rather than
+only the tuple.
 
 ```sh
 xxd -s 0  -l 32 /tmp/zkvm-output.bin   # post-state root
@@ -232,6 +265,27 @@ Both runs go through `ziskemu`, on two ELFs. Not through a host executor: an
 x86 build of the guest is a different program, with the native Poseidon2
 permutation instead of `csrs 0x812` and libsecp256k1 instead of zisklib, so two
 host arms agreeing would say nothing about the arm being proved.
+
+**The corpus for this is blocks from Paris up to Shanghai**, and both ends
+matter. In mainnet terms that is block 15,537,394 (PARIS_ACTIVATION_BLOCK_NUMBER)
+up to the last block whose timestamp is below 1,681,338,455
+(SHANGHAI_ACTIVATION_TIMESTAMP) -- about 1.5 million blocks, September 2022 to
+April 2023. Worth having in numbers, because a block number alone does not say
+which fork it is: from Shanghai on, mainnet's schedule switches on the
+TIMESTAMP, so the test on a witness is that header field and not its height. A Shanghai-or-later block carries withdrawals, which the L2 rejects
+outright as unauthorised balance creation — nothing on this chain
+authenticates the list — and stripping them is no way round it, since the
+credits are in the post-state root and removing them changes the very root the
+oracle compares. A pre-Merge block fails at the other end: it may carry ommers,
+which the L2 also rejects, and its block reward is non-zero while the L2 gates
+apply_block_reward out, so the two arms would disagree on the post-state root
+for a reason that has nothing to do with the cipher.
+
+Inside that window the two arms really do agree: ommers are empty, there are no
+withdrawals, the block reward is already zero so gating it changes nothing, and
+EIP-7685 is not active so gating process_requests changes nothing either. The
+rewriter refuses anything outside it rather than emit a witness the guest will
+refuse.
 
 ```sh
 # The plaintext arm, saved aside before the L2 configure overwrites the ELF.

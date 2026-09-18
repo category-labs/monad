@@ -313,6 +313,15 @@ Result<std::vector<Receipt>> execute_block(
         process_withdrawal(state, block.withdrawals);
     }
 
+    // No requests on this chain, and gated for two reasons. The mechanism is
+    // for a beacon chain this one does not have. And under Prague it would
+    // make EVERY block invalid: system_call returns SystemCallMissingCode
+    // unless the EIP-7002 and EIP-7251 predeploys have code, which an L2 with
+    // no validators has no reason to deploy. It also builds a commitment to
+    // deposit requests read out of prover-chosen logs, checked only against
+    // the prover's own header -- inert today because nothing consumes it, and
+    // one more prover-driven surface for a mechanism that does not apply.
+#ifndef MONAD_ZKVM_L2
     if constexpr (traits::eip_7685_active()) {
         MONAD_ASSERT_THROW(
             block.header.requests_hash.has_value(),
@@ -332,6 +341,7 @@ Result<std::vector<Receipt>> execute_block(
             return BlockError::InvalidRequestsHash;
         }
     }
+#endif
 
     // The message anchor's state effect, mirroring execute_block_zkvm. Only
     // the CLEAR is here: the anchor value itself is the prover's to publish,
@@ -359,7 +369,18 @@ Result<std::vector<Receipt>> execute_block(
     }
 #endif
 
+    // No block reward on this chain, and gated rather than left to be zero.
+    // apply_block_reward credits block.header.beneficiary and every ommer's
+    // beneficiary -- fields the prover writes -- whenever block_reward is
+    // non-zero, which is any pre-Merge revision. A static_assert in l2_config
+    // forbids those, so the call would be inert; but then its safety rests on
+    // a property of the revision constant rather than on a rule of the chain,
+    // and an L2 has no miner, no beneficiary that means anything, and no
+    // issuance. Removing the call is the rule; the static_assert is the second
+    // line, not the first.
+#ifndef MONAD_ZKVM_L2
     apply_block_reward<traits>(state, block);
+#endif
 
     // TODO: move to execute_monad_block
     if constexpr (traits::mip_11_active()) {

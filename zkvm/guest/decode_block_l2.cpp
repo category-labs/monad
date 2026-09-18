@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
+#include <category/execution/ethereum/validate_block.hpp>
 
 #include <boost/outcome/try.hpp>
 
@@ -39,6 +40,14 @@ Result<Block> decode_block_l2(
     Block block;
     BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
     BOOST_OUTCOME_TRY(block.header, rlp::decode_block_header(payload));
+
+    // EIP-7685's requests are protocol-initiated execution for a beacon chain
+    // this one does not have: no validators, no deposits, no exits. The
+    // epilogue therefore computes no requests hash, so a header claiming one
+    // would carry a value nothing checks. Rejected rather than ignored.
+    if (MONAD_UNLIKELY(block.header.requests_hash.has_value())) {
+        return BlockError::RequestsNotSupported;
+    }
 
     BOOST_OUTCOME_TRY(auto items, rlp::parse_list_metadata(payload));
     // One buffer for the block, reused per leaf: Transaction owns its calldata
@@ -63,10 +72,32 @@ Result<Block> decode_block_l2(
     }
 
     BOOST_OUTCOME_TRY(block.ommers, rlp::decode_block_header_vector(payload));
+    // Ommers have no meaning on this chain, and leaving them accepted would
+    // leave apply_block_reward's ommer credits reachable -- they are zero on
+    // Paris and later, which the revision's static_assert pins, but this is the
+    // list itself rather than one more thing depending on that assert.
+    if (MONAD_UNLIKELY(!block.ommers.empty())) {
+        return BlockError::OmmersNotSupported;
+    }
 
     if (payload.size() > 0) {
         BOOST_OUTCOME_TRY(
             auto withdrawals, rlp::decode_withdrawal_list(payload));
+        // A withdrawal credits its recipient directly, and on this chain
+        // nothing authenticates the list. The block RLP is the prover's, the
+        // withdrawals root is checked only against the prover's own header,
+        // and the block hash this run publishes is computed from that same
+        // header -- so there is no external fact any of it is pinned to. An
+        // entry here would be balance created from nothing, provable.
+        //
+        // An empty list is allowed so a Shanghai-or-later header can still
+        // carry a well-formed withdrawals root. A real L2 needs an
+        // authenticated deposit path and this is where it would attach: the
+        // list would have to be bound to deposits the L1 hub has accepted,
+        // not merely to a header the prover wrote.
+        if (MONAD_UNLIKELY(!withdrawals.empty())) {
+            return BlockError::WithdrawalsNotSupported;
+        }
         block.withdrawals.emplace(std::move(withdrawals));
     }
 

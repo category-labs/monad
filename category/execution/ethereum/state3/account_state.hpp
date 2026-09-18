@@ -41,17 +41,24 @@ namespace trace
     struct StateDiffTracer;
 }
 
-// Mutable slots with linear lookup; undo records save only written slots.
+// Mutable slots; undo records save only written slots.
 // Appending preserves indices, but reallocation can invalidate pointers
 // and erase can move the last entry.
 class FlatStorage
 {
     std::vector<std::pair<bytes32_t, bytes32_t>> v_{};
 
+    // Small rows use linear scans; erase invalidates indexed positions.
+    SlotIndex idx_{};
+
 public:
     [[nodiscard]] bytes32_t const *find(bytes32_t const &key) const
     {
         std::uint64_t const tail = key_tail(key);
+        if (idx_) {
+            std::uint32_t const p = idx_.lookup(key, tail, v_);
+            return p ? &v_[p - 1].second : nullptr;
+        }
         for (auto const &e : v_) {
             if (key_equals(key, tail, e.first)) {
                 return &e.second;
@@ -63,6 +70,15 @@ public:
     void upsert(bytes32_t const &key, bytes32_t const &value)
     {
         std::uint64_t const tail = key_tail(key);
+        if (idx_) {
+            if (std::uint32_t const p = idx_.lookup(key, tail, v_); p != 0) {
+                v_[p - 1].second = value;
+                return;
+            }
+            v_.emplace_back(key, value);
+            idx_.on_insert(v_);
+            return;
+        }
         for (auto &e : v_) {
             if (key_equals(key, tail, e.first)) {
                 e.second = value;
@@ -70,6 +86,7 @@ public:
             }
         }
         v_.emplace_back(key, value);
+        idx_.on_insert(v_);
     }
 
     // Restore absence after a reverted insertion: keeping the original value
@@ -77,10 +94,20 @@ public:
     void erase(bytes32_t const &key)
     {
         std::uint64_t const tail = key_tail(key);
+        // The journal replays in reverse and only a new key appends, so the
+        // slot being removed is the one appended last. Without this the scan
+        // makes rejecting a frame that wrote n slots cost O(n^2), which the
+        // index cannot help: erase invalidates it, so it is never consulted.
+        if (!v_.empty() && key_equals(key, tail, v_.back().first)) {
+            v_.pop_back();
+            idx_.reset();
+            return;
+        }
         for (auto &e : v_) {
             if (key_equals(key, tail, e.first)) {
                 e = v_.back();
                 v_.pop_back();
+                idx_.reset();
                 return;
             }
         }
@@ -222,7 +249,8 @@ public:
 };
 
 // Guard against unintended growth of the per-account state.
-static_assert(sizeof(AccountState) == 192);
+// Two FlatStorage index pointers add 16 bytes in the ZisK guest.
+static_assert(sizeof(AccountState) == 208);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

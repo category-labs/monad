@@ -50,6 +50,8 @@ namespace
         case SimulationError::TransactionsContextUnavailable:
         case SimulationError::InvalidBlockGap:
         case SimulationError::GasLimitExceeded:
+        case SimulationError::StateOverrideFailure:
+        case SimulationError::InternalError:
             return EVMC_INTERNAL_ERROR;
         }
         return EVMC_INTERNAL_ERROR;
@@ -141,7 +143,11 @@ quick_status_code_from_enum<monad::SimulationError>::value_mappings()
         {SimulationError::InvalidBlockGap,
          "the block gap must be exactly 1 after filling in synthetic blocks",
          {}},
-        {SimulationError::GasLimitExceeded, "gas limit exceeded", {}}};
+        {SimulationError::GasLimitExceeded, "gas limit exceeded", {}},
+        {SimulationError::StateOverrideFailure,
+         "failed to apply state override",
+         {}},
+        {SimulationError::InternalError, "internal error", {}}};
 
     return v;
 }

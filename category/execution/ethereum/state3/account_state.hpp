@@ -42,17 +42,28 @@ namespace trace
     struct StateDiffTracer;
 }
 
-// Mutable slots with linear lookup; undo records save only written slots.
+// Mutable slots; undo records save only written slots.
 // Appending preserves indices, but reallocation can invalidate pointers
 // and erase can move the last entry.
 class FlatStorage
 {
     std::vector<std::pair<bytes32_t, bytes32_t>> v_{};
 
+#ifdef MONAD_ZKVM_ZISK
+    // Small rows use linear scans; erase invalidates indexed positions.
+    SlotIndex idx_{};
+#endif
+
 public:
     [[nodiscard]] bytes32_t const *find(bytes32_t const &key) const
     {
         std::uint64_t const tail = key_tail(key);
+#ifdef MONAD_ZKVM_ZISK
+        if (idx_) {
+            std::uint32_t const p = idx_.lookup(key, tail, v_);
+            return p ? &v_[p - 1].second : nullptr;
+        }
+#endif
         for (auto const &e : v_) {
             if (key_equals(key, tail, e.first)) {
                 return &e.second;
@@ -64,6 +75,17 @@ public:
     void upsert(bytes32_t const &key, bytes32_t const &value)
     {
         std::uint64_t const tail = key_tail(key);
+#ifdef MONAD_ZKVM_ZISK
+        if (idx_) {
+            if (std::uint32_t const p = idx_.lookup(key, tail, v_); p != 0) {
+                v_[p - 1].second = value;
+                return;
+            }
+            v_.emplace_back(key, value);
+            idx_.on_insert(v_);
+            return;
+        }
+#endif
         for (auto &e : v_) {
             if (key_equals(key, tail, e.first)) {
                 e.second = value;
@@ -71,6 +93,9 @@ public:
             }
         }
         v_.emplace_back(key, value);
+#ifdef MONAD_ZKVM_ZISK
+        idx_.on_insert(v_);
+#endif
     }
 
     // Restore absence after a reverted insertion: keeping the original value
@@ -82,6 +107,9 @@ public:
             if (key_equals(key, tail, e.first)) {
                 e = v_.back();
                 v_.pop_back();
+#ifdef MONAD_ZKVM_ZISK
+                idx_.reset();
+#endif
                 return;
             }
         }
@@ -223,7 +251,12 @@ public:
 };
 
 // Guard against unintended growth of the per-account state.
+#ifdef MONAD_ZKVM_ZISK
+// Two FlatStorage index pointers add 16 bytes in the ZisK guest.
+static_assert(sizeof(AccountState) == 208);
+#else
 static_assert(sizeof(AccountState) == 192);
+#endif
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

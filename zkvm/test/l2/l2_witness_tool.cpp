@@ -55,6 +55,7 @@
 #include <category/core/bytes.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
@@ -259,6 +260,41 @@ int main(int const argc, char **const argv)
             }
         }
         body = after_header; // the tail: ommers and maybe withdrawals
+    }
+
+    // A post-Shanghai mainnet block carries withdrawals, and the L2 rejects
+    // them as unauthorised balance creation. Refuse here rather than emit a
+    // witness the guest will refuse: the differential's oracle is that the two
+    // runs agree on the roots, and stripping the withdrawals would change the
+    // post-state root and destroy it. So the corpus for this arm is
+    // pre-Shanghai blocks.
+    // A pre-Merge block has a non-zero block reward, and the L2 gates
+    // apply_block_reward out, so the two arms would disagree on the post-state
+    // root for a reason that has nothing to do with the cipher. difficulty is
+    // the marker: the Merge repurposed the field and a post-Merge header
+    // carries zero there.
+    if (header.difficulty != 0) {
+        return fail(
+            "block is pre-Merge: its block reward would make the two arms "
+            "disagree on the post-state root -- rewrite a Paris-or-later "
+            "block instead");
+    }
+
+    if (!body.empty()) {
+        monad::byte_string_view tail = body;
+        auto const ommers = monad::rlp::decode_block_header_vector(tail);
+        if (ommers.has_error() || !ommers.value().empty()) {
+            return fail("block has ommers, which the L2 rejects");
+        }
+        if (!tail.empty()) {
+            auto const w = monad::rlp::decode_withdrawal_list(tail);
+            if (w.has_error() || !w.value().empty()) {
+                return fail(
+                    "block has withdrawals, which the L2 rejects as "
+                    "unauthorised balance creation -- rewrite a pre-Shanghai "
+                    "block instead");
+            }
+        }
     }
 
     auto ctx = monad::l2_cipher_context(header);

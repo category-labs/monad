@@ -268,9 +268,27 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
 
     if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+#ifdef MONAD_ZKVM_L2
+        // process_withdrawal credits its recipients directly, and on this
+        // chain nothing authenticates the list -- decode_block_l2 rejects a
+        // non-empty one for that reason. Asserted here as well because this is
+        // where the harm would land, and a guard three files away is a guard
+        // that can be lost.
+        MONAD_ASSERT(
+            !block.withdrawals.has_value() || block.withdrawals->empty());
+#endif
         process_withdrawal(state, block.withdrawals);
     }
 
+    // No requests on this chain, and gated for two reasons. The mechanism is
+    // for a beacon chain this one does not have. And under Prague it would
+    // make EVERY block invalid: system_call returns SystemCallMissingCode
+    // unless the EIP-7002 and EIP-7251 predeploys have code, which an L2 with
+    // no validators has no reason to deploy. It also builds a commitment to
+    // deposit requests read out of prover-chosen logs, checked only against
+    // the prover's own header -- inert today because nothing consumes it, and
+    // one more prover-driven surface for a mechanism that does not apply.
+#ifndef MONAD_ZKVM_L2
     if constexpr (traits::eip_7685_active()) {
         BOOST_OUTCOME_TRY(
             auto const computed_requests_hash,
@@ -288,6 +306,7 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
             return BlockError::InvalidRequestsHash;
         }
     }
+#endif
 
     // 4.5 The message anchor. Here and not earlier because the harvest reads
     //     `receipts`, which are only canonical once checked against the
@@ -316,7 +335,18 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
     }
 #endif
 
+    // No block reward on this chain, and gated rather than left to be zero.
+    // apply_block_reward credits block.header.beneficiary and every ommer's
+    // beneficiary -- fields the prover writes -- whenever block_reward is
+    // non-zero, which is any pre-Merge revision. A static_assert in l2_config
+    // forbids those, so the call would be inert; but then its safety rests on
+    // a property of the revision constant rather than on a rule of the chain,
+    // and an L2 has no miner, no beneficiary that means anything, and no
+    // issuance. Removing the call is the rule; the static_assert is the second
+    // line, not the first.
+#ifndef MONAD_ZKVM_L2
     apply_block_reward<traits>(state, block);
+#endif
 
     state.destruct_touched_dead();
 

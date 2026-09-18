@@ -27,8 +27,11 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/validate_block.hpp>
 #include <zkvm/guest/decode_block_l2.hpp>
 #include <zkvm/guest/l2_cipher.hpp>
 #include <zkvm/guest/l2_cipher_suite.hpp>
@@ -329,6 +332,65 @@ TEST(DecodeBlockL2, TrailingBytesInAPlaintextAreRejected)
     ASSERT_FALSE(got.has_error());
     EXPECT_EQ(ciphertexts.size(), 1u);
     EXPECT_TRUE(got.value().transactions.empty());
+}
+
+// A withdrawal credits its recipient directly and nothing on this chain
+// authenticates the list, so an entry is provable balance creation. The block
+// must be rejected outright -- not skipped like a bad leaf, because this is not
+// one entry going wrong, it is the block claiming a power the chain does not
+// have.
+TEST(DecodeBlockL2, RejectsAWithdrawal)
+{
+    auto const ctx = context();
+    auto const secret = bound_secret(ctx);
+    auto const original = sample_block();
+    auto const cts = encrypt_transactions(ctx, original.transactions);
+
+    Withdrawal w{};
+    w.index = 0;
+    w.validator_index = 1;
+    w.recipient = 0x000000000000000000000000000000000baddcaf_address;
+    w.amount = 1;
+
+    byte_string txs;
+    for (auto const &ct : cts) {
+        txs += rlp::encode_string2(ct);
+    }
+    byte_string body;
+    body += rlp::encode_block_header(original.header);
+    body += rlp::encode_list2(txs);
+    body += rlp::encode_list2(); // ommers
+    body += rlp::encode_list2(rlp::encode_withdrawal(w)); // one withdrawal
+    auto const encoded = rlp::encode_list2(body);
+
+    byte_string_view view{encoded};
+    std::vector<byte_string_view> ciphertexts;
+    auto const got = decode_block_l2(view, ctx, secret, ciphertexts);
+    ASSERT_TRUE(got.has_error());
+    EXPECT_EQ(got.error(), BlockError::WithdrawalsNotSupported);
+}
+
+// An empty list is fine: a Shanghai-or-later header still needs a well-formed
+// withdrawals root.
+TEST(DecodeBlockL2, AcceptsAnEmptyWithdrawalList)
+{
+    auto const ctx = context();
+    auto const secret = bound_secret(ctx);
+    BlockHeader header{};
+    header.number = 11;
+    byte_string body;
+    body += rlp::encode_block_header(header);
+    body += rlp::encode_list2(); // transactions
+    body += rlp::encode_list2(); // ommers
+    body += rlp::encode_list2(); // withdrawals, empty
+    auto const encoded = rlp::encode_list2(body);
+
+    byte_string_view view{encoded};
+    std::vector<byte_string_view> ciphertexts;
+    auto const got = decode_block_l2(view, ctx, secret, ciphertexts);
+    ASSERT_FALSE(got.has_error());
+    EXPECT_TRUE(got.value().withdrawals.has_value());
+    EXPECT_TRUE(got.value().withdrawals->empty());
 }
 
 TEST(DecodeBlockL2, EmptyTransactionListIsFine)

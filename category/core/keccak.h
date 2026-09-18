@@ -27,6 +27,16 @@ constexpr size_t KECCAK256_SIZE = 32;
 
 void keccak256(void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
 
+// The Keccak-f memo that the guest can leave out does not exist here, so this
+// is keccak256. The name exists because a translation unit shared with the
+// guest calls it unguarded: in a cross build zkvm/category/core/keccak.h
+// replaces this whole file and supplies the memo-free entry for real.
+static inline void keccak256_nomemo(
+    void const *const in, size_t const len, uint8_t out[KECCAK256_SIZE])
+{
+    keccak256(in, len, out);
+}
+
 #ifdef __cplusplus
 }
 #endif

@@ -35,7 +35,8 @@ struct MonadRunloopAddress
 // Opaque runloop structure:
 typedef void MonadRunloop;
 
-// Make a new runloop client
+// Make a new runloop client. The pool at db_path must already exist and be
+// page-encoded (created with monad-mpt --create --state-machine monad).
 MonadRunloop *monad_runloop_new(
     uint64_t chain_id, char const *ledger_path, char const *db_path);
 
@@ -55,12 +56,8 @@ void monad_runloop_get_balance(
     MonadRunloop *, MonadRunloopAddress const *,
     MonadRunloopWord *result_balance);
 
-// Store current primary state root in `result_state_root`.
-void monad_runloop_get_primary_state_root(
-    MonadRunloop *, MonadRunloopWord *result_state_root);
-
-// Store current secondary state root in `result_state_root`.
-void monad_runloop_get_secondary_state_root(
+// Store current state root in `result_state_root`.
+void monad_runloop_get_state_root(
     MonadRunloop *, MonadRunloopWord *result_state_root);
 
 // Dump the current state of the database to stdout

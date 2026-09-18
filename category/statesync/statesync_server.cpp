@@ -218,14 +218,6 @@ bool statesync_server_handle_request(
         {
         }
 
-        // When the server's primary is page-encoded, storage leaves hold
-        // encoded pages rather than single slots; we expand each page into
-        // slot-format upserts so v1 clients sync unchanged.
-        bool server_is_page_encoded() const
-        {
-            return sync->context->is_page_encoded();
-        }
-
         virtual bool down(unsigned char const branch, Node const &node) override
         {
             if (branch == INVALID_BRANCH) {
@@ -270,15 +262,12 @@ bool statesync_server_handle_request(
             }
 
             if (node.has_value() && v <= until) {
-                auto const send_upsert = [&](monad_sync_type const type,
-                                             unsigned char const *const v1 =
-                                                 nullptr,
-                                             uint64_t const size1 = 0) {
-                    uint64_t const size2 = node.value().size();
+                auto const send_upsert = [&](monad_sync_type const type) {
+                    uint64_t const size = node.value().size();
                     sync->statesync_server_send_upsert(
-                        sync->net, type, v1, size1, node.value().data(), size2);
+                        sync->net, type, nullptr, 0, node.value().data(), size);
                     ++(*num_upserts);
-                    *upsert_bytes += size1 + size2;
+                    *upsert_bytes += size;
                 };
 
                 if (nibble == CODE_NIBBLE) {
@@ -292,34 +281,25 @@ bool statesync_server_handle_request(
                     }
                     else {
                         MONAD_ASSERT(depth == (HASH_SIZE * 2));
-                        if (server_is_page_encoded()) {
-                            // Expand the page-encoded leaf into one slot-format
-                            // upsert per non-zero slot, so the wire stays
-                            // identical to a slot-encoded server.
-                            auto const decoded =
-                                decode_storage_page_leaf(node.value());
-                            MONAD_ASSERT(decoded.has_value());
-                            for (auto const [slot_key, slot_val] :
-                                 decoded.value().slots()) {
-                                auto const entry =
-                                    encode_storage_db(slot_key, slot_val);
-                                sync->statesync_server_send_upsert(
-                                    sync->net,
-                                    SYNC_TYPE_UPSERT_STORAGE,
-                                    reinterpret_cast<unsigned char const *>(
-                                        &addr),
-                                    sizeof(addr),
-                                    entry.data(),
-                                    entry.size());
-                                ++(*num_upserts);
-                                *upsert_bytes += sizeof(addr) + entry.size();
-                            }
-                        }
-                        else {
-                            send_upsert(
+                        // Storage leaves hold page-encoded pages. Expand each
+                        // into one slot-format upsert per non-zero slot so
+                        // the wire protocol stays slot-based.
+                        auto const decoded =
+                            decode_storage_page_leaf(node.value());
+                        MONAD_ASSERT(decoded.has_value());
+                        for (auto const [slot_key, slot_val] :
+                             decoded.value().slots()) {
+                            auto const entry =
+                                encode_storage_db(slot_key, slot_val);
+                            sync->statesync_server_send_upsert(
+                                sync->net,
                                 SYNC_TYPE_UPSERT_STORAGE,
-                                reinterpret_cast<unsigned char *>(&addr),
-                                sizeof(addr));
+                                reinterpret_cast<unsigned char const *>(&addr),
+                                sizeof(addr),
+                                entry.data(),
+                                entry.size());
+                            ++(*num_upserts);
+                            *upsert_bytes += sizeof(addr) + entry.size();
                         }
                     }
                 }

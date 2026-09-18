@@ -79,6 +79,16 @@ inline constexpr std::uint64_t L2_NAMESPACE_ID = MONAD_L2_NAMESPACE_ID;
 /// revision to be decided.
 inline constexpr monad_eth_revision L2_REVISION = MONAD_L2_REVISION;
 
+/// Paris or later, and this is a soundness rule rather than a preference.
+/// Before the Merge block_reward is non-zero, and apply_block_reward credits
+/// header.beneficiary and every ommer's beneficiary -- all of them fields the
+/// prover writes, checked against nothing but the prover's own header. On
+/// Paris and later the reward is zero and the call is inert.
+static_assert(
+    L2_REVISION >= MONAD_ETH_PARIS,
+    "a pre-Merge revision makes apply_block_reward mint to prover-chosen "
+    "addresses");
+
 /// The operator's public key, as a compressed point split into its
 /// x-coordinate and the parity of y. Split rather than given as 33 hex bytes
 /// so the existing _bytes32 literal can carry it with no parser.

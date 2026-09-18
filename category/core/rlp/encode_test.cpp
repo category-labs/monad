@@ -20,7 +20,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstddef>
+#include <iterator>
 #include <span>
 
 using monad::byte_string;
@@ -87,6 +89,44 @@ TEST(rlp, impl_encode_length)
     EXPECT_TRUE(
         byte_string_view(buf, result.data()) ==
         byte_string({0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}));
+}
+
+TEST(rlp, impl_encode_length_compact_preserves_tail)
+{
+    for (size_t len = 0; len <= sizeof(size_t); ++len) {
+        unsigned char buf[sizeof(size_t) + 1];
+        std::fill(std::begin(buf), std::end(buf), 0xaa);
+        size_t const value = len == 0 ? 0 : size_t{1} << (8 * (len - 1));
+        auto const remaining = monad::rlp::impl::encode_length_compact(
+            std::span{buf}.first(len), value);
+        EXPECT_TRUE(remaining.empty());
+        if (len != 0) {
+            EXPECT_EQ(buf[0], 1);
+            for (size_t i = 1; i < len; ++i) {
+                EXPECT_EQ(buf[i], 0);
+            }
+        }
+        for (size_t i = len; i < sizeof(buf); ++i) {
+            EXPECT_EQ(buf[i], 0xaa);
+        }
+    }
+}
+
+TEST(rlp, encode_list_prefix_compact_preserves_payload)
+{
+    for (size_t const size : {0u, 55u, 56u, 255u, 256u, 65535u, 65536u}) {
+        byte_string node(monad::rlp::list_length(size), 0xaa);
+        size_t const header_len = node.size() - size;
+        auto const remaining = monad::rlp::encode_list_prefix_compact(
+            std::span{node}.first(header_len), size);
+        EXPECT_TRUE(remaining.empty());
+        EXPECT_EQ(node.substr(header_len), byte_string(size, 0xaa));
+        unsigned char expected[1 + sizeof(size_t)];
+        auto const rest = monad::rlp::encode_list_prefix(expected, size);
+        EXPECT_EQ(sizeof(expected) - rest.size(), header_len);
+        EXPECT_EQ(
+            node.substr(0, header_len), byte_string(expected, header_len));
+    }
 }
 
 TEST(rlp, string_length)

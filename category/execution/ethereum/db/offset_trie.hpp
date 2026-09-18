@@ -62,6 +62,61 @@ inline constexpr uint32_t HEADER_LEN = 8; // magic(4) root_offset(4)
 // + value slot + list header. 700 leaves margin.
 inline constexpr size_t MAX_NODE_RLP = 700;
 
+// A thin view over an RLP scratch buffer of fixed capacity.
+// Encoding writes the payload into the *tail* of the
+// buffer, so `data()` always stays at the buffer start and `size()`
+// shrinks as bytes are written. The live RLP region is therefore
+// [data() + size(), buf_end):
+//   rlp_data() = data() + size(),  rlp_size() = Capacity - size().
+template <size_t Capacity>
+struct node_rlp_span : private std::span<unsigned char>
+{
+    // rlp_size() computes the written tail as Capacity - size(),
+    // which is only right when the span starts out covering exactly
+    // Capacity bytes — so that is the only buffer accepted here.
+    explicit node_rlp_span(unsigned char (&buf)[Capacity])
+        : std::span<unsigned char>(buf)
+    {
+    }
+
+    using std::span<unsigned char>::size;
+    using std::span<unsigned char>::empty;
+
+    unsigned char const *rlp_data() const
+    {
+        return std::span<unsigned char>::data() + size();
+    }
+
+    size_t rlp_size() const
+    {
+        return Capacity - size();
+    }
+
+    unsigned char &back() const
+    {
+        MONAD_ASSERT(!empty());
+        return std::span<unsigned char>::back();
+    }
+
+    std::span<unsigned char> last(size_t const n) const
+    {
+        MONAD_ASSERT(n <= size());
+        return std::span<unsigned char>::last(n);
+    }
+
+    node_rlp_span shrink(size_t const n) const
+    {
+        MONAD_ASSERT(n <= size());
+        return node_rlp_span{std::span<unsigned char>::first(size() - n)};
+    }
+
+private:
+    explicit node_rlp_span(std::span<unsigned char> const s)
+        : std::span<unsigned char>(s)
+    {
+    }
+};
+
 // Longest path a node may carry.
 inline constexpr unsigned MAX_PATH_NIBBLES = 64;
 
@@ -551,72 +606,9 @@ public:
     bytes32_t hash(NodeId id);
     bytes32_t state_root();
 
+    using node_rlp_span = mpt::node_rlp_span<MAX_NODE_RLP>;
+
 private:
-    // A thin view over an RLP scratch buffer of fixed capacity
-    // MAX_NODE_RLP. Encoding writes the payload into the *tail* of the
-    // buffer, so `data()` always stays at the buffer start and `size()`
-    // shrinks as bytes are written. The live RLP region is therefore
-    // [data() + size(), buf_end):
-    //   rlp_data() = data() + size(),  rlp_size() = MAX_NODE_RLP - size().
-    struct node_rlp_span : std::span<unsigned char>
-    {
-        // rlp_size() computes the written tail as MAX_NODE_RLP - size(),
-        // which is only right when the span starts out covering exactly
-        // MAX_NODE_RLP bytes — so that is the only buffer accepted here.
-        explicit node_rlp_span(unsigned char (&buf)[MAX_NODE_RLP])
-            : std::span<unsigned char>(buf)
-        {
-        }
-
-        // The written RLP is the tail past size(), not a subspan of *this,
-        // so rlp_data() needs the raw base pointer. Everyone else must
-        // reach bytes through last(): hide the front pointer to stop
-        // accidental writes to the unwritten head being mistaken for the
-        // payload.
-        unsigned char *data() const = delete;
-
-        // The remaining unchecked accessors are deleted too: bytes are
-        // reachable only through the asserting back()/last() below.
-        unsigned char &operator[](size_t) const = delete;
-        unsigned char &front() const = delete;
-        std::span<unsigned char> first(size_t) const = delete;
-        std::span<unsigned char> subspan(size_t, size_t) const = delete;
-
-        unsigned char const *rlp_data() const
-        {
-            return std::span<unsigned char>::data() + size();
-        }
-
-        size_t rlp_size() const
-        {
-            return MAX_NODE_RLP - size();
-        }
-
-        unsigned char &back() const
-        {
-            MONAD_ASSERT(!empty());
-            return std::span<unsigned char>::back();
-        }
-
-        std::span<unsigned char> last(size_t const n) const
-        {
-            MONAD_ASSERT(n <= size());
-            return std::span<unsigned char>::last(n);
-        }
-
-        node_rlp_span shrink(size_t const n) const
-        {
-            MONAD_ASSERT(n <= size());
-            return node_rlp_span{std::span<unsigned char>::first(size() - n)};
-        }
-
-    private:
-        explicit node_rlp_span(std::span<unsigned char> const s)
-            : std::span<unsigned char>(s)
-        {
-        }
-    };
-
     template <bool priming_pass>
     node_rlp_span child_ref_compute(
         NodeId const id, NodeViewBase const node, node_rlp_span dest);

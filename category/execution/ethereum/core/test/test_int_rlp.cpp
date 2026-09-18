@@ -26,10 +26,54 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <span>
 
 using namespace monad;
 using namespace monad::rlp;
+
+TEST(Rlp_Number, EncodeUnsignedSpan)
+{
+    auto const check = []<unsigned_integral T>(T const value) {
+        auto const expected = encode_unsigned(value);
+        byte_string buffer(expected.size() + 1, 0xaa);
+        auto const remaining =
+            encode_unsigned(std::span{buffer}.first(expected.size()), value);
+        EXPECT_TRUE(remaining.empty());
+        EXPECT_EQ(remaining.data(), buffer.data() + expected.size());
+        EXPECT_EQ(buffer.substr(0, expected.size()), expected);
+        EXPECT_EQ(buffer.back(), 0xaa);
+
+        auto const tail = encode_unsigned(std::span{buffer}, value);
+        EXPECT_EQ(tail.size(), 1);
+        EXPECT_EQ(tail[0], 0xaa);
+    };
+    auto const check_type = [&]<typename T>() {
+        for (unsigned const value : {0u, 1u, 127u, 128u, 255u}) {
+            check(static_cast<T>(value));
+        }
+        for (unsigned byte = 1; byte < sizeof(T); ++byte) {
+            unsigned char bytes[sizeof(T)]{};
+            std::fill_n(bytes + sizeof(T) - byte, byte, 0xff);
+            check(load_be<T>(bytes)); // just below the next byte width
+            std::fill_n(bytes, sizeof(T), 0);
+            bytes[sizeof(T) - byte - 1] = 1;
+            check(load_be<T>(bytes));
+            bytes[sizeof(T) - 1] = 1;
+            check(load_be<T>(bytes));
+        }
+        unsigned char max_bytes[sizeof(T)];
+        std::fill_n(max_bytes, sizeof(T), 0xff);
+        check(load_be<T>(max_bytes));
+    };
+    check_type.template operator()<uint8_t>();
+    check_type.template operator()<uint16_t>();
+    check_type.template operator()<uint32_t>();
+    check_type.template operator()<uint64_t>();
+    check_type.template operator()<uint128_t>();
+    check_type.template operator()<uint256_t>();
+}
 
 TEST(Rlp_Number, DecodeUnsigned)
 {

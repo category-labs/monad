@@ -21,16 +21,29 @@
 #include <category/core/result.hpp>
 #include <category/core/rlp/config.hpp>
 #include <category/core/rlp/decode_error.hpp>
+#include <category/core/rlp/encode.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 
 #include <boost/outcome/try.hpp>
+
+#include <span>
 
 MONAD_RLP_NAMESPACE_BEGIN
 
 inline byte_string encode_unsigned(unsigned_integral auto const &n)
 {
     return encode_string2(to_big_compact(n));
+}
+
+// Encode into the start of dest and return the unused tail. At most
+// 1 + sizeof(n) bytes are written; no temporary byte_string is constructed.
+inline std::span<unsigned char>
+encode_unsigned(std::span<unsigned char> dest, unsigned_integral auto const &n)
+{
+    auto const big_endian = bswap(n);
+    return encode_string(
+        dest, zeroless_view({as_bytes(big_endian), sizeof(big_endian)}));
 }
 
 template <unsigned_integral T>

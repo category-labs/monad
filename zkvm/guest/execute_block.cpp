@@ -24,6 +24,9 @@
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#ifdef MONAD_ZKVM_L2
+    #include <category/execution/ethereum/namespace_anchor.hpp>
+#endif
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -98,9 +101,9 @@ struct ZkvmSequentialExecutor
 
 template <Traits traits>
     requires(is_evm_trait_v<traits>)
-Result<bytes32_t> execute_block_zkvm(
+Result<ZkvmBlockOutput> execute_block_zkvm(
     Chain const &chain, Block const &block,
-    std::span<byte_string_view const> const raw_transactions, Db &pdb,
+    std::span<byte_string_view const> const root_transactions, Db &pdb,
     vm::VM &vm, BlockHashBuffer const &block_hash_buffer)
 {
     static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
@@ -111,12 +114,21 @@ Result<bytes32_t> execute_block_zkvm(
     senders.reserve(block.transactions.size());
     std::vector<std::vector<std::optional<Address>>> authorities;
     authorities.reserve(block.transactions.size());
+#ifndef MONAD_ZKVM_L2
     // Build signing payloads from the original transaction bytes.
-    MONAD_ASSERT(raw_transactions.size() == block.transactions.size());
+    MONAD_ASSERT(root_transactions.size() == block.transactions.size());
+#endif
     for (size_t i = 0; i < block.transactions.size(); ++i) {
         auto const &tx = block.transactions[i];
+#ifdef MONAD_ZKVM_L2
+        // The committed bytes are ciphertexts here, one per leaf rather than
+        // one per transaction, so they are not what the transaction was
+        // decoded from: its signing payload is re-encoded instead.
+        auto const s = recover_sender(tx);
+#else
         auto const s = recover_address(
-            tx.sc.signature, rlp::signing_payload(tx, raw_transactions[i]));
+            tx.sc.signature, rlp::signing_payload(tx, root_transactions[i]));
+#endif
         if (MONAD_UNLIKELY(!s.has_value())) {
             return TransactionError::MissingSender;
         }
@@ -199,9 +211,26 @@ Result<bytes32_t> execute_block_zkvm(
     // The transactions and withdrawals executed above, and the receipts
     // produced, must be the ones the header commits to
     {
-        MONAD_ASSERT(raw_transactions.size() == block.transactions.size());
+        // Against the committed bytes, not against a re-encoding of what was
+        // decoded. That is the stronger of the two: re-encoding proves "what I
+        // executed, canonically re-encoded, hashes to the committed root",
+        // which admits any input whose re-encoding is canonical even where
+        // decode was lossy; this proves "the bytes I read from hash to the
+        // committed root", and what executed came from exactly those slices by
+        // construction.
+        //
+        // On an L2 block the chain has one more link and is still the same
+        // statement: leaf in transactions_root, in the header, in the block
+        // hash this run publishes; plaintext = D_sk(leaf) under a key bound by
+        // sk*G == the operator key the protocol names; and one transaction per
+        // plaintext with nothing left over. The count is NOT compared there: a
+        // rejected leaf is committed to and executes nothing, so the two
+        // differ by however many were rejected.
+#ifndef MONAD_ZKVM_L2
+        MONAD_ASSERT(root_transactions.size() == block.transactions.size());
+#endif
         if (MONAD_UNLIKELY(
-                ordered_trie_root(raw_transactions) !=
+                ordered_trie_root(root_transactions) !=
                 block.header.transactions_root)) {
             return BlockError::WrongMerkleRoot;
         }
@@ -279,6 +308,33 @@ Result<bytes32_t> execute_block_zkvm(
         }
     }
 
+    // 4.5 The message anchor. Here and not earlier because the harvest reads
+    //     `receipts`, which are only canonical once checked against the
+    //     header's receipts root above; and here rather than later because the
+    //     clear needs this epilogue State. Next to process_requests, the other
+    //     epilogue step that consumes receipts, so the two log harvests read
+    //     together.
+    //
+    //     Note what this CANNOT do: emit the anchor as an event. Anything
+    //     store_log'd into the LAST_TX state lands in State::logs_ and is then
+    //     dropped -- the receipts vector was fixed and root-checked before this
+    //     State even existed. The anchor's only exits are storage and the
+    //     public output, which is consistent with the contract:
+    //     finalizeNamespaceMessages logs nothing either, it RETURNS the anchor.
+    bytes32_t namespace_anchor{};
+#ifdef MONAD_ZKVM_L2
+    {
+        BOOST_OUTCOME_TRY(
+            auto leaves,
+            collect_namespace_messages(receipts, L2_NAMESPACE_SPOKE));
+        // Before the root consumes the vector in place.
+        auto const count = static_cast<uint64_t>(leaves.size());
+        namespace_anchor = sorted_pair_merkle_root(leaves);
+        clear_pending_namespace_messages(
+            state, L2_NAMESPACE_SPOKE, L2_PENDING_SLOT, count);
+    }
+#endif
+
     apply_block_reward<traits>(state, block);
 
     state.destruct_touched_dead();
@@ -294,7 +350,7 @@ Result<bytes32_t> execute_block_zkvm(
         bytes32_t{}, builder, block.header, *released.state, [](BlockHeader &) {
         });
 
-    return pdb.state_root();
+    return ZkvmBlockOutput{pdb.state_root(), namespace_anchor};
 }
 
 EXPLICIT_EVM_TRAITS(execute_block_zkvm);

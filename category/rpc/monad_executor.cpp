@@ -57,6 +57,7 @@
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/tracer_config.h>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
@@ -220,7 +221,8 @@ namespace
             header.base_fee_per_gas,
             header.excess_blob_gas,
             chain.get_chain_id(),
-            chain.get_blob_schedule(header.timestamp)));
+            chain.get_blob_schedule(header.timestamp),
+            tokens_in_calldata(enriched_txn)));
 
         tdb.set_block_and_prefix(block_number, block_id);
         BlockState block_state{tdb, vm};

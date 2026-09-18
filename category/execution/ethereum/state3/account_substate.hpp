@@ -37,6 +37,9 @@ class AccountSubstate
     bool accessed_{false}; // A_a
     Set accessed_storage_{}; // A_K
 
+    // Undoing a warm slot invalidates the index.
+    SlotIndex aidx_{};
+
 public:
     AccountSubstate() = default;
     AccountSubstate(AccountSubstate &&) noexcept = default;
@@ -93,12 +96,21 @@ public:
     monad_access_status access_storage(bytes32_t const &key)
     {
         std::uint64_t const tail = key_tail(key);
+        if (aidx_) {
+            if (aidx_.lookup(key, tail, accessed_storage_) != 0) {
+                return MONAD_ACCESS_WARM;
+            }
+            accessed_storage_.push_back(key);
+            aidx_.on_insert(accessed_storage_);
+            return MONAD_ACCESS_COLD;
+        }
         for (auto const &k : accessed_storage_) {
             if (key_equals(key, tail, k)) {
                 return MONAD_ACCESS_WARM;
             }
         }
         accessed_storage_.push_back(key);
+        aidx_.on_insert(accessed_storage_);
         return MONAD_ACCESS_COLD;
     }
 
@@ -128,10 +140,11 @@ public:
                 accessed_storage_.back().bytes, key.bytes, sizeof(key.bytes)) ==
             0);
         accessed_storage_.pop_back();
+        aidx_.reset();
     }
 };
 
 // Guard against unintended growth of the per-account substate.
-static_assert(sizeof(AccountSubstate) == 32);
+static_assert(sizeof(AccountSubstate) == 40);
 
 MONAD_NAMESPACE_END

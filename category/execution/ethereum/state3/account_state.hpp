@@ -249,8 +249,8 @@ public:
 };
 
 // Guard against unintended growth of the per-account state.
-// Two FlatStorage index pointers add 16 bytes in the ZisK guest.
-static_assert(sizeof(AccountState) == 208);
+// Two FlatStorage index pointers and A_K's account for 24 of these bytes.
+static_assert(sizeof(AccountState) == 216);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

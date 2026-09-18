@@ -71,6 +71,16 @@ option(MONAD_ZKVM_L2
        OFF)
 if(MONAD_ZKVM_L2)
   monad_l2_compile_definitions()
+else()
+  if(MONAD_ZKVM_L2_ALLOW_L1_SHAPE OR MONAD_ZKVM_L2_PLAINTEXT_LEAVES)
+    # Both only take effect through monad_l2_compile_definitions, which this
+    # branch never reaches. Fail rather than build a guest that silently is not
+    # the arm the caller asked for.
+    message(FATAL_ERROR
+            "MONAD_ZKVM_L2_ALLOW_L1_SHAPE and MONAD_ZKVM_L2_PLAINTEXT_LEAVES "
+            "are diagnostics OF the L2 guest and do nothing without "
+            "-DMONAD_ZKVM_L2=ON")
+  endif()
 endif()
 
 # ##############################################################################

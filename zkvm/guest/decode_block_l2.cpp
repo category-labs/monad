@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -45,8 +46,14 @@ Result<Block> decode_block_l2(
     // this one does not have: no validators, no deposits, no exits. The
     // epilogue therefore computes no requests hash, so a header claiming one
     // would carry a value nothing checks. Rejected rather than ignored.
-    if (MONAD_UNLIKELY(block.header.requests_hash.has_value())) {
-        return BlockError::RequestsNotSupported;
+    // Rejected on PRESENCE, not on content: the epilogue computes no requests
+    // hash, so any value here is one nothing checks. A Prague-or-later header
+    // carries keccak256("") even with no requests, which is why the corpus
+    // differential needs l2_allows_l1_shape to get past this at all.
+    if constexpr (!l2_allows_l1_shape()) {
+        if (MONAD_UNLIKELY(block.header.requests_hash.has_value())) {
+            return BlockError::RequestsNotSupported;
+        }
     }
 
     BOOST_OUTCOME_TRY(auto items, rlp::parse_list_metadata(payload));
@@ -95,8 +102,13 @@ Result<Block> decode_block_l2(
         // authenticated deposit path and this is where it would attach: the
         // list would have to be bound to deposits the L1 hub has accepted,
         // not merely to a header the prover wrote.
-        if (MONAD_UNLIKELY(!withdrawals.empty())) {
-            return BlockError::WithdrawalsNotSupported;
+        // l2_allows_l1_shape lifts this for the corpus differential, and
+        // lifting the rejection is all it does: the epilogue still does not
+        // credit them, so even that build creates no balance.
+        if constexpr (!l2_allows_l1_shape()) {
+            if (MONAD_UNLIKELY(!withdrawals.empty())) {
+                return BlockError::WithdrawalsNotSupported;
+            }
         }
         block.withdrawals.emplace(std::move(withdrawals));
     }

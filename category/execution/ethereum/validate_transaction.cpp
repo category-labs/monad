@@ -62,7 +62,16 @@ Result<void> static_validate_transaction(
     // line and makes every blob-gas path unreachable, where unpicking
     // calc_blob_fee, get_total_blob_gas and the rest would touch code the
     // mainnet corpus exercises for a feature this chain does not have.
-    if constexpr (!traits::eip_4844_active() || !gas_is_priced()) {
+    //
+    // l2_allows_l1_shape narrows it back for the corpus differential, whose
+    // only corpus has blob transactions in two thirds of its blocks. Safe
+    // there for a reason particular to that measurement rather than in
+    // general: gas is unpriced in BOTH arms, so no blob fee is charged in
+    // either and the two still agree. It is not a claim that this chain
+    // supports blobs.
+    if constexpr (
+        !traits::eip_4844_active() ||
+        (!gas_is_priced() && !l2_allows_l1_shape())) {
         if (MONAD_UNLIKELY(tx.type == TransactionType::eip4844)) {
             return TransactionError::TypeNotSupported;
         }

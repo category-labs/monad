@@ -116,6 +116,42 @@ function(monad_l2_sources GUEST_DIR OUT_VAR)
       PARENT_SCOPE)
 endfunction()
 
+# The two DIAGNOSTIC levers, both OFF by default and neither ever part of a
+# provable configuration. They exist so the corpus differential can run on the
+# witnesses that exist rather than on the ones its design assumed.
+#
+# MONAD_ZKVM_L2_ALLOW_L1_SHAPE accepts a block shape the L2 has no rules for --
+# withdrawals, a present requests_hash, blob transactions -- and IGNORES what
+# it cannot authenticate rather than implementing it. It creates no balance:
+# the epilogue still skips process_withdrawal, so the P1 it reaches into stays
+# closed even here.
+#
+# MONAD_ZKVM_L2_PLAINTEXT_LEAVES is the differential's reference arm: L2 chain,
+# L2 gas rules, L2 block shape, L2 anchor, but a six-field witness whose leaves
+# are plaintext. Both arms of the differential are L2 builds and differ only in
+# this, which is what makes the comparison an argument about the cipher.
+# Comparing against a non-L2 build compares two rule sets instead: gas is
+# priced there, so the sender's balance, the refund and the beneficiary's tips
+# move on one arm and not the other, and the roots differ on every block that
+# has a transaction.
+function(monad_l2_diagnostic_definitions)
+  if(MONAD_ZKVM_L2_ALLOW_L1_SHAPE)
+    add_compile_definitions(MONAD_ZKVM_L2_ALLOW_L1_SHAPE)
+    message(WARNING
+            "MONAD_ZKVM_L2_ALLOW_L1_SHAPE: this guest accepts withdrawals, a "
+            "requests hash and blob transactions that it has no rules for, and "
+            "ignores them. Diagnostic only -- the roots it commits describe no "
+            "chain. Nothing built this way should be proved or published.")
+  endif()
+  if(MONAD_ZKVM_L2_PLAINTEXT_LEAVES)
+    add_compile_definitions(MONAD_ZKVM_L2_PLAINTEXT_LEAVES)
+    message(WARNING
+            "MONAD_ZKVM_L2_PLAINTEXT_LEAVES: this guest does not decrypt. It "
+            "is the corpus differential's reference arm and proves nothing "
+            "about the cipher on its own -- only the pair does.")
+  endif()
+endfunction()
+
 function(monad_l2_compile_definitions)
   if(NOT DEFINED MONAD_ZKVM_L2_CIPHER)
     set(MONAD_ZKVM_L2_CIPHER "ecdh-poseidon2")
@@ -173,4 +209,6 @@ function(monad_l2_compile_definitions)
     MONAD_L2_OPERATOR_PK_X=${MONAD_ZKVM_L2_OPERATOR_PK_X}_bytes32
     MONAD_L2_OPERATOR_PK_ODD=${MONAD_ZKVM_L2_OPERATOR_PK_ODD}
     MONAD_L2_EPOCH_BLOCKS=${MONAD_ZKVM_L2_EPOCH_BLOCKS})
+
+  monad_l2_diagnostic_definitions()
 endfunction()

@@ -244,67 +244,98 @@ keccak-sites build.
 ### The corpus differential
 
 Nothing in this repository produces witnesses, so the L2 arm gets its oracle by
-REWRITING one rather than making one. Encrypting the leaves and recomputing
-`transactions_root` changes nothing execution reads — `execute_block_header`
-and `ExecuteTransaction` touch `prev_randao`, `beneficiary`, `timestamp`,
-`number`, `gas_limit` and `base_fee_per_gas`, not that root — and the decrypted
-transactions are byte for byte the originals. So the two runs must agree on the
-first 64 bytes of the public output, exactly. Only the block hash differs, and
-it differs by construction because the block is fabricated.
+REWRITING one rather than making one: encrypt each leaf, recompute
+`transactions_root`, re-assemble. What the differential then asserts is that
+encrypting the transactions changes nothing about executing them.
 
-**`MONAD_ZKVM_L2_REVISION` has to be the revision mainnet's own schedule would
-give the corpus blocks**, and getting it wrong costs the oracle rather than
-announcing itself. The plaintext arm is `EthereumMainnet` and consults that
-schedule; the L2 arm returns a compiled constant and ignores the block
-entirely, which is the point of a chain with no fork schedule. Set the two to
-different revisions and the arms execute under different EVM rules, so the
-post-state roots differ for a reason that has nothing to do with the cipher --
-the one signal this differential exists to give.
+**Both arms are L2 builds.** That is not an implementation detail, it is what
+makes the comparison mean anything:
+
+| arm | build | leaves |
+|---|---|---|
+| reference | `MONAD_ZKVM_L2=ON` + `MONAD_ZKVM_L2_PLAINTEXT_LEAVES=ON` | plaintext, six-field witness |
+| subject | `MONAD_ZKVM_L2=ON` | ciphertext, seven-field witness |
+
+Comparing an L2 build against a NON-L2 build does not work, and the reason is
+worth stating because it is easy to talk yourself into. The L2 arm differs from
+a plaintext guest by the gas surgery as well as by the cipher: the sender's
+upfront cost, the refund credit and the beneficiary's tips all move balances on
+a non-L2 build and none of them move on an L2 one. So the post-state roots
+differ on every block that contains a single transaction, whatever the fork and
+whatever the corpus. Two L2 builds leave the cipher as the only difference, and
+their roots must then agree **exactly** — the first 64 bytes of the public
+output, byte for byte. Only the block hash differs, by construction, because
+the block is fabricated.
 
 Both runs go through `ziskemu`, on two ELFs. Not through a host executor: an
 x86 build of the guest is a different program, with the native Poseidon2
 permutation instead of `csrs 0x812` and libsecp256k1 instead of zisklib, so two
 host arms agreeing would say nothing about the arm being proved.
 
-**The corpus for this is blocks from Paris up to Shanghai**, and both ends
-matter. In mainnet terms that is block 15,537,394 (PARIS_ACTIVATION_BLOCK_NUMBER)
-up to the last block whose timestamp is below 1,681,338,455
-(SHANGHAI_ACTIVATION_TIMESTAMP) -- about 1.5 million blocks, September 2022 to
-April 2023. Worth having in numbers, because a block number alone does not say
-which fork it is: from Shanghai on, mainnet's schedule switches on the
-TIMESTAMP, so the test on a witness is that header field and not its height. A Shanghai-or-later block carries withdrawals, which the L2 rejects
-outright as unauthorised balance creation — nothing on this chain
-authenticates the list — and stripping them is no way round it, since the
-credits are in the post-state root and removing them changes the very root the
-oracle compares. A pre-Merge block fails at the other end: it may carry ommers,
-which the L2 also rejects, and its block reward is non-zero while the L2 gates
-apply_block_reward out, so the two arms would disagree on the post-state root
-for a reason that has nothing to do with the cipher.
+#### The corpus, and the lever it needs
 
-Inside that window the two arms really do agree: ommers are empty, there are no
-withdrawals, the block reward is already zero so gating it changes nothing, and
-EIP-7685 is not active so gating process_requests changes nothing either. The
-rewriter refuses anything outside it rather than emit a witness the guest will
-refuse.
+An L2 block shape is narrower than mainnet's, so most real witnesses are
+refused outright: a Shanghai-or-later block carries withdrawals, a
+Prague-or-later header carries a `requests_hash` (`keccak256("")` even with no
+requests), and a Cancun-or-later block may carry blob transactions.
+`MONAD_ZKVM_L2_ALLOW_L1_SHAPE` accepts all three and ignores what this chain
+cannot authenticate rather than implementing it — withdrawals are decoded but
+never credited, the requests hash is accepted but never recomputed, a blob
+transaction executes with no blob fee.
+
+It goes in **both** arms, so it cannot bias the comparison, and it creates no
+balance in either: the epilogue still skips `process_withdrawal`, so the P1
+this lever reaches into stays closed. What it does cost is that the roots those
+runs commit describe no chain. That is acceptable for a differential whose
+whole claim is "these two agree with each other" and acceptable for nothing
+else, which is why `MONAD_ZKVM_L2_ALLOW_L1_SHAPE` and
+`MONAD_ZKVM_L2_PLAINTEXT_LEAVES` are both forbidden in the official profile and
+required OFF by `audit-official-build.py`.
+
+Without the lever the corpus has to be a block the L2 accepts unaided: from
+Paris (block 15,537,394) up to the last block whose timestamp is below
+1,681,338,455 (`SHANGHAI_ACTIVATION_TIMESTAMP`), about 1.5 million blocks from
+September 2022 to April 2023. Worth having in numbers, because a block number
+alone does not say which fork it is: from Shanghai on, mainnet's schedule
+switches on the TIMESTAMP, so the test on a witness is that header field and
+not its height.
+
+`MONAD_ZKVM_L2_REVISION` has to be the revision mainnet's own schedule would
+give the corpus blocks. Both arms are L2 builds and both read the same compiled
+constant, so a wrong value no longer breaks the comparison between them — but
+it does execute the corpus under rules it was not built under, which is its own
+way of measuring nothing.
 
 ```sh
-# The plaintext arm, saved aside before the L2 configure overwrites the ELF.
-cd zkvm/zisk && cargo-zisk build --release
-cp target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk /tmp/guest-plain
+cd zkvm/zisk
+COMMON="MONAD_ZKVM_L2=ON;MONAD_ZKVM_L2_ALLOW_L1_SHAPE=ON;<the eight values>"
 
-# The L2 arm, with the defines above.
-MONAD_ZKVM_CMAKE_DEFINES="MONAD_ZKVM_L2=ON;..." cargo-zisk build --release
+# The reference arm: L2 rules, no cipher.
+MONAD_ZKVM_CMAKE_DEFINES="$COMMON;MONAD_ZKVM_L2_PLAINTEXT_LEAVES=ON" \
+    cargo-zisk build --release
+cp target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk /tmp/guest-ref
+
+# The subject arm: the same rules, decrypting.
+MONAD_ZKVM_CMAKE_DEFINES="$COMMON" cargo-zisk build --release
 cp target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk /tmp/guest-l2
 
 # Rewrite the witness. --check decrypts every leaf back before writing.
 monad-zkvm-l2-witness --in plain.bin --out l2.bin --sk <64 hex> --check
 
 # Frame both (8-byte LE length prefix, zero-padded to a multiple of 8) and run.
-ziskemu -e /tmp/guest-plain -i plain.framed.bin -o /tmp/a.bin
-ziskemu -e /tmp/guest-l2    -i l2.framed.bin    -o /tmp/b.bin
+# The reference arm takes the ORIGINAL witness, the subject arm the rewritten
+# one -- that asymmetry is the experiment.
+ziskemu -e /tmp/guest-ref -i plain.framed.bin -o /tmp/a.bin
+ziskemu -e /tmp/guest-l2  -i l2.framed.bin    -o /tmp/b.bin
 
 cmp <(head -c 64 /tmp/a.bin) <(head -c 64 /tmp/b.bin)   # must be identical
 ```
+
+What this differential does NOT cover, and nothing else on this branch does
+either: that the gas surgery produces the right `gas_used`, that the anchor
+matches what the contract would compute, and that either arm's roots match the
+canonical chain. Both arms carry the same surgery and the same anchor, so both
+agreeing says nothing about either being right.
 
 `monad-zkvm-l2-witness` is a host tool and legitimately so: it only rewrites
 bytes, and it shares `l2_cipher` with the guest, so its keystream is the

@@ -85,6 +85,53 @@ inline constexpr bool gas_is_priced() noexcept
 #endif
 }
 
+/// DIAGNOSTIC ONLY. True when the L2 guest accepts an L1 block shape it has no
+/// rules for, so that the corpus differential can run on mainnet witnesses.
+/// Off by default, and forbidden in any audited build.
+///
+/// It exists because the corpus available is Osaka, not the Paris-to-Shanghai
+/// window: every block carries withdrawals and a requests_hash, and two thirds
+/// carry blob transactions, each of which the L2 refuses outright. With this
+/// on, those three are accepted and the parts this chain cannot authenticate
+/// are IGNORED rather than implemented -- withdrawals are decoded but never
+/// credited, the requests hash is accepted but never recomputed, and a blob
+/// transaction executes with no blob fee.
+///
+/// That makes the executed semantics diverge from mainnet's, which is fine for
+/// what it is for and useless for anything else: the differential compares two
+/// L2 builds against EACH OTHER, so both arms carry this and it cannot bias
+/// the comparison. It creates no balance in either, which is the one property
+/// worth keeping even in a build nobody proves: the P1 this lever reaches into
+/// stays closed.
+inline constexpr bool l2_allows_l1_shape() noexcept
+{
+#ifdef MONAD_ZKVM_L2_ALLOW_L1_SHAPE
+    return true;
+#else
+    return false;
+#endif
+}
+
+/// DIAGNOSTIC ONLY. True in the differential's REFERENCE arm: L2 chain, L2 gas
+/// rules, L2 block shape and L2 anchor, but a six-field witness whose leaves
+/// are plaintext transactions rather than ciphertexts.
+///
+/// This is what makes the differential an argument about the cipher. Comparing
+/// an L2 build against a NON-L2 build compares two different consensus rule
+/// sets: gas is priced on one and metered-only on the other, so the sender's
+/// balance, the refund and the beneficiary's tips all move on one arm and not
+/// the other, and the post-state roots differ on every block that has a
+/// transaction. Comparing L2 against L2 leaves the cipher as the only
+/// difference, which is the thing being tested.
+inline constexpr bool l2_leaves_are_plaintext() noexcept
+{
+#ifdef MONAD_ZKVM_L2_PLAINTEXT_LEAVES
+    return true;
+#else
+    return false;
+#endif
+}
+
 uint64_t floor_data_gas(Transaction const &) noexcept;
 uint64_t floor_data_gas(CalldataTokens) noexcept;
 

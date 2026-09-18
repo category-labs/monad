@@ -58,6 +58,13 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     option(MONAD_ZKVM_L2
            "L2 semantics: encrypted transactions, message anchor, no gas economics"
            OFF)
+    if(NOT MONAD_ZKVM_L2 AND
+       (MONAD_ZKVM_L2_ALLOW_L1_SHAPE OR MONAD_ZKVM_L2_PLAINTEXT_LEAVES))
+        message(FATAL_ERROR
+            "MONAD_ZKVM_L2_ALLOW_L1_SHAPE and MONAD_ZKVM_L2_PLAINTEXT_LEAVES "
+            "are diagnostics OF the L2 guest and do nothing without "
+            "-DMONAD_ZKVM_L2=ON")
+    endif()
     if(MONAD_ZKVM_L2)
         # Relative: MONAD_ROOT is not set until much further down this file.
         include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/l2.cmake")
@@ -112,7 +119,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         # CHECK_SEQUENTIAL_MERGE is already forbidden here, which is also what keeps it from
         # colliding with the NO_MERGE_CONSTRAINTS forced on just above.
         if(MONAD_ZKVM_KECCAK_SITES OR MONAD_ZKVM_SELFTEST
-           OR MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
+           OR MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE
+           OR MONAD_ZKVM_L2_ALLOW_L1_SHAPE OR MONAD_ZKVM_L2_PLAINTEXT_LEAVES)
             message(FATAL_ERROR
                 "diagnostic counters/self-test are forbidden in the official ZisK profile")
         endif()

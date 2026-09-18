@@ -59,6 +59,7 @@
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <zkvm/guest/body_roots.hpp>
 #include <zkvm/guest/l2_cipher.hpp>
 #include <zkvm/guest/l2_config.hpp>
@@ -198,6 +199,18 @@ int main(int const argc, char **const argv)
         return fail("--in, --out and --sk are all required");
     }
 
+    // The differential's reference arm consumes the ORIGINAL witness, not a
+    // rewritten one -- that asymmetry IS the experiment. A tool built
+    // alongside that arm has nothing to do, and rewriting anyway would hand it
+    // a seven-field witness it rejects with InputTooLong, several build and
+    // framing steps from here. Said now instead.
+    if constexpr (monad::l2_leaves_are_plaintext()) {
+        return fail(
+            "built with MONAD_ZKVM_L2_PLAINTEXT_LEAVES: that arm reads the "
+            "witness as it stands, so there is nothing to rewrite. Build this "
+            "tool with the subject arm's defines instead");
+    }
+
     auto const sk_bytes = from_hex(sk_hex);
     if (!sk_bytes.has_value() || sk_bytes->size() != 32) {
         return fail("--sk must be 32 bytes of hex");
@@ -262,22 +275,18 @@ int main(int const argc, char **const argv)
         body = after_header; // the tail: ommers and maybe withdrawals
     }
 
-    // A post-Shanghai mainnet block carries withdrawals, and the L2 rejects
-    // them as unauthorised balance creation. Refuse here rather than emit a
-    // witness the guest will refuse: the differential's oracle is that the two
-    // runs agree on the roots, and stripping the withdrawals would change the
-    // post-state root and destroy it. So the corpus for this arm is
-    // pre-Shanghai blocks.
-    // A pre-Merge block has a non-zero block reward, and the L2 gates
-    // apply_block_reward out, so the two arms would disagree on the post-state
-    // root for a reason that has nothing to do with the cipher. difficulty is
-    // the marker: the Merge repurposed the field and a post-Merge header
-    // carries zero there.
+    // Refuse what the guest would refuse, rather than emitting a witness that
+    // dies on the far side of a build and a framing step.
+    //
+    // Pre-Merge blocks go whatever the levers say. They carry ommers, which
+    // nothing here accepts, and the block reward they carry is only inert
+    // because BOTH arms gate apply_block_reward out -- resting a corpus on
+    // that is resting it on a gate rather than on the block. difficulty is the
+    // marker: the Merge repurposed the field, so a post-Merge header is zero.
     if (header.difficulty != 0) {
         return fail(
-            "block is pre-Merge: its block reward would make the two arms "
-            "disagree on the post-state root -- rewrite a Paris-or-later "
-            "block instead");
+            "block is pre-Merge: it carries ommers, which the L2 rejects -- "
+            "rewrite a Paris-or-later block instead");
     }
 
     if (!body.empty()) {
@@ -286,13 +295,21 @@ int main(int const argc, char **const argv)
         if (ommers.has_error() || !ommers.value().empty()) {
             return fail("block has ommers, which the L2 rejects");
         }
-        if (!tail.empty()) {
-            auto const w = monad::rlp::decode_withdrawal_list(tail);
-            if (w.has_error() || !w.value().empty()) {
-                return fail(
-                    "block has withdrawals, which the L2 rejects as "
-                    "unauthorised balance creation -- rewrite a pre-Shanghai "
-                    "block instead");
+        // Withdrawals are what a Shanghai-or-later block always carries, and
+        // the guest rejects them as unauthorised balance creation unless
+        // MONAD_ZKVM_L2_ALLOW_L1_SHAPE is on -- which this tool is compiled
+        // with or without alongside the guest, so the two always agree about
+        // what is admissible.
+        if constexpr (!monad::l2_allows_l1_shape()) {
+            if (!tail.empty()) {
+                auto const w = monad::rlp::decode_withdrawal_list(tail);
+                if (w.has_error() || !w.value().empty()) {
+                    return fail(
+                        "block has withdrawals, which the L2 rejects as "
+                        "unauthorised balance creation -- rewrite a block from "
+                        "Paris up to Shanghai, or build with "
+                        "-DMONAD_ZKVM_L2_ALLOW_L1_SHAPE=ON");
+                }
             }
         }
     }

@@ -44,6 +44,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 
 #include "body_roots.hpp"
@@ -274,10 +275,20 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
         // non-empty one for that reason. Asserted here as well because this is
         // where the harm would land, and a guard three files away is a guard
         // that can be lost.
-        MONAD_ASSERT(
-            !block.withdrawals.has_value() || block.withdrawals->empty());
-#endif
+        //
+        // Under l2_allows_l1_shape the decoder accepts the list so the corpus
+        // differential can run, and THIS is the line that keeps that from
+        // mattering: the credit is skipped, so a list arrives, is decoded, and
+        // moves no balance. The assertion narrows to the invariant that still
+        // holds -- nothing is credited -- rather than being lifted with it.
+        if constexpr (!l2_allows_l1_shape()) {
+            MONAD_ASSERT(
+                !block.withdrawals.has_value() || block.withdrawals->empty());
+            process_withdrawal(state, block.withdrawals);
+        }
+#else
         process_withdrawal(state, block.withdrawals);
+#endif
     }
 
     // No requests on this chain, and gated for two reasons. The mechanism is

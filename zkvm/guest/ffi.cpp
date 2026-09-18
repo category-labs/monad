@@ -140,7 +140,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     std::size_t input_len = 0;
     read_input(&input, &input_len);
 
-#ifdef MONAD_ZKVM_L2
+#if defined(MONAD_ZKVM_L2) && !defined(MONAD_ZKVM_L2_PLAINTEXT_LEAVES)
     // Seven fields, the seventh being the transaction-decryption secret. A
     // six-field witness fails here with InputTooShort, and a seven-field one
     // given to a plaintext guest fails with InputTooLong -- which is why the
@@ -150,6 +150,9 @@ extern "C" void monad_zkvm_execute_witness(void)
     MONAD_ASSERT(witness.has_value());
     auto const &w = witness.value().base;
 #else
+    // Six fields under MONAD_ZKVM_L2_PLAINTEXT_LEAVES too: that arm is the
+    // differential's reference, so it reads the ORIGINAL witness -- no secret,
+    // and leaves that are already transactions.
     auto const witness = monad::parse_execution_witness(
         monad::byte_string_view{input, input_len});
     MONAD_ASSERT(witness.has_value());
@@ -222,7 +225,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     // these are the ciphertext leaves, every one of them, including any that
     // were rejected -- the header commits to the whole list.
     std::vector<monad::byte_string_view> root_transactions;
-#ifdef MONAD_ZKVM_L2
+#if defined(MONAD_ZKVM_L2) && !defined(MONAD_ZKVM_L2_PLAINTEXT_LEAVES)
     // The cipher context is a function of the header and of compiled protocol
     // constants, so it has to be in hand before the first leaf is decrypted --
     // hence one extra pass over the header, which is a single RLP list. It
@@ -252,6 +255,13 @@ extern "C" void monad_zkvm_execute_witness(void)
     auto block_result = monad::decode_block_l2(
         block_view, cipher_ctx, *secret, root_transactions);
 #else
+    // Also the MONAD_ZKVM_L2_PLAINTEXT_LEAVES path. Everything else about that
+    // build is the L2 -- the chain, the unpriced gas, the block shape, the
+    // anchor -- so a run of it against an encrypted run of the same block
+    // differs by the cipher and by nothing else. That is the whole argument
+    // the corpus differential makes, and comparing against a NON-L2 build
+    // cannot make it: gas is priced there, so the sender's balance, the refund
+    // and the beneficiary's tips all move on one arm and not the other.
     auto block_result =
         monad::rlp::decode_block(block_view, &root_transactions);
 #endif

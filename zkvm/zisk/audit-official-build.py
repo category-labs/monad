@@ -26,6 +26,11 @@ REQUIRED_OPTIONS = {
     # CMake FATAL_ERROR: that one guards the configure, this one guards an ELF
     # matched against a stale-but-passing cache.
     "MONAD_ZKVM_L2": "OFF",
+    # Unreachable while L2 itself is OFF, and listed anyway: these two make the
+    # guest accept blocks it has no rules for and skip decryption entirely, so
+    # an ELF carrying either is not a prover at all.
+    "MONAD_ZKVM_L2_ALLOW_L1_SHAPE": "OFF",
+    "MONAD_ZKVM_L2_PLAINTEXT_LEAVES": "OFF",
 }
 REQUIRED_FLAGS = (
     "-O3",

@@ -48,12 +48,6 @@
 #include <utility>
 #include <vector>
 
-#ifdef MONAD_ZKVM_KECCAK_SITES
-    #include <category/core/keccak_sites.hpp>
-#else
-    #define MONAD_GUEST_SITE(s) ((void)0)
-#endif
-
 MONAD_NAMESPACE_BEGIN
 
 namespace

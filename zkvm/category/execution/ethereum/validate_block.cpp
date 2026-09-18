@@ -49,6 +49,7 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
         {BlockError::InvalidOmmerHeader, "invalid ommer header", {}},
         {BlockError::WrongLogsBloom, "wrong logs bloom", {}},
         {BlockError::InvalidGasUsed, "invalid gas used", {}},
+        {BlockError::InvalidExcessBlobGas, "invalid excess blob gas", {}},
         {BlockError::WrongMerkleRoot, "wrong merkle root", {}},
         {BlockError::SystemCallMissingCode,
          "system call target has no code",

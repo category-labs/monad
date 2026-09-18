@@ -23,8 +23,7 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/state3/account_substate.hpp>
 #include <category/execution/ethereum/state3/page_tracker.hpp>
-
-#include <evmc/evmc.h>
+#include <category/vm/evm/storage_status.h>
 
 // TODO immer known to trigger incorrect warning
 #pragma GCC diagnostic push
@@ -71,11 +70,11 @@ public:
     StorageMap transient_storage_{};
     PageTracker page_tracker_{};
 
-    evmc_storage_status zero_out_key(
+    monad_storage_status zero_out_key(
         bytes32_t const &key, bytes32_t const &original_value,
         bytes32_t const &current_value);
 
-    evmc_storage_status set_current_value(
+    monad_storage_status set_current_value(
         bytes32_t const &key, bytes32_t const &value,
         bytes32_t const &original_value, bytes32_t const &current_value);
 
@@ -133,7 +132,7 @@ public:
         return {};
     }
 
-    evmc_storage_status set_storage(
+    monad_storage_status set_storage(
         bytes32_t const &key, bytes32_t const &value,
         bytes32_t const &original_value)
     {

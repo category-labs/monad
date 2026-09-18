@@ -70,7 +70,7 @@ evmc_storage_status EvmcHostBase::set_storage(
 {
     MONAD_TRY
     {
-        return state_.set_storage(address, key, value);
+        return to_evmc_storage_status(state_.set_storage(address, key, value));
     }
     MONAD_CATCH(...)
     {

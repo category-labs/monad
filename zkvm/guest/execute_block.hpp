@@ -34,13 +34,31 @@ namespace vm
     class VM;
 }
 
+/// What the proof publishes about a block.
+///
+/// `namespace_anchor` is bytes32_t{} on a build without MONAD_ZKVM_L2, where
+/// there is no spoke to harvest. The struct is unconditional, and the 32 zero
+/// bytes are the price: making it conditional would leak the macro into this
+/// header, into ffi.cpp's dispatch wrapper, and into the return type of the
+/// SWITCH_EVM_TRAITS lambda.
+struct ZkvmBlockOutput
+{
+    bytes32_t state_root;
+    bytes32_t namespace_anchor;
+};
+
 // Sequential mirror of execute_block<traits> for the zkVM guest. Drops the
 // fiber pool, dispatch_transaction indirection, tracers, and block-metrics
+// `root_transactions` is what the transactions-root check is taken over, in
+// order. On a plaintext block that is the byte slice each transaction was
+// decoded from, one per transaction. On an L2 block it is every ciphertext
+// LEAF -- including the ones that were rejected, because the header commits to
+// the whole list -- so it may be LONGER than block.transactions.
 template <Traits traits>
     requires(is_evm_trait_v<traits>)
-Result<bytes32_t> execute_block_zkvm(
+Result<ZkvmBlockOutput> execute_block_zkvm(
     Chain const &chain, Block const &block,
-    std::span<byte_string_view const> raw_transactions, Db &pdb, vm::VM &vm,
+    std::span<byte_string_view const> root_transactions, Db &pdb, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer);
 
 MONAD_NAMESPACE_END

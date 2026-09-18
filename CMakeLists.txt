@@ -55,6 +55,23 @@ if(NOT DEFINED BUILD_SHARED_LIBS)
 endif()
 
 include(cmake/test.cmake)
+include(cmake/l2.cmake)
+
+# Lever: L2 semantics -- encrypted transactions, the end-of-block message
+# anchor, and no gas economics. A MODE and not an optimisation: it changes the
+# witness shape, the chain and the consensus rules, so a witness built for one
+# setting is rejected outright by the other.
+#
+# Declared at root scope, and it therefore makes EVERY binary in this build
+# tree an L2 binary, cmd/monad included. That is arguably right -- an L2 node
+# and its prover have to agree on the rules -- but it means this is not "a
+# guest option". See cmake/l2.cmake for why root scope is forced.
+option(MONAD_ZKVM_L2
+       "L2 semantics: encrypted transactions, message anchor, no gas economics"
+       OFF)
+if(MONAD_ZKVM_L2)
+  monad_l2_compile_definitions()
+endif()
 
 # ##############################################################################
 # deps

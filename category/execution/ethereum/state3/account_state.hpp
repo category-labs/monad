@@ -263,16 +263,29 @@ static_assert(sizeof(AccountState) == 192);
 
 // Cache original slot values on first read; entries are never overwritten
 // or rolled back. Append-only storage preserves indices, though vector
-// reallocation may invalidate pointers. Lookup uses a linear scan.
+// reallocation may invalidate pointers.
 class PrestateStorage
 {
     // [(slot identifier, original value)]
     std::vector<std::pair<bytes32_t, bytes32_t>> entries_{};
 
+#ifdef MONAD_ZKVM_ZISK
+    // Append-only entries keep indexed positions stable.
+    SlotIndex slot_index_{};
+#endif
+
 public:
     bytes32_t const *find(bytes32_t const &key) const
     {
         std::uint64_t const tail = key_tail(key);
+#ifdef MONAD_ZKVM_ZISK
+        if (slot_index_) {
+            std::uint32_t const position_plus_one =
+                slot_index_.lookup(key, tail, entries_);
+            return position_plus_one ? &entries_[position_plus_one - 1].second
+                                     : nullptr;
+        }
+#endif
         for (auto const &entry : entries_) {
             if (key_equals(key, tail, entry.first)) {
                 return &entry.second;
@@ -281,9 +294,16 @@ public:
         return nullptr;
     }
 
+#ifdef MONAD_ZKVM_ZISK
+    // Avoid a separate call when caching a slot read from the block state.
+    [[gnu::always_inline]]
+#endif
     void insert(bytes32_t const &key, bytes32_t const &value)
     {
         entries_.emplace_back(key, value);
+#ifdef MONAD_ZKVM_ZISK
+        slot_index_.on_insert(entries_);
+#endif
     }
 
     bool empty() const

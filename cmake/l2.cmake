@@ -152,6 +152,17 @@ function(monad_l2_diagnostic_definitions)
   endif()
 endfunction()
 
+# `0x` followed by exactly DIGITS hex digits, or a fatal error naming the value.
+function(monad_l2_require_hex NAME DIGITS VALUE)
+  string(LENGTH "${VALUE}" _len)
+  math(EXPR _want "${DIGITS} + 2")
+  if(NOT _len EQUAL _want OR NOT VALUE MATCHES "^0x[0-9a-fA-F]+$")
+    message(FATAL_ERROR
+            "${NAME} must be 0x followed by ${DIGITS} hex digits; got "
+            "'${VALUE}' (${_len} characters)")
+  endif()
+endfunction()
+
 function(monad_l2_compile_definitions)
   if(NOT DEFINED MONAD_ZKVM_L2_CIPHER)
     set(MONAD_ZKVM_L2_CIPHER "ecdh-poseidon2")
@@ -180,16 +191,13 @@ function(monad_l2_compile_definitions)
             "or the wrong operator key emits proofs the L1 hub accepts.")
   endif()
 
-  if(NOT MONAD_ZKVM_L2_SPOKE MATCHES "^0x[0-9a-fA-F]{40}$")
-    message(FATAL_ERROR
-            "MONAD_ZKVM_L2_SPOKE must be 0x followed by 40 hex digits, got "
-            "'${MONAD_ZKVM_L2_SPOKE}'")
-  endif()
-  if(NOT MONAD_ZKVM_L2_OPERATOR_PK_X MATCHES "^0x[0-9a-fA-F]{64}$")
-    message(FATAL_ERROR
-            "MONAD_ZKVM_L2_OPERATOR_PK_X must be 0x followed by 64 hex digits, "
-            "got '${MONAD_ZKVM_L2_OPERATOR_PK_X}'")
-  endif()
+  # Length and character class checked separately, because CMake's regex
+  # engine has no brace repetition: "[0-9a-fA-F]{40}" matches nothing at all,
+  # so a guard written that way rejects every value it was meant to accept and
+  # the option can never be set. Found by configuring.
+  monad_l2_require_hex(MONAD_ZKVM_L2_SPOKE 40 "${MONAD_ZKVM_L2_SPOKE}")
+  monad_l2_require_hex(
+    MONAD_ZKVM_L2_OPERATOR_PK_X 64 "${MONAD_ZKVM_L2_OPERATOR_PK_X}")
 
   # The suite name reaches C++ as one macro per suite rather than as a string,
   # so the selection is a #if and an unselected suite is not compiled at all.

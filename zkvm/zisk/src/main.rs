@@ -25,6 +25,11 @@ ziskos::entrypoint!(main);
 // we issue the same RISC-V Linux exit syscall (a7 = 93) that ziskos's own
 // _start ends on, so the prover terminates with the requested status.
 
+// The L2 guest's ECDH reaches ziskos' secp256k1 library through this module's
+// C entries; it is compiled in unconditionally because a symbol the C++ side
+// does not reference is dead-stripped anyway.
+mod secp256k1_bridge;
+
 extern "C" {
     fn monad_zkvm_execute_witness();
 }

@@ -62,7 +62,9 @@ namespace monad::keccak_sites
                      // ancestor walk
         // State-access sites. Counted only — a permutation count is meaningless
         // here, so their perms slots stay zero. The 256-byte output budget is
-        // what caps the list: 96 bytes of roots + 2 * 18 * 4 = 240.
+        // what caps the list: 96 bytes of roots + 2 * 19 * 4 = 248 against a
+        // 256-byte cap, so there is room for exactly one more enumerator and
+        // not two.
         ACCT_LOOKUP, // State::current_account_state entered
         ACCT_FIND_MISS, // ... and the current_ map missed, so the original_
                         // path ran

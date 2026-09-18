@@ -15,15 +15,19 @@
 
 // Phase 4 — ingest a reth-format execution witness from the eth-act standard
 // input interface, reconstruct the partial state trie, execute the embedded
-// block sequentially via execute_block_zkvm<traits>, and emit the resulting
-// post-state root as the 32-byte output.
+// block sequentially via execute_block_zkvm<traits>, and commit the public
+// output: three roots on the Ethereum arm, and under MONAD_ZKVM_L2 the message
+// anchor and the block number after them. See the comment at the write_output
+// calls for what each value is for and what it is worth.
 //
 // The Rust ZisK / SP1 guest crates link this library and call
 // monad_zkvm_execute_witness from their respective entrypoints. The C++
 // side owns input/output via the eth-act standard interface
 // (zkvm/core/zkvm_io.h):
 //   - read_input(...)  — fetches the RLP-encoded witness buffer
-//   - write_output(...) — emits the computed post-state root as 32 bytes
+//   - write_output(...) — appends to the committed public output, one call a
+//     value; ZisK's ROM publishes that region with its `pubout` operation, in
+//     32 chunks of 64 bits, which is where the 256-byte cap comes from
 // Both symbols are resolved by the backend's runtime (ziskos on ZisK;
 // libzkevm.a on SP1; the x86 test runner provides them against a --input
 // file).
@@ -40,6 +44,12 @@
 #include <category/core/keccak.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#ifdef MONAD_ZKVM_L2
+    #include <category/execution/ethereum/core/contract/big_endian.hpp>
+    #include <zkvm/guest/decode_block_l2.hpp>
+    #include <zkvm/guest/l2_config.hpp>
+    #include <zkvm/guest/monad_l2_chain.hpp>
+#endif
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -90,16 +100,16 @@ namespace
     // template the macro can name). ChainContext<traits> for EVM traits
     // is an empty aggregate, so we materialise it here.
     template <monad::Traits traits>
-    monad::Result<monad::bytes32_t> dispatch(
+    monad::Result<monad::ZkvmBlockOutput> dispatch(
         monad::Chain const &chain, monad::Block const &block,
-        std::span<monad::byte_string_view const> const raw_transactions,
+        std::span<monad::byte_string_view const> const root_transactions,
         monad::Db &pdb, monad::vm::VM &vm,
         monad::BlockHashBuffer const &block_hash_buffer)
     {
         return monad::execute_block_zkvm<traits>(
             chain,
             block,
-            raw_transactions,
+            root_transactions,
             pdb,
             vm,
             block_hash_buffer,
@@ -130,9 +140,21 @@ extern "C" void monad_zkvm_execute_witness(void)
     std::size_t input_len = 0;
     read_input(&input, &input_len);
 
+#ifdef MONAD_ZKVM_L2
+    // Seven fields, the seventh being the transaction-decryption secret. A
+    // six-field witness fails here with InputTooShort, and a seven-field one
+    // given to a plaintext guest fails with InputTooLong -- which is why the
+    // envelope carries no version byte.
+    auto const witness = monad::parse_execution_witness_l2(
+        monad::byte_string_view{input, input_len});
+    MONAD_ASSERT(witness.has_value());
+    auto const &w = witness.value().base;
+#else
     auto const witness = monad::parse_execution_witness(
         monad::byte_string_view{input, input_len});
     MONAD_ASSERT(witness.has_value());
+    auto const &w = witness.value();
+#endif
 
     // 2. Build the code index from the witness bytecodes (keccak-keyed), the
     //    same content PartialTrieDb serves read_code from.
@@ -141,7 +163,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     // into a map that starts empty, and a rehash recomputes every key it holds.
     code_index.reserve(512);
     {
-        monad::byte_string_view codes = witness.value().encoded_codes;
+        monad::byte_string_view codes = w.encoded_codes;
         while (!codes.empty()) {
             auto const bytes = monad::rlp::parse_string_metadata(codes);
             MONAD_ASSERT(bytes.has_value());
@@ -186,7 +208,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     // 3. Load the pre-state trie zero-copy from the offset-format node region
     //    (validated + hash-primed by the OffsetTrie constructor). No external
     //    pre-state root is needed — it is the blob's own header root.
-    monad::mpt::OffsetTrie trie{witness.value().encoded_nodes};
+    monad::mpt::OffsetTrie trie{w.encoded_nodes};
     // A witness must carry a materialised pre-state trie; an overlay-id root is
     // the empty-trie sentinel (root_off == 0), which the execution path cannot
     // read from or commit onto.
@@ -194,12 +216,45 @@ extern "C" void monad_zkvm_execute_witness(void)
     monad::PartialTrieDb pdb{std::move(trie), std::move(code_index)};
 
     // 4. Decode the embedded block.
-    monad::byte_string_view block_view = witness.value().block_rlp;
-    // The byte slice each transaction was decoded from, kept so the
-    // transactions-root check can be made against those bytes rather than
-    // against a re-encoding of what was decoded from them.
-    std::vector<monad::byte_string_view> raw_transactions;
-    auto block_result = monad::rlp::decode_block(block_view, &raw_transactions);
+    monad::byte_string_view block_view = w.block_rlp;
+    // What the transactions-root check is taken over: the committed bytes,
+    // rather than a re-encoding of what was decoded from them. On an L2 block
+    // these are the ciphertext leaves, every one of them, including any that
+    // were rejected -- the header commits to the whole list.
+    std::vector<monad::byte_string_view> root_transactions;
+#ifdef MONAD_ZKVM_L2
+    // The cipher context is a function of the header and of compiled protocol
+    // constants, so it has to be in hand before the first leaf is decrypted --
+    // hence one extra pass over the header, which is a single RLP list. It
+    // stays a PARAMETER of decode_block_l2 rather than being built inside it,
+    // so a test can inject one without the deployment constants.
+    monad::BlockHeader l2_header;
+    {
+        monad::byte_string_view view = block_view;
+        auto payload = monad::rlp::parse_list_metadata(view);
+        MONAD_ASSERT(payload.has_value());
+        auto header = monad::rlp::decode_block_header(payload.value());
+        MONAD_ASSERT(header.has_value());
+        l2_header = std::move(header).value();
+    }
+    auto const cipher_ctx = monad::l2_cipher_context(l2_header);
+    // The one check the whole design rests on, and it is in the type rather
+    // than in a call: the secret is a private witness input, so without tying
+    // it to the compiled operator key a prover supplies any secret, gets
+    // another set of plaintexts, and proves a valid post-state for a block
+    // nobody wrote. bind_secret is the only source of an L2Cipher::Secret, so
+    // decode_block_l2 cannot be reached with an unbound one. A failure here is
+    // a malformed witness, like every other witness defect in this function.
+    auto const secret = monad::L2Cipher::bind_secret(
+        cipher_ctx,
+        std::span<unsigned char const, 32>{witness.value().sk.data(), 32});
+    MONAD_ASSERT(secret.has_value());
+    auto block_result = monad::decode_block_l2(
+        block_view, cipher_ctx, *secret, root_transactions);
+#else
+    auto block_result =
+        monad::rlp::decode_block(block_view, &root_transactions);
+#endif
     MONAD_ASSERT(block_result.has_value());
     MONAD_ASSERT(block_view.empty());
     auto const &block = block_result.value();
@@ -216,7 +271,7 @@ extern "C" void monad_zkvm_execute_witness(void)
         bool have_prev = false;
         monad::bytes32_t prev_hash{};
         uint64_t prev_number = 0;
-        monad::byte_string_view headers = witness.value().encoded_headers;
+        monad::byte_string_view headers = w.encoded_headers;
         while (!headers.empty()) {
             auto const payload = monad::rlp::parse_string_metadata(headers);
             MONAD_ASSERT(payload.has_value());
@@ -260,7 +315,13 @@ extern "C" void monad_zkvm_execute_witness(void)
 
     // 6. Build the execution context. EthereumMainnet is the MVP chain;
     //    monad-chain dispatch lands when we wire monad witnesses up.
+#ifdef MONAD_ZKVM_L2
+    // A chain id of its own and a revision that is a constant, not a lookup:
+    // an L2 that starts at one revision has no fork schedule to consult.
+    monad::MonadL2 const chain;
+#else
     monad::EthereumMainnet const chain;
+#endif
     monad::vm::VM vm;
     pdb.set_block_and_prefix(block.header.number, monad::bytes32_t{});
 
@@ -270,12 +331,12 @@ extern "C" void monad_zkvm_execute_witness(void)
     //    and timestamp select the revision the same way the live node does.
     monad_eth_revision const rev =
         chain.get_revision(block.header.number, block.header.timestamp);
-    auto const root_result = [&]() -> monad::Result<monad::bytes32_t> {
+    auto const root_result = [&]() -> monad::Result<monad::ZkvmBlockOutput> {
         SWITCH_EVM_TRAITS(
             dispatch,
             chain,
             block,
-            raw_transactions,
+            root_transactions,
             pdb,
             vm,
             block_hash_buffer);
@@ -286,7 +347,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     }();
     MONAD_ASSERT(root_result.has_value());
 
-    monad::bytes32_t const &state_root = root_result.value();
+    monad::bytes32_t const &state_root = root_result.value().state_root;
 
     // The hash of the block that was executed, from the canonical header
     // encoding -- with the state root THIS RUN COMPUTED sealed into it, not the
@@ -333,12 +394,38 @@ extern "C" void monad_zkvm_execute_witness(void)
     write_output(state_root.bytes, sizeof(state_root.bytes));
     write_output(pre_state_root.bytes, sizeof(pre_state_root.bytes));
     write_output(block_hash.bytes, sizeof(block_hash.bytes));
+#ifdef MONAD_ZKVM_L2
+    // The tuple the L1 hub verifies: submitStateSignature(chainId,
+    // blockNumber, newStateRoot, anchor). chainId is compiled into this guest,
+    // so only these two join the three above.
+    //
+    // Neither weakens the argument above; both lean on it. The block number IS
+    // a field of the sealed header, and the anchor is a deterministic function
+    // of the block's logs, which receipts_root commits to and the header
+    // carries. They are published so the verifier can rebuild the digest
+    // without carrying the header, not because they add anything to trust.
+    //
+    // Big-endian, like every other multi-byte quantity the header and the ABI
+    // use; the keccak-site tail below is little-endian but explicitly
+    // diagnostic, so it is not a precedent. Eight bytes rather than a padded
+    // ABI word because this buffer is a packed struct -- the verifier
+    // left-pads in one line.
+    monad::bytes32_t const &anchor = root_result.value().namespace_anchor;
+    write_output(anchor.bytes, sizeof(anchor.bytes));
+    monad::u64_be const number{block.header.number};
+    write_output(number.bytes, sizeof(number.bytes));
+#endif
 #ifdef MONAD_ZKVM_KECCAK_SITES
-    // Diagnostic tail, AFTER the three public values so their offsets are
-    // unchanged and the verifier reads them exactly as before. A run that
-    // reports its keccak breakdown is therefore still a run whose roots are
-    // checked -- which is the whole point of putting the counters here rather
-    // than in a printf the guest cannot do.
+    // Diagnostic tail, AFTER the verifier's values so their offsets are
+    // unchanged and it reads them exactly as before. A run that reports its
+    // keccak breakdown is therefore still a run whose roots are checked --
+    // which is the whole point of putting the counters here rather than in a
+    // printf the guest cannot do.
+    //
+    // This tail is 2 * 19 * 4 = 152 bytes and the three roots are 96, so a
+    // diagnostic run commits 248 of ZisK's 256. MONAD_ZKVM_L2's two extra
+    // values take the head to 136 and the total to 288, which is why the two
+    // options are a configure-time error together rather than an overflow.
     write_output(monad::keccak_sites::bytes(), monad::keccak_sites::size());
 #endif
 }

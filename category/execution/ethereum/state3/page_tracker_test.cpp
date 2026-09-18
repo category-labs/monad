@@ -15,8 +15,8 @@
 
 #include <category/core/bytes.hpp>
 #include <category/execution/ethereum/state3/page_tracker.hpp>
-
-#include <evmc/evmc.h>
+#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/storage_status.h>
 
 #include <gtest/gtest.h>
 
@@ -33,39 +33,41 @@ TEST(PageTracker, cold_write)
 {
     PageTracker pt;
 
-    EXPECT_TRUE(pt.update_page(SLOT_A, EVMC_STORAGE_ADDED).first_page_write);
+    EXPECT_TRUE(pt.update_page(SLOT_A, MONAD_STORAGE_ADDED).first_page_write);
     EXPECT_FALSE(
-        pt.update_page(SLOT_A2, EVMC_STORAGE_MODIFIED).first_page_write);
-    EXPECT_FALSE(pt.update_page(SLOT_A, EVMC_STORAGE_DELETED).first_page_write);
+        pt.update_page(SLOT_A2, MONAD_STORAGE_MODIFIED).first_page_write);
+    EXPECT_FALSE(
+        pt.update_page(SLOT_A, MONAD_STORAGE_DELETED).first_page_write);
 }
 
 TEST(PageTracker, state_growth)
 {
     PageTracker pt;
 
-    EXPECT_TRUE(pt.update_page(SLOT_A, EVMC_STORAGE_ADDED).grew_state);
-    EXPECT_TRUE(pt.update_page(SLOT_A2, EVMC_STORAGE_ADDED).grew_state);
-    EXPECT_FALSE(pt.update_page(SLOT_A, EVMC_STORAGE_MODIFIED).grew_state);
+    EXPECT_TRUE(pt.update_page(SLOT_A, MONAD_STORAGE_ADDED).grew_state);
+    EXPECT_TRUE(pt.update_page(SLOT_A2, MONAD_STORAGE_ADDED).grew_state);
+    EXPECT_FALSE(pt.update_page(SLOT_A, MONAD_STORAGE_MODIFIED).grew_state);
 }
 
 TEST(PageTracker, intra_txn_free)
 {
     PageTracker pt;
 
-    EXPECT_TRUE(pt.update_page(SLOT_A, EVMC_STORAGE_ADDED).grew_state);
-    EXPECT_TRUE(pt.update_page(SLOT_A2, EVMC_STORAGE_ADDED).grew_state);
-    EXPECT_FALSE(pt.update_page(SLOT_A, EVMC_STORAGE_DELETED).grew_state);
-    EXPECT_FALSE(pt.update_page(SLOT_A, EVMC_STORAGE_DELETED_ADDED).grew_state);
+    EXPECT_TRUE(pt.update_page(SLOT_A, MONAD_STORAGE_ADDED).grew_state);
+    EXPECT_TRUE(pt.update_page(SLOT_A2, MONAD_STORAGE_ADDED).grew_state);
+    EXPECT_FALSE(pt.update_page(SLOT_A, MONAD_STORAGE_DELETED).grew_state);
+    EXPECT_FALSE(
+        pt.update_page(SLOT_A, MONAD_STORAGE_DELETED_ADDED).grew_state);
 }
 
 TEST(PageTracker, distinct_pages)
 {
     PageTracker pt;
 
-    EXPECT_TRUE(pt.update_page(SLOT_A, EVMC_STORAGE_ADDED).first_page_write);
-    EXPECT_FALSE(pt.update_page(SLOT_A2, EVMC_STORAGE_ADDED).first_page_write);
+    EXPECT_TRUE(pt.update_page(SLOT_A, MONAD_STORAGE_ADDED).first_page_write);
+    EXPECT_FALSE(pt.update_page(SLOT_A2, MONAD_STORAGE_ADDED).first_page_write);
 
-    auto const r = pt.update_page(SLOT_B, EVMC_STORAGE_ADDED);
+    auto const r = pt.update_page(SLOT_B, MONAD_STORAGE_ADDED);
     EXPECT_TRUE(r.first_page_write);
     EXPECT_TRUE(r.grew_state);
 }
@@ -74,24 +76,24 @@ TEST(PageTracker, cold_read_then_warm_read)
 {
     PageTracker pt;
 
-    EXPECT_EQ(pt.access_page(SLOT_A), EVMC_ACCESS_COLD);
-    EXPECT_EQ(pt.access_page(SLOT_A2), EVMC_ACCESS_WARM);
-    EXPECT_EQ(pt.access_page(SLOT_B), EVMC_ACCESS_COLD);
-    EXPECT_EQ(pt.access_page(SLOT_B), EVMC_ACCESS_WARM);
+    EXPECT_EQ(pt.access_page(SLOT_A), MONAD_ACCESS_COLD);
+    EXPECT_EQ(pt.access_page(SLOT_A2), MONAD_ACCESS_WARM);
+    EXPECT_EQ(pt.access_page(SLOT_B), MONAD_ACCESS_COLD);
+    EXPECT_EQ(pt.access_page(SLOT_B), MONAD_ACCESS_WARM);
 }
 
 TEST(PageTracker, deleted_then_readded_returns_to_baseline)
 {
     PageTracker pt;
-    pt.update_page(SLOT_A, EVMC_STORAGE_DELETED);
-    pt.update_page(SLOT_A, EVMC_STORAGE_DELETED_ADDED);
-    EXPECT_TRUE(pt.update_page(SLOT_A2, EVMC_STORAGE_ADDED).grew_state);
+    pt.update_page(SLOT_A, MONAD_STORAGE_DELETED);
+    pt.update_page(SLOT_A, MONAD_STORAGE_DELETED_ADDED);
+    EXPECT_TRUE(pt.update_page(SLOT_A2, MONAD_STORAGE_ADDED).grew_state);
 }
 
 TEST(PageTracker, deleted_then_restored_returns_to_baseline)
 {
     PageTracker pt;
-    pt.update_page(SLOT_A, EVMC_STORAGE_DELETED);
-    pt.update_page(SLOT_A, EVMC_STORAGE_DELETED_RESTORED);
-    EXPECT_TRUE(pt.update_page(SLOT_A2, EVMC_STORAGE_ADDED).grew_state);
+    pt.update_page(SLOT_A, MONAD_STORAGE_DELETED);
+    pt.update_page(SLOT_A, MONAD_STORAGE_DELETED_RESTORED);
+    EXPECT_TRUE(pt.update_page(SLOT_A2, MONAD_STORAGE_ADDED).grew_state);
 }

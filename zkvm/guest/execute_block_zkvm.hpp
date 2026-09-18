@@ -34,22 +34,38 @@ namespace vm
     class VM;
 }
 
+/// What the proof publishes about a block.
+///
+/// `namespace_anchor` is bytes32_t{} on a build without MONAD_ZKVM_L2, where
+/// there is no spoke to harvest. The struct is unconditional, and the 32 zero
+/// bytes are the price: making it conditional would leak the macro into this
+/// header, into ffi.cpp's dispatch wrapper, and into the return type of the
+/// SWITCH_EVM_TRAITS lambda.
+struct ZkvmBlockOutput
+{
+    bytes32_t state_root;
+    bytes32_t namespace_anchor;
+};
+
 // Sequential mirror of execute_block<traits> for the zkVM guest. Drops the
 // fiber pool, dispatch_transaction indirection, tracers, and block-metrics
 // timing; reuses ExecuteTransaction, execute_block_header, process_requests,
 // apply_block_reward, and BlockState::merge unchanged.
 //
-// MVP: emits the post-state root only. Receipts are computed (and the YP eq.22
-// cumulative-gas fixup is applied) but discarded; Phase 7 wires them into a
-// full block-output hash.
-// `raw_transactions` is the byte slice each transaction was decoded from, in
-// order, as decode_block hands them out. The transactions-root check uses
-// those bytes directly rather than re-encoding what was decoded from them --
-// see the note at the body binding.
+// Receipts are computed and checked against the header, then discarded: what
+// leaves here is the post-state root, and under MONAD_ZKVM_L2 the message
+// anchor with it.
+//
+// `root_transactions` is what the transactions-root check is taken over, in
+// order. On a plaintext block that is the byte slice each transaction was
+// decoded from, one per transaction. On an L2 block it is every ciphertext
+// LEAF -- including the ones that were rejected, because the header commits to
+// the whole list -- so it may be LONGER than block.transactions. See the note
+// at the body binding for why the root is taken over those bytes.
 template <Traits traits>
-Result<bytes32_t> execute_block_zkvm(
+Result<ZkvmBlockOutput> execute_block_zkvm(
     Chain const &chain, Block const &block,
-    std::span<byte_string_view const> raw_transactions, Db &pdb, vm::VM &vm,
+    std::span<byte_string_view const> root_transactions, Db &pdb, vm::VM &vm,
     BlockHashBuffer const &block_hash_buffer,
     ChainContext<traits> const &chain_ctx);
 

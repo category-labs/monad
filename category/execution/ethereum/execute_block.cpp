@@ -39,6 +39,7 @@
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/namespace_anchor.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -331,6 +332,32 @@ Result<std::vector<Receipt>> execute_block(
             return BlockError::InvalidRequestsHash;
         }
     }
+
+    // The message anchor's state effect, mirroring execute_block_zkvm. Only
+    // the CLEAR is here: the anchor value itself is the prover's to publish,
+    // and execute_block returns receipts, so the node drops it. The asymmetry
+    // is deliberate -- the node wants the state root, the prover wants the
+    // tuple the L1 hub verifies.
+    //
+    // Emptying the pending array is a CONSENSUS rule, not bookkeeping: if the
+    // guest's epilogue clears it and the node's does not, the two state roots
+    // diverge on the first block that carries a message. Nothing in the build
+    // keeps these two epilogues in step -- this file is dropped from the guest
+    // and execute_block_zkvm.cpp is absent from the node -- so the length
+    // assertion inside the clear is what turns a divergence into an abort on
+    // the first such block rather than a wrong root.
+#ifdef MONAD_ZKVM_L2
+    {
+        BOOST_OUTCOME_TRY(
+            auto const leaves,
+            collect_namespace_messages(retvals, L2_NAMESPACE_SPOKE));
+        clear_pending_namespace_messages(
+            state,
+            L2_NAMESPACE_SPOKE,
+            L2_PENDING_SLOT,
+            static_cast<uint64_t>(leaves.size()));
+    }
+#endif
 
     apply_block_reward<traits>(state, block);
 

@@ -25,8 +25,6 @@
 #include <optional>
 #include <vector>
 
-MONAD_NAMESPACE_BEGIN
-
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 /// The outer envelope, with no emptiness check: whether anything may follow the
@@ -65,6 +63,8 @@ Result<ExecutionWitness> parse_base_fields(byte_string_view &outer)
 
 MONAD_ANONYMOUS_NAMESPACE_END
 
+MONAD_NAMESPACE_BEGIN
+
 Result<ExecutionWitness> parse_execution_witness(byte_string_view witness_bytes)
 {
     BOOST_OUTCOME_TRY(auto outer, strip_envelope(witness_bytes));
@@ -98,6 +98,8 @@ parse_execution_witness_l2(byte_string_view witness_bytes)
 
     return w;
 }
+
+MONAD_NAMESPACE_END
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -210,6 +212,8 @@ byte_string encode_witness_impl(
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_NAMESPACE_BEGIN
 
 byte_string encode_execution_witness(
     byte_string_view const block_rlp, byte_string_view const nodes,

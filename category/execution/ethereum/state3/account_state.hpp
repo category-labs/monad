@@ -252,8 +252,8 @@ public:
 
 // Guard against unintended growth of the per-account state.
 #ifdef MONAD_ZKVM_ZISK
-// Two FlatStorage index pointers add 16 bytes in the ZisK guest.
-static_assert(sizeof(AccountState) == 208);
+// Two FlatStorage index pointers and A_K's add 24 bytes in the ZisK guest.
+static_assert(sizeof(AccountState) == 216);
 #else
 static_assert(sizeof(AccountState) == 192);
 #endif

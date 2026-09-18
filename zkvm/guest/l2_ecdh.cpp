@@ -192,8 +192,6 @@ l2_point_decompress(std::span<unsigned char const, 33> const sec1)
     if (sec1[0] != 0x02 && sec1[0] != 0x03) {
         return std::nullopt;
     }
-    bool const y_is_odd = sec1[0] == 0x03;
-
     L2Point p{};
     limbs_from_be(p.limb, sec1.data() + 1);
     // Checked here rather than left to the backend: a non-canonical x would be
@@ -203,6 +201,9 @@ l2_point_decompress(std::span<unsigned char const, 33> const sec1)
     }
 
 #ifdef MONAD_ZKVM_ZISK
+    // Only this arm needs the parity spelled out. libsecp256k1 takes the whole
+    // 33-byte SEC1 string, tag included, and resolves it itself.
+    bool const y_is_odd = sec1[0] == 0x03;
     // A distinct destination: passing p.limb as both operands would leave a
     // live shared reference aliasing what the bridge writes through.
     L2Point lifted{};

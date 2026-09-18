@@ -78,7 +78,7 @@ namespace
         add_asm_log_path(CompilerConfig c, std::string const log_path)
         {
             if (!c.asm_log_path &&
-                monad::vm::compiler::test::params.dump_asm_on_failure) {
+                monad::vm::test::params.dump_asm_on_failure) {
                 c.asm_log_path = log_path.c_str();
             }
             return c;
@@ -104,7 +104,7 @@ namespace
             // Flush the debug logger in case the code segfaults before the
             // Emitter destructor is called.
             flush_debug_logger();
-            if (monad::vm::compiler::test::params.dump_asm_on_failure) {
+            if (monad::vm::test::params.dump_asm_on_failure) {
                 std::cout << "See disassembly at:\n  " << log_path_storage_
                           << std::endl;
             }

@@ -45,7 +45,7 @@ using monad::EvmTraits;
 using monad::load_be_unsafe;
 using namespace monad::vm;
 using namespace monad::vm::compiler;
-using namespace monad::vm::compiler::test;
+using namespace monad::vm::test;
 
 TYPED_TEST(VMTraitsTest, Stop)
 {

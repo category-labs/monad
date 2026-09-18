@@ -38,13 +38,12 @@
 
 using namespace monad::vm::runtime;
 
-namespace monad::vm::compiler::test
+namespace monad::vm::test
 {
     namespace
     {
-        void init_host(
-            monad::vm::test::MockedHost &host,
-            std::array<evmc_bytes32, 2> &blob_hashes_)
+        void
+        init_host(MockedHost &host, std::array<evmc_bytes32, 2> &blob_hashes_)
         {
             host.tx_context = evmc_tx_context{
                 .tx_gas_price = store_be_as<bytes32_t>(uint256_t{56762}),
@@ -172,7 +171,7 @@ namespace monad::vm::compiler::test
         auto const codehash = keccak256({code.data(), code.size()});
         bytes32_t codehash_bytes;
         std::copy(codehash.bytes, codehash.bytes + 32, codehash_bytes.bytes);
-        auto const account = vm::test::MockedAccount{
+        auto const account = MockedAccount{
             .code = byte_string(code.data(), code.size()),
             .codehash = codehash_bytes,
             .balance = {},

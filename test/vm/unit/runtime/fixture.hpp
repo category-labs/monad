@@ -31,7 +31,7 @@
 
 extern "C" void tests_trampoline(void *, void (*)(void *), void *);
 
-namespace monad::vm::compiler::test
+namespace monad::vm::test
 {
     using namespace runtime;
     using namespace monad::literals;
@@ -46,8 +46,8 @@ namespace monad::vm::compiler::test
         std::array<std::uint8_t, 128> call_return_data_;
 
         std::array<evmc_bytes32, 2> blob_hashes_;
-        monad::vm::test::MockedHost host_;
-        monad::vm::test::TestContext test_ctx_;
+        MockedHost host_;
+        TestContext test_ctx_;
         vm::runtime::Context &ctx_;
 
         evmc_result

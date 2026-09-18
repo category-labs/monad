@@ -41,7 +41,7 @@
 
 namespace fs = std::filesystem;
 
-namespace monad::vm::compiler::test
+namespace monad::vm::test
 {
     template <typename T>
     class VMTraitsTestBase
@@ -93,10 +93,10 @@ namespace monad::vm::compiler::test
 
         monad::vm::VM vm_{};
 
-        monad::vm::test::TestMessage test_msg_;
+        TestMessage test_msg_;
         evmc_message &msg_{*test_msg_};
 
-        vm::test::MockedHost host_;
+        MockedHost host_;
 
         evmc::Result result_;
 

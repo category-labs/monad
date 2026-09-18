@@ -22,7 +22,7 @@
 
 using namespace monad::vm::runtime;
 using monad::operator""_u256;
-using namespace monad::vm::compiler::test;
+using namespace monad::vm::test;
 
 TEST_F(RuntimeTest, SelfBalance)
 {

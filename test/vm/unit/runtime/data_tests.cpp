@@ -29,7 +29,7 @@
 using namespace monad;
 using namespace monad::vm;
 using namespace monad::vm::runtime;
-using namespace monad::vm::compiler::test;
+using namespace monad::vm::test;
 
 constexpr auto addr = uint256_t{678};
 constexpr auto wei = uint256_t{782374};

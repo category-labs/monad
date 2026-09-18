@@ -22,7 +22,7 @@
 
 using namespace monad;
 using namespace monad::vm::runtime;
-using namespace monad::vm::compiler::test;
+using namespace monad::vm::test;
 
 TYPED_TEST(RuntimeTraitsTest, KeccakEmpty)
 {

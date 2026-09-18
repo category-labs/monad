@@ -15,7 +15,7 @@
 
 #pragma once
 
-namespace monad::vm::compiler::test
+namespace monad::vm::test
 {
     struct TestParams
     {

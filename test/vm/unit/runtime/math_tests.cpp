@@ -30,7 +30,7 @@
 using namespace monad;
 using namespace monad::vm;
 using namespace monad::vm::runtime;
-using namespace monad::vm::compiler::test;
+using namespace monad::vm::test;
 using namespace monad::vm::runtime;
 
 TEST_F(RuntimeTest, Mul)

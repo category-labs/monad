@@ -15,7 +15,7 @@
 
 #include "test_params.hpp"
 
-namespace monad::vm::compiler::test
+namespace monad::vm::test
 {
     struct TestParams params = TestParams(false);
 }

@@ -27,7 +27,7 @@
 using namespace monad;
 using namespace monad::vm;
 using namespace monad::vm::runtime;
-using namespace monad::vm::compiler::test;
+using namespace monad::vm::test;
 
 constexpr uint256_t prog = 0x63FFFFFFFF6000526004601CF3_u256;
 constexpr Address result_addr = Address{uint8_t{0x42}};

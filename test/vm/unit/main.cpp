@@ -31,14 +31,13 @@ int main(int argc, char *argv[])
     CLI::App app{"Monad VM unit tests", "vm-unit-tests"};
     app.add_flag(
         "--dump-asm",
-        monad::vm::compiler::test::params.dump_asm_on_failure,
+        monad::vm::test::params.dump_asm_on_failure,
         "Save assembly on failure");
     CLI11_PARSE(app, argc, argv);
 
     // Create test log directory
     std::filesystem::path test_log_dir = "/tmp/monad_vm_test_logs";
-    bool const needs_test_logs =
-        monad::vm::compiler::test::params.dump_asm_on_failure;
+    bool const needs_test_logs = monad::vm::test::params.dump_asm_on_failure;
     if (needs_test_logs && !std::filesystem::exists(test_log_dir)) {
         std::filesystem::create_directory(test_log_dir);
     }

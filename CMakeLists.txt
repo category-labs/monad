@@ -72,7 +72,8 @@ option(MONAD_ZKVM_L2
 if(MONAD_ZKVM_L2)
   monad_l2_compile_definitions()
 else()
-  if(MONAD_ZKVM_L2_ALLOW_L1_SHAPE OR MONAD_ZKVM_L2_PLAINTEXT_LEAVES)
+  if(MONAD_ZKVM_L2_ALLOW_L1_SHAPE OR MONAD_ZKVM_L2_PLAINTEXT_LEAVES
+     OR MONAD_ZKVM_L2_PRICE_GAS)
     # Both only take effect through monad_l2_compile_definitions, which this
     # branch never reaches. Fail rather than build a guest that silently is not
     # the arm the caller asked for.

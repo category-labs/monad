@@ -31,6 +31,7 @@ REQUIRED_OPTIONS = {
     # an ELF carrying either is not a prover at all.
     "MONAD_ZKVM_L2_ALLOW_L1_SHAPE": "OFF",
     "MONAD_ZKVM_L2_PLAINTEXT_LEAVES": "OFF",
+    "MONAD_ZKVM_L2_PRICE_GAS": "OFF",
 }
 REQUIRED_FLAGS = (
     "-O3",

@@ -78,12 +78,38 @@ uint64_t intrinsic_gas_counted(Transaction const &, CalldataTokens) noexcept;
 /// picks. Here the dimension is the build, so there is nothing to pick between.
 inline constexpr bool gas_is_priced() noexcept
 {
-#ifdef MONAD_ZKVM_L2
+#if defined(MONAD_ZKVM_L2) && !defined(MONAD_ZKVM_L2_PRICE_GAS)
     return false;
 #else
     return true;
 #endif
 }
+
+// TEMPORARY SCAFFOLD -- MONAD_ZKVM_L2_PRICE_GAS, read above, puts the pricing
+// back into an L2 build. It exists for one reason and should be deleted with
+// the thing it props up.
+//
+// A witness is a function of the rules that produced it. The corpus available
+// is mainnet, so its state trie is pruned to exactly the accounts and slots
+// canonical execution touched; everything else is a Digest node and reading
+// one is MONAD_ABORT("incomplete witness"). Unpriced gas changes what
+// execution touches -- senders keep their gas money, the beneficiary gets no
+// tips -- so the guest walks off the edge of the witness partway through a
+// busy block. Measured: block 25815000 aborts mid-execution, before the
+// epilogue is reached at all.
+//
+// Turning pricing back on makes execution follow the rules the witness was
+// cut for, which is what lets the corpus differential run at all. What it
+// costs is that the arm measured is no longer the arm this branch is about:
+// the gas surgery is precisely the L2 semantics being tested. So the
+// differential under this knob says something about the CIPHER and nothing
+// about the surgery, and the surgery needs a corpus generated under L2 rules
+// before it can be exercised end to end.
+//
+// It would have been a `git revert` of "gas: meter it, stop pricing it", but
+// that commit introduces gas_is_priced itself and two later ones read it, so
+// a literal revert does not compile. This is the same change expressed where
+// it can be switched off again in one line.
 
 /// DIAGNOSTIC ONLY. True when the L2 guest accepts an L1 block shape it has no
 /// rules for, so that the corpus differential can run on mainnet witnesses.

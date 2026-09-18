@@ -59,7 +59,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
            "L2 semantics: encrypted transactions, message anchor, no gas economics"
            OFF)
     if(NOT MONAD_ZKVM_L2 AND
-       (MONAD_ZKVM_L2_ALLOW_L1_SHAPE OR MONAD_ZKVM_L2_PLAINTEXT_LEAVES))
+       (MONAD_ZKVM_L2_ALLOW_L1_SHAPE OR MONAD_ZKVM_L2_PLAINTEXT_LEAVES
+        OR MONAD_ZKVM_L2_PRICE_GAS))
         message(FATAL_ERROR
             "MONAD_ZKVM_L2_ALLOW_L1_SHAPE and MONAD_ZKVM_L2_PLAINTEXT_LEAVES "
             "are diagnostics OF the L2 guest and do nothing without "
@@ -120,7 +121,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         # colliding with the NO_MERGE_CONSTRAINTS forced on just above.
         if(MONAD_ZKVM_KECCAK_SITES OR MONAD_ZKVM_SELFTEST
            OR MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE
-           OR MONAD_ZKVM_L2_ALLOW_L1_SHAPE OR MONAD_ZKVM_L2_PLAINTEXT_LEAVES)
+           OR MONAD_ZKVM_L2_ALLOW_L1_SHAPE OR MONAD_ZKVM_L2_PLAINTEXT_LEAVES
+           OR MONAD_ZKVM_L2_PRICE_GAS)
             message(FATAL_ERROR
                 "diagnostic counters/self-test are forbidden in the official ZisK profile")
         endif()

@@ -341,8 +341,26 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
         // Before the root consumes the vector in place.
         auto const count = static_cast<uint64_t>(leaves.size());
         namespace_anchor = sorted_pair_merkle_root(leaves);
-        clear_pending_namespace_messages(
-            state, L2_NAMESPACE_SPOKE, L2_PENDING_SLOT, count);
+        // The clear is the only thing in this epilogue that READS state, and
+        // under l2_allows_l1_shape that is fatal rather than merely wrong: a
+        // mainnet witness carries no NamespaceSpoke account, so its subtree is
+        // a Digest and get_storage on it is MONAD_ABORT("incomplete witness").
+        // Measured: every block of the corpus dies here, including one with no
+        // transactions at all.
+        //
+        // Skipped, therefore, and skipped rather than made conditional on the
+        // account existing -- finding that out would itself be the read that
+        // aborts. The anchor above is still computed, from receipts, which
+        // need no trie; both arms of the differential skip identically; and
+        // what is lost is the length cross-check, which on a corpus with no
+        // spoke deployed had nothing to say.
+        if constexpr (!l2_allows_l1_shape()) {
+            clear_pending_namespace_messages(
+                state, L2_NAMESPACE_SPOKE, L2_PENDING_SLOT, count);
+        }
+        else {
+            (void)count;
+        }
     }
 #endif
 

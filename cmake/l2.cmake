@@ -143,6 +143,15 @@ function(monad_l2_diagnostic_definitions)
             "ignores them. Diagnostic only -- the roots it commits describe no "
             "chain. Nothing built this way should be proved or published.")
   endif()
+  if(MONAD_ZKVM_L2_PRICE_GAS)
+    add_compile_definitions(MONAD_ZKVM_L2_PRICE_GAS)
+    message(WARNING
+            "MONAD_ZKVM_L2_PRICE_GAS: TEMPORARY SCAFFOLD. This guest prices "
+            "gas, so it is not the L2 rule set at all -- it exists only "
+            "because a mainnet witness is pruned to what mainnet execution "
+            "touched, and unpriced gas walks off the edge of it. Delete this "
+            "knob once a corpus exists that was generated under L2 rules.")
+  endif()
   if(MONAD_ZKVM_L2_PLAINTEXT_LEAVES)
     add_compile_definitions(MONAD_ZKVM_L2_PLAINTEXT_LEAVES)
     message(WARNING

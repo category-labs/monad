@@ -341,6 +341,13 @@ Result<std::vector<Receipt>> execute_block(
             return BlockError::InvalidRequestsHash;
         }
     }
+#else
+    // process_requests was this parameter's only reader, and the signature
+    // keeps it rather than dropping it under the option: execute_block is
+    // what the node calls, and a function whose arity depends on a build flag
+    // is a worse thing to own than one unused argument. -Werror makes the
+    // cast necessary rather than decorative.
+    (void)system_call_state_tracer;
 #endif
 
     // The message anchor's state effect, mirroring execute_block_zkvm. Only

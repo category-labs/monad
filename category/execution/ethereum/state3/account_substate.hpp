@@ -18,50 +18,13 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/state3/slot_index.hpp>
 #include <category/vm/evm/access_status.h>
 
 #include <cstdint>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
-
-// Preload the key's last word for linear scans. Small big-endian keys differ
-// there; preloading all four words measured worse.
-[[nodiscard]] inline std::uint64_t key_tail(bytes32_t const &key)
-{
-    std::uint64_t last_word;
-    __builtin_memcpy(&last_word, key.bytes + 24, 8);
-    // Keep the tail load outside the scan and prevent GCC from folding the
-    // comparisons back into an address-order memcmp. Not a memory barrier.
-    __asm__("" : "+r"(last_word));
-    return last_word;
-}
-
-// Compare key with entry_key; tail must be key_tail(key).
-// Check the last word first: small slot numbers differ there.
-// Compare the remaining words only if it matches.
-[[nodiscard]] inline bool key_equals(
-    bytes32_t const &key, std::uint64_t const tail, bytes32_t const &entry_key)
-{
-    std::uint64_t entry_word, key_word;
-    __builtin_memcpy(&entry_word, entry_key.bytes + 24, 8);
-    if (entry_word != tail) {
-        return false;
-    }
-    __builtin_memcpy(&entry_word, entry_key.bytes, 8);
-    __builtin_memcpy(&key_word, key.bytes, 8);
-    if (entry_word != key_word) {
-        return false;
-    }
-    __builtin_memcpy(&entry_word, entry_key.bytes + 8, 8);
-    __builtin_memcpy(&key_word, key.bytes + 8, 8);
-    if (entry_word != key_word) {
-        return false;
-    }
-    __builtin_memcpy(&entry_word, entry_key.bytes + 16, 8);
-    __builtin_memcpy(&key_word, key.bytes + 16, 8);
-    return entry_word == key_word;
-}
 
 // YP 6.1
 class AccountSubstate

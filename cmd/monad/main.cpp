@@ -188,7 +188,7 @@ try {
     CLI::Option *const db_option = cli.add_option(
         "--db",
         dbname_paths,
-        "A comma-separated list of previously created database paths. You can "
+        "A space-separated list of previously created database paths. You can "
         "configure the storage pool with one or more files/devices. If no "
         "value is passed, the replay will run with an in-memory triedb");
     cli.add_option(

@@ -351,6 +351,16 @@ TYPED_TEST(TraitsTest, invalid_gas_limit)
     EXPECT_EQ(result.error(), BlockError::InvalidGasLimit);
 }
 
+TYPED_TEST(TraitsTest, header_gas_used_above_limit)
+{
+    BlockHeader const header{.gas_limit = 5000, .gas_used = 5001};
+
+    auto const result =
+        static_validate_header<typename TestFixture::Trait>(header);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), BlockError::GasAboveLimit);
+}
+
 #define TEST_OPTIONAL_FIELD(f, default_val, ACTIVE)                            \
     {                                                                          \
         if constexpr (ACTIVE) {                                                \
@@ -604,6 +614,13 @@ TYPED_TEST(TraitsTest, parent_validation_uses_chain_rules)
         expect_ethereum_error(BlockError::InvalidBaseFeePerGas);
         block.header = valid_header;
     }
+
+    // Both chains still enforce the block's own gas budget.
+    block.header.gas_used = block.header.gas_limit + 1;
+    auto const result =
+        static_validate_block_with_parent<Trait>(chain, block, parent);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), BlockError::GasAboveLimit);
 }
 
 // A parent every rule below accepts: the gas used sits exactly on the

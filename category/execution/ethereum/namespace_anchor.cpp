@@ -163,6 +163,19 @@ void clear_pending_namespace_messages(
     State &state, Address const &spoke, std::uint64_t const slot,
     std::uint64_t const expected_length)
 {
+    // State::get_storage requires the account to have been read first -- it
+    // asserts on one that is not in original_ -- and the epilogue runs on
+    // every block, including the overwhelming majority that never touch the
+    // spoke. So this is not a convenience check: without it the guest aborts
+    // on any block whose transactions leave the spoke alone.
+    if (!state.account_exists(spoke)) {
+        // No account, so no log could have come from it, so nothing was
+        // harvested. A spoke that is absent where the protocol says one is
+        // deployed is a misconfiguration, and the assertion is what says so.
+        MONAD_ASSERT(expected_length == 0);
+        return;
+    }
+
     bytes32_t const length_key = store_be_as<bytes32_t>(uint256_t{slot});
     auto const stored =
         load_be<uint256_t>(state.get_storage(spoke, length_key));

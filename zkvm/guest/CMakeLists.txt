@@ -642,6 +642,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "trie_db.cpp"
         "db/util.cpp"
         "db/commit_builder.cpp"
+        # The witness generator. Nothing in the guest produces a blob, and
+        # leaving it out keeps the guest's archive -- and so the official
+        # profile's ELF -- what it was before this file existed.
+        "db/witness_generator.cpp"
         "ecrecover/impl.cpp"
         "exec_event_ctypes_metadata.c"
         "exec_event_recorder.cpp"

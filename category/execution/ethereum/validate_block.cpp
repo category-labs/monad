@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/checked_math.hpp>
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
@@ -49,6 +50,16 @@
 #include <initializer_list>
 #include <limits>
 #include <vector>
+
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+// EIP-1559 constants.
+constexpr uint64_t GAS_LIMIT_BOUND_DIVISOR = 1024;
+constexpr uint64_t ELASTICITY_MULTIPLIER = 2;
+constexpr uint64_t BASE_FEE_MAX_CHANGE_DENOMINATOR = 8;
+constexpr uint64_t INITIAL_BASE_FEE = 1'000'000'000;
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
@@ -277,17 +288,109 @@ Result<void> static_validate_block(Chain const &chain, Block const &block)
 EXPLICIT_TRAITS(static_validate_block);
 
 template <Traits traits>
-Result<void> static_validate_block_with_parent(
+Result<void> static_validate_ethereum_header_with_parent(
+    BlockHeader const &header, BlockHeader const &parent)
+{
+    // YP eq. 53: timestamp must strictly increase.
+    if (MONAD_UNLIKELY(header.timestamp <= parent.timestamp)) {
+        return BlockError::InvalidTimestamp;
+    }
+
+    // EIP-1559: at London activation the block gas limit doubles, so the
+    // delta below is measured against twice the parent's.
+    uint64_t parent_gas_limit = parent.gas_limit;
+    if constexpr (traits::evm_rev() >= MONAD_ETH_LONDON) {
+        if (!parent.base_fee_per_gas.has_value()) {
+            if (MONAD_UNLIKELY(
+                    parent_gas_limit > std::numeric_limits<uint64_t>::max() /
+                                           ELASTICITY_MULTIPLIER)) {
+                return BlockError::InvalidGasLimit;
+            }
+            parent_gas_limit *= ELASTICITY_MULTIPLIER;
+        }
+    }
+
+    // YP eq. 47-48: gas limit delta must be strictly less than the bound.
+    uint64_t const bound = parent_gas_limit / GAS_LIMIT_BOUND_DIVISOR;
+    uint64_t const delta = header.gas_limit > parent_gas_limit
+                               ? header.gas_limit - parent_gas_limit
+                               : parent_gas_limit - header.gas_limit;
+    if (MONAD_UNLIKELY(delta >= bound)) {
+        return BlockError::InvalidGasLimit;
+    }
+
+    if constexpr (traits::evm_rev() >= MONAD_ETH_LONDON) {
+        if (MONAD_UNLIKELY(!header.base_fee_per_gas.has_value())) {
+            return BlockError::MissingField;
+        }
+
+        uint256_t expected;
+        if (!parent.base_fee_per_gas.has_value()) {
+            // EIP-1559 sets a fixed initial base fee at London activation.
+            expected = uint256_t{INITIAL_BASE_FEE};
+        }
+        else {
+            uint256_t const parent_base_fee = parent.base_fee_per_gas.value();
+            uint64_t const target = parent.gas_limit / ELASTICITY_MULTIPLIER;
+            // The parent is not validated here; guard against division by zero.
+            if (MONAD_UNLIKELY(target == 0)) {
+                return BlockError::InvalidGasLimit;
+            }
+            if (parent.gas_used == target) {
+                expected = parent_base_fee;
+            }
+            else {
+                bool const increasing = parent.gas_used > target;
+                uint64_t const gas_delta = increasing
+                                               ? parent.gas_used - target
+                                               : target - parent.gas_used;
+                // Combining the divisors preserves rounding.
+                auto const divisor = uint256_t{target} *
+                                     uint256_t{BASE_FEE_MAX_CHANGE_DENOMINATOR};
+                auto const delta = checked_wide_mul_div(
+                    parent_base_fee, uint256_t{gas_delta}, divisor);
+                if (MONAD_UNLIKELY(delta.has_error())) {
+                    return BlockError::InvalidBaseFeePerGas;
+                }
+                uint256_t const d = delta.value();
+                if (increasing) {
+                    // EIP-1559 requires an increase of at least one wei.
+                    auto const fee =
+                        checked_add(parent_base_fee, d == 0 ? uint256_t{1} : d);
+                    if (MONAD_UNLIKELY(fee.has_error())) {
+                        return BlockError::InvalidBaseFeePerGas;
+                    }
+                    expected = fee.value();
+                }
+                else {
+                    expected = parent_base_fee - d;
+                }
+            }
+        }
+        if (MONAD_UNLIKELY(header.base_fee_per_gas.value() != expected)) {
+            return BlockError::InvalidBaseFeePerGas;
+        }
+    }
+
+    return success();
+}
+
+EXPLICIT_TRAITS(static_validate_ethereum_header_with_parent);
+
+template <Traits traits>
+Result<void> static_validate_ethereum_block_with_parent(
     Chain const &chain, Block const &block, BlockHeader const &parent_header)
 {
     BOOST_OUTCOME_TRY(static_validate_block<traits>(chain, block));
+    BOOST_OUTCOME_TRY(static_validate_ethereum_header_with_parent<traits>(
+        block.header, parent_header));
     BOOST_OUTCOME_TRY(
         static_validate_4844_parent<traits>(chain, block, parent_header));
 
     return success();
 }
 
-EXPLICIT_TRAITS(static_validate_block_with_parent);
+EXPLICIT_TRAITS(static_validate_ethereum_block_with_parent);
 
 Result<void>
 validate_output_header(BlockHeader const &input, BlockHeader const &output)
@@ -368,7 +471,9 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
          {}},
         {BlockError::SystemCallFailed, "system call failed", {}},
         {BlockError::InvalidRequestsHash, "invalid requests hash", {}},
-        {BlockError::InvalidDepositLog, "invalid deposit log", {}}};
+        {BlockError::InvalidDepositLog, "invalid deposit log", {}},
+        {BlockError::InvalidBaseFeePerGas, "invalid base fee per gas", {}},
+        {BlockError::InvalidTimestamp, "invalid timestamp", {}}};
 
     return v;
 }

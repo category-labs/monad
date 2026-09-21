@@ -32,9 +32,9 @@ struct monad_state_override
         std::optional<monad::uint256_t> balance{std::nullopt};
         std::optional<uint64_t> nonce{std::nullopt};
         std::optional<monad::byte_string> code{std::nullopt};
-        ankerl::unordered_dense::segmented_map<
-            monad::bytes32_t, monad::bytes32_t>
-            state{};
+        std::optional<ankerl::unordered_dense::segmented_map<
+            monad::bytes32_t, monad::bytes32_t>>
+            state{std::nullopt};
         ankerl::unordered_dense::segmented_map<
             monad::bytes32_t, monad::bytes32_t>
             state_diff{};

@@ -122,6 +122,13 @@ impl CStateOverrideVec {
         }
     }
 
+    pub(crate) fn set_empty_state_at(&mut self, at: usize, addr: &Address) {
+        let addr: &[u8] = addr.as_slice();
+        unsafe {
+            ffi::set_override_empty_state_at(self.as_mut_ptr(), at, addr.as_ptr(), addr.len());
+        }
+    }
+
     pub(crate) fn set_state_diff_at(
         &mut self,
         at: usize,

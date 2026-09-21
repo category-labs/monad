@@ -80,6 +80,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -4830,8 +4831,8 @@ TEST(StateOverrideVec, set_fields_at_index)
         code_bytes, code_bytes + sizeof(code_bytes)};
     EXPECT_EQ(*obj.code, expected_code);
 
-    auto const state_it = obj.state.find(state_key);
-    ASSERT_NE(state_it, obj.state.end());
+    auto const state_it = obj.state.value().find(state_key);
+    ASSERT_NE(state_it, obj.state.value().end());
     EXPECT_EQ(state_it->second, state_value);
 
     auto const state_diff_it = obj.state_diff.find(state_diff_key);
@@ -8713,5 +8714,192 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
 
     monad_block_override_vec_destroy(block_override);
     monad_state_override_vec_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, eth_call_empty_state_override_zeros_storage)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr Address contract =
+        0xcccccccccccccccccccccccccccccccccccccccc_address;
+
+    auto const eb = evm_as::latest()
+                        .push0()
+                        .sload()
+                        .push0()
+                        .mstore()
+                        .push(32)
+                        .push0()
+                        .return_();
+    ASSERT_TRUE(evm_as::validate(eb));
+    std::vector<uint8_t> code{};
+    evm_as::compile(eb, code);
+    byte_string_view const code_view{code.data(), code.size()};
+    auto const code_hash = to_bytes(keccak256(code_view));
+    auto const compiled_code = vm::make_shared_intercode(code_view);
+    bytes32_t const storage_key{};
+    bytes32_t const storage_value = store_be_as<bytes32_t>(uint256_t{1});
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {contract,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0, .code_hash = code_hash}},
+                 .storage = {{storage_key, {bytes32_t{}, storage_value}}}}}},
+        Code{{code_hash, compiled_code}},
+        BlockHeader{.number = 0});
+
+    Transaction const tx{.gas_limit = 200'000, .to = contract};
+    BlockHeader const header{.number = 0};
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(Address{})));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+    add_override_address(
+        state_override, contract.bytes, sizeof(contract.bytes));
+    set_override_empty_state(
+        state_override, contract.bytes, sizeof(contract.bytes));
+
+    callback_context ctx;
+    boost::fibers::future<void> future = ctx.promise.get_future();
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        &ctx,
+        NOOP_TRACER,
+        true);
+    future.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->output_data_len, sizeof(bytes32_t));
+    EXPECT_TRUE(std::ranges::all_of(
+        std::span{ctx.result->output_data, ctx.result->output_data_len},
+        [](uint8_t const byte) { return byte == 0; }));
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, eth_simulate_v1_empty_state_override_zeros_storage)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address contract =
+        0xcccccccccccccccccccccccccccccccccccccccc_address;
+
+    auto const eb = evm_as::latest()
+                        .push0()
+                        .sload()
+                        .push0()
+                        .mstore()
+                        .push(32)
+                        .push0()
+                        .return_();
+    ASSERT_TRUE(evm_as::validate(eb));
+    std::vector<uint8_t> code{};
+    evm_as::compile(eb, code);
+    byte_string_view const code_view{code.data(), code.size()};
+    auto const code_hash = to_bytes(keccak256(code_view));
+    auto const compiled_code = vm::make_shared_intercode(code_view);
+    bytes32_t const storage_key{};
+    bytes32_t const storage_value = store_be_as<bytes32_t>(uint256_t{1});
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 1'000'000, .nonce = 0}}}},
+            {contract,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0, .code_hash = code_hash}},
+                 .storage = {{storage_key, {bytes32_t{}, storage_value}}}}}},
+        Code{{code_hash, compiled_code}},
+        BlockHeader{.number = 0});
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_overrides = monad_state_override_vec_create(1);
+    auto *block_overrides = monad_block_override_vec_create(1);
+    add_override_address_at(
+        state_overrides, 0, contract.bytes, sizeof(contract.bytes));
+    set_override_empty_state_at(
+        state_overrides, 0, contract.bytes, sizeof(contract.bytes));
+
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+    Transaction const tx{.gas_limit = 200'000, .to = contract};
+    auto const encoded_tx = rlp::encode_transaction(tx);
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_string2(byte_string_view(encoded_tx)))));
+    BlockHeader const header{.number = 0, .gas_limit = 200'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    callback_context ctx;
+    boost::fibers::future<void> future = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        header.number,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        simulate_max_output_size,
+        state_overrides,
+        block_overrides,
+        false,
+        complete_callback,
+        &ctx);
+    future.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_GT(ctx.result->encoded_trace_len, 0);
+    auto const output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+    ASSERT_EQ(output.size(), 1);
+    ASSERT_EQ(output[0]["calls"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(
+        output[0]["calls"][0]["returnData"],
+        "0x0000000000000000000000000000000000000000000000000000000000000000");
+
+    monad_block_override_vec_destroy(block_overrides);
+    monad_state_override_vec_destroy(state_overrides);
     monad_executor_destroy(executor);
 }

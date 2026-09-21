@@ -189,9 +189,10 @@ namespace
             }
 
             // Remove all override
-            if (!state_delta.state.empty()) {
+            if (auto const &state_object = state_delta.state;
+                state_object.has_value()) {
                 state.set_to_state_incarnation(address);
-                update_state(state_delta.state);
+                update_state(*state_object);
             }
         }
         MONAD_ASSERT_THROW(

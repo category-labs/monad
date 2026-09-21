@@ -157,9 +157,30 @@ void set_override_state(
     bytes32_t v;
     std::memcpy(v.bytes, value, sizeof(bytes32_t));
 
-    auto &state_object = m->override_sets[address].state;
+    auto &state_object_opt = m->override_sets[address].state;
+    if (!state_object_opt.has_value()) {
+        state_object_opt.emplace();
+    }
+
+    auto &state_object = *state_object_opt;
     MONAD_ASSERT(state_object.find(k) == state_object.end());
     state_object.emplace(k, v);
+}
+
+void set_override_empty_state(
+    struct monad_state_override *const m, uint8_t const *const addr,
+    size_t const addr_len)
+{
+    MONAD_ASSERT(m);
+
+    MONAD_ASSERT(addr);
+    MONAD_ASSERT(addr_len == sizeof(Address));
+    Address address;
+    std::memcpy(address.bytes, addr, sizeof(Address));
+    MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
+
+    m->override_sets[address].state =
+        ankerl::unordered_dense::segmented_map<bytes32_t, bytes32_t>{};
 }
 
 struct monad_state_override_vec *monad_state_override_vec_create(size_t size)
@@ -232,6 +253,15 @@ void set_override_state_at(
     MONAD_ASSERT(index < v->size);
     set_override_state(
         &v->overrides[index], addr, addr_len, key, key_len, value, value_len);
+}
+
+void set_override_empty_state_at(
+    struct monad_state_override_vec *v, size_t index, uint8_t const *addr,
+    size_t addr_len)
+{
+    MONAD_ASSERT(v);
+    MONAD_ASSERT(index < v->size);
+    set_override_empty_state(&v->overrides[index], addr, addr_len);
 }
 
 monad_block_override *monad_block_override_create()

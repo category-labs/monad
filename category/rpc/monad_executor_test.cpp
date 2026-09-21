@@ -8369,3 +8369,109 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_history_state_override)
     monad_state_override_vec_destroy(state_overrides);
     monad_executor_destroy(executor);
 }
+
+TEST_F(EthCallFixture, eth_simulate_v1_deploy_over_storage_override)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr uint64_t base_block_number = 255;
+    static constexpr Address sender =
+        0x1111111111111111111111111111111111111111_address;
+    Address const contract_address = create_contract_address(sender, 0);
+
+    auto const init_eb = evm_as::latest().sstore(0, 2).stop();
+    ASSERT_TRUE(evm_as::validate(init_eb));
+    std::vector<uint8_t> init_code;
+    evm_as::compile(init_eb, init_code);
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 100_ether, .nonce = 0}}}}},
+        {},
+        BlockHeader{.number = 0});
+    for (uint64_t i = 1; i <= base_block_number; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+    auto *const state_overrides = monad_state_override_vec_create(1);
+    auto *const block_overrides = monad_block_override_vec_create(1);
+
+    bytes32_t const storage_key = store_be_as<bytes32_t>(uint256_t{0});
+    bytes32_t const storage_value = store_be_as<bytes32_t>(uint256_t{1});
+    add_override_address_at(
+        state_overrides,
+        0,
+        contract_address.bytes,
+        sizeof(contract_address.bytes));
+    set_override_state_diff_at(
+        state_overrides,
+        0,
+        contract_address.bytes,
+        sizeof(contract_address.bytes),
+        storage_key.bytes,
+        sizeof(storage_key.bytes),
+        storage_value.bytes,
+        sizeof(storage_value.bytes));
+
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 200'000'000,
+        .to = std::nullopt,
+        .type = TransactionType::eip1559,
+        .data = byte_string{init_code.data(), init_code.size()},
+        .max_priority_fee_per_gas = 0,
+    };
+    auto const encoded_tx = rlp::encode_transaction(tx);
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_string2(byte_string_view(encoded_tx)))));
+
+    BlockHeader const header{
+        .number = base_block_number,
+        .gas_limit = 200'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        base_block_number,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        state_overrides,
+        block_overrides,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_NE(ctx.result->message, nullptr);
+    EXPECT_STREQ(ctx.result->message, "block state cannot be merged");
+
+    monad_block_override_vec_destroy(block_overrides);
+    monad_state_override_vec_destroy(state_overrides);
+    monad_executor_destroy(executor);
+}

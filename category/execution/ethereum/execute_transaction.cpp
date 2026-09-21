@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
@@ -487,7 +488,8 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 
         auto result = execute_impl2(state);
 
-        MONAD_ASSERT(block_state_.can_merge(state));
+        MONAD_ASSERT_THROW(
+            block_state_.can_merge(state), "block state cannot be merged");
         if (result.has_error()) {
             return std::move(result.error());
         }

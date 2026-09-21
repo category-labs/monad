@@ -209,8 +209,15 @@ MONAD_ZKVM_L2_EPOCH_BLOCKS=<n>" \
     cargo-zisk build --release
 ```
 
-The operator key is compiled in, so the order is: generate a keypair, configure
-with its public half, and hand the witness rewriter the matching secret.
+The operator key is compiled in, so the order is: pick a secret, run
+`monad-zkvm-corpus-gen --pubkey <secret>` for the two `OPERATOR_PK` values,
+configure with those, and hand the generator the same secret with `--sk`. The
+generator checks the pair at startup and refuses to produce a corpus nothing
+can decrypt.
+
+`MONAD_ZKVM_L2_SPOKE` comes from the same tool: `--spoke-address` prints where
+the spoke scenario deploys. The address is CREATE-derived, so it follows the
+deployer key and therefore the `--seed`.
 
 ### Swapping the encryption
 
@@ -233,82 +240,81 @@ refuses is a deterministic rejection of one queue entry, never a halt — nor th
 binding of the operator secret, which is the check the whole design rests on.
 
 Selection is a compile-time alias, so a guest carries exactly one suite and an
-unselected one is not compiled. **Comparing two therefore means two ELFs and two
-runs**, like the corpus differential below, and what that yields is a total
-rather than a breakdown: nothing in the cipher counts cells per phase, so the
-ECDH / sponge / packing split quoted in this tree is computed from ZisK's cost
-table and not measured. Instrumenting it needs a diagnostic mode of its own,
-since the committed output region is already at 248 of 256 bytes in the
-keccak-sites build.
+unselected one is not compiled. **Comparing two therefore means two ELFs and
+two runs.** Nothing in the cipher counts its own cells, so a phase breakdown
+does not come from the guest; it comes from attributing an emulator trace to
+symbols from outside.
 
-### The corpus differential
+That was done once, on `al/zkvm-r10-l2-corpus`, over a 200-block rewritten
+mainnet corpus, and the result is worth carrying because it inverts what this
+design assumed. The sponge outweighs the ECDH by **15.7x in steps** where the
+plan predicted roughly 24x the other way. The Poseidon2 precompile is 19,386
+steps on a whole block -- 0.3% of the cipher -- and the cost is the software
+mode around it, of which `L2Sponge::charge`, validating that the declared SAFE
+pattern is being followed, is 24% on its own. In cells the margin narrows to
+about 7x, since the ECDH's work is precompiled and the sponge's is not. Nothing
+here has been profiled against the generated corpus yet.
 
-Nothing in this repository produces witnesses, so the L2 arm gets its oracle by
-REWRITING one rather than making one. Encrypting the leaves and recomputing
-`transactions_root` changes nothing execution reads — `execute_block_header`
-and `ExecuteTransaction` touch `prev_randao`, `beneficiary`, `timestamp`,
-`number`, `gas_limit` and `base_fee_per_gas`, not that root — and the decrypted
-transactions are byte for byte the originals. So the two runs must agree on the
-first 64 bytes of the public output, exactly. Only the block hash differs, and
-it differs by construction because the block is fabricated.
+### The corpus
 
-**`MONAD_ZKVM_L2_REVISION` has to be the revision mainnet's own schedule would
-give the corpus blocks**, and getting it wrong costs the oracle rather than
-announcing itself. The plaintext arm is `EthereumMainnet` and consults that
-schedule; the L2 arm returns a compiled constant and ignores the block
-entirely, which is the point of a chain with no fork schedule. Set the two to
-different revisions and the arms execute under different EVM rules, so the
-post-state roots differ for a reason that has nothing to do with the cipher --
-the one signal this differential exists to give.
+The blocks the L2 arm runs on are **generated, not borrowed**. `zkvm/test/corpus`
+builds a genesis state, signs transactions, executes them on the host and emits
+the witness the guest consumes -- so the blocks obey this chain's rules instead
+of being made to fit them.
 
-Both runs go through `ziskemu`, on two ELFs. Not through a host executor: an
-x86 build of the guest is a different program, with the native Poseidon2
-permutation instead of `csrs 0x812` and libsecp256k1 instead of zisklib, so two
-host arms agreeing would say nothing about the arm being proved.
+That distinction is the whole reason the section exists. An earlier approach
+took mainnet witnesses and rewrote their leaves, which needed three levers to
+make the guest accept a shape it has no rules for: withdrawals and a
+`requests_hash` and blob transactions, a mainnet blob schedule, and gas pricing
+put back because the header's `gas_used` was computed under L1 rules. A
+generated block has none of those shapes, so none of the levers exist here.
 
-**The corpus for this is blocks from Paris up to Shanghai**, and both ends
-matter. In mainnet terms that is block 15,537,394 (PARIS_ACTIVATION_BLOCK_NUMBER)
-up to the last block whose timestamp is below 1,681,338,455
-(SHANGHAI_ACTIVATION_TIMESTAMP) -- about 1.5 million blocks, September 2022 to
-April 2023. Worth having in numbers, because a block number alone does not say
-which fork it is: from Shanghai on, mainnet's schedule switches on the
-TIMESTAMP, so the test on a witness is that header field and not its height. A Shanghai-or-later block carries withdrawals, which the L2 rejects
-outright as unauthorised balance creation — nothing on this chain
-authenticates the list — and stripping them is no way round it, since the
-credits are in the post-state root and removing them changes the very root the
-oracle compares. A pre-Merge block fails at the other end: it may carry ommers,
-which the L2 also rejects, and its block reward is non-zero while the L2 gates
-apply_block_reward out, so the two arms would disagree on the post-state root
-for a reason that has nothing to do with the cipher.
+**The corpus targets Paris, and the number is load-bearing.** The chain starts
+at block 15,537,394 with a timestamp below 1,681,338,455 -- Shanghai's. Paris
+is the one window with no withdrawals, no `requests_hash` and no blob fields,
+which is exactly the shape this chain accepts unaided. `MONAD_ZKVM_L2_REVISION`
+has to be `MONAD_ETH_PARIS` to match.
 
-Inside that window the two arms really do agree: ommers are empty, there are no
-withdrawals, the block reward is already zero so gating it changes nothing, and
-EIP-7685 is not active so gating process_requests changes nothing either. The
-rewriter refuses anything outside it rather than emit a witness the guest will
-refuse.
+Three scenarios: EOA transfers with a contract that fills storage slots and
+zeroes one; CREATE, logs, REVERT, SELFDESTRUCT and the legacy/2930/1559
+transaction types; and the real `NamespaceSpoke`, vendored from
+`eerkaijun/monad-namespaces` at `e6012d8cebf4` and deployed by CREATE, sending
+namespace messages so the anchor has logs to harvest and a pending array to
+clear.
 
 ```sh
-# The plaintext arm, saved aside before the L2 configure overwrites the ELF.
-cd zkvm/zisk && cargo-zisk build --release
-cp target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk /tmp/guest-plain
+# Configure an L2 host tree with the eight deployment values, then:
+cmake --build build --target monad-zkvm-corpus-gen monad-zkvm-x86-test-runner
+./build/zkvm/guest/monad-zkvm-corpus-gen --out /tmp/corpus --sk <64 hex>
 
-# The L2 arm, with the defines above.
-MONAD_ZKVM_CMAKE_DEFINES="MONAD_ZKVM_L2=ON;..." cargo-zisk build --release
-cp target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk /tmp/guest-l2
-
-# Rewrite the witness. --check decrypts every leaf back before writing.
-monad-zkvm-l2-witness --in plain.bin --out l2.bin --sk <64 hex> --check
-
-# Frame both (8-byte LE length prefix, zero-padded to a multiple of 8) and run.
-ziskemu -e /tmp/guest-plain -i plain.framed.bin -o /tmp/a.bin
-ziskemu -e /tmp/guest-l2    -i l2.framed.bin    -o /tmp/b.bin
-
-cmp <(head -c 64 /tmp/a.bin) <(head -c 64 /tmp/b.bin)   # must be identical
+# Each witness makes the guest republish what the manifest records: the
+# post-state root, the pre-state root, the block hash, the anchor and the
+# number.
+./build/zkvm/guest/monad-zkvm-x86-test-runner \
+    --input /tmp/corpus/spoke-15537396.witness --output /tmp/out.bin
 ```
 
-`monad-zkvm-l2-witness` is a host tool and legitimately so: it only rewrites
-bytes, and it shares `l2_cipher` with the guest, so its keystream is the
-guest's by construction rather than by agreement.
+**The oracle is not circular**, and that is the point of generating rather than
+asserting. The generator computes its roots with `TrieDb`, the node's own
+backend; the guest recomputes them with `OffsetTrie` from the blob. Two
+implementations of the same trie, so their agreement is evidence. The anchor is
+derived twice for the same reason -- the generator merkleises the receipts
+itself, the guest merkleises them in the epilogue.
+
+Building the same sources with `MONAD_ZKVM_L2=OFF` gives a plaintext corpus and
+the three-value output, which is the cheaper check to run first: it exercises
+the generator and the trie without the cipher in the way.
+
+What this does NOT establish: that the gas surgery produces the right
+`gas_used`, or that the anchor is what the deployed contract would compute.
+Both sides here run the same rules, so their agreement says nothing about
+either being right. The storage layout is at least read from the contract's own
+source -- `_pendingNamespaceMessages` is slot 1 -- rather than assumed.
+
+Running under `ziskemu` on the real ELF is the step that distinguishes "the C++
+agrees with itself" from "the proved guest agrees": an x86 build has the native
+Poseidon2 permutation instead of `csrs 0x812` and libsecp256k1 instead of
+zisklib, so it is a different program.
 
 For proving, see ZisK's docs (`cargo-zisk prove ...`); nothing above proves,
 it only executes under the emulator.

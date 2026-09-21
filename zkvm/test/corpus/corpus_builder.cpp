@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/db/witness_generator.hpp>
@@ -44,6 +45,14 @@
 
 #include <cstring>
 #include <utility>
+
+#ifdef MONAD_ZKVM_L2
+    #include <category/execution/ethereum/namespace_anchor.hpp>
+    #include <zkvm/guest/body_roots.hpp>
+    #include <zkvm/guest/l2_cipher.hpp>
+    #include <zkvm/guest/l2_config.hpp>
+    #include <zkvm/guest/l2_ecdh.hpp>
+#endif
 
 MONAD_NAMESPACE_BEGIN
 
@@ -121,11 +130,63 @@ namespace corpus
         }
     }
 
-    CorpusBuilder::CorpusBuilder(std::function<void(State &)> const &seed)
+#ifdef MONAD_ZKVM_L2
+    namespace
+    {
+        /// A fresh ephemeral scalar per leaf, derived so a regenerated corpus
+        /// is byte-identical.
+        ///
+        /// Fresh, and not the operator secret. The rewriter this replaces
+        /// passed sk as r, which makes R = pk on every leaf and P = sk^2 G a
+        /// constant -- so two blocks in one epoch share a keystream for the
+        /// same leaf index and plaintext length. That is a break, not an
+        /// inefficiency: XORing two such leaves cancels the mask.
+        L2Scalar ephemeral(bytes32_t const &sk, uint64_t number, size_t index)
+        {
+            for (uint64_t salt = 0;; ++salt) {
+                byte_string buf{sk.bytes, sizeof(sk.bytes)};
+                for (uint64_t const v : {number, uint64_t{index}, salt}) {
+                    for (unsigned i = 0; i < 8; ++i) {
+                        buf.push_back(
+                            static_cast<unsigned char>(v >> (56 - 8 * i)));
+                    }
+                }
+                auto const h = to_bytes(keccak256(buf));
+                auto const r = l2_scalar_from_be(
+                    std::span<unsigned char const, 32>{h.bytes, 32});
+                // Astronomically unlikely, but a scalar outside [1, n-1] is
+                // not a key and l2_ecdh would return nullopt rather than say
+                // why. Salting again costs nothing and keeps it total.
+                if (l2_scalar_is_valid(r)) {
+                    return r;
+                }
+            }
+        }
+    }
+#endif
+
+    CorpusBuilder::CorpusBuilder(
+        std::function<void(State &)> const &seed, bytes32_t const &sk)
         : impl_{std::make_unique<Impl>()}
         , mdb_{std::make_unique<InMemoryMachine>()}
         , tdb_{mdb_}
+        , sk_{sk}
     {
+#ifdef MONAD_ZKVM_L2
+        // Checked once, here, against a throwaway header: the context's key
+        // material does not depend on the block, only its epoch does, and a
+        // secret that does not match the compiled operator key can never
+        // produce a leaf this guest will decrypt.
+        BlockHeader probe{.number = GENESIS_NUMBER};
+        auto const probe_ctx = l2_cipher_context(probe);
+        MONAD_ASSERT_PRINTF(
+            l2_check_operator_key(
+                probe_ctx,
+                l2_scalar_from_be(
+                    std::span<unsigned char const, 32>{sk_.bytes, 32})),
+            "the corpus secret does not match the compiled "
+            "MONAD_ZKVM_L2_OPERATOR_PK_X");
+#endif
         // Genesis goes in through a State so callers write
         // create_contract/set_code/add_to_balance/set_storage rather than
         // assembling StateDeltas by hand.
@@ -297,13 +358,92 @@ namespace corpus
         MONAD_ASSERT(sealed_.back().state_root == pre_root);
 
         std::vector<byte_string> codes{wd.codes.begin(), wd.codes.end()};
-        byte_string const block_rlp = rlp::encode_block(block);
-        byte_string const witness =
-            encode_execution_witness(block_rlp, wd.nodes, codes, ancestors);
 
-        sealed_.push_back(sealed);
+        // The anchor the L2 guest will publish. Recomputed here from the same
+        // receipts rather than read back from execution: execute_block has
+        // nowhere to return it (it yields receipts), so the host clears the
+        // pending array and drops the value. Deliberate asymmetry -- the node
+        // wants the root, the prover publishes the anchor -- and it means the
+        // two are derived independently, which is what makes comparing them
+        // worth anything.
+        bytes32_t anchor{};
+#ifdef MONAD_ZKVM_L2
+        {
+            auto messages =
+                collect_namespace_messages(receipts, L2_NAMESPACE_SPOKE);
+            MONAD_ASSERT(messages.has_value());
+            anchor = sorted_pair_merkle_root(messages.value());
+        }
+#endif
+
+        BlockHeader published = sealed;
+        byte_string block_rlp;
+        byte_string witness;
+        size_t encrypted = 0;
+
+#ifdef MONAD_ZKVM_L2
+        // Encrypt the leaves and re-root the transactions trie over the
+        // ciphertexts, which is what the header commits to on this chain.
+        // commit_simple has already filled transactions_root from the
+        // plaintext trie, so it is overwritten here and nowhere else -- every
+        // other computed field (state_root, receipts_root, gas_used,
+        // logs_bloom) is the same either way, because the cipher does not
+        // change what executing the block does.
+        std::vector<byte_string> leaves;
+        leaves.reserve(block.transactions.size());
+        for (size_t i = 0; i < block.transactions.size(); ++i) {
+            // The trie form, which is what the guest decrypts back to: a
+            // legacy transaction is its own RLP list, a typed one is the bare
+            // type byte and payload with no string wrapper.
+            byte_string const plain =
+                rlp::encode_transaction(block.transactions[i]);
+            auto const ctx = l2_cipher_context(sealed);
+            auto const r = ephemeral(sk_, number, i);
+            unsigned char nonce[16] = {};
+            for (unsigned b = 0; b < 8; ++b) {
+                nonce[b] = static_cast<unsigned char>(i >> (8 * b));
+            }
+            std::vector<unsigned char> leaf;
+            MONAD_ASSERT(l2_encrypt_leaf(
+                ctx,
+                r,
+                std::span<unsigned char const, 16>{nonce},
+                std::span<unsigned char const>{plain.data(), plain.size()},
+                leaf));
+            leaves.emplace_back(leaf.begin(), leaf.end());
+            ++encrypted;
+        }
+        published.transactions_root = ordered_trie_root(leaves);
+
+        {
+            byte_string txs;
+            for (auto const &leaf : leaves) {
+                txs += rlp::encode_string2(leaf);
+            }
+            byte_string body = rlp::encode_block_header(published);
+            body += rlp::encode_list2(txs);
+            body += rlp::encode_list2(byte_string{}); // no ommers, ever
+            block_rlp = rlp::encode_list2(body);
+        }
+
+        witness = encode_execution_witness_l2(
+            block_rlp,
+            wd.nodes,
+            codes,
+            ancestors,
+            byte_string_view{sk_.bytes, sizeof(sk_.bytes)});
+#else
+        block_rlp = rlp::encode_block(block);
+        witness =
+            encode_execution_witness(block_rlp, wd.nodes, codes, ancestors);
+#endif
+
+        // The sealed header is what the NEXT block's parent_hash and the
+        // ancestor list must name, and on an L2 block that is the published
+        // header -- the one whose transactions_root covers the ciphertexts.
+        sealed_.push_back(published);
         block_hashes_.set(
-            number, to_bytes(keccak256(rlp::encode_block_header(sealed))));
+            number, to_bytes(keccak256(rlp::encode_block_header(published))));
         if (sealed_.size() > BlockHashBuffer::N + 1) {
             sealed_.erase(sealed_.begin());
         }
@@ -313,9 +453,12 @@ namespace corpus
             .witness = witness,
             .pre_root = pre_root,
             .post_root = post_root,
-            .block_hash = to_bytes(keccak256(rlp::encode_block_header(sealed))),
-            .header = sealed,
-            .receipts = std::move(receipts)};
+            .block_hash =
+                to_bytes(keccak256(rlp::encode_block_header(published))),
+            .header = published,
+            .receipts = std::move(receipts),
+            .namespace_anchor = anchor,
+            .encrypted_leaves = encrypted};
     }
 }
 

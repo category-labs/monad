@@ -980,20 +980,36 @@ else()
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/corpus_builder.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/scenarios.cpp")
 
+    # In an L2 tree the generator encrypts the leaves and emits a seven-field
+    # witness, so it needs the cipher sources and body_roots -- the ciphertext
+    # transactions root has no host-side equivalent. Out of one, the same
+    # sources build a plaintext corpus and none of this is compiled.
+    set(_corpus_extra "")
+    set(_corpus_libs "")
+    if(MONAD_ZKVM_L2)
+        monad_l2_sources("${CMAKE_CURRENT_SOURCE_DIR}" _corpus_l2)
+        monad_l2_cipher_host_libs(_corpus_l2_libs)
+        list(APPEND _corpus_extra ${_corpus_l2}
+             "${CMAKE_CURRENT_SOURCE_DIR}/body_roots.cpp")
+        list(APPEND _corpus_libs ${_corpus_l2_libs})
+    endif()
+
     add_executable(monad-zkvm-corpus-gen
         ${_corpus_sources}
+        ${_corpus_extra}
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/corpus_gen_main.cpp")
     monad_compile_options(monad-zkvm-corpus-gen)
     target_link_libraries(monad-zkvm-corpus-gen PRIVATE
-        monad_execution PkgConfig::secp256k1)
+        monad_execution PkgConfig::secp256k1 ${_corpus_libs})
 
     # libsecp256k1 is PRIVATE on monad_execution and the signer calls it
     # directly, so it has to be named again here.
     monad_add_test(test_corpus_builder
         ${_corpus_sources}
-        
+        ${_corpus_extra}
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/test_corpus_builder.cpp")
-    target_link_libraries(test_corpus_builder PkgConfig::secp256k1)
+    target_link_libraries(test_corpus_builder
+        PkgConfig::secp256k1 ${_corpus_libs})
 
     # Precompile golden-vector test runner: same x86 driver, but its entry is
     # the precompile-vector harness instead of the witness executor.
@@ -1034,19 +1050,6 @@ else()
         "${CMAKE_CURRENT_SOURCE_DIR}/l2_sponge.cpp"
         ${_l2_suite_sources})
     target_link_libraries(l2_cipher_test ${_l2_host_libs})
-
-    # The corpus oracle: rewrites a plaintext witness into an L2 one, so the
-    # post-state and pre-state roots of both runs must match exactly. Only
-    # meaningful in an L2 build tree -- it needs the deployment constants.
-    if(MONAD_ZKVM_L2)
-        add_executable(monad-zkvm-l2-witness
-            "${CMAKE_CURRENT_SOURCE_DIR}/../test/l2/l2_witness_tool.cpp"
-            "${CMAKE_CURRENT_SOURCE_DIR}/body_roots.cpp"
-            ${_l2_sources})
-        monad_compile_options(monad-zkvm-l2-witness)
-        target_link_libraries(monad-zkvm-l2-witness PRIVATE
-            monad_execution ${_l2_host_libs})
-    endif()
 
     monad_add_test(decode_block_l2_test
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/l2/decode_block_l2_test.cpp"

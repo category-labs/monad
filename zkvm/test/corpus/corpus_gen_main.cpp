@@ -18,14 +18,19 @@
 
 #include <zkvm/test/corpus/corpus_builder.hpp>
 #include <zkvm/test/corpus/scenarios.hpp>
+#include <zkvm/test/corpus/tx_sign.hpp>
 
 #include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
+#ifdef MONAD_ZKVM_L2
+    #include <zkvm/guest/l2_ecdh.hpp>
+#endif
 
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -36,7 +41,19 @@ namespace
         std::fprintf(
             stderr,
             "Usage: %s --out <dir> [--scenario all|transfers|evm|spoke]\n"
-            "          [--seed <64 hex>]\n",
+            "          [--seed <64 hex>] [--sk <64 hex>]\n"
+            "       %s --pubkey <64 hex secret>\n"
+            "       %s --spoke-address [--seed <64 hex>]\n"
+            "\n"
+            "--sk is the operator secret, required in an L2 build and\n"
+            "ignored otherwise. --pubkey prints the compressed public half of\n"
+            "a secret as MONAD_ZKVM_L2_OPERATOR_PK_X and _ODD, which is what\n"
+            "the guest has to be configured with before a corpus it produces\n"
+            "can be decrypted. --spoke-address prints where the spoke\n"
+            "scenario will deploy, which is what MONAD_ZKVM_L2_SPOKE has to\n"
+            "be -- the address is CREATE-derived, so it follows the seed.\n",
+            prog,
+            prog,
             prog);
         return 1;
     }
@@ -51,6 +68,17 @@ namespace
         }
         return s;
     }
+
+    std::string hex_of_address(monad::Address const &a)
+    {
+        static char const *const D = "0123456789abcdef";
+        std::string s = "0x";
+        for (unsigned char const c : a.bytes) {
+            s.push_back(D[c >> 4]);
+            s.push_back(D[c & 0xf]);
+        }
+        return s;
+    }
 }
 
 int main(int const argc, char **const argv)
@@ -59,6 +87,31 @@ int main(int const argc, char **const argv)
     std::string want = "all";
     monad::bytes32_t seed{};
     seed.bytes[31] = 1;
+    monad::bytes32_t sk{};
+    bool have_sk = false;
+    monad::bytes32_t pubkey_of{};
+    bool want_pubkey = false;
+    bool want_spoke = false;
+
+    auto const parse_hex32 = [](std::string_view h,
+                                monad::bytes32_t &out) -> bool {
+        if (h.starts_with("0x")) {
+            h.remove_prefix(2);
+        }
+        if (h.size() != 64) {
+            return false;
+        }
+        for (unsigned j = 0; j < 32; ++j) {
+            auto const hi = monad::from_hex_char(h[2 * j]);
+            auto const lo = monad::from_hex_char(h[2 * j + 1]);
+            if (!hi.has_value() || !lo.has_value()) {
+                return false;
+            }
+            out.bytes[j] =
+                static_cast<unsigned char>((hi.value() << 4) | lo.value());
+        }
+        return true;
+    };
 
     for (int i = 1; i < argc; ++i) {
         std::string_view const arg{argv[i]};
@@ -69,44 +122,109 @@ int main(int const argc, char **const argv)
             want = argv[++i];
         }
         else if (arg == "--seed" && i + 1 < argc) {
-            std::string_view h{argv[++i]};
-            if (h.starts_with("0x")) {
-                h.remove_prefix(2);
-            }
-            if (h.size() != 64) {
+            if (!parse_hex32(argv[++i], seed)) {
                 std::fprintf(stderr, "corpus-gen: --seed needs 64 hex\n");
                 return 1;
             }
-            for (unsigned j = 0; j < 32; ++j) {
-                auto const hi = monad::from_hex_char(h[2 * j]);
-                auto const lo = monad::from_hex_char(h[2 * j + 1]);
-                if (!hi.has_value() || !lo.has_value()) {
-                    std::fprintf(stderr, "corpus-gen: --seed is not hex\n");
-                    return 1;
-                }
-                seed.bytes[j] =
-                    static_cast<unsigned char>((hi.value() << 4) | lo.value());
+        }
+        else if (arg == "--sk" && i + 1 < argc) {
+            if (!parse_hex32(argv[++i], sk)) {
+                std::fprintf(stderr, "corpus-gen: --sk needs 64 hex\n");
+                return 1;
             }
+            have_sk = true;
+        }
+        else if (arg == "--pubkey" && i + 1 < argc) {
+            if (!parse_hex32(argv[++i], pubkey_of)) {
+                std::fprintf(stderr, "corpus-gen: --pubkey needs 64 hex\n");
+                return 1;
+            }
+            want_pubkey = true;
+        }
+        else if (arg == "--spoke-address") {
+            want_spoke = true;
         }
         else {
             return usage(argv[0]);
         }
     }
+    if (want_spoke) {
+        // Ask the builder rather than recomputing the CREATE derivation here:
+        // one derivation, and it is the one the corpus will actually use.
+        for (auto const &s : monad::corpus::all_scenarios(seed)) {
+            if (s.name != "spoke") {
+                continue;
+            }
+            monad::corpus::CorpusBuilder b{s.genesis, sk};
+            std::printf(
+                "MONAD_ZKVM_L2_SPOKE=%s\n",
+                hex_of_address(
+                    b.next_contract_address(monad::corpus::address_of(
+                        monad::corpus::derive_key(seed, 200))))
+                    .c_str());
+            return 0;
+        }
+        std::fprintf(stderr, "corpus-gen: no spoke scenario\n");
+        return 1;
+    }
+
+    if (want_pubkey) {
+#ifdef MONAD_ZKVM_L2
+        auto const k = monad::l2_scalar_from_be(
+            std::span<unsigned char const, 32>{pubkey_of.bytes, 32});
+        if (!monad::l2_scalar_is_valid(k)) {
+            std::fprintf(stderr, "corpus-gen: not a secp256k1 scalar\n");
+            return 1;
+        }
+        auto const pk = monad::l2_ecdh(k, monad::SECP256K1_G);
+        if (!pk.has_value()) {
+            std::fprintf(stderr, "corpus-gen: cannot derive the public key\n");
+            return 1;
+        }
+        unsigned char sec1[33];
+        monad::l2_point_compress(
+            pk.value(), std::span<unsigned char, 33>{sec1});
+        std::printf("MONAD_ZKVM_L2_OPERATOR_PK_X=0x");
+        for (unsigned i = 1; i < 33; ++i) {
+            std::printf("%02x", sec1[i]);
+        }
+        std::printf(
+            "\nMONAD_ZKVM_L2_OPERATOR_PK_ODD=%d\n", sec1[0] == 0x03 ? 1 : 0);
+        return 0;
+#else
+        std::fprintf(
+            stderr,
+            "corpus-gen: --pubkey needs an L2 build; this one has no curve\n");
+        return 1;
+#endif
+    }
+
     if (out_dir.empty()) {
         return usage(argv[0]);
     }
+#ifdef MONAD_ZKVM_L2
+    if (!have_sk) {
+        std::fprintf(
+            stderr,
+            "corpus-gen: --sk is required in an L2 build -- without it the "
+            "leaves cannot be encrypted under the compiled operator key\n");
+        return 1;
+    }
+#else
+    (void)have_sk;
+#endif
 
     std::filesystem::create_directories(out_dir);
     std::ofstream manifest{out_dir + "/manifest.csv"};
     manifest << "scenario,number,pre_root,post_root,block_hash,txs,gas_used,"
-                "witness_bytes\n";
+                "witness_bytes,anchor,leaves\n";
 
     unsigned written = 0;
     for (auto const &s : monad::corpus::all_scenarios(seed)) {
         if (want != "all" && want != s.name) {
             continue;
         }
-        monad::corpus::CorpusBuilder builder{s.genesis};
+        monad::corpus::CorpusBuilder builder{s.genesis, sk};
         for (auto &spec : s.blocks(builder)) {
             auto const n_txs = spec.txs.size();
             auto const e = builder.add_block(std::move(spec));
@@ -131,7 +249,9 @@ int main(int const argc, char **const argv)
             manifest << s.name << ',' << e.header.number << ','
                      << hex_of(e.pre_root) << ',' << hex_of(e.post_root) << ','
                      << hex_of(e.block_hash) << ',' << n_txs << ','
-                     << e.header.gas_used << ',' << e.witness.size() << '\n';
+                     << e.header.gas_used << ',' << e.witness.size() << ','
+                     << hex_of(e.namespace_anchor) << ',' << e.encrypted_leaves
+                     << '\n';
             ++written;
         }
     }

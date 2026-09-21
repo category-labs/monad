@@ -155,6 +155,9 @@ impl MonadExecutor {
                         for (k, v) in storage_override {
                             state_overrides.set_state_at(i, addr, k, v)
                         }
+                        if storage_override.is_empty() {
+                            state_overrides.set_empty_state_at(i, addr);
+                        }
                     }
                     Some(StorageOverride::StateDiff(override_state_diff)) => {
                         for (k, v) in override_state_diff {

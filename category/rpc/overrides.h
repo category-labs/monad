@@ -52,6 +52,9 @@ void set_override_state(
     struct monad_state_override *, uint8_t const *addr, size_t addr_len,
     uint8_t const *key, size_t key_len, uint8_t const *value, size_t value_len);
 
+void set_override_empty_state(
+    struct monad_state_override *, uint8_t const *addr, size_t addr_len);
+
 struct monad_state_override_vec;
 
 struct monad_state_override_vec *monad_state_override_vec_create(size_t size);
@@ -83,6 +86,10 @@ void set_override_state_at(
     struct monad_state_override_vec *, size_t index, uint8_t const *addr,
     size_t addr_len, uint8_t const *key, size_t key_len, uint8_t const *value,
     size_t value_len);
+
+void set_override_empty_state_at(
+    struct monad_state_override_vec *, size_t index, uint8_t const *addr,
+    size_t addr_len);
 
 struct monad_block_override;
 

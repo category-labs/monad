@@ -192,6 +192,10 @@ impl MonadExecutor {
                                 v.len(),
                             )
                         }
+
+                        if override_state.is_empty() {
+                            ffi::set_override_empty_state(override_ctx, addr.as_ptr(), addr.len());
+                        }
                     }
                     Some(StorageOverride::StateDiff(override_state_diff)) => {
                         for (k, v) in override_state_diff {

@@ -28,8 +28,9 @@ pub(crate) use self::bindings::{
     set_block_override_fee_recipient_at, set_block_override_gas_limit_at,
     set_block_override_number_at, set_block_override_prev_randao_at, set_block_override_time_at,
     set_override_balance, set_override_balance_at, set_override_code, set_override_code_at,
-    set_override_nonce, set_override_nonce_at, set_override_state, set_override_state_at,
-    set_override_state_diff, set_override_state_diff_at,
+    set_override_empty_state, set_override_empty_state_at, set_override_nonce,
+    set_override_nonce_at, set_override_state, set_override_state_at, set_override_state_diff,
+    set_override_state_diff_at,
 };
 
 #[allow(dead_code, non_camel_case_types, non_upper_case_globals)]

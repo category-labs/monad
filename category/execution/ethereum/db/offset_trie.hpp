@@ -464,6 +464,33 @@ decltype(auto) match(NodeViewBase n, Fs &&...fs)
     MONAD_ABORT("bad node tag");
 }
 
+// ── node writers — the producer's half of the layout above ──────────────────
+// Append one node's bytes to `out`. Children are named by NodeId: a producer
+// building a flat blob passes byte offsets, the overlay passes overlay ids.
+//
+// These live here, beside checked_end, and not in the producer, because that
+// separation is what the two lineages of this format got wrong. The reader
+// keeps a node's child id immediately after the tag so child()/storage() is a
+// constant-offset read; a writer that emitted the path first produced a blob
+// whose magic, header and RLP envelope all checked out, and which the reader
+// then parsed one node into before landing mid-field and aborting -- exit 0, a
+// plausible step count, and a public output of 256 zero bytes. Nothing about
+// that failure names the field order. So the emitters derive their positions
+// from the same declarations the views do, and each one asserts in debug that
+// the reader's own extent lands exactly on the bytes it just wrote.
+//
+// Definitions are in offset_trie_writer.cpp, which the guest does not compile:
+// nothing in the guest produces a blob, and keeping the writer out of its
+// archive keeps the official profile's ELF byte-identical.
+void append_branch(byte_string &out, std::array<NodeId, 16> const &children);
+void append_ext(byte_string &out, NibblesView path, NodeId child);
+void append_storage(byte_string &out, NibblesView path, bytes32_t const &value);
+void append_acct(
+    byte_string &out, NodeId storage, Account const &acct, NibblesView path);
+// No mutation counterpart: upsert never creates a Digest. They arrive only in
+// the pre-state blob, from the producer.
+void append_digest(byte_string &out, bytes32_t const &hash);
+
 // ── OffsetTrie — immutable blob + stable-id overlay ──────────────────────────
 class OffsetTrie
 {
@@ -473,6 +500,7 @@ class OffsetTrie
     // asserted blob_.size() >= HEADER_LEN before any lookup can run.
     uint64_t blob_span_;
     ankerl::unordered_dense::map<NodeId, byte_string, NodeIdHash> overlay_{};
+
     // A cached hash, and whether it is still the node's.
     //
     // Invalidation used to erase. `unordered_dense` is a flat map, so an erase
@@ -523,6 +551,7 @@ class OffsetTrie
             it->second.valid = false;
         }
     }
+
     NodeId next_id_{OVERLAY_BASE}; // fresh-id counter (>= OVERLAY_BASE)
 
     // Negative filter in front of overlay_. Measured on r4-jd-blockhash,
@@ -599,10 +628,11 @@ public:
         //
         // `id - HEADER_LEN < blob_.size() - HEADER_LEN` is the SAME predicate
         // as `id >= HEADER_LEN && id < blob_.size()`: an id below HEADER_LEN
-        // wraps to at least 2^64 - HEADER_LEN, which exceeds any blob (read_root
-        // asserts blob_.size() <= OVERLAY_BASE), and an overlay id is rejected
-        // by the same bound it is rejected by today. Two priced `ltu` at 60
-        // cells become one, and the low bound stops needing its own constant.
+        // wraps to at least 2^64 - HEADER_LEN, which exceeds any blob
+        // (read_root asserts blob_.size() <= OVERLAY_BASE), and an overlay id
+        // is rejected by the same bound it is rejected by today. Two priced
+        // `ltu` at 60 cells become one, and the low bound stops needing its own
+        // constant.
         MONAD_ASSERT(
             id == NULL_ID ||
             static_cast<uint64_t>(id) - HEADER_LEN < blob_span_);

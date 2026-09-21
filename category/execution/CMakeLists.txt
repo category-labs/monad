@@ -103,6 +103,7 @@ add_library(
   "ethereum/db/file_db.hpp"
   "ethereum/db/offset_trie.hpp"
   "ethereum/db/offset_trie.cpp"
+  "ethereum/db/offset_trie_writer.cpp"
   "ethereum/db/partial_trie_db.hpp"
   "ethereum/db/partial_trie_db.cpp"
   "ethereum/db/state_machine_init.cpp"

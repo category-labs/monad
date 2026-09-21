@@ -676,6 +676,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "trie_db.cpp"
         "db/util.cpp"
         "db/commit_builder.cpp"
+        # The producer half of the witness format. Nothing in the guest writes
+        # a blob, and leaving it out keeps its archive -- and so the official
+        # profile's ELF -- what it was before this file existed.
+        "db/offset_trie_writer.cpp"
         "ecrecover.cpp"
         "exec_event_ctypes_metadata.c"
         "exec_event_recorder.cpp"

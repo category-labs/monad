@@ -137,7 +137,7 @@ TEST(EncodeExecutionWitness, AllFieldsRoundtrip)
 }
 
 // ---------------------------------------------------------------------------
-// L2 shape: the same six fields plus [6] sk.
+// L2 shape: the same six fields plus [6] sk and [7] salt_secret.
 //
 // The two shapes reject each other, which is why the envelope carries no
 // version byte: the strict trailing-byte checks already do the work, in both
@@ -147,10 +147,11 @@ TEST(EncodeExecutionWitness, AllFieldsRoundtrip)
 namespace
 {
     byte_string const SK(32, 0x42);
+    byte_string const SALT(32, 0x5a);
 
     byte_string make_minimal_l2_witness()
     {
-        return encode_execution_witness_l2({}, {}, {}, {}, SK);
+        return encode_execution_witness_l2({}, {}, {}, {}, SK, SALT);
     }
 }
 
@@ -161,6 +162,7 @@ TEST(ParseExecutionWitnessL2, ValidMinimalWitness)
     ASSERT_FALSE(result.has_error());
     EXPECT_TRUE(result.value().base.block_rlp.empty());
     EXPECT_EQ(result.value().sk, byte_string_view{SK});
+    EXPECT_EQ(result.value().salt_secret, byte_string_view{SALT});
 }
 
 TEST(ParseExecutionWitnessL2, RejectsSixFieldWitness)
@@ -187,22 +189,47 @@ TEST(ParseExecutionWitnessL2, RejectsTruncated)
     EXPECT_TRUE(parse_execution_witness_l2(w).has_error());
 }
 
-// A key of the wrong width is an envelope defect, not a cipher one, so it is
-// caught here rather than left to the scalar-range check.
-TEST(ParseExecutionWitnessL2, RejectsWrongKeyLength)
+// A secret of the wrong width is an envelope defect, not a cipher one, so it
+// is caught here rather than left to the scalar-range check or to the
+// commitment check in the guest.
+TEST(ParseExecutionWitnessL2, RejectsWrongSecretLength)
 {
-    for (size_t len : {size_t{0}, size_t{31}, size_t{33}}) {
-        // encode_execution_witness_l2 asserts 32, so the short key is built by
-        // hand: an outer list holding six empty fields and one short string.
-        byte_string inner;
-        inner += rlp::encode_string2(byte_string_view{}); // [0]
-        for (int i = 0; i < 5; ++i) {
-            inner += rlp::encode_list2(); // [1]..[5]
+    // Which of the two secrets is short, so neither check stands in for the
+    // other -- [6] being validated would otherwise hide [7] not being.
+    for (int which : {6, 7}) {
+        for (size_t len : {size_t{0}, size_t{31}, size_t{33}}) {
+            // encode_execution_witness_l2 asserts 32 on both, so the short one
+            // is built by hand: an outer list of six empty fields and two
+            // strings.
+            byte_string inner;
+            inner += rlp::encode_string2(byte_string_view{}); // [0]
+            for (int i = 0; i < 5; ++i) {
+                inner += rlp::encode_list2(); // [1]..[5]
+            }
+            inner += rlp::encode_string2(
+                byte_string(which == 6 ? len : 32, 0x11)); // [6]
+            inner += rlp::encode_string2(
+                byte_string(which == 7 ? len : 32, 0x22)); // [7]
+            auto const w = rlp::encode_list2(inner);
+            EXPECT_TRUE(parse_execution_witness_l2(w).has_error())
+                << "field " << which << " len " << len;
         }
-        inner += rlp::encode_string2(byte_string(len, 0x11)); // [6]
-        auto const w = rlp::encode_list2(inner);
-        EXPECT_TRUE(parse_execution_witness_l2(w).has_error()) << "len " << len;
     }
+}
+
+// The seven-field shape is now as wrong as the six-field one. Worth a case of
+// its own: it is the shape this branch used before the blinder, so a stale
+// witness is a thing that exists rather than a hypothetical.
+TEST(ParseExecutionWitnessL2, RejectsTheSevenFieldShape)
+{
+    byte_string inner;
+    inner += rlp::encode_string2(byte_string_view{}); // [0]
+    for (int i = 0; i < 5; ++i) {
+        inner += rlp::encode_list2(); // [1]..[5]
+    }
+    inner += rlp::encode_string2(byte_string(32, 0x11)); // [6], and no [7]
+    auto const w = rlp::encode_list2(inner);
+    EXPECT_TRUE(parse_execution_witness_l2(w).has_error());
 }
 
 TEST(EncodeExecutionWitnessL2, SixFieldPrefixIsUnchanged)
@@ -215,7 +242,7 @@ TEST(EncodeExecutionWitnessL2, SixFieldPrefixIsUnchanged)
     auto const plain =
         encode_execution_witness(block_rlp, nodes, codes, headers);
     auto const l2 =
-        encode_execution_witness_l2(block_rlp, nodes, codes, headers, SK);
+        encode_execution_witness_l2(block_rlp, nodes, codes, headers, SK, SALT);
 
     // Both are one encoder with one optional field, so the six fields must
     // agree. They do not share a prefix -- the outer length differs -- so the

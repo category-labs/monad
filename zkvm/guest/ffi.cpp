@@ -248,6 +248,31 @@ extern "C" void monad_zkvm_execute_witness(void)
     auto const secret = monad::L2Cipher::bind_secret(
         cipher_ctx,
         std::span<unsigned char const, 32>{witness.value().sk.data(), 32});
+
+    // The state blinder, bound the same way and for a reason that needs saying
+    // because it is not soundness. An unbound blinder costs nothing: the
+    // commitment chain forces a prover to reuse whatever it picked, keccak256
+    // binds it, and every proof still verifies. What an unbound blinder costs
+    // is the confidentiality it exists for -- a producer supplying zeros
+    // publishes an unblinded block hash, the state becomes testable by anyone
+    // who can guess it, and nothing anywhere says so. Hence a compiled
+    // commitment rather than trust.
+    //
+    // Asserted against extra_data, not written into it: the header arrives in
+    // the witness and is hashed as given (see the sealing comment below), so
+    // the only way to make the block hash blinded is to require that the
+    // header already carries the right blinder.
+    monad::bytes32_t const salt = monad::l2_state_salt(
+        std::span<unsigned char const, 32>{
+            witness.value().salt_secret.data(), 32},
+        l2_header.number);
+    MONAD_ASSERT(
+        monad::to_bytes(monad::keccak256(witness.value().salt_secret)) ==
+        monad::L2_SALT_COMMITMENT);
+    MONAD_ASSERT(
+        l2_header.extra_data.size() == sizeof(salt.bytes) &&
+        std::memcmp(
+            l2_header.extra_data.data(), salt.bytes, sizeof(salt.bytes)) == 0);
     MONAD_ASSERT(secret.has_value());
     auto block_result = monad::decode_block_l2(
         block_view, cipher_ctx, *secret, root_transactions);
@@ -391,29 +416,56 @@ extern "C" void monad_zkvm_execute_witness(void)
     // asserted to hash to block.header.parent_hash and each older one to be
     // named by its successor, so pinning this header pins the whole run the
     // BLOCKHASH buffer serves.
-    write_output(state_root.bytes, sizeof(state_root.bytes));
-    write_output(pre_state_root.bytes, sizeof(pre_state_root.bytes));
-    write_output(block_hash.bytes, sizeof(block_hash.bytes));
 #ifdef MONAD_ZKVM_L2
-    // The tuple the L1 hub verifies: submitStateSignature(chainId,
-    // blockNumber, newStateRoot, anchor). chainId is compiled into this guest,
-    // so only these two join the three above.
+    // The L2 publishes NEITHER state root, and that is the point rather than
+    // an omission.
     //
-    // Neither weakens the argument above; both lean on it. The block number IS
-    // a field of the sealed header, and the anchor is a deterministic function
-    // of the block's logs, which receipts_root commits to and the header
-    // carries. They are published so the verifier can rebuild the digest
-    // without carrying the header, not because they add anything to trust.
+    // A root is a commitment, and a commitment to a guessable value confirms
+    // guesses -- see l2_state_salt for why this chain's state is guessable
+    // from public data. So what goes out is the hash chain instead: this
+    // block's hash, and the parent hash it names. Both are blinded, because
+    // both headers carry the per-block blinder in extra_data.
     //
+    // Nothing is lost, because the continuity the roots were published for is
+    // established IN HERE and not by the verifier comparing them:
+    //
+    //   - the pre-state root is asserted equal to the newest ancestor
+    //     header's state_root, and that header to hash to
+    //     block.header.parent_hash (the ancestor walk above);
+    //   - the post-state root is sealed into the header just above, so the
+    //     block hash commits to it.
+    //
+    // The L1 therefore needs one comparison to chain a block to its parent --
+    // this block's parent hash against the previous block's hash -- and it
+    // reads no root to do it. Which also means the L1 never sees a root: the
+    // hub's newStateRoot argument carries this block hash, a strictly stronger
+    // commitment since it covers the root and every other header field, and
+    // anything that ever wants the root itself would need the header revealed.
+    // Withdrawals do not; they go through the anchor.
+    write_output(
+        block.header.parent_hash.bytes, sizeof(block.header.parent_hash.bytes));
+    write_output(block_hash.bytes, sizeof(block_hash.bytes));
+
+    // The anchor is NOT blinded, and cannot be: the L1 verifies merkle proofs
+    // against it to release withdrawals. It is guessable the same way a root
+    // is -- whoever guesses the messages recomputes it -- and the honest
+    // statement of what that costs is that a message not yet relayed can be
+    // confirmed early. Inherent to a root the L1 must open, not something the
+    // blinder could fix.
+    monad::bytes32_t const &anchor = root_result.value().namespace_anchor;
+    write_output(anchor.bytes, sizeof(anchor.bytes));
+
     // Big-endian, like every other multi-byte quantity the header and the ABI
     // use; the keccak-site tail below is little-endian but explicitly
     // diagnostic, so it is not a precedent. Eight bytes rather than a padded
     // ABI word because this buffer is a packed struct -- the verifier
     // left-pads in one line.
-    monad::bytes32_t const &anchor = root_result.value().namespace_anchor;
-    write_output(anchor.bytes, sizeof(anchor.bytes));
     monad::u64_be const number{block.header.number};
     write_output(number.bytes, sizeof(number.bytes));
+#else
+    write_output(state_root.bytes, sizeof(state_root.bytes));
+    write_output(pre_state_root.bytes, sizeof(pre_state_root.bytes));
+    write_output(block_hash.bytes, sizeof(block_hash.bytes));
 #endif
 #ifdef MONAD_ZKVM_KECCAK_SITES
     // Diagnostic tail, AFTER the verifier's values so their offsets are

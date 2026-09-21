@@ -57,6 +57,7 @@
 #include <zkvm/guest/l2_cipher_suite.hpp>
 
 #include <cstdint>
+#include <span>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -106,6 +107,41 @@ inline constexpr bool L2_OPERATOR_PK_ODD = MONAD_L2_OPERATOR_PK_ODD != 0;
 /// of the header alone -- so it cannot be the prover's to choose. Confirm it
 /// before this is anything but a prototype.
 inline constexpr std::uint64_t L2_EPOCH_BLOCKS = MONAD_L2_EPOCH_BLOCKS;
+
+/// keccak256 of the blinder secret the witness must supply.
+///
+/// A commitment and not the secret, because the secret is what the guest must
+/// not contain -- the ELF is public, and a blinder anyone can read blinds
+/// nothing.
+inline constexpr bytes32_t L2_SALT_COMMITMENT = MONAD_L2_SALT_COMMITMENT;
+
+/// The per-block state blinder, which goes in the header's extra_data and so
+/// into the block hash.
+///
+/// Why a blinder at all: the block hash is the value this chain publishes, and
+/// hashing is not hiding. Almost every header field is public or derivable --
+/// the number, the parent hash, the protocol constants, and the transactions
+/// root, whose leaves are ciphertexts that were sequenced through the L1 in
+/// the clear. The rest (state_root, receipts_root, logs_bloom, gas_used) are
+/// all functions of ONE hypothesis about what the block did. So an observer
+/// who can enumerate the plausible sets of transfers -- and on a permissioned
+/// chain whose participants are registered on the L1 and whose deposits are
+/// public L1 transfers, that set can be small -- computes each candidate
+/// header and compares. Preimage resistance is no defence: nothing is being
+/// inverted.
+///
+/// Why it takes the block number: without it the blinder is constant, and two
+/// blocks with the same state publish the same hash. On a low-volume chain
+/// that reveals which blocks changed nothing, and a return to an earlier hash
+/// reveals a cycle.
+///
+/// Derived rather than stored, so nothing has to persist between blocks and
+/// the chain of commitments needs no extra bookkeeping to line up. The
+/// accepted cost: whoever learns the secret unblinds the whole history. That
+/// is strictly better than the position the decryption key is already in --
+/// learning THAT one reads every transaction in the clear.
+bytes32_t l2_state_salt(
+    std::span<unsigned char const, 32> salt_secret, std::uint64_t block_number);
 
 /// The block-constant cipher context. Every field is a compiled constant or a
 /// header field, so nothing in it is the prover's.

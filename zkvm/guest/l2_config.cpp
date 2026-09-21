@@ -21,9 +21,36 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <zkvm/guest/l2_cipher.hpp>
 
+#include <category/core/byte_string.hpp>
+#include <category/core/keccak.hpp>
+
 #include <cstring>
+#include <span>
+#include <string_view>
 
 MONAD_NAMESPACE_BEGIN
+
+bytes32_t l2_state_salt(
+    std::span<unsigned char const, 32> const salt_secret,
+    std::uint64_t const block_number)
+{
+    // A label, the secret, then the number. The label keeps this hash from
+    // colliding with any other use of the same secret, and the number is what
+    // makes the blinder per-block.
+    static constexpr std::string_view LABEL = "monad-l2/state-salt/v1";
+
+    byte_string buf;
+    buf.reserve(LABEL.size() + 32 + 8);
+    buf.append(
+        reinterpret_cast<unsigned char const *>(LABEL.data()), LABEL.size());
+    buf.append(salt_secret.data(), salt_secret.size());
+    // Big-endian, like every other multi-byte quantity that reaches the wire
+    // here.
+    for (unsigned i = 0; i < 8; ++i) {
+        buf.push_back(static_cast<unsigned char>(block_number >> (56 - 8 * i)));
+    }
+    return to_bytes(keccak256(buf));
+}
 
 L2Cipher::Context l2_cipher_context(BlockHeader const &header)
 {

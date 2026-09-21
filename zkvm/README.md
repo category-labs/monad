@@ -114,19 +114,70 @@ xxd /tmp/zkvm-output.bin | head -2
 
 ### The public output
 
+The two arms publish different things, because the L2's state is private and
+the Ethereum arm's is not.
+
+**Ethereum** — three values:
+
 | Offset | Size | Value |
 |--------|------|-------|
 | 0 | 32 | post-state root |
 | 32 | 32 | pre-state root |
 | 64 | 32 | block hash, over the header with the COMPUTED state root sealed in |
-| 96 | 32 | message anchor — `MONAD_ZKVM_L2` only |
-| 128 | 8 | block number, big-endian u64 — `MONAD_ZKVM_L2` only |
 
-On the **Ethereum** arm the third value is sufficient on its own: the computed
-root is sealed into the header before it is hashed, so pinning the hash against
-the canonical chain at that height pins the state root, the parent, and every
-other header field in one comparison. The first two are published because they
-are useful to a caller and to the corpus gate.
+The third is sufficient on its own: the computed root is sealed into the header
+before it is hashed, so pinning the hash against the canonical chain at that
+height pins the state root, the parent, and every other header field in one
+comparison. The first two are published because they are useful to a caller and
+to the corpus gate.
+
+**L2** — four values, and **no state root**:
+
+| Offset | Size | Value |
+|--------|------|-------|
+| 0 | 32 | parent block hash |
+| 32 | 32 | block hash |
+| 64 | 32 | message anchor |
+| 96 | 8 | block number, big-endian u64 |
+
+A root is a commitment, and a commitment to a guessable value confirms guesses.
+On this chain the state IS guessable from public data: the participants are
+registered on the L1, deposits are public L1 transfers, and the ciphertexts
+were sequenced through the L1 in the clear. So an observer who can enumerate
+the plausible sets of transfers computes each candidate root and compares.
+Hashing is no defence — nothing is being inverted — which is why publishing
+`keccak256(header)` instead would not have helped either: almost every other
+header field is public or derivable, and the rest (`state_root`,
+`receipts_root`, `logs_bloom`, `gas_used`) are all functions of one hypothesis
+about what the block did.
+
+What makes the two hashes safe to publish is a **per-block blinder** in the
+header's `extra_data`, derived as
+`keccak256("monad-l2/state-salt/v1" ‖ salt_secret ‖ number)`. The number is in
+there because a constant blinder would leave two blocks of identical state
+publishing the same hash, which on a low-volume chain says which blocks did
+nothing.
+
+`salt_secret` is witness field [7] and is checked against a compiled
+`MONAD_ZKVM_L2_SALT_COMMITMENT`, which needs saying because the reason is not
+soundness. An unbound blinder costs nothing there: the commitment chain forces
+a prover to reuse whatever it chose and `keccak256` binds it, so every proof
+still verifies and every block still chains. What an unbound blinder costs is
+the confidentiality it exists for — a producer supplying zeros publishes an
+unblinded hash and nothing anywhere says so.
+
+Dropping the roots costs nothing, because the continuity they were published
+for is established inside the circuit: the pre-state root is asserted equal to
+the newest ancestor header's `state_root` and that header to hash to
+`parent_hash`, and the post-state root is sealed into the header the block hash
+covers. The hub therefore chains a block to its parent with one comparison —
+this block's parent hash against the previous block's hash — and reads no root
+to do it.
+
+The **anchor is not blinded and cannot be**: the L1 verifies merkle proofs
+against it to release withdrawals. It is guessable the same way a root is, so
+the honest statement of the cost is that a message not yet relayed can be
+confirmed early. That is inherent to a root the L1 must open.
 
 ### What the L1 hub must check, and what this branch does not establish
 
@@ -141,10 +192,12 @@ So a hub verifying one of these proofs has to check all of:
 
 1. **Chain and height** — `chainId`, which is compiled into the guest, and the
    published block number is the next height it expects for that namespace.
-2. **The pre-state it accepted** — the published pre-state root at offset 32
-   equals the post-state root the hub last accepted for this namespace. Without
-   this a proof is a transition from *some* state, not from *the* state, and a
-   prover picks the starting point.
+2. **The pre-state it accepted** — the published parent block hash at offset 0
+   equals the block hash the hub last accepted for this namespace. Without this
+   a proof is a transition from *some* state, not from *the* state, and a
+   prover picks the starting point. The hub compares hashes rather than roots,
+   and that is a stronger check, not a weaker one: a block hash covers the
+   state root and every other header field at once.
 3. **The inputs it authorised** — the ciphertext list the guest executed is the
    one published to the data availability the hub trusts. The published block
    hash is `keccak256` of the header with this run's computed state root sealed
@@ -157,11 +210,10 @@ So a hub verifying one of these proofs has to check all of:
    `stateTransitionDigest(chainId, blockNumber, newStateRoot, namespaceAnchor)`.
 
 What the output has to publish, then, is whatever the header does NOT carry:
-the pre-state root, because a header holds the post-state root only, and the
-anchor, because it is a function of the block's logs and the hub has no
-receipts to recompute it from. Both are there. The post-state root and the
-block number are published as well, and those two are conveniences — the
-sealed header carries them and the hash ties them to what was published.
+the anchor, because it is a function of the block's logs and the hub has no
+receipts to recompute it from. It is there. The parent hash and the block
+number are header fields, published so the hub can chain and index without
+holding the header.
 
 So the gap is not in the output format; it is that none of the four checks
 above exists. The L2's soundness is conditional on an L1 side this branch does
@@ -169,16 +221,23 @@ not contain, and on the operator actually handing over the header rather than
 only the tuple.
 
 ```sh
+# Ethereum
 xxd -s 0  -l 32 /tmp/zkvm-output.bin   # post-state root
 xxd -s 32 -l 32 /tmp/zkvm-output.bin   # pre-state root
 xxd -s 64 -l 32 /tmp/zkvm-output.bin   # block hash
-xxd -s 96 -l 40 /tmp/zkvm-output.bin   # anchor || block number   (L2 only)
+
+# L2
+xxd -s 0  -l 64 /tmp/zkvm-output.bin   # parent block hash || block hash
+xxd -s 64 -l 40 /tmp/zkvm-output.bin   # anchor || block number
 ```
 
 A diagnostic build appends the `MONAD_ZKVM_KECCAK_SITES` tail after these, so
-their offsets never move. That tail is 152 bytes, which with the three roots
-comes to 248 of ZisK's 256-byte committed output — which is why `MONAD_ZKVM_L2`
-and `MONAD_ZKVM_KECCAK_SITES` are a configure-time error together.
+their offsets never move. That tail is 152 bytes, which with the Ethereum
+arm's 96 comes to 248 of ZisK's 256-byte committed output — one enumerator of
+margin and no more. `MONAD_ZKVM_L2` and `MONAD_ZKVM_KECCAK_SITES` remain a
+configure-time error together: the L2's four values are 104 bytes, so the two
+would come to exactly 256, and a budget with no margin at all is not a
+configuration to leave reachable.
 
 ## The L2 arm
 
@@ -205,7 +264,8 @@ MONAD_ZKVM_L2_SPOKE=0x<40 hex>;\
 MONAD_ZKVM_L2_PENDING_SLOT=<n>;\
 MONAD_ZKVM_L2_OPERATOR_PK_X=0x<64 hex>;\
 MONAD_ZKVM_L2_OPERATOR_PK_ODD=<0|1>;\
-MONAD_ZKVM_L2_EPOCH_BLOCKS=<n>" \
+MONAD_ZKVM_L2_EPOCH_BLOCKS=<n>;\
+MONAD_ZKVM_L2_SALT_COMMITMENT=0x<64 hex>" \
     cargo-zisk build --release
 ```
 
@@ -217,7 +277,9 @@ can decrypt.
 
 `MONAD_ZKVM_L2_SPOKE` comes from the same tool: `--spoke-address` prints where
 the spoke scenario deploys. The address is CREATE-derived, so it follows the
-deployer key and therefore the `--seed`.
+deployer key and therefore the `--seed`. And `--salt-commitment <secret>`
+prints `MONAD_ZKVM_L2_SALT_COMMITMENT` for a blinder secret, which the
+generator then wants back as `--salt`.
 
 ### Swapping the encryption
 
@@ -283,16 +345,22 @@ namespace messages so the anchor has logs to harvest and a pending array to
 clear.
 
 ```sh
-# Configure an L2 host tree with the eight deployment values, then:
+# Configure an L2 host tree with the nine deployment values, then:
 cmake --build build --target monad-zkvm-corpus-gen monad-zkvm-x86-test-runner
-./build/zkvm/guest/monad-zkvm-corpus-gen --out /tmp/corpus --sk <64 hex>
+./build/zkvm/guest/monad-zkvm-corpus-gen --out /tmp/corpus \
+    --sk <64 hex> --salt <64 hex>
 
 # Each witness makes the guest republish what the manifest records: the
-# post-state root, the pre-state root, the block hash, the anchor and the
-# number.
+# parent block hash, the block hash, the anchor and the number.
 ./build/zkvm/guest/monad-zkvm-x86-test-runner \
     --input /tmp/corpus/spoke-15537396.witness --output /tmp/out.bin
 ```
+
+Note that the manifest still records both state roots even on the L2 arm. They
+are what the generator computed, not what the guest publishes -- and the corpus
+check uses them for a second purpose: asserting that neither appears anywhere
+in the published output, which is the property the blinder exists for and the
+one worth checking directly rather than assuming.
 
 **The oracle is not circular**, and that is the point of generating rather than
 asserting. The generator computes its roots with `TrieDb`, the node's own

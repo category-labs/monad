@@ -22,6 +22,7 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/keccak.hpp>
 #ifdef MONAD_ZKVM_L2
     #include <zkvm/guest/l2_ecdh.hpp>
 #endif
@@ -41,9 +42,10 @@ namespace
         std::fprintf(
             stderr,
             "Usage: %s --out <dir> [--scenario all|transfers|evm|spoke]\n"
-            "          [--seed <64 hex>] [--sk <64 hex>]\n"
+            "          [--seed <64 hex>] [--sk <64 hex>] [--salt <64 hex>]\n"
             "       %s --pubkey <64 hex secret>\n"
             "       %s --spoke-address [--seed <64 hex>]\n"
+            "       %s --salt-commitment <64 hex secret>\n"
             "\n"
             "--sk is the operator secret, required in an L2 build and\n"
             "ignored otherwise. --pubkey prints the compressed public half of\n"
@@ -51,7 +53,13 @@ namespace
             "the guest has to be configured with before a corpus it produces\n"
             "can be decrypted. --spoke-address prints where the spoke\n"
             "scenario will deploy, which is what MONAD_ZKVM_L2_SPOKE has to\n"
-            "be -- the address is CREATE-derived, so it follows the seed.\n",
+            "be -- the address is CREATE-derived, so it follows the seed.\n"
+            "--salt-commitment prints the keccak256 of a blinder secret as\n"
+            "MONAD_ZKVM_L2_SALT_COMMITMENT; --salt hands the generator that\n"
+            "same secret. Required in an L2 build: without it the block hash\n"
+            "is unblinded and the state is testable by anyone who can guess\n"
+            "it.\n",
+            prog,
             prog,
             prog,
             prog);
@@ -89,6 +97,10 @@ int main(int const argc, char **const argv)
     seed.bytes[31] = 1;
     monad::bytes32_t sk{};
     bool have_sk = false;
+    monad::bytes32_t salt{};
+    bool have_salt = false;
+    monad::bytes32_t commit_of{};
+    bool want_commitment = false;
     monad::bytes32_t pubkey_of{};
     bool want_pubkey = false;
     bool want_spoke = false;
@@ -141,6 +153,21 @@ int main(int const argc, char **const argv)
             }
             want_pubkey = true;
         }
+        else if (arg == "--salt" && i + 1 < argc) {
+            if (!parse_hex32(argv[++i], salt)) {
+                std::fprintf(stderr, "corpus-gen: --salt needs 64 hex\n");
+                return 1;
+            }
+            have_salt = true;
+        }
+        else if (arg == "--salt-commitment" && i + 1 < argc) {
+            if (!parse_hex32(argv[++i], commit_of)) {
+                std::fprintf(
+                    stderr, "corpus-gen: --salt-commitment needs 64 hex\n");
+                return 1;
+            }
+            want_commitment = true;
+        }
         else if (arg == "--spoke-address") {
             want_spoke = true;
         }
@@ -148,6 +175,15 @@ int main(int const argc, char **const argv)
             return usage(argv[0]);
         }
     }
+    if (want_commitment) {
+        std::printf(
+            "MONAD_ZKVM_L2_SALT_COMMITMENT=%s\n",
+            hex_of(monad::to_bytes(monad::keccak256(monad::byte_string_view{
+                       commit_of.bytes, sizeof(commit_of.bytes)})))
+                .c_str());
+        return 0;
+    }
+
     if (want_spoke) {
         // Ask the builder rather than recomputing the CREATE derivation here:
         // one derivation, and it is the one the corpus will actually use.
@@ -155,7 +191,7 @@ int main(int const argc, char **const argv)
             if (s.name != "spoke") {
                 continue;
             }
-            monad::corpus::CorpusBuilder b{s.genesis, sk};
+            monad::corpus::CorpusBuilder b{s.genesis, sk, salt};
             std::printf(
                 "MONAD_ZKVM_L2_SPOKE=%s\n",
                 hex_of_address(
@@ -210,21 +246,29 @@ int main(int const argc, char **const argv)
             "leaves cannot be encrypted under the compiled operator key\n");
         return 1;
     }
+    if (!have_salt) {
+        std::fprintf(
+            stderr,
+            "corpus-gen: --salt is required in an L2 build -- a zero blinder "
+            "publishes an unblinded block hash and nothing would say so\n");
+        return 1;
+    }
 #else
     (void)have_sk;
+    (void)have_salt;
 #endif
 
     std::filesystem::create_directories(out_dir);
     std::ofstream manifest{out_dir + "/manifest.csv"};
-    manifest << "scenario,number,pre_root,post_root,block_hash,txs,gas_used,"
-                "witness_bytes,anchor,leaves\n";
+    manifest << "scenario,number,pre_root,post_root,block_hash,parent_hash,"
+                "txs,gas_used,witness_bytes,anchor,leaves\n";
 
     unsigned written = 0;
     for (auto const &s : monad::corpus::all_scenarios(seed)) {
         if (want != "all" && want != s.name) {
             continue;
         }
-        monad::corpus::CorpusBuilder builder{s.genesis, sk};
+        monad::corpus::CorpusBuilder builder{s.genesis, sk, salt};
         for (auto &spec : s.blocks(builder)) {
             auto const n_txs = spec.txs.size();
             auto const e = builder.add_block(std::move(spec));
@@ -248,10 +292,10 @@ int main(int const argc, char **const argv)
 
             manifest << s.name << ',' << e.header.number << ','
                      << hex_of(e.pre_root) << ',' << hex_of(e.post_root) << ','
-                     << hex_of(e.block_hash) << ',' << n_txs << ','
-                     << e.header.gas_used << ',' << e.witness.size() << ','
-                     << hex_of(e.namespace_anchor) << ',' << e.encrypted_leaves
-                     << '\n';
+                     << hex_of(e.block_hash) << ',' << hex_of(e.parent_hash)
+                     << ',' << n_txs << ',' << e.header.gas_used << ','
+                     << e.witness.size() << ',' << hex_of(e.namespace_anchor)
+                     << ',' << e.encrypted_leaves << '\n';
             ++written;
         }
     }

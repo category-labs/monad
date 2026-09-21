@@ -73,6 +73,15 @@ namespace corpus
 
     namespace
     {
+#ifdef MONAD_ZKVM_L2
+        /// The blinder goes in extra_data, whose 32-byte cap is exactly its
+        /// width (block_rlp.cpp enforces EXTRA_DATA_MAX_LENGTH).
+        void set_salt(BlockHeader &h, bytes32_t const &salt)
+        {
+            h.extra_data.assign(salt.bytes, sizeof(salt.bytes));
+        }
+#endif
+
         /// The accounts subtrie as generate_witness wants it.
         mpt::NodeCursor
         accounts_cursor(mpt::Db &mdb, TrieDb &tdb, uint64_t const number)
@@ -166,11 +175,13 @@ namespace corpus
 #endif
 
     CorpusBuilder::CorpusBuilder(
-        std::function<void(State &)> const &seed, bytes32_t const &sk)
+        std::function<void(State &)> const &seed, bytes32_t const &sk,
+        bytes32_t const &salt_secret)
         : impl_{std::make_unique<Impl>()}
         , mdb_{std::make_unique<InMemoryMachine>()}
         , tdb_{mdb_}
         , sk_{sk}
+        , salt_secret_{salt_secret}
     {
 #ifdef MONAD_ZKVM_L2
         // Checked once, here, against a throwaway header: the context's key
@@ -203,6 +214,9 @@ namespace corpus
             .gas_limit = GAS_LIMIT,
             .timestamp = GENESIS_TIMESTAMP,
             .base_fee_per_gas = uint256_t{0}};
+#ifdef MONAD_ZKVM_L2
+        set_salt(genesis, block_salt(genesis.number));
+#endif
 
         test::commit_simple(
             tdb_,
@@ -221,6 +235,17 @@ namespace corpus
     }
 
     CorpusBuilder::~CorpusBuilder() = default;
+
+    bytes32_t
+    CorpusBuilder::block_salt([[maybe_unused]] uint64_t const number) const
+    {
+#ifdef MONAD_ZKVM_L2
+        return l2_state_salt(
+            std::span<unsigned char const, 32>{salt_secret_.bytes, 32}, number);
+#else
+        return bytes32_t{};
+#endif
+    }
 
     Address CorpusBuilder::next_contract_address(Address const &deployer) const
     {
@@ -252,6 +277,12 @@ namespace corpus
             .timestamp = parent.timestamp + BLOCK_TIME,
             .beneficiary = spec.beneficiary,
             .base_fee_per_gas = uint256_t{0}};
+#ifdef MONAD_ZKVM_L2
+        // Before anything hashes the header: the blinder is a header field, so
+        // it has to be in place for the block hash to be blinded, and the
+        // guest refuses a header carrying any other value.
+        set_salt(header, block_salt(number));
+#endif
 
         // --- nonces then signatures, in that order: the nonce is inside the
         // --- signing preimage, so signing before setting it signs a lie.
@@ -431,7 +462,8 @@ namespace corpus
             wd.nodes,
             codes,
             ancestors,
-            byte_string_view{sk_.bytes, sizeof(sk_.bytes)});
+            byte_string_view{sk_.bytes, sizeof(sk_.bytes)},
+            byte_string_view{salt_secret_.bytes, sizeof(salt_secret_.bytes)});
 #else
         block_rlp = rlp::encode_block(block);
         witness =
@@ -458,6 +490,7 @@ namespace corpus
             .header = published,
             .receipts = std::move(receipts),
             .namespace_anchor = anchor,
+            .parent_hash = published.parent_hash,
             .encrypted_leaves = encrypted};
     }
 }

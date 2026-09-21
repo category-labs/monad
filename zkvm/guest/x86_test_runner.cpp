@@ -66,10 +66,16 @@ write_output(std::uint8_t const *const output, std::size_t const size)
         std::fwrite(output, 1, size, stdout);
     }
     else {
-        std::ofstream out{g_output_path, std::ios::binary};
+        // Opened once, on the first call. A fresh ofstream per call would
+        // truncate, and the guest publishes its values one at a time -- so
+        // the file would end up holding only the last one, which looks like
+        // a guest that published a single wrong value rather than a driver
+        // that threw the others away.
+        static std::ofstream out{g_output_path, std::ios::binary};
         out.write(
             reinterpret_cast<char const *>(output),
             static_cast<std::streamsize>(size));
+        out.flush();
     }
 }
 

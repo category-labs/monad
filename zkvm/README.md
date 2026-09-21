@@ -373,6 +373,31 @@ Building the same sources with `MONAD_ZKVM_L2=OFF` gives a plaintext corpus and
 the three-value output, which is the cheaper check to run first: it exercises
 the generator and the trie without the cipher in the way.
 
+### Witnesses the guest must refuse
+
+`test_witness_rejection` is the other half, and it is the half that rots
+unnoticed. Everything above proves the guest accepts what it should; these
+prove it rejects what it should, and they guard assertions whose absence
+produces a **valid-looking proof rather than a crash** -- so nothing else
+would ever report them missing.
+
+| Tampering | What has to catch it |
+|---|---|
+| the parent is omitted from the ancestor list | `checked_pre_state_root` |
+| an ancestor is removed from the middle of the run | the contiguity check |
+| one bit of `salt_secret` is flipped | the compiled salt commitment |
+
+They drive the real runner as a subprocess, because a bad witness is signalled
+by aborting -- the thing under test is a process exit -- and they match on the
+assertion text, not just a non-zero status, so a test cannot pass for the wrong
+reason.
+
+Two details that decide whether these test anything. The run starts from a
+four-block chain and drops an ancestor from the MIDDLE: dropping the oldest
+would just make a shorter, valid run and prove nothing. And the first test
+asserts the untampered witness is accepted, without which a rejection below
+says nothing about the tampering.
+
 What this does NOT establish: that the gas surgery produces the right
 `gas_used`, or that the anchor is what the deployed contract would compute.
 Both sides here run the same rules, so their agreement says nothing about

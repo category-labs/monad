@@ -1011,6 +1011,17 @@ else()
     target_link_libraries(test_corpus_builder
         PkgConfig::secp256k1 ${_corpus_libs})
 
+    # The witnesses the guest must refuse. It drives the real runner as a
+    # subprocess -- a bad witness is signalled by aborting, so the thing under
+    # test is a process exit -- hence the dependency rather than a link.
+    monad_add_test(test_witness_rejection
+        ${_corpus_sources}
+        ${_corpus_extra}
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/test_witness_rejection.cpp")
+    target_link_libraries(test_witness_rejection
+        PkgConfig::secp256k1 ${_corpus_libs})
+    add_dependencies(test_witness_rejection monad-zkvm-x86-test-runner)
+
     # Precompile golden-vector test runner: same x86 driver, but its entry is
     # the precompile-vector harness instead of the witness executor.
     add_executable(monad-zkvm-x86-precompile-test

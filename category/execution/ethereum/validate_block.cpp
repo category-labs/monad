@@ -100,6 +100,12 @@ Result<void> static_validate_header(BlockHeader const &header)
         return BlockError::InvalidGasLimit;
     }
 
+    // YP eq. 56: also checked here for guests and ommers, which skip
+    // validate_output_header.
+    if (MONAD_UNLIKELY(header.gas_used > header.gas_limit)) {
+        return BlockError::GasAboveLimit;
+    }
+
     // YP eq. 56
     if (MONAD_UNLIKELY(header.extra_data.length() > 32)) {
         return BlockError::ExtraDataTooLong;

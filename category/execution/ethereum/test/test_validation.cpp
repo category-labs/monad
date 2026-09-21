@@ -359,6 +359,16 @@ TYPED_TEST(TraitsTest, invalid_gas_limit)
     EXPECT_EQ(result.error(), BlockError::InvalidGasLimit);
 }
 
+TYPED_TEST(TraitsTest, header_gas_used_above_limit)
+{
+    BlockHeader const header{.gas_limit = 5000, .gas_used = 5001};
+
+    auto const result =
+        static_validate_header<typename TestFixture::Trait>(header);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), BlockError::GasAboveLimit);
+}
+
 #define TEST_OPTIONAL_FIELD(f, default_val, REV)                               \
     {                                                                          \
         if constexpr (TestFixture::Trait::evm_rev() >= REV) {                  \

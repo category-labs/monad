@@ -889,6 +889,29 @@ else()
     monad_compile_options(monad-zkvm-x86-test-runner)
     target_link_libraries(monad-zkvm-x86-test-runner PRIVATE monad_execution)
 
+    # The corpus generator: builds witnesses from a genesis state rather than
+    # rewriting someone else's, so the blocks obey this chain's rules instead
+    # of being made to fit. See zkvm/test/corpus/corpus_builder.hpp.
+    set(_corpus_sources
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/tx_sign.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/corpus_builder.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/scenarios.cpp")
+
+    add_executable(monad-zkvm-corpus-gen
+        ${_corpus_sources}
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/corpus_gen_main.cpp")
+    monad_compile_options(monad-zkvm-corpus-gen)
+    target_link_libraries(monad-zkvm-corpus-gen PRIVATE
+        monad_execution PkgConfig::secp256k1)
+
+    # libsecp256k1 is PRIVATE on monad_execution and the signer calls it
+    # directly, so it has to be named again here.
+    monad_add_test(test_corpus_builder
+        ${_corpus_sources}
+        
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/test_corpus_builder.cpp")
+    target_link_libraries(test_corpus_builder PkgConfig::secp256k1)
+
     # Precompile golden-vector test runner: same x86 driver, but its entry is
     # the precompile-vector harness instead of the witness executor.
     add_executable(monad-zkvm-x86-precompile-test

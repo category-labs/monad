@@ -43,6 +43,14 @@ MONAD_NAMESPACE_BEGIN
 ///
 /// Fields [4] and [5] can be left unpopulated for chains/revisions where
 /// can_sender_dip_into_reserve is not active (EVM traits, pre-MONAD_FOUR).
+///
+/// An L2 witness carries a seventh field and is parsed by
+/// parse_execution_witness_l2; see ExecutionWitnessL2. There is deliberately no
+/// version byte in the envelope: the strict trailing-byte rejection at both
+/// levels already makes each shape reject the other loudly, six fields against
+/// seven, and a version would buy a runtime dispatch that the compile-time
+/// MONAD_ZKVM_L2 switch says we do not want. Were one ever needed it would have
+/// to be a new field [0] -- a version cannot sit after what it describes.
 struct ExecutionWitness
 {
     byte_string_view block_rlp;
@@ -53,12 +61,40 @@ struct ExecutionWitness
     byte_string_view encoded_grandparent_senders_and_authorities;
 };
 
+/// An L2 witness: the six fields above plus
+///   [6] sk    the block's transaction-decryption secret: a secp256k1 scalar
+///             as 32 BIG-ENDIAN bytes, the same order a signature's r and s
+///             arrive in
+///
+/// A private input, and the reason the guest must check sk*G against the
+/// operator key the protocol names: without that check a prover could supply
+/// any secret, decrypt to a different set of transactions, and prove a
+/// perfectly valid post-state for a block nobody wrote.
+struct ExecutionWitnessL2
+{
+    ExecutionWitness base;
+    byte_string_view sk;
+};
+
 Result<ExecutionWitness>
 parse_execution_witness(byte_string_view witness_bytes);
+
+Result<ExecutionWitnessL2>
+parse_execution_witness_l2(byte_string_view witness_bytes);
 
 byte_string encode_execution_witness(
     byte_string_view block_rlp, byte_string_view nodes,
     std::span<byte_string const> codes, std::span<byte_string const> headers,
+    ankerl::unordered_dense::segmented_set<Address> const
+        *const parent_senders_and_authorities = nullptr,
+    ankerl::unordered_dense::segmented_set<Address> const
+        *const grandparent_senders_and_authorities = nullptr);
+
+/// The same, plus field [6]. `sk` must be exactly 32 bytes.
+byte_string encode_execution_witness_l2(
+    byte_string_view block_rlp, byte_string_view nodes,
+    std::span<byte_string const> codes, std::span<byte_string const> headers,
+    byte_string_view sk,
     ankerl::unordered_dense::segmented_set<Address> const
         *const parent_senders_and_authorities = nullptr,
     ankerl::unordered_dense::segmented_set<Address> const

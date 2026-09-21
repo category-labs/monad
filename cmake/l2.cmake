@@ -49,7 +49,8 @@ set(MONAD_ZKVM_L2_REQUIRED
     MONAD_ZKVM_L2_PENDING_SLOT
     MONAD_ZKVM_L2_OPERATOR_PK_X
     MONAD_ZKVM_L2_OPERATOR_PK_ODD
-    MONAD_ZKVM_L2_EPOCH_BLOCKS)
+    MONAD_ZKVM_L2_EPOCH_BLOCKS
+    MONAD_ZKVM_L2_SALT_COMMITMENT)
 
 # What the SELECTED suite is made of: its sources, and the host libraries its
 # off-ZisK arm needs. Everything suite-specific in the build is these two
@@ -162,6 +163,8 @@ function(monad_l2_compile_definitions)
   monad_l2_require_hex(MONAD_ZKVM_L2_SPOKE 40 "${MONAD_ZKVM_L2_SPOKE}")
   monad_l2_require_hex(
     MONAD_ZKVM_L2_OPERATOR_PK_X 64 "${MONAD_ZKVM_L2_OPERATOR_PK_X}")
+  monad_l2_require_hex(
+    MONAD_ZKVM_L2_SALT_COMMITMENT 64 "${MONAD_ZKVM_L2_SALT_COMMITMENT}")
 
   # The suite name reaches C++ as one macro per suite rather than as a string,
   # so the selection is a #if and an unselected suite is not compiled at all.
@@ -180,5 +183,6 @@ function(monad_l2_compile_definitions)
     MONAD_L2_PENDING_SLOT=${MONAD_ZKVM_L2_PENDING_SLOT}
     MONAD_L2_OPERATOR_PK_X=${MONAD_ZKVM_L2_OPERATOR_PK_X}_bytes32
     MONAD_L2_OPERATOR_PK_ODD=${MONAD_ZKVM_L2_OPERATOR_PK_ODD}
-    MONAD_L2_EPOCH_BLOCKS=${MONAD_ZKVM_L2_EPOCH_BLOCKS})
+    MONAD_L2_EPOCH_BLOCKS=${MONAD_ZKVM_L2_EPOCH_BLOCKS}
+    MONAD_L2_SALT_COMMITMENT=${MONAD_ZKVM_L2_SALT_COMMITMENT}_bytes32)
 endfunction()

@@ -79,6 +79,8 @@ namespace corpus
         std::vector<Receipt> receipts;
         /// L2 only, and zero when the block recorded no namespace message.
         bytes32_t namespace_anchor{};
+        /// L2 only: the parent hash the guest publishes for chaining.
+        bytes32_t parent_hash{};
         /// L2 only: how many leaves were encrypted.
         size_t encrypted_leaves{0};
     };
@@ -97,7 +99,8 @@ namespace corpus
         /// here so a misconfigured corpus fails at the start rather than one
         /// leaf at a time inside the guest.
         CorpusBuilder(
-            std::function<void(State &)> const &seed, bytes32_t const &sk = {});
+            std::function<void(State &)> const &seed, bytes32_t const &sk = {},
+            bytes32_t const &salt_secret = {});
         ~CorpusBuilder();
 
         CorpusBuilder(CorpusBuilder const &) = delete;
@@ -110,6 +113,10 @@ namespace corpus
 
         /// The address a CREATE from `deployer` at its current nonce will take.
         Address next_contract_address(Address const &deployer) const;
+
+        /// The per-block state blinder this builder will put in a header's
+        /// extra_data. Exposed so a test can check the guest agrees.
+        bytes32_t block_salt(uint64_t number) const;
 
         uint64_t next_number() const
         {
@@ -136,6 +143,7 @@ namespace corpus
         /// which asserts is_on_disk() -- and this db is in memory.
         BlockHashBufferFinalized block_hashes_;
         bytes32_t sk_{};
+        bytes32_t salt_secret_{};
     };
 }
 

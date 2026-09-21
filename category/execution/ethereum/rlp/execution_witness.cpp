@@ -85,10 +85,17 @@ parse_execution_witness_l2(byte_string_view witness_bytes)
     ExecutionWitnessL2 w{};
     BOOST_OUTCOME_TRY(w.base, parse_base_fields(outer));
     BOOST_OUTCOME_TRY(w.sk, rlp::parse_string_metadata(outer));
+    BOOST_OUTCOME_TRY(w.salt_secret, rlp::parse_string_metadata(outer));
 
     // A secp256k1 scalar and nothing else. Its range is the cipher's business;
     // its width is the envelope's.
     if (MONAD_UNLIKELY(w.sk.size() != 32)) {
+        return rlp::DecodeError::ArrayLengthUnexpected;
+    }
+
+    // The blinder's preimage. Nothing here constrains its value -- the guest's
+    // commitment check does that -- only its width.
+    if (MONAD_UNLIKELY(w.salt_secret.size() != 32)) {
         return rlp::DecodeError::ArrayLengthUnexpected;
     }
 
@@ -103,15 +110,17 @@ MONAD_NAMESPACE_END
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-/// One encoder for both shapes. `sk` present makes it the seven-field L2
-/// envelope; absent, the output is byte for byte what the node has always
+/// One encoder for both shapes. The L2 secrets present make it the eight-field
+/// L2 envelope; absent, the output is byte for byte what the node has always
 /// emitted, which is the property worth keeping over a second copy of this
-/// function.
+/// function. They travel together because neither shape has one without the
+/// other.
 byte_string encode_witness_impl(
     byte_string_view const block_rlp, byte_string_view const nodes,
     std::span<byte_string const> const codes,
     std::span<byte_string const> const headers,
     std::optional<byte_string_view> const sk,
+    std::optional<byte_string_view> const salt_secret,
     ankerl::unordered_dense::segmented_set<Address> const
         *const parent_senders_and_authorities,
     ankerl::unordered_dense::segmented_set<Address> const
@@ -145,7 +154,8 @@ byte_string encode_witness_impl(
         rlp::list_length(codes_payload) + rlp::list_length(headers_payload) +
         rlp::list_length(parent_payload) +
         rlp::list_length(grandparent_payload) +
-        (sk.has_value() ? rlp::string_length(*sk) : 0);
+        (sk.has_value() ? rlp::string_length(*sk) : 0) +
+        (salt_secret.has_value() ? rlp::string_length(*salt_secret) : 0);
 
     byte_string result;
     result.resize_and_overwrite(
@@ -207,6 +217,11 @@ byte_string encode_witness_impl(
         d = rlp::encode_string(d, *sk);
     }
 
+    // [7] salt_secret — what the per-block state blinder is derived from
+    if (salt_secret.has_value()) {
+        d = rlp::encode_string(d, *salt_secret);
+    }
+
     MONAD_ASSERT(d.empty());
     return result;
 }
@@ -230,6 +245,7 @@ byte_string encode_execution_witness(
         codes,
         headers,
         std::nullopt,
+        std::nullopt,
         parent_senders_and_authorities,
         grandparent_senders_and_authorities);
 }
@@ -238,18 +254,21 @@ byte_string encode_execution_witness_l2(
     byte_string_view const block_rlp, byte_string_view const nodes,
     std::span<byte_string const> const codes,
     std::span<byte_string const> const headers, byte_string_view const sk,
+    byte_string_view const salt_secret,
     ankerl::unordered_dense::segmented_set<Address> const
         *const parent_senders_and_authorities,
     ankerl::unordered_dense::segmented_set<Address> const
         *const grandparent_senders_and_authorities)
 {
     MONAD_ASSERT(sk.size() == 32);
+    MONAD_ASSERT(salt_secret.size() == 32);
     return encode_witness_impl(
         block_rlp,
         nodes,
         codes,
         headers,
         sk,
+        salt_secret,
         parent_senders_and_authorities,
         grandparent_senders_and_authorities);
 }

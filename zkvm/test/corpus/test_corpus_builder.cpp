@@ -27,7 +27,9 @@
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+
 #include <category/vm/code.hpp>
+#include <functional>
 
 #include <gtest/gtest.h>
 
@@ -40,6 +42,19 @@ namespace
         0x0000000000000000000000000000000000000000000000000000000000000a11_bytes32;
     constexpr auto KEY_B =
         0x0000000000000000000000000000000000000000000000000000000000000b22_bytes32;
+
+    /// The operator secret whose public half these tests are configured with.
+    /// Ignored in a plaintext build; in an L2 one the builder checks it
+    /// against the compiled MONAD_ZKVM_L2_OPERATOR_PK_X and aborts on a
+    /// mismatch, so a tree configured with another key fails here rather than
+    /// producing a corpus nothing can decrypt.
+    constexpr auto OPERATOR_SK =
+        0x00000000000000000000000000000000000000000000000000000000cafef00d_bytes32;
+
+    corpus::CorpusBuilder make_builder(std::function<void(State &)> const &g)
+    {
+        return corpus::CorpusBuilder{g, OPERATOR_SK};
+    }
 }
 
 TEST(CorpusSigner, SenderRecovers)
@@ -61,9 +76,9 @@ TEST(CorpusSigner, SenderRecovers)
 
 TEST(CorpusBuilder, OneTransferBlockRoundTrips)
 {
-    corpus::CorpusBuilder b{[](State &s) {
+    auto b = make_builder([](State &s) {
         s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
-    }};
+    });
 
     corpus::BlockSpec spec;
     Transaction tx{
@@ -88,9 +103,18 @@ namespace
     /// root, so nothing external is needed to open it.
     PartialTrieDb guest_view(byte_string const &witness)
     {
+#ifdef MONAD_ZKVM_L2
+        // Seven fields here and six otherwise, and each shape rejects the
+        // other loudly rather than silently mis-parsing -- which is the whole
+        // argument for there being no version byte.
+        auto parsed = parse_execution_witness_l2(witness);
+        MONAD_ASSERT(parsed.has_value());
+        auto const &w = parsed.value().base;
+#else
         auto parsed = parse_execution_witness(witness);
         MONAD_ASSERT(parsed.has_value());
         auto const &w = parsed.value();
+#endif
 
         CodeIndex codes;
         byte_string_view rest = w.encoded_codes;
@@ -114,10 +138,10 @@ namespace
 
 TEST(CorpusBuilder, WitnessCarriesThePreState)
 {
-    corpus::CorpusBuilder b{[](State &s) {
+    auto b = make_builder([](State &s) {
         s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
         s.add_to_balance(corpus::address_of(KEY_B), 500000000000000000_u256);
-    }};
+    });
 
     corpus::BlockSpec spec;
     Transaction tx{
@@ -138,9 +162,9 @@ TEST(CorpusBuilder, WitnessCarriesThePreState)
 
 TEST(CorpusBuilder, TheBlockInTheWitnessIsTheBlockThatWasSealed)
 {
-    corpus::CorpusBuilder b{[](State &s) {
+    auto b = make_builder([](State &s) {
         s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
-    }};
+    });
 
     corpus::BlockSpec spec;
     Transaction tx{
@@ -155,6 +179,22 @@ TEST(CorpusBuilder, TheBlockInTheWitnessIsTheBlockThatWasSealed)
 
     auto const e = b.add_block(std::move(spec));
 
+#ifdef MONAD_ZKVM_L2
+    auto parsed = parse_execution_witness_l2(e.witness);
+    ASSERT_TRUE(parsed.has_value());
+    byte_string_view block_view = parsed.value().base.block_rlp;
+    // Only the header: the transactions list holds ciphertexts, which
+    // rlp::decode_block would try to read as transactions.
+    auto payload = rlp::parse_list_metadata(block_view);
+    ASSERT_TRUE(payload.has_value());
+    byte_string_view body = payload.value();
+    auto header = rlp::decode_block_header(body);
+    ASSERT_TRUE(header.has_value());
+    EXPECT_EQ(
+        to_bytes(keccak256(rlp::encode_block_header(header.value()))),
+        e.block_hash);
+    EXPECT_EQ(header.value().state_root, e.post_root);
+#else
     auto parsed = parse_execution_witness(e.witness);
     ASSERT_TRUE(parsed.has_value());
     byte_string_view block_view = parsed.value().block_rlp;
@@ -164,6 +204,7 @@ TEST(CorpusBuilder, TheBlockInTheWitnessIsTheBlockThatWasSealed)
         to_bytes(keccak256(rlp::encode_block_header(decoded.value().header))),
         e.block_hash);
     EXPECT_EQ(decoded.value().header.state_root, e.post_root);
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -174,9 +215,9 @@ TEST(CorpusBuilder, TheBlockInTheWitnessIsTheBlockThatWasSealed)
 
 TEST(CorpusBuilder, AncestorHeadersChainToTheParentAndThePreState)
 {
-    corpus::CorpusBuilder b{[](State &s) {
+    auto b = make_builder([](State &s) {
         s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
-    }};
+    });
 
     corpus::Emitted last{};
     for (int i = 0; i < 3; ++i) {
@@ -193,11 +234,17 @@ TEST(CorpusBuilder, AncestorHeadersChainToTheParentAndThePreState)
         last = b.add_block(std::move(spec));
     }
 
+#ifdef MONAD_ZKVM_L2
+    auto parsed = parse_execution_witness_l2(last.witness);
+    ASSERT_TRUE(parsed.has_value());
+    byte_string_view rest = parsed.value().base.encoded_headers;
+#else
     auto parsed = parse_execution_witness(last.witness);
     ASSERT_TRUE(parsed.has_value());
+    byte_string_view rest = parsed.value().encoded_headers;
+#endif
 
     std::vector<BlockHeader> ancestors;
-    byte_string_view rest = parsed.value().encoded_headers;
     while (!rest.empty()) {
         auto item = rlp::parse_string_metadata(rest);
         ASSERT_TRUE(item.has_value());
@@ -234,7 +281,7 @@ TEST(CorpusScenarios, EveryBlockRoundTripsThroughTheGuestTrie)
     seed.bytes[31] = 1;
 
     for (auto const &sc : corpus::all_scenarios(seed)) {
-        corpus::CorpusBuilder b{sc.genesis};
+        auto b = make_builder(sc.genesis);
         for (auto &spec : sc.blocks(b)) {
             auto const e = b.add_block(std::move(spec));
             SCOPED_TRACE(sc.name + " " + std::to_string(e.header.number));
@@ -268,7 +315,7 @@ TEST(CorpusScenarios, TheSpokeEmitsHarvestableMessages)
             continue;
         }
         found_scenario = true;
-        corpus::CorpusBuilder b{sc.genesis};
+        auto b = make_builder(sc.genesis);
         auto specs = sc.blocks(b);
         ASSERT_EQ(specs.size(), 2u);
 

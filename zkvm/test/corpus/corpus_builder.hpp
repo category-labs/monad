@@ -77,6 +77,10 @@ namespace corpus
         bytes32_t block_hash;
         BlockHeader header;
         std::vector<Receipt> receipts;
+        /// L2 only, and zero when the block recorded no namespace message.
+        bytes32_t namespace_anchor{};
+        /// L2 only: how many leaves were encrypted.
+        size_t encrypted_leaves{0};
     };
 
     class CorpusBuilder
@@ -87,7 +91,13 @@ namespace corpus
         /// route json_state.cpp takes. Not GenesisState: its "wei_balance"
         /// JSON schema, its concrete TrieDb& and its hardcoded block id are
         /// three frictions for no gain when the caller is C++ to begin with.
-        explicit CorpusBuilder(std::function<void(State &)> const &seed);
+        /// `sk` is the operator secret, used only in an L2 tree. It must
+        /// match the compiled MONAD_ZKVM_L2_OPERATOR_PK_X or the constructor
+        /// aborts -- the same check the guest makes on the witness field, made
+        /// here so a misconfigured corpus fails at the start rather than one
+        /// leaf at a time inside the guest.
+        CorpusBuilder(
+            std::function<void(State &)> const &seed, bytes32_t const &sk = {});
         ~CorpusBuilder();
 
         CorpusBuilder(CorpusBuilder const &) = delete;
@@ -125,6 +135,7 @@ namespace corpus
         /// Filled as blocks are sealed. Not init_block_hash_buffer_from_triedb,
         /// which asserts is_on_disk() -- and this db is in memory.
         BlockHashBufferFinalized block_hashes_;
+        bytes32_t sk_{};
     };
 }
 

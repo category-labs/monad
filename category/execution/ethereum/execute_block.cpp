@@ -341,7 +341,8 @@ Result<std::vector<Receipt>> execute_block(
 
     state.destruct_touched_dead();
 
-    MONAD_ASSERT(block_state.can_merge(state));
+    MONAD_ASSERT_THROW(
+        block_state.can_merge(state), "block state cannot be merged");
     block_state.merge(state);
     record_account_access_events(
         exec_recorder, MONAD_ACCT_ACCESS_BLOCK_EPILOGUE, state);

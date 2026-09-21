@@ -910,20 +910,36 @@ else()
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/corpus_builder.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/scenarios.cpp")
 
+    # In an L2 tree the generator encrypts the leaves and emits a seven-field
+    # witness, so it needs the cipher sources. The ciphertext transactions root
+    # needs none: ordered_trie_root is a template in db/ordered_trie.hpp. Out
+    # of one, the same sources build a plaintext corpus and none of this is
+    # compiled.
+    set(_corpus_extra "")
+    set(_corpus_libs "")
+    if(MONAD_ZKVM_L2)
+        monad_l2_sources("${CMAKE_CURRENT_SOURCE_DIR}" _corpus_l2)
+        monad_l2_cipher_host_libs(_corpus_l2_libs)
+        list(APPEND _corpus_extra ${_corpus_l2})
+        list(APPEND _corpus_libs ${_corpus_l2_libs})
+    endif()
+
     add_executable(monad-zkvm-corpus-gen
         ${_corpus_sources}
+        ${_corpus_extra}
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/corpus_gen_main.cpp")
     monad_compile_options(monad-zkvm-corpus-gen)
     target_link_libraries(monad-zkvm-corpus-gen PRIVATE
-        monad_execution secp256k1)
+        monad_execution secp256k1 ${_corpus_libs})
 
     # libsecp256k1 is PRIVATE on monad_execution and the signer calls it
     # directly, so it has to be named again here.
     monad_add_test(test_corpus_builder
         ${_corpus_sources}
-        
+        ${_corpus_extra}
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/test_corpus_builder.cpp")
-    target_link_libraries(test_corpus_builder secp256k1)
+    target_link_libraries(test_corpus_builder
+        secp256k1 ${_corpus_libs})
 
     # Precompile golden-vector test runner: same x86 driver, but its entry is
     # the precompile-vector harness instead of the witness executor.

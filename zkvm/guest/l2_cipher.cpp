@@ -101,10 +101,25 @@ Key derive_key(
 }
 
 /// Z = H_STREAM(K, A; l).
+///
+/// A zero-element message has no keystream, and asking for one is not a
+/// degenerate case to paper over -- SAFE's pattern records the operations that
+/// actually happen, and a squeeze of nothing is not one of them. The sponge
+/// says so by rejecting a zero-length op.
+///
+/// This matters beyond an empty message being odd: len is a wire field, and
+/// l2_leaf_size(0) is a well-formed 85-byte leaf. Without this arm a leaf
+/// declaring len = 0 reaches the sponge and ABORTS THE GUEST -- a halt on
+/// attacker-chosen bytes, where the design promises every bad leaf is a
+/// deterministic rejection that consumes one queue entry. The tag still binds
+/// len through A, so an empty message stays distinguishable from any other.
 void derive_masks(
     Key const &k, ContextElems const &a, bytes32_t const &constants,
     std::span<std::uint64_t> const z)
 {
+    if (z.empty()) {
+        return;
+    }
     L2IoOp const pattern[] = {
         {false, static_cast<std::uint32_t>(KEY_ELEMS + L2_CONTEXT_ELEMS)},
         {true, static_cast<std::uint32_t>(z.size())}};

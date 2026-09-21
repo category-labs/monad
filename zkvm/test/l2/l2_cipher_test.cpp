@@ -192,12 +192,28 @@ TEST(L2Cipher, ContextIsBound)
 
 // Tampering is a rejection of one entry, never a halt -- every one of these
 // must return false and leave the block valid.
+//
+// -Warray-bounds and -Wstringop-overflow are off for this function alone. At
+// -O3 gcc does not carry a std::vector's size across the copy `auto l = base`,
+// so it keeps the copy's buffer at [0, 0] and calls l.back() a -1 subscript
+// and the eight-byte store below an overflow. Neither is reachable: base is
+// l2_leaf_size(50) bytes, which the assertion above states and the line before
+// it enforces. Tried and rejected first: a gtest assertion on the size (gcc
+// does not use it), a MONAD_ASSERT (same), and splitting the empty-leaf cases
+// into their own test (they were not the cause). Keep the suppression as narrow
+// as it is -- it is hiding a real check everywhere else in the file.
+#if defined(__GNUC__) && !defined(__clang__)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Warray-bounds"
+    #pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
 TEST(L2Cipher, TamperingIsRejected)
 {
     auto const ctx = context();
     auto const plain = message(50);
     std::vector<unsigned char> base;
     ASSERT_TRUE(l2_encrypt_leaf(ctx, sender_r(), nonce_of(9), plain, base));
+    ASSERT_EQ(base.size(), l2_leaf_size(plain.size()));
 
     auto reject = [&](std::vector<unsigned char> leaf, char const *what) {
         std::vector<unsigned char> got;
@@ -239,12 +255,6 @@ TEST(L2Cipher, TamperingIsRejected)
         l.pop_back();
         reject(l, "truncated");
     }
-    { // shorter than the fixed overhead
-        reject(std::vector<unsigned char>(L2_LEAF_OVERHEAD - 1, 0), "stub");
-    }
-    { // empty
-        reject({}, "empty");
-    }
     { // a non-canonical ciphertext element, which the sponge could not absorb
         auto l = base;
         for (size_t b = 0; b < 8; ++b) {
@@ -258,6 +268,28 @@ TEST(L2Cipher, TamperingIsRejected)
         wrong.limb[0] ^= 1u;
         EXPECT_FALSE(l2_decrypt_leaf(ctx, wrong, base, got));
     }
+}
+#if defined(__GNUC__) && !defined(__clang__)
+    #pragma GCC diagnostic pop
+#endif
+
+// A leaf too short to hold even the fixed prefix. Its own test, and not a case
+// in TamperingIsRejected, because a zero-length leaf beside a mutated one lets
+// gcc's value-range pass conclude the mutated one might also be empty and
+// reject base.back() as a -1 subscript. Splitting them is not a workaround for
+// the warning so much as for the merge: these two cases never touch a valid
+// leaf, and the others never touch an empty one.
+TEST(L2Cipher, LeavesTooShortToParseAreRejected)
+{
+    auto const ctx = context();
+    std::vector<unsigned char> got;
+    EXPECT_FALSE(
+        l2_decrypt_leaf(ctx, operator_sk(), std::vector<unsigned char>{}, got));
+    EXPECT_FALSE(l2_decrypt_leaf(
+        ctx,
+        operator_sk(),
+        std::vector<unsigned char>(L2_LEAF_OVERHEAD - 1, 0),
+        got));
 }
 
 // This file tests the scheme through its free functions; the guest reaches it

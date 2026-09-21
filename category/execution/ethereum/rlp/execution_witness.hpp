@@ -44,11 +44,11 @@ MONAD_NAMESPACE_BEGIN
 /// Fields [4] and [5] can be left unpopulated for chains/revisions where
 /// can_sender_dip_into_reserve is not active (EVM traits, pre-MONAD_FOUR).
 ///
-/// An L2 witness carries a seventh field and is parsed by
+/// An L2 witness carries two further fields and is parsed by
 /// parse_execution_witness_l2; see ExecutionWitnessL2. There is deliberately no
 /// version byte in the envelope: the strict trailing-byte rejection at both
 /// levels already makes each shape reject the other loudly, six fields against
-/// seven, and a version would buy a runtime dispatch that the compile-time
+/// eight, and a version would buy a runtime dispatch that the compile-time
 /// MONAD_ZKVM_L2 switch says we do not want. Were one ever needed it would have
 /// to be a new field [0] -- a version cannot sit after what it describes.
 struct ExecutionWitness
@@ -62,18 +62,31 @@ struct ExecutionWitness
 };
 
 /// An L2 witness: the six fields above plus
-///   [6] sk    the block's transaction-decryption secret: a secp256k1 scalar
-///             as 32 BIG-ENDIAN bytes, the same order a signature's r and s
-///             arrive in
+///   [6] sk           the block's transaction-decryption secret: a secp256k1
+///                    scalar as 32 BIG-ENDIAN bytes, the same order a
+///                    signature's r and s arrive in
+///   [7] salt_secret  32 bytes the per-block state blinder is derived from
 ///
-/// A private input, and the reason the guest must check sk*G against the
-/// operator key the protocol names: without that check a prover could supply
-/// any secret, decrypt to a different set of transactions, and prove a
-/// perfectly valid post-state for a block nobody wrote.
+/// Both are private inputs, and both are why the guest has a binding check for
+/// them. For sk the argument is direct: without checking sk*G against the
+/// operator key the protocol names, a prover supplies any secret, decrypts to
+/// a different set of transactions, and proves a perfectly valid post-state
+/// for a block nobody wrote.
+///
+/// For salt_secret the failure is quieter and worth spelling out, because it
+/// does not look like a failure. An unbound blinder costs nothing in
+/// soundness -- the commitment chain forces a prover to reuse whatever it
+/// chose, and keccak256 binds it -- so every proof still verifies and every
+/// block still chains. What breaks is the confidentiality the blinder exists
+/// for: a producer that supplies zeros publishes an unblinded block hash, and
+/// the state becomes testable by anyone who can guess it. Nothing detects
+/// that, which is why the secret is checked against a compiled commitment
+/// rather than trusted.
 struct ExecutionWitnessL2
 {
     ExecutionWitness base;
     byte_string_view sk;
+    byte_string_view salt_secret;
 };
 
 Result<ExecutionWitness>
@@ -94,7 +107,7 @@ byte_string encode_execution_witness(
 byte_string encode_execution_witness_l2(
     byte_string_view block_rlp, byte_string_view nodes,
     std::span<byte_string const> codes, std::span<byte_string const> headers,
-    byte_string_view sk,
+    byte_string_view sk, byte_string_view salt_secret,
     ankerl::unordered_dense::segmented_set<Address> const
         *const parent_senders_and_authorities = nullptr,
     ankerl::unordered_dense::segmented_set<Address> const

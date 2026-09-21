@@ -51,9 +51,13 @@ namespace
     constexpr auto OPERATOR_SK =
         0x00000000000000000000000000000000000000000000000000000000cafef00d_bytes32;
 
+    /// The blinder secret whose keccak256 these tests are configured with.
+    constexpr auto SALT_SECRET =
+        0x000000000000000000000000000000000000000000000000000000005a1700d5_bytes32;
+
     corpus::CorpusBuilder make_builder(std::function<void(State &)> const &g)
     {
-        return corpus::CorpusBuilder{g, OPERATOR_SK};
+        return corpus::CorpusBuilder{g, OPERATOR_SK, SALT_SECRET};
     }
 }
 
@@ -348,3 +352,64 @@ TEST(CorpusScenarios, TheSpokeEmitsHarvestableMessages)
     }
     EXPECT_TRUE(found_scenario);
 }
+
+#ifdef MONAD_ZKVM_L2
+// ---------------------------------------------------------------------------
+// The blinder. Two properties, and the second is the one that matters: a
+// constant blinder would leave two blocks of identical state publishing the
+// same hash, which on a low-volume chain says which blocks did nothing.
+// ---------------------------------------------------------------------------
+
+TEST(CorpusBlinder, TheHeaderCarriesThePerBlockBlinder)
+{
+    auto b = make_builder([](State &s) {
+        s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
+    });
+
+    std::vector<bytes32_t> salts;
+    for (int i = 0; i < 3; ++i) {
+        corpus::BlockSpec spec;
+        Transaction tx{
+            .max_fee_per_gas = 100,
+            .gas_limit = 21000,
+            .value = 1,
+            .to = corpus::address_of(KEY_B),
+            .type = TransactionType::eip1559,
+            .max_priority_fee_per_gas = 1};
+        tx.sc.chain_id = 1;
+        spec.txs.push_back(tx);
+        spec.keys.push_back(KEY_A);
+        auto const e = b.add_block(std::move(spec));
+
+        // extra_data is exactly the blinder, which is what makes the block
+        // hash blinded -- and what the guest asserts before it will proceed.
+        ASSERT_EQ(e.header.extra_data.size(), 32u);
+        bytes32_t carried{};
+        std::memcpy(carried.bytes, e.header.extra_data.data(), 32);
+        EXPECT_EQ(carried, b.block_salt(e.header.number));
+        salts.push_back(carried);
+    }
+
+    // Per block, not per chain.
+    EXPECT_NE(salts[0], salts[1]);
+    EXPECT_NE(salts[1], salts[2]);
+    EXPECT_NE(salts[0], salts[2]);
+}
+
+// A different secret gives a different blinder at the same height, which is
+// what makes the commitment to the secret worth checking.
+TEST(CorpusBlinder, TheBlinderFollowsTheSecret)
+{
+    auto seeder = [](State &s) {
+        s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
+    };
+    corpus::CorpusBuilder a{seeder, OPERATOR_SK, SALT_SECRET};
+    bytes32_t other = SALT_SECRET;
+    other.bytes[31] ^= 1u;
+    corpus::CorpusBuilder c{seeder, OPERATOR_SK, other};
+
+    EXPECT_NE(
+        a.block_salt(corpus::GENESIS_NUMBER + 1),
+        c.block_salt(corpus::GENESIS_NUMBER + 1));
+}
+#endif

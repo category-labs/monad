@@ -189,7 +189,7 @@ void State::journal_created(Address const &address)
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{address, Undo::Kind::Created, 0});
+    undo_.emplace_back(address, Undo::Kind::Created, 0);
 }
 
 void State::journal_account(Address const &address, AccountState const &row)
@@ -197,10 +197,8 @@ void State::journal_account(Address const &address, AccountState const &row)
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{
-        address,
-        Undo::Kind::AccountWhole,
-        static_cast<std::uint32_t>(undo_accounts_.size())});
+    undo_.emplace_back(
+        address, Undo::Kind::AccountWhole, undo_accounts_.size());
     undo_accounts_.push_back(row.account_);
 }
 
@@ -215,10 +213,7 @@ void State::journal_balance(
     static_assert(sizeof(balance_bytes.bytes) == sizeof(previous_value));
     __builtin_memcpy(
         balance_bytes.bytes, &previous_value, sizeof(balance_bytes.bytes));
-    undo_.push_back(Undo{
-        address,
-        Undo::Kind::Balance,
-        static_cast<std::uint32_t>(undo_words_.size())});
+    undo_.emplace_back(address, Undo::Kind::Balance, undo_words_.size());
     undo_words_.push_back(balance_bytes);
 }
 
@@ -228,10 +223,7 @@ void State::journal_code_hash(
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{
-        address,
-        Undo::Kind::CodeHash,
-        static_cast<std::uint32_t>(undo_words_.size())});
+    undo_.emplace_back(address, Undo::Kind::CodeHash, undo_words_.size());
     undo_words_.push_back(previous_value);
 }
 
@@ -241,10 +233,7 @@ void State::journal_nonce(
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{
-        address,
-        Undo::Kind::Nonce,
-        static_cast<std::uint32_t>(undo_u64_.size())});
+    undo_.emplace_back(address, Undo::Kind::Nonce, undo_u64_.size());
     undo_u64_.push_back(previous_value);
 }
 
@@ -253,7 +242,7 @@ void State::journal_flag(Address const &address, Undo::Kind const kind)
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{address, kind, 0});
+    undo_.emplace_back(address, kind, 0);
 }
 
 void State::journal_warm_slot(Address const &address, bytes32_t const &key)
@@ -261,10 +250,7 @@ void State::journal_warm_slot(Address const &address, bytes32_t const &key)
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{
-        address,
-        Undo::Kind::WarmSlot,
-        static_cast<std::uint32_t>(undo_words_.size())});
+    undo_.emplace_back(address, Undo::Kind::WarmSlot, undo_words_.size());
     undo_words_.push_back(key);
 }
 
@@ -275,14 +261,20 @@ void State::journal_slot(
         return;
     }
     bytes32_t const *const previous_value = row.storage_.find(key);
-    undo_.push_back(Undo{
-        address,
-        Undo::Kind::Slot,
-        static_cast<std::uint32_t>(undo_slots_.size())});
-    undo_slots_.push_back(SlotUndo{
+    undo_.emplace_back(address, Undo::Kind::Slot, undo_slots_.size());
+#ifdef MONAD_ZKVM_ZISK
+    // Both branches refer to existing objects, avoiding a temporary value.
+    static constexpr bytes32_t zero{};
+    undo_slots_.emplace_back(
+        key,
+        previous_value ? *previous_value : zero,
+        previous_value != nullptr);
+#else
+    undo_slots_.emplace_back(
         key,
         previous_value ? *previous_value : bytes32_t{},
-        previous_value != nullptr});
+        previous_value != nullptr);
+#endif
 }
 
 void State::journal_transient(
@@ -292,14 +284,20 @@ void State::journal_transient(
         return;
     }
     bytes32_t const *const previous_value = row.transient_storage_.find(key);
-    undo_.push_back(Undo{
-        address,
-        Undo::Kind::Transient,
-        static_cast<std::uint32_t>(undo_slots_.size())});
-    undo_slots_.push_back(SlotUndo{
+    undo_.emplace_back(address, Undo::Kind::Transient, undo_slots_.size());
+#ifdef MONAD_ZKVM_ZISK
+    // Borrow the prior value or a static zero, as in journal_slot.
+    static constexpr bytes32_t zero{};
+    undo_slots_.emplace_back(
+        key,
+        previous_value ? *previous_value : zero,
+        previous_value != nullptr);
+#else
+    undo_slots_.emplace_back(
         key,
         previous_value ? *previous_value : bytes32_t{},
-        previous_value != nullptr});
+        previous_value != nullptr);
+#endif
 }
 
 void State::journal_pages(Address const &address, AccountState const &row)
@@ -307,10 +305,7 @@ void State::journal_pages(Address const &address, AccountState const &row)
     if (!journalling()) {
         return;
     }
-    undo_.push_back(Undo{
-        address,
-        Undo::Kind::Pages,
-        static_cast<std::uint32_t>(undo_pages_.size())});
+    undo_.emplace_back(address, Undo::Kind::Pages, undo_pages_.size());
     undo_pages_.push_back(row.page_tracker_);
 }
 

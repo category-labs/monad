@@ -163,7 +163,25 @@ class State
         // would incorrectly include it in the commit set.
         bool had_value;
         // Power-of-two size for cheaper vector::size(), as in Undo.
+#ifdef MONAD_ZKVM_ZISK
+        // Padding is never read; leave it uninitialized to avoid zeroing
+        // the entire record before constructing its fields.
+        unsigned char pad_[63];
+
+        // vector::resize requires this even though we only use it to shrink.
+        SlotUndo() = default;
+
+        SlotUndo(
+            bytes32_t const &slot_key, bytes32_t const &previous_value,
+            bool const was_present)
+            : key{slot_key}
+            , value{previous_value}
+            , had_value{was_present}
+        {
+        }
+#else
         unsigned char pad_[63]{};
+#endif
     };
 
     static_assert(sizeof(SlotUndo) == 128);
@@ -209,7 +227,25 @@ class State
         size_t slot_position;
         size_t page_position;
         // Power-of-two size for cheaper vector::size(), as in Undo.
+#ifdef MONAD_ZKVM_ZISK
+        // Padding is never read. Initialize only the six saved positions
+        // to avoid zeroing the entire mark on every frame.
+        size_t pad_[2];
+
+        UndoMark(
+            size_t const undo_at, size_t const account_at, size_t const word_at,
+            size_t const nonce_at, size_t const slot_at, size_t const page_at)
+            : undo_position{undo_at}
+            , account_position{account_at}
+            , word_position{word_at}
+            , nonce_position{nonce_at}
+            , slot_position{slot_at}
+            , page_position{page_at}
+        {
+        }
+#else
         size_t pad_[2]{};
+#endif
     };
 
     static_assert(sizeof(UndoMark) == 64);

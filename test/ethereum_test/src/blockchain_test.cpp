@@ -334,8 +334,8 @@ Result<BlockExecOutput> execute(
 
     using namespace monad::test;
 
-    BOOST_OUTCOME_TRY(
-        static_validate_block_with_parent<traits>(chain, block, parent_header));
+    BOOST_OUTCOME_TRY(static_validate_ethereum_block_with_parent<traits>(
+        chain, block, parent_header));
 
     BlockState block_state(db, vm);
     BlockMetrics metrics;

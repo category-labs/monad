@@ -20,6 +20,12 @@ REQUIRED_OPTIONS = {
     "MONAD_ZKVM_FUSE": "ON",
     "MONAD_ZKVM_KECCAK_SITES": "OFF",
     "MONAD_ZKVM_SELFTEST": "OFF",
+    # The official artifact is the L1 mainnet prover. L2 is a different rule
+    # set, not a different feature set, and MARKER above encodes the latter --
+    # so one signature must not be able to cover both. Belt and braces with the
+    # CMake FATAL_ERROR: that one guards the configure, this one guards an ELF
+    # matched against a stale-but-passing cache.
+    "MONAD_ZKVM_L2": "OFF",
 }
 REQUIRED_FLAGS = (
     "-O3",

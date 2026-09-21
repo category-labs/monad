@@ -47,6 +47,39 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "MONAD_COMPILER_TESTING is not supported in zkVM builds")
     endif()
 
+    # Lever: L2 semantics -- encrypted transactions, the end-of-block message
+    # anchor, no gas economics. A MODE and not an optimisation, so it is
+    # declared here AND at root scope (see cmake/l2.cmake for the ODR reason);
+    # this branch is a standalone project and sees none of the root's options.
+    #
+    # A witness built for one setting is rejected outright by the other -- six
+    # RLP fields against seven, InputTooShort one way and InputTooLong the
+    # other -- which is why the envelope needs no version byte.
+    option(MONAD_ZKVM_L2
+           "L2 semantics: encrypted transactions, message anchor, no gas economics"
+           OFF)
+    if(MONAD_ZKVM_L2)
+        # Relative: MONAD_ROOT is not set until much further down this file.
+        include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/l2.cmake")
+        monad_l2_compile_definitions()
+        if(NOT MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+            message(FATAL_ERROR
+                "MONAD_ZKVM_L2 needs ZisK: the ECDH rides zisklib's "
+                "secp256k1_add/_dbl precompiles and Poseidon2 rides csrs 0x812, "
+                "and SP1 has neither. A software curve would measure the "
+                "software curve, not this protocol.")
+        endif()
+        # The three public values fill 96 bytes, the anchor and the block
+        # number take it to 136, and the keccak-site tail is 2 * 19 * 4 = 152 --
+        # so 136 + 152 = 288 against ZisK's 256-byte committed output. The
+        # diagnostic build on its own already sits at 96 + 152 = 248.
+        if(MONAD_ZKVM_KECCAK_SITES)
+            message(FATAL_ERROR
+                "MONAD_ZKVM_L2 and MONAD_ZKVM_KECCAK_SITES together need 296 "
+                "bytes of public output against ZisK's 256-byte cap")
+        endif()
+    endif()
+
     # Fail-closed profile for a report/release ZisK artifact. Diagnostic A/B
     # builds keep using the individual switches below; an official artifact
     # enables this one switch and cannot silently omit a measured lever.
@@ -82,6 +115,15 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
            OR MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
             message(FATAL_ERROR
                 "diagnostic counters/self-test are forbidden in the official ZisK profile")
+        endif()
+        # The official artifact is the L1 mainnet prover. The ELF marker and
+        # this profile encode a FEATURE SET; L2 is a different RULE SET, and one
+        # signature must not be able to cover both. An audited L2 profile, if it
+        # is ever wanted, is a second profile with its own marker.
+        if(MONAD_ZKVM_L2)
+            message(FATAL_ERROR
+                "MONAD_ZKVM_L2 changes the witness shape and the consensus "
+                "rules; the official profile must not claim one identity for two")
         endif()
         add_compile_definitions(MONAD_ZKVM_OFFICIAL_PROFILE=1)
     endif()
@@ -644,6 +686,11 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "${MONAD_ROOT}/category/core/rlp/decode_error.cpp"
         "${MONAD_ROOT}/category/core/checked_math.cpp"
         "${MONAD_ROOT}/category/core/seeded_fast_hash.cpp"
+        # Poseidon2-16 over Goldilocks. One source serves both sides: the
+        # sponge is shared and only the permutation switches, native on the
+        # host and csrs 0x812 here, so a witness generator and the guest
+        # compute the same digest by construction rather than by agreement.
+        "${MONAD_ROOT}/category/core/poseidon2.cpp"
     )
     monad_compile_options(monad-core)
     monad_riscv_compile_options(monad-core)
@@ -840,8 +887,21 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "${CMAKE_CURRENT_SOURCE_DIR}/../../category/execution/ethereum/state3/test/revert_semantics_test.cpp")
     endif()
 
+    # Compiled ONLY under the option, on the same measured grounds as
+    # _selftest_sources above: monad_l2_chain.cpp has a vtable, which survives
+    # --gc-sections. Gated, a non-L2 ELF stays byte for byte what it is today,
+    # and that is the property the official profile's signature rests on.
+    set(_l2_sources "")
+    if(MONAD_ZKVM_L2)
+        # Which sources a suite is made of lives in cmake/l2.cmake, next to the
+        # list of suites it validates against -- see the note there on why this
+        # is not spelled out in each of this file's two branches.
+        monad_l2_sources("${CMAKE_CURRENT_SOURCE_DIR}" _l2_sources)
+    endif()
+
     add_library(${_guest_target} STATIC
         ${_selftest_sources}
+        ${_l2_sources}
         "${CMAKE_CURRENT_SOURCE_DIR}/ffi.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/execute_block_zkvm.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/body_roots.cpp"
@@ -865,8 +925,14 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     )
     monad_compile_options(${_guest_target})
     monad_riscv_compile_options(${_guest_target})
+    # cthash is here and not only on monad_execution_ethereum because the
+    # guest's OWN sources reach it: namespace_anchor.hpp derives its topic0
+    # through abi_encode_event_signature, which is consteval over cthash's
+    # Keccak, and l2_config.hpp includes that header. Before this branch
+    # nothing in the guest included core/contract/abi_signatures.hpp, so the
+    # include path it needs was never on this target.
     target_link_libraries(${_guest_target}
-        PUBLIC evmc unordered_dense komihash immer
+        PUBLIC evmc unordered_dense komihash immer cthash
         nlohmann_json::nlohmann_json)
     target_compile_options(${_guest_target}
         PUBLIC "-idirafter${_boost_inc}")
@@ -878,7 +944,18 @@ else()
     # x86_test_runner.cpp compile straight into the executable; no
     # intermediate static library.
 
+    # Mirrors the cross branch's gate. The definitions themselves come from the
+    # root scope, which this branch is a subdirectory of.
+    set(_l2_sources "")
+    if(MONAD_ZKVM_L2)
+        # Which sources a suite is made of lives in cmake/l2.cmake, next to the
+        # list of suites it validates against -- see the note there on why this
+        # is not spelled out in each of this file's two branches.
+        monad_l2_sources("${CMAKE_CURRENT_SOURCE_DIR}" _l2_sources)
+    endif()
+
     add_executable(monad-zkvm-x86-test-runner
+        ${_l2_sources}
         "${CMAKE_CURRENT_SOURCE_DIR}/ffi.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/execute_block_zkvm.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/body_roots.cpp"
@@ -888,6 +965,12 @@ else()
     )
     monad_compile_options(monad-zkvm-x86-test-runner)
     target_link_libraries(monad-zkvm-x86-test-runner PRIVATE monad_execution)
+    if(MONAD_ZKVM_L2)
+        # Whatever the selected suite's host arm needs; see cmake/l2.cmake.
+        monad_l2_cipher_host_libs(_l2_host_libs)
+        target_link_libraries(monad-zkvm-x86-test-runner PRIVATE
+            ${_l2_host_libs})
+    endif()
 
     # The corpus generator: builds witnesses from a genesis state rather than
     # rewriting someone else's, so the blocks obey this chain's rules instead
@@ -922,5 +1005,54 @@ else()
     target_compile_definitions(monad-zkvm-x86-precompile-test PRIVATE
         MONAD_ZKVM_X86_ENTRY=monad_zkvm_run_precompile_tests)
     target_link_libraries(monad-zkvm-x86-precompile-test PRIVATE monad_execution)
+
+    # ---- L2 unit tests ----
+    # Registered by hand rather than by monad_add_test_folder: each one needs
+    # the guest source it exercises compiled alongside it, and those sources
+    # are not in monad_execution -- they are the guest's own.
+    #
+    # Built in a PLAIN host tree, not only under MONAD_ZKVM_L2, so the cipher
+    # and the decoder are testable without a deployment's eight required
+    # values. l2_cipher_suite.hpp defaults the suite for exactly this case.
+    monad_l2_cipher_sources("${CMAKE_CURRENT_SOURCE_DIR}" _l2_suite_sources)
+    monad_l2_cipher_host_libs(_l2_host_libs)
+
+    monad_add_test(l2_sponge_test
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/l2/l2_sponge_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/l2_sponge.cpp")
+
+    # The ECDH suite's own test, so it names that suite's source directly
+    # rather than the selected one: it exists to test secp256k1 against
+    # libsecp256k1, and means nothing for a suite without a curve.
+    monad_add_test(l2_ecdh_test
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/l2/l2_ecdh_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/l2_ecdh.cpp")
+    target_link_libraries(l2_ecdh_test PkgConfig::secp256k1)
+
+    monad_add_test(l2_cipher_test
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/l2/l2_cipher_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/l2_sponge.cpp"
+        ${_l2_suite_sources})
+    target_link_libraries(l2_cipher_test ${_l2_host_libs})
+
+    # The corpus oracle: rewrites a plaintext witness into an L2 one, so the
+    # post-state and pre-state roots of both runs must match exactly. Only
+    # meaningful in an L2 build tree -- it needs the deployment constants.
+    if(MONAD_ZKVM_L2)
+        add_executable(monad-zkvm-l2-witness
+            "${CMAKE_CURRENT_SOURCE_DIR}/../test/l2/l2_witness_tool.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/body_roots.cpp"
+            ${_l2_sources})
+        monad_compile_options(monad-zkvm-l2-witness)
+        target_link_libraries(monad-zkvm-l2-witness PRIVATE
+            monad_execution ${_l2_host_libs})
+    endif()
+
+    monad_add_test(decode_block_l2_test
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/l2/decode_block_l2_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/decode_block_l2.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/l2_sponge.cpp"
+        ${_l2_suite_sources})
+    target_link_libraries(decode_block_l2_test ${_l2_host_libs})
 
 endif()

@@ -1,0 +1,14 @@
+Compiled with:
+  solc --evm-version paris --optimize --optimize-runs 200 --bin NamespaceSpoke.sol
+solc 0.8.35+commit.47b9dedd.
+
+--evm-version paris is not optional. solc's default target is Shanghai or
+later, where it emits PUSH0 (0x5f); the corpus runs at Paris, where 0x5f is
+invalid and the constructor reverts. The block still executes and every root
+still round-trips -- the contract simply is not there -- so this is caught by
+checking the deployment receipt's status, not by checking roots.
+
+The imports in NamespaceSpoke.sol name ./interfaces/INamespace.sol and
+./libraries/MerkleTreeLib.sol upstream; here all three sit side by side, so
+the two import lines are rewritten to match. MerkleTreeLib is internal-only,
+so solc inlines it and nothing needs linking.

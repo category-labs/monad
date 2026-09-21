@@ -88,7 +88,7 @@ public:
 
     virtual size_t copy_code(
         evmc::address const &, size_t offset, uint8_t *data,
-        size_t size) const noexcept override;
+        size_t size) const override;
 
     virtual evmc_tx_context const *get_tx_context() const noexcept override;
 
@@ -203,7 +203,7 @@ struct EvmcHost final : public EvmcHostBase
     }
 
     virtual evmc_access_status
-    access_account(evmc::address const &address) noexcept override
+    access_account(evmc::address const &address) override
     {
         MONAD_TRY
         {

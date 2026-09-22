@@ -52,9 +52,7 @@
 #include <test/vm/utils/test_message.hpp>
 
 #include <ankerl/unordered_dense.h>
-#include <evmc/bytes.hpp>
 #include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
@@ -281,7 +279,7 @@ void run_dipped_into_reserve_test(
         state.add_to_balance(EOA, initial_balance);
 
         // set EOA to delegate to SCW
-        evmc::bytes const delegate_code =
+        byte_string const delegate_code =
             from_hex(std::format("0xef0100{}", to_hex(SCW))).value();
         state.set_code(EOA, byte_string_view{delegate_code});
 

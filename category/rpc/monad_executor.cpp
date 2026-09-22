@@ -624,7 +624,7 @@ namespace
             "output size exceeds maximum allowed size");
 
         auto const format_hex = [](auto const &b) {
-            return std::format("0x{}", evmc::hex(b));
+            return std::format("0x{}", to_hex(b));
         };
 
         auto entry = nlohmann::json::object();
@@ -766,7 +766,7 @@ namespace
                         {eth_simulate_json::amount,
                          std::format("0x{:x}", withdrawal.amount)},
                         {eth_simulate_json::recipient,
-                         std::format("0x{}", evmc::hex(withdrawal.recipient))},
+                         std::format("0x{}", to_hex(withdrawal.recipient))},
                     });
             }
         }

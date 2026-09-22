@@ -385,6 +385,7 @@ would ever report them missing.
 |---|---|
 | the parent is omitted from the ancestor list | `checked_pre_state_root` |
 | an ancestor is removed from the middle of the run | the contiguity check |
+| an "ancestor" sits at the block's own height | the strictly-older check |
 | one bit of `salt_secret` is flipped | the compiled salt commitment |
 
 They drive the real runner as a subprocess, because a bad witness is signalled

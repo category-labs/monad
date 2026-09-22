@@ -315,6 +315,16 @@ extern "C" void monad_zkvm_execute_witness(void)
                 MONAD_ASSERT(header.value().number == prev_number + 1);
                 MONAD_ASSERT(header.value().parent_hash == prev_hash);
             }
+            // An ANCESTOR, so strictly older. Not a soundness check: the
+            // interpreter bounds BLOCKHASH to below the current height before
+            // the buffer is ever consulted, so no hash from here can be
+            // returned for a height at or above this block. What it stops is
+            // a confusing failure. A list running past the current height
+            // leaves the buffer's n_ too high, and get() asserts
+            // n + 256 >= n_ -- so a lookback that should have succeeded
+            // aborts instead, naming neither the ancestor list nor the height
+            // that caused it. Here the witness is named where it is wrong.
+            MONAD_ASSERT(header.value().number < block.header.number);
             block_hash_buffer.set(header.value().number, hash);
             if (header.value().number + 1 == block.header.number) {
                 // The newest ancestor is this block's parent, and block.header

@@ -109,6 +109,32 @@ typedef struct triedb_update_stats
 // so it cannot double as the failure signal.
 bool triedb_update_stats_read(TriedbStatsReader *, triedb_update_stats *out);
 
+// Trie-node LRU counters for this handle. Totals since the handle was opened;
+// reading does not reset them. `used_bytes` is against the node_lru_max_mem
+// the handle was opened with, and `entries` against the slot count derived
+// from it — compare the two to see which bound is binding. A handle serving a
+// secondary timeline caches it separately and that cache is not reported here.
+//
+// Covers the async paths only: triedb_async_read, triedb_async_traverse and
+// triedb_async_ranged_get. triedb_read and triedb_traverse are blocking and
+// consult no cache, so a caller using only those sees zeros here — which is
+// not the same as an unused cache.
+//
+// Unlike the rest of this header, safe to call from any thread: all five are
+// relaxed atomics the owning thread publishes. A scraper gets an
+// eventually-consistent reading and never has to be fed from the read path.
+typedef struct triedb_node_cache_stats
+{
+    uint64_t hits;
+    uint64_t misses;
+    uint64_t evictions;
+    uint64_t used_bytes;
+    uint64_t entries;
+} triedb_node_cache_stats;
+
+void triedb_node_cache_stats_read(
+    TriedbRoInner *, triedb_node_cache_stats *out);
+
 // Compute the storage page key for a 32-byte slot key on a page-encoded db:
 // page_key = slot >> 7. Writes the 32-byte big-endian page key (the key the
 // storage trie is looked up by) to out_page_key.

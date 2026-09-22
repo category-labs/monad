@@ -193,6 +193,22 @@ impl Drop for TriedbStatsReader {
     }
 }
 
+/// Trie-node LRU counters for one handle. Totals since the handle was opened;
+/// reading does not reset them, so a scraper derives its own rates.
+/// No `Default`: substituting zeros for a lost sample reads as a counter reset
+/// to anything computing a rate over these.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NodeCacheStats {
+    pub hits: u64,
+    pub misses: u64,
+    pub evictions: u64,
+    /// Bytes of cached nodes, against the handle's `node_lru_max_mem`.
+    pub used_bytes: u64,
+    /// Cached nodes, against the slot count derived from `node_lru_max_mem`.
+    /// Compare with `used_bytes` to see which of the two bounds is binding.
+    pub entries: u64,
+}
+
 struct SenderContext {
     sender: Sender<Option<Vec<u8>>>,
     completed_counter: Arc<AtomicUsize>,
@@ -423,6 +439,35 @@ impl TriedbHandle {
         StorageStats {
             disk_capacity_bytes: out.disk_capacity_bytes,
             disk_used_bytes: out.disk_used_bytes,
+        }
+    }
+
+    /// Trie-node LRU counters for this handle. Each handle owns an independent
+    /// cache, so these are per-handle and not comparable across handles, and a
+    /// handle nobody reads through reports zeros forever.
+    ///
+    /// Only the async paths consult the cache. Both [`Self::read`] and
+    /// synchronous traversal are blocking and uncached, so a caller using only
+    /// those sees zeros.
+    ///
+    /// Unlike the rest of this type, safe to call from any thread: all five
+    /// are relaxed atomics the owning thread publishes, so a scraper gets an
+    /// eventually-consistent reading.
+    pub fn node_cache_stats(&self) -> NodeCacheStats {
+        let mut out = ffi::triedb_node_cache_stats {
+            hits: 0,
+            misses: 0,
+            evictions: 0,
+            used_bytes: 0,
+            entries: 0,
+        };
+        unsafe { ffi::triedb_node_cache_stats_read(self.db_ptr, &mut out) };
+        NodeCacheStats {
+            hits: out.hits,
+            misses: out.misses,
+            evictions: out.evictions,
+            used_bytes: out.used_bytes,
+            entries: out.entries,
         }
     }
 

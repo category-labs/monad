@@ -599,27 +599,25 @@ namespace
         }
     }
 
-    void eth_simulate_validate_inputs(
+    Result<void> eth_simulate_validate_inputs(
         size_t max_simulate_blocks, uint64_t default_timestamp_increment,
         std::vector<std::vector<Transaction>> const &calls,
         struct monad_block_override_vec const &block_overrides,
         struct monad_state_override_vec const &state_overrides,
         BlockHeader const &base_header, bool const instance_is_monad)
     {
-        MONAD_ASSERT_THROW(calls.size() > 0, "empty input");
-        MONAD_ASSERT_THROW(
-            calls.size() <= max_simulate_blocks, "too many blocks");
-        MONAD_ASSERT_THROW(
-            block_overrides.overrides != nullptr,
-            "block overrides pointer is null");
-        MONAD_ASSERT_THROW(
-            state_overrides.overrides != nullptr,
-            "state overrides pointer is null");
+        if (MONAD_UNLIKELY(
+                calls.empty() || calls.size() > max_simulate_blocks ||
+                block_overrides.overrides == nullptr ||
+                state_overrides.overrides == nullptr)) {
+            return SimulationError::InvalidInput;
+        }
         if (instance_is_monad &&
             block_overrides.overrides->withdrawals.has_value()) {
-            MONAD_ASSERT_THROW(
-                block_overrides.overrides->withdrawals->size() == 0,
-                "Withdrawals are not supported on Monad");
+            if (MONAD_UNLIKELY(
+                    !block_overrides.overrides->withdrawals->empty())) {
+                return SimulationError::WithdrawalsNotSupported;
+            }
         }
 
         BlockHeader header = base_header;
@@ -631,9 +629,9 @@ namespace
             // > increment. Skipping numbers is allowed and skipped
             // > blocks are included in the response.
             uint64_t const block_number = bo.number.value_or(header.number + 1);
-            MONAD_ASSERT_THROW(
-                block_number > header.number,
-                "block numbers must be strictly increasing");
+            if (MONAD_UNLIKELY(block_number <= header.number)) {
+                return SimulationError::BlockNumbersNotIncreasing;
+            }
             uint64_t const gap = block_number - header.number;
             // Possible block number override has been validated; we can
             // partially update our loop carried header.
@@ -653,39 +651,37 @@ namespace
                     header.timestamp += (gap - 1) * default_timestamp_increment;
                 }
 
-                MONAD_ASSERT_THROW(
-                    header.timestamp <= *bo.time,
-                    "block timestamps must be monotonically increasing");
+                if (MONAD_UNLIKELY(header.timestamp > *bo.time)) {
+                    return SimulationError::BlockTimestampsNotMonotonic;
+                }
                 header.timestamp = *bo.time;
             }
             else {
                 header.timestamp += gap * default_timestamp_increment;
             }
         }
-        MONAD_ASSERT_THROW(
-            header.number > base_header.number,
-            "simulation header number must be greater than the base header "
-            "number");
+        if (MONAD_UNLIKELY(header.number <= base_header.number)) {
+            return SimulationError::SimulationHeaderNotAfterBase;
+        }
         size_t const num_blocks = header.number - base_header.number;
-        MONAD_ASSERT_THROW(
-            num_blocks <= max_simulate_blocks, "too many blocks");
+        if (MONAD_UNLIKELY(num_blocks > max_simulate_blocks)) {
+            return SimulationError::InvalidInput;
+        }
+        return outcome::success();
     }
 
-    void save_eth_simulate_log_entry(
+    Result<void> save_eth_simulate_log_entry(
         Block const &block, std::vector<Receipt> const &receipts,
         std::vector<std::vector<CallFrame>> const &call_frames,
         bytes32_t const &block_hash, std::vector<bytes32_t> const &txn_hashes,
         nlohmann::json &result)
     {
-        MONAD_ASSERT_THROW(
-            call_frames.size() == block.transactions.size(),
-            "call frames size mismatch with transactions");
-        MONAD_ASSERT_THROW(
-            receipts.size() == block.transactions.size(),
-            "receipts size mismatch with transactions");
-        MONAD_ASSERT_THROW(
-            txn_hashes.size() == block.transactions.size(),
-            "transaction hashes size mismatch with transactions");
+        if (MONAD_UNLIKELY(
+                call_frames.size() != block.transactions.size() ||
+                receipts.size() != block.transactions.size() ||
+                txn_hashes.size() != block.transactions.size())) {
+            return SimulationError::InvalidData;
+        }
 
         auto const format_hex = [](auto const &b) {
             return std::format("0x{}", evmc::hex(b));
@@ -697,9 +693,9 @@ namespace
         auto &txns = entry["calls"];
 
         for (size_t tx_idx = 0; tx_idx < block.transactions.size(); ++tx_idx) {
-            MONAD_ASSERT_THROW(
-                call_frames[tx_idx].size() > 0,
-                "call frames size must be greater than 0");
+            if (MONAD_UNLIKELY(call_frames[tx_idx].empty())) {
+                return SimulationError::InvalidData;
+            }
             auto call_result = nlohmann::json::object();
 
             call_result["status"] = std::format(
@@ -745,6 +741,7 @@ namespace
         }
         store_output_header(block, receipts, block_hash, txn_hashes, entry);
         result.emplace_back(std::move(entry));
+        return outcome::success();
     }
 
     template <Traits traits>
@@ -764,37 +761,34 @@ namespace
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
 
-        MONAD_ASSERT_THROW(
-            calls.size() == senders.size(), "calls and senders size mismatch");
-        MONAD_ASSERT_THROW(
-            calls.size() == authorities.size(),
-            "calls and authorities size mismatch");
-        MONAD_ASSERT_THROW(
-            calls.size() == state_overrides.size,
-            "calls and state_overrides size mismatch");
-        MONAD_ASSERT_THROW(
-            calls.size() == block_overrides.size,
-            "calls and block_overrides size mismatch");
+        if (MONAD_UNLIKELY(
+                calls.size() != senders.size() ||
+                calls.size() != authorities.size() ||
+                calls.size() != state_overrides.size ||
+                calls.size() != block_overrides.size)) {
+            return Result<nlohmann::json>::error_type{
+                SimulationError::InvalidInput};
+        }
 
         for (size_t i = 0; i < calls.size(); ++i) {
-            MONAD_ASSERT_THROW(
-                calls[i].size() == senders[i].size(),
-                "transactions and senders size mismatch");
-            MONAD_ASSERT_THROW(
-                calls[i].size() == authorities[i].size(),
-                "transactions and authorities size mismatch");
+            if (MONAD_UNLIKELY(
+                    calls[i].size() != senders[i].size() ||
+                    calls[i].size() != authorities[i].size())) {
+                return Result<nlohmann::json>::error_type{
+                    SimulationError::InvalidInput};
+            }
         }
 
         // Validate the inputs before constructing the simulation objects. This
-        // validation procedure throws on bad input.
-        eth_simulate_validate_inputs(
+        // validation procedure returns an error on bad input.
+        BOOST_OUTCOME_TRY(eth_simulate_validate_inputs(
             max_calls,
             DEFAULT_TIMESTAMP_INCREMENT,
             calls,
             block_overrides,
             state_overrides,
             base_header,
-            is_monad_trait_v<traits>);
+            is_monad_trait_v<traits>));
 
         TrieRODb tdb{db};
         tdb.set_block_and_prefix(base_block_number, block_id);
@@ -805,9 +799,10 @@ namespace
         if (MONAD_LIKELY(base_block_number > 0)) {
             auto const grandparent_transactions = monad::get_transactions(
                 db, base_block_number - 1, grandparent_id);
-            MONAD_ASSERT_THROW(
-                grandparent_transactions.has_value(),
-                GRANDPARENT_TRANSACTIONS_CONTEXT_ERR_MSG);
+            if (MONAD_UNLIKELY(!grandparent_transactions.has_value())) {
+                return Result<nlohmann::json>::error_type{
+                    SimulationError::TransactionsContextUnavailable};
+            }
             auto const &[grandparent_senders, grandparent_authorities] =
                 recover_senders_and_authorities(
                     grandparent_transactions.assume_value());
@@ -819,9 +814,10 @@ namespace
         {
             auto const parent_transactions =
                 monad::get_transactions(db, base_block_number, block_id);
-            MONAD_ASSERT_THROW(
-                parent_transactions.has_value(),
-                PARENT_TRANSACTIONS_CONTEXT_ERR_MSG);
+            if (MONAD_UNLIKELY(!parent_transactions.has_value())) {
+                return Result<nlohmann::json>::error_type{
+                    SimulationError::TransactionsContextUnavailable};
+            }
             auto const &[parent_senders, parent_authorities] =
                 recover_senders_and_authorities(
                     parent_transactions.assume_value());
@@ -920,23 +916,25 @@ namespace
                     rlp::encode_block_header(synthetic_block.header)));
                 block_hash_buffer.advance(synthetic_block_hash);
 
-                save_eth_simulate_log_entry(
+                BOOST_OUTCOME_TRY(save_eth_simulate_log_entry(
                     synthetic_block,
                     receipts,
                     empty_call_frames,
                     synthetic_block_hash,
                     {},
-                    result);
+                    result));
 
                 header = synthetic_block.header;
             }
             // By this point it must be the case that the distance between the
             // previous block and the block we are about to construct is
             // exactly 1.
-            MONAD_ASSERT_THROW(
-                bo.number.value_or(header.number + 1) - header.number == 1,
-                "the block gap must be exactly 1 after filling in synthetic "
-                "blocks");
+            if (MONAD_UNLIKELY(
+                    bo.number.value_or(header.number + 1) - header.number !=
+                    1)) {
+                return Result<nlohmann::json>::error_type{
+                    SimulationError::InvalidBlockGap};
+            }
 
             // Construct the block header.
             BlockHeader const current_header{
@@ -1078,8 +1076,8 @@ namespace
                     to_bytes(keccak256(rlp::encode_transaction(txn))));
             }
 
-            save_eth_simulate_log_entry(
-                block, receipts, call_frames, block_hash, txn_hashes, result);
+            BOOST_OUTCOME_TRY(save_eth_simulate_log_entry(
+                block, receipts, call_frames, block_hash, txn_hashes, result));
 
             header = current_header;
         }

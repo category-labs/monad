@@ -135,7 +135,7 @@ namespace
     static ankerl::unordered_dense::segmented_set<Address>
         empty_senders_and_authorities{};
 
-    void apply_state_overrides(
+    Result<void> apply_state_overrides(
         BlockState &block_state, Incarnation const incarnation,
         monad_state_override const &state_overrides)
     {
@@ -193,9 +193,11 @@ namespace
                 update_state(state_delta.state);
             }
         }
-        MONAD_ASSERT_THROW(
-            block_state.can_merge(state), "failed to apply state override");
+        if (MONAD_UNLIKELY(!block_state.can_merge(state))) {
+            return SimulationError::StateOverrideFailure;
+        }
         block_state.merge(state);
+        return outcome::success();
     }
 
     template <Traits traits>
@@ -229,7 +231,8 @@ namespace
         BlockState block_state{tdb, vm};
         // avoid conflict with block reward txn
         Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
-        apply_state_overrides(block_state, incarnation, state_overrides);
+        BOOST_OUTCOME_TRY(
+            apply_state_overrides(block_state, incarnation, state_overrides));
 
         State state{block_state, incarnation};
 
@@ -757,7 +760,7 @@ namespace
         struct monad_block_override_vec const &block_overrides,
         uint64_t const gas_limit, size_t const max_calls,
         bool emit_native_transfer_logs)
-    {
+    try {
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
 
@@ -963,10 +966,10 @@ namespace
             // block, rather than with the current header's block number.
             auto const override_incarnation = Incarnation{
                 base_block_number + block_idx, Incarnation::LAST_TX - 1u};
-            apply_state_overrides(
+            BOOST_OUTCOME_TRY(apply_state_overrides(
                 block_state,
                 override_incarnation,
-                state_overrides.overrides[block_idx]);
+                state_overrides.overrides[block_idx]));
 
             // Patch up transactions with valid chain_id, signature, and nonce
             // so that they can pass validation in execute_block.
@@ -1083,6 +1086,10 @@ namespace
         }
 
         return result;
+    }
+    catch (...) {
+        return Result<nlohmann::json>::error_type{
+            SimulationError::InternalError};
     }
 }
 

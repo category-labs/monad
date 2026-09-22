@@ -27,8 +27,8 @@ ExternalProject_Add(
 
 ExternalProject_Add(
   MonadSpecTestFixtures
-  URL "https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.2.1/fixtures_monad.tar.gz"
-  URL_HASH "SHA256=ee4392e2012f3bab03b12a63faa5eb208dca4f6b032e7ba01b7b148ac3998403"
+  URL "https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.2.2/fixtures_monad.tar.gz"
+  URL_HASH "SHA256=c96c822d2e187e9168aa20f2c158c8a2de96ea076f6e6c473a1b6d3fc5c064df"
   PREFIX ${CMAKE_BINARY_DIR}
   CONFIGURE_COMMAND ""
   BUILD_COMMAND ""

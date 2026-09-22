@@ -182,6 +182,52 @@ namespace
         return replace_field(witness, 3, rlp_list(kept));
     }
 
+    /// The block's own header, as it sits in field [0]. Appending it to the
+    /// ancestor list makes a run that is contiguous and correctly named and
+    /// still wrong -- an ancestor is strictly older than the block.
+    byte_string own_header(byte_string const &witness)
+    {
+        byte_string_view const b{witness};
+        auto const outer = rlp_item(b, 0);
+        auto const fields = rlp_children(b, outer);
+        // [0] is the block RLP as a string; its payload is the block list,
+        // whose first item is the header.
+        Span const block_list = rlp_item(b, fields[0].payload_begin);
+        auto const parts = rlp_children(b, block_list);
+        byte_string header{
+            witness.begin() + static_cast<ptrdiff_t>(parts[0].begin),
+            witness.begin() + static_cast<ptrdiff_t>(parts[0].end)};
+        // Field [3] holds each header wrapped as a string.
+        byte_string out;
+        if (header.size() < 56) {
+            out.push_back(static_cast<unsigned char>(0x80 + header.size()));
+        }
+        else {
+            byte_string be;
+            for (size_t n = header.size(); n != 0; n >>= 8) {
+                be.insert(be.begin(), static_cast<unsigned char>(n & 0xff));
+            }
+            out.push_back(static_cast<unsigned char>(0xb7 + be.size()));
+            out += be;
+        }
+        out += header;
+        return out;
+    }
+
+    /// The ancestor list with `extra` appended.
+    byte_string
+    append_ancestor(byte_string const &witness, byte_string_view const extra)
+    {
+        byte_string_view const b{witness};
+        auto const outer = rlp_item(b, 0);
+        auto const fields = rlp_children(b, outer);
+        byte_string kept{
+            witness.begin() + static_cast<ptrdiff_t>(fields[3].payload_begin),
+            witness.begin() + static_cast<ptrdiff_t>(fields[3].payload_end)};
+        kept += extra;
+        return replace_field(witness, 3, rlp_list(kept));
+    }
+
     size_t ancestor_count(byte_string const &witness)
     {
         byte_string_view const b{witness};
@@ -323,3 +369,25 @@ TEST(WitnessRejection, AWitnessWhoseSaltSecretDoesNotMatchIsRefused)
         << r.output;
 }
 #endif
+
+// An "ancestor" at the block's own height. The run stays contiguous and every
+// header still names the one before it, so neither of the checks above fires
+// -- which is what makes this worth its own case.
+//
+// What refuses it is the parent check's second conjunct: the parent has to be
+// the LAST header, and this one follows it. That conjunct is what keeps every
+// ancestor strictly older than the block -- contiguity puts any header at or
+// above the block's height after the parent -- so this test is what would
+// notice it going. Not a soundness hole even then: the interpreter bounds
+// BLOCKHASH below the current height before the buffer is read.
+TEST(WitnessRejection, AnAncestorAtTheBlockHeightIsRefused)
+{
+    auto const e = build_chain(4);
+    auto const n = ancestor_count(e.witness);
+    auto const tampered = append_ancestor(e.witness, own_header(e.witness));
+    ASSERT_EQ(ancestor_count(tampered), n + 1);
+
+    auto const r = run_guest(tampered, "own-height");
+    EXPECT_NE(r.status, 0) << "an ancestor at the current height was accepted";
+    EXPECT_NE(r.output.find("headers.empty()"), std::string::npos) << r.output;
+}

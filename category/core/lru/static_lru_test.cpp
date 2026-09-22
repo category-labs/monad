@@ -17,6 +17,7 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <string>
 
 TEST(static_lru_test, evict)
@@ -140,4 +141,95 @@ TEST(static_lru_test, clear)
 
     lru.insert(5, "world");
     EXPECT_EQ(lru.size(), 1);
+}
+
+TEST(static_lru_test, counts_hits_misses_and_evictions)
+{
+    using LruCache = monad::static_lru_cache<int, int>;
+    LruCache lru(2);
+    LruCache::ConstAccessor acc;
+
+    EXPECT_FALSE(lru.find(acc, 1));
+    lru.insert(1, 0x111);
+    lru.insert(2, 0x222);
+    ASSERT_TRUE(lru.find(acc, 1));
+    EXPECT_EQ(lru.stats().evictions, 0u);
+
+    lru.insert(3, 0x333);
+
+    auto const stats = lru.stats();
+    EXPECT_EQ(stats.hits, 1u);
+    EXPECT_EQ(stats.misses, 1u);
+    EXPECT_EQ(stats.evictions, 1u);
+}
+
+// An existence check must not move the hit rate, and must not count as a use
+// that keeps the entry alive.
+TEST(static_lru_test, contains_neither_counts_nor_reorders)
+{
+    using LruCache = monad::static_lru_cache<int, int>;
+    LruCache lru(2);
+
+    lru.insert(1, 0x111);
+    lru.insert(2, 0x222);
+
+    EXPECT_TRUE(lru.contains(1));
+    EXPECT_FALSE(lru.contains(3));
+
+    auto const stats = lru.stats();
+    EXPECT_EQ(stats.hits, 0u);
+    EXPECT_EQ(stats.misses, 0u);
+
+    // 1 is still the LRU tail, so it is what the next insert displaces.
+    lru.insert(3, 0x333);
+    EXPECT_FALSE(lru.contains(1));
+    EXPECT_TRUE(lru.contains(2));
+}
+
+// The recycled nodes drop their values, or a cache of shared_ptr keeps
+// everything it ever held alive.
+TEST(static_lru_test, clear_releases_the_stored_values)
+{
+    using LruCache = monad::static_lru_cache<int, std::shared_ptr<int>>;
+    LruCache lru(2);
+
+    auto const held = std::make_shared<int>(7);
+    lru.insert(1, held);
+    ASSERT_EQ(held.use_count(), 2);
+
+    lru.clear();
+
+    EXPECT_EQ(held.use_count(), 1);
+}
+
+TEST(static_lru_test, clear_does_not_leave_a_phantom_eviction)
+{
+    using LruCache = monad::static_lru_cache<int, int>;
+    LruCache lru(2);
+
+    lru.insert(1, 0x111);
+    lru.insert(2, 0x222);
+    ASSERT_EQ(lru.stats().evictions, 0u);
+
+    lru.clear();
+    ASSERT_EQ(lru.size(), 0);
+
+    // The cache is empty, so this insert needs no room and must not report
+    // evicting the entry clear() already removed.
+    lru.insert(3, 0x333);
+
+    EXPECT_EQ(lru.size(), 1);
+    EXPECT_EQ(lru.stats().evictions, 0u);
+}
+
+TEST(static_lru_test, overwriting_an_existing_key_does_not_evict)
+{
+    using LruCache = monad::static_lru_cache<int, int>;
+    LruCache lru(2);
+
+    lru.insert(1, 0x111);
+    lru.insert(1, 0x222);
+
+    EXPECT_EQ(lru.size(), 1);
+    EXPECT_EQ(lru.stats().evictions, 0u);
 }

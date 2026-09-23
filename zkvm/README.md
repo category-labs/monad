@@ -373,6 +373,121 @@ Building the same sources with `MONAD_ZKVM_L2=OFF` gives a plaintext corpus and
 the three-value output, which is the cheaper check to run first: it exercises
 the generator and the trie without the cipher in the way.
 
+### The benchmark corpus, and what it costs
+
+The three scenarios above prove the generator works; they say nothing about
+what a block costs, because twenty accounts and two blocks cannot. `--preset`
+generates a corpus at scale instead: a genesis of `--accounts` holders, then
+`--blocks` blocks that each aim to touch `--distinct` of them.
+
+```sh
+# The design document's two inverse cases. Wholesale is hundreds of
+# institutions moving large amounts with an anchor every block; payouts is one
+# payer fanning out over a million holders.
+./build/zkvm/guest/monad-zkvm-corpus-gen --out /tmp/corpus-payouts \
+    --preset payouts --accounts 1000000 --blocks 200 --distinct 500 \
+    --sk <64 hex> --salt <64 hex>
+
+# The dispersion sweep: one corpus per point, each in its own subdirectory.
+./build/zkvm/guest/monad-zkvm-corpus-gen --out /tmp/sweep \
+    --preset payouts --accounts 1000000 --blocks 4 \
+    --shape uniform --sweep 50,200,500,2000,5000
+```
+
+**Genesis does not go through a `State`.** `State::set_storage` probes two
+linear-scan containers per call and `FlatStorage::find` is a scan in a host
+build -- the open-addressed index above it is `#ifdef MONAD_ZKVM_ZISK`, so only
+the guest gets it. That is quadratic in the slots already on an account, and a
+million of them measured at 64 minutes. `GenesisSink`
+(`zkvm/test/corpus/genesis_bulk.hpp`) builds the `StateDeltas` directly, the
+way `load_genesis_state` does: **11 seconds for a million accounts.** Two tests
+hold it honest -- the fast route gives the same state root as the `State` route,
+and chunking does not change it.
+
+`manifest.csv` records the regressors beside each witness:
+`intended_distinct`, `acct_leaves`, `storage_leaves`, `branches`, `exts`,
+`digests`, `blob_bytes`, `code_bytes`. They come from `witness_stats`, which
+tiles the node blob with the guest's own `checked_end` and aborts if the tiling
+is not exact -- a counter that had the grammar wrong would otherwise return
+plausible, wrong numbers.
+
+#### What the dispersion is worth
+
+Measured on this generator, 1,000,000 accounts, four blocks per point, three
+access shapes. `N` is the accounts in the trie, `K` the leaves a block touched.
+
+| distinct | leaves | digests | digests/leaf | witness | bytes/leaf | gas |
+|---:|---:|---:|---:|---:|---:|---:|
+| 50 | 60 | 2,419 | 40.2 | 107 KB | 1,641 | 1.2 M |
+| 200 | 226 | 7,777 | 34.4 | 342 KB | 1,428 | 4.6 M |
+| 500 | 560 | 16,490 | 29.5 | 741 KB | 1,246 | 11.4 M |
+| 2,000 | 2,212 | 49,080 | 22.2 | 2,328 KB | 973 | 45.7 M |
+| 5,000 | 5,489 | 96,904 | 17.7 | 4,868 KB | 804 | 114.3 M |
+
+Three things fall out, and the first is why this corpus exists at all.
+
+**The access distribution does not matter; the distinct count does.** A leaf
+touched twice in one block is free -- it is already in the witness -- so a
+distribution can only reach the cost through the number of distinct leaves it
+produces. Uniform, Zipf and hot-set agree to within **0.2-1.8 %** at every
+point above, against a 2.3x swing in digests-per-leaf across the points
+themselves. Frozen as `WorkloadDispersion.TheShapeDoesNotChangeTheCostAtEqualDistinct`.
+
+**The depth law is now measurable.** `digests/leaf = 14.0 x log16(N/K) - 8.6`,
+**R2 0.9985**: fourteen digests for each level a path diverges from its
+neighbours, less about nine for the top levels where every path is shared. The
+naive prediction was fifteen per level with no offset. Mainnet cannot establish
+this -- the same fit over 504 mainnet witnesses gives **R2 0.065**, because
+mainnet mixes storage tries of wildly different sizes and confounds dispersion
+with the shape of the state. A flat million-account trie separates them.
+
+**Cost per block is sublinear in dispersion.**
+`witness_bytes = 4291 x distinct^0.830`, **R2 0.9999** -- doubling the distinct
+accounts costs **1.78x, not 2x**, because the extra paths land under prefixes
+the earlier ones already paid for.
+
+#### Turning bytes into cells
+
+Over 504 mainnet witnesses joined to their measured ZisK cost (the corpus and
+per-block figures in `zkvm-bench`):
+
+| | fit |
+|---|---|
+| `blob_bytes = 40.0 x digests` | R2 0.9996 -- the blob **is** its digests, 82 % of its bytes |
+| `COST = 2891 x witness_bytes` | R2 0.942; 2,371 -> 2,734 cells/byte from the 1st to the 10th decile |
+| `keccak = 0.0093 x bytes^1.02` | R2 0.987 -- 12.4-13.0 keccak calls per KB, stable over a 40x range |
+| `COST = 7.54e6 x touched_leaves` | R2 0.897 |
+| `COST ~ leaves + code_bytes` | delta-R2 **0.000** -- code adds nothing once the leaf count is known |
+
+So witness bytes are not a proxy of unknown quality: they are the cost to
+within about 8 % over a 40x size range, which is what makes the whole corpus
+measurable without a prover.
+
+**That slope is a calibration to re-take, not a constant to quote.** It was
+measured on the `r8` guest, on mainnet blocks, under that revision's cost model
+-- and this tree's `Cargo.lock` pins ziskos 1.1.0-alpha while
+`keccak_accel.cpp` quotes ziskemu 1.2 figures, two repricings that differ on
+Keccak-f by about 2x. Applying 2,891 cells/byte to the table above puts a
+500-distinct L2 block at roughly 2.2 G cells, 12 % of a median mainnet block,
+and a 5,000-distinct one at 14.4 G, 79 % of one. Those are extrapolations,
+labelled as such until the sweep has run under `ziskemu` on the current ELF.
+
+One consequence worth stating plainly, because it answers the question
+directly: **prover cost is not proportional to block gas.** Gas tracks
+`distinct` almost exactly linearly across the sweep, while cells per gas falls
+from about 267 at 50 distinct accounts to 126 at 5,000 -- a **2.1x swing in the
+constant** that a single cells-per-gas figure would hide.
+
+#### What still has to be measured elsewhere
+
+`zkvm-bench` already has the machinery and none of it is duplicated here:
+`guests/monad/ev.sh` loops witnesses, applies the 8-byte length framing and
+runs `ziskemu`; `profiling/hotspots.py` attributes cells to functions and
+opcodes. The corpus writes what they read, so a run is a copy into
+`guests/monad/gen/<tag>/witnesses/` away. The one gap is the oracle: `ev.sh`
+verifies a published state root, and the L2 arm publishes none -- four values
+and no root. `guests/monad/gen-expected-pv.py` is where that belongs.
+
 ### Witnesses the guest must refuse
 
 `test_witness_rejection` is the other half, and it is the half that rots

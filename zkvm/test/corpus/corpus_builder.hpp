@@ -44,6 +44,8 @@ class State;
 
 namespace corpus
 {
+    class GenesisSink;
+
     /// The synthetic chain starts here, and the number is load-bearing.
     ///
     /// The non-L2 guest instantiates EthereumMainnet, whose schedule picks the
@@ -101,6 +103,18 @@ namespace corpus
         CorpusBuilder(
             std::function<void(State &)> const &seed, bytes32_t const &sk = {},
             bytes32_t const &salt_secret = {});
+
+        /// Genesis at benchmark scale. `seed` is handed a GenesisSink, which
+        /// writes StateDeltas straight through instead of driving a State --
+        /// see genesis_bulk.hpp for why a million accounts cannot take the
+        /// other route. `gas_limit` is constant for the whole chain, and it
+        /// is a parameter because a block touching thousands of distinct
+        /// accounts does not fit under 30M.
+        CorpusBuilder(
+            std::function<void(GenesisSink &)> const &seed,
+            size_t chunk_accounts = 100'000, uint64_t gas_limit = GAS_LIMIT,
+            bytes32_t const &sk = {}, bytes32_t const &salt_secret = {});
+
         ~CorpusBuilder();
 
         CorpusBuilder(CorpusBuilder const &) = delete;
@@ -129,10 +143,17 @@ namespace corpus
         }
 
     private:
+        /// Aborts unless `sk_` is the secret behind the compiled
+        /// MONAD_ZKVM_L2_OPERATOR_PK_X. No-op off the L2 arm.
+        void check_operator_key() const;
+        /// Records a sealed genesis header as the chain's first ancestor.
+        void seal_genesis(BlockHeader const &);
+
         struct Impl;
         std::unique_ptr<Impl> impl_;
         mpt::Db mdb_;
         TrieDb tdb_;
+        uint64_t gas_limit_{GAS_LIMIT};
         uint64_t next_number_{GENESIS_NUMBER + 1};
         /// Sealed headers, oldest first, for witness field [3]. Kept as the
         /// commit sealed them rather than rebuilt: field [3]'s newest entry

@@ -977,7 +977,10 @@ else()
     # of being made to fit. See zkvm/test/corpus/corpus_builder.hpp.
     set(_corpus_sources
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/tx_sign.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/genesis_bulk.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/witness_stats.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/corpus_builder.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/workload.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/scenarios.cpp")
 
     # In an L2 tree the generator encrypts the leaves and emits a seven-field

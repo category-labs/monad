@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <zkvm/test/corpus/corpus_builder.hpp>
+#include <zkvm/test/corpus/genesis_bulk.hpp>
 #include <zkvm/test/corpus/tx_sign.hpp>
 
 #include <category/core/assert.h>
@@ -42,6 +43,8 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <cstring>
 #include <utility>
@@ -183,21 +186,7 @@ namespace corpus
         , sk_{sk}
         , salt_secret_{salt_secret}
     {
-#ifdef MONAD_ZKVM_L2
-        // Checked once, here, against a throwaway header: the context's key
-        // material does not depend on the block, only its epoch does, and a
-        // secret that does not match the compiled operator key can never
-        // produce a leaf this guest will decrypt.
-        BlockHeader probe{.number = GENESIS_NUMBER};
-        auto const probe_ctx = l2_cipher_context(probe);
-        MONAD_ASSERT_PRINTF(
-            l2_check_operator_key(
-                probe_ctx,
-                l2_scalar_from_be(
-                    std::span<unsigned char const, 32>{sk_.bytes, 32})),
-            "the corpus secret does not match the compiled "
-            "MONAD_ZKVM_L2_OPERATOR_PK_X");
-#endif
+        check_operator_key();
         // Genesis goes in through a State so callers write
         // create_contract/set_code/add_to_balance/set_storage rather than
         // assembling StateDeltas by hand.
@@ -211,7 +200,7 @@ namespace corpus
         BlockHeader genesis{
             .difficulty = 0,
             .number = GENESIS_NUMBER,
-            .gas_limit = GAS_LIMIT,
+            .gas_limit = gas_limit_,
             .timestamp = GENESIS_TIMESTAMP,
             .base_fee_per_gas = uint256_t{0}};
 #ifdef MONAD_ZKVM_L2
@@ -227,14 +216,67 @@ namespace corpus
         tdb_.finalize(GENESIS_NUMBER, bytes32_t{GENESIS_NUMBER});
         tdb_.set_block_and_prefix(GENESIS_NUMBER);
 
-        auto const sealed = tdb_.read_eth_header();
+        seal_genesis(tdb_.read_eth_header());
+    }
+
+    CorpusBuilder::CorpusBuilder(
+        std::function<void(GenesisSink &)> const &seed,
+        size_t const chunk_accounts, uint64_t const gas_limit,
+        bytes32_t const &sk, bytes32_t const &salt_secret)
+        : impl_{std::make_unique<Impl>()}
+        , mdb_{std::make_unique<InMemoryMachine>()}
+        , tdb_{mdb_}
+        , gas_limit_{gas_limit}
+        , sk_{sk}
+        , salt_secret_{salt_secret}
+    {
+        check_operator_key();
+
+        BlockHeader genesis{
+            .difficulty = 0,
+            .number = GENESIS_NUMBER,
+            .gas_limit = gas_limit_,
+            .timestamp = GENESIS_TIMESTAMP,
+            .base_fee_per_gas = uint256_t{0}};
+#ifdef MONAD_ZKVM_L2
+        set_salt(genesis, block_salt(genesis.number));
+#endif
+        // The sink commits as it fills, so the header is handed over only at
+        // the end -- and it is handed over already stamped, because the
+        // blinder has to be in extra_data before the commit hashes it.
+        GenesisSink sink{tdb_, chunk_accounts};
+        seed(sink);
+        seal_genesis(sink.finish(genesis));
+    }
+
+    CorpusBuilder::~CorpusBuilder() = default;
+
+    void CorpusBuilder::check_operator_key() const
+    {
+#ifdef MONAD_ZKVM_L2
+        // Checked once, against a throwaway header: the context's key
+        // material does not depend on the block, only its epoch does, and a
+        // secret that does not match the compiled operator key can never
+        // produce a leaf this guest will decrypt.
+        BlockHeader probe{.number = GENESIS_NUMBER};
+        auto const probe_ctx = l2_cipher_context(probe);
+        MONAD_ASSERT_PRINTF(
+            l2_check_operator_key(
+                probe_ctx,
+                l2_scalar_from_be(
+                    std::span<unsigned char const, 32>{sk_.bytes, 32})),
+            "the corpus secret does not match the compiled "
+            "MONAD_ZKVM_L2_OPERATOR_PK_X");
+#endif
+    }
+
+    void CorpusBuilder::seal_genesis(BlockHeader const &sealed)
+    {
         sealed_.push_back(sealed);
         block_hashes_.set(
             GENESIS_NUMBER,
             to_bytes(keccak256(rlp::encode_block_header(sealed))));
     }
-
-    CorpusBuilder::~CorpusBuilder() = default;
 
     bytes32_t
     CorpusBuilder::block_salt([[maybe_unused]] uint64_t const number) const
@@ -273,7 +315,7 @@ namespace corpus
                 to_bytes(keccak256(rlp::encode_block_header(parent))),
             .difficulty = 0,
             .number = number,
-            .gas_limit = GAS_LIMIT,
+            .gas_limit = gas_limit_,
             .timestamp = parent.timestamp + BLOCK_TIME,
             .beneficiary = spec.beneficiary,
             .base_fee_per_gas = uint256_t{0}};
@@ -286,17 +328,21 @@ namespace corpus
 
         // --- nonces then signatures, in that order: the nonce is inside the
         // --- signing preimage, so signing before setting it signs a lie.
+        //
+        // address_of is an EC multiplication, so each key becomes an address
+        // exactly once and the same-sender count comes from a map. Scanning
+        // the earlier transactions instead, re-deriving each of their
+        // addresses, is quadratic in a multiplication: 12.5M of them on a
+        // 5000-transaction block, which a payouts corpus reaches on every
+        // block.
+        ankerl::unordered_dense::map<Address, uint64_t> sent;
         for (size_t i = 0; i < spec.txs.size(); ++i) {
             auto const sender = corpus::address_of(spec.keys[i]);
             auto const acct = tdb_.read_account(sender);
-            spec.txs[i].nonce = acct.has_value() ? acct->nonce : 0;
+            uint64_t const base = acct.has_value() ? acct->nonce : 0;
             // A block may carry two transactions from one sender; the second
             // must see the first's nonce, which the db does not yet know.
-            for (size_t j = 0; j < i; ++j) {
-                if (corpus::address_of(spec.keys[j]) == sender) {
-                    ++spec.txs[i].nonce;
-                }
-            }
+            spec.txs[i].nonce = base + sent[sender]++;
             corpus::sign_transaction(spec.txs[i], spec.keys[i]);
         }
 

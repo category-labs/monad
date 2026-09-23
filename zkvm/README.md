@@ -411,6 +411,35 @@ tiles the node blob with the guest's own `checked_end` and aborts if the tiling
 is not exact -- a counter that had the grammar wrong would otherwise return
 plausible, wrong numbers.
 
+#### The two corpora
+
+Both presets at two hundred blocks, generated and checked end to end:
+
+| | `wholesale` | `payouts` |
+|---|---:|---:|
+| accounts | 500 | 1,000,000 |
+| blocks | 201 (15,537,395-15,537,595) | 201 |
+| generation | 0.7 s | 19 s |
+| witness, median | 72 KB | 802 KB |
+| witness, min-max | 20-122 KB | 733-860 KB |
+| leaves touched, median | 44 | 563 |
+| digests per leaf | 6.1 | 29.8 |
+| gas, median | 0.5 M | 11.4 M |
+| corpus size | 15 MB | 164 MB |
+
+Every witness in both is accepted by the x86 runner. The chain holds:
+`post_root[n] == pre_root[n+1]` and `block_hash[n] == parent_hash[n+1]` across
+all 201, the numbers are contiguous, and all 201 post-state roots are distinct
+-- the state moves every block rather than being re-proved.
+
+**Wholesale is about eleven times cheaper per block**, which is the design
+document's two inverse cases showing up in the measurement: the MVP case is the
+cheap one, and the payouts case is what sizing has to be done against.
+
+Note that the depth law below was fitted at a million accounts, and wholesale's
+6.1 digests per leaf sits well outside its range -- 500 accounts is under two
+levels of trie. Do not read the fit as covering it.
+
 #### What the dispersion is worth
 
 Measured on this generator, 1,000,000 accounts, four blocks per point, three

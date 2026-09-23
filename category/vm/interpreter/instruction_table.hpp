@@ -113,6 +113,19 @@
     }                                                                          \
     while (false)
 
+// Check without changing state; charge the total gas only on success.
+// On failure, per-opcode checks preserve error order and gas accounting.
+// Unneeded stack bounds compile away.
+#define MONAD_VM_FUSED_OK(REQ)                                                 \
+    ((gas_remaining >= (REQ).gas) &&                                           \
+     ((REQ).min_required == 0 ||                                               \
+      (stack_top) >= (stack_bottom) + (REQ).min_required) &&                   \
+     ((REQ).max_growth == 0 ||                                                 \
+      (stack_top) <=                                                           \
+          (stack_bottom) + (static_cast<std::ptrdiff_t>(                       \
+                                runtime::EvmStackAllocatorMeta::size) -        \
+                            (REQ).max_growth)))
+
 #define MONAD_VM_NEXT_PUSH(OP)                                                 \
     MONAD_VM_NEXT_IMPL(OP, ((OP) - PUSH0) + 1, *instr_ptr)
 
@@ -120,6 +133,49 @@ namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
     using enum compiler::EvmOpCode;
+
+    // Static gas and stack requirements, computed from the opcode table.
+    // Track required operands and peak height, not just net stack change.
+    struct FusedRequirements
+    {
+        int64_t gas;
+        // Minimum stack height at sequence entry.
+        int32_t min_required;
+        // Peak growth above the entry height.
+        int32_t max_growth;
+
+        bool operator==(FusedRequirements const &) const = default;
+    };
+
+    // A non-constexpr call rejects dynamic-gas opcodes at compile time.
+    void fused_requirements_rejects_dynamic_gas();
+
+    template <Traits traits, compiler::EvmOpCode... Ops>
+    consteval FusedRequirements fused_requirements()
+    {
+        FusedRequirements r{0, 0, 0};
+        int32_t height = 0;
+        for (auto const op : {Ops...}) {
+            auto const ci = compiler::opcode_table<traits>[op];
+            // Dynamic gas cannot be included in this static total:
+            // triggers compilation error
+            if (ci.dynamic_gas) {
+                fused_requirements_rejects_dynamic_gas();
+            }
+            r.gas += ci.min_gas;
+            r.min_required =
+                // - height because some previous opcode can free space, like
+                // for the sequence PUSH2 + JUMPI (2 elements needed, one
+                // provided by PUSH2)
+                std::max(
+                    r.min_required,
+                    static_cast<int32_t>(ci.min_stack) - height);
+            height = height - static_cast<int32_t>(ci.min_stack) +
+                     static_cast<int32_t>(ci.stack_increase);
+            r.max_growth = std::max(r.max_growth, height);
+        }
+        return r;
+    }
 
 #if defined(MONAD_ZKVM_ZISK)
     // After validating the destination, charge JUMPDEST's gas and skip it.
@@ -663,15 +719,22 @@ namespace monad::vm::interpreter
         // cannot overflow once EQ's operands are validated.
         if (*(instr_ptr + 1) == static_cast<std::uint8_t>(PUSH2) &&
             *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
-            MONAD_VM_CHECK(EQ);
-            // EQ frees a slot, so PUSH2 cannot overflow a valid stack.
-            MONAD_DEBUG_ASSERT(
-                (stack_top - 1) - stack_bottom <
-                static_cast<std::ptrdiff_t>(
-                    runtime::EvmStackAllocatorMeta::size));
-            MONAD_VM_CHARGE(PUSH2);
-            // PUSH2 adds one value, restoring the original stack height.
-            MONAD_VM_CHECK_AT(JUMPI, 0);
+            static constexpr auto monad_vm_req =
+                fused_requirements<traits, EQ, PUSH2, JUMPI>();
+            if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) {
+                gas_remaining -= monad_vm_req.gas;
+            }
+            else {
+                MONAD_VM_CHECK(EQ);
+                // EQ frees a slot, so PUSH2 cannot overflow a valid stack.
+                MONAD_DEBUG_ASSERT(
+                    (stack_top - 1) - stack_bottom <
+                    static_cast<std::ptrdiff_t>(
+                        runtime::EvmStackAllocatorMeta::size));
+                MONAD_VM_CHARGE(PUSH2);
+                // PUSH2 adds one value, restoring the original stack height.
+                MONAD_VM_CHECK_AT(JUMPI, 0);
+            }
             // Keep EQ's result in a C++ bool instead of the EVM stack.
             bool const monad_vm_taken = (*stack_top == *(stack_top - 1));
             instr_ptr = fused_branch(
@@ -702,9 +765,16 @@ namespace monad::vm::interpreter
         // Fuse ISZERO PUSH2 <dst16> JUMPI without storing the test result.
         if (*(instr_ptr + 1) == static_cast<std::uint8_t>(PUSH2) &&
             *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
-            MONAD_VM_CHECK(ISZERO);
-            MONAD_VM_CHECK_AT(PUSH2, 0);
-            MONAD_VM_CHECK_AT(JUMPI, 1);
+            static constexpr auto monad_vm_req =
+                fused_requirements<traits, ISZERO, PUSH2, JUMPI>();
+            if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) {
+                gas_remaining -= monad_vm_req.gas;
+            }
+            else {
+                MONAD_VM_CHECK(ISZERO);
+                MONAD_VM_CHECK_AT(PUSH2, 0);
+                MONAD_VM_CHECK_AT(JUMPI, 1);
+            }
             bool const monad_vm_taken = !*stack_top;
             instr_ptr = fused_branch(
                 ctx, analysis, instr_ptr, monad_vm_taken, gas_remaining);
@@ -1361,22 +1431,36 @@ namespace monad::vm::interpreter
             // Filtering for these four opcodes first improves performance.
             if (monad_vm_op2 < 64 &&
                 ((monad_vm_fuse_mask >> monad_vm_op2) & 1)) {
-                MONAD_VM_CHECK(PUSH1);
+                // These four followers share gas and stack requirements.
+                // Verify that ADD's checks cover all four.
+                static constexpr auto monad_vm_req =
+                    fused_requirements<traits, PUSH1, ADD>();
+                static_assert(
+                    monad_vm_req == fused_requirements<traits, PUSH1, SHL>() &&
+                        monad_vm_req ==
+                            fused_requirements<traits, PUSH1, SHR>() &&
+                        monad_vm_req ==
+                            fused_requirements<traits, PUSH1, SAR>(),
+                    "PUSH1 fusion mask holds followers with unequal "
+                    "requirements; aggregate them per follower");
+                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) {
+                    gas_remaining -= monad_vm_req.gas;
+                }
+                else {
+                    MONAD_VM_CHECK(PUSH1);
+                    MONAD_VM_CHECK_AT(ADD, 1);
+                }
                 uint256_t const monad_vm_imm{*(instr_ptr + 1)};
                 if (monad_vm_op2 == static_cast<std::uint8_t>(ADD)) {
-                    MONAD_VM_CHECK_AT(ADD, 1);
                     *stack_top = monad_vm_imm + *stack_top;
                 }
                 else if (monad_vm_op2 == static_cast<std::uint8_t>(SHL)) {
-                    MONAD_VM_CHECK_AT(SHL, 1);
                     *stack_top <<= monad_vm_imm;
                 }
                 else if (monad_vm_op2 == static_cast<std::uint8_t>(SHR)) {
-                    MONAD_VM_CHECK_AT(SHR, 1);
                     *stack_top >>= monad_vm_imm;
                 }
                 else {
-                    MONAD_VM_CHECK_AT(SAR, 1);
                     *stack_top = sar(monad_vm_imm, *stack_top);
                 }
                 // Advance instr_ptr by 3 bytes, keep the stack size unchanged,
@@ -1394,15 +1478,22 @@ namespace monad::vm::interpreter
             // puts this on ZisK's generic binary machine on every PUSH2.
             if (static_cast<size_t>(monad_vm_op2) - static_cast<size_t>(JUMP) <=
                 1u) {
-                MONAD_VM_CHECK(PUSH2);
                 // PUSH2's two-byte immediate gives the jump destination.
                 auto const monad_vm_dst = static_cast<size_t>(
                     (static_cast<unsigned>(*(instr_ptr + 1)) << 8) |
                     static_cast<unsigned>(*(instr_ptr + 2)));
                 if (monad_vm_op2 == static_cast<std::uint8_t>(JUMP)) {
-                    // PUSH2 supplies the operand required by JUMP.
-                    MONAD_DEBUG_ASSERT(stack_top >= stack_bottom);
-                    MONAD_VM_CHARGE(JUMP);
+                    static constexpr auto monad_vm_req =
+                        fused_requirements<traits, PUSH2, JUMP>();
+                    if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) {
+                        gas_remaining -= monad_vm_req.gas;
+                    }
+                    else {
+                        MONAD_VM_CHECK(PUSH2);
+                        // PUSH2 supplies the operand required by JUMP.
+                        MONAD_DEBUG_ASSERT(stack_top >= stack_bottom);
+                        MONAD_VM_CHARGE(JUMP);
+                    }
                     if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) {
                         ctx.exit(Error);
                     }
@@ -1418,7 +1509,15 @@ namespace monad::vm::interpreter
                         gas_remaining,
                         instr_ptr MONAD_VM_TBL_ARG);
                 }
-                MONAD_VM_CHECK_AT(JUMPI, 1);
+                static constexpr auto monad_vm_reqi =
+                    fused_requirements<traits, PUSH2, JUMPI>();
+                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_reqi))) {
+                    gas_remaining -= monad_vm_reqi.gas;
+                }
+                else {
+                    MONAD_VM_CHECK(PUSH2);
+                    MONAD_VM_CHECK_AT(JUMPI, 1);
+                }
                 // The condition is the original top, below PUSH2's destination.
                 if (*stack_top) {
                     if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) {
@@ -1763,4 +1862,5 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_CHECK
 #undef MONAD_VM_CHECK_AT
 #undef MONAD_VM_CHARGE
+#undef MONAD_VM_FUSED_OK
 #undef MONAD_VM_CHECKED_RUNTIME_CALL

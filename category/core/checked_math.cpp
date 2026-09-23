@@ -79,6 +79,23 @@ Result<uint256_t> checked_div(uint256_t const &x, uint256_t const &y) noexcept
     return x / y;
 }
 
+Result<uint256_t> checked_wide_mul_div(
+    uint256_t const &x, uint256_t const &y, uint256_t const &divisor) noexcept
+{
+    if (divisor == 0) {
+        return MathError::DivisionByZero;
+    }
+    auto const product =
+        truncating_mul<2 * uint256_t::num_words>(x.as_words(), y.as_words());
+    auto const quotient = udivrem(product, divisor.as_words()).quot;
+    if (MONAD_UNLIKELY(
+            (quotient[4] | quotient[5] | quotient[6] | quotient[7]) != 0)) {
+        return MathError::Overflow;
+    }
+    return uint256_t{std::array<uint64_t, 4>{
+        quotient[0], quotient[1], quotient[2], quotient[3]}};
+}
+
 MONAD_NAMESPACE_END
 
 BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN

@@ -45,6 +45,11 @@ Result<uint256_t> checked_sub(uint256_t const &x, uint256_t const &y) noexcept;
 Result<uint256_t> checked_mul(uint256_t const &x, uint256_t const &y) noexcept;
 Result<uint256_t> checked_div(uint256_t const &x, uint256_t const &y) noexcept;
 
+// floor(x * y / divisor), with a full-precision intermediate product.
+// Fails if divisor is zero or the quotient does not fit in 256 bits.
+Result<uint256_t> checked_wide_mul_div(
+    uint256_t const &x, uint256_t const &y, uint256_t const &divisor) noexcept;
+
 MONAD_NAMESPACE_END
 
 BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN

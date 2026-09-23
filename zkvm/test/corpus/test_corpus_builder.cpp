@@ -14,8 +14,11 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <zkvm/test/corpus/corpus_builder.hpp>
+#include <zkvm/test/corpus/genesis_bulk.hpp>
 #include <zkvm/test/corpus/scenarios.hpp>
 #include <zkvm/test/corpus/tx_sign.hpp>
+#include <zkvm/test/corpus/witness_stats.hpp>
+#include <zkvm/test/corpus/workload.hpp>
 
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
@@ -29,6 +32,9 @@
 #include <category/execution/ethereum/state3/state.hpp>
 
 #include <category/vm/code.hpp>
+
+#include <cmath>
+#include <cstring>
 #include <functional>
 
 #include <gtest/gtest.h>
@@ -413,3 +419,206 @@ TEST(CorpusBlinder, TheBlinderFollowsTheSecret)
         c.block_salt(corpus::GENESIS_NUMBER + 1));
 }
 #endif
+
+// ---------------------------------------------------------------------------
+// The fast genesis route, and the two things that make it trustworthy: it
+// agrees with the slow one, and it agrees with itself at any chunk size.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    constexpr auto CONTRACT_ADDR =
+        0x00000000000000000000000000000000000c0de9_address;
+    constexpr auto SLOT_ONE =
+        0x0000000000000000000000000000000000000000000000000000000000000001_bytes32;
+    constexpr auto SLOT_TWO =
+        0x0000000000000000000000000000000000000000000000000000000000000002_bytes32;
+    constexpr auto VALUE_ONE =
+        0x00000000000000000000000000000000000000000000000000000000000000aa_bytes32;
+    constexpr auto VALUE_TWO =
+        0x00000000000000000000000000000000000000000000000000000000000000bb_bytes32;
+
+    /// PUSH1 0 PUSH1 0 SSTORE STOP, just to give the contract a code hash.
+    byte_string const SOME_CODE =
+        byte_string{0x60, 0x00, 0x60, 0x00, 0x55, 0x00};
+}
+
+TEST(GenesisBulk, TheFastRouteGivesTheSameRootAsTheSlowOne)
+{
+    // Whatever the two routes disagree on internally -- and they do disagree
+    // on incarnation, which create_contract bumps and a hand-built delta does
+    // not -- the STATE ROOT cannot see it: the merkle leaf is
+    // rlp::encode_account(account, storage_root), four fields, and the
+    // incarnation is not one of them. So this compares the only thing that
+    // has to match.
+    auto slow = make_builder([](State &s) {
+        s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
+        s.add_to_balance(corpus::address_of(KEY_B), 22_u256);
+        s.set_nonce(corpus::address_of(KEY_B), 5);
+        s.create_contract(CONTRACT_ADDR);
+        s.set_code(CONTRACT_ADDR, SOME_CODE);
+        s.add_to_balance(CONTRACT_ADDR, 7_u256);
+        s.set_storage(CONTRACT_ADDR, SLOT_ONE, VALUE_ONE);
+        s.set_storage(CONTRACT_ADDR, SLOT_TWO, VALUE_TWO);
+    });
+
+    auto const fast_seeder = [](corpus::GenesisSink &sink) {
+        sink.account(
+            corpus::address_of(KEY_A),
+            Account{.balance = 1000000000000000000_u256});
+        sink.account(
+            corpus::address_of(KEY_B), Account{.balance = 22, .nonce = 5});
+        sink.contract(CONTRACT_ADDR, Account{.balance = 7}, SOME_CODE);
+        sink.storage(CONTRACT_ADDR, SLOT_ONE, VALUE_ONE);
+        sink.storage(CONTRACT_ADDR, SLOT_TWO, VALUE_TWO);
+    };
+    corpus::CorpusBuilder fast{
+        fast_seeder, 100'000, corpus::GAS_LIMIT, OPERATOR_SK, SALT_SECRET};
+
+    EXPECT_EQ(fast.db().state_root(), slow.db().state_root());
+}
+
+TEST(GenesisBulk, ChunkingDoesNotChangeTheRoot)
+{
+    // 1000 accounts, once in a single commit and once in chunks that do not
+    // divide it. Chunk boundaries land mid-account-run in the second, and an
+    // account's storage has to stay with it, which is the property the sink's
+    // flush-at-the-start-of-account rule exists for.
+    auto const seeder = [](corpus::GenesisSink &sink) {
+        for (uint64_t i = 0; i < 1000; ++i) {
+            auto const key = corpus::derive_key(bytes32_t{}, 900'000 + i);
+            Address a;
+            std::memcpy(a.bytes, key.bytes + 12, sizeof(a.bytes));
+            sink.account(a, Account{.balance = uint256_t{1000 + i}});
+            sink.storage(a, SLOT_ONE, VALUE_ONE);
+        }
+    };
+    corpus::CorpusBuilder one{
+        seeder, 100'000, corpus::GAS_LIMIT, OPERATOR_SK, SALT_SECRET};
+    corpus::CorpusBuilder many{
+        seeder, 337, corpus::GAS_LIMIT, OPERATOR_SK, SALT_SECRET};
+
+    EXPECT_EQ(one.db().state_root(), many.db().state_root());
+}
+
+// ---------------------------------------------------------------------------
+// The node counter. witness_stats aborts if the nodes do not tile the blob, so
+// merely running it on every block is most of the test; what is left is that
+// the widths it attributes add back up.
+// ---------------------------------------------------------------------------
+
+TEST(WitnessStats, TheNodesTileEveryBlockOfEveryScenario)
+{
+    for (auto const &s : corpus::all_scenarios(bytes32_t{})) {
+        auto b = make_builder(s.genesis);
+        for (auto &spec : s.blocks(b)) {
+            auto const e = b.add_block(std::move(spec));
+            auto const st = corpus::witness_stats(e.witness);
+
+            EXPECT_EQ(st.reconstructed_blob_bytes(), st.blob_bytes)
+                << "scenario " << s.name << " block " << e.header.number;
+            EXPECT_EQ(st.branch_bytes, st.branches * 65u);
+            EXPECT_EQ(st.digest_bytes, st.digests * mpt::DIGEST_NODE_LEN);
+            EXPECT_EQ(st.witness_bytes, e.witness.size());
+            // A block that changed the state touched at least one account,
+            // and reaching it needed at least one branch above it.
+            EXPECT_GE(st.acct_leaves, 1u);
+            EXPECT_GE(st.branches, 1u);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The law the corpus exists to establish, frozen as a test.
+//
+// Cost tracks witness bytes, and a witness is mostly digests of siblings the
+// block did not touch. A leaf touched twice in one block is free -- it is
+// already there. So the access DISTRIBUTION can only reach the cost through
+// the number of distinct leaves it produces, and at equal distinct count the
+// three shapes should cost the same.
+//
+// Measured on a 200k-account state at distinct=300, four blocks: 24.32
+// digests per leaf uniform, 24.07 zipf, 24.45 hot-set -- a 1.6% spread, next
+// to a 1.8x swing across the distinct values themselves. The bound below is
+// 8%, five times the observed spread, because this is a floor under the
+// claim and not a re-measurement of it. If it ever fails, the reasoning above
+// is wrong, and that is the finding.
+// ---------------------------------------------------------------------------
+
+TEST(WorkloadDispersion, TheShapeDoesNotChangeTheCostAtEqualDistinct)
+{
+    auto const run = [](corpus::Shape const shape) {
+        corpus::WorkloadSpec spec{};
+        spec.preset = corpus::Preset::Payouts;
+        spec.shape = shape;
+        spec.accounts = 20'000;
+        spec.blocks = 2;
+        spec.distinct = 200;
+        corpus::Workload w{spec};
+        corpus::CorpusBuilder b{
+            w.seeder(),
+            w.spec().chunk,
+            w.spec().gas_limit(),
+            OPERATOR_SK,
+            SALT_SECRET};
+
+        size_t leaves = 0;
+        size_t digests = 0;
+        for (uint64_t i = 0; i < w.block_count(); ++i) {
+            auto const e = b.add_block(w.block(b, i));
+            auto const st = corpus::witness_stats(e.witness);
+            leaves += st.touched_leaves();
+            digests += st.digests;
+        }
+        EXPECT_GT(leaves, 0u);
+        return static_cast<double>(digests) / static_cast<double>(leaves);
+    };
+
+    double const uniform = run(corpus::Shape::Uniform);
+    double const zipf = run(corpus::Shape::Zipf);
+    double const hotset = run(corpus::Shape::HotSet);
+
+    for (double const other : {zipf, hotset}) {
+        EXPECT_LT(std::abs(other - uniform) / uniform, 0.08)
+            << "uniform " << uniform << " vs " << other;
+    }
+}
+
+// The other half of the same law: the distinct count is what moves, and it
+// moves a lot. Sublinearly, because deeper paths share more of their prefix --
+// which is why a benchmark has to sweep it rather than quote one number.
+TEST(WorkloadDispersion, MoreDistinctAccountsCostMoreButSublinearly)
+{
+    auto const bytes_at = [](uint64_t const distinct) {
+        corpus::WorkloadSpec spec{};
+        spec.preset = corpus::Preset::Payouts;
+        spec.shape = corpus::Shape::Uniform;
+        spec.accounts = 20'000;
+        spec.blocks = 1;
+        spec.distinct = distinct;
+        corpus::Workload w{spec};
+        corpus::CorpusBuilder b{
+            w.seeder(),
+            w.spec().chunk,
+            w.spec().gas_limit(),
+            OPERATOR_SK,
+            SALT_SECRET};
+        // Block 0 deploys; block 1 is the first one that draws.
+        b.add_block(w.block(b, 0));
+        auto const e = b.add_block(w.block(b, 1));
+        return corpus::witness_stats(e.witness);
+    };
+
+    auto const small = bytes_at(100);
+    auto const large = bytes_at(400);
+
+    EXPECT_GT(large.blob_bytes, small.blob_bytes);
+    // Four times the accounts for less than four times the bytes: the extra
+    // paths land under prefixes the first hundred already paid for.
+    EXPECT_LT(large.blob_bytes, 4 * small.blob_bytes);
+    EXPECT_LT(
+        static_cast<double>(large.blob_bytes) /
+            static_cast<double>(large.touched_leaves()),
+        static_cast<double>(small.blob_bytes) /
+            static_cast<double>(small.touched_leaves()));
+}

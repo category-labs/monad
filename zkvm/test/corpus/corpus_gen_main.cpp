@@ -19,6 +19,8 @@
 #include <zkvm/test/corpus/corpus_builder.hpp>
 #include <zkvm/test/corpus/scenarios.hpp>
 #include <zkvm/test/corpus/tx_sign.hpp>
+#include <zkvm/test/corpus/witness_stats.hpp>
+#include <zkvm/test/corpus/workload.hpp>
 
 #include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
@@ -28,12 +30,15 @@
 #endif
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <ostream>
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace
 {
@@ -43,6 +48,10 @@ namespace
             stderr,
             "Usage: %s --out <dir> [--scenario all|transfers|evm|spoke]\n"
             "          [--seed <64 hex>] [--sk <64 hex>] [--salt <64 hex>]\n"
+            "       %s --out <dir> --preset wholesale|payouts\n"
+            "          [--accounts N] [--blocks N] [--distinct K]\n"
+            "          [--shape zipf|uniform|hotset] [--zipf-s F]\n"
+            "          [--chunk N] [--sweep K1,K2,...]\n"
             "       %s --pubkey <64 hex secret>\n"
             "       %s --spoke-address [--seed <64 hex>]\n"
             "       %s --salt-commitment <64 hex secret>\n"
@@ -58,7 +67,21 @@ namespace
             "MONAD_ZKVM_L2_SALT_COMMITMENT; --salt hands the generator that\n"
             "same secret. Required in an L2 build: without it the block hash\n"
             "is unblinded and the state is testable by anyone who can guess\n"
-            "it.\n",
+            "it.\n"
+            "\n"
+            "--preset generates a benchmark corpus instead of the small\n"
+            "scenarios: a genesis of --accounts holders, then --blocks blocks\n"
+            "that each aim to touch --distinct of them. --distinct is the "
+            "axis\n"
+            "that matters -- measured over 504 mainnet witnesses, cost tracks\n"
+            "witness bytes (R2 0.94) and 82%% of those bytes are digests of\n"
+            "siblings the block did not touch, so what a block costs is how\n"
+            "many DISTINCT leaves it reaches. --shape only changes which "
+            "ones,\n"
+            "and exists to check that it does not change the cost.\n"
+            "--sweep runs the same workload once per distinct value, writing\n"
+            "each into its own subdirectory.\n",
+            prog,
             prog,
             prog,
             prog,
@@ -104,6 +127,9 @@ int main(int const argc, char **const argv)
     monad::bytes32_t pubkey_of{};
     bool want_pubkey = false;
     bool want_spoke = false;
+    bool want_preset = false;
+    monad::corpus::WorkloadSpec wl{};
+    std::vector<uint64_t> sweep;
 
     auto const parse_hex32 = [](std::string_view h,
                                 monad::bytes32_t &out) -> bool {
@@ -170,6 +196,41 @@ int main(int const argc, char **const argv)
         }
         else if (arg == "--spoke-address") {
             want_spoke = true;
+        }
+        else if (arg == "--preset" && i + 1 < argc) {
+            wl.preset = monad::corpus::preset_from_name(argv[++i]);
+            want_preset = true;
+        }
+        else if (arg == "--shape" && i + 1 < argc) {
+            wl.shape = monad::corpus::shape_from_name(argv[++i]);
+        }
+        else if (arg == "--accounts" && i + 1 < argc) {
+            wl.accounts = std::strtoull(argv[++i], nullptr, 10);
+        }
+        else if (arg == "--blocks" && i + 1 < argc) {
+            wl.blocks = std::strtoull(argv[++i], nullptr, 10);
+        }
+        else if (arg == "--distinct" && i + 1 < argc) {
+            wl.distinct = std::strtoull(argv[++i], nullptr, 10);
+        }
+        else if (arg == "--chunk" && i + 1 < argc) {
+            wl.chunk = std::strtoull(argv[++i], nullptr, 10);
+        }
+        else if (arg == "--zipf-s" && i + 1 < argc) {
+            wl.zipf_s = std::strtod(argv[++i], nullptr);
+        }
+        else if (arg == "--sweep" && i + 1 < argc) {
+            std::string_view rest{argv[++i]};
+            while (!rest.empty()) {
+                auto const comma = rest.find(',');
+                auto const tok = rest.substr(0, comma);
+                sweep.push_back(
+                    std::strtoull(std::string{tok}.c_str(), nullptr, 10));
+                if (comma == std::string_view::npos) {
+                    break;
+                }
+                rest.remove_prefix(comma + 1);
+            }
         }
         else {
             return usage(argv[0]);
@@ -258,10 +319,119 @@ int main(int const argc, char **const argv)
     (void)have_salt;
 #endif
 
+    // One emitter for both paths: the manifest columns are the regressors,
+    // and which ones they are is a measurement -- witness bytes track
+    // measured cost with R2 0.94 over 504 mainnet blocks, digests are 82% of
+    // those bytes, and code bytes add nothing once the leaf count is known.
+    // code_bytes is here to keep confirming that, not because it is expected
+    // to matter.
+    auto const manifest_header =
+        "scenario,number,pre_root,post_root,block_hash,parent_hash,"
+        "txs,gas_used,witness_bytes,anchor,leaves,"
+        "intended_distinct,acct_leaves,storage_leaves,branches,exts,digests,"
+        "blob_bytes,code_bytes\n";
+
+    auto const emit = [&](std::ostream &manifest,
+                          std::string const &dir,
+                          std::string const &tag,
+                          monad::corpus::Emitted const &e,
+                          size_t const n_txs,
+                          uint64_t const intended) -> bool {
+        char name[256];
+        std::snprintf(
+            name,
+            sizeof(name),
+            "%s/%s-%08lu.witness",
+            dir.c_str(),
+            tag.c_str(),
+            static_cast<unsigned long>(e.header.number));
+        std::ofstream f{name, std::ios::binary};
+        f.write(
+            reinterpret_cast<char const *>(e.witness.data()),
+            static_cast<std::streamsize>(e.witness.size()));
+        if (!f) {
+            std::fprintf(stderr, "corpus-gen: cannot write %s\n", name);
+            return false;
+        }
+        auto const st = monad::corpus::witness_stats(e.witness);
+        manifest << tag << ',' << e.header.number << ',' << hex_of(e.pre_root)
+                 << ',' << hex_of(e.post_root) << ',' << hex_of(e.block_hash)
+                 << ',' << hex_of(e.parent_hash) << ',' << n_txs << ','
+                 << e.header.gas_used << ',' << e.witness.size() << ','
+                 << hex_of(e.namespace_anchor) << ',' << e.encrypted_leaves
+                 << ',' << intended << ',' << st.acct_leaves << ','
+                 << st.storage_leaves << ',' << st.branches << ',' << st.exts
+                 << ',' << st.digests << ',' << st.blob_bytes << ','
+                 << st.code_bytes << '\n';
+        return true;
+    };
+
+    if (want_preset) {
+        auto const distincts =
+            sweep.empty() ? std::vector<uint64_t>{wl.distinct} : sweep;
+        unsigned total = 0;
+        for (uint64_t const d : distincts) {
+            auto spec = wl;
+            spec.distinct = d;
+            spec.seed = seed;
+            monad::corpus::Workload w{spec};
+            auto const &r = w.spec();
+
+            // A sweep gets one directory per point so the manifests stay
+            // separable; a single run writes straight into --out.
+            std::string const dir =
+                sweep.empty()
+                    ? out_dir
+                    : out_dir + "/" + monad::corpus::name_of(r.preset) + "-" +
+                          monad::corpus::name_of(r.shape) + "-d" +
+                          std::to_string(r.distinct);
+            std::filesystem::create_directories(dir);
+            std::ofstream manifest{dir + "/manifest.csv"};
+            manifest << manifest_header;
+
+            std::fprintf(
+                stderr,
+                "corpus-gen: %s/%s accounts=%lu blocks=%lu distinct=%lu "
+                "chunk=%zu gas_limit=%lu\n",
+                monad::corpus::name_of(r.preset),
+                monad::corpus::name_of(r.shape),
+                static_cast<unsigned long>(r.accounts),
+                static_cast<unsigned long>(r.blocks),
+                static_cast<unsigned long>(r.distinct),
+                r.chunk,
+                static_cast<unsigned long>(r.gas_limit()));
+
+            monad::corpus::CorpusBuilder builder{
+                w.seeder(), r.chunk, r.gas_limit(), sk, salt};
+            std::fprintf(
+                stderr,
+                "corpus-gen: genesis seeded, spoke at %s\n",
+                hex_of_address(w.spoke()).c_str());
+
+            std::string const tag =
+                std::string{monad::corpus::name_of(r.preset)};
+            for (uint64_t i = 0; i < w.block_count(); ++i) {
+                auto spec_i = w.block(builder, i);
+                auto const n_txs = spec_i.txs.size();
+                auto const intended = w.last_intended_distinct();
+                auto const e = builder.add_block(std::move(spec_i));
+                if (!emit(manifest, dir, tag, e, n_txs, intended)) {
+                    return 1;
+                }
+                ++total;
+            }
+        }
+        std::fprintf(
+            stderr,
+            "corpus-gen: wrote %u witnesses to %s\n",
+            total,
+            out_dir.c_str());
+        return 0;
+    }
+
     std::filesystem::create_directories(out_dir);
     std::ofstream manifest{out_dir + "/manifest.csv"};
-    manifest << "scenario,number,pre_root,post_root,block_hash,parent_hash,"
-                "txs,gas_used,witness_bytes,anchor,leaves\n";
+    manifest << manifest_header;
 
     unsigned written = 0;
     for (auto const &s : monad::corpus::all_scenarios(seed)) {
@@ -272,30 +442,9 @@ int main(int const argc, char **const argv)
         for (auto &spec : s.blocks(builder)) {
             auto const n_txs = spec.txs.size();
             auto const e = builder.add_block(std::move(spec));
-
-            char name[128];
-            std::snprintf(
-                name,
-                sizeof(name),
-                "%s/%s-%08lu.witness",
-                out_dir.c_str(),
-                s.name.c_str(),
-                static_cast<unsigned long>(e.header.number));
-            std::ofstream f{name, std::ios::binary};
-            f.write(
-                reinterpret_cast<char const *>(e.witness.data()),
-                static_cast<std::streamsize>(e.witness.size()));
-            if (!f) {
-                std::fprintf(stderr, "corpus-gen: cannot write %s\n", name);
+            if (!emit(manifest, out_dir, s.name, e, n_txs, 0)) {
                 return 1;
             }
-
-            manifest << s.name << ',' << e.header.number << ','
-                     << hex_of(e.pre_root) << ',' << hex_of(e.post_root) << ','
-                     << hex_of(e.block_hash) << ',' << hex_of(e.parent_hash)
-                     << ',' << n_txs << ',' << e.header.gas_used << ','
-                     << e.witness.size() << ',' << hex_of(e.namespace_anchor)
-                     << ',' << e.encrypted_leaves << '\n';
             ++written;
         }
     }

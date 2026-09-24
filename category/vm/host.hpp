@@ -15,11 +15,18 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
+#include <category/vm/evm/delegation.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.hpp>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
+#include <optional>
+#include <span>
 
 namespace monad::vm
 {
@@ -56,6 +63,32 @@ namespace monad::vm
             }
 
             runtime_context_->stack_unwind();
+        }
+
+        std::optional<Address> resolve_delegation(Address const &addr) const
+        {
+            // Copy up to |code_size| bytes of the bytecode. Then test
+            // whether the code begins with the prefix 0xEF0100, if so,
+            // then drop these three bytes and interpret the remainder as
+            // the delegate address.
+            uint8_t code_buffer[evm::delegation_indicator_size + 1];
+            size_t const actual_code_size = copy_code(
+                addr, 0, code_buffer, evm::delegation_indicator_size + 1);
+
+            std::span const code{code_buffer, actual_code_size};
+
+            if (!evm::is_delegated(code)) {
+                return std::nullopt;
+            }
+
+            // Copy the delegate address from the code buffer.
+            Address designation;
+            std::ranges::copy(
+                code.subspan(
+                    evm::delegation_indicator_prefix_bytes.size(),
+                    sizeof(Address)),
+                designation.bytes);
+            return designation;
         }
 
     private:

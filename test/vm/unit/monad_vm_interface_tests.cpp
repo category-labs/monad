@@ -424,10 +424,7 @@ TEST(MonadVmInterface, execute_bytecode_raw)
     msg->gas = 10;
 
     auto rt_ctx = runtime::Context::from(
-        &host.get_interface(),
-        host.to_context(),
-        &*msg,
-        {bytecode0.data(), bytecode0.size()});
+        host, &*msg, {bytecode0.data(), bytecode0.size()});
     auto result = vm.execute_bytecode_raw<TestTraits>(
         rt_ctx, {bytecode0.data(), bytecode0.size()});
     ASSERT_EQ(result.status_code, EVMC_SUCCESS);
@@ -447,10 +444,7 @@ TEST(MonadVmInterface, execute_intercode_raw)
     msg->gas = 10;
 
     auto rt_ctx = runtime::Context::from(
-        &host.get_interface(),
-        host.to_context(),
-        &*msg,
-        {bytecode0.data(), bytecode0.size()});
+        host, &*msg, {bytecode0.data(), bytecode0.size()});
     auto result = vm.execute_intercode_raw<TestTraits>(rt_ctx, icode0);
     ASSERT_EQ(result.status_code, EVMC_SUCCESS);
     ASSERT_EQ(result.output_size, 0);
@@ -472,10 +466,7 @@ TEST(MonadVmInterface, execute_native_entrypoint_raw)
     msg->gas = 10;
 
     auto rt_ctx = runtime::Context::from(
-        &host.get_interface(),
-        host.to_context(),
-        &*msg,
-        {bytecode0.data(), bytecode0.size()});
+        host, &*msg, {bytecode0.data(), bytecode0.size()});
     auto result = vm.execute_native_entrypoint_raw<TestTraits>(rt_ctx, entry0);
     ASSERT_EQ(result.status_code, EVMC_SUCCESS);
     ASSERT_EQ(result.output_size, 0);
@@ -497,19 +488,16 @@ static void test_execute_raw(VM::Mode const mode)
 
     // First parameter is just to avoid explicitly using .template operator()
     // when the lambda gets called.
-    auto execute_raw =
-        [&]<Traits traits>(
-            traits, bytes32_t const &hash, SharedVarcode const &vcode) {
-            auto const &icode = vcode->intercode();
-            auto rt_ctx = runtime::Context::from(
-                &host.get_interface(),
-                host.to_context(),
-                &*msg,
-                icode->code_span());
-            auto result = vm.execute_raw<traits>(rt_ctx, hash, vcode);
-            ASSERT_EQ(result.status_code, EVMC_SUCCESS);
-            ASSERT_EQ(result.output_size, 0);
-        };
+    auto execute_raw = [&]<Traits traits>(
+                           traits,
+                           bytes32_t const &hash,
+                           SharedVarcode const &vcode) {
+        auto const &icode = vcode->intercode();
+        auto rt_ctx = runtime::Context::from(host, &*msg, icode->code_span());
+        auto result = vm.execute_raw<traits>(rt_ctx, hash, vcode);
+        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.output_size, 0);
+    };
 
     auto [bytecode0, hash0] = make_bytecode(0);
     auto icode0 = make_shared_intercode(bytecode0);

@@ -66,7 +66,15 @@ struct monad_statesync_client_context
     ankerl::unordered_dense::segmented_set<monad::bytes32_t> seen_code;
     Map<monad::bytes32_t, monad::byte_string> code;
     Map<monad::Address, std::optional<StateDelta>> deltas;
+    // pages whose complete contents arrived since the last commit
+    Map<monad::Address,
+        ankerl::unordered_dense::segmented_set<monad::bytes32_t>>
+        covered_pages;
+    // slot deltas applied since the last commit, not records seen: a page
+    // record counts once per slot it carried
     uint64_t n_upserts;
+    // slot deltas held between commits; must be non-zero
+    uint64_t upserts_per_commit{1 << 20};
     monad_statesync_client *sync;
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request);

@@ -99,49 +99,46 @@ namespace
         {
         }
 
-        bool account_exists(evmc::address const &) const noexcept override
+        bool account_exists(Address const &) const noexcept override
         {
             return false;
         }
 
-        evmc::bytes32 get_storage(evmc::address const &, evmc::bytes32 const &)
-            const noexcept override
+        bytes32_t
+        get_storage(Address const &, bytes32_t const &) const noexcept override
         {
-            return evmc::bytes32{};
+            return bytes32_t{};
         }
 
-        evmc_storage_status set_storage(
-            evmc::address const &, evmc::bytes32 const &,
-            evmc::bytes32 const &) noexcept override
+        monad_storage_status set_storage(
+            Address const &, bytes32_t const &,
+            bytes32_t const &) noexcept override
         {
-            return evmc_storage_status{};
+            return monad_storage_status{};
         }
 
-        evmc::uint256be
-        get_balance(evmc::address const &) const noexcept override
+        bytes32_t get_balance(Address const &) const noexcept override
         {
-            return evmc::uint256be{};
+            return bytes32_t{};
         }
 
-        size_t get_code_size(evmc::address const &) const noexcept override
-        {
-            return 0;
-        }
-
-        evmc::bytes32
-        get_code_hash(evmc::address const &) const noexcept override
-        {
-            return evmc::bytes32{};
-        }
-
-        size_t copy_code(evmc::address const &, size_t, uint8_t *, size_t)
-            const noexcept override
+        size_t get_code_size(Address const &) const noexcept override
         {
             return 0;
         }
 
-        bool selfdestruct(
-            evmc::address const &, evmc::address const &) noexcept override
+        bytes32_t get_code_hash(Address const &) const noexcept override
+        {
+            return bytes32_t{};
+        }
+
+        size_t copy_code(
+            Address const &, size_t, uint8_t *, size_t) const noexcept override
+        {
+            return 0;
+        }
+
+        bool selfdestruct(Address const &, Address const &) noexcept override
         {
             return false;
         }
@@ -165,45 +162,43 @@ namespace
             return &tx_context_;
         }
 
-        evmc::bytes32 get_block_hash(int64_t) const noexcept override
+        bytes32_t get_block_hash(int64_t) const noexcept override
         {
-            return evmc::bytes32{};
+            return bytes32_t{};
         }
 
         void emit_log(
-            evmc::address const &, uint8_t const *, size_t,
-            evmc::bytes32 const *, size_t) noexcept override
+            Address const &, uint8_t const *, size_t, bytes32_t const *,
+            size_t) noexcept override
         {
         }
 
-        evmc_access_status
-        access_account(evmc::address const &) noexcept override
+        monad_access_status access_account(Address const &) noexcept override
         {
-            return evmc_access_status{};
+            return monad_access_status{};
         }
 
-        evmc_access_status access_storage(
-            evmc::address const &, evmc::bytes32 const &) noexcept override
+        monad_access_status
+        access_storage(Address const &, bytes32_t const &) noexcept override
         {
-            return evmc_access_status{};
+            return monad_access_status{};
         }
 
-        evmc::bytes32 get_transient_storage(
-            evmc::address const &,
-            evmc::bytes32 const &) const noexcept override
+        bytes32_t get_transient_storage(
+            Address const &, bytes32_t const &) const noexcept override
         {
-            return evmc::bytes32{};
+            return bytes32_t{};
         }
 
         void set_transient_storage(
-            evmc::address const &, evmc::bytes32 const &,
-            evmc::bytes32 const &) noexcept override
+            Address const &, bytes32_t const &,
+            bytes32_t const &) noexcept override
         {
         }
 
-        evmc_page_storage_status update_page(
-            evmc::address const &, evmc::bytes32 const &,
-            evmc_storage_status) noexcept override
+        monad_page_storage_status update_page(
+            Address const &, bytes32_t const &,
+            monad_storage_status) noexcept override
         {
             return {};
         }

@@ -23,6 +23,7 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/ir/x86/virtual_stack.hpp>
 #include <category/vm/compiler/types.hpp>
+#include <category/vm/evm/tx_context.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/math.hpp>
 #include <category/vm/runtime/math/intrinsics.hpp>
@@ -38,8 +39,6 @@
 #include <asmjit/core/jitruntime.h>
 #include <asmjit/core/operand.h>
 #include <asmjit/x86/x86operand.h>
-
-#include <evmc/evmc.h>
 
 #include <algorithm>
 #include <array>
@@ -3091,64 +3090,61 @@ namespace monad::vm::compiler::native
     // No discharge
     void Emitter::origin()
     {
-        read_evmc_tx_context_address(offsetof(evmc_tx_context, tx_origin));
+        read_tx_context_address(offsetof(TxContext, tx_origin));
     }
 
     // No discharge
     void Emitter::gasprice()
     {
-        read_evmc_tx_context_word(offsetof(evmc_tx_context, tx_gas_price));
+        read_tx_context_word(offsetof(TxContext, tx_gas_price));
     }
 
     // No discharge
     void Emitter::gaslimit()
     {
-        read_evmc_tx_context_uint64_to_word(
-            offsetof(evmc_tx_context, block_gas_limit));
+        read_tx_context_uint64_to_word(offsetof(TxContext, block_gas_limit));
     }
 
     // No discharge
     void Emitter::coinbase()
     {
-        read_evmc_tx_context_address(offsetof(evmc_tx_context, block_coinbase));
+        read_tx_context_address(offsetof(TxContext, block_coinbase));
     }
 
     // No discharge
     void Emitter::timestamp()
     {
-        read_evmc_tx_context_uint64_to_word(
-            offsetof(evmc_tx_context, block_timestamp));
+        read_tx_context_uint64_to_word(offsetof(TxContext, block_timestamp));
     }
 
     // No discharge
     void Emitter::number()
     {
-        read_evmc_tx_context_uint64_to_word(
-            offsetof(evmc_tx_context, block_number));
+        read_tx_context_uint64_to_word(offsetof(TxContext, block_number));
     }
 
     // No discharge
     void Emitter::prevrandao()
     {
-        read_evmc_tx_context_word(offsetof(evmc_tx_context, block_prev_randao));
+        read_tx_context_word(offsetof(TxContext, block_prev_randao));
     }
 
     // No discharge
     void Emitter::chainid()
     {
-        read_evmc_tx_context_word(offsetof(evmc_tx_context, chain_id));
+        read_tx_context_word(offsetof(TxContext, chain_id));
     }
 
     // No discharge
     void Emitter::basefee()
     {
-        read_evmc_tx_context_word(offsetof(evmc_tx_context, block_base_fee));
+        read_tx_context_word(offsetof(TxContext, block_base_fee));
     }
 
     // No discharge
     void Emitter::blobbasefee()
     {
-        read_evmc_tx_context_word(offsetof(evmc_tx_context, blob_base_fee));
+        read_tx_context_word(offsetof(TxContext, blob_base_fee));
     }
 
     // Discharge
@@ -3834,7 +3830,7 @@ namespace monad::vm::compiler::native
         stack_.push(std::move(dst));
     }
 
-    void Emitter::read_evmc_tx_context_address(int32_t const offset)
+    void Emitter::read_tx_context_address(int32_t const offset)
     {
         auto [dst, _] = alloc_general_reg();
         Gpq256 const &gpq = general_reg_to_gpq256(*dst->general_reg());
@@ -3864,7 +3860,7 @@ namespace monad::vm::compiler::native
         stack_.push(read_mem_be(x86::qword_ptr(reg_context, offset)));
     }
 
-    void Emitter::read_evmc_tx_context_word(int32_t const offset)
+    void Emitter::read_tx_context_word(int32_t const offset)
     {
         as_.mov(
             x86::rax,
@@ -3891,7 +3887,7 @@ namespace monad::vm::compiler::native
         stack_.push(std::move(dst));
     }
 
-    void Emitter::read_evmc_tx_context_uint64_to_word(int32_t const offset)
+    void Emitter::read_tx_context_uint64_to_word(int32_t const offset)
     {
         auto [dst, _] = alloc_general_reg();
         Gpq256 const &gpq = general_reg_to_gpq256(*dst->general_reg());

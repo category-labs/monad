@@ -31,7 +31,7 @@
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
-evmc_tx_context get_tx_context(
+vm::TxContext get_tx_context(
     Transaction const &tx, Address const &sender, BlockHeader const &hdr,
     uint256_t const &chain_id, BlobSchedule const &blob_schedule)
 {

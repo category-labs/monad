@@ -46,7 +46,7 @@ namespace monad::vm::test
         std::array<std::uint8_t, 128> call_data_;
         std::array<std::uint8_t, 128> call_return_data_;
 
-        std::array<evmc_bytes32, 2> blob_hashes_;
+        std::array<bytes32_t, 2> blob_hashes_;
         MockedHost host_;
         TestContext test_ctx_;
         vm::runtime::Context &ctx_;

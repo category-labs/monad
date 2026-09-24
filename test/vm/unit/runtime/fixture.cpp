@@ -42,10 +42,9 @@ namespace monad::vm::test
 {
     namespace
     {
-        void
-        init_host(MockedHost &host, std::array<evmc_bytes32, 2> &blob_hashes_)
+        void init_host(MockedHost &host, std::array<bytes32_t, 2> &blob_hashes_)
         {
-            host.tx_context = evmc_tx_context{
+            host.tx_context = TxContext{
                 .tx_gas_price = store_be_as<bytes32_t>(uint256_t{56762}),
                 .tx_origin = 0x000000000000000000000000000000005CA1AB1E_address,
                 .block_coinbase =

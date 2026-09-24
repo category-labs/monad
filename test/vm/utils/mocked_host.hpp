@@ -122,7 +122,7 @@ namespace monad::vm::test
 
     public:
         std::unordered_map<Address, MockedAccount> accounts;
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         bytes32_t block_hash;
         evmc_result call_result{};
         mutable std::vector<int64_t> recorded_blockhashes;
@@ -257,7 +257,7 @@ namespace monad::vm::test
             return evmc::Result{call_result};
         }
 
-        evmc_tx_context const *get_tx_context() const noexcept override
+        TxContext const *get_tx_context() const noexcept override
         {
             return &tx_context;
         }

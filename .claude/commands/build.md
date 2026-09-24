@@ -33,7 +33,7 @@ You are helping the user configure and build the monad C++ project located at $C
 | `category/core/toolchains/gcc-avx512.cmake` | `-march=skylake-avx512`. Works with both GCC and Clang. |
 | `category/core/toolchains/gcc-asan.cmake` | ASAN + UBSAN (includes `-march=haswell`). **GCC only — do not use with Clang** (use `clang-fuzz.cmake` instead). |
 | `category/core/toolchains/gcc-tsan.cmake` | TSAN (includes `-march=haswell`). **GCC only.** |
-| `category/core/toolchains/clang-tsan.cmake` | TSAN (includes `-march=haswell`). **Clang only.** Note: currently hard-codes a `-fsanitize-blacklist` path that may not exist on all machines. |
+| `category/core/toolchains/clang-tsan.cmake` | TSAN (includes `-march=haswell`). **Clang only.** |
 | `category/core/toolchains/clang-fuzz.cmake` | ASAN + UBSAN + fuzzing coverage instrumentation. **Clang only.** Note: includes fuzzing flags (`-fsanitize-coverage`, `-DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION`), so this is more than plain ASAN. There is no plain Clang ASAN toolchain — warn the user about the extra flags if they just asked for `--asan --clang`. |
 
 ### CMake options available

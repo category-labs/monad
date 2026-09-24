@@ -152,6 +152,11 @@ namespace monad::vm
     public:
         explicit VM(Mode mode = Dual);
 
+        Mode mode() const
+        {
+            return mode_;
+        }
+
         std::optional<SharedVarcode> find_varcode(bytes32_t const &code_hash)
         {
             return compiler_.find_varcode(code_hash);

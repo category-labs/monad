@@ -276,8 +276,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
 
     if constexpr (traits::eip_7702_active()) {
         if (tx_.to.has_value()) {
-            if (auto const delegate = vm::evm::resolve_delegation(
-                    &host.get_interface(), host.to_context(), *tx_.to)) {
+            if (auto const delegate = host.resolve_delegation(*tx_.to)) {
                 msg.code_address = *delegate;
                 msg.flags |= EVMC_DELEGATED;
                 state.access_account(*delegate);

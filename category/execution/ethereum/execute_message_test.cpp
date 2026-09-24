@@ -36,7 +36,6 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/code.hpp>
-#include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -1471,17 +1470,13 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
         0,
         chain_ctx};
 
-    auto const d1 = vm::evm::resolve_delegation(
-        &h.get_interface(), h.to_context(), falsely_delegated_1);
+    auto const d1 = h.resolve_delegation(falsely_delegated_1);
     EXPECT_FALSE(d1.has_value());
-    auto const d2 = vm::evm::resolve_delegation(
-        &h.get_interface(), h.to_context(), falsely_delegated_2);
+    auto const d2 = h.resolve_delegation(falsely_delegated_2);
     EXPECT_FALSE(d2.has_value());
-    auto const d3 = vm::evm::resolve_delegation(
-        &h.get_interface(), h.to_context(), falsely_delegated_3);
+    auto const d3 = h.resolve_delegation(falsely_delegated_3);
     EXPECT_FALSE(d3.has_value());
-    auto const d4 = vm::evm::resolve_delegation(
-        &h.get_interface(), h.to_context(), correctly_delegated);
+    auto const d4 = h.resolve_delegation(correctly_delegated);
     EXPECT_TRUE(d4.has_value());
     EXPECT_EQ(d4.value(), falsely_delegated_3);
 }

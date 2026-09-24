@@ -48,6 +48,8 @@ namespace monad::vm::interpreter
             return;
         }
 
+        ctx.check_deadline();
+
         auto const stack_size = stack_top - stack_bottom;
         MONAD_DEBUG_ASSERT(stack_size <= 1024);
 

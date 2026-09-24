@@ -25,7 +25,6 @@
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <span>
 
@@ -34,7 +33,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     void log_impl(
         Context *ctx, uint256_t const &offset_word, uint256_t const &size_word,
-        std::span<evmc::bytes32 const> topics)
+        std::span<bytes32_t const> topics)
     {
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
@@ -78,7 +77,7 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic1_ptr)),
+                store_be_as<bytes32_t>(*topic1_ptr),
             }});
     }
 
@@ -94,8 +93,8 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic1_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic2_ptr)),
+                store_be_as<bytes32_t>(*topic1_ptr),
+                store_be_as<bytes32_t>(*topic2_ptr),
             }});
     }
 
@@ -112,9 +111,9 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic1_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic2_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic3_ptr)),
+                store_be_as<bytes32_t>(*topic1_ptr),
+                store_be_as<bytes32_t>(*topic2_ptr),
+                store_be_as<bytes32_t>(*topic3_ptr),
             }});
     }
 
@@ -131,10 +130,10 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic1_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic2_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic3_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic4_ptr)),
+                store_be_as<bytes32_t>(*topic1_ptr),
+                store_be_as<bytes32_t>(*topic2_ptr),
+                store_be_as<bytes32_t>(*topic3_ptr),
+                store_be_as<bytes32_t>(*topic4_ptr),
             }});
     }
 

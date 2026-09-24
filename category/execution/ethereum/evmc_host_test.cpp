@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/vm/evm/access_status.h>
 #include <category/vm/vm.hpp>
 
 #include <monad/test/traits_test.hpp>
@@ -145,7 +146,7 @@ TYPED_TEST(TraitsTest, emit_log)
         0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32};
     static constexpr auto topic1{
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
-    static constexpr evmc::bytes32 topics[] = {topic0, topic1};
+    static constexpr bytes32_t topics[] = {topic0, topic1};
     static byte_string const data = {0x00, 0x01, 0x02, 0x03, 0x04};
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -209,8 +210,8 @@ TYPED_TEST(TraitsTest, access_precompile)
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),
-        EVMC_ACCESS_WARM);
+        MONAD_ACCESS_WARM);
     EXPECT_EQ(
         host.access_account(0x5353535353535353535353535353535353535353_address),
-        EVMC_ACCESS_COLD);
+        MONAD_ACCESS_COLD);
 }

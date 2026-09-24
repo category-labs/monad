@@ -218,7 +218,9 @@ class State
     //
     // An increasing epoch tracks dirty-set registration: version_ alone
     // cannot distinguish successive frames at the same depth.
-    Address memo_addr_{};
+    //
+    // Align the cached address for the lookup's 64-bit loads.
+    alignas(8) Address memo_addr_{};
     AccountState *memo_val_{nullptr};
     std::uint64_t memo_epoch_{0};
     std::uint64_t frame_epoch_{1};

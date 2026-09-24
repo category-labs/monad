@@ -75,9 +75,10 @@ ARG CMAKE_BUILD_TYPE
 ARG TOOLCHAIN
 
 RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CMAKE_TOOLCHAIN_FILE=category/core/toolchains/${TOOLCHAIN:?}.cmake ./scripts/configure.sh
-RUN cd src && cmake build -DMONAD_COMPILER_TESTING=On
+RUN cd src && cmake build -DMONAD_COMPILER_TESTING=On -DMONAD_COMPILER_BENCHMARKS=On
 
 RUN cd src && ./scripts/vm/build-tests.sh
+RUN cd src && cmake --build build -t execution-benchmarks vm-micro-benchmarks compile-benchmarks mce
 RUN cd src && ./scripts/vm/test.sh
 
 FROM base_rust AS build_and_test_rust

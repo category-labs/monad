@@ -39,6 +39,7 @@
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/status_code.h>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/vm.hpp>
@@ -117,7 +118,7 @@ TEST(CallFrame, to_json)
 
 TEST(CallTrace, enter_and_exit)
 {
-    evmc_message msg{.input_data = input};
+    vm::Message msg{.input_data = input};
     evmc::Result res{};
     res.output_data = output;
 
@@ -162,7 +163,7 @@ TEST(CallTrace, size_limit_is_checked_explicitly)
     Transaction const tx{};
     std::vector<CallFrame> frames;
     CallTracer tracer{tx, frames, 0};
-    evmc_message const msg{};
+    vm::Message const msg{};
 
     EXPECT_NO_THROW(tracer.on_enter(msg));
     EXPECT_NO_THROW(tracer.on_exit(evmc::Result{EVMC_SUCCESS, 0, 0}));
@@ -176,7 +177,7 @@ TEST(CallTrace, size_limit_is_checked_explicitly)
 
 TEST(CallTrace, frame_size_limit_throws_on_check)
 {
-    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    vm::Message msg{.input_data = input, .input_size = sizeof(input)};
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
@@ -193,7 +194,7 @@ TEST(CallTrace, frame_size_limit_throws_on_check)
 
 TEST(CallTrace, zero_size_limit_throws_on_check)
 {
-    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    vm::Message msg{.input_data = input, .input_size = sizeof(input)};
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames, 0};
@@ -207,7 +208,7 @@ TEST(CallTrace, zero_size_limit_throws_on_check)
 
 TEST(CallTrace, output_size_limit_throws_on_check)
 {
-    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    vm::Message msg{.input_data = input, .input_size = sizeof(input)};
     evmc::Result res{};
     res.status_code = EVMC_SUCCESS;
     res.gas_left = 9'000;
@@ -228,7 +229,7 @@ TEST(CallTrace, output_size_limit_throws_on_check)
 
 TEST(CallTrace, log_size_limit_throws_on_check)
 {
-    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    vm::Message msg{.input_data = input, .input_size = sizeof(input)};
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
@@ -244,7 +245,7 @@ TEST(CallTrace, log_size_limit_throws_on_check)
 
 TEST(CallTrace, self_destruct_size_limit_throws_on_check)
 {
-    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    vm::Message msg{.input_data = input, .input_size = sizeof(input)};
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
@@ -258,7 +259,7 @@ TEST(CallTrace, self_destruct_size_limit_throws_on_check)
 
 TEST(CallTrace, callbacks_after_size_limit_exceeded_are_ignored)
 {
-    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    vm::Message msg{.input_data = input, .input_size = sizeof(input)};
     evmc::Result res{};
     res.status_code = EVMC_SUCCESS;
 
@@ -284,7 +285,7 @@ TEST(CallTrace, callbacks_after_size_limit_exceeded_are_ignored)
 
 TEST(CallTrace, reset_clears_size_limit_exceeded)
 {
-    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    vm::Message msg{.input_data = input, .input_size = sizeof(input)};
     evmc::Result res{};
     res.status_code = EVMC_SUCCESS;
     res.gas_left = 9'000;
@@ -315,7 +316,7 @@ TEST(CallTrace, reset_clears_size_limit_exceeded)
 
 TEST(CallTrace, exact_size_limit_succeeds)
 {
-    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    vm::Message msg{.input_data = input, .input_size = sizeof(input)};
     evmc::Result res{};
     res.status_code = EVMC_SUCCESS;
     res.gas_left = 9'000;
@@ -337,7 +338,7 @@ TEST(CallTrace, exact_size_limit_succeeds)
 
 TEST(CallTrace, one_byte_over_size_limit_is_rejected)
 {
-    evmc_message const msg{.input_data = input, .input_size = sizeof(input)};
+    vm::Message const msg{.input_data = input, .input_size = sizeof(input)};
     evmc::Result res{};
     res.status_code = EVMC_SUCCESS;
     res.gas_left = 9'000;
@@ -360,7 +361,7 @@ TEST(CallTrace, one_byte_over_size_limit_is_rejected)
 
 TEST(CallTrace, input_size_overflow_is_rejected)
 {
-    evmc_message const msg{.input_size = std::numeric_limits<size_t>::max()};
+    vm::Message const msg{.input_size = std::numeric_limits<size_t>::max()};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
 
@@ -373,7 +374,7 @@ TEST(CallTrace, input_size_overflow_is_rejected)
 
 TEST(CallTrace, output_size_overflow_is_rejected)
 {
-    evmc_message const msg{};
+    vm::Message const msg{};
     evmc::Result res{};
     res.status_code = EVMC_SUCCESS;
     res.output_size = std::numeric_limits<size_t>::max();
@@ -391,7 +392,7 @@ TEST(CallTrace, output_size_overflow_is_rejected)
 
 TEST(CallTrace, exact_log_size_limit_succeeds)
 {
-    evmc_message const msg{};
+    vm::Message const msg{};
     evmc::Result res{};
     res.status_code = EVMC_SUCCESS;
     res.gas_left = 9'000;
@@ -420,7 +421,7 @@ TEST(CallTrace, exact_log_size_limit_succeeds)
 
 TEST(CallTrace, json_output_has_empty_calls_without_nested_frames)
 {
-    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    vm::Message msg{.input_data = input, .input_size = sizeof(input)};
     evmc::Result res{};
     res.status_code = EVMC_SUCCESS;
     res.gas_left = 9'000;

@@ -77,7 +77,7 @@ namespace monad::vm::test
             x.gas_remaining = std::numeric_limits<std::int64_t>::max(),
             x.gas_refund = 0,
             x.env = {
-                .evmc_flags = 0,
+                .flags = 0,
                 .depth = 0,
                 .recipient = 0x0000000000000000000000000000000000000001_address,
                 .sender = 0x0000000000000000000000000000000000000002_address,

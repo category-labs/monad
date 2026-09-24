@@ -45,6 +45,7 @@
 #include <category/mpt/traverse_util.hpp>
 #include <category/mpt/util.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/status_code.h>
 #include <category/vm/vm.hpp>
@@ -93,7 +94,7 @@ namespace
         {
         }
 
-        void on_enter(evmc_message const &) override {}
+        void on_enter(vm::Message const &) override {}
 
         void on_exit(evmc::Result const &) override {}
 

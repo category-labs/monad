@@ -21,12 +21,13 @@
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 template <Traits traits, typename Contract, Address contract_address>
 std::optional<evmc::Result> check_call_monad_precompile(
-    State &state, CallTracerBase &call_tracer, evmc_message const &msg,
+    State &state, CallTracerBase &call_tracer, vm::Message const &msg,
     bool const log_native_transfers)
 {
 
@@ -34,7 +35,7 @@ std::optional<evmc::Result> check_call_monad_precompile(
         return std::nullopt;
     }
 
-    if (MONAD_UNLIKELY(msg.kind != EVMC_CALL) || (msg.flags != 0)) {
+    if (MONAD_UNLIKELY(msg.kind != vm::CallKind::Call) || (msg.flags != 0)) {
         return evmc::Result{evmc_status_code::EVMC_REJECTED};
     }
 
@@ -84,7 +85,7 @@ EXPLICIT_MONAD_TRAITS(is_precompile);
 
 template <Traits traits>
 std::optional<evmc::Result> check_call_precompile(
-    State &state, CallTracerBase &call_tracer, evmc_message const &msg,
+    State &state, CallTracerBase &call_tracer, vm::Message const &msg,
     bool const log_native_transfers)
 {
     if (auto maybe_result = check_call_eth_precompile<traits>(msg)) {

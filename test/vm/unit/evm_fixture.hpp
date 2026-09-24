@@ -18,6 +18,7 @@
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
@@ -36,6 +37,7 @@
 
 #include <gtest/gtest.h>
 
+#include <bit>
 #include <cstdint>
 #include <filesystem>
 #include <span>
@@ -95,7 +97,7 @@ namespace monad::vm::test
         monad::vm::VM vm_{};
 
         TestMessage test_msg_;
-        evmc_message &msg_{*test_msg_};
+        Message &msg_{*test_msg_};
 
         MockedHost host_;
 
@@ -158,7 +160,7 @@ namespace monad::vm::test
                     host.get_interface(),
                     host.to_context(),
                     to_evmc_revision(TraitsTest<T>::Trait::evm_rev()),
-                    msg_,
+                    std::bit_cast<evmc_message>(msg_),
                     code.data(),
                     code.size());
             }

@@ -21,6 +21,7 @@
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
@@ -88,7 +89,7 @@ namespace monad::vm::runtime
     }
 
     Context Context::from(
-        Host &host, evmc_message const *const msg,
+        Host &host, Message const *const msg,
         std::span<uint8_t const> const code) noexcept
     {
         return Context{
@@ -97,12 +98,12 @@ namespace monad::vm::runtime
             .gas_refund = 0,
             .env =
                 {
-                    .evmc_flags = msg->flags,
+                    .flags = msg->flags,
                     .depth = msg->depth,
                     .recipient = msg->recipient,
                     .sender = msg->sender,
-                    .value = static_cast<bytes32_t>(msg->value),
-                    .create2_salt = static_cast<bytes32_t>(msg->create2_salt),
+                    .value = msg->value,
+                    .create2_salt = msg->create2_salt,
                     .input_data = msg->input_data,
                     .code = code.data(),
                     .return_data = {},
@@ -126,7 +127,7 @@ namespace monad::vm::runtime
             .gas_refund = 0,
             .env =
                 {
-                    .evmc_flags = 0,
+                    .flags = 0,
                     .depth = 0,
                     .recipient = Address{},
                     .sender = Address{},

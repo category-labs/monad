@@ -506,6 +506,7 @@ TEST_F(EventRecorderDefaultFixture, CxxInterface)
         recorder.reserve_event<monad_test_event_vlt>(
             MONAD_TEST_EVENT_VLT,
             as_bytes(std::span{VLT_ARRAY_1}).subspan(0),
+            std::span<std::byte const>{},
             as_bytes(std::span{VLT_ARRAY_2}).subspan(0));
     ASSERT_NE(vlt_event.event, nullptr);
     ASSERT_NE(vlt_event.payload, nullptr);
@@ -558,6 +559,7 @@ TEST_F(EventRecorderDefaultFixture, CxxOverflowError)
     ReservedEvent const vlt_event =
         recorder.reserve_event<monad_test_event_vlt>(
             MONAD_TEST_EVENT_VLT,
+            std::span<std::byte const>{},
             std::as_bytes(std::span{truncated}),
             std::span{
                 reinterpret_cast<std::byte const *>(truncated.data()),

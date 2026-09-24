@@ -38,6 +38,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/tx_context.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/vm.hpp>
 
@@ -121,7 +122,7 @@ namespace
 
             Transaction const tx{};
             BlockHeader const header{.number = 1};
-            evmc_tx_context const tx_context = get_tx_context<Trait>(
+            vm::TxContext const tx_context = get_tx_context<Trait>(
                 tx,
                 sender,
                 header,

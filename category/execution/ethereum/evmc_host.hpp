@@ -54,7 +54,7 @@ class EvmcHostBase : public vm::Host
     BlockHashBuffer const &block_hash_buffer_;
 
 protected:
-    evmc_tx_context const &tx_context_;
+    vm::TxContext const &tx_context_;
     State &state_;
     CallTracerBase &call_tracer_;
 
@@ -63,7 +63,7 @@ public:
     trace::StateTracer &state_tracer_;
 
     EvmcHostBase(
-        CallTracerBase &, trace::StateTracer &, evmc_tx_context const &,
+        CallTracerBase &, trace::StateTracer &, vm::TxContext const &,
         BlockHashBuffer const &, State &, bool log_native_transfers) noexcept;
 
     virtual ~EvmcHostBase() noexcept = default;
@@ -84,7 +84,7 @@ public:
         Address const &, size_t offset, uint8_t *data,
         size_t size) const override;
 
-    virtual evmc_tx_context const *get_tx_context() const noexcept override;
+    virtual vm::TxContext const *get_tx_context() const noexcept override;
 
     virtual bytes32_t get_block_hash(int64_t) const override;
 
@@ -112,7 +112,7 @@ struct EvmcHost final : public EvmcHostBase
 
     EvmcHost(
         CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
-        evmc_tx_context const &tx_context,
+        vm::TxContext const &tx_context,
         BlockHashBuffer const &block_hash_buffer, State &state,
         Transaction const &tx, std::optional<uint256_t> const base_fee_per_gas,
         uint64_t const i, ChainContext<traits> const &chain_ctx,
@@ -126,7 +126,7 @@ struct EvmcHost final : public EvmcHostBase
     }
 
     EvmcHost(
-        CallTracerBase &, trace::StateTracer &, evmc_tx_context const &,
+        CallTracerBase &, trace::StateTracer &, vm::TxContext const &,
         BlockHashBuffer const &, State &, Transaction const &,
         std::optional<uint256_t>, uint64_t, ChainContext<traits> const &&,
         bool = false) = delete;

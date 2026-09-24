@@ -28,8 +28,6 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 
-#include <evmc/evmc.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <utility>
@@ -38,7 +36,7 @@ MONAD_NAMESPACE_BEGIN
 
 EvmcHostBase::EvmcHostBase(
     CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
-    evmc_tx_context const &tx_context, BlockHashBuffer const &block_hash_buffer,
+    vm::TxContext const &tx_context, BlockHashBuffer const &block_hash_buffer,
     State &state, bool const log_native_transfers) noexcept
     : block_hash_buffer_{block_hash_buffer}
     , tx_context_{tx_context}
@@ -154,7 +152,7 @@ size_t EvmcHostBase::copy_code(
     stack_unwind();
 }
 
-evmc_tx_context const *EvmcHostBase::get_tx_context() const noexcept
+vm::TxContext const *EvmcHostBase::get_tx_context() const noexcept
 {
     return &tx_context_;
 }

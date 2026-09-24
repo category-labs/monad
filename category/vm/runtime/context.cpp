@@ -22,6 +22,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -87,13 +88,11 @@ namespace monad::vm::runtime
     }
 
     Context Context::from(
-        evmc_host_interface const *const host, evmc_host_context *const context,
-        evmc_message const *const msg,
+        Host &host, evmc_message const *const msg,
         std::span<uint8_t const> const code) noexcept
     {
         return Context{
-            .host = host,
-            .context = context,
+            .host = &host,
             .gas_remaining = msg->gas,
             .gas_refund = 0,
             .env =
@@ -110,7 +109,7 @@ namespace monad::vm::runtime
                     .input_data_size = static_cast<uint32_t>(msg->input_size),
                     .code_size = static_cast<uint32_t>(code.size()),
                     .return_data_size = 0,
-                    .tx_context = host->get_tx_context(context),
+                    .tx_context = host.get_tx_context(),
                 },
             .result = {},
             .memory =
@@ -123,7 +122,6 @@ namespace monad::vm::runtime
     {
         return Context{
             .host = nullptr,
-            .context = nullptr,
             .gas_remaining = 0,
             .gas_refund = 0,
             .env =

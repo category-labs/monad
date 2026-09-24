@@ -17,8 +17,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
-
-#include <evmc/evmc.h>
+#include <category/vm/host.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -30,6 +29,5 @@ namespace monad::vm::evm
 
     bool is_delegated(std::span<uint8_t const> code);
 
-    std::optional<Address> resolve_delegation(
-        evmc_host_interface const *, evmc_host_context *, Address const &);
+    std::optional<Address> resolve_delegation(Host const &, Address const &);
 }

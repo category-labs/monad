@@ -51,6 +51,8 @@ namespace trace
         {
         }
 
+        PrestateTracer(nlohmann::json &, Address const &&) = delete;
+
         void encode(Map<Address, OriginalAccountState> const &, State &);
 
     private:

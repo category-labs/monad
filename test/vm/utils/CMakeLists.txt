@@ -18,6 +18,7 @@ add_library(monad-vm-test-utils OBJECT)
 target_sources(monad-vm-test-utils PRIVATE
     "benchmark_vm.hpp"
     "evm-as_utils.hpp"
+    "evmc_host_adapter.hpp"
     "mocked_host.hpp"
     "test_context.hpp"
     "test_host.hpp"

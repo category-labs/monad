@@ -15,21 +15,75 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
+#include <category/core/bytes.hpp>
+#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/page_storage_status.h>
+#include <category/vm/evm/storage_status.h>
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.hpp>
 
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 
 namespace monad::vm
 {
     class VM;
 
-    class Host : public evmc::Host
+    class Host
     {
         friend class VM;
 
     public:
+        virtual ~Host() = default;
+
+        virtual bool account_exists(Address const &) const = 0;
+
+        virtual bytes32_t
+        get_storage(Address const &, bytes32_t const &key) const = 0;
+
+        virtual monad_storage_status set_storage(
+            Address const &, bytes32_t const &key, bytes32_t const &value) = 0;
+
+        virtual bytes32_t get_balance(Address const &) const = 0;
+
+        virtual size_t get_code_size(Address const &) const = 0;
+
+        virtual bytes32_t get_code_hash(Address const &) const = 0;
+
+        virtual size_t copy_code(
+            Address const &, size_t code_offset, uint8_t *buffer_data,
+            size_t buffer_size) const = 0;
+
+        virtual bool
+        selfdestruct(Address const &, Address const &beneficiary) = 0;
+
+        virtual evmc::Result call(evmc_message const &) = 0;
+
+        virtual evmc_tx_context const *get_tx_context() const = 0;
+
+        virtual bytes32_t get_block_hash(int64_t block_number) const = 0;
+
+        virtual void emit_log(
+            Address const &, uint8_t const *data, size_t data_size,
+            bytes32_t const topics[], size_t num_topics) = 0;
+
+        virtual monad_access_status access_account(Address const &) = 0;
+
+        virtual monad_access_status
+        access_storage(Address const &, bytes32_t const &key) = 0;
+
+        virtual bytes32_t
+        get_transient_storage(Address const &, bytes32_t const &key) const = 0;
+
+        virtual void set_transient_storage(
+            Address const &, bytes32_t const &key, bytes32_t const &value) = 0;
+
+        virtual monad_page_storage_status update_page(
+            Address const &, bytes32_t const &key, monad_storage_status) = 0;
+
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.
         void capture_current_exception() const noexcept

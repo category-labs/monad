@@ -70,41 +70,35 @@ public:
 
     virtual ~EvmcHostBase() noexcept = default;
 
-    virtual evmc::bytes32 get_storage(
-        evmc::address const &,
-        evmc::bytes32 const &key) const noexcept override;
+    virtual bytes32_t
+    get_storage(Address const &, bytes32_t const &key) const override;
 
-    virtual evmc_storage_status set_storage(
-        evmc::address const &, evmc::bytes32 const &key,
-        evmc::bytes32 const &value) noexcept override;
+    virtual monad_storage_status set_storage(
+        Address const &, bytes32_t const &key, bytes32_t const &value) override;
 
-    virtual evmc::uint256be
-    get_balance(evmc::address const &) const noexcept override;
+    virtual bytes32_t get_balance(Address const &) const override;
 
-    virtual size_t get_code_size(evmc::address const &) const noexcept override;
+    virtual size_t get_code_size(Address const &) const override;
 
-    virtual evmc::bytes32
-    get_code_hash(evmc::address const &) const noexcept override;
+    virtual bytes32_t get_code_hash(Address const &) const override;
 
     virtual size_t copy_code(
-        evmc::address const &, size_t offset, uint8_t *data,
-        size_t size) const noexcept override;
+        Address const &, size_t offset, uint8_t *data,
+        size_t size) const override;
 
     virtual evmc_tx_context const *get_tx_context() const noexcept override;
 
-    virtual evmc::bytes32 get_block_hash(int64_t) const noexcept override;
+    virtual bytes32_t get_block_hash(int64_t) const override;
 
     virtual void emit_log(
-        evmc::address const &, uint8_t const *data, size_t data_size,
-        evmc::bytes32 const topics[], size_t num_topics) noexcept override;
+        Address const &, uint8_t const *data, size_t data_size,
+        bytes32_t const topics[], size_t num_topics) override;
 
-    virtual evmc::bytes32 get_transient_storage(
-        evmc::address const &,
-        evmc::bytes32 const &key) const noexcept override;
+    virtual bytes32_t
+    get_transient_storage(Address const &, bytes32_t const &key) const override;
 
     virtual void set_transient_storage(
-        evmc::address const &, evmc::bytes32 const &key,
-        evmc::bytes32 const &value) noexcept override;
+        Address const &, bytes32_t const &key, bytes32_t const &value) override;
 };
 
 static_assert(sizeof(EvmcHostBase) == 72);
@@ -133,8 +127,7 @@ struct EvmcHost final : public EvmcHostBase
     {
     }
 
-    virtual bool
-    account_exists(evmc::address const &address) const noexcept override
+    virtual bool account_exists(Address const &address) const override
     {
         static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
@@ -149,9 +142,8 @@ struct EvmcHost final : public EvmcHostBase
         stack_unwind();
     }
 
-    virtual bool selfdestruct(
-        evmc::address const &address,
-        evmc::address const &beneficiary) noexcept override
+    virtual bool
+    selfdestruct(Address const &address, Address const &beneficiary) override
     {
         MONAD_TRY
         {
@@ -173,7 +165,7 @@ struct EvmcHost final : public EvmcHostBase
         stack_unwind();
     }
 
-    virtual evmc::Result call(evmc_message const &msg) noexcept override
+    virtual evmc::Result call(evmc_message const &msg) override
     {
         MONAD_TRY
         {
@@ -202,15 +194,14 @@ struct EvmcHost final : public EvmcHostBase
         stack_unwind();
     }
 
-    virtual evmc_access_status
-    access_account(evmc::address const &address) noexcept override
+    virtual monad_access_status access_account(Address const &address) override
     {
         MONAD_TRY
         {
             if (is_precompile<traits>(address)) {
-                return EVMC_ACCESS_WARM;
+                return MONAD_ACCESS_WARM;
             }
-            return to_evmc_access_status(state_.access_account(address));
+            return state_.access_account(address);
         }
         MONAD_CATCH(...)
         {
@@ -219,14 +210,12 @@ struct EvmcHost final : public EvmcHostBase
         stack_unwind();
     }
 
-    virtual evmc_access_status access_storage(
-        evmc::address const &address,
-        evmc::bytes32 const &key) noexcept override
+    virtual monad_access_status
+    access_storage(Address const &address, bytes32_t const &key) override
     {
         MONAD_TRY
         {
-            return to_evmc_access_status(
-                state_.access_storage<traits>(address, key));
+            return state_.access_storage<traits>(address, key);
         }
         MONAD_CATCH(...)
         {
@@ -235,15 +224,14 @@ struct EvmcHost final : public EvmcHostBase
         stack_unwind();
     }
 
-    virtual evmc_page_storage_status update_page(
-        evmc::address const &address, evmc::bytes32 const &key,
-        evmc_storage_status const status) noexcept override
+    virtual monad_page_storage_status update_page(
+        Address const &address, bytes32_t const &key,
+        monad_storage_status const status) override
     {
         if constexpr (traits::mip_8_active()) {
             MONAD_TRY
             {
-                return to_evmc_page_storage_status(state_.update_page(
-                    address, key, from_evmc_storage_status(status)));
+                return state_.update_page(address, key, status);
             }
             MONAD_CATCH(...)
             {

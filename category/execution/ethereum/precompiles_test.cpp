@@ -145,15 +145,11 @@ namespace
                 "0000000000000300000000000000000000000000000001"})
             .value();
 
-    struct evmc_some_error
-    {
-    };
-
     struct test_case
     {
         std::string name;
         evmc::bytes input;
-        std::variant<evmc::bytes, evmc_some_error, evmc_status_code> expected;
+        std::variant<evmc::bytes, evmc_status_code> expected;
         int64_t gas;
         std::optional<int64_t> gas_offset;
     };
@@ -169,7 +165,7 @@ namespace
         }
         else {
             MONAD_ASSERT(j.contains("ExpectedError"));
-            t.expected = evmc_some_error{};
+            t.expected = evmc_status_code::EVMC_PRECOMPILE_FAILURE;
         }
 
         // Expected-to-fail tests don't have a Gas field, so we assign them the
@@ -363,17 +359,10 @@ namespace
                     }
                 }
                 else {
-                    EXPECT_NE(
-                        result.status_code, evmc_status_code::EVMC_SUCCESS)
+                    EXPECT_EQ(
+                        result.status_code,
+                        std::get<evmc_status_code>(test_case.expected))
                         << suite_name << " test case " << test_case.name;
-
-                    // expecting a specific error code
-                    if (auto const *expected_error_code =
-                            std::get_if<evmc_status_code>(
-                                &test_case.expected)) {
-                        EXPECT_EQ(result.status_code, *expected_error_code)
-                            << suite_name << " test case " << test_case.name;
-                    }
 
                     EXPECT_EQ(result.gas_left, 0)
                         << suite_name << " test case " << test_case.name

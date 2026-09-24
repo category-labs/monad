@@ -140,14 +140,11 @@ public:
             chain};
         auto &host = test_host.get_evmc_host();
 
-        evmc_host_interface const *const interface = &host.get_interface();
-        evmc_host_context *const context = host.to_context();
-
         std::vector<uint8_t> empty_code{};
         auto code_span = std::span<uint8_t const>{empty_code.data(), 0};
 
-        auto ctx =
-            vm::runtime::Context::from(interface, context, msg, code_span);
+        vm::runtime::Context ctx =
+            vm::runtime::Context::from(host, msg, code_span);
 
         auto stack_ptr = stack_allocator.allocate();
 

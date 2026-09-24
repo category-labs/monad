@@ -20,10 +20,10 @@
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/status_code.h>
 
-#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -64,7 +64,9 @@ nlohmann::json to_json(CallFrame const &f)
 {
     nlohmann::json res{};
     res["type"] = call_kind_to_string(f.type);
-    if (MONAD_UNLIKELY(f.type == CallType::CALL && (f.flags & EVMC_STATIC))) {
+    if (MONAD_UNLIKELY(
+            f.type == CallType::CALL &&
+            (f.flags & std::to_underlying(vm::CallFlags::Static)))) {
         res["type"] = "STATICCALL";
     }
     res["from"] = fmt::format(
@@ -100,7 +102,9 @@ get_call_frame_opcode(CallType const type, uint32_t const call_flags)
     using enum vm::compiler::EvmOpCode;
     switch (type) {
     case CallType::CALL:
-        return call_flags & EVMC_STATIC ? STATICCALL : CALL;
+        return call_flags & std::to_underlying(vm::CallFlags::Static)
+                   ? STATICCALL
+                   : CALL;
     case CallType::CALLCODE:
         return CALLCODE;
     case CallType::DELEGATECALL:

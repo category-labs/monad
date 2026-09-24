@@ -20,6 +20,7 @@
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/vm/evm/message.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -32,7 +33,7 @@ struct Transaction;
 
 struct CallTracerBase
 {
-    void on_enter(evmc_message const &) noexcept {}
+    void on_enter(vm::Message const &) noexcept {}
 
     void on_exit(evmc::Result const &) noexcept {}
 

@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/memory_pool.hpp>
 #include <category/vm/runtime/allocator.hpp>
@@ -82,8 +83,8 @@ public:
     evmc::Result execute(Binary &entry)
     {
         auto msg_memory = memory_pool_.alloc_ref();
-        auto msg = new evmc_message{
-            .kind = EVMC_CALL,
+        auto msg = new vm::Message{
+            .kind = vm::CallKind::Call,
             .flags = 0,
             .depth = 0,
             .gas = 150'000'000,

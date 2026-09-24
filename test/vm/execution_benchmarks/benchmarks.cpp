@@ -15,11 +15,13 @@
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
@@ -69,7 +71,7 @@ using monad::vm::test::TestMemory;
 
 struct free_message
 {
-    static void operator()(evmc_message *msg) noexcept
+    static void operator()(vm::Message *msg) noexcept
     {
         if (msg) {
             delete[] msg->input_data;
@@ -78,7 +80,7 @@ struct free_message
     }
 };
 
-using msg_ptr = std::unique_ptr<evmc_message, free_message>;
+using msg_ptr = std::unique_ptr<vm::Message, free_message>;
 
 struct benchmark_case
 {
@@ -102,8 +104,8 @@ namespace
         auto *input_buffer = new uint8_t[input.size()];
         std::copy(input.begin(), input.end(), input_buffer);
 
-        auto msg = msg_ptr(new evmc_message{
-            .kind = EVMC_CALL,
+        auto msg = msg_ptr(new vm::Message{
+            .kind = vm::CallKind::Call,
             .flags = 0,
             .depth = 0,
             .gas = 150'000'000,
@@ -170,7 +172,7 @@ namespace
     // `run_benchmark_json`
     void run_benchmark(
         benchmark::State &bench_state, vm::VM::Mode const mode,
-        evmc_message const msg, std::vector<uint8_t> const &code)
+        vm::Message const msg, std::vector<uint8_t> const &code)
     {
         vm::VM monad_vm{mode};
         monad_vm.set_compiler_config(compiler_config);
@@ -224,8 +226,7 @@ namespace
 
     void run_benchmark_json(
         benchmark::State &bench_state, vm::VM::Mode const mode,
-        JsonState const &json_state, evmc_message const msg,
-        bool assert_success)
+        JsonState const &json_state, vm::Message const msg, bool assert_success)
     {
         vm::VM monad_vm{mode};
         monad_vm.set_compiler_config(compiler_config);
@@ -269,7 +270,7 @@ namespace
             // Creation runs the code through the interpreter, as calls
             // through the compiled path.
             auto const result =
-                msg.kind == EVMC_CREATE
+                msg.kind == vm::CallKind::Create
                     ? monad_vm.execute_bytecode<MonadTraits<rev>>(
                           test_host.get_evmc_host(), &msg, code->code_span())
                     : monad_vm.execute<MonadTraits<rev>>(
@@ -290,7 +291,7 @@ namespace
     };
 
     void register_benchmark(
-        std::string_view const name, evmc_message const msg,
+        std::string_view const name, vm::Message const msg,
         std::vector<uint8_t> const &code)
     {
         for (auto const impl : all_impls) {
@@ -342,8 +343,9 @@ namespace
                     auto const recipient = tx.to.value_or({});
 
                     auto const sender = recover_sender(tx).value();
-                    auto msg = evmc_message{
-                        .kind = tx.to.has_value() ? EVMC_CALL : EVMC_CREATE,
+                    auto msg = vm::Message{
+                        .kind = tx.to.has_value() ? vm::CallKind::Call
+                                                  : vm::CallKind::Create,
                         .flags = 0,
                         .depth = 0,
                         .gas = 150'000'000,
@@ -351,7 +353,7 @@ namespace
                         .sender = sender,
                         .input_data = tx.data.data(),
                         .input_size = tx.data.size(),
-                        .value = store_be_as<evmc::uint256be>(tx.value),
+                        .value = store_be_as<bytes32_t>(tx.value),
                         .create2_salt = {},
                         .code_address = recipient,
                         .memory_handle = test_memory.data,

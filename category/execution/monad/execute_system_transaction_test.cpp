@@ -62,6 +62,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
     BlockHeader const header{.number = 0};
 
     NoopCallTracer noop_call_tracer;
+    Address const beneficiary = 0xdeadbeef_address;
 
     // Create a system transaction that calls syscallOnEpochChange
     auto const epoch_change_tx = [](uint64_t tx_nonce,
@@ -85,7 +86,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
     {
         nlohmann::json trace;
         trace::StateTracer prestate_tracer =
-            trace::PrestateTracer{trace, 0xdeadbeef_address};
+            trace::PrestateTracer{trace, beneficiary};
 
         // Fulfil this promise such that ExecuteSystemTransaction doesn't wait
         // indefinitely.
@@ -123,7 +124,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
     {
         nlohmann::json trace;
         trace::StateTracer prestate_tracer =
-            trace::PrestateTracer{trace, 0xdeadbeef_address};
+            trace::PrestateTracer{trace, beneficiary};
 
         boost::fibers::promise<void> promise;
         promise.set_value();

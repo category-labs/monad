@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/address.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
@@ -25,7 +25,6 @@
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <span>
 
@@ -34,7 +33,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     void log_impl(
         Context *ctx, uint256_t const &offset_word, uint256_t const &size_word,
-        std::span<evmc::bytes32 const> topics)
+        std::span<bytes32_t const> const topics)
     {
         if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
             ctx->exit(StatusCode::Error);
@@ -50,7 +49,7 @@ namespace monad::vm::runtime
         }
 
         ctx->host->emit_log(
-            to_evmc(ctx->env.recipient),
+            ctx->env.recipient,
             ctx->memory.data + *offset,
             *size,
             topics.data(),
@@ -78,7 +77,7 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                store_be_as<evmc_bytes32>(*topic1_ptr),
+                store_be_as<bytes32_t>(*topic1_ptr),
             }});
     }
 
@@ -94,8 +93,8 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                store_be_as<evmc_bytes32>(*topic1_ptr),
-                store_be_as<evmc_bytes32>(*topic2_ptr),
+                store_be_as<bytes32_t>(*topic1_ptr),
+                store_be_as<bytes32_t>(*topic2_ptr),
             }});
     }
 
@@ -112,9 +111,9 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                store_be_as<evmc_bytes32>(*topic1_ptr),
-                store_be_as<evmc_bytes32>(*topic2_ptr),
-                store_be_as<evmc_bytes32>(*topic3_ptr),
+                store_be_as<bytes32_t>(*topic1_ptr),
+                store_be_as<bytes32_t>(*topic2_ptr),
+                store_be_as<bytes32_t>(*topic3_ptr),
             }});
     }
 
@@ -131,10 +130,10 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                store_be_as<evmc_bytes32>(*topic1_ptr),
-                store_be_as<evmc_bytes32>(*topic2_ptr),
-                store_be_as<evmc_bytes32>(*topic3_ptr),
-                store_be_as<evmc_bytes32>(*topic4_ptr),
+                store_be_as<bytes32_t>(*topic1_ptr),
+                store_be_as<bytes32_t>(*topic2_ptr),
+                store_be_as<bytes32_t>(*topic3_ptr),
+                store_be_as<bytes32_t>(*topic4_ptr),
             }});
     }
 

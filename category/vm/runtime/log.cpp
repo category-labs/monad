@@ -19,6 +19,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/log.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -49,8 +50,7 @@ namespace monad::vm::runtime
         }
 
         ctx->host->emit_log(
-            ctx->context,
-            &ctx->env.recipient,
+            ctx->env.recipient,
             ctx->memory.data + *offset,
             *size,
             topics.data(),

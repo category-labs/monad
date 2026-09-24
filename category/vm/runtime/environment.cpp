@@ -16,6 +16,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/environment.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -42,8 +43,8 @@ namespace monad::vm::runtime
             std::max(tx_context.block_number - 256, 0L);
         if (block_number >= first_allowed_block &&
             block_number < tx_context.block_number) {
-            auto const hash = static_cast<bytes32_t>(
-                ctx->host->get_block_hash(ctx->context, block_number));
+            auto const hash =
+                static_cast<bytes32_t>(ctx->host->get_block_hash(block_number));
             *result_ptr = load_be<uint256_t>(hash);
         }
         else {
@@ -53,8 +54,8 @@ namespace monad::vm::runtime
 
     void selfbalance(Context *const ctx, uint256_t *const result_ptr)
     {
-        auto const balance = static_cast<bytes32_t>(
-            ctx->host->get_balance(ctx->context, &ctx->env.recipient));
+        auto const balance =
+            static_cast<bytes32_t>(ctx->host->get_balance(ctx->env.recipient));
         *result_ptr = load_be<uint256_t>(balance);
     }
 

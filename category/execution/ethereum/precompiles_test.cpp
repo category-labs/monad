@@ -524,8 +524,11 @@ TYPED_TEST(TraitsTest, blake2f)
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
             if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
                 // MONAD_SEVEN doubles the price of blake2F
-                tests = transform_test_cases(
-                    tests, [](auto &test) { test.gas *= 2; });
+                tests = transform_test_cases(tests, [](auto &test) {
+                    if (test.gas != std::numeric_limits<int64_t>::max()) {
+                        test.gas *= 2;
+                    }
+                });
             }
         }
 

@@ -16,9 +16,8 @@
 #pragma once
 
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/storage_status.h>
 #include <category/vm/evm/traits.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <array>
 #include <cstdint>
@@ -52,7 +51,7 @@ namespace monad::vm::runtime
     }
 
     template <Traits traits>
-    constexpr StoreCost store_cost(evmc_storage_status const status)
+    constexpr StoreCost store_cost(monad_storage_status const status)
     {
         return StorageCostTable<traits>::costs[status];
     }

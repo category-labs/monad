@@ -22,15 +22,17 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/revision.h>
+#include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/evm-as/kernel-builder.hpp>
+#include <category/vm/vm.hpp>
 
 #include <test/utils/json_state.hpp>
 
 #include <test/utils/test_state.hpp>
+#include <test/vm/utils/benchmark_vm.hpp>
 #include <test/vm/utils/evm-as_utils.hpp>
 #include <test/vm/utils/test_block_hash_buffer.hpp>
 #include <test/vm/utils/test_host.hpp>
-#include <test/vm/vm/test_vm.hpp>
 
 #include <CLI/CLI.hpp>
 
@@ -329,7 +331,7 @@ print_results(std::vector<BenchmarkResult> const &results, OutputFormat format)
     }
 }
 
-static void init_execute_state(
+static bytes32_t init_execute_state(
     Address const &code_address, Address const &sender_address,
     std::vector<uint8_t> const &bytecode, BenchTestStateRef test_state)
 {
@@ -360,16 +362,20 @@ static void init_execute_state(
         code,
         NULL_HASH_BLAKE3,
         BlockHeader{.number = 1});
+
+    return code_hash;
 }
 
 static double execute_iteration(
-    evmc::VM &vm, MemoryPool &memory_pool, Address const &code_address,
+    vm::VM &vm, MemoryPool &memory_pool, Address const &code_address,
     std::vector<uint8_t> const &bytecode,
     vm::test::KernelCalldata const &calldata)
 {
     auto const json_state = monad::test::JsonState{};
     auto const test_state = json_state.make_test_state<true>();
 
+    // Nested calls are not part of the measurement: the state's VM returns
+    // success immediately, while the top-level frame runs on `vm`.
     vm::VM monad_vm;
     monad_vm.debug_set_execute_override(
         [](auto const *const,
@@ -383,7 +389,12 @@ static double execute_iteration(
 
     Address const sender_address{200};
 
-    init_execute_state(code_address, sender_address, bytecode, test_state);
+    auto const code_hash =
+        init_execute_state(code_address, sender_address, bytecode, test_state);
+    auto const icode =
+        vm.try_insert_varcode_raw(code_hash, bytecode)->intercode();
+    auto const vcode =
+        vm::test::prime_varcode_cache<traits>(vm, code_hash, icode);
 
     BlockState block_state{test_state->trie_db, monad_vm};
     monad::State state{block_state, Incarnation{2, 1}};
@@ -407,10 +418,6 @@ static double execute_iteration(
         chain};
     auto &host = test_host.get_evmc_host();
 
-    auto *bvm = reinterpret_cast<BlockchainTestVM *>(vm.get_raw_pointer());
-    auto const *interface = &host.get_interface();
-    auto *ctx = host.to_context();
-
     auto msg_memory = memory_pool.alloc_ref();
     evmc_message msg{
         .kind = EVMC_CALL,
@@ -431,13 +438,7 @@ static double execute_iteration(
 
     auto const start = std::chrono::steady_clock::now();
 
-    auto result = bvm->execute(
-        interface,
-        ctx,
-        to_evmc_revision(traits::evm_rev()),
-        &msg,
-        bytecode.data(),
-        bytecode.size());
+    auto const result = vm.execute<traits>(host, &msg, code_hash, vcode);
 
     auto const stop = std::chrono::steady_clock::now();
 
@@ -447,7 +448,7 @@ static double execute_iteration(
 }
 
 static std::pair<double, double> execute_against_base(
-    evmc::VM &vm, MemoryPool &memory_pool, Address const &base_code_address,
+    vm::VM &vm, MemoryPool &memory_pool, Address const &base_code_address,
     std::vector<uint8_t> const &base_bytecode,
     vm::test::KernelCalldata const &base_calldata, Address const &code_address,
     std::vector<uint8_t> const &bytecode,
@@ -475,18 +476,19 @@ static std::pair<double, double> execute_against_base(
 }
 
 static std::optional<BenchmarkResult> run_implementation_benchmark(
-    CommandArguments const &args, BlockchainTestVM::Implementation impl,
+    CommandArguments const &args, vm::VM::Mode const mode,
     MemoryPool &memory_pool, Benchmark const &bench)
 {
-    auto *bvm = new BlockchainTestVM{impl};
-    auto vm = evmc::VM(bvm);
+    std::string const impl{vm::test::impl_name(mode)};
 
-    auto const impl_name =
-        std::string{BlockchainTestVM::impl_name(bvm->implementation())};
-
-    if (!filter_search(impl_name, args.impl_filters)) {
+    if (!filter_search(impl, args.impl_filters)) {
         return {};
     }
+
+    vm::VM vm{mode};
+    // Lift the native code size bound so every benchmark kernel compiles.
+    vm.set_compiler_config(
+        {.max_code_size_offset = vm::interpreter::code_size_t::max()});
 
     uint256_t code_address{1000};
     uint256_t const base_code_address{code_address};
@@ -503,7 +505,7 @@ static std::optional<BenchmarkResult> run_implementation_benchmark(
     auto const base_calldata = bench.calldata_generate(bench.baseline_seq);
 
     BenchmarkResult res{
-        .impl = impl_name, .title = bench.title, .base_seq = base_name};
+        .impl = impl, .title = bench.title, .base_seq = base_name};
     auto const seq_count = static_cast<double>(bench.sequence_count);
 
     for (size_t i = 0; i < bench.subject_seqs.size(); ++i) {
@@ -552,11 +554,9 @@ static std::optional<BenchmarkResult> run_implementation_benchmark(
     return res;
 }
 
-using enum BlockchainTestVM::Implementation;
-
-static BlockchainTestVM::Implementation const all_impls[] = {
-    Interpreter,
-    BlockchainTestVM::Implementation::Compiler,
+static vm::VM::Mode const all_impls[] = {
+    vm::VM::InterpreterOnly,
+    vm::VM::CompilerOnly,
 };
 
 static void run_benchmark(

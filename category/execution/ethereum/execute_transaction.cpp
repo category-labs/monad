@@ -279,8 +279,8 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     // EIP-7702
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         if (tx_.to.has_value()) {
-            if (auto const delegate = vm::evm::resolve_delegation(
-                    &host.get_interface(), host.to_context(), *tx_.to)) {
+            if (auto const delegate =
+                    vm::evm::resolve_delegation(host, *tx_.to)) {
                 msg.code_address = *delegate;
                 msg.flags |= EVMC_DELEGATED;
                 state.access_account(*delegate);

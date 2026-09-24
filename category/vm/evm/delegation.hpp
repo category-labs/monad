@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/vm/host.hpp>
 
 #include <evmc/evmc.hpp>
 
@@ -27,6 +28,5 @@ namespace monad::vm::evm
 
     bool is_delegated(std::span<uint8_t const> code);
 
-    std::optional<Address> resolve_delegation(
-        evmc_host_interface const *, evmc_host_context *, Address const &);
+    std::optional<Address> resolve_delegation(Host const &, Address const &);
 }

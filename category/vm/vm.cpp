@@ -64,15 +64,13 @@ namespace monad::vm
         Host &host, evmc_message const *msg, bytes32_t const &code_hash,
         SharedVarcode const &vcode)
     {
-        auto const *const host_itf = &host.get_interface();
-        auto *const host_ctx = host.to_context();
         auto const &icode = vcode->intercode();
 
         if constexpr (enable_execute_override) {
             if (execute_override_) {
                 return execute_override_(
-                    host_itf,
-                    host_ctx,
+                    &host.get_interface(),
+                    host.to_context(),
                     traits::evm_rev(),
                     msg,
                     icode->code(),
@@ -80,8 +78,7 @@ namespace monad::vm
             }
         }
 
-        auto rt_ctx =
-            runtime::Context::from(host_itf, host_ctx, msg, icode->code_span());
+        auto rt_ctx = runtime::Context::from(host, msg, icode->code_span());
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
@@ -104,14 +101,11 @@ namespace monad::vm
     evmc::Result VM::execute_bytecode(
         Host &host, evmc_message const *msg, std::span<uint8_t const> code)
     {
-        auto const *const host_itf = &host.get_interface();
-        auto *const host_ctx = host.to_context();
-
         if constexpr (enable_execute_override) {
             if (execute_override_) {
                 return execute_override_(
-                    host_itf,
-                    host_ctx,
+                    &host.get_interface(),
+                    host.to_context(),
                     traits::evm_rev(),
                     msg,
                     code.data(),
@@ -119,7 +113,7 @@ namespace monad::vm
             }
         }
 
-        auto rt_ctx = runtime::Context::from(host_itf, host_ctx, msg, code);
+        auto rt_ctx = runtime::Context::from(host, msg, code);
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);

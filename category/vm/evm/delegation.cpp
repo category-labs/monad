@@ -15,6 +15,7 @@
 
 #include <category/core/address.hpp>
 #include <category/vm/evm/delegation.hpp>
+#include <category/vm/host.hpp>
 
 #include <evmc/bytes.hpp>
 #include <evmc/evmc.h>
@@ -54,17 +55,16 @@ namespace monad::vm::evm
         return std::equal(prefix.begin(), prefix.end(), code.begin());
     }
 
-    std::optional<Address> resolve_delegation(
-        evmc_host_interface const *const host, evmc_host_context *const ctx,
-        Address const &addr)
+    std::optional<Address>
+    resolve_delegation(Host const &host, Address const &addr)
     {
         // Copy up to |code_size| bytes of the bytecode. Then test
         // whether the code begins with the prefix 0xEF0100, if so,
         // then drop these three bytes and interpret the remainder as
         // the delegate address.
         uint8_t code_buffer[delegation_indicator_size + 1];
-        size_t const actual_code_size = host->copy_code(
-            ctx, &addr, 0, code_buffer, delegation_indicator_size + 1);
+        size_t const actual_code_size =
+            host.copy_code(addr, 0, code_buffer, delegation_indicator_size + 1);
 
         std::span const code{code_buffer, actual_code_size};
 

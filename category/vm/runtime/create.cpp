@@ -22,6 +22,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/create.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -59,8 +60,7 @@ namespace monad::vm::runtime
         if constexpr (
             traits::evm_rev() >= MONAD_ETH_PRAGUE &&
             !traits::can_create_inside_delegated()) {
-            if (evm::resolve_delegation(
-                    ctx->host, ctx->context, ctx->env.recipient)) {
+            if (evm::resolve_delegation(*ctx->host, ctx->env.recipient)) {
                 ctx->exit(StatusCode::Error);
             }
         }
@@ -113,7 +113,7 @@ namespace monad::vm::runtime
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,
         };
 
-        auto const result = ctx->host->call(ctx->context, &message);
+        auto const result = ctx->host->call(message).release_raw();
 
         ctx->env.set_return_data(result.output_data, result.output_size);
 

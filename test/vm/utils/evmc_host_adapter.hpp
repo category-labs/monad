@@ -17,6 +17,7 @@
 
 #include <category/core/bytes.hpp>
 #include <category/vm/evm/access_status.h>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/page_storage_status.h>
 #include <category/vm/evm/storage_status.h>
 #include <category/vm/host.hpp>
@@ -97,7 +98,7 @@ namespace monad::vm::test
 
         evmc::Result call(evmc_message const &msg) noexcept override
         {
-            return host_.call(msg);
+            return host_.call(std::bit_cast<Message>(msg));
         }
 
         evmc_tx_context const *get_tx_context() const noexcept override

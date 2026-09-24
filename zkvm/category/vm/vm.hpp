@@ -17,6 +17,7 @@
 
 #include <category/core/bytes.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/interpreter/execute.hpp>
@@ -25,7 +26,6 @@
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
@@ -75,7 +75,7 @@ namespace monad::vm
 
         template <Traits traits>
         evmc::Result execute(
-            Host &host, evmc_message const *const msg,
+            Host &host, Message const *const msg,
             bytes32_t const & /*code_hash*/, SharedVarcode const &vcode)
         {
             auto const &icode = vcode->intercode();
@@ -93,7 +93,7 @@ namespace monad::vm
 
         template <Traits traits>
         evmc::Result execute_bytecode(
-            Host &host, evmc_message const *const msg,
+            Host &host, Message const *const msg,
             std::span<uint8_t const> const code)
         {
             auto rt_ctx = runtime::Context::from(host, msg, code);

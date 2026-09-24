@@ -19,6 +19,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/interpreter/execute.hpp>
@@ -136,7 +137,7 @@ namespace monad::vm
         };
 
         using ExecuteOverride = std::function<evmc::Result(
-            Host &host, monad_eth_revision rev, evmc_message const *msg,
+            Host &host, monad_eth_revision rev, Message const *msg,
             uint8_t const *code, size_t code_size)>;
 
     private:
@@ -198,13 +199,13 @@ namespace monad::vm
         /// interpreter and potentially start async compilation.
         template <Traits traits>
         evmc::Result execute(
-            Host &host, evmc_message const *msg, bytes32_t const &code_hash,
+            Host &host, Message const *msg, bytes32_t const &code_hash,
             SharedVarcode const &vcode);
 
         /// Execute the bytecode `code` with interpreter.
         template <Traits traits>
         evmc::Result execute_bytecode(
-            Host &host, evmc_message const *msg, std::span<uint8_t const> code);
+            Host &host, Message const *msg, std::span<uint8_t const> code);
 
         /// Like `execute`, but without stack unwind support.
         template <Traits traits>

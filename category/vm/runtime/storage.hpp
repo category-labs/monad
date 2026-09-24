@@ -18,10 +18,12 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <cstdint>
+#include <utility>
 
 namespace monad::vm::runtime
 {
@@ -49,7 +51,8 @@ namespace monad::vm::runtime
         Context *const ctx, uint256_t const *const key_ptr,
         uint256_t const *const val_ptr)
     {
-        if (MONAD_UNLIKELY(ctx->env.evmc_flags & evmc_flags::EVMC_STATIC)) {
+        if (MONAD_UNLIKELY(
+                ctx->env.flags & std::to_underlying(CallFlags::Static))) {
             ctx->exit(StatusCode::Error);
         }
 

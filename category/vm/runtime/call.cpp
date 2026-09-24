@@ -21,6 +21,7 @@
 #include <category/vm/evm/access_status.h>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
@@ -35,6 +36,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace monad::vm::runtime
 {
@@ -43,14 +45,14 @@ namespace monad::vm::runtime
         bool const delegation_indicator)
     {
         if (static_call) {
-            env_flags = static_cast<uint32_t>(EVMC_STATIC);
+            env_flags = std::to_underlying(CallFlags::Static);
         }
 
         if (delegation_indicator) {
-            env_flags |= static_cast<uint32_t>(EVMC_DELEGATED);
+            env_flags |= std::to_underlying(CallFlags::Delegated);
         }
         else {
-            env_flags &= ~static_cast<uint32_t>(EVMC_DELEGATED);
+            env_flags &= ~std::to_underlying(CallFlags::Delegated);
         }
 
         return env_flags;
@@ -62,7 +64,7 @@ namespace monad::vm::runtime
         bool const has_value, bytes32_t const &value,
         uint256_t const &args_offset_word, uint256_t const &args_size_word,
         uint256_t const &ret_offset_word, uint256_t const &ret_size_word,
-        evmc_call_kind const call_kind, bool const static_call,
+        CallKind const call_kind, bool const static_call,
         int64_t const remaining_block_base_gas)
     {
         static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
@@ -107,11 +109,11 @@ namespace monad::vm::runtime
             return dest_address;
         }();
 
-        auto const recipient = (call_kind == EVMC_CALL || static_call)
+        auto const recipient = (call_kind == CallKind::Call || static_call)
                                    ? dest_address
                                    : ctx->env.recipient;
 
-        auto const sender = (call_kind == EVMC_DELEGATECALL)
+        auto const sender = (call_kind == CallKind::DelegateCall)
                                 ? ctx->env.sender
                                 : ctx->env.recipient;
 
@@ -119,9 +121,10 @@ namespace monad::vm::runtime
             ctx->gas_remaining -= 9000;
         }
 
-        if (call_kind == EVMC_CALL) {
+        if (call_kind == CallKind::Call) {
             if (MONAD_UNLIKELY(
-                    has_value && (ctx->env.evmc_flags & EVMC_STATIC))) {
+                    has_value &&
+                    (ctx->env.flags & std::to_underlying(CallFlags::Static)))) {
                 auto const error_code =
                     ctx->gas_remaining + remaining_block_base_gas < 0
                         ? StatusCode::OutOfGas
@@ -154,10 +157,10 @@ namespace monad::vm::runtime
             return 0;
         }
 
-        auto const message = evmc_message{
+        auto const message = Message{
             .kind = call_kind,
             .flags = message_flags(
-                ctx->env.evmc_flags, static_call, dest_address != code_address),
+                ctx->env.flags, static_call, dest_address != code_address),
             .depth = ctx->env.depth + 1,
             .gas = gas,
             .recipient = recipient,
@@ -165,8 +168,8 @@ namespace monad::vm::runtime
             .input_data =
                 (*args_size > 0) ? ctx->memory.data + *args_offset : nullptr,
             .input_size = *args_size,
-            .value = static_cast<evmc::bytes32>(value),
-            .create2_salt = static_cast<evmc::bytes32>(ctx->env.create2_salt),
+            .value = value,
+            .create2_salt = ctx->env.create2_salt,
             .code_address = code_address,
             .memory_handle = ctx->memory.data_handle,
             .memory = ctx->memory.data + ctx->memory.size,
@@ -212,7 +215,7 @@ namespace monad::vm::runtime
             *args_size_ptr,
             *ret_offset_ptr,
             *ret_size_ptr,
-            EVMC_CALL,
+            CallKind::Call,
             false,
             remaining_block_base_gas);
     }
@@ -237,7 +240,7 @@ namespace monad::vm::runtime
             *args_size_ptr,
             *ret_offset_ptr,
             *ret_size_ptr,
-            EVMC_CALLCODE,
+            CallKind::CallCode,
             false,
             remaining_block_base_gas);
     }
@@ -261,7 +264,7 @@ namespace monad::vm::runtime
             *args_size_ptr,
             *ret_offset_ptr,
             *ret_size_ptr,
-            EVMC_DELEGATECALL,
+            CallKind::DelegateCall,
             false,
             remaining_block_base_gas);
     }
@@ -287,7 +290,7 @@ namespace monad::vm::runtime
             *args_size_ptr,
             *ret_offset_ptr,
             *ret_size_ptr,
-            EVMC_CALL,
+            CallKind::Call,
             true,
             remaining_block_base_gas);
     }

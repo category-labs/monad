@@ -18,6 +18,7 @@
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/vm/evm/access_status.h>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/page_storage_status.h>
 #include <category/vm/evm/storage_status.h>
 #include <category/vm/evm/tx_context.hpp>
@@ -61,7 +62,7 @@ namespace monad::vm
         virtual bool
         selfdestruct(Address const &, Address const &beneficiary) = 0;
 
-        virtual evmc::Result call(evmc_message const &) = 0;
+        virtual evmc::Result call(Message const &) = 0;
 
         virtual TxContext const *get_tx_context() const = 0;
 

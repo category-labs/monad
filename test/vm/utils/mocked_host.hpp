@@ -24,6 +24,7 @@
 #include <category/core/bytes.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/evm/access_status.h>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/page_storage_status.h>
 #include <category/vm/evm/storage_status.h>
 #include <category/vm/host.hpp>
@@ -128,7 +129,7 @@ namespace monad::vm::test
         mutable std::vector<int64_t> recorded_blockhashes;
         mutable std::vector<Address> recorded_account_accesses;
         // Pointer fields are nulled on record; only scalars outlive the call.
-        std::vector<evmc_message> recorded_calls;
+        std::vector<Message> recorded_calls;
         std::vector<LogRecord> recorded_logs;
         std::unordered_map<Address, std::vector<Address>>
             recorded_selfdestructs;
@@ -244,7 +245,7 @@ namespace monad::vm::test
             return beneficiaries.size() == 1;
         }
 
-        evmc::Result call(evmc_message const &msg) noexcept override
+        evmc::Result call(Message const &msg) noexcept override
         {
             record_account_access(msg.recipient);
             auto &rec = recorded_calls.emplace_back(msg);

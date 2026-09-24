@@ -74,7 +74,7 @@ namespace monad::vm::test
         : blob_hashes_{store_be_as<evmc_bytes32>(uint256_t{1}), store_be_as<evmc_bytes32>(uint256_t{2})}
         , host_{}
         , test_ctx_{[&](auto &x) {
-            x.host = &host_.get_interface(), x.context = host_.to_context(),
+            x.host = &host_,
             x.gas_remaining = std::numeric_limits<std::int64_t>::max(),
             x.gas_refund = 0,
             x.env = {

@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/memory_pool.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/vm.hpp>
@@ -123,16 +124,12 @@ public:
             authorities,
             block_header,
             chain};
-        auto &host = test_host.get_evmc_host();
-
-        evmc_host_interface const *const interface = &host.get_interface();
-        evmc_host_context *const context = host.to_context();
+        vm::Host &host = test_host.get_evmc_host();
 
         std::vector<uint8_t> empty_code{};
         auto code_span = std::span<uint8_t const>{empty_code.data(), 0};
 
-        auto ctx =
-            vm::runtime::Context::from(interface, context, msg, code_span);
+        auto ctx = vm::runtime::Context::from(host, msg, code_span);
 
         auto stack_ptr = stack_allocator.allocate();
 

@@ -40,7 +40,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
-void load_genesis_state(GenesisState const &genesis, TrieDb &db)
+void load_genesis_state(
+    GenesisState const &genesis, TrieDb &db, bool const verbatim_header)
 {
     MONAD_ASSERT(genesis.alloc);
     MONAD_ASSERT(
@@ -106,6 +107,9 @@ void load_genesis_state(GenesisState const &genesis, TrieDb &db)
         genesis.header,
         deltas,
         [&](BlockHeader &h) {
+            if (verbatim_header) {
+                return;
+            }
             h.receipts_root = db.receipts_root();
             h.state_root = db.state_root();
             h.withdrawals_root = db.withdrawals_root();

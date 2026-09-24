@@ -195,7 +195,10 @@ EventRecorder::reserve_event(EventEnum const event_type, U... trailing_bufs)
     #pragma GCC diagnostic ignored "-Warray-bounds"
 #endif
         void *p = payload_buf + sizeof(T);
-        ((p = mempcpy(p, data(trailing_bufs), size(trailing_bufs))), ...);
+        ((p = size(trailing_bufs) != 0
+                  ? mempcpy(p, data(trailing_bufs), size(trailing_bufs))
+                  : p),
+         ...);
 #if !defined(__clang__)
     #pragma GCC diagnostic pop
 #endif

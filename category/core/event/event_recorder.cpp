@@ -98,7 +98,9 @@ EventRecorder::setup_record_error_event(
         void *p = payload_buf + truncated_vlt_offset;
         for (std::span<std::byte const> buf : trailing_payload_bufs) {
             size_t const copy_len = std::min(residual_size, size(buf));
-            p = mempcpy(p, data(buf), copy_len);
+            if (copy_len != 0) {
+                p = mempcpy(p, data(buf), copy_len);
+            }
             residual_size -= copy_len;
             if (residual_size == 0) {
                 break;

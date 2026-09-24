@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/vm/evm/message.hpp>
 
 #include <evmc/evmc.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -36,7 +37,7 @@ struct CallTracerBase
 {
     virtual ~CallTracerBase() = default;
 
-    virtual void on_enter(evmc_message const &) = 0;
+    virtual void on_enter(vm::Message const &) = 0;
     virtual void on_exit(evmc::Result const &) = 0;
     virtual void on_log(Receipt::Log) = 0;
     virtual void on_self_destruct(
@@ -49,7 +50,7 @@ struct CallTracerBase
 
 struct NoopCallTracer final : public CallTracerBase
 {
-    virtual void on_enter(evmc_message const &) override;
+    virtual void on_enter(vm::Message const &) override;
     virtual void on_exit(evmc::Result const &) override;
     virtual void on_log(Receipt::Log) override;
     virtual void on_self_destruct(
@@ -107,7 +108,7 @@ public:
     CallTracer(Transaction const &, std::vector<CallFrame> &);
     CallTracer(Transaction const &, std::vector<CallFrame> &, size_t max_size);
 
-    virtual void on_enter(evmc_message const &) override;
+    virtual void on_enter(vm::Message const &) override;
     virtual void on_exit(evmc::Result const &) override;
     virtual void on_log(Receipt::Log) override;
     virtual void on_self_destruct(

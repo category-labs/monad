@@ -257,7 +257,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     }
 
     if constexpr (traits::eip_3651_active()) {
-        host.access_account(to_evmc(header_.beneficiary));
+        host.access_account(header_.beneficiary);
     }
 
     state.access_account(sender_);

@@ -13,11 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/access_status.h>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
@@ -40,16 +40,15 @@ namespace monad::vm::runtime
     {
         static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
-        auto const key = store_be_as<evmc_bytes32>(*key_ptr);
+        auto const key = store_be_as<bytes32_t>(*key_ptr);
 
         auto const access_status =
-            ctx->host->access_storage(to_evmc(ctx->env.recipient), key);
-        if (access_status == EVMC_ACCESS_COLD) {
+            ctx->host->access_storage(ctx->env.recipient, key);
+        if (access_status == MONAD_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_storage_cost());
         }
 
-        evmc_bytes32 const value =
-            ctx->host->get_storage(to_evmc(ctx->env.recipient), key);
+        auto const value = ctx->host->get_storage(ctx->env.recipient, key);
 
         *result_ptr = load_be<uint256_t>(value);
     }
@@ -74,21 +73,21 @@ namespace monad::vm::runtime
             ctx->exit(StatusCode::OutOfGas);
         }
 
-        auto const key = store_be_as<evmc_bytes32>(*key_ptr);
-        auto const value = store_be_as<evmc_bytes32>(*value_ptr);
+        auto const key = store_be_as<bytes32_t>(*key_ptr);
+        auto const value = store_be_as<bytes32_t>(*value_ptr);
 
         if constexpr (traits::mip_8_active()) {
             auto const access_status =
-                ctx->host->access_storage(to_evmc(ctx->env.recipient), key);
-            if (access_status == EVMC_ACCESS_COLD) {
+                ctx->host->access_storage(ctx->env.recipient, key);
+            if (access_status == MONAD_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_storage_cost());
             }
 
             auto const storage_status =
-                ctx->host->set_storage(to_evmc(ctx->env.recipient), key, value);
+                ctx->host->set_storage(ctx->env.recipient, key, value);
 
-            auto const [first_page_write, grew_state] = ctx->host->update_page(
-                to_evmc(ctx->env.recipient), key, storage_status);
+            auto const [first_page_write, grew_state] =
+                ctx->host->update_page(ctx->env.recipient, key, storage_status);
 
             int64_t gas_used = traits::base_sstore_cost();
             if (first_page_write) {
@@ -103,13 +102,13 @@ namespace monad::vm::runtime
         }
         else {
             auto const access_status =
-                ctx->host->access_storage(to_evmc(ctx->env.recipient), key);
-            if (access_status == EVMC_ACCESS_COLD) {
+                ctx->host->access_storage(ctx->env.recipient, key);
+            if (access_status == MONAD_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
             }
 
             auto const storage_status =
-                ctx->host->set_storage(to_evmc(ctx->env.recipient), key, value);
+                ctx->host->set_storage(ctx->env.recipient, key, value);
 
             auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
 
@@ -130,9 +129,9 @@ namespace monad::vm::runtime
         auto const magic = uint256_t{0xdeb009};
         auto const base = (magic + base_offset) * 1024;
         if (offset == 0) {
-            auto const base_key = store_be_as<evmc_bytes32>(base);
-            evmc_bytes32 const base_value = ctx->host->get_transient_storage(
-                to_evmc(ctx->env.recipient), base_key);
+            auto const base_key = store_be_as<bytes32_t>(base);
+            auto const base_value =
+                ctx->host->get_transient_storage(ctx->env.recipient, base_key);
             if (base_value != bytes32_t{}) {
                 // If this transient storage location has already been written,
                 // then we are likely in a loop. We return early in this case
@@ -141,14 +140,13 @@ namespace monad::vm::runtime
             }
         }
         for (uint64_t i = 0; i < stack_size; ++i) {
-            auto const key = store_be_as<evmc_bytes32>(base + i + offset);
+            auto const key = store_be_as<bytes32_t>(base + i + offset);
             auto const &x = stack[static_cast<int64_t>(-i) - 1];
             // Make sure we do not store zero, because incorrect non-zero is
             // more likely to be noticed, due to zero being the default:
             auto const s = x < magic ? x + 1 : x;
-            auto const value = store_be_as<evmc_bytes32>(s);
-            ctx->host->set_transient_storage(
-                to_evmc(ctx->env.recipient), key, value);
+            auto const value = store_be_as<bytes32_t>(s);
+            ctx->host->set_transient_storage(ctx->env.recipient, key, value);
         }
         return true;
     }

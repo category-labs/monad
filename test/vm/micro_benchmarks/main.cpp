@@ -378,14 +378,8 @@ static double execute_iteration(
     // success immediately, while the top-level frame runs on `vm`.
     vm::VM monad_vm;
     monad_vm.debug_set_execute_override(
-        [](auto const *const,
-           auto *const,
-           auto const,
-           auto const *msg,
-           auto const *,
-           auto const) -> evmc::Result {
-            return evmc::Result{EVMC_SUCCESS, msg->gas};
-        });
+        [](auto &, auto const, auto const *msg, auto const *, auto const)
+            -> evmc::Result { return evmc::Result{EVMC_SUCCESS, msg->gas}; });
 
     Address const sender_address{200};
 

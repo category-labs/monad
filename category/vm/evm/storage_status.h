@@ -28,11 +28,8 @@ extern "C"
 // gas/refund table lookups in store_cost numerically unchanged. The 1:1
 // correspondence is enforced by static_assert in storage_status.cpp.
 //
-// The enum itself carries no evmc dependency. The only tie to evmc is the
-// conversion functions below, which are needed solely at the remaining evmc
-// host interface boundary (the EvmcHost overrides, whose signatures are fixed
-// by evmc::HostInterface); they — together with the <evmc/evmc.h> include — are
-// removable in one step once the host interface is ported off evmc.
+// The enum itself carries no evmc dependency. The conversions below are used
+// only by the test-only EvmcHostAdapter.
 enum monad_storage_status
 {
     MONAD_STORAGE_ASSIGNED = 0,
@@ -46,8 +43,7 @@ enum monad_storage_status
     MONAD_STORAGE_MODIFIED_RESTORED = 8
 };
 
-// Convert between monad_storage_status and evmc's evmc_storage_status. Needed
-// only at the remaining evmc host interface boundary (see the note above).
+// Convert between monad_storage_status and evmc's evmc_storage_status.
 enum evmc_storage_status
 to_evmc_storage_status(enum monad_storage_status status);
 enum monad_storage_status

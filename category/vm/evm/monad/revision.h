@@ -34,6 +34,9 @@ enum monad_revision
     MONAD_NINE = 9,
     MONAD_TEN = 10,
     MONAD_NEXT = 11,
+
+    // The latest known Monad revision with finalized specification.
+    MONAD_LATEST_STABLE_REVISION = MONAD_TEN
 };
 
 inline char const *monad_revision_to_string(enum monad_revision const rev)

@@ -29,7 +29,7 @@ monad_compile_options(execution-benchmarks)
 
 target_link_libraries(execution-benchmarks
     PRIVATE benchmark::benchmark
-    PRIVATE blockchain-test-vm
+    PRIVATE monad-vm::monad-vm
     PRIVATE nlohmann_json::nlohmann_json
     PRIVATE monad-test-utils
     PRIVATE monad-vm::monad-vm-test-utils

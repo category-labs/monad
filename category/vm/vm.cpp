@@ -69,12 +69,7 @@ namespace monad::vm
         if constexpr (enable_execute_override) {
             if (execute_override_) {
                 return execute_override_(
-                    &host.get_interface(),
-                    host.to_context(),
-                    traits::evm_rev(),
-                    msg,
-                    icode->code(),
-                    icode->size());
+                    host, traits::evm_rev(), msg, icode->code(), icode->size());
             }
         }
 
@@ -104,12 +99,7 @@ namespace monad::vm
         if constexpr (enable_execute_override) {
             if (execute_override_) {
                 return execute_override_(
-                    &host.get_interface(),
-                    host.to_context(),
-                    traits::evm_rev(),
-                    msg,
-                    code.data(),
-                    code.size());
+                    host, traits::evm_rev(), msg, code.data(), code.size());
             }
         }
 

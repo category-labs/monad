@@ -17,6 +17,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/access_status.h>
 #include <category/vm/runtime/detail.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <monad/test/traits_test.hpp>
@@ -203,7 +204,7 @@ namespace monad::vm::test
 
             if constexpr (TraitsTest<T>::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
                 ASSERT_EQ(
-                    host_.access_account(delegate_addr), EVMC_ACCESS_WARM);
+                    host_.access_account(delegate_addr), MONAD_ACCESS_WARM);
                 ASSERT_EQ(
                     host_.recorded_calls[0].flags &
                         static_cast<uint32_t>(EVMC_DELEGATED),
@@ -211,7 +212,7 @@ namespace monad::vm::test
             }
             else {
                 ASSERT_EQ(
-                    host_.access_account(delegate_addr), EVMC_ACCESS_COLD);
+                    host_.access_account(delegate_addr), MONAD_ACCESS_COLD);
                 ASSERT_NE(
                     host_.recorded_calls[0].flags &
                         static_cast<uint32_t>(EVMC_DELEGATED),

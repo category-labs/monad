@@ -136,8 +136,7 @@ namespace monad::vm
         };
 
         using ExecuteOverride = std::function<evmc::Result(
-            evmc_host_interface const *host, evmc_host_context *context,
-            monad_eth_revision rev, evmc_message const *msg,
+            Host &host, monad_eth_revision rev, evmc_message const *msg,
             uint8_t const *code, size_t code_size)>;
 
     private:

@@ -24,6 +24,7 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -35,6 +36,7 @@ namespace monad::vm::test
     class EvmcHostAdapter final : public evmc::Host
     {
         vm::Host &host_;
+        mutable evmc_tx_context tx_context_{};
 
     public:
         explicit EvmcHostAdapter(vm::Host &host) noexcept
@@ -105,7 +107,9 @@ namespace monad::vm::test
 
         evmc_tx_context const *get_tx_context() const noexcept override
         {
-            return host_.get_tx_context();
+            tx_context_ =
+                std::bit_cast<evmc_tx_context>(*host_.get_tx_context());
+            return &tx_context_;
         }
 
         evmc::bytes32

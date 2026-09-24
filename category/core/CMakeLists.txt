@@ -61,6 +61,16 @@ function(check_if_boost_fiber_needs_ucontext_macro)
 endfunction()
 check_if_boost_fiber_needs_ucontext_macro()
 
+# Boost.Context only annotates fiber switches for ASAN in its ucontext backend.
+# Must follow the check above, whose try-run cannot link with these defines.
+if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=address")
+  set_property(
+    TARGET Boost::context
+    APPEND
+    PROPERTY INTERFACE_COMPILE_DEFINITIONS BOOST_USE_ASAN BOOST_USE_UCONTEXT)
+  target_sources(boost_fiber PRIVATE fiber/boost_context_ucontext.cpp)
+endif()
+
 # ##############################################################################
 # libs
 # ##############################################################################

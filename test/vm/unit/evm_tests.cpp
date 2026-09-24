@@ -504,11 +504,7 @@ TYPED_TEST(VMTraitsTest, MaxDeltaOutOfBound)
             icode1, config);
 
     TestFixture::pre_execute(10'000, {});
-    auto rt_ctx1 = runtime::Context::from(
-        &this->host_.get_interface(),
-        this->host_.to_context(),
-        &this->msg_,
-        bytecode1);
+    auto rt_ctx1 = runtime::Context::from(this->host_, &this->msg_, bytecode1);
     this->result_ = this->vm_.template execute_native_entrypoint_raw<
         typename TestFixture::Trait>(rt_ctx1, ncode1->entrypoint());
 
@@ -525,11 +521,7 @@ TYPED_TEST(VMTraitsTest, MaxDeltaOutOfBound)
             icode2, config);
 
     TestFixture::pre_execute(10'000, {});
-    auto rt_ctx2 = runtime::Context::from(
-        &this->host_.get_interface(),
-        this->host_.to_context(),
-        &this->msg_,
-        bytecode2);
+    auto rt_ctx2 = runtime::Context::from(this->host_, &this->msg_, bytecode2);
     this->result_ = this->vm_.template execute_native_entrypoint_raw<
         typename TestFixture::Trait>(rt_ctx2, ncode2->entrypoint());
 
@@ -565,11 +557,7 @@ TYPED_TEST(VMTraitsTest, MinDeltaOutOfBound)
             icode1, config);
 
     TestFixture::pre_execute(10'000, {});
-    auto rt_ctx1 = runtime::Context::from(
-        &this->host_.get_interface(),
-        this->host_.to_context(),
-        &this->msg_,
-        bytecode1);
+    auto rt_ctx1 = runtime::Context::from(this->host_, &this->msg_, bytecode1);
     this->result_ = this->vm_.template execute_native_entrypoint_raw<
         typename TestFixture::Trait>(rt_ctx1, ncode1->entrypoint());
 
@@ -585,11 +573,7 @@ TYPED_TEST(VMTraitsTest, MinDeltaOutOfBound)
             icode2, config);
 
     TestFixture::pre_execute(10'000, {});
-    auto rt_ctx2 = runtime::Context::from(
-        &this->host_.get_interface(),
-        this->host_.to_context(),
-        &this->msg_,
-        bytecode2);
+    auto rt_ctx2 = runtime::Context::from(this->host_, &this->msg_, bytecode2);
     this->result_ = this->vm_.template execute_native_entrypoint_raw<
         typename TestFixture::Trait>(rt_ctx2, ncode2->entrypoint());
 
@@ -653,11 +637,7 @@ TYPED_TEST(VMTraitsTest, ShrCeilOffByOneRegression)
         vm.compiler().template compile<typename TestFixture::Trait>(icode);
     MONAD_ASSERT(ncode->entrypoint() != nullptr);
 
-    auto rt_ctx = runtime::Context::from(
-        &this->host_.get_interface(),
-        this->host_.to_context(),
-        &this->msg_,
-        code);
+    auto rt_ctx = runtime::Context::from(this->host_, &this->msg_, code);
     vm.template execute_native_entrypoint_raw<typename TestFixture::Trait>(
         rt_ctx, ncode->entrypoint());
 }

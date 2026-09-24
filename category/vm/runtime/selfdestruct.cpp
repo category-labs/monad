@@ -19,6 +19,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/selfdestruct.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -36,10 +37,9 @@ namespace monad::vm::runtime
             ctx->exit(StatusCode::Error);
         }
 
-        auto address = address_from_uint256(*address_ptr);
+        auto const address = address_from_uint256(*address_ptr);
 
-        auto const access_status =
-            ctx->host->access_account(ctx->context, &address);
+        auto const access_status = ctx->host->access_account(address);
         if (access_status == EVMC_ACCESS_COLD) {
             // +100 for the warm account access cost.
             ctx->deduct_gas(traits::cold_account_cost() + 100);
@@ -47,21 +47,20 @@ namespace monad::vm::runtime
 
         auto const non_zero_transfer = [ctx] {
             auto const balance = static_cast<bytes32_t>(
-                ctx->host->get_balance(ctx->context, &ctx->env.recipient));
+                ctx->host->get_balance(ctx->env.recipient));
             return balance != bytes32_t{};
         }();
 
         if (non_zero_transfer) {
-            auto const exists =
-                ctx->host->account_exists(ctx->context, &address);
+            auto const exists = ctx->host->account_exists(address);
 
             if (!exists) {
                 ctx->deduct_gas(25000);
             }
         }
 
-        auto const result = ctx->host->selfdestruct(
-            ctx->context, &ctx->env.recipient, &address);
+        auto const result =
+            ctx->host->selfdestruct(ctx->env.recipient, address);
 
         if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
             if (result) {

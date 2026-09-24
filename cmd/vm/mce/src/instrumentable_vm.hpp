@@ -41,7 +41,6 @@
 #include <valgrind/cachegrind.h>
 
 #include <cstdint>
-#include <iostream>
 #include <optional>
 #include <vector>
 
@@ -51,22 +50,8 @@ using namespace monad::vm::compiler;
 using namespace monad::literals;
 using namespace monad::vm::compiler::native;
 
-namespace abi_compat
-{
-    // These are required for compatibility with the EVMC ABI. For now
-    // they are either noops or aborts upon invocation. Later it would
-    // be useful to support full interaction with the host.
-    void destroy(evmc_vm *vm);
-
-    evmc_result execute(
-        evmc_vm *vm, evmc_host_interface const *host,
-        evmc_host_context *context, evmc_revision rev, evmc_message const *msg,
-        uint8_t const *code, size_t code_size);
-    evmc_capabilities_flagset get_capabilities(evmc_vm *vm);
-}
-
 template <bool instrument>
-class InstrumentableVM : public evmc_vm
+class InstrumentableVM
 {
     monad::vm::runtime::EvmStackAllocator stack_allocator;
     monad::vm::MemoryPool memory_pool_;
@@ -75,8 +60,7 @@ class InstrumentableVM : public evmc_vm
 
 public:
     InstrumentableVM(asmjit::JitRuntime &rt)
-        : evmc_vm{EVMC_ABI_VERSION, "monad-compiler-x86-microbenchmark-engine", "0.0.0", abi_compat::destroy, abi_compat::execute, abi_compat::get_capabilities, nullptr}
-        , memory_pool_{8 * 1024 * 1024}
+        : memory_pool_{8 * 1024 * 1024}
         , rt_(rt)
     {
     }
@@ -179,44 +163,6 @@ public:
         ep(ctx, stck);
     }
 
-    evmc_capabilities_flagset get_capabilities() const
-    {
-        return EVMC_CAPABILITY_EVM1;
-    }
-
 private:
     asmjit::JitRuntime &rt_;
 };
-
-namespace abi_compat
-{
-    void destroy(evmc_vm *vm)
-    {
-        // The creator of the InstrumentableVM must destroy it.
-        (void)vm;
-    }
-
-    evmc_result execute(
-        evmc_vm *vm, evmc_host_interface const *host,
-        evmc_host_context *context, evmc_revision rev, evmc_message const *msg,
-        uint8_t const *code, size_t code_size)
-    {
-        // We don't support the host calling execute, yet...
-        (void)vm;
-        (void)host;
-        (void)context;
-        (void)rev;
-        (void)msg;
-        (void)code;
-        (void)code_size;
-        std::cout << "error: host -> native not yet implemented" << std::endl;
-        abort();
-    }
-
-    evmc_capabilities_flagset get_capabilities(evmc_vm *vm)
-    {
-        (void)vm;
-        return EVMC_CAPABILITY_EVM1;
-    }
-
-}

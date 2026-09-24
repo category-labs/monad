@@ -21,6 +21,7 @@
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/tx_context.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/exit.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -72,7 +73,7 @@ namespace monad::vm::runtime
         uint32_t code_size;
         size_t return_data_size;
 
-        evmc_tx_context const *tx_context;
+        TxContext const *tx_context;
 
         ~Environment()
         {

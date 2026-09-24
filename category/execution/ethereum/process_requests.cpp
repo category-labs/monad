@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <category/crypto/silkpre_vendor/sha256.h>
@@ -89,18 +90,18 @@ Result<byte_string> system_call(
     };
 
     auto msg_memory = state.vm().message_memory_ref();
-    evmc_message const msg = {
-        .kind = EVMC_CALL,
+    vm::Message const msg = {
+        .kind = vm::CallKind::Call,
         .flags = 0,
         .depth = 0,
         .gas = 30'000'000, // as per eip-7002, eip-7251
-        .recipient = to_evmc(contract_address),
-        .sender = to_evmc(ETH_SYSTEM_ADDRESS),
+        .recipient = contract_address,
+        .sender = ETH_SYSTEM_ADDRESS,
         .input_data = nullptr,
         .input_size = 0,
         .value = {},
         .create2_salt = {},
-        .code_address = to_evmc(contract_address),
+        .code_address = contract_address,
         .memory_handle = msg_memory.get(),
         .memory = msg_memory.get(),
         .memory_capacity = state.vm().message_memory_capacity(),

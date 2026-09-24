@@ -18,6 +18,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/access_status.h>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
@@ -25,7 +26,7 @@
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <evmc/evmc.h>
+#include <utility>
 
 namespace monad::vm::runtime
 {
@@ -34,7 +35,8 @@ namespace monad::vm::runtime
     {
         static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
-        if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
+        if (MONAD_UNLIKELY(
+                ctx->env.flags & std::to_underlying(CallFlags::Static))) {
             ctx->exit(StatusCode::Error);
         }
 

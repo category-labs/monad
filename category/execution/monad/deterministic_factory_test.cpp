@@ -36,6 +36,7 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/mpt/db.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/evm/tx_context.hpp>
@@ -144,14 +145,14 @@ namespace
                 ChainContext<Trait>::debug_empty()};
 
             auto msg_memory = state.vm().message_memory_ref();
-            evmc_message const msg{
-                .kind = EVMC_CALL,
+            vm::Message const msg{
+                .kind = vm::CallKind::Call,
                 .gas = 1'000'000,
-                .recipient = to_evmc(FACTORY_ADDRESS),
-                .sender = to_evmc(sender),
+                .recipient = FACTORY_ADDRESS,
+                .sender = sender,
                 .input_data = calldata.data(),
                 .input_size = calldata.size(),
-                .code_address = to_evmc(FACTORY_ADDRESS),
+                .code_address = FACTORY_ADDRESS,
                 .memory_handle = msg_memory.get(),
                 .memory = msg_memory.get(),
                 .memory_capacity = state.vm().message_memory_capacity()};

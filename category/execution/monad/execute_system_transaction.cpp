@@ -38,6 +38,7 @@
 #include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <evmc/evmc.h>
 
@@ -146,22 +147,22 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 }
 
 template <Traits traits>
-evmc_message ExecuteSystemTransaction<traits>::to_message() const
+vm::Message ExecuteSystemTransaction<traits>::to_message() const
 {
     // System transactions currently do not need a pointer to vm memory,
     // so the `memory*` fields are zero initialized:
-    evmc_message msg{
-        .kind = EVMC_CALL,
+    vm::Message msg{
+        .kind = vm::CallKind::Call,
         .flags = 0,
         .depth = 0,
         .gas = 0,
-        .recipient = to_evmc(*tx_.to),
-        .sender = to_evmc(sender_),
+        .recipient = *tx_.to,
+        .sender = sender_,
         .input_data = tx_.data.data(),
         .input_size = tx_.data.size(),
-        .value = store_be_as<evmc::uint256be>(tx_.value),
+        .value = store_be_as<bytes32_t>(tx_.value),
         .create2_salt = {},
-        .code_address = to_evmc(*tx_.to),
+        .code_address = *tx_.to,
         .memory_handle = nullptr,
         .memory = nullptr,
         .memory_capacity = 0,

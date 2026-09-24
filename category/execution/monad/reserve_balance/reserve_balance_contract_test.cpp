@@ -43,6 +43,7 @@
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -338,10 +339,10 @@ void run_dipped_into_reserve_test(
             chain_context};
 
         monad::vm::test::TestMessage test_msg_;
-        evmc_message msg{*test_msg_};
+        Message msg{*test_msg_};
         msg.gas = int64_t{GAS_LIMIT};
-        msg.recipient = to_evmc(ENTRYPOINT);
-        msg.sender = to_evmc(BUNDLER);
+        msg.recipient = ENTRYPOINT;
+        msg.sender = BUNDLER;
 
         init_reserve_balance_context<traits>(
             state,
@@ -383,13 +384,13 @@ TEST_F(ReserveBalanceEvm, precompile_fallback)
     {
         auto input = std::array<uint8_t, 4>{};
 
-        auto const m = evmc_message{
+        auto const m = Message{
             .gas = 100,
-            .recipient = to_evmc(RESERVE_BALANCE_CA),
-            .sender = to_evmc(account_a),
+            .recipient = RESERVE_BALANCE_CA,
+            .sender = account_a,
             .input_data = input.data(),
             .input_size = input.size(),
-            .code_address = to_evmc(RESERVE_BALANCE_CA),
+            .code_address = RESERVE_BALANCE_CA,
         };
 
         init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
@@ -416,13 +417,13 @@ TEST_F(ReserveBalanceEvm, precompile_fallback)
     {
         auto input = std::array<uint8_t, 4>{};
 
-        auto const m = evmc_message{
+        auto const m = Message{
             .gas = 99,
-            .recipient = to_evmc(RESERVE_BALANCE_CA),
-            .sender = to_evmc(account_a),
+            .recipient = RESERVE_BALANCE_CA,
+            .sender = account_a,
             .input_data = input.data(),
             .input_size = input.size(),
-            .code_address = to_evmc(RESERVE_BALANCE_CA),
+            .code_address = RESERVE_BALANCE_CA,
         };
 
         init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
@@ -448,13 +449,13 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_present)
     auto const *s = selector.bytes;
     auto input = std::array<uint8_t, 4>{s[0], s[1], s[2], s[3]};
 
-    auto const m = evmc_message{
+    auto const m = Message{
         .gas = 100,
-        .recipient = to_evmc(RESERVE_BALANCE_CA),
-        .sender = to_evmc(account_a),
+        .recipient = RESERVE_BALANCE_CA,
+        .sender = account_a,
         .input_data = input.data(),
         .input_size = input.size(),
-        .code_address = to_evmc(RESERVE_BALANCE_CA),
+        .code_address = RESERVE_BALANCE_CA,
     };
 
     init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
@@ -479,13 +480,13 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_oog)
     auto const *s = selector.bytes;
     auto input = std::array<uint8_t, 4>{s[0], s[1], s[2], s[3]};
 
-    auto const m = evmc_message{
+    auto const m = Message{
         .gas = 99,
-        .recipient = to_evmc(RESERVE_BALANCE_CA),
-        .sender = to_evmc(account_a),
+        .recipient = RESERVE_BALANCE_CA,
+        .sender = account_a,
         .input_data = input.data(),
         .input_size = input.size(),
-        .code_address = to_evmc(RESERVE_BALANCE_CA),
+        .code_address = RESERVE_BALANCE_CA,
     };
 
     init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
@@ -510,13 +511,13 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_with_argument)
     auto const *s = selector.bytes;
     auto input = std::array<uint8_t, 4 + 1>{s[0], s[1], s[2], s[3], 0};
 
-    auto const m = evmc_message{
+    auto const m = Message{
         .gas = 100,
-        .recipient = to_evmc(RESERVE_BALANCE_CA),
-        .sender = to_evmc(account_a),
+        .recipient = RESERVE_BALANCE_CA,
+        .sender = account_a,
         .input_data = input.data(),
         .input_size = input.size(),
-        .code_address = to_evmc(RESERVE_BALANCE_CA),
+        .code_address = RESERVE_BALANCE_CA,
     };
 
     init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
@@ -569,7 +570,7 @@ TYPED_TEST(MonadTraitsTest, reverttransaction_revert)
 template <Traits traits>
     requires is_monad_trait_v<traits>
 void run_check_call_precompile_test(
-    State &state, evmc_message const &msg, evmc_status_code expected_status,
+    State &state, Message const &msg, evmc_status_code expected_status,
     std::string_view expected_message = "")
 {
     NoopCallTracer call_tracer;
@@ -641,16 +642,16 @@ TYPED_TEST(
     u32_be const selector = abi_encode_selector("dippedIntoReserve()");
     byte_string const calldata = {selector.bytes, 4};
     // Generates a basic OK message
-    auto const make_msg = [this, &calldata]() -> evmc_message {
-        return evmc_message{
-            .kind = EVMC_CALL,
+    auto const make_msg = [this, &calldata]() -> Message {
+        return Message{
+            .kind = CallKind::Call,
             .flags = 0,
             .gas = 100,
-            .recipient = to_evmc(RESERVE_BALANCE_CA),
-            .sender = to_evmc(this->account_a),
+            .recipient = RESERVE_BALANCE_CA,
+            .sender = this->account_a,
             .input_data = calldata.data(),
             .input_size = calldata.size(),
-            .code_address = to_evmc(RESERVE_BALANCE_CA),
+            .code_address = RESERVE_BALANCE_CA,
         };
     };
 
@@ -685,25 +686,25 @@ TYPED_TEST(
     // 1. Invocation method is not `CALL`: Reject with message ""
     {
         for (auto const call_kind :
-             {EVMC_CALL,
-              EVMC_DELEGATECALL,
-              EVMC_CALLCODE,
-              EVMC_CREATE,
-              EVMC_CREATE2,
-              EVMC_EOFCREATE}) {
+             {CallKind::Call,
+              CallKind::DelegateCall,
+              CallKind::CallCode,
+              CallKind::Create,
+              CallKind::Create2,
+              CallKind::EofCreate}) {
 
-            evmc_message msg = make_msg();
+            Message msg = make_msg();
             msg.kind = call_kind;
 
             for (int64_t const gas : std::initializer_list<int64_t>{99, 100}) {
                 msg.gas = gas;
                 for (uint8_t const flags : std::initializer_list<uint8_t>{
                          0u,
-                         static_cast<uint8_t>(EVMC_STATIC),
-                         static_cast<uint8_t>(EVMC_DELEGATED),
-                         static_cast<uint8_t>(EVMC_STATIC) |
-                             static_cast<uint8_t>(EVMC_DELEGATED)}) {
-                    if (call_kind == EVMC_CALL && flags == 0u) {
+                         static_cast<uint8_t>(CallFlags::Static),
+                         static_cast<uint8_t>(CallFlags::Delegated),
+                         static_cast<uint8_t>(CallFlags::Static) |
+                             static_cast<uint8_t>(CallFlags::Delegated)}) {
+                    if (call_kind == CallKind::Call && flags == 0u) {
                         // This is the valid CALL case, which should be
                         // accepted, so skip it in this loop and test it in the
                         // loops below.
@@ -714,7 +715,7 @@ TYPED_TEST(
                     for (uint256_be_t const value :
                          std::initializer_list<uint256_be_t>{
                              0x00_bytes32, 0x01_bytes32}) {
-                        msg.value = to_evmc(value);
+                        msg.value = value;
 
                         for (auto const &calldata_variant : calldata_variants) {
                             msg.input_data = calldata_variant.data();
@@ -732,12 +733,12 @@ TYPED_TEST(
 
     // 2. gas < 100: OOG with message ""
     {
-        evmc_message msg = make_msg();
+        Message msg = make_msg();
         msg.gas = 99;
 
         for (uint256_be_t const value :
              std::initializer_list<uint256_be_t>{0x00_bytes32, 0x01_bytes32}) {
-            msg.value = to_evmc(value);
+            msg.value = value;
 
             for (auto const &calldata_variant : calldata_variants) {
                 msg.input_data = calldata_variant.data();
@@ -751,7 +752,7 @@ TYPED_TEST(
 
     // 3. len(calldata) < 4: Reject with message "method not supported"
     {
-        evmc_message msg = make_msg();
+        Message msg = make_msg();
 
         std::array<uint8_t, 3> short3 = {s[0], s[1], s[2]};
         std::array<uint8_t, 2> short2 = {s[0], s[1]};
@@ -770,7 +771,7 @@ TYPED_TEST(
 
             for (uint256_be_t const value : std::initializer_list<uint256_be_t>{
                      0x00_bytes32, 0x01_bytes32}) {
-                msg.value = to_evmc(value);
+                msg.value = value;
 
                 run_check_call_precompile_test<typename TestFixture::Trait>(
                     this->state, msg, EVMC_REVERT, "method not supported");
@@ -781,7 +782,7 @@ TYPED_TEST(
     // Case 4. calldata[:4] != dippedIntoReserve.selector: Reject with message
     // "method not supported"
     {
-        evmc_message msg = make_msg();
+        Message msg = make_msg();
 
         std::array<uint8_t, 4> wrong_selector = {0xFF, 0xFF, 0xFF, 0xFF};
         std::array<uint8_t, 5> wrong_too_long = {s[0], s[1], s[2], 0xFF, 0x00};
@@ -792,7 +793,7 @@ TYPED_TEST(
 
         for (uint256_be_t const value :
              std::initializer_list<uint256_be_t>{0x00_bytes32, 0x01_bytes32}) {
-            msg.value = to_evmc(value);
+            msg.value = value;
 
             for (auto const &[data, size] : wrong_calldata) {
                 msg.input_data = data;
@@ -806,8 +807,8 @@ TYPED_TEST(
     // Case 5. calldata[:4] == dippedIntoReserve.selector && value > 0: Reject
     // with message "value is nonzero"
     {
-        evmc_message msg = make_msg();
-        msg.value = to_evmc(0x01_bytes32);
+        Message msg = make_msg();
+        msg.value = 0x01_bytes32;
 
         std::array<uint8_t, 4> selector = {s[0], s[1], s[2], s[3]};
         std::array<uint8_t, 5> too_long = {s[0], s[1], s[2], s[3], 0x00};
@@ -827,7 +828,7 @@ TYPED_TEST(
     // Case 6. calldata[:4] == dippedIntoReserve.selector && len(calldata) > 4:
     // Reject with message "input is invalid"
     {
-        evmc_message msg = make_msg();
+        Message msg = make_msg();
         std::array<uint8_t, 5> too_long = {s[0], s[1], s[2], s[3], 0x00};
         msg.input_data = too_long.data();
         msg.input_size = too_long.size();
@@ -837,7 +838,7 @@ TYPED_TEST(
 
     // Case 7: A well-formed call that should be accepted.
     {
-        evmc_message msg = make_msg();
+        Message msg = make_msg();
 
         init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
             this->state,

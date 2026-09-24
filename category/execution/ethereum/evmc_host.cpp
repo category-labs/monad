@@ -135,7 +135,7 @@ EvmcHostBase::get_code_hash(evmc::address const &address) const noexcept
 
 size_t EvmcHostBase::copy_code(
     evmc::address const &address, size_t const offset, uint8_t *const data,
-    size_t const size) const noexcept
+    size_t const size) const
 {
     MONAD_TRY
     {

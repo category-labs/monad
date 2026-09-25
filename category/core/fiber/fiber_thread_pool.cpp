@@ -42,7 +42,8 @@ MONAD_FIBER_NAMESPACE_BEGIN
 
 FiberThreadPool::FiberThreadPool(
     unsigned const n_threads, bool const prevent_spin)
-    : prevent_spin_{prevent_spin}
+    : exit_latch_{n_threads + 1}
+    , prevent_spin_{prevent_spin}
 {
     MONAD_ASSERT(n_threads);
 
@@ -59,8 +60,11 @@ FiberThreadPool::FiberThreadPool(
             boost::fibers::use_scheduling_algorithm<PriorityAlgorithm>(
                 queue_, prevent_spin_);
 
-            std::unique_lock<boost::fibers::mutex> lock{mutex_};
-            cv_.wait(lock, [this] { return done_; });
+            {
+                std::unique_lock<boost::fibers::mutex> lock{mutex_};
+                cv_.wait(lock, [this] { return done_; });
+            }
+            exit_latch_.arrive_and_wait();
         });
         threads_.push_back(std::move(thread));
     }
@@ -93,6 +97,7 @@ FiberThreadPool::FiberThreadPool(
         }
 
         bootstrap_fiber.join();
+        exit_latch_.arrive_and_wait();
     });
     threads_.push_back(std::move(thread));
 }
@@ -111,6 +116,7 @@ FiberThreadPool::~FiberThreadPool()
     }
 
     cv_.notify_all();
+    exit_latch_.count_down();
 
     while (threads_.size()) {
         auto &thread = threads_.back();

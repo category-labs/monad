@@ -26,6 +26,7 @@
 #include <optional>
 #include <span>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace monad::vm::compiler
@@ -103,6 +104,9 @@ namespace monad::vm::compiler
         Dup = 0x80,
         Swap = 0x90,
         Log = 0xA0,
+        DupN = 0xE6,
+        SwapN = 0xE7,
+        Exchange = 0xE8,
         Create = 0xF0,
         Call = 0xF1,
         CallCode = 0xF2,
@@ -124,12 +128,20 @@ namespace monad::vm::compiler
             uint32_t static_gas_cost, uint8_t stack_args, uint8_t index,
             uint8_t stack_increase, bool dynamic_gas);
 
+        constexpr Instruction(
+            uint32_t pc, OpCode opcode, uint32_t static_gas_cost,
+            uint8_t stack_args, std::pair<uint8_t, uint8_t> indices,
+            uint8_t stack_increase, bool dynamic_gas);
+
         constexpr uint256_t const &immediate_value() const noexcept;
         constexpr uint32_t pc() const noexcept;
         constexpr uint32_t static_gas_cost() const noexcept;
         constexpr OpCode opcode() const noexcept;
         constexpr uint8_t stack_args() const noexcept;
+        // N for PUSHN, DUP1-16, SWAP1-16, LOGN, DUPN and SWAPN. EXCHANGE's pair
+        // is exchange_indices().
         constexpr uint8_t index() const noexcept;
+        constexpr std::pair<uint8_t, uint8_t> exchange_indices() const noexcept;
         constexpr bool increases_stack() const noexcept;
         constexpr uint8_t stack_increase() const noexcept;
         constexpr bool dynamic_gas() const noexcept;
@@ -145,7 +157,7 @@ namespace monad::vm::compiler
         uint32_t static_gas_cost_;
         OpCode opcode_;
         uint8_t stack_args_;
-        uint8_t index_;
+        std::pair<uint8_t, uint8_t> indices_;
         uint8_t stack_increase_;
         bool dynamic_gas_;
     };
@@ -174,11 +186,27 @@ namespace monad::vm::compiler
         , static_gas_cost_(static_gas_cost)
         , opcode_(op)
         , stack_args_(stack_args)
-        , index_(index)
+        , indices_(index, 0)
         , stack_increase_(stack_increase)
         , dynamic_gas_(dynamic_gas)
     {
         MONAD_DEBUG_ASSERT(immediate_value == 0 || opcode() == OpCode::Push);
+    }
+
+    constexpr Instruction::Instruction(
+        uint32_t const pc, OpCode const op, uint32_t const static_gas_cost,
+        uint8_t const stack_args, std::pair<uint8_t, uint8_t> const indices,
+        uint8_t const stack_increase, bool const dynamic_gas)
+        : immediate_value_(0)
+        , pc_(pc)
+        , static_gas_cost_(static_gas_cost)
+        , opcode_(op)
+        , stack_args_(stack_args)
+        , indices_(indices)
+        , stack_increase_(stack_increase)
+        , dynamic_gas_(dynamic_gas)
+    {
+        MONAD_DEBUG_ASSERT(op == OpCode::Exchange);
     }
 
     constexpr uint256_t const &Instruction::immediate_value() const noexcept
@@ -211,8 +239,16 @@ namespace monad::vm::compiler
     {
         MONAD_ASSERT(
             opcode() == OpCode::Push || opcode() == OpCode::Swap ||
-            opcode() == OpCode::Dup || opcode() == OpCode::Log);
-        return index_;
+            opcode() == OpCode::Dup || opcode() == OpCode::Log ||
+            opcode() == OpCode::DupN || opcode() == OpCode::SwapN);
+        return indices_.first;
+    }
+
+    constexpr std::pair<uint8_t, uint8_t>
+    Instruction::exchange_indices() const noexcept
+    {
+        MONAD_ASSERT(opcode() == OpCode::Exchange);
+        return indices_;
     }
 
     constexpr bool Instruction::increases_stack() const noexcept
@@ -238,7 +274,7 @@ namespace monad::vm::compiler
             static_gas_cost_,
             opcode_,
             stack_args_,
-            index_,
+            indices_,
             stack_increase_,
             dynamic_gas_);
     }
@@ -396,6 +432,12 @@ namespace monad::vm::compiler
             return "SWAP";
         case Log:
             return "LOG";
+        case DupN:
+            return "DUPN";
+        case SwapN:
+            return "SWAPN";
+        case Exchange:
+            return "EXCHANGE";
         case Create:
             return "CREATE";
         case Call:
@@ -454,6 +496,17 @@ struct std::formatter<monad::vm::compiler::Instruction>
                 inst.opcode(),
                 inst.index(),
                 inst.immediate_value());
+        }
+
+        if (inst.opcode() == DupN || inst.opcode() == SwapN) {
+            return std::format_to(
+                ctx.out(), "{} {}", inst.opcode(), +inst.index());
+        }
+
+        if (inst.opcode() == Exchange) {
+            auto const [n, m] = inst.exchange_indices();
+            return std::format_to(
+                ctx.out(), "{} {}, {}", inst.opcode(), +n, +m);
         }
 
         if (inst.opcode() == Push || inst.opcode() == Dup ||

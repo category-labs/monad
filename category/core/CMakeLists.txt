@@ -71,6 +71,7 @@ add_library(
   "config.hpp"
   # core
   "address.hpp"
+  "asan.h"
   "assert.c"
   "assert.h"
   "assume.h"

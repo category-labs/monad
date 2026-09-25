@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/asan.h>
 #include <category/core/assert.h>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
@@ -52,7 +53,13 @@ namespace monad::vm::runtime
         [[gnu::always_inline]]
         size_t size()
         {
-            return empty() ? 0 : elements->idx;
+            if (empty()) {
+                return 0;
+            }
+            MONAD_ASAN_UNPOISON(elements, sizeof(CachedAllocatorElement));
+            size_t const n = elements->idx;
+            MONAD_ASAN_POISON(elements, sizeof(CachedAllocatorElement));
+            return n;
         }
 
         void push(CachedAllocatorElement *const e)
@@ -60,12 +67,14 @@ namespace monad::vm::runtime
             e->next = elements;
             e->idx = size() + 1;
             elements = e;
+            MONAD_ASAN_POISON(e, sizeof(CachedAllocatorElement));
         }
 
         CachedAllocatorElement *pop()
         {
             MONAD_DEBUG_ASSERT(!empty());
             auto *ptr = elements;
+            MONAD_ASAN_UNPOISON(ptr, sizeof(CachedAllocatorElement));
             elements = ptr->next;
             return ptr;
         }
@@ -74,6 +83,7 @@ namespace monad::vm::runtime
         {
             auto *e = elements;
             while (e) {
+                MONAD_ASAN_UNPOISON(e, sizeof(CachedAllocatorElement));
                 auto *next = e->next;
                 std::free(e);
                 e = next;
@@ -120,7 +130,10 @@ namespace monad::vm::runtime
                 return p;
             }
             else {
-                return reinterpret_cast<uint8_t *>(T::cache_list.pop());
+                auto *const p =
+                    reinterpret_cast<uint8_t *>(T::cache_list.pop());
+                MONAD_ASAN_UNPOISON(p, alloc_size);
+                return p;
             }
         }
 
@@ -139,6 +152,9 @@ namespace monad::vm::runtime
                 std::free(ptr);
             }
             else {
+                MONAD_ASAN_POISON(
+                    ptr + sizeof(CachedAllocatorElement),
+                    alloc_size - sizeof(CachedAllocatorElement));
                 T::cache_list.push(
                     reinterpret_cast<CachedAllocatorElement *>(ptr));
             }

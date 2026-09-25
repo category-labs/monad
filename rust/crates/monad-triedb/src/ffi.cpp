@@ -33,11 +33,13 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 struct TriedbRoInner
@@ -293,6 +295,35 @@ bool triedb_update_stats_read(
         stats->bytes_copied_slow_to_fast_for_slow;
     out->nodes_updated_expire = stats->nodes_updated_expire;
     out->nreads_expire = stats->nreads_expire;
+    return true;
+}
+
+bool triedb_thread_idle_stats_read(
+    TriedbStatsReader *const stats_reader, triedb_thread_idle *const out,
+    size_t *const count)
+{
+    using monad::mpt::detail::ThreadIdleSection;
+    static_assert(
+        TRIEDB_THREAD_IDLE_MAX ==
+        std::extent_v<decltype(ThreadIdleSection::slots)>);
+    static_assert(
+        sizeof(triedb_thread_idle) ==
+        sizeof(monad::mpt::detail::ThreadIdleSlot));
+
+    if (stats_reader == nullptr || out == nullptr || count == nullptr) {
+        return false;
+    }
+    auto const section = stats_reader->reader.read_thread_idle();
+    if (!section.has_value()) {
+        return false;
+    }
+    for (uint32_t i = 0; i < section->count; ++i) {
+        std::memcpy(out[i].name, section->slots[i].name, sizeof(out[i].name));
+        out[i].name[sizeof(out[i].name) - 1] = '\0';
+        out[i].idle_ns = section->slots[i].idle_ns;
+        out[i].registered_at_ns = section->slots[i].registered_at_ns;
+    }
+    *count = section->count;
     return true;
 }
 

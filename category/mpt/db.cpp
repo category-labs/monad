@@ -30,6 +30,7 @@
 #include <category/core/io/ring.hpp>
 #include <category/core/log.hpp>
 #include <category/core/result.hpp>
+#include <category/core/thread_idle.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/db_error.hpp>
 #include <category/mpt/db_metadata_context.hpp>
@@ -49,6 +50,8 @@
 
 #include <boost/fiber/operations.hpp>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -61,6 +64,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <thread>
 #include <utility>
 #include <variant>
@@ -444,6 +448,34 @@ private:
         UpdateAux aux;
         std::atomic<bool> sleeping{false}, done{false};
 
+        static constexpr uint64_t THREAD_IDLE_PUBLISH_INTERVAL_NS =
+            1'000'000'000;
+        uint64_t last_thread_idle_publish_ns{0};
+        std::array<ThreadIdleSample, ThreadIdleRegistry::MAX_THREADS>
+            last_thread_idle_samples{};
+        size_t last_thread_idle_count{0};
+
+        void maybe_publish_thread_idle(uint64_t const now_ns)
+        {
+            if (!stats_publisher.has_value() ||
+                now_ns - last_thread_idle_publish_ns <
+                    THREAD_IDLE_PUBLISH_INTERVAL_NS) {
+                return;
+            }
+            std::array<ThreadIdleSample, ThreadIdleRegistry::MAX_THREADS>
+                samples;
+            size_t const n = ThreadIdleRegistry::global().snapshot(samples);
+            auto const current = std::span{samples}.first(n);
+            keep_idle_monotonic(
+                current,
+                std::span{last_thread_idle_samples}.first(
+                    last_thread_idle_count));
+            stats_publisher->publish_thread_idle(current);
+            std::ranges::copy(current, last_thread_idle_samples.begin());
+            last_thread_idle_count = n;
+            last_thread_idle_publish_ns = now_ns;
+        }
+
         DbAsyncWorker(
             OnDiskDbServiceThread *const parent,
             ReadOnlyOnDiskDbConfig const &options)
@@ -563,8 +595,15 @@ private:
         {
             Comms request;
             unsigned did_nothing_count = 0;
+            auto const idle_registration =
+                ThreadIdleRegistry::global().claim("triedb rw");
+            ThreadIdleCounter *const idle_counter = idle_registration.counter();
             while (!done.load(std::memory_order_acquire)) {
+                // Taken before the iteration because poll_nonblocking runs
+                // completion handlers, whose work must count as busy.
+                uint64_t const iteration_start_ns = monotonic_ns();
                 bool did_nothing = true;
+                bool dequeued = false;
                 if (parent->comms_.try_dequeue(request)) {
                     if (auto *req = std::get_if<1>(&request); req != nullptr) {
                         find_notify_fiber_future(
@@ -637,8 +676,18 @@ private:
                         req->promise.set_value(std::move(root));
                     }
                     did_nothing = false;
+                    dequeued = true;
                 }
-                async_io.io.poll_nonblocking(1);
+                size_t const reaped = async_io.io.poll_nonblocking(1);
+                if (idle_counter != nullptr) {
+                    if (dequeued || reaped != 0) {
+                        idle_counter->mark_busy_at(iteration_start_ns);
+                    }
+                    else {
+                        idle_counter->mark_idle_at(iteration_start_ns);
+                    }
+                }
+                maybe_publish_thread_idle(iteration_start_ns);
                 if (did_nothing && async_io.io.io_in_flight() > 0) {
                     did_nothing = false;
                 }
@@ -649,6 +698,9 @@ private:
                     did_nothing_count = 0;
                 }
                 if (did_nothing_count > 1000000) {
+                    if (idle_counter != nullptr) {
+                        idle_counter->mark_idle_at(iteration_start_ns);
+                    }
                     std::unique_lock g(parent->lock_);
                     sleeping.store(true, std::memory_order_release);
                     /* Very irritatingly, Boost.Fiber may have fibers scheduled

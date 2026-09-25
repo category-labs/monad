@@ -15,7 +15,7 @@
 
 use std::{
     cmp::Ordering,
-    ffi::CString,
+    ffi::{CStr, CString},
     path::Path,
     ptr::{null, null_mut, NonNull},
     sync::{
@@ -113,6 +113,18 @@ pub struct UpdateStats {
 const _: () =
     assert!(std::mem::size_of::<ffi::triedb_update_stats>() == std::mem::size_of::<UpdateStats>());
 
+/// Cumulative idle time of one of the writing process's busy-polling threads,
+/// read from the statistics sidecar. These threads show at 100% in `top`
+/// whatever their load; this is the time they actually had nothing to do.
+/// Restarts at zero when the writing process does.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ThreadIdle {
+    pub name: String,
+    pub idle_ns: u64,
+    /// CLOCK_MONOTONIC in the writing process when the thread registered.
+    pub registered_at_ns: u64,
+}
+
 /// Reader for the statistics sidecar published by a writing db (see the
 /// execution binary's `--db-stats-file`). Independent of [`TriedbHandle`]:
 /// the sidecar is a separate path, is absent unless the writer was
@@ -184,6 +196,34 @@ impl TriedbStatsReader {
             nodes_updated_expire: out.nodes_updated_expire,
             nreads_expire: out.nreads_expire,
         })
+    }
+
+    /// None if the writing db predates these counters, the section is
+    /// corrupt, or the writer kept republishing it for the whole retry budget.
+    pub fn thread_idle_stats(&self) -> Option<Vec<ThreadIdle>> {
+        // Plain C structs of bytes and u64s: zeroed is a valid value.
+        let mut out: [ffi::triedb_thread_idle; ffi::TRIEDB_THREAD_IDLE_MAX as usize] =
+            unsafe { std::mem::zeroed() };
+        let mut count: usize = 0;
+        if !unsafe { ffi::triedb_thread_idle_stats_read(self.ptr, out.as_mut_ptr(), &mut count) } {
+            return None;
+        }
+
+        Some(
+            out[..count]
+                .iter()
+                .map(|thread| {
+                    let bytes: Vec<u8> = thread.name.iter().map(|&c| c as u8).collect();
+                    ThreadIdle {
+                        name: CStr::from_bytes_until_nul(&bytes)
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                        idle_ns: thread.idle_ns,
+                        registered_at_ns: thread.registered_at_ns,
+                    }
+                })
+                .collect(),
+        )
     }
 }
 
@@ -717,7 +757,7 @@ mod migration_phase_tests {
 mod update_stats_tests {
     use std::{fs, path::PathBuf};
 
-    use super::{TriedbStatsReader, UpdateStats};
+    use super::{ThreadIdle, TriedbStatsReader, UpdateStats};
 
     const MAGIC: u64 = 0x4d4f_4e41_4453_5453;
     const FORMAT_VERSION: u32 = 1;
@@ -810,5 +850,99 @@ mod update_stats_tests {
                 nreads_expire: 20,
             }
         );
+    }
+
+    const THREAD_SLOTS: usize = 32;
+
+    fn write_full_sidecar(path: &PathBuf, threads: &[([u8; 16], u64, u64)], count: u32) {
+        let payload = FIELDS * 8 + 8 + THREAD_SLOTS * 32;
+        let mut bytes = Vec::with_capacity(24 + payload);
+        bytes.extend_from_slice(&MAGIC.to_ne_bytes());
+        bytes.extend_from_slice(&FORMAT_VERSION.to_ne_bytes());
+        bytes.extend_from_slice(&(payload as u32).to_ne_bytes());
+        bytes.extend_from_slice(&2u32.to_ne_bytes());
+        bytes.extend_from_slice(&0u32.to_ne_bytes());
+        for i in 0..FIELDS {
+            bytes.extend_from_slice(&(i as u64).to_ne_bytes());
+        }
+        bytes.extend_from_slice(&count.to_ne_bytes());
+        bytes.extend_from_slice(&0u32.to_ne_bytes());
+        for slot in 0..THREAD_SLOTS {
+            let (name, idle, since) = threads.get(slot).copied().unwrap_or(([0; 16], 0, 0));
+            bytes.extend_from_slice(&name);
+            bytes.extend_from_slice(&idle.to_ne_bytes());
+            bytes.extend_from_slice(&since.to_ne_bytes());
+        }
+        fs::write(path, &bytes).unwrap();
+    }
+
+    fn name16(s: &str) -> [u8; 16] {
+        let mut out = [0u8; 16];
+        out[..s.len()].copy_from_slice(s.as_bytes());
+        out
+    }
+
+    #[test]
+    fn thread_idle_stats_reads_every_published_thread() {
+        let path = sidecar_path("thread_idle");
+        let _cleanup = RemoveOnDrop(path.clone());
+        write_full_sidecar(
+            &path,
+            &[(name16("ftpool 0"), 11, 1), (name16("triedb rw"), 22, 2)],
+            2,
+        );
+
+        let reader = TriedbStatsReader::try_new(&path).expect("sidecar should open");
+        assert_eq!(
+            reader
+                .thread_idle_stats()
+                .expect("section should be present"),
+            vec![
+                ThreadIdle {
+                    name: "ftpool 0".into(),
+                    idle_ns: 11,
+                    registered_at_ns: 1
+                },
+                ThreadIdle {
+                    name: "triedb rw".into(),
+                    idle_ns: 22,
+                    registered_at_ns: 2
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn thread_idle_stats_is_none_for_a_writer_predating_them() {
+        let path = sidecar_path("thread_idle_predating");
+        let _cleanup = RemoveOnDrop(path.clone());
+        write_sidecar(&path, 2, |_| 7);
+
+        let reader = TriedbStatsReader::try_new(&path).expect("sidecar should open");
+        assert!(reader.update_stats().is_some());
+        assert!(reader.thread_idle_stats().is_none());
+    }
+
+    #[test]
+    fn a_name_filling_all_sixteen_bytes_is_cut_at_fifteen() {
+        let path = sidecar_path("thread_idle_unterminated");
+        let _cleanup = RemoveOnDrop(path.clone());
+        write_full_sidecar(&path, &[(*b"ABCDEFGHIJKLMNOP", 1, 1)], 1);
+
+        let reader = TriedbStatsReader::try_new(&path).expect("sidecar should open");
+        let threads = reader
+            .thread_idle_stats()
+            .expect("section should be present");
+        assert_eq!(threads[0].name, "ABCDEFGHIJKLMNO");
+    }
+
+    #[test]
+    fn thread_idle_stats_is_none_for_an_impossible_count() {
+        let path = sidecar_path("thread_idle_bad_count");
+        let _cleanup = RemoveOnDrop(path.clone());
+        write_full_sidecar(&path, &[], THREAD_SLOTS as u32 + 1);
+
+        let reader = TriedbStatsReader::try_new(&path).expect("sidecar should open");
+        assert!(reader.thread_idle_stats().is_none());
     }
 }

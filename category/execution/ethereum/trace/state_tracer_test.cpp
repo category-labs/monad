@@ -18,9 +18,12 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/units.hpp>
+#include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
@@ -30,11 +33,14 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <category/core/address.hpp>
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
@@ -47,6 +53,8 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <boost/fiber/future/promise.hpp>
+
 #include <ankerl/unordered_dense.h>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -55,6 +63,8 @@
 
 #include <algorithm>
 #include <bit>
+#include <cstdint>
+#include <format>
 #include <optional>
 #include <vector>
 
@@ -1158,6 +1168,100 @@ TYPED_TEST(TraitsTest, access_list_precompiles)
         tracer.encode<typename TestFixture::Trait>(s);
 
         EXPECT_EQ(storage, nlohmann::json::parse(json_string));
+    }
+}
+
+// ExecuteTransaction finalizes before it runs the state tracer, so a contract
+// created and self-destructed to itself in one transaction is traced in its
+// finalized form: under EIP-8246 a preserved account showing only its balance
+// (nonce 0, no code and cleared storage are omitted), before EIP-8246 nothing
+// on either side.
+TYPED_TEST(TraitsTest, statediff_selfdestruct_same_tx_preserved)
+{
+    static constexpr auto from{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr uint64_t nonce = 25;
+    auto const created = create_contract_address(from, nonce);
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    BlockMetrics metrics;
+
+    {
+        State state{bs, Incarnation{0, 0}};
+        state.add_to_balance(from, 20_ether);
+        state.set_nonce(from, nonce);
+        bs.merge(state);
+    }
+
+    // Initcode: PUSH1 1 PUSH1 0 SSTORE ADDRESS SELFDESTRUCT
+    auto const data = byte_string{0x60, 0x01, 0x60, 0x00, 0x55, 0x30, 0xff};
+
+    Transaction const tx{
+        .sc =
+            {
+                .signature =
+                    {
+                        .r =
+                            0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256,
+                        .s =
+                            0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256,
+                    },
+            },
+        .nonce = nonce,
+        .max_fee_per_gas = 1,
+        .gas_limit = 100'000,
+        .value = 1_ether,
+        .to = std::nullopt,
+        .data = data,
+    };
+
+    BlockHeader const header{};
+    BlockHashBufferFinalized const block_hash_buffer;
+
+    NoopCallTracer noop_call_tracer;
+    nlohmann::json diff;
+    StateTracer state_tracer = StateDiffTracer{diff};
+
+    boost::fibers::promise<void> prev{};
+    prev.set_value();
+
+    auto const chain_ctx =
+        ChainContext<typename TestFixture::Trait>::debug_empty();
+
+    auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
+        MonadTestnet{},
+        0,
+        tx,
+        from,
+        {},
+        header,
+        block_hash_buffer,
+        bs,
+        metrics,
+        prev,
+        noop_call_tracer,
+        state_tracer,
+        chain_ctx,
+        /*exec_recorder=*/nullptr)();
+
+    ASSERT_TRUE(receipt.has_value());
+    EXPECT_EQ(receipt.value().status, 1u);
+
+    ASSERT_TRUE(diff.contains("pre") && diff.contains("post")) << diff.dump();
+    auto const key = std::format("0x{}", to_hex(created));
+    EXPECT_FALSE(diff["pre"].contains(key)) << diff.dump();
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        auto const json_str = R"({"balance":"0xde0b6b3a7640000"})";
+        EXPECT_EQ(
+            diff["post"].value(key, nlohmann::json{}),
+            nlohmann::json::parse(json_str))
+            << diff.dump();
+    }
+    else {
+        EXPECT_FALSE(diff["post"].contains(key)) << diff.dump();
     }
 }
 

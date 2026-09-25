@@ -226,3 +226,11 @@ TEST(StateSyncThread, shutdown_during_reconnect)
     sync_server->thread.request_stop();
     sync_server->thread.join();
 }
+
+TEST(StateSyncServerNetworkDeathTest, path_too_long_for_sun_path_aborts)
+{
+    std::string const path(sizeof(sockaddr_un::sun_path), 'x');
+    EXPECT_DEATH(
+        (void)monad_statesync_server_network{path.c_str()},
+        "statesync socket path is too long");
+}

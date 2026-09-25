@@ -615,8 +615,8 @@ static void do_run(
             auto const *const msg,
             auto const *const code,
             auto const code_size) -> evmc::Result {
-            return spec_vm.execute(
-                *host, context, to_evmc_revision(rev), *msg, code, code_size);
+            return copy_monadml_result(spec_vm.execute(
+                *host, context, to_evmc_revision(rev), *msg, code, code_size));
         });
 
     auto monad_state = [&] {

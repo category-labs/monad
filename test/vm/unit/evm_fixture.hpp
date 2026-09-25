@@ -153,13 +153,13 @@ namespace monad::vm::test
                 MONAD_ASSERT(impl == Spec);
                 evmc::VM spec_vm{evmc_create_monadml_evm()};
 
-                result_ = spec_vm.execute(
+                result_ = copy_monadml_result(spec_vm.execute(
                     host_.get_interface(),
                     host_.to_context(),
                     to_evmc_revision(TraitsTest<T>::Trait::evm_rev()),
                     msg_,
                     code.data(),
-                    code.size());
+                    code.size()));
             }
         }
 

@@ -16,6 +16,27 @@
 #pragma once
 
 #include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
 
 extern "C" struct evmc_vm *evmc_create_monadml_evm() noexcept;
 extern "C" struct evmc_vm *evmc_create_monadml_evm_debug_tstore() noexcept;
+
+// The spec VM's release functions are libffi trampolines that can start a page
+// with nothing mapped below it; clang's -fsanitize=function reads the 8 bytes
+// before an indirect callee, so release here, unchecked, instead of in ~Result.
+[[nodiscard, clang::no_sanitize("function")]] inline evmc::Result
+copy_monadml_result(evmc::Result spec) noexcept
+{
+    auto const raw = spec.release_raw();
+    evmc::Result result{
+        raw.status_code,
+        raw.gas_left,
+        raw.gas_refund,
+        raw.output_data,
+        raw.output_size};
+    result.create_address = raw.create_address;
+    if (raw.release != nullptr) {
+        raw.release(&raw);
+    }
+    return result;
+}

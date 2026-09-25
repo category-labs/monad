@@ -20,6 +20,7 @@ add_executable(vm-unit-tests)
 target_sources(vm-unit-tests PRIVATE
     async_compile_tests.cpp
     bin_tests.cpp
+    cached_allocator_tests.cpp
     compiler_tests.cpp
     evm-as_tests.cpp
     monad_vm_interface_tests.cpp

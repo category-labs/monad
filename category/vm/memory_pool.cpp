@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/asan.h>
 #include <category/core/assert.h>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/vm/memory_pool.hpp>
@@ -38,6 +39,7 @@ namespace monad::vm
         Node *n = head_;
         while (n != &empty_head_) {
             auto *const t = n;
+            MONAD_ASAN_UNPOISON(t, sizeof(Node));
             n = n->next;
             std::free(t);
         }
@@ -49,6 +51,7 @@ namespace monad::vm
         {
             std::lock_guard const lock{mutex_};
             old_head = head_;
+            MONAD_ASAN_UNPOISON(old_head, sizeof(Node));
             head_ = old_head->next;
         }
 
@@ -59,6 +62,7 @@ namespace monad::vm
             return reinterpret_cast<uint8_t *>(p);
         }
 
+        MONAD_ASAN_UNPOISON(old_head, alloc_capacity_);
         // This clears the memory buffer:
         std::memset(static_cast<void *>(&old_head->next), 0, sizeof(Node *));
         return reinterpret_cast<uint8_t *>(old_head);
@@ -67,12 +71,16 @@ namespace monad::vm
     void MemoryPool::dealloc(uint8_t *const p)
     {
         MONAD_DEBUG_ASSERT((reinterpret_cast<uintptr_t>(p) & 31) == 0);
+        MONAD_DEBUG_ASSERT(
+            p[0] == 0 && std::memcmp(p, p + 1, alloc_capacity_ - 1) == 0);
         static_assert(alignof(Node) <= 32);
+        MONAD_ASAN_POISON(p + sizeof(Node), alloc_capacity_ - sizeof(Node));
         Node *const new_head = reinterpret_cast<Node *>(p);
         {
             std::lock_guard const lock{mutex_};
             new_head->next = head_;
             head_ = new_head;
+            MONAD_ASAN_POISON(new_head, sizeof(Node));
         }
     }
 
@@ -84,7 +92,10 @@ namespace monad::vm
             if (!nodes.insert(n).second) {
                 return false;
             }
-            n = n->next;
+            MONAD_ASAN_UNPOISON(n, sizeof(Node));
+            Node *const next = n->next;
+            MONAD_ASAN_POISON(n, sizeof(Node));
+            n = next;
         }
         return true;
     }
@@ -95,7 +106,10 @@ namespace monad::vm
         Node *n = head_;
         while (n != &empty_head_) {
             ++x;
-            n = n->next;
+            MONAD_ASAN_UNPOISON(n, sizeof(Node));
+            Node *const next = n->next;
+            MONAD_ASAN_POISON(n, sizeof(Node));
+            n = next;
         }
         return x;
     }

@@ -58,6 +58,50 @@ TEST(CheckedMath, Multiply)
     EXPECT_EQ(overflow.error(), MathError::Overflow);
 }
 
+TEST(CheckedMath, MultiplyDivide)
+{
+    auto const rounded =
+        checked_wide_mul_div(uint256_t{7}, uint256_t{5}, uint256_t{3});
+    ASSERT_TRUE(rounded);
+    EXPECT_EQ(rounded.assume_value(), uint256_t{11});
+
+    auto const zero =
+        checked_wide_mul_div(uint256_t{0}, uint256_t{5}, uint256_t{3});
+    ASSERT_TRUE(zero);
+    EXPECT_EQ(zero.assume_value(), uint256_t{0});
+
+    auto const below_one =
+        checked_wide_mul_div(uint256_t{2}, uint256_t{3}, uint256_t{7});
+    ASSERT_TRUE(below_one);
+    EXPECT_EQ(below_one.assume_value(), uint256_t{0});
+}
+
+TEST(CheckedMath, MultiplyDivideWideProduct)
+{
+    auto const max = std::numeric_limits<uint256_t>::max();
+    auto const quotient = checked_wide_mul_div(max, max, max);
+    ASSERT_TRUE(quotient);
+    EXPECT_EQ(quotient.assume_value(), max);
+
+    constexpr auto half = uint256_t{1} << 255;
+    auto const rounded = checked_wide_mul_div(max, half, half + 1);
+    ASSERT_TRUE(rounded);
+    EXPECT_EQ(rounded.assume_value(), max - 2);
+
+    auto const overflow = checked_wide_mul_div(max, max, max - 1);
+    ASSERT_TRUE(overflow.has_error());
+    EXPECT_EQ(overflow.error(), MathError::Overflow);
+}
+
+TEST(CheckedMath, MultiplyDivideByZero)
+{
+    for (auto const x : {uint256_t{0}, std::numeric_limits<uint256_t>::max()}) {
+        auto const result = checked_wide_mul_div(x, x, uint256_t{0});
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), MathError::DivisionByZero);
+    }
+}
+
 TEST(CheckedMath, Divide)
 {
     auto const quotient = checked_div(uint256_t{7}, uint256_t{2});

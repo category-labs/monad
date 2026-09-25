@@ -16,14 +16,17 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/core/byte_string.hpp>
 
-#include <evmc/evmc.hpp>
+#include <evmc/evmc.h>
 
+#include <cstdint>
 #include <optional>
+#include <span>
 
 namespace monad::vm::evm
 {
-    evmc::bytes_view delegation_indicator_prefix();
+    byte_string_view delegation_indicator_prefix();
 
     bool is_delegated(std::span<uint8_t const> code);
 

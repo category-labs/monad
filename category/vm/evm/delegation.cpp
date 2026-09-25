@@ -14,9 +14,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
+#include <category/core/byte_string.hpp>
 #include <category/vm/evm/delegation.hpp>
 
-#include <evmc/bytes.hpp>
 #include <evmc/evmc.h>
 
 #include <algorithm>
@@ -37,7 +37,7 @@ namespace monad::vm::evm
             delegation_indicator_prefix_bytes.size() + sizeof(evmc_address);
     }
 
-    evmc::bytes_view delegation_indicator_prefix()
+    byte_string_view delegation_indicator_prefix()
     {
         return {
             delegation_indicator_prefix_bytes.data(),

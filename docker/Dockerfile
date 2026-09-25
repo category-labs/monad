@@ -40,11 +40,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
     rm -rf /opt
 
-ARG OCAML_VERSION=5.4.1
-
-RUN opam init --bare -y && \
-    opam switch create "$OCAML_VERSION" "$OCAML_VERSION" && \
-    opam install -y dune
+COPY scripts/ubuntu-build/install-ocaml.sh third_party/monad-execution-specs/monad-spec.opam /tmp/ocaml/
+RUN /tmp/ocaml/install-ocaml.sh /tmp/ocaml && rm -rf /tmp/ocaml
 
 FROM base AS build_and_test
 

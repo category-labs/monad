@@ -17,12 +17,14 @@
 
 #include <category/core/assert.h>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/stack_top.hpp>
 #include <category/vm/interpreter/types.hpp>
 
 #include <evmc/evmc.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace monad::vm::interpreter
@@ -35,6 +37,7 @@ namespace monad::vm::interpreter
         uint256_t const *const stack_bottom, StackTop const stack_top,
         int64_t &gas_remaining)
     {
+        static_assert(!compiler::has_operand_dependent_stack_effect(Instr));
         static constexpr auto info = compiler::opcode_table<traits>[Instr];
 
         if constexpr (info.min_gas > 0) {
@@ -72,6 +75,50 @@ namespace monad::vm::interpreter
                 }
             }
         }
+    }
+
+    struct Eip8024Operands
+    {
+        ptrdiff_t n;
+        ptrdiff_t m; // meaningful only for EXCHANGE
+    };
+
+    template <uint8_t Instr, Traits traits>
+    [[gnu::always_inline]] inline Eip8024Operands check_requirements_eip8024(
+        runtime::Context &ctx, uint256_t const *const stack_bottom,
+        StackTop const stack_top, int64_t &gas_remaining, uint8_t const imm)
+    {
+        static constexpr auto info = compiler::opcode_table<traits>[Instr];
+
+        // Checked before gas, so it fails as INVALID (matches compiler).
+        if (MONAD_UNLIKELY(!compiler::eip8024_immediate_valid(Instr, imm))) {
+            ctx.exit(Error);
+        }
+
+        gas_remaining -= info.min_gas;
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            ctx.exit(OutOfGas);
+        }
+
+        auto const operands = compiler::eip8024_operands(Instr, imm);
+        ptrdiff_t const min_stack =
+            compiler::eip8024_stack_effect(Instr, operands).min_stack;
+
+        auto const stack_size = stack_top.next_slot() - stack_bottom;
+        MONAD_DEBUG_ASSERT(stack_size <= 1024);
+        if (MONAD_UNLIKELY(stack_size < min_stack)) {
+            ctx.exit(Error);
+        }
+
+        static constexpr auto delta = info.stack_increase - info.min_stack;
+        if constexpr (delta > 0) {
+            static constexpr auto max_safe_size = 1024 - delta;
+            if (MONAD_UNLIKELY(stack_size > max_safe_size)) {
+                ctx.exit(Error);
+            }
+        }
+
+        return {operands.first, operands.second};
     }
 
     [[gnu::always_inline]] inline void

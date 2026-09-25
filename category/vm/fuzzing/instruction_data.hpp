@@ -46,8 +46,8 @@ namespace monad::vm::fuzzing
     //   PUSH0 - PUSH32  (generate_push)
     //   CREATE, CREATE2 (generate_create)
     //
-    // TODO(amsterdam): SLOTNUM is Amsterdam-only and unimplemented by
-    // by pinned OCaml spec.
+    // TODO(amsterdam): Amsterdam opcodes are not fuzzed, since the reference
+    // the fuzzer compares against has no Amsterdam revision.
 
     constexpr auto call_non_terminators = std::array{
         CALL,

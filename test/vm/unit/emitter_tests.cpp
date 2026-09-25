@@ -4728,3 +4728,145 @@ TEST(Emitter, WriteGeneralRegWordsToFinalStackOffsets)
         }
     }
 }
+
+namespace
+{
+    basic_blocks::BasicBlocksIR make_push_block_ir(unsigned const depth)
+    {
+        std::vector<uint8_t> code;
+        code.reserve(2 * depth);
+        for (unsigned i = 0; i < depth; ++i) {
+            code.push_back(static_cast<uint8_t>(PUSH1));
+            code.push_back(0);
+        }
+        return basic_blocks::BasicBlocksIR::unsafe_from(code);
+    }
+
+    uint256_t literal_at(Stack &stack, int32_t const index)
+    {
+        auto const e = stack.get(index);
+        EXPECT_TRUE(e->literal().has_value());
+        return e->literal().value().value;
+    }
+}
+
+// literal_at takes an absolute index (0 is the bottom); exchange(n, m) swaps
+// the items n+1 and m+1 from the top.
+
+TEST(Emitter, exchange_swaps_second_and_third)
+{
+    auto ir = make_push_block_ir(3);
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+
+    emit.push(0x33);
+    emit.push(0x22);
+    emit.push(0x11);
+
+    Stack &stack = emit.get_stack();
+    emit.exchange(1, 2);
+
+    EXPECT_EQ(literal_at(stack, 0), 0x22);
+    EXPECT_EQ(literal_at(stack, 1), 0x33);
+    EXPECT_EQ(literal_at(stack, 2), 0x11);
+
+    (void)emit.finish_contract(rt);
+}
+
+TEST(Emitter, exchange_swaps_deep_pair_and_leaves_others)
+{
+    auto ir = make_push_block_ir(6);
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+
+    emit.push(0x66);
+    emit.push(0x55);
+    emit.push(0x44);
+    emit.push(0x33);
+    emit.push(0x22);
+    emit.push(0x11);
+
+    Stack &stack = emit.get_stack();
+    ASSERT_EQ(literal_at(stack, 3), 0x33);
+    ASSERT_EQ(literal_at(stack, 1), 0x55);
+
+    emit.exchange(2, 4);
+
+    EXPECT_EQ(literal_at(stack, 3), 0x55);
+    EXPECT_EQ(literal_at(stack, 1), 0x33);
+    EXPECT_EQ(literal_at(stack, 0), 0x66);
+    EXPECT_EQ(literal_at(stack, 2), 0x44);
+    EXPECT_EQ(literal_at(stack, 4), 0x22);
+    EXPECT_EQ(literal_at(stack, 5), 0x11);
+
+    (void)emit.finish_contract(rt);
+}
+
+TEST(Emitter, exchange_across_location_types)
+{
+    for (auto const loc_third : all_locations) {
+        for (auto const loc_second : all_locations) {
+            auto ir = make_push_block_ir(3);
+            asmjit::JitRuntime rt;
+            TestEmitter emit{rt, ir.codesize};
+            (void)emit.begin_new_block(ir.blocks()[0]);
+
+            emit.push(0x33);
+            emit.push(0x22);
+            emit.push(0x11);
+
+            Stack &stack = emit.get_stack();
+            // The stack retains ownership, so these raw pointers stay valid.
+            auto const *third = stack.get(0).get();
+            auto const *second = stack.get(1).get();
+
+            mov_literal_to_location_type(emit, 0, loc_third);
+            mov_literal_to_location_type(emit, 1, loc_second);
+
+            emit.exchange(1, 2);
+
+            EXPECT_EQ(stack.get(0).get(), second)
+                << "3rd@" << Emitter::location_type_to_string(loc_third)
+                << " 2nd@" << Emitter::location_type_to_string(loc_second);
+            EXPECT_EQ(stack.get(1).get(), third)
+                << "3rd@" << Emitter::location_type_to_string(loc_third)
+                << " 2nd@" << Emitter::location_type_to_string(loc_second);
+
+            (void)emit.finish_contract(rt);
+        }
+    }
+}
+
+TEST(Emitter, exchange_aliased_duplicated_element)
+{
+    auto ir = make_push_block_ir(4);
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+
+    Stack &stack = emit.get_stack();
+
+    emit.push(0x30);
+    emit.push(0x20);
+    emit.dup(1);
+    emit.push(0x99);
+
+    auto shared = stack.get(1);
+    ASSERT_EQ(stack.get(1).get(), stack.get(2).get());
+    ASSERT_EQ(shared->stack_indices().size(), 2u);
+
+    emit.exchange(1, 2);
+
+    ASSERT_EQ(stack.get(1).get(), stack.get(2).get());
+    ASSERT_EQ(stack.get(1).get(), shared.get());
+    ASSERT_EQ(shared->stack_indices().size(), 2u);
+    ASSERT_TRUE(shared->literal().has_value());
+    ASSERT_EQ(shared->literal().value().value, 0x20);
+    EXPECT_EQ(literal_at(stack, 3), 0x99);
+    EXPECT_EQ(literal_at(stack, 0), 0x30);
+    shared.reset();
+
+    (void)emit.finish_contract(rt);
+}

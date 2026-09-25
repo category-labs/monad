@@ -1,0 +1,45 @@
+name: Cache OCaml Toolchain
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - 'docker/Dockerfile'
+      - 'scripts/ubuntu-build/**'
+      - 'third_party/monad-execution-specs'
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cache-ocaml:
+    runs-on: ubuntu-26.04-32
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Checkout monad-execution-specs
+        run: git submodule update --init third_party/monad-execution-specs
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and cache base_vm_test stage
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: |-
+            UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
+          ulimit: "memlock=-1:-1"
+          target: base_vm_test
+          cache-from: |
+            type=gha,scope=base_vm_test
+            type=gha,scope=base
+          cache-to: type=gha,scope=base_vm_test

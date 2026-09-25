@@ -76,5 +76,8 @@ jobs:
             file: docker/Dockerfile
             build-args: |-
               UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
+            ulimit: "memlock=-1:-1"
             target: code_quality
-            cache-from: type=gha,scope=base
+            cache-from: |
+              type=gha,scope=base_vm_test
+              type=gha,scope=base

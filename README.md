@@ -37,7 +37,9 @@ Execution has two kinds of dependencies on third-party libraries:
    `scripts/ubuntu-build/install-boost.sh` install all required system
    packages. On an Ubuntu host, first run `sudo apt-get update`, then run
    these scripts with elevated privileges (for example, via `sudo`, or as
-   root).
+   root). Configuring with `MONAD_COMPILER_TESTING` also needs `opam` and
+   the `monad-spec` opam switch that `scripts/ubuntu-build/install-ocaml.sh`
+   creates; run that script as yourself, not as root.
 
 ### Minimum development tool requirements
 

@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <new>
 #include <span>
 #include <stdlib.h>
 #include <type_traits>
@@ -70,10 +71,14 @@ namespace detail
 
         [[nodiscard]] constexpr value_type *allocate(size_t const n)
         {
-            auto *newp = p + sizeof(value_type) * n;
-            assert(size_t(newp - buffer.data()) <= buffer.size());
-            auto *ret = reinterpret_cast<value_type *>(p);
-            p = newp;
+            auto const remaining =
+                static_cast<size_t>(buffer.data() + buffer.size() - p);
+            if (n > remaining / sizeof(value_type)) {
+                // basic_stacktrace catches this and leaves the trace empty
+                throw std::bad_alloc{};
+            }
+            auto *const ret = reinterpret_cast<value_type *>(p);
+            p += sizeof(value_type) * n;
             return ret;
         }
 

@@ -52,8 +52,9 @@ public:
     SIGNAL SAFE.
 
     The buffer MUST remain within lifetime until the returned
-    unique ptr is destructed. If the input buffer is not big enough, the
-    process will be terminated.
+    unique ptr is destructed, and MUST be larger than the backtrace
+    object itself. If the frames do not fit, the backtrace is empty; that
+    path allocates, so it is not async signal safe.
     */
     static ptr capture(std::span<std::byte> storage) noexcept;
 

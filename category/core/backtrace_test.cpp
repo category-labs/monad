@@ -19,11 +19,13 @@
 #include <category/core/assert.h>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <span>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -43,6 +45,18 @@ namespace
     func_a(std::span<std::byte> const storage)
     {
         return func_b(storage);
+    }
+
+    __attribute__((noinline)) void capture_at_depth(
+        unsigned const depth, std::span<std::byte> const storage,
+        monad::stack_backtrace::ptr &out)
+    {
+        if (depth == 0) {
+            out = monad::stack_backtrace::capture(storage);
+            return;
+        }
+        capture_at_depth(depth - 1, storage, out);
+        asm volatile("" ::: "memory"); // keep the call out of tail position
     }
 
     TEST(BacktraceTest, works)
@@ -99,5 +113,27 @@ namespace
         EXPECT_NE(nullptr, strstr(buffer, "func_a"));
         EXPECT_NE(nullptr, strstr(buffer, "func_b"));
         EXPECT_NE(nullptr, strstr(buffer, "/backtrace_test.cpp"));
+    }
+
+    TEST(BacktraceTest, deep_stack_stays_in_storage)
+    {
+        constexpr size_t storage_size = 16384;
+        constexpr std::byte guard{0xa5};
+        std::vector<std::byte> memory(5 * storage_size, guard);
+        std::span<std::byte> const all{memory};
+        monad::stack_backtrace::ptr st;
+        capture_at_depth(2000, all.first(storage_size), st);
+        EXPECT_TRUE(std::ranges::all_of(
+            all.subspan(storage_size), [](std::byte b) { return b == guard; }));
+
+        int fds[2];
+        ASSERT_EQ(0, ::pipe(fds));
+        st->print(fds[1], 0, false);
+        ::close(fds[1]);
+        char out[64];
+        auto const n = ::read(fds[0], out, sizeof(out));
+        ::close(fds[0]);
+        ASSERT_EQ(1, n);
+        EXPECT_EQ('\n', out[0]);
     }
 }

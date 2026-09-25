@@ -20,6 +20,7 @@
 #include <category/core/fiber/fiber_group.hpp>
 #include <category/core/fiber/priority_algorithm.hpp>
 #include <category/core/fiber/priority_properties.hpp>
+#include <category/core/thread_idle.hpp>
 
 #include <boost/fiber/channel_op_status.hpp>
 #include <boost/fiber/fiber.hpp>
@@ -57,8 +58,13 @@ FiberThreadPool::FiberThreadPool(
             std::snprintf(name, 16, "ftpool %u", i);
             pthread_setname_np(pthread_self(), name);
 
+            // thread_local so it outlives the Boost.Fiber scheduler, which is
+            // itself a thread_local created by the call below and may still
+            // pick fibers while it is torn down.
+            thread_local ThreadIdleRegistry::Registration const idle =
+                ThreadIdleRegistry::global().claim(name);
             boost::fibers::use_scheduling_algorithm<PriorityAlgorithm>(
-                queue_, prevent_spin_);
+                queue_, prevent_spin_, idle.counter());
 
             {
                 std::unique_lock<boost::fibers::mutex> lock{mutex_};
@@ -74,8 +80,10 @@ FiberThreadPool::FiberThreadPool(
     auto thread = std::thread([this] {
         pthread_setname_np(pthread_self(), "ftpool 0");
 
+        thread_local ThreadIdleRegistry::Registration const idle =
+            ThreadIdleRegistry::global().claim("ftpool 0");
         boost::fibers::use_scheduling_algorithm<PriorityAlgorithm>(
-            queue_, prevent_spin_);
+            queue_, prevent_spin_, idle.counter());
 
         auto *const properties = new PriorityProperties{nullptr};
         boost::fibers::fiber bootstrap_fiber{

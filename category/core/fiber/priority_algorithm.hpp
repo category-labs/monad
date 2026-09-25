@@ -18,6 +18,7 @@
 #include <category/core/fiber/config.hpp>
 #include <category/core/fiber/priority_properties.hpp>
 #include <category/core/fiber/priority_queue.hpp>
+#include <category/core/thread_idle.hpp>
 
 #include <boost/fiber/algo/algorithm.hpp>
 #include <boost/fiber/context.hpp>
@@ -35,13 +36,16 @@ class PriorityAlgorithm final
     bool prevent_spin_{false};
 
     PriorityQueue &rqueue_;
+    ThreadIdleCounter *idle_counter_; // null when uninstrumented
 
     using lqueue_type = boost::fibers::scheduler::ready_queue_type;
 
     lqueue_type lqueue_{};
 
 public:
-    explicit PriorityAlgorithm(PriorityQueue &, bool prevent_spin = false);
+    explicit PriorityAlgorithm(
+        PriorityQueue &, bool prevent_spin = false,
+        ThreadIdleCounter *idle_counter = nullptr);
 
     PriorityAlgorithm(PriorityAlgorithm const &) = delete;
     PriorityAlgorithm(PriorityAlgorithm &&) = delete;

@@ -476,7 +476,8 @@ namespace trace
 
                 // * Deletion operations are represented by:
                 //   - Account selfdestruct: Account appears in pre but not in
-                //     post
+                //     post. Under EIP-8246 one holding a balance is preserved
+                //     and appears in both, with nonce 0 and no code.
                 //   - Storage clearing (setting a storage value to zero is also
                 //     treated as clearing): Storage slot appears in pre but not
                 //     in post

@@ -89,6 +89,12 @@ private:
 
     AccountState &current_account_state(Address const &);
 
+    // Whether SELFDESTRUCT to the account itself destroys the balance.
+    template <Traits traits>
+    bool selfdestruct_to_self_burns(Address const &);
+
+    void zero_storage(Address const &, AccountState &);
+
     std::optional<Account> const &recent_account(Address const &);
 
     std::optional<Account> &current_account(Address const &);

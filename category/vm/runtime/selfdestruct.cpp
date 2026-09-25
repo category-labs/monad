@@ -16,6 +16,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/access_status.h>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
@@ -40,14 +41,13 @@ namespace monad::vm::runtime
         auto const address = address_from_uint256(*address_ptr);
 
         auto const access_status = ctx->host->access_account(address);
-        if (access_status == EVMC_ACCESS_COLD) {
+        if (access_status == MONAD_ACCESS_COLD) {
             // +100 for the warm account access cost.
             ctx->deduct_gas(traits::cold_account_cost() + 100);
         }
 
         auto const non_zero_transfer = [ctx] {
-            auto const balance = static_cast<bytes32_t>(
-                ctx->host->get_balance(ctx->env.recipient));
+            auto const balance = ctx->host->get_balance(ctx->env.recipient);
             return balance != bytes32_t{};
         }();
 

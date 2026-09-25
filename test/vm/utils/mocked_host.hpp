@@ -23,6 +23,9 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
+#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/page_storage_status.h>
+#include <category/vm/evm/storage_status.h>
 #include <category/vm/host.hpp>
 
 #include <evmc/evmc.h>
@@ -79,42 +82,42 @@ namespace monad::vm::test
         std::set<PageKey> read_accessed_pages_;
         std::set<PageKey> write_accessed_pages_;
         std::map<PageKey, PageGrowth> growth_;
-        evmc_page_storage_status last_write_page_status_{};
+        monad_page_storage_status last_write_page_status_{};
 
         void record_account_access(Address const &addr) const noexcept
         {
             recorded_account_accesses.emplace_back(addr);
         }
 
-        static evmc_storage_status storage_status(
+        static monad_storage_status storage_status(
             bytes32_t const &original, bytes32_t const &current,
             bytes32_t const &value) noexcept
         {
             auto const zero = bytes32_t{};
             if (current == value) {
-                return EVMC_STORAGE_ASSIGNED;
+                return MONAD_STORAGE_ASSIGNED;
             }
             if (original == current) {
                 if (original == zero) {
-                    return EVMC_STORAGE_ADDED;
+                    return MONAD_STORAGE_ADDED;
                 }
-                return value == zero ? EVMC_STORAGE_DELETED
-                                     : EVMC_STORAGE_MODIFIED;
+                return value == zero ? MONAD_STORAGE_DELETED
+                                     : MONAD_STORAGE_MODIFIED;
             }
             if (original != zero) {
                 if (current == zero) {
-                    return original == value ? EVMC_STORAGE_DELETED_RESTORED
-                                             : EVMC_STORAGE_DELETED_ADDED;
+                    return original == value ? MONAD_STORAGE_DELETED_RESTORED
+                                             : MONAD_STORAGE_DELETED_ADDED;
                 }
                 if (value == zero) {
-                    return EVMC_STORAGE_MODIFIED_DELETED;
+                    return MONAD_STORAGE_MODIFIED_DELETED;
                 }
             }
             if (original == value) {
-                return original == zero ? EVMC_STORAGE_ADDED_DELETED
-                                        : EVMC_STORAGE_MODIFIED_RESTORED;
+                return original == zero ? MONAD_STORAGE_ADDED_DELETED
+                                        : MONAD_STORAGE_MODIFIED_RESTORED;
             }
-            return EVMC_STORAGE_ASSIGNED;
+            return MONAD_STORAGE_ASSIGNED;
         }
 
     public:
@@ -130,15 +133,14 @@ namespace monad::vm::test
         std::unordered_map<Address, std::vector<Address>>
             recorded_selfdestructs;
 
-        bool account_exists(evmc::address const &addr) const noexcept override
+        bool account_exists(Address const &addr) const noexcept override
         {
             record_account_access(addr);
             return accounts.contains(addr);
         }
 
-        evmc::bytes32 get_storage(
-            evmc::address const &addr,
-            evmc::bytes32 const &key) const noexcept override
+        bytes32_t get_storage(
+            Address const &addr, bytes32_t const &key) const noexcept override
         {
             record_account_access(addr);
             auto const account = accounts.find(addr);
@@ -152,14 +154,14 @@ namespace monad::vm::test
             return slot->second.current;
         }
 
-        evmc_storage_status set_storage(
-            evmc::address const &addr, evmc::bytes32 const &key,
-            evmc::bytes32 const &value) noexcept override
+        monad_storage_status set_storage(
+            Address const &addr, bytes32_t const &key,
+            bytes32_t const &value) noexcept override
         {
             record_account_access(addr);
             auto &slot = accounts[addr].storage[key];
             auto const v_current = slot.current;
-            auto const v_new = bytes32_t{value};
+            auto const v_new = value;
             auto const p = PageKey{addr, compute_page_key(key)};
 
             bool first_page_write = false;
@@ -192,35 +194,31 @@ namespace monad::vm::test
             return status;
         }
 
-        evmc::uint256be
-        get_balance(evmc::address const &addr) const noexcept override
+        bytes32_t get_balance(Address const &addr) const noexcept override
         {
             record_account_access(addr);
             auto const account = accounts.find(addr);
-            return account == accounts.end()
-                       ? evmc::uint256be{}
-                       : evmc::uint256be{account->second.balance};
+            return account == accounts.end() ? bytes32_t{}
+                                             : account->second.balance;
         }
 
-        size_t get_code_size(evmc::address const &addr) const noexcept override
+        size_t get_code_size(Address const &addr) const noexcept override
         {
             record_account_access(addr);
             auto const account = accounts.find(addr);
             return account == accounts.end() ? 0 : account->second.code.size();
         }
 
-        evmc::bytes32
-        get_code_hash(evmc::address const &addr) const noexcept override
+        bytes32_t get_code_hash(Address const &addr) const noexcept override
         {
             record_account_access(addr);
             auto const account = accounts.find(addr);
-            return account == accounts.end()
-                       ? evmc::bytes32{}
-                       : evmc::bytes32{account->second.codehash};
+            return account == accounts.end() ? bytes32_t{}
+                                             : account->second.codehash;
         }
 
         size_t copy_code(
-            evmc::address const &addr, size_t const code_offset,
+            Address const &addr, size_t const code_offset,
             uint8_t *const buffer_data,
             size_t const buffer_size) const noexcept override
         {
@@ -239,8 +237,7 @@ namespace monad::vm::test
         }
 
         bool selfdestruct(
-            evmc::address const &addr,
-            evmc::address const &beneficiary) noexcept override
+            Address const &addr, Address const &beneficiary) noexcept override
         {
             record_account_access(addr);
             auto &beneficiaries = recorded_selfdestructs[addr];
@@ -265,7 +262,7 @@ namespace monad::vm::test
             return &tx_context;
         }
 
-        evmc::bytes32
+        bytes32_t
         get_block_hash(int64_t const block_number) const noexcept override
         {
             recorded_blockhashes.emplace_back(block_number);
@@ -273,37 +270,34 @@ namespace monad::vm::test
         }
 
         void emit_log(
-            evmc::address const &addr, uint8_t const *const data,
-            size_t const data_size, evmc::bytes32 const topics[],
+            Address const &addr, uint8_t const *const data,
+            size_t const data_size, bytes32_t const topics[],
             size_t const topics_count) noexcept override
         {
             recorded_logs.push_back(
                 {addr, {data, data_size}, {topics, topics + topics_count}});
         }
 
-        evmc_access_status
-        access_account(evmc::address const &addr) noexcept override
+        monad_access_status
+        access_account(Address const &addr) noexcept override
         {
-            auto const a = Address{addr};
             auto const already_accessed =
-                std::ranges::find(recorded_account_accesses, a) !=
+                std::ranges::find(recorded_account_accesses, addr) !=
                 recorded_account_accesses.end();
-            record_account_access(a);
-            return already_accessed ? EVMC_ACCESS_WARM : EVMC_ACCESS_COLD;
+            record_account_access(addr);
+            return already_accessed ? MONAD_ACCESS_WARM : MONAD_ACCESS_COLD;
         }
 
-        evmc_access_status access_storage(
-            evmc::address const &addr,
-            evmc::bytes32 const &key) noexcept override
+        monad_access_status access_storage(
+            Address const &addr, bytes32_t const &key) noexcept override
         {
             auto const p = PageKey{addr, compute_page_key(key)};
             auto const [it, inserted] = read_accessed_pages_.insert(p);
-            return inserted ? EVMC_ACCESS_COLD : EVMC_ACCESS_WARM;
+            return inserted ? MONAD_ACCESS_COLD : MONAD_ACCESS_WARM;
         }
 
-        evmc::bytes32 get_transient_storage(
-            evmc::address const &addr,
-            evmc::bytes32 const &key) const noexcept override
+        bytes32_t get_transient_storage(
+            Address const &addr, bytes32_t const &key) const noexcept override
         {
             record_account_access(addr);
             auto const account = accounts.find(addr);
@@ -318,16 +312,16 @@ namespace monad::vm::test
         }
 
         void set_transient_storage(
-            evmc::address const &addr, evmc::bytes32 const &key,
-            evmc::bytes32 const &value) noexcept override
+            Address const &addr, bytes32_t const &key,
+            bytes32_t const &value) noexcept override
         {
             record_account_access(addr);
             accounts[addr].transient_storage[key] = value;
         }
 
-        evmc_page_storage_status update_page(
-            evmc::address const &, evmc::bytes32 const &,
-            evmc_storage_status) noexcept override
+        monad_page_storage_status update_page(
+            Address const &, bytes32_t const &,
+            monad_storage_status) noexcept override
         {
             return last_write_page_status_;
         }

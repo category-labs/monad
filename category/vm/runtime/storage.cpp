@@ -17,6 +17,7 @@
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/access_status.h>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
@@ -43,7 +44,7 @@ namespace monad::vm::runtime
 
         auto const access_status =
             ctx->host->access_storage(ctx->env.recipient, key);
-        if (access_status == EVMC_ACCESS_COLD) {
+        if (access_status == MONAD_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_storage_cost());
         }
 
@@ -78,7 +79,7 @@ namespace monad::vm::runtime
         if constexpr (traits::mip_8_active()) {
             auto const access_status =
                 ctx->host->access_storage(ctx->env.recipient, key);
-            if (access_status == EVMC_ACCESS_COLD) {
+            if (access_status == MONAD_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_storage_cost());
             }
 
@@ -102,7 +103,7 @@ namespace monad::vm::runtime
         else {
             auto const access_status =
                 ctx->host->access_storage(ctx->env.recipient, key);
-            if (access_status == EVMC_ACCESS_COLD) {
+            if (access_status == MONAD_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
             }
 
@@ -129,8 +130,8 @@ namespace monad::vm::runtime
         auto const base = (magic + base_offset) * 1024;
         if (offset == 0) {
             auto const base_key = store_be_as<bytes32_t>(base);
-            auto const base_value = static_cast<bytes32_t>(
-                ctx->host->get_transient_storage(ctx->env.recipient, base_key));
+            auto const base_value =
+                ctx->host->get_transient_storage(ctx->env.recipient, base_key);
             if (base_value != bytes32_t{}) {
                 // If this transient storage location has already been written,
                 // then we are likely in a loop. We return early in this case

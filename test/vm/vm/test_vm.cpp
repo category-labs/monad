@@ -28,6 +28,8 @@
 
 #include <category/vm/vm.hpp>
 
+#include <test/vm/utils/evmc_host_adapter.hpp>
+
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
@@ -88,12 +90,13 @@ evmc::Result BlockchainTestVM::execute(
     monad_eth_revision const rev = from_evmc_revision(evmc_rev);
     MONAD_ASSERT(rev >= constants::EARLIEST_SUPPORTED_EVM_FORK);
     MONAD_ASSERT(host == &evmc::Host::get_interface());
-    auto *const vm_host =
-        dynamic_cast<vm::Host *>(evmc::Host::from_context(context));
-    MONAD_ASSERT(vm_host);
+    auto *const adapter = dynamic_cast<vm::test::EvmcHostAdapter *>(
+        evmc::Host::from_context(context));
+    MONAD_ASSERT(adapter);
 
     auto *const prev_rt_ctx = rt_ctx_;
-    auto new_rt_ctx = runtime::Context::from(*vm_host, msg, {code, code_size});
+    auto new_rt_ctx =
+        runtime::Context::from(adapter->host(), msg, {code, code_size});
     rt_ctx_ = &new_rt_ctx;
 
     auto res = [&] {

@@ -28,6 +28,7 @@
 
 #include <test/utils/test_state.hpp>
 #include <test/vm/utils/evm-as_utils.hpp>
+#include <test/vm/utils/evmc_host_adapter.hpp>
 #include <test/vm/utils/test_block_hash_buffer.hpp>
 #include <test/vm/utils/test_host.hpp>
 #include <test/vm/vm/test_vm.hpp>
@@ -372,14 +373,8 @@ static double execute_iteration(
 
     vm::VM monad_vm;
     monad_vm.debug_set_execute_override(
-        [](auto const *const,
-           auto *const,
-           auto const,
-           auto const *msg,
-           auto const *,
-           auto const) -> evmc::Result {
-            return evmc::Result{EVMC_SUCCESS, msg->gas};
-        });
+        [](auto &, auto const, auto const *msg, auto const *, auto const)
+            -> evmc::Result { return evmc::Result{EVMC_SUCCESS, msg->gas}; });
 
     Address const sender_address{200};
 
@@ -405,7 +400,7 @@ static double execute_iteration(
         authorities,
         header,
         chain};
-    auto &host = test_host.get_evmc_host();
+    vm::test::EvmcHostAdapter host{test_host.get_evmc_host()};
 
     auto *bvm = reinterpret_cast<BlockchainTestVM *>(vm.get_raw_pointer());
     auto const *interface = &host.get_interface();

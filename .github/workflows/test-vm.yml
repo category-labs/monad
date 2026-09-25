@@ -14,6 +14,8 @@ on:
       - 'scripts/vm/**'
       - 'test/vm/**'
       - 'docker/Dockerfile'
+      - 'scripts/ubuntu-build/install-ocaml.sh'
+      - 'third_party/monad-execution-specs'
   workflow_dispatch:
 
 permissions:
@@ -79,8 +81,11 @@ jobs:
                   CMAKE_BUILD_TYPE=${{ matrix.build.CMAKE_BUILD_TYPE }}
                   TOOLCHAIN=${{ matrix.build.TOOLCHAIN }}
                   UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
+                ulimit: "memlock=-1:-1"
                 target: build_and_test_vm
-                cache-from: type=gha,scope=base
+                cache-from: |
+                  type=gha,scope=base_vm_test
+                  type=gha,scope=base
 
     fuzz:
       name: VM Fuzz Tests
@@ -104,8 +109,11 @@ jobs:
           file: docker/Dockerfile
           build-args: |-
             UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
+          ulimit: "memlock=-1:-1"
           target: vm_fuzz
-          cache-from: type=gha,scope=base
+          cache-from: |
+            type=gha,scope=base_vm_test
+            type=gha,scope=base
 
     python-code-quality:
         name: Python code quality checks

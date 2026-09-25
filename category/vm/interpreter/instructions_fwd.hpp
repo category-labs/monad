@@ -384,6 +384,21 @@ namespace monad::vm::interpreter
         int64_t, uint8_t const *);
 
     template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void dupn(
+        runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
+        int64_t, uint8_t const *);
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void swapn(
+        runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
+        int64_t, uint8_t const *);
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void exchange(
+        runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
+        int64_t, uint8_t const *);
+
+    template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void jump(
         runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
         int64_t, uint8_t const *);

@@ -581,6 +581,9 @@ impl TriedbHandle {
         sender: Sender<Option<Vec<TraverseEntry>>>,
         concurrency_tracker: Arc<()>,
     ) {
+        if validate_nibble_key(prefix_key, prefix_key_len_nibbles, "Prefix key").is_none() {
+            return;
+        }
         if validate_nibble_key(min_key, min_key_len_nibbles, "Min key").is_none() {
             return;
         }
@@ -810,5 +813,24 @@ mod update_stats_tests {
                 nreads_expire: 20,
             }
         );
+    }
+}
+
+#[cfg(test)]
+mod range_get_tests {
+    use std::{mem::ManuallyDrop, sync::Arc};
+
+    use futures::channel::oneshot;
+
+    use super::TriedbHandle;
+
+    #[test]
+    fn range_get_rejects_short_prefix_key_before_ffi() {
+        let handle = ManuallyDrop::new(TriedbHandle {
+            db_ptr: std::ptr::null_mut(),
+        });
+        let (sender, mut receiver) = oneshot::channel();
+        handle.range_get_triedb_async(&[], 2, &[], 0, &[], 0, 0, sender, Arc::new(()));
+        assert!(matches!(receiver.try_recv(), Err(oneshot::Canceled)));
     }
 }

@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/log.hpp>
@@ -41,6 +42,12 @@ struct monad_statesync_server_network
 
     void connect()
     {
+        MONAD_ASSERT_PRINTF(
+            path.size() < sizeof(sockaddr_un::sun_path),
+            "statesync socket path is too long (%zu bytes, max %zu): %s",
+            path.size(),
+            sizeof(sockaddr_un::sun_path) - 1,
+            path.c_str());
         fd = socket(AF_UNIX, SOCK_STREAM, 0);
         MONAD_ASSERT_PRINTF(
             fd >= 0, "failed to create socket: %s", strerror(errno));

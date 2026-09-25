@@ -16,14 +16,14 @@
 find_program(OPAM opam REQUIRED)
 
 execute_process(
-    COMMAND ${OPAM} exec -- which dune
+    COMMAND ${OPAM} exec --switch=monad-spec -- which dune
     OUTPUT_VARIABLE DUNE
     OUTPUT_STRIP_TRAILING_WHITESPACE
     RESULT_VARIABLE DUNE_RESULT
 )
 
 if(NOT DUNE_RESULT EQUAL 0)
-    message(FATAL_ERROR "unable to find dune install path via opam")
+    message(FATAL_ERROR "unable to find dune in the monad-spec opam switch; run scripts/ubuntu-build/install-ocaml.sh")
 endif()
 
 set(LIBMONADML_WORKING_DIR "${CMAKE_SOURCE_DIR}/third_party/monad-execution-specs")
@@ -31,7 +31,7 @@ set(LIBMONADML_BUILD_DIR "${LIBMONADML_WORKING_DIR}/_build")
 set(LIBMONADML_EVM "${LIBMONADML_BUILD_DIR}/default/bindings/vm/libmonadml_evm.so")
 
 add_custom_target(build-monadml-evm ALL
-    COMMAND ${DUNE} build bindings/vm/libmonadml_evm.so --profile release
+    COMMAND ${OPAM} exec --switch=monad-spec -- ${DUNE} build bindings/vm/libmonadml_evm.so --profile release --pkg=disabled
     WORKING_DIRECTORY "${LIBMONADML_WORKING_DIR}"
     BYPRODUCTS "${LIBMONADML_EVM}"
     COMMENT "Building OCaml VM reference implementation with ${DUNE}"

@@ -27,6 +27,7 @@
 #include <chrono>
 #include <cstddef>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <variant>
 
@@ -35,7 +36,6 @@ namespace monad::vm
     Compiler::Compiler(
         bool const enable_async, size_t const compile_job_soft_limit)
         : asmjit_rt_{&asmjit_create_params_}
-        , compile_job_lock_{compile_job_mutex_}
         , compile_job_soft_limit_{compile_job_soft_limit}
         , enable_async_compilation_{enable_async}
     {
@@ -141,6 +141,7 @@ namespace monad::vm
 
     void Compiler::compile_loop()
     {
+        std::unique_lock lock{compile_job_mutex_};
         while (!stop_flag_.test(std::memory_order_acquire)) {
             // It is possible that a new compile job has arrived or the stop
             // flag has been set, so wait for at most 1 ms. The time 1 ms seems
@@ -149,8 +150,7 @@ namespace monad::vm
             // Another approach is to use a lock to fix these "data races".
             // However that seems to require a lock in `async_compile`, which
             // is undesirable because it is part of the fast path.
-            compile_job_cv_.wait_for(
-                compile_job_lock_, std::chrono::milliseconds{1});
+            compile_job_cv_.wait_for(lock, std::chrono::milliseconds{1});
             dispense_compile_jobs();
         }
     }

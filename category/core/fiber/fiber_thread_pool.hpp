@@ -24,6 +24,7 @@
 
 #include <atomic>
 #include <functional>
+#include <latch>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -54,6 +55,10 @@ class FiberThreadPool final
 
     boost::fibers::mutex mutex_{};
     boost::fibers::condition_variable cv_{};
+
+    // Pool threads must not exit, freeing their schedulers, while another
+    // thread may still be inside schedule_from_remote for them.
+    std::latch exit_latch_;
 
     std::vector<std::thread> threads_{};
 

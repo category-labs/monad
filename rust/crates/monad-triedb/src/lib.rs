@@ -193,6 +193,89 @@ impl Drop for TriedbStatsReader {
     }
 }
 
+/// Trie-node LRU counters for one cache.
+///
+/// `hits`, `misses` and `evictions` are totals for the life of the **cache**,
+/// not of the handle: a freshly opened handle's first snapshot reports
+/// everything the cache has done since it was built. Reading never resets
+/// them, so a scraper derives its own rates.
+///
+/// No `Default`: substituting zeros for a lost sample reads as a counter reset
+/// to anything computing a rate over these.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NodeCacheStats {
+    pub hits: u64,
+    pub misses: u64,
+    pub evictions: u64,
+    /// Bytes of cached nodes. A current level, not a total: it goes down, and
+    /// reads zero once the cache is destroyed.
+    pub used_bytes: u64,
+    /// Cached nodes. Also a current level.
+    pub entries: u64,
+    /// The byte budget `used_bytes` runs against, so a reader holding only a
+    /// snapshot can compute utilisation.
+    pub max_bytes: u64,
+    /// The slot count `entries` runs against, derived from `max_bytes`. The
+    /// cache is bounded by both, so compare the two ratios to see which bound
+    /// is binding.
+    pub max_entries: u64,
+}
+
+/// A pollable view of one trie-node cache's counters, independent of the
+/// [`TriedbHandle`] it was opened from.
+///
+/// Unlike that handle this is `Send + Sync`, which is what lets a scraper on a
+/// metrics thread pull a snapshot directly instead of being fed by the thread
+/// that owns the cache.
+#[derive(Debug)]
+pub struct NodeCacheStatsHandle {
+    ptr: *mut ffi::triedb_node_cache_stats_handle,
+}
+
+// SAFETY: the view owns a reference to a counter block that is separate from
+// the db, so it neither reads nor frees anything the owning thread is using.
+// Reading is relaxed atomic loads of values that thread publishes, and
+// dropping the view only releases a reference -- it can never run the db's
+// destructor, which is thread-affine.
+unsafe impl Send for NodeCacheStatsHandle {}
+unsafe impl Sync for NodeCacheStatsHandle {}
+
+impl NodeCacheStatsHandle {
+    /// Each field is one atomic load, so no field is ever torn. Only `hits`,
+    /// `misses` and `evictions` are monotone; the levels go down, so rates
+    /// belong on the counters only. The occupancy pair is published as two
+    /// stores, so a reader can land between them and see the new byte total
+    /// against the old entry count -- treat a ratio across the two as
+    /// approximate.
+    pub fn snapshot(&self) -> NodeCacheStats {
+        let mut out = ffi::triedb_node_cache_stats {
+            hits: 0,
+            misses: 0,
+            evictions: 0,
+            used_bytes: 0,
+            entries: 0,
+            max_bytes: 0,
+            max_entries: 0,
+        };
+        unsafe { ffi::triedb_node_cache_stats_read(self.ptr, &mut out) };
+        NodeCacheStats {
+            hits: out.hits,
+            misses: out.misses,
+            evictions: out.evictions,
+            used_bytes: out.used_bytes,
+            entries: out.entries,
+            max_bytes: out.max_bytes,
+            max_entries: out.max_entries,
+        }
+    }
+}
+
+impl Drop for NodeCacheStatsHandle {
+    fn drop(&mut self) {
+        unsafe { ffi::triedb_node_cache_stats_close(self.ptr) };
+    }
+}
+
 struct SenderContext {
     sender: Sender<Option<Vec<u8>>>,
     completed_counter: Arc<AtomicUsize>,
@@ -424,6 +507,25 @@ impl TriedbHandle {
             disk_capacity_bytes: out.disk_capacity_bytes,
             disk_used_bytes: out.disk_used_bytes,
         }
+    }
+
+    /// A view of this handle's trie-node cache counters that can be polled
+    /// directly, at any rate, from any thread.
+    ///
+    /// Each handle owns an independent cache, so the view reports this handle
+    /// and nothing else; one opened only to query metadata reports zeros for
+    /// its lifetime. A handle serving a secondary timeline caches it
+    /// separately and that cache is not reported, so during a migration the
+    /// reads routed below the primary's earliest version are missing.
+    ///
+    /// Only the async paths consult the cache. Both [`Self::read`] and
+    /// synchronous traversal are blocking and uncached, so a caller using only
+    /// those sees zeros.
+    pub fn node_cache_stats_handle(&self) -> Option<NodeCacheStatsHandle> {
+        let ptr = unsafe { ffi::triedb_node_cache_stats_open(self.db_ptr) };
+        // then(), not then_some(): the latter builds the handle eagerly and
+        // would run Drop -- and so close(NULL) -- on the null branch.
+        (!ptr.is_null()).then(|| NodeCacheStatsHandle { ptr })
     }
 
     pub fn read(&self, key: &[u8], key_len_nibbles: u8, block_id: u64) -> Option<Vec<u8>> {
@@ -810,5 +912,20 @@ mod update_stats_tests {
                 nreads_expire: 20,
             }
         );
+    }
+}
+
+#[cfg(test)]
+mod node_cache_stats_handle_tests {
+    use super::NodeCacheStatsHandle;
+
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    // Only proves the two unsafe impls compile; it cannot detect unsoundness.
+    // It guards against the traits being dropped, not against them being
+    // wrong; the SAFETY comment on the impls carries that argument.
+    #[test]
+    fn handle_is_send_and_sync() {
+        assert_send_sync::<NodeCacheStatsHandle>();
     }
 }

@@ -109,6 +109,56 @@ typedef struct triedb_update_stats
 // so it cannot double as the failure signal.
 bool triedb_update_stats_read(TriedbStatsReader *, triedb_update_stats *out);
 
+// A reader's view of one trie-node cache's counters.
+//
+// Independent of the db handle it was opened from: the counters are refcounted
+// separately, so the view stays valid after triedb_close and reading or
+// closing it needs no coordination with the read path. Open it once and poll
+// it at whatever rate the scraper wants.
+//
+// Safe to use from any thread, unlike the rest of this header. The values are
+// relaxed atomics the owning thread publishes, and closing the view only drops
+// a reference.
+typedef struct triedb_node_cache_stats_handle triedb_node_cache_stats_handle;
+
+// Null if `db` is null or the allocation fails. Each triedb handle owns an
+// independent cache, so the view reports the handle it was opened from and
+// nothing else; a handle opened only to query metadata reports zeros for its
+// lifetime. A handle serving a secondary timeline caches it separately and
+// that cache is not reported here.
+triedb_node_cache_stats_handle *triedb_node_cache_stats_open(TriedbRoInner *);
+void triedb_node_cache_stats_close(triedb_node_cache_stats_handle *);
+
+// hits, misses and evictions are totals for the life of the cache and are
+// never reset; they keep their last values once the cache is gone. used_bytes
+// and entries are current levels, go down, and read zero once the cache is
+// destroyed. max_bytes and max_entries are the bounds the two levels run
+// against, so a reader holding only this struct can see which bound is
+// binding without knowing how the cache was configured.
+//
+// The occupancy pair is published by one call but as two stores, so a reader
+// can land between them; treat a ratio across the pair as approximate.
+//
+// Covers the async paths only: triedb_async_read, triedb_async_traverse and
+// triedb_async_ranged_get. triedb_read and triedb_traverse are blocking and
+// consult no cache, so a caller using only those sees zeros here -- which is
+// not the same as an unused cache.
+//
+// `out` is zeroed first, so a null view reads back as an idle cache.
+typedef struct triedb_node_cache_stats
+{
+    uint64_t hits;
+    uint64_t misses;
+    uint64_t evictions;
+    uint64_t used_bytes;
+    uint64_t entries;
+    uint64_t max_bytes;
+    uint64_t max_entries;
+} triedb_node_cache_stats;
+
+void triedb_node_cache_stats_read(
+    triedb_node_cache_stats_handle *, triedb_node_cache_stats *out);
+
 // Compute the storage page key for a 32-byte slot key on a page-encoded db:
 // page_key = slot >> 7. Writes the 32-byte big-endian page key (the key the
 // storage trie is looked up by) to out_page_key.

@@ -18,12 +18,19 @@
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/vm/code.hpp>
+#include <category/vm/compiler.hpp>
+#include <category/vm/evm/revision.h>
+#include <category/vm/evm/traits.hpp>
+#include <category/vm/interpreter/intercode.hpp>
+#include <category/vm/vm.hpp>
 
 #include <test_resource_data.h>
 
+#include <test/vm/utils/benchmark_vm.hpp>
 #include <test/vm/utils/test_block_hash_buffer.hpp>
 #include <test/vm/utils/test_host.hpp>
-#include <test/vm/vm/test_vm.hpp>
+#include <test/vm/utils/test_memory.hpp>
 
 #include "benchmarktest.hpp"
 
@@ -53,11 +60,11 @@ namespace json = nlohmann;
 
 using namespace monad::test_resource;
 
-using enum BlockchainTestVM::Implementation;
-
 using namespace monad;
 using namespace monad::test;
 
+using monad::vm::test::impl_name;
+using monad::vm::test::prime_varcode_cache;
 using monad::vm::test::TestMemory;
 
 struct free_message
@@ -140,39 +147,21 @@ namespace
             read_file(calldata_path));
     }
 
-    void precompile_contract(
-        BlockchainTestVM *vm_ptr, monad_eth_revision rev,
-        bytes32_t const &code_hash, uint8_t const *code, size_t const code_size)
-    {
-        (void)vm_ptr->get_intercode_nativecode(rev, code_hash, code, code_size);
-    }
+    constexpr auto rev = MONAD_ETH_CANCUN;
 
-    void precompile_contracts(
-        BlockchainTestVM *vm_ptr, monad_eth_revision rev,
-        JsonState const &json_state)
+    // Lift the native code size bound so every benchmark contract compiles.
+    vm::CompilerConfig const compiler_config{
+        .max_code_size_offset = vm::interpreter::code_size_t::max()};
+
+    void prime_contracts(vm::VM &monad_vm, JsonState const &json_state)
     {
         auto const test_state = json_state.make_test_state();
         for (auto const &addr : json_state.initial_accounts()) {
             auto const account = test_state->trie_db.read_account(addr);
             auto const code_hash = account.value().code_hash;
-            auto const code = test_state->trie_db.read_code(code_hash);
-            precompile_contract(
-                vm_ptr, rev, code_hash, code->code(), code->size());
+            (void)prime_varcode_cache<EvmTraits<rev>>(
+                monad_vm, code_hash, test_state->trie_db.read_code(code_hash));
         }
-    }
-
-    vm::VM::ExecuteOverride to_execute_override(evmc::VM &vm)
-    {
-        return [&vm](
-                   auto const *const host,
-                   auto *const context,
-                   auto const rev,
-                   auto const *const msg,
-                   auto const *const code,
-                   auto const code_size) -> evmc::Result {
-            return vm.execute(
-                *host, context, to_evmc_revision(rev), *msg, code, code_size);
-        };
     }
 
     // This benchmark runner assumes that no state is modified during execution,
@@ -180,16 +169,14 @@ namespace
     // that micro-benchmarks of e.g. specific opcodes, use the JSON format with
     // `run_benchmark_json`
     void run_benchmark(
-        benchmark::State &bench_state,
-        BlockchainTestVM::Implementation const impl, evmc_message const msg,
-        std::vector<uint8_t> const &code)
+        benchmark::State &bench_state, vm::VM::Mode const mode,
+        evmc_message const msg, std::vector<uint8_t> const &code)
     {
-        auto vm = evmc::VM(new BlockchainTestVM(impl));
+        vm::VM monad_vm{mode};
+        monad_vm.set_compiler_config(compiler_config);
 
         auto const json_state = JsonState{};
         auto const test_state = json_state.make_test_state();
-        vm::VM monad_vm;
-        monad_vm.debug_set_execute_override(to_execute_override(vm));
         BlockState block_state{test_state->trie_db, monad_vm};
         monad::State state{
             block_state, Incarnation{json_state.header.number + 1, 1}};
@@ -205,7 +192,6 @@ namespace
         BlockHeader const header{.number = json_state.header.number + 1};
         EthereumMainnet const chain{};
 
-        constexpr auto rev = MONAD_ETH_CANCUN;
         auto test_host = TestHost<EvmTraits<rev>>{
             block_hash_buffer,
             state,
@@ -215,25 +201,14 @@ namespace
             authorities,
             header,
             chain};
-        auto &host = test_host.get_evmc_host();
 
-        auto *vm_ptr =
-            reinterpret_cast<BlockchainTestVM *>(vm.get_raw_pointer());
-        auto const *interface = &host.get_interface();
-        evmc_host_context *ctx = host.to_context();
-
-        auto code_hash = interface->get_code_hash(ctx, &msg.code_address);
-
-        precompile_contract(vm_ptr, rev, code_hash, code.data(), code.size());
+        auto const code_hash = state.get_code_hash(msg.code_address);
+        auto const vcode = prime_varcode_cache<EvmTraits<rev>>(
+            monad_vm, code_hash, state.get_code(msg.code_address)->intercode());
 
         for (auto _ : bench_state) {
-            auto const result = evmc::Result{vm_ptr->execute(
-                interface,
-                ctx,
-                to_evmc_revision(rev),
-                &msg,
-                code.data(),
-                code.size())};
+            auto const result = monad_vm.execute<EvmTraits<rev>>(
+                test_host.get_evmc_host(), &msg, code_hash, vcode);
 
             MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
         }
@@ -248,22 +223,18 @@ namespace
     };
 
     void run_benchmark_json(
-        benchmark::State &bench_state,
-        BlockchainTestVM::Implementation const impl,
+        benchmark::State &bench_state, vm::VM::Mode const mode,
         JsonState const &json_state, evmc_message const msg,
         bool assert_success)
     {
-        auto vm = evmc::VM(new BlockchainTestVM(impl));
-        auto *vm_ptr =
-            reinterpret_cast<BlockchainTestVM *>(vm.get_raw_pointer());
-
-        constexpr auto rev = MONAD_ETH_CANCUN;
-        precompile_contracts(vm_ptr, rev, json_state);
+        vm::VM monad_vm{mode};
+        monad_vm.set_compiler_config(compiler_config);
+        prime_contracts(monad_vm, json_state);
 
         auto const test_state = json_state.make_test_state();
         auto const account = test_state->trie_db.read_account(msg.code_address);
-        auto const code =
-            test_state->trie_db.read_code(account.value().code_hash);
+        auto const code_hash = account.value().code_hash;
+        auto const code = test_state->trie_db.read_code(code_hash);
 
         TestBlockHashBuffer block_hash_buffer{};
         Transaction tx{};
@@ -276,8 +247,6 @@ namespace
         for (auto _ : bench_state) {
             bench_state.PauseTiming();
 
-            vm::VM monad_vm;
-            monad_vm.debug_set_execute_override(to_execute_override(vm));
             BlockState block_state{test_state->trie_db, monad_vm};
             monad::State state{
                 block_state, Incarnation{json_state.header.number + 1, 1}};
@@ -293,19 +262,18 @@ namespace
                 authorities,
                 header,
                 chain};
-            auto &host = test_host.get_evmc_host();
 
-            auto const *interface = &host.get_interface();
-            auto *ctx = host.to_context();
+            auto const vcode = state.get_code(msg.code_address);
             bench_state.ResumeTiming();
 
-            auto const result = evmc::Result{vm_ptr->execute(
-                interface,
-                ctx,
-                to_evmc_revision(rev),
-                &msg,
-                code->code(),
-                code->size())};
+            // Creation runs the code through the interpreter, as calls
+            // through the compiled path.
+            auto const result =
+                msg.kind == EVMC_CREATE
+                    ? monad_vm.execute_bytecode<EvmTraits<rev>>(
+                          test_host.get_evmc_host(), &msg, code->code_span())
+                    : monad_vm.execute<EvmTraits<rev>>(
+                          test_host.get_evmc_host(), &msg, code_hash, vcode);
 
             if (assert_success) {
                 MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
@@ -316,9 +284,9 @@ namespace
         }
     }
 
-    static BlockchainTestVM::Implementation const all_impls[] = {
-        Interpreter,
-        Compiler,
+    static vm::VM::Mode const all_impls[] = {
+        vm::VM::InterpreterOnly,
+        vm::VM::CompilerOnly,
     };
 
     void register_benchmark(
@@ -327,8 +295,7 @@ namespace
     {
         for (auto const impl : all_impls) {
             benchmark::RegisterBenchmark(
-                std::format(
-                    "execute/{}/{}", name, BlockchainTestVM::impl_name(impl)),
+                std::format("execute/{}/{}", name, impl_name(impl)),
                 run_benchmark,
                 impl,
                 msg,
@@ -408,7 +375,7 @@ namespace
                                 test.name,
                                 block_no,
                                 i,
-                                BlockchainTestVM::impl_name(impl)),
+                                impl_name(impl)),
                             run_benchmark_json,
                             impl,
                             test.json_state,

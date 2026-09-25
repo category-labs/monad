@@ -34,9 +34,5 @@ if(MONAD_COMPILER_TESTING)
   add_subdirectory(fuzzer)
 endif()
 
-if(MONAD_COMPILER_BENCHMARKS OR MONAD_COMPILER_TESTING)
-  add_subdirectory(vm)
-endif()
-
 add_subdirectory(utils)
 add_subdirectory(unit)

@@ -23,7 +23,6 @@ target_include_directories(vm-micro-benchmarks
 monad_compile_options(vm-micro-benchmarks)
 
 target_link_libraries(vm-micro-benchmarks
-    PRIVATE blockchain-test-vm
     PRIVATE monad-vm::monad-vm-test-utils
     PRIVATE monad_execution
     PRIVATE monad-test-utils

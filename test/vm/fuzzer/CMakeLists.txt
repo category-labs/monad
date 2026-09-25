@@ -24,7 +24,6 @@ target_sources(monad-compiler-fuzzer PRIVATE
 
 target_link_libraries(monad-compiler-fuzzer
   PRIVATE monadml-evm
-  PRIVATE blockchain-test-vm
   PRIVATE monad-vm::monad-vm-fuzzing
   PRIVATE monad_execution
   PRIVATE monad-test-utils

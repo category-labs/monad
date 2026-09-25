@@ -17,16 +17,19 @@
 #include <category/core/assert.h>
 #include <category/core/detail/start_lifetime_as_polyfill.hpp>
 #include <category/core/log.hpp>
+#include <category/core/thread_idle.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/db_stats_shm.hpp>
 #include <category/mpt/detail/collected_stats.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <utility>
 
 #include <fcntl.h>
@@ -39,9 +42,10 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 namespace
 {
-    // A publish holds the seqlock only for a 160 byte copy, so losing this
-    // many races in a row means racing a writer the scheduler stopped mid
-    // publish. The sample is dropped and the next scrape picks it up.
+    // A publish holds the seqlock only for a copy of one section, at most
+    // about 1 KiB, so losing this many races in a row means racing a writer
+    // the scheduler stopped mid publish. The sample is dropped and the next
+    // scrape picks it up.
     constexpr unsigned READ_ATTEMPTS = 8;
 
     detail::db_stats_shm *map_shm(int const fd, int const prot)
@@ -161,8 +165,10 @@ DbStatsPublisher::create(std::filesystem::path const &path)
     seq.store(held, std::memory_order_relaxed);
     std::atomic_thread_fence(std::memory_order_release);
     shm->update_stats = {};
+    shm->thread_idle = {};
     shm->format_version = detail::db_stats_shm::FORMAT_VERSION;
-    shm->payload_size = sizeof(detail::TrieUpdateCollectedStats);
+    shm->payload_size = sizeof(detail::TrieUpdateCollectedStats) +
+                        sizeof(detail::ThreadIdleSection);
     shm->unused_ = 0;
     seq.store(held + 1, std::memory_order_release);
 
@@ -191,16 +197,39 @@ DbStatsPublisher::~DbStatsPublisher()
     }
 }
 
-void DbStatsPublisher::publish_update_stats(
-    detail::TrieUpdateCollectedStats const &s) noexcept
+template <typename Write>
+void DbStatsPublisher::publish_(Write &&write) noexcept
 {
     MONAD_DEBUG_ASSERT(shm_ != nullptr);
     std::atomic_ref<uint32_t> const seq{shm_->seq};
     uint32_t const begin = seq.load(std::memory_order_relaxed);
     seq.store(begin + 1, std::memory_order_relaxed);
     std::atomic_thread_fence(std::memory_order_release);
-    shm_->update_stats = s;
+    write(*shm_);
     seq.store(begin + 2, std::memory_order_release);
+}
+
+void DbStatsPublisher::publish_update_stats(
+    detail::TrieUpdateCollectedStats const &s) noexcept
+{
+    publish_([&](detail::db_stats_shm &shm) { shm.update_stats = s; });
+}
+
+void DbStatsPublisher::publish_thread_idle(
+    std::span<ThreadIdleSample const> const samples) noexcept
+{
+    detail::ThreadIdleSection section{};
+    section.count = static_cast<uint32_t>(
+        std::min(samples.size(), std::size(section.slots)));
+    for (uint32_t i = 0; i < section.count; ++i) {
+        std::memcpy(
+            section.slots[i].name,
+            samples[i].name.data(),
+            sizeof(section.slots[i].name));
+        section.slots[i].idle_ns = samples[i].idle_ns;
+        section.slots[i].registered_at_ns = samples[i].registered_at_ns;
+    }
+    publish_([&](detail::db_stats_shm &shm) { shm.thread_idle = section; });
 }
 
 std::optional<DbStatsReader>
@@ -269,8 +298,10 @@ DbStatsReader::~DbStatsReader()
     }
 }
 
-std::optional<detail::TrieUpdateCollectedStats>
-DbStatsReader::read_update_stats() const noexcept
+template <typename Section>
+std::optional<Section> DbStatsReader::read_(
+    Section detail::db_stats_shm::*const section,
+    uint32_t const min_payload_size) const noexcept
 {
     MONAD_DEBUG_ASSERT(shm_ != nullptr);
     std::atomic_ref<uint32_t> const seq{shm_->seq};
@@ -280,17 +311,44 @@ DbStatsReader::read_update_stats() const noexcept
             continue;
         }
         uint32_t const payload_size = shm_->payload_size;
-        detail::TrieUpdateCollectedStats stats = shm_->update_stats;
+        Section const copy = shm_->*section;
         std::atomic_thread_fence(std::memory_order_acquire);
         if (seq.load(std::memory_order_relaxed) != begin) {
             continue;
         }
-        if (payload_size < sizeof(detail::TrieUpdateCollectedStats)) {
+        if (payload_size < min_payload_size) {
             return std::nullopt;
         }
-        return stats;
+        return copy;
     }
     return std::nullopt;
+}
+
+std::optional<detail::TrieUpdateCollectedStats>
+DbStatsReader::read_update_stats() const noexcept
+{
+    return read_(
+        &detail::db_stats_shm::update_stats,
+        sizeof(detail::TrieUpdateCollectedStats));
+}
+
+std::optional<detail::ThreadIdleSection>
+DbStatsReader::read_thread_idle() const noexcept
+{
+    auto section = read_(
+        &detail::db_stats_shm::thread_idle,
+        sizeof(detail::TrieUpdateCollectedStats) +
+            sizeof(detail::ThreadIdleSection));
+    if (!section.has_value()) {
+        return std::nullopt;
+    }
+    if (section->count > std::size(section->slots)) {
+        return std::nullopt;
+    }
+    for (auto &slot : section->slots) {
+        slot.name[sizeof(slot.name) - 1] = '\0';
+    }
+    return section;
 }
 
 MONAD_MPT_NAMESPACE_END

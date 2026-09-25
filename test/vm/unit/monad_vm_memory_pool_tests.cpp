@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/asan.h>
 #include <category/vm/memory_pool.hpp>
 
 #include <gtest/gtest.h>
@@ -104,3 +105,31 @@ TEST(MonadVmMemoryPool, stress_test_in_steps)
     ASSERT_EQ(memory_pool.debug_get_cache_size(), N);
     ASSERT_TRUE(memory_pool.debug_check_uniqueness_invariant());
 }
+
+#if !defined(NDEBUG) || defined(MONAD_CORE_FORCE_DEBUG_ASSERT)
+TEST(MonadVmMemoryPoolDeathTest, dealloc_requires_zeroed_buffer)
+{
+    testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    MemoryPool memory_pool{64};
+    uint8_t *const m = memory_pool.alloc();
+    m[63] = 1;
+    EXPECT_DEATH(memory_pool.dealloc(m), "memcmp");
+    m[63] = 0;
+    memory_pool.dealloc(m);
+}
+#endif
+
+#ifdef MONAD_HAVE_ASAN
+TEST(MonadVmMemoryPool, dealloc_poisons_buffer)
+{
+    MemoryPool memory_pool{64};
+    uint8_t *const m = memory_pool.alloc();
+    memory_pool.dealloc(m);
+    ASSERT_TRUE(__asan_address_is_poisoned(m));
+    ASSERT_TRUE(__asan_address_is_poisoned(m + 63));
+    ASSERT_EQ(memory_pool.alloc(), m);
+    ASSERT_EQ(__asan_region_is_poisoned(m, 64), nullptr);
+    memory_pool.dealloc(m);
+}
+#endif

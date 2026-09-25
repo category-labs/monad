@@ -236,3 +236,4 @@ Test data paths are available via generated header `test/test_resource_data.h`:
 - **GCC + ASAN breaks the VM interpreter** — GCC's ASAN implementation is incompatible with the must-tail calling convention used by the interpreter. Use Clang for ASAN builds when working on VM code.
 - **Submodules in worktrees** — Fresh clones and git worktrees need `git submodule update --init --recursive` before configuring.
 - **Always use toolchain files** — Passing bare `-march=haswell` via `CFLAGS`/`CXXFLAGS` misses assembly sources (e.g., `keccak_impl.S`). Use `-DCMAKE_TOOLCHAIN_FILE=...` instead.
+- **`MONAD_COMPILER_TESTING` needs the `monad-spec` opam switch** — create it with `scripts/ubuntu-build/install-ocaml.sh` (as yourself, not root), and re-run that when a spec bump changes `monad-spec.opam`.

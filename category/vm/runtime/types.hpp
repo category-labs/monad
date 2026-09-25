@@ -28,6 +28,7 @@
 #include <evmc/evmc.hpp>
 
 #include <cstddef>
+#include <limits>
 #include <span>
 #include <type_traits>
 #include <variant>
@@ -228,10 +229,12 @@ namespace monad::vm::runtime
     {
         static Context from(
             evmc_host_interface const *host, evmc_host_context *context,
-            evmc_message const *msg, std::span<uint8_t const> code) noexcept;
+            evmc_message const *msg, std::span<uint8_t const> code,
+            uint64_t *growth_gas_ptr = nullptr) noexcept;
 
-        static Context
-        empty(uint8_t *memory_handle, uint32_t memory_capacity) noexcept;
+        static Context empty(
+            uint8_t *memory_handle, uint32_t memory_capacity,
+            uint64_t *growth_gas_ptr = nullptr) noexcept;
 
         evmc_host_interface const *host;
         evmc_host_context *context;
@@ -247,6 +250,8 @@ namespace monad::vm::runtime
 
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
+
+        uint64_t *growth_gas_ptr{nullptr};
 
         [[gnu::always_inline]]
         constexpr void deduct_gas(int64_t const gas) noexcept
@@ -391,6 +396,17 @@ namespace monad::vm::runtime
 
         template <Traits traits>
         evmc::Result copy_to_evmc_result();
+
+        [[gnu::always_inline]]
+        constexpr void add_growth_gas(uint64_t const g) noexcept
+        {
+            if (growth_gas_ptr != nullptr) {
+                MONAD_DEBUG_ASSERT(
+                    g <=
+                    std::numeric_limits<uint64_t>::max() - *growth_gas_ptr);
+                *growth_gas_ptr += g;
+            }
+        }
 
     private:
         template <Traits traits>

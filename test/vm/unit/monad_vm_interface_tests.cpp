@@ -83,7 +83,7 @@ namespace
     {
         size_t calls_before_exception_;
         std::function<evmc::Result(Host &, evmc_message const &)> call_impl_;
-        evmc_tx_context tx_context_{};
+        TxContext tx_context_{};
 
     public:
         struct Exception
@@ -157,7 +157,7 @@ namespace
             stack_unwind();
         }
 
-        evmc_tx_context const *get_tx_context() const noexcept override
+        TxContext const *get_tx_context() const noexcept override
         {
             return &tx_context_;
         }

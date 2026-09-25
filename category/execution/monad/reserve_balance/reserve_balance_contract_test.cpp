@@ -258,7 +258,7 @@ void run_dipped_into_reserve_test(
     vm::VM vm;
     BlockState bs{tdb, vm};
     NoopCallTracer call_tracer;
-    evmc_tx_context const tx_context{};
+    vm::TxContext const tx_context{};
     BlockHashBufferFinalized block_hash_buffer{};
 
     ASSERT_EQ(monad_default_max_reserve_balance_mon(traits::monad_rev()), 10);

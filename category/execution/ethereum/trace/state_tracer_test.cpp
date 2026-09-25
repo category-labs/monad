@@ -1831,9 +1831,9 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
     }
 }
 
-// CodeTracer coverage.
+// WitnessTracer coverage.
 //
-// Each test below constructs `StateTracer{CodeTracer{}}`, exercises exactly
+// Each test below constructs `StateTracer{WitnessTracer{}}`, exercises exactly
 // one of the `on_read_code` recording sites in the execution layer, and
 // asserts that the recorded codes map contains the (code_hash, intercode)
 // pair that the site is responsible for. The sites are:
@@ -1865,7 +1865,7 @@ namespace
 }
 
 // Site 1: EvmcHostBase::get_code_size
-TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
+TYPED_TEST(TraitsTest, witness_tracer_records_extcodesize)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
@@ -1890,7 +1890,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer = trace::CodeTracer{};
+    trace::StateTracer state_tracer = trace::WitnessTracer{};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
@@ -1904,7 +1904,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
 
     EXPECT_EQ(host.get_code_size(ADDR_A), A_ICODE->size());
 
-    auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+    auto const &codes = std::get<trace::WitnessTracer>(state_tracer).codes;
     EXPECT_EQ(codes.size(), 1u);
     auto const it = codes.find(A_CODE_HASH);
     ASSERT_TRUE(it != codes.end());
@@ -1914,7 +1914,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
 }
 
 // Site 2: EvmcHostBase::copy_code
-TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
+TYPED_TEST(TraitsTest, witness_tracer_records_extcodecopy)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
@@ -1939,7 +1939,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer = trace::CodeTracer{};
+    trace::StateTracer state_tracer = trace::WitnessTracer{};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
@@ -1959,7 +1959,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
         buf.begin() + static_cast<std::ptrdiff_t>(n),
         A_ICODE->code()));
 
-    auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+    auto const &codes = std::get<trace::WitnessTracer>(state_tracer).codes;
     EXPECT_EQ(codes.size(), 1u);
     auto const it = codes.find(A_CODE_HASH);
     ASSERT_TRUE(it != codes.end());
@@ -1969,7 +1969,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
 }
 
 // Site 3: execute_call_message records called-contract code
-TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
+TYPED_TEST(TraitsTest, witness_tracer_records_called_contract_code)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
@@ -1998,7 +1998,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer = trace::CodeTracer{};
+    trace::StateTracer state_tracer = trace::WitnessTracer{};
     EvmcHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
@@ -2027,7 +2027,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
 
     (void)execute_call_message<typename TestFixture::Trait>(&host, state, msg);
 
-    auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+    auto const &codes = std::get<trace::WitnessTracer>(state_tracer).codes;
     auto const it = codes.find(B_CODE_HASH);
     ASSERT_TRUE(it != codes.end())
         << "called contract code not recorded by execute_call_message";
@@ -2037,7 +2037,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
 }
 
 // Site 4: system_call (via process_requests) records system-contract code
-TYPED_TEST(TraitsTest, code_tracer_records_system_contract_code)
+TYPED_TEST(TraitsTest, witness_tracer_records_system_contract_code)
 {
     if constexpr (!TestFixture::Trait::eip_7685_active()) {
         GTEST_SKIP() << "process_requests requires EIP-7685";
@@ -2071,7 +2071,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_system_contract_code)
         EthereumMainnet const chain;
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
-        trace::StateTracer state_tracer = trace::CodeTracer{};
+        trace::StateTracer state_tracer = trace::WitnessTracer{};
 
         auto const result = process_requests<typename TestFixture::Trait>(
             chain,
@@ -2083,7 +2083,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_system_contract_code)
             std::span<Receipt const>{});
         ASSERT_TRUE(result.has_value());
 
-        auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+        auto const &codes = std::get<trace::WitnessTracer>(state_tracer).codes;
         auto const it = codes.find(SYSTEM_STUB_CODE_HASH);
         ASSERT_TRUE(it != codes.end())
             << "system contract code not recorded by system_call";
@@ -2095,7 +2095,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_system_contract_code)
 }
 
 // Site 5: validate_ethereum_transaction records sender code on EIP-7702 check
-TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
+TYPED_TEST(TraitsTest, witness_tracer_records_sender_code_in_validate)
 {
     if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
         GTEST_SKIP() << "EIP-7702 sender code read requires Prague+";
@@ -2125,11 +2125,11 @@ TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
         State state{bs, Incarnation{0, 0}};
 
         Transaction const tx{.gas_limit = 60'500};
-        trace::StateTracer state_tracer = trace::CodeTracer{};
+        trace::StateTracer state_tracer = trace::WitnessTracer{};
         (void)validate_ethereum_transaction<typename TestFixture::Trait>(
             tx, ADDR_A, state, state_tracer);
 
-        auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+        auto const &codes = std::get<trace::WitnessTracer>(state_tracer).codes;
         auto const it = codes.find(C_CODE_HASH);
         ASSERT_TRUE(it != codes.end())
             << "sender code not recorded by validate_ethereum_transaction";
@@ -2151,7 +2151,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
 // at the top of operator() for monad traits. The Monad MONAD_FOUR+ exercise
 // of process_authorizations is structurally identical and is indirectly
 // covered by the witness-generation integration tests.
-TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
+TYPED_TEST(EvmTraitsTest, witness_tracer_records_authorization_code)
 {
     if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
         GTEST_SKIP() << "EIP-7702 authority code read requires Prague+";
@@ -2203,7 +2203,7 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
         uint256_t const base_fee{0};
-        trace::StateTracer state_tracer = trace::CodeTracer{};
+        trace::StateTracer state_tracer = trace::WitnessTracer{};
         EvmcHost<typename TestFixture::Trait> host{
             call_tracer,
             state_tracer,
@@ -2219,7 +2219,7 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
             EthereumMainnet{}, tx, ADDR_A, authorities, BlockHeader{}}(
             state, host);
 
-        auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+        auto const &codes = std::get<trace::WitnessTracer>(state_tracer).codes;
         auto const it = codes.find(B_CODE_HASH);
         ASSERT_TRUE(it != codes.end())
             << "authority code not recorded by process_authorizations";
@@ -2242,7 +2242,7 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
 //   - B_CODE_HASH: only recorded via dipped_into_reserve (ADDR_B is in
 //                  current() but is not the sender, so the is_delegated call
 //                  above does not touch it).
-TYPED_TEST(MonadTraitsTest, code_tracer_records_reserve_balance_code)
+TYPED_TEST(MonadTraitsTest, witness_tracer_records_reserve_balance_code)
 {
     using Trait = typename TestFixture::Trait;
     if (TestFixture::REV < MONAD_FOUR) {
@@ -2295,7 +2295,7 @@ TYPED_TEST(MonadTraitsTest, code_tracer_records_reserve_balance_code)
         .authorities = authorities};
 
     Transaction const tx{.max_fee_per_gas = 1, .gas_limit = 21'000};
-    trace::StateTracer state_tracer = trace::CodeTracer{};
+    trace::StateTracer state_tracer = trace::WitnessTracer{};
 
     init_reserve_balance_context<Trait>(
         state,
@@ -2309,7 +2309,7 @@ TYPED_TEST(MonadTraitsTest, code_tracer_records_reserve_balance_code)
     (void)revert_transaction<Trait>(
         SENDER, tx, /*base_fee_per_gas=*/0, /*i=*/0, state, state_tracer, ctx);
 
-    auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+    auto const &codes = std::get<trace::WitnessTracer>(state_tracer).codes;
     auto const it_a = codes.find(A_CODE_HASH);
     ASSERT_TRUE(it_a != codes.end())
         << "sender code not recorded by is_delegated";

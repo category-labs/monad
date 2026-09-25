@@ -21,6 +21,7 @@
 #include <category/core/result.hpp>
 #include <category/core/rlp/config.hpp>
 #include <category/core/rlp/decode_error.hpp>
+#include <category/core/rlp/encode.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 

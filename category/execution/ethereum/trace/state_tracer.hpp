@@ -25,7 +25,9 @@
 #include <immer/map.hpp>
 #include <nlohmann/json_fwd.hpp>
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <variant>
 
@@ -124,34 +126,48 @@ namespace trace
         bool should_exclude_address(Address const &) const;
     };
 
-    /// Records every code preimage read during execution, keyed by
-    /// code_hash. Used by witness generation to assemble the codes section
-    /// of the post-block witness. Insertions happen from the EVM host's
-    /// code-read entry points; production execution uses `std::monostate`
-    /// instead, so the recording path has zero cost. A CodeTracer is only
-    /// ever accessed from a single thread, so a plain (non-concurrent) map
-    /// suffices.
-    struct CodeTracer
+    /// Records what witness generation needs from one transaction's
+    /// execution: every code preimage read, keyed by code_hash, and the
+    /// lowest block number BLOCKHASH served from the block hash buffer,
+    /// which decides how many ancestor headers the witness carries.
+    /// Insertions happen from the EVM host; production execution uses
+    /// `std::monostate` instead, so the recording path has zero cost.
+    ///
+    /// The tracer is per transaction and is cleared before every execution
+    /// attempt, so a discarded speculative attempt leaves nothing behind and
+    /// the block-level merge only sees what the final attempt read. It is
+    /// only ever accessed from a single thread, so plain containers suffice.
+    struct WitnessTracer
     {
         Map<bytes32_t, vm::SharedIntercode> codes{};
+        std::optional<uint64_t> min_block_hash{};
     };
 
     using StateTracer = std::variant<
         std::monostate, PrestateTracer, StateDiffTracer, AccessListTracer,
-        CodeTracer>;
+        WitnessTracer>;
 
-    [[gnu::always_inline]] inline bool is_code_tracer(StateTracer const &tracer)
+    [[gnu::always_inline]] inline bool
+    is_witness_tracer(StateTracer const &tracer)
     {
-        return std::holds_alternative<CodeTracer>(tracer);
+        return std::holds_alternative<WitnessTracer>(tracer);
     }
 
     inline void on_read_code(
         StateTracer &tracer, bytes32_t const &code_hash,
         vm::SharedIntercode const &intercode)
     {
-        if (auto *t = std::get_if<CodeTracer>(&tracer);
+        if (auto *t = std::get_if<WitnessTracer>(&tracer);
             t && code_hash != NULL_HASH) {
             t->codes.emplace(code_hash, intercode);
+        }
+    }
+
+    inline void on_block_hash(StateTracer &tracer, uint64_t const block_number)
+    {
+        if (auto *t = std::get_if<WitnessTracer>(&tracer);
+            t && (!t->min_block_hash || block_number < *t->min_block_hash)) {
+            t->min_block_hash = block_number;
         }
     }
 

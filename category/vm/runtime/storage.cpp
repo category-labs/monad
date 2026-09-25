@@ -20,6 +20,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/storage_costs.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -38,16 +39,15 @@ namespace monad::vm::runtime
     {
         static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
-        auto key = store_be_as<bytes32_t>(*key_ptr);
+        auto const key = store_be_as<bytes32_t>(*key_ptr);
 
         auto const access_status =
-            ctx->host->access_storage(ctx->context, &ctx->env.recipient, &key);
+            ctx->host->access_storage(ctx->env.recipient, key);
         if (access_status == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_storage_cost());
         }
 
-        auto const value =
-            ctx->host->get_storage(ctx->context, &ctx->env.recipient, &key);
+        auto const value = ctx->host->get_storage(ctx->env.recipient, key);
 
         *result_ptr = load_be<uint256_t>(value);
     }
@@ -72,21 +72,21 @@ namespace monad::vm::runtime
             ctx->exit(StatusCode::OutOfGas);
         }
 
-        auto key = store_be_as<bytes32_t>(*key_ptr);
-        auto value = store_be_as<bytes32_t>(*value_ptr);
+        auto const key = store_be_as<bytes32_t>(*key_ptr);
+        auto const value = store_be_as<bytes32_t>(*value_ptr);
 
         if constexpr (traits::mip_8_active()) {
-            auto const access_status = ctx->host->access_storage(
-                ctx->context, &ctx->env.recipient, &key);
+            auto const access_status =
+                ctx->host->access_storage(ctx->env.recipient, key);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_storage_cost());
             }
 
-            auto const storage_status = ctx->host->set_storage(
-                ctx->context, &ctx->env.recipient, &key, &value);
+            auto const storage_status =
+                ctx->host->set_storage(ctx->env.recipient, key, value);
 
-            auto const [first_page_write, grew_state] = ctx->host->update_page(
-                ctx->context, &ctx->env.recipient, &key, storage_status);
+            auto const [first_page_write, grew_state] =
+                ctx->host->update_page(ctx->env.recipient, key, storage_status);
 
             int64_t gas_used = traits::base_sstore_cost();
             if (first_page_write) {
@@ -100,14 +100,14 @@ namespace monad::vm::runtime
             ctx->deduct_gas(gas_used);
         }
         else {
-            auto const access_status = ctx->host->access_storage(
-                ctx->context, &ctx->env.recipient, &key);
+            auto const access_status =
+                ctx->host->access_storage(ctx->env.recipient, key);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
             }
 
-            auto const storage_status = ctx->host->set_storage(
-                ctx->context, &ctx->env.recipient, &key, &value);
+            auto const storage_status =
+                ctx->host->set_storage(ctx->env.recipient, key, value);
 
             auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
 
@@ -129,8 +129,8 @@ namespace monad::vm::runtime
         auto const base = (magic + base_offset) * 1024;
         if (offset == 0) {
             auto const base_key = store_be_as<bytes32_t>(base);
-            auto const base_value = ctx->host->get_transient_storage(
-                ctx->context, &ctx->env.recipient, &base_key);
+            auto const base_value = static_cast<bytes32_t>(
+                ctx->host->get_transient_storage(ctx->env.recipient, base_key));
             if (base_value != bytes32_t{}) {
                 // If this transient storage location has already been written,
                 // then we are likely in a loop. We return early in this case
@@ -145,8 +145,7 @@ namespace monad::vm::runtime
             // more likely to be noticed, due to zero being the default:
             auto const s = x < magic ? x + 1 : x;
             auto const value = store_be_as<bytes32_t>(s);
-            ctx->host->set_transient_storage(
-                ctx->context, &ctx->env.recipient, &key, &value);
+            ctx->host->set_transient_storage(ctx->env.recipient, key, value);
         }
         return true;
     }

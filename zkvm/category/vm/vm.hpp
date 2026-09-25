@@ -79,11 +79,7 @@ namespace monad::vm
             bytes32_t const & /*code_hash*/, SharedVarcode const &vcode)
         {
             auto const &icode = vcode->intercode();
-            auto rt_ctx = runtime::Context::from(
-                &host.get_interface(),
-                host.to_context(),
-                msg,
-                icode->code_span());
+            auto rt_ctx = runtime::Context::from(host, msg, icode->code_span());
 
             auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
             auto const stack_ptr = stack_allocator_.allocate();
@@ -100,8 +96,7 @@ namespace monad::vm
             Host &host, evmc_message const *const msg,
             std::span<uint8_t const> const code)
         {
-            auto rt_ctx = runtime::Context::from(
-                &host.get_interface(), host.to_context(), msg, code);
+            auto rt_ctx = runtime::Context::from(host, msg, code);
 
             auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
             auto const stack_ptr = stack_allocator_.allocate();

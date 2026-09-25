@@ -1473,17 +1473,13 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
         0,
         chain_ctx};
 
-    auto const d1 = vm::evm::resolve_delegation(
-        &h.get_interface(), h.to_context(), falsely_delegated_1);
+    auto const d1 = vm::evm::resolve_delegation(h, falsely_delegated_1);
     EXPECT_FALSE(d1.has_value());
-    auto const d2 = vm::evm::resolve_delegation(
-        &h.get_interface(), h.to_context(), falsely_delegated_2);
+    auto const d2 = vm::evm::resolve_delegation(h, falsely_delegated_2);
     EXPECT_FALSE(d2.has_value());
-    auto const d3 = vm::evm::resolve_delegation(
-        &h.get_interface(), h.to_context(), falsely_delegated_3);
+    auto const d3 = vm::evm::resolve_delegation(h, falsely_delegated_3);
     EXPECT_FALSE(d3.has_value());
-    auto const d4 = vm::evm::resolve_delegation(
-        &h.get_interface(), h.to_context(), correctly_delegated);
+    auto const d4 = vm::evm::resolve_delegation(h, correctly_delegated);
     EXPECT_TRUE(d4.has_value());
     EXPECT_EQ(d4.value(), falsely_delegated_3);
 }

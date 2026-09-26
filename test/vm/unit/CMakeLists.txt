@@ -27,6 +27,7 @@ target_sources(vm-unit-tests PRIVATE
     mocked_host_tests.cpp
     utils_tests.cpp
     uint256_tests.cpp
+    uint256_barrett_tests.cpp
     uint128_tests.cpp
     non_temporal_memory_tests.cpp
     rc_ptr_tests.cpp

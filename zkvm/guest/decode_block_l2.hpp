@@ -99,8 +99,8 @@ struct Block;
 /// way to obtain one, and it fails unless the witness's bytes are the secret
 /// the context names. So the check every other part of this design rests on is
 /// carried by the type rather than by a line in this function: there is no way
-/// to call it with an unbound secret, and a malformed witness halts in ffi.cpp
-/// alongside every other witness defect.
+/// to call it with an unbound secret, and a malformed witness halts in
+/// execute_witness.cpp alongside every other witness defect.
 Result<Block> decode_block_l2(
     byte_string_view &enc, L2Cipher::Context const &ctx,
     L2Cipher::Secret const &secret, std::vector<byte_string_view> &ciphertexts);

@@ -290,7 +290,8 @@ associated types and two static functions — and a concept that a candidate
 suite is `static_assert`ed against, so an incomplete one names itself once
 instead of failing at whichever call site the compiler reaches first. Behind it
 sit the wire format, the curve or the absence of one, the field, the sponge and
-the tag; in front of it `decode_block_l2` and `ffi.cpp` name no cipher at all.
+the tag; in front of it `decode_block_l2` and `execute_witness.cpp` name no
+cipher at all.
 What the interface does NOT let a suite change is the decision rule — a leaf it
 refuses is a deterministic rejection of one queue entry, never a halt — nor the
 binding of the operator secret, which is the check the whole design rests on.
@@ -588,7 +589,7 @@ emulator's own convention and has no counterpart here.
 ## Iterating on the C++ guest in isolation
 
 The C++ guest library can be built independently of either Rust crate, for
-fast iteration on `ffi.cpp` / `execute_block_zkvm`:
+fast iteration on `execute_witness.cpp` / `execute_block.cpp`:
 
 ```sh
 cmake -B build-zkvm -S zkvm/guest \

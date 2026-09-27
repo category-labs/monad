@@ -179,7 +179,7 @@ bool l2_encrypt_leaf(
 /// than here so this header stays the scheme and not the seam.
 ///
 /// The members are thin: everything is above, and this exists so that the
-/// decoder and ffi.cpp name a suite instead of naming secp256k1.
+/// decoder and execute_witness.cpp name a suite instead of naming secp256k1.
 struct L2EcdhPoseidon2
 {
     using Context = L2CipherContext;

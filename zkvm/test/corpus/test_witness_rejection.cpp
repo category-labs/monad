@@ -23,7 +23,8 @@
 //
 // They drive the real guest as a subprocess rather than linking it, for two
 // reasons. The guest signals a bad witness by aborting, so the thing under
-// test is a process exit; and linking ffi.cpp into a gtest binary would mean
+// test is a process exit; and linking the guest entry into a gtest binary
+// would mean
 // reproducing the whole x86 driver -- read_input, write_output, the allocator
 // shim -- which is a second copy of a thing that already exists and would be
 // what got tested instead.

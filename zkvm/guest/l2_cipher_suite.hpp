@@ -26,7 +26,7 @@
 // WHAT IS BEHIND THE SEAM. Everything about how a leaf is built: the wire
 // format, the curve or the absence of one, the field, the sponge, the tag, the
 // packing density. The two entry points below take bytes and return bytes, so
-// none of it reaches decode_block_l2 or ffi.cpp.
+// none of it reaches decode_block_l2 or execute_witness.cpp.
 //
 // WHAT IS NOT, and cannot be moved behind it:
 //

@@ -55,7 +55,8 @@ namespace
     }
 
     // Big-endian, the wire order of the witness's seventh field, so that
-    // bind_secret is reached the way ffi.cpp reaches it rather than around it.
+    // bind_secret is reached the way execute_witness.cpp reaches it rather
+    // than around it.
     std::array<unsigned char, 32> operator_sk_be()
     {
         std::array<unsigned char, 32> be{};
@@ -91,7 +92,8 @@ namespace
 
     // The decoder takes a secret that has already been bound to its context,
     // so every case below goes through bind_secret rather than handing over a
-    // bare scalar -- which is what ffi.cpp does, and the only way the binding
+    // bare scalar -- which is what execute_witness.cpp does, and the only way
+    // the binding
     // gets exercised at all.
     L2Cipher::Secret bound_secret(L2Cipher::Context const &ctx)
     {

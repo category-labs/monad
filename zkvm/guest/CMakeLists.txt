@@ -938,8 +938,10 @@ else()
     target_link_libraries(monad-zkvm-corpus-gen PRIVATE
         monad_execution secp256k1 ${_corpus_libs})
 
-    # libsecp256k1 is PRIVATE on monad_execution and the signer calls it
-    # directly, so it has to be named again here.
+    # secp256k1 is silkpre's vendored target, and it already reaches these
+    # through monad_execution -> monad_crypto, both PUBLIC. Named anyway
+    # because the signer calls it directly, and a direct caller should not
+    # depend on a transitive edge it does not own.
     monad_add_test(test_corpus_builder
         ${_corpus_sources}
         ${_corpus_extra}

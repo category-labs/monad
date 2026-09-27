@@ -14,7 +14,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // zkVM guest references the BlockError status-code domain: execute_block_zkvm
-// returns BlockError::InvalidRequestsHash and ffi.cpp returns BlockError::
+// returns BlockError::InvalidRequestsHash and execute_witness.cpp returns
+// BlockError::
 // FieldBeforeFork.
 
 #include <category/execution/ethereum/validate_block.hpp>

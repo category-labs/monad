@@ -84,9 +84,11 @@ function(monad_l2_cipher_sources GUEST_DIR OUT_VAR)
 endfunction()
 
 # libsecp256k1 is the ECDH suite's HOST arm only -- on ZisK the same code goes
-# through ziskos' zisklib and links nothing. category/execution links it
-# PRIVATE, so a target using that arm has to name it itself. A suite with no
-# curve returns an empty list and the target links nothing extra.
+# through ziskos' zisklib and links nothing. The target is silkpre's vendored
+# `secp256k1`, which carries ENABLE_MODULE_ECDH; it also reaches every target
+# that links monad_execution, through monad_crypto, but the suite names it
+# because the suite calls it. A suite with no curve returns an empty list and
+# the target links nothing extra.
 function(monad_l2_cipher_host_libs OUT_VAR)
   if(NOT DEFINED MONAD_ZKVM_L2_CIPHER)
     set(MONAD_ZKVM_L2_CIPHER "ecdh-poseidon2")

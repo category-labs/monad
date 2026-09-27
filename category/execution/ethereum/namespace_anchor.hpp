@@ -109,7 +109,7 @@ Result<std::vector<bytes32_t>> collect_namespace_messages(
 /// keccak256(min(a,b) || max(a,b)) over adjacent pairs, and a trailing odd node
 /// is promoted to the next level unchanged. A single leaf is its own root.
 ///
-/// THIS IS NOT the Ethereum ordered trie. zkvm/guest/body_roots.hpp's
+/// THIS IS NOT the Ethereum ordered trie. db/ordered_trie.hpp's
 /// ordered_trie_root is a different rule for a different job, and a proof built
 /// against one does not verify against the other. Do not "simplify" the pair
 /// ordering: it is what the L1 contract computes.

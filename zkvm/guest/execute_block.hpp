@@ -39,8 +39,8 @@ namespace vm
 /// `namespace_anchor` is bytes32_t{} on a build without MONAD_ZKVM_L2, where
 /// there is no spoke to harvest. The struct is unconditional, and the 32 zero
 /// bytes are the price: making it conditional would leak the macro into this
-/// header, into ffi.cpp's dispatch wrapper, and into the return type of the
-/// SWITCH_EVM_TRAITS lambda.
+/// header and into the return type of the SWITCH_EVM_TRAITS lambda in
+/// execute_witness.cpp.
 struct ZkvmBlockOutput
 {
     bytes32_t state_root;

@@ -360,7 +360,7 @@ Result<std::vector<Receipt>> execute_block(
     // guest's epilogue clears it and the node's does not, the two state roots
     // diverge on the first block that carries a message. Nothing in the build
     // keeps these two epilogues in step -- this file is dropped from the guest
-    // and execute_block_zkvm.cpp is absent from the node -- so the length
+    // and zkvm/guest/execute_block.cpp is absent from the node -- so the length
     // assertion inside the clear is what turns a divergence into an abort on
     // the first such block rather than a wrong root.
 #ifdef MONAD_ZKVM_L2

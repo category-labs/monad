@@ -108,14 +108,17 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
                                : CacheReadStatus::MissTruncated;
     if (status == CacheReadStatus::Hit) {
         // The hit skipped the trie walk; warm the trie path in the
-        // background so the commit upsert does not stall loading it.
-        db_.find_async(
-            curr_root_,
-            concat(
-                prefix_,
-                STATE_NIBBLE,
-                NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
-            block_number_);
+        // background so the commit upsert does not stall loading it. Only
+        // the first hit per block prefetches; repeats are deduped.
+        if (prefetched_accounts_.insert({addr, 0})) {
+            db_.find_async(
+                curr_root_,
+                concat(
+                    prefix_,
+                    STATE_NIBBLE,
+                    NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
+                block_number_);
+        }
         return result;
     }
     auto const res = db_.find(
@@ -151,7 +154,7 @@ bytes32_t TrieDb::read_storage(
                      addr, incarnation, lookup_key, lookup_offset, result)
                : CacheReadStatus::MissTruncated;
     if (status == CacheReadStatus::Hit) {
-        prefetch_storage_path(addr, lookup_key);
+        prefetch_storage_path(addr, incarnation, lookup_key);
         return result;
     }
     return load_storage_page(
@@ -171,17 +174,23 @@ storage_page_t TrieDb::read_storage_page(
             ? cache_->try_read_storage_page(addr, incarnation, page_key, result)
             : CacheReadStatus::MissTruncated;
     if (status == CacheReadStatus::Hit) {
-        prefetch_storage_path(addr, page_key);
+        prefetch_storage_path(addr, incarnation, page_key);
         return result;
     }
     return load_storage_page(addr, incarnation, page_key, status);
 }
 
 // The cache hit skipped the trie walk; warm the trie path in the background
-// so the commit upsert does not stall loading it.
+// so the commit upsert does not stall loading it. Only the first hit per
+// block prefetches; repeats are deduped.
 void TrieDb::prefetch_storage_path(
-    Address const &addr, bytes32_t const &lookup_key)
+    Address const &addr, Incarnation const incarnation,
+    bytes32_t const &lookup_key)
 {
+    if (!prefetched_storage_.insert(
+            {StorageKey{addr, incarnation, lookup_key}, 0})) {
+        return;
+    }
     db_.find_async(
         curr_root_,
         concat(
@@ -293,11 +302,17 @@ void TrieDb::commit(
         cache_->update_proposal_state(
             builder.take_proposal_post_state(), header.number, block_id);
     }
+    // The upserts above rewrote the trie paths this block's prefetches
+    // warmed; the next block must warm them again.
+    clear_prefetched();
 }
 
 void TrieDb::set_block_and_prefix(
     uint64_t const block_number, bytes32_t const &block_id)
 {
+    // The read target changes below, so prior prefetch dedupe entries no
+    // longer describe the paths a new prefetch would walk.
+    clear_prefetched();
     if (cache_) {
         cache_->set_block_and_prefix(block_number, block_id);
     }

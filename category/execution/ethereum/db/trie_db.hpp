@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/bytes.hpp>
+#include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -24,6 +25,7 @@
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
+#include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/mpt/compute.hpp>
@@ -33,6 +35,8 @@
 #include <category/vm/vm.hpp>
 
 #include <nlohmann/json_fwd.hpp>
+
+#include <tbb/concurrent_hash_map.h>
 
 #include <deque>
 #include <istream>
@@ -144,7 +148,23 @@ private:
         CacheReadStatus);
 
     // fire-and-forget async find to warm the trie path after a cache hit
-    void prefetch_storage_path(Address const &, bytes32_t const &lookup_key);
+    void prefetch_storage_path(
+        Address const &, Incarnation, bytes32_t const &lookup_key);
+
+    // Per-block dedupe of cache-hit prefetches: a hot key is read many times
+    // per block but its trie path only needs one background warm-up, and every
+    // skipped duplicate saves a keccak + worker-queue round trip. Cleared at
+    // commit and whenever the read target (block / prefix) changes.
+    tbb::concurrent_hash_map<Address, char, BytesHashCompare<Address>>
+        prefetched_accounts_;
+    tbb::concurrent_hash_map<StorageKey, char, BytesHashCompare<StorageKey>>
+        prefetched_storage_;
+
+    void clear_prefetched()
+    {
+        prefetched_accounts_.clear();
+        prefetched_storage_.clear();
+    }
 };
 
 MONAD_NAMESPACE_END

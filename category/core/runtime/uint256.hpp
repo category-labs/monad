@@ -720,18 +720,17 @@ struct ZiskAdd256Params
     uint64_t *c;
 };
 
-// Reuse caller-owned storage to avoid a local stack frame; the caller sets
-// p.cin. dst may be a or b: the precompile's memory accesses read the
-// operands at MAX_MEM_OPS_BY_MAIN_STEP * step + 2 and write c at + 3
-// (precompiles/common, MemBusHelpers), so its reads see the operands as they
-// were, and opc_add256 reads both into its own buffer before writing c.
+// Reuse caller-owned storage to avoid a local stack frame. The caller sets
+// p.cin, and p.a before the call: a handler that stores p.a first frees a's
+// register for its new top. dst may be a or b: the precompile's memory
+// accesses read the operands at MAX_MEM_OPS_BY_MAIN_STEP * step + 2 and write
+// c at + 3 (precompiles/common, MemBusHelpers), so its reads see the operands
+// as they were, and opc_add256 reads both into its own buffer before writing c.
 [[gnu::always_inline]] inline void zisk_add256(
-    ZiskAdd256Params &p, uint256_t const &a, uint256_t const &b,
-    uint256_t &dst) noexcept
+    ZiskAdd256Params &p, uint256_t const &b, uint256_t &dst) noexcept
 {
     static_assert(alignof(uint256_t) >= 8);
     static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
-    p.a = reinterpret_cast<uint64_t const *>(&a);
     p.b = reinterpret_cast<uint64_t const *>(&b);
     p.c = reinterpret_cast<uint64_t *>(&dst);
     // ZisK requires a nonzero destination register distinct from the input.

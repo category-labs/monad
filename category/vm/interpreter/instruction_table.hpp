@@ -603,15 +603,23 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(ADD);
-        auto &&[a, b] = top_two(stack_top);
 #if defined(MONAD_ZKVM_ZISK)
+        // Name a, then step to the sum's slot, which is the new top: the old
+        // top dies at that store, so add256's output register cannot take a3
+        // from under the new one and cost a move.
+        ctx.add256_params.a = reinterpret_cast<uint64_t const *>(stack_top);
+        --stack_top;
+        MONAD_VM_LAUNDER(stack_top);
         // Let the precompile handle the 256-bit addition and carries.
-        zisk_add256(ctx.add256_params, a, b, b);
+        zisk_add256(ctx.add256_params, *stack_top, *stack_top);
+
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
 #else
+        auto &&[a, b] = top_two(stack_top);
         b = a + b;
-#endif
 
         MONAD_VM_NEXT(ADD);
+#endif
     }
 
     template <Traits traits>
@@ -632,19 +640,28 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(SUB);
-        auto &&[a, b] = top_two(stack_top);
 #if defined(MONAD_ZKVM_ZISK)
+        // Name a, then step to the new top, as ADD does. The barrier keeps the
+        // store ahead of b's loads, which gcc would otherwise schedule first.
+        ctx.sub256_params.a = reinterpret_cast<uint64_t const *>(stack_top);
+        asm volatile("" ::: "memory");
+        --stack_top;
+        MONAD_VM_LAUNDER(stack_top);
         // a - b = a + ~b + 1: complement b where it lies, then let add256 add
         // it to a with a carry-in of 1, back into the same slot.
+        auto &b = *stack_top;
         for (size_t i = 0; i < 4; ++i) {
             b[i] = ~b[i];
         }
-        zisk_add256(ctx.sub256_params, a, b, b);
+        zisk_add256(ctx.sub256_params, b, b);
+
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
 #else
+        auto &&[a, b] = top_two(stack_top);
         b = a - b;
-#endif
 
         MONAD_VM_NEXT(SUB);
+#endif
     }
 
     template <Traits traits>

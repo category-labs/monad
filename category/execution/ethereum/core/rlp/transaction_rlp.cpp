@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 
+#include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <bit>
@@ -44,6 +45,8 @@
 #include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN
+
+using BOOST_OUTCOME_V2_NAMESPACE::success;
 
 // Encode
 byte_string encode_access_list(AccessList const &access_list)
@@ -358,9 +361,9 @@ Result<AuthorizationList> decode_authorization_list(byte_string_view &enc)
     return auth_list;
 }
 
-Result<Transaction> decode_transaction_legacy(byte_string_view &enc)
+static Result<void>
+decode_transaction_legacy_into(Transaction &txn, byte_string_view &enc)
 {
-    Transaction txn;
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
     txn.type = TransactionType::legacy;
@@ -378,12 +381,23 @@ Result<Transaction> decode_transaction_legacy(byte_string_view &enc)
         return DecodeError::InputTooLong;
     }
 
+    return success();
+}
+
+Result<Transaction> decode_transaction_legacy(byte_string_view &enc)
+{
+    Transaction txn;
+    BOOST_OUTCOME_TRY(decode_transaction_legacy_into(txn, enc));
     return txn;
 }
 
-Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
+static Result<void>
+decode_transaction_eip2718_into(Transaction &txn, byte_string_view &enc)
 {
-    Transaction txn;
+    // The list walk hands each transaction a non-empty slot, so this guard
+    // never fires from there; it stays because a decoder is also reachable
+    // from callers that have not checked, and should answer them rather
+    // than abort.
     if (MONAD_UNLIKELY(enc.empty())) {
         return DecodeError::InputTooShort;
     }
@@ -444,6 +458,13 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
         return DecodeError::InputTooLong;
     }
 
+    return success();
+}
+
+Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
+{
+    Transaction txn;
+    BOOST_OUTCOME_TRY(decode_transaction_eip2718_into(txn, enc));
     return txn;
 }
 
@@ -485,12 +506,13 @@ decode_transaction_list(byte_string_view &enc, Out const raw_transactions)
     while (!ls.empty()) {
         if (ls[0] >= 0xc0) {
             auto const before = ls;
-            BOOST_OUTCOME_TRY(auto tx, decode_transaction_legacy(ls));
+            // Decode in place: moving would copy the 256-bit fields.
+            BOOST_OUTCOME_TRY(
+                decode_transaction_legacy_into(transactions.emplace_back(), ls));
             if constexpr (keep_raw_transactions) {
                 raw_transactions.get().push_back(
                     before.substr(0, before.size() - ls.size()));
             }
-            transactions.emplace_back(std::move(tx));
         }
         else {
             BOOST_OUTCOME_TRY(auto str, parse_string_metadata(ls));
@@ -499,8 +521,8 @@ decode_transaction_list(byte_string_view &enc, Out const raw_transactions)
             if constexpr (keep_raw_transactions) {
                 raw_transactions.get().push_back(str);
             }
-            BOOST_OUTCOME_TRY(auto tx, decode_transaction_eip2718(str));
-            transactions.emplace_back(std::move(tx));
+            BOOST_OUTCOME_TRY(
+                decode_transaction_eip2718_into(transactions.emplace_back(), str));
         }
     }
     MONAD_ASSERT(ls.empty());

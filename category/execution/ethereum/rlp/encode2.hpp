@@ -187,7 +187,9 @@ byte_string encode_list2(Args const &...args)
         [&](unsigned char *const buf, size_t const n) {
             unsigned char *p = buf;
             append_list_header(p, payload);
-            auto const put = [&p](auto const &a) {
+            // Unused when Args is empty, and an empty pack is not a mistake:
+            // encode_list2() is the empty list, 0xc0.
+            [[maybe_unused]] auto const put = [&p](auto const &a) {
                 std::memcpy(p, a.data(), a.size());
                 p += a.size();
             };

@@ -1861,16 +1861,25 @@ namespace monad::vm::interpreter
 #endif
         MONAD_VM_CHECK(DUP1 + (N - 1));
 
-        push(stack_top, stack_top[-(N - 1)]);
-
 #if defined(MONAD_ZKVM_ZISK)
         if constexpr (N == 1) {
+            push(stack_top, *stack_top);
+
             MONAD_VM_NEXT_OP(DUP1, monad_vm_op2);
         }
         else {
-            MONAD_VM_NEXT(DUP1 + (N - 1));
+            // Advance the one-past pointer before copying, then reuse it for
+            // dispatch. From the new top, the source is N slots below.
+            auto *next = stack_top.next_slot() + 1;
+            MONAD_VM_LAUNDER(next);
+            stack_top = StackTop{next};
+            *stack_top = stack_top[-N];
+
+            MONAD_VM_DISPATCH(1, 0, *instr_ptr);
         }
 #else
+        push(stack_top, stack_top[-(N - 1)]);
+
         MONAD_VM_NEXT(DUP1 + (N - 1));
 #endif
     }

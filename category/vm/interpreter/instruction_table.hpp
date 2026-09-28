@@ -1518,6 +1518,10 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        // Held in a3 and a5 through empty asms, so gcc does not take them
+        // for temporaries and copy the pointers away at the first instruction.
+        MONAD_VM_LAUNDER(stack_top);
+        MONAD_VM_LAUNDER(instr_ptr);
         MONAD_VM_CHECK_OWN_GAS(MSTORE);
 
         // A store inside the memory charges nothing, so no gas sync, and it
@@ -1837,8 +1841,12 @@ namespace monad::vm::interpreter
                     MONAD_VM_CHECK(PUSH1);
                     MONAD_VM_CHECK_AT(PUSH1, 1);
                 }
-                interpreter::push(stack_top, uint256_t{*(instr_ptr + 1)});
-                interpreter::push(stack_top + 1, uint256_t{*(instr_ptr + 3)});
+                // Both immediates read before either store, so the old
+                // instr_ptr dies before the dispatch forms the new one.
+                uint8_t const monad_vm_imm1 = *(instr_ptr + 1);
+                uint8_t const monad_vm_imm2 = *(instr_ptr + 3);
+                interpreter::push(stack_top, uint256_t{monad_vm_imm1});
+                interpreter::push(stack_top + 1, uint256_t{monad_vm_imm2});
                 MONAD_VM_FUSED_NEXT(4, 2);
             }
         }
@@ -1869,6 +1877,11 @@ namespace monad::vm::interpreter
                     gas_remaining,
                     instr_ptr MONAD_VM_TBL_ARG);
             }
+        }
+        if constexpr (N == 2) {
+            // Held in a5 through an empty asm, so gcc does not take a5 for
+            // the stack limit's load and copy instr_ptr away for it.
+            MONAD_VM_LAUNDER(instr_ptr);
         }
 #endif
         MONAD_VM_CHECK(PUSH0 + N);

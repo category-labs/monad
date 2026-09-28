@@ -31,6 +31,7 @@
 #include <boost/fiber/future.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <functional>
@@ -89,6 +90,70 @@ namespace
                 parent->set_next(branch_index, node);
             }
             MONAD_ASSERT(cont(NodeCursor{node}));
+        }
+    };
+
+    // Receiver for a fire-and-forget prefetch read. On completion it attaches
+    // the loaded node to its parent and continues the walk — unless the
+    // prefetch epoch has advanced past the one captured at request time, in
+    // which case a trie mutation (upsert / copy_trie / move_trie) may have
+    // restructured the trie and reused the on-disk offset, so the buffer is
+    // dropped without deserializing.
+    struct prefetch_receiver
+    {
+        static constexpr bool lifetime_managed_internally = true;
+
+        UpdateAux &aux;
+        std::atomic<uint64_t> const &epoch;
+        uint64_t const expected_epoch;
+        Nibbles key;
+        Node::SharedPtr parent;
+        chunk_offset_t rd_offset; // required for sender
+        unsigned bytes_to_read; // required for sender too
+        uint16_t buffer_off;
+        unsigned const branch_index;
+
+        prefetch_receiver(
+            UpdateAux &aux_, std::atomic<uint64_t> const &epoch_,
+            uint64_t const expected_epoch_, Nibbles key_,
+            Node::SharedPtr parent_, unsigned char const branch)
+            : aux(aux_)
+            , epoch(epoch_)
+            , expected_epoch(expected_epoch_)
+            , key(std::move(key_))
+            , parent(std::move(parent_))
+            , rd_offset(0, 0)
+            , branch_index(parent->to_child_index(branch))
+        {
+            chunk_offset_t const offset = parent->fnext(branch_index);
+            auto const num_pages_to_load_node =
+                node_disk_pages_spare_15{offset}.to_pages();
+            bytes_to_read =
+                static_cast<unsigned>(num_pages_to_load_node << DISK_PAGE_BITS);
+            rd_offset = offset;
+            auto const new_offset =
+                round_down_align<DISK_PAGE_BITS>(offset.offset);
+            rd_offset.offset = new_offset & chunk_offset_t::max_offset;
+            buffer_off = uint16_t(offset.offset - rd_offset.offset);
+        }
+
+        template <class ResultType>
+        void set_value(
+            MONAD_ASYNC_NAMESPACE::erased_connected_operation *io_state,
+            ResultType buffer_)
+        {
+            MONAD_ASSERT(buffer_);
+            if (epoch.load(std::memory_order_acquire) != expected_epoch) {
+                return;
+            }
+            auto node = parent->next(branch_index);
+            if (node == nullptr) {
+                node = detail::deserialize_node_from_receiver_result(
+                    std::move(buffer_), buffer_off, io_state);
+                parent->set_next(branch_index, node);
+            }
+            find_async_prefetch(
+                aux, epoch, expected_epoch, NodeCursor{node}, key);
         }
     };
 
@@ -244,6 +309,50 @@ void find_notify_fiber_future(
         promise.set_value(
             {NodeCursor{node, node_prefix_index},
              find_result::branch_not_exist_failure});
+    }
+}
+
+void find_async_prefetch(
+    UpdateAux &aux, std::atomic<uint64_t> const &epoch,
+    uint64_t const expected_epoch, NodeCursor const &start, NibblesView key)
+{
+    if (epoch.load(std::memory_order_acquire) != expected_epoch) {
+        return;
+    }
+    NodeCursor root = start;
+    while (root.is_valid()) {
+        unsigned prefix_index = 0;
+        unsigned node_prefix_index = root.prefix_index;
+        auto node = root.node;
+        for (; node_prefix_index < node->path_nibbles_len();
+             ++node_prefix_index, ++prefix_index) {
+            if (prefix_index >= key.nibble_size()) {
+                return;
+            }
+            if (key.get(prefix_index) !=
+                node->path_nibble_view().get(node_prefix_index)) {
+                return;
+            }
+        }
+        if (prefix_index == key.nibble_size()) {
+            return; // the full path is already in memory
+        }
+        unsigned char const branch = key.get(prefix_index);
+        if (!(node->mask & (1u << branch))) {
+            return;
+        }
+        key = key.substr(static_cast<unsigned char>(prefix_index) + 1u);
+        auto const child_index = node->to_child_index(branch);
+        if (auto const &next = node->next(child_index); next != nullptr) {
+            root = NodeCursor{next};
+            continue;
+        }
+        MONAD_ASSERT(aux.io->owning_thread_id() == get_tl_tid());
+        prefetch_receiver receiver(
+            aux, epoch, expected_epoch, Nibbles{key}, std::move(node), branch);
+        detail::initiate_async_read_update(
+            *aux.io, std::move(receiver), receiver.bytes_to_read);
+        return;
     }
 }
 

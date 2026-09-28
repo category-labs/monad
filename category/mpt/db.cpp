@@ -89,6 +89,11 @@ struct Db::Impl
         NibblesView dest, uint64_t dest_version, bool write_root = true) = 0;
     virtual find_cursor_result_type find_fiber_blocking(
         NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
+
+    // Fire-and-forget find that warms the in-memory trie along the key.
+    // Only the RW on-disk impl acts on it; a no-op everywhere else.
+    virtual void find_async(NodeCursor const &, NibblesView, uint64_t) {}
+
     virtual size_t prefetch_fiber_blocking(Node::SharedPtr const &) = 0;
     virtual Node::SharedPtr load_root_for_version(uint64_t version) = 0;
 
@@ -424,16 +429,33 @@ public:
         timeline_id tid;
     };
 
+    // Fire-and-forget prefetch find: no promise, nobody waits. The key is
+    // held by value because the submitting caller does not outlive the
+    // request. `epoch` is the prefetch epoch captured at submit time; the
+    // request is dropped if a trie mutation has advanced it since.
+    struct PrefetchFindRequest
+    {
+        NodeCursor start;
+        Nibbles key;
+        uint64_t epoch;
+    };
+
     using Comms = std::variant<
         std::monostate, fiber_find_request_t, FiberUpsertRequest,
         FiberLoadAllFromBlockRequest, FiberTraverseRequest, MoveSubtrieRequest,
         FiberLoadRootVersionRequest, FiberCopyTrieRequest,
-        RODbFiberFindOwningNodeRequest>;
+        RODbFiberFindOwningNodeRequest, PrefetchFindRequest>;
 
 private:
     ::moodycamel::ConcurrentQueue<Comms> comms_;
     std::mutex lock_;
     std::condition_variable cond_;
+    // Advanced by the worker before every trie-mutating request (upsert,
+    // copy_trie, move_trie). Prefetch finds carry the epoch observed at
+    // submit time; each walk step and read completion drops itself when the
+    // epoch no longer matches, so no prefetch touches the trie across a
+    // mutation.
+    std::atomic<uint64_t> prefetch_epoch_{0};
 
     struct DbAsyncWorker
     {
@@ -572,6 +594,8 @@ private:
                     }
                     else if (auto *req = std::get_if<2>(&request);
                              req != nullptr) {
+                        parent->prefetch_epoch_.fetch_add(
+                            1, std::memory_order_release);
                         req->promise.set_value(aux.do_update(
                             std::move(req->prev_root),
                             req->sm,
@@ -606,6 +630,8 @@ private:
                     }
                     else if (auto *req = std::get_if<5>(&request);
                              req != nullptr) {
+                        parent->prefetch_epoch_.fetch_add(
+                            1, std::memory_order_release);
                         aux.move_trie_version_forward(
                             req->src, req->dest, req->tid);
                         req->promise.set_value();
@@ -625,6 +651,8 @@ private:
                     }
                     else if (auto *req = std::get_if<7>(&request);
                              req != nullptr) {
+                        parent->prefetch_epoch_.fetch_add(
+                            1, std::memory_order_release);
                         auto root = copy_trie_to_dest(
                             aux,
                             std::move(req->src_root),
@@ -635,6 +663,15 @@ private:
                             req->tid,
                             req->write_root);
                         req->promise.set_value(std::move(root));
+                    }
+                    else if (auto *req = std::get_if<9>(&request);
+                             req != nullptr) {
+                        find_async_prefetch(
+                            aux,
+                            parent->prefetch_epoch_,
+                            req->epoch,
+                            req->start,
+                            NibblesView{req->key});
                     }
                     did_nothing = false;
                 }
@@ -728,6 +765,11 @@ public:
         }
     }
 
+    uint64_t prefetch_epoch() const
+    {
+        return prefetch_epoch_.load(std::memory_order_acquire);
+    }
+
     UpdateAux &aux()
     {
         MONAD_ASSERT(worker_ != nullptr);
@@ -815,6 +857,21 @@ public:
         worker_thread_->submit(fiber_find_request_t{
             .promise = std::move(promise), .start = start, .key = key});
         return fut.get();
+    }
+
+    // threadsafe, fire-and-forget
+    virtual void find_async(
+        NodeCursor const &start, NibblesView const key,
+        uint64_t const version) override
+    {
+        if (unflushed_version_ != version &&
+            !aux().metadata_ctx().version_is_valid_ondisk(version, tid_)) {
+            return;
+        }
+        worker_thread_->submit(OnDiskDbServiceThread::PrefetchFindRequest{
+            .start = start,
+            .key = Nibbles{key},
+            .epoch = worker_thread_->prefetch_epoch()});
     }
 
     // threadsafe
@@ -1211,6 +1268,13 @@ Db::find(NibblesView const key, uint64_t const block_id) const
     MONAD_ASSERT(impl_->aux().is_on_disk());
     auto const root = impl_->load_root_for_version(block_id);
     return find(NodeCursor{root}, key, block_id);
+}
+
+void Db::find_async(
+    NodeCursor const &root, NibblesView const key, uint64_t const block_id)
+{
+    MONAD_ASSERT(impl_);
+    impl_->find_async(root, key, block_id);
 }
 
 Node::SharedPtr Db::load_root_for_version(uint64_t const block_id) const

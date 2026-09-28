@@ -152,6 +152,13 @@ public:
     find(NodeCursor const &, NibblesView, uint64_t block_id) const;
     Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
 
+    // Fire-and-forget async find: warms the in-memory trie along the key
+    // without blocking the caller. Only the RW on-disk Db acts on it; other
+    // impls ignore it. Threadsafe. Any subsequent upsert / copy_trie /
+    // move_trie invalidates outstanding prefetches — their read completions
+    // are dropped, so a prefetch never touches the trie across a mutation.
+    void find_async(NodeCursor const &, NibblesView, uint64_t block_id);
+
     Node::SharedPtr load_root_for_version(uint64_t block_id) const;
 
     Node::SharedPtr copy_trie(

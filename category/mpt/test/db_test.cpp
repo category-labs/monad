@@ -567,6 +567,40 @@ TEST_F(OnDiskDbWithFileFixture, rwdb_access_multi_version)
     }
 }
 
+TEST_F(OnDiskDbWithFileFixture, find_async_prefetch)
+{
+    constexpr unsigned nkeys = 100;
+    auto [bytes_alloc, updates_alloc] = prepare_random_updates(nkeys);
+    UpdateList ls;
+    for (auto &u : updates_alloc) {
+        ls.push_front(u);
+    }
+    root = db.upsert({}, std::move(ls), 0);
+
+    // a freshly loaded root has no children in memory, so the prefetches
+    // below do real async reads
+    auto const fresh_root = db.load_root_for_version(0);
+    for (unsigned i = 0; i < nkeys; ++i) {
+        db.find_async(fresh_root, bytes_alloc[i], 0);
+    }
+    // blocking finds queued behind the prefetches still resolve correctly
+    for (unsigned i = 0; i < nkeys; ++i) {
+        EXPECT_EQ(
+            db_get(db, fresh_root, bytes_alloc[i], 0).value(), bytes_alloc[i]);
+    }
+
+    // an upsert advances the prefetch epoch: queued prefetches and in-flight
+    // read completions are dropped without touching the trie, and reads on
+    // the new version still resolve correctly
+    for (unsigned i = 0; i < nkeys; ++i) {
+        db.find_async(fresh_root, bytes_alloc[i], 0);
+    }
+    root = db.upsert(std::move(root), {}, 1);
+    for (unsigned i = 0; i < nkeys; ++i) {
+        EXPECT_EQ(db_get(db, root, bytes_alloc[i], 1).value(), bytes_alloc[i]);
+    }
+}
+
 TEST_F(ROOnDiskWithFileFixture, nonblocking_rodb)
 {
     std::shared_ptr<boost::fibers::promise<void>[]> promises{

@@ -139,6 +139,9 @@ private:
     storage_page_t load_storage_page(
         Address const &, Incarnation, bytes32_t const &lookup_key,
         CacheReadStatus);
+
+    // fire-and-forget async find to warm the trie path after a cache hit
+    void prefetch_storage_path(Address const &, bytes32_t const &lookup_key);
 };
 
 MONAD_NAMESPACE_END

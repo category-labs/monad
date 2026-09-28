@@ -107,6 +107,15 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     auto const status = cache_ ? cache_->try_read_account(addr, result)
                                : CacheReadStatus::MissTruncated;
     if (status == CacheReadStatus::Hit) {
+        // The hit skipped the trie walk; warm the trie path in the
+        // background so the commit upsert does not stall loading it.
+        db_.find_async(
+            curr_root_,
+            concat(
+                prefix_,
+                STATE_NIBBLE,
+                NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
+            block_number_);
         return result;
     }
     auto const res = db_.find(
@@ -142,6 +151,7 @@ bytes32_t TrieDb::read_storage(
                      addr, incarnation, lookup_key, lookup_offset, result)
                : CacheReadStatus::MissTruncated;
     if (status == CacheReadStatus::Hit) {
+        prefetch_storage_path(addr, lookup_key);
         return result;
     }
     return load_storage_page(
@@ -161,9 +171,26 @@ storage_page_t TrieDb::read_storage_page(
             ? cache_->try_read_storage_page(addr, incarnation, page_key, result)
             : CacheReadStatus::MissTruncated;
     if (status == CacheReadStatus::Hit) {
+        prefetch_storage_path(addr, page_key);
         return result;
     }
     return load_storage_page(addr, incarnation, page_key, status);
+}
+
+// The cache hit skipped the trie walk; warm the trie path in the background
+// so the commit upsert does not stall loading it.
+void TrieDb::prefetch_storage_path(
+    Address const &addr, bytes32_t const &lookup_key)
+{
+    db_.find_async(
+        curr_root_,
+        concat(
+            prefix_,
+            STATE_NIBBLE,
+            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+            NibblesView{
+                keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
+        block_number_);
 }
 
 storage_page_t TrieDb::load_storage_page(

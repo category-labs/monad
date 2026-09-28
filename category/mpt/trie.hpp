@@ -532,6 +532,23 @@ void find_notify_fiber_future(
     UpdateAux &, ::boost::fibers::promise<find_cursor_result_type>,
     NodeCursor const &start, NibblesView key);
 
+/*! \brief Fire-and-forget find that warms the in-memory trie along `key`.
+
+Walks like `find_notify_fiber_future` but reports to no one: missing nodes
+are read asynchronously and attached to their parents so that a later walk
+(e.g. the commit upsert) finds them in memory. `epoch` guards against trie
+mutation: the caller captures the epoch when the prefetch is requested, and
+every walk step and read completion re-checks it — once a trie-mutating
+operation advances the epoch, the stale prefetch drops its result without
+touching the trie or deserializing the (possibly reused) on-disk bytes.
+
+\warning this is not threadsafe, should only be called from the triedb
+worker thread.
+*/
+void find_async_prefetch(
+    UpdateAux &, std::atomic<uint64_t> const &epoch, uint64_t expected_epoch,
+    NodeCursor const &start, NibblesView key);
+
 // rodb
 void find_owning_notify_fiber_future(
     UpdateAux &, NodeCache &, inflight_map_owning_t &,

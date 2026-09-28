@@ -32,6 +32,12 @@
 // SHIFT is the net stack change from earlier fused opcodes; 0 checks the
 // stack at handler entry.
 #define MONAD_VM_CHECK_REQUIREMENTS_AT(Instr, SHIFT, EXIT)                     \
+    MONAD_VM_CHECK_REQUIREMENTS_AT_EXITS(Instr, SHIFT, EXIT, EXIT, EXIT)
+
+// The same checks, with the gas test leaving through GAS_EXIT(OutOfGas) and
+// the overflow test through OVERFLOW_EXIT(Error).
+#define MONAD_VM_CHECK_REQUIREMENTS_AT_EXITS(                                  \
+    Instr, SHIFT, EXIT, GAS_EXIT, OVERFLOW_EXIT)                               \
     do {                                                                       \
         static_assert(!compiler::has_operand_dependent_stack_effect(Instr));   \
         static constexpr auto info = compiler::opcode_table<traits>[Instr];    \
@@ -40,7 +46,7 @@
             gas_remaining -= info.min_gas;                                     \
                                                                                \
             if (MONAD_UNLIKELY(gas_remaining < 0)) {                           \
-                EXIT(OutOfGas);                                                \
+                GAS_EXIT(OutOfGas);                                            \
             }                                                                  \
         }                                                                      \
                                                                                \
@@ -81,7 +87,7 @@
             if constexpr (limit <= 1024) {                                     \
                 if (MONAD_UNLIKELY(                                            \
                         stack_at >= ctx.stack_limit + (limit - 1024))) {       \
-                    EXIT(Error);                                               \
+                    OVERFLOW_EXIT(Error);                                      \
                 }                                                              \
             }                                                                  \
         }                                                                      \
@@ -91,6 +97,13 @@
 namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
+
+    // Separate entry points for the same errors; keep them out of line.
+    [[noreturn, gnu::noinline, gnu::cold]] inline void
+    exit_stack_overflow(runtime::Context &ctx) noexcept
+    {
+        ctx.exit(Error);
+    }
 
     template <uint8_t Instr, Traits traits>
     [[gnu::always_inline]] inline void check_requirements(

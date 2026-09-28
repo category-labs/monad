@@ -15,6 +15,7 @@
 
 cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
 
+include(CheckCXXSourceCompiles)
 include(CheckCXXSourceRuns)
 include(CheckCXXSymbolExists)
 
@@ -58,18 +59,27 @@ function(check_if_boost_fiber_needs_ucontext_macro)
       )
     endif()
   endif()
+  # Boost.Context only annotates fiber switches for ASAN in its ucontext
+  # backend.
+  check_cxx_source_compiles("
+  #if defined(__SANITIZE_ADDRESS__)
+  #elif defined(__has_feature)
+  #  if !__has_feature(address_sanitizer)
+  #    error
+  #  endif
+  #else
+  #  error
+  #endif
+  int main() { return 0; }" MONAD_HAVE_ASAN)
+  if(MONAD_HAVE_ASAN)
+    set_property(
+      TARGET Boost::context
+      APPEND
+      PROPERTY INTERFACE_COMPILE_DEFINITIONS BOOST_USE_ASAN BOOST_USE_UCONTEXT)
+    target_sources(boost_fiber PRIVATE fiber/boost_context_ucontext.cpp)
+  endif()
 endfunction()
 check_if_boost_fiber_needs_ucontext_macro()
-
-# Boost.Context only annotates fiber switches for ASAN in its ucontext backend.
-# Must follow the check above, whose try-run cannot link with these defines.
-if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=address")
-  set_property(
-    TARGET Boost::context
-    APPEND
-    PROPERTY INTERFACE_COMPILE_DEFINITIONS BOOST_USE_ASAN BOOST_USE_UCONTEXT)
-  target_sources(boost_fiber PRIVATE fiber/boost_context_ucontext.cpp)
-endif()
 
 # ##############################################################################
 # libs

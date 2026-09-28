@@ -479,7 +479,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             if (result.has_error()) {
                 return std::move(result.error());
             }
-            auto const receipt = execute_final(state, result.value());
+            auto receipt = execute_final(state, result.value());
             block_state_.merge(state);
             return receipt;
         }
@@ -500,7 +500,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         if (result.has_error()) {
             return std::move(result.error());
         }
-        auto const receipt = execute_final(state, result.value());
+        auto receipt = execute_final(state, result.value());
         block_state_.merge(state);
         return receipt;
     }
@@ -549,7 +549,9 @@ Result<Receipt> ExecuteTransaction<traits>::execute(SequentialExecutionToken)
     if (result.has_error()) {
         return std::move(result.error());
     }
-    auto const receipt = execute_final(state, result.value());
+    // Not const: returned into a Result<Receipt>, a const local is copied --
+    // every log's data and topics with it -- where this one is moved.
+    auto receipt = execute_final(state, result.value());
     block_state_.merge(state);
     return receipt;
 }

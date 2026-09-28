@@ -257,6 +257,14 @@ static inline uint64_t fcall_get_keccakf_index(uint64_t const *const state)
 // the scratch unpublished, for the next call to overwrite. `keccak_permute`'s
 // note on why an entry must own the bytes it compares against holds here too:
 // the entry owns them, the caller's buffer is never keyed on.
+//
+// The scratch is all zero on entry, so the block is built without clearing it
+// first. Every slot past `keccakf_memo_used` is untouched, and untouched memory
+// reads zero on ZisK: the memory AIR constrains a first read to 0. A miss
+// publishes this slot, so the next call stands on a fresh one; a hit clears
+// the seventeen lanes a one-block digest writes before it returns; and the
+// spare past a full table, the one slot reused as it is, is permuted in place
+// and cleared whole before the call returns.
 static void keccak256_one_block(
     void const *const in, size_t const len, uint8_t out[32])
 {
@@ -265,7 +273,6 @@ static void keccak256_one_block(
     KeccakfEntry &e = keccakf_memo[keccakf_memo_used];
     uint64_t *const s = e.in;
 
-    std::memset(s, 0, KECCAKF_STATE_BYTES);
     if (len) {
         std::memcpy(s, in, len);
     }
@@ -276,14 +283,17 @@ static void keccak256_one_block(
     if (index < keccakf_memo_used &&
         keccakf_state_eq(keccakf_memo[index].in, s)) {
         std::memcpy(out, keccakf_memo[index].out, 32);
+        // Lanes 0-16, the rate: the block wrote bytes 0..len and byte 135.
+        std::memset(s, 0, 17 * sizeof(uint64_t));
         return;
     }
 
     if (keccakf_memo_used == KECCAKF_MEMO_ENTRIES) {
         // Full: keep permuting, stop remembering. The scratch is the spare
-        // slot, so permute it in place; nothing will read the rest of it.
+        // slot, so permute it in place, then clear all of it for the next.
         zisk_keccakf(&e.in);
         std::memcpy(out, s, 32);
+        std::memset(s, 0, KECCAKF_STATE_BYTES);
         return;
     }
 

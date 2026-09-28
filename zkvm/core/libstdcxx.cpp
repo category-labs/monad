@@ -37,27 +37,41 @@ namespace
 
 [[gnu::always_inline]] static inline void *alloc_or_exit(std::size_t size)
 {
-    // Add 15 in place, checking for overflow.
-    if (__builtin_add_overflow(size, std::size_t{15}, &size)) {
-        zkvm_halt(1);
+    // g_arena_left is always a multiple of 16 -- every chunk is one, and every
+    // request takes one from it -- so a request fits exactly when its size
+    // rounded up to 16 does, and the size can be tested before it is rounded.
+    // That keeps the rounding's overflow check on the new-chunk path, the only
+    // one a size within 15 of SIZE_MAX can take. Checked on entry instead, its
+    // halt is reachable before any other call, and gcc sets up the frame on
+    // every allocation rather than on that path. A zero-byte request wraps
+    // size - 1, so it comes here too, and is served like a one-byte one.
+    if (size - 1 >= g_arena_left) {
+        if (size == 0) {
+            size = 1;
+        }
+        if (size > g_arena_left) {
+            // Add 15, checking for overflow, then round down to a multiple of
+            // 16: the size this chunk has to hold.
+            std::size_t rounded;
+            if (__builtin_add_overflow(size, std::size_t{15}, &rounded)) {
+                zkvm_halt(1);
+            }
+            rounded &= ~std::size_t{15};
+            // Reserve ARENA_CHUNK for future allocations, or size if larger.
+            std::size_t const chunk =
+                rounded > ARENA_CHUNK ? rounded : ARENA_CHUNK;
+            g_arena_cur =
+                static_cast<unsigned char *>(sys_alloc_aligned(chunk, 16));
+            if (!g_arena_cur) {
+                zkvm_halt(1);
+            }
+            g_arena_left = chunk;
+        }
     }
     // Round down to a multiple of 16 to keep subsequent allocations aligned.
     // Adding 15 first rounds the original size up, leaving multiples of 16
-    // unchanged.
-    size &= ~std::size_t{15};
-    if (size == 0) {
-        size = 16;
-    }
-    if (size > g_arena_left) {
-        // Reserve ARENA_CHUNK for future allocations, or size if larger.
-        std::size_t const chunk = size > ARENA_CHUNK ? size : ARENA_CHUNK;
-        g_arena_cur =
-            static_cast<unsigned char *>(sys_alloc_aligned(chunk, 16));
-        if (!g_arena_cur) {
-            zkvm_halt(1);
-        }
-        g_arena_left = chunk;
-    }
+    // unchanged. size <= g_arena_left here, so the addition cannot wrap.
+    size = (size + 15) & ~std::size_t{15};
     // Save the allocation's start, then advance to the next free address.
     void *const ptr = g_arena_cur;
     g_arena_cur += size;

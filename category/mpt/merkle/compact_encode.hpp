@@ -23,6 +23,7 @@
 #include <category/mpt/config.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -46,18 +47,30 @@ constexpr unsigned compact_encode_len(unsigned const si, unsigned const ei)
 //
 // Reads exactly what the byte form reads: a group needs src[k..k+7] and
 // src[k+8] with k + 8 <= n, and the byte form reads src[n] on its last turn.
+//
+// A run of eight bytes or more is groups only: the last one is placed to end
+// at out[n-1], overlapping the one before it and writing the same bytes there
+// again. Byte turns are left to runs shorter than a group, because the
+// shifted value keeps src[k]'s high nibble above the byte it stores -- on
+// ZisK, the dearer kind of byte store.
 inline void shift_nibbles_left(
     unsigned char *const out, unsigned char const *const src, unsigned const n)
 {
-    unsigned k = 0;
-    for (; k + 8 <= n; k += 8) {
-        std::uint64_t w;
-        std::memcpy(&w, src + k, sizeof(w));
-        std::uint64_t const be = bswap(
-            (bswap(w) << 4) | (static_cast<std::uint64_t>(src[k + 8]) >> 4));
-        std::memcpy(out + k, &be, sizeof(be));
+    if (n >= 8) {
+        unsigned const last = n - 8;
+        for (unsigned k = 0;; k = std::min(k + 8, last)) {
+            std::uint64_t w;
+            std::memcpy(&w, src + k, sizeof(w));
+            std::uint64_t const be = bswap(
+                (bswap(w) << 4) |
+                (static_cast<std::uint64_t>(src[k + 8]) >> 4));
+            std::memcpy(out + k, &be, sizeof(be));
+            if (k == last) {
+                return;
+            }
+        }
     }
-    for (; k < n; ++k) {
+    for (unsigned k = 0; k < n; ++k) {
         out[k] = static_cast<unsigned char>((src[k] << 4) | (src[k + 1] >> 4));
     }
 }

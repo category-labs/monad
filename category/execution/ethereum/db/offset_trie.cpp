@@ -138,6 +138,21 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // claims it as a child.
     // A child whose byte is clear is either previously unseen/invalid or
     // already claimed by a different parent.
+    //
+    // `unclaimed` is DIGEST_NODE_LEN times the number of bytes currently set.
+    // The walk marks each offset once -- it advances monotonically, one node a
+    // turn -- and is_valid_offset only claims a byte that is still set, so no
+    // node is claimed twice and the bytes still set are exactly the marks less
+    // the claims: none exactly when every node has been claimed, the check the
+    // constructor ends on, without reading the blob-sized array back.
+    //
+    // The scale keeps the DIGEST arm, nine nodes in ten, off the count. It
+    // starts at the region's length, which the nodes tile exactly -- the assert
+    // after the walk checks that before the count is read -- so the length
+    // already holds DIGEST_NODE_LEN for each DIGEST node's mark, and the general
+    // arm trades its own node's length for the DIGEST_NODE_LEN of its mark. A
+    // claim takes DIGEST_NODE_LEN away.
+    size_t unclaimed = static_cast<size_t>(region_end - node.bytes());
 
     // Reuse one CachedHash for the sweep: Keccak overwrites the hash directly,
     // avoiding per-node zeroing and an intermediate copy. All entries are
@@ -153,6 +168,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         MONAD_ASSERT(
             child_offset < blob_.size() && node_offsets[child_offset] != 0);
         node_offsets[child_offset] = 0;
+        unclaimed -= DIGEST_NODE_LEN;
     };
     unsigned char rlp_buf[MAX_NODE_RLP];
 
@@ -227,44 +243,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                 }});
 
         node_offsets[node_offset] = 1;
+        unclaimed = unclaimed + DIGEST_NODE_LEN - (next_offset - node_offset);
         node = NodeViewBase{base + next_offset};
         seen = node_offsets.data() + next_offset;
     }
     MONAD_ASSERT(node.bytes() == region_end); // nodes tile exactly
     is_valid_offset(root);
 
-    // Every node was claimed exactly once, a leftover byte is a node not
+    // Every node was claimed exactly once; a leftover count is a node not
     // reachable from root.
-    auto const all_zero = [](std::span<unsigned char const> bytes) {
-        auto const load_word = [](unsigned char const *p) {
-            uint64_t word;
-            std::memcpy(&word, p, sizeof(word));
-            return word;
-        };
-        // Check 64 bytes per turn instead of branching on every marker. OR
-        // preserves any non-zero byte; memcpy does not require word alignment.
-        // Both loops guard the full read, leaving at most seven trailing bytes.
-        while (bytes.size() >= 64) {
-            auto const *p = bytes.data();
-            uint64_t const combined = load_word(p) | load_word(p + 8) |
-                                      load_word(p + 16) | load_word(p + 24) |
-                                      load_word(p + 32) | load_word(p + 40) |
-                                      load_word(p + 48) | load_word(p + 56);
-            if (combined != 0) {
-                return false;
-            }
-            bytes = bytes.subspan(64);
-        }
-        while (bytes.size() >= sizeof(uint64_t)) {
-            if (load_word(bytes.data()) != 0) {
-                return false;
-            }
-            bytes = bytes.subspan(sizeof(uint64_t));
-        }
-        return std::ranges::all_of(
-            bytes, [](unsigned char const b) { return b == 0; });
-    };
-    MONAD_ASSERT(all_zero(node_offsets));
+    MONAD_ASSERT(unclaimed == 0);
 }
 
 NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const

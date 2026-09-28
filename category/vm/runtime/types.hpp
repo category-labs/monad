@@ -266,6 +266,8 @@ namespace monad::vm::runtime
         // Reuse ADD parameters; execute initializes carry-in to 0.
         // Keep last to preserve the assembly offsets.
         ZiskAdd256Params add256_params{nullptr, nullptr, 0, nullptr};
+        // SUB uses carry-in 1 for a + ~b + 1.
+        ZiskAdd256Params sub256_params{nullptr, nullptr, 1, nullptr};
 #endif
 
         [[gnu::always_inline]]

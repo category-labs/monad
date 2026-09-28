@@ -101,6 +101,12 @@ namespace monad::vm::interpreter
 #if defined(MONAD_ZKVM_ZISK)
     // Separate entry points for the same errors; keep them out of line.
     [[noreturn, gnu::noinline, gnu::cold]] inline void
+    exit_out_of_gas(runtime::Context &ctx) noexcept
+    {
+        ctx.exit(OutOfGas);
+    }
+
+    [[noreturn, gnu::noinline, gnu::cold]] inline void
     exit_stack_overflow(runtime::Context &ctx) noexcept
     {
         ctx.exit(Error);

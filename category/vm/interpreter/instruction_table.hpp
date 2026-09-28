@@ -156,7 +156,9 @@ namespace monad::vm::interpreter
 
 #if defined(MONAD_ZKVM_ZISK)
 // Separate selected error exits so GCC need not merge them and keep an extra
-// copy of ctx. Apply only to DUP2-16 overflow checks here.
+// copy of ctx. Apply only to DUP2-16 overflow and MLOAD/MSTORE base gas checks.
+    #define MONAD_VM_EXIT_OWN_OUT_OF_GAS(CODE)                                 \
+        MONAD_VM_MUST_TAIL return ::monad::vm::interpreter::exit_out_of_gas(ctx)
     #define MONAD_VM_EXIT_OWN_OVERFLOW(CODE)                                   \
         MONAD_VM_MUST_TAIL return ::monad::vm::interpreter::                   \
             exit_stack_overflow(ctx)
@@ -167,8 +169,16 @@ namespace monad::vm::interpreter
             MONAD_VM_MUST_TAIL return ctx.exit,                                \
             MONAD_VM_MUST_TAIL return ctx.exit,                                \
             MONAD_VM_EXIT_OWN_OVERFLOW)
+    #define MONAD_VM_CHECK_OWN_GAS(OP)                                         \
+        MONAD_VM_CHECK_REQUIREMENTS_AT_EXITS(                                  \
+            OP,                                                                \
+            0,                                                                 \
+            MONAD_VM_MUST_TAIL return ctx.exit,                                \
+            MONAD_VM_EXIT_OWN_OUT_OF_GAS,                                      \
+            MONAD_VM_MUST_TAIL return ctx.exit)
 #else
     #define MONAD_VM_CHECK_OWN_OVERFLOW(OP) MONAD_VM_CHECK(OP)
+    #define MONAD_VM_CHECK_OWN_GAS(OP) MONAD_VM_CHECK(OP)
 #endif
 
 // Charge gas only. Each caller must justify why its stack checks cannot fail.
@@ -1404,7 +1414,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECK(MLOAD);
+        MONAD_VM_CHECK_OWN_GAS(MLOAD);
 
         ctx.gas_remaining = gas_remaining;
         auto const offset = ctx.get_memory_offset(*stack_top);
@@ -1481,7 +1491,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECK(MSTORE);
+        MONAD_VM_CHECK_OWN_GAS(MSTORE);
 
         // The base gas is already charged. In-bounds stores need no expansion
         // charge or gas synchronization.

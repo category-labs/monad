@@ -464,7 +464,15 @@ namespace monad::vm::interpreter
         check_requirements<SUB, traits>(
             ctx, analysis, stack_bottom, stack_top, gas_remaining);
         auto &&[a, b] = top_two(stack_top);
+#if defined(MONAD_ZKVM_ZISK)
+        // Compute a - b as a + ~b + 1 modulo 2^256, in place.
+        for (size_t i = 0; i < 4; ++i) {
+            b[i] = ~b[i];
+        }
+        zisk_add256(ctx.sub256_params, a, b, b);
+#else
         b = a - b;
+#endif
 
         MONAD_VM_NEXT(SUB);
     }

@@ -109,6 +109,37 @@
     MONAD_VM_CHECK_REQUIREMENTS_AT(                                            \
         OP, SHIFT, MONAD_VM_MUST_TAIL return ctx.exit)
 
+#if defined(MONAD_ZKVM_ZISK)
+// MONAD_VM_CHECK with one test leaving through an exit of its own, for a
+// handler whose other exits include an equal call: DUP's two stack tests both
+// leave with Error, and MLOAD's and MSTORE's gas and offset tests both with
+// OutOfGas. gcc merges equal exit calls into one block, and a block reached
+// from two tests costs a copy of ctx on every execution. Not for every
+// handler: PUSH1 pays two instructions an execution for the same change.
+    #define MONAD_VM_EXIT_OWN_OUT_OF_GAS(CODE)                                 \
+        MONAD_VM_MUST_TAIL return ::monad::vm::interpreter::exit_out_of_gas(ctx)
+    #define MONAD_VM_EXIT_OWN_OVERFLOW(CODE)                                   \
+        MONAD_VM_MUST_TAIL return ::monad::vm::interpreter::exit_stack_overflow( \
+            ctx)
+    #define MONAD_VM_CHECK_OWN_OVERFLOW(OP)                                    \
+        MONAD_VM_CHECK_REQUIREMENTS_AT_EXITS(                                  \
+            OP,                                                                \
+            0,                                                                 \
+            MONAD_VM_MUST_TAIL return ctx.exit,                                \
+            MONAD_VM_MUST_TAIL return ctx.exit,                                \
+            MONAD_VM_EXIT_OWN_OVERFLOW)
+    #define MONAD_VM_CHECK_OWN_GAS(OP)                                         \
+        MONAD_VM_CHECK_REQUIREMENTS_AT_EXITS(                                  \
+            OP,                                                                \
+            0,                                                                 \
+            MONAD_VM_MUST_TAIL return ctx.exit,                                \
+            MONAD_VM_EXIT_OWN_OUT_OF_GAS,                                      \
+            MONAD_VM_MUST_TAIL return ctx.exit)
+#else
+    #define MONAD_VM_CHECK_OWN_OVERFLOW(OP) MONAD_VM_CHECK(OP)
+    #define MONAD_VM_CHECK_OWN_GAS(OP) MONAD_VM_CHECK(OP)
+#endif
+
 // Charge gas only. Each caller must justify why its stack checks cannot fail.
 #define MONAD_VM_CHARGE(OP)                                                    \
     do {                                                                       \
@@ -1334,7 +1365,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECK(MLOAD);
+        MONAD_VM_CHECK_OWN_GAS(MLOAD);
 
         // No gas sync: only the growth path charges, and mload_grow syncs
         // through call_runtime. An out-of-range offset exits OutOfGas, whose
@@ -1414,7 +1445,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECK(MSTORE);
+        MONAD_VM_CHECK_OWN_GAS(MSTORE);
 
         // A store inside the memory charges nothing, so no gas sync, and it
         // makes no call, so no frame.
@@ -1843,16 +1874,18 @@ namespace monad::vm::interpreter
             }
         }
 #endif
-        MONAD_VM_CHECK(DUP1 + (N - 1));
-
 #if defined(MONAD_ZKVM_ZISK)
         if constexpr (N == 1) {
+            MONAD_VM_CHECK(DUP1);
+
             auto *const old_top = stack_top;
             push(stack_top, *old_top);
 
             MONAD_VM_NEXT_OP(DUP1, monad_vm_op2);
         }
         else {
+            MONAD_VM_CHECK_OWN_OVERFLOW(DUP1 + (N - 1));
+
             // The copy's destination is the new top: step there first, so the
             // register the copy writes through is the one the dispatch passes
             // on, not a second one moved into place after it.
@@ -1863,6 +1896,8 @@ namespace monad::vm::interpreter
             MONAD_VM_DISPATCH(1, 0, *instr_ptr);
         }
 #else
+        MONAD_VM_CHECK(DUP1 + (N - 1));
+
         auto *const old_top = stack_top;
         push(stack_top, *(old_top - (N - 1)));
 

@@ -1030,6 +1030,13 @@ udivrem(uint256_t const &u, uint256_t const &v) noexcept
                     return {.quot = u >> uint256_t{k}, .rem = u & (v - 1)};
                 }
             }
+            // One word by one word, 17 % of them: the hardware divides that
+            // exactly, for a fraction of the hint and the multiply checking it.
+            if ((u[1] | u[2] | u[3] | v[1] | v[2] | v[3]) == 0) {
+                return {
+                    .quot = uint256_t{u[0] / v[0]},
+                    .rem = uint256_t{u[0] % v[0]}};
+            }
             // Dividend and divisor are read where they lie: a uint256_t is at
             // least 8-aligned and its words are the limb order the shim wants.
             // The quotient and remainder stay locals, because the shim's write

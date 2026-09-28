@@ -261,8 +261,18 @@ extern "C" void monad_zkvm_execute_witness(void)
             MONAD_ASSERT(bytes.has_value());
             auto const code = intercode_of(bytes.value());
             monad::bytes32_t code_hash;
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
             monad_zkvm_keccak256_fast_nomemo(
                 code->code(), bytes.value().size(), code_hash.bytes);
+#else
+            // The memo-free entry exists only where the memo does: it is
+            // defined under the same condition in keccak_accel.cpp and
+            // declared only in the guest's shadow of keccak.h. This file is
+            // compiled for the host runner too, where there is no memo to
+            // leave out, so the digest is the ordinary one.
+            monad_keccak256(
+                code->code(), bytes.value().size(), code_hash.bytes);
+#endif
             code_index.emplace(code_hash, code);
         }
     }

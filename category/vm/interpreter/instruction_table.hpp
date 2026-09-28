@@ -630,15 +630,23 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(ADD);
-        auto &&[a, b] = top_two(stack_top);
 #if defined(MONAD_ZKVM_ZISK)
+        // Save a's address before moving to the result slot, so dispatch
+        // can reuse the updated stack pointer without an extra register copy.
+        ctx.add256_params.a = reinterpret_cast<uint64_t const *>(&*stack_top);
+        auto *next = stack_top.next_slot() - 1;
+        MONAD_VM_LAUNDER(next);
+        stack_top = StackTop{next};
         // Let the precompile handle the 256-bit addition and carries.
-        zisk_add256(ctx.add256_params, a, b, b);
+        zisk_add256(ctx.add256_params, *stack_top, *stack_top);
+
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
 #else
+        auto &&[a, b] = top_two(stack_top);
         b = a + b;
-#endif
 
         MONAD_VM_NEXT(ADD);
+#endif
     }
 
     template <Traits traits>
@@ -659,18 +667,28 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(SUB);
-        auto &&[a, b] = top_two(stack_top);
 #if defined(MONAD_ZKVM_ZISK)
+        // Save a's address before moving to b. Keep this store ahead of b's
+        // loads to avoid extending a's register lifetime.
+        ctx.sub256_params.a = reinterpret_cast<uint64_t const *>(&*stack_top);
+        asm volatile("" ::: "memory");
+        auto *next = stack_top.next_slot() - 1;
+        MONAD_VM_LAUNDER(next);
+        stack_top = StackTop{next};
         // Compute a - b as a + ~b + 1 modulo 2^256, in place.
+        auto &b = *stack_top;
         for (size_t i = 0; i < 4; ++i) {
             b[i] = ~b[i];
         }
-        zisk_add256(ctx.sub256_params, a, b, b);
+        zisk_add256(ctx.sub256_params, b, b);
+
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
 #else
+        auto &&[a, b] = top_two(stack_top);
         b = a - b;
-#endif
 
         MONAD_VM_NEXT(SUB);
+#endif
     }
 
     template <Traits traits>

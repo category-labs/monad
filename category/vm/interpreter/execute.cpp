@@ -161,7 +161,7 @@ namespace monad::vm::interpreter
         ctx.stack_limit = stack_ptr + runtime::EvmStackAllocatorMeta::size;
 
 #if defined(MONAD_ZKVM_ZISK)
-        // The carry-ins are fixed; zisk_add256 sets the pointers on every call.
+        // The carry-ins are fixed; ADD and SUB set the pointers on every call.
         ctx.add256_params.cin = 0;
         ctx.sub256_params.cin = 1;
 #endif

@@ -397,7 +397,18 @@ static void keccak256_sponge(void const *const in, size_t len, uint8_t out[32])
     }
 #endif
 
+#ifdef MONAD_ZKVM_ZISK
+    // The capacity, lanes 17 to 24, starts at zero, and only the permutation
+    // writes it. The rate is cleared only for an input shorter than a block:
+    // a longer one's first block is copied over the whole rate below.
+    uint64_t st[25];
+    std::memset(st + WORDS, 0, sizeof(st) - RATE);
+    if (len < RATE) {
+        std::memset(st, 0, RATE);
+    }
+#else
     uint64_t st[25] = {};
+#endif
     auto const *p = static_cast<unsigned char const *>(in);
 
 #ifdef MONAD_ZKVM_ZISK
@@ -421,10 +432,9 @@ static void keccak256_sponge(void const *const in, size_t len, uint8_t out[32])
         p = staged;
     }
 
-    // The state is zero until something has been absorbed, so the first block
-    // is a copy rather than a xor -- and -mzisk-dma lowers that 136-byte copy
-    // to ZisK's block-move precompile. `first` tracks whether anything has
-    // been absorbed yet.
+    // The first block is a copy rather than a xor, into a rate nothing has
+    // cleared -- and -mzisk-dma lowers that 136-byte copy to ZisK's block-move
+    // precompile. `first` tracks whether anything has been absorbed yet.
     bool first = true;
     while (len >= RATE) {
         if (first) {

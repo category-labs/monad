@@ -1180,8 +1180,22 @@ MONAD_NO_VECTORIZE
 exp(uint256_t base, uint256_t const &exponent) noexcept
 {
     uint256_t result{1};
-    if (base == 2) {
-        return result << exponent;
+    // For a 64-bit base = 2^s, use 1 << (s * exponent).
+    // For s >= 1, exponent >= 256 gives zero modulo 2^256.
+    // Check this bound before multiplying to avoid overflow.
+    if ((base[1] | base[2] | base[3]) == 0 && base[0] != 0 &&
+        (base[0] & (base[0] - 1)) == 0) {
+        uint64_t const s = static_cast<uint64_t>(std::countr_zero(base[0]));
+        if (s == 0) {
+            return result;
+        }
+        if ((exponent[1] | exponent[2] | exponent[3]) != 0 ||
+            exponent[0] >= 256) {
+            // base = 2^s with s >= 1: the result is a multiple of 2^256,
+            // so its low 256 bits are zero.
+            return 0;
+        }
+        return result << uint256_t{s * exponent[0]};
     }
 
     size_t const sig_words = count_significant_words(exponent.as_words());

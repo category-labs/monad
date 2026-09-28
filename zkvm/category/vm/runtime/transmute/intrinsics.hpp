@@ -29,6 +29,18 @@ namespace monad::vm::runtime
     inline uint256_t
     uint256_load_bounded_le(uint8_t const *const bytes, int64_t const max_len)
     {
+        // The whole word is in bounds nearly always: read it as four words
+        // where it lies. Staging it costs a zero fill and a DMA copy whose
+        // source -- calldata at 4 + 32k -- and destination disagree in
+        // alignment, the dearest kind.
+        if (max_len >= static_cast<int64_t>(uint256_t::num_bytes)) {
+            auto const word = [bytes](size_t const i) {
+                uint64_t w;
+                std::memcpy(&w, bytes + i * sizeof(w), sizeof(w));
+                return w;
+            };
+            return uint256_t{word(0), word(1), word(2), word(3)};
+        }
         uint256_t v{0};
         if (max_len <= 0) {
             return v;

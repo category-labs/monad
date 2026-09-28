@@ -81,9 +81,15 @@ namespace monad::vm::interpreter
             }
         }();
 
-        ctx.gas_remaining = gas_remaining;
+        // Context-free runtime functions do not change gas. Skip the sync:
+        // result stores may alias the gas field, preventing GCC from removing it.
+        if constexpr (use_context) {
+            ctx.gas_remaining = gas_remaining;
+        }
         std::apply(f, all_args);
 
-        gas_remaining = ctx.gas_remaining;
+        if constexpr (use_context) {
+            gas_remaining = ctx.gas_remaining;
+        }
     }
 }

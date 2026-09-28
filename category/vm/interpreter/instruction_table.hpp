@@ -48,6 +48,14 @@
     #error "No compiler support for __has_attribute"
 #endif
 
+#if defined(MONAD_ZKVM_ZISK)
+// Make the next load use the advanced pointer, so GCC need not keep the
+// old pointer in another register. The empty asm emits no instruction.
+    #define MONAD_VM_LAUNDER(P) asm("" : "+r"(P))
+#else
+    #define MONAD_VM_LAUNDER(P)
+#endif
+
 namespace monad::vm::interpreter
 {
 #if defined(MONAD_ZKVM_ZISK)
@@ -97,6 +105,7 @@ namespace monad::vm::interpreter
 #define MONAD_VM_DISPATCH(NBYTES, STACK_DELTA, NEXT_OPCODE)                    \
     do {                                                                       \
         instr_ptr += (NBYTES);                                                 \
+        MONAD_VM_LAUNDER(instr_ptr);                                           \
         if constexpr (debug_enabled) {                                         \
             trace(analysis, gas_remaining, instr_ptr);                         \
         }                                                                      \

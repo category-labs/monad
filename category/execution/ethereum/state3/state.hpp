@@ -408,6 +408,9 @@ public:
     ////////////////////////////////////////
 
     std::vector<Receipt::Log> const &logs();
+    // The logs, handed over and cleared. A receipt is their last reader: the
+    // events that follow read the receipt's, and nothing reverts afterwards.
+    std::vector<Receipt::Log> take_logs();
 
     void store_log(Receipt::Log const &);
     void store_log(Receipt::Log &&);

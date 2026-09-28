@@ -23,6 +23,7 @@
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -192,12 +193,11 @@ Receipt ExecuteSystemTransaction<traits>::execute_final(State &state)
 {
     // always return success because these transactions can't revert.
     Receipt receipt{.status = 1u, .gas_used = 0, .type = tx_.type};
-    // Reserved: add_log grows the vector one push at a time otherwise, and
-    // with a bump allocator every intermediate capacity is allocated, copied
-    // forward and abandoned.
-    receipt.logs.reserve(state.logs().size());
-    for (auto const &log : state.logs()) {
-        receipt.add_log(log);
+    // Taken, not copied: a copy allocates and fills every log's data and
+    // topics again, for a State that is about to be merged and dropped.
+    receipt.logs = state.take_logs();
+    for (auto const &log : receipt.logs) {
+        populate_bloom(receipt.bloom, log);
     }
     call_tracer_.on_finish(receipt.gas_used);
     trace::run_tracer<traits>(state_tracer_, state);

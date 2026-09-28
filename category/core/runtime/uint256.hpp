@@ -999,6 +999,37 @@ udivrem(uint256_t const &u, uint256_t const &v) noexcept
     if !consteval {
         // Keep division by zero on the existing assertion path.
         if (v[0] | v[1] | v[2] | v[3]) {
+            // A divisor of one set bit, 2^k, is a shift and needs neither the
+            // hint nor the multiply that checks it: selectors (2^224),
+            // addresses (2^160) and fixed-point scales (2^96, 2^112) are all
+            // divided out this way, over a third of this guest's divisions. A
+            // low word with two bits set rules it out in three instructions,
+            // which is where 10^18, 10^6 and the rest leave.
+            if ((v[0] & (v[0] - 1)) == 0) {
+                unsigned k = 256; // no single bit found
+                if (v[0] != 0) {
+                    if ((v[1] | v[2] | v[3]) == 0) {
+                        k = static_cast<unsigned>(std::countr_zero(v[0]));
+                    }
+                }
+                else if (v[1] != 0) {
+                    if ((v[1] & (v[1] - 1)) == 0 && (v[2] | v[3]) == 0) {
+                        k = 64 + static_cast<unsigned>(std::countr_zero(v[1]));
+                    }
+                }
+                else if (v[2] != 0) {
+                    if ((v[2] & (v[2] - 1)) == 0 && v[3] == 0) {
+                        k = 128 +
+                            static_cast<unsigned>(std::countr_zero(v[2]));
+                    }
+                }
+                else if ((v[3] & (v[3] - 1)) == 0) {
+                    k = 192 + static_cast<unsigned>(std::countr_zero(v[3]));
+                }
+                if (k < 256) {
+                    return {.quot = u >> uint256_t{k}, .rem = u & (v - 1)};
+                }
+            }
             // Dividend and divisor are read where they lie: a uint256_t is at
             // least 8-aligned and its words are the limb order the shim wants.
             // The quotient and remainder stay locals, because the shim's write

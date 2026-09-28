@@ -76,9 +76,16 @@ namespace monad::vm::interpreter
             }
         }();
 
-        ctx.gas_remaining = gas_remaining;
+        // A function without the Context cannot charge gas, so it gets no
+        // sync. The pair is not dead to gcc: the result's uint64_t stores may
+        // alias the int64_t field, so both would stay.
+        if constexpr (use_context) {
+            ctx.gas_remaining = gas_remaining;
+        }
         std::apply(f, all_args);
 
-        gas_remaining = ctx.gas_remaining;
+        if constexpr (use_context) {
+            gas_remaining = ctx.gas_remaining;
+        }
     }
 }

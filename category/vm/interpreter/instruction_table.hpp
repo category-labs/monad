@@ -57,6 +57,21 @@
     #define MONAD_VM_LAUNDER(P)
 #endif
 
+namespace monad::vm::interpreter
+{
+    // ctx through MONAD_VM_LAUNDER, for a handler whose other values gcc would
+    // otherwise place in a0: laundered, ctx stays there, and the handler no
+    // longer saves it away at its first instruction and restores it before
+    // the dispatch.
+    [[gnu::always_inline]] inline runtime::Context &
+    held_in_a0(runtime::Context &ctx) noexcept
+    {
+        auto *p = &ctx;
+        MONAD_VM_LAUNDER(p);
+        return *p;
+    }
+}
+
 // Evaluate NEXT_OPCODE after advancing instr_ptr; it may be *instr_ptr.
 #define MONAD_VM_DISPATCH(NBYTES, DELTA, NEXT_OPCODE)                          \
     do {                                                                       \
@@ -752,54 +767,95 @@ namespace monad::vm::interpreter
     // Boolean
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void
-    lt(runtime::Context &ctx, Intercode const &analysis,
+    lt(runtime::Context &entry_ctx, Intercode const &analysis,
        uint256_t const *stack_bottom, uint256_t *stack_top,
        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        runtime::Context &ctx = held_in_a0(entry_ctx);
         MONAD_VM_CHECK(LT);
+#if defined(MONAD_ZKVM_ZISK)
+        // The result's slot is the new top: step there first, so the old top
+        // dies here instead of beside the new one.
+        --stack_top;
+        MONAD_VM_LAUNDER(stack_top);
+        *stack_top = *(stack_top + 1) < *stack_top;
+
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+#else
         auto &&[a, b] = top_two(stack_top);
         b = a < b;
 
         MONAD_VM_NEXT(LT);
+#endif
     }
 
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void
-    gt(runtime::Context &ctx, Intercode const &analysis,
+    gt(runtime::Context &entry_ctx, Intercode const &analysis,
        uint256_t const *stack_bottom, uint256_t *stack_top,
        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        runtime::Context &ctx = held_in_a0(entry_ctx);
         MONAD_VM_CHECK(GT);
+#if defined(MONAD_ZKVM_ZISK)
+        // As LT.
+        --stack_top;
+        MONAD_VM_LAUNDER(stack_top);
+        *stack_top = *(stack_top + 1) > *stack_top;
+
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+#else
         auto &&[a, b] = top_two(stack_top);
         b = a > b;
 
         MONAD_VM_NEXT(GT);
+#endif
     }
 
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void
-    slt(runtime::Context &ctx, Intercode const &analysis,
+    slt(runtime::Context &entry_ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        runtime::Context &ctx = held_in_a0(entry_ctx);
         MONAD_VM_CHECK(SLT);
+#if defined(MONAD_ZKVM_ZISK)
+        // As LT.
+        --stack_top;
+        MONAD_VM_LAUNDER(stack_top);
+        *stack_top = slt(*(stack_top + 1), *stack_top);
+
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+#else
         auto &&[a, b] = top_two(stack_top);
         b = slt(a, b);
 
         MONAD_VM_NEXT(SLT);
+#endif
     }
 
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void
-    sgt(runtime::Context &ctx, Intercode const &analysis,
+    sgt(runtime::Context &entry_ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        runtime::Context &ctx = held_in_a0(entry_ctx);
         MONAD_VM_CHECK(SGT);
+#if defined(MONAD_ZKVM_ZISK)
+        // As LT.
+        --stack_top;
+        MONAD_VM_LAUNDER(stack_top);
+        *stack_top = slt(*stack_top, *(stack_top + 1)); // swapped arguments
+
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+#else
         auto &&[a, b] = top_two(stack_top);
         b = slt(b, a); // note swapped arguments
 
         MONAD_VM_NEXT(SGT);
+#endif
     }
 
     template <Traits traits>
@@ -1091,10 +1147,11 @@ namespace monad::vm::interpreter
 
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void calldataload(
-        runtime::Context &ctx, Intercode const &analysis,
+        runtime::Context &entry_ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        runtime::Context &ctx = held_in_a0(entry_ctx);
         MONAD_VM_CHECK(CALLDATALOAD);
         // Called directly: it reads the environment and never gas, so
         // call_runtime's sync would be a store and a reload for nothing.

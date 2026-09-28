@@ -31,6 +31,8 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
+#include <category/execution/ethereum/core/ecrecover.hpp>
+#include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
@@ -109,8 +111,12 @@ Result<bytes32_t> execute_block_zkvm(
     senders.reserve(block.transactions.size());
     std::vector<std::vector<std::optional<Address>>> authorities;
     authorities.reserve(block.transactions.size());
-    for (auto const &tx : block.transactions) {
-        auto const s = recover_sender(tx);
+    // Build signing payloads from the original transaction bytes.
+    MONAD_ASSERT(raw_transactions.size() == block.transactions.size());
+    for (size_t i = 0; i < block.transactions.size(); ++i) {
+        auto const &tx = block.transactions[i];
+        auto const s = recover_address(
+            tx.sc.signature, rlp::signing_payload(tx, raw_transactions[i]));
         if (MONAD_UNLIKELY(!s.has_value())) {
             return TransactionError::MissingSender;
         }

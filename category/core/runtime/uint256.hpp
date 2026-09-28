@@ -1149,8 +1149,21 @@ MONAD_NO_VECTORIZE
 exp(uint256_t base, uint256_t const &exponent) noexcept
 {
     uint256_t result{1};
-    if (base == 2) {
-        return result << exponent;
+    // A power of two below 2^64, 2^s, raises to a shift by s * exponent: 2
+    // itself and, far more often, 256 -- the byte shift older Solidity
+    // compiles to EXP. An exponent of 256 or more shifts everything out for
+    // any s >= 1, and bounding it keeps s * exponent from wrapping.
+    if ((base[1] | base[2] | base[3]) == 0 && base[0] != 0 &&
+        (base[0] & (base[0] - 1)) == 0) {
+        uint64_t const s = static_cast<uint64_t>(std::countr_zero(base[0]));
+        if (s == 0) {
+            return result;
+        }
+        if ((exponent[1] | exponent[2] | exponent[3]) != 0 ||
+            exponent[0] >= 256) {
+            return 0;
+        }
+        return result << uint256_t{s * exponent[0]};
     }
 
     size_t const sig_words = count_significant_words(exponent.as_words());

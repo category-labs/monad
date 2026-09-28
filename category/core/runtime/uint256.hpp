@@ -1120,8 +1120,20 @@ MONAD_NO_VECTORIZE
 exp(uint256_t base, uint256_t const &exponent) noexcept
 {
     uint256_t result{1};
-    if (base == 2) {
-        return result << exponent;
+    // For a 64-bit base = 2^k in one word, compute 1 << (k * exponent).
+    // Bound the exponent before multiplying; shifts >= 256 produce zero.
+    if ((base[1] | base[2] | base[3]) == 0 && base[0] != 0 &&
+        (base[0] & (base[0] - 1)) == 0) {
+        uint64_t const base_bit_index =
+            static_cast<uint64_t>(std::countr_zero(base[0]));
+        if (base_bit_index == 0) {
+            return result;
+        }
+        if ((exponent[1] | exponent[2] | exponent[3]) != 0 ||
+            exponent[0] >= 256) {
+            return 0;
+        }
+        return result << uint256_t{base_bit_index * exponent[0]};
     }
 
     size_t const sig_words = count_significant_words(exponent.as_words());

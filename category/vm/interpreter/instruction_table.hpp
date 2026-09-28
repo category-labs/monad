@@ -564,7 +564,7 @@ namespace monad::vm::interpreter
         auto &&[a, b] = top_two(stack_top);
 #if defined(MONAD_ZKVM_ZISK)
         // Let the precompile handle the 256-bit addition and carries.
-        zisk_add256(ctx.add256_params, ctx.add256_out, a, b, b);
+        zisk_add256(ctx.add256_params, a, b, b);
 #else
         b = a + b;
 #endif

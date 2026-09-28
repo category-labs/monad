@@ -63,10 +63,8 @@ namespace monad::vm::interpreter
         ctx.stack_limit = reinterpret_cast<uint256_t *>(stack_ptr) + 1023;
 
 #if defined(MONAD_ZKVM_ZISK)
-        // Set fixed parameters once per execution and rebind the output pointer
-        // to this Context's buffer, even if the Context was copied.
+        // The carry-in is fixed; zisk_add256 sets the pointers on every call.
         ctx.add256_params.cin = 0;
-        ctx.add256_params.c = ctx.add256_out;
 #endif
         trampoline(
             ctx,

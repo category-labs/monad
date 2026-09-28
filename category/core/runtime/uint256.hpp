@@ -720,16 +720,20 @@ struct ZiskAdd256Params
     uint64_t *c;
 };
 
-// Reuse caller-owned storage to avoid a local stack frame.
-// Caller sets p.c = out and p.cin = 0; out must not overlap a or b.
+// Reuse caller-owned storage to avoid a local stack frame; the caller sets
+// p.cin. dst may be a or b: the precompile's memory accesses read the
+// operands at MAX_MEM_OPS_BY_MAIN_STEP * step + 2 and write c at + 3
+// (precompiles/common, MemBusHelpers), so its reads see the operands as they
+// were, and opc_add256 reads both into its own buffer before writing c.
 [[gnu::always_inline]] inline void zisk_add256(
-    ZiskAdd256Params &p, uint64_t const *out, uint256_t const &a,
-    uint256_t const &b, uint256_t &dst) noexcept
+    ZiskAdd256Params &p, uint256_t const &a, uint256_t const &b,
+    uint256_t &dst) noexcept
 {
     static_assert(alignof(uint256_t) >= 8);
     static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
     p.a = reinterpret_cast<uint64_t const *>(&a);
     p.b = reinterpret_cast<uint64_t const *>(&b);
+    p.c = reinterpret_cast<uint64_t *>(&dst);
     // ZisK requires a nonzero destination register distinct from the input.
     // `=&r` prevents overlap; `csrs` (rd = x0) is not a valid add256 marker.
     // Discard carry-out: EVM ADD keeps only the low 256 bits.
@@ -742,9 +746,6 @@ struct ZiskAdd256Params
                  : "r"(&p)
                  : "memory");
     (void)cout;
-    // Use a separate result buffer because dst may also be an operand.
-    // memcpy lets the ZisK compiler emit a single DMA copy.
-    __builtin_memcpy(&dst[0], out, sizeof(uint256_t));
 }
 #endif
 

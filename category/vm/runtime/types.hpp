@@ -283,11 +283,10 @@ namespace monad::vm::runtime
         // saving and restoring it. Keep last to preserve assembly offsets.
         uint256_t swap_scratch;
 
-        // Reusable ADD parameters and output avoid a local stack frame.
-        // execute sets carry-in to 0 and binds c to this output buffer.
+        // Reusable ADD parameters avoid a local stack frame. execute sets the
+        // carry-in to 0; ADD writes the sum straight into its stack slot.
         // Last, so no offset context.S or the asserts below pin down moves.
-        alignas(8) uint64_t add256_out[4]{};
-        ZiskAdd256Params add256_params{nullptr, nullptr, 0, add256_out};
+        ZiskAdd256Params add256_params{nullptr, nullptr, 0, nullptr};
 #endif
 
         [[gnu::always_inline]]

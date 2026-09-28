@@ -287,6 +287,8 @@ namespace monad::vm::runtime
         // carry-in to 0; ADD writes the sum straight into its stack slot.
         // Last, so no offset context.S or the asserts below pin down moves.
         ZiskAdd256Params add256_params{nullptr, nullptr, 0, nullptr};
+        // SUB's, whose carry-in is the + 1 of a - b = a + ~b + 1.
+        ZiskAdd256Params sub256_params{nullptr, nullptr, 1, nullptr};
 #endif
 
         [[gnu::always_inline]]

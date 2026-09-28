@@ -591,7 +591,16 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_CHECK(SUB);
         auto &&[a, b] = top_two(stack_top);
+#if defined(MONAD_ZKVM_ZISK)
+        // a - b = a + ~b + 1: complement b where it lies, then let add256 add
+        // it to a with a carry-in of 1, back into the same slot.
+        for (size_t i = 0; i < 4; ++i) {
+            b[i] = ~b[i];
+        }
+        zisk_add256(ctx.sub256_params, a, b, b);
+#else
         b = a - b;
+#endif
 
         MONAD_VM_NEXT(SUB);
     }

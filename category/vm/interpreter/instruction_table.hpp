@@ -116,15 +116,27 @@
 // Check without changing state; charge the total gas only on success.
 // On failure, per-opcode checks preserve error order and gas accounting.
 // Unneeded stack bounds compile away.
-// Reuse the cached stack limit; the adjustment folds to zero for growth 1.
-#define MONAD_VM_FUSED_OK(REQ)                                                 \
+#define MONAD_VM_FUSED_OK_IMPL(REQ, STACK_BOUND)                               \
     ((gas_remaining >= (REQ).gas) &&                                           \
      ((REQ).min_required == 0 ||                                               \
       ((REQ).min_required == 1                                                 \
            ? (stack_top) > (stack_bottom)                                      \
            : (stack_top) >= (stack_bottom) + (REQ).min_required)) &&           \
-     ((REQ).max_growth == 0 ||                                                 \
-      (stack_top) < ctx.stack_limit + (1 - (REQ).max_growth)))
+     ((REQ).max_growth == 0 || (stack_top) < (STACK_BOUND)))
+
+// Default for fused handlers: loading the cached limit is cheaper than
+// recomputing it. PUSH2 + JUMP/JUMPI use MONAD_VM_FUSED_OK_BOTTOM instead.
+#define MONAD_VM_FUSED_OK(REQ)                                                 \
+    MONAD_VM_FUSED_OK_IMPL(REQ, ctx.stack_limit + (1 - (REQ).max_growth))
+
+// Use only for PUSH2 + JUMP/JUMPI: deriving the same bound from stack_bottom
+// lets GCC avoid a native stack frame by keeping fewer registers live.
+#define MONAD_VM_FUSED_OK_BOTTOM(REQ)                                          \
+    MONAD_VM_FUSED_OK_IMPL(                                                    \
+        REQ,                                                                   \
+        (stack_bottom) + (static_cast<std::ptrdiff_t>(                         \
+                              runtime::EvmStackAllocatorMeta::size) +          \
+                          1 - (REQ).max_growth))
 
 // Dispatch using OP2, the opcode already read at instr_ptr[1].
 // EQ/ISZERO's stack writes prevent GCC from reusing that load itself;
@@ -1574,7 +1586,7 @@ namespace monad::vm::interpreter
                 if (monad_vm_op2 == static_cast<std::uint8_t>(JUMP)) {
                     static constexpr auto monad_vm_req =
                         fused_requirements<traits, PUSH2, JUMP>();
-                    if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) {
+                    if (MONAD_LIKELY(MONAD_VM_FUSED_OK_BOTTOM(monad_vm_req))) {
                         gas_remaining -= monad_vm_req.gas;
                     }
                     else {
@@ -1600,7 +1612,7 @@ namespace monad::vm::interpreter
                 }
                 static constexpr auto monad_vm_reqi =
                     fused_requirements<traits, PUSH2, JUMPI>();
-                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_reqi))) {
+                if (MONAD_LIKELY(MONAD_VM_FUSED_OK_BOTTOM(monad_vm_reqi))) {
                     gas_remaining -= monad_vm_reqi.gas;
                 }
                 else {
@@ -1958,5 +1970,7 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_CHECK
 #undef MONAD_VM_CHECK_AT
 #undef MONAD_VM_CHARGE
+#undef MONAD_VM_FUSED_OK_IMPL
 #undef MONAD_VM_FUSED_OK
+#undef MONAD_VM_FUSED_OK_BOTTOM
 #undef MONAD_VM_CHECKED_RUNTIME_CALL

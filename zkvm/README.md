@@ -549,6 +549,30 @@ agrees with itself" from "the proved guest agrees": an x86 build has the native
 Poseidon2 permutation instead of `csrs 0x812` and libsecp256k1 instead of
 zisklib, so it is a different program.
 
+That step has been taken, under `ziskemu` 1.2.0-alpha -- the runtime
+`Cargo.lock` pins -- on both ELFs, built with `cargo-zisk build --release` and
+the L2 one with the nine deployment values the tests use. Every witness the
+three presets generate passes: the guest publishes exactly what the manifest
+recorded, the block hash on the plaintext arm and the four values on the L2
+one, including the seven L2 blocks whose anchor is non-zero.
+
+| | plaintext | L2 |
+|---|---:|---:|
+| scenarios (transfers, evm, spoke) | 6 / 6 | 6 / 6 |
+| `payouts`, 10,000 accounts, `--distinct 50` | 4 / 4 | 4 / 4 |
+| `wholesale`, 500 accounts | 4 / 4 | 4 / 4 |
+| steps, a 50-distinct payouts block | 1,403,392 | 1,644,301 |
+
+The L2 costs 16-22 % more steps than the same block in the clear -- the
+decryption, the sponge, the ECDH and the anchor together. Steps, not cells: no
+cell figure here has been re-taken on this ELF.
+
+The plaintext ELF also reproduces the canonical mainnet block hash of blocks
+25,815,000-25,815,005 from `zkvm-bench`'s `r10zisk-rtp` witnesses, 10.7 M to
+161.6 M steps. Witnesses from before the blob grammar moved `DIGEST` to `0xa0`
+abort in the reader, which is expected: `ziskemu` exits 0 and leaves the output
+zero, so a harness has to judge the bytes, never the exit status.
+
 For proving, see ZisK's docs (`cargo-zisk prove ...`); nothing above proves,
 it only executes under the emulator.
 

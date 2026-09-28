@@ -120,7 +120,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
             if (result.has_error()) {
                 return std::move(result.error());
             }
-            auto const receipt = execute_final(state);
+            auto receipt = execute_final(state);
             block_state_.merge(state);
             return receipt;
         }
@@ -140,7 +140,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
         if (result.has_error()) {
             return std::move(result.error());
         }
-        auto const receipt = execute_final(state);
+        auto receipt = execute_final(state);
         block_state_.merge(state);
         return receipt;
     }

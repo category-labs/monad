@@ -55,16 +55,15 @@ namespace monad::vm::runtime
         // stores a call.
         static_assert(alignof(uint256_t) >= 8);
         static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
-        // The params block is built once, not per call. Three of its five
-        // fields never change -- the zero addend and the two result buffers --
-        // and the syscall needs the block's address, so a stack-local one
-        // stores all five every time. Static, they are two stores.
+        // The params block is built once, not per call. Two of its five fields
+        // never change -- the zero addend and the high half's buffer -- and the
+        // syscall needs the block's address, so a stack-local one stores all
+        // five every time. Static, they are three stores.
         //
         // Safe because this is the only writer (the guest is single-threaded)
         // and nothing runs between filling the block and reading the result,
         // so no call can be in flight while another fills it.
         alignas(8) static constexpr uint64_t zero[4] = {0, 0, 0, 0};
-        alignas(8) static uint64_t lo[4];
         alignas(8) static uint64_t hi[4];
         // The two nullptrs are what keep the initialiser constant, and that is
         // the point of writing a and b separately instead of in the braces.
@@ -72,9 +71,16 @@ namespace monad::vm::runtime
         // so the static is initialised on first use and gcc guards it: not just
         // the one-time __cxa_guard_acquire, but a guard byte loaded, an acquire
         // `fence r,rw` and a branch on EVERY entry.
-        static ZiskArith256Params p{nullptr, nullptr, zero, lo, hi};
+        static ZiskArith256Params p{nullptr, nullptr, zero, nullptr, hi};
         p.a = reinterpret_cast<uint64_t const *>(a_ptr);
         p.b = reinterpret_cast<uint64_t const *>(b_ptr);
+        // The low half goes straight to result, even where result is a or b:
+        // the precompile's memory accesses read a, b and c at
+        // MAX_MEM_OPS_BY_MAIN_STEP * step + 2 and write dl and dh at + 3
+        // (precompiles/common, MemBusHelpers::mem_aligned_op), so its reads see
+        // the operands as they were, and opc_arith256 loads all three before it
+        // writes either half.
+        p.dl = reinterpret_cast<uint64_t *>(result_ptr);
         // Emit ziskos' arith256 syscall marker inline to avoid call overhead.
         // This port uses csrs with rd = x0, matching ziskos' implementation.
         asm volatile(".option push\n\t"
@@ -84,10 +90,6 @@ namespace monad::vm::runtime
                      :
                      : "r"(&p)
                      : "memory");
-        // Through a local and not straight into result_ptr: the interface allows
-        // result to be one of the operands, and the precompile's write order is
-        // not ours to assume.
-        *result_ptr = uint256_t{lo[0], lo[1], lo[2], lo[3]};
 #else
         *result_ptr = *a_ptr * *b_ptr;
 #endif

@@ -1455,6 +1455,32 @@ namespace monad::vm::interpreter
     }
 
     // Stack
+
+    // PUSH1's fused SHR and SAR, apart from push<1>. A 256-bit shift by a
+    // runtime amount wants more registers than the caller-saved ones left
+    // beside the handler's arguments, and the callee-saved one it takes inside
+    // push<1> puts a frame on every fused PUSH1, ADD and SHL included. Gas and
+    // stack are checked, and instr_ptr is still on the PUSH1.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_INSTRUCTION_CALL void push1_shr(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        *stack_top >>= uint256_t{*(instr_ptr + 1)};
+        MONAD_VM_FUSED_NEXT(3, 0);
+    }
+
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_INSTRUCTION_CALL void push1_sar(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        *stack_top = sar(uint256_t{*(instr_ptr + 1)}, *stack_top);
+        MONAD_VM_FUSED_NEXT(3, 0);
+    }
+
     template <size_t N, Traits traits>
         requires(N <= 32)
     MONAD_VM_INSTRUCTION_CALL void push(
@@ -1511,10 +1537,22 @@ namespace monad::vm::interpreter
                     *stack_top <<= monad_vm_imm;
                 }
                 else if (monad_vm_op2 == static_cast<std::uint8_t>(SHR)) {
-                    *stack_top >>= monad_vm_imm;
+                    MONAD_VM_MUST_TAIL return push1_shr<traits>(
+                        ctx,
+                        analysis,
+                        stack_bottom,
+                        stack_top,
+                        gas_remaining,
+                        instr_ptr MONAD_VM_TBL_ARG);
                 }
                 else {
-                    *stack_top = sar(monad_vm_imm, *stack_top);
+                    MONAD_VM_MUST_TAIL return push1_sar<traits>(
+                        ctx,
+                        analysis,
+                        stack_bottom,
+                        stack_top,
+                        gas_remaining,
+                        instr_ptr MONAD_VM_TBL_ARG);
                 }
                 // Advance instr_ptr by 3 bytes, keep the stack size unchanged,
                 // and call the next opcode handler.

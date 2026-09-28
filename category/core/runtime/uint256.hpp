@@ -998,11 +998,20 @@ udivrem(uint256_t const &u, uint256_t const &v) noexcept
     if !consteval {
         // Keep division by zero on the existing assertion path.
         if (v[0] | v[1] | v[2] | v[3]) {
-            alignas(8) uint64_t const a[4] = {u[0], u[1], u[2], u[3]};
-            alignas(8) uint64_t const b[4] = {v[0], v[1], v[2], v[3]};
+            // Dividend and divisor are read where they lie: a uint256_t is at
+            // least 8-aligned and its words are the limb order the shim wants.
+            // The quotient and remainder stay locals, because the shim's write
+            // order is not ours to assume and a caller may divide a value into
+            // itself.
+            static_assert(alignof(uint256_t) >= 8);
+            static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
             alignas(8) uint64_t q[4];
             alignas(8) uint64_t r[4];
-            div_rem256_c(a, b, q, r);
+            div_rem256_c(
+                reinterpret_cast<uint64_t const *>(&u),
+                reinterpret_cast<uint64_t const *>(&v),
+                q,
+                r);
             return {
                 .quot = uint256_t{q[0], q[1], q[2], q[3]},
                 .rem = uint256_t{r[0], r[1], r[2], r[3]}};

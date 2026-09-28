@@ -309,6 +309,153 @@ static void keccak256_one_block(
     std::memcpy(out, e.out, 32);
 }
 
+// One permutation of the pre-state standing in the scratch slot,
+// `keccakf_memo[keccakf_memo_used].in`, with the memo's two checks in their
+// usual order; returns where the post-state lies. A hit names an earlier entry,
+// whose `out` is the post-state and is never written again, and leaves the
+// scratch holding the pre-state. A miss copies the scratch's `in` to its `out`,
+// permutes that, and publishes the slot. A full table permutes the spare the
+// same way without filing it.
+static inline uint64_t const *keccakf_memo_permute(uint64_t *const pre)
+{
+    uint64_t const index = fcall_get_keccakf_index(pre);
+    if (index < keccakf_memo_used &&
+        keccakf_state_eq(keccakf_memo[index].in, pre)) {
+        return keccakf_memo[index].out;
+    }
+    KeccakfEntry &e = keccakf_memo[keccakf_memo_used];
+    keccakf_state_copy(e.out, pre);
+    if (keccakf_memo_used == KECCAKF_MEMO_ENTRIES) {
+        zisk_keccakf(&e.out);
+        return e.out;
+    }
+    // Adjacent, for the reason `keccak_permute` gives.
+    fcall_set_keccakf_index(keccakf_memo_used);
+    zisk_keccakf(&e.out);
+    // Published last, as in `keccak_permute`.
+    ++keccakf_memo_used;
+    return e.out;
+}
+
+// A digest of a rate block or more, built the way keccak256_one_block builds
+// one: each block's pre-state goes straight into the scratch slot the memo
+// would file it under, made from the previous post-state where that already
+// lies -- the entry a miss just published, or the one a hit named -- and the
+// block. Against a state kept on the stack, a miss copies one state instead of
+// two and a hit copies none, for a 64-byte copy of the capacity into each block
+// after the first: 12 of the 25 lanes' worth of port traffic saved or more.
+//
+// The scratch is zero on entry, which the first block relies on for its
+// capacity; every later block writes all 25 lanes. When the last permutation
+// leaves the scratch where it was -- a hit, or the spare of a full table -- it
+// is cleared before the call returns, so the next digest finds it zero too.
+static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[32])
+{
+    constexpr size_t RATE = 136;
+    constexpr size_t WORDS = RATE / 8; // 17
+    static_assert(135 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
+    auto const *p = static_cast<unsigned char const *>(in);
+
+    // A misaligned input is staged once, as the stack sponge stages it: every
+    // lane would otherwise be a boundary-crossing load, 159 against 16.
+    alignas(8) unsigned char staged[8 * RATE];
+    if ((reinterpret_cast<uintptr_t>(p) & 7) != 0 && len <= sizeof(staged)) {
+        std::memcpy(staged, p, len);
+        p = staged;
+    }
+
+    uint64_t *pre = keccakf_memo[keccakf_memo_used].in;
+    std::memcpy(pre, p, RATE);
+    p += RATE;
+    len -= RATE;
+    uint64_t const *post = keccakf_memo_permute(pre);
+
+    while (len >= RATE) {
+        pre = keccakf_memo[keccakf_memo_used].in;
+        for (size_t i = 0; i < WORDS; ++i) {
+            pre[i] = post[i] ^ load64(p + 8 * i);
+        }
+        std::memcpy(pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
+        post = keccakf_memo_permute(pre);
+        p += RATE;
+        len -= RATE;
+    }
+
+    // The final block, pad10*1 with the 0x01 domain byte: its whole lanes, a
+    // literal count per case; then its last partial lane, taken from the eight
+    // bytes that END at the input's end and shifted down, in bounds since a
+    // whole block came before; then the lanes it leaves as they were.
+    pre = keccakf_memo[keccakf_memo_used].in;
+    size_t const whole = len / 8;
+    unsigned const rem = static_cast<unsigned>(len % 8);
+    switch (whole) {
+    case 16:
+        pre[15] = post[15] ^ load64(p + 120);
+        [[fallthrough]];
+    case 15:
+        pre[14] = post[14] ^ load64(p + 112);
+        [[fallthrough]];
+    case 14:
+        pre[13] = post[13] ^ load64(p + 104);
+        [[fallthrough]];
+    case 13:
+        pre[12] = post[12] ^ load64(p + 96);
+        [[fallthrough]];
+    case 12:
+        pre[11] = post[11] ^ load64(p + 88);
+        [[fallthrough]];
+    case 11:
+        pre[10] = post[10] ^ load64(p + 80);
+        [[fallthrough]];
+    case 10:
+        pre[9] = post[9] ^ load64(p + 72);
+        [[fallthrough]];
+    case 9:
+        pre[8] = post[8] ^ load64(p + 64);
+        [[fallthrough]];
+    case 8:
+        pre[7] = post[7] ^ load64(p + 56);
+        [[fallthrough]];
+    case 7:
+        pre[6] = post[6] ^ load64(p + 48);
+        [[fallthrough]];
+    case 6:
+        pre[5] = post[5] ^ load64(p + 40);
+        [[fallthrough]];
+    case 5:
+        pre[4] = post[4] ^ load64(p + 32);
+        [[fallthrough]];
+    case 4:
+        pre[3] = post[3] ^ load64(p + 24);
+        [[fallthrough]];
+    case 3:
+        pre[2] = post[2] ^ load64(p + 16);
+        [[fallthrough]];
+    case 2:
+        pre[1] = post[1] ^ load64(p + 8);
+        [[fallthrough]];
+    case 1:
+        pre[0] = post[0] ^ load64(p);
+        [[fallthrough]];
+    default:
+        break;
+    }
+    uint64_t lane = uint64_t{0x01} << (8 * rem);
+    if (rem != 0) {
+        lane |= load64(p + len - 8) >> (8 * (8 - rem));
+    }
+    pre[whole] = post[whole] ^ lane;
+    std::memcpy(
+        pre + whole + 1, post + whole + 1, (KECCAKF_LANES - 1 - whole) * 8);
+    pre[16] ^= uint64_t{0x80} << 56;
+    post = keccakf_memo_permute(pre);
+    std::memcpy(out, post, 32);
+
+    if (pre == keccakf_memo[keccakf_memo_used].in) {
+        std::memset(pre, 0, KECCAKF_STATE_BYTES);
+    }
+}
+
 #endif // MONAD_ZKVM_KECCAKF_MEMO
 
 // Only `syscall_keccak_f` above and the two entry points below carry C linkage;
@@ -392,8 +539,11 @@ static void keccak256_sponge(void const *const in, size_t len, uint8_t out[32])
     if constexpr (Memo) {
         if (len < RATE) {
             keccak256_one_block(in, len, out);
-            return;
         }
+        else {
+            keccak256_memo_sponge(in, len, out);
+        }
+        return;
     }
 #endif
 

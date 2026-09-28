@@ -17,11 +17,14 @@
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
+#include <category/core/lru/cache_stats.hpp>
 
 #include <boost/intrusive/list.hpp>
 
 #include <ankerl/unordered_dense.h>
 
+#include <cstddef>
+#include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -48,10 +51,20 @@ protected:
     using ListIter = typename List::iterator;
     using Map = ankerl::unordered_dense::segmented_map<Key, ListIter, Hash>;
 
+private:
     std::vector<list_node> array_;
     boost::intrusive::list<list_node> active_list_;
     boost::intrusive::list<list_node> free_list_;
     Map map_;
+    // The published block, not a member value: a reader holds a handle to it
+    // and may outlive this cache. evictions counts this class's slot bound and
+    // any derived class's bound together; the total cannot attribute either.
+    std::shared_ptr<CacheStats> stats_{std::make_shared<CacheStats>()};
+    // Set by a derived cache for the span of one of its operations, so the
+    // occupancy pair is published once at the end rather than the entry count
+    // moving first and leaving a reader with a combination the cache never
+    // held. Owning thread only, like everything else here.
+    bool defer_occupancy_{false};
 
 public:
     using ConstAccessor = Map::const_iterator;
@@ -65,17 +78,25 @@ public:
             free_list_.push_back(array_[i]);
         }
         map_.reserve(size);
+        stats_->publish_capacity(0, size);
 
         MONAD_ASSERT(free_list_.size() == array_.size());
         MONAD_ASSERT(active_list_.size() == 0);
     }
 
-    ~static_lru_cache() = default;
+    // A reader may still hold the block. Occupancy is a level, so a destroyed
+    // cache publishes zero rather than leaving its last reading to look like a
+    // live cache holding entries. The counters are lifetime totals and stay.
+    ~static_lru_cache()
+    {
+        stats_->publish_occupancy(0, 0);
+    }
 
     // return the map iterator and the erased value if any
     std::pair<typename Map::iterator, std::optional<Value>>
     insert(Key const &key, Value const &value) noexcept
     {
+        MONAD_DEBUG_ASSERT(stats_->entries() == map_.size());
         std::optional<Value> erased_value = std::nullopt;
         if (auto const it = map_.find(key); it != map_.end()) {
             erased_value = it->second->val;
@@ -83,51 +104,141 @@ public:
             update_lru(it->second);
             return {it, erased_value};
         }
-        list_node *node = nullptr;
-        if (!free_list_.empty()) {
-            // allocate from free_list_
-            auto const list_it = free_list_.begin();
-            node = &*list_it;
-            free_list_.erase(list_it);
+        if (free_list_.empty()) {
+            erased_value = evict_lru_tail();
         }
-        else { // reuse the last node in active_list_
-            auto const list_it = std::prev(active_list_.end());
-            erased_value = list_it->val;
-            map_.erase(list_it->key);
-            node = &*list_it;
-            active_list_.erase(list_it);
-        }
-        // Reuse node
+        auto const free_it = free_list_.begin();
+        list_node *const node = &*free_it;
+        free_list_.erase(free_it);
+
         node->key = key;
         node->val = value;
 
         active_list_.insert(active_list_.begin(), *node);
-        return {
-            map_.emplace(key, active_list_.iterator_to(*node)).first,
-            erased_value};
+        auto const it =
+            map_.emplace(key, active_list_.iterator_to(*node)).first;
+        publish_size();
+        return {it, erased_value};
     }
 
+    // Counts as a lookup. Use contains() for a predicate, or the hit rate
+    // moves for a read nobody made.
     bool find(ConstAccessor &acc, Key const &key) noexcept
     {
         acc = map_.find(key);
         if (acc == map_.end()) {
+            stats_->record_miss();
             return false;
         }
+        stats_->record_hit();
         update_lru(acc->second);
         return true;
     }
 
-    size_t size() const noexcept
+    // Existence check that records no hit or miss and leaves the LRU order
+    // alone. Owning thread only, like find(): it reads the map.
+    [[nodiscard]] bool contains(Key const &key) const noexcept
+    {
+        return map_.find(key) != map_.end();
+    }
+
+    // The map, not the published count: that one lags while a derived cache
+    // defers occupancy, and an eviction loop guarding on a lagging count can
+    // run past the end of the LRU list.
+    [[nodiscard]] size_t size() const noexcept
     {
         return map_.size();
     }
 
+    [[nodiscard]] CacheStatsSnapshot stats() const noexcept
+    {
+        return stats_->snapshot();
+    }
+
+    // A reader's view of this cache's numbers. Outlives the cache, and is safe
+    // to read and to release from any thread.
+    [[nodiscard]] std::shared_ptr<CacheStats const>
+    stats_handle() const noexcept
+    {
+        return stats_;
+    }
+
+    // Empties the index and returns every node to the free list. A node left
+    // on the active list is reused by the next insert and counted as an
+    // eviction, so both halves matter. Leaves the counters alone.
     void clear() noexcept
     {
-        map_.clear();
+        MONAD_DEBUG_ASSERT(stats_->entries() == map_.size());
+        while (!active_list_.empty()) {
+            recycle_lru_tail();
+        }
     }
 
 protected:
+    // Publishes the byte total a derived cache maintains together with this
+    // class's entry count, and ends the deferral its operation opened.
+    void publish_occupancy(uint64_t const used_bytes) noexcept
+    {
+        defer_occupancy_ = false;
+        stats_->publish_occupancy(used_bytes, map_.size());
+    }
+
+    [[nodiscard]] uint64_t published_used_bytes() const noexcept
+    {
+        return stats_->used_bytes();
+    }
+
+    void defer_occupancy() noexcept
+    {
+        defer_occupancy_ = true;
+    }
+
+    void publish_byte_capacity(uint64_t const max_bytes) noexcept
+    {
+        stats_->publish_capacity(max_bytes, array_.size());
+    }
+
+    // Drops the LRU tail and counts it. The one place a derived cache
+    // evicting on its own bound should call, so it cannot leave half the
+    // bookkeeping behind.
+    Value evict_lru_tail() noexcept
+    {
+        stats_->record_eviction();
+        return recycle_lru_tail();
+    }
+
+private:
+    // Removes the LRU tail from the index and the active list, returns the
+    // node to the free list, and returns its value. Uncounted, because
+    // clear() removes entries without evicting them.
+    Value recycle_lru_tail() noexcept
+    {
+        MONAD_DEBUG_ASSERT(!active_list_.empty());
+        auto const list_it = std::prev(active_list_.end());
+        auto &node = *list_it;
+        Value removed = node.val;
+        map_.erase(node.key);
+        active_list_.erase(list_it);
+        // The key is left alone: nothing reads a free-list node's key, and
+        // resetting it would require Key to be default-constructible, which
+        // virtual_chunk_offset_t is not.
+        node.val = Value();
+        free_list_.push_back(node);
+        publish_size();
+        return removed;
+    }
+
+    void publish_size() noexcept
+    {
+        if (defer_occupancy_) {
+            return;
+        }
+        // This class has no byte bound of its own, so there is nothing to
+        // republish alongside the count; a derived cache defers to publish
+        // both together.
+        stats_->publish_entries(map_.size());
+    }
+
     void update_lru(ListIter const it)
     {
         active_list_.splice(active_list_.begin(), active_list_, it);

@@ -1878,8 +1878,12 @@ namespace monad::vm::interpreter
                     MONAD_VM_CHECK(PUSH1);
                     MONAD_VM_CHECK_AT(PUSH1, 1);
                 }
-                interpreter::push(stack_top, uint256_t{*(instr_ptr + 1)});
-                interpreter::push(stack_top + 1, uint256_t{*(instr_ptr + 3)});
+                // Read both immediates before storing, so instr_ptr is no
+                // longer needed for these loads when dispatch advances it.
+                uint8_t const monad_vm_imm1 = *(instr_ptr + 1);
+                uint8_t const monad_vm_imm2 = *(instr_ptr + 3);
+                interpreter::push(stack_top, uint256_t{monad_vm_imm1});
+                interpreter::push(stack_top + 1, uint256_t{monad_vm_imm2});
                 MONAD_VM_FUSED_NEXT(4, 2);
             }
         }

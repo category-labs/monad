@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <limits>
 
 using namespace monad;
@@ -56,6 +57,12 @@ TEST(CheckedMath, Multiply)
     auto const overflow = checked_mul(TWO_TO_128, TWO_TO_128);
     ASSERT_TRUE(overflow.has_error());
     EXPECT_EQ(overflow.error(), MathError::Overflow);
+
+    // 64-bit operands: (2^64 - 1)^2 = 2^128 - 2^65 + 1 sets both low words.
+    constexpr uint64_t MAX_64 = std::numeric_limits<uint64_t>::max();
+    auto const wide = checked_mul(uint256_t{MAX_64}, uint256_t{MAX_64});
+    ASSERT_TRUE(wide);
+    EXPECT_EQ(wide.assume_value(), (uint256_t{1, MAX_64 - 1, 0, 0}));
 }
 
 TEST(CheckedMath, Divide)

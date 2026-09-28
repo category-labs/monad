@@ -61,6 +61,15 @@ Result<uint256_t> checked_sub(uint256_t const &x, uint256_t const &y) noexcept
 
 Result<uint256_t> checked_mul(uint256_t const &x, uint256_t const &y) noexcept
 {
+    // Gas arithmetic -- a gas limit times a price -- is one word by one word
+    // nearly always, and such a product is exact in two words: it cannot
+    // overflow, and one mulx replaces the 512-bit product.
+    if ((x[1] | x[2] | x[3] | y[1] | y[2] | y[3]) == 0) {
+        uint64_t hi;
+        uint64_t lo;
+        mulx(x[0], y[0], hi, lo);
+        return uint256_t{lo, hi, 0, 0};
+    }
     // Compute the full 512-bit product; overflow iff any upper word is set.
     auto const prod =
         truncating_mul<2 * uint256_t::num_words>(x.as_words(), y.as_words());

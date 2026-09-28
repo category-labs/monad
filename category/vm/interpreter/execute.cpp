@@ -56,8 +56,9 @@ namespace monad::vm::interpreter
         uint256_t *const stack_ptr)
     {
 #if defined(MONAD_ZKVM_ZISK)
-        // The carry-in is fixed; zisk_add256 sets the pointers on every call.
+        // The carry-ins are fixed; zisk_add256 sets the pointers on every call.
         ctx.add256_params.cin = 0;
+        ctx.sub256_params.cin = 1;
 #endif
         trampoline(ctx, analysis, stack_ptr, core_loop<traits>);
     }

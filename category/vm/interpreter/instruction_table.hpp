@@ -126,6 +126,22 @@
      ((REQ).max_growth == 0 ||                                                 \
       (stack_top) < ctx.stack_limit + (1 - (REQ).max_growth)))
 
+// The same test with the overflow bound written against stack_bottom, which
+// every handler already holds in a register. ctx.stack_limit is the same
+// address, stack_bottom + 1024, but reading it is a load that keeps ctx live,
+// and in PUSH2's JUMP/JUMPI arms that one register is what pushes gcc past the
+// caller-saved set into s0 and the frame that comes with it: four instructions
+// on every fused PUSH2. The other fused handlers have registers to spare and
+// are cheaper with the load, so only those two arms use this form.
+#define MONAD_VM_FUSED_OK_BOTTOM(REQ)                                          \
+    ((gas_remaining >= (REQ).gas) &&                                           \
+     ((REQ).min_required == 0 ||                                               \
+      ((REQ).min_required == 1                                                 \
+           ? (stack_top) > (stack_bottom)                                      \
+           : (stack_top) >= (stack_bottom) + (REQ).min_required)) &&           \
+     ((REQ).max_growth == 0 ||                                                 \
+      (stack_top) < (stack_bottom) + (1025 - (REQ).max_growth)))
+
 // Dispatch using OP2, the opcode already read at instr_ptr[1].
 // EQ/ISZERO's stack writes prevent GCC from reusing that load itself;
 // reusing it explicitly is safe because bytecode is immutable.
@@ -1531,7 +1547,7 @@ namespace monad::vm::interpreter
                 if (monad_vm_op2 == static_cast<std::uint8_t>(JUMP)) {
                     static constexpr auto monad_vm_req =
                         fused_requirements<traits, PUSH2, JUMP>();
-                    if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_req))) {
+                    if (MONAD_LIKELY(MONAD_VM_FUSED_OK_BOTTOM(monad_vm_req))) {
                         gas_remaining -= monad_vm_req.gas;
                     }
                     else {
@@ -1557,7 +1573,7 @@ namespace monad::vm::interpreter
                 }
                 static constexpr auto monad_vm_reqi =
                     fused_requirements<traits, PUSH2, JUMPI>();
-                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(monad_vm_reqi))) {
+                if (MONAD_LIKELY(MONAD_VM_FUSED_OK_BOTTOM(monad_vm_reqi))) {
                     gas_remaining -= monad_vm_reqi.gas;
                 }
                 else {
@@ -1986,4 +2002,5 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_CHECK_AT
 #undef MONAD_VM_CHARGE
 #undef MONAD_VM_FUSED_OK
+#undef MONAD_VM_FUSED_OK_BOTTOM
 #undef MONAD_VM_CHECKED_RUNTIME_CALL

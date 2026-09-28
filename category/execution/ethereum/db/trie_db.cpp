@@ -109,8 +109,11 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     if (status == CacheReadStatus::Hit) {
         // The hit skipped the trie walk; warm the trie path in the
         // background so the commit upsert does not stall loading it. Only
-        // the first hit per block prefetches; repeats are deduped.
-        if (prefetched_accounts_.insert({addr, 0})) {
+        // the first hit per block prefetches; repeats are deduped. The
+        // read-locked count() screens out the common repeat before insert(),
+        // whose bucket write lock would make hot keys a contention point.
+        if (prefetched_accounts_.count(addr) == 0 &&
+            prefetched_accounts_.insert({addr, 0})) {
             db_.find_async(
                 curr_root_,
                 concat(
@@ -187,8 +190,11 @@ void TrieDb::prefetch_storage_path(
     Address const &addr, Incarnation const incarnation,
     bytes32_t const &lookup_key)
 {
-    if (!prefetched_storage_.insert(
-            {StorageKey{addr, incarnation, lookup_key}, 0})) {
+    // Read-locked count() screens out the common repeat before insert(),
+    // whose bucket write lock would make hot keys a contention point.
+    StorageKey const skey{addr, incarnation, lookup_key};
+    if (prefetched_storage_.count(skey) != 0 ||
+        !prefetched_storage_.insert({skey, 0})) {
         return;
     }
     db_.find_async(

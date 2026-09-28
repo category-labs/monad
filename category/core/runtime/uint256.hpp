@@ -922,8 +922,43 @@ udivrem(uint256_t const &u, uint256_t const &v) noexcept
 {
 #ifdef MONAD_ZKVM_ZISK
     if !consteval {
+        uint64_t const v_high = v[1] | v[2] | v[3];
         // Keep division by zero on the existing assertion path.
-        if (v[0] | v[1] | v[2] | v[3]) {
+        if (v[0] | v_high) {
+            // For v = 2^k, a shift and mask replace the division hint and its
+            // verification. Check the low word first to quickly reject common
+            // divisors with multiple set bits (e.g. decimal scales).
+            if ((v[0] & (v[0] - 1)) == 0) {
+                unsigned k = 256; // no single bit found
+                if (v[0] != 0) {
+                    if (v_high == 0) {
+                        k = static_cast<unsigned>(std::countr_zero(v[0]));
+                    }
+                }
+                else if (v[1] != 0) {
+                    if ((v[1] & (v[1] - 1)) == 0 && (v[2] | v[3]) == 0) {
+                        k = 64 + static_cast<unsigned>(std::countr_zero(v[1]));
+                    }
+                }
+                else if (v[2] != 0) {
+                    if ((v[2] & (v[2] - 1)) == 0 && v[3] == 0) {
+                        k = 128 +
+                            static_cast<unsigned>(std::countr_zero(v[2]));
+                    }
+                }
+                else if ((v[3] & (v[3] - 1)) == 0) {
+                    k = 192 + static_cast<unsigned>(std::countr_zero(v[3]));
+                }
+                if (k < 256) {
+                    return {.quot = u >> uint256_t{k}, .rem = u & (v - 1)};
+                }
+            }
+            // For 64-bit operands, use native division instead of the hint.
+            if ((u[1] | u[2] | u[3] | v_high) == 0) {
+                return {
+                    .quot = uint256_t{u[0] / v[0]},
+                    .rem = uint256_t{u[0] % v[0]}};
+            }
             // Read the aligned operands in place; their layout matches the
             // shim. Keep outputs separate to avoid relying on its read/write
             // order.

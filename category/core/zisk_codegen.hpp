@@ -34,11 +34,17 @@ namespace monad
     // it feeds.
     //
     // Guarded, because on a real CPU the barrier costs an instruction and buys
-    // nothing: there, a byte store is a byte store.
-    [[gnu::always_inline]] inline unsigned char zx(unsigned long v) noexcept
+    // nothing: there, a byte store is a byte store. It is skipped in constant
+    // evaluation, so constexpr encoders can use it.
+    //
+    // It zero-extends what it is given and nothing more: the value must
+    // already fit in the byte, as an RLP prefix computed in full width does.
+    [[gnu::always_inline]] constexpr unsigned char zx(unsigned long v) noexcept
     {
 #if defined(MONAD_ZKVM_ZISK)
-        asm("" : "+r"(v));
+        if !consteval {
+            asm("" : "+r"(v));
+        }
 #endif
         return static_cast<unsigned char>(v);
     }

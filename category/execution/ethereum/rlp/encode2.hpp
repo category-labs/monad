@@ -19,6 +19,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/int.hpp>
 #include <category/core/rlp/config.hpp>
+#include <category/core/zisk_codegen.hpp>
 
 #include <bit>
 #include <concepts>
@@ -125,7 +126,7 @@ inline void
 append_length(unsigned char *&p, unsigned char const base, size_t const size)
 {
     size_t const n = big_compact_size(size);
-    *p++ = static_cast<unsigned char>(base + n);
+    *p++ = zx(base + n);
     for (size_t i = n; i-- > 0;) {
         *p++ = static_cast<unsigned char>(size >> (i * 8));
     }
@@ -138,7 +139,7 @@ inline void append_list_header(unsigned char *&p, size_t const payload)
         append_length(p, 0xf7, payload);
         return;
     }
-    *p++ = static_cast<unsigned char>(0xc0 + payload);
+    *p++ = zx(0xc0 + payload);
 }
 
 // encode_string2, appended rather than returned.
@@ -154,7 +155,7 @@ append_string2(unsigned char *&p, byte_string_view const string_view)
         append_length(p, 0xb7, size);
     }
     else {
-        *p++ = static_cast<unsigned char>(0x80 + size);
+        *p++ = zx(0x80 + size);
     }
     std::memcpy(p, string_view.data(), size);
     p += size;

@@ -21,6 +21,7 @@
 #include <category/core/result.hpp>
 #include <category/core/rlp/config.hpp>
 #include <category/core/rlp/decode_error.hpp>
+#include <category/core/zisk_codegen.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
@@ -76,12 +77,12 @@ namespace
             log.topics.size() * (1 + sizeof(bytes32_t));
 
         append_list_header(p, log_payload_len(log));
-        *p++ = address_header;
+        *p++ = zx(address_header);
         std::memcpy(p, log.address.bytes, sizeof(log.address.bytes));
         p += sizeof(log.address.bytes);
         append_list_header(p, topics_payload);
         for (auto const &i : log.topics) {
-            *p++ = topic_header;
+            *p++ = zx(topic_header);
             std::memcpy(p, i.bytes, sizeof(i.bytes));
             p += sizeof(i.bytes);
         }

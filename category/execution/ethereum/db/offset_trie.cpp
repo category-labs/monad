@@ -407,7 +407,7 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
         compact_encode_raw(d.last(path_len).data(), path, terminating);
         d = d.shrink(path_len);
         if (path_len > 1) {
-            d.back() = static_cast<unsigned char>(0x80 + path_len);
+            d.back() = zx(0x80 + path_len);
             d = d.shrink(1);
         }
         return d;
@@ -559,7 +559,7 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // The outer wrap collapses to no prefix only when it wraps
                 // a single byte <=0x7F, i.e. zl itself is one byte <=0x7F.
                 if (!(val.size() == 1 && val[0] <= 0x7F)) {
-                    dest.back() = static_cast<unsigned char>(0x80 + val_len);
+                    dest.back() = zx(0x80 + val_len);
                     dest = dest.shrink(1);
                 }
                 dest = encode_path(dest, l.path(), /*terminating=*/true);
@@ -707,7 +707,7 @@ namespace
             out.push_back(p[0]);
             return;
         }
-        out.push_back(static_cast<unsigned char>(0x80 + len));
+        out.push_back(zx(0x80 + len));
         out.append(p, len);
     }
 
@@ -740,7 +740,7 @@ void append_acct(
 
 void append_digest(byte_string &out, bytes32_t const &hash)
 {
-    out.push_back(DIGEST);
+    out.push_back(zx(DIGEST));
     out.append(hash.bytes, 32);
 }
 

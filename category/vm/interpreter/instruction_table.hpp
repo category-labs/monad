@@ -1810,17 +1810,27 @@ namespace monad::vm::interpreter
 #endif
         MONAD_VM_CHECK(DUP1 + (N - 1));
 
-        auto *const old_top = stack_top;
-        push(stack_top, *(old_top - (N - 1)));
-
 #if defined(MONAD_ZKVM_ZISK)
         if constexpr (N == 1) {
+            auto *const old_top = stack_top;
+            push(stack_top, *old_top);
+
             MONAD_VM_NEXT_OP(DUP1, monad_vm_op2);
         }
         else {
-            MONAD_VM_NEXT(DUP1 + (N - 1));
+            // The copy's destination is the new top: step there first, so the
+            // register the copy writes through is the one the dispatch passes
+            // on, not a second one moved into place after it.
+            ++stack_top;
+            MONAD_VM_LAUNDER(stack_top);
+            *stack_top = *(stack_top - N);
+
+            MONAD_VM_DISPATCH(1, 0, *instr_ptr);
         }
 #else
+        auto *const old_top = stack_top;
+        push(stack_top, *(old_top - (N - 1)));
+
         MONAD_VM_NEXT(DUP1 + (N - 1));
 #endif
     }

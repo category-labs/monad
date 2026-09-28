@@ -33,9 +33,11 @@
 
 #include <boost/outcome/try.hpp>
 
+#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <optional>
 #include <utility>
@@ -182,6 +184,80 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
 
         return prefix + encode_list2(encode_eip2718_base(txn));
     }
+}
+
+namespace
+{
+    // Values below 0x80 use one byte; larger values add a one-byte prefix.
+    size_t unsigned_rlp_size(uint256_t const &n)
+    {
+        size_t const w = count_significant_words(n.as_words());
+        if (w == 0 || (w == 1 && n[0] < 0x80)) {
+            return 1;
+        }
+        size_t const top =
+            8 - static_cast<size_t>(std::countl_zero(n[w - 1])) / 8;
+        return 1 + (w - 1) * 8 + top;
+    }
+}
+
+// Canonical RLP lets us reuse the fields before the signature verbatim.
+// Rebuild the list header, preserving the type byte or adding the
+// EIP-155 legacy suffix (chain ID, 0, 0) as needed.
+byte_string signing_payload(Transaction const &txn, byte_string_view enc)
+{
+    MONAD_ASSERT(!enc.empty());
+    bool const legacy_encoding = enc[0] >= 0xc0;
+    if (legacy_encoding) {
+        MONAD_ASSERT(txn.type == TransactionType::legacy);
+    }
+    else if (MONAD_UNLIKELY(txn.type == TransactionType::legacy)) {
+        // A 0x00 envelope has typed fields but legacy signing rules.
+        return encode_transaction_for_signing(txn);
+    }
+    else {
+        MONAD_ASSERT(enc[0] == static_cast<unsigned char>(txn.type));
+        enc = enc.substr(1);
+    }
+    auto const payload = parse_list_metadata(enc);
+    MONAD_ASSERT(payload.has_value() && enc.empty());
+
+    // Rebuild legacy v with from_v's wrapping arithmetic; get_v rejects
+    // some chain IDs accepted by the decoder.
+    auto const &sig = txn.sc.signature;
+    uint256_t const v = !legacy_encoding ? uint256_t{sig.y_parity}
+                        : txn.sc.chain_id.has_value()
+                            ? *txn.sc.chain_id * 2u + 35u + sig.y_parity
+                            : uint256_t{27u + sig.y_parity};
+    size_t const sig_size = unsigned_rlp_size(v) + unsigned_rlp_size(sig.r) +
+                            unsigned_rlp_size(sig.s);
+    MONAD_ASSERT(sig_size <= payload.value().size());
+    byte_string_view const body =
+        payload.value().substr(0, payload.value().size() - sig_size);
+
+    byte_string const tail =
+        legacy_encoding && txn.sc.chain_id.has_value()
+            ? encode_unsigned(*txn.sc.chain_id) + byte_string{0x80, 0x80}
+            : byte_string{};
+    size_t const list = body.size() + tail.size();
+
+    byte_string out;
+    out.resize_and_overwrite(
+        (legacy_encoding ? 0 : 1) + list_header_size(list) + list,
+        [&](unsigned char *const buf, size_t const n) {
+            unsigned char *p = buf;
+            if (!legacy_encoding) {
+                *p++ = static_cast<unsigned char>(txn.type);
+            }
+            append_list_header(p, list);
+            std::memcpy(p, body.data(), body.size());
+            p += body.size();
+            std::memcpy(p, tail.data(), tail.size());
+            p += tail.size();
+            MONAD_ASSERT(p == buf + n);
+            return n;
+        });
+    return out;
 }
 
 // Decode

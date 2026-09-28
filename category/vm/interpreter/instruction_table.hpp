@@ -1084,7 +1084,9 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(CALLDATALOAD, runtime::calldataload);
+        MONAD_VM_CHECK(CALLDATALOAD);
+        // CALLDATALOAD reads the environment but never changes gas.
+        runtime::calldataload(&ctx, &*stack_top, &*stack_top);
 
         MONAD_VM_NEXT(CALLDATALOAD);
     }
@@ -1379,7 +1381,8 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_CHECK(MLOAD);
 
-        ctx.gas_remaining = gas_remaining;
+        // Only memory growth charges gas; mload_grow synchronizes it.
+        // An invalid offset exits OutOfGas, which returns no remaining gas.
         auto const offset = ctx.get_memory_offset(*stack_top);
         if (MONAD_UNLIKELY(ctx.memory.size < *offset + 32)) {
             MONAD_VM_MUST_TAIL return mload_grow<traits>(
@@ -1391,7 +1394,6 @@ namespace monad::vm::interpreter
                 instr_ptr MONAD_VM_TBL_ARG);
         }
         runtime::mload_at<traits>(&ctx, &*stack_top, offset);
-        gas_remaining = ctx.gas_remaining;
 
         MONAD_VM_NEXT(MLOAD);
     }

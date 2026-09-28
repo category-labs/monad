@@ -59,8 +59,8 @@ function(check_if_boost_fiber_needs_ucontext_macro)
       )
     endif()
   endif()
-  # Boost.Context only annotates fiber switches for ASAN in its ucontext
-  # backend.
+  # Boost.Context only annotates fiber switches for ASAN and TSAN in its
+  # ucontext backend.
   check_cxx_source_compiles("
   #if defined(__SANITIZE_ADDRESS__)
   #elif defined(__has_feature)
@@ -71,11 +71,27 @@ function(check_if_boost_fiber_needs_ucontext_macro)
   #  error
   #endif
   int main() { return 0; }" MONAD_HAVE_ASAN)
+  check_cxx_source_compiles("
+  #if defined(__SANITIZE_THREAD__)
+  #elif defined(__has_feature)
+  #  if !__has_feature(thread_sanitizer)
+  #    error
+  #  endif
+  #else
+  #  error
+  #endif
+  int main() { return 0; }" MONAD_HAVE_TSAN)
   if(MONAD_HAVE_ASAN)
     set_property(
       TARGET Boost::context
       APPEND
       PROPERTY INTERFACE_COMPILE_DEFINITIONS BOOST_USE_ASAN BOOST_USE_UCONTEXT)
+    target_sources(boost_fiber PRIVATE fiber/boost_context_ucontext.cpp)
+  elseif(MONAD_HAVE_TSAN)
+    set_property(
+      TARGET Boost::context
+      APPEND
+      PROPERTY INTERFACE_COMPILE_DEFINITIONS BOOST_USE_TSAN BOOST_USE_UCONTEXT)
     target_sources(boost_fiber PRIVATE fiber/boost_context_ucontext.cpp)
   endif()
 endfunction()

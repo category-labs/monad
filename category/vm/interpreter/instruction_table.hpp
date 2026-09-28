@@ -1557,6 +1557,11 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        // Encourage pointer-register reuse instead of save/restore copies.
+        auto *top = stack_top.next_slot();
+        MONAD_VM_LAUNDER(top);
+        stack_top = StackTop{top};
+        MONAD_VM_LAUNDER(instr_ptr);
         MONAD_VM_CHECK_OWN_GAS(MSTORE);
 
         // The base gas is already charged. In-bounds stores need no expansion

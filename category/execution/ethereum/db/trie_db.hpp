@@ -111,6 +111,9 @@ private:
     std::atomic<uint64_t> n_account_value_{0};
     std::atomic<uint64_t> n_storage_no_value_{0};
     std::atomic<uint64_t> n_storage_value_{0};
+    // db_.prefetch_dropped() snapshot at the last print_stats, so pfd is
+    // reported per interval like the counters above
+    uint64_t last_prefetch_dropped_{0};
 
     void stats_account_no_value()
     {

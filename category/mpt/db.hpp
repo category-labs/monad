@@ -159,6 +159,11 @@ public:
     // are dropped, so a prefetch never touches the trie across a mutation.
     void find_async(NodeCursor const &, NibblesView, uint64_t block_id);
 
+    // Cumulative count of prefetch finds (queued requests and in-flight read
+    // completions) dropped because a trie mutation advanced the prefetch
+    // epoch past theirs. Always zero except on the RW on-disk Db.
+    uint64_t prefetch_dropped() const;
+
     Node::SharedPtr load_root_for_version(uint64_t block_id) const;
 
     Node::SharedPtr copy_trie(

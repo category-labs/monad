@@ -532,21 +532,32 @@ void find_notify_fiber_future(
     UpdateAux &, ::boost::fibers::promise<find_cursor_result_type>,
     NodeCursor const &start, NibblesView key);
 
+// Shared state guarding fire-and-forget prefetch finds against trie
+// mutation. `epoch` is advanced before every trie-mutating operation;
+// `dropped` counts prefetch requests and read completions that were
+// discarded because their captured epoch went stale.
+struct PrefetchTracker
+{
+    std::atomic<uint64_t> epoch{0};
+    std::atomic<uint64_t> dropped{0};
+};
+
 /*! \brief Fire-and-forget find that warms the in-memory trie along `key`.
 
 Walks like `find_notify_fiber_future` but reports to no one: missing nodes
 are read asynchronously and attached to their parents so that a later walk
-(e.g. the commit upsert) finds them in memory. `epoch` guards against trie
-mutation: the caller captures the epoch when the prefetch is requested, and
-every walk step and read completion re-checks it — once a trie-mutating
-operation advances the epoch, the stale prefetch drops its result without
-touching the trie or deserializing the (possibly reused) on-disk bytes.
+(e.g. the commit upsert) finds them in memory. The tracker's epoch guards
+against trie mutation: the caller captures the epoch when the prefetch is
+requested, and every walk step and read completion re-checks it — once a
+trie-mutating operation advances the epoch, the stale prefetch drops its
+result without touching the trie or deserializing the (possibly reused)
+on-disk bytes, and bumps the tracker's dropped counter.
 
 \warning this is not threadsafe, should only be called from the triedb
 worker thread.
 */
 void find_async_prefetch(
-    UpdateAux &, std::atomic<uint64_t> const &epoch, uint64_t expected_epoch,
+    UpdateAux &, PrefetchTracker &, uint64_t expected_epoch,
     NodeCursor const &start, NibblesView key);
 
 // rodb

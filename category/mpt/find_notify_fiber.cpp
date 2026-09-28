@@ -104,7 +104,7 @@ namespace
         static constexpr bool lifetime_managed_internally = true;
 
         UpdateAux &aux;
-        std::atomic<uint64_t> const &epoch;
+        PrefetchTracker &tracker;
         uint64_t const expected_epoch;
         Nibbles key;
         Node::SharedPtr parent;
@@ -114,11 +114,11 @@ namespace
         unsigned const branch_index;
 
         prefetch_receiver(
-            UpdateAux &aux_, std::atomic<uint64_t> const &epoch_,
+            UpdateAux &aux_, PrefetchTracker &tracker_,
             uint64_t const expected_epoch_, Nibbles key_,
             Node::SharedPtr parent_, unsigned char const branch)
             : aux(aux_)
-            , epoch(epoch_)
+            , tracker(tracker_)
             , expected_epoch(expected_epoch_)
             , key(std::move(key_))
             , parent(std::move(parent_))
@@ -143,7 +143,9 @@ namespace
             ResultType buffer_)
         {
             MONAD_ASSERT(buffer_);
-            if (epoch.load(std::memory_order_acquire) != expected_epoch) {
+            if (tracker.epoch.load(std::memory_order_acquire) !=
+                expected_epoch) {
+                tracker.dropped.fetch_add(1, std::memory_order_relaxed);
                 return;
             }
             auto node = parent->next(branch_index);
@@ -153,7 +155,7 @@ namespace
                 parent->set_next(branch_index, node);
             }
             find_async_prefetch(
-                aux, epoch, expected_epoch, NodeCursor{node}, key);
+                aux, tracker, expected_epoch, NodeCursor{node}, key);
         }
     };
 
@@ -313,10 +315,11 @@ void find_notify_fiber_future(
 }
 
 void find_async_prefetch(
-    UpdateAux &aux, std::atomic<uint64_t> const &epoch,
-    uint64_t const expected_epoch, NodeCursor const &start, NibblesView key)
+    UpdateAux &aux, PrefetchTracker &tracker, uint64_t const expected_epoch,
+    NodeCursor const &start, NibblesView key)
 {
-    if (epoch.load(std::memory_order_acquire) != expected_epoch) {
+    if (tracker.epoch.load(std::memory_order_acquire) != expected_epoch) {
+        tracker.dropped.fetch_add(1, std::memory_order_relaxed);
         return;
     }
     NodeCursor root = start;
@@ -349,7 +352,12 @@ void find_async_prefetch(
         }
         MONAD_ASSERT(aux.io->owning_thread_id() == get_tl_tid());
         prefetch_receiver receiver(
-            aux, epoch, expected_epoch, Nibbles{key}, std::move(node), branch);
+            aux,
+            tracker,
+            expected_epoch,
+            Nibbles{key},
+            std::move(node),
+            branch);
         detail::initiate_async_read_update(
             *aux.io, std::move(receiver), receiver.bytes_to_read);
         return;

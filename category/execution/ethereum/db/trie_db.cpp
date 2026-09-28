@@ -433,13 +433,16 @@ BlockHeader TrieDb::read_eth_header()
 
 std::string TrieDb::print_stats()
 {
+    uint64_t const prefetch_dropped = db_.prefetch_dropped();
     std::string ret;
     ret += std::format(
-        ",ae={:4},ane={:4},sz={:4},snz={:4}",
+        ",ae={:4},ane={:4},sz={:4},snz={:4},pfd={:4}",
         n_account_no_value_.load(std::memory_order_acquire),
         n_account_value_.load(std::memory_order_acquire),
         n_storage_no_value_.load(std::memory_order_acquire),
-        n_storage_value_.load(std::memory_order_acquire));
+        n_storage_value_.load(std::memory_order_acquire),
+        prefetch_dropped - last_prefetch_dropped_);
+    last_prefetch_dropped_ = prefetch_dropped;
     n_account_no_value_.store(0, std::memory_order_release);
     n_account_value_.store(0, std::memory_order_release);
     n_storage_no_value_.store(0, std::memory_order_release);

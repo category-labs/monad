@@ -94,6 +94,13 @@ struct Db::Impl
     // Only the RW on-disk impl acts on it; a no-op everywhere else.
     virtual void find_async(NodeCursor const &, NibblesView, uint64_t) {}
 
+    // Count of prefetch finds dropped because a trie mutation advanced the
+    // prefetch epoch past theirs. Always zero except on the RW on-disk impl.
+    virtual uint64_t prefetch_dropped() const
+    {
+        return 0;
+    }
+
     virtual size_t prefetch_fiber_blocking(Node::SharedPtr const &) = 0;
     virtual Node::SharedPtr load_root_for_version(uint64_t version) = 0;
 
@@ -450,12 +457,12 @@ private:
     ::moodycamel::ConcurrentQueue<Comms> comms_;
     std::mutex lock_;
     std::condition_variable cond_;
-    // Advanced by the worker before every trie-mutating request (upsert,
-    // copy_trie, move_trie). Prefetch finds carry the epoch observed at
-    // submit time; each walk step and read completion drops itself when the
-    // epoch no longer matches, so no prefetch touches the trie across a
-    // mutation.
-    std::atomic<uint64_t> prefetch_epoch_{0};
+    // The epoch is advanced by the worker before every trie-mutating
+    // request (upsert, copy_trie, move_trie). Prefetch finds carry the epoch
+    // observed at submit time; each walk step and read completion drops
+    // itself when the epoch no longer matches, so no prefetch touches the
+    // trie across a mutation. Dropped work is counted in the tracker.
+    PrefetchTracker prefetch_tracker_;
 
     struct DbAsyncWorker
     {
@@ -594,7 +601,7 @@ private:
                     }
                     else if (auto *req = std::get_if<2>(&request);
                              req != nullptr) {
-                        parent->prefetch_epoch_.fetch_add(
+                        parent->prefetch_tracker_.epoch.fetch_add(
                             1, std::memory_order_release);
                         req->promise.set_value(aux.do_update(
                             std::move(req->prev_root),
@@ -630,7 +637,7 @@ private:
                     }
                     else if (auto *req = std::get_if<5>(&request);
                              req != nullptr) {
-                        parent->prefetch_epoch_.fetch_add(
+                        parent->prefetch_tracker_.epoch.fetch_add(
                             1, std::memory_order_release);
                         aux.move_trie_version_forward(
                             req->src, req->dest, req->tid);
@@ -651,7 +658,7 @@ private:
                     }
                     else if (auto *req = std::get_if<7>(&request);
                              req != nullptr) {
-                        parent->prefetch_epoch_.fetch_add(
+                        parent->prefetch_tracker_.epoch.fetch_add(
                             1, std::memory_order_release);
                         auto root = copy_trie_to_dest(
                             aux,
@@ -668,7 +675,7 @@ private:
                              req != nullptr) {
                         find_async_prefetch(
                             aux,
-                            parent->prefetch_epoch_,
+                            parent->prefetch_tracker_,
                             req->epoch,
                             req->start,
                             NibblesView{req->key});
@@ -767,7 +774,12 @@ public:
 
     uint64_t prefetch_epoch() const
     {
-        return prefetch_epoch_.load(std::memory_order_acquire);
+        return prefetch_tracker_.epoch.load(std::memory_order_acquire);
+    }
+
+    uint64_t prefetch_dropped() const
+    {
+        return prefetch_tracker_.dropped.load(std::memory_order_relaxed);
     }
 
     UpdateAux &aux()
@@ -872,6 +884,11 @@ public:
             .start = start,
             .key = Nibbles{key},
             .epoch = worker_thread_->prefetch_epoch()});
+    }
+
+    virtual uint64_t prefetch_dropped() const override
+    {
+        return worker_thread_->prefetch_dropped();
     }
 
     // threadsafe
@@ -1275,6 +1292,12 @@ void Db::find_async(
 {
     MONAD_ASSERT(impl_);
     impl_->find_async(root, key, block_id);
+}
+
+uint64_t Db::prefetch_dropped() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->prefetch_dropped();
 }
 
 Node::SharedPtr Db::load_root_for_version(uint64_t const block_id) const

@@ -154,6 +154,23 @@ namespace monad::vm::interpreter
     MONAD_VM_CHECK_REQUIREMENTS_AT(                                            \
         OP, SHIFT, MONAD_VM_MUST_TAIL return ctx.exit)
 
+#if defined(MONAD_ZKVM_ZISK)
+// Separate selected error exits so GCC need not merge them and keep an extra
+// copy of ctx. Apply only to DUP2-16 overflow checks here.
+    #define MONAD_VM_EXIT_OWN_OVERFLOW(CODE)                                   \
+        MONAD_VM_MUST_TAIL return ::monad::vm::interpreter::                   \
+            exit_stack_overflow(ctx)
+    #define MONAD_VM_CHECK_OWN_OVERFLOW(OP)                                    \
+        MONAD_VM_CHECK_REQUIREMENTS_AT_EXITS(                                  \
+            OP,                                                                \
+            0,                                                                 \
+            MONAD_VM_MUST_TAIL return ctx.exit,                                \
+            MONAD_VM_MUST_TAIL return ctx.exit,                                \
+            MONAD_VM_EXIT_OWN_OVERFLOW)
+#else
+    #define MONAD_VM_CHECK_OWN_OVERFLOW(OP) MONAD_VM_CHECK(OP)
+#endif
+
 // Charge gas only. Each caller must justify why its stack checks cannot fail.
 #define MONAD_VM_CHARGE(OP)                                                    \
     do {                                                                       \
@@ -172,7 +189,6 @@ namespace monad::vm::interpreter
 // Check without changing state; charge the total gas only on success.
 // On failure, per-opcode checks preserve error order and gas accounting.
 // Unneeded stack bounds compile away.
-// Reuse the cached stack limit; the adjustment folds to zero for growth 1.
 #define MONAD_VM_FUSED_OK(REQ)                                                 \
     ((gas_remaining >= (REQ).gas) &&                                           \
      ((REQ).min_required == 0 ||                                               \
@@ -180,7 +196,7 @@ namespace monad::vm::interpreter
            ? stack_top.next_slot() > (stack_bottom)                            \
            : stack_top.next_slot() >= (stack_bottom) + (REQ).min_required)) && \
      ((REQ).max_growth == 0 ||                                                 \
-      stack_top.next_slot() < ctx.stack_limit + (1 - (REQ).max_growth)))
+      stack_top.next_slot() < (ctx.stack_limit + (1 - (REQ).max_growth))))
 
 // Dispatch using OP2, the opcode already read at instr_ptr[1].
 // EQ/ISZERO's stack writes prevent GCC from reusing that load itself;
@@ -1589,6 +1605,10 @@ namespace monad::vm::interpreter
 
     // Stack
 
+#if defined(MONAD_ZKVM_ZISK)
+
+#endif
+
     template <size_t N, Traits traits>
         requires(N <= 32)
     MONAD_VM_INSTRUCTION_CALL void push(
@@ -1644,78 +1664,90 @@ namespace monad::vm::interpreter
                 MONAD_VM_FUSED_NEXT(3, 0);
             }
         }
-        // Use PUSH2's immediate directly as the JUMP/JUMPI destination.
-        // Check gas and stack in opcode order, then validate taken jumps.
+        // Use PUSH2's immediate directly as the jump destination.
         if constexpr (N == 2) {
             // Match JUMP and JUMPI with one range check: they are consecutive.
             // size_t and not unsigned for the difference: a 32-bit subtract
             // puts this on ZisK's generic binary machine on every PUSH2.
-            if (static_cast<size_t>(next_opcode) - static_cast<size_t>(JUMP) <=
-                1u) {
-                // Decode PUSH2's destination with the shared big-endian reader
-                // to favor the cheaper packh sequence on ZisK.
-                auto const destination =
-                    static_cast<size_t>(detail::load_be_k<2>(instr_ptr + 1));
-                if (next_opcode == static_cast<std::uint8_t>(JUMP)) {
-                    static constexpr auto requirements =
-                        fused_requirements<traits, PUSH2, JUMP>();
-                    if (MONAD_LIKELY(MONAD_VM_FUSED_OK(requirements))) {
-                        gas_remaining -= requirements.gas;
+            auto const monad_vm_jump =
+                static_cast<size_t>(next_opcode) - static_cast<size_t>(JUMP);
+            if (monad_vm_jump <= 1u) {
+                if (monad_vm_jump == 0) {
+                    {
+                        // Decode PUSH2's destination with the shared big-endian
+                        // reader to favor the cheaper packh sequence on ZisK.
+                        auto const destination = static_cast<size_t>(
+                            detail::load_be_k<2>(instr_ptr + 1));
+                        static constexpr auto requirements =
+                            fused_requirements<traits, PUSH2, JUMP>();
+                        if (MONAD_LIKELY(MONAD_VM_FUSED_OK(requirements))) {
+                            gas_remaining -= requirements.gas;
+                        }
+                        else {
+                            MONAD_VM_CHECK(PUSH2);
+                            // PUSH2 supplies the operand required by JUMP.
+                            MONAD_DEBUG_ASSERT(
+                                stack_top.next_slot() >= stack_bottom);
+                            MONAD_VM_CHARGE(JUMP);
+                        }
+                        if (MONAD_UNLIKELY(
+                                !analysis.is_jumpdest(destination))) {
+                            ctx.exit(Error);
+                        }
+                        auto const *next_instruction =
+                            analysis.code() + destination;
+                        next_instruction = swallow_jumpdest(
+                            ctx, next_instruction, gas_remaining);
+                        instr_ptr = next_instruction;
+                        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF
+                            [*instr_ptr](
+                                ctx,
+                                analysis,
+                                stack_bottom,
+                                stack_top,
+                                gas_remaining,
+                                instr_ptr MONAD_VM_TBL_ARG);
+                    }
+                }
+                {
+                    static constexpr auto jump_requirements =
+                        fused_requirements<traits, PUSH2, JUMPI>();
+                    if (MONAD_LIKELY(MONAD_VM_FUSED_OK(jump_requirements))) {
+                        gas_remaining -= jump_requirements.gas;
                     }
                     else {
                         MONAD_VM_CHECK(PUSH2);
-                        // PUSH2 supplies the operand required by JUMP.
-                        MONAD_DEBUG_ASSERT(
-                            stack_top.next_slot() >= stack_bottom);
-                        MONAD_VM_CHARGE(JUMP);
+                        MONAD_VM_CHECK_AT(JUMPI, 1);
                     }
-                    if (MONAD_UNLIKELY(!analysis.is_jumpdest(destination))) {
-                        ctx.exit(Error);
+                    // The condition is the original top, below PUSH2's
+                    // destination.
+                    if (*stack_top) {
+                        // An untaken jump does not need its destination
+                        // decoded.
+                        auto const destination = static_cast<size_t>(
+                            detail::load_be_k<2>(instr_ptr + 1));
+                        if (MONAD_UNLIKELY(
+                                !analysis.is_jumpdest(destination))) {
+                            ctx.exit(Error);
+                        }
+                        auto const *next_instruction =
+                            analysis.code() + destination;
+                        next_instruction = swallow_jumpdest(
+                            ctx, next_instruction, gas_remaining);
+                        instr_ptr = next_instruction;
+                        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF
+                            [*instr_ptr](
+                                ctx,
+                                analysis,
+                                stack_bottom,
+                                stack_top - 1, // Consume JUMPI's condition.
+                                gas_remaining,
+                                instr_ptr MONAD_VM_TBL_ARG);
                     }
-                    auto const *next_instruction =
-                        analysis.code() + destination;
-                    next_instruction =
-                        swallow_jumpdest(ctx, next_instruction, gas_remaining);
-                    instr_ptr = next_instruction;
-                    MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
-                        ctx,
-                        analysis,
-                        stack_bottom,
-                        stack_top,
-                        gas_remaining,
-                        instr_ptr MONAD_VM_TBL_ARG);
+                    // Skip the pair and consume the condition when the jump is
+                    // not taken.
+                    MONAD_VM_FUSED_NEXT(4, -1);
                 }
-                static constexpr auto jump_requirements =
-                    fused_requirements<traits, PUSH2, JUMPI>();
-                if (MONAD_LIKELY(MONAD_VM_FUSED_OK(jump_requirements))) {
-                    gas_remaining -= jump_requirements.gas;
-                }
-                else {
-                    MONAD_VM_CHECK(PUSH2);
-                    MONAD_VM_CHECK_AT(JUMPI, 1);
-                }
-                // The condition is the original top, below PUSH2's destination.
-                if (*stack_top) {
-                    if (MONAD_UNLIKELY(!analysis.is_jumpdest(destination))) {
-                        ctx.exit(Error);
-                    }
-                    auto const *next_instruction =
-                        analysis.code() + destination;
-                    next_instruction =
-                        swallow_jumpdest(ctx, next_instruction, gas_remaining);
-                    instr_ptr = next_instruction;
-                    MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
-                        ctx,
-                        analysis,
-                        stack_bottom,
-                        stack_top - 1, // Consume JUMPI's condition.
-                        gas_remaining,
-                        instr_ptr MONAD_VM_TBL_ARG);
-                }
-                // Advance instr_ptr by 4 bytes, reduce the stack size by 1 to
-                // consume JUMPI's condition, and call the next opcode handler.
-                // Returns from the current handler.
-                MONAD_VM_FUSED_NEXT(4, -1);
             }
         }
 #endif
@@ -1790,18 +1822,26 @@ namespace monad::vm::interpreter
             }
         }
 #endif
+#if defined(MONAD_ZKVM_ZISK)
+        if constexpr (N == 1) {
+            MONAD_VM_CHECK(DUP1);
+
+            push(stack_top, *stack_top);
+
+            MONAD_VM_NEXT_OP(DUP1, next_opcode);
+        }
+        else {
+            MONAD_VM_CHECK_OWN_OVERFLOW(DUP1 + (N - 1));
+
+            push(stack_top, stack_top[-(N - 1)]);
+
+            MONAD_VM_NEXT(DUP1 + (N - 1));
+        }
+#else
         MONAD_VM_CHECK(DUP1 + (N - 1));
 
         push(stack_top, stack_top[-(N - 1)]);
 
-#if defined(MONAD_ZKVM_ZISK)
-        if constexpr (N == 1) {
-            MONAD_VM_NEXT_OP(DUP1, next_opcode);
-        }
-        else {
-            MONAD_VM_NEXT(DUP1 + (N - 1));
-        }
-#else
         MONAD_VM_NEXT(DUP1 + (N - 1));
 #endif
     }

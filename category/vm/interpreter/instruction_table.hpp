@@ -1912,6 +1912,8 @@ namespace monad::vm::interpreter
                     gas_remaining,
                     instr_ptr MONAD_VM_TBL_ARG);
             }
+            // Encourage GCC to retain instr_ptr while checking the stack limit.
+            MONAD_VM_LAUNDER(instr_ptr);
         }
 #endif
         MONAD_VM_CHECK(PUSH0 + N);

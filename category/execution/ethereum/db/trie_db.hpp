@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/async/io.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
@@ -111,6 +112,9 @@ private:
     std::atomic<uint64_t> n_account_value_{0};
     std::atomic<uint64_t> n_storage_no_value_{0};
     std::atomic<uint64_t> n_storage_value_{0};
+    // AsyncIO record snapshot at the last print_stats, so the io* counters
+    // are reported per interval like the counters above
+    async::IORecord last_io_records_{};
 
     void stats_account_no_value()
     {

@@ -428,6 +428,24 @@ std::string TrieDb::print_stats()
     n_account_value_.store(0, std::memory_order_release);
     n_storage_no_value_.store(0, std::memory_order_release);
     n_storage_value_.store(0, std::memory_order_release);
+    // Per-interval AsyncIO counters of the db's io (on-disk dbs only): reads
+    // and writes submitted, KiB read and written, reads retried on EAGAIN,
+    // and the peak in-flight depth since start. Read across threads as a
+    // statistic, see AsyncIO::records().
+    if (auto const *const io = db_.io(); io != nullptr) {
+        async::IORecord const rec = io->records();
+        ret += std::format(
+            ",ior={:6},iorkb={:7},iow={:5},iowkb={:7},iorr={:3},iomax={:3}/"
+            "{:3}",
+            rec.nreads - last_io_records_.nreads,
+            (rec.bytes_read - last_io_records_.bytes_read) / 1024,
+            rec.nwrites - last_io_records_.nwrites,
+            (rec.bytes_written - last_io_records_.bytes_written) / 1024,
+            rec.reads_retried - last_io_records_.reads_retried,
+            rec.max_inflight_rd,
+            rec.max_inflight_wr);
+        last_io_records_ = rec;
+    }
     if (cache_) {
         ret += ",ac=" + cache_->accounts_stats() +
                ",sc=" + cache_->storage_stats();

@@ -53,6 +53,9 @@ struct IORecord
     // Reads and scatter reads which got a EAGAIN and were retried
     unsigned reads_retried{0};
     uint64_t bytes_read{0};
+
+    uint64_t nwrites{0};
+    uint64_t bytes_written{0};
 };
 
 class AsyncIO final
@@ -200,6 +203,29 @@ public:
         return records_.bytes_read;
     }
 
+    uint64_t total_writes_submitted() const noexcept
+    {
+        return records_.nwrites;
+    }
+
+    uint64_t total_bytes_written() const noexcept
+    {
+        return records_.bytes_written;
+    }
+
+    unsigned total_reads_retried() const noexcept
+    {
+        return records_.reads_retried;
+    }
+
+    // Snapshot of all counters. The counters are plain fields updated by the
+    // owning thread; a snapshot taken from another thread is a statistics
+    // read, not a synchronization point.
+    IORecord const &records() const noexcept
+    {
+        return records_;
+    }
+
     unsigned concurrent_read_io_limit() const noexcept
     {
         return concurrent_read_io_limit_;
@@ -299,6 +325,8 @@ public:
         records_.nreads = 0;
         records_.bytes_read = 0;
         records_.reads_retried = 0;
+        records_.nwrites = 0;
+        records_.bytes_written = 0;
     }
 
     size_t submit_read_request(
@@ -357,6 +385,8 @@ public:
         if (++records_.inflight_wr > records_.max_inflight_wr) {
             records_.max_inflight_wr = records_.inflight_wr;
         }
+        ++records_.nwrites;
+        records_.bytes_written += buffer.size();
     }
 
     /* This isn't the ideal place to put this, but only AsyncIO knows how to
@@ -627,7 +657,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 256);
+static_assert(sizeof(AsyncIO) == 272);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

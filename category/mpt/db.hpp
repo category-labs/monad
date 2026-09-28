@@ -228,6 +228,10 @@ public:
     // Safe on a read-only handle while the writer is live.
     DbStorageStats get_storage_stats() const;
 
+    // The AsyncIO an on-disk db does its reads and writes through, for
+    // statistics (AsyncIO::records()). nullptr for an in-memory db.
+    async::AsyncIO const *io() const;
+
     // Timeline lifecycle (callable on the primary Db only).
     //
     // All three require the secondary Db (if one was issued) to be

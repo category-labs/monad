@@ -1415,6 +1415,12 @@ UpdateAux const &Db::aux() const
     return impl_->aux();
 }
 
+async::AsyncIO const *Db::io() const
+{
+    MONAD_ASSERT(impl_);
+    return impl_->aux().io;
+}
+
 UpdateAux &Db::aux()
 {
     MONAD_ASSERT(impl_);

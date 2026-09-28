@@ -999,6 +999,11 @@ std::vector<Receipt::Log> const &State::logs()
     return logs_;
 }
 
+std::vector<Receipt::Log> State::take_logs()
+{
+    return std::exchange(logs_, {});
+}
+
 void State::store_log(Receipt::Log const &log)
 {
     logs_.push_back(log);

@@ -484,7 +484,21 @@ decode_transaction_list(byte_string_view &enc, Out const raw_transactions)
     std::vector<Transaction> transactions;
     BOOST_OUTCOME_TRY(auto ls, parse_list_metadata(enc));
 
-    // TODO: Reserve txn vector size for better perf
+    // Counted before it is filled, headers only: a vector that starts empty
+    // doubles its way up, and every intermediate capacity moves each
+    // Transaction already in it -- with a bump allocator, into memory
+    // allocated for it and then abandoned. The count stops at a malformed
+    // header and leaves its error to the loop below.
+    {
+        size_t count = 0;
+        for (auto rest = ls; !rest.empty() && parse_metadata(rest).has_value();
+             ++count) {
+        }
+        transactions.reserve(count);
+        if constexpr (keep_raw_transactions) {
+            raw_transactions.get().reserve(count);
+        }
+    }
     while (!ls.empty()) {
         if (ls[0] >= 0xc0) {
             auto const before = ls;

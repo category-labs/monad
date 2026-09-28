@@ -47,10 +47,21 @@
     #error "No compiler support for __has_attribute"
 #endif
 
+#if defined(MONAD_ZKVM_ZISK)
+// Hide P's new value from the optimiser, so that what follows reads through
+// it rather than through the old one. The old value then dies here and its
+// register can take the new one; otherwise both stay live, and gcc keeps a
+// copy of one of them from the handler's first instruction on.
+    #define MONAD_VM_LAUNDER(P) asm("" : "+r"(P))
+#else
+    #define MONAD_VM_LAUNDER(P)
+#endif
+
 // Evaluate NEXT_OPCODE after advancing instr_ptr; it may be *instr_ptr.
 #define MONAD_VM_DISPATCH(NBYTES, DELTA, NEXT_OPCODE)                          \
     do {                                                                       \
         instr_ptr += (NBYTES);                                                 \
+        MONAD_VM_LAUNDER(instr_ptr);                                           \
         if constexpr (debug_enabled) {                                         \
             trace(analysis, gas_remaining, instr_ptr);                         \
         }                                                                      \

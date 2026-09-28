@@ -790,10 +790,20 @@ namespace monad::vm::interpreter
        uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(LT);
+#if defined(MONAD_ZKVM_ZISK)
+        // Move to the result slot before comparing; dispatch reuses this top.
+        auto *next = stack_top.next_slot() - 1;
+        MONAD_VM_LAUNDER(next);
+        stack_top = StackTop{next};
+        *stack_top = *(stack_top + 1) < *stack_top;
+
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+#else
         auto &&[a, b] = top_two(stack_top);
         b = a < b;
 
         MONAD_VM_NEXT(LT);
+#endif
     }
 
     template <Traits traits>
@@ -803,10 +813,20 @@ namespace monad::vm::interpreter
        uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(GT);
+#if defined(MONAD_ZKVM_ZISK)
+        // As LT.
+        auto *next = stack_top.next_slot() - 1;
+        MONAD_VM_LAUNDER(next);
+        stack_top = StackTop{next};
+        *stack_top = *(stack_top + 1) > *stack_top;
+
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+#else
         auto &&[a, b] = top_two(stack_top);
         b = a > b;
 
         MONAD_VM_NEXT(GT);
+#endif
     }
 
     template <Traits traits>
@@ -816,10 +836,20 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(SLT);
+#if defined(MONAD_ZKVM_ZISK)
+        // As LT.
+        auto *next = stack_top.next_slot() - 1;
+        MONAD_VM_LAUNDER(next);
+        stack_top = StackTop{next};
+        *stack_top = slt(*(stack_top + 1), *stack_top);
+
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+#else
         auto &&[a, b] = top_two(stack_top);
         b = slt(a, b);
 
         MONAD_VM_NEXT(SLT);
+#endif
     }
 
     template <Traits traits>
@@ -829,10 +859,20 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(SGT);
+#if defined(MONAD_ZKVM_ZISK)
+        // As LT.
+        auto *next = stack_top.next_slot() - 1;
+        MONAD_VM_LAUNDER(next);
+        stack_top = StackTop{next};
+        *stack_top = slt(*stack_top, *(stack_top + 1)); // swapped arguments
+
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+#else
         auto &&[a, b] = top_two(stack_top);
         b = slt(b, a); // note swapped arguments
 
         MONAD_VM_NEXT(SGT);
+#endif
     }
 
     template <Traits traits>

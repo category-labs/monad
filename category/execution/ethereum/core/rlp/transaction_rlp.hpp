@@ -32,6 +32,9 @@ byte_string encode_access_list(AccessList const &);
 byte_string encode_authorization_entry_for_signing(AuthorizationEntry const &);
 byte_string encode_transaction(Transaction const &);
 byte_string encode_transaction_for_signing(Transaction const &);
+// encode_transaction_for_signing's bytes, taken from `enc`, the encoding
+// `txn` was decoded from, rather than re-encoded field by field.
+byte_string signing_payload(Transaction const &txn, byte_string_view enc);
 
 Result<std::vector<bytes32_t>> decode_access_entry_keys(byte_string_view &);
 Result<AccessEntry> decode_access_entry(byte_string_view &);

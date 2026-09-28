@@ -32,6 +32,9 @@ byte_string encode_access_list(AccessList const &);
 byte_string encode_authorization_entry_for_signing(AuthorizationEntry const &);
 byte_string encode_transaction(Transaction const &);
 byte_string encode_transaction_for_signing(Transaction const &);
+// Like encode_transaction_for_signing, reusing the original bytes.
+// Requires enc to be the complete encoding used to decode txn.
+byte_string signing_payload(Transaction const &txn, byte_string_view enc);
 
 Result<std::vector<bytes32_t>> decode_access_entry_keys(byte_string_view &);
 Result<AccessEntry> decode_access_entry(byte_string_view &);

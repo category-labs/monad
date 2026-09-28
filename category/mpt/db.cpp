@@ -455,6 +455,10 @@ public:
 
 private:
     ::moodycamel::ConcurrentQueue<Comms> comms_;
+    // Low-priority queue for fire-and-forget prefetch finds. Serviced only
+    // when comms_ is empty, so a prefetch backlog never adds latency to
+    // blocking finds and upserts (head-of-line blocking during execution).
+    ::moodycamel::ConcurrentQueue<Comms> prefetch_comms_;
     std::mutex lock_;
     std::condition_variable cond_;
     // The epoch is advanced by the worker before every trie-mutating
@@ -580,7 +584,8 @@ private:
                      */
                     parent->cond_.wait_for(g, std::chrono::seconds(1), [this] {
                         return done.load(std::memory_order_acquire) ||
-                               parent->comms_.size_approx() > 0;
+                               parent->comms_.size_approx() > 0 ||
+                               parent->prefetch_comms_.size_approx() > 0;
                     });
                     sleeping.store(false, std::memory_order_release);
                 }
@@ -671,8 +676,10 @@ private:
                             req->write_root);
                         req->promise.set_value(std::move(root));
                     }
-                    else if (auto *req = std::get_if<9>(&request);
-                             req != nullptr) {
+                    did_nothing = false;
+                }
+                else if (parent->prefetch_comms_.try_dequeue(request)) {
+                    if (auto *req = std::get_if<9>(&request); req != nullptr) {
                         find_async_prefetch(
                             aux,
                             parent->prefetch_tracker_,
@@ -703,7 +710,8 @@ private:
                      */
                     parent->cond_.wait_for(g, std::chrono::seconds(1), [this] {
                         return done.load(std::memory_order_acquire) ||
-                               parent->comms_.size_approx() > 0;
+                               parent->comms_.size_approx() > 0 ||
+                               parent->prefetch_comms_.size_approx() > 0;
                     });
                     sleeping.store(false, std::memory_order_release);
                 }
@@ -766,6 +774,16 @@ public:
     {
         MONAD_ASSERT(worker_ != nullptr);
         comms_.enqueue(std::move(request));
+        if (worker_->sleeping.load(std::memory_order_acquire)) {
+            std::unique_lock const g(lock_);
+            cond_.notify_one();
+        }
+    }
+
+    void submit_prefetch(Comms request)
+    {
+        MONAD_ASSERT(worker_ != nullptr);
+        prefetch_comms_.enqueue(std::move(request));
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
             cond_.notify_one();
@@ -880,10 +898,11 @@ public:
             !aux().metadata_ctx().version_is_valid_ondisk(version, tid_)) {
             return;
         }
-        worker_thread_->submit(OnDiskDbServiceThread::PrefetchFindRequest{
-            .start = start,
-            .key = Nibbles{key},
-            .epoch = worker_thread_->prefetch_epoch()});
+        worker_thread_->submit_prefetch(
+            OnDiskDbServiceThread::PrefetchFindRequest{
+                .start = start,
+                .key = Nibbles{key},
+                .epoch = worker_thread_->prefetch_epoch()});
     }
 
     virtual uint64_t prefetch_dropped() const override

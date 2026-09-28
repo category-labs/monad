@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/mpt/config.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -296,11 +297,15 @@ validate_output_header(BlockHeader const &input, BlockHeader const &output)
     if (MONAD_UNLIKELY(input.ommers_hash != output.ommers_hash)) {
         return BlockError::WrongOmmersHash;
     }
-    if (MONAD_UNLIKELY(input.transactions_root != output.transactions_root)) {
-        return BlockError::WrongMerkleRoot;
-    }
-    if (MONAD_UNLIKELY(input.withdrawals_root != output.withdrawals_root)) {
-        return BlockError::WrongMerkleRoot;
+    // A non-hexary benchmark trie cannot reproduce Ethereum roots.
+    if constexpr (mpt::NIBBLE_BITS == 4) {
+        if (MONAD_UNLIKELY(
+                input.transactions_root != output.transactions_root)) {
+            return BlockError::WrongMerkleRoot;
+        }
+        if (MONAD_UNLIKELY(input.withdrawals_root != output.withdrawals_root)) {
+            return BlockError::WrongMerkleRoot;
+        }
     }
 
     // Second, validate execution outputs known before commit.
@@ -325,11 +330,14 @@ validate_output_header(BlockHeader const &input, BlockHeader const &output)
     }
 
     // Lastly, validate execution outputs only known after commit.
-    if (MONAD_UNLIKELY(input.state_root != output.state_root)) {
-        return BlockError::WrongMerkleRoot;
-    }
-    if (MONAD_UNLIKELY(input.receipts_root != output.receipts_root)) {
-        return BlockError::WrongMerkleRoot;
+    // A non-hexary benchmark trie cannot reproduce Ethereum roots.
+    if constexpr (mpt::NIBBLE_BITS == 4) {
+        if (MONAD_UNLIKELY(input.state_root != output.state_root)) {
+            return BlockError::WrongMerkleRoot;
+        }
+        if (MONAD_UNLIKELY(input.receipts_root != output.receipts_root)) {
+            return BlockError::WrongMerkleRoot;
+        }
     }
 
     return success();

@@ -83,15 +83,8 @@ namespace
 {
     bytes32_t to_bytes32(Nibbles const &nibbles)
     {
-        MONAD_ASSERT(nibbles.nibble_size() == sizeof(bytes32_t) * 2);
-        if (nibbles.begin_nibble()) { // not left-aligned
-            Nibbles const compact_nibbles = nibbles.substr(0);
-            MONAD_ASSERT(compact_nibbles.data_size() == sizeof(bytes32_t));
-            return to_bytes(byte_string_view{
-                compact_nibbles.data(), compact_nibbles.data_size()});
-        }
-        MONAD_ASSERT(nibbles.data_size() == sizeof(bytes32_t));
-        return to_bytes(byte_string_view{nibbles.data(), nibbles.data_size()});
+        MONAD_ASSERT(nibbles.nibble_size() == MachineBase::KEY_NIBBLES);
+        return to_bytes(nibbles_to_bytes(NibblesView{nibbles}));
     }
 
     struct BinaryDbLoader
@@ -474,10 +467,10 @@ mpt::Compute &MachineBase::get_compute() const
         if (MONAD_UNLIKELY(depth == prefix_length)) {
             return account_root_compute;
         }
-        else if (depth < prefix_length + 2 * sizeof(bytes32_t)) {
+        else if (depth < prefix_length + KEY_NIBBLES) {
             return account_compute;
         }
-        else if (depth == prefix_length + 2 * sizeof(bytes32_t)) {
+        else if (depth == prefix_length + KEY_NIBBLES) {
             return storage_root_compute();
         }
         else {
@@ -912,7 +905,8 @@ mpt::Nibbles proposal_prefix(bytes32_t const &block_id)
 std::vector<bytes32_t>
 get_proposal_block_ids(mpt::Db &db, uint64_t const block_number)
 {
-    static constexpr uint64_t PROPOSAL_PREFIX_LEN = 1 + sizeof(bytes32_t) * 2;
+    static constexpr uint64_t PROPOSAL_PREFIX_LEN =
+        1 + MachineBase::KEY_NIBBLES;
 
     class ProposalTraverseMachine final : public TraverseMachine
     {
@@ -1001,10 +995,9 @@ Result<std::vector<Transaction>> get_transactions(
     txs.reserve(1000);
     GetAllMachine machine{
         [&txs](NibblesView const path, byte_string_view value) {
-            // nibble size is even and first nibble starts at index 0
-            MONAD_ASSERT(path.nibble_size() == path.data_size() * 2);
-            // convert nibbles to byte_string
-            byte_string_view raw{path.data(), path.data_size()};
+            // convert nibbles back to the rlp-encoded index bytes
+            byte_string const raw_bytes = nibbles_to_bytes(path);
+            byte_string_view raw{raw_bytes};
             auto const index_res = rlp::decode_unsigned<uint32_t>(raw);
             MONAD_ASSERT(index_res.has_value());
             uint32_t const idx = index_res.value();
@@ -1056,8 +1049,9 @@ bool for_each_code(
 
             path_ = concat(NibblesView{path_}, branch, node.path_nibble_view());
             if (node.has_value()) {
-                MONAD_ASSERT(path_.nibble_size() == (sizeof(bytes32_t) * 2));
-                fn_(to_bytes({path_.data(), sizeof(bytes32_t)}), node.value());
+                MONAD_ASSERT(path_.nibble_size() == MachineBase::KEY_NIBBLES);
+                fn_(to_bytes(nibbles_to_bytes(NibblesView{path_})),
+                    node.value());
                 return false;
             }
             return true;

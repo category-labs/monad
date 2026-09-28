@@ -271,13 +271,13 @@ struct compact_offset_pair
 static_assert(sizeof(compact_offset_pair) == 8);
 static_assert(alignof(compact_offset_pair) == 4);
 
-constexpr unsigned bitmask_index(uint16_t const mask, unsigned const i) noexcept
+constexpr unsigned bitmask_index(mask_t const mask, unsigned const i) noexcept
 {
-    MONAD_ASSERT(i < 16);
+    MONAD_ASSERT(i < NIBBLE_BRANCHES);
     MONAD_ASSERT(mask & (1u << i));
-    uint16_t const filter = UINT16_MAX >> (16 - i);
+    mask_t const filter = static_cast<mask_t>((1u << i) - 1u);
     return static_cast<unsigned>(
-        std::popcount(static_cast<uint16_t>(mask & filter)));
+        std::popcount(static_cast<mask_t>(mask & filter)));
 }
 
 //! convert an integral's least significant N bytes to a size-N byte string

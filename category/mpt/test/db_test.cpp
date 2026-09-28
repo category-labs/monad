@@ -1861,7 +1861,7 @@ TYPED_TEST(DbTraverseTest, traverse_blocking_custom_children_iterator)
     struct ReverseChildrenRange
     {
         std::vector<std::pair<uint8_t, unsigned char>>
-        operator()(uint16_t const mask) const
+        operator()(mask_t const mask) const
         {
             std::vector<std::pair<uint8_t, unsigned char>> children;
             for (auto const &p : NodeChildrenRange(mask)) {

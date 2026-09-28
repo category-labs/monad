@@ -122,7 +122,7 @@ void flush_buffered_writes(UpdateAux &);
 
 void erase_child_from_parent(UpdateTNode &parent, ChildData &entry)
 {
-    parent.mask &= static_cast<uint16_t>(~(1u << entry.branch));
+    parent.mask &= static_cast<mask_t>(~(1u << entry.branch));
     entry.erase();
     parent.child_done();
 }
@@ -130,7 +130,7 @@ void erase_child_from_parent(UpdateTNode &parent, ChildData &entry)
 void erase_child_from_parent(
     UpdateExpireBase &parent, uint8_t const branch, uint8_t const index)
 {
-    parent.mask &= static_cast<uint16_t>(~(1u << branch));
+    parent.mask &= static_cast<mask_t>(~(1u << branch));
     if (parent.type == tnode_type::update) {
         static_cast<UpdateTNode *>(&parent)->children[index].erase();
     }
@@ -526,10 +526,10 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
 }
 
 Node::SharedPtr create_node_from_children_if_any(
-    UpdateAux &aux, StateMachine &sm, uint16_t const orig_mask,
-    uint16_t const mask, std::span<ChildData> const children,
-    NibblesView const path, std::optional<byte_string_view> const leaf_data,
-    int64_t const version, timeline_id const tid)
+    UpdateAux &aux, StateMachine &sm, mask_t const orig_mask, mask_t const mask,
+    std::span<ChildData> const children, NibblesView const path,
+    std::optional<byte_string_view> const leaf_data, int64_t const version,
+    timeline_id const tid)
 {
     aux.collect_number_nodes_created_stats();
     // handle non child and single child cases
@@ -565,7 +565,7 @@ Node::SharedPtr create_node_from_children_if_any(
             if (child.is_valid() && child.offset == INVALID_OFFSET) {
                 // write updated node or node to be compacted to disk
                 // won't duplicate write of unchanged old child
-                MONAD_ASSERT(child.branch < 16);
+                MONAD_ASSERT(child.branch < NIBBLE_BRANCHES);
                 MONAD_ASSERT(child.ptr);
                 child.offset =
                     async_write_node_set_spare(aux, *child.ptr, true);
@@ -619,7 +619,7 @@ void create_node_compute_data_possibly_async(
                     auto *parent = tnode->parent();
                     MONAD_ASSERT(parent);
                     auto &entry = parent->children[tnode->child_index()];
-                    MONAD_ASSERT(entry.branch < 16);
+                    MONAD_ASSERT(entry.branch < NIBBLE_BRANCHES);
                     auto &child = tnode->children[bitmask_index(
                         tnode->orig_mask,
                         static_cast<unsigned>(std::countr_zero(tnode->mask)))];
@@ -652,7 +652,7 @@ void create_node_compute_data_possibly_async(
         tnode->opt_leaf_data,
         tnode->version,
         tid);
-    MONAD_ASSERT(entry.branch < 16);
+    MONAD_ASSERT(entry.branch < NIBBLE_BRANCHES);
     if (node) {
         parent.version = std::max(parent.version, node->version);
         entry.finalize(std::move(node), sm.get_compute(), sm.cache());
@@ -802,7 +802,7 @@ void create_new_trie_from_requests_(
     timeline_id const tid)
 {
     // version will be updated bottom up
-    uint16_t const mask = requests.mask;
+    mask_t const mask = requests.mask;
     std::vector<ChildData> children(size_t(std::popcount(mask)));
     for (auto const [index, branch] : NodeChildrenRange(mask)) {
         children[index].branch = branch;
@@ -967,7 +967,7 @@ void dispatch_updates_impl_(
     timeline_id const tid)
 {
     Node *old = old_ptr.get();
-    uint16_t const orig_mask = old->mask | requests.mask;
+    mask_t const orig_mask = old->mask | requests.mask;
     // tnode->version will be updated bottom up
     auto tnode = make_tnode(
         orig_mask,
@@ -1044,8 +1044,8 @@ void mismatch_handler_(
     MONAD_ASSERT(!requests.opt_leaf.has_value());
     unsigned char const old_nibble =
         old.path_nibble_view().get(old_prefix_index);
-    uint16_t const orig_mask =
-        static_cast<uint16_t>(1u << old_nibble | requests.mask);
+    mask_t const orig_mask =
+        static_cast<mask_t>(1u << old_nibble | requests.mask);
     auto tnode = make_tnode(orig_mask, &parent, entry.branch, path);
     auto const number_of_children =
         static_cast<unsigned>(std::popcount(orig_mask));
@@ -1215,7 +1215,7 @@ void fillin_parent_after_expiration(
             MONAD_ASSERT(parent->type == tnode_type::expire);
             auto *const expire_parent = static_cast<ExpireTNode *>(parent);
             if (cache_node) {
-                expire_parent->cache_mask |= static_cast<uint16_t>(1u << index);
+                expire_parent->cache_mask |= static_cast<mask_t>(1u << index);
             }
             expire_parent->node->set_next(index, std::move(new_node));
             expire_parent->node->set_subtrie_min_version(index, min_version);
@@ -1392,7 +1392,7 @@ void try_fillin_parent_with_rewritten_node(
         // Delay tnode->node deallocation to parent ExpireTNode
         p->node->set_next(index, std::move(tnode->node));
         if (tnode->cache_node) {
-            p->cache_mask |= static_cast<uint16_t>(1u << tnode->index);
+            p->cache_mask |= static_cast<mask_t>(1u << tnode->index);
         }
     }
     parent->child_done();

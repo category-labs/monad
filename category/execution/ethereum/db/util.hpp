@@ -45,14 +45,16 @@ struct BlockHeader;
 
 struct MachineBase : public mpt::StateMachine
 {
+    // symbols in a keccak256 / bytes32 key (64 for 4-bit, 52 for 5-bit)
+    static constexpr uint64_t KEY_NIBBLES =
+        mpt::nibbles_for_bytes(sizeof(bytes32_t));
     static constexpr uint64_t TABLE_PREFIX_LEN = 1;
     static constexpr uint64_t TOP_NIBBLE_PREFIX_LEN = 1;
     static constexpr uint64_t FINALIZED_PREFIX_LEN =
         TOP_NIBBLE_PREFIX_LEN + TABLE_PREFIX_LEN;
     static constexpr uint64_t PROPOSAL_PREFIX_LEN =
         TOP_NIBBLE_PREFIX_LEN +
-        sizeof(bytes32_t) * 2 /* use block_id as proposal prefix */ +
-        TABLE_PREFIX_LEN;
+        KEY_NIBBLES /* use block_id as proposal prefix */ + TABLE_PREFIX_LEN;
 
     enum class TrieType : uint8_t
     {
@@ -90,7 +92,7 @@ struct MachineBase : public mpt::StateMachine
 
     constexpr uint8_t max_depth(uint8_t const prefix_length) const
     {
-        return prefix_length + sizeof(bytes32_t) * 2 + sizeof(bytes32_t) * 2;
+        return static_cast<uint8_t>(prefix_length + 2 * KEY_NIBBLES);
     }
 
 protected:

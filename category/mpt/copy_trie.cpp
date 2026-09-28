@@ -39,10 +39,10 @@ Node::SharedPtr create_node_add_new_branch(
     Node::SharedPtr new_child, uint64_t const new_version,
     std::optional<byte_string_view> const opt_value)
 {
-    uint16_t const mask =
-        static_cast<uint16_t>(node->mask | (1u << new_branch));
+    mask_t const mask = static_cast<mask_t>(node->mask | (1u << new_branch));
     std::vector<ChildData> children(static_cast<unsigned>(std::popcount(mask)));
-    for (unsigned i = 0, j = 0, old_j = 0, bit = 1; i < 16; ++i, bit <<= 1) {
+    for (unsigned i = 0, j = 0, old_j = 0, bit = 1; i < NIBBLE_BRANCHES;
+         ++i, bit <<= 1) {
         if (i == new_branch) {
             auto &child = children[j];
             child.branch = (unsigned char)i;
@@ -81,8 +81,7 @@ Node::SharedPtr create_node_with_two_children(
 {
     // mismatch: split node's path: turn node to a branch node with two
     // children
-    uint16_t const mask =
-        static_cast<uint16_t>((1u << branch0) | (1u << branch1));
+    mask_t const mask = static_cast<mask_t>((1u << branch0) | (1u << branch1));
     bool const zero_comes_first = branch0 < branch1;
     ChildData children[2];
     {
@@ -139,7 +138,7 @@ Node::SharedPtr copy_trie_impl(
         child.min_offsets =
             calc_min_offsets(*child.ptr, aux.physical_to_virtual(child.offset));
         return make_node(
-            static_cast<uint16_t>(1u << child.branch),
+            static_cast<mask_t>(1u << child.branch),
             {&child, 1},
             {},
             src_root->value(),
@@ -156,7 +155,7 @@ Node::SharedPtr copy_trie_impl(
 
     using ParentIndexPair = std::pair<Node *, unsigned char>;
     std::vector<ParentIndexPair> vec_pairs;
-    vec_pairs.reserve(16);
+    vec_pairs.reserve(NIBBLE_BRANCHES);
     std::stack<ParentIndexPair, std::vector<ParentIndexPair>>
         parents_and_indexes{std::move(vec_pairs)};
 

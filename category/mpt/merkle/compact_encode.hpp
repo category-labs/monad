@@ -28,33 +28,55 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
+// Hex-prefix ("compact") encoding of a node path. For 4-bit symbols this is
+// the Ethereum encoding: flag byte (0x20 terminating, 0x10 odd length, low
+// nibble = first symbol when odd) followed by the remaining symbols two per
+// byte. For wider symbols the same flag byte (0x20 terminating, 0x10 odd
+// symbol count) is followed by the symbols bit-packed MSB-first; the odd flag
+// disambiguates the symbol count, since a given byte length holds at most two
+// consecutive counts.
 constexpr unsigned compact_encode_len(unsigned const si, unsigned const ei)
 {
     MONAD_ASSERT(ei >= si);
-    return (ei - si) / 2 + 1;
+    if constexpr (NIBBLE_BITS == 4) {
+        return (ei - si) / 2 + 1;
+    }
+    else {
+        return 1 + bytes_for_nibbles(ei - si);
+    }
 }
 
-// Transform the nibbles to its compact encoding
-// https://ethereum.org/en/developers/docs/data-structures-and-encoding/patricia-merkle-trie/
 constexpr void compact_encode_raw(
     unsigned char *const res, NibblesView const nibbles, bool const terminating)
 {
-    unsigned i = 0;
-
     MONAD_ASSERT(nibbles.nibble_size() || terminating);
 
-    // Populate first byte with the encoded nibbles type and potentially
-    // also the first nibble if number of nibbles is odd
     res[0] = terminating ? 0x20 : 0x00;
-    if (nibbles.nibble_size() % 2) {
-        res[0] |= static_cast<unsigned char>(0x10 | nibbles.get(0));
-        i = 1;
+    if constexpr (NIBBLE_BITS == 4) {
+        unsigned i = 0;
+        // Populate first byte with the encoded nibbles type and potentially
+        // also the first nibble if number of nibbles is odd
+        if (nibbles.nibble_size() % 2) {
+            res[0] |= static_cast<unsigned char>(0x10 | nibbles.get(0));
+            i = 1;
+        }
+        unsigned res_ci = 2;
+        for (; i < nibbles.nibble_size(); i++) {
+            set_nibble(res, res_ci, nibbles.get(i));
+            ++res_ci;
+        }
     }
-
-    unsigned res_ci = 2;
-    for (; i < nibbles.nibble_size(); i++) {
-        set_nibble(res, res_ci, nibbles.get(i));
-        ++res_ci;
+    else {
+        if (nibbles.nibble_size() % 2) {
+            res[0] |= 0x10;
+        }
+        unsigned const bytes = bytes_for_nibbles(nibbles.nibble_size());
+        for (unsigned i = 0; i < bytes; ++i) {
+            res[1 + i] = 0;
+        }
+        for (unsigned i = 0; i < nibbles.nibble_size(); i++) {
+            detail::set_symbol(res + 1, 0, i, nibbles.get(i));
+        }
     }
 }
 
@@ -62,13 +84,9 @@ constexpr void compact_encode_raw(
     unsigned char *const res, NibblesView const nibbles, bool const terminating)
 {
     compact_encode_raw(res, nibbles, terminating);
-    return byte_string_view{
-        res, nibbles.nibble_size() ? (nibbles.nibble_size() / 2 + 1) : 1u};
+    return byte_string_view{res, compact_encode_len(0, nibbles.nibble_size())};
 }
 
-// Decode a compact-encoded path.
-// Returns {nibbles, is_leaf} on success, or an rlp::DecodeError if enc is
-// empty or otherwise invalid.
 [[nodiscard]] inline Result<std::pair<Nibbles, bool>>
 compact_decode(byte_string_view const enc)
 {
@@ -84,13 +102,35 @@ compact_decode(byte_string_view const enc)
     bool const terminating = enc[0] & 0x20;
     bool const odd = enc[0] & 0x10;
 
-    // For even-length paths the low nibble of the prefix is padding and must
-    // be zero.
-    if (MONAD_UNLIKELY(!odd && (enc[0] & 0x0F))) {
-        return rlp::DecodeError::TypeUnexpected;
+    size_t nibble_count = 0;
+    if constexpr (NIBBLE_BITS == 4) {
+        // For even-length paths the low nibble of the prefix is padding and
+        // must be zero.
+        if (MONAD_UNLIKELY(!odd && (enc[0] & 0x0F))) {
+            return rlp::DecodeError::TypeUnexpected;
+        }
+        nibble_count = (enc.size() - 1) * 2 + static_cast<size_t>(odd);
     }
-
-    size_t const nibble_count = (enc.size() - 1) * 2 + static_cast<size_t>(odd);
+    else {
+        if (MONAD_UNLIKELY(enc[0] & 0x0F)) {
+            return rlp::DecodeError::TypeUnexpected;
+        }
+        // the largest symbol count that fits the payload, or one less when
+        // the parity flag says so
+        size_t const payload_bits = (enc.size() - 1) * 8;
+        nibble_count = payload_bits / NIBBLE_BITS;
+        if ((nibble_count % 2 != 0) != odd) {
+            if (MONAD_UNLIKELY(nibble_count == 0)) {
+                return rlp::DecodeError::TypeUnexpected;
+            }
+            --nibble_count;
+        }
+        if (MONAD_UNLIKELY(
+                nibble_count > 0 && bytes_for_nibbles(static_cast<unsigned>(
+                                        nibble_count)) != enc.size() - 1)) {
+            return rlp::DecodeError::TypeUnexpected;
+        }
+    }
 
     // A non-terminating (extension) node with an empty path is structurally
     // invalid — compact_encode asserts against it, so reject here to keep
@@ -99,20 +139,32 @@ compact_decode(byte_string_view const enc)
         return rlp::DecodeError::PathTooShort;
     }
 
-    // Nibbles uses uint8_t for length; reject inputs that would overflow it.
     if (MONAD_UNLIKELY(nibble_count > std::numeric_limits<uint8_t>::max())) {
         return rlp::DecodeError::PathTooLong;
     }
 
     Nibbles result{nibble_count};
 
-    size_t nibble_i = 0;
-    if (odd) {
-        result.set(static_cast<unsigned>(nibble_i++), enc[0] & 0x0F);
+    if constexpr (NIBBLE_BITS == 4) {
+        size_t nibble_i = 0;
+        if (odd) {
+            result.set(static_cast<unsigned>(nibble_i++), enc[0] & 0x0F);
+        }
+        for (size_t i = 1; i < enc.size(); ++i) {
+            result.set(static_cast<unsigned>(nibble_i++), enc[i] >> 4);
+            result.set(static_cast<unsigned>(nibble_i++), enc[i] & 0x0F);
+        }
     }
-    for (size_t i = 1; i < enc.size(); ++i) {
-        result.set(static_cast<unsigned>(nibble_i++), enc[i] >> 4);
-        result.set(static_cast<unsigned>(nibble_i++), enc[i] & 0x0F);
+    else {
+        for (unsigned i = 0; i < nibble_count; ++i) {
+            result.set(
+                i,
+                detail::get_symbol(
+                    enc.data() + 1,
+                    0,
+                    i,
+                    static_cast<unsigned>(enc.size() - 1)));
+        }
     }
 
     return std::pair{std::move(result), terminating};

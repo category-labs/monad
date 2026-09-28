@@ -41,6 +41,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/mpt/config.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -224,8 +225,10 @@ Result<void> process_ethereum_block(
     // block hash to append to the circular hash buffer
     db.finalize(block.header.number, block_id);
     db.update_verified_block(block.header.number);
-    exec_output.eth_block_hash =
-        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
+    // The benchmark trie's roots differ from Ethereum's, so hash the input
+    // header there to keep the block hash chain (BLOCKHASH) intact.
+    exec_output.eth_block_hash = to_bytes(keccak256(rlp::encode_block_header(
+        mpt::NIBBLE_BITS == 4 ? exec_output.eth_header : block.header)));
     block_hash_buffer.set(
         exec_output.eth_header.number, exec_output.eth_block_hash);
     (void)record_block_result(exec_recorder, exec_output);

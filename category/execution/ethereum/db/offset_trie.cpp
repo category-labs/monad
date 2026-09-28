@@ -284,14 +284,14 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
 {
     MONAD_DEBUG_ASSERT(node.tag() != EMPTY && node.tag() != DIGEST);
     // Compact-encode `path` straight into d's tail as an RLP string; return
-    // d shrunk. The compact form is clen = nibble_size/2 + 1 bytes (<= 33,
+    // d shrunk. The compact form is clen = compact_encode_len bytes (<= 55,
     // always a short string): write it directly, then prepend the
     // 0x80+path_len prefix. When path_len == 1 the single byte is <= 0x3F,
     // so it is already its own RLP and no prefix is added.
     auto const encode_path = [](OffsetTrie::node_rlp_span d,
                                 NibblesView const path,
                                 bool const terminating) {
-        size_t const path_len = path.nibble_size() / 2 + 1;
+        size_t const path_len = compact_encode_len(0, path.nibble_size());
         compact_encode_raw(d.last(path_len).data(), path, terminating);
         d = d.shrink(path_len);
         if (path_len > 1) {
@@ -451,18 +451,18 @@ namespace
             children.size() * sizeof(node_id_wire_t));
     }
 
-    // Append a path as nodes store it: a 1-byte nibble count then
-    // ceil(nlen/2) packed nibbles, left-aligned (nibble 0 in the high
-    // nibble of the first byte) — exactly what path_view reads back.
+    // Append a path as nodes store it: a 1-byte nibble count then the
+    // symbols bit-packed MSB-first, left-aligned (symbol 0 in the high bits
+    // of the first byte) — exactly what path_view reads back.
     void append_path(byte_string &b, NibblesView const path)
     {
         unsigned const nlen = path.nibble_size();
         MONAD_ASSERT(nlen <= MAX_PATH_NIBBLES);
         b.push_back(static_cast<unsigned char>(nlen));
         size_t const start = b.size();
-        b.resize(start + (nlen + 1) / 2, 0);
+        b.resize(start + bytes_for_nibbles(nlen), 0);
         for (unsigned i = 0; i < nlen; ++i) {
-            set_nibble(b.data() + start, i, path.get(i));
+            mpt::detail::set_symbol(b.data() + start, 0, i, path.get(i));
         }
     }
 

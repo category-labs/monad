@@ -99,12 +99,12 @@ public:
 struct UpdateExpireBase : public TNodeBase
 {
     uint8_t const branch{INVALID_BRANCH};
-    uint16_t mask{0};
+    mask_t mask{0};
 
 protected:
     UpdateExpireBase(
         TNodeBase *const parent, tnode_type const type, uint8_t const npending,
-        uint8_t const branch, uint16_t const mask)
+        uint8_t const branch, mask_t const mask)
         : TNodeBase(parent, type, npending)
         , branch(branch)
         , mask(mask)
@@ -115,7 +115,7 @@ protected:
 struct UpdateTNode : public UpdateExpireBase
 {
     using Base = UpdateExpireBase;
-    uint16_t orig_mask{0};
+    mask_t orig_mask{0};
     // UpdateTNode keeps old node alive only when old is leaf node, as
     // opt_leaf_data has to be valid in memory when it works the way back to
     // recompute leaf data
@@ -126,7 +126,7 @@ struct UpdateTNode : public UpdateExpireBase
     int64_t version{0};
 
     explicit UpdateTNode(
-        uint16_t const orig_mask, UpdateTNode *const parent = nullptr,
+        mask_t const orig_mask, UpdateTNode *const parent = nullptr,
         uint8_t const branch = INVALID_BRANCH, NibblesView const path = {},
         int64_t const version = 0,
         std::optional<byte_string_view> const opt_leaf_data = std::nullopt,
@@ -184,7 +184,7 @@ struct UpdateTNode : public UpdateExpireBase
 using tnode_unique_ptr = UpdateTNode::unique_ptr_type;
 
 inline tnode_unique_ptr make_tnode(
-    uint16_t const orig_mask, UpdateTNode *const parent = nullptr,
+    mask_t const orig_mask, UpdateTNode *const parent = nullptr,
     uint8_t const branch = INVALID_BRANCH, NibblesView const path = {},
     int64_t const version = 0,
     std::optional<byte_string_view> const opt_leaf_data = std::nullopt,
@@ -200,7 +200,7 @@ inline tnode_unique_ptr make_tnode(
         std::move(old)});
 }
 
-static_assert(sizeof(UpdateTNode) == 104);
+static_assert(NIBBLE_BITS != 4 || sizeof(UpdateTNode) == 104);
 static_assert(alignof(UpdateTNode) == 8);
 
 struct CompactTNode : public TNodeBase
@@ -289,7 +289,7 @@ struct ExpireTNode : public UpdateExpireBase
     always need to be cached if it is a child of UpdateTNode. */
     bool const cache_node{false};
     // A mask of which child to cache, each bit is a child of original node
-    uint16_t cache_mask{0};
+    mask_t cache_mask{0};
     Node::SharedPtr node{nullptr};
 
     ExpireTNode(

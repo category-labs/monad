@@ -51,7 +51,7 @@ namespace detail
     constexpr unsigned calc_branch_rlp_max_size(unsigned const leaf_data_size)
     {
         return static_cast<unsigned>(rlp::list_length(
-            rlp::list_length(KECCAK256_SIZE) * 16 +
+            rlp::list_length(KECCAK256_SIZE) * NIBBLE_BRANCHES +
             rlp::list_length(leaf_data_size)));
     }
 }
@@ -82,7 +82,7 @@ struct Compute
     //! pointer, file offset and calculated hash, the returned size is used to
     //! allocate mpt::Node internal data
     virtual unsigned compute_node_data_len(
-        std::span<ChildData> children, uint16_t mask, NibblesView path,
+        std::span<ChildData> children, mask_t mask, NibblesView path,
         std::optional<byte_string_view> value) = 0;
     //! Write computed node data to buffer and return the number of bytes
     //! written.
@@ -96,7 +96,7 @@ struct Compute
 struct EmptyCompute : Compute
 {
     virtual unsigned compute_node_data_len(
-        std::span<ChildData>, uint16_t, NibblesView,
+        std::span<ChildData>, mask_t, NibblesView,
         std::optional<byte_string_view>) override
     {
         return 0;
@@ -122,20 +122,21 @@ template <leaf_processor LeafValueProcessor>
 struct MerkleComputeBase : Compute
 {
     static constexpr auto max_branch_rlp_size = rlp::list_length(
-        rlp::list_length(KECCAK256_SIZE) * 16 + rlp::list_length(0));
+        rlp::list_length(KECCAK256_SIZE) * NIBBLE_BRANCHES +
+        rlp::list_length(0));
     static constexpr auto max_leaf_data_size = rlp::list_length( // account rlp
         rlp::list_length(32) // balance
         + rlp::list_length(KECCAK256_SIZE) // code hash
         + rlp::list_length(KECCAK256_SIZE) // storage hash
         + rlp::list_length(8) // nonce
     );
-    static_assert(max_branch_rlp_size == 532);
+    static_assert(NIBBLE_BITS != 4 || max_branch_rlp_size == 532);
     static_assert(max_leaf_data_size == 110);
 
     // Compute data from children and value to the internal state, which
     // will later be copied to in the intermediate data section inside node
     virtual unsigned compute_node_data_len(
-        std::span<ChildData> const children, uint16_t const mask,
+        std::span<ChildData> const children, mask_t const mask,
         NibblesView /*path*/,
         std::optional<byte_string_view> const value) override
     {
@@ -297,7 +298,7 @@ struct VarLenMerkleCompute : Compute
     // For variable length merkle trie, we store branch node data inline in
     // nodes that have at least one child and non-empty path.
     virtual unsigned compute_node_data_len(
-        std::span<ChildData> const children, uint16_t const mask,
+        std::span<ChildData> const children, mask_t const mask,
         NibblesView const path,
         std::optional<byte_string_view> const value) override
     {
@@ -402,7 +403,7 @@ struct RootVarLenMerkleCompute : public VarLenMerkleCompute<LeafValueProcessor>
     }
 
     virtual unsigned compute_node_data_len(
-        std::span<ChildData> const children, uint16_t const mask, NibblesView,
+        std::span<ChildData> const children, mask_t const mask, NibblesView,
         std::optional<byte_string_view> const value) override
     {
         MONAD_ASSERT(mask);

@@ -54,7 +54,7 @@ TEST(EncodeBranch, NoValueInlineChildren)
     std::array<ChildData, 2> children{c0, c1};
 
     Node::SharedPtr const node = make_node(
-        /*mask=*/static_cast<uint16_t>((1u << 0x3) | (1u << 0x8)),
+        /*mask=*/static_cast<mask_t>((1u << 0x3) | (1u << 0x8)),
         /*children=*/std::span<ChildData>{children},
         /*path=*/NibblesView{},
         /*value=*/std::nullopt,
@@ -105,7 +105,7 @@ TEST(EncodeBranch, HashedChildAndValue)
 
     byte_string const value = {'h', 'e', 'l', 'l', 'o'};
     Node::SharedPtr const node = make_node(
-        /*mask=*/static_cast<uint16_t>(1u << 0x0),
+        /*mask=*/static_cast<mask_t>(1u << 0x0),
         /*children=*/std::span<ChildData>{children},
         /*path=*/NibblesView{},
         /*value=*/byte_string_view{value},

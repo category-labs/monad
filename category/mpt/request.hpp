@@ -29,9 +29,9 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 struct Requests
 {
-    uint16_t mask{0};
+    mask_t mask{0};
     uint8_t prefix_len{0};
-    std::array<UpdateList, 16> sublists{};
+    std::array<UpdateList, NIBBLE_BRANCHES> sublists{};
     std::optional<Update> opt_leaf{std::nullopt};
 
     Requests() = default;
@@ -103,7 +103,7 @@ struct Requests
             }
             auto const branch = req.key.get(prefix_index);
             if (sublists[branch].empty()) {
-                mask |= uint16_t(1u << branch);
+                mask |= mask_t(1u << branch);
                 ++n;
             }
             sublists[branch].push_front(req);
@@ -112,7 +112,7 @@ struct Requests
     }
 };
 
-static_assert(sizeof(Requests) == 352);
+static_assert(NIBBLE_BITS != 4 || sizeof(Requests) == 352);
 static_assert(alignof(Requests) == 8);
 
 MONAD_MPT_NAMESPACE_END

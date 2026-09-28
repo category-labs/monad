@@ -30,6 +30,7 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <type_traits>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -131,7 +132,7 @@ class Node final
     };
 
 public:
-    static constexpr size_t max_number_of_children = 16;
+    static constexpr size_t max_number_of_children = NIBBLE_BRANCHES;
     static constexpr uint8_t max_data_len = (1U << 6) - 1;
     static constexpr size_t max_disk_size =
         256 * 1024 * 1024; // 256mb, same as storage chunk size
@@ -139,21 +140,32 @@ public:
     static constexpr size_t max_size =
         max_disk_size + max_number_of_children * KECCAK256_SIZE;
 
-    /* 16-bit mask for children */
-    uint16_t mask{0};
+    /* one bit per child branch */
+    mask_t mask{0};
+
+    // 4-bit symbols: 1 bit records whether the path starts on the low nibble
+    // of path_data()[0]; wider symbols need the raw bit offset (0..7).
+    using bitpacked_base_t =
+        std::conditional_t<NIBBLE_BITS == 4, uint8_t, uint16_t>;
+    static constexpr unsigned path_start_bits = NIBBLE_BITS == 4 ? 1 : 3;
+    // unit of path_start: 4 bits for 4-bit symbols, 1 bit otherwise
+    static constexpr unsigned path_start_unit = NIBBLE_BITS == 4 ? 4 : 1;
 
     struct bitpacked_storage_t
     {
         /* does node have a value, value_len is not necessarily positive */
-        bool has_value : 1 {false};
-        bool path_nibble_index_start : 1 {false};
+        bitpacked_base_t has_value : 1 {0};
+        /* offset of the first path symbol within path_data()[0], in
+         * path_start_unit bits */
+        bitpacked_base_t path_start : path_start_bits{0};
         /* size (in byte) of intermediate cache for branch hash */
-        uint8_t data_len : 6 {0};
-    } bitpacked{false};
+        bitpacked_base_t data_len : 6 {0};
+    } bitpacked{};
 
-    static_assert(sizeof(bitpacked) == 1);
+    static_assert(sizeof(bitpacked) == sizeof(bitpacked_base_t));
 
-    uint8_t path_nibble_index_end{0};
+    /* number of symbols in the path */
+    uint8_t path_nibbles_len_{0};
     /* size (in byte) of user-passed leaf data */
     uint32_t value_len{0};
     /* A note on definition of node version:
@@ -177,7 +189,7 @@ public:
     * `data_offset` array: size-n array each stores a specific child data's
     starting offset
     * `path`: a few bytes for relative path, size depends on
-    path_nibble_index_start, path_nibble_index_end
+    path_start (bit offset) and path_nibbles_len_
     * `value`: user-passed leaf data of value_len bytes
     * `data`: intermediate hash cached for a implicit branch node, which
     exists in leaf nodes that have child.
@@ -203,7 +215,7 @@ public:
     explicit Node(prevent_public_construction_tag);
 
     Node(
-        prevent_public_construction_tag tag, uint16_t mask,
+        prevent_public_construction_tag tag, mask_t mask,
         std::optional<byte_string_view> value, size_t data_size,
         NibblesView path, int64_t version);
 
@@ -288,6 +300,8 @@ public:
     unsigned path_bytes() const noexcept;
     NibblesView path_nibble_view() const noexcept;
     unsigned path_start_nibble() const noexcept;
+    // bit offset of the first path symbol within path_data()[0]
+    unsigned path_begin_bit() const noexcept;
 
     //! value
     unsigned char *value_data() noexcept;
@@ -337,7 +351,7 @@ public:
 
 static_assert(std::is_standard_layout_v<Node>, "required by offsetof");
 
-static_assert(sizeof(Node) == 16);
+static_assert(sizeof(Node) == (NIBBLE_BITS == 4 ? 16 : 24));
 static_assert(alignof(Node) == 8);
 
 // ChildData is for temporarily holding a child's info, including child ptr,
@@ -387,24 +401,25 @@ constexpr size_t MAX_VALUE_LEN_OF_LEAF =
     Node::max_disk_size -
     calculate_node_size(
         0 /* number_of_children */, 0 /* child_data_size */, 0 /* value_size */,
-        KECCAK256_SIZE /* path_size */, KECCAK256_SIZE /* data_size*/);
+        bytes_for_nibbles(nibbles_for_bytes(KECCAK256_SIZE)) /* path_size */,
+        KECCAK256_SIZE /* data_size*/);
 
 Node::SharedPtr make_node(
     Node &from, NibblesView path, std::optional<byte_string_view> value,
     int64_t version, bool is_move = true);
 
 Node::SharedPtr make_node(
-    uint16_t mask, std::span<ChildData>, NibblesView path,
+    mask_t mask, std::span<ChildData>, NibblesView path,
     std::optional<byte_string_view> value, size_t data_size, int64_t version);
 
 Node::SharedPtr make_node(
-    uint16_t mask, std::span<ChildData>, NibblesView path,
+    mask_t mask, std::span<ChildData>, NibblesView path,
     std::optional<byte_string_view> value, byte_string_view data,
     int64_t version);
 
 // create node: either branch/extension, with or without leaf
 Node::SharedPtr create_node_with_children(
-    Compute &, uint16_t mask, std::span<ChildData> children, NibblesView path,
+    Compute &, mask_t mask, std::span<ChildData> children, NibblesView path,
     std::optional<byte_string_view> value, int64_t version);
 
 void serialize_node_to_buffer(
@@ -424,7 +439,7 @@ inline Node::SharedPtr deserialize_node_from_buffer(
     MONAD_ASSERT(disk_size > 0 && disk_size <= Node::max_disk_size);
     read_pos += Node::disk_size_bytes;
     // Load the on disk node
-    auto const mask = unaligned_load<uint16_t>(read_pos);
+    auto const mask = unaligned_load<mask_t>(read_pos);
     auto const number_of_children = static_cast<unsigned>(std::popcount(mask));
     uint32_t const base_size = disk_size - Node::disk_size_bytes;
     auto const alloc_size = round_up_align<3>(base_size) +
@@ -460,7 +475,7 @@ public:
         using reference = value_type;
 
         // NOLINTNEXTLINE(google-explicit-constructor)
-        iterator(uint16_t const mask)
+        iterator(mask_t const mask)
             : index_(0)
             , mask_(mask)
         {
@@ -485,10 +500,10 @@ public:
 
     private:
         uint8_t index_;
-        uint16_t mask_;
+        mask_t mask_;
     };
 
-    explicit NodeChildrenRange(uint16_t const mask)
+    explicit NodeChildrenRange(mask_t const mask)
         : mask_(mask)
     {
     }
@@ -504,7 +519,7 @@ public:
     }
 
 private:
-    uint16_t mask_;
+    mask_t mask_;
 };
 
 MONAD_MPT_NAMESPACE_END

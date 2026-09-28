@@ -42,23 +42,30 @@ MONAD_MPT_NAMESPACE_BEGIN
 Node::Node(prevent_public_construction_tag) {}
 
 Node::Node(
-    prevent_public_construction_tag, uint16_t const mask,
+    prevent_public_construction_tag, mask_t const mask,
     std::optional<byte_string_view> const value, size_t const data_size,
     NibblesView const path, int64_t const version)
     : mask(mask)
-    , path_nibble_index_end(path.end_nibble_)
+    , path_nibbles_len_(static_cast<uint8_t>(path.nibble_size()))
     , value_len(static_cast<decltype(value_len)>(
           value.transform(&byte_string_view::size).value_or(0)))
     , version(version)
 {
     MONAD_ASSERT(!value || value->size() == value_len);
-    bitpacked.path_nibble_index_start = path.begin_nibble_;
+    MONAD_ASSERT(path.begin_bit_ % path_start_unit == 0);
+    bitpacked.path_start =
+        static_cast<bitpacked_base_t>(path.begin_bit_ / path_start_unit);
     bitpacked.has_value = value.has_value();
 
     MONAD_ASSERT(data_size <= Node::max_data_len);
-    bitpacked.data_len = static_cast<uint8_t>(data_size & Node::max_data_len);
+    bitpacked.data_len =
+        static_cast<bitpacked_base_t>(data_size & Node::max_data_len);
 
-    std::ranges::copy(path.data_span(), path_data());
+    // materialize the path: copy the backing bytes, zero any padding byte
+    auto const backed = path.data_span();
+    std::ranges::copy(backed, path_data());
+    MONAD_ASSERT(backed.size() <= path_bytes());
+    std::fill_n(path_data() + backed.size(), path_bytes() - backed.size(), 0);
 
     if (value_len) {
         std::ranges::copy(*value, value_data());
@@ -74,7 +81,7 @@ Node::~Node()
 
 unsigned Node::to_child_index(unsigned const branch) const noexcept
 {
-    // convert the enabled i'th bit in a 16-bit mask into its corresponding
+    // convert the enabled i'th bit in the child mask into its corresponding
     // index location - index
     return bitmask_index(mask, branch);
 }
@@ -262,8 +269,7 @@ unsigned char const *Node::path_data() const noexcept
 
 unsigned Node::path_nibbles_len() const noexcept
 {
-    MONAD_ASSERT(bitpacked.path_nibble_index_start <= path_nibble_index_end);
-    return path_nibble_index_end - bitpacked.path_nibble_index_start;
+    return path_nibbles_len_;
 }
 
 bool Node::has_path() const noexcept
@@ -271,20 +277,28 @@ bool Node::has_path() const noexcept
     return path_nibbles_len() > 0;
 }
 
+unsigned Node::path_begin_bit() const noexcept
+{
+    return static_cast<unsigned>(bitpacked.path_start) * path_start_unit;
+}
+
 unsigned Node::path_bytes() const noexcept
 {
-    return (path_nibble_index_end + 1) / 2;
+    return path_nibbles_len_ == 0
+               ? 0
+               : bytes_for_bits(
+                     path_begin_bit() + path_nibbles_len_ * NIBBLE_BITS);
 }
 
 NibblesView Node::path_nibble_view() const noexcept
 {
-    return NibblesView{
-        bitpacked.path_nibble_index_start, path_nibble_index_end, path_data()};
+    return NibblesView::from_bits(
+        path_data(), path_begin_bit(), path_nibbles_len_, path_bytes());
 }
 
 unsigned Node::path_start_nibble() const noexcept
 {
-    return bitpacked.path_nibble_index_start;
+    return path_begin_bit() / NIBBLE_BITS;
 }
 
 unsigned char *Node::value_data() noexcept
@@ -489,7 +503,7 @@ void ChildData::copy_old_child(Node *const old, unsigned const i)
     memcpy(&data, old_data.data(), old_data.size());
     MONAD_ASSERT(old_data.size() <= std::numeric_limits<uint8_t>::max());
     len = static_cast<uint8_t>(old_data.size());
-    MONAD_ASSERT(i < 16);
+    MONAD_ASSERT(i < NIBBLE_BRANCHES);
     branch = static_cast<uint8_t>(i);
     offset = old->fnext(index);
     min_offsets = old->min_offsets(index);
@@ -550,7 +564,7 @@ Node::SharedPtr make_node(
 }
 
 Node::SharedPtr make_node(
-    uint16_t const mask, std::span<ChildData> const children,
+    mask_t const mask, std::span<ChildData> const children,
     NibblesView const path, std::optional<byte_string_view> const value,
     size_t const data_size, int64_t const version)
 {
@@ -613,7 +627,7 @@ Node::SharedPtr make_node(
 }
 
 Node::SharedPtr make_node(
-    uint16_t const mask, std::span<ChildData> const children,
+    mask_t const mask, std::span<ChildData> const children,
     NibblesView const path, std::optional<byte_string_view> const value,
     byte_string_view const data, int64_t const version)
 {
@@ -625,7 +639,7 @@ Node::SharedPtr make_node(
 // all children's offset are set before creating parent
 // create node with at least one child
 Node::SharedPtr create_node_with_children(
-    Compute &comp, uint16_t const mask, std::span<ChildData> const children,
+    Compute &comp, mask_t const mask, std::span<ChildData> const children,
     NibblesView const path, std::optional<byte_string_view> const value,
     int64_t const version)
 {

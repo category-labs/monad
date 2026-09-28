@@ -31,6 +31,7 @@
 
 #include <ankerl/unordered_dense.h>
 
+#include <bit>
 #include <deque>
 #include <limits>
 #include <memory>
@@ -111,13 +112,19 @@ private:
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
+// The shard is the top log2(MONAD_SNAPSHOT_SHARDS) bits of the key, read
+// from its leading symbols.
 uint64_t get_shard(monad::mpt::NibblesView const path)
 {
+    using namespace monad::mpt;
+    constexpr unsigned shard_bits = std::countr_zero(MONAD_SNAPSHOT_SHARDS);
+    constexpr unsigned symbols = (shard_bits + NIBBLE_BITS - 1) / NIBBLE_BITS;
     uint64_t ret = 0;
-    for (unsigned i = 0; i < MONAD_SNAPSHOT_SHARD_NIBBLES; ++i) {
-        ret <<= 4;
+    for (unsigned i = 0; i < symbols; ++i) {
+        ret <<= NIBBLE_BITS;
         ret |= path.get(i);
     }
+    ret >>= symbols * NIBBLE_BITS - shard_bits;
     MONAD_ASSERT(ret < MONAD_SNAPSHOT_SHARDS);
     return ret;
 }
@@ -301,10 +308,13 @@ void read_stream_header(
 class NibblePath
 {
 private:
-    // 128 nibbles max: 64 (account hash) + 64 (storage hash)
+    // account hash + storage hash symbols, plus slack for branch symbols
     // Note: finalized and code/data nibbles are handled separately and not
     // stored in path
-    std::array<unsigned char, 64> buffer_{};
+    static constexpr unsigned MAX_NIBBLES =
+        2 * monad::mpt::nibbles_for_bytes(sizeof(bytes32_t)) + 8;
+    std::array<unsigned char, monad::mpt::bytes_for_nibbles(MAX_NIBBLES)>
+        buffer_{};
     uint8_t length_{0};
 
 public:
@@ -313,10 +323,10 @@ public:
     {
         using namespace monad::mpt;
         unsigned const src_nibbles = node_path.nibble_size();
-        MONAD_ASSERT(length_ + 1 + src_nibbles <= buffer_.size() * 2);
+        MONAD_ASSERT(length_ + 1 + src_nibbles <= MAX_NIBBLES);
 
         // Append branch nibble
-        set_nibble(buffer_.data(), length_, branch);
+        monad::mpt::detail::set_symbol(buffer_.data(), 0, length_, branch);
         ++length_;
 
         if (src_nibbles == 0) {
@@ -324,7 +334,8 @@ public:
         }
 
         for (unsigned i = 0; i < src_nibbles; ++i) {
-            set_nibble(buffer_.data(), length_ + i, node_path.get(i));
+            monad::mpt::detail::set_symbol(
+                buffer_.data(), 0, length_ + i, node_path.get(i));
         }
         length_ = static_cast<uint8_t>(length_ + src_nibbles);
     }
@@ -458,7 +469,8 @@ struct MonadSnapshotTraverseMachine : public monad::mpt::TraverseMachine
     {
         using namespace monad;
         using namespace monad::mpt;
-        constexpr unsigned HASH_SIZE = KECCAK256_SIZE * 2;
+        constexpr unsigned HASH_SIZE =
+            monad::mpt::nibbles_for_bytes(KECCAK256_SIZE);
 
         if (branch == INVALID_BRANCH) {
             MONAD_ASSERT(path.length() == 0);

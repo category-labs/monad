@@ -118,7 +118,8 @@ private:
 };
 
 // Longest path a node may carry.
-inline constexpr unsigned MAX_PATH_NIBBLES = 64;
+inline constexpr unsigned MAX_PATH_NIBBLES =
+    nibbles_for_bytes(sizeof(bytes32_t));
 
 // A node's stable id. 0 = null; `n` in the [HEADER_LEN, blob_len) range is
 // a blob offset (unless shadowed by an overlay); n >= OVERLAY_BASE is a
@@ -230,10 +231,10 @@ inline unsigned path_length(unsigned char const *const p)
     return p[0];
 }
 
-// Packed size of the path in bytes — half the nibble count, rounded up.
+// Packed size of the path in bytes: the symbols bit-packed, rounded up.
 inline unsigned path_byte_length(unsigned n)
 {
-    return (n + 1) / 2;
+    return bytes_for_nibbles(n);
 }
 
 inline NibblesView path_view(unsigned char const *const p)

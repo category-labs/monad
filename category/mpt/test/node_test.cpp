@@ -34,7 +34,7 @@ struct DummyCompute final : Compute
 {
     // hash length = 1
     virtual unsigned compute_node_data_len(
-        std::span<ChildData> const children, uint16_t const, NibblesView const,
+        std::span<ChildData> const children, mask_t const, NibblesView const,
         std::optional<monad::byte_string_view> const value) override
     {
         if (!value.has_value()) {
@@ -85,7 +85,7 @@ TEST(NodeTest, leaf_single_branch)
     children[0].branch = 0xc;
     children[0].ptr = make_node(0, {}, path1, value, {}, 0);
     NibblesView const path2{1, 10, path.data()};
-    uint16_t const mask = 1u << 0xc;
+    mask_t const mask = 1u << 0xc;
     Node::SharedPtr const node{
         create_node_with_children(comp, mask, children, path2, value, 0)};
 
@@ -110,7 +110,7 @@ TEST(NodeTest, leaf_multiple_branches)
     children[1].ptr = make_node(0, {}, path1, value, {}, 0);
 
     NibblesView const path2{1, 10, path.data()};
-    uint16_t const mask = (1u << 0xa) | (1u << 0xc);
+    mask_t const mask = (1u << 0xa) | (1u << 0xc);
     Node::SharedPtr const node{
         create_node_with_children(comp, mask, children, path2, value, 0)};
 
@@ -135,7 +135,7 @@ TEST(NodeTest, branch_node)
     children[1].ptr = make_node(0, {}, path1, value, {}, 0);
 
     NibblesView const path2{1, 1, path.data()}; // path2 is empty
-    uint16_t const mask = (1u << 0xa) | (1u << 0xc);
+    mask_t const mask = (1u << 0xa) | (1u << 0xc);
     Node::SharedPtr const node{create_node_with_children(
         comp, mask, children, path2, std::nullopt, 0)};
 
@@ -160,7 +160,7 @@ TEST(NodeTest, extension_node)
     children[1].ptr = make_node(0, {}, path1, value, {}, 0);
 
     NibblesView const path2{1, 10, path.data()};
-    uint16_t const mask = (1u << 0xa) | (1u << 0xc);
+    mask_t const mask = (1u << 0xa) | (1u << 0xc);
     Node::SharedPtr const node{create_node_with_children(
         comp, mask, children, path2, std::nullopt, 0)};
 

@@ -26,6 +26,7 @@
 
 #include <cstddef>
 #include <cstring>
+#include <limits>
 #include <span>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -33,9 +34,11 @@ MONAD_MPT_NAMESPACE_BEGIN
 byte_string encode_two_pieces(
     NibblesView const path, byte_string_view const second, bool const is_leaf)
 {
-    constexpr size_t max_compact_encode_size = KECCAK256_SIZE + 1;
+    // a node path is at most a whole key, 255 nibbles
+    constexpr size_t max_compact_encode_size =
+        compact_encode_len(0, std::numeric_limits<uint8_t>::max());
 
-    MONAD_ASSERT(path.data_size() <= KECCAK256_SIZE);
+    MONAD_ASSERT(path.nibble_size() <= std::numeric_limits<uint8_t>::max());
 
     unsigned char path_arr[max_compact_encode_size] = {0};
     auto const first = compact_encode(path_arr, path, is_leaf);
@@ -73,7 +76,7 @@ std::span<unsigned char> encode_16_children(
     unsigned i = 0;
     for (auto &child : children) {
         if (child.is_valid()) {
-            MONAD_ASSERT(child.branch < 16);
+            MONAD_ASSERT(child.branch < NIBBLE_BRANCHES);
             while (child.branch != i) {
                 result[0] = RLP_EMPTY_STRING;
                 result = result.subspan(1);
@@ -89,7 +92,7 @@ std::span<unsigned char> encode_16_children(
         }
     }
     // encode empty value string
-    for (; i < 16; ++i) {
+    for (; i < NIBBLE_BRANCHES; ++i) {
         result = encode_empty_string(result);
     }
     return result;
@@ -98,7 +101,7 @@ std::span<unsigned char> encode_16_children(
 std::span<unsigned char>
 encode_16_children(Node const &node, std::span<unsigned char> result)
 {
-    for (unsigned i = 0, bit = 1; i < 16; ++i, bit <<= 1) {
+    for (unsigned i = 0, bit = 1; i < NIBBLE_BRANCHES; ++i, bit <<= 1) {
         if (node.mask & bit) {
             auto const child_index = node.to_child_index(i);
             MONAD_ASSERT(node.child_data_len(child_index) <= KECCAK256_SIZE);

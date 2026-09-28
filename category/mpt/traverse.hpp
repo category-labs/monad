@@ -66,7 +66,7 @@ namespace detail
 
     struct DefaultChildrenVisitRange
     {
-        auto operator()(uint16_t const mask) const
+        auto operator()(mask_t const mask) const
         {
             return NodeChildrenRange(mask);
         }

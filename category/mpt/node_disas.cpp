@@ -17,7 +17,7 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
-uint16_t child_mask_disas(Node const &node)
+mask_t child_mask_disas(Node const &node)
 {
     return child_mask(node);
 }

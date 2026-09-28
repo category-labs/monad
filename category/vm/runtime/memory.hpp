@@ -60,12 +60,12 @@ namespace monad::vm::runtime
         mload_at<traits>(ctx, result_ptr, offset);
     }
 
+    // Store 32 bytes at a validated offset; [offset, offset + 32) must already
+    // be within memory.size.
     template <Traits traits>
-    inline void mstore(
-        Context *ctx, uint256_t const *offset_ptr, uint256_t const *value_ptr)
+    [[gnu::always_inline]] inline void mstore_at(
+        Context *ctx, Memory::Offset const offset, uint256_t const *value_ptr)
     {
-        auto const offset = ctx->get_memory_offset(*offset_ptr);
-        ctx->expand_memory<traits>(offset + bin<32>);
 #if defined(MONAD_ZKVM_ZISK)
         // Store one byte-swapped word at a time to avoid staging a 32-byte
         // temporary on the stack for a DMA copy. The resulting bytes match
@@ -81,6 +81,15 @@ namespace monad::vm::runtime
 #else
         store_be(ctx->memory.data + *offset, *value_ptr);
 #endif
+    }
+
+    template <Traits traits>
+    inline void mstore(
+        Context *ctx, uint256_t const *offset_ptr, uint256_t const *value_ptr)
+    {
+        auto const offset = ctx->get_memory_offset(*offset_ptr);
+        ctx->expand_memory<traits>(offset + bin<32>);
+        mstore_at<traits>(ctx, offset, value_ptr);
     }
 
     template <Traits traits>

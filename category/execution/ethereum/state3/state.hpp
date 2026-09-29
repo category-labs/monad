@@ -245,6 +245,16 @@ class State
 
     Map<bytes32_t, vm::SharedVarcode> code_{};
 
+    // Reuse code between the EIP-7702 check and execution.
+    // Block code is immutable for a given hash.
+    bytes32_t last_code_hash_{};
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+    // Borrow the VM cache entry to avoid shared_ptr reference-count updates.
+    vm::SharedVarcode const *last_code_{nullptr};
+#else
+    vm::SharedVarcode last_code_{};
+#endif
+
     unsigned version_{0};
 
 #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)

@@ -191,16 +191,60 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             //
             // A run of digests takes a loop of its own: its few live values
             // leave a register for the mark, which the outer loop rebuilds
-            // on every node. Likely, so that the back edge is the test and the
-            // exit takes the jump.
+            // on every node. Four nodes a turn while all four start inside
+            // the region: one bound test and one pair of increments for four
+            // marks. Likely, so that the back edge is the test and the exits
+            // take the jumps.
+            //
+            // Below quad_end a digest and the three nodes after it all start
+            // inside the region. As an integer, and against p itself: compared
+            // as p + 99, gcc keeps that sum in another register to read the
+            // tags from. Formed here, once a run: held across the constructor,
+            // it is reloaded from the stack every turn.
+            uintptr_t const quad_end =
+                reinterpret_cast<uintptr_t>(region_end) - 3 * DIGEST_NODE_LEN;
             unsigned char const *p = node.bytes();
-            do {
+            *seen = 1;
+            seen += DIGEST_NODE_LEN;
+            p += DIGEST_NODE_LEN;
+            while (MONAD_LIKELY(reinterpret_cast<uintptr_t>(p) < quad_end)) {
+                if (MONAD_UNLIKELY(NodeViewBase{p}.tag() != DIGEST)) {
+                    goto digest_run_end;
+                }
+                seen[0] = 1;
+                if (MONAD_UNLIKELY(
+                        NodeViewBase{p + DIGEST_NODE_LEN}.tag() != DIGEST)) {
+                    seen += DIGEST_NODE_LEN;
+                    p += DIGEST_NODE_LEN;
+                    goto digest_run_end;
+                }
+                seen[DIGEST_NODE_LEN] = 1;
+                if (MONAD_UNLIKELY(
+                        NodeViewBase{p + 2 * DIGEST_NODE_LEN}.tag() !=
+                        DIGEST)) {
+                    seen += 2 * DIGEST_NODE_LEN;
+                    p += 2 * DIGEST_NODE_LEN;
+                    goto digest_run_end;
+                }
+                seen[2 * DIGEST_NODE_LEN] = 1;
+                if (MONAD_UNLIKELY(
+                        NodeViewBase{p + 3 * DIGEST_NODE_LEN}.tag() !=
+                        DIGEST)) {
+                    seen += 3 * DIGEST_NODE_LEN;
+                    p += 3 * DIGEST_NODE_LEN;
+                    goto digest_run_end;
+                }
+                seen[3 * DIGEST_NODE_LEN] = 1;
+                seen += 4 * DIGEST_NODE_LEN;
+                p += 4 * DIGEST_NODE_LEN;
+            }
+            // Fewer than four nodes start inside the region from here.
+            while (p < region_end && NodeViewBase{p}.tag() == DIGEST) {
                 *seen = 1;
                 seen += DIGEST_NODE_LEN;
                 p += DIGEST_NODE_LEN;
             }
-            while (MONAD_LIKELY(p < region_end) &&
-                   MONAD_LIKELY(NodeViewBase{p}.tag() == DIGEST));
+        digest_run_end:
             node = NodeViewBase{p};
             continue;
         }

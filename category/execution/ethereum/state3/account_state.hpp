@@ -59,6 +59,7 @@ public:
             std::uint32_t const p = idx_.lookup(key, tail, v_);
             return p ? &v_[p - 1].second : nullptr;
         }
+        MONAD_SLOT_SCAN
         for (auto const &e : v_) {
             if (key_equals(key, tail, e.first)) {
                 return &e.second;
@@ -79,6 +80,7 @@ public:
             idx_.on_insert(v_);
             return;
         }
+        MONAD_SLOT_SCAN
         for (auto &e : v_) {
             if (key_equals(key, tail, e.first)) {
                 e.second = value;
@@ -109,6 +111,7 @@ public:
             idx_.reset();
             return;
         }
+        MONAD_SLOT_SCAN
         for (auto &e : v_) {
             if (key_equals(key, tail, e.first)) {
                 e = v_.back();
@@ -277,6 +280,7 @@ public:
             std::uint32_t const p = idx_.lookup(k, tail, v_);
             return p ? &v_[p - 1].second : nullptr;
         }
+        MONAD_SLOT_SCAN
         for (auto const &e : v_) {
             if (key_equals(k, tail, e.first)) {
                 return &e.second;

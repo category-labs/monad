@@ -25,6 +25,16 @@
 #include <utility>
 #include <vector>
 
+// A linear scan visits a few entries. With the ZisK guest's -funroll-loops,
+// gcc enters the eight-way unrolled copy through a chain of compares on the
+// trip count's remainder, two steps a case: dearer than the loop tests the
+// unrolling saves.
+#ifdef MONAD_ZKVM_ZISK
+    #define MONAD_SLOT_SCAN _Pragma("GCC unroll 1")
+#else
+    #define MONAD_SLOT_SCAN
+#endif
+
 MONAD_NAMESPACE_BEGIN
 
 // Preload the key's last word for linear scans. Small big-endian keys differ

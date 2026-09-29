@@ -22,6 +22,9 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/host.hpp>
+#endif
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -104,6 +107,13 @@ namespace monad::vm::runtime
         evmc_message const *const msg,
         std::span<uint8_t const> const code) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        // The guest's VM hands monad's host: its method, not the C adapter.
+        evmc_tx_context const *const tx_context =
+            host_shim::of(context)->get_tx_context();
+#else
+        evmc_tx_context const *const tx_context = host->get_tx_context(context);
+#endif
         return Context{
             .host = host,
             .context = context,
@@ -123,7 +133,7 @@ namespace monad::vm::runtime
                     .input_data_size = static_cast<uint32_t>(msg->input_size),
                     .code_size = static_cast<uint32_t>(code.size()),
                     .return_data_size = 0,
-                    .tx_context = host->get_tx_context(context),
+                    .tx_context = tx_context,
                 },
             .result = {},
             .memory =

@@ -15,6 +15,9 @@
 
 #include <category/core/address.hpp>
 #include <category/vm/evm/delegation.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/host.hpp>
+#endif
 
 #include <evmc/bytes.hpp>
 #include <evmc/evmc.h>
@@ -63,8 +66,19 @@ namespace monad::vm::evm
         // then drop these three bytes and interpret the remainder as
         // the delegate address.
         uint8_t code_buffer[delegation_indicator_size + 1];
+#if defined(MONAD_ZKVM_ZISK)
+        // Every caller in the guest passes monad's host: its method, not the
+        // C adapter.
+        (void)host;
+        size_t const actual_code_size = host_shim::of(ctx)->copy_code(
+            host_shim::addr(&addr),
+            0,
+            code_buffer,
+            delegation_indicator_size + 1);
+#else
         size_t const actual_code_size = host->copy_code(
             ctx, &addr, 0, code_buffer, delegation_indicator_size + 1);
+#endif
 
         std::span const code{code_buffer, actual_code_size};
 

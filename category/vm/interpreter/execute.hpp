@@ -22,6 +22,8 @@
 
 namespace monad::vm::interpreter
 {
+    /// `stack_ptr` must address at least 1025 slots, as `EvmStackAllocator`
+    /// provides; slot 0 is reserved as the empty-stack marker.
     template <Traits traits>
     void execute(runtime::Context &, Intercode const &, uint256_t *stack_ptr);
 }

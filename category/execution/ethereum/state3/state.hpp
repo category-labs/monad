@@ -255,7 +255,9 @@ class State
     vm::SharedVarcode last_code_{};
 #endif
 
-    unsigned version_{0};
+    // Open frame count. Match vector sizes and avoid costly 32-bit accesses
+    // on ZisK.
+    size_t version_{0};
 
 #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     std::deque<DirtyAccounts> dirty_;

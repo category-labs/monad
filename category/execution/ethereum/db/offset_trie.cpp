@@ -451,8 +451,19 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // only mutation needs the overlay check. get_original also
                 // checks bounds before access.
                 auto const blob_digest_at = [this](uint64_t const w) {
-                    return w != 0 &&
-                           get_original(NodeId{w}).tag() == Tag::DIGEST;
+                    if constexpr (priming_pass) {
+                        // No bounds test: the priming pass encodes only nodes
+                        // the constructor has walked, and before priming one it
+                        // asserted each of its children zero or a node start
+                        // the walk had marked, so at least HEADER_LEN and
+                        // inside the blob (is_valid_offset).
+                        return w != 0 && NodeViewBase{blob_.data() + w}.tag() ==
+                                             Tag::DIGEST;
+                    }
+                    else {
+                        return w != 0 &&
+                               get_original(NodeId{w}).tag() == Tag::DIGEST;
+                    }
                 };
                 auto const digest_at = [blob_digest_at](uint64_t const w) {
                     if constexpr (priming_pass) {

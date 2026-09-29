@@ -553,8 +553,13 @@ static inline void keccak_permute(uint64_t (*state)[25])
 }
 #endif
 
-template <bool Memo>
-static void keccak256_sponge(void const *const in, size_t len, uint8_t out[32])
+// `Prefix` sends only the first `memo_blocks` rate blocks through the memo and
+// the rest past it, for an input that shares a prefix with another: the stack
+// sponge's memo, which copies the state in and out, on those blocks only.
+template <bool Memo, bool Prefix = false>
+static void keccak256_sponge(
+    void const *const in, size_t len, uint8_t out[32],
+    [[maybe_unused]] size_t memo_blocks = 0)
 {
     constexpr size_t RATE = 136;
     constexpr size_t WORDS = RATE / 8; // 17
@@ -629,7 +634,18 @@ static void keccak256_sponge(void const *const in, size_t len, uint8_t out[32])
                 st[i] ^= load64(p + 8 * i);
             }
         }
-        keccak_permute<Memo>(&st);
+        if constexpr (Prefix) {
+            if (memo_blocks != 0) {
+                --memo_blocks;
+                keccak_permute<true>(&st);
+            }
+            else {
+                keccak_permute<false>(&st);
+            }
+        }
+        else {
+            keccak_permute<Memo>(&st);
+        }
         p += RATE;
         len -= RATE;
     }
@@ -783,6 +799,22 @@ void monad_zkvm_keccak256_fast_nomemo(
     void const *const in, size_t len, uint8_t out[32])
 {
     keccak256_sponge<false>(in, len, out);
+}
+
+// The same sponge, with the memo on its first `memo_blocks` rate blocks only:
+// for a bytecode whose chain recurs as far as the prefix it shares with
+// another, and no further. The argument above covers both halves: the memo's
+// two checks on the blocks it serves, and nothing filed on the others.
+void monad_zkvm_keccak256_fast_memo_prefix(
+    void const *const in, size_t len, size_t const memo_blocks,
+    uint8_t out[32])
+{
+#if defined(MONAD_ZKVM_ZISK) && MONAD_ZKVM_KECCAKF_MEMO
+    keccak256_sponge<false, true>(in, len, out, memo_blocks);
+#else
+    (void)memo_blocks;
+    keccak256_sponge<false>(in, len, out);
+#endif
 }
 
 } // extern "C"

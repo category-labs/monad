@@ -47,7 +47,8 @@ namespace monad::vm
 
 #if defined(MONAD_ZKVM_WIDE_MEMORY_SIZE) && defined(__x86_64__)
     #error "MONAD_ZKVM_WIDE_MEMORY_SIZE is a guest-only layout: it moves \
-the Memory fields that context.S and the x86 emitter read at fixed offsets."
+the Environment and Memory fields that context.S and the x86 emitter read at \
+fixed offsets."
 #endif
 
 namespace monad::vm::runtime
@@ -67,10 +68,26 @@ namespace monad::vm::runtime
         StatusCode status;
     };
 
+    // Use full-word reads on the guest; preserve the x86 emitter's layout.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+    using env_size_t = uint64_t;
+#else
+    using env_size_t = uint32_t;
+#endif
+
+    // Widen flags and depth too, avoiding 32-bit guest memory accesses.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+    using env_flags_t = uint64_t;
+    using env_depth_t = int64_t;
+#else
+    using env_flags_t = uint32_t;
+    using env_depth_t = int32_t;
+#endif
+
     struct Environment
     {
-        uint32_t evmc_flags;
-        int32_t depth;
+        env_flags_t evmc_flags;
+        env_depth_t depth;
         Address recipient;
         Address sender;
         bytes32_t value;
@@ -80,8 +97,8 @@ namespace monad::vm::runtime
         uint8_t const *code;
         uint8_t const *return_data;
 
-        uint32_t input_data_size;
-        uint32_t code_size;
+        env_size_t input_data_size;
+        env_size_t code_size;
         size_t return_data_size;
 
         evmc_tx_context const *tx_context;
@@ -447,7 +464,10 @@ namespace monad::vm::runtime
 
     // Update context.S accordingly if these offsets change:
     static_assert(offsetof(Context, gas_remaining) == 8);
+#ifndef MONAD_ZKVM_WIDE_MEMORY_SIZE
+    // The wide Environment layout shifts memory on the guest.
     static_assert(offsetof(Context, memory) == 256);
+#endif
     // Preserve contiguous fields in both layouts, retaining the offsets
     // used by context.S and the JIT on x86.
     static_assert(offsetof(Memory, size) == 0);

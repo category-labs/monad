@@ -68,7 +68,12 @@ class ReserveBalance
 public:
     explicit ReserveBalance(State *state);
 
-    bool tracking_enabled() const;
+    // Defined here: State asserts it on every push and pop, where a call
+    // costs a frame.
+    bool tracking_enabled() const
+    {
+        return tracking_enabled_;
+    }
 
     bool has_violation() const;
 

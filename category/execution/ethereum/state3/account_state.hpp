@@ -65,6 +65,7 @@ public:
                                      : nullptr;
         }
 #endif
+        MONAD_SLOT_SCAN
         for (auto const &entry : entries_) {
             if (key_equals(key, tail, entry.first)) {
                 return &entry.second;
@@ -89,6 +90,7 @@ public:
             return;
         }
 #endif
+        MONAD_SLOT_SCAN
         for (auto &entry : entries_) {
             if (key_equals(key, tail, entry.first)) {
                 entry.second = value;
@@ -106,6 +108,7 @@ public:
     void erase(bytes32_t const &key)
     {
         std::uint64_t const tail = key_tail(key);
+        MONAD_SLOT_SCAN
         for (auto &entry : entries_) {
             if (key_equals(key, tail, entry.first)) {
                 entry = entries_.back();
@@ -285,6 +288,7 @@ public:
                                      : nullptr;
         }
 #endif
+        MONAD_SLOT_SCAN
         for (auto const &entry : entries_) {
             if (key_equals(key, tail, entry.first)) {
                 return &entry.second;

@@ -17,6 +17,7 @@
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/revision.h>
+#include <category/vm/evm/status_code.h>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/utils/evm-as/compiler.hpp>
@@ -24,7 +25,6 @@
 
 #include <test/vm/unit/evm_fixture.hpp>
 
-#include <evmc/evmc.h>
 #include <gtest/gtest.h>
 
 #include <array>
@@ -222,7 +222,7 @@ namespace
 
         struct Outcome
         {
-            evmc_status_code status;
+            monad_status_code status;
             int64_t gas_left;
             std::vector<uint8_t> output;
         };
@@ -255,10 +255,10 @@ namespace
             auto const i = run(code, Interpreter, gas);
             auto const c = run(code, Compiler, gas);
             EXPECT_EQ(c.status, i.status);
-            EXPECT_NE(i.status, EVMC_SUCCESS);
-            EXPECT_NE(i.status, EVMC_REVERT);
-            EXPECT_NE(c.status, EVMC_SUCCESS);
-            EXPECT_NE(c.status, EVMC_REVERT);
+            EXPECT_NE(i.status, MONAD_STATUS_SUCCESS);
+            EXPECT_NE(i.status, MONAD_STATUS_REVERT);
+            EXPECT_NE(c.status, MONAD_STATUS_SUCCESS);
+            EXPECT_NE(c.status, MONAD_STATUS_REVERT);
         }
 
         static std::vector<uint8_t> assemble(auto const &eb)
@@ -284,7 +284,7 @@ namespace
         append_return_top(eb);
 
         auto const out = expect_equal(assemble(eb));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, MONAD_STATUS_SUCCESS);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 4);
     }
@@ -299,7 +299,7 @@ namespace
         append_return_top(eb);
 
         auto const out = expect_equal(assemble(eb));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, MONAD_STATUS_SUCCESS);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 1);
     }
@@ -314,7 +314,7 @@ namespace
         append_return_top(eb);
 
         auto const out = expect_equal(assemble(eb));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, MONAD_STATUS_SUCCESS);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 3);
     }
@@ -330,7 +330,7 @@ namespace
         append_return_top(eb);
 
         auto const out = expect_equal(assemble(eb));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, MONAD_STATUS_SUCCESS);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 3);
     }
@@ -358,7 +358,7 @@ namespace
         append_return_top(eb);
 
         auto const out = expect_equal(assemble(eb));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, MONAD_STATUS_SUCCESS);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 1);
     }
@@ -374,7 +374,7 @@ namespace
         append_return_top(eb);
 
         auto const out = expect_equal(assemble(eb));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, MONAD_STATUS_SUCCESS);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 1);
     }
@@ -390,7 +390,7 @@ namespace
         append_return_top(eb);
 
         auto const out = expect_equal(assemble(eb));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, MONAD_STATUS_SUCCESS);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 1);
     }
@@ -399,7 +399,7 @@ namespace
     {
         std::vector<uint8_t> const c{DUPN, JUMPDEST};
         auto const out = expect_equal(c);
-        EXPECT_EQ(out.status, EVMC_FAILURE);
+        EXPECT_EQ(out.status, MONAD_STATUS_FAILURE);
     }
 
     TEST_F(Eip8024Test, DisallowedPairImmediateHaltsAsInvalid)
@@ -407,7 +407,7 @@ namespace
         // 0x52 (MSTORE) is disallowed for EXCHANGE but not for DUPN/SWAPN.
         std::vector<uint8_t> const c{EXCHANGE, MSTORE};
         auto const out = expect_equal(c);
-        EXPECT_EQ(out.status, EVMC_FAILURE);
+        EXPECT_EQ(out.status, MONAD_STATUS_FAILURE);
     }
 
     TEST(Eip8024Disasm, DisallowedImmediateIsLabelledAndNotConsumed)
@@ -467,14 +467,14 @@ namespace
     {
         std::vector<uint8_t> const c{DUPN, JUMPDEST};
         auto const out = expect_equal(c, 2); // DUPN costs 3
-        EXPECT_EQ(out.status, EVMC_FAILURE);
+        EXPECT_EQ(out.status, MONAD_STATUS_FAILURE);
     }
 
     TEST_F(Eip8024Test, DisallowedImmediateByteIsAReachableJumpdestInCompiler)
     {
         std::vector<uint8_t> const c{PUSH1, 0x04, JUMP, DUPN, JUMPDEST, STOP};
         auto const out = expect_equal(c);
-        EXPECT_EQ(out.status, EVMC_SUCCESS);
+        EXPECT_EQ(out.status, MONAD_STATUS_SUCCESS);
     }
 
     TEST_F(Eip8024Test, UnderflowHaltsInBothEngines)
@@ -482,7 +482,7 @@ namespace
         auto eb = evm_as::amsterdam();
         eb.push(1).push(2).dupn(17);
         auto const out = expect_equal(assemble(eb));
-        EXPECT_EQ(out.status, EVMC_FAILURE);
+        EXPECT_EQ(out.status, MONAD_STATUS_FAILURE);
     }
 
     TEST_F(Eip8024Test, TruncatedImmediateHaltsWithoutOob)
@@ -514,7 +514,7 @@ namespace
             eb.dupn(n);
             append_return_top(eb);
             auto const out = expect_equal(assemble(eb));
-            ASSERT_EQ(out.status, EVMC_SUCCESS) << "n=" << n;
+            ASSERT_EQ(out.status, MONAD_STATUS_SUCCESS) << "n=" << n;
             ASSERT_EQ(out.output.size(), 32u) << "n=" << n;
             EXPECT_EQ(out.output[31], 2) << "n=" << n;
         }
@@ -530,7 +530,7 @@ namespace
             eb.swapn(n);
             append_return_top(eb);
             auto const out = expect_equal(assemble(eb));
-            ASSERT_EQ(out.status, EVMC_SUCCESS) << "n=" << n;
+            ASSERT_EQ(out.status, MONAD_STATUS_SUCCESS) << "n=" << n;
             ASSERT_EQ(out.output.size(), 32u) << "n=" << n;
             EXPECT_EQ(out.output[31], 1) << "n=" << n;
         }
@@ -549,7 +549,7 @@ namespace
                 eb.dup(n + 1);
                 append_return_top(eb);
                 auto const out = expect_equal(assemble(eb));
-                ASSERT_EQ(out.status, EVMC_SUCCESS)
+                ASSERT_EQ(out.status, MONAD_STATUS_SUCCESS)
                     << "n=" << +n << " m=" << +m;
                 ASSERT_EQ(out.output.size(), 32u) << "n=" << +n << " m=" << +m;
                 EXPECT_EQ(out.output[31], 1) << "n=" << +n << " m=" << +m;
@@ -568,7 +568,7 @@ namespace
             }
             eb.dupn(17).stop();
             auto const out = expect_equal(assemble(eb));
-            EXPECT_EQ(out.status, EVMC_SUCCESS);
+            EXPECT_EQ(out.status, MONAD_STATUS_SUCCESS);
         }
         {
             auto eb = evm_as::amsterdam();
@@ -577,7 +577,7 @@ namespace
             }
             eb.dupn(17).stop();
             auto const out = expect_equal(assemble(eb));
-            EXPECT_EQ(out.status, EVMC_FAILURE);
+            EXPECT_EQ(out.status, MONAD_STATUS_FAILURE);
         }
     }
 
@@ -611,7 +611,7 @@ namespace
     {
         auto const out =
             expect_equal(jumped_block(236, DUPN, eip8024_encode_single(235)));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, MONAD_STATUS_SUCCESS);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 2);
     }
@@ -620,7 +620,7 @@ namespace
     {
         auto const out =
             expect_equal(jumped_block(236, SWAPN, eip8024_encode_single(235)));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, MONAD_STATUS_SUCCESS);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 1);
     }
@@ -629,7 +629,7 @@ namespace
     {
         auto const out = expect_equal(
             jumped_block(30, EXCHANGE, eip8024_encode_pair(1, 29), {DUP2}));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, MONAD_STATUS_SUCCESS);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 1);
     }
@@ -645,7 +645,8 @@ namespace
         , public ::testing::Test
     {
     protected:
-        evmc_status_code run(std::span<uint8_t const> code, Implementation impl)
+        monad_status_code
+        run(std::span<uint8_t const> code, Implementation impl)
         {
             host_ = {};
             execute(1'000'000, code, {}, impl);
@@ -657,8 +658,9 @@ namespace
     {
         for (uint8_t op : {DUPN, SWAPN, EXCHANGE}) {
             std::vector<uint8_t> const c{PUSH1, 0x01, op, 0x00};
-            EXPECT_NE(run(c, Interpreter), EVMC_SUCCESS) << "op=" << +op;
-            EXPECT_NE(run(c, Compiler), EVMC_SUCCESS) << "op=" << +op;
+            EXPECT_NE(run(c, Interpreter), MONAD_STATUS_SUCCESS)
+                << "op=" << +op;
+            EXPECT_NE(run(c, Compiler), MONAD_STATUS_SUCCESS) << "op=" << +op;
         }
         EXPECT_TRUE(
             compiler::is_unknown_opcode_info<EvmTraits<MONAD_ETH_OSAKA>>(DUPN));

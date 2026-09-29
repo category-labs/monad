@@ -21,11 +21,9 @@
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <test/vm/utils/mocked_host.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <array>
 #include <cstdint>
@@ -100,40 +98,36 @@ namespace monad::vm::test
         std::iota(call_return_data_.begin(), call_return_data_.end(), 0);
     }
 
-    evmc_result RuntimeTestBase::success_result(
+    vm::RawResult RuntimeTestBase::success_result(
         std::int64_t const gas_left, std::int64_t const gas_refund)
     {
         auto output_data = result_data();
         return {
-            .status_code = EVMC_SUCCESS,
+            .status_code = MONAD_STATUS_SUCCESS,
             .gas_left = gas_left,
             .gas_refund = gas_refund,
             .output_data = output_data.data(),
             .output_size = output_data.size(),
-            .release = nullptr,
             .create_address = {},
-            .padding = {},
         };
     }
 
-    evmc_result RuntimeTestBase::create_result(
+    vm::RawResult RuntimeTestBase::create_result(
         Address const prog_addr, std::int64_t const gas_left,
         std::int64_t const gas_refund)
     {
         auto output_data = result_data();
         return {
-            .status_code = EVMC_SUCCESS,
+            .status_code = MONAD_STATUS_SUCCESS,
             .gas_left = gas_left,
             .gas_refund = gas_refund,
             .output_data = output_data.data(),
             .output_size = output_data.size(),
-            .release = nullptr,
             .create_address = prog_addr,
-            .padding = {},
         };
     }
 
-    evmc_result RuntimeTestBase::failure_result(evmc_status_code const sc)
+    vm::RawResult RuntimeTestBase::failure_result(monad_status_code const sc)
     {
         auto output_data = result_data();
         return {
@@ -142,9 +136,7 @@ namespace monad::vm::test
             .gas_refund = 0,
             .output_data = output_data.data(),
             .output_size = output_data.size(),
-            .release = nullptr,
             .create_address = {},
-            .padding = {},
         };
     }
 

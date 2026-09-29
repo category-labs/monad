@@ -170,6 +170,20 @@ namespace
         }
         return out;
     }
+
+    /// decode_block_l2 for the cases that are about the block and its
+    /// ciphertexts. The plaintext views it also fills are checked on their
+    /// own, in EncodingsAreWhatEachTransactionWasDecodedFrom.
+    Result<Block> decode_l2(
+        byte_string_view &enc, L2Cipher::Context const &ctx,
+        L2Cipher::Secret const &secret,
+        std::vector<byte_string_view> &ciphertexts)
+    {
+        byte_string plaintexts;
+        std::vector<byte_string_view> encodings;
+        return decode_block_l2(
+            enc, ctx, secret, ciphertexts, plaintexts, encodings);
+    }
 }
 
 // bind_secret is the whole reason decode_block_l2 can take a Secret and ask no
@@ -216,7 +230,7 @@ TEST(DecodeBlockL2, RoundTripsEveryTransaction)
 
     byte_string_view view{encoded};
     std::vector<byte_string_view> ciphertexts;
-    auto const got = decode_block_l2(view, ctx, secret, ciphertexts);
+    auto const got = decode_l2(view, ctx, secret, ciphertexts);
     ASSERT_FALSE(got.has_error());
     EXPECT_TRUE(view.empty());
 
@@ -245,7 +259,7 @@ TEST(DecodeBlockL2, AgreesWithDecodeBlockOnEverythingElse)
     auto const l2_rlp = encode_l2_block(original.header, cts);
     byte_string_view l2_view{l2_rlp};
     std::vector<byte_string_view> ciphertexts;
-    auto const l2 = decode_block_l2(l2_view, ctx, secret, ciphertexts);
+    auto const l2 = decode_l2(l2_view, ctx, secret, ciphertexts);
     ASSERT_FALSE(l2.has_error());
 
     EXPECT_EQ(l2.value().header, plain.value().header);
@@ -266,7 +280,7 @@ TEST(DecodeBlockL2, CiphertextsAreViewsCoveringEveryLeaf)
 
     byte_string_view view{encoded};
     std::vector<byte_string_view> ciphertexts;
-    ASSERT_FALSE(decode_block_l2(view, ctx, secret, ciphertexts).has_error());
+    ASSERT_FALSE(decode_l2(view, ctx, secret, ciphertexts).has_error());
 
     ASSERT_EQ(ciphertexts.size(), cts.size());
     for (size_t i = 0; i < cts.size(); ++i) {
@@ -293,7 +307,7 @@ TEST(DecodeBlockL2, TamperedLeafIsRejectedNotFatal)
 
     byte_string_view view{encoded};
     std::vector<byte_string_view> ciphertexts;
-    auto const got = decode_block_l2(view, ctx, secret, ciphertexts);
+    auto const got = decode_l2(view, ctx, secret, ciphertexts);
     ASSERT_FALSE(got.has_error());
 
     EXPECT_EQ(ciphertexts.size(), 3u);
@@ -330,7 +344,7 @@ TEST(DecodeBlockL2, TrailingBytesInAPlaintextAreRejected)
         original.header, {byte_string{leaf.begin(), leaf.end()}});
     byte_string_view view{encoded};
     std::vector<byte_string_view> ciphertexts;
-    auto const got = decode_block_l2(view, ctx, secret, ciphertexts);
+    auto const got = decode_l2(view, ctx, secret, ciphertexts);
     ASSERT_FALSE(got.has_error());
     EXPECT_EQ(ciphertexts.size(), 1u);
     EXPECT_TRUE(got.value().transactions.empty());
@@ -367,7 +381,7 @@ TEST(DecodeBlockL2, RejectsAWithdrawal)
 
     byte_string_view view{encoded};
     std::vector<byte_string_view> ciphertexts;
-    auto const got = decode_block_l2(view, ctx, secret, ciphertexts);
+    auto const got = decode_l2(view, ctx, secret, ciphertexts);
     ASSERT_TRUE(got.has_error());
     EXPECT_EQ(got.error(), BlockError::WithdrawalsNotSupported);
 }
@@ -389,7 +403,7 @@ TEST(DecodeBlockL2, AcceptsAnEmptyWithdrawalList)
 
     byte_string_view view{encoded};
     std::vector<byte_string_view> ciphertexts;
-    auto const got = decode_block_l2(view, ctx, secret, ciphertexts);
+    auto const got = decode_l2(view, ctx, secret, ciphertexts);
     ASSERT_FALSE(got.has_error());
     EXPECT_TRUE(got.value().withdrawals.has_value());
     EXPECT_TRUE(got.value().withdrawals->empty());
@@ -405,8 +419,62 @@ TEST(DecodeBlockL2, EmptyTransactionListIsFine)
 
     byte_string_view view{encoded};
     std::vector<byte_string_view> ciphertexts;
-    auto const got = decode_block_l2(view, ctx, secret, ciphertexts);
+    auto const got = decode_l2(view, ctx, secret, ciphertexts);
     ASSERT_FALSE(got.has_error());
     EXPECT_TRUE(ciphertexts.empty());
     EXPECT_TRUE(got.value().transactions.empty());
+}
+
+// Sender recovery builds each signing payload from these views, so they must
+// be exactly the bytes each ACCEPTED transaction was decoded from: one per
+// transaction, in order, a rejected leaf contributing none -- and those bytes
+// must give the payload the field-by-field re-encoding gives, for each shape
+// signing_payload treats differently: legacy without a chain id, EIP-155
+// legacy, which gains the chain id and two zeros, and typed, which keeps its
+// type byte.
+TEST(DecodeBlockL2, EncodingsAreWhatEachTransactionWasDecodedFrom)
+{
+    auto const ctx = context();
+    auto const secret = bound_secret(ctx);
+    Block original = sample_block();
+
+    Transaction eip155 = legacy_tx(3, byte_string{0x01});
+    eip155.sc.chain_id = 1;
+    original.transactions.push_back(eip155);
+
+    Transaction typed = legacy_tx(4, byte_string(40, 0x11));
+    typed.type = TransactionType::eip1559;
+    typed.sc.chain_id = 1;
+    typed.sc.signature.y_parity = 1;
+    typed.max_priority_fee_per_gas = 3;
+    typed.access_list.push_back(AccessEntry{
+        0x000000000000000000000000000000000000cafe_address, {bytes32_t{}}});
+    original.transactions.push_back(typed);
+
+    auto cts = encrypt_transactions(ctx, original.transactions);
+    cts[1].back() ^= 1u; // break the second leaf's tag
+    auto const encoded = encode_l2_block(original.header, cts);
+
+    byte_string_view view{encoded};
+    std::vector<byte_string_view> ciphertexts;
+    byte_string plaintexts;
+    std::vector<byte_string_view> encodings;
+    auto const got =
+        decode_block_l2(view, ctx, secret, ciphertexts, plaintexts, encodings);
+    ASSERT_FALSE(got.has_error());
+
+    auto const &txs = got.value().transactions;
+    ASSERT_EQ(txs.size(), original.transactions.size() - 1);
+    ASSERT_EQ(encodings.size(), txs.size());
+    for (size_t i = 0; i < txs.size(); ++i) {
+        byte_string_view rest = encodings[i];
+        auto const decoded = rlp::decode_transaction(rest);
+        ASSERT_TRUE(decoded.has_value()) << "tx " << i;
+        EXPECT_TRUE(rest.empty()) << "tx " << i;
+        EXPECT_EQ(decoded.value(), txs[i]) << "tx " << i;
+        EXPECT_EQ(
+            rlp::signing_payload(txs[i], encodings[i]),
+            rlp::encode_transaction_for_signing(txs[i]))
+            << "tx " << i;
+    }
 }

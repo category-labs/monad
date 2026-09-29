@@ -308,6 +308,10 @@ extern "C" void monad_zkvm_execute_witness(void)
     // were rejected -- the header commits to the whole list.
     std::vector<monad::byte_string_view> root_transactions;
 #ifdef MONAD_ZKVM_L2
+    // What each accepted transaction was decoded from, which its signing
+    // payload is built from: the plaintexts, kept for the block.
+    monad::byte_string plaintexts;
+    std::vector<monad::byte_string_view> l2_encodings;
     // The cipher context is a function of the header and of compiled protocol
     // constants, so it has to be in hand before the first leaf is decrypted --
     // hence one extra pass over the header, which is a single RLP list. It
@@ -360,7 +364,12 @@ extern "C" void monad_zkvm_execute_witness(void)
             l2_header.extra_data.data(), salt.bytes, sizeof(salt.bytes)) == 0);
     MONAD_ASSERT(secret.has_value());
     auto block_result = monad::decode_block_l2(
-        block_view, cipher_ctx, *secret, root_transactions);
+        block_view,
+        cipher_ctx,
+        *secret,
+        root_transactions,
+        plaintexts,
+        l2_encodings);
 #else
     auto block_result = monad::rlp::decode_block(block_view, root_transactions);
 #endif
@@ -431,12 +440,23 @@ extern "C" void monad_zkvm_execute_witness(void)
     }();
     MONAD_ASSERT(valid.has_value());
 
+    // The bytes each executed transaction was decoded from. On a plaintext
+    // block they are the committed ones; on an L2 block the committed ones are
+    // ciphertexts, one per leaf, so they are the plaintexts instead.
+#ifdef MONAD_ZKVM_L2
+    std::vector<monad::byte_string_view> const &transaction_encodings =
+        l2_encodings;
+#else
+    std::vector<monad::byte_string_view> const &transaction_encodings =
+        root_transactions;
+#endif
     auto const root_result = [&]() -> monad::Result<monad::ZkvmBlockOutput> {
         SWITCH_EVM_TRAITS(
             execute_block_zkvm,
             chain,
             block,
             root_transactions,
+            transaction_encodings,
             pdb,
             vm,
             block_hash_buffer);

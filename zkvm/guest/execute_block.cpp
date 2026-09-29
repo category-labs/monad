@@ -103,7 +103,8 @@ template <Traits traits>
     requires(is_evm_trait_v<traits>)
 Result<ZkvmBlockOutput> execute_block_zkvm(
     Chain const &chain, Block const &block,
-    std::span<byte_string_view const> const root_transactions, Db &pdb,
+    std::span<byte_string_view const> const root_transactions,
+    std::span<byte_string_view const> const transaction_encodings, Db &pdb,
     vm::VM &vm, BlockHashBuffer const &block_hash_buffer)
 {
     static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
@@ -114,21 +115,15 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
     senders.reserve(block.transactions.size());
     std::vector<std::vector<std::optional<Address>>> authorities;
     authorities.reserve(block.transactions.size());
-#ifndef MONAD_ZKVM_L2
-    // Build signing payloads from the original transaction bytes.
-    MONAD_ASSERT(root_transactions.size() == block.transactions.size());
-#endif
+    // Each sender's signing payload is taken from the bytes the transaction
+    // was decoded from instead of re-encoded from its fields;
+    // rlp::signing_payload says why the two are the same bytes.
+    MONAD_ASSERT(transaction_encodings.size() == block.transactions.size());
     for (size_t i = 0; i < block.transactions.size(); ++i) {
         auto const &tx = block.transactions[i];
-#ifdef MONAD_ZKVM_L2
-        // The committed bytes are ciphertexts here, one per leaf rather than
-        // one per transaction, so they are not what the transaction was
-        // decoded from: its signing payload is re-encoded instead.
-        auto const s = recover_sender(tx);
-#else
         auto const s = recover_address(
-            tx.sc.signature, rlp::signing_payload(tx, root_transactions[i]));
-#endif
+            tx.sc.signature,
+            rlp::signing_payload(tx, transaction_encodings[i]));
         if (MONAD_UNLIKELY(!s.has_value())) {
             return TransactionError::MissingSender;
         }

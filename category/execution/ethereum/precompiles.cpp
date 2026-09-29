@@ -77,15 +77,7 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
     // The same address set maps to the same contracts and every other address
     // maps to nullopt, which the test asserts over 0x00-0x0120, a random
     // sample, and every EXPLICIT_TRAITS instantiation.
-    std::uint64_t w0;
-    std::uint64_t w1;
-    std::uint16_t w2;
-    // Read the 18 bytes in 3 chunks, and test them all at the same time with |
-    __builtin_memcpy(&w0, address.bytes, 8);
-    __builtin_memcpy(&w1, address.bytes + 8, 8);
-    __builtin_memcpy(&w2, address.bytes + 16, 2);
-    if (MONAD_LIKELY((w0 | w1 | static_cast<std::uint64_t>(w2)) != 0)) {
-        // Not a precompile
+    if (MONAD_LIKELY(!may_be_precompile(address))) {
         return std::nullopt;
     }
     // Read the two id bytes individually: bytes[18] is the high byte on every

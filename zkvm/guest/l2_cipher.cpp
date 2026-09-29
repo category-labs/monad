@@ -77,7 +77,8 @@ ContextElems context_elems(
 /// K = H_KDF(P, A; 4). P enters compressed, so it is one unambiguous encoding
 /// of a point and not a bare x-coordinate.
 Key derive_key(
-    L2Point const &shared, ContextElems const &a, bytes32_t const &constants)
+    L2Point const &shared, ContextElems const &a, bytes32_t const &constants,
+    L2SpongeTags &tags)
 {
     unsigned char sec1[33];
     l2_point_compress(shared, std::span<unsigned char, 33>{sec1});
@@ -91,7 +92,8 @@ Key derive_key(
         L2Domain::kdf,
         pattern,
         std::span<unsigned char const, 32>{constants.bytes, 32},
-        L2EcdhPoseidon2::LABEL};
+        L2EcdhPoseidon2::LABEL,
+        tags};
     s.absorb(p_elems);
     s.absorb(a);
     Key k{};
@@ -115,7 +117,7 @@ Key derive_key(
 /// len through A, so an empty message stays distinguishable from any other.
 void derive_masks(
     Key const &k, ContextElems const &a, bytes32_t const &constants,
-    std::span<std::uint64_t> const z)
+    L2SpongeTags &tags, std::span<std::uint64_t> const z)
 {
     if (z.empty()) {
         return;
@@ -127,7 +129,8 @@ void derive_masks(
         L2Domain::stream,
         pattern,
         std::span<unsigned char const, 32>{constants.bytes, 32},
-        L2EcdhPoseidon2::LABEL};
+        L2EcdhPoseidon2::LABEL,
+        tags};
     s.absorb(k);
     s.absorb(a);
     s.squeeze(z);
@@ -139,7 +142,7 @@ void derive_masks(
 /// keys would need a collision of this hash, not of an internal state.
 Key compute_tag(
     Key const &k, ContextElems const &a, bytes32_t const &constants,
-    std::span<std::uint64_t const> const c)
+    L2SpongeTags &tags, std::span<std::uint64_t const> const c)
 {
     L2IoOp const pattern[] = {
         {false,
@@ -149,7 +152,8 @@ Key compute_tag(
         L2Domain::auth,
         pattern,
         std::span<unsigned char const, 32>{constants.bytes, 32},
-        L2EcdhPoseidon2::LABEL};
+        L2EcdhPoseidon2::LABEL,
+        tags};
     s.absorb(k);
     s.absorb(a);
     s.absorb(c);
@@ -253,7 +257,7 @@ bool l2_decrypt_leaf(
     }
 
     auto const a = context_elems(r_bytes, nonce, len);
-    Key const k = derive_key(*shared, a, ctx.constants_digest);
+    Key const k = derive_key(*shared, a, ctx.constants_digest, ctx.sponge_tags);
 
     std::vector<std::uint64_t> c(n);
     get_elems_le(c, &leaf[L2_LEAF_C_OFFSET]);
@@ -270,7 +274,8 @@ bool l2_decrypt_leaf(
     // Encrypt-then-MAC: the tag is verified in full, and only then is a mask
     // applied. The two steps are separate calls so the order cannot be
     // rearranged without it being obvious.
-    Key const want = compute_tag(k, a, ctx.constants_digest, c);
+    Key const want =
+        compute_tag(k, a, ctx.constants_digest, ctx.sponge_tags, c);
     unsigned char tag_bytes[32];
     put_elems_le(tag_bytes, want);
     if (std::memcmp(tag_bytes, &leaf[L2_LEAF_C_OFFSET + 8 * n], 32) != 0) {
@@ -278,7 +283,7 @@ bool l2_decrypt_leaf(
     }
 
     std::vector<std::uint64_t> z(n);
-    derive_masks(k, a, ctx.constants_digest, z);
+    derive_masks(k, a, ctx.constants_digest, ctx.sponge_tags, z);
     for (std::size_t i = 0; i < n; ++i) {
         c[i] = goldilocks_sub(c[i], z[i]);
     }
@@ -357,16 +362,16 @@ bool l2_encrypt_leaf(
 
     auto const a = context_elems(
         std::span<unsigned char const, 33>{r_bytes, 33}, nonce, len);
-    Key const k = derive_key(*shared, a, ctx.constants_digest);
+    Key const k = derive_key(*shared, a, ctx.constants_digest, ctx.sponge_tags);
 
     std::vector<std::uint64_t> c(n);
     MONAD_ASSERT(l2_pack_bytes(plain, c) == n);
     std::vector<std::uint64_t> z(n);
-    derive_masks(k, a, ctx.constants_digest, z);
+    derive_masks(k, a, ctx.constants_digest, ctx.sponge_tags, z);
     for (std::size_t i = 0; i < n; ++i) {
         c[i] = goldilocks_add(c[i], z[i]);
     }
-    Key const t = compute_tag(k, a, ctx.constants_digest, c);
+    Key const t = compute_tag(k, a, ctx.constants_digest, ctx.sponge_tags, c);
 
     leaf.assign(l2_leaf_size(len), 0);
     std::memcpy(&leaf[L2_LEAF_R_OFFSET], r_bytes, sizeof(r_bytes));

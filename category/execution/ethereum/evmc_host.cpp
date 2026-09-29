@@ -64,6 +64,22 @@ evmc::bytes32 EvmcHostBase::get_storage(
     stack_unwind();
 }
 
+void EvmcHostBase::get_storage_into(
+    evmc::address const &address, evmc::bytes32 const &key,
+    evmc_bytes32 &value) const noexcept
+{
+    MONAD_TRY
+    {
+        state_.get_storage_into(as_monad(address), as_monad(key), value);
+        return;
+    }
+    MONAD_CATCH(...)
+    {
+        capture_current_exception();
+    }
+    stack_unwind();
+}
+
 evmc_storage_status EvmcHostBase::set_storage(
     evmc::address const &address, evmc::bytes32 const &key,
     evmc::bytes32 const &value) noexcept

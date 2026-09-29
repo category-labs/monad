@@ -16,6 +16,7 @@
 #include "test_fixtures_fuzz.hpp"
 
 #include <category/core/byte_string.hpp>
+#include <category/core/log.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -25,6 +26,12 @@
 
 inline constexpr auto MAX_VALUE_SIZE = 110u;
 inline constexpr auto GENERATED_SIZE = 100ul;
+
+extern "C" int LLVMFuzzerInitialize(int *, char ***)
+{
+    monad::start_logger_minimal();
+    return 0;
+}
 
 extern "C" int LLVMFuzzerTestOneInput(uint8_t const *input, size_t bytes)
 {

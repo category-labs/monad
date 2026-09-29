@@ -321,22 +321,29 @@ evmc::Result execute_call_message(
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
 
-    if (auto result = pre_call<traits>(*host, msg, state); result.has_value()) {
-        call_tracer.on_exit(result.value());
-        return std::move(result.value());
-    }
-
-    evmc::Result result;
-    if (auto maybe_result = check_call_precompile<traits>(
-            state, call_tracer, msg, host->log_native_transfers_);
-        maybe_result.has_value()) {
-        result = std::move(maybe_result.value());
-    }
-    else {
+    // Initialise directly to avoid clearing and move-assigning the result.
+    // Return the same local on every path to enable NRVO.
+    bool pre_called = false;
+    evmc::Result result = [&] {
+        if (auto pre_result = pre_call<traits>(*host, msg, state);
+            pre_result.has_value()) {
+            pre_called = true;
+            return std::move(pre_result.value());
+        }
+        if (auto maybe_result =
+                check_call_precompile<traits>(
+                     state, call_tracer, msg, host->log_native_transfers_);
+            maybe_result.has_value()) {
+            return std::move(maybe_result.value());
+        }
         auto const hash = state.get_code_hash(msg.code_address);
         auto const code = state.read_code(hash);
         trace::on_read_code(host->state_tracer_, hash, code->intercode());
-        result = state.vm().execute<traits>(*host, &msg, hash, code);
+        return state.vm().execute<traits>(*host, &msg, hash, code);
+    }();
+    if (pre_called) {
+        call_tracer.on_exit(result);
+        return result;
     }
 
     if (msg.depth == 0) {

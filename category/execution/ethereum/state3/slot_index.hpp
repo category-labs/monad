@@ -50,19 +50,20 @@ MONAD_NAMESPACE_BEGIN
 }
 
 // Compare search key k with entry key e; tail must be key_tail(k).
-// Check words 0 and 3 first to reject most mismatches early,
-// then words 1 and 2 to confirm equality.
+// Check word 3 first: it differs between small slot numbers, whose word 0 is
+// zero, and between keccak-derived keys alike. Then words 0, 1 and 2 to
+// confirm equality.
 [[nodiscard]] inline bool
 key_equals(bytes32_t const &k, std::uint64_t const tail, bytes32_t const &e)
 {
     std::uint64_t a, b;
+    __builtin_memcpy(&a, e.bytes + 24, 8);
+    if (a != tail) {
+        return false;
+    }
     __builtin_memcpy(&a, e.bytes, 8);
     __builtin_memcpy(&b, k.bytes, 8);
     if (a != b) {
-        return false;
-    }
-    __builtin_memcpy(&a, e.bytes + 24, 8);
-    if (a != tail) {
         return false;
     }
     __builtin_memcpy(&a, e.bytes + 8, 8);

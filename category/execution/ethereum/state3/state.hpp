@@ -334,6 +334,16 @@ private:
 
     void zero_storage(Address const &, AccountState &);
 
+    // Warm a slot in an already located account.
+    template <Traits traits>
+    AccessStatus
+    access_storage_of(AccountState &, Address const &, bytes32_t const &key);
+
+    // Read a slot from an account already located in current_.
+    [[gnu::always_inline]] inline void current_storage_into(
+        AccountState const &, Address const &, bytes32_t const &key,
+        bytes32_t &out);
+
     std::optional<Account> const &recent_account(Address const &);
 
     std::optional<Account> &current_account(Address const &);
@@ -432,6 +442,14 @@ public:
 
     template <Traits traits>
     AccessStatus access_storage(Address const &, bytes32_t const &key);
+
+#if defined(MONAD_ZKVM_ZISK)
+    // Warm and read a slot with one account lookup; see vm::Host::sload_into.
+    template <Traits traits>
+    AccessStatus sload_into(
+        Address const &, bytes32_t const &key, bool can_pay_cold_access,
+        bytes32_t &out);
+#endif
 
     PageStorageStatus
     update_page(Address const &, bytes32_t const &key, StorageStatus status);

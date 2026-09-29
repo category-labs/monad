@@ -70,10 +70,6 @@ public:
     virtual bytes32_t
     get_storage(Address const &, bytes32_t const &key) const override;
 
-    virtual void get_storage_into(
-        Address const &, bytes32_t const &key,
-        bytes32_t &value) const noexcept override;
-
     virtual StorageStatus set_storage(
         Address const &, bytes32_t const &key,
         bytes32_t const &value) noexcept override;
@@ -238,9 +234,27 @@ struct StateHost final : public StateHostBase
         stack_unwind();
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    virtual AccessStatus sload_into(
+        Address const &address, bytes32_t const &key,
+        bool const can_pay_cold_access, bytes32_t &value) noexcept override
+    {
+        MONAD_TRY
+        {
+            return state_.sload_into<traits>(
+                address, key, can_pay_cold_access, value);
+        }
+        MONAD_CATCH(...)
+        {
+            capture_current_exception();
+        }
+        stack_unwind();
+    }
+#endif
+
     virtual PageStorageStatus update_page(
         Address const &address, bytes32_t const &key,
-        StorageStatus const status) override
+        StorageStatus const status) noexcept override
     {
         if constexpr (traits::mip_8_active()) {
             MONAD_TRY

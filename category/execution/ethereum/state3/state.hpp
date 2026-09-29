@@ -331,7 +331,17 @@ public:
 
     bool is_current_incarnation(Address const &);
 
-    bytes32_t get_storage(Address const &, bytes32_t const &key);
+    bytes32_t get_storage(Address const &address, bytes32_t const &key)
+    {
+        bytes32_t value;
+        get_storage_into(address, key, value);
+        return value;
+    }
+
+    // Writes the value where the caller wants it: a caller that hands it on
+    // as another word type would otherwise copy it once more.
+    void
+    get_storage_into(Address const &, bytes32_t const &key, evmc_bytes32 &out);
 
     bytes32_t get_transient_storage(Address const &, bytes32_t const &key);
 

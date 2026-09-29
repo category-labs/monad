@@ -51,9 +51,11 @@ class StakingContract
 {
     State &state_;
     CallTracerBase &call_tracer_;
+    bool const log_native_transfers_;
 
 public:
-    StakingContract(State &, CallTracerBase &);
+    StakingContract(
+        State &, CallTracerBase &, bool log_native_transfers = false);
 
     struct WithdrawalRequest
     {
@@ -487,8 +489,9 @@ private:
     // Mint tokens in the staking contract. Done in reward.
     void mint_tokens(uint256_t const &);
 
-    // Send tokens from the staking contract to a delegator. Done in claim and
-    // withdraw.
+    // Send tokens from the staking contract to a delegator and log the
+    // transfer. Done in claim and withdraw.
+    template <Traits traits>
     void send_tokens(Address const &, uint256_t const &);
 
     // Sets an existence bit in state that `val_id` is present in the set.
@@ -602,8 +605,10 @@ public:
     template <Traits traits>
     Result<byte_string> precompile_compound(
         byte_string_view, Address const &, uint256_be_t const &);
+    template <Traits traits>
     Result<byte_string> precompile_withdraw(
         byte_string_view, Address const &, uint256_be_t const &);
+    template <Traits traits>
     Result<byte_string> precompile_claim_rewards(
         byte_string_view, Address const &, uint256_be_t const &);
     Result<byte_string> precompile_change_commission(

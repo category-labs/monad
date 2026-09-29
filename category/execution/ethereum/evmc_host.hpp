@@ -20,10 +20,8 @@
 #include <category/core/config.hpp>
 #include <category/core/throw.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
-#include <category/execution/ethereum/core/contract/abi_encode.hpp>
-#include <category/execution/ethereum/core/contract/abi_signatures.hpp>
-#include <category/execution/ethereum/core/contract/events.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
+#include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -59,9 +57,9 @@ protected:
     evmc_tx_context const &tx_context_;
     State &state_;
     CallTracerBase &call_tracer_;
-    bool const log_native_transfers_;
 
 public:
+    bool const log_native_transfers_;
     trace::StateTracer &state_tracer_;
 
     EvmcHostBase(
@@ -161,8 +159,13 @@ struct EvmcHost final : public EvmcHostBase
             call_tracer_.on_self_destruct(
                 address, beneficiary, transferred_balance);
 
-            emit_native_transfer_event(
-                address, beneficiary, transferred_balance);
+            emit_native_transfer_logs<traits>(
+                state_,
+                call_tracer_,
+                address,
+                beneficiary,
+                transferred_balance,
+                log_native_transfers_);
 
             return result;
         }
@@ -259,32 +262,6 @@ struct EvmcHost final : public EvmcHostBase
     CallTracerBase &get_call_tracer() noexcept
     {
         return call_tracer_;
-    }
-
-    void emit_native_transfer_event(
-        Address const &from, Address const &to, uint256_t const &value)
-    {
-        // Skip emitting native transfer events when no value is transferred or
-        // `from` and `to` are the same account (i.e. no net transfer of funds).
-        if (log_native_transfers_ && value > 0 && from != to) {
-            static constexpr Address native_token_address =
-                0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address;
-            static constexpr bytes32_t signature =
-                abi_encode_event_signature("Transfer(address,address,uint256)");
-            static_assert(
-                signature ==
-                bytes32_from_hex("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a"
-                                 "11628f55a4df523b3ef"));
-
-            auto event = EventBuilder(native_token_address, signature)
-                             .add_topic(abi_encode_address(from))
-                             .add_topic(abi_encode_address(to))
-                             .add_data(abi_encode_uint(u256_be{value}))
-                             .build();
-
-            state_.store_log(event);
-            call_tracer_.on_log(std::move(event));
-        }
     }
 };
 

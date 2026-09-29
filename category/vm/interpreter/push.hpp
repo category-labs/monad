@@ -78,6 +78,17 @@ namespace monad::vm::interpreter
                     : "m"(p[0]), "m"(p[1]));
                 return hi;
             }
+            // Use lwu instead of lw to avoid ZisK's sign-extension cost.
+            // rev8 and srli convert the four bytes from big-endian.
+            if constexpr (K == 4) {
+                subword_t v;
+                asm("lwu %0, %1\n\t"
+                    "rev8 %0, %0\n\t"
+                    "srli %0, %0, 32"
+                    : "=r"(v)
+                    : "m"(*reinterpret_cast<uint8_t const(*)[4]>(p)));
+                return v;
+            }
 #endif
             return [p]<size_t... Is>(std::index_sequence<Is...>) {
                 return (

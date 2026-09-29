@@ -437,11 +437,19 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // cheaper than a 32-bit one.
                 //
                 // Priming already validated all child IDs as blob offsets;
-                // only mutation needs the overlay check. get_original also
-                // checks bounds before access.
+                // only mutation needs the overlay and bounds checks here.
                 auto const blob_digest_at = [this](uint64_t const w) {
-                    return w != 0 &&
-                           get_original(NodeId{w}).tag() == Tag::DIGEST;
+                    if constexpr (priming_pass) {
+                        // Before encoding a node, is_valid_offset checks that
+                        // each nonzero child points to an earlier node in the
+                        // blob. Inlined children were checked on earlier turns.
+                        return w != 0 && NodeViewBase{blob_.data() + w}.tag() ==
+                                             Tag::DIGEST;
+                    }
+                    else {
+                        return w != 0 &&
+                               get_original(NodeId{w}).tag() == Tag::DIGEST;
+                    }
                 };
                 auto const digest_at = [blob_digest_at](uint64_t const w) {
                     if constexpr (priming_pass) {

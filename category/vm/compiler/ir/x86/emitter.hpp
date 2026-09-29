@@ -22,6 +22,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/detail.hpp>
+#include <category/vm/runtime/runtime.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <asmjit/x86.h>

@@ -18,7 +18,7 @@
 
 #include <gtest/gtest.h>
 
-#include <cstdint>
+#include <cstddef>
 
 using namespace monad::vm::runtime;
 
@@ -26,7 +26,7 @@ using namespace monad::vm::runtime;
 TEST(CachedAllocator, free_cached_poisons_block)
 {
     EvmStackAllocator const allocator;
-    uint8_t *const p = allocator.aligned_alloc_cached();
+    std::byte *const p = allocator.aligned_alloc_cached();
     allocator.free_cached(p);
     ASSERT_TRUE(__asan_address_is_poisoned(p));
     ASSERT_TRUE(

@@ -27,12 +27,12 @@ void set_3_bits(Receipt::Bloom &bloom, byte_string_view const bytes)
 {
     // YP Eqn 29
     auto const hash = keccak256(bytes);
+    // The three 16-bit big-endian chunks are the hash's first six bytes, so
+    // one 64-bit big-endian load holds them all, chunk i at bit 48 - 16i.
+    uint64_t const chunks = load_be_unsafe<uint64_t>(hash.bytes);
     for (unsigned i = 0; i < 3; ++i) {
-        // Load each 16-bit big-endian chunk from the hash as a native integer.
-        uint16_t const bit =
-            load_be_unsafe<uint16_t>(hash.bytes + i * 2) & 2047u;
-        unsigned int const byte = 255u - bit / 8u;
-        bloom[byte] |= static_cast<unsigned char>(1u << (bit & 7u));
+        uint64_t const bit = (chunks >> (48 - 16 * i)) & 2047u;
+        bloom[255u - bit / 8u] |= static_cast<unsigned char>(1u << (bit & 7u));
     }
 }
 

@@ -16,6 +16,9 @@
 #![no_main]
 ziskos::entrypoint!(main);
 
+mod ecrecover;
+mod ecrecover_tables;
+
 // The C++ guest (zkvm/guest/execute_witness.cpp) owns input and output via the eth-act
 // standard interface (io-interface/zkvm_io.h): it calls read_input to fetch the
 // RLP-encoded witness and write_output to emit the 32-byte block hash.

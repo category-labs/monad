@@ -30,7 +30,9 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstdio>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -244,4 +246,76 @@ TEST(L2PackBytes, EmptyAndCanonical)
         EXPECT_EQ(e, 0x00FFFFFFFFFFFFFFULL);
         EXPECT_LT(e, GOLDILOCKS_P);
     }
+}
+
+// Known answers. Every other test in this file is relational -- determinism,
+// separation, the rate boundary -- so an edit that changed what the sponge
+// computes while staying consistent with itself would pass all of them, and
+// every leaf already encrypted under it would stop decrypting. These pin the
+// function: the outputs of the implementation the first L2 corpora were
+// encrypted under, in full where they are short and folded where they are not.
+namespace
+{
+    // FNV-1a over the lanes, as hex: enough to see any change, and not a hash
+    // anything relies on.
+    std::string fold(std::span<uint64_t const> const lanes)
+    {
+        uint64_t h = 0xcbf29ce484222325ULL;
+        for (uint64_t const lane : lanes) {
+            for (unsigned i = 0; i < 8; ++i) {
+                h ^= (lane >> (8 * i)) & 0xff;
+                h *= 0x100000001b3ULL;
+            }
+        }
+        char buf[19];
+        std::snprintf(
+            buf, sizeof(buf), "0x%016llx", static_cast<unsigned long long>(h));
+        return buf;
+    }
+}
+
+TEST(L2Sponge, KnownAnswers)
+{
+    // One short transcript per domain, the first in full so that a failure
+    // names the lane.
+    EXPECT_EQ(
+        run(L2Domain::kdf, ramp(5), 4, ctx_a()),
+        (std::vector<uint64_t>{
+            0x8961c69a98b06ae2ULL,
+            0x26a7df3e8911ceadULL,
+            0x7eb269a51b6bbc79ULL,
+            0x199a4638e9c285a3ULL}));
+    EXPECT_EQ(
+        fold(run(L2Domain::stream, ramp(5), 4, ctx_a())), "0xb4e39c9d63c5eeae");
+    EXPECT_EQ(
+        fold(run(L2Domain::auth, ramp(5), 4, ctx_a())), "0xd6da11e18dca85f6");
+
+    // Across both rate boundaries: thirteen absorbed, thirty squeezed.
+    EXPECT_EQ(
+        fold(run(L2Domain::stream, ramp(13), 30, ctx_a())),
+        "0x6af26948c6bc820d");
+
+    // Two direction changes, each on a part-filled rate, and an absorb split
+    // across calls of different lengths.
+    std::array<L2IoOp, 5> const pattern{
+        L2IoOp{false, 5},
+        L2IoOp{true, 3},
+        L2IoOp{false, 9},
+        L2IoOp{false, 5},
+        L2IoOp{true, 13}};
+    auto const context = ctx_b();
+    L2Sponge s{
+        L2Domain::auth,
+        pattern,
+        std::span<unsigned char const, 32>{context},
+        LABEL};
+    auto const in = ramp(19);
+    std::vector<uint64_t> out(16);
+    s.absorb(std::span{in}.first(5));
+    s.squeeze(std::span{out}.first(3));
+    s.absorb(std::span{in}.subspan(5, 9));
+    s.absorb(std::span{in}.subspan(14));
+    s.squeeze(std::span{out}.subspan(3));
+    s.finish();
+    EXPECT_EQ(fold(out), "0x8a181bd02cdd4be4");
 }

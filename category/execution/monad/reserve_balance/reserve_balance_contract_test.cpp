@@ -572,7 +572,8 @@ void run_check_call_precompile_test(
     std::string_view expected_message = "")
 {
     NoopCallTracer call_tracer;
-    auto const result = check_call_precompile<traits>(state, call_tracer, msg);
+    auto const result =
+        check_call_precompile<traits>(state, call_tracer, msg, false);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->status_code, expected_status);
@@ -656,7 +657,7 @@ TYPED_TEST(
         // The precompile should be unavailable prior to MONAD_NINE.
         NoopCallTracer call_tracer;
         auto const result = check_call_precompile<typename TestFixture::Trait>(
-            this->state, call_tracer, make_msg());
+            this->state, call_tracer, make_msg(), false);
         EXPECT_FALSE(result.has_value());
         return;
     }

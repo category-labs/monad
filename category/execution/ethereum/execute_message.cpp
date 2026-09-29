@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
+#include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -62,7 +63,13 @@ namespace
         uint256_t const value = load_be<uint256_t>(msg.value);
         state.subtract_from_balance(msg.sender, value);
         state.add_to_balance(to, value);
-        host.emit_native_transfer_event(msg.sender, to, value);
+        emit_native_transfer_logs<traits>(
+            state,
+            host.get_call_tracer(),
+            msg.sender,
+            to,
+            value,
+            host.log_native_transfers_);
     }
 
 } // anonymous namespace
@@ -318,8 +325,8 @@ evmc::Result execute_call_message(
     }
 
     evmc::Result result;
-    if (auto maybe_result =
-            check_call_precompile<traits>(state, call_tracer, msg);
+    if (auto maybe_result = check_call_precompile<traits>(
+            state, call_tracer, msg, host->log_native_transfers_);
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }

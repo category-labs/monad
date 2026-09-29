@@ -27,7 +27,7 @@
 #include <category/execution/ethereum/core/contract/events.hpp>
 #include <category/execution/ethereum/core/contract/storage_array.hpp>
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
+#include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/bls.hpp>
@@ -371,9 +371,11 @@ MONAD_STAKING_ANONYMOUS_NAMESPACE_END
 
 MONAD_STAKING_NAMESPACE_BEGIN
 
-StakingContract::StakingContract(State &state, CallTracerBase &call_tracer)
+StakingContract::StakingContract(
+    State &state, CallTracerBase &call_tracer, bool const log_native_transfers)
     : state_{state}
     , call_tracer_{call_tracer}
+    , log_native_transfers_{log_native_transfers}
     , vars{state}
 {
 }
@@ -556,11 +558,16 @@ void StakingContract::mint_tokens(uint256_t const &amount)
     state_.add_to_balance(STAKING_CA, amount);
 }
 
+template <Traits traits>
 void StakingContract::send_tokens(Address const &to, uint256_t const &amount)
 {
     state_.add_to_balance(to, amount);
     state_.subtract_from_balance(STAKING_CA, amount);
+    emit_native_transfer_logs<traits>(
+        state_, call_tracer_, STAKING_CA, to, amount, log_native_transfers_);
 }
+
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::send_tokens);
 
 uint64_t StakingContract::get_activation_epoch() const noexcept
 {
@@ -807,11 +814,13 @@ StakingContract::precompile_dispatch(byte_string_view &input)
             &StakingContract::precompile_compound<traits>, COMPOUND_OP_COST};
     case PrecompileSelector::WITHDRAW:
         // [11, 6, 1, 0, 0, 1, 1]
-        return {&StakingContract::precompile_withdraw, WITHDRAW_OP_COST};
+        return {
+            &StakingContract::precompile_withdraw<traits>, WITHDRAW_OP_COST};
     case PrecompileSelector::CLAIM_REWARDS:
         // [16, 11, 2, 11, 1, 1, 1]
         return {
-            &StakingContract::precompile_claim_rewards, CLAIM_REWARDS_OP_COST};
+            &StakingContract::precompile_claim_rewards<traits>,
+            CLAIM_REWARDS_OP_COST};
     case PrecompileSelector::CHANGE_COMMISSION:
         // [0, 3, 0, 0, 1, 1, 0]
         return {
@@ -1475,6 +1484,7 @@ Result<byte_string> StakingContract::precompile_compound(
 
 EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_compound);
 
+template <Traits traits>
 Result<byte_string> StakingContract::precompile_withdraw(
     byte_string_view input, Address const &msg_sender,
     uint256_be_t const &msg_value)
@@ -1517,13 +1527,16 @@ Result<byte_string> StakingContract::precompile_withdraw(
     uint256_t const contract_balance = state_.get_balance(STAKING_CA);
     MONAD_ASSERT_THROW(
         contract_balance >= withdrawal_amount, "withdrawal insolvent");
-    send_tokens(msg_sender, withdrawal_amount);
+    send_tokens<traits>(msg_sender, withdrawal_amount);
 
     emit_withdraw_event(val_id, msg_sender, withdrawal_id, withdrawal_amount);
 
     return byte_string{abi_encode_bool(true)};
 }
 
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_withdraw);
+
+template <Traits traits>
 Result<byte_string> StakingContract::precompile_claim_rewards(
     byte_string_view input, Address const &msg_sender,
     uint256_be_t const &msg_value)
@@ -1539,13 +1552,15 @@ Result<byte_string> StakingContract::precompile_claim_rewards(
 
     auto const rewards = del.rewards().load();
     if (MONAD_LIKELY(rewards.native() != 0)) {
-        send_tokens(msg_sender, rewards.native());
+        send_tokens<traits>(msg_sender, rewards.native());
         del.rewards().clear();
         emit_claim_rewards_event(val_id, msg_sender, rewards);
     }
 
     return byte_string{abi_encode_bool(true)};
 }
+
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_claim_rewards);
 
 Result<byte_string> StakingContract::precompile_change_commission(
     byte_string_view input, Address const &msg_sender,

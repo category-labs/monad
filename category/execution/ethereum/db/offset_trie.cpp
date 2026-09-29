@@ -480,24 +480,29 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                     // digest node is already a valid RLP string
                     static_assert(DIGEST == 0x80 + KECCAK256_SIZE);
                     size_t lo = i;
-                    // The run test compares the slot against its neighbour,
-                    // so each extension already holds the value the next turn
-                    // reads: `cur == children[lo]` holds on entry and across
-                    // the body.
-                    uint64_t cur = w;
+                    // The slot below extends the run if it holds the offset
+                    // one digest below the run's lowest, `below`, counted down
+                    // in place, so no value passes from one turn's register to
+                    // the next. Not unrolled: gcc's copies of the body would
+                    // pass lo and below between them in moves.
+                    uint64_t below = w - HASH_RLP_LEN;
+#pragma GCC unroll 1
                     while (lo > 0) {
                         uint64_t const prev = children[lo - 1];
-                        if (!digest_at(prev) || cur != prev + HASH_RLP_LEN) {
+                        if (prev != below || !digest_at(prev)) {
                             break;
                         }
-                        cur = prev;
+                        below -= HASH_RLP_LEN;
                         --lo;
                     }
                     size_t const digests_length = (i - lo + 1) * HASH_RLP_LEN;
 
                     unsigned char *const digests =
                         dest.last(digests_length).data();
-                    std::memcpy(digests, blob_.data() + cur, digests_length);
+                    std::memcpy(
+                        digests,
+                        blob_.data() + (below + HASH_RLP_LEN),
+                        digests_length);
 
                     dest = dest.shrink(digests_length);
                     i = lo; // the test's decrement steps past the run

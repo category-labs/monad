@@ -472,15 +472,16 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                     }
                 };
 
-                // 64-bit, though the slots are in [0, 15]: ZisK prices add_w,
-                // sub and eq at 60 cells against ~15 for a native add, so an
-                // int counter would run the whole loop at the higher rate.
-                // Decremented after the test, not in it: `i-- > 0` tests the
-                // value before the decrement, which gcc keeps in a copy every
-                // turn.
-                for (size_t i = 16; i != 0;) {
-                    --i;
-                    uint64_t const w = children[i];
+                // Walked by pointer: an index costs a shift and an add to
+                // reach each slot, and a copy at the end of every turn.
+                // Decremented after the test, not in it: `c-- != first` tests
+                // the value before the decrement, which gcc keeps in a copy
+                // every turn.
+                node_id_wire_t const *const first = children.data();
+                for (node_id_wire_t const *c = first + children.size();
+                     c != first;) {
+                    --c;
+                    uint64_t const w = *c;
                     if (!digest_at(w)) {
                         dest = child_ref<priming_pass>(NodeId{w}, dest);
                         continue;
@@ -488,7 +489,7 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                     // copy any contiguous digests directly into dest, since a
                     // digest node is already a valid RLP string
                     static_assert(DIGEST == 0x80 + KECCAK256_SIZE);
-                    size_t lo = i;
+                    node_id_wire_t const *lo = c;
                     // The slot below extends the run if it holds the offset
                     // one digest below the run's lowest, `below`, counted down
                     // in place, so no value passes from one turn's register to
@@ -496,15 +497,16 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                     // pass lo and below between them in moves.
                     uint64_t below = w - HASH_RLP_LEN;
 #pragma GCC unroll 1
-                    while (lo > 0) {
-                        uint64_t const prev = children[lo - 1];
+                    while (lo != first) {
+                        uint64_t const prev = lo[-1];
                         if (prev != below || !digest_at(prev)) {
                             break;
                         }
                         below -= HASH_RLP_LEN;
                         --lo;
                     }
-                    size_t const digests_length = (i - lo + 1) * HASH_RLP_LEN;
+                    size_t const digests_length =
+                        (static_cast<size_t>(c - lo) + 1) * HASH_RLP_LEN;
 
                     unsigned char *const digests =
                         dest.last(digests_length).data();
@@ -514,7 +516,7 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                         digests_length);
 
                     dest = dest.shrink(digests_length);
-                    i = lo; // the next turn's decrement steps past the run
+                    c = lo; // the next turn's decrement steps past the run
                 }
                 return wrap(dest);
             },

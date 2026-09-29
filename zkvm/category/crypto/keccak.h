@@ -44,6 +44,12 @@ extern "C" void monad_zkvm_keccak256_fast(
 extern "C" void monad_zkvm_keccak256_fast_nomemo(
     void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
 
+// The same digest with the memo on the first `memo_blocks` rate blocks only,
+// for a bytecode that shares that prefix with another.
+extern "C" void monad_zkvm_keccak256_fast_memo_prefix(
+    void const *in, size_t len, size_t memo_blocks,
+    uint8_t out[KECCAK256_SIZE]);
+
 [[gnu::always_inline]] static inline void monad_keccak256(
     void const *const in, size_t const len, uint8_t out[KECCAK256_SIZE])
 {

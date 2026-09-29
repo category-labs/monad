@@ -158,18 +158,24 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             node,
             Cases{
                 [&](BranchView b) {
-                    // Validate the 16 children two at a time: a uint64_t load
-                    // spans exactly one pair, low word first.
+                    // Validate two children per 64-bit load, low word first.
+                    // Unroll all eight pairs to remove loop-control overhead.
                     static_assert(std::endian::native == std::endian::little);
                     static_assert(
                         sizeof(uint64_t) == 2 * sizeof(node_id_wire_t));
-                    unsigned char const *const p = b.payload();
-                    uint64_t pair;
-                    for (unsigned i = 0; i < 8; ++i) {
-                        std::memcpy(&pair, p + i * sizeof(pair), sizeof(pair));
-                        claim_child(NodeId{static_cast<node_id_wire_t>(pair)});
+                    unsigned char const *const child_payload = b.payload();
+                    uint64_t child_pair;
+#pragma GCC unroll 8
+                    for (unsigned pair_index = 0; pair_index < 8;
+                         ++pair_index) {
+                        std::memcpy(
+                            &child_pair,
+                            child_payload + pair_index * sizeof(child_pair),
+                            sizeof(child_pair));
                         claim_child(
-                            NodeId{static_cast<node_id_wire_t>(pair >> 32)});
+                            NodeId{static_cast<node_id_wire_t>(child_pair)});
+                        claim_child(NodeId{
+                            static_cast<node_id_wire_t>(child_pair >> 32)});
                     }
                 },
                 [&](ExtView e) { claim_child(e.child()); },

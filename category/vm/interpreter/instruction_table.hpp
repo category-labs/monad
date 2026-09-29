@@ -584,7 +584,24 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_CHECK(SIGNEXTEND);
         auto &&[b, x] = top_two(stack_top);
-        x = signextend(b, x);
+#if defined(MONAD_ZKVM_ZISK)
+        // Byte indices 0..7 place the sign bit in the low 64-bit word.
+        if ((b[1] | b[2] | b[3]) == 0 && b[0] < 8) {
+            unsigned const sign_shift = static_cast<unsigned>(56 - 8 * b[0]);
+            // Move the sign bit to bit 63, then shift back arithmetically.
+            int64_t const signed_low_word =
+                static_cast<int64_t>(x[0] << sign_shift) >> sign_shift;
+            // Fill the upper words with zeros or ones according to the sign.
+            uint64_t const sign_fill =
+                static_cast<uint64_t>(signed_low_word >> 63);
+            x[0] = static_cast<uint64_t>(signed_low_word);
+            x[1] = sign_fill;
+            x[2] = sign_fill;
+            x[3] = sign_fill;
+            MONAD_VM_NEXT(SIGNEXTEND);
+        }
+#endif
+        signextend_to(b, x);
 
         MONAD_VM_NEXT(SIGNEXTEND);
     }

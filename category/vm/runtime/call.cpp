@@ -57,8 +57,18 @@ namespace monad::vm::runtime
         return env_flags;
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    // Inlined into each caller: out of line, a call saves twelve registers,
+    // passes five arguments on the stack and copies its result out of a
+    // temporary, and the callers' constant call_kind, static_call and
+    // has_value do not fold.
+    #define MONAD_VM_CALL_IMPL_INLINE [[gnu::always_inline]] inline
+#else
+    #define MONAD_VM_CALL_IMPL_INLINE
+#endif
+
     template <Traits traits>
-    uint256_t call_impl(
+    MONAD_VM_CALL_IMPL_INLINE uint256_t call_impl(
         Context *ctx, uint256_t const &gas_word, uint256_t const &address,
         bool const has_value, bytes32_t const &value,
         uint256_t const &args_offset_word, uint256_t const &args_size_word,

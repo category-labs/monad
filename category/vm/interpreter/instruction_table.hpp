@@ -264,6 +264,10 @@ namespace monad::vm::interpreter
         runtime::Context &ctx, uint8_t const *landing, int64_t &gas_remaining)
     {
         gas_remaining -= 1;
+        // gcc knows the gas was not negative before this charge, and turns
+        // the test into a compare with -1, a constant it must load first:
+        // hidden from it, the test is one bltz.
+        MONAD_VM_LAUNDER(gas_remaining);
         if (MONAD_UNLIKELY(gas_remaining < 0)) {
             ctx.exit(OutOfGas);
         }

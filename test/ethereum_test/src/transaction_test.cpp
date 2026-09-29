@@ -48,6 +48,7 @@
 #include <fstream>
 #include <optional>
 #include <string>
+#include <vector>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -188,8 +189,14 @@ void register_transaction_tests_path(
     };
 
     if (fs::is_directory(root)) {
+        std::vector<fs::path> paths;
         for (auto const &entry : fs::recursive_directory_iterator{root}) {
-            register_test(entry.path());
+            paths.push_back(entry.path());
+        }
+        // gtest shards by registration index, so all shards must agree on it
+        std::ranges::sort(paths);
+        for (auto const &path : paths) {
+            register_test(path);
         }
     }
     else {

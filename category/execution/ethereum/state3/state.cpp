@@ -299,13 +299,15 @@ void State::push()
 #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     dirty_.emplace_back();
 #endif
-    undo_marks_.push_back(UndoMark{
+    // Built in the vector: a pushed UndoMark is built on the stack and then
+    // copied in, 64 bytes a frame.
+    undo_marks_.emplace_back(
         undo_.size(),
         undo_accts_.size(),
         undo_words_.size(),
         undo_u64_.size(),
         undo_slots_.size(),
-        undo_pages_.size()});
+        undo_pages_.size());
     log_marks_.push_back(logs_.size());
 }
 

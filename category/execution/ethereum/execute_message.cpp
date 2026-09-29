@@ -317,18 +317,19 @@ evmc::Result execute_call_message(
         return std::move(result.value());
     }
 
-    evmc::Result result;
-    if (auto maybe_result =
-            check_call_precompile<traits>(state, call_tracer, msg);
-        maybe_result.has_value()) {
-        result = std::move(maybe_result.value());
-    }
-    else {
+    // Initialised from what produces it: default-constructed and then
+    // assigned, the result would be cleared and then copied over.
+    evmc::Result result = [&] {
+        if (auto maybe_result =
+                check_call_precompile<traits>(state, call_tracer, msg);
+            maybe_result.has_value()) {
+            return std::move(maybe_result.value());
+        }
         auto const hash = state.get_code_hash(msg.code_address);
         auto const code = state.read_code(hash);
         trace::on_read_code(host->state_tracer_, hash, code->intercode());
-        result = state.vm().execute<traits>(*host, &msg, hash, code);
-    }
+        return state.vm().execute<traits>(*host, &msg, hash, code);
+    }();
 
     if (msg.depth == 0) {
         if (revert_transaction<traits>(

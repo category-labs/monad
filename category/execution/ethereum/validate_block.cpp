@@ -21,6 +21,7 @@
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -28,6 +29,7 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -161,6 +163,29 @@ Result<void> static_validate_header(BlockHeader const &header)
 }
 
 EXPLICIT_TRAITS(static_validate_header);
+
+template <Traits traits>
+monad_eth_header_layout eth_header_layout()
+{
+    // Amsterdam revisions encode the Prague layout.
+    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+        return MONAD_ETH_HEADER_LAYOUT_PRAGUE;
+    }
+    else if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+        return MONAD_ETH_HEADER_LAYOUT_CANCUN;
+    }
+    else if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+        return MONAD_ETH_HEADER_LAYOUT_SHANGHAI;
+    }
+    else if constexpr (traits::evm_rev() >= MONAD_ETH_LONDON) {
+        return MONAD_ETH_HEADER_LAYOUT_LONDON;
+    }
+    else {
+        return MONAD_ETH_HEADER_LAYOUT_LEGACY;
+    }
+}
+
+EXPLICIT_TRAITS(eth_header_layout);
 
 template <Traits traits>
 Result<void> static_validate_ommers(Chain const &chain, Block const &block)

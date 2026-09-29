@@ -295,19 +295,23 @@ public:
     }
 
     // On ZisK, compare from the most significant word and stop at the first
-    // difference, avoiding a full subtraction and borrow chain.
+    // difference, avoiding a full subtraction and borrow chain. The high words
+    // of the values EVM code compares are nearly always equal, so the low word
+    // decides: unlikely on the others lays that path out straight, where gcc
+    // would fall into the first difference and send the common case back to
+    // the result with a jump.
     [[gnu::always_inline]]
     friend constexpr bool
     operator<(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
 #if defined(MONAD_ZKVM_ZISK)
-        if (lhs[3] != rhs[3]) {
+        if (MONAD_UNLIKELY(lhs[3] != rhs[3])) {
             return lhs[3] < rhs[3];
         }
-        if (lhs[2] != rhs[2]) {
+        if (MONAD_UNLIKELY(lhs[2] != rhs[2])) {
             return lhs[2] < rhs[2];
         }
-        if (lhs[1] != rhs[1]) {
+        if (MONAD_UNLIKELY(lhs[1] != rhs[1])) {
             return lhs[1] < rhs[1];
         }
         return lhs[0] < rhs[0];

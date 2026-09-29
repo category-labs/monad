@@ -22,6 +22,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/call.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -183,7 +184,12 @@ namespace monad::vm::runtime
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,
         };
 
+#if defined(MONAD_ZKVM_ZISK)
+        // What the C adapter does, without its frame.
+        auto const result = host_of(*ctx).call(message).release_raw();
+#else
         auto const result = ctx->host->call(ctx->context, &message);
+#endif
 
         ctx->env.set_return_data(result.output_data, result.output_size);
 

@@ -90,19 +90,13 @@ namespace monad::vm
         virtual PageStorageStatus
         update_page(Address const &, bytes32_t const &key, StorageStatus) = 0;
 
-        /// Write into the caller's buffer to avoid intermediate copies.
 #if defined(MONAD_ZKVM_ZISK)
-        // No default body: avoid GCC's speculative calls to that fallback.
-        virtual void get_storage_into(
+        /// Warm the slot and return its previous access status.
+        /// Read into value only if warm or can_pay_cold_access is true.
+        /// The caller must charge cold-access gas before using value.
+        virtual AccessStatus sload_into(
             Address const &address, bytes32_t const &key,
-            bytes32_t &value) const noexcept = 0;
-#else
-        virtual void get_storage_into(
-            Address const &address, bytes32_t const &key,
-            bytes32_t &value) const noexcept
-        {
-            value = get_storage(address, key);
-        }
+            bool can_pay_cold_access, bytes32_t &value) noexcept = 0;
 #endif
 
         /// Capture `std::current_exception()`.

@@ -42,16 +42,24 @@ namespace monad::vm::runtime
 
         auto const key = store_be_as<bytes32_t>(*key_ptr);
 
+#if defined(MONAD_ZKVM_ZISK)
+        // Skip the read if cold-access gas is insufficient; deduct_gas then
+        // exits before the uninitialized value can be used.
+        bytes32_t value;
+        if (host_of(*ctx).sload_into(
+                ctx->env.recipient,
+                key,
+                ctx->gas_remaining >= traits::cold_storage_cost(),
+                value) == AccessStatus::Cold) {
+            ctx->deduct_gas(traits::cold_storage_cost());
+        }
+#else
         auto const access_status =
             ctx->host->access_storage(ctx->env.recipient, key);
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_storage_cost());
         }
 
-#if defined(MONAD_ZKVM_ZISK)
-        bytes32_t value;
-        ctx->host->get_storage_into(ctx->env.recipient, key, value);
-#else
         auto const value = ctx->host->get_storage(ctx->env.recipient, key);
 #endif
 

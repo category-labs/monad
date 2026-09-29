@@ -722,6 +722,46 @@ bool State::is_current_incarnation(Address const &address)
     return false;
 }
 
+inline void State::current_storage_into(
+    AccountState const &account_state, Address const &address,
+    bytes32_t const &key, bytes32_t &out)
+{
+    auto const &account = account_state.account_;
+    MONAD_ASSERT(account.has_value());
+    auto const &storage = account_state.storage_;
+    if (auto const *const stored_value = storage.find(key); stored_value) {
+        out = *stored_value;
+        return;
+    }
+    MONAD_ASSERT(account_state.original_state_ != nullptr);
+    auto &original_account_state = *account_state.original_state_;
+    auto const &original_account = original_account_state.account_;
+    if (!original_account.has_value() ||
+        account.value().incarnation != original_account.value().incarnation) {
+        out = {};
+        return;
+    }
+    auto &original_storage = original_account_state.prestate_storage_;
+    if (auto const *const original_value = original_storage.find(key);
+        original_value) {
+        out = *original_value;
+    }
+    else {
+#ifdef MONAD_ZKVM_ZISK
+        bytes32_t const &value = block_state_.read_storage(
+            *original_account_state.block_delta_,
+            address,
+            account.value().incarnation,
+            key);
+#else
+        bytes32_t const value = block_state_.read_storage(
+            address, account.value().incarnation, key);
+#endif
+        original_storage.insert(key, value);
+        out = value;
+    }
+}
+
 void State::get_storage_into(
     Address const &address, bytes32_t const &key, bytes32_t &out)
 {
@@ -758,41 +798,7 @@ void State::get_storage_into(
         }
     }
     else {
-        auto const &account_state = *current_state;
-        auto const &account = account_state.account_;
-        MONAD_ASSERT(account.has_value());
-        auto const &storage = account_state.storage_;
-        if (auto const *const it2 = storage.find(key); it2) {
-            out = *it2;
-            return;
-        }
-        MONAD_ASSERT(account_state.original_state_ != nullptr);
-        auto &original_account_state = *account_state.original_state_;
-        auto const &original_account = original_account_state.account_;
-        if (!original_account.has_value() ||
-            account.value().incarnation !=
-                original_account.value().incarnation) {
-            out = {};
-            return;
-        }
-        auto &original_storage = original_account_state.prestate_storage_;
-        if (auto const *const it3 = original_storage.find(key); it3) {
-            out = *it3;
-        }
-        else {
-#ifdef MONAD_ZKVM_ZISK
-            bytes32_t const &value = block_state_.read_storage(
-                *original_account_state.block_delta_,
-                address,
-                account.value().incarnation,
-                key);
-#else
-            bytes32_t const value = block_state_.read_storage(
-                address, account.value().incarnation, key);
-#endif
-            original_storage.insert(key, value);
-            out = value;
-        }
+        current_storage_into(*current_state, address, key, out);
     }
 }
 
@@ -956,9 +962,9 @@ AccessStatus State::access_account(Address const &address)
 }
 
 template <Traits traits>
-AccessStatus State::access_storage(Address const &address, bytes32_t const &key)
+[[gnu::always_inline]] inline AccessStatus State::access_storage_of(
+    AccountState &account_state, Address const &address, bytes32_t const &key)
 {
-    auto &account_state = current_account_state(address);
     auto const slot_status = account_state.access_storage(key);
     if (slot_status == AccessStatus::Cold) {
         journal_warm_slot(address, key);
@@ -970,7 +976,33 @@ AccessStatus State::access_storage(Address const &address, bytes32_t const &key)
     return slot_status;
 }
 
+template <Traits traits>
+AccessStatus State::access_storage(Address const &address, bytes32_t const &key)
+{
+    return access_storage_of<traits>(
+        current_account_state(address), address, key);
+}
+
 EXPLICIT_TRAITS_MEMBER(State::access_storage);
+
+#if defined(MONAD_ZKVM_ZISK)
+// Warm and read the slot using the same account lookup.
+template <Traits traits>
+AccessStatus State::sload_into(
+    Address const &address, bytes32_t const &key,
+    bool const can_pay_cold_access, bytes32_t &out)
+{
+    auto &account_state = current_account_state(address);
+    AccessStatus const status =
+        access_storage_of<traits>(account_state, address, key);
+    if (status == AccessStatus::Warm || can_pay_cold_access) {
+        current_storage_into(account_state, address, key, out);
+    }
+    return status;
+}
+
+EXPLICIT_TRAITS_MEMBER(State::sload_into);
+#endif
 
 PageStorageStatus State::update_page(
     Address const &address, bytes32_t const &key, StorageStatus const status)

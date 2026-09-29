@@ -48,10 +48,19 @@ enum monad_storage_status
 
 // Convert between monad_storage_status and evmc's evmc_storage_status. Needed
 // only at the remaining evmc host interface boundary (see the note above).
-enum evmc_storage_status
-to_evmc_storage_status(enum monad_storage_status status);
-enum monad_storage_status
-from_evmc_storage_status(enum evmc_storage_status status);
+// Value-preserving casts, by the static_asserts in storage_status.cpp; defined
+// here, so that the host's overrides make no call for them.
+static inline enum evmc_storage_status
+to_evmc_storage_status(enum monad_storage_status const status)
+{
+    return (enum evmc_storage_status)status;
+}
+
+static inline enum monad_storage_status
+from_evmc_storage_status(enum evmc_storage_status const status)
+{
+    return (enum monad_storage_status)status;
+}
 
 #ifdef __cplusplus
 } // extern "C"

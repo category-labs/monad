@@ -25,9 +25,11 @@ jobs:
       name: Compile for RISC-V
       runs-on: ubuntu-26.04-32
       steps:
-      - name: Tell git to do submodules in parallel
+      - name: Configure git submodules
         run: |
           git config --global submodule.fetchJobs "$(nproc)"
+          git config --global submodule.LegacyTests.update none
+          git config --global submodule.third_party/tests.update none
 
       - uses: actions/checkout@v4
         with:
@@ -43,9 +45,8 @@ jobs:
           file: docker/Dockerfile
           build-args: |-
             UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
+          ulimit: "memlock=-1:-1"
           target: build_zk
           cache-from: |
             type=gha,scope=riscv-toolchain
-            type=gha,scope=zk
             type=gha,scope=base
-          cache-to: type=gha,mode=max,scope=zk

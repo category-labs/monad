@@ -28,6 +28,7 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <limits>
 #include <optional>
 
 using namespace monad;
@@ -661,5 +662,43 @@ TEST(Rlp_Transaction, DecodeEip2718TrailingBytes)
         auto const result = decode_transaction_list(enc, nullptr);
         ASSERT_TRUE(result.has_error());
         EXPECT_EQ(result.error(), DecodeError::InputTooLong);
+    }
+}
+
+TEST(Rlp_Transaction, DecodeLegacyInvalidV)
+{
+    auto const encode_legacy_tx = [](uint256_t const &v) {
+        return encode_list2(
+            encode_unsigned(0u), // nonce
+            encode_unsigned(1u), // gas_price
+            encode_unsigned(21'000u), // gas_limit
+            encode_address(0x3535353535353535353535353535353535353535_address),
+            encode_unsigned(0u), // value
+            encode_string2(byte_string{}), // data
+            encode_unsigned(v),
+            encode_unsigned(1u), // r
+            encode_unsigned(1u)); // s
+    };
+
+    for (auto const &v : {0_u256, 1_u256, 26_u256, 29_u256, 34_u256}) {
+        auto const tx = encode_legacy_tx(v);
+        byte_string_view enc{tx};
+        auto const result = decode_transaction(enc);
+        ASSERT_TRUE(result.has_error()) << to_string(v);
+        EXPECT_EQ(result.error(), DecodeError::NonCanonical);
+    }
+
+    for (auto const &v :
+         {27_u256,
+          28_u256,
+          35_u256,
+          36_u256,
+          37_u256,
+          std::numeric_limits<uint256_t>::max()}) {
+        auto const tx = encode_legacy_tx(v);
+        byte_string_view enc{tx};
+        auto const result = decode_transaction(enc);
+        ASSERT_FALSE(result.has_error()) << to_string(v);
+        EXPECT_EQ(encode_transaction(result.value()), tx) << to_string(v);
     }
 }

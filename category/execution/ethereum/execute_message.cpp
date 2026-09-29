@@ -312,22 +312,30 @@ evmc::Result execute_call_message(
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
 
-    if (auto result = pre_call<traits>(*host, msg, state); result.has_value()) {
-        call_tracer.on_exit(result.value());
-        return std::move(result.value());
-    }
-
-    evmc::Result result;
-    if (auto maybe_result =
-            check_call_precompile<traits>(state, call_tracer, msg);
-        maybe_result.has_value()) {
-        result = std::move(maybe_result.value());
-    }
-    else {
+    // Initialised from what produces it: default-constructed and then
+    // assigned, the result would be cleared and then copied over. The
+    // pre_call exit goes through it too, so that every return is of this
+    // one variable and it is built in the caller's slot.
+    bool pre_called = false;
+    evmc::Result result = [&] {
+        if (auto pre_result = pre_call<traits>(*host, msg, state);
+            pre_result.has_value()) {
+            pre_called = true;
+            return std::move(pre_result.value());
+        }
+        if (auto maybe_result =
+                check_call_precompile<traits>(state, call_tracer, msg);
+            maybe_result.has_value()) {
+            return std::move(maybe_result.value());
+        }
         auto const hash = state.get_code_hash(msg.code_address);
         auto const code = state.read_code(hash);
         trace::on_read_code(host->state_tracer_, hash, code->intercode());
-        result = state.vm().execute<traits>(*host, &msg, hash, code);
+        return state.vm().execute<traits>(*host, &msg, hash, code);
+    }();
+    if (pre_called) {
+        call_tracer.on_exit(result);
+        return result;
     }
 
     if (msg.depth == 0) {

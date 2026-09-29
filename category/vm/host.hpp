@@ -247,6 +247,17 @@ namespace monad::vm::host_shim
     {
         return of(h)->update_page(addr(a), word(k), status);
     }
+
+    // Whether an interface slot was filled. A function and not an inline
+    // comparison: compared in place, the slot reads to GCC 15 as a function's
+    // address, and -Waddress rejects testing that against null as always
+    // true -- which it is when the slot is filled, and is exactly what the
+    // assertion using this is there to establish.
+    template <typename R, typename... Args>
+    consteval bool is_set(R (*const fn)(Args...)) noexcept
+    {
+        return fn != nullptr;
+    }
 }
 
 namespace monad::vm
@@ -275,7 +286,7 @@ namespace monad::vm
             ::monad::vm::host_shim::update_page,
         };
         // An omitted trailing callback becomes null; require update_page.
-        static_assert(interface.update_page != nullptr);
+        static_assert(host_shim::is_set(interface.update_page));
         return interface;
     }
 }

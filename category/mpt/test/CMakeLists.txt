@@ -13,6 +13,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+monad_add_test_death(
+  grow_death_no_mode_test
+  SOURCES
+  "grow_death_no_mode.cpp"
+  LINK_LIBRARIES
+  monad_execution
+  FAIL_REGEX
+  ".*run 'monad-mpt --grow.*")
+add_trie_test(TARGET grow_database_test SOURCES "grow_database_test.cpp")
 add_trie_test(TARGET append_test SOURCES "append_test.cpp")
 add_trie_test(TARGET big_endian_serialization_test SOURCES
               "big_endian_serialization_test.cpp")

@@ -320,7 +320,7 @@ steps on a whole block -- 0.3% of the cipher -- and the cost is the software
 mode around it, of which `L2Sponge::charge`, validating that the declared SAFE
 pattern is being followed, is 24% on its own. In cells the margin narrows to
 about 7x, since the ECDH's work is precompiled and the sponge's is not. On the
-generated corpus the sponge is 3.3x the ECDH in steps; see
+generated corpus the sponge is 1.6x the ECDH in steps; see
 [Where the L2's share goes](#where-the-l2s-share-goes).
 
 ### The corpus
@@ -521,7 +521,7 @@ zkvm/test/corpus/bench-report.py --l2 l2.csv --plain plain.csv --mainnet mainnet
 
 **The ELFs are built the way the benchmark builds its own**, and it matters: a
 bare `cargo-zisk build --release` leaves five of the six levers the official
-profile forces switched off, and measured 17 % more steps on a payouts block.
+profile forces switched off, and measured 15 % more steps on a payouts block.
 The plaintext ELF is the official profile; the L2 one cannot be (the guest
 CMake refuses `MONAD_ZKVM_L2` there), so it is a dev build carrying the same six
 levers -- `ZISK_DMA`, `KECCAKF_MEMO`, `WIDE_MEMORY_SIZE`, `VARCODE_CACHE`,
@@ -532,15 +532,15 @@ what licenses reading the L2 ELF as the official guest plus the L2.
 
 | | `wholesale` | `payouts` |
 |---|---:|---:|
-| steps, L2 | 0.81 M | 14.89 M |
-| COST, L2 | 0.422 G | 2.709 G |
+| steps, L2 | 0.73 M | 13.10 M |
+| COST, L2 | 0.414 G | 2.534 G |
 | of which fixed | 0.287 G | 0.287 G |
-| COST, plaintext | 0.408 G | 2.376 G |
-| share of a median mainnet block | 4 % | 27 % |
+| COST, plaintext | 0.403 G | 2.286 G |
+| share of a median mainnet block | 4 % | 26 % |
 
 **A fixed 287,309,824 of it is the same on every block**: `Base`, ZisK's ROM
 and lookup tables (137 x 2^21), which the cost model charges once per run
-whatever the run proves. It is 68 % of a wholesale block. A guest that proved
+whatever the run proves. It is 69 % of a wholesale block. A guest that proved
 several blocks in one run -- this one proves one -- would pay it once, and on
 wholesale two blocks per run would save more than making the block itself
 free.
@@ -548,24 +548,24 @@ free.
 **The rest follows the transactions first.** Over the 420 workload blocks of
 the L2 arm,
 
-    COST - base = 3.46 M x txs + 802 x witness_bytes + 0.6 M        R2 0.99999
+    COST - base = 3.13 M x txs + 791 x witness_bytes + 0.4 M        R2 0.99999
 
-and the plaintext arm gives 2.83 M per transaction and 814 per byte. The
-per-byte term is the trie's and is the same on both arms; the L2 is 0.63 M more
-per transaction, +22 %. A payouts block spends 1.73 G on its 500 transactions
-and 0.69 G on its 859 KB of witness.
+and the plaintext arm gives 2.66 M per transaction and 811 per byte. The
+per-byte term is the trie's and is the same on both arms; the L2 is 0.47 M more
+per transaction, +18 %. A payouts block spends 1.57 G on its 500 transactions
+and 0.68 G on its 859 KB of witness.
 
 **So prover cost is proportional to gas only above the floor.** On the payouts
-sweep `COST - base = 191 x gas`, R2 0.9995: for one transaction mix, the part
+sweep `COST - base = 176 x gas`, R2 0.9995: for one transaction mix, the part
 of the cost that depends on the block is linear in gas even though the witness
-is not. What makes COST per gas fall from 472 at 50 transfers to 192 at 5,000
+is not. What makes COST per gas fall from 457 at 50 transfers to 177 at 5,000
 is the fixed part, and the slope belongs to the mix -- outside the floor,
-wholesale spends 271 per gas and payouts 212.
+wholesale spends 255 per gas and payouts 196.
 
 **Mainnet, on the same ELF.** The 200 canonical blocks 25,815,000-25,815,199
 (`zkvm-bench`'s `r10zisk-rtp` witnesses), every block hash reproduced: median
-**9.97 G** COST (p10 6.02, p90 15.04), 66.4 M steps, 6.61 MB of witness,
-1,477 COST per witness byte above the floor. A payouts block spends 2,817 per
+**9.67 G** COST (p10 5.84, p90 14.58), 63.4 M steps, 6.61 MB of witness,
+1,432 COST per witness byte above the floor. A payouts block spends 2,614 per
 byte, nearly twice as much: a transaction-dense L2 block is not a small mainnet
 block, and the mainnet law below does not carry over to it -- the transaction
 count is what it misses.
@@ -577,27 +577,44 @@ transfers from the same seed:
 
 | | steps | COST | COST - base |
 |---|---:|---:|---:|
-| `wholesale` | 1.14x | 1.03x | 1.11x |
-| `payouts` | 1.18x | 1.14x | 1.16x |
-| sweep, 50 to 5,000 transfers | 1.17-1.21x | 1.06-1.19x | 1.14-1.19x |
+| `wholesale` | 1.09x | 1.03x | 1.09x |
+| `payouts` | 1.13x | 1.11x | 1.12x |
+| sweep, 50 to 5,000 transfers | 1.12-1.15x | 1.05-1.15x | 1.11-1.15x |
 
-Of the extra COST on a payouts block, 47 % is main-machine steps, 27 %
-precompiles (Poseidon2 9 %, secp256k1 11 %, Keccak 3 %) and 18 % memory. By
-function, on one 500-transaction block (`hotspots.py`, 14.73 M steps against
-12.34 M):
+Of the extra COST on a payouts block, 40 % is main-machine steps, 37 %
+precompiles (Poseidon2 12 %, secp256k1 14 %, Keccak 3 %) and 16 % memory. By
+function, on one 500-transaction block (`hotspots.py`, 12.93 M steps against
+11.38 M):
 
-- the software sponge around the Poseidon2 precompile, **2.21 M steps**:
-  `L2Sponge::absorb` 1.14 M, the constructor, which derives SAFE's tag from the
-  I/O pattern for every sponge, 0.62 M, `squeeze` 0.36 M, byte packing 0.09 M;
+- the software sponge around the Poseidon2 precompile, **1.08 M steps**:
+  `L2Sponge::absorb` 0.51 M, the constructor, which derives SAFE's tag from the
+  I/O pattern for every sponge, 0.31 M, `squeeze` 0.16 M, byte packing 0.09 M;
 - the ECDH, mostly the GLV scalar multiplication, 0.66 M;
-- leaf decryption and the L2 block decode, 0.43 M;
-- less 0.8 M the L2 does not do: gas pricing (`gas_price`, `checked_mul`, the
-  fee credits) and the plaintext decode.
+- leaf decryption and the L2 block decode, 0.45 M;
+- less about 0.6 M the L2 does not do: gas pricing (`gas_price`, `checked_mul`,
+  the fee credits) and the plaintext decode.
 
-The sponge is 3.3x the ECDH here -- the direction measured on the rewritten
-mainnet corpus, at a narrower margin because a native transfer is a short
-plaintext -- and it is the place to optimise: the Poseidon2 precompile itself is
-11 k of its steps.
+What keeps the sponge at that: it checks its declared I/O pattern once per call
+rather than once per element, absorbs and squeezes a rate block at a time, and
+writes the first rate block without the modular addition -- until the first
+permutation the rate is the zero it was built with, so adding into it is the
+element itself. An absorbed element is then about sixteen instructions: the
+load, the canonicity check, the Goldilocks addition and the store. The tag
+block is copied whole rather than byte by byte. None of this changes what the
+sponge computes: `L2Sponge.KnownAnswers` and `L2Cipher.KnownAnswerLeaves` pin
+its outputs, and every leaf of the corpora above decrypts under it.
+
+Each transaction's signing payload is built from the plaintext it was decoded
+from, which `decode_block_l2` keeps for the block, rather than re-encoded field
+by field -- the same bytes, as `DecodeBlockL2.EncodingsAreWhatEachTransactionWasDecodedFrom`
+checks for legacy, EIP-155 and typed transactions.
+
+The sponge is 1.6x the ECDH here. Most of what is left is the absorption
+itself, at the sixteen instructions an element above. The part that could
+still go is the constructor's tag: three Poseidon2 permutations a leaf, over a
+block that depends only on the domain, the lengths and the per-block context,
+so it could be computed once a block for the key derivation and once per
+length for the other two -- 0.31 M on this block.
 
 #### What mainnet said, on `r8`
 
@@ -614,7 +631,7 @@ Over 504 mainnet witnesses joined to their measured cost on the `r8` guest
 
 The structural fits are properties of the witness and still hold. The slope is
 not a constant of the guest: it was `r8` under the emulator and runtime of its
-time, and this ELF spends 1,477 per byte on mainnet above the floor, about half. On
+time, and this ELF spends 1,432 per byte on mainnet above the floor, about half. On
 mainnet, witness bytes are the cost to within about 8 %; on the L2 corpus they
 are the smaller of two terms.
 
@@ -686,7 +703,7 @@ What the L2 adds to each block is in
 
 The plaintext ELF also reproduces the canonical mainnet block hash of all 200
 blocks 25,815,000-25,815,199 from `zkvm-bench`'s `r10zisk-rtp` witnesses, 0.3 M
-to 133.5 M steps. Witnesses from before the blob grammar moved `DIGEST` to `0xa0`
+to 127.1 M steps. Witnesses from before the blob grammar moved `DIGEST` to `0xa0`
 abort in the reader, which is expected: `ziskemu` exits 0 and leaves the output
 zero, so a harness has to judge the bytes, never the exit status.
 

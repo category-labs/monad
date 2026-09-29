@@ -263,6 +263,11 @@ class State
 
     Map<bytes32_t, vm::SharedVarcode> code_{};
 
+#if !defined(MONAD_ZKVM_VARCODE_CACHE)
+    // Keep the code alive until the next borrowed lookup.
+    vm::SharedVarcode borrowed_code_{};
+#endif
+
     // Open frame count. Match vector sizes and avoid costly 32-bit accesses
     // on ZisK.
     size_t version_{0};
@@ -472,6 +477,10 @@ public:
     ////////////////////////////////////////
 
     vm::SharedVarcode read_code(bytes32_t const &code_hash);
+
+    // Borrow the cached shared_ptr without changing its reference count.
+    // Use it immediately: a later code lookup may replace the cached value.
+    vm::SharedVarcode const &read_code_ref(bytes32_t const &code_hash);
 
     vm::SharedVarcode get_code(Address const &);
 

@@ -83,6 +83,11 @@ public:
 
     vm::SharedVarcode read_code(bytes32_t const &);
 
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+    // Borrow the cached shared_ptr; the VM must outlive the reference.
+    vm::SharedVarcode const &read_code_ref(bytes32_t const &);
+#endif
+
     bool can_merge(State &) const;
 
     void merge(State const &);

@@ -1110,7 +1110,7 @@ void State::destruct_touched_dead()
     }
 }
 
-vm::SharedVarcode State::read_code(bytes32_t const &code_hash)
+vm::SharedVarcode const &State::read_code_ref(bytes32_t const &code_hash)
 {
     {
         auto const it = code_.find(code_hash);
@@ -1118,7 +1118,17 @@ vm::SharedVarcode State::read_code(bytes32_t const &code_hash)
             return it->second;
         }
     }
-    return block_state_.read_code(code_hash);
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+    return block_state_.read_code_ref(code_hash);
+#else
+    borrowed_code_ = block_state_.read_code(code_hash);
+    return borrowed_code_;
+#endif
+}
+
+vm::SharedVarcode State::read_code(bytes32_t const &code_hash)
+{
+    return read_code_ref(code_hash);
 }
 
 vm::SharedVarcode State::get_code(Address const &address)
@@ -1136,16 +1146,7 @@ size_t State::get_code_size(Address const &address)
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
     }
-    bytes32_t const &code_hash = account.value().code_hash;
-    {
-        auto const it = code_.find(code_hash);
-        if (it != code_.end()) {
-            auto const &vcode = it->second;
-            MONAD_ASSERT(vcode);
-            return vcode->intercode()->size();
-        }
-    }
-    auto const vcode = block_state_.read_code(code_hash);
+    vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
     MONAD_ASSERT(vcode);
     return vcode->intercode()->size();
 }
@@ -1158,7 +1159,7 @@ size_t State::copy_code(
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
     }
-    vm::SharedVarcode const vcode = read_code(account.value().code_hash);
+    vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
     MONAD_ASSERT(vcode);
     return vcode->intercode()->copy_code(offset, buffer, buffer_size);
 }

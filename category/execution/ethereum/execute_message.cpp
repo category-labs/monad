@@ -339,7 +339,12 @@ evmc::Result execute_call_message(
             }
         }
         auto const hash = state.get_code_hash(msg.code_address);
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+        // The VM cache keeps this entry alive throughout execution.
+        auto const &code = state.read_code_ref(hash);
+#else
         auto const code = state.read_code(hash);
+#endif
         trace::on_read_code(host->state_tracer_, hash, code->intercode());
         return state.vm().execute<traits>(*host, &msg, hash, code);
     }();

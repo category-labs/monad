@@ -48,7 +48,12 @@ namespace monad::vm::runtime
             ctx->deduct_gas(traits::cold_storage_cost());
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        bytes32_t value;
+        ctx->host->get_storage_into(ctx->env.recipient, key, value);
+#else
         auto const value = ctx->host->get_storage(ctx->env.recipient, key);
+#endif
 
         *result_ptr = load_be<uint256_t>(value);
     }

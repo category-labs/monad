@@ -150,6 +150,8 @@ add_library(
   "ethereum/execute_transaction.cpp"
   "ethereum/execute_transaction.hpp"
   "ethereum/fmt/event_trace_fmt.hpp"
+  "ethereum/native_transfer_log.cpp"
+  "ethereum/native_transfer_log.hpp"
   "ethereum/process_requests.cpp"
   "ethereum/process_requests.hpp"
   "ethereum/reserve_balance.cpp"

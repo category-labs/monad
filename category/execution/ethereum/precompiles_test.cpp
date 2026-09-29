@@ -336,7 +336,7 @@ namespace
 
                 NoopCallTracer call_tracer{};
                 evmc::Result const result =
-                    check_call_precompile<traits>(s, call_tracer, input)
+                    check_call_precompile<traits>(s, call_tracer, input, false)
                         .value();
 
                 if (auto const *expected_value =

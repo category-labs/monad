@@ -15,8 +15,11 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/core/thread_local.h>
 #include <category/vm/runtime/cached_allocator.hpp>
+
+#include <cstddef>
 
 namespace monad::vm::runtime
 {

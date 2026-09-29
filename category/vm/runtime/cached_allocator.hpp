@@ -17,14 +17,14 @@
 
 #include <category/core/asan.h>
 #include <category/core/assert.h>
-#include <category/core/runtime/non_temporal_memory.hpp>
-#include <category/core/runtime/uint256.hpp>
 
-#include <algorithm>
+#include <concepts>
+#include <cstddef>
 #include <cstdlib>
 #include <functional>
 #include <memory>
-#include <vector>
+#include <new>
+#include <type_traits>
 
 namespace monad::vm::runtime
 {
@@ -62,12 +62,12 @@ namespace monad::vm::runtime
             return n;
         }
 
-        void push(CachedAllocatorElement *const e)
+        void push(void *const storage)
         {
-            e->next = elements;
-            e->idx = size() + 1;
-            elements = e;
-            MONAD_ASAN_POISON(e, sizeof(CachedAllocatorElement));
+            auto const new_size = size() + 1;
+            elements = ::new (storage)
+                CachedAllocatorElement{.next = elements, .idx = new_size};
+            MONAD_ASAN_POISON(storage, sizeof(CachedAllocatorElement));
         }
 
         CachedAllocatorElement *pop()
@@ -103,11 +103,22 @@ namespace monad::vm::runtime
     class CachedAllocator
     {
     public:
-        static constexpr size_t alloc_size =
-            sizeof(typename T::base_type) * T::size;
+        using base_type = typename T::base_type;
+
+        static constexpr size_t alloc_size = sizeof(base_type) * T::size;
         static constexpr size_t DEFAULT_MAX_CACHE_BYTE_SIZE = 4096 * alloc_size;
 
+#if defined(__cpp_lib_is_implicit_lifetime) &&                                 \
+    __cpp_lib_is_implicit_lifetime >= 202302L
+        static_assert(std::is_implicit_lifetime_v<base_type>);
+#else
+        static_assert(std::is_trivially_copy_constructible_v<base_type>);
+#endif
+        // Cached storage is reused without calling payload destructors.
+        static_assert(std::is_trivially_destructible_v<base_type>);
+
         static_assert(T::alignment >= 32);
+        static_assert(alignof(base_type) <= T::alignment);
         static_assert(alignof(CachedAllocatorElement) <= T::alignment);
         static_assert(alloc_size % T::alignment == 0);
         static_assert(sizeof(CachedAllocatorElement) <= alloc_size);
@@ -122,19 +133,22 @@ namespace monad::vm::runtime
             max_slots_in_cache = max_cache_byte_size_per_thread / alloc_size;
         };
 
-        uint8_t *aligned_alloc_cached() const
+        std::byte *aligned_alloc_cached() const
         {
+            void *storage;
             if (T::cache_list.empty()) {
-                auto *const p = reinterpret_cast<uint8_t *>(
-                    std::aligned_alloc(T::alignment, alloc_size));
-                return p;
+                storage = std::aligned_alloc(T::alignment, alloc_size);
             }
             else {
-                auto *const p =
-                    reinterpret_cast<uint8_t *>(T::cache_list.pop());
-                MONAD_ASAN_UNPOISON(p, alloc_size);
-                return p;
+                storage = T::cache_list.pop();
+                MONAD_ASAN_UNPOISON(storage, alloc_size);
             }
+
+            MONAD_ASSERT(storage != nullptr);
+
+            // Start byte storage and implicitly create payload objects without
+            // initializing their values.
+            return ::new (storage) std::byte[alloc_size];
         }
 
         /// Clear cache for testing/debugging purposes
@@ -146,26 +160,29 @@ namespace monad::vm::runtime
         }
 
         /// Free memory allocated with `aligned_alloc_cached`.
-        void free_cached(uint8_t *const ptr) const
+        void free_cached(void *const storage) const
         {
             if (T::cache_list.size() >= max_slots_in_cache) {
-                std::free(ptr);
+                std::free(storage);
             }
             else {
-                MONAD_ASAN_POISON(
-                    ptr + sizeof(CachedAllocatorElement),
-                    alloc_size - sizeof(CachedAllocatorElement));
-                T::cache_list.push(
-                    reinterpret_cast<CachedAllocatorElement *>(ptr));
+                T::cache_list.push(storage);
+                MONAD_ASAN_POISON(storage, alloc_size);
             }
         };
 
-        std::unique_ptr<uint8_t, std::function<void(uint8_t *)>>
+        /// Return live base_type objects whose values are uninitialized.
+        std::unique_ptr<base_type, std::function<void(base_type *)>>
         allocate() const
         {
-            return {aligned_alloc_cached(), [*this](uint8_t *ptr) {
-                        free_cached(ptr);
-                    }};
+            // aligned_alloc_cached's placement new of a std::byte array
+            // implicitly creates the base_type objects. reinterpret_cast alone
+            // does not retarget the byte pointer to those objects; launder
+            // obtains a pointer to the first live base_type. Its lifetime has
+            // already started before the call to launder.
+            auto *const ptr = std::launder(
+                reinterpret_cast<base_type *>(aligned_alloc_cached()));
+            return {ptr, [*this](base_type *const p) { free_cached(p); }};
         }
 
     private:

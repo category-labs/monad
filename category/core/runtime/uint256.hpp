@@ -976,10 +976,54 @@ udivrem(words_t<M> const &u, words_t<N> const &v) noexcept
 }
 
 #ifdef MONAD_ZKVM_ZISK
-// Replace software division with zisklib's verified quotient/remainder hint.
-// It checks q*b + r == a in 512 bits (high half zero) and r < b.
-extern "C" void div_rem256_c(
-    uint64_t const *a, uint64_t const *b, uint64_t *quo, uint64_t *rem);
+// ZisK's 256-bit multiply-add (CSR 0x801): dh·2^256 + dl = a·b + c, four
+// little-endian 64-bit limbs each.
+struct ZiskArith256Params
+{
+    uint64_t const *a;
+    uint64_t const *b;
+    uint64_t const *c;
+    uint64_t *dl;
+    uint64_t *dh;
+};
+
+// Verify the executor's division hint: q·v + r == u in 512 bits and
+// r < v (requires v != 0). Calling fcall 19 directly avoids
+// div_rem256_c's extra copies and zero-initialisation.
+[[gnu::always_inline]] inline div_result<uint256_t>
+zisk_udivrem(uint256_t const &u, uint256_t const &v) noexcept
+{
+    static_assert(alignof(uint256_t) >= 8);
+    static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
+    alignas(8) uint64_t qr[8]; // the quotient, then the remainder
+    alignas(8) uint64_t d[8]; // q·v + r, low half then high half
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrs 0x8F2, %[u]\n\t" // a parameter: the four words at u
+                 "csrs 0x8F2, %[v]\n\t"
+                 "csrwi 0x8C0, 19\n\t" // FCALL_UINT256_DIV_ID
+                 "csrs 0x815, %[qr]\n\t" // inputcpy: the eight result words
+                 "addi x0, %[qr], 64\n\t"
+                 ".option pop"
+                 :
+                 : [u] "r"(&u), [v] "r"(&v), [qr] "r"(qr)
+                 : "memory");
+    ZiskArith256Params p{
+        qr, reinterpret_cast<uint64_t const *>(&v), qr + 4, d, d + 4};
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrs 0x801, %0\n\t"
+                 ".option pop"
+                 :
+                 : "r"(&p)
+                 : "memory");
+    uint256_t const q{qr[0], qr[1], qr[2], qr[3]};
+    uint256_t const r{qr[4], qr[5], qr[6], qr[7]};
+    MONAD_ASSERT(
+        std::memcmp(d, &u, sizeof(u)) == 0 && (d[4] | d[5] | d[6] | d[7]) == 0);
+    MONAD_ASSERT(r < v);
+    return {.quot = q, .rem = r};
+}
 #endif
 
 [[gnu::always_inline]] constexpr div_result<uint256_t>
@@ -1023,21 +1067,8 @@ udivrem(uint256_t const &u, uint256_t const &v) noexcept
                     .quot = uint256_t{u[0] / v[0]},
                     .rem = uint256_t{u[0] % v[0]}};
             }
-            // Read the aligned operands in place; their layout matches the
-            // shim. Keep outputs separate to avoid relying on its read/write
-            // order.
-            static_assert(alignof(uint256_t) >= 8);
-            static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
-            alignas(8) uint64_t q[4];
-            alignas(8) uint64_t r[4];
-            div_rem256_c(
-                reinterpret_cast<uint64_t const *>(&u),
-                reinterpret_cast<uint64_t const *>(&v),
-                q,
-                r);
-            return {
-                .quot = uint256_t{q[0], q[1], q[2], q[3]},
-                .rem = uint256_t{r[0], r[1], r[2], r[3]}};
+            // Read operands in place; keep results separate for x /= x.
+            return zisk_udivrem(u, v);
         }
     }
 #endif

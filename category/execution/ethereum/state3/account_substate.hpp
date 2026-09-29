@@ -108,6 +108,7 @@ public:
             return MONAD_ACCESS_COLD;
         }
 #endif
+        MONAD_SLOT_SCAN
         for (auto const &k : accessed_storage_) {
             if (key_equals(key, tail, k)) {
                 return MONAD_ACCESS_WARM;

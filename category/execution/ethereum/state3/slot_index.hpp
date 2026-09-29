@@ -25,6 +25,13 @@
 #include <utility>
 #include <vector>
 
+// These scans are short: on ZisK, unrolling adds more setup steps than it saves.
+#ifdef MONAD_ZKVM_ZISK
+    #define MONAD_SLOT_SCAN _Pragma("GCC unroll 1")
+#else
+    #define MONAD_SLOT_SCAN
+#endif
+
 MONAD_NAMESPACE_BEGIN
 
 // Preload the key's last word for linear scans. Small big-endian keys differ

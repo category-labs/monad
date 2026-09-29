@@ -188,9 +188,20 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             // arm does before then is set a byte at an offset the loop
             // condition has already put inside the blob. One compare and its
             // branch, on nine nodes in ten of the whole blob.
-            *seen = 1;
-            seen += DIGEST_NODE_LEN;
-            node = NodeViewBase{node.bytes() + DIGEST_NODE_LEN};
+            //
+            // A run of digests takes a loop of its own: its few live values
+            // leave a register for the mark, which the outer loop rebuilds
+            // on every node. Likely, so that the back edge is the test and the
+            // exit takes the jump.
+            unsigned char const *p = node.bytes();
+            do {
+                *seen = 1;
+                seen += DIGEST_NODE_LEN;
+                p += DIGEST_NODE_LEN;
+            }
+            while (MONAD_LIKELY(p < region_end) &&
+                   MONAD_LIKELY(NodeViewBase{p}.tag() == DIGEST));
+            node = NodeViewBase{p};
             continue;
         }
         // Wanted from here down -- by the hash key and by the marking below

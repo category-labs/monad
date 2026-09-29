@@ -90,6 +90,21 @@ namespace monad::vm
         virtual PageStorageStatus
         update_page(Address const &, bytes32_t const &key, StorageStatus) = 0;
 
+        /// Write into the caller's buffer to avoid intermediate copies.
+#if defined(MONAD_ZKVM_ZISK)
+        // No default body: avoid GCC's speculative calls to that fallback.
+        virtual void get_storage_into(
+            Address const &address, bytes32_t const &key,
+            bytes32_t &value) const noexcept = 0;
+#else
+        virtual void get_storage_into(
+            Address const &address, bytes32_t const &key,
+            bytes32_t &value) const noexcept
+        {
+            value = get_storage(address, key);
+        }
+#endif
+
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.
         void capture_current_exception() const noexcept

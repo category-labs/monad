@@ -65,8 +65,25 @@ StateHostBase::get_storage(Address const &address, bytes32_t const &key) const
     stack_unwind();
 }
 
+void StateHostBase::get_storage_into(
+    Address const &address, bytes32_t const &key,
+    bytes32_t &value) const noexcept
+{
+    MONAD_TRY
+    {
+        state_.get_storage_into(address, key, value);
+        return;
+    }
+    MONAD_CATCH(...)
+    {
+        capture_current_exception();
+    }
+    stack_unwind();
+}
+
 StorageStatus StateHostBase::set_storage(
-    Address const &address, bytes32_t const &key, bytes32_t const &value)
+    Address const &address, bytes32_t const &key,
+    bytes32_t const &value) noexcept
 {
     MONAD_TRY
     {

@@ -299,11 +299,6 @@ private:
 
     std::optional<Account> &current_account(Address const &);
 
-    // read_code's varcode where it is kept, for a caller done with it before
-    // the next read_code: a copy increments the use count and its release
-    // decrements it, each a 4-byte load and store.
-    vm::SharedVarcode const &read_code_ref(bytes32_t const &code_hash);
-
 public:
     State(BlockState &, Incarnation, bool relaxed_validation = false);
 
@@ -424,6 +419,11 @@ public:
     ////////////////////////////////////////
 
     vm::SharedVarcode read_code(bytes32_t const &code_hash);
+
+    // read_code's varcode where it is kept, for a caller done with the
+    // reference before the next read_code: a copy increments the use count
+    // and its release decrements it, each a 4-byte load and store.
+    vm::SharedVarcode const &read_code_ref(bytes32_t const &code_hash);
 
     vm::SharedVarcode get_code(Address const &);
 

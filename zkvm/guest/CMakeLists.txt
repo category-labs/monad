@@ -132,7 +132,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     endif()
 
     # Lever: give the guest's VM shadow the varcode cache the host has. The
-    # shadow's find_varcode returns nullopt unconditionally, so every read of an
+    # shadow's find_varcode finds nothing without it, so every read of an
     # existing contract rebuilds a Varcode and its control block out of an
     # intercode BlockState::code_ already holds. Nothing is re-decoded.
     option(MONAD_ZKVM_VARCODE_CACHE

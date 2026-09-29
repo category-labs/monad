@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
@@ -21,16 +20,15 @@
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/revision.h>
+#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/create.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <cstdint>
 #include <utility>
@@ -126,7 +124,7 @@ namespace monad::vm::runtime
         ctx->deduct_gas(gas - result.gas_left);
         ctx->gas_refund += result.gas_refund;
 
-        return (result.status_code == EVMC_SUCCESS)
+        return (result.status_code == MONAD_STATUS_SUCCESS)
                    ? uint256_from_address(result.create_address)
                    : 0;
     }

@@ -19,6 +19,7 @@
 
 #include <test/utils/test_state.hpp>
 #include <test/vm/utils/evmc_host_adapter.hpp>
+#include <test/vm/utils/evmc_result.hpp>
 #include <test/vm/utils/test_block_hash_buffer.hpp>
 #include <test/vm/utils/test_host.hpp>
 
@@ -34,6 +35,7 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/fuzzing/choice.hpp>
 #include <category/vm/memory_pool.hpp>
@@ -115,44 +117,44 @@ public:
     }
 };
 
-static constexpr std::string_view to_string(evmc_status_code const sc) noexcept
+static constexpr std::string_view to_string(monad_status_code const sc) noexcept
 {
     switch (sc) {
-    case EVMC_SUCCESS:
+    case MONAD_STATUS_SUCCESS:
         return "SUCCESS";
-    case EVMC_FAILURE:
+    case MONAD_STATUS_FAILURE:
         return "FAILURE";
-    case EVMC_REVERT:
+    case MONAD_STATUS_REVERT:
         return "REVERT";
-    case EVMC_OUT_OF_GAS:
+    case MONAD_STATUS_OUT_OF_GAS:
         return "OUT_OF_GAS";
-    case EVMC_INVALID_INSTRUCTION:
+    case MONAD_STATUS_INVALID_INSTRUCTION:
         return "INVALID_INSTRUCTION";
-    case EVMC_UNDEFINED_INSTRUCTION:
+    case MONAD_STATUS_UNDEFINED_INSTRUCTION:
         return "UNDEFINED_INSTRUCTION";
-    case EVMC_STACK_OVERFLOW:
+    case MONAD_STATUS_STACK_OVERFLOW:
         return "STACK_OVERFLOW";
-    case EVMC_STACK_UNDERFLOW:
+    case MONAD_STATUS_STACK_UNDERFLOW:
         return "STACK_UNDERFLOW";
-    case EVMC_BAD_JUMP_DESTINATION:
+    case MONAD_STATUS_BAD_JUMP_DESTINATION:
         return "BAD_JUMP_DESTINATION";
-    case EVMC_INVALID_MEMORY_ACCESS:
+    case MONAD_STATUS_INVALID_MEMORY_ACCESS:
         return "INVALID_MEMORY_ACCESS";
-    case EVMC_CALL_DEPTH_EXCEEDED:
+    case MONAD_STATUS_CALL_DEPTH_EXCEEDED:
         return "CALL_DEPTH_EXCEEDED";
-    case EVMC_STATIC_MODE_VIOLATION:
+    case MONAD_STATUS_STATIC_MODE_VIOLATION:
         return "STATIC_MODE_VIOLATION";
-    case EVMC_PRECOMPILE_FAILURE:
+    case MONAD_STATUS_PRECOMPILE_FAILURE:
         return "PRECOMPILE_FAILURE";
-    case EVMC_ARGUMENT_OUT_OF_RANGE:
+    case MONAD_STATUS_ARGUMENT_OUT_OF_RANGE:
         return "ARGUMENT_OUT_OF_RANGE";
-    case EVMC_INSUFFICIENT_BALANCE:
+    case MONAD_STATUS_INSUFFICIENT_BALANCE:
         return "INSUFFICIENT_BALANCE";
-    case EVMC_INTERNAL_ERROR:
+    case MONAD_STATUS_INTERNAL_ERROR:
         return "INTERNAL_ERROR";
-    case EVMC_REJECTED:
+    case MONAD_STATUS_REJECTED:
         return "REJECTED";
-    case EVMC_OUT_OF_MEMORY:
+    case MONAD_STATUS_OUT_OF_MEMORY:
         return "OUT_OF_MEMORY";
     default:
         return "OTHER";
@@ -215,7 +217,7 @@ tx_from(TransitionState &tstate, vm::Message const &msg) noexcept
 }
 
 template <Traits traits>
-static evmc::Result message_call(
+static vm::Result message_call(
     TransitionState &tstate, BlockHashBuffer const &block_hash_buffer,
     Transaction const &tx, vm::Message const &msg,
     BlockHeader const &block_header)
@@ -238,7 +240,7 @@ static evmc::Result message_call(
 }
 
 template <Traits traits>
-static evmc::Result transition(
+static vm::Result transition(
     TransitionState &tstate, vm::Message const &msg,
     BlockHashBuffer const &block_hash_buffer, BlockHeader const &block_header)
 {
@@ -430,7 +432,7 @@ static arguments parse_args(int const argc, char **const argv)
 }
 
 template <Traits traits>
-static evmc_status_code fuzz_iteration(
+static monad_status_code fuzz_iteration(
     vm::Message const &msg, BlockHashBuffer const &block_hash_buffer,
     FuzzerTestStateRef spec_state, FuzzerTestStateRef monad_state,
     BlockHeader const &block_header)
@@ -454,7 +456,7 @@ static evmc_status_code fuzz_iteration(
 
     assert_equal(spec_tstate.state, monad_tstate.state);
 
-    if (monad_result.status_code == EVMC_SUCCESS) {
+    if (monad_result.status_code == MONAD_STATUS_SUCCESS) {
         spec_tstate.accept(block_header.number);
         monad_tstate.accept(block_header.number);
     }
@@ -472,7 +474,7 @@ static evmc_status_code fuzz_iteration(
 
 static void
 log(std::chrono::high_resolution_clock::time_point start, arguments const &args,
-    std::unordered_map<evmc_status_code, std::size_t> const &exit_code_stats,
+    std::unordered_map<monad_status_code, std::size_t> const &exit_code_stats,
     std::size_t const run_index, std::size_t const total_messages)
 {
     using namespace std::chrono;
@@ -616,15 +618,15 @@ static void do_run(
             auto const rev,
             auto const *const msg,
             auto const *const code,
-            auto const code_size) -> evmc::Result {
+            auto const code_size) -> vm::Result {
             vm::test::EvmcHostAdapter adapter{host};
-            return spec_vm.execute(
+            return vm::test::from_evmc_result(spec_vm.execute(
                 adapter.get_interface(),
                 adapter.to_context(),
                 to_evmc_revision(rev),
                 std::bit_cast<evmc_message>(*msg),
                 code,
-                code_size);
+                code_size));
         });
 
     auto monad_state = [&] {
@@ -643,7 +645,7 @@ static void do_run(
     auto contract_addresses = std::vector<Address>{};
     auto known_addresses = std::vector<Address>{};
 
-    auto exit_code_stats = std::unordered_map<evmc_status_code, std::size_t>{};
+    auto exit_code_stats = std::unordered_map<monad_status_code, std::size_t>{};
     auto total_messages = std::size_t{0};
 
     auto start_time = std::chrono::high_resolution_clock::now();

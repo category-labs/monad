@@ -25,11 +25,8 @@
 #include <category/execution/ethereum/precompiles_impl.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/status_code.h>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-#include <evmc/helpers.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -134,7 +131,7 @@ bool is_precompile(Address const &address)
 EXPLICIT_EVM_TRAITS(is_precompile);
 
 template <Traits traits>
-std::optional<evmc::Result> check_call_eth_precompile(vm::Message const &msg)
+std::optional<vm::Result> check_call_eth_precompile(vm::Message const &msg)
 {
     auto const &address = msg.code_address;
     auto const maybe_precompile = resolve_precompile<traits>(address);
@@ -149,7 +146,7 @@ std::optional<evmc::Result> check_call_eth_precompile(vm::Message const &msg)
         auto const delegated =
             (msg.flags & std::to_underlying(vm::CallFlags::Delegated)) != 0;
         if (delegated) {
-            return evmc::Result{evmc_status_code::EVMC_SUCCESS, msg.gas};
+            return vm::Result{MONAD_STATUS_SUCCESS, msg.gas};
         }
     }
 
@@ -160,32 +157,30 @@ std::optional<evmc::Result> check_call_eth_precompile(vm::Message const &msg)
 
     // If cost is std::nullopt, the gas function got an invalid input.
     if (!cost.has_value()) {
-        return evmc::Result{evmc_status_code::EVMC_PRECOMPILE_FAILURE};
+        return vm::Result{MONAD_STATUS_PRECOMPILE_FAILURE};
     }
 
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost.value()))) {
-        return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
+        return vm::Result{MONAD_STATUS_OUT_OF_GAS};
     }
 
     auto const [status_code, output_buffer, output_size] = execute_func(input);
-    return evmc::Result{evmc_result{
-        .status_code = to_evmc_status_code(status_code),
+    return vm::Result{vm::RawResult{
+        .status_code = status_code,
         .gas_left = (status_code == MONAD_STATUS_SUCCESS)
                         ? msg.gas - static_cast<int64_t>(cost.value())
                         : 0,
         .gas_refund = 0,
         .output_data = output_buffer,
         .output_size = output_size,
-        .release = evmc_free_result_memory,
         .create_address = {},
-        .padding = {},
     }};
 }
 
 EXPLICIT_TRAITS(check_call_eth_precompile);
 
 template <Traits traits>
-std::optional<evmc::Result>
+std::optional<vm::Result>
 check_call_precompile(State &, CallTracerBase &, vm::Message const &msg)
 {
     return check_call_eth_precompile<traits>(msg);

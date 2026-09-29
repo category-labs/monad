@@ -20,10 +20,9 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <bit>
 #include <cstring>
@@ -46,10 +45,10 @@ template <Traits traits>
 bool is_precompile(Address const &);
 
 template <Traits traits>
-std::optional<evmc::Result> check_call_eth_precompile(vm::Message const &);
+std::optional<vm::Result> check_call_eth_precompile(vm::Message const &);
 
 template <Traits traits>
-std::optional<evmc::Result>
+std::optional<vm::Result>
 check_call_precompile(State &, CallTracerBase &, vm::Message const &);
 
 using precompiled_gas_cost_fn = std::optional<uint64_t>(byte_string_view);

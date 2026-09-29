@@ -20,6 +20,7 @@
 #include <category/core/int.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -28,6 +29,7 @@
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 #include <test/vm/utils/evmc_host_adapter.hpp>
+#include <test/vm/utils/evmc_result.hpp>
 #include <test/vm/utils/mocked_host.hpp>
 #include <test/vm/utils/test_message.hpp>
 
@@ -101,7 +103,7 @@ namespace monad::vm::test
 
         MockedHost host_;
 
-        evmc::Result result_;
+        vm::Result result_;
 
         std::span<uint8_t const> output_data_{};
 
@@ -111,7 +113,7 @@ namespace monad::vm::test
         {
             static_assert(TraitsTest<T>::Trait::evm_rev() >= MONAD_ETH_BERLIN);
 
-            result_ = evmc::Result();
+            result_ = vm::Result();
             output_data_ = {};
 
             host_.accounts[msg_.sender].balance =
@@ -142,7 +144,7 @@ namespace monad::vm::test
                         icode);
 
                 ASSERT_TRUE(ncode->entrypoint() != nullptr);
-                result_ = evmc::Result{vm_.execute_native_entrypoint_raw<
+                result_ = vm::Result{vm_.execute_native_entrypoint_raw<
                     typename TraitsTest<T>::Trait>(
                     rt_ctx, ncode->entrypoint())};
             }
@@ -156,13 +158,13 @@ namespace monad::vm::test
                 evmc::VM spec_vm{evmc_create_monadml_evm()};
                 EvmcHostAdapter host{host_};
 
-                result_ = spec_vm.execute(
+                result_ = from_evmc_result(spec_vm.execute(
                     host.get_interface(),
                     host.to_context(),
                     to_evmc_revision(TraitsTest<T>::Trait::evm_rev()),
                     std::bit_cast<evmc_message>(msg_),
                     code.data(),
-                    code.size());
+                    code.size()));
             }
         }
 
@@ -230,13 +232,13 @@ namespace monad::vm::test
             auto expected = std::move(result_);
 
             switch (expected.status_code) {
-            case EVMC_SUCCESS:
-            case EVMC_REVERT:
+            case MONAD_STATUS_SUCCESS:
+            case MONAD_STATUS_REVERT:
                 ASSERT_EQ(actual.status_code, expected.status_code);
                 break;
             default:
-                ASSERT_NE(actual.status_code, EVMC_SUCCESS);
-                ASSERT_NE(actual.status_code, EVMC_REVERT);
+                ASSERT_NE(actual.status_code, MONAD_STATUS_SUCCESS);
+                ASSERT_NE(actual.status_code, MONAD_STATUS_REVERT);
                 break;
             }
 

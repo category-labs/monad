@@ -21,8 +21,8 @@
 // witness-execution path actually uses: an interpreter-only execute path
 // and the MemoryPool for message-buffer allocation. Under
 // MONAD_ZKVM_VARCODE_CACHE it keeps the varcode cache as well, one
-// unordered_dense map keyed by code hash; without it, find_varcode returns
-// nullopt and the try_insert_varcode helpers build a fresh Varcode per call.
+// unordered_dense map keyed by code hash; without it, find_varcode finds
+// nothing and the try_insert_varcode helpers build a fresh Varcode per call.
 //
 // That cache saves an allocation, not a decode: BlockState::code_ holds the
 // SharedIntercode, so bytecode is decoded once per contract per block either
@@ -57,7 +57,6 @@
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
-#include <optional>
 #include <span>
 
 namespace monad::vm
@@ -80,13 +79,14 @@ namespace monad::vm
         }
 
 #if defined(MONAD_ZKVM_VARCODE_CACHE)
-        std::optional<SharedVarcode> find_varcode(bytes32_t const &code_hash)
+        // The varcode where the cache keeps it, or null; valid until the next
+        // insertion. Its one caller copies it out: an optional of a copy
+        // would count the reference up twice and down once, each a 4-byte
+        // load and store.
+        SharedVarcode const *find_varcode(bytes32_t const &code_hash)
         {
             auto const it = varcode_.find(code_hash);
-            if (it == varcode_.end()) {
-                return std::nullopt;
-            }
-            return it->second;
+            return it == varcode_.end() ? nullptr : &it->second;
         }
 
         SharedVarcode try_insert_varcode(
@@ -112,9 +112,9 @@ namespace monad::vm
             return it->second;
         }
 #else
-        std::optional<SharedVarcode> find_varcode(bytes32_t const &)
+        SharedVarcode const *find_varcode(bytes32_t const &)
         {
-            return std::nullopt;
+            return nullptr;
         }
 
         SharedVarcode

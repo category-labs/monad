@@ -38,16 +38,3 @@ MONAD_ASSERT_STORAGE_STATUS_EQ(ADDED_DELETED);
 MONAD_ASSERT_STORAGE_STATUS_EQ(MODIFIED_RESTORED);
 
 #undef MONAD_ASSERT_STORAGE_STATUS_EQ
-
-// These are value-preserving casts: monad_storage_status mirrors
-// evmc_storage_status 1:1, enforced by the static_asserts above. C linkage
-// matches the declarations in storage_status.h.
-evmc_storage_status to_evmc_storage_status(monad_storage_status const status)
-{
-    return static_cast<evmc_storage_status>(std::to_underlying(status));
-}
-
-monad_storage_status from_evmc_storage_status(evmc_storage_status const status)
-{
-    return static_cast<monad_storage_status>(std::to_underlying(status));
-}

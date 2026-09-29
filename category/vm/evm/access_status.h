@@ -39,9 +39,13 @@ enum monad_access_status
     MONAD_ACCESS_WARM = 1
 };
 
-// Convert monad_access_status to evmc's evmc_access_status. Needed only at the
-// remaining evmc host interface boundary (see the note above).
-enum evmc_access_status to_evmc_access_status(enum monad_access_status status);
+// Inline the EVMC boundary conversion to avoid a function call.
+// access_status.cpp asserts that both enums use the same values.
+static inline enum evmc_access_status
+to_evmc_access_status(enum monad_access_status const status)
+{
+    return (enum evmc_access_status)status;
+}
 
 #ifdef __cplusplus
 } // extern "C"

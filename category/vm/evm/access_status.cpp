@@ -31,11 +31,3 @@ MONAD_ASSERT_ACCESS_STATUS_EQ(COLD);
 MONAD_ASSERT_ACCESS_STATUS_EQ(WARM);
 
 #undef MONAD_ASSERT_ACCESS_STATUS_EQ
-
-// This is a value-preserving cast: monad_access_status mirrors
-// evmc_access_status 1:1, enforced by the static_asserts above. C linkage
-// matches the declaration in access_status.h.
-evmc_access_status to_evmc_access_status(monad_access_status const status)
-{
-    return static_cast<evmc_access_status>(std::to_underlying(status));
-}

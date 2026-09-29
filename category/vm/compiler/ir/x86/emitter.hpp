@@ -325,6 +325,7 @@ namespace monad::vm::compiler::native
         void returndatasize();
         void msize();
         void codesize();
+        void callstackdepth();
         void origin();
         void gasprice();
         void gaslimit();
@@ -447,6 +448,11 @@ namespace monad::vm::compiler::native
         void selfbalance(int64_t remaining_base_gas)
         {
             call_runtime(remaining_base_gas, true, runtime::selfbalance);
+        }
+
+        void callern(int64_t const remaining_base_gas)
+        {
+            call_runtime(remaining_base_gas, true, runtime::callern);
         }
 
         template <Traits traits>

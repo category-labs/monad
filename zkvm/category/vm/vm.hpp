@@ -28,6 +28,7 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -85,6 +86,8 @@ namespace monad::vm
                 msg,
                 icode->code_span());
 
+            host.template enter_call_frame<traits>(rt_ctx);
+
             auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
             auto const stack_ptr = stack_allocator_.allocate();
             interpreter::execute<traits>(rt_ctx, *icode, stack_ptr.get());
@@ -102,6 +105,8 @@ namespace monad::vm
         {
             auto rt_ctx = runtime::Context::from(
                 &host.get_interface(), host.to_context(), msg, code);
+
+            host.template enter_call_frame<traits>(rt_ctx);
 
             auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
             auto const stack_ptr = stack_allocator_.allocate();

@@ -3089,6 +3089,13 @@ namespace monad::vm::compiler::native
     }
 
     // No discharge
+    void Emitter::callstackdepth()
+    {
+        static_assert(sizeof(runtime::Environment::depth) == sizeof(int32_t));
+        read_context_uint32_to_word(runtime::context_offset_env_depth);
+    }
+
+    // No discharge
     void Emitter::origin()
     {
         read_evmc_tx_context_address(offsetof(evmc_tx_context, tx_origin));

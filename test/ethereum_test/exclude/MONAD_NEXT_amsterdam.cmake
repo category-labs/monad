@@ -23,4 +23,6 @@ set(MONAD_NEXT_amsterdam_excluded_tests
   "BlockchainTests.for_monad_next/amsterdam/eip8024_dupn_swapn_exchange/*"
   # Test contains a EIP-4844 blob which is disabled on Monad
   "BlockchainTests.for_monad_next/amsterdam/eip7981_increase_access_list_cost/transaction_validity/transactions_without_access_list.json"
+  # Expects 0xAE 0x00 to be INVALID, which MIP-18 assigns to CALLSTACKDEPTH
+  "BlockchainTests.for_monad_next/frontier/opcodes/all_opcodes/all_opcodes.json"
 )

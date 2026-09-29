@@ -278,6 +278,16 @@ private:
 
     AccountState &current_account_state(Address const &);
 
+    // access_storage's work on the account it looked up.
+    template <Traits traits>
+    monad_access_status
+    access_storage_of(AccountState &, Address const &, bytes32_t const &key);
+
+    // get_storage_into's work on an account in current_.
+    [[gnu::always_inline]] inline void current_storage_into(
+        AccountState const &, Address const &, bytes32_t const &key,
+        evmc_bytes32 &out);
+
     std::optional<Account> const &recent_account(Address const &);
 
     std::optional<Account> &current_account(Address const &);
@@ -373,6 +383,15 @@ public:
 
     template <Traits traits>
     monad_access_status access_storage(Address const &, bytes32_t const &key);
+
+#if defined(MONAD_ZKVM_ZISK)
+    // SLOAD's access_storage and get_storage_into, with one lookup of the
+    // account: see vm::Host::sload_into.
+    template <Traits traits>
+    monad_access_status sload_into(
+        Address const &, bytes32_t const &key, bool read_cold,
+        evmc_bytes32 &out);
+#endif
 
     monad_page_storage_status update_page(
         Address const &, bytes32_t const &key, monad_storage_status status);

@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/crypto/keccak.h>
 
 #include <c-interface-accelerators/zkvm_accelerators.h>
 
@@ -42,12 +43,13 @@ MONAD_NAMESPACE_BEGIN
         return false;
     }
 
-    zkvm_bytes_32 key_hash;
-    if (zkvm_keccak256(pubkey.data, 64, &key_hash) != ZKVM_EOK) {
-        return false;
-    }
+    // The guest's own sponge rather than zisklib's, which takes 141 steps for
+    // the block where this one takes 36, and runs past the Keccak-f memo:
+    // a sender that recurs in the block recurs here too.
+    uint8_t key_hash[KECCAK256_SIZE];
+    monad_zkvm_keccak256_fast(pubkey.data, 64, key_hash);
 
-    std::memcpy(out.data(), key_hash.data + 12, out.size());
+    std::memcpy(out.data(), key_hash + 12, out.size());
 
     return true;
 }

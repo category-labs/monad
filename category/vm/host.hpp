@@ -36,13 +36,11 @@ namespace monad::vm
 
         /// Write the storage value where the caller wants it. Returned by
         /// value, it is copied again at each change of word type on its way
-        /// back through the C interface.
+        /// back through the C interface. Pure: a body here is the target gcc
+        /// guesses for a call, and tests the guess on every call.
         virtual void get_storage_into(
             evmc::address const &addr, evmc::bytes32 const &key,
-            evmc_bytes32 &value) const noexcept
-        {
-            value = get_storage(addr, key);
-        }
+            evmc_bytes32 &value) const noexcept = 0;
 
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.
@@ -252,3 +250,18 @@ namespace monad::vm
         return interface;
     }
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+namespace monad::vm::runtime
+{
+    // The guest's VM builds every Context from a vm::Host and its interface,
+    // so a runtime function can call the host's methods and skip their C
+    // adapters. get_storage's takes a frame to move its result's address into
+    // place.
+    [[gnu::always_inline]] inline Host &host_of(Context const &ctx) noexcept
+    {
+        MONAD_DEBUG_ASSERT(ctx.host == &Host::get_interface());
+        return *host_shim::of(ctx.context);
+    }
+}
+#endif

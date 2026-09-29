@@ -469,10 +469,10 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
     if constexpr (priming_pass) {
         MONAD_ABORT("offset trie: unprimed hash-referenced node (bad offset)");
     }
-    bytes32_t h;
-    monad_keccak256(child_rlp, child_rlp_len, h.bytes);
-    hashes_.insert_or_assign(id, NodeCacheEntry{h, true});
-    return encode_rlp(h, dest);
+    bytes32_t digest;
+    monad_keccak256(child_rlp, child_rlp_len, digest.bytes);
+    hashes_.insert_or_assign(id, NodeCacheEntry{digest, true});
+    return encode_rlp(digest, dest);
 }
 
 namespace
@@ -563,12 +563,21 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 //
                 // Widen wire IDs once to use native 64-bit arithmetic.
                 //
-                // Priming uses validated blob IDs. During mutation, reject
-                // overlay IDs before reading the original blob; get_original
-                // checks bounds.
+                // Priming already validated all child IDs as blob offsets;
+                // only mutation needs the overlay and bounds checks here.
                 auto const blob_digest_at = [this](uint64_t const w) {
-                    return w != 0 &&
-                           get_original(NodeId{w}).tag() == Tag::DIGEST;
+                    if constexpr (priming_pass) {
+                        // Before encoding a node, claim_child checks that
+                        // each nonzero child points to an earlier node in
+                        // the blob. Inlined children were checked on
+                        // earlier turns.
+                        return w != 0 && NodeViewBase{blob_.data() + w}.tag() ==
+                                             Tag::DIGEST;
+                    }
+                    else {
+                        return w != 0 &&
+                               get_original(NodeId{w}).tag() == Tag::DIGEST;
+                    }
                 };
                 auto const digest_at = [blob_digest_at](uint64_t const w) {
                     if constexpr (priming_pass) {

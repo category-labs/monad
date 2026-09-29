@@ -133,10 +133,7 @@ AccountState &State::current_account_state(Address const &address)
 {
     // Reuse the cached account. When dirty tracking is enabled, register
     // it again if the frame epoch changed.
-    if (current_memo_state_ != nullptr && __builtin_memcmp(
-                                              address.bytes,
-                                              current_memo_address_.bytes,
-                                              sizeof(address.bytes)) == 0) {
+    if (current_memo_state_ != nullptr && address == current_memo_address_) {
 #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
         if (current_memo_epoch_ != frame_epoch_) {
             if (!dirty_.empty()) {

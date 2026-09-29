@@ -20,6 +20,7 @@
 #include <category/vm/interpreter/instruction_table.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/interpreter/trampoline.hpp>
+#include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
 
 namespace monad::vm::interpreter
@@ -31,7 +32,11 @@ namespace monad::vm::interpreter
             void *, runtime::Context *ctx, Intercode const *analysis,
             uint256_t *stack_ptr, void *)
         {
-            auto *const stack_top = stack_ptr - 1;
+            // Slot 0 is the empty-stack marker, so the first PUSH lands in
+            // slot 1 and the deepest legal stack ends in slot 1024, the last
+            // element of the block.
+            static_assert(runtime::EvmStackAllocatorMeta::size >= 1024 + 1);
+            auto *const stack_top = stack_ptr;
             auto const *const stack_bottom = stack_top;
             auto const *const instr_ptr = analysis->code();
             auto const gas_remaining = ctx->gas_remaining;

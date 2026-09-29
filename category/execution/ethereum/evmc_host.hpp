@@ -97,6 +97,10 @@ public:
         evmc::address const &,
         evmc::bytes32 const &key) const noexcept override;
 
+    virtual void get_storage_into(
+        evmc::address const &, evmc::bytes32 const &key,
+        evmc_bytes32 &value) const noexcept override;
+
     virtual evmc_storage_status set_storage(
         evmc::address const &, evmc::bytes32 const &key,
         evmc::bytes32 const &value) noexcept override;

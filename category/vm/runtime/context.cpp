@@ -22,6 +22,9 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/host.hpp>
+#endif
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -99,6 +102,26 @@ namespace monad::vm::runtime
         }
     }
 
+    namespace
+    {
+        // Read in Context's initialiser, where the message's fields are no
+        // longer needed: read before it, the arguments are spilled across
+        // the call and loaded back.
+        [[gnu::always_inline]] inline evmc_tx_context const *tx_context_of(
+            evmc_host_interface const *const host,
+            evmc_host_context *const context) noexcept
+        {
+#if defined(MONAD_ZKVM_ZISK)
+            // The guest's VM hands monad's host: its method, not the C
+            // adapter.
+            (void)host;
+            return host_shim::of(context)->get_tx_context();
+#else
+            return host->get_tx_context(context);
+#endif
+        }
+    }
+
     Context Context::from(
         evmc_host_interface const *const host, evmc_host_context *const context,
         evmc_message const *const msg,
@@ -123,7 +146,7 @@ namespace monad::vm::runtime
                     .input_data_size = static_cast<uint32_t>(msg->input_size),
                     .code_size = static_cast<uint32_t>(code.size()),
                     .return_data_size = 0,
-                    .tx_context = host->get_tx_context(context),
+                    .tx_context = tx_context_of(host, context),
                 },
             .result = {},
             .memory =

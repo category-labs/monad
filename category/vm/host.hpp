@@ -34,6 +34,21 @@ namespace monad::vm
         /// Use Monad's adapters to avoid temporary EVMC argument copies.
         static evmc_host_interface const &get_interface() noexcept;
 
+        /// Write into the caller's buffer to avoid intermediate copies.
+#if defined(MONAD_ZKVM_ZISK)
+        // No default body: avoid GCC's speculative calls to that fallback.
+        virtual void get_storage_into(
+            evmc::address const &addr, evmc::bytes32 const &key,
+            evmc_bytes32 &value) const noexcept = 0;
+#else
+        virtual void get_storage_into(
+            evmc::address const &addr, evmc::bytes32 const &key,
+            evmc_bytes32 &value) const noexcept
+        {
+            value = get_storage(addr, key);
+        }
+#endif
+
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.
         void capture_current_exception() const noexcept
@@ -122,7 +137,9 @@ namespace monad::vm::host_shim
         evmc_host_context *h, evmc_address const *a,
         evmc_bytes32 const *k) noexcept
     {
-        return of(h)->get_storage(addr(a), word(k));
+        evmc_bytes32 value;
+        of(h)->get_storage_into(addr(a), word(k), value);
+        return value;
     }
 
     inline evmc_storage_status set_storage(

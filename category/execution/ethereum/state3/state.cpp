@@ -1099,6 +1099,11 @@ bool State::record_balance_constraint_for_debit(
 {
 #if defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
     // Keep the balance check; sequential execution needs no merge constraints.
+    // A debit of zero, which most calls are, is covered by any balance, and
+    // the lookup has no other effect here.
+    if (debit == 0) {
+        return true;
+    }
     auto const &account = recent_account(address);
     uint256_t const balance = account.has_value() ? account->balance : 0;
     return balance >= debit;

@@ -256,9 +256,13 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
                     if (key.nibble_size() == 0) { // no value at a branch
                         return NULL_ID;
                     }
-                    NodeId const next = b.child(key.get(0));
+                    // The child is read after drop_front1, not between it and
+                    // get(0): gcc copies that stretch into both arms of the
+                    // nibble's parity test, and a child read there is widened
+                    // where the arms meet, a lw and two shifts for one lwu.
+                    unsigned const i = key.get(0);
                     key.drop_front1();
-                    return next;
+                    return b.child(i);
                 },
                 [&](ExtView e) -> NodeId {
                     NibblesView const ep = e.path();
@@ -939,9 +943,11 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
             [&](BranchView b) -> std::pair<NodeId, NibblesView> {
                 MONAD_ASSERT(key.nibble_size() > 0); // never ends at branch
                 unsigned const nib = key.get(0);
-                NodeId const child = b.child(nib);
                 NibblesView rest = key;
                 rest.drop_front1();
+                // After drop_front1, as in find_original: read before it, the
+                // child is widened past its branch.
+                NodeId const child = b.child(nib);
                 if (child != NULL_ID) {
                     return upsert_node(child, rest);
                 }

@@ -208,6 +208,12 @@ class State
 
     Map<bytes32_t, vm::SharedVarcode> code_{};
 
+    // The last code read from the block, by hash: a call reads its callee's
+    // code twice in a row, to test it for an EIP-7702 delegation and then to
+    // run it, and the block's code for a hash does not change.
+    bytes32_t last_code_hash_{};
+    vm::SharedVarcode last_code_{};
+
     unsigned version_{0};
 
 #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)

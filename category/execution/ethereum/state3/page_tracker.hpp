@@ -39,8 +39,19 @@ class PageTracker
         int16_t current_growth{0};
     };
 
+#if defined(MONAD_ZKVM_ZISK)
+    // ZisK does not reclaim allocations, so skip node reference counts.
+    // Keep persistent updates: pages_ changes only through set().
+    using PageMemoryPolicy = immer::memory_policy<
+        immer::default_heap_policy, immer::no_refcount_policy,
+        immer::no_lock_policy, immer::no_transience_policy>;
+#else
+    using PageMemoryPolicy = immer::default_memory_policy;
+#endif
+
     using PageMap = immer::map<
-        bytes32_t, PageState, ankerl::unordered_dense::hash<monad::bytes32_t>>;
+        bytes32_t, PageState, ankerl::unordered_dense::hash<monad::bytes32_t>,
+        std::equal_to<bytes32_t>, PageMemoryPolicy>;
 
     PageMap pages_{};
 

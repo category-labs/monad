@@ -47,4 +47,10 @@
 [[gnu::const]] void operator delete(void *, std::size_t) noexcept;
 [[gnu::const]] void operator delete[](void *, std::size_t) noexcept;
 
+// free, for the same reason: zkvm/core/libc.cpp defines it empty. Its callers
+// here are the release functions of evmc results, run on every message call.
+// No noexcept: newlib declares it with __attribute__((nothrow)) only, and the
+// two declarations must agree.
+extern "C" [[gnu::const]] void free(void *);
+
 #pragma GCC diagnostic pop

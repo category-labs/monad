@@ -256,6 +256,15 @@ def main() -> int:
                 "nodelete.hpp declares this a no-op and libstdcxx.cpp no longer "
                 f"defines it so: {sig}"
             )
+    libc = (args.repo / "zkvm" / "core" / "libc.cpp").read_text(errors="replace")
+    free_body = re.search(r"void free\(void \*(\w+)\)\s*\{(.*?)\n\}", libc, re.S)
+    if free_body is None or re.sub(
+        r"//[^\n]*", "", free_body.group(2)
+    ).split() != [f"(void){free_body.group(1)};"]:
+        fail(
+            "nodelete.hpp declares free a no-op and libc.cpp no longer "
+            "defines it so"
+        )
     # Check generated build inputs, not a source filename in the CMake text.
     # State separately asserts that reserve-balance tracking is inactive.
     check_dirty_accounts(build_dir, repo)
@@ -267,7 +276,9 @@ def main() -> int:
         [str(nm), "--print-size", "--defined-only", str(elf)], text=True
     ).splitlines():
         fields = line.split()
-        if len(fields) == 4 and fields[3].startswith(("_Zdl", "_Zda")):
+        if len(fields) == 4 and (
+            fields[3].startswith(("_Zdl", "_Zda")) or fields[3] == "free"
+        ):
             if int(fields[1], 16) != 4:
                 fail(
                     f"{fields[3]} is {int(fields[1], 16)} bytes; nodelete.hpp "

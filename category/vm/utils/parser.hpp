@@ -54,6 +54,6 @@ namespace monad::vm::utils
     /**
      *  convert from binary evm bytecode to text opcodes and data
      */
-    std::string show_opcodes(std::vector<uint8_t> const &opcodes);
+    [[nodiscard]] std::string show_opcodes(std::vector<uint8_t> const &opcodes);
 
 }

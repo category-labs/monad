@@ -264,6 +264,24 @@ struct EvmcHost final : public EvmcHostBase
         stack_unwind();
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    virtual evmc_access_status sload_into(
+        evmc::address const &address, evmc::bytes32 const &key,
+        bool const read_cold, evmc_bytes32 &value) noexcept override
+    {
+        MONAD_TRY
+        {
+            return to_evmc_access_status(state_.sload_into<traits>(
+                as_monad(address), as_monad(key), read_cold, value));
+        }
+        MONAD_CATCH(...)
+        {
+            capture_current_exception();
+        }
+        stack_unwind();
+    }
+#endif
+
     virtual evmc_page_storage_status update_page(
         evmc::address const &address, evmc::bytes32 const &key,
         evmc_storage_status const status) noexcept override

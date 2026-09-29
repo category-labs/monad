@@ -116,7 +116,7 @@ xxd /tmp/zkvm-output.bin | head -2
 The two arms publish different things, because the L2's state is private and
 the Ethereum arm's is not.
 
-**Ethereum** — three values:
+**Ethereum** — one value:
 
 | Offset | Size | Value |
 |--------|------|-------|
@@ -365,7 +365,7 @@ derived twice for the same reason -- the generator merkleises the receipts
 itself, the guest merkleises them in the epilogue.
 
 Building the same sources with `MONAD_ZKVM_L2=OFF` gives a plaintext corpus and
-the three-value output, which is the cheaper check to run first: it exercises
+the block-hash output, which is the cheaper check to run first: it exercises
 the generator and the trie without the cipher in the way.
 
 ### The benchmark corpus, and what it costs
@@ -588,7 +588,7 @@ cd zkvm/sp1/script
 
 # Execute (no proof).
 cargo run --release -- --input /path/to/witness.bin
-#  Output: 0x<96-byte hex>   -- the three roots, as on ZisK
+#  Output: 0x<32-byte hex>
 
 # Generate and verify a proof. Use --profile prover for proving builds (see below).
 cargo run --profile prover -- --input /path/to/witness.bin --prove

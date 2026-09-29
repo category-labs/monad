@@ -84,8 +84,13 @@ namespace monad::vm::runtime
 
         auto const dest_address = address_from_uint256(address);
 
+#if defined(MONAD_ZKVM_ZISK)
+        auto const access_status =
+            host_of(*ctx).access_account(host_shim::addr(&dest_address));
+#else
         auto const access_status =
             ctx->host->access_account(ctx->context, &dest_address);
+#endif
         if (access_status == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
@@ -97,8 +102,13 @@ namespace monad::vm::runtime
                 // current authority.
                 if (auto delegate_address = evm::resolve_delegation(
                         ctx->host, ctx->context, dest_address)) {
+#if defined(MONAD_ZKVM_ZISK)
+                    auto const access_status = host_of(*ctx).access_account(
+                        host_shim::addr(&*delegate_address));
+#else
                     auto const access_status = ctx->host->access_account(
                         ctx->context, &*delegate_address);
+#endif
                     ctx->gas_remaining -= (access_status == EVMC_ACCESS_COLD
                                                ? traits::cold_account_cost()
                                                : 0) +

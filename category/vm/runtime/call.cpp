@@ -80,7 +80,12 @@ namespace monad::vm::runtime
 
         auto const dest_address = address_from_uint256(address);
 
+#if defined(MONAD_ZKVM_ZISK)
+        auto const access_status =
+            host_of(*ctx).access_account(host_shim::addr(&dest_address));
+#else
         auto const access_status = ctx->host->access_account(dest_address);
+#endif
         if (access_status == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
@@ -92,8 +97,13 @@ namespace monad::vm::runtime
                 // current authority.
                 if (auto delegate_address =
                         ctx->host->resolve_delegation(dest_address)) {
-                    auto const access_status =
-                        ctx->host->access_account(*delegate_address);
+#if defined(MONAD_ZKVM_ZISK)
+                    auto const access_status = host_of(*ctx).access_account(
+                        host_shim::addr(&*delegate_address));
+#else
+                    auto const access_status = ctx->host->access_account(
+                        *delegate_address);
+#endif
                     ctx->gas_remaining -= (access_status == EVMC_ACCESS_COLD
                                                ? traits::cold_account_cost()
                                                : 0) +
@@ -170,7 +180,12 @@ namespace monad::vm::runtime
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,
         };
 
+#if defined(MONAD_ZKVM_ZISK)
+        // Transfer result ownership as the C adapter does.
+        auto const result = host_of(*ctx).call(message).release_raw();
+#else
         auto const result = ctx->host->call(message).release_raw();
+#endif
 
         ctx->env.set_return_data(result.output_data, result.output_size);
 

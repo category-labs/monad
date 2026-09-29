@@ -295,3 +295,14 @@ namespace monad::vm
         return interface;
     }
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+namespace monad::vm::runtime
+{
+    // Context already stores the C++ host.
+    [[gnu::always_inline]] inline Host &host_of(Context const &ctx) noexcept
+    {
+        return *ctx.host;
+    }
+}
+#endif

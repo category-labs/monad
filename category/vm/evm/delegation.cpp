@@ -15,6 +15,9 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/vm/evm/delegation.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/host.hpp>
+#endif
 
 #include <algorithm>
 #include <cstdint>

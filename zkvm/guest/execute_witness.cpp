@@ -40,6 +40,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <utility>
 #include <vector>
@@ -65,6 +66,98 @@ unsigned char const monad_zkvm_official_profile[] = "monad-zkvm-dev-v2";
 
 #ifdef MONAD_ZKVM_SELFTEST
 extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void);
+#endif
+
+#if defined(MONAD_ZKVM_ZISK)
+namespace
+{
+    // Codes that share their first rate blocks share every Keccak-f state of
+    // their chains up to where they first differ -- clones of one template
+    // differ only at their immutables -- and those states recur: 519 of the
+    // 23,304 bytecode permutations on block 25815159, 1,413 of 35,173 on
+    // 25815000. A code that shares a prefix with another hashes that prefix
+    // through the memo and the rest past it; every other code keeps the path
+    // without it.
+    constexpr size_t CODE_RATE = 136;
+
+    // Looking for clones costs every code a key and a slot, about 38 steps,
+    // and a witness needs enough bytecode to hold any: on the rtp 200 the nine
+    // witnesses under 800 KiB of code carry 64 recurring permutations between
+    // them, and the smallest above carries 105.
+    constexpr size_t CODE_CLONES_MIN_BYTES = 800 * 1024;
+
+    // The first code seen under each key, and the most rate blocks a later
+    // code of that key shares with it. The key is the last word of the first
+    // block, in the selector table that sets clones apart from other
+    // contracts: codes whose first blocks agree share it, and codes that only
+    // share it find no block in common. Open addressing, in a table that
+    // starts zero as untouched memory does on the guest; past half full it
+    // stops filing, and a code it has no slot for keeps the path without the
+    // memo.
+    class FirstBlocks
+    {
+    public:
+        struct Slot
+        {
+            monad::vm::Intercode const *first; // null marks an empty slot
+            uint64_t key;
+            size_t first_depth;
+        };
+
+    private:
+        static constexpr size_t SLOTS = 4096;
+        Slot slots_[SLOTS];
+        size_t used_;
+
+    public:
+        // `code`'s key's slot, tagged in bit 0, if `code` is the first there;
+        // else the whole rate blocks it shares with that first code, shifted
+        // past the tag.
+        uintptr_t add(monad::vm::Intercode const &code)
+        {
+            uint64_t w;
+            std::memcpy(&w, code.code() + CODE_RATE - 8, 8);
+            uint64_t const key = w * 0x9E3779B97F4A7C15ull;
+            size_t i = key >> 52;
+            while (slots_[i].first != nullptr && slots_[i].key != key) {
+                i = (i + 1) % SLOTS;
+            }
+            Slot &s = slots_[i];
+            if (s.first == nullptr) {
+                if (used_ == SLOTS / 2) {
+                    return 0;
+                }
+                ++used_;
+                s.first = &code;
+                s.key = key;
+                return reinterpret_cast<uintptr_t>(&s) | 1;
+            }
+            size_t const size = s.first->size();
+            size_t const n =
+                (code.size() < size ? code.size() : size) / CODE_RATE;
+            size_t k = 0;
+            while (k < n && std::memcmp(
+                                code.code() + CODE_RATE * k,
+                                s.first->code() + CODE_RATE * k,
+                                CODE_RATE) == 0) {
+                ++k;
+            }
+            if (k > s.first_depth) {
+                s.first_depth = k;
+            }
+            return k << 1;
+        }
+
+        // The memo depth `add` left a code, once every code has been added.
+        static size_t depth(uintptr_t const tag)
+        {
+            return (tag & 1) != 0
+                       ? reinterpret_cast<Slot const *>(tag & ~uintptr_t{1})
+                             ->first_depth
+                       : tag >> 1;
+        }
+    };
+}
 #endif
 
 extern "C" void monad_zkvm_execute_witness(void)
@@ -94,41 +187,79 @@ extern "C" void monad_zkvm_execute_witness(void)
     code_index.reserve(512);
     {
         monad::byte_string_view codes = witness.value().encoded_codes;
+        // Hash the intercode's copy, not the witness bytes.
+        //
+        // Bytecode is the guest's longest keccak input -- 72 rate blocks a
+        // call on 25815100 -- and it sits at whatever offset the witness
+        // envelope left it at. 136 is a multiple of 8, so a misaligned start
+        // makes every lane of every block a boundary-crossing load, 159
+        // against 16.
+        //
+        // Intercode already owns an 8-aligned verbatim copy: `pad` takes it
+        // from `new uint8_t[]` and returns it offset by a 32-byte prologue,
+        // so `code()` keeps the alignment operator new gives. Building it
+        // first and hashing from there costs no memory and no copy -- the
+        // copy exists either way.
+        auto const intercode_of = [](monad::byte_string_view const bytes) {
+            MONAD_KECCAK_SITE(CODE_INDEX, bytes.size());
+            auto code = monad::vm::make_shared_intercode(bytes);
+            // The two properties this depends on, checked rather than
+            // trusted: the copy is 8-aligned, and it is the witness bytes
+            // unchanged. Intercode pads around the code, never inside it, so
+            // the first `size()` bytes at code() are verbatim -- but the
+            // padding is what makes the alignment hold, so an assert here is
+            // what would catch a change to it.
+            MONAD_ASSERT((reinterpret_cast<uintptr_t>(code->code()) & 7) == 0);
+            MONAD_DEBUG_ASSERT(
+                std::memcmp(code->code(), bytes.data(), bytes.size()) == 0);
+            return code;
+        };
+        // Without the Keccak-f memo but for the prefix a code shares with
+        // another: a body's chain recurs only as far as that prefix, and the
+        // memo files 2 x 1,232 cells a permutation. See
+        // monad_zkvm_keccak256_fast_nomemo for the soundness argument.
+#if defined(MONAD_ZKVM_ZISK)
+        if (codes.size() >= CODE_CLONES_MIN_BYTES) {
+            // Every intercode first, each tagged with its memo depth: its own
+            // shared blocks, or its key's slot when it is the first code there,
+            // whose depth the later codes of the key raise. The key and the
+            // compares read the aligned copies.
+            struct Pending
+            {
+                monad::vm::SharedIntercode code;
+                uintptr_t tag;
+            };
+
+            static FirstBlocks first_blocks;
+            std::vector<Pending> pending;
+            pending.reserve(512);
+            while (!codes.empty()) {
+                auto const bytes = monad::rlp::parse_string_metadata(codes);
+                MONAD_ASSERT(bytes.has_value());
+                auto code = intercode_of(bytes.value());
+                uintptr_t const tag =
+                    code->size() >= CODE_RATE ? first_blocks.add(*code) : 0;
+                pending.push_back({std::move(code), tag});
+            }
+            for (Pending &p : pending) {
+                size_t const depth = FirstBlocks::depth(p.tag);
+                monad::bytes32_t code_hash;
+                if (depth != 0) {
+                    monad_zkvm_keccak256_fast_memo_prefix(
+                        p.code->code(), p.code->size(), depth, code_hash.bytes);
+                }
+                else {
+                    monad_zkvm_keccak256_fast_nomemo(
+                        p.code->code(), p.code->size(), code_hash.bytes);
+                }
+                code_index.emplace(code_hash, std::move(p.code));
+            }
+        }
+#endif
         while (!codes.empty()) {
             auto const bytes = monad::rlp::parse_string_metadata(codes);
             MONAD_ASSERT(bytes.has_value());
-            MONAD_KECCAK_SITE(CODE_INDEX, bytes.value().size());
-            // Hash the intercode's copy, not the witness bytes.
-            //
-            // Bytecode is the guest's longest keccak input -- 72 rate blocks a
-            // call on 25815100 -- and it sits at whatever offset the witness
-            // envelope left it at. 136 is a multiple of 8, so a misaligned
-            // start makes every lane of every block a boundary-crossing load,
-            // 159 against 16.
-            //
-            // Intercode already owns an 8-aligned verbatim copy: `pad` takes it
-            // from `new uint8_t[]` and returns it offset by a 32-byte prologue,
-            // so `code()` keeps the alignment operator new gives. Building it
-            // first and hashing from there costs no memory and no copy -- the
-            // copy exists either way.
-            auto const code = monad::vm::make_shared_intercode(bytes.value());
-            // The two properties this depends on, checked rather than trusted:
-            // the copy is 8-aligned, and it is the witness bytes unchanged.
-            // Intercode pads around the code, never inside it, so the first
-            // `size()` bytes at code() are verbatim -- but the padding is what
-            // makes the alignment hold, so an assert here is what would catch a
-            // change to it.
-            MONAD_ASSERT(
-                (reinterpret_cast<uintptr_t>(code->code()) & 7) == 0);
-            MONAD_DEBUG_ASSERT(
-                std::memcmp(
-                    code->code(), bytes.value().data(),
-                    bytes.value().size()) == 0);
-            // Without the Keccak-f memo. Bytecode is 28,451 of the block's
-            // 120,701 permutations and the 395 bodies are all distinct, so not
-            // one state in a body's chain recurs: the memo files 2 x 1,232
-            // cells per permutation and collects nothing. See
-            // monad_zkvm_keccak256_fast_nomemo for the soundness argument.
+            auto const code = intercode_of(bytes.value());
             monad::bytes32_t code_hash;
             monad_zkvm_keccak256_fast_nomemo(
                 code->code(), bytes.value().size(), code_hash.bytes);

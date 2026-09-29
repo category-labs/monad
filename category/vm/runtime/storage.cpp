@@ -44,15 +44,16 @@ namespace monad::vm::runtime
         auto key = store_be_as<bytes32_t>(*key_ptr);
 
 #if defined(MONAD_ZKVM_ZISK)
-        Host &host = host_of(*ctx);
-        auto const &recipient = host_shim::addr(&ctx->env.recipient);
-        auto const &slot = host_shim::word(&key);
-        if (host.access_storage(recipient, slot) == EVMC_ACCESS_COLD) {
+        // Both host calls in one. A cold access that the gas left cannot pay
+        // for exits below, before the value is read, as it did between them.
+        evmc_bytes32 value;
+        if (host_of(*ctx).sload_into(
+                host_shim::addr(&ctx->env.recipient),
+                host_shim::word(&key),
+                ctx->gas_remaining >= traits::cold_storage_cost(),
+                value) == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_storage_cost());
         }
-
-        evmc_bytes32 value;
-        host.get_storage_into(recipient, slot, value);
 #else
         auto const access_status =
             ctx->host->access_storage(ctx->context, &ctx->env.recipient, &key);

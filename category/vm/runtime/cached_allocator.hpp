@@ -144,12 +144,22 @@ namespace monad::vm::runtime
             }
         };
 
-        std::unique_ptr<uint8_t, std::function<void(uint8_t *)>>
-        allocate() const
+        /// Returns the memory to this allocator's cache. A plain deleter:
+        /// a std::function cost a manager call to create and destroy it and
+        /// an indirect call to run it, on every message.
+        struct Deleter
         {
-            return {aligned_alloc_cached(), [*this](uint8_t *ptr) {
-                        free_cached(ptr);
-                    }};
+            CachedAllocator allocator;
+
+            void operator()(uint8_t *const ptr) const
+            {
+                allocator.free_cached(ptr);
+            }
+        };
+
+        std::unique_ptr<uint8_t, Deleter> allocate() const
+        {
+            return {aligned_alloc_cached(), Deleter{*this}};
         }
 
     private:

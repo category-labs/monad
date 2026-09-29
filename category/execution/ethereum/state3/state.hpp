@@ -262,7 +262,9 @@ class State
 
     Map<bytes32_t, vm::SharedVarcode> code_{};
 
-    unsigned version_{0};
+    // Open frame count. Match vector sizes and avoid costly 32-bit accesses
+    // on ZisK.
+    size_t version_{0};
 
     std::deque<DirtyAccounts> dirty_;
 

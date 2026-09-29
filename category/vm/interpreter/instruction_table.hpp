@@ -1771,26 +1771,33 @@ namespace monad::vm::interpreter
                         // reader to favor the cheaper packh sequence on ZisK.
                         auto const destination = static_cast<size_t>(
                             detail::load_be_k<2>(instr_ptr + 1));
+                        // Include the destination JUMPDEST in the upfront gas
+                        // charge.
                         static constexpr auto requirements =
-                            fused_requirements<traits, PUSH2, JUMP>();
-                        if (MONAD_UNLIKELY(
-                                !MONAD_VM_FUSED_CHARGE(requirements))) {
+                            fused_requirements<traits, PUSH2, JUMP, JUMPDEST>();
+                        if (MONAD_LIKELY(MONAD_VM_FUSED_CHARGE(requirements))) {
+                            if (MONAD_UNLIKELY(
+                                    !analysis.is_jumpdest(destination))) {
+                                ctx.exit(Error);
+                            }
+                            instr_ptr = analysis.code() + destination + 1;
+                        }
+                        else {
                             gas_remaining += requirements.gas;
                             MONAD_VM_CHECK(PUSH2);
                             // PUSH2 supplies the operand required by JUMP.
                             MONAD_DEBUG_ASSERT(
                                 stack_top.next_slot() >= stack_bottom);
                             MONAD_VM_CHARGE(JUMP);
+                            if (MONAD_UNLIKELY(
+                                    !analysis.is_jumpdest(destination))) {
+                                ctx.exit(Error);
+                            }
+                            instr_ptr = swallow_jumpdest(
+                                ctx,
+                                analysis.code() + destination,
+                                gas_remaining);
                         }
-                        if (MONAD_UNLIKELY(
-                                !analysis.is_jumpdest(destination))) {
-                            ctx.exit(Error);
-                        }
-                        auto const *next_instruction =
-                            analysis.code() + destination;
-                        next_instruction = swallow_jumpdest(
-                            ctx, next_instruction, gas_remaining);
-                        instr_ptr = next_instruction;
                         MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF
                             [*instr_ptr](
                                 ctx,
@@ -2042,11 +2049,26 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        // Include the destination JUMPDEST in the upfront gas charge.
+        static constexpr auto requirements =
+            fused_requirements<traits, JUMP, JUMPDEST>();
+        uint8_t const *new_ip;
+        if (MONAD_LIKELY(MONAD_VM_FUSED_CHARGE(requirements))) {
+            auto const &target = pop(stack_top);
+            new_ip = jump_impl(ctx, analysis, target) + 1;
+        }
+        else {
+            gas_remaining += requirements.gas;
+            MONAD_VM_CHECK(JUMP);
+            auto const &target = pop(stack_top);
+            new_ip = swallow_jumpdest(
+                ctx, jump_impl(ctx, analysis, target), gas_remaining);
+        }
+#else
         MONAD_VM_CHECK(JUMP);
         auto const &target = pop(stack_top);
         auto const *new_ip = jump_impl(ctx, analysis, target);
-#if defined(MONAD_ZKVM_ZISK)
-        new_ip = swallow_jumpdest(ctx, new_ip, gas_remaining);
 #endif
 
         if constexpr (debug_enabled) {

@@ -619,8 +619,19 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
 #pragma GCC unroll 1
                     while (run_begin != children_begin) {
                         uint64_t const previous_child = run_begin[-1];
-                        if (previous_child != preceding_offset ||
-                            !blob_digest_at(previous_child)) {
+                        if (previous_child != preceding_offset) {
+                            break;
+                        }
+                        if constexpr (priming_pass) {
+                            // Offset zero reads the validated header's EMPTY
+                            // tag, never DIGEST, so no separate null check is
+                            // needed.
+                            if (NodeViewBase{blob_.data() + previous_child}.tag() !=
+                                Tag::DIGEST) {
+                                break;
+                            }
+                        }
+                        else if (!blob_digest_at(previous_child)) {
                             break;
                         }
                         preceding_offset -= HASH_RLP_LEN;

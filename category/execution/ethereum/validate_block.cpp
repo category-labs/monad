@@ -301,7 +301,7 @@ Result<void> static_validate_ethereum_header_with_parent(
     // EIP-1559: at London activation the block gas limit doubles, so the
     // delta below is measured against twice the parent's.
     uint64_t parent_gas_limit = parent.gas_limit;
-    if constexpr (traits::evm_rev() >= MONAD_ETH_LONDON) {
+    if constexpr (traits::eip_1559_active()) {
         if (!parent.base_fee_per_gas.has_value()) {
             if (MONAD_UNLIKELY(
                     parent_gas_limit > std::numeric_limits<uint64_t>::max() /
@@ -321,7 +321,7 @@ Result<void> static_validate_ethereum_header_with_parent(
         return BlockError::InvalidGasLimit;
     }
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_LONDON) {
+    if constexpr (traits::eip_1559_active()) {
         if (MONAD_UNLIKELY(!header.base_fee_per_gas.has_value())) {
             return BlockError::MissingField;
         }

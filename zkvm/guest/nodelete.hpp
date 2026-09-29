@@ -32,4 +32,8 @@
 [[gnu::const]] void operator delete(void *, std::size_t) noexcept;
 [[gnu::const]] void operator delete[](void *, std::size_t) noexcept;
 
+// Expose the no-op free in zkvm/core/libc.cpp so GCC can remove calls.
+// Omit noexcept to match newlib's declaration.
+extern "C" [[gnu::const]] void free(void *);
+
 #pragma GCC diagnostic pop

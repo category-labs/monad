@@ -594,6 +594,24 @@ TEST(Rlp_Transaction, DecodeEip4844BlobHashListTrailingBytes)
     }
 }
 
+TEST(Rlp_Transaction, DecodeEip2718Empty)
+{
+    {
+        byte_string_view enc{};
+        auto const result = decode_transaction_eip2718(enc);
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), DecodeError::InputTooShort);
+    }
+
+    {
+        byte_string const body{0xc1, 0x80};
+        byte_string_view enc{body};
+        auto const result = decode_transaction_list(enc, nullptr);
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), DecodeError::InputTooShort);
+    }
+}
+
 TEST(Rlp_Transaction, DecodeEip2718TrailingBytes)
 {
     Transaction const t{

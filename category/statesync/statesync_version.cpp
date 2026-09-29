@@ -15,6 +15,8 @@
 
 #include <category/statesync/statesync_version.h>
 
+#include <cstdint>
+
 uint32_t monad_statesync_version()
 {
     return MONAD_STATESYNC_VERSION;

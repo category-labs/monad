@@ -13,19 +13,28 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/async/config.hpp>
+#include <category/async/util.hpp>
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/log.hpp>
 #include <category/core/runtime/unaligned.hpp>
+#include <category/execution/ethereum/chain/chain_config.h>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/mpt/db.hpp>
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/timeline.hpp>
+#include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/statesync/statesync_client.h>
@@ -38,12 +47,18 @@
 #include <ankerl/unordered_dense.h>
 
 #include <cstdint>
+#include <cstring>
 #include <deque>
+#include <filesystem>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <span>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/sysinfo.h>
+#include <unistd.h>
+#include <utility>
 
 using namespace monad;
 using namespace monad::mpt;
@@ -203,7 +218,7 @@ namespace
         MONAD_ASSERT(orig.has_value());
         StateDeltas::accessor it;
         bytes32_t const end{state.storage[addr].end++};
-        bool success = deltas.emplace(
+        bool const success = deltas.emplace(
             it,
             Address{addr},
             StateDelta{
@@ -364,6 +379,8 @@ namespace
             case 5:
                 remove_storage(deltas, state, stdb, n);
                 break;
+            default:
+                MONAD_ABORT();
             }
             client.mask = raw.size() < sizeof(uint64_t)
                               ? std::numeric_limits<uint64_t>::max()

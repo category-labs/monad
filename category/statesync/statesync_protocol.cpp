@@ -13,16 +13,27 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/keccak.hpp>
 #include <category/core/runtime/unaligned.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/mpt/util.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
+#include <category/statesync/statesync_messages.h>
 #include <category/statesync/statesync_protocol.hpp>
+
+#include <bit>
+#include <cstdint>
+#include <optional>
+#include <utility>
 
 using namespace monad;
 using namespace monad::mpt;

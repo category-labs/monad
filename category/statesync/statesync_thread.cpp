@@ -15,9 +15,16 @@
 
 #include <category/statesync/statesync_thread.hpp>
 
+#include <category/core/config.hpp>
+#include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/statesync/statesync_server.h>
+#include <category/statesync/statesync_server_context.hpp>
+#include <category/statesync/statesync_server_network.hpp>
 
+#include <memory>
 #include <pthread.h>
+#include <stop_token>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -36,7 +43,7 @@ StateSyncServer::StateSyncServer(StateSyncServerConfig const &config)
         mpt::Db ro{io_ctx};
         ctx->ro = &ro;
 
-        std::stop_callback stop_cb(
+        std::stop_callback const stop_cb(
             token, [config]() { config.network->signal_shutdown(); });
 
         while (!token.stop_requested()) {

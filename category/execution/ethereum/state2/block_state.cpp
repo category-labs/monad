@@ -21,13 +21,13 @@
 #include <category/core/log.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
-#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
-#include <category/execution/ethereum/state2/fmt/state_deltas_fmt.hpp> // NOLINT
+#include <category/execution/ethereum/state2/fmt/state_deltas_fmt.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>

@@ -23,9 +23,9 @@
 #include <category/core/log.hpp>
 #include <category/crypto/keccak.h>
 #include <category/execution/ethereum/core/account.hpp>
-#include <category/execution/ethereum/core/fmt/address_fmt.hpp> // NOLINT
-#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
-#include <category/execution/ethereum/core/fmt/int_fmt.hpp> // NOLINT
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp>
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
+#include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -47,7 +47,7 @@
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
-#include <category/mpt/nibbles_view_fmt.hpp> // NOLINT
+#include <category/mpt/nibbles_view_fmt.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/traverse.hpp>

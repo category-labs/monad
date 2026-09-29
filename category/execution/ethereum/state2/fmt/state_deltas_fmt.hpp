@@ -15,6 +15,8 @@
 
 #pragma once
 
+// IWYU pragma: always_keep
+
 #include <category/core/basic_formatter.hpp>
 #include <category/execution/ethereum/core/fmt/account_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/address_fmt.hpp>

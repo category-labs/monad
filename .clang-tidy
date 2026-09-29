@@ -57,10 +57,12 @@
       value:        assert,MONAD_DEBUG_ASSERT
     - key:          bugprone-dangling-handle.HandleClasses
       value:        ::std::basic_string_view;::std::span;::absl::string_view
+    - key:          bugprone-reserved-identifier.AllowedIdentifiers
+      value:        __progname
     - key:          bugprone-string-constructor.StringNames
       value:        ::std::basic_string;::std::basic_string_view;::absl::string_view
     - key:          misc-include-cleaner.IgnoreHeaders
-      value:        gtest/.*|gmock/.*|sys/.*|CLI/.*|boost/.*|llvm/.*|nlohmann/.*|quill/.*|bits/.*|category/core/log\.hpp
+      value:        gtest/.*|gmock/.*|sys/.*|CLI/.*|boost/.*|llvm/.*|nlohmann/.*|quill/.*|bits/.*|category/core/log\.hpp|getopt\.h
     - key:          modernize-use-default-member-init.UseAssignment
       value:        1
     - key:          modernize-use-transparent-functors.SafeMode

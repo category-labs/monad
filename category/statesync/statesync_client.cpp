@@ -14,25 +14,33 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
-#include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
+#include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
+#include <category/mpt/update.hpp>
+#include <category/mpt/util.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
+#include <category/statesync/statesync_messages.h>
 #include <category/statesync/statesync_protocol.hpp>
 #include <category/statesync/statesync_version.h>
 #include <category/vm/evm/traits.hpp>
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
+#include <utility>
 
 using namespace monad;
 using namespace monad::mpt;

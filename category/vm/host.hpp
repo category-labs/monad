@@ -42,6 +42,16 @@ namespace monad::vm
             evmc::address const &addr, evmc::bytes32 const &key,
             evmc_bytes32 &value) const noexcept = 0;
 
+#if defined(MONAD_ZKVM_ZISK)
+        /// SLOAD's access_storage and get_storage_into, with one lookup of
+        /// the account. The value is read when the slot is warm, or when
+        /// `read_cold` says the caller can pay for a cold access: one that
+        /// cannot exits before reading, as it did between the two calls.
+        virtual evmc_access_status sload_into(
+            evmc::address const &addr, evmc::bytes32 const &key,
+            bool read_cold, evmc_bytes32 &value) noexcept = 0;
+#endif
+
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.
         void capture_current_exception() const noexcept

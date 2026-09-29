@@ -687,13 +687,17 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
         account = Account{.incarnation = incarnation_};
     }
 
-    MONAD_ASSERT_THROW(
-        std::numeric_limits<uint256_t>::max() - delta >=
-            account.value().balance,
-        "balance overflow");
+    // A zero delta, as most calls carry, changes no balance: nothing to
+    // check, journal or add, and the touch below is its whole effect.
+    if (delta != 0) {
+        MONAD_ASSERT_THROW(
+            std::numeric_limits<uint256_t>::max() - delta >=
+                account.value().balance,
+            "balance overflow");
 
-    journal_balance(address, account.value().balance);
-    account.value().balance += delta;
+        journal_balance(address, account.value().balance);
+        account.value().balance += delta;
+    }
     if (account_state.touch()) {
         journal_flag(address, Undo::Kind::FlagTouched);
     }
@@ -710,10 +714,14 @@ void State::subtract_from_balance(
         account = Account{.incarnation = incarnation_};
     }
 
-    MONAD_ASSERT_THROW(delta <= account.value().balance, "balance underflow");
+    // As in add_to_balance: a zero delta leaves only the touch.
+    if (delta != 0) {
+        MONAD_ASSERT_THROW(
+            delta <= account.value().balance, "balance underflow");
 
-    journal_balance(address, account.value().balance);
-    account.value().balance -= delta;
+        journal_balance(address, account.value().balance);
+        account.value().balance -= delta;
+    }
     if (account_state.touch()) {
         journal_flag(address, Undo::Kind::FlagTouched);
     }

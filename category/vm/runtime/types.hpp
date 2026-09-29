@@ -21,13 +21,13 @@
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
+#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/evm/tx_context.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/exit.hpp>
 #include <category/vm/runtime/transmute.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <cstddef>
 #include <span>
@@ -396,11 +396,11 @@ namespace monad::vm::runtime
         void exit [[noreturn]] (StatusCode code) noexcept;
 
         template <Traits traits>
-        evmc::Result copy_to_evmc_result();
+        vm::Result copy_to_result();
 
     private:
         template <Traits traits>
-        std::variant<std::span<uint8_t const>, evmc_status_code>
+        std::variant<std::span<uint8_t const>, monad_status_code>
         copy_result_data();
     };
 

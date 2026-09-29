@@ -27,10 +27,9 @@
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/status_code.h>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
@@ -78,7 +77,7 @@ namespace
 
 void NoopCallTracer::on_enter(vm::Message const &) {}
 
-void NoopCallTracer::on_exit(evmc::Result const &) {}
+void NoopCallTracer::on_exit(vm::Result const &) {}
 
 void NoopCallTracer::on_log(Receipt::Log) {}
 
@@ -273,12 +272,12 @@ void CallTracer::on_enter(vm::Message const &msg)
     });
 }
 
-void CallTracer::on_exit(evmc::Result const &res)
+void CallTracer::on_exit(vm::Result const &res)
 {
-    size_t const output_size =
-        res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT
-            ? res.output_size
-            : 0;
+    size_t const output_size = res.status_code == MONAD_STATUS_SUCCESS ||
+                                       res.status_code == MONAD_STATUS_REVERT
+                                   ? res.output_size
+                                   : 0;
     if (!(size_ += output_size)) {
         return;
     }
@@ -290,12 +289,13 @@ void CallTracer::on_exit(evmc::Result const &res)
         "Frame gas is less than remaining gas");
     frame.gas_used = frame.gas - static_cast<uint64_t>(res.gas_left);
 
-    if (res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT) {
+    if (res.status_code == MONAD_STATUS_SUCCESS ||
+        res.status_code == MONAD_STATUS_REVERT) {
         frame.output = res.output_size == 0
                            ? byte_string{}
                            : byte_string{res.output_data, res.output_size};
     }
-    frame.status = from_evmc_status_code(res.status_code);
+    frame.status = res.status_code;
 
     if (frame.type == CallType::CREATE || frame.type == CallType::CREATE2) {
         frame.to = is_zero(res.create_address)

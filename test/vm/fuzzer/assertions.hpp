@@ -15,8 +15,7 @@
 
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-
-#include <evmc/evmc.hpp>
+#include <category/vm/evm/result.hpp>
 
 namespace monad::vm::fuzzing
 {
@@ -30,6 +29,6 @@ namespace monad::vm::fuzzing
     void assert_equal(State &, State &);
 
     void assert_equal(
-        evmc::Result const &spec_result, evmc::Result const &compiler_result,
+        vm::Result const &spec_result, vm::Result const &compiler_result,
         bool strict_out_of_gas);
 }

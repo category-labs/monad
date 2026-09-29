@@ -183,7 +183,9 @@ class State
     std::vector<SlotUndo> undo_slots_{};
     std::vector<PageTracker> undo_pages_{};
 
-    // Each open frame's watermark in all six vectors.
+    // Each open frame's watermark in all six vectors. `accts` is in bytes:
+    // an optional<Account> is 88 of them, and a count would cost a multiply
+    // by 11's inverse on every frame, where only a rejection needs it.
     struct UndoMark
     {
         size_t log;
@@ -203,7 +205,8 @@ class State
     // Logs are append-only. Each frame saves the current size so reverting
     // can discard its logs without persistent-vector snapshots.
     std::vector<Receipt::Log> logs_{};
-    // One saved size per open frame; log_marks_.size() == version_.
+    // One saved size per open frame, in bytes as UndoMark::accts (a Log is
+    // 80); log_marks_.size() == version_.
     std::vector<size_t> log_marks_{};
 
     Map<bytes32_t, vm::SharedVarcode> code_{};

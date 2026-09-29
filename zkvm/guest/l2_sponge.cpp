@@ -21,6 +21,7 @@
 #include <category/core/int.hpp>
 #include <category/core/poseidon2.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -39,6 +40,98 @@ constexpr std::string_view domain_name(L2Domain const d)
         return "auth";
     }
     return "";
+}
+
+// The tag block is one rate block, 84 bytes, so at most 21 pattern words fit
+// in it -- and fewer once the label and the context are in.
+constexpr std::size_t MAX_PATTERN_WORDS =
+    L2_SPONGE_RATE * L2_BYTES_PER_ELEM / 4;
+
+// SAFE's encoding of the I/O pattern: one word per call, high bit set for a
+// squeeze, and consecutive calls of the same kind merged -- so a length split
+// across two calls encodes the same way as the single call, which is what makes
+// the transcript rather than the call boundaries the thing being committed to.
+// Returns the number of words.
+std::size_t merge_pattern(
+    std::span<L2IoOp const> const io_pattern,
+    std::uint32_t (&words)[MAX_PATTERN_WORDS])
+{
+    std::size_t count = 0;
+    for (std::size_t i = 0; i < io_pattern.size();) {
+        MONAD_ASSERT(io_pattern[i].len > 0);
+        std::uint64_t len = io_pattern[i].len;
+        std::size_t j = i + 1;
+        for (; j < io_pattern.size() &&
+               io_pattern[j].squeeze == io_pattern[i].squeeze;
+             ++j) {
+            MONAD_ASSERT(io_pattern[j].len > 0);
+            len += io_pattern[j].len;
+        }
+        MONAD_ASSERT(len < (std::uint64_t{1} << 31));
+        MONAD_ASSERT(count < MAX_PATTERN_WORDS);
+        words[count++] = static_cast<std::uint32_t>(len) |
+                         (io_pattern[i].squeeze ? 0x80000000u : 0u);
+        i = j;
+    }
+    return count;
+}
+
+// SAFE's initial state: the capacity carries a tag over the encoded I/O
+// pattern, the caller's label, the domain and the caller's context, and the
+// rate starts empty. The tag is what stops two uses -- or two transcripts whose
+// lengths differ -- from sharing an initial state, so the pattern is normative
+// and not a debugging aid. It is a function of those four inputs and of nothing
+// else, which is what lets L2SpongeTags keep it.
+void safe_tag(
+    L2Domain const domain, std::span<std::uint32_t const> const words,
+    std::span<unsigned char const, 32> const context,
+    std::string_view const label, std::uint64_t (&capacity)[4])
+{
+    // One rate block holds it by construction: this guest's patterns are a
+    // handful of ops and a short label, and the bounds say so rather than
+    // truncating in silence.
+    //
+    // Not zeroed: l2_pack_bytes reads the n bytes written below and nothing
+    // past them, whole-word loads included.
+    unsigned char buf[L2_SPONGE_RATE * L2_BYTES_PER_ELEM];
+    std::size_t n = 0;
+    for (std::uint32_t const w : words) {
+        buf[n++] = static_cast<unsigned char>(w >> 24);
+        buf[n++] = static_cast<unsigned char>(w >> 16);
+        buf[n++] = static_cast<unsigned char>(w >> 8);
+        buf[n++] = static_cast<unsigned char>(w);
+    }
+
+    // The caller's label, then the domain, then the caller's application
+    // context -- see the header for why the context is in the tag rather than
+    // the rate, and why it arrives pre-hashed. The label and the domain are
+    // frozen with the suite's protocol version: a build that changes either
+    // produces tags nothing else reproduces, which is the intent -- it is a
+    // different protocol.
+    //
+    // Copied whole, behind one bound for all three: this block is most of what
+    // computing a tag costs.
+    std::string_view const name = domain_name(domain);
+    MONAD_ASSERT(
+        n + label.size() + name.size() + context.size() <= sizeof(buf));
+    std::memcpy(buf + n, label.data(), label.size());
+    n += label.size();
+    std::memcpy(buf + n, name.data(), name.size());
+    n += name.size();
+    std::memcpy(buf + n, context.data(), context.size());
+    n += context.size();
+
+    // Poseidon2 and not keccak: one permutation is 5,488 cells against a
+    // Keccak-f's 75,575 in ZisK's cost model, and it keeps one hash function
+    // across the whole L2 surface. (POSEIDON_COST and KECCAK_COST in ZisK's
+    // cost table. Revisions have repriced both, so the figures are worth
+    // re-reading against whatever revision Cargo.lock pins.)
+    std::uint64_t seed[16] = {};
+    l2_pack_bytes({buf, n}, {seed, L2_SPONGE_RATE});
+    monad_poseidon2_16(seed);
+    for (std::size_t i = 0; i < 4; ++i) {
+        capacity[i] = seed[i];
+    }
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END
@@ -78,82 +171,88 @@ std::size_t l2_pack_bytes(
     return n;
 }
 
+void L2SpongeTags::tag(
+    L2Domain const domain, std::span<std::uint32_t const> const words,
+    std::span<unsigned char const, 32> const context,
+    std::string_view const label, std::uint64_t (&capacity)[4])
+{
+    MONAD_ASSERT(words.size() <= MAX_WORDS);
+    std::uint64_t ctx[4];
+    for (std::size_t i = 0; i < 4; ++i) {
+        ctx[i] = load_le_unsafe<std::uint64_t>(context.data() + 8 * i);
+    }
+    // Bound to one context and one label: a sponge over any other empties the
+    // cache first, so no tag outlives the inputs it was computed from.
+    if (label.data() != label_ || label.size() != label_size_ ||
+        ctx[0] != context_[0] || ctx[1] != context_[1] ||
+        ctx[2] != context_[2] || ctx[3] != context_[3]) {
+        for (std::size_t i = 0; i < 4; ++i) {
+            context_[i] = ctx[i];
+        }
+        label_ = label.data();
+        label_size_ = label.size();
+        count_ = 0;
+        next_ = 0;
+    }
+    for (std::size_t e = 0; e < count_; ++e) {
+        Entry const &x = entries_[e];
+        if (x.domain == domain && x.words == words.size() &&
+            std::equal(words.begin(), words.end(), x.word)) {
+            for (std::size_t i = 0; i < 4; ++i) {
+                capacity[i] = x.capacity[i];
+            }
+            return;
+        }
+    }
+    safe_tag(domain, words, context, label, capacity);
+    Entry &x = entries_[next_];
+    x.domain = domain;
+    x.words = static_cast<std::uint8_t>(words.size());
+    std::copy(words.begin(), words.end(), x.word);
+    for (std::size_t i = 0; i < 4; ++i) {
+        x.capacity[i] = capacity[i];
+    }
+    next_ = (next_ + 1) % ENTRIES;
+    if (count_ < ENTRIES) {
+        ++count_;
+    }
+}
+
 L2Sponge::L2Sponge(
     L2Domain const domain, std::span<L2IoOp const> const io_pattern,
     std::span<unsigned char const, 32> const context,
     std::string_view const label)
+    : L2Sponge{domain, io_pattern, context, label, nullptr}
+{
+}
+
+L2Sponge::L2Sponge(
+    L2Domain const domain, std::span<L2IoOp const> const io_pattern,
+    std::span<unsigned char const, 32> const context,
+    std::string_view const label, L2SpongeTags &tags)
+    : L2Sponge{domain, io_pattern, context, label, &tags}
+{
+}
+
+L2Sponge::L2Sponge(
+    L2Domain const domain, std::span<L2IoOp const> const io_pattern,
+    std::span<unsigned char const, 32> const context,
+    std::string_view const label, L2SpongeTags *const tags)
     : pattern_{io_pattern}
 {
     MONAD_ASSERT(!io_pattern.empty());
-
-    // SAFE's initial state: the capacity carries a tag over the encoded I/O
-    // pattern and the domain, and the rate starts empty. The tag is what stops
-    // two uses -- or two transcripts whose lengths differ -- from sharing an
-    // initial state, so the pattern is normative and not a debugging aid.
-    //
-    // One rate block holds it by construction: this guest's patterns are a
-    // handful of ops and a short label, and the bounds below say so rather
-    // than truncating in silence.
-    // Not zeroed: l2_pack_bytes reads the n bytes written below and nothing
-    // past them, whole-word loads included.
-    unsigned char buf[L2_SPONGE_RATE * L2_BYTES_PER_ELEM];
-    std::size_t n = 0;
-
-    // One word per call, high bit set for a squeeze, and consecutive calls of
-    // the same kind merged -- so a length split across two calls encodes the
-    // same way as the single call, which is what makes the transcript rather
-    // than the call boundaries the thing being committed to.
-    for (std::size_t i = 0; i < io_pattern.size();) {
-        MONAD_ASSERT(io_pattern[i].len > 0);
-        std::uint64_t len = io_pattern[i].len;
-        std::size_t j = i + 1;
-        for (; j < io_pattern.size() &&
-               io_pattern[j].squeeze == io_pattern[i].squeeze;
-             ++j) {
-            MONAD_ASSERT(io_pattern[j].len > 0);
-            len += io_pattern[j].len;
-        }
-        MONAD_ASSERT(len < (std::uint64_t{1} << 31));
-        std::uint32_t const w = static_cast<std::uint32_t>(len) |
-                                (io_pattern[i].squeeze ? 0x80000000u : 0u);
-        MONAD_ASSERT(n + 4 <= sizeof(buf));
-        buf[n++] = static_cast<unsigned char>(w >> 24);
-        buf[n++] = static_cast<unsigned char>(w >> 16);
-        buf[n++] = static_cast<unsigned char>(w >> 8);
-        buf[n++] = static_cast<unsigned char>(w);
-        i = j;
-    }
-
-    // The caller's label, then the domain, then the caller's application
-    // context -- see the header for why the context is in the tag rather than
-    // the rate, and why it arrives pre-hashed. The label and the domain are
-    // frozen with the suite's protocol version: a build that changes either
-    // produces tags nothing else reproduces, which is the intent -- it is a
-    // different protocol.
-    //
-    // Copied whole, behind one bound for all three: this block is most of what
-    // opening a sponge costs, and a decrypted leaf opens three.
     MONAD_ASSERT(!label.empty());
-    std::string_view const name = domain_name(domain);
-    MONAD_ASSERT(
-        n + label.size() + name.size() + context.size() <= sizeof(buf));
-    std::memcpy(buf + n, label.data(), label.size());
-    n += label.size();
-    std::memcpy(buf + n, name.data(), name.size());
-    n += name.size();
-    std::memcpy(buf + n, context.data(), context.size());
-    n += context.size();
-
-    // Poseidon2 and not keccak: one permutation is 5,488 cells against a
-    // Keccak-f's 75,575 in ZisK's cost model, and it keeps one hash function
-    // across the whole L2 surface. (POSEIDON_COST and KECCAK_COST in ZisK's
-    // cost table. Revisions have repriced both, so the figures are worth
-    // re-reading against whatever revision Cargo.lock pins.)
-    std::uint64_t seed[16] = {};
-    l2_pack_bytes({buf, n}, {seed, L2_SPONGE_RATE});
-    monad_poseidon2_16(seed);
+    std::uint32_t words[MAX_PATTERN_WORDS];
+    std::size_t const count = merge_pattern(io_pattern, words);
+    std::uint64_t capacity[4];
+    if (tags != nullptr && count <= L2SpongeTags::MAX_WORDS) {
+        tags->tag(domain, {words, count}, context, label, capacity);
+    }
+    else {
+        safe_tag(domain, {words, count}, context, label, capacity);
+    }
     for (std::size_t i = 0; i < 4; ++i) {
-        st_[L2_SPONGE_RATE + i] = seed[i];
+        st_[L2_SPONGE_RATE + i] = capacity[i];
     }
 }
 

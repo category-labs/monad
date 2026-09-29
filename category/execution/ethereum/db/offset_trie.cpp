@@ -473,7 +473,11 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // 64-bit, though the slots are in [0, 15]: ZisK prices add_w,
                 // sub and eq at 60 cells against ~15 for a native add, so an
                 // int counter would run the whole loop at the higher rate.
-                for (size_t i = 16; i-- > 0;) {
+                // Decremented after the test, not in it: `i-- > 0` tests the
+                // value before the decrement, which gcc keeps in a copy every
+                // turn.
+                for (size_t i = 16; i != 0;) {
+                    --i;
                     uint64_t const w = children[i];
                     if (!digest_at(w)) {
                         dest = child_ref<priming_pass>(NodeId{w}, dest);
@@ -508,7 +512,7 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                         digests_length);
 
                     dest = dest.shrink(digests_length);
-                    i = lo; // the test's decrement steps past the run
+                    i = lo; // the next turn's decrement steps past the run
                 }
                 return wrap(dest);
             },

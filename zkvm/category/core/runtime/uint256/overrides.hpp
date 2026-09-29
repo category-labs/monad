@@ -70,6 +70,23 @@ namespace monad::uint256::overrides
     }
 
     template <typename U>
+    [[gnu::always_inline]] constexpr U
+    multiply(U const &lhs, U const &rhs) noexcept
+    {
+        if !consteval {
+            // Gas and fee operands often fit in 64 bits; multiply just their
+            // low words and keep the full 128-bit product.
+            if ((lhs[1] | lhs[2] | lhs[3] | rhs[1] | rhs[2] | rhs[3]) == 0) {
+                uint64_t hi;
+                uint64_t lo;
+                intrinsics::mulx(lhs[0], rhs[0], hi, lo);
+                return U{lo, hi, 0, 0};
+            }
+        }
+        return truncating_mul(lhs, rhs);
+    }
+
+    template <typename U>
     [[gnu::always_inline]] constexpr bool slt(U const &x, U const &y) noexcept
     {
         auto const x_neg = x[U::num_words - 1] >> 63;

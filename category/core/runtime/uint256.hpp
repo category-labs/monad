@@ -680,6 +680,9 @@ MONAD_NO_VECTORIZE
 constexpr uint256_t
 operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept
 {
+    if constexpr (uint256::overrides::enabled) {
+        return uint256::overrides::multiply(lhs, rhs);
+    }
     return truncating_mul(lhs, rhs);
 }
 

@@ -696,7 +696,8 @@ bool State::is_current_incarnation(Address const &address)
     return false;
 }
 
-bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
+void State::get_storage_into(
+    Address const &address, bytes32_t const &key, evmc_bytes32 &out)
 {
     MONAD_GUEST_SITE(STOR_LOOKUP);
     AccountState *current_state = cached_current_account(address);
@@ -714,7 +715,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         MONAD_ASSERT(account.has_value());
         auto &storage = account_state.prestate_storage_;
         if (auto const *const it3 = storage.find(key); it3) {
-            return *it3;
+            out = to_evmc(*it3);
         }
         else {
 #ifdef MONAD_ZKVM_ZISK
@@ -728,7 +729,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
                 address, account.value().incarnation, key);
 #endif
             storage.insert(key, value);
-            return value;
+            out = to_evmc(value);
         }
     }
     else {
@@ -737,7 +738,8 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         MONAD_ASSERT(account.has_value());
         auto const &storage = account_state.storage_;
         if (auto const *const it2 = storage.find(key); it2) {
-            return *it2;
+            out = to_evmc(*it2);
+            return;
         }
         MONAD_ASSERT(account_state.original_state_ != nullptr);
         auto &original_account_state = *account_state.original_state_;
@@ -745,11 +747,14 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         if (!original_account.has_value() ||
             account.value().incarnation !=
                 original_account.value().incarnation) {
-            return {};
+            out = {};
+            return;
         }
         auto &original_storage = original_account_state.prestate_storage_;
-        if (auto const *const it3 = original_storage.find(key); it3) {
-            return *it3;
+        if (auto const *const it3 =
+                original_storage.find(key);
+            it3) {
+            out = to_evmc(*it3);
         }
         else {
 #ifdef MONAD_ZKVM_ZISK
@@ -763,7 +768,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
                 address, account.value().incarnation, key);
 #endif
             original_storage.insert(key, value);
-            return value;
+            out = to_evmc(value);
         }
     }
 }

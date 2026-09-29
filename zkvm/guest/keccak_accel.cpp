@@ -388,58 +388,50 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
     pre = keccakf_memo[keccakf_memo_used].in;
     size_t const whole = len / 8;
     unsigned const rem = static_cast<unsigned>(len % 8);
-    switch (whole) {
-    case 16:
-        pre[15] = post[15] ^ load64(p + 120);
-        [[fallthrough]];
-    case 15:
-        pre[14] = post[14] ^ load64(p + 112);
-        [[fallthrough]];
-    case 14:
-        pre[13] = post[13] ^ load64(p + 104);
-        [[fallthrough]];
-    case 13:
-        pre[12] = post[12] ^ load64(p + 96);
-        [[fallthrough]];
-    case 12:
-        pre[11] = post[11] ^ load64(p + 88);
-        [[fallthrough]];
-    case 11:
-        pre[10] = post[10] ^ load64(p + 80);
-        [[fallthrough]];
-    case 10:
-        pre[9] = post[9] ^ load64(p + 72);
-        [[fallthrough]];
-    case 9:
-        pre[8] = post[8] ^ load64(p + 64);
-        [[fallthrough]];
-    case 8:
-        pre[7] = post[7] ^ load64(p + 56);
-        [[fallthrough]];
-    case 7:
-        pre[6] = post[6] ^ load64(p + 48);
-        [[fallthrough]];
-    case 6:
-        pre[5] = post[5] ^ load64(p + 40);
-        [[fallthrough]];
-    case 5:
-        pre[4] = post[4] ^ load64(p + 32);
-        [[fallthrough]];
-    case 4:
-        pre[3] = post[3] ^ load64(p + 24);
-        [[fallthrough]];
-    case 3:
-        pre[2] = post[2] ^ load64(p + 16);
-        [[fallthrough]];
-    case 2:
-        pre[1] = post[1] ^ load64(p + 8);
-        [[fallthrough]];
-    case 1:
-        pre[0] = post[0] ^ load64(p);
-        [[fallthrough]];
-    default:
-        break;
-    }
+    // Entered through a table of the cases' addresses, not a switch: gcc's
+    // jump table holds 4-byte offsets from its base, read by a lw -- a
+    // sub-word ROM read ZisK prices at 120 cells, sign-extended -- and added
+    // to that base, behind a bound test. Each entry here is one aligned 8-byte
+    // read, and `whole` needs no bound: len < RATE after the loop.
+    static void *const entry[] = {
+        &&lanes0,  &&lanes1,  &&lanes2,  &&lanes3,  &&lanes4,  &&lanes5,
+        &&lanes6,  &&lanes7,  &&lanes8,  &&lanes9,  &&lanes10, &&lanes11,
+        &&lanes12, &&lanes13, &&lanes14, &&lanes15, &&lanes16};
+    static_assert(sizeof(entry) / sizeof(entry[0]) == WORDS);
+    goto *entry[whole];
+lanes16:
+    pre[15] = post[15] ^ load64(p + 120);
+lanes15:
+    pre[14] = post[14] ^ load64(p + 112);
+lanes14:
+    pre[13] = post[13] ^ load64(p + 104);
+lanes13:
+    pre[12] = post[12] ^ load64(p + 96);
+lanes12:
+    pre[11] = post[11] ^ load64(p + 88);
+lanes11:
+    pre[10] = post[10] ^ load64(p + 80);
+lanes10:
+    pre[9] = post[9] ^ load64(p + 72);
+lanes9:
+    pre[8] = post[8] ^ load64(p + 64);
+lanes8:
+    pre[7] = post[7] ^ load64(p + 56);
+lanes7:
+    pre[6] = post[6] ^ load64(p + 48);
+lanes6:
+    pre[5] = post[5] ^ load64(p + 40);
+lanes5:
+    pre[4] = post[4] ^ load64(p + 32);
+lanes4:
+    pre[3] = post[3] ^ load64(p + 24);
+lanes3:
+    pre[2] = post[2] ^ load64(p + 16);
+lanes2:
+    pre[1] = post[1] ^ load64(p + 8);
+lanes1:
+    pre[0] = post[0] ^ load64(p);
+lanes0:
     uint64_t lane = uint64_t{0x01} << (8 * rem);
     if (rem != 0) {
         lane |= load64(p + len - 8) >> (8 * (8 - rem));

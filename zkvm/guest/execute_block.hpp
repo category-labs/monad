@@ -54,11 +54,17 @@ struct ZkvmBlockOutput
 // decoded from, one per transaction. On an L2 block it is every ciphertext
 // LEAF -- including the ones that were rejected, because the header commits to
 // the whole list -- so it may be LONGER than block.transactions.
+//
+// `transaction_encodings` holds, for each of block.transactions in order, the
+// bytes it was decoded from, which its signing payload is built from. On a
+// plaintext block that is `root_transactions` itself; on an L2 block it is the
+// decrypted plaintexts, one per accepted leaf.
 template <Traits traits>
     requires(is_evm_trait_v<traits>)
 Result<ZkvmBlockOutput> execute_block_zkvm(
     Chain const &chain, Block const &block,
-    std::span<byte_string_view const> root_transactions, Db &pdb, vm::VM &vm,
-    BlockHashBuffer const &block_hash_buffer);
+    std::span<byte_string_view const> root_transactions,
+    std::span<byte_string_view const> transaction_encodings, Db &pdb,
+    vm::VM &vm, BlockHashBuffer const &block_hash_buffer);
 
 MONAD_NAMESPACE_END

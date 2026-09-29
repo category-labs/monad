@@ -35,7 +35,8 @@ MONAD_NAMESPACE_BEGIN
 
 Result<Block> decode_block_l2(
     byte_string_view &enc, L2Cipher::Context const &ctx,
-    L2Cipher::Secret const &secret, std::vector<byte_string_view> &ciphertexts)
+    L2Cipher::Secret const &secret, std::vector<byte_string_view> &ciphertexts,
+    byte_string &plaintexts, std::vector<byte_string_view> &encodings)
 {
     Block block;
     BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
@@ -55,6 +56,9 @@ Result<Block> decode_block_l2(
     // decode_transaction returns, and the peak is the largest transaction
     // rather than the block.
     std::vector<unsigned char> plain;
+    // Where each accepted plaintext ends in `plaintexts`. Offsets and not
+    // views, because the buffer may move while it grows.
+    std::vector<std::size_t> ends;
     while (!items.empty()) {
         BOOST_OUTCOME_TRY(auto const ct, rlp::parse_string_metadata(items));
         ciphertexts.push_back(ct);
@@ -69,6 +73,13 @@ Result<Block> decode_block_l2(
             continue; // rejected
         }
         block.transactions.emplace_back(std::move(tx).value());
+        plaintexts.append(plain.data(), plain.size());
+        ends.push_back(plaintexts.size());
+    }
+    encodings.reserve(ends.size());
+    for (std::size_t begin = 0; std::size_t const end : ends) {
+        encodings.emplace_back(plaintexts.data() + begin, end - begin);
+        begin = end;
     }
 
     BOOST_OUTCOME_TRY(block.ommers, rlp::decode_block_header_vector(payload));

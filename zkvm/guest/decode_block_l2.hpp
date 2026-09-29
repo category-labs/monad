@@ -95,6 +95,13 @@ struct Block;
 /// DECISION RULE, which is not the suite's to change: a leaf the suite refuses
 /// is consumed and skipped, never a halt.
 ///
+/// `encodings` receives, for each accepted transaction in order, the plaintext
+/// it was decoded from -- canonical RLP, so its signing payload can be built
+/// from those bytes rather than re-encoded field by field. The views point into
+/// `plaintexts`, which is appended to while the list is walked; they are only
+/// made once the walk is done, so the buffer's growth cannot leave one
+/// dangling, and it has to outlive them.
+///
 /// `secret` arrives already bound to `ctx` -- L2Cipher::bind_secret is the only
 /// way to obtain one, and it fails unless the witness's bytes are the secret
 /// the context names. So the check every other part of this design rests on is
@@ -103,6 +110,7 @@ struct Block;
 /// execute_witness.cpp alongside every other witness defect.
 Result<Block> decode_block_l2(
     byte_string_view &enc, L2Cipher::Context const &ctx,
-    L2Cipher::Secret const &secret, std::vector<byte_string_view> &ciphertexts);
+    L2Cipher::Secret const &secret, std::vector<byte_string_view> &ciphertexts,
+    byte_string &plaintexts, std::vector<byte_string_view> &encodings);
 
 MONAD_NAMESPACE_END

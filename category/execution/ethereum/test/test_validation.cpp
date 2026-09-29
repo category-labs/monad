@@ -669,7 +669,7 @@ TYPED_TEST(EvmTraitsTest, header_gas_limit_within_a_1024th_of_parent)
 
 TYPED_TEST(EvmTraitsTest, header_base_fee_recomputed_from_parent)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_LONDON) {
+    if constexpr (!TestFixture::Trait::eip_1559_active()) {
         GTEST_SKIP() << "EIP-1559 is not active";
     }
 
@@ -689,7 +689,7 @@ TYPED_TEST(EvmTraitsTest, header_base_fee_recomputed_from_parent)
 
 TYPED_TEST(EvmTraitsTest, header_with_parent_missing_base_fee)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_LONDON) {
+    if constexpr (!TestFixture::Trait::eip_1559_active()) {
         GTEST_SKIP() << "EIP-1559 is not active";
     }
 
@@ -705,7 +705,7 @@ TYPED_TEST(EvmTraitsTest, header_with_parent_missing_base_fee)
 
 TYPED_TEST(EvmTraitsTest, header_base_fee_wide_arithmetic)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_LONDON) {
+    if constexpr (!TestFixture::Trait::eip_1559_active()) {
         GTEST_SKIP() << "EIP-1559 is not active";
     }
 
@@ -761,7 +761,7 @@ TYPED_TEST(EvmTraitsTest, header_base_fee_wide_arithmetic)
 
 TYPED_TEST(EvmTraitsTest, header_at_london_activation)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_LONDON) {
+    if constexpr (!TestFixture::Trait::eip_1559_active()) {
         GTEST_SKIP() << "EIP-1559 is not active";
     }
 

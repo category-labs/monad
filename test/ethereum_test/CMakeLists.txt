@@ -80,6 +80,23 @@ monad_compile_options(monad-ethereum-test)
 
 target_link_libraries(monad-ethereum-test PRIVATE monad_unit_test_common)
 
+# Shard the long spec suites and start them first so ctest -j keeps every core
+# busy.
+set(ETHEREUM_TEST_SHARDS 4)
+
+function(add_sharded_test name)
+  math(EXPR last_shard "${ETHEREUM_TEST_SHARDS} - 1")
+  foreach(shard RANGE ${last_shard})
+    add_test(NAME ${name}_${shard} ${ARGN})
+    set_tests_properties(
+      ${name}_${shard}
+      PROPERTIES
+        COST 1000
+        ENVIRONMENT
+        "GTEST_TOTAL_SHARDS=${ETHEREUM_TEST_SHARDS};GTEST_SHARD_INDEX=${shard}")
+  endforeach()
+endfunction()
+
 function(add_ethereum_test)
   set(ONE_VALUE_ARGS FORK)
   cmake_parse_arguments(ADD_ETHEREUM_TEST "" "${ONE_VALUE_ARGS}" "" ${ARGN})
@@ -92,9 +109,9 @@ function(add_ethereum_test)
   list(JOIN ${TESTS_EXCLUDED} ":" TESTS_EXCLUDED)
   set(FILTER "-:${TESTS_EXCLUDED}")
 
-  add_test(NAME ${ADD_ETHEREUM_TEST_FORK}_monad_ethereum_test
-           COMMAND monad-ethereum-test --fork ${ADD_ETHEREUM_TEST_FORK}
-                   --record-exec-events --gtest_filter=${FILTER})
+  add_sharded_test(${ADD_ETHEREUM_TEST_FORK}_monad_ethereum_test
+                   COMMAND monad-ethereum-test --fork ${ADD_ETHEREUM_TEST_FORK}
+                           --record-exec-events --gtest_filter=${FILTER})
 endfunction()
 
 function(add_monad_test)
@@ -109,12 +126,12 @@ function(add_monad_test)
   list(JOIN ${TESTS_EXCLUDED} ":" TESTS_EXCLUDED)
   set(FILTER "-:${TESTS_EXCLUDED}")
 
-  add_test(NAME ${ADD_MONAD_TEST_FORK}_monad_ethereum_test
-           COMMAND monad-ethereum-test --fork ${ADD_MONAD_TEST_FORK}
-                  # TODO: not ready yet
-                  #  --record-exec-events
-                   --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadSpecTestFixtures/blockchain_tests
-                   --gtest_filter=${FILTER})
+  add_sharded_test(${ADD_MONAD_TEST_FORK}_monad_ethereum_test
+                   COMMAND monad-ethereum-test --fork ${ADD_MONAD_TEST_FORK}
+                          # TODO: not ready yet
+                          #  --record-exec-events
+                           --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadSpecTestFixtures/blockchain_tests
+                           --gtest_filter=${FILTER})
 endfunction()
 
 add_monad_test(FORK MONAD_EIGHT)
@@ -123,19 +140,19 @@ add_monad_test(FORK MONAD_TEN)
 
 # MONAD_NEXT Amsterdam spec tests, from a separate fixtures release. While the
 # whole suite is excluded (see the exclusion file), the runner exits non-zero
-# via its "No tests were run" guard, so the job is marked WILL_FAIL to keep
+# via its "No tests were run" guard, so shard 0 is marked WILL_FAIL to keep
 # ctest green. WILL_FAIL is set only while the suite is fully excluded: once
 # individual tests are re-enabled by dropping entries from the exclusion list,
 # the job runs normally so real failures (and unexpected passes) surface.
 include(${CMAKE_CURRENT_SOURCE_DIR}/exclude/MONAD_NEXT_amsterdam.cmake)
 list(JOIN MONAD_NEXT_amsterdam_excluded_tests ":" TESTS_EXCLUDED)
-add_test(NAME MONAD_NEXT_amsterdam_monad_ethereum_test
-         COMMAND monad-ethereum-test --fork MONAD_NEXT
-                 --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadAmsterdamSpecTestFixtures/blockchain_tests
-                 --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadEip7981SpecTestFixtures/blockchain_tests
-                 --gtest_filter=-:${TESTS_EXCLUDED})
+add_sharded_test(MONAD_NEXT_amsterdam_monad_ethereum_test
+                 COMMAND monad-ethereum-test --fork MONAD_NEXT
+                         --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadAmsterdamSpecTestFixtures/blockchain_tests
+                         --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadEip7981SpecTestFixtures/blockchain_tests
+                         --gtest_filter=-:${TESTS_EXCLUDED})
 if(MONAD_NEXT_amsterdam_excluded_tests STREQUAL "BlockchainTests.*")
-  set_tests_properties(MONAD_NEXT_amsterdam_monad_ethereum_test
+  set_tests_properties(MONAD_NEXT_amsterdam_monad_ethereum_test_0
                        PROPERTIES WILL_FAIL TRUE)
 endif()
 

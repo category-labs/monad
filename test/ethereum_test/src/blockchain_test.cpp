@@ -883,8 +883,13 @@ void register_blockchain_tests_path(
         };
 
     if (fs::is_directory(root)) {
+        std::vector<fs::path> paths;
         for (auto const &entry : fs::recursive_directory_iterator{root}) {
-            register_test(entry.path());
+            paths.push_back(entry.path());
+        }
+        std::ranges::sort(paths);
+        for (auto const &path : paths) {
+            register_test(path);
         }
     }
     else {

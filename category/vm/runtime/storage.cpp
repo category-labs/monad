@@ -20,7 +20,9 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/host.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/host.hpp>
+#endif
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/storage_costs.hpp>
 #include <category/vm/runtime/types.hpp>

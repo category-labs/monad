@@ -36,11 +36,22 @@ namespace monad::vm
 
         /// Write the storage value where the caller wants it. Returned by
         /// value, it is copied again at each change of word type on its way
-        /// back through the C interface. Pure: a body here is the target gcc
-        /// guesses for a call, and tests the guess on every call.
+        /// back through the C interface.
+#if defined(MONAD_ZKVM_ZISK)
+        /// Pure in the guest, whose one host defines it: a body here is the
+        /// target gcc guesses for the runtime's direct call, and it tests the
+        /// guess on every call.
         virtual void get_storage_into(
             evmc::address const &addr, evmc::bytes32 const &key,
             evmc_bytes32 &value) const noexcept = 0;
+#else
+        virtual void get_storage_into(
+            evmc::address const &addr, evmc::bytes32 const &key,
+            evmc_bytes32 &value) const noexcept
+        {
+            value = get_storage(addr, key);
+        }
+#endif
 
 #if defined(MONAD_ZKVM_ZISK)
         /// SLOAD's access_storage and get_storage_into, with one lookup of

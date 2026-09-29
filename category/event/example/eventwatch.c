@@ -21,7 +21,6 @@
  * process.
  */
 
-#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,6 +38,7 @@
 #include <unistd.h>
 
 #if defined(__linux__)
+    #include <linux/limits.h>
     #include <syscall.h>
 constexpr bool PLATFORM_LINUX = true;
 #else

@@ -14,7 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
-#include <category/core/basic_formatter.hpp> // NOLINT
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/cli/help_formatter.hpp>
@@ -25,9 +24,9 @@
 #include <category/core/result.hpp>
 #include <category/crypto/keccak.h>
 #include <category/execution/ethereum/core/account.hpp>
-#include <category/execution/ethereum/core/fmt/account_fmt.hpp> // NOLINT
-#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp> // NOLINT
-#include <category/execution/ethereum/core/fmt/receipt_fmt.hpp> // NOLINT
+#include <category/execution/ethereum/core/fmt/account_fmt.hpp>
+#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
+#include <category/execution/ethereum/core/fmt/receipt_fmt.hpp>
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
@@ -37,7 +36,7 @@
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
-#include <category/mpt/nibbles_view_fmt.hpp> // NOLINT
+#include <category/mpt/nibbles_view_fmt.hpp>
 #include <category/mpt/node_cursor.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/traverse.hpp>

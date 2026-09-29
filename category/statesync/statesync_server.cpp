@@ -15,30 +15,34 @@
 
 #include <category/async/io.hpp>
 #include <category/core/assert.h>
-#include <category/core/basic_formatter.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/likely.h>
 #include <category/core/log.hpp>
 #include <category/core/runtime/unaligned.hpp>
-#include <category/execution/ethereum/core/block.hpp>
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/mpt/nibbles_view.hpp>
+#include <category/mpt/node.hpp>
+#include <category/mpt/node_cursor.hpp>
 #include <category/mpt/traverse.hpp>
+#include <category/mpt/util.hpp>
+#include <category/statesync/statesync_messages.h>
 #include <category/statesync/statesync_server.h>
 #include <category/statesync/statesync_server_context.hpp>
 
 #include <quill/std/Chrono.h>
 
 #include <chrono>
-#include <fcntl.h>
-#include <mutex>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/un.h>
-#include <thread>
-#include <unistd.h>
 
 struct monad_statesync_server
 {
@@ -274,11 +278,11 @@ bool statesync_server_handle_request(
                                              unsigned char const *const v1 =
                                                  nullptr,
                                              uint64_t const size1 = 0) {
-                    uint64_t const size2 = node.value().size();
+                    auto const value = node.value();
                     sync->statesync_server_send_upsert(
-                        sync->net, type, v1, size1, node.value().data(), size2);
+                        sync->net, type, v1, size1, value.data(), value.size());
                     ++(*num_upserts);
-                    *upsert_bytes += size1 + size2;
+                    *upsert_bytes += size1 + value.size();
                 };
 
                 if (nibble == CODE_NIBBLE) {

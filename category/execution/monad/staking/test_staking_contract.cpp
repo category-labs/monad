@@ -28,8 +28,8 @@
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/contract/storage_array.hpp>
-#include <category/execution/ethereum/core/fmt/address_fmt.hpp> // NOLINT
-#include <category/execution/ethereum/core/fmt/int_fmt.hpp> // NOLINT
+#include <category/execution/ethereum/core/fmt/address_fmt.hpp>
+#include <category/execution/ethereum/core/fmt/int_fmt.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>

@@ -13,24 +13,37 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/core/keccak.hpp>
+#include <category/crypto/hash256.h>
+#include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/chain/chain_factory.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
+#include <category/mpt/detail/timeline.hpp>
+#include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/update.hpp>
+#include <category/mpt/util.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_protocol.hpp>
 
 #include <ankerl/unordered_dense.h>
 
+#include <cstdint>
 #include <deque>
+#include <filesystem>
+#include <memory>
+#include <optional>
 #include <sys/sysinfo.h>
+#include <utility>
 
 using namespace monad;
 using namespace monad::mpt;

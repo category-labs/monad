@@ -15,5 +15,7 @@
 
 #pragma once
 
+// IWYU pragma: always_keep
+
 // Shadowing this header with an empty include avoids pulling the host's
 // transitive int_fmt.hpp / account_fmt.hpp chain.

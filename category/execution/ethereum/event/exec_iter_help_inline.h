@@ -31,7 +31,7 @@
 // descriptor containing a consensus event; if this is not the case, we need to
 // seek to the nearest BLOCK_START and copy that event into a caller-provided
 // buffer, then reseat the event_p pointer to refer to that event buffer instead
-static inline bool _monad_exec_ring_ensure_block(
+static inline bool monad_exec_ring_ensure_block(
     struct monad_event_ring const *event_ring,
     struct monad_event_descriptor const **event_p,
     struct monad_event_descriptor *buf)
@@ -54,7 +54,7 @@ static inline bool _monad_exec_ring_ensure_block(
 // `iter` is pointing inside a block, rewind it to BLOCK_START, and copy that
 // out instead (and set `*moved` to true); if false is returned, the event
 // descriptor is not valid
-static inline bool _monad_exec_iter_copy_consensus_event(
+static inline bool monad_exec_iter_copy_consensus_event(
     struct monad_event_iterator *iter, struct monad_event_descriptor *event,
     bool *moved)
 {
@@ -80,7 +80,7 @@ static inline bool _monad_exec_iter_copy_consensus_event(
     return true;
 }
 
-static inline bool _monad_exec_ring_is_start_of_block(
+static inline bool monad_exec_ring_is_start_of_block(
     struct monad_event_ring const *event_ring,
     struct monad_event_descriptor const *event, uint64_t block_number)
 {
@@ -98,7 +98,7 @@ inline bool monad_exec_ring_get_block_number(
     void const *payload;
 
     if (MONAD_UNLIKELY(
-            !_monad_exec_ring_ensure_block(event_ring, &event, &buf))) {
+            !monad_exec_ring_ensure_block(event_ring, &event, &buf))) {
         return false;
     }
 
@@ -141,7 +141,7 @@ inline bool monad_exec_ring_block_id_matches(
     bool tag_matches;
 
     if (MONAD_UNLIKELY(
-            !_monad_exec_ring_ensure_block(event_ring, &event, &buf))) {
+            !monad_exec_ring_ensure_block(event_ring, &event, &buf))) {
         return false;
     }
 
@@ -192,7 +192,7 @@ inline bool monad_exec_iter_consensus_prev(
 
     // Try to copy out the current consensus event
     if (MONAD_UNLIKELY(
-            !_monad_exec_iter_copy_consensus_event(iter, event, &moved))) {
+            !monad_exec_iter_copy_consensus_event(iter, event, &moved))) {
         return false;
     }
     if ((filter == MONAD_EXEC_NONE || filter == MONAD_EXEC_BLOCK_START) &&
@@ -220,7 +220,7 @@ inline bool monad_exec_iter_consensus_prev(
     while (MONAD_UNLIKELY(iter->read_last_seqno > 0)) {
         --iter->read_last_seqno;
         if (MONAD_UNLIKELY(
-                !_monad_exec_iter_copy_consensus_event(iter, event, &moved))) {
+                !monad_exec_iter_copy_consensus_event(iter, event, &moved))) {
             break;
         }
         if (filter == MONAD_EXEC_NONE ||
@@ -348,7 +348,7 @@ inline bool monad_exec_iter_rewind_for_simple_replay(
     uint64_t prev_read = iter->read_last_seqno;
 
     while (monad_exec_iter_consensus_prev(iter, MONAD_EXEC_NONE, event) &&
-           !(found_finalized_block_start = _monad_exec_ring_is_start_of_block(
+           !(found_finalized_block_start = monad_exec_ring_is_start_of_block(
                  event_ring, event, block_number))) {
         prev_read = iter->read_last_seqno;
     }

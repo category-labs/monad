@@ -76,7 +76,7 @@ struct monad_statesync_server_network
         }
     }
 
-    monad_statesync_server_network(char const *const path)
+    explicit monad_statesync_server_network(char const *const path)
         : path{path}
     {
         shutdown_eventfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);

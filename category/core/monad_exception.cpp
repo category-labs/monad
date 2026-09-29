@@ -22,7 +22,7 @@
 #include <cstring>
 #include <stdio.h>
 
-extern char const *__progname; // NOLINT(bugprone-reserved-identifier)
+extern char const *__progname;
 
 MONAD_NAMESPACE_BEGIN
 

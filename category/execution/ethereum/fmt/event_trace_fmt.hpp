@@ -15,6 +15,8 @@
 
 #pragma once
 
+// IWYU pragma: always_keep
+
 #include <category/execution/ethereum/trace/event_trace.hpp>
 
 #include <category/core/log.hpp>

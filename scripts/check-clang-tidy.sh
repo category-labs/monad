@@ -54,8 +54,10 @@ mapfile -d '' -t inputs < <(\
     -g '*.cpp' -g '*.c' \
     category/async \
     category/core  \
+    category/event \
     category/mpt   \
     category/rpc   \
+    category/statesync \
     category/vm    \
     zkvm)
 

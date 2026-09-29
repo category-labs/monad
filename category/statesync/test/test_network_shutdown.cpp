@@ -13,10 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/async/config.hpp>
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
-#include <category/core/basic_formatter.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/statesync/statesync_server_network.hpp>
@@ -26,12 +27,15 @@
 
 #include <boost/scope_exit.hpp>
 
-#include <array>
+#include <cerrno>
 #include <chrono>
-#include <fcntl.h>
+#include <cstring>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <poll.h>
+#include <string>
+#include <string_view>
 #include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <sys/un.h>

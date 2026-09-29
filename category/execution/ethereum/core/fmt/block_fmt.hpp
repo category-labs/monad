@@ -15,6 +15,8 @@
 
 #pragma once
 
+// IWYU pragma: always_keep
+
 #include <category/core/basic_formatter.hpp>
 #include <category/core/block.hpp>
 #include <category/core/fmt/address_fmt.hpp>

@@ -13,40 +13,51 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/async/config.hpp>
 #include <category/async/util.hpp>
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
-#include <category/core/basic_formatter.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/keccak.hpp>
+#include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
-#include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
+#include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/chain/chain_factory.hpp>
 #include <category/execution/monad/db/commit_block_migration.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
+#include <category/mpt/db.hpp>
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/timeline.hpp>
+#include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/trie.hpp>
+#include <category/mpt/util.hpp>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
+#include <category/statesync/statesync_messages.h>
+#include <category/statesync/statesync_protocol.hpp>
 #include <category/statesync/statesync_server.h>
 #include <category/statesync/statesync_server_context.hpp>
 #include <category/statesync/statesync_version.h>
+#include <category/vm/code.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -54,10 +65,18 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <deque>
 #include <filesystem>
-#include <fstream>
+#include <memory>
+#include <optional>
+#include <stdlib.h>
 #include <sys/sysinfo.h>
+#include <unistd.h>
+#include <utility>
+#include <vector>
 
 using namespace monad;
 using namespace monad::mpt;
@@ -243,7 +262,7 @@ namespace
                     .append = true,
                     .dbname_path = cdbname,
                     .chunk_capacity = 24}};
-            [[maybe_unused]] mpt::Db secondary =
+            [[maybe_unused]] mpt::Db const secondary =
                 primary.activate_secondary_timeline(
                     std::make_unique<MonadOnDiskMachine>());
             MONAD_ASSERT(primary.timeline_active(mpt::timeline_id::secondary));
@@ -588,7 +607,7 @@ TYPED_TEST(StateSyncTestBothForks, sync_from_some)
                 deltas,
                 code,
                 BlockHeader{.parent_hash = parent_hash, .number = number});
-            BlockHeader const committed = this->stdb.read_eth_header();
+            BlockHeader committed = this->stdb.read_eth_header();
             parent_hash =
                 to_bytes(keccak256(rlp::encode_block_header(committed)));
             return committed;
@@ -699,7 +718,7 @@ TYPED_TEST(StateSyncTestBothForks, sync_from_some)
     EXPECT_TRUE(monad_statesync_client_finalize(this->cctx));
 
     // find transaction trie
-    mpt::RODb cdb{ReadOnlyOnDiskDbConfig{.dbname_path = this->cdbname}};
+    mpt::RODb const cdb{ReadOnlyOnDiskDbConfig{.dbname_path = this->cdbname}};
     for (auto const nibble :
          {RECEIPT_NIBBLE,
           TRANSACTION_NIBBLE,
@@ -1685,7 +1704,7 @@ TEST_F(StateSyncFixture, validation_prefix_bytes_too_large)
     }
     init();
 
-    monad_sync_request rq{
+    monad_sync_request const rq{
         .prefix = 0,
         .prefix_bytes = 9, // exceeds maximum of 8 - INVALID
         .target = 99,
@@ -1716,7 +1735,7 @@ TEST_F(StateSyncFixture, validation_target_invalid)
     }
     init();
 
-    monad_sync_request rq{
+    monad_sync_request const rq{
         .prefix = 0,
         .prefix_bytes = 8,
         .target = INVALID_BLOCK_NUM, // invalid target
@@ -1746,7 +1765,7 @@ TEST_F(StateSyncFixture, validation_from_greater_than_until)
     }
     init();
 
-    monad_sync_request rq{
+    monad_sync_request const rq{
         .prefix = 0,
         .prefix_bytes = 8,
         .target = 99,
@@ -1776,7 +1795,7 @@ TEST_F(StateSyncFixture, validation_until_greater_than_target)
     }
     init();
 
-    monad_sync_request rq{
+    monad_sync_request const rq{
         .prefix = 0,
         .prefix_bytes = 8,
         .target = 99,
@@ -1806,7 +1825,7 @@ TEST_F(StateSyncFixture, validation_old_target_greater_than_target)
     }
     init();
 
-    monad_sync_request rq{
+    monad_sync_request const rq{
         .prefix = 0,
         .prefix_bytes = 8,
         .target = 50,
@@ -1821,10 +1840,10 @@ TEST_F(StateSyncFixture, validation_old_target_greater_than_target)
 
 TEST(ProtocolValidation, storage_deletion_rejects_oversized_key)
 {
-    StatesyncProtocolV1_2 proto;
+    StatesyncProtocolV1_2 const proto;
 
-    Address a{0xdeadbeef};
-    byte_string oversized_key(33, 0xff);
+    Address const a{0xdeadbeef};
+    byte_string const oversized_key(33, 0xff);
 
     byte_string buf{};
     buf += to_byte_string_view(a.bytes);
@@ -1836,7 +1855,7 @@ TEST(ProtocolValidation, storage_deletion_rejects_oversized_key)
 
 TEST(ProtocolValidation, upserts_reject_trailing_bytes)
 {
-    StatesyncProtocolV1_2 proto;
+    StatesyncProtocolV1_2 const proto;
 
     auto const dbname = tmp_dbname();
     {
@@ -1850,10 +1869,10 @@ TEST(ProtocolValidation, upserts_reject_trailing_bytes)
             &client,
             &statesync_send_request};
 
-        Address a{0xdeadbeef};
-        Account acct{.balance = 1};
-        bytes32_t key{1};
-        bytes32_t val{2};
+        Address const a{0xdeadbeef};
+        Account const acct{.balance = 1};
+        bytes32_t const key{1};
+        bytes32_t const val{2};
 
         auto account_buf = encode_account_db(a, acct);
         account_buf.push_back(0xff);

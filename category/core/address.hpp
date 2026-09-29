@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <type_traits>
 
@@ -77,6 +78,32 @@ struct Address : evmc_address
     friend constexpr bool
     operator==(Address const &a, Address const &b) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if !consteval {
+            // Reject on the first eight bytes, then compare the remaining 12
+            // with ZisK DMA (CSR 0x814). The following addi encodes the second
+            // pointer and byte count.
+            uint64_t first_word_a;
+            uint64_t first_word_b;
+            std::memcpy(&first_word_a, a.bytes, sizeof(first_word_a));
+            std::memcpy(&first_word_b, b.bytes, sizeof(first_word_b));
+            if (first_word_a != first_word_b) {
+                return false;
+            }
+            uint64_t different;
+            asm(".option push\n\t"
+                ".option arch, +zicsr\n\t"
+                "csrrs %0, 0x814, %1\n\t"
+                "addi x0, %2, 12\n\t"
+                ".option pop"
+                : "=&r"(different)
+                : "r"(a.bytes + 8),
+                  "r"(b.bytes + 8),
+                  "m"(*reinterpret_cast<uint8_t const(*)[12]>(a.bytes + 8)),
+                  "m"(*reinterpret_cast<uint8_t const(*)[12]>(b.bytes + 8)));
+            return different == 0;
+        }
+#endif
         return std::equal(a.bytes, a.bytes + 20, b.bytes);
     }
 

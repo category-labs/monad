@@ -139,10 +139,7 @@ AccountState &State::current_account_state(Address const &address)
 
     // Reuse the cached account; register it as dirty again if the frame
     // epoch changed.
-    if (current_memo_state_ != nullptr && __builtin_memcmp(
-                                              address.bytes,
-                                              current_memo_address_.bytes,
-                                              sizeof(address.bytes)) == 0) {
+    if (current_memo_state_ != nullptr && address == current_memo_address_) {
         MONAD_GUEST_SITE(ACCT_MEMO_HIT);
         if (current_memo_epoch_ != frame_epoch_) {
             if (!dirty_.empty()) {

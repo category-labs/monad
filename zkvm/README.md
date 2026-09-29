@@ -320,7 +320,7 @@ steps on a whole block -- 0.3% of the cipher -- and the cost is the software
 mode around it, of which `L2Sponge::charge`, validating that the declared SAFE
 pattern is being followed, is 24% on its own. In cells the margin narrows to
 about 7x, since the ECDH's work is precompiled and the sponge's is not. On the
-generated corpus the sponge is 1.6x the ECDH in steps; see
+generated corpus the sponge is 1.5x the ECDH in steps; see
 [Where the L2's share goes](#where-the-l2s-share-goes).
 
 ### The corpus
@@ -532,15 +532,15 @@ what licenses reading the L2 ELF as the official guest plus the L2.
 
 | | `wholesale` | `payouts` |
 |---|---:|---:|
-| steps, L2 | 0.73 M | 13.10 M |
-| COST, L2 | 0.414 G | 2.534 G |
+| steps, L2 | 0.72 M | 12.97 M |
+| COST, L2 | 0.413 G | 2.510 G |
 | of which fixed | 0.287 G | 0.287 G |
 | COST, plaintext | 0.403 G | 2.286 G |
 | share of a median mainnet block | 4 % | 26 % |
 
 **A fixed 287,309,824 of it is the same on every block**: `Base`, ZisK's ROM
 and lookup tables (137 x 2^21), which the cost model charges once per run
-whatever the run proves. It is 69 % of a wholesale block. A guest that proved
+whatever the run proves. It is 70 % of a wholesale block. A guest that proved
 several blocks in one run -- this one proves one -- would pay it once, and on
 wholesale two blocks per run would save more than making the block itself
 free.
@@ -548,24 +548,24 @@ free.
 **The rest follows the transactions first.** Over the 420 workload blocks of
 the L2 arm,
 
-    COST - base = 3.13 M x txs + 791 x witness_bytes + 0.4 M        R2 0.99999
+    COST - base = 3.08 M x txs + 791 x witness_bytes + 0.5 M        R2 0.99999
 
 and the plaintext arm gives 2.66 M per transaction and 811 per byte. The
-per-byte term is the trie's and is the same on both arms; the L2 is 0.47 M more
-per transaction, +18 %. A payouts block spends 1.57 G on its 500 transactions
+per-byte term is the trie's and is the same on both arms; the L2 is 0.42 M more
+per transaction, +16 %. A payouts block spends 1.54 G on its 500 transactions
 and 0.68 G on its 859 KB of witness.
 
 **So prover cost is proportional to gas only above the floor.** On the payouts
-sweep `COST - base = 176 x gas`, R2 0.9995: for one transaction mix, the part
+sweep `COST - base = 174 x gas`, R2 0.9995: for one transaction mix, the part
 of the cost that depends on the block is linear in gas even though the witness
-is not. What makes COST per gas fall from 457 at 50 transfers to 177 at 5,000
+is not. What makes COST per gas fall from 455 at 50 transfers to 175 at 5,000
 is the fixed part, and the slope belongs to the mix -- outside the floor,
-wholesale spends 255 per gas and payouts 196.
+wholesale spends 253 per gas and payouts 194.
 
 **Mainnet, on the same ELF.** The 200 canonical blocks 25,815,000-25,815,199
 (`zkvm-bench`'s `r10zisk-rtp` witnesses), every block hash reproduced: median
 **9.67 G** COST (p10 5.84, p90 14.58), 63.4 M steps, 6.61 MB of witness,
-1,432 COST per witness byte above the floor. A payouts block spends 2,614 per
+1,432 COST per witness byte above the floor. A payouts block spends 2,586 per
 byte, nearly twice as much: a transaction-dense L2 block is not a small mainnet
 block, and the mainnet law below does not carry over to it -- the transaction
 count is what it misses.
@@ -577,18 +577,18 @@ transfers from the same seed:
 
 | | steps | COST | COST - base |
 |---|---:|---:|---:|
-| `wholesale` | 1.09x | 1.03x | 1.09x |
-| `payouts` | 1.13x | 1.11x | 1.12x |
-| sweep, 50 to 5,000 transfers | 1.12-1.15x | 1.05-1.15x | 1.11-1.15x |
+| `wholesale` | 1.09x | 1.02x | 1.08x |
+| `payouts` | 1.12x | 1.10x | 1.11x |
+| sweep, 50 to 5,000 transfers | 1.11-1.13x | 1.04-1.14x | 1.10-1.14x |
 
-Of the extra COST on a payouts block, 40 % is main-machine steps, 37 %
-precompiles (Poseidon2 12 %, secp256k1 14 %, Keccak 3 %) and 16 % memory. By
-function, on one 500-transaction block (`hotspots.py`, 12.93 M steps against
+Of the extra COST on a payouts block, 41 % is main-machine steps, 37 %
+precompiles (Poseidon2 10 %, secp256k1 16 %, Keccak 4 %) and 16 % memory. By
+function, on one 500-transaction block (`hotspots.py`, 12.81 M steps against
 11.38 M):
 
-- the software sponge around the Poseidon2 precompile, **1.08 M steps**:
-  `L2Sponge::absorb` 0.51 M, the constructor, which derives SAFE's tag from the
-  I/O pattern for every sponge, 0.31 M, `squeeze` 0.16 M, byte packing 0.09 M;
+- the software sponge around the Poseidon2 precompile, **0.96 M steps**:
+  `L2Sponge::absorb` 0.51 M, the constructor 0.19 M, `squeeze` 0.16 M, byte
+  packing 0.09 M;
 - the ECDH, mostly the GLV scalar multiplication, 0.66 M;
 - leaf decryption and the L2 block decode, 0.45 M;
 - less about 0.6 M the L2 does not do: gas pricing (`gas_price`, `checked_mul`,
@@ -600,21 +600,28 @@ writes the first rate block without the modular addition -- until the first
 permutation the rate is the zero it was built with, so adding into it is the
 element itself. An absorbed element is then about sixteen instructions: the
 load, the canonicity check, the Goldilocks addition and the store. The tag
-block is copied whole rather than byte by byte. None of this changes what the
-sponge computes: `L2Sponge.KnownAnswers` and `L2Cipher.KnownAnswerLeaves` pin
-its outputs, and every leaf of the corpora above decrypts under it.
+block is copied whole rather than byte by byte, and it is hashed once rather
+than once a sponge: SAFE's tag is a function of the domain, the merged I/O
+pattern, the label and the context and of nothing else, and over one block the
+context is fixed and a leaf's patterns differ from the last leaf's only by the
+message length -- so the cipher context carries an `L2SpongeTags`, and a
+block's leaves open their sponges on tags already computed. The cache is bound
+to the context and label it last saw and empties itself when either differs,
+so a tag is only ever served for the inputs it was computed from. None of this
+changes what the sponge computes: `L2Sponge.KnownAnswers` and
+`L2Cipher.KnownAnswerLeaves` pin its outputs, `L2Sponge.TagCacheIsTransparent`
+holds the cached and uncached sponges equal, and every leaf of the corpora
+above decrypts under it.
 
 Each transaction's signing payload is built from the plaintext it was decoded
 from, which `decode_block_l2` keeps for the block, rather than re-encoded field
 by field -- the same bytes, as `DecodeBlockL2.EncodingsAreWhatEachTransactionWasDecodedFrom`
 checks for legacy, EIP-155 and typed transactions.
 
-The sponge is 1.6x the ECDH here. Most of what is left is the absorption
-itself, at the sixteen instructions an element above. The part that could
-still go is the constructor's tag: three Poseidon2 permutations a leaf, over a
-block that depends only on the domain, the lengths and the per-block context,
-so it could be computed once a block for the key derivation and once per
-length for the other two -- 0.31 M on this block.
+The sponge is 1.5x the ECDH here, and most of what is left is the absorption
+itself, at the sixteen instructions an element above. What the constructor
+still costs, about 125 steps a sponge, is merging the pattern, checking the
+cache's binding, finding the tag and zeroing the state.
 
 #### What mainnet said, on `r8`
 

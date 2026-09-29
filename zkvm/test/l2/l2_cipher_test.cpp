@@ -22,6 +22,9 @@
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/hex.hpp>
+#include <category/core/keccak.hpp>
 #include <category/core/poseidon2.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <zkvm/guest/l2_cipher.hpp>
@@ -344,4 +347,43 @@ TEST(L2Cipher, LeafSizeArithmetic)
     EXPECT_EQ(l2_elem_count(8), 2u);
     EXPECT_EQ(l2_leaf_size(0), L2_LEAF_OVERHEAD);
     EXPECT_EQ(l2_leaf_size(7), L2_LEAF_OVERHEAD + 8u);
+}
+
+// Known answers for whole leaves. RoundTrip and the tampering tests are
+// relational: a change to the sponge, the packing or the wire layout that
+// encrypted and decrypted consistently would pass them, and every leaf already
+// committed to a chain would stop decrypting. These pin the leaf bytes
+// themselves -- their keccak, for fixed inputs, at the lengths RoundTrip
+// covers: empty, either side of one element, either side of a rate block.
+TEST(L2Cipher, KnownAnswerLeaves)
+{
+    auto const ctx = context();
+    auto const n = nonce_of(0x5a);
+
+    struct Case
+    {
+        size_t len;
+        std::string_view keccak;
+    };
+
+    Case const cases[] = {
+        {0, "a8df6c4fb9ac2a5cffe18804d3f89ec60f719cf9226c71901ded88bd94203d28"},
+        {1, "09f055724c32cd71fc6a4d0774c91d82a0f7bd084ebcc7ae6e4bacb329ca115b"},
+        {7, "6f77169767d27fa0d4ee655563027c6504d5e3f76d82c63700c99918d7f5d10b"},
+        {84,
+         "733a604b0ea487cb303478b745675bc4ffb76c1de58c4073bb8b464e4624eb1f"},
+        {85,
+         "2ce4cce2a9d7b9eed3cbc34e70ff9d08ac0cb6f4a8c95bdd72c93d0f2ca43914"},
+        {1000,
+         "e912aa0977b6377915828514b53265aa7b0525015e6c79e007257ad284ac4d52"},
+    };
+    for (Case const &c : cases) {
+        std::vector<unsigned char> leaf;
+        ASSERT_TRUE(l2_encrypt_leaf(ctx, sender_r(), n, message(c.len), leaf))
+            << "len " << c.len;
+        EXPECT_EQ(
+            to_hex(keccak256(byte_string_view{leaf.data(), leaf.size()})),
+            c.keccak)
+            << "len " << c.len;
+    }
 }

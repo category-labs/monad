@@ -18,6 +18,9 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/host.hpp>
+#endif
 #include <category/vm/runtime/types.hpp>
 
 #include <cstdint>
@@ -38,8 +41,13 @@ namespace monad::vm::runtime
     {
         auto key = store_be_as<bytes32_t>(*key_ptr);
 
+#if defined(MONAD_ZKVM_ZISK)
+        auto const value = host_of(*ctx).get_transient_storage(
+            host_shim::addr(&ctx->env.recipient), host_shim::word(&key));
+#else
         auto const value = ctx->host->get_transient_storage(
             ctx->context, &ctx->env.recipient, &key);
+#endif
 
         *result_ptr = load_be<uint256_t>(value);
     }
@@ -55,8 +63,15 @@ namespace monad::vm::runtime
         auto key = store_be_as<bytes32_t>(*key_ptr);
         auto val = store_be_as<bytes32_t>(*val_ptr);
 
+#if defined(MONAD_ZKVM_ZISK)
+        host_of(*ctx).set_transient_storage(
+            host_shim::addr(&ctx->env.recipient),
+            host_shim::word(&key),
+            host_shim::word(&val));
+#else
         ctx->host->set_transient_storage(
             ctx->context, &ctx->env.recipient, &key, &val);
+#endif
     }
 
     bool debug_tstore_stack(

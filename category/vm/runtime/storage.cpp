@@ -20,6 +20,9 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/host.hpp>
+#endif
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/storage_costs.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -40,6 +43,17 @@ namespace monad::vm::runtime
 
         auto key = store_be_as<bytes32_t>(*key_ptr);
 
+#if defined(MONAD_ZKVM_ZISK)
+        Host &host = host_of(*ctx);
+        auto const &recipient = host_shim::addr(&ctx->env.recipient);
+        auto const &slot = host_shim::word(&key);
+        if (host.access_storage(recipient, slot) == EVMC_ACCESS_COLD) {
+            ctx->deduct_gas(traits::cold_storage_cost());
+        }
+
+        evmc_bytes32 value;
+        host.get_storage_into(recipient, slot, value);
+#else
         auto const access_status =
             ctx->host->access_storage(ctx->context, &ctx->env.recipient, &key);
         if (access_status == EVMC_ACCESS_COLD) {
@@ -48,6 +62,7 @@ namespace monad::vm::runtime
 
         auto const value =
             ctx->host->get_storage(ctx->context, &ctx->env.recipient, &key);
+#endif
 
         *result_ptr = load_be<uint256_t>(value);
     }
@@ -100,6 +115,17 @@ namespace monad::vm::runtime
             ctx->deduct_gas(gas_used);
         }
         else {
+#if defined(MONAD_ZKVM_ZISK)
+            Host &host = host_of(*ctx);
+            auto const &recipient = host_shim::addr(&ctx->env.recipient);
+            auto const &slot = host_shim::word(&key);
+            if (host.access_storage(recipient, slot) == EVMC_ACCESS_COLD) {
+                ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
+            }
+
+            auto const storage_status =
+                host.set_storage(recipient, slot, host_shim::word(&value));
+#else
             auto const access_status = ctx->host->access_storage(
                 ctx->context, &ctx->env.recipient, &key);
             if (access_status == EVMC_ACCESS_COLD) {
@@ -108,6 +134,7 @@ namespace monad::vm::runtime
 
             auto const storage_status = ctx->host->set_storage(
                 ctx->context, &ctx->env.recipient, &key, &value);
+#endif
 
             auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
 

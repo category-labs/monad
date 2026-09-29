@@ -42,8 +42,8 @@ uint256_t get_v(SignatureAndChain const &sc)
 {
     if (sc.chain_id.has_value()) {
         // Max chain id to prevent overflow:
-        static constexpr uint256_t max_chain_id =
-            (std::numeric_limits<uint256_t>::max() - 36) / 2;
+        static constexpr auto max_v = std::numeric_limits<uint256_t>::max();
+        uint256_t const max_chain_id = (max_v - 35 - sc.signature.y_parity) / 2;
         MONAD_ASSERT_THROW(
             *sc.chain_id <= max_chain_id, "get_v: chain_id out of bounds");
         return (*sc.chain_id * 2u) + 35u + sc.signature.y_parity;

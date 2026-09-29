@@ -170,11 +170,6 @@ ReserveBalance::ReserveBalance(State *const state)
 {
 }
 
-bool ReserveBalance::tracking_enabled() const
-{
-    return tracking_enabled_;
-}
-
 bool ReserveBalance::has_violation() const
 {
     return !failed_.empty();

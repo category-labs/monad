@@ -208,6 +208,7 @@ int mce_main(arguments const &args)
 
     asmjit::JitRuntime rt{};
 
+    // Must be declared after `rt`: ~Nativecode releases its code via `rt`.
     Binary bin;
 
     native::CompilerConfig config{};

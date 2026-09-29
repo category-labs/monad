@@ -468,6 +468,10 @@ public:
 
     vm::SharedVarcode read_code(bytes32_t const &code_hash);
 
+    // Borrow the cached shared_ptr without changing its reference count.
+    // Use it immediately: a later code lookup may replace the cached value.
+    vm::SharedVarcode const &read_code_ref(bytes32_t const &code_hash);
+
     vm::SharedVarcode get_code(Address const &);
 
     size_t get_code_size(Address const &);

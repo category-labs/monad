@@ -70,8 +70,13 @@ public:
     virtual bytes32_t
     get_storage(Address const &, bytes32_t const &key) const override;
 
+    virtual void get_storage_into(
+        Address const &, bytes32_t const &key,
+        bytes32_t &value) const noexcept override;
+
     virtual StorageStatus set_storage(
-        Address const &, bytes32_t const &key, bytes32_t const &value) override;
+        Address const &, bytes32_t const &key,
+        bytes32_t const &value) noexcept override;
 
     virtual uint256_t get_balance(Address const &) const override;
 

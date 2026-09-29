@@ -140,6 +140,18 @@ template <typename T, FixedBytes Src>
 template <typename T, FixedBytes Src>
 [[nodiscard, gnu::always_inline]] constexpr T load_be(Src const &src) noexcept
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // Load four words directly to avoid GCC's temporary DMA copy.
+    if constexpr (std::same_as<T, uint256_t>) {
+        if !consteval {
+            return T{
+                load_be_unsafe<uint64_t>(src.bytes + 24),
+                load_be_unsafe<uint64_t>(src.bytes + 16),
+                load_be_unsafe<uint64_t>(src.bytes + 8),
+                load_be_unsafe<uint64_t>(src.bytes)};
+        }
+    }
+#endif
     return bswap(load_le<T>(src));
 }
 
@@ -190,6 +202,19 @@ store_be_as(SrcT const x) noexcept
 {
     static_assert(sizeof(DstT::bytes) == sizeof(SrcT));
     static_assert(std::is_trivially_copyable_v<DstT>);
+#if defined(MONAD_ZKVM_ZISK)
+    // Store four words directly to avoid GCC's temporary DMA copy.
+    if constexpr (std::same_as<SrcT, uint256_t>) {
+        if !consteval {
+            DstT r;
+            store_be(r.bytes, x[3]);
+            store_be(r.bytes + 8, x[2]);
+            store_be(r.bytes + 16, x[1]);
+            store_be(r.bytes + 24, x[0]);
+            return r;
+        }
+    }
+#endif
     return std::bit_cast<DstT>(bswap(x));
 }
 

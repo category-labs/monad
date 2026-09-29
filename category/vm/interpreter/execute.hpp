@@ -15,16 +15,13 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
-#include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 namespace monad::vm::interpreter
 {
     template <Traits traits>
-    void execute(runtime::Context &, Intercode const &, uint8_t *stack_ptr);
+    void execute(runtime::Context &, Intercode const &, uint256_t *stack_ptr);
 }

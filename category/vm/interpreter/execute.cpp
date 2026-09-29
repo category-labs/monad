@@ -22,8 +22,6 @@
 #include <category/vm/interpreter/trampoline.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <cstdint>
-
 namespace monad::vm::interpreter
 {
     namespace
@@ -53,13 +51,10 @@ namespace monad::vm::interpreter
 
     template <Traits traits>
     void execute(
-        runtime::Context &ctx, Intercode const &analysis, uint8_t *stack_ptr)
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t *const stack_ptr)
     {
-        trampoline(
-            ctx,
-            analysis,
-            reinterpret_cast<uint256_t *>(stack_ptr),
-            core_loop<traits>);
+        trampoline(ctx, analysis, stack_ptr, core_loop<traits>);
     }
 
     EXPLICIT_TRAITS(execute);

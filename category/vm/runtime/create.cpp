@@ -98,7 +98,7 @@ namespace monad::vm::runtime
         auto const message = evmc_message{
             .kind = kind,
             .flags = 0,
-            .depth = ctx->env.depth + 1,
+            .depth = static_cast<int32_t>(ctx->env.depth + 1),
             .gas = gas,
             .recipient = {},
             .sender = ctx->env.recipient,

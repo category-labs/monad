@@ -312,14 +312,17 @@ evmc::Result execute_call_message(
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
 
-    if (auto result = pre_call<traits>(*host, msg, state); result.has_value()) {
-        call_tracer.on_exit(result.value());
-        return std::move(result.value());
-    }
-
     // Initialised from what produces it: default-constructed and then
-    // assigned, the result would be cleared and then copied over.
+    // assigned, the result would be cleared and then copied over. The
+    // pre_call exit goes through it too, so that every return is of this
+    // one variable and it is built in the caller's slot.
+    bool pre_called = false;
     evmc::Result result = [&] {
+        if (auto pre_result = pre_call<traits>(*host, msg, state);
+            pre_result.has_value()) {
+            pre_called = true;
+            return std::move(pre_result.value());
+        }
         if (auto maybe_result =
                 check_call_precompile<traits>(state, call_tracer, msg);
             maybe_result.has_value()) {
@@ -330,6 +333,10 @@ evmc::Result execute_call_message(
         trace::on_read_code(host->state_tracer_, hash, code->intercode());
         return state.vm().execute<traits>(*host, &msg, hash, code);
     }();
+    if (pre_called) {
+        call_tracer.on_exit(result);
+        return result;
+    }
 
     if (msg.depth == 0) {
         if (revert_transaction<traits>(

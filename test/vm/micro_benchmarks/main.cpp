@@ -22,6 +22,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/evm-as/kernel-builder.hpp>
@@ -380,7 +381,9 @@ static double execute_iteration(
     vm::VM monad_vm;
     monad_vm.debug_set_execute_override(
         [](auto &, auto const, auto const *msg, auto const *, auto const)
-            -> evmc::Result { return evmc::Result{EVMC_SUCCESS, msg->gas}; });
+            -> vm::Result {
+            return vm::Result{MONAD_STATUS_SUCCESS, msg->gas};
+        });
 
     Address const sender_address{200};
 
@@ -437,7 +440,7 @@ static double execute_iteration(
 
     auto const stop = std::chrono::steady_clock::now();
 
-    MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
+    MONAD_ASSERT(result.status_code == MONAD_STATUS_SUCCESS);
 
     return static_cast<double>((stop - start).count());
 }

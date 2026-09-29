@@ -36,6 +36,7 @@ target_sources(vm-unit-tests PRIVATE
     emitter_tests.cpp
     interpreter_tests.cpp
     lru_weight_cache_tests.cpp
+    result_tests.cpp
     status_code_tests.cpp
     test_params.cpp
     runtime/fixture.cpp

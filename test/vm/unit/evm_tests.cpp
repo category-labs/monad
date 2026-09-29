@@ -27,9 +27,6 @@
 
 #include <test_resource_data.h>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -50,17 +47,17 @@ using namespace monad::vm::test;
 TYPED_TEST(VMTraitsTest, Stop)
 {
     TestFixture::execute(0, {STOP});
-    ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_SUCCESS);
 }
 
 TYPED_TEST(VMTraitsTest, Push0)
 {
     TestFixture::execute(2, {PUSH0});
     if constexpr (TestFixture::Trait::eip_3855_active()) {
-        ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(this->result_.status_code, MONAD_STATUS_SUCCESS);
     }
     else {
-        ASSERT_NE(this->result_.status_code, EVMC_SUCCESS);
+        ASSERT_NE(this->result_.status_code, MONAD_STATUS_SUCCESS);
     }
     ASSERT_EQ(this->result_.gas_left, 0);
 }
@@ -73,14 +70,14 @@ TYPED_TEST(VMTraitsTest, PushSeveral)
     else {
         TestFixture::execute(10, {PUSH1, 0x01, PUSH2, 0x20, 0x20, PUSH0});
     }
-    ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_SUCCESS);
     ASSERT_EQ(this->result_.gas_left, 2);
 }
 
 TYPED_TEST(VMTraitsTest, OutOfGas)
 {
     TestFixture::execute(8, {PUSH1, 0x0, PUSH1, 0x0, ADD});
-    ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_OUT_OF_GAS);
     ASSERT_EQ(this->result_.gas_left, 0);
 }
 
@@ -94,7 +91,7 @@ TYPED_TEST(VMTraitsTest, MLoadAtBoundMIP3)
     for (auto const impl : impls) {
         constexpr auto gas = 200'000'000;
         TestFixture::execute(gas, {PUSH3, 0x7f, 0xff, 0xe0, MLOAD}, {}, impl);
-        ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(this->result_.status_code, MONAD_STATUS_SUCCESS);
 
         switch (memory_version) {
         case runtime::Memory::Version::V1:
@@ -123,7 +120,7 @@ TYPED_TEST(VMTraitsTest, MStore8AtBoundMIP3)
         constexpr auto gas = 200'000'000;
         TestFixture::execute(
             gas, {PUSH1, 0, PUSH3, 0x7f, 0xff, 0xff, MSTORE8}, {}, impl);
-        ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(this->result_.status_code, MONAD_STATUS_SUCCESS);
 
         switch (memory_version) {
         case runtime::Memory::Version::V1:
@@ -166,7 +163,7 @@ TYPED_TEST(VMTraitsTest, ResultDataAtBound)
         bytecode.push_back(0);
         bytecode.push_back(RETURN);
         TestFixture::execute(gas, bytecode, {}, impl);
-        ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(this->result_.status_code, MONAD_STATUS_SUCCESS);
 
         switch (memory_version) {
         case runtime::Memory::Version::V1:
@@ -209,7 +206,7 @@ TYPED_TEST(VMTraitsTest, ResultDataOutOfBound)
         bytecode.push_back(0);
         bytecode.push_back(RETURN);
         TestFixture::execute(gas, bytecode, {}, impl);
-        ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
+        ASSERT_EQ(this->result_.status_code, MONAD_STATUS_OUT_OF_GAS);
     }
 }
 
@@ -226,11 +223,11 @@ TYPED_TEST(VMTraitsTest, MLoadOutOfBoundMIP3)
 
         switch (memory_version) {
         case runtime::Memory::Version::V1:
-            ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+            ASSERT_EQ(this->result_.status_code, MONAD_STATUS_SUCCESS);
             ASSERT_EQ(this->result_.gas_left, 64'994'813 - 2 * 3);
             break;
         case runtime::Memory::Version::MIP3:
-            ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
+            ASSERT_EQ(this->result_.status_code, MONAD_STATUS_OUT_OF_GAS);
             break;
         }
     }
@@ -250,11 +247,11 @@ TYPED_TEST(VMTraitsTest, MStore8OutOfBoundMIP3)
 
         switch (memory_version) {
         case runtime::Memory::Version::V1:
-            ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+            ASSERT_EQ(this->result_.status_code, MONAD_STATUS_SUCCESS);
             ASSERT_EQ(this->result_.gas_left, 64'994'813 - 3 * 3);
             break;
         case runtime::Memory::Version::MIP3:
-            ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
+            ASSERT_EQ(this->result_.status_code, MONAD_STATUS_OUT_OF_GAS);
             break;
         }
     }
@@ -282,21 +279,21 @@ TYPED_TEST(VMTraitsTest, BeaconRootRegression_138)
     ASSERT_EQ(insts[21], 0x4C);
     TestFixture::execute(insts);
 
-    ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_SUCCESS);
 }
 
 // https://github.com/category-labs/monad-compiler/issues/190
 TYPED_TEST(VMTraitsTest, UnderflowRegression_190)
 {
     TestFixture::execute({POP});
-    ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_FAILURE);
 }
 
 // https://github.com/category-labs/monad-compiler/issues/192
 TYPED_TEST(VMTraitsTest, BadJumpRegression_192)
 {
     TestFixture::execute({PUSH0, JUMP});
-    ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_FAILURE);
 }
 
 TEST_P(VMFileTest, RegressionFile)
@@ -347,7 +344,7 @@ TYPED_TEST(VMTraitsTest, JumpiLiveDestDeferredComparisonBug)
          ADDRESS,
          SLT,
          JUMPI});
-    ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_FAILURE);
 }
 
 TYPED_TEST(VMTraitsTest, Cmov32BitBug)
@@ -367,7 +364,7 @@ TYPED_TEST(VMTraitsTest, Cmov32BitBug)
          SAR,
          ADDRESS,
          JUMPI});
-    ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_SUCCESS);
 }
 
 TYPED_TEST(VMTraitsTest, MissingDischargeInJumpiKeepFallthroughStack)
@@ -459,7 +456,7 @@ TYPED_TEST(VMTraitsTest, DupStackOverflow)
     TestFixture::execute(
         bytecode, {}, TestFixture::Implementation::Interpreter);
 
-    ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_FAILURE);
 }
 
 TYPED_TEST(VMTraitsTest, NativeCodeSizeOutOfBound)
@@ -507,7 +504,7 @@ TYPED_TEST(VMTraitsTest, MaxDeltaOutOfBound)
     this->result_ = this->vm_.template execute_native_entrypoint_raw<
         typename TestFixture::Trait>(rt_ctx1, ncode1->entrypoint());
 
-    ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_SUCCESS);
     ASSERT_EQ(this->result_.gas_left, 10'000 - (3 * 1024 + 1));
 
     std::vector<uint8_t> bytecode2{base_bytecode};
@@ -524,7 +521,7 @@ TYPED_TEST(VMTraitsTest, MaxDeltaOutOfBound)
     this->result_ = this->vm_.template execute_native_entrypoint_raw<
         typename TestFixture::Trait>(rt_ctx2, ncode2->entrypoint());
 
-    ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_FAILURE);
 
     // Since the basic block in `ncode2` is known to overflow the stack, with
     // max_delta > 1024, the native code for the basic block should just jump
@@ -560,7 +557,7 @@ TYPED_TEST(VMTraitsTest, MinDeltaOutOfBound)
     this->result_ = this->vm_.template execute_native_entrypoint_raw<
         typename TestFixture::Trait>(rt_ctx1, ncode1->entrypoint());
 
-    ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_SUCCESS);
     ASSERT_EQ(this->result_.gas_left, 10'000 - (2 * 1024 + 1 + 2 * 1024 + 1));
 
     std::vector<uint8_t> bytecode2{base_bytecode};
@@ -576,7 +573,7 @@ TYPED_TEST(VMTraitsTest, MinDeltaOutOfBound)
     this->result_ = this->vm_.template execute_native_entrypoint_raw<
         typename TestFixture::Trait>(rt_ctx2, ncode2->entrypoint());
 
-    ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_FAILURE);
 
     // We expect native code size of `ncode2` to be smaller, because the last
     // basic block has min_delta < -1024, so will just jump to error label,
@@ -618,11 +615,11 @@ TYPED_TEST(VMTraitsTest, LoopOutOfGas)
 
     TestFixture::execute(
         30'000, code, {}, TestFixture::Implementation::Interpreter);
-    ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_OUT_OF_GAS);
 
     TestFixture::execute(
         30'000, code, {}, TestFixture::Implementation::Compiler);
-    ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
+    ASSERT_EQ(this->result_.status_code, MONAD_STATUS_FAILURE);
 }
 
 TYPED_TEST(VMTraitsTest, ShrCeilOffByOneRegression)
@@ -720,10 +717,10 @@ TYPED_TEST(VMTraitsTest, EthCallOutOfGas)
         30'000'000, code, data, TestFixture::Implementation::Interpreter);
     // code contains PUSH0
     if constexpr (TestFixture::Trait::eip_3855_active()) {
-        ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
+        ASSERT_EQ(this->result_.status_code, MONAD_STATUS_OUT_OF_GAS);
     }
     else {
-        ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
+        ASSERT_EQ(this->result_.status_code, MONAD_STATUS_FAILURE);
     }
 }
 

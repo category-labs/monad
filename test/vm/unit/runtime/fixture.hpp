@@ -19,6 +19,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/access_status.h>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/runtime/detail.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <monad/test/traits_test.hpp>
@@ -26,8 +27,6 @@
 #include <test/vm/utils/test_context.hpp>
 
 #include <gtest/gtest.h>
-
-#include <evmc/evmc.hpp>
 
 #include <limits>
 #include <utility>
@@ -53,14 +52,15 @@ namespace monad::vm::test
         TestContext test_ctx_;
         vm::runtime::Context &ctx_;
 
-        evmc_result
+        vm::RawResult
         success_result(std::int64_t gas_left, std::int64_t gas_refund = 0);
 
-        evmc_result create_result(
+        vm::RawResult create_result(
             Address prog_addr, std::int64_t gas_left,
             std::int64_t gas_refund = 0);
 
-        evmc_result failure_result(evmc_status_code = EVMC_INTERNAL_ERROR);
+        vm::RawResult
+            failure_result(monad_status_code = MONAD_STATUS_INTERNAL_ERROR);
 
         // shim to be able to pass a function pointer to tests_trampoline
         // which will then correctly invoke the actual closure/lambda

@@ -206,9 +206,9 @@ int mce_main(arguments const &args)
         abort();
     }
 
-    Binary bin;
-
     asmjit::JitRuntime rt{};
+
+    Binary bin;
 
     native::CompilerConfig config{};
     if (args.asm_log_file) {

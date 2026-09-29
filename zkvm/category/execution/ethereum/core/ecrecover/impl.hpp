@@ -16,6 +16,9 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/crypto/keccak.h>
+#endif
 
 #include <c-interface-accelerators/zkvm_accelerators.h>
 
@@ -42,12 +45,21 @@ MONAD_NAMESPACE_BEGIN
         return false;
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    // Use the guest sponge's short-input path and checked permutation memo.
+    // Repeated public keys can reuse the cached result.
+    uint8_t key_hash[KECCAK256_SIZE];
+    monad_zkvm_keccak256_fast(pubkey.data, 64, key_hash);
+
+    std::memcpy(out.data(), key_hash + 12, out.size());
+#else
     zkvm_bytes_32 key_hash;
     if (zkvm_keccak256(pubkey.data, 64, &key_hash) != ZKVM_EOK) {
         return false;
     }
 
     std::memcpy(out.data(), key_hash.data + 12, out.size());
+#endif
 
     return true;
 }

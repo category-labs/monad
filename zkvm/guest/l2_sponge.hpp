@@ -83,6 +83,62 @@ inline constexpr std::size_t L2_SPONGE_RATE = 12;
 /// it unprovable.
 inline constexpr std::size_t L2_BYTES_PER_ELEM = 7;
 
+/// SAFE tags already computed, for the sponges one owner opens over one context
+/// and one label -- a block's leaves, which open three apiece.
+///
+/// A tag, the four capacity lanes a sponge starts from, is a function of the
+/// domain, the merged I/O pattern, the label and the context and of nothing
+/// else, and computing it is a twelve-lane pack and a Poseidon2 permutation.
+/// Over one block the context is fixed and a leaf's patterns differ from the
+/// last leaf's only by a message length, so most sponges open on a tag already
+/// computed.
+///
+/// A sponge handed this compares the context and label it was given with the
+/// ones the cache is bound to, and empties the cache when either differs: a tag
+/// is only ever served for the inputs it was computed from. The label is
+/// compared by where it lives rather than by its bytes -- it is a suite's
+/// constant -- so a label must not be rewritten in place while a cache that has
+/// seen it is in use.
+///
+/// Holds a few tags and replaces them in turn: what it saves is bounded by how
+/// few distinct patterns its owner opens, not by its size. Not thread-safe, and
+/// not meant to be: its owner opens one sponge at a time.
+class L2SpongeTags
+{
+public:
+    L2SpongeTags() = default;
+
+private:
+    friend class L2Sponge;
+
+    /// A pattern merging to more words than this bypasses the cache. The
+    /// cipher's patterns merge to two.
+    static constexpr std::size_t MAX_WORDS = 4;
+    static constexpr std::size_t ENTRIES = 8;
+
+    struct Entry
+    {
+        L2Domain domain;
+        std::uint8_t words;
+        std::uint32_t word[MAX_WORDS];
+        std::uint64_t capacity[4];
+    };
+
+    /// Fills `capacity` with the tag for these inputs: from an entry when one
+    /// matches, and otherwise computed and filed.
+    void
+    tag(L2Domain domain, std::span<std::uint32_t const> words,
+        std::span<unsigned char const, 32> context, std::string_view label,
+        std::uint64_t (&capacity)[4]);
+
+    std::uint64_t context_[4]{};
+    char const *label_{nullptr};
+    std::size_t label_size_{0};
+    std::size_t count_{0};
+    std::size_t next_{0};
+    Entry entries_[ENTRIES]{};
+};
+
 class L2Sponge
 {
 public:
@@ -120,6 +176,14 @@ public:
         L2Domain domain, std::span<L2IoOp const> io_pattern,
         std::span<unsigned char const, 32> context, std::string_view label);
 
+    /// The same sponge, opened on a tag from `tags` when that cache has seen
+    /// this domain, merged pattern, context and label, and on one computed and
+    /// filed there otherwise. What it produces is identical either way.
+    L2Sponge(
+        L2Domain domain, std::span<L2IoOp const> io_pattern,
+        std::span<unsigned char const, 32> context, std::string_view label,
+        L2SpongeTags &tags);
+
     /// Every element must be canonical (< GOLDILOCKS_P). The callers that pack
     /// bytes get that for free; the ones absorbing integers are bounded.
     void absorb(std::span<std::uint64_t const> elems);
@@ -132,6 +196,11 @@ public:
     void finish() const;
 
 private:
+    L2Sponge(
+        L2Domain domain, std::span<L2IoOp const> io_pattern,
+        std::span<unsigned char const, 32> context, std::string_view label,
+        L2SpongeTags *tags);
+
     void permute();
     /// Consumes `n` elements of the declared pattern, asserting that each op
     /// they reach is of kind `squeeze` and that they do not overrun it.

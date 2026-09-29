@@ -207,6 +207,110 @@ TEST(L2Sponge, RateBoundary)
     EXPECT_EQ(std::unique(sorted.begin(), sorted.end()), sorted.end());
 }
 
+// The tag cache's whole contract: a sponge opened through it produces exactly
+// what one opened without it does -- on a miss, on a hit, when its context or
+// its label changes under it and changes back, with more distinct patterns
+// than it holds, and past the pattern length it keeps.
+TEST(L2Sponge, TagCacheIsTransparent)
+{
+    L2SpongeTags tags;
+    auto const cached = [&tags](
+                            L2Domain const domain,
+                            std::span<uint64_t const> const in,
+                            size_t const n,
+                            std::array<unsigned char, 32> const &context,
+                            std::string_view const label) {
+        std::array<L2IoOp, 2> const pattern{
+            L2IoOp{false, static_cast<uint32_t>(in.size())},
+            L2IoOp{true, static_cast<uint32_t>(n)}};
+        L2Sponge s{
+            domain,
+            pattern,
+            std::span<unsigned char const, 32>{context},
+            label,
+            tags};
+        s.absorb(in);
+        std::vector<uint64_t> out(n);
+        s.squeeze(out);
+        s.finish();
+        return out;
+    };
+
+    // Twice over, so the second round is served from the cache.
+    for (int round = 0; round < 2; ++round) {
+        for (L2Domain const d :
+             {L2Domain::kdf, L2Domain::stream, L2Domain::auth}) {
+            for (size_t const len : {1u, 5u, 12u, 13u, 30u}) {
+                EXPECT_EQ(
+                    cached(d, ramp(len), 4, ctx_a(), LABEL),
+                    run(d, ramp(len), 4, ctx_a()))
+                    << "round " << round << " len " << len;
+            }
+        }
+    }
+
+    // Another context, then the first again: each must rebind, not serve the
+    // other's tags.
+    EXPECT_EQ(
+        cached(L2Domain::stream, ramp(5), 4, ctx_b(), LABEL),
+        run(L2Domain::stream, ramp(5), 4, ctx_b()));
+    EXPECT_EQ(
+        cached(L2Domain::stream, ramp(5), 4, ctx_a(), LABEL),
+        run(L2Domain::stream, ramp(5), 4, ctx_a()));
+
+    // Another label.
+    constexpr std::string_view OTHER = "other-suite/v1/";
+    EXPECT_EQ(
+        cached(L2Domain::stream, ramp(5), 4, ctx_a(), OTHER),
+        run(L2Domain::stream, ramp(5), 4, ctx_a(), OTHER));
+
+    // More distinct patterns than it holds, twice: replacement must never
+    // hand one pattern another's tag.
+    for (int round = 0; round < 2; ++round) {
+        for (size_t len = 1; len <= 20; ++len) {
+            EXPECT_EQ(
+                cached(L2Domain::auth, ramp(len), 4, ctx_a(), LABEL),
+                run(L2Domain::auth, ramp(len), 4, ctx_a()))
+                << "round " << round << " len " << len;
+        }
+    }
+
+    // A pattern merging to six words, past what the cache keeps: served
+    // without it, and still the same sponge.
+    std::array<L2IoOp, 6> const long_pattern{
+        L2IoOp{false, 2},
+        L2IoOp{true, 1},
+        L2IoOp{false, 2},
+        L2IoOp{true, 1},
+        L2IoOp{false, 2},
+        L2IoOp{true, 3}};
+    auto const context = ctx_a();
+    auto const in = ramp(6);
+    auto const walk = [&](L2Sponge &s) {
+        std::vector<uint64_t> out(5);
+        s.absorb(std::span{in}.first(2));
+        s.squeeze(std::span{out}.first(1));
+        s.absorb(std::span{in}.subspan(2, 2));
+        s.squeeze(std::span{out}.subspan(1, 1));
+        s.absorb(std::span{in}.subspan(4));
+        s.squeeze(std::span{out}.subspan(2));
+        s.finish();
+        return out;
+    };
+    L2Sponge with_cache{
+        L2Domain::kdf,
+        long_pattern,
+        std::span<unsigned char const, 32>{context},
+        LABEL,
+        tags};
+    L2Sponge without{
+        L2Domain::kdf,
+        long_pattern,
+        std::span<unsigned char const, 32>{context},
+        LABEL};
+    EXPECT_EQ(walk(with_cache), walk(without));
+}
+
 TEST(L2Sponge, SqueezedLanesAreCanonical)
 {
     for (uint64_t const lane : run(L2Domain::stream, ramp(3), 24, ctx_a())) {

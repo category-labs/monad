@@ -60,6 +60,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <zkvm/guest/l2_ecdh.hpp>
+#include <zkvm/guest/l2_sponge.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -102,6 +103,15 @@ struct L2CipherContext
     /// The hash of the six fields above, from l2_constants_digest. Populated
     /// once a block; the sponges read only this.
     bytes32_t constants_digest;
+
+    /// Not a protocol field: the SAFE tags this context's sponges have needed.
+    /// A leaf opens three sponges over this context, and their patterns differ
+    /// from the last leaf's only by a message length, so a block's leaves open
+    /// most of them on a tag already computed. A memo, so mutable; the cache
+    /// checks the context it is handed against the one it holds, so changing a
+    /// field and recomputing the digest cannot be served a stale tag. A context
+    /// is used by one thread at a time.
+    mutable L2SpongeTags sponge_tags;
 };
 
 /// Hashes the block-constant half of A into the 32 bytes the sponge takes as

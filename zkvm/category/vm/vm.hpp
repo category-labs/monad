@@ -18,6 +18,7 @@
 #include <category/core/bytes.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/interpreter/execute.hpp>
@@ -25,8 +26,6 @@
 #include <category/vm/memory_pool.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -74,7 +73,7 @@ namespace monad::vm
         }
 
         template <Traits traits>
-        evmc::Result execute(
+        Result execute(
             Host &host, Message const *const msg,
             bytes32_t const & /*code_hash*/, SharedVarcode const &vcode)
         {
@@ -84,7 +83,7 @@ namespace monad::vm
             auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
             auto const stack_ptr = stack_allocator_.allocate();
             interpreter::execute<traits>(rt_ctx, *icode, stack_ptr.get());
-            auto result = rt_ctx.template copy_to_evmc_result<traits>();
+            auto result = rt_ctx.template copy_to_result<traits>();
             rt_ctx.template return_to<traits>(prev_rt_ctx);
             (void)host.set_runtime_context(prev_rt_ctx);
             host.rethrow_on_active_exception();
@@ -92,7 +91,7 @@ namespace monad::vm
         }
 
         template <Traits traits>
-        evmc::Result execute_bytecode(
+        Result execute_bytecode(
             Host &host, Message const *const msg,
             std::span<uint8_t const> const code)
         {
@@ -102,7 +101,7 @@ namespace monad::vm
             auto const stack_ptr = stack_allocator_.allocate();
             interpreter::execute<traits>(
                 rt_ctx, interpreter::Intercode{code}, stack_ptr.get());
-            auto result = rt_ctx.template copy_to_evmc_result<traits>();
+            auto result = rt_ctx.template copy_to_result<traits>();
             rt_ctx.template return_to<traits>(prev_rt_ctx);
             (void)host.set_runtime_context(prev_rt_ctx);
             host.rethrow_on_active_exception();

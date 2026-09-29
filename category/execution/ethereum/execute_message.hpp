@@ -18,9 +18,8 @@
 #include <category/core/address.hpp>
 #include <category/core/config.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <functional>
 
@@ -32,15 +31,14 @@ struct EvmcHost;
 class State;
 
 template <Traits traits>
-evmc::Result
-deploy_contract_code(State &, Address const &, evmc::Result) noexcept;
+vm::Result deploy_contract_code(State &, Address const &, vm::Result) noexcept;
 
 template <Traits traits>
-evmc::Result
+vm::Result
 execute_create_message(EvmcHost<traits> *, State &, vm::Message const &);
 
 template <Traits traits>
-evmc::Result
+vm::Result
 execute_call_message(EvmcHost<traits> *, State &, vm::Message const &);
 
 MONAD_NAMESPACE_END

@@ -895,7 +895,12 @@ vm::SharedVarcode State::read_code(bytes32_t const &code_hash)
             return it->second;
         }
     }
-    return block_state_.read_code(code_hash);
+    if (last_code_ && code_hash == last_code_hash_) {
+        return last_code_;
+    }
+    last_code_ = block_state_.read_code(code_hash);
+    last_code_hash_ = code_hash;
+    return last_code_;
 }
 
 vm::SharedVarcode State::get_code(Address const &address)
@@ -913,16 +918,7 @@ size_t State::get_code_size(Address const &address)
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
     }
-    bytes32_t const &code_hash = account.value().code_hash;
-    {
-        auto const it = code_.find(code_hash);
-        if (it != code_.end()) {
-            auto const &vcode = it->second;
-            MONAD_ASSERT(vcode);
-            return vcode->intercode()->size();
-        }
-    }
-    auto const vcode = block_state_.read_code(code_hash);
+    vm::SharedVarcode const vcode = read_code(account.value().code_hash);
     MONAD_ASSERT(vcode);
     return vcode->intercode()->size();
 }

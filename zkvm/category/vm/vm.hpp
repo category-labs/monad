@@ -47,8 +47,10 @@ namespace monad::vm
         runtime::EvmStackAllocator stack_allocator_;
         MemoryPool memory_pool_;
 #if defined(MONAD_ZKVM_VARCODE_CACHE)
-        // Share one wrapper per code hash for the VM's lifetime.
-        ankerl::unordered_dense::map<bytes32_t, SharedVarcode> varcode_{};
+        // Segmented storage keeps pointers stable across insertions.
+        // Entries are retained until the VM is destroyed.
+        ankerl::unordered_dense::segmented_map<bytes32_t, SharedVarcode>
+            varcode_{};
 #endif
 
     public:
@@ -64,8 +66,8 @@ namespace monad::vm
         }
 
 #if defined(MONAD_ZKVM_VARCODE_CACHE)
-        // Point to the cached shared_ptr, or null, avoiding a temporary copy.
-        // The caller copies it before any insertion can invalidate the pointer.
+        // Borrow the cached shared_ptr without changing its reference count.
+        // The pointer stays valid until the VM is destroyed; null on a miss.
         SharedVarcode const *find_varcode(bytes32_t const &code_hash)
         {
             auto const it = varcode_.find(code_hash);
@@ -75,7 +77,7 @@ namespace monad::vm
             return &it->second;
         }
 
-        SharedVarcode try_insert_varcode(
+        SharedVarcode const &try_insert_varcode(
             bytes32_t const &code_hash, SharedIntercode const &icode)
         {
             auto const [it, inserted] =
@@ -86,7 +88,7 @@ namespace monad::vm
             return it->second;
         }
 
-        SharedVarcode try_insert_varcode_raw(
+        SharedVarcode const &try_insert_varcode_raw(
             bytes32_t const &code_hash, std::span<uint8_t const> const code)
         {
             auto const [it, inserted] =

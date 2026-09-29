@@ -225,7 +225,11 @@ bytes32_t BlockState::read_storage(
 #endif
 }
 
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+vm::SharedVarcode const &BlockState::read_code_ref(bytes32_t const &code_hash)
+#else
 vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
+#endif
 {
     // vm
     if (auto vcode = vm_.find_varcode(code_hash)) {
@@ -251,6 +255,13 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
         return vm_.try_insert_varcode(code_hash, result);
     }
 }
+
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
+{
+    return read_code_ref(code_hash);
+}
+#endif
 
 bool BlockState::can_merge(State &state) const
 {

@@ -57,7 +57,7 @@ namespace monad::vm::runtime
     void copy_impl(
         Context *ctx, uint256_t const &dest_offset_word,
         uint256_t const &offset_word, uint256_t const &size_word,
-        uint8_t const *source, uint32_t const len)
+        uint8_t const *source, env_size_t const len)
     {
         auto const size = ctx->get_memory_offset(size_word);
         if (*size == 0) {
@@ -71,13 +71,13 @@ namespace monad::vm::runtime
         auto const size_in_words = shr_ceil<5>(size);
         ctx->deduct_gas(size_in_words * bin<3>);
 
-        uint32_t const start =
+        env_size_t const start =
             is_bounded_by_bits<32>(offset_word)
-                ? std::min(static_cast<uint32_t>(offset_word), len)
+                ? std::min(static_cast<env_size_t>(offset_word), len)
                 : len;
 
         // Both operands at the width Bin carries: `len` and `start` are
-        // uint32_t, and the accessor is wider where the guest widens it.
+        // env_size_t, which the guest widens with the accessor.
         auto const copy_size = std::min(
             *size, static_cast<decltype(*size)>(len - start));
         auto *dest_ptr = ctx->memory.data + *dest_offset;

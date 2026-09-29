@@ -34,6 +34,16 @@ namespace monad::vm
         /// Use Monad's adapters to avoid temporary EVMC argument copies.
         static evmc_host_interface const &get_interface() noexcept;
 
+        /// Write the storage value where the caller wants it. Returned by
+        /// value, it is copied again at each change of word type on its way
+        /// back through the C interface.
+        virtual void get_storage_into(
+            evmc::address const &addr, evmc::bytes32 const &key,
+            evmc_bytes32 &value) const noexcept
+        {
+            value = get_storage(addr, key);
+        }
+
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.
         void capture_current_exception() const noexcept
@@ -122,7 +132,9 @@ namespace monad::vm::host_shim
         evmc_host_context *h, evmc_address const *a,
         evmc_bytes32 const *k) noexcept
     {
-        return of(h)->get_storage(addr(a), word(k));
+        evmc_bytes32 value;
+        of(h)->get_storage_into(addr(a), word(k), value);
+        return value;
     }
 
     inline evmc_storage_status set_storage(

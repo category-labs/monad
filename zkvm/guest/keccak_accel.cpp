@@ -346,6 +346,24 @@ static inline uint64_t const *keccakf_memo_permute(uint64_t *const pre)
 // capacity; every later block writes all 25 lanes. When the last permutation
 // leaves the scratch where it was -- a hit, or the spare of a full table -- it
 // is cleared before the call returns, so the next digest finds it zero too.
+//
+// `From` is where the blocks are read from, which the caller decides: the
+// input itself when it is 8-byte aligned; an aligned copy of it when it is not
+// and fits one, as the stack sponge stages it -- every lane would otherwise be
+// a boundary-crossing load, 159 against 16; and the misaligned input itself
+// when it is longer. Deciding it here instead would put a call in this
+// function's rare path, and gcc then copies all three arguments out of their
+// registers on entry, on every path.
+enum class MemoFrom
+{
+    Aligned,
+    Staged,
+    Misaligned
+};
+
+constexpr size_t MEMO_STAGED_BYTES = 8 * 136;
+
+template <MemoFrom From>
 static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[32])
 {
     constexpr size_t RATE = 136;
@@ -353,10 +371,8 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
     static_assert(135 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
     auto const *p = static_cast<unsigned char const *>(in);
 
-    // A misaligned input is staged once, as the stack sponge stages it: every
-    // lane would otherwise be a boundary-crossing load, 159 against 16.
-    alignas(8) unsigned char staged[8 * RATE];
-    if ((reinterpret_cast<uintptr_t>(p) & 7) != 0 && len <= sizeof(staged)) {
+    [[maybe_unused]] alignas(8) unsigned char staged[MEMO_STAGED_BYTES];
+    if constexpr (From == MemoFrom::Staged) {
         std::memcpy(staged, p, len);
         p = staged;
     }
@@ -379,9 +395,14 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
     }
 
     // The final block, pad10*1 with the 0x01 domain byte: its whole lanes, a
-    // literal count per case; then its last partial lane, taken from the eight
-    // bytes that END at the input's end and shifted down, in bounds since a
-    // whole block came before; then the lanes it leaves as they were.
+    // literal count per case; then its last partial lane; then the lanes it
+    // leaves as they were. Read aligned, the partial lane is the word that
+    // holds it, the bytes past the input's end masked off: the load stays in
+    // the aligned word holding the input's last byte, which the region holding
+    // the input holds whole -- RAM and ROM are word-granular, and an input
+    // record is padded to eight bytes. Read misaligned, it is the eight bytes
+    // that END at the input's end, shifted down, in bounds since a whole block
+    // came before -- a boundary-crossing load, like every lane of such an input.
     pre = keccakf_memo[keccakf_memo_used].in;
     size_t const whole = len / 8;
     unsigned const rem = static_cast<unsigned>(len % 8);
@@ -431,7 +452,12 @@ lanes1:
 lanes0:
     uint64_t lane = uint64_t{0x01} << (8 * rem);
     if (rem != 0) {
-        lane |= load64(p + len - 8) >> (8 * (8 - rem));
+        if constexpr (From != MemoFrom::Misaligned) {
+            lane |= load64(p + 8 * whole) & (lane - 1);
+        }
+        else {
+            lane |= load64(p + len - 8) >> (8 * (8 - rem));
+        }
     }
     pre[whole] = post[whole] ^ lane;
     std::memcpy(
@@ -529,8 +555,14 @@ static void keccak256_sponge(void const *const in, size_t len, uint8_t out[32])
         if (len < RATE) {
             keccak256_one_block(in, len, out);
         }
+        else if ((reinterpret_cast<uintptr_t>(in) & 7) == 0) {
+            keccak256_memo_sponge<MemoFrom::Aligned>(in, len, out);
+        }
+        else if (len <= MEMO_STAGED_BYTES) {
+            keccak256_memo_sponge<MemoFrom::Staged>(in, len, out);
+        }
         else {
-            keccak256_memo_sponge(in, len, out);
+            keccak256_memo_sponge<MemoFrom::Misaligned>(in, len, out);
         }
         return;
     }

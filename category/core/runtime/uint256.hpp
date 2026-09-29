@@ -744,6 +744,18 @@ MONAD_NO_VECTORIZE
 constexpr uint256_t
 operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept
 {
+#if defined(MONAD_ZKVM_ZISK)
+    if !consteval {
+        // Gas and fee operands often fit in 64 bits; multiply just their low
+        // words and keep the full 128-bit product.
+        if ((lhs[1] | lhs[2] | lhs[3] | rhs[1] | rhs[2] | rhs[3]) == 0) {
+            uint64_t hi;
+            uint64_t lo;
+            mulx(lhs[0], rhs[0], hi, lo);
+            return uint256_t{lo, hi, 0, 0};
+        }
+    }
+#endif
     return truncating_mul(lhs, rhs);
 }
 

@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/crypto/keccak.h>
 
 #include <c-interface-accelerators/zkvm_accelerators.h>
@@ -24,30 +25,65 @@
 #include <cstring>
 #include <span>
 
+#if defined(MONAD_ZKVM_ZISK)
+// zkvm/zisk/src/ecrecover.rs: the scalars as little-endian words, the key
+// written back as x || y in big-endian words.
+extern "C" bool monad_zkvm_secp256k1_recover(
+    uint64_t const *z, uint64_t const *r, uint64_t const *s, uint8_t recid,
+    uint64_t *pubkey);
+#endif
+
 MONAD_NAMESPACE_BEGIN
 
 [[gnu::always_inline]] inline bool recover_address(
     std::span<uint8_t, 20> const out, std::span<uint8_t const, 32> const msg,
     std::span<uint8_t const, 64> const sig, uint8_t const recid)
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // Words both ways: the Rust side is built without unaligned access, so a
+    // byte pointer is read and written there a byte at a time.
+    uint64_t const z[4] = {
+        load_be_unsafe<uint64_t>(msg.data() + 24),
+        load_be_unsafe<uint64_t>(msg.data() + 16),
+        load_be_unsafe<uint64_t>(msg.data() + 8),
+        load_be_unsafe<uint64_t>(msg.data())};
+    uint64_t const r[4] = {
+        load_be_unsafe<uint64_t>(sig.data() + 24),
+        load_be_unsafe<uint64_t>(sig.data() + 16),
+        load_be_unsafe<uint64_t>(sig.data() + 8),
+        load_be_unsafe<uint64_t>(sig.data())};
+    uint64_t const s[4] = {
+        load_be_unsafe<uint64_t>(sig.data() + 56),
+        load_be_unsafe<uint64_t>(sig.data() + 48),
+        load_be_unsafe<uint64_t>(sig.data() + 40),
+        load_be_unsafe<uint64_t>(sig.data() + 32)};
+    uint64_t pubkey_words[8];
+    if (!monad_zkvm_secp256k1_recover(z, r, s, recid, pubkey_words)) {
+        return false;
+    }
+    auto const *const pubkey =
+        reinterpret_cast<uint8_t const *>(pubkey_words);
+#else
     auto const *msg_hash =
         reinterpret_cast<zkvm_secp256k1_hash const *>(msg.data());
 
     auto const *signature =
         reinterpret_cast<zkvm_secp256k1_signature const *>(sig.data());
 
-    zkvm_secp256k1_pubkey pubkey;
+    zkvm_secp256k1_pubkey pubkey_struct;
 
-    if (zkvm_secp256k1_ecrecover(msg_hash, signature, recid, &pubkey) !=
-        ZKVM_EOK) {
+    if (zkvm_secp256k1_ecrecover(
+            msg_hash, signature, recid, &pubkey_struct) != ZKVM_EOK) {
         return false;
     }
+    auto const *const pubkey = pubkey_struct.data;
+#endif
 
     // The guest's own sponge rather than zisklib's, which takes 141 steps for
     // the block where this one takes 36, and runs past the Keccak-f memo:
     // a sender that recurs in the block recurs here too.
     uint8_t key_hash[KECCAK256_SIZE];
-    monad_zkvm_keccak256_fast(pubkey.data, 64, key_hash);
+    monad_zkvm_keccak256_fast(pubkey, 64, key_hash);
 
     std::memcpy(out.data(), key_hash + 12, out.size());
 

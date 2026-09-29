@@ -22,6 +22,9 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/host.hpp>
+#endif
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/call.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -80,8 +83,13 @@ namespace monad::vm::runtime
 
         auto const dest_address = address_from_uint256(address);
 
+#if defined(MONAD_ZKVM_ZISK)
+        auto const access_status =
+            host_of(*ctx).access_account(host_shim::addr(&dest_address));
+#else
         auto const access_status =
             ctx->host->access_account(ctx->context, &dest_address);
+#endif
         if (access_status == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
@@ -93,8 +101,13 @@ namespace monad::vm::runtime
                 // current authority.
                 if (auto delegate_address = evm::resolve_delegation(
                         ctx->host, ctx->context, dest_address)) {
+#if defined(MONAD_ZKVM_ZISK)
+                    auto const access_status = host_of(*ctx).access_account(
+                        host_shim::addr(&*delegate_address));
+#else
                     auto const access_status = ctx->host->access_account(
                         ctx->context, &*delegate_address);
+#endif
                     ctx->gas_remaining -= (access_status == EVMC_ACCESS_COLD
                                                ? traits::cold_account_cost()
                                                : 0) +
@@ -172,7 +185,12 @@ namespace monad::vm::runtime
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,
         };
 
+#if defined(MONAD_ZKVM_ZISK)
+        // Transfer result ownership as the C adapter does.
+        auto const result = host_of(*ctx).call(message).release_raw();
+#else
         auto const result = ctx->host->call(ctx->context, &message);
+#endif
 
         ctx->env.set_return_data(result.output_data, result.output_size);
 

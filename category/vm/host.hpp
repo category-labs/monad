@@ -257,3 +257,15 @@ namespace monad::vm
         return interface;
     }
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+namespace monad::vm::runtime
+{
+    // Guest contexts use vm::Host, so we can bypass its C adapters.
+    [[gnu::always_inline]] inline Host &host_of(Context const &ctx) noexcept
+    {
+        MONAD_DEBUG_ASSERT(ctx.host == &Host::get_interface());
+        return *host_shim::of(ctx.context);
+    }
+}
+#endif

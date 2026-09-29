@@ -265,6 +265,9 @@ namespace monad::vm::interpreter
         runtime::Context &ctx, uint8_t const *landing, int64_t &gas_remaining)
     {
         gas_remaining -= 1;
+        // Hide the previous gas bound to favor a sign test over comparing
+        // with -1, which requires loading that constant on RISC-V.
+        MONAD_VM_LAUNDER(gas_remaining);
         if (MONAD_UNLIKELY(gas_remaining < 0)) {
             ctx.exit(OutOfGas);
         }

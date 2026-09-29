@@ -102,6 +102,14 @@ public:
     virtual std::string print_stats() override;
     virtual uint64_t get_block_number() const override;
 
+    // Storage-trie leaf lookups resolved from disk, hits and misses both,
+    // accumulated since the last print_stats() reset it.
+    uint64_t storage_read_count() const
+    {
+        return n_storage_no_value_.load(std::memory_order_acquire) +
+               n_storage_value_.load(std::memory_order_acquire);
+    }
+
     nlohmann::json to_json(size_t concurrency_limit = 4096);
     uint64_t get_history_length() const;
 

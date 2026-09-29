@@ -939,7 +939,7 @@ void State::destruct_touched_dead()
     }
 }
 
-vm::SharedVarcode State::read_code(bytes32_t const &code_hash)
+vm::SharedVarcode const &State::read_code_ref(bytes32_t const &code_hash)
 {
     {
         auto const it = code_.find(code_hash);
@@ -953,6 +953,11 @@ vm::SharedVarcode State::read_code(bytes32_t const &code_hash)
     last_code_ = block_state_.read_code(code_hash);
     last_code_hash_ = code_hash;
     return last_code_;
+}
+
+vm::SharedVarcode State::read_code(bytes32_t const &code_hash)
+{
+    return read_code_ref(code_hash);
 }
 
 vm::SharedVarcode State::get_code(Address const &address)
@@ -970,7 +975,7 @@ size_t State::get_code_size(Address const &address)
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
     }
-    vm::SharedVarcode const vcode = read_code(account.value().code_hash);
+    vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
     MONAD_ASSERT(vcode);
     return vcode->intercode()->size();
 }
@@ -983,7 +988,7 @@ size_t State::copy_code(
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
     }
-    vm::SharedVarcode const vcode = read_code(account.value().code_hash);
+    vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
     MONAD_ASSERT(vcode);
     return vcode->intercode()->copy_code(offset, buffer, buffer_size);
 }

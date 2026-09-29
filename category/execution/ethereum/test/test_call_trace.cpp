@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -52,6 +53,7 @@
 
 #include <test_resource_data.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -71,6 +73,16 @@ namespace
 
     constexpr auto a = 0x5353535353535353535353535353535353535353_address;
     constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
+
+    // The receipt's logs (State::store_log) must match the frame's.
+    void expect_receipt_logs_match(
+        State &state, std::vector<CallFrame::Log> const &frame_logs)
+    {
+        ASSERT_EQ(state.logs().size(), frame_logs.size());
+        for (size_t i = 0; i < frame_logs.size(); ++i) {
+            EXPECT_EQ(state.logs()[i], frame_logs[i].log);
+        }
+    }
 }
 
 TEST(CallFrame, to_json)
@@ -510,7 +522,25 @@ TYPED_TEST(TraitsTest, execute_success)
         .logs = std::vector<CallFrame::Log>{},
     };
 
+    if constexpr (TestFixture::Trait::eip_7708_active()) {
+        // EIP-7708: log the top-level transfer
+        expected.logs->push_back(
+            {{
+                 .data =
+                     byte_string{store_be_as<bytes32_t>(uint256_t{0x10000})},
+                 .topics =
+                     std::vector{
+                         0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
+                         abi_encode_address(sender),
+                         abi_encode_address(ADDR_B),
+                     },
+                 .address = ETH_SYSTEM_ADDRESS,
+             },
+             0});
+    }
+
     EXPECT_EQ(call_frames[0], expected);
+    expect_receipt_logs_match(s, *expected.logs);
 }
 
 TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
@@ -1088,13 +1118,16 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
                         0x0000000000000000000000000000000000000000000000000000000000000100_bytes32,
                         0x0000000000000000000000000000000000000000000000000000000000000101_bytes32,
                     },
-                .address = 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address,
+                .address = TestFixture::Trait::eip_7708_active()
+                               ? ETH_SYSTEM_ADDRESS
+                               : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
             },
             0,
         }},
     };
 
     EXPECT_EQ(call_frames[0], expected);
+    expect_receipt_logs_match(s, *expected.logs);
 }
 
 TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
@@ -1181,7 +1214,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
     EXPECT_EQ(call_frames[1].type, CallType::SELFDESTRUCT);
     EXPECT_EQ(call_frames[1].value, 1000u);
 
-    // The synthetic Transfer log appears in the parent CALL frame
+    // The Transfer log appears in the parent CALL frame
     ASSERT_TRUE(call_frames[0].logs.has_value());
     ASSERT_EQ(call_frames[0].logs->size(), 1);
 
@@ -1194,7 +1227,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
                     0x0000000000000000000000000000000000000000000000000000000000000101_bytes32,
                     0x0000000000000000000000000000000000000000000000000000000000000102_bytes32,
                 },
-            .address = 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address,
+            .address = TestFixture::Trait::eip_7708_active()
+                           ? ETH_SYSTEM_ADDRESS
+                           : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
         },
         1, // position: after the selfdestruct sub-frame
     };
@@ -1465,6 +1500,10 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
                      "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
+        EXPECT_EQ(
+            call_frames[1].logs->at(0).log.address,
+            traits::eip_7708_active() ? ETH_SYSTEM_ADDRESS
+                                      : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS);
         EXPECT_EQ(call_frames[1].logs->at(0).log.topics, expected_topics);
         EXPECT_EQ(call_frames[1].logs->at(0).log.data, expected_data);
     }
@@ -1485,6 +1524,10 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
                      "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
+        EXPECT_EQ(
+            logs[0].log.address,
+            traits::eip_7708_active() ? ETH_SYSTEM_ADDRESS
+                                      : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS);
         EXPECT_EQ(logs[0].log.topics, expected_topics);
         EXPECT_EQ(logs[0].log.data, expected_data);
     }
@@ -1503,6 +1546,10 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
                      "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
+        EXPECT_EQ(
+            logs[1].log.address,
+            traits::eip_7708_active() ? ETH_SYSTEM_ADDRESS
+                                      : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS);
         EXPECT_EQ(logs[1].log.topics, expected_topics);
         EXPECT_EQ(logs[1].log.data, expected_data);
     }
@@ -1831,6 +1878,10 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
                 abi_encode_address(ADDR_A),
                 abi_encode_address(ADDR_B)};
 
+            EXPECT_EQ(
+                call_frames[1].logs->at(0).log.address,
+                traits::eip_7708_active() ? ETH_SYSTEM_ADDRESS
+                                          : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS);
             EXPECT_EQ(call_frames[1].logs->at(0).log.topics, expected_topics);
 
             byte_string const expected_data =

@@ -217,7 +217,11 @@ class State
     bytes32_t last_code_hash_{};
     vm::SharedVarcode last_code_{};
 
-    unsigned version_{0};
+    // The number of open frames. A size_t, as the vector sizes every push and
+    // pop compares it with: an unsigned is loaded sign-extended, widened with
+    // two shifts for the compare, and stored in four bytes, which ZisK prices
+    // as an unaligned access.
+    size_t version_{0};
 
 #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     std::deque<DirtyAccounts> dirty_;

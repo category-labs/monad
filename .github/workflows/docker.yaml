@@ -30,9 +30,11 @@ jobs:
     runs-on: ubuntu-26.04-32
 
     steps:
-      - name: Tell git to do submodules in parallel
+      - name: Configure git submodules
         run: |
            git config --global submodule.fetchJobs 8
+           git config --global submodule.LegacyTests.update none
+           git config --global submodule.third_party/tests.update none
 
       - name: Checkout repo and submodules
         uses: actions/checkout@v4

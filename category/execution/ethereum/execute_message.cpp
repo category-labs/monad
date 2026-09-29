@@ -321,10 +321,13 @@ evmc::Result execute_call_message(
             pre_called = true;
             return std::move(pre_result.value());
         }
-        if (auto maybe_result =
-                check_call_precompile<traits>(state, call_tracer, msg);
-            maybe_result.has_value()) {
-            return std::move(maybe_result.value());
+        // Skip precompile lookup for ordinary addresses.
+        if (may_be_precompile(msg.code_address)) {
+            if (auto maybe_result =
+                    check_call_precompile<traits>(state, call_tracer, msg);
+                maybe_result.has_value()) {
+                return std::move(maybe_result.value());
+            }
         }
         auto const hash = state.get_code_hash(msg.code_address);
         auto const code = state.read_code(hash);

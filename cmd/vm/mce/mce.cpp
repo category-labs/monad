@@ -25,14 +25,12 @@
 #include <category/core/log.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <asmjit/core/jitruntime.h>
 
 #include <CLI/CLI.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -128,7 +126,7 @@ static arguments parse_args(int const argc, char **const argv)
     return args;
 }
 
-static void dump_result(arguments const &args, evmc::Result const &result)
+static void dump_result(arguments const &args, monad::vm::Result const &result)
 {
     if (!args.report_result && !args.wall_clock_time) {
         // Nothing to report.
@@ -145,25 +143,25 @@ static void dump_result(arguments const &args, evmc::Result const &result)
         object["time"] = time;
     }
 
-    if (result.status_code == EVMC_SUCCESS) {
+    if (result.status_code == MONAD_STATUS_SUCCESS) {
         object["result"] = json(monad::to_hex(
             monad::byte_string_view{result.output_data, result.output_size}));
     }
     else {
         switch (result.status_code) {
-        case EVMC_FAILURE:
+        case MONAD_STATUS_FAILURE:
             object["error"] = json("failure");
             break;
-        case EVMC_INTERNAL_ERROR:
+        case MONAD_STATUS_INTERNAL_ERROR:
             object["error"] = json("internal error");
             break;
-        case EVMC_OUT_OF_GAS:
+        case MONAD_STATUS_OUT_OF_GAS:
             object["error"] = json("out of gas");
             break;
-        case EVMC_STACK_OVERFLOW:
+        case MONAD_STATUS_STACK_OVERFLOW:
             object["error"] = json("stack overflow");
             break;
-        case EVMC_STACK_UNDERFLOW:
+        case MONAD_STATUS_STACK_UNDERFLOW:
             object["error"] = json("stack underflow");
             break;
         default:
@@ -223,7 +221,7 @@ int mce_main(arguments const &args)
         bin = compiler.compile<traits>(*ir, device);
     }
 
-    evmc::Result const result = [&]() {
+    monad::vm::Result const result = [&]() {
         if (args.instrument_execute) {
             InstrumentableVM<true> vm(rt);
             return vm.execute<traits>(bin, device);
@@ -238,7 +236,7 @@ int mce_main(arguments const &args)
 
     auto status_code = result.status_code;
 
-    return status_code == EVMC_SUCCESS ? 0 : 1;
+    return status_code == MONAD_STATUS_SUCCESS ? 0 : 1;
 }
 
 static std::string uppercase(std::string s)

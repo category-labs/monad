@@ -22,8 +22,6 @@
 #include <category/vm/runtime/memory.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
-#include <evmc/evmc.h>
-
 using namespace monad;
 using namespace monad::vm;
 using namespace monad::vm::runtime;
@@ -79,7 +77,8 @@ TYPED_TEST(RuntimeTraitsTest, CreateSizeIsZero)
 
 TYPED_TEST(RuntimeTraitsTest, CreateFailure)
 {
-    this->host_.call_result = TestFixture::failure_result(EVMC_OUT_OF_GAS);
+    this->host_.call_result =
+        TestFixture::failure_result(MONAD_STATUS_OUT_OF_GAS);
 
     auto do_create = TestFixture::wrap(create<typename TestFixture::Trait>);
 

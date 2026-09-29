@@ -160,13 +160,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     CachedHash ch{};
     ch.valid = true;
 
+    // Read once: the byte stores below may alias anything, so gcc reloads a
+    // member after each of them, twice a child pair.
+    size_t const blob_size = blob_.size();
     auto const is_valid_offset = [&](NodeId c) {
         if (c == NULL_ID) {
             return;
         }
         uint64_t child_offset = static_cast<uint64_t>(c);
         MONAD_ASSERT(
-            child_offset < blob_.size() && node_offsets[child_offset] != 0);
+            child_offset < blob_size && node_offsets[child_offset] != 0);
         node_offsets[child_offset] = 0;
         unclaimed -= DIGEST_NODE_LEN;
     };

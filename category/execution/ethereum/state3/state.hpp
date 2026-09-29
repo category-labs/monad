@@ -263,9 +263,7 @@ private:
     // registers dirty accounts and sets the corresponding epoch.
     [[nodiscard]] AccountState *memoised(Address const &address)
     {
-        if (memo_val_ != nullptr &&
-            __builtin_memcmp(
-                address.bytes, memo_addr_.bytes, sizeof(address.bytes)) == 0) {
+        if (memo_val_ != nullptr && address == memo_addr_) {
             return memo_val_;
         }
         return nullptr;

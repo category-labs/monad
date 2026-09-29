@@ -16,6 +16,8 @@ import math
 import re
 import statistics as st
 
+PRESETS = ('wholesale', 'payouts')
+
 
 def load(paths, workload_only=True):
     rows = []
@@ -26,6 +28,10 @@ def load(paths, workload_only=True):
             rows.append(r)
     if not workload_only:
         return rows
+    # Only the presets are workloads. The small scenarios (transfers, evm,
+    # spoke) exercise the rules and are checked for correctness by bench.py,
+    # but they are not a load and their blocks are not comparable.
+    rows = [r for r in rows if r['scenario'] in PRESETS]
     # The first block of every generated corpus deploys the spoke: one
     # transaction, whatever the preset. It is setup, not workload, and it would
     # sit in every sweep point at that point's nominal dispersion.

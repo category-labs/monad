@@ -134,11 +134,6 @@ namespace
     char const *const TRANSACTION_OUT_OF_BOUNDS_ERR_MSG =
         "transaction out of bounds";
     namespace eth_simulate_json = monad::rpc::eth_simulateV1::json_fields;
-    char const *const CALL_TRACER_OUTPUT_TRUNCATED_MSG = "trace truncated";
-    byte_string const CALL_TRACER_OUTPUT_TRUNCATED_BYTES = [] {
-        auto const view = to_byte_string_view(CALL_TRACER_OUTPUT_TRUNCATED_MSG);
-        return byte_string{view.begin(), view.end()};
-    }();
     static ankerl::unordered_dense::segmented_set<Address>
         empty_senders_and_authorities{};
 
@@ -793,7 +788,7 @@ namespace
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        size_t const call_tracers_max_size, bool emit_native_transfer_logs)
+        bool emit_native_transfer_logs)
     {
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
@@ -1041,9 +1036,11 @@ namespace
             state_tracers.reserve(calls[block_idx].size());
             trace::StateTracer system_call_state_tracer{std::monostate{}};
 
+            size_t const remaining_size =
+                max_size > carried_size ? max_size - carried_size : 0;
             size_t const call_tracer_max_size = std::max<size_t>(
                 1UL, // 1 byte minimum.
-                call_tracers_max_size /
+                remaining_size /
                     std::max<size_t>(1UL, calls[block_idx].size()));
 
             for (Transaction const &tx : calls[block_idx]) {
@@ -1081,24 +1078,6 @@ namespace
                     chain_context,
                     /*exec_recorder=*/nullptr,
                     emit_native_transfer_logs));
-
-            for (size_t i = 0; i < call_tracers.size(); ++i) {
-                // NOTE(dhil): Insert a synthetic log if a call trace was
-                // truncated. This is somewhat of a hack, however, I think this
-                // is better than adding a bespoke entry to the JSON output,
-                // because I would like to overhaul the RPC memory management
-                // approach eventually.
-                if (call_tracers[i]->truncated()) {
-                    constexpr Address SYSTEM_ADDRESS =
-                        0xfffffffffffffffffffffffffffffffffffffffe_address;
-
-                    receipts[i].logs.emplace_back(Receipt::Log{
-                        .data = CALL_TRACER_OUTPUT_TRUNCATED_BYTES,
-                        .topics = {},
-                        .address = SYSTEM_ADDRESS,
-                    });
-                }
-            }
 
             // Receipts have cumulative gas_used (YP eq. 22), so
             // the last receipt's value is the total for the block.
@@ -1963,7 +1942,7 @@ struct monad_executor
         BlockHeader const &block_header, uint64_t const block_number,
         bytes32_t const &block_id, bytes32_t const &grandparent_id,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        size_t const call_tracers_max_size, bool emit_native_transfer_logs,
+        bool emit_native_transfer_logs,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
         monad_executor_result *const result = new monad_executor_result();
@@ -1993,7 +1972,6 @@ struct monad_executor
              gas_limit = gas_limit,
              max_calls = max_calls,
              max_size = max_size,
-             call_tracers_max_size = call_tracers_max_size,
              emit_native_transfer_logs = emit_native_transfer_logs,
              fiber_group = &trace_block_group_,
              tx_exec_group = &trace_tx_exec_group_,
@@ -2064,7 +2042,6 @@ struct monad_executor
                                 gas_limit,
                                 max_calls,
                                 max_size,
-                                call_tracers_max_size,
                                 emit_native_transfer_logs);
                             MONAD_ASSERT(false);
                         }
@@ -2091,7 +2068,6 @@ struct monad_executor
                                 gas_limit,
                                 max_calls,
                                 max_size,
-                                call_tracers_max_size,
                                 emit_native_transfer_logs);
                             MONAD_ASSERT(false);
                         }
@@ -2351,7 +2327,6 @@ void monad_executor_eth_simulate_submit(
     uint8_t const *const rlp_grandparent_block_id,
     size_t const rlp_grandparent_block_id_len, uint64_t gas_limit,
     size_t max_calls, size_t max_output_size,
-    size_t const call_tracers_max_size,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
     bool emit_native_transfer_logs,
@@ -2416,7 +2391,6 @@ void monad_executor_eth_simulate_submit(
         gas_limit,
         max_calls,
         max_output_size,
-        call_tracers_max_size,
         emit_native_transfer_logs,
         complete,
         user);

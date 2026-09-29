@@ -88,7 +88,6 @@ impl MonadExecutor {
         gas_limit: u64,
         max_calls: usize,
         max_output_size: usize,
-        call_tracer_max_size: usize,
         emit_native_transfer_logs: bool,
         overrides: &[(&BlockOverride, &StateOverrideSet)],
     ) -> Result<EthSimulateSuccess, EthSimulateError> {
@@ -233,7 +232,6 @@ impl MonadExecutor {
                 gas_limit,
                 max_calls,
                 max_output_size,
-                call_tracer_max_size,
                 state_overrides.as_mut_ptr(),
                 block_overrides.as_mut_ptr(),
                 emit_native_transfer_logs,

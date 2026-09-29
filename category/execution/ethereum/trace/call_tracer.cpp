@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
@@ -47,22 +48,8 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
-    nlohmann::json make_truncated_call_frame(uint64_t const depth)
-    {
-        nlohmann::json frame;
-        frame["type"] = "TRUNCATED";
-        frame["from"] = "0x0000000000000000000000000000000000000000";
-        frame["to"] = "0x0000000000000000000000000000000000000000";
-        frame["value"] = "0x0";
-        frame["gas"] = "0x0";
-        frame["gasUsed"] = "0x0";
-        frame["input"] = "0x";
-        frame["output"] = "0x";
-        frame["error"] = "trace truncated";
-        frame["depth"] = depth;
-        frame["calls"] = nlohmann::json::array();
-        return frame;
-    }
+    char const *const CALL_TRACE_SIZE_LIMIT_ERR_MSG =
+        "call trace size exceeds maximum allowed size";
 
     void to_json_helper(
         std::span<CallFrame const> const frames, nlohmann::json &json,
@@ -103,11 +90,6 @@ void NoopCallTracer::on_finish(uint64_t const) {}
 
 void NoopCallTracer::reset() {}
 
-bool NoopCallTracer::truncated() const
-{
-    return false;
-}
-
 std::span<CallFrame const> NoopCallTracer::get_call_frames() const
 {
     return {};
@@ -124,34 +106,10 @@ CallTracer::CallFramesStack::CallFramesStack(std::vector<CallFrame> &frames)
     positions_.push(0);
 }
 
-void CallTracer::CallFramesStack::record_dropped_subtree_enter()
-{
-    if (!last_.empty()) {
-        advance_position();
-    }
-    dropped_subtree_depth_ = 1;
-}
-
-void CallTracer::CallFramesStack::record_dropped_subtree_child_enter()
-{
-    MONAD_ASSERT(dropped_subtree_depth_ > 0);
-    dropped_subtree_depth_++;
-}
-
 void CallTracer::CallFramesStack::advance_position()
 {
     MONAD_ASSERT(!positions_.empty());
     positions_.top()++;
-}
-
-bool CallTracer::CallFramesStack::consume_dropped_exit()
-{
-    if (dropped_subtree_depth_ == 0) {
-        return false;
-    }
-
-    dropped_subtree_depth_--;
-    return true;
 }
 
 CallFrame &CallTracer::CallFramesStack::top_frame()
@@ -195,16 +153,6 @@ bool CallTracer::CallFramesStack::has_active_frame() const
     return !last_.empty();
 }
 
-bool CallTracer::CallFramesStack::in_dropped_subtree() const
-{
-    return dropped_subtree_depth_ > 0;
-}
-
-size_t CallTracer::CallFramesStack::dropped_subtree_depth() const
-{
-    return dropped_subtree_depth_;
-}
-
 size_t CallTracer::CallFramesStack::position() const
 {
     MONAD_ASSERT(!positions_.empty());
@@ -216,7 +164,6 @@ void CallTracer::CallFramesStack::reset()
     last_ = std::stack<size_t>{};
     positions_ = std::stack<size_t>{};
     positions_.push(0);
-    dropped_subtree_depth_ = 0;
 }
 
 CallTracer::CallTracer(
@@ -231,13 +178,11 @@ CallTracer::CallTracer(
     frames_.reserve(128);
 }
 
-bool CallTracer::fits(size_t const additional_size) const
+void CallTracer::assert_fits(size_t const additional_size) const
 {
-    if (size_ >= max_size_) {
-        return false;
-    }
-
-    return additional_size <= (max_size_ - size_);
+    MONAD_ASSERT_THROW(
+        size_ <= max_size_ && additional_size <= max_size_ - size_,
+        CALL_TRACE_SIZE_LIMIT_ERR_MSG);
 }
 
 size_t CallTracer::log_size(Receipt::Log const &log) const
@@ -251,27 +196,8 @@ size_t CallTracer::log_size(Receipt::Log const &log) const
 
 void CallTracer::on_enter(evmc_message const &msg)
 {
-    if (frames_stack_.in_dropped_subtree()) {
-        frames_stack_.record_dropped_subtree_child_enter();
-        return;
-    }
-
-    if (truncated_) {
-        frames_stack_.record_dropped_subtree_enter();
-        return;
-    }
-
     auto const frame_size = sizeof(CallFrame) + msg.input_size;
-
-    if (!fits(frame_size)) {
-        truncated_ = true;
-        frames_stack_.record_dropped_subtree_enter();
-        return;
-    }
-
-    byte_string const input = msg.input_data == nullptr
-                                  ? byte_string{}
-                                  : byte_string{msg.input_data, msg.input_size};
+    assert_fits(frame_size);
 
     auto const depth = static_cast<uint64_t>(msg.depth);
 
@@ -328,10 +254,6 @@ void CallTracer::on_enter(evmc_message const &msg)
 
 void CallTracer::on_exit(evmc::Result const &res)
 {
-    if (frames_stack_.consume_dropped_exit()) {
-        return;
-    }
-
     CallFrame &frame = frames_stack_.pop_frame();
 
     MONAD_ASSERT(frame.gas >= static_cast<uint64_t>(res.gas_left));
@@ -341,13 +263,10 @@ void CallTracer::on_exit(evmc::Result const &res)
         if (res.output_size == 0) {
             frame.output = byte_string{};
         }
-        else if (fits(res.output_size)) {
+        else {
+            assert_fits(res.output_size);
             frame.output = byte_string{res.output_data, res.output_size};
             size_ += res.output_size;
-        }
-        else {
-            frame.output = byte_string{};
-            truncated_ = true;
         }
     }
     frame.status = from_evmc_status_code(res.status_code);
@@ -361,16 +280,8 @@ void CallTracer::on_exit(evmc::Result const &res)
 
 void CallTracer::on_log(Receipt::Log log)
 {
-    if (frames_stack_.in_dropped_subtree()) {
-        truncated_ = true;
-        return;
-    }
-
     auto const entry_size = log_size(log);
-    if (!fits(entry_size)) {
-        truncated_ = true;
-        return;
-    }
+    assert_fits(entry_size);
 
     auto &frame = frames_stack_.top_frame();
     MONAD_ASSERT(frame.logs.has_value());
@@ -383,16 +294,7 @@ void CallTracer::on_self_destruct(
     Address const &from, Address const &to,
     uint256_t const &transferred_balance)
 {
-    if (frames_stack_.in_dropped_subtree()) {
-        truncated_ = true;
-        return;
-    }
-
-    if (!fits(sizeof(CallFrame))) {
-        truncated_ = true;
-        frames_stack_.advance_position();
-        return;
-    }
+    assert_fits(sizeof(CallFrame));
 
     auto &parent = frames_stack_.top_frame();
 
@@ -416,13 +318,8 @@ void CallTracer::on_self_destruct(
 
 void CallTracer::on_finish(uint64_t const gas_used)
 {
-    MONAD_ASSERT(frames_stack_.dropped_subtree_depth() == 0);
+    MONAD_ASSERT(!frames_.empty());
     MONAD_ASSERT(!frames_stack_.has_active_frame());
-
-    if (frames_.empty()) {
-        return;
-    }
-
     frames_.front().gas_used = gas_used;
 }
 
@@ -431,17 +328,11 @@ void CallTracer::reset()
     frames_.clear();
     frames_stack_.reset();
     size_ = 0;
-    truncated_ = false;
 }
 
 std::span<CallFrame const> CallTracer::get_call_frames() const
 {
     return frames_;
-}
-
-bool CallTracer::truncated() const
-{
-    return truncated_;
 }
 
 nlohmann::json CallTracer::to_json() const
@@ -452,19 +343,10 @@ nlohmann::json CallTracer::to_json() const
         "0x{:02x}", fmt::join(std::as_bytes(std::span(hash.bytes)), ""));
     nlohmann::json value{};
 
-    if (!frames_.empty()) {
-        MONAD_ASSERT(frames_[0].depth == 0);
-        size_t pos = 0;
-        to_json_helper(frames_, value, pos);
-        if (truncated_) {
-            value["calls"].push_back(
-                make_truncated_call_frame(frames_[0].depth + 1));
-        }
-    }
-    else {
-        MONAD_ASSERT(truncated_);
-        value = make_truncated_call_frame(0);
-    }
+    MONAD_ASSERT(!frames_.empty());
+    MONAD_ASSERT(frames_[0].depth == 0);
+    size_t pos = 0;
+    to_json_helper(frames_, value, pos);
 
     res[key] = value;
 

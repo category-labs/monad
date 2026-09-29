@@ -45,7 +45,6 @@ struct CallTracerBase
     virtual void on_finish(uint64_t const) = 0;
     virtual void reset() = 0;
     virtual std::span<CallFrame const> get_call_frames() const = 0;
-    virtual bool truncated() const = 0;
 };
 
 struct NoopCallTracer final : public CallTracerBase
@@ -58,7 +57,6 @@ struct NoopCallTracer final : public CallTracerBase
     virtual void on_finish(uint64_t const) override;
     virtual void reset() override;
     virtual std::span<CallFrame const> get_call_frames() const override;
-    virtual bool truncated() const override;
 };
 
 class CallTracer final : public CallTracerBase
@@ -68,14 +66,10 @@ class CallTracer final : public CallTracerBase
         std::vector<CallFrame> &frames_;
         std::stack<size_t> last_{};
         std::stack<size_t> positions_{};
-        size_t dropped_subtree_depth_{0};
 
         explicit CallFramesStack(std::vector<CallFrame> &);
 
-        void record_dropped_subtree_enter();
-        void record_dropped_subtree_child_enter();
         void advance_position();
-        bool consume_dropped_exit();
 
         CallFrame &top_frame();
         CallFrame &pop_frame();
@@ -83,8 +77,6 @@ class CallTracer final : public CallTracerBase
         CallFrame &push_selfdestruct_frame(CallFrame &&);
 
         bool has_active_frame() const;
-        bool in_dropped_subtree() const;
-        size_t dropped_subtree_depth() const;
         size_t position() const;
 
         void reset();
@@ -95,9 +87,8 @@ class CallTracer final : public CallTracerBase
     Transaction const &tx_;
     size_t const max_size_;
     size_t size_{0};
-    bool truncated_{false};
 
-    bool fits(size_t additional_size) const;
+    void assert_fits(size_t additional_size) const;
     size_t log_size(Receipt::Log const &) const;
 
 public:
@@ -117,7 +108,6 @@ public:
     virtual void on_finish(uint64_t const) override;
     virtual void reset() override;
     virtual std::span<CallFrame const> get_call_frames() const override;
-    virtual bool truncated() const override;
 
     nlohmann::json to_json() const;
 };

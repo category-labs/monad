@@ -572,7 +572,19 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
 #pragma GCC unroll 1
                     while (lo != first) {
                         uint64_t const prev = lo[-1];
-                        if (prev != below || !blob_digest_at(prev)) {
+                        if (prev != below) {
+                            break;
+                        }
+                        if constexpr (priming_pass) {
+                            // The tag alone decides: a null slot reads the
+                            // blob's first byte, the magic's 'M' that read_root
+                            // asserts, i.e. EMPTY, never DIGEST.
+                            if (NodeViewBase{blob_.data() + prev}.tag() !=
+                                Tag::DIGEST) {
+                                break;
+                            }
+                        }
+                        else if (!blob_digest_at(prev)) {
                             break;
                         }
                         below -= HASH_RLP_LEN;

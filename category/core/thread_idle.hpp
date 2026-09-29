@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <string_view>
 
@@ -67,7 +68,8 @@ struct ThreadIdleSample
 {
     std::array<char, 16> name; // NUL-terminated, at most 15 characters
     uint64_t idle_ns;
-    uint64_t registered_at_ns; // on the registry's clock
+    // On the clock of the registry or IdleFromBusyTime that made the sample.
+    uint64_t registered_at_ns;
 };
 
 // Raises each sample's idle_ns to at least that of the previous sample of the
@@ -75,6 +77,39 @@ struct ThreadIdleSample
 void keep_idle_monotonic(
     std::span<ThreadIdleSample> current,
     std::span<ThreadIdleSample const> previous) noexcept;
+
+// Idle time of a thread this process cannot instrument but whose cumulative
+// busy time it can read, such as a kernel thread: the time since the first
+// reading less the busy time accrued since then.
+class IdleFromBusyTime
+{
+    struct Reading
+    {
+        uint64_t now_ns;
+        uint64_t busy_ns;
+    };
+
+    struct Readings
+    {
+        Reading first;
+        Reading last;
+    };
+
+    std::array<char, 16> name_; // NUL-padded
+    IdleClock clock_;
+    std::optional<Readings> readings_;
+
+public:
+    explicit IdleFromBusyTime(
+        std::string_view name, IdleClock clock = monotonic_ns) noexcept;
+
+    // Without a new reading, or with busy time below the last one, repeats the
+    // last sample so the thread stays in a published section; that interval
+    // then reads as busy. nullopt before the first reading, whose time is
+    // registered_at_ns.
+    std::optional<ThreadIdleSample>
+    sample(std::optional<uint64_t> busy_ns) noexcept;
+};
 
 // Process-wide table of busy-polling threads' idle counters.
 class ThreadIdleRegistry

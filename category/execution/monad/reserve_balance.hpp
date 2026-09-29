@@ -68,7 +68,11 @@ class ReserveBalance
 public:
     explicit ReserveBalance(State *state);
 
-    bool tracking_enabled() const;
+    // Keep this visible for inlining in State's frequent push/pop checks.
+    bool tracking_enabled() const
+    {
+        return tracking_enabled_;
+    }
 
     bool has_violation() const;
 

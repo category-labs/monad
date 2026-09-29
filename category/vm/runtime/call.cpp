@@ -180,8 +180,10 @@ namespace monad::vm::runtime
         auto const message = evmc_message{
             .kind = call_kind,
             .flags = message_flags(
-                ctx->env.evmc_flags, static_call, dest_address != code_address),
-            .depth = ctx->env.depth + 1,
+                static_cast<uint32_t>(ctx->env.evmc_flags),
+                static_call,
+                dest_address != code_address),
+            .depth = static_cast<int32_t>(ctx->env.depth + 1),
             .gas = gas,
             .recipient = recipient,
             .sender = sender,

@@ -66,10 +66,21 @@ namespace monad::vm::runtime
     using env_size_t = uint32_t;
 #endif
 
+    // The flags and the depth at the same width, for the same reason: SSTORE,
+    // TSTORE and the LOGs read the flags for their static test, CALL and
+    // CREATE read both, and Context::from writes both for every message.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+    using env_flags_t = uint64_t;
+    using env_depth_t = int64_t;
+#else
+    using env_flags_t = uint32_t;
+    using env_depth_t = int32_t;
+#endif
+
     struct Environment
     {
-        uint32_t evmc_flags;
-        int32_t depth;
+        env_flags_t evmc_flags;
+        env_depth_t depth;
         Address recipient;
         Address sender;
         bytes32_t value;

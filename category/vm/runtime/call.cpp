@@ -56,8 +56,16 @@ namespace monad::vm::runtime
         return env_flags;
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    // Inline to avoid argument/result copies and let each caller's constant
+    // call kind and flags eliminate unused branches.
+    #define MONAD_VM_CALL_IMPL_INLINE [[gnu::always_inline]] inline
+#else
+    #define MONAD_VM_CALL_IMPL_INLINE
+#endif
+
     template <Traits traits>
-    uint256_t call_impl(
+    MONAD_VM_CALL_IMPL_INLINE uint256_t call_impl(
         Context *ctx, uint256_t const &gas_word, uint256_t const &address,
         bool const has_value, bytes32_t const &value,
         uint256_t const &args_offset_word, uint256_t const &args_size_word,

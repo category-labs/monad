@@ -49,6 +49,15 @@ namespace monad::vm
         }
 #endif
 
+#if defined(MONAD_ZKVM_ZISK)
+        /// Warm the slot and return its previous access status.
+        /// Read into value only if warm or can_pay_cold_access is true.
+        /// The caller must charge cold-access gas before using value.
+        virtual evmc_access_status sload_into(
+            evmc::address const &addr, evmc::bytes32 const &key,
+            bool can_pay_cold_access, evmc_bytes32 &value) noexcept = 0;
+#endif
+
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.
         void capture_current_exception() const noexcept

@@ -615,12 +615,12 @@ public:
 
 static_assert(std::is_trivially_copyable_v<uint256_t>);
 
+// Extend the sign in place to avoid a stack temporary and DMA copies on ZisK.
 [[gnu::always_inline]]
-inline uint256_t signextend(uint256_t const &byte_index_256, uint256_t const &x)
+inline void signextend_to(uint256_t const &byte_index_256, uint256_t &x)
 {
-    uint256_t ret = x;
     if (byte_index_256 >= 31) {
-        return ret;
+        return;
     }
 
     uint64_t const byte_index = byte_index_256[0];
@@ -636,10 +636,17 @@ inline uint256_t signextend(uint256_t const &byte_index_256, uint256_t const &x)
         ~(std::numeric_limits<int64_t>::min() >> (63 - bit_index));
     uint64_t const lower = static_cast<uint64_t>(signed_lower);
     uint64_t const sign_bits = static_cast<uint64_t>(signed_byte >> 63);
-    ret[word_index] = upper | lower;
+    x[word_index] = upper | lower;
     for (uint64_t j = word_index + 1; j < 4; ++j) {
-        ret[j] = sign_bits;
+        x[j] = sign_bits;
     }
+}
+
+[[gnu::always_inline]]
+inline uint256_t signextend(uint256_t const &byte_index_256, uint256_t const &x)
+{
+    uint256_t ret = x;
+    signextend_to(byte_index_256, ret);
     return ret;
 }
 

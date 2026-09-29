@@ -776,7 +776,7 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_CHECK(SIGNEXTEND);
         auto &&[b, x] = top_two(stack_top);
-        x = signextend(b, x);
+        signextend_to(b, x);
 
         MONAD_VM_NEXT(SIGNEXTEND);
     }

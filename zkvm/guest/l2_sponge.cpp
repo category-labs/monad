@@ -23,6 +23,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string_view>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -91,18 +92,12 @@ L2Sponge::L2Sponge(
     // initial state, so the pattern is normative and not a debugging aid.
     //
     // One rate block holds it by construction: this guest's patterns are a
-    // handful of ops and a short label, and the assert in put_u32 says so
-    // rather than truncating in silence.
-    unsigned char buf[L2_SPONGE_RATE * L2_BYTES_PER_ELEM] = {};
+    // handful of ops and a short label, and the bounds below say so rather
+    // than truncating in silence.
+    // Not zeroed: l2_pack_bytes reads the n bytes written below and nothing
+    // past them, whole-word loads included.
+    unsigned char buf[L2_SPONGE_RATE * L2_BYTES_PER_ELEM];
     std::size_t n = 0;
-
-    auto const put_u32 = [&buf, &n](std::uint32_t w) {
-        MONAD_ASSERT(n + 4 <= sizeof(buf));
-        buf[n++] = static_cast<unsigned char>(w >> 24);
-        buf[n++] = static_cast<unsigned char>(w >> 16);
-        buf[n++] = static_cast<unsigned char>(w >> 8);
-        buf[n++] = static_cast<unsigned char>(w);
-    };
 
     // One word per call, high bit set for a squeeze, and consecutive calls of
     // the same kind merged -- so a length split across two calls encodes the
@@ -119,38 +114,41 @@ L2Sponge::L2Sponge(
             len += io_pattern[j].len;
         }
         MONAD_ASSERT(len < (std::uint64_t{1} << 31));
-        put_u32(
-            static_cast<std::uint32_t>(len) |
-            (io_pattern[i].squeeze ? 0x80000000u : 0u));
+        std::uint32_t const w = static_cast<std::uint32_t>(len) |
+                                (io_pattern[i].squeeze ? 0x80000000u : 0u);
+        MONAD_ASSERT(n + 4 <= sizeof(buf));
+        buf[n++] = static_cast<unsigned char>(w >> 24);
+        buf[n++] = static_cast<unsigned char>(w >> 16);
+        buf[n++] = static_cast<unsigned char>(w >> 8);
+        buf[n++] = static_cast<unsigned char>(w);
         i = j;
     }
 
-    // The caller's label, then the domain. Frozen with the suite's protocol
-    // version: a build that changes either produces tags nothing else
-    // reproduces, which is the intent -- it is a different protocol.
+    // The caller's label, then the domain, then the caller's application
+    // context -- see the header for why the context is in the tag rather than
+    // the rate, and why it arrives pre-hashed. The label and the domain are
+    // frozen with the suite's protocol version: a build that changes either
+    // produces tags nothing else reproduces, which is the intent -- it is a
+    // different protocol.
+    //
+    // Copied whole, behind one bound for all three: this block is most of what
+    // opening a sponge costs, and a decrypted leaf opens three.
     MONAD_ASSERT(!label.empty());
-    for (char const c : label) {
-        MONAD_ASSERT(n < sizeof(buf));
-        buf[n++] = static_cast<unsigned char>(c);
-    }
-    for (char const c : domain_name(domain)) {
-        MONAD_ASSERT(n < sizeof(buf));
-        buf[n++] = static_cast<unsigned char>(c);
-    }
-
-    // The caller's application context, last. See the header for why it is in
-    // the tag rather than the rate, and why it arrives pre-hashed.
-    MONAD_ASSERT(n + context.size() <= sizeof(buf));
-    for (unsigned char const c : context) {
-        buf[n++] = c;
-    }
+    std::string_view const name = domain_name(domain);
+    MONAD_ASSERT(
+        n + label.size() + name.size() + context.size() <= sizeof(buf));
+    std::memcpy(buf + n, label.data(), label.size());
+    n += label.size();
+    std::memcpy(buf + n, name.data(), name.size());
+    n += name.size();
+    std::memcpy(buf + n, context.data(), context.size());
+    n += context.size();
 
     // Poseidon2 and not keccak: one permutation is 5,488 cells against a
     // Keccak-f's 75,575 in ZisK's cost model, and it keeps one hash function
-    // across the whole L2 surface. (POSEIDON_COST and KECCAK_COST, zisk
-    // v1.1.0-alpha -- the revision the Cargo.lock pins; earlier revisions
-    // priced Poseidon2 differently, so the figure is worth re-reading against
-    // whatever is actually pinned.)
+    // across the whole L2 surface. (POSEIDON_COST and KECCAK_COST in ZisK's
+    // cost table. Revisions have repriced both, so the figures are worth
+    // re-reading against whatever revision Cargo.lock pins.)
     std::uint64_t seed[16] = {};
     l2_pack_bytes({buf, n}, {seed, L2_SPONGE_RATE});
     monad_poseidon2_16(seed);
@@ -162,59 +160,83 @@ L2Sponge::L2Sponge(
 void L2Sponge::permute()
 {
     monad_poseidon2_16(st_);
+    fresh_ = false;
 }
 
-void L2Sponge::charge(bool const squeeze)
+void L2Sponge::charge(bool const squeeze, std::size_t n)
 {
-    MONAD_ASSERT(op_ < pattern_.size());
-    MONAD_ASSERT(pattern_[op_].squeeze == squeeze);
-    ++done_;
-    MONAD_ASSERT(done_ <= pattern_[op_].len);
-    if (done_ == pattern_[op_].len) {
-        ++op_;
-        done_ = 0;
+    // The same acceptance as charging one element at a time: every op the
+    // call reaches must be of its kind, and the call may not run past the
+    // pattern -- it only stops at op boundaries rather than at each element.
+    while (n > 0) {
+        MONAD_ASSERT(op_ < pattern_.size());
+        L2IoOp const &op = pattern_[op_];
+        MONAD_ASSERT(op.squeeze == squeeze);
+        std::uint32_t const left = op.len - done_;
+        std::uint32_t const take =
+            n < left ? static_cast<std::uint32_t>(n) : left;
+        done_ += take;
+        n -= take;
+        if (done_ == op.len) {
+            ++op_;
+            done_ = 0;
+        }
     }
-}
-
-void L2Sponge::absorb_one(std::uint64_t const elem)
-{
-    MONAD_ASSERT(elem < GOLDILOCKS_P);
-    // A direction change permutes even on a part-filled rate: otherwise the
-    // lanes squeezed next would still hold what was just absorbed.
-    if (squeezing_ || pos_ == L2_SPONGE_RATE) {
-        permute();
-        pos_ = 0;
-        squeezing_ = false;
-    }
-    st_[pos_] = goldilocks_add(st_[pos_], elem);
-    ++pos_;
-}
-
-std::uint64_t L2Sponge::squeeze_one()
-{
-    if (!squeezing_ || pos_ == L2_SPONGE_RATE) {
-        permute();
-        pos_ = 0;
-        squeezing_ = true;
-    }
-    // Already reduced: the permutation's outputs are field elements, which is
-    // what poseidon2_test.cpp asserts lane by lane.
-    return st_[pos_++];
 }
 
 void L2Sponge::absorb(std::span<std::uint64_t const> const elems)
 {
-    for (std::uint64_t const e : elems) {
-        charge(false);
-        absorb_one(e);
+    charge(false, elems.size());
+    std::size_t pos = pos_;
+    for (std::size_t i = 0; i < elems.size();) {
+        // A direction change permutes even on a part-filled rate: otherwise
+        // the lanes squeezed next would still hold what was just absorbed.
+        if (squeezing_ || pos == L2_SPONGE_RATE) {
+            permute();
+            pos = 0;
+            squeezing_ = false;
+        }
+        std::size_t const room = L2_SPONGE_RATE - pos;
+        std::size_t const end =
+            elems.size() - i < room ? elems.size() : i + room;
+        if (fresh_) {
+            // Until the first permutation the rate is the zero it was built
+            // with, and each lane is written once before that permutation --
+            // so adding into it is adding to zero, which is the element.
+            for (; i < end; ++i) {
+                MONAD_ASSERT(elems[i] < GOLDILOCKS_P);
+                st_[pos++] = elems[i];
+            }
+        }
+        else {
+            for (; i < end; ++i) {
+                MONAD_ASSERT(elems[i] < GOLDILOCKS_P);
+                st_[pos] = goldilocks_add(st_[pos], elems[i]);
+                ++pos;
+            }
+        }
+        pos_ = pos;
     }
 }
 
 void L2Sponge::squeeze(std::span<std::uint64_t> const out)
 {
-    for (std::uint64_t &o : out) {
-        charge(true);
-        o = squeeze_one();
+    charge(true, out.size());
+    std::size_t pos = pos_;
+    for (std::size_t i = 0; i < out.size();) {
+        if (!squeezing_ || pos == L2_SPONGE_RATE) {
+            permute();
+            pos = 0;
+            squeezing_ = true;
+        }
+        std::size_t const room = L2_SPONGE_RATE - pos;
+        std::size_t const end = out.size() - i < room ? out.size() : i + room;
+        // Already reduced: the permutation's outputs are field elements,
+        // which is what poseidon2_test.cpp asserts lane by lane.
+        for (; i < end; ++i) {
+            out[i] = st_[pos++];
+        }
+        pos_ = pos;
     }
 }
 

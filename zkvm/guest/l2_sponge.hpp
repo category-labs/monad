@@ -133,13 +133,15 @@ public:
 
 private:
     void permute();
-    void absorb_one(std::uint64_t elem);
-    std::uint64_t squeeze_one();
-    void charge(bool squeeze);
+    /// Consumes `n` elements of the declared pattern, asserting that each op
+    /// they reach is of kind `squeeze` and that they do not overrun it.
+    void charge(bool squeeze, std::size_t n);
 
     std::uint64_t st_[16]{};
     std::size_t pos_{0};
     bool squeezing_{false};
+    /// No permutation yet: the rate still holds the zeros it was built with.
+    bool fresh_{true};
     std::span<L2IoOp const> pattern_;
     std::size_t op_{0};
     std::uint32_t done_{0};

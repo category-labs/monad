@@ -50,6 +50,23 @@ REQUIRED_FLAGS = (
 )
 
 
+def strip_comments(src: str) -> str:
+    """C and C++ comments out, so a body is empty whatever is written in it."""
+    out, i, n = [], 0, len(src)
+    while i < n:
+        if src.startswith("//", i):
+            j = src.find("\n", i)
+            i = n if j < 0 else j
+        elif src.startswith("/*", i):
+            j = src.find("*/", i + 2)
+            out.append(" ")
+            i = n if j < 0 else j + 2
+        else:
+            out.append(src[i])
+            i += 1
+    return "".join(out)
+
+
 def fail(message: str) -> None:
     raise SystemExit(f"official-build audit failed: {message}")
 
@@ -256,11 +273,13 @@ def main() -> int:
                 "nodelete.hpp declares this a no-op and libstdcxx.cpp no longer "
                 f"defines it so: {sig}"
             )
-    libc = (args.repo / "zkvm" / "core" / "libc.cpp").read_text(errors="replace")
+    libc = strip_comments(
+        (args.repo / "zkvm" / "core" / "libc.cpp").read_text(errors="replace")
+    )
     free_body = re.search(r"void free\(void \*(\w+)\)\s*\{(.*?)\n\}", libc, re.S)
-    if free_body is None or re.sub(
-        r"//[^\n]*", "", free_body.group(2)
-    ).split() != [f"(void){free_body.group(1)};"]:
+    if free_body is None or free_body.group(2).split() != [
+        f"(void){free_body.group(1)};"
+    ]:
         fail(
             "nodelete.hpp declares free a no-op and libc.cpp no longer "
             "defines it so"

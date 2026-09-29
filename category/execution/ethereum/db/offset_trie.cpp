@@ -505,8 +505,10 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                         below -= HASH_RLP_LEN;
                         --lo;
                     }
-                    size_t const digests_length =
-                        (static_cast<size_t>(c - lo) + 1) * HASH_RLP_LEN;
+                    // From the run's lowest digest, at below + HASH_RLP_LEN,
+                    // to the end of the one at w: `below` has counted the
+                    // length already.
+                    size_t const digests_length = w - below;
 
                     unsigned char *const digests =
                         dest.last(digests_length).data();

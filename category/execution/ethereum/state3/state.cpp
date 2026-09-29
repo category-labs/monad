@@ -53,6 +53,18 @@
 
 MONAD_NAMESPACE_BEGIN
 
+namespace
+{
+    // end minus begin: size() would divide it by the element's size.
+    template <typename T>
+    [[gnu::always_inline]] inline size_t bytes_of(std::vector<T> const &v)
+    {
+        return static_cast<size_t>(
+            reinterpret_cast<char const *>(std::to_address(v.cend())) -
+            reinterpret_cast<char const *>(v.data()));
+    }
+}
+
 OriginalAccountState &State::original_account_state(Address const &address)
 {
     auto it = original_.find(address);
@@ -303,12 +315,12 @@ void State::push()
     // copied in, 64 bytes a frame.
     undo_marks_.emplace_back(
         undo_.size(),
-        undo_accts_.size(),
+        bytes_of(undo_accts_),
         undo_words_.size(),
         undo_u64_.size(),
         undo_slots_.size(),
         undo_pages_.size());
-    log_marks_.push_back(logs_.size());
+    log_marks_.push_back(bytes_of(logs_));
 }
 
 void State::pop_accept()
@@ -371,7 +383,7 @@ void State::pop_reject()
 #endif
 
     // Rejected: drop exactly what this frame appended.
-    logs_.resize(log_marks_.back());
+    logs_.resize(log_marks_.back() / sizeof(Receipt::Log));
     log_marks_.pop_back();
 
     // Rollback may erase and move map entries, invalidating the cached
@@ -465,7 +477,7 @@ void State::pop_reject()
         }
         undo_.pop_back();
     }
-    undo_accts_.resize(mark.accts);
+    undo_accts_.resize(mark.accts / sizeof(std::optional<Account>));
     undo_words_.resize(mark.words);
     undo_u64_.resize(mark.u64);
     undo_slots_.resize(mark.slots);

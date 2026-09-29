@@ -171,9 +171,21 @@ namespace monad::vm::runtime
             }
         };
 
+        /// Returns the memory to this allocator's cache. A plain struct, not
+        /// a std::function: the latter costs a manager call to create and one
+        /// to destroy it, plus an indirect call to run it, on every message.
+        struct Deleter
+        {
+            CachedAllocator allocator;
+
+            void operator()(base_type *const ptr) const
+            {
+                allocator.free_cached(ptr);
+            }
+        };
+
         /// Return live base_type objects whose values are uninitialized.
-        std::unique_ptr<base_type, std::function<void(base_type *)>>
-        allocate() const
+        std::unique_ptr<base_type, Deleter> allocate() const
         {
             // aligned_alloc_cached's placement new of a std::byte array
             // implicitly creates the base_type objects. reinterpret_cast alone
@@ -182,7 +194,7 @@ namespace monad::vm::runtime
             // already started before the call to launder.
             auto *const ptr = std::launder(
                 reinterpret_cast<base_type *>(aligned_alloc_cached()));
-            return {ptr, [*this](base_type *const p) { free_cached(p); }};
+            return {ptr, Deleter{*this}};
         }
 
     private:

@@ -308,7 +308,9 @@ Result<Transaction> decode_transaction_legacy(byte_string_view &enc)
 Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
 {
     Transaction txn;
-    MONAD_ASSERT(enc.size());
+    if (MONAD_UNLIKELY(enc.empty())) {
+        return DecodeError::InputTooShort;
+    }
     if (MONAD_UNLIKELY(
             enc[0] >= static_cast<unsigned char>(TransactionType::LAST))) {
         return DecodeError::InvalidTxnType;

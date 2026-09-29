@@ -461,14 +461,16 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // Priming already validated all child IDs as blob offsets;
                 // only mutation needs the overlay check. get_original also
                 // checks bounds before access.
-                auto const digest_at = [this](uint64_t const w) {
+                auto const blob_digest_at = [this](uint64_t const w) {
+                    return w != 0 &&
+                           get_original(NodeId{w}).tag() == Tag::DIGEST;
+                };
+                auto const digest_at = [blob_digest_at](uint64_t const w) {
                     if constexpr (priming_pass) {
-                        return w != 0 &&
-                               get_original(NodeId{w}).tag() == Tag::DIGEST;
+                        return blob_digest_at(w);
                     }
                     else {
-                        return w != 0 && w < OVERLAY_BASE &&
-                               get_original(NodeId{w}).tag() == Tag::DIGEST;
+                        return w < OVERLAY_BASE && blob_digest_at(w);
                     }
                 };
 
@@ -494,12 +496,13 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                     // one digest below the run's lowest, `below`, counted down
                     // in place, so no value passes from one turn's register to
                     // the next. Not unrolled: gcc's copies of the body would
-                    // pass lo and below between them in moves.
+                    // pass lo and below between them in moves. A slot equal to
+                    // `below` lies under w, so it is not an overlay id.
                     uint64_t below = w - HASH_RLP_LEN;
 #pragma GCC unroll 1
                     while (lo != first) {
                         uint64_t const prev = lo[-1];
-                        if (prev != below || !digest_at(prev)) {
+                        if (prev != below || !blob_digest_at(prev)) {
                             break;
                         }
                         below -= HASH_RLP_LEN;

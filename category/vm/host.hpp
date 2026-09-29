@@ -183,3 +183,13 @@ namespace monad::vm
         mutable std::exception_ptr active_exception_;
     };
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+namespace monad::vm::runtime
+{
+    [[gnu::always_inline]] inline Host &host_of(Context const &ctx) noexcept
+    {
+        return *ctx.host;
+    }
+}
+#endif

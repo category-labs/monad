@@ -1,0 +1,19 @@
+[package]
+name = "monad-zkvm-zisk-ecrecover-test"
+description = "Host tests of the ZisK secp256k1 recovery against k256"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Standalone workspace, like the guest crate it tests (../Cargo.toml).
+[workspace]
+
+[dependencies]
+ziskos = { git = "https://github.com/0xPolygonHermez/zisk.git", tag = "v1.4.0-alpha" }
+
+[dev-dependencies]
+k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
+
+# The guest code tests for the ZisK target, which the host does not know.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_vendor, values("zisk"))'] }

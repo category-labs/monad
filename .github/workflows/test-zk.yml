@@ -30,3 +30,18 @@ jobs:
           setup: true
           submodules: true
           cache-from: type=gha,scope=riscv-toolchain
+
+  ecrecover:
+    name: ZisK ecrecover host tests
+    runs-on: ubuntu-26.04-32
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build `test_zisk_host` stage
+        uses: ./.github/actions/docker-stage
+        with:
+          target: test_zisk_host
+          setup: true
+          cache-from: type=gha,scope=base_rust

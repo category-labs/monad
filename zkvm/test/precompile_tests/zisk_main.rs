@@ -21,6 +21,11 @@
 #![no_main]
 ziskos::entrypoint!(main);
 
+#[path = "../../zisk/src/ecrecover.rs"]
+mod ecrecover;
+#[path = "../../zisk/src/ecrecover_tables.rs"]
+mod ecrecover_tables;
+
 extern "C" {
     fn monad_zkvm_run_precompile_tests();
 }

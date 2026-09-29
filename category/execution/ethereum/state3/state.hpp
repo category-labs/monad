@@ -327,6 +327,16 @@ private:
 
     AccountState &current_account_state(Address const &);
 
+    // Warm a slot in an already located account.
+    template <Traits traits>
+    monad_access_status
+    access_storage_of(AccountState &, Address const &, bytes32_t const &key);
+
+    // Read a slot from an account already located in current_.
+    [[gnu::always_inline]] inline void current_storage_into(
+        AccountState const &, Address const &, bytes32_t const &key,
+        evmc_bytes32 &out);
+
     std::optional<Account> const &recent_account(Address const &);
 
     std::optional<Account> &current_account(Address const &);
@@ -421,6 +431,14 @@ public:
 
     template <Traits traits>
     monad_access_status access_storage(Address const &, bytes32_t const &key);
+
+#if defined(MONAD_ZKVM_ZISK)
+    // Warm and read a slot with one account lookup; see vm::Host::sload_into.
+    template <Traits traits>
+    monad_access_status sload_into(
+        Address const &, bytes32_t const &key, bool can_pay_cold_access,
+        evmc_bytes32 &out);
+#endif
 
     monad_page_storage_status update_page(
         Address const &, bytes32_t const &key, monad_storage_status status);

@@ -96,9 +96,7 @@ AccountState &State::current_account_state(Address const &address)
 
     // Reuse the cached account; register it as dirty again if the frame
     // epoch changed.
-    if (memo_val_ != nullptr &&
-        __builtin_memcmp(
-            address.bytes, memo_addr_.bytes, sizeof(address.bytes)) == 0) {
+    if (memo_val_ != nullptr && address == memo_addr_) {
         MONAD_GUEST_SITE(ACCT_MEMO_HIT);
         if (memo_epoch_ != frame_epoch_) {
 #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)

@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <type_traits>
 
@@ -77,6 +78,37 @@ struct Address : evmc_address
     friend constexpr bool
     operator==(Address const &a, Address const &b) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if !consteval {
+            // Read as gcc expands the comparison, two 8-byte words then four
+            // bytes, but the four through lwu: gcc's lw sign-extends both
+            // sides of an equality the extension cannot change, and ZisK
+            // charges a signextend_w for each.
+            uint64_t a0;
+            uint64_t b0;
+            std::memcpy(&a0, a.bytes, sizeof(a0));
+            std::memcpy(&b0, b.bytes, sizeof(b0));
+            if (a0 != b0) {
+                return false;
+            }
+            uint64_t a1;
+            uint64_t b1;
+            std::memcpy(&a1, a.bytes + 8, sizeof(a1));
+            std::memcpy(&b1, b.bytes + 8, sizeof(b1));
+            if (a1 != b1) {
+                return false;
+            }
+            uint64_t a2;
+            uint64_t b2;
+            asm("lwu %0, %1"
+                : "=r"(a2)
+                : "m"(*reinterpret_cast<uint8_t const(*)[4]>(a.bytes + 16)));
+            asm("lwu %0, %1"
+                : "=r"(b2)
+                : "m"(*reinterpret_cast<uint8_t const(*)[4]>(b.bytes + 16)));
+            return a2 == b2;
+        }
+#endif
         return std::equal(a.bytes, a.bytes + 20, b.bytes);
     }
 

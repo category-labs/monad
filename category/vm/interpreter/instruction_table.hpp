@@ -1680,6 +1680,7 @@ namespace monad::vm::interpreter
         MONAD_VM_FUSED_NEXT(3, 0);
     }
 
+#if defined(MONAD_ZKVM_ZISK)
     // PUSH2 <dst> JUMP and PUSH2 <dst> JUMPI, one twin each: use the immediate
     // directly as the destination. Check gas and stack in opcode order, then
     // validate taken jumps. push<2> tail-calls the one its follower names.
@@ -1757,6 +1758,7 @@ namespace monad::vm::interpreter
         // Returns from the current handler.
         MONAD_VM_FUSED_NEXT(4, -1);
     }
+#endif
 
     template <size_t N, Traits traits>
         requires(N <= 32)

@@ -333,7 +333,14 @@ evmc::Result execute_call_message(
             }
         }
         auto const hash = state.get_code_hash(msg.code_address);
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+        // The guest's VM keeps every varcode for the block and takes the
+        // intercode from this one before it runs anything, so the State's
+        // own copy is enough, though a nested read_code replaces it.
+        auto const &code = state.read_code_ref(hash);
+#else
         auto const code = state.read_code(hash);
+#endif
         trace::on_read_code(host->state_tracer_, hash, code->intercode());
         return state.vm().execute<traits>(*host, &msg, hash, code);
     }();

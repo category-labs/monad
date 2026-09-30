@@ -132,10 +132,15 @@ namespace monad::vm::interpreter
     // handlers. Any other leaves a negative count to the next of those: it
     // moves only the stack, memory the frame already has and the pc, which
     // an exceptional halt discards, and the halt consumes all the gas and
-    // reverts the frame whichever opcode ran out.
+    // reverts the frame whichever opcode ran out. MLOAD, MSTORE and MSTORE8
+    // are such opcodes when the memory holds their word; their growth, the
+    // dynamic cost, is charged and tested where it happens.
     consteval bool gas_tested(uint8_t const op, bool const dynamic_gas) noexcept
     {
         using enum compiler::EvmOpCode;
+        if (op == MLOAD || op == MSTORE || op == MSTORE8) {
+            return false;
+        }
         return dynamic_gas || op == JUMP || op == JUMPI || op == GAS ||
                op == TSTORE || op == SELFDESTRUCT;
     }

@@ -224,8 +224,10 @@ namespace monad::vm::interpreter
      ((REQ).max_growth == 0 ||                                                 \
       (stack_top) < MONAD_VM_STACK_LIMIT + (1 - (REQ).max_growth)))
 
-// MONAD_VM_FUSED_CHARGE for a sequence of pure opcodes (gas_tested): on ZisK
-// its charge leaves the sign of the count to the next checkpoint.
+// MONAD_VM_FUSED_CHARGE for a sequence of pure opcodes (gas_tested), or of
+// pure opcodes and a JUMPI: on ZisK its charge leaves the sign of the count to
+// the next checkpoint, which for a taken JUMPI is the JUMPDEST it lands on
+// (swallow_jumpdest), and otherwise the straight line after it.
 #if defined(MONAD_ZKVM_ZISK)
     #define MONAD_VM_FUSED_CHARGE_PURE(REQ)                                    \
         ((gas_remaining -= (REQ).gas, true) &&                                 \
@@ -932,7 +934,7 @@ namespace monad::vm::interpreter
             *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
             static constexpr auto monad_vm_req =
                 fused_requirements<traits, EQ, PUSH2, JUMPI>();
-            if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE(monad_vm_req))) {
+            if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
                 gas_remaining += monad_vm_req.gas;
                 MONAD_VM_CHECK(EQ);
                 // EQ frees a slot, so PUSH2 cannot overflow a valid stack.
@@ -982,7 +984,7 @@ namespace monad::vm::interpreter
             *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
             static constexpr auto monad_vm_req =
                 fused_requirements<traits, ISZERO, PUSH2, JUMPI>();
-            if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE(monad_vm_req))) {
+            if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
                 gas_remaining += monad_vm_req.gas;
                 MONAD_VM_CHECK(ISZERO);
                 MONAD_VM_CHECK_AT(PUSH2, 0);
@@ -1784,7 +1786,7 @@ namespace monad::vm::interpreter
             static_cast<size_t>(detail::load_be_k<2>(instr_ptr + 1));
         static constexpr auto monad_vm_reqi =
             fused_requirements<traits, PUSH2, JUMPI>();
-        if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE(monad_vm_reqi))) {
+        if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_reqi))) {
             gas_remaining += monad_vm_reqi.gas;
             MONAD_VM_CHECK(PUSH2);
             MONAD_VM_CHECK_AT(JUMPI, 1);
@@ -1990,7 +1992,7 @@ namespace monad::vm::interpreter
                 *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI)) {
                 static constexpr auto monad_vm_req =
                     fused_requirements<traits, DUP1, PUSH4, EQ, PUSH2, JUMPI>();
-                if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE(monad_vm_req))) {
+                if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
                     gas_remaining += monad_vm_req.gas;
                     MONAD_VM_CHECK(DUP1);
                     MONAD_VM_CHECK_AT(PUSH4, 1);

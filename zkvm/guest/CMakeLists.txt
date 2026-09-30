@@ -603,22 +603,25 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_riscv_compile_options(monad_execution_native)
 
     # ---- Final guest static archive ----
-    # Run rollback tests through the guest entry point instead of a witness.
+    # Run the state self-test instead of reading a witness.
     option(MONAD_ZKVM_SELFTEST "guest entry runs the state self-test instead of a witness" OFF)
     if(MONAD_ZKVM_SELFTEST)
         add_compile_definitions(MONAD_ZKVM_SELFTEST)
     endif()
 
-    # Keep test globals and the stub vtable out of normal guest archives:
-    # section garbage collection alone did not remove them from the binary.
-    set(_selftest_sources "")
-    if(MONAD_ZKVM_SELFTEST)
-        set(_selftest_sources
-            "${CMAKE_CURRENT_SOURCE_DIR}/../../category/execution/ethereum/state3/test/revert_semantics_test.cpp")
+    option(MONAD_ZKVM_GAS_SELFTEST "Run interpreter gas boundary tests" OFF)
+    option(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE "Use eager checks in gas self-tests" OFF)
+    if(MONAD_ZKVM_GAS_SELFTEST)
+        add_compile_definitions(MONAD_ZKVM_GAS_SELFTEST)
+    endif()
+    if(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+        if(NOT MONAD_ZKVM_GAS_SELFTEST)
+            message(FATAL_ERROR "Eager gas checks are a self-test reference only")
+        endif()
+        add_compile_definitions(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
     endif()
 
     add_library(${_guest_target} STATIC
-        ${_selftest_sources}
         $<TARGET_OBJECTS:monad-zkvm-guest>
         $<TARGET_OBJECTS:monad-core>
         $<TARGET_OBJECTS:monad-zkvm-core>
@@ -736,3 +739,13 @@ endif()
 add_library(zkevm-standards INTERFACE)
 target_include_directories(zkevm-standards
     INTERFACE "${THIRD_PARTY_DIR}/zkevm-standards/standards")
+
+# Keep test globals and vtables out of production guest binaries.
+if(MONAD_ZKVM_SELFTEST OR MONAD_ZKVM_GAS_SELFTEST)
+    target_sources(monad-zkvm-guest PRIVATE
+        "${MONAD_ROOT}/category/execution/ethereum/state3/test/revert_semantics_test.cpp")
+endif()
+
+if(MONAD_ZKVM_GAS_SELFTEST)
+    target_sources(monad-zkvm-guest PRIVATE test/deferred_gas_test.cpp)
+endif()

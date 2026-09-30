@@ -1,0 +1,56 @@
+name: Build a Docker stage
+description: >-
+  Build a docker/Dockerfile stage with the settings the GitHub Actions layer
+  caches are keyed on, so every job reads and writes the same cache entries.
+
+inputs:
+  target:
+    description: Dockerfile stage to build.
+    required: true
+  build-args:
+    description: Extra build arguments, one per line.
+    default: ''
+  cache-from:
+    description: Layer caches to read, one per line.
+    default: ''
+  cache-to:
+    description: Layer cache to write.
+    default: ''
+  allow:
+    description: Extra privileges for RUN steps.
+    default: ''
+  submodules:
+    description: Check out the submodules, skipping unused test data.
+    default: 'false'
+  setup:
+    description: Set up Buildx (and the submodules); true for the first build in each job.
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Check out submodules
+      if: inputs.setup == 'true' && inputs.submodules == 'true'
+      shell: bash
+      run: |
+        git config --global submodule.LegacyTests.update none
+        git config --global submodule.third_party/tests.update none
+        git submodule update --init --recursive --depth=1 --jobs "$(nproc)"
+
+    - name: Set up Docker Buildx
+      if: inputs.setup == 'true'
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build `${{ inputs.target }}` stage
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: docker/Dockerfile
+        build-args: |-
+          UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
+          ${{ inputs.build-args }}
+        allow: ${{ inputs.allow }}
+        ulimit: "memlock=-1:-1"
+        target: ${{ inputs.target }}
+        cache-from: ${{ inputs.cache-from }}
+        cache-to: ${{ inputs.cache-to }}

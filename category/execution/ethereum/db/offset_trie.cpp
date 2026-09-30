@@ -280,6 +280,11 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         // of the region
         auto next_offset =
             static_cast<uint64_t>(node.checked_end(region_end) - base);
+#if defined(MONAD_ZKVM_ZISK)
+        // Read once: the copy of a branch's children may alias the blob, so
+        // gcc would read the tag again to choose the priming encode.
+        Tag const tag = node.tag();
+#endif
 
         match(
             node,
@@ -316,59 +321,49 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                 [&](AccountLeafView a) { is_valid_offset(a.storage()); },
                 [](auto) {}});
 
-        match(
-            node,
-            Cases{
-                [](NullView) {},
-                [](DigestView) {},
-                [&](auto) {
+        // checked_end has rejected every other tag and the arm above takes the
+        // digests: the node is a branch, an extension or a leaf, and primed.
 #if defined(MONAD_ZKVM_ZISK)
-                    // Encoded where a hashed node keeps it: see
-                    // CachedHash::rlp. An inlined node's window is reused.
-                    if (MONAD_UNLIKELY(rlp_window_ == rlp_windows_end_)) {
-                        refill_rlp_windows();
-                    }
-                    auto &window = *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(
-                        rlp_window_);
-                    node_rlp_span const rem =
-                        node.tag() == BRANCH
-                            ? encode_rlp<true, true>(
-                                  node,
-                                  node_rlp_span{window},
-                                  primed_slots_ + PRIMED_CHILDREN)
-                            : encode_rlp<true>(
-                                  node, node_rlp_span{window}); // priming pass
+        // Encoded where a hashed node keeps it: see CachedHash::rlp. An
+        // inlined node's window is reused.
+        if (MONAD_UNLIKELY(rlp_window_ == rlp_windows_end_)) {
+            refill_rlp_windows();
+        }
+        auto &window =
+            *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(rlp_window_);
+        node_rlp_span const rem =
+            tag == BRANCH
+                ? encode_rlp<true, true>(
+                      node,
+                      node_rlp_span{window},
+                      primed_slots_ + PRIMED_CHILDREN)
+                : encode_rlp<true>(node, node_rlp_span{window}); // priming pass
 #else
-                    node_rlp_span const rem = encode_rlp<true>(
-                        node, node_rlp_span{rlp_buf}); // priming pass
+        node_rlp_span const rem =
+            encode_rlp<true>(node, node_rlp_span{rlp_buf}); // priming pass
 #endif
-                    // Only hash-referenced nodes (canonical RLP >= 32 B)
-                    // are cached; smaller nodes are inlined by their
-                    // parent, so caching their hash would make child_ref
-                    // emit a 32-byte ref where the trie inlines it.
-                    if (rem.rlp_size() >= 32) {
-                        MONAD_KECCAK_SITE(TRIE_PRIME, rem.rlp_size());
+        // Only hash-referenced nodes (canonical RLP >= 32 B) are cached;
+        // smaller nodes are inlined by their parent, so caching their hash
+        // would make child_ref emit a 32-byte ref where the trie inlines it.
+        if (rem.rlp_size() >= 32) {
+            MONAD_KECCAK_SITE(TRIE_PRIME, rem.rlp_size());
 #if defined(MONAD_ZKVM_ZISK)
-                        // The sweep reaches each node once, so its slot is
-                        // empty: the digest goes straight into a new entry.
-                        // Filled before the hash, which comes last: nothing
-                        // then lives across the call, where the entry and the
-                        // RLP's length were saved and reloaded around it.
-                        CachedHash *const e = new_hash_entry();
-                        e->valid = true;
-                        e->rlp = rem.rlp_data();
-                        e->rlp_len = rem.rlp_size();
-                        blob_hash_slots_[node_offset >> 2] = e;
-                        rlp_window_ += RLP_WINDOW_STRIDE;
-                        monad_keccak256(
-                            rem.rlp_data(), rem.rlp_size(), e->h.bytes);
+            // The sweep reaches each node once, so its slot is empty: the
+            // digest goes straight into a new entry. Filled before the hash,
+            // which comes last: nothing then lives across the call, where the
+            // entry and the RLP's length were saved and reloaded around it.
+            CachedHash *const e = new_hash_entry();
+            e->valid = true;
+            e->rlp = rem.rlp_data();
+            e->rlp_len = rem.rlp_size();
+            blob_hash_slots_[node_offset >> 2] = e;
+            rlp_window_ += RLP_WINDOW_STRIDE;
+            monad_keccak256(rem.rlp_data(), rem.rlp_size(), e->h.bytes);
 #else
-                        monad_keccak256(
-                            rem.rlp_data(), rem.rlp_size(), ch.h.bytes);
-                        hashes_.insert_or_assign(NodeId{node_offset}, ch);
+            monad_keccak256(rem.rlp_data(), rem.rlp_size(), ch.h.bytes);
+            hashes_.insert_or_assign(NodeId{node_offset}, ch);
 #endif
-                    }
-                }});
+        }
 
         node_offsets[node_offset] = 1;
         unclaimed = unclaimed + DIGEST_NODE_LEN - (next_offset - node_offset);

@@ -22,6 +22,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
 #include <category/core/config.hpp>
+#include <category/core/likely.h>
 #include <category/core/rlp/encode.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
@@ -537,9 +538,14 @@ class OffsetTrie
     struct NodeCacheEntry
     {
         bytes32_t hash;
-        // Word-sized flags avoid costly byte accesses on ZisK without
-        // enlarging the padded map entry.
+        // Word-sized flags avoid costly byte accesses on ZisK.
+#if defined(MONAD_ZKVM_ZISK)
+        // Zero means current. Fresh bump-allocated ZisK memory reads as zero,
+        // so priming needs no flag store. Invalidation sets this to one.
+        uint64_t hash_stale;
+#else
         uint64_t hash_valid;
+#endif
         // Make the map entry 64 bytes so index arithmetic uses shifts
         // instead of multiplication or division by 48.
         [[maybe_unused]] uint64_t padding[2];
@@ -548,26 +554,23 @@ class OffsetTrie
     // Preserve the power-of-two map entry size used for cheap indexing.
     static_assert(sizeof(std::pair<NodeId, NodeCacheEntry>) == 64);
 
-    ankerl::unordered_dense::map<NodeId, NodeCacheEntry, NodeIdHash> hashes_{};
-
-    // Return a valid cached hash, or nullptr. Inserting into the map may
-    // invalidate the returned pointer.
-    [[nodiscard]] bytes32_t const *cached_hash(NodeId const id) const
-    {
-        auto const it = hashes_.find(id);
-        return (it != hashes_.end() && it->second.hash_valid) ? &it->second.hash
-                                                              : nullptr;
-    }
-
-    // Invalidate without erasing.
-    void drop_hash(NodeId const id)
-    {
-        if (auto const it = hashes_.find(id); it != hashes_.end()) {
-            it->second.hash_valid = false;
-        }
-    }
-
 #if defined(MONAD_ZKVM_ZISK)
+    // Direct slots: blob offset / 4, or fresh id - OVERLAY_BASE.
+    // Blob nodes occupy at least six bytes, so their slots cannot collide.
+    // Slots point to stable entries; untouched ZisK bump memory reads as zero.
+    // Blob ids must first be bounded by get_original/get_current.
+    static constexpr uint64_t FRESH_HASH_SLOTS = uint64_t{1} << 20;
+    // Blob nodes: slot id / 4 holds an entry pointer, or null if absent.
+    NodeCacheEntry **blob_node_cache_{nullptr};
+    // New nodes: slot id - OVERLAY_BASE holds an entry pointer, or null.
+    NodeCacheEntry **new_node_cache_{nullptr};
+    // Next unused entry in the current allocation chunk.
+    NodeCacheEntry *next_cache_entry_{nullptr};
+    // One past the last entry in that chunk; reaching it triggers a refill.
+    NodeCacheEntry *cache_entries_end_{nullptr};
+
+    void refill_hash_pool(size_t entries);
+
     // Keep the 16 children 8-byte aligned, with a zero sentinel before
     // them to stop digest runs during claims. Two padding slots preserve
     // alignment; the second is the sentinel read by the loop.
@@ -581,7 +584,70 @@ class OffsetTrie
     // Claims made during priming, counted in DIGEST_NODE_LEN units per node.
     size_t claimed_bytes_{0};
 
+    NodeCacheEntry *new_hash_entry()
+    {
+        if (MONAD_UNLIKELY(next_cache_entry_ == cache_entries_end_)) {
+            refill_hash_pool(1024);
+        }
+        return next_cache_entry_++;
+    }
+
+    NodeCacheEntry *&hash_slot(NodeId const id) const
+    {
+        uint64_t const node_id = static_cast<uint64_t>(id);
+        if (MONAD_LIKELY(node_id < OVERLAY_BASE)) {
+            return blob_node_cache_[node_id >> 2];
+        }
+        MONAD_ASSERT(node_id - OVERLAY_BASE < FRESH_HASH_SLOTS);
+        return new_node_cache_[node_id - OVERLAY_BASE];
+    }
+#else
+    ankerl::unordered_dense::map<NodeId, NodeCacheEntry, NodeIdHash> hashes_{};
 #endif
+
+    // The cached hash of `id`, or nullptr: absent and present-but-invalid are
+    // the same answer. On the host, an insertion may invalidate the pointer.
+    [[nodiscard]] bytes32_t const *cached_hash(NodeId const id) const
+    {
+#if defined(MONAD_ZKVM_ZISK)
+        NodeCacheEntry const *const cached = hash_slot(id);
+        return (cached != nullptr && cached->hash_stale == 0) ? &cached->hash
+                                                              : nullptr;
+#else
+        auto const it = hashes_.find(id);
+        return (it != hashes_.end() && it->second.hash_valid) ? &it->second.hash
+                                                              : nullptr;
+#endif
+    }
+
+    // Invalidate without erasing.
+    void drop_hash(NodeId const id)
+    {
+#if defined(MONAD_ZKVM_ZISK)
+        if (NodeCacheEntry *const cached = hash_slot(id)) {
+            cached->hash_stale = 1;
+        }
+#else
+        if (auto const it = hashes_.find(id); it != hashes_.end()) {
+            it->second.hash_valid = false;
+        }
+#endif
+    }
+
+    // Cache `digest` as the hash of `id`.
+    void store_hash(NodeId const id, bytes32_t const &digest)
+    {
+#if defined(MONAD_ZKVM_ZISK)
+        NodeCacheEntry *&slot = hash_slot(id);
+        if (slot == nullptr) {
+            slot = new_hash_entry();
+        }
+        slot->hash = digest;
+        slot->hash_stale = 0;
+#else
+        hashes_.insert_or_assign(id, NodeCacheEntry{digest, true});
+#endif
+    }
 
     NodeId next_id_{OVERLAY_BASE}; // fresh-id counter (>= OVERLAY_BASE)
 public:

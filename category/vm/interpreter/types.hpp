@@ -66,15 +66,36 @@
     #endif
 #endif
 
+/**
+ * On ZisK a revision's handlers are laid out in slots, one per opcode
+ * (execute.cpp), and the dispatch computes a handler's address from its opcode
+ * instead of loading it from a table. A handler is compiled into its slot and
+ * nowhere else; a twin a handler tail-calls stays a function of its own
+ * (MONAD_VM_TWIN_CALL), and a handler pointer carries no attribute
+ * (MONAD_VM_POINTER_CALL).
+ */
+#if defined(MONAD_ZKVM_ZISK)
+    #undef MONAD_VM_INSTRUCTION_CALL
+    #define MONAD_VM_INSTRUCTION_CALL __attribute__((always_inline)) inline
+    #define MONAD_VM_INLINE_INSTRUCTION_CALL MONAD_VM_INSTRUCTION_CALL
+    #define MONAD_VM_TWIN_CALL
+    #define MONAD_VM_POINTER_CALL
+#else
+    #define MONAD_VM_INLINE_INSTRUCTION_CALL MONAD_VM_INSTRUCTION_CALL inline
+    #define MONAD_VM_TWIN_CALL MONAD_VM_INSTRUCTION_CALL
+    #define MONAD_VM_POINTER_CALL MONAD_VM_INSTRUCTION_CALL
+#endif
+
 // On ZisK, pass the table base in a seventh register argument to avoid
-// reloading it at each dispatch.
+// reloading it at each dispatch: the slots' base where the revision has them
+// (dispatch_table, instruction_table.hpp), the table's otherwise.
 // All dispatching handlers must use MONAD_VM_TBL_PARAM and MONAD_VM_TBL_ARG;
 // they expand to nothing on other targets.
 #if defined(MONAD_ZKVM_ZISK)
     #define MONAD_VM_TBL_TYPE , void const *
     #define MONAD_VM_TBL_PARAM , void const *itbl
     #define MONAD_VM_TBL_ARG , itbl
-    #define MONAD_VM_TABLE_REF (static_cast<InstrEval const *>(itbl))
+    #define MONAD_VM_TABLE_REF (dispatch_table<traits>(itbl))
 #else
     #define MONAD_VM_TBL_TYPE
     #define MONAD_VM_TBL_PARAM
@@ -86,7 +107,7 @@ namespace monad::vm::interpreter
 {
     // Use void const * to avoid a recursive InstrEval type; dispatch casts it
     // back to a pointer to table entries.
-    using InstrEval = void MONAD_VM_INSTRUCTION_CALL (*)(
+    using InstrEval = void MONAD_VM_POINTER_CALL (*)(
         runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
         int64_t, uint8_t const *MONAD_VM_TBL_TYPE);
 

@@ -1789,6 +1789,9 @@ namespace monad::vm::interpreter
             MONAD_VM_CHECK(PUSH2);
             MONAD_VM_CHECK_AT(JUMPI, 1);
         }
+        // The charge made here, for both arms: folded into the taken arm's
+        // JUMPDEST charge, it would cost the other arm a move.
+        MONAD_VM_LAUNDER(gas_remaining);
         // The condition is the original top, below PUSH2's destination.
         if (*stack_top) {
             if (MONAD_UNLIKELY(
@@ -1998,6 +2001,8 @@ namespace monad::vm::interpreter
                     MONAD_VM_CHECK_AT(PUSH2, 1);
                     MONAD_VM_CHECK_AT(JUMPI, 2);
                 }
+                // The charge made here, as in push2_jumpi.
+                MONAD_VM_LAUNDER(gas_remaining);
                 bool const monad_vm_taken =
                     (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} ==
                      *stack_top);

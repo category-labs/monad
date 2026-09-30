@@ -624,15 +624,14 @@ class OffsetTrie
 
     void refill_hash_pool(size_t entries);
 
-    // The priming sweep encodes each node at the end of its own window, which
-    // a hashed node keeps as its CachedHash::rlp. Windows are carved from
-    // chunks that never move, RLP_WINDOW_STRIDE apart: a multiple of eight,
-    // so a kept RLP starts at the alignment an 8-aligned buffer's copy of it
-    // does, which keeps encode_current's copy on DMA's cheap path.
     // The constructor's copy of the branch it validates and primes: its
     // payload lies at any offset, so reading the children in place crosses a
     // word seven times in eight, and the priming encode copied them again.
-    alignas(8) node_id_wire_t primed_children_[16];
+    // The children are primed_slots_[2..18), 8-aligned, over a slot that
+    // stays zero: a digest run in the claims pass ends on it without a bound
+    // test.
+    alignas(8) node_id_wire_t primed_slots_[2 + 16]{};
+    static constexpr size_t PRIMED_CHILDREN = 2;
 
     // The constructor's claim marks, for the branches whose priming encode
     // claims their children, and the claims those encodes made, in the
@@ -640,6 +639,11 @@ class OffsetTrie
     unsigned char *claim_marks_{nullptr};
     size_t claimed_bytes_{0};
 
+    // The priming sweep encodes each node at the end of its own window, which
+    // a hashed node keeps as its CachedHash::rlp. Windows are carved from
+    // chunks that never move, RLP_WINDOW_STRIDE apart: a multiple of eight,
+    // so a kept RLP starts at the alignment an 8-aligned buffer's copy of it
+    // does, which keeps encode_current's copy on DMA's cheap path.
     static constexpr size_t RLP_WINDOW_STRIDE = 704;
     static_assert(RLP_WINDOW_STRIDE >= MAX_NODE_RLP && RLP_WINDOW_STRIDE % 8 == 0);
     unsigned char *rlp_window_{nullptr};
@@ -960,6 +964,8 @@ private:
     // children the caller already holds; otherwise the branch copies its own.
     // `claims`: the priming encode of a branch the constructor has not
     // validated claims its children itself, as it first reads them (ZisK).
+    // Its `children` are the constructor's copy, whose slot below the first
+    // is zero.
     template <bool priming_pass = false, bool claims = false>
     node_rlp_span encode_rlp(
         NodeViewBase node, node_rlp_span dest,

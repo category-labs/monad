@@ -37,6 +37,7 @@
 #include <cstdint>
 #include <cstring>
 #include <new>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -1199,117 +1200,129 @@ void OffsetTrie::fold_ext_node_path_maybe(
 // owning `p` in the ExtView arm stays: that one views the overlay, which the
 // put_*s below it move.
 std::pair<NodeId, NibblesView>
-OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
+OffsetTrie::upsert_node(NodeId id, NibblesView key)
 {
-    // dirtied along the descent
-    [[maybe_unused]] CachedHash *const self = drop_hash(id);
-    // Leaf split/overwrite, shared by both leaf types. Only re-emitting the
-    // displaced old leaf differs (`reput_old`): a storage leaf keeps its
-    // value, an account leaf its fields and storage edge. `reput_old` runs
-    // ahead of every other put_* here, which is what lets it still read the
-    // displaced leaf's bytes.
-    auto const split_leaf =
-        [&](NibblesView const path,
-            auto const &reput_old) -> std::pair<NodeId, NibblesView> {
-        if (path == key) { // exact match -> overwrite (reuse id + its path)
-            return {id, key};
-        }
-        // old leaf + new key meet at a fresh branch, wrapped in an
-        // extension for their shared prefix.
-        unsigned const cp = common_prefix_length(path, key);
-        MONAD_ASSERT(cp < path.nibble_size() && cp < key.nibble_size());
-        std::array<node_id_wire_t, 16> children{};
-        children[path.get(cp)] =
-            to_node_id_wire_t(reput_old(path.substr(cp + 1)));
-        NodeId const leaf = fresh_id();
-        children[key.get(cp)] = to_node_id_wire_t(leaf);
-        if (cp > 0) {
-            NodeId const branch = put_branch(NULL_ID, children);
-            put_ext(id, key.substr(0, cp), branch);
-        }
-        else {
-            put_branch(id, children);
-        }
-        return {leaf, key.substr(cp + 1)};
-    };
-
-    return match(
-        get_current(id),
-        Cases{
-            [&](NullView) -> std::pair<NodeId, NibblesView> {
-                // Empty slot (or an empty trie's root): a fresh leaf
-                // holding the whole remaining key, which the caller
-                // materialises.
-                return {fresh_id(), key};
-            },
-            [&](StorageLeafView l) -> std::pair<NodeId, NibblesView> {
-                bytes32_t const v = l.value();
-                return split_leaf(l.path(), [&](NibblesView const np) {
-                    return put_storage(NULL_ID, np, v);
-                });
-            },
-            [&](AccountLeafView l) -> std::pair<NodeId, NibblesView> {
-                return split_leaf(l.path(), [&, l](NibblesView const np) {
-                    return clone_acct(NULL_ID, l, np);
-                });
-            },
-            [&](ExtView e) -> std::pair<NodeId, NibblesView> {
-                Nibbles const p{e.path()};
-                NibblesView const path{p};
-                NodeId child = e.child();
-                unsigned const cp = common_prefix_length(path, key);
-                if (cp == path.nibble_size()) { // full prefix -> descend
-#if defined(MONAD_ZKVM_ZISK)
-                    mark_dirty(self, 0);
-#endif
-                    return upsert_node(child, key.substr(cp));
-                }
-                // diverge mid-extension
-                std::array<node_id_wire_t, 16> children{};
-                if (cp + 1 < path.nibble_size()) {
-                    child = put_ext(NULL_ID, path.substr(cp + 1), child);
-                }
-                children[path.get(cp)] = to_node_id_wire_t(child);
-
-                NodeId const leaf = fresh_id();
-                children[key.get(cp)] = to_node_id_wire_t(leaf);
-
-                if (cp > 0) {
-                    NodeId const branch = put_branch(NULL_ID, children);
-                    put_ext(id, key.substr(0, cp), branch);
-                }
-                else {
-                    put_branch(id, children);
-                }
-                return {leaf, key.substr(cp + 1)};
-            },
-            [&](BranchView b) -> std::pair<NodeId, NibblesView> {
-                MONAD_ASSERT(key.nibble_size() > 0); // never ends at branch
-                unsigned const nib = key.get(0);
-                NibblesView rest = key;
-                rest.drop_front1();
-                // After drop_front1, as in find_original: read before it, the
-                // child is widened past its branch.
-                NodeId const child = b.child(nib);
-                if (child != NULL_ID) {
-#if defined(MONAD_ZKVM_ZISK)
-                    mark_dirty(self, nib);
-#endif
-                    return upsert_node(child, rest);
-                }
-                // A previously-empty slot fills, so the branch is rewritten
-                // and its sixteen children are needed. Read them before
-                // recursing.
-                std::array<node_id_wire_t, 16> children = b.children();
-                auto const result = upsert_node(NULL_ID, rest);
-                children[nib] = to_node_id_wire_t(result.first);
+    using Result = std::pair<NodeId, NibblesView>;
+    // A descent to an existing child -- through a branch, or through an
+    // extension whose whole path the key starts with -- is the next turn with
+    // the child's id and the rest of the key: a call cost a frame a level.
+    for (;;) {
+        // dirtied along the descent
+        [[maybe_unused]] CachedHash *const self = drop_hash(id);
+        // Leaf split/overwrite, shared by both leaf types. Only re-emitting the
+        // displaced old leaf differs (`reput_old`): a storage leaf keeps its
+        // value, an account leaf its fields and storage edge. `reput_old` runs
+        // ahead of every other put_* here, which is what lets it still read the
+        // displaced leaf's bytes.
+        auto const split_leaf = [&](NibblesView const path,
+                                    auto const &reput_old) -> Result {
+            if (path == key) { // exact match -> overwrite (reuse id + its path)
+                return {id, key};
+            }
+            // old leaf + new key meet at a fresh branch, wrapped in an
+            // extension for their shared prefix.
+            unsigned const cp = common_prefix_length(path, key);
+            MONAD_ASSERT(cp < path.nibble_size() && cp < key.nibble_size());
+            std::array<node_id_wire_t, 16> children{};
+            children[path.get(cp)] =
+                to_node_id_wire_t(reput_old(path.substr(cp + 1)));
+            NodeId const leaf = fresh_id();
+            children[key.get(cp)] = to_node_id_wire_t(leaf);
+            if (cp > 0) {
+                NodeId const branch = put_branch(NULL_ID, children);
+                put_ext(id, key.substr(0, cp), branch);
+            }
+            else {
                 put_branch(id, children);
-                return result;
-            },
-            [&](DigestView) -> std::pair<NodeId, NibblesView> {
-                MONAD_ABORT("incomplete witness: upsert hit a Digest");
-            },
-        });
+            }
+            return {leaf, key.substr(cp + 1)};
+        };
+
+        std::optional<Result> const done = match(
+            get_current(id),
+            Cases{
+                [&](NullView) -> std::optional<Result> {
+                    // Empty slot (or an empty trie's root): a fresh leaf
+                    // holding the whole remaining key, which the caller
+                    // materialises.
+                    return Result{fresh_id(), key};
+                },
+                [&](StorageLeafView l) -> std::optional<Result> {
+                    bytes32_t const v = l.value();
+                    return split_leaf(l.path(), [&](NibblesView const np) {
+                        return put_storage(NULL_ID, np, v);
+                    });
+                },
+                [&](AccountLeafView l) -> std::optional<Result> {
+                    return split_leaf(l.path(), [&, l](NibblesView const np) {
+                        return clone_acct(NULL_ID, l, np);
+                    });
+                },
+                [&](ExtView e) -> std::optional<Result> {
+                    Nibbles const p{e.path()};
+                    NibblesView const path{p};
+                    NodeId child = e.child();
+                    unsigned const cp = common_prefix_length(path, key);
+                    if (cp == path.nibble_size()) { // full prefix -> descend
+#if defined(MONAD_ZKVM_ZISK)
+                        mark_dirty(self, 0);
+#endif
+                        key = key.substr(cp);
+                        id = child;
+                        return std::nullopt;
+                    }
+                    // diverge mid-extension
+                    std::array<node_id_wire_t, 16> children{};
+                    if (cp + 1 < path.nibble_size()) {
+                        child = put_ext(NULL_ID, path.substr(cp + 1), child);
+                    }
+                    children[path.get(cp)] = to_node_id_wire_t(child);
+
+                    NodeId const leaf = fresh_id();
+                    children[key.get(cp)] = to_node_id_wire_t(leaf);
+
+                    if (cp > 0) {
+                        NodeId const branch = put_branch(NULL_ID, children);
+                        put_ext(id, key.substr(0, cp), branch);
+                    }
+                    else {
+                        put_branch(id, children);
+                    }
+                    return Result{leaf, key.substr(cp + 1)};
+                },
+                [&](BranchView b) -> std::optional<Result> {
+                    MONAD_ASSERT(key.nibble_size() > 0); // never ends at branch
+                    unsigned const nib = key.get(0);
+                    NibblesView rest = key;
+                    rest.drop_front1();
+                    // After drop_front1, as in find_original: read before it,
+                    // the child is widened past its branch.
+                    NodeId const child = b.child(nib);
+                    if (child != NULL_ID) {
+#if defined(MONAD_ZKVM_ZISK)
+                        mark_dirty(self, nib);
+#endif
+                        key = rest;
+                        id = child;
+                        return std::nullopt;
+                    }
+                    // A previously-empty slot fills, so the branch is
+                    // rewritten and its sixteen children are needed. Read them
+                    // before recursing.
+                    std::array<node_id_wire_t, 16> children = b.children();
+                    auto const result = upsert_node(NULL_ID, rest);
+                    children[nib] = to_node_id_wire_t(result.first);
+                    put_branch(id, children);
+                    return result;
+                },
+                [&](DigestView) -> std::optional<Result> {
+                    MONAD_ABORT("incomplete witness: upsert hit a Digest");
+                },
+            });
+        if (done.has_value()) {
+            return *done;
+        }
+    }
 }
 
 OffsetTrie::EraseResult

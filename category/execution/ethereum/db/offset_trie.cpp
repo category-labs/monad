@@ -387,21 +387,26 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
 {
     NodeViewBase found = empty();
     while (id != NULL_ID) {
+        NodeViewBase const node = get_original(id);
+        // Most levels are branches: tested first, where the match's compare
+        // tree reaches them third.
+        if (MONAD_LIKELY(node.tag() == BRANCH)) {
+            if (key.nibble_size() == 0) { // no value at a branch
+                break;
+            }
+            // The child is read after drop_front1, not between it and get(0):
+            // gcc copies that stretch into both arms of the nibble's parity
+            // test, and a child read there is widened where the arms meet, a
+            // lw and two shifts for one lwu.
+            unsigned const i = key.get(0);
+            key.drop_front1();
+            id = BranchView{node}.child(i);
+            continue;
+        }
         id = match(
-            get_original(id),
+            node,
             Cases{
-                [&](BranchView b) -> NodeId {
-                    if (key.nibble_size() == 0) { // no value at a branch
-                        return NULL_ID;
-                    }
-                    // The child is read after drop_front1, not between it and
-                    // get(0): gcc copies that stretch into both arms of the
-                    // nibble's parity test, and a child read there is widened
-                    // where the arms meet, a lw and two shifts for one lwu.
-                    unsigned const i = key.get(0);
-                    key.drop_front1();
-                    return b.child(i);
-                },
+                [](BranchView) -> NodeId { std::unreachable(); },
                 [&](ExtView e) -> NodeId {
                     NibblesView const ep = e.path();
                     if (!key.starts_with(ep)) {

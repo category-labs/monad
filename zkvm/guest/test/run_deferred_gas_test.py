@@ -18,7 +18,7 @@ CASES = [
     "BLOCKHASH gas boundary", "SELFBALANCE gas boundary", "TLOAD gas boundary",
     "stack overflow", "CALL", "pure chain gas sweep", "exact-gas RETURN",
     "exact-gas REVERT", "affordable host reads", "dynamic effects",
-    "selector chain gas sweep",
+    "selector chain gas sweep", "mask widths and gas boundaries",
 ]
 
 
@@ -48,7 +48,7 @@ def main():
         failures = [name for i, name in enumerate(state_cases) if state_mask & (1 << i)]
         raise SystemExit(f"FAIL State mask={state_mask:#x}: {', '.join(failures)}")
     print("PASS: 6 State rollback checks (5 production calls)")
-    print(f"PASS: {len(CASES)} gas boundary groups (204 interpreter executions)")
+    print(f"PASS: {len(CASES)} gas boundary groups (1228 interpreter executions)")
 
 
 if __name__ == "__main__":

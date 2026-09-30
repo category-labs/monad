@@ -447,11 +447,11 @@ namespace monad::vm::interpreter
         runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
         int64_t, uint8_t const *MONAD_VM_TBL_TYPE);
 
-    MONAD_VM_INSTRUCTION_CALL inline void stop(
+    MONAD_VM_INLINE_INSTRUCTION_CALL void stop(
         runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
         int64_t, uint8_t const *MONAD_VM_TBL_TYPE);
 
-    MONAD_VM_INSTRUCTION_CALL inline void invalid(
+    MONAD_VM_INLINE_INSTRUCTION_CALL void invalid(
         runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
         int64_t, uint8_t const *MONAD_VM_TBL_TYPE);
 }

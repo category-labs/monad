@@ -400,8 +400,9 @@ generates a corpus at scale instead: a genesis of `--accounts` holders, then
     --shape uniform --sweep 50,200,500,2000,5000
 
 # The same two cases as the document describes them, over wrapped ERC-20
-# tokens: payment-versus-payment between banks, and a payroll platform with
-# an earn vault and three exits. See "The document's flows" below.
+# tokens: payment-versus-payment between banks in five currencies, and a
+# payroll platform with an earn vault and three exits. See "The document's
+# flows" below; --currencies 2 is the document's example, one pair.
 ./build/zkvm/guest/monad-zkvm-corpus-gen --out /tmp/wholesale-cbdc \
     --preset wholesale-cbdc --blocks 200 --sk <64 hex> --salt <64 hex>
 ./build/zkvm/guest/monad-zkvm-corpus-gen --out /tmp/worker-payouts \
@@ -507,13 +508,13 @@ for, eligibility and both legs or neither, on the checked-in bytecode.
 
 | | `wholesale-cbdc` | `worker-payouts` |
 |---|---|---|
-| participants | 500 banks: 50 intermediaries holding both currencies, 225 in each | 1,000,000 contractors, 4,096 of whom send; 1,000 businesses; the platform |
-| a block | settles the last block's 10 payments and proposes 10; one bank redeems reserves to the L1 | admits 10 contractors; pays 400 in 10 batches of 40, each funded by a business; 25 deposits into the vault and 25 withdrawals; 50 exits, by card, by redemption and to the L1 |
+| participants | 500 banks over five currencies: 50 intermediaries holding all five, 90 in each | 1,000,000 contractors, 4,096 of whom send; 1,000 businesses; the platform |
+| a block | settles the last block's 10 payments and proposes 10; one bank redeems reserves to the L1, each currency in turn | admits 10 contractors; pays 400 in 10 batches of 40, each funded by a business; 25 deposits into the vault and 25 withdrawals; 50 exits, by card, by redemption and to the L1 |
 | transactions | 21 | 130 |
 | gas, median | 1.25 M | 9.60 M |
-| witness, median (min-max) | 112 KB (25-165) | 919 KB (860-981) |
-| account / storage leaves touched | 25 / 75 | 115 / 616 |
-| digests per leaf | 6.6 | 25.4 |
+| witness, median (min-max) | 114 KB (25-169) | 919 KB (860-981) |
+| account / storage leaves touched | 28 / 75 | 115 / 616 |
+| digests per leaf | 6.9 | 25.4 |
 | corpus size | 22 MB | 176 MB |
 
 A contractor who only receives has a balance slot and no account: nothing it
@@ -522,6 +523,21 @@ holds only the few thousand who send -- the storage-trie variant the native
 presets leave out. Both corpora chain like the native ones, all 201 post-state
 roots of each are distinct, and every L2 block after the first carries a
 non-zero anchor.
+
+**Five currencies, because the platforms are that size.** The document's
+example is one payment between two currencies, not the size of the platform --
+it names CLS's eighteen as the reach today's settlement has -- and the
+multi-currency central bank projects settle four to seven: mBridge five, Agorá
+seven. `--currencies` sets the count. Each currency is a wrapped token of its
+own, held by its own banks and by every intermediary. A payment's pair is drawn
+with weight 1/((a+1)(b+1)), so the first currency is on one side of 68 % of the
+payments and three corridors carry 58 % of them, the way a hub currency does,
+and each pair's payments run both ways. Five cost almost nothing more than two:
+block for block, `--currencies 2` has a 1.9 % smaller witness, and 0.9 % less
+of the cost above the floor, 0.247 G against 0.249 G. Three more token
+contracts' accounts in each block, against storage tries a little smaller:
+what a wholesale block costs is its payments, not how many currencies they are
+in.
 
 #### What the dispersion is worth
 
@@ -607,10 +623,10 @@ what licenses reading the L2 ELF as the official guest plus the L2.
 
 | | `wholesale` | `payouts` | `wholesale-cbdc` | `worker-payouts` |
 |---|---:|---:|---:|---:|
-| steps, L2 | 0.72 M | 12.97 M | 1.62 M | 12.52 M |
-| COST, L2 | 0.413 G | 2.510 G | 0.534 G | 2.284 G |
+| steps, L2 | 0.72 M | 12.97 M | 1.63 M | 12.52 M |
+| COST, L2 | 0.413 G | 2.510 G | 0.536 G | 2.284 G |
 | of which fixed | 0.287 G | 0.287 G | 0.287 G | 0.287 G |
-| COST, plaintext | 0.403 G | 2.286 G | 0.521 G | 2.210 G |
+| COST, plaintext | 0.403 G | 2.286 G | 0.523 G | 2.210 G |
 | share of a median mainnet block | 4 % | 26 % | 6 % | 24 % |
 
 **A fixed 287,309,824 of it is the same on every block**: `Base`, ZisK's ROM
@@ -644,15 +660,15 @@ forty transfers -- and the law misses the part of the cost above the floor by
 38 % on `wholesale-cbdc` and 44 % on `worker-payouts`. Gas and witness bytes
 carry all four mixes: over their 800 workload blocks on the L2 arm,
 
-    COST - base = 144 x gas + 673 x witness_bytes - 3.2 M        R2 0.99998
+    COST - base = 144 x gas + 672 x witness_bytes - 2.7 M        R2 0.99998
 
 within 0.4 % on every block of both payout presets, and a median of -4 % and
 +2 % on the two wholesale ones, whose blocks are small enough for the constant
-to show. Outside the floor the token presets spend 197 and 208 per gas, inside
+to show. Outside the floor the token presets spend 199 and 208 per gas, inside
 the native range.
 
 Settling payment versus payment doubles a wholesale block above the floor,
-0.247 G against 0.126 G: about forty banks either way, but reached through two
+0.249 G against 0.126 G: about forty banks either way, but reached through two
 tokens' storage and a settlement contract rather than as account leaves.
 Payroll goes the other way. `worker-payouts` touches as many contractors as
 `payouts` touches holders and costs 9 % less, 2.284 G against 2.510 G, because
@@ -800,8 +816,8 @@ measures: the official plaintext profile, and the L2 arm as a dev build carrying
 the same six levers and the nine deployment values the tests use. Every witness
 the scenarios and the four presets generate passes, on both arms: the guest
 publishes exactly what the manifest recorded, the block hash on the plaintext
-arm and the four values on the L2 one, including the 821 L2 blocks whose anchor
-is non-zero.
+arm and the four values on the L2 one, including the 1,021 L2 blocks whose
+anchor is non-zero.
 
 | | plaintext | L2 |
 |---|---:|---:|
@@ -809,7 +825,8 @@ is non-zero.
 | `wholesale`, 500 accounts | 201 / 201 | 201 / 201 |
 | `payouts`, 1,000,000 accounts | 201 / 201 | 201 / 201 |
 | the dispersion sweep, 50 to 5,000 distinct | 25 / 25 | 25 / 25 |
-| `wholesale-cbdc`, 500 banks | 201 / 201 | 201 / 201 |
+| `wholesale-cbdc`, 500 banks in five currencies | 201 / 201 | 201 / 201 |
+| `wholesale-cbdc --currencies 2` | 201 / 201 | 201 / 201 |
 | `worker-payouts`, 1,000,000 contractors | 201 / 201 | 201 / 201 |
 
 What the L2 adds to each block is in

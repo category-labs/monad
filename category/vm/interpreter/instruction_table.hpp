@@ -2032,6 +2032,36 @@ namespace monad::vm::interpreter
                     gas_remaining,
                     instr_ptr MONAD_VM_TBL_ARG);
             }
+            // The dispatch's binary search: DUP1 PUSH4 <pivot> GT PUSH2 <dst>
+            // JUMPI, taken when the selector is below the pivot.
+            if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH4) &&
+                *(instr_ptr + 6) == static_cast<std::uint8_t>(GT) &&
+                *(instr_ptr + 7) == static_cast<std::uint8_t>(PUSH2) &&
+                *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI)) {
+                static constexpr auto monad_vm_req =
+                    fused_requirements<traits, DUP1, PUSH4, GT, PUSH2, JUMPI>();
+                if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
+                    gas_remaining += monad_vm_req.gas;
+                    MONAD_VM_CHECK(DUP1);
+                    MONAD_VM_CHECK_AT(PUSH4, 1);
+                    MONAD_VM_CHECK_AT(GT, 2);
+                    MONAD_VM_CHECK_AT(PUSH2, 1);
+                    MONAD_VM_CHECK_AT(JUMPI, 2);
+                }
+                MONAD_VM_LAUNDER(gas_remaining);
+                bool const monad_vm_taken =
+                    (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} >
+                     *stack_top);
+                instr_ptr = fused_branch(
+                    ctx, instr_ptr + 6, monad_vm_taken, gas_remaining);
+                MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
         }
 #endif
 #if defined(MONAD_ZKVM_ZISK)

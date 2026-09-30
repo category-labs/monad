@@ -1747,6 +1747,9 @@ namespace monad::vm::interpreter
                 ctx.exit(Error);
             }
             instr_ptr = MONAD_VM_ANALYSIS.code() + monad_vm_dst + 1;
+            // Formed where it is born: gcc would otherwise copy the
+            // destination into a5 first, to add the base to it there.
+            MONAD_VM_LAUNDER(instr_ptr);
         }
         else {
             gas_remaining += monad_vm_req.gas;

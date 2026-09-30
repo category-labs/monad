@@ -96,6 +96,14 @@ struct node_rlp_span : private std::span<unsigned char>
         return std::span<unsigned char>::data();
     }
 
+    // `b` written just before the RLP already there, without back()'s room
+    // test: for a caller whose whole output is bounded under Capacity.
+    node_rlp_span prepend_unchecked(unsigned char const b) const
+    {
+        std::span<unsigned char>::data()[size() - 1] = b;
+        return node_rlp_span{std::span<unsigned char>::first(size() - 1)};
+    }
+
     size_t rlp_size() const
     {
         return Capacity - size();

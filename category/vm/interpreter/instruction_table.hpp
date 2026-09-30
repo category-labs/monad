@@ -2005,13 +2005,39 @@ namespace monad::vm::interpreter
                 }
                 // Keep the gas deduction before the branch, as in push2_jumpi.
                 MONAD_VM_LAUNDER(gas_remaining);
-                bool const monad_vm_taken =
-                    (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} ==
-                     *stack_top);
-                // fused_branch expects a pointer to EQ, followed by
-                // PUSH2 <dst> JUMPI.
-                instr_ptr = fused_branch(
-                    ctx, instr_ptr + 6, monad_vm_taken, gas_remaining);
+                // Byte offsets within each 11-byte selector test:
+                //   0     1      2..5       6   7      8..9         10
+                //   DUP1  PUSH4  [selector] EQ  PUSH2  [destination] JUMPI
+                // Compare the selector at +2 with the value on the stack.
+                // A failed test preserves that value for the next test.
+                while (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} !=
+                       *stack_top) {
+                    instr_ptr += 11; // Skip the entire failed test.
+                    // Continue the loop only if the next bytes form another
+                    // selector test; otherwise leave via normal dispatch.
+                    // Tail padding makes these lookahead reads safe.
+                    if (*instr_ptr != static_cast<std::uint8_t>(DUP1) ||
+                        *(instr_ptr + 1) != static_cast<std::uint8_t>(PUSH4) ||
+                        *(instr_ptr + 6) != static_cast<std::uint8_t>(EQ) ||
+                        *(instr_ptr + 7) != static_cast<std::uint8_t>(PUSH2) ||
+                        *(instr_ptr + 10) != static_cast<std::uint8_t>(JUMPI)) {
+                        MONAD_VM_DISPATCH(0, 0, *instr_ptr);
+                    }
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+                    // The first test validated the unchanged stack.
+                    MONAD_VM_CHARGE(DUP1);
+                    MONAD_VM_CHARGE(PUSH4);
+                    MONAD_VM_CHARGE(EQ);
+                    MONAD_VM_CHARGE(PUSH2);
+                    MONAD_VM_CHARGE(JUMPI);
+    #else
+                    gas_remaining -= monad_vm_req.gas;
+    #endif
+                }
+                // A selector matched: take its jump. fused_branch expects
+                // the EQ at +6, followed by PUSH2 <dst> JUMPI.
+                instr_ptr =
+                    fused_branch(ctx, instr_ptr + 6, true, gas_remaining);
                 MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
                     ctx,
                     MONAD_VM_DISPATCH_STATE_ARG,

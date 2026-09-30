@@ -104,6 +104,14 @@ struct node_rlp_span : private std::span<unsigned char>
         return node_rlp_span{std::span<unsigned char>::first(size() - 1)};
     }
 
+    // The same for `n` bytes from `src`.
+    node_rlp_span
+    prepend_unchecked(unsigned char const *const src, size_t const n) const
+    {
+        std::memcpy(std::span<unsigned char>::data() + size() - n, src, n);
+        return node_rlp_span{std::span<unsigned char>::first(size() - n)};
+    }
+
     size_t rlp_size() const
     {
         return Capacity - size();

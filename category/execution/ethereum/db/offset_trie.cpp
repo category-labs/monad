@@ -742,15 +742,29 @@ OffsetTrie::encode_rlp(
     return match(
         node,
         Cases{
-            [&, wrap](BranchView b) -> node_rlp_span {
-                dest.back() = zx(0x80); // empty branch value, last element
-                dest = dest.shrink(1);
+            [&](BranchView b) -> node_rlp_span {
+                // The arm's own writes skip the room test: a span is only ever
+                // made whole, over MAX_NODE_RLP bytes, and a branch's RLP is
+                // 532 at most -- a payload of 17 to 529 bytes, a header of 1
+                // to 3.
+                static_assert(3 + 16 * HASH_RLP_LEN + 1 <= MAX_NODE_RLP);
+                // The empty value and an empty child's byte, zero-extended
+                // once and out of the loop: zx inside it copies the hoisted
+                // constant into a new register every turn. Not const: a const
+                // byte with a constant initialiser is a constant itself, and
+                // skips zx's barrier.
+                // NOLINTNEXTLINE(misc-const-correctness)
+                unsigned char empty_rlp = zx(0x80);
+                // empty branch value, last element
+                dest = dest.prepend_unchecked(empty_rlp);
 #if defined(MONAD_ZKVM_ZISK)
                 alignas(8) node_id_wire_t own[16];
                 node_id_wire_t const *children = children_in;
-                if (children == nullptr) {
-                    std::memcpy(own, b.payload(), sizeof(own));
-                    children = own;
+                if constexpr (!claims) {
+                    if (children == nullptr) {
+                        std::memcpy(own, b.payload(), sizeof(own));
+                        children = own;
+                    }
                 }
 #else
                 std::array<node_id_wire_t, 16> const children = b.children();
@@ -805,13 +819,6 @@ OffsetTrie::encode_rlp(
                 // Decremented after the test, not in it: `c-- != first` tests
                 // the value before the decrement, which gcc keeps in a copy
                 // every turn.
-                //
-                // An empty child's byte, zero-extended once and out of the
-                // loop: zx inside it copies the hoisted constant into a new
-                // register every turn. Not const: a const byte with a constant
-                // initialiser is a constant itself, and skips zx's barrier.
-                // NOLINTNEXTLINE(misc-const-correctness)
-                unsigned char empty_rlp = zx(0x80);
 #if defined(MONAD_ZKVM_ZISK)
                 node_id_wire_t const *const first = children;
                 for (node_id_wire_t const *c = first + 16; c != first;) {
@@ -829,11 +836,6 @@ OffsetTrie::encode_rlp(
 #endif
                     uint64_t const w = *c;
                     if (w == 0) {
-                        // An empty child needs no room test: a span is only
-                        // ever made whole, over MAX_NODE_RLP bytes, and a
-                        // branch's RLP is 532 at most.
-                        static_assert(
-                            3 + 16 * HASH_RLP_LEN + 1 <= MAX_NODE_RLP);
                         dest = dest.prepend_unchecked(empty_rlp);
                         continue;
                     }
@@ -864,7 +866,9 @@ OffsetTrie::encode_rlp(
                             // entry the constructor makes is valid.
                             if (CachedHash const *const e =
                                     blob_hash_slots_[w >> 2]) {
-                                dest = encode_rlp(e->h, dest);
+                                dest = dest.prepend_unchecked(
+                                               e->h.bytes, KECCAK256_SIZE)
+                                           .prepend_unchecked(zx(0xa0));
                             }
                             else {
                                 dest = child_ref_compute<true>(
@@ -967,7 +971,18 @@ OffsetTrie::encode_rlp(
                     claimed_bytes_ += claimed;
                 }
 #endif
-                return wrap(dest);
+                // The list header, as wrap writes it, without its tests.
+                size_t const payload_len = dest.rlp_size();
+                if (payload_len <= 55) {
+                    return dest.prepend_unchecked(zx(0xC0 + payload_len));
+                }
+                if (payload_len <= 0xFF) {
+                    return dest.prepend_unchecked(zx(payload_len))
+                        .prepend_unchecked(zx(0xF8));
+                }
+                return dest.prepend_unchecked(zx(payload_len & 0xFF))
+                    .prepend_unchecked(zx(payload_len >> 8))
+                    .prepend_unchecked(zx(0xF9));
             },
             [&, encode_path, wrap](ExtView e) -> node_rlp_span {
                 // child ref — last element

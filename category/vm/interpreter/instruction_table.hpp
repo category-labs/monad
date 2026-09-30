@@ -224,6 +224,19 @@ namespace monad::vm::interpreter
      ((REQ).max_growth == 0 ||                                                 \
       (stack_top) < MONAD_VM_STACK_LIMIT + (1 - (REQ).max_growth)))
 
+// MONAD_VM_FUSED_CHARGE for a sequence of pure opcodes (gas_tested): on ZisK
+// its charge leaves the sign of the count to the next checkpoint.
+#if defined(MONAD_ZKVM_ZISK)
+    #define MONAD_VM_FUSED_CHARGE_PURE(REQ)                                    \
+        ((gas_remaining -= (REQ).gas, true) &&                                 \
+         ::monad::vm::interpreter::stack_holds<(REQ).min_required>(            \
+             stack_top, stack_bottom) &&                                       \
+         ((REQ).max_growth == 0 ||                                             \
+          (stack_top) < MONAD_VM_STACK_LIMIT + (1 - (REQ).max_growth)))
+#else
+    #define MONAD_VM_FUSED_CHARGE_PURE(REQ) MONAD_VM_FUSED_CHARGE(REQ)
+#endif
+
 // Dispatch using OP2, the opcode already read at instr_ptr[1].
 // EQ/ISZERO's stack writes prevent GCC from reusing that load itself;
 // reusing it explicitly is safe because bytecode is immutable.
@@ -1841,7 +1854,7 @@ namespace monad::vm::interpreter
                             fused_requirements<traits, PUSH1, SAR>(),
                     "PUSH1 fusion mask holds followers with unequal "
                     "requirements; aggregate them per follower");
-                if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE(monad_vm_req))) {
+                if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
                     gas_remaining += monad_vm_req.gas;
                     MONAD_VM_CHECK(PUSH1);
                     MONAD_VM_CHECK_AT(ADD, 1);
@@ -1884,7 +1897,8 @@ namespace monad::vm::interpreter
             if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH1)) {
                 static constexpr auto monad_vm_reqp =
                     fused_requirements<traits, PUSH1, PUSH1>();
-                if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE(monad_vm_reqp))) {
+                if (MONAD_UNLIKELY(
+                        !MONAD_VM_FUSED_CHARGE_PURE(monad_vm_reqp))) {
                     gas_remaining += monad_vm_reqp.gas;
                     MONAD_VM_CHECK(PUSH1);
                     MONAD_VM_CHECK_AT(PUSH1, 1);
@@ -2387,4 +2401,5 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_CHECK_AT
 #undef MONAD_VM_CHARGE
 #undef MONAD_VM_FUSED_CHARGE
+#undef MONAD_VM_FUSED_CHARGE_PURE
 #undef MONAD_VM_CHECKED_RUNTIME_CALL

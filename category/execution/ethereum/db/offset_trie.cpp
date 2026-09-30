@@ -184,7 +184,9 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         node_offsets[child_offset] = 0;
         unclaimed -= DIGEST_NODE_LEN;
     };
+#if !defined(MONAD_ZKVM_ZISK)
     unsigned char rlp_buf[MAX_NODE_RLP];
+#endif
 
     while (node.bytes() < region_end) {
         // In range by the loop's own condition: the walk runs while
@@ -241,8 +243,20 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                 [](NullView) {},
                 [](DigestView) {},
                 [&](auto) {
+#if defined(MONAD_ZKVM_ZISK)
+                    // Encoded where a hashed node keeps it: see
+                    // CachedHash::rlp. An inlined node's window is reused.
+                    if (MONAD_UNLIKELY(rlp_window_ == rlp_windows_end_)) {
+                        refill_rlp_windows();
+                    }
+                    auto &window = *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(
+                        rlp_window_);
+                    node_rlp_span const rem = encode_rlp<true>(
+                        node, node_rlp_span{window}); // priming pass
+#else
                     node_rlp_span const rem = encode_rlp<true>(
                         node, node_rlp_span{rlp_buf}); // priming pass
+#endif
                     // Only hash-referenced nodes (canonical RLP >= 32 B)
                     // are cached; smaller nodes are inlined by their
                     // parent, so caching their hash would make child_ref
@@ -256,7 +270,10 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                         monad_keccak256(
                             rem.rlp_data(), rem.rlp_size(), e->h.bytes);
                         e->valid = true;
+                        e->rlp = rem.rlp_data();
+                        e->rlp_len = rem.rlp_size();
                         blob_hash_slots_[node_offset >> 2] = e;
+                        rlp_window_ += RLP_WINDOW_STRIDE;
 #else
                         monad_keccak256(
                             rem.rlp_data(), rem.rlp_size(), ch.h.bytes);
@@ -343,8 +360,8 @@ bytes32_t OffsetTrie::hash(NodeId const id)
                     return *hit;
                 }
 
-                unsigned char buf[MAX_NODE_RLP];
-                node_rlp_span const rem = encode_rlp(node, node_rlp_span{buf});
+                alignas(8) unsigned char buf[MAX_NODE_RLP];
+                node_rlp_span const rem = encode_current(id, node, buf);
                 MONAD_ASSERT(rem.rlp_size() >= 32);
                 bytes32_t h;
                 // RLP occupies the tail: [rem.end(), buf_end).
@@ -369,15 +386,124 @@ void OffsetTrie::refill_hash_pool(size_t const entries)
         static_cast<CachedHash *>(::operator new(entries * sizeof(CachedHash)));
     hash_pool_end_ = hash_pool_ + entries;
 }
+
+void OffsetTrie::refill_rlp_windows()
+{
+    // Never freed, and never moved: a kept RLP stays where its entry says.
+    constexpr size_t WINDOWS = 2048;
+    rlp_window_ = static_cast<unsigned char *>(
+        ::operator new(WINDOWS * RLP_WINDOW_STRIDE));
+    rlp_windows_end_ = rlp_window_ + WINDOWS * RLP_WINDOW_STRIDE;
+}
+
+namespace
+{
+    // The length of a node's RLP list header: its payload is under 2^16.
+    constexpr size_t rlp_list_header_len(unsigned char const b)
+    {
+        return b <= 0xf7 ? 1 : static_cast<size_t>(b - 0xf6);
+    }
+
+    // A child ref: the empty string, a 32-byte hash, or an inlined node,
+    // which is under 32 bytes and so a short list.
+    constexpr size_t rlp_ref_len(unsigned char const b)
+    {
+        return b == 0x80 ? 1
+               : b == 0xa0 ? 1 + KECCAK256_SIZE
+                           : 1 + static_cast<size_t>(b - 0xc0);
+    }
+
+    // A compact path: a single byte that is its own RLP, or a short string.
+    constexpr size_t rlp_path_len(unsigned char const b)
+    {
+        return b < 0x80 ? 1 : 1 + static_cast<size_t>(b - 0x80);
+    }
+}
+
+// The node's bytes are the ones it was primed with, so its RLP differs from
+// the priming RLP only in the refs of the children a descent has passed
+// through since -- which set their bits in `dirty` -- and each of those is
+// recomputed and written over its old ref. A ref whose length changed would
+// move everything after it: that case, zero, falls back to a full encode.
+size_t OffsetTrie::patch_rlp(
+    CachedHash const &e, NodeViewBase const node,
+    unsigned char (&buf)[MAX_NODE_RLP])
+{
+    size_t const len = e.rlp_len;
+    unsigned char *const out = buf + MAX_NODE_RLP - len;
+    std::memcpy(out, e.rlp, len);
+    unsigned char *p = out + rlp_list_header_len(out[0]);
+    uint64_t mask = e.dirty;
+    if (node.tag() == BRANCH) {
+        BranchView const b{node};
+        for (unsigned k = 0; mask != 0; ++k, mask >>= 1) {
+            size_t const n = rlp_ref_len(*p);
+            if ((mask & 1) != 0 && !patch_ref(b.child(k), p, n)) {
+                return 0;
+            }
+            p += n;
+        }
+    }
+    else {
+        MONAD_ASSERT(node.tag() == EXT);
+        p += rlp_path_len(*p);
+        if ((mask & 1) != 0 && !patch_ref(ExtView{node}.child(), p, rlp_ref_len(*p))) {
+            return 0;
+        }
+    }
+    return len;
+}
+
+bool OffsetTrie::patch_ref(
+    NodeId const child, unsigned char *const ref, size_t const ref_len)
+{
+    unsigned char tmp[MAX_NODE_RLP];
+    node_rlp_span const rem = child_ref<false>(child, node_rlp_span{tmp});
+    if (rem.rlp_size() != ref_len) {
+        return false;
+    }
+    std::memcpy(ref, rem.rlp_data(), ref_len);
+    return true;
+}
 #endif
+
+OffsetTrie::node_rlp_span OffsetTrie::encode_current(
+    NodeId const id, NodeViewBase const node,
+    unsigned char (&buf)[MAX_NODE_RLP])
+{
+#if defined(MONAD_ZKVM_ZISK)
+    // A primed node that is neither fresh nor rewritten: a blob id with no
+    // overlay entry, its slot bounded by the get_current or get_original that
+    // produced `node`. Only branches and extensions have children to patch.
+    uint64_t const v = static_cast<uint64_t>(id);
+    if (v < OVERLAY_BASE && blob_overlay_slots_[v >> 2] == nullptr &&
+        (node.tag() == BRANCH || node.tag() == EXT)) {
+        CachedHash const *const e = blob_hash_slots_[v >> 2];
+        if (e != nullptr && e->rlp != nullptr) {
+            if (size_t const len = patch_rlp(*e, node, buf); len != 0) {
+                return node_rlp_span{buf}.shrink(len);
+            }
+        }
+    }
+#else
+    (void)id;
+#endif
+    return encode_rlp(node, node_rlp_span{buf});
+}
 
 template <bool priming_pass>
 OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
     NodeId const id, NodeViewBase const node, OffsetTrie::node_rlp_span dest)
 {
-    unsigned char buf[MAX_NODE_RLP];
-    node_rlp_span const rem =
-        encode_rlp<priming_pass>(node, node_rlp_span{buf});
+    alignas(8) unsigned char buf[MAX_NODE_RLP];
+    node_rlp_span const rem = [&] {
+        if constexpr (priming_pass) {
+            return encode_rlp<true>(node, node_rlp_span{buf});
+        }
+        else {
+            return encode_current(id, node, buf);
+        }
+    }();
     unsigned char const *const child_rlp = rem.rlp_data();
     size_t const child_rlp_len = rem.rlp_size();
     if (child_rlp_len < 32) {
@@ -952,7 +1078,8 @@ void OffsetTrie::fold_ext_node_path_maybe(
 std::pair<NodeId, NibblesView>
 OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
 {
-    drop_hash(id); // dirtied along the descent
+    // dirtied along the descent
+    [[maybe_unused]] CachedHash *const self = drop_hash(id);
     // Leaf split/overwrite, shared by both leaf types. Only re-emitting the
     // displaced old leaf differs (`reput_old`): a storage leaf keeps its
     // value, an account leaf its fields and storage edge. `reput_old` runs
@@ -1009,6 +1136,9 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
                 NodeId child = e.child();
                 unsigned const cp = common_prefix_length(path, key);
                 if (cp == path.nibble_size()) { // full prefix -> descend
+#if defined(MONAD_ZKVM_ZISK)
+                    mark_dirty(self, 0);
+#endif
                     return upsert_node(child, key.substr(cp));
                 }
                 // diverge mid-extension
@@ -1039,6 +1169,9 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
                 // child is widened past its branch.
                 NodeId const child = b.child(nib);
                 if (child != NULL_ID) {
+#if defined(MONAD_ZKVM_ZISK)
+                    mark_dirty(self, nib);
+#endif
                     return upsert_node(child, rest);
                 }
                 // A previously-empty slot fills, so the branch is rewritten
@@ -1092,8 +1225,12 @@ OffsetTrie::erase_node(NodeId const id, NibblesView const key)
                     return OffsetTrie::EraseResult::Unmodified;
                 }
                 // child survived; fold the ext path into it if it collapsed
-                // to a leaf/ext, but keep `id` of the ext node
-                drop_hash(id);
+                // to a leaf/ext, but keep `id` of the ext node. A branch child
+                // leaves the extension's bytes alone and changes its ref.
+                [[maybe_unused]] CachedHash *const self = drop_hash(id);
+#if defined(MONAD_ZKVM_ZISK)
+                mark_dirty(self, 0);
+#endif
                 NodeViewBase const child = get_current(child_id);
                 return match(
                     child,

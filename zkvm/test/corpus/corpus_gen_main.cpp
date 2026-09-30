@@ -51,7 +51,7 @@ namespace
             "       %s --out <dir> --preset <preset>\n"
             "          [--accounts N] [--blocks N] [--distinct K]\n"
             "          [--shape zipf|uniform|hotset] [--zipf-s F]\n"
-            "          [--chunk N] [--sweep K1,K2,...]\n"
+            "          [--chunk N] [--sweep K1,K2,...] [--currencies N]\n"
             "       %s --pubkey <64 hex secret>\n"
             "       %s --spoke-address [--seed <64 hex>]\n"
             "       %s --salt-commitment <64 hex secret>\n"
@@ -88,7 +88,9 @@ namespace
             "over wrapped ERC-20 tokens: payment-versus-payment settlement\n"
             "across two currencies, and payroll batches, an earn vault and\n"
             "the three exits. For those two, --accounts counts banks or\n"
-            "contractors and --distinct the ones a block touches.\n",
+            "contractors and --distinct the ones a block touches.\n"
+            "--currencies sets how many currencies wholesale-cbdc settles,\n"
+            "five by default.\n",
             prog,
             prog,
             prog,
@@ -223,6 +225,9 @@ int main(int const argc, char **const argv)
         }
         else if (arg == "--chunk" && i + 1 < argc) {
             wl.chunk = std::strtoull(argv[++i], nullptr, 10);
+        }
+        else if (arg == "--currencies" && i + 1 < argc) {
+            wl.currencies = std::strtoull(argv[++i], nullptr, 10);
         }
         else if (arg == "--zipf-s" && i + 1 < argc) {
             wl.zipf_s = std::strtod(argv[++i], nullptr);
@@ -400,12 +405,13 @@ int main(int const argc, char **const argv)
             std::fprintf(
                 stderr,
                 "corpus-gen: %s/%s accounts=%lu blocks=%lu distinct=%lu "
-                "chunk=%zu gas_limit=%lu\n",
+                "currencies=%lu chunk=%zu gas_limit=%lu\n",
                 monad::corpus::name_of(r.preset),
                 monad::corpus::name_of(r.shape),
                 static_cast<unsigned long>(r.accounts),
                 static_cast<unsigned long>(r.blocks),
                 static_cast<unsigned long>(r.distinct),
+                static_cast<unsigned long>(r.currencies),
                 r.chunk,
                 static_cast<unsigned long>(r.gas_limit()));
 

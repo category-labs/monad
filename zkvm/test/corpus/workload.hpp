@@ -59,8 +59,9 @@ namespace corpus
     /// flows instead. Value is an ERC-20 per natively wrapped L1 token --
     /// contracts/WrappedToken.sol, eligibility enforced in the token -- so a
     /// holder is a storage slot. WholesaleCbdc settles cross-currency payments
-    /// payment-versus-payment, both legs in one transaction
-    /// (contracts/PvpSettlement.sol). WorkerPayouts funds payroll from
+    /// between `currencies` wrapped reserve tokens payment-versus-payment,
+    /// both legs in one transaction (contracts/PvpSettlement.sol).
+    /// WorkerPayouts funds payroll from
     /// businesses, pays contractors in batches, and carries the earn vault
     /// (contracts/EarnVault.sol) and the document's three exits: card,
     /// redemption and withdrawal to the L1.
@@ -105,6 +106,10 @@ namespace corpus
         /// for the token presets. THE axis. Zero means the preset's default,
         /// as above.
         uint64_t distinct{0};
+        /// WholesaleCbdc only: the currencies the platform settles, one
+        /// wrapped token each, held by their own banks and by every
+        /// intermediary. Zero means the default, five.
+        uint64_t currencies{0};
         double zipf_s{1.1};
         /// Accounts per genesis commit. See genesis_bulk.hpp: a StateDelta is
         /// 752 bytes whether or not the account has storage.
@@ -165,11 +170,12 @@ namespace corpus
             return last_distinct_;
         }
 
-        /// Token presets: where the seeded contracts live. `token(0)` is the
-        /// payment token -- the first currency's reserves for WholesaleCbdc,
-        /// the contractors' dollar token for WorkerPayouts -- and `token(1)`
-        /// the other: the second currency's, or the businesses' stablecoin.
-        Address token(unsigned index) const;
+        /// Token presets: where the seeded contracts live. For WholesaleCbdc
+        /// `token(c)` is currency c's reserves, the first currency the one on
+        /// one side of most payments. For WorkerPayouts `token(0)` is the
+        /// contractors' dollar token and `token(1)` the businesses'
+        /// stablecoin.
+        Address token(uint64_t index) const;
         Address settlement() const;
         Address vault() const;
 

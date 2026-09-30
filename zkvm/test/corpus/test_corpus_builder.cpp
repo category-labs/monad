@@ -34,6 +34,7 @@
 
 #include <category/vm/code.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <functional>
@@ -648,41 +649,56 @@ namespace
 
 TEST(WorkloadTokens, EveryWholesaleCbdcTransactionSucceeds)
 {
-    corpus::WorkloadSpec spec{};
-    spec.preset = corpus::Preset::WholesaleCbdc;
-    spec.accounts = 60;
-    spec.blocks = 3;
-    spec.distinct = 20;
-    // The seed the compiled spoke address was derived from, so the anchor is
-    // harvested from the spoke this run deploys.
-    spec.seed.bytes[31] = 1;
-    corpus::Workload w{spec};
-    corpus::CorpusBuilder b{
-        w.seeder(),
-        w.spec().chunk,
-        w.spec().gas_limit(),
-        OPERATOR_SK,
-        SALT_SECRET};
+    for (uint64_t const currencies : {2u, 5u}) {
+        SCOPED_TRACE(std::to_string(currencies) + " currencies");
+        corpus::WorkloadSpec spec{};
+        spec.preset = corpus::Preset::WholesaleCbdc;
+        spec.accounts = 60;
+        spec.blocks = 3;
+        spec.distinct = 20;
+        spec.currencies = currencies;
+        // The seed the compiled spoke address was derived from, so the anchor
+        // is harvested from the spoke this run deploys.
+        spec.seed.bytes[31] = 1;
+        corpus::Workload w{spec};
+        corpus::CorpusBuilder b{
+            w.seeder(),
+            w.spec().chunk,
+            w.spec().gas_limit(),
+            OPERATOR_SK,
+            SALT_SECRET};
 
-    // distinct=20 is five payments a block: proposed in one, settled in the
-    // next, so blocks 2 and 3 each settle five -- two token transfers apiece,
-    // one per leg, in one transaction.
-    size_t settlements = 0;
-    for (uint64_t i = 0; i < w.block_count(); ++i) {
-        auto const e = b.add_block(w.block(b, i));
-        SCOPED_TRACE("block " + std::to_string(i));
-        EXPECT_EQ(guest_view(e.witness).state_root(), e.pre_root);
-        for (auto const &r : e.receipts) {
-            EXPECT_EQ(r.status, 1u);
-            settlements += transfer_logs(r) == 2;
-        }
+        // distinct=20 is five payments a block: proposed in one, settled in
+        // the next, so blocks 2 and 3 each settle five -- two token
+        // transfers apiece, one per leg and each in its own currency, in one
+        // transaction. With the redemptions, every currency moves.
+        size_t settlements = 0;
+        std::vector<Address> moved;
+        for (uint64_t i = 0; i < w.block_count(); ++i) {
+            auto const e = b.add_block(w.block(b, i));
+            SCOPED_TRACE("block " + std::to_string(i));
+            EXPECT_EQ(guest_view(e.witness).state_root(), e.pre_root);
+            for (auto const &r : e.receipts) {
+                EXPECT_EQ(r.status, 1u);
+                settlements += transfer_logs(r) == 2;
+                for (auto const &log : r.logs) {
+                    if (!log.topics.empty() &&
+                        log.topics[0] == TRANSFER_TOPIC &&
+                        std::find(moved.begin(), moved.end(), log.address) ==
+                            moved.end()) {
+                        moved.push_back(log.address);
+                    }
+                }
+            }
 #ifdef MONAD_ZKVM_L2
-        // Every block after the deployment redeems reserves through the
-        // spoke, so every one of them carries an anchor.
-        EXPECT_EQ(e.namespace_anchor == bytes32_t{}, i == 0);
+            // Every block after the deployment redeems reserves through the
+            // spoke, so every one of them carries an anchor.
+            EXPECT_EQ(e.namespace_anchor == bytes32_t{}, i == 0);
 #endif
+        }
+        EXPECT_EQ(settlements, 10u);
+        EXPECT_EQ(moved.size(), currencies);
     }
-    EXPECT_EQ(settlements, 10u);
 }
 
 TEST(WorkloadTokens, EveryWorkerPayoutsTransactionSucceeds)

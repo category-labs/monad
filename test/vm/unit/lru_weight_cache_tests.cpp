@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <thread>
 #include <unordered_map>
@@ -317,4 +318,101 @@ TEST_F(LruWeightCacheTest, is_consistent)
         ASSERT_TRUE(weight_cache_.unsafe_check_consistent());
         current_weight_ = 0;
     }
+}
+
+TEST(LruWeightCacheProtected, weight_eviction_skips_protected)
+{
+    WeightCache cache{10, std::chrono::nanoseconds{0}};
+    for (Key k = 1; k <= 3; ++k) {
+        cache.insert(k, k, 1);
+    }
+    ASSERT_TRUE(cache.protect_front(1));
+    ASSERT_TRUE(cache.protect_front(2));
+    EXPECT_FALSE(cache.protect_front(99));
+    for (Key k = 100; k < 200; ++k) {
+        cache.insert(k, k, 1);
+    }
+    WeightCache::ConstAccessor acc;
+    EXPECT_TRUE(cache.find(acc, 1));
+    acc.release();
+    EXPECT_TRUE(cache.find(acc, 2));
+    acc.release();
+    EXPECT_FALSE(cache.find(acc, 3));
+    acc.release();
+    EXPECT_EQ(cache.approx_weight(), 10);
+    EXPECT_TRUE(cache.unsafe_check_consistent());
+}
+
+TEST(LruWeightCacheProtected, order_reads_and_demotion)
+{
+    WeightCache cache{3, std::chrono::nanoseconds{0}};
+    cache.insert(1, 1, 1);
+    cache.insert(2, 2, 1);
+    cache.protect_front(1);
+    cache.protect_front(2);
+    EXPECT_EQ(cache.oldest_protected(), Key{1});
+
+    // Reading a protected element never moves it.
+    WeightCache::ConstAccessor acc;
+    ASSERT_TRUE(cache.find(acc, 1));
+    acc.release();
+    EXPECT_EQ(cache.oldest_protected(), Key{1});
+
+    // Demoting makes 1 the newest unprotected element: it outlives older
+    // unprotected elements and is the next to go after them.
+    cache.insert(3, 3, 1);
+    cache.demote_oldest_protected();
+    EXPECT_EQ(cache.oldest_protected(), Key{2});
+    EXPECT_TRUE(cache.unsafe_check_consistent());
+    cache.insert(4, 4, 1);
+    EXPECT_FALSE(cache.find(acc, 3));
+    acc.release();
+    EXPECT_TRUE(cache.find(acc, 1));
+    acc.release();
+    cache.insert(5, 5, 1);
+    EXPECT_FALSE(cache.find(acc, 4));
+    acc.release();
+    EXPECT_TRUE(cache.find(acc, 1));
+    acc.release();
+
+    cache.demote_oldest_protected();
+    EXPECT_EQ(cache.oldest_protected(), std::nullopt);
+    EXPECT_TRUE(cache.unsafe_check_consistent());
+}
+
+TEST(LruWeightCacheProtected, clear_unprotected)
+{
+    WeightCache cache{100, std::chrono::nanoseconds{0}};
+    for (Key k = 1; k <= 10; ++k) {
+        cache.insert(k, k, k);
+    }
+    cache.protect_front(4);
+    cache.protect_front(7);
+    cache.clear_unprotected();
+    EXPECT_EQ(cache.size(), 2);
+    EXPECT_EQ(cache.approx_weight(), 11);
+    EXPECT_EQ(cache.oldest_protected(), Key{4});
+    EXPECT_TRUE(cache.unsafe_check_consistent());
+}
+
+TEST(LruWeightCacheProtected, eviction_never_crosses_into_protected)
+{
+    WeightCache cache{2, std::chrono::nanoseconds{0}};
+    cache.insert(1, 1, 1);
+    cache.protect_front(1);
+    // Growing a protected element past the budget leaves nothing
+    // unprotected to evict.
+    EXPECT_DEATH(cache.insert(1, 1, 5), "protected");
+}
+
+TEST(LruWeightCacheProtected, weight_above_32_bits)
+{
+    WeightCache cache{uint64_t{1} << 34, std::chrono::nanoseconds{0}};
+    for (Key k = 1; k <= 3; ++k) {
+        cache.insert(k, k, std::numeric_limits<uint32_t>::max());
+    }
+    EXPECT_EQ(cache.size(), 3);
+    EXPECT_EQ(
+        cache.approx_weight(),
+        3 * uint64_t{std::numeric_limits<uint32_t>::max()});
 }

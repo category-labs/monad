@@ -1756,6 +1756,8 @@ namespace monad::vm::interpreter
                 ctx.exit(Error);
             }
             instr_ptr = MONAD_VM_CODE_VIEW.code() + monad_vm_dst + 1;
+            // Discourage GCC from copying the destination before the add.
+            MONAD_VM_LAUNDER(instr_ptr);
         }
         else {
             gas_remaining += monad_vm_req.gas;

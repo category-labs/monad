@@ -89,6 +89,13 @@ struct node_rlp_span : private std::span<unsigned char>
         return std::span<unsigned char>::data() + size();
     }
 
+    // The start of the whole buffer, which an RLP written at its end leaves
+    // alone up to rlp_data().
+    unsigned char *base() const
+    {
+        return std::span<unsigned char>::data();
+    }
+
     size_t rlp_size() const
     {
         return Capacity - size();

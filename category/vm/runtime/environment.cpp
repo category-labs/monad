@@ -52,7 +52,7 @@ namespace monad::vm::runtime
 
     void selfbalance(Context *const ctx, uint256_t *const result_ptr)
     {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_SELFTEST)
         *result_ptr = guest_get_balance(host_of(*ctx), ctx->env.recipient);
 #else
         *result_ptr = ctx->host->get_balance(ctx->env.recipient);

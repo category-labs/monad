@@ -84,3 +84,6 @@
 #define MONAD_VM_TBL_PARAM
 #define MONAD_VM_TBL_ARG
 #define MONAD_VM_TABLE_REF instruction_table<traits>
+
+// Every handler checks gas where it charges it.
+#define MONAD_VM_SHOULD_CHECK_GAS(Instr, DYNAMIC) true

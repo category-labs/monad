@@ -45,8 +45,11 @@
         if constexpr (info.min_gas > 0) {                                      \
             gas_remaining -= info.min_gas;                                     \
                                                                                \
-            if (MONAD_UNLIKELY(gas_remaining < 0)) {                           \
-                GAS_EXIT(OutOfGas);                                            \
+            if constexpr (MONAD_VM_SHOULD_CHECK_GAS(                           \
+                              Instr, info.dynamic_gas)) {                      \
+                if (MONAD_UNLIKELY(gas_remaining < 0)) {                       \
+                    GAS_EXIT(OutOfGas);                                        \
+                }                                                              \
             }                                                                  \
         }                                                                      \
                                                                                \
@@ -93,6 +96,24 @@
 namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
+
+    // Checkpoints of targets that defer gas checks (MONAD_VM_SHOULD_CHECK_GAS).
+    // Keep gas checks before observable effects and jumps. Other opcodes
+    // still charge gas, but may defer exhaustion to the next checkpoint.
+    // Host reads also need a checkpoint: even a discarded read may require
+    // a witness entry. STOP, RETURN and REVERT check before ending the frame.
+    consteval bool
+    should_check_gas(uint8_t const op, bool const dynamic_gas) noexcept
+    {
+        using enum compiler::EvmOpCode;
+        // Existing memory is frame-local; growth checks gas before resizing.
+        if (op == MLOAD || op == MSTORE || op == MSTORE8) {
+            return false;
+        }
+        return dynamic_gas || op == JUMP || op == JUMPI || op == GAS ||
+               op == TSTORE || op == SELFDESTRUCT || op == BLOCKHASH ||
+               op == SELFBALANCE || op == TLOAD;
+    }
 
     // Separate entry points for the same errors; keep them out of line.
     [[noreturn, gnu::noinline, gnu::cold]] inline void

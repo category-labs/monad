@@ -798,6 +798,13 @@ OffsetTrie::encode_rlp(
                 // Decremented after the test, not in it: `c-- != first` tests
                 // the value before the decrement, which gcc keeps in a copy
                 // every turn.
+                //
+                // An empty child's byte, zero-extended once and out of the
+                // loop: zx inside it copies the hoisted constant into a new
+                // register every turn. Not const: a const byte with a constant
+                // initialiser is a constant itself, and skips zx's barrier.
+                // NOLINTNEXTLINE(misc-const-correctness)
+                unsigned char empty_rlp = zx(0x80);
 #if defined(MONAD_ZKVM_ZISK)
                 node_id_wire_t const *const first = children;
                 for (node_id_wire_t const *c = first + 16; c != first;) {
@@ -807,6 +814,12 @@ OffsetTrie::encode_rlp(
                      c != first;) {
 #endif
                     --c;
+#if defined(MONAD_ZKVM_ZISK)
+                    // The slot is read through c's new value: folded into the
+                    // old one's offset, both stay live and every turn ends
+                    // copying one into the other.
+                    asm("" : "+r"(c));
+#endif
                     uint64_t const w = *c;
                     if (w == 0) {
                         // An empty child needs no room test: a span is only
@@ -814,7 +827,7 @@ OffsetTrie::encode_rlp(
                         // branch's RLP is 532 at most.
                         static_assert(
                             3 + 16 * HASH_RLP_LEN + 1 <= MAX_NODE_RLP);
-                        dest = dest.prepend_unchecked(zx(0x80));
+                        dest = dest.prepend_unchecked(empty_rlp);
                         continue;
                     }
                     bool digest;

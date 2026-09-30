@@ -43,15 +43,35 @@ namespace monad::vm::interpreter
         // precompile access, unlike std::vector<bool>'s opaque storage.
         class JumpdestMap
         {
+#if defined(MONAD_ZKVM_ZISK)
+            // At least 2^16 bits, so a PUSH2's destination needs no bound test
+            // (is_jumpdest16). Bump memory, never reused, reads zero until the
+            // analysis writes it, and the analysis sets no bit past the code:
+            // nothing is cleared, and nothing is freed on this guest.
+            static constexpr size_t min_words = (size_t{1} << 16) / 64;
+            uint64_t *words_{nullptr};
+            size_t word_count_{0};
+#else
             std::vector<uint64_t> words_;
+#endif
 
         public:
             JumpdestMap() = default;
 
+#if defined(MONAD_ZKVM_ZISK)
+            explicit JumpdestMap(size_t const bits)
+                : words_{static_cast<uint64_t *>(::operator new(
+                      std::max((bits + 63) / 64, min_words) *
+                      sizeof(uint64_t)))}
+                , word_count_{std::max((bits + 63) / 64, min_words)}
+            {
+            }
+#else
             explicit JumpdestMap(size_t const bits)
                 : words_((bits + 63) / 64, 0)
             {
             }
+#endif
 
             void set(size_t const i) noexcept
             {
@@ -82,12 +102,20 @@ namespace monad::vm::interpreter
 
             size_t word_count() const noexcept
             {
+#if defined(MONAD_ZKVM_ZISK)
+                return word_count_;
+#else
                 return words_.size();
+#endif
             }
 
             uint64_t *words() noexcept
             {
+#if defined(MONAD_ZKVM_ZISK)
+                return words_;
+#else
                 return words_.data();
+#endif
             }
         };
 
@@ -123,6 +151,19 @@ namespace monad::vm::interpreter
         bool is_jumpdest(size_t const pc) const noexcept
         {
             return pc < *code_size_ && jumpdest_map_.test(pc);
+        }
+
+        // The same for a PUSH2's destination, under 2^16: on ZisK the map
+        // covers every such position and holds no bit past the code, so the
+        // bound is the map's own. Taken as a size_t: a uint16_t parameter
+        // makes gcc zero-extend a value the decode already built in 16 bits.
+        bool is_jumpdest16(size_t const pc) const noexcept
+        {
+#if defined(MONAD_ZKVM_ZISK)
+            return jumpdest_map_.test(pc);
+#else
+            return is_jumpdest(pc);
+#endif
         }
 
         [[gnu::always_inline]]

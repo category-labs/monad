@@ -73,10 +73,16 @@
                 EXIT(Error);                                                   \
             }                                                                  \
         }                                                                      \
-        else {                                                                 \
+        else if constexpr (MONAD_VM_STACK_BOTTOM_BIAS == 1) {                  \
+            /* Against the deepest operand's address, which the handler        \
+             * forms anyway to read it. */                                     \
             if (MONAD_UNLIKELY(                                                \
-                    stack_at < stack_bottom + (info.min_stack -                \
-                                               MONAD_VM_STACK_BOTTOM_BIAS))) { \
+                    stack_at - (info.min_stack - 1) < stack_bottom)) {         \
+                EXIT(Error);                                                   \
+            }                                                                  \
+        }                                                                      \
+        else {                                                                 \
+            if (MONAD_UNLIKELY(stack_at < stack_bottom + info.min_stack)) {    \
                 EXIT(Error);                                                   \
             }                                                                  \
         }                                                                      \

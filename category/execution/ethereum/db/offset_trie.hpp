@@ -570,16 +570,27 @@ class OffsetTrie
         // a 1-byte write 66, against 16 and 18 for an aligned word. The width
         // is free: the padding below fixes the pair at 64 bytes either way.
         uint64_t valid;
+#if defined(MONAD_ZKVM_ZISK)
+        // A primed node's canonical RLP, where the priming sweep encoded it,
+        // and the children whose refs have changed since: bit k for a
+        // branch's child k, bit 0 for an extension's. See encode_current.
+        unsigned char const *rlp;
+        uint64_t rlp_len;
+        uint64_t dirty;
+#else
         // Pad std::pair<NodeId, CachedHash> to 64 bytes so unordered_dense can
         // convert between entry indices and addresses using shifts instead of
         // multiplication or division by 48. Trades extra memory for cheaper
         // indexing.
         [[maybe_unused]] uint64_t pad_[2];
+#endif
     };
 
+#if !defined(MONAD_ZKVM_ZISK)
     // Asserted, because losing it is silent: the index arithmetic goes back to
     // a reciprocal multiply and nothing else changes -- just a slower guest.
     static_assert(sizeof(std::pair<NodeId, CachedHash>) == 64);
+#endif
 
 #if defined(MONAD_ZKVM_ZISK)
     // The cached hashes by id, reached without hashing it. A blob node's slot
@@ -597,6 +608,27 @@ class OffsetTrie
     CachedHash *hash_pool_end_{nullptr};
 
     void refill_hash_pool(size_t entries);
+
+    // The priming sweep encodes each node at the end of its own window, which
+    // a hashed node keeps as its CachedHash::rlp. Windows are carved from
+    // chunks that never move, RLP_WINDOW_STRIDE apart: a multiple of eight,
+    // so a kept RLP starts at the alignment an 8-aligned buffer's copy of it
+    // does, which keeps encode_current's copy on DMA's cheap path.
+    static constexpr size_t RLP_WINDOW_STRIDE = 704;
+    static_assert(RLP_WINDOW_STRIDE >= MAX_NODE_RLP && RLP_WINDOW_STRIDE % 8 == 0);
+    unsigned char *rlp_window_{nullptr};
+    unsigned char *rlp_windows_end_{nullptr};
+
+    void refill_rlp_windows();
+
+    // A descent through `e`'s node that leaves the node's bytes alone: the
+    // ref of its child `bit` changes (bit 0 for an extension's child).
+    static void mark_dirty(CachedHash *const e, unsigned const bit)
+    {
+        if (e != nullptr) {
+            e->dirty |= uint64_t{1} << bit;
+        }
+    }
 
     CachedHash *new_hash_entry()
     {
@@ -633,17 +665,21 @@ class OffsetTrie
 #endif
     }
 
-    // Invalidate without erasing.
-    void drop_hash(NodeId const id)
+    // Invalidate without erasing; the entry, or nullptr.
+    CachedHash *drop_hash(NodeId const id)
     {
 #if defined(MONAD_ZKVM_ZISK)
-        if (CachedHash *const e = hash_slot(id)) {
+        CachedHash *const e = hash_slot(id);
+        if (e != nullptr) {
             e->valid = false;
         }
+        return e;
 #else
         if (auto const it = hashes_.find(id); it != hashes_.end()) {
             it->second.valid = false;
+            return &it->second;
         }
+        return nullptr;
 #endif
     }
 
@@ -829,6 +865,18 @@ private:
     template <bool priming_pass>
     node_rlp_span child_ref_compute(
         NodeId const id, NodeViewBase const node, node_rlp_span dest);
+
+    // The current canonical RLP of `id`, whose current bytes are `node`, at
+    // the end of `buf`. On ZisK a primed node the block has not rewritten is
+    // its priming RLP with its dirty children's refs recomputed.
+    node_rlp_span encode_current(
+        NodeId id, NodeViewBase node, unsigned char (&buf)[MAX_NODE_RLP]);
+#if defined(MONAD_ZKVM_ZISK)
+    size_t patch_rlp(
+        CachedHash const &e, NodeViewBase node,
+        unsigned char (&buf)[MAX_NODE_RLP]);
+    bool patch_ref(NodeId child, unsigned char *ref, size_t ref_len);
+#endif
 
     template <bool priming_pass>
     inline node_rlp_span child_ref(NodeId const id, node_rlp_span dest)

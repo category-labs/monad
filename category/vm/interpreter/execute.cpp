@@ -45,20 +45,20 @@ namespace monad::vm::interpreter
     // handler gets a frame.
     #define MONAD_VM_SLOT(REV, NAME, OP)                                       \
         extern "C" [[gnu::section(".monad_vm_slot." #NAME "." #OP)]] void      \
-        monad_vm_slot_##NAME##_##OP(                                           \
-            runtime::Context &ctx,                                             \
-            Intercode const &analysis,                                         \
-            uint256_t const *const stack_bottom,                               \
-            uint256_t *const stack_top,                                        \
-            int64_t const gas_remaining,                                       \
-            uint8_t const *const instr_ptr,                                    \
-            void const *const itbl)                                            \
+            monad_vm_slot_##NAME##_##OP(                                       \
+                runtime::Context &ctx,                                         \
+                MONAD_VM_ANALYSIS_PARAM,                                       \
+                uint256_t const *const stack_bottom,                           \
+                uint256_t *const stack_top,                                    \
+                int64_t const gas_remaining,                                   \
+                uint8_t const *const instr_ptr,                                \
+                void const *const itbl)                                        \
         {                                                                      \
             constexpr InstrEval handler =                                      \
                 instruction_table<EvmTraits<REV>>[0x##OP];                     \
             __attribute__((musttail)) return handler(                          \
                 ctx,                                                           \
-                analysis,                                                      \
+                MONAD_VM_ANALYSIS_ARG,                                         \
                 stack_bottom,                                                  \
                 stack_top,                                                     \
                 gas_remaining,                                                 \
@@ -149,7 +149,11 @@ namespace monad::vm::interpreter
 #endif
             first(
                 *ctx,
+#if defined(MONAD_ZKVM_ZISK)
+                ctx->stack_limit,
+#else
                 *analysis,
+#endif
                 stack_bottom,
                 stack_top,
                 gas_remaining,
@@ -169,6 +173,11 @@ namespace monad::vm::interpreter
         // The carry-ins are fixed; ADD and SUB set the pointers on every call.
         ctx.add256_params.cin = 0;
         ctx.sub256_params.cin = 1;
+        // What the jumps read of the code: the handlers' second argument is
+        // the stack limit.
+        ctx.code_base = analysis.code();
+        ctx.code_bound = analysis.size();
+        ctx.jumpdest_words = analysis.jumpdest_words();
 #endif
         trampoline(ctx, analysis, stack_ptr, core_loop<traits>);
     }

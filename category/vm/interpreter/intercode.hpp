@@ -79,13 +79,16 @@ namespace monad::vm::interpreter
                 words_[i >> 6] |= uint64_t{1} << (i & 63);
             }
 
-            bool test(size_t const i) const noexcept
-            {
 #ifdef MONAD_ZKVM_ZISK
+            // The test on a map's words, for a handler that holds them rather
+            // than the map (FrameCode).
+            [[gnu::always_inline]] static bool
+            test(uint64_t const *const words, size_t const i) noexcept
+            {
                 // bext extracts bit i % 64 in one instruction. Use asm because
                 // GCC misses this pattern with a masked shift count. Removing
                 // the mask in C++ would make shifts by 64 or more undefined.
-                uint64_t const w = words_[i >> 6];
+                uint64_t const w = words[i >> 6];
                 uint64_t r;
                 asm(".option push\n\t"
                     ".option arch, +zbs\n\t"
@@ -94,6 +97,13 @@ namespace monad::vm::interpreter
                     : "=r"(r)
                     : "r"(w), "r"(i));
                 return r != 0;
+            }
+#endif
+
+            bool test(size_t const i) const noexcept
+            {
+#ifdef MONAD_ZKVM_ZISK
+                return test(words_, i);
 #else
                 // Read bit i % 64 from word i / 64.
                 return (words_[i >> 6] >> (i & 63)) & 1;
@@ -117,6 +127,13 @@ namespace monad::vm::interpreter
                 return words_.data();
 #endif
             }
+
+#if defined(MONAD_ZKVM_ZISK)
+            uint64_t const *words() const noexcept
+            {
+                return words_;
+            }
+#endif
         };
 
         explicit Intercode(std::span<uint8_t const> const);
@@ -152,6 +169,13 @@ namespace monad::vm::interpreter
         {
             return pc < *code_size_ && jumpdest_map_.test(pc);
         }
+
+#if defined(MONAD_ZKVM_ZISK)
+        uint64_t const *jumpdest_words() const noexcept
+        {
+            return jumpdest_map_.words();
+        }
+#endif
 
         // The same for a PUSH2's destination, under 2^16: on ZisK the map
         // covers every such position and holds no bit past the code, so the

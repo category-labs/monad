@@ -180,6 +180,17 @@ impl Backend {
             Self::Zisk => {
                 let align_ld = manifest_dir().join("align.ld");
                 println!("cargo:rustc-link-arg=-T{}", align_ld.display());
+                // The witness-execution guest only: the precompile test
+                // guest does not link the interpreter.
+                let out_dir =
+                    PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR unset"));
+                let slots_ld = out_dir.join("slots.ld");
+                std::fs::write(&slots_ld, zisk_slots_ld())
+                    .expect("write slots.ld");
+                println!(
+                    "cargo:rustc-link-arg-bin=monad-zkvm-zisk=-T{}",
+                    slots_ld.display()
+                );
             }
             Self::Sp1 => {}
         }
@@ -419,6 +430,37 @@ fn official_build_commit(repo_root: &Path) -> String {
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset"))
+}
+
+/// The linker script that lays out the interpreter's handler slots
+/// (category/vm/interpreter/execute.cpp): one per revision from BERLIN (8) to
+/// AMSTERDAM (15) and per opcode, 1 KiB each, the newest revision first and
+/// then in opcode order, so that a handler's address is `monad_vm_slots` plus
+/// its offset. The gaps are nops. A handler that outgrows its slot fails the
+/// link, since the location counter cannot move backwards, and so does a slot
+/// left empty.
+fn zisk_slots_ld() -> String {
+    const SLOT: usize = 0x400;
+    let mut ld = String::from(
+        "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
+         FILL(0x13000000)\n        monad_vm_slots = .;\n",
+    );
+    for (rank, rev) in (8..=15).rev().enumerate() {
+        for op in 0..256 {
+            let at = (rank * 256 + op) * SLOT;
+            ld += &format!(
+                "        . = monad_vm_slots + {at:#x};\n        \
+                 KEEP(*(.monad_vm_slot.{rev:02}.{op:02x}))\n        \
+                 ASSERT(. > monad_vm_slots + {at:#x}, \
+                 \"monad_vm_slots: slot {rev:02}.{op:02x} is empty\")\n"
+            );
+        }
+    }
+    ld += &format!(
+        "        . = monad_vm_slots + {:#x};\n    }}\n}} INSERT AFTER .text;\n",
+        8 * 256 * SLOT
+    );
+    ld
 }
 
 // Walk upward from the caller's manifest until we find

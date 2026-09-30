@@ -36,6 +36,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 
 #if defined(__has_attribute)
     #if __has_attribute(musttail)
@@ -70,6 +71,48 @@ namespace monad::vm::interpreter
         MONAD_VM_LAUNDER(p);
         return *p;
     }
+
+#if defined(MONAD_ZKVM_ZISK)
+    // A revision's handlers, one to a slot of 1 << slot_shift bytes in opcode
+    // order: execute.cpp compiles each handler into its slot, and the linker
+    // script that zkvm/build-support writes places the slots. A handler's
+    // address is the base plus its opcode's offset, so the dispatch is one
+    // read and one step shorter than a table's.
+    inline constexpr size_t slot_shift = 10;
+
+    // The revisions whose handlers have slots: the EVM ones the guest runs.
+    // Other traits dispatch through their table.
+    template <Traits traits>
+    inline constexpr bool has_slots =
+        std::is_same_v<traits, EvmTraits<traits::evm_rev()>> &&
+        traits::evm_rev() >= MONAD_ETH_BERLIN &&
+        traits::evm_rev() <= MONAD_ETH_AMSTERDAM;
+
+    struct SlotTable
+    {
+        void const *base;
+
+        [[gnu::always_inline]] InstrEval
+        operator[](size_t const opcode) const noexcept
+        {
+            return reinterpret_cast<InstrEval>(
+                reinterpret_cast<uintptr_t>(base) + (opcode << slot_shift));
+        }
+    };
+
+    // What MONAD_VM_TABLE_REF indexes: the slots' base, or the table.
+    template <Traits traits>
+    [[gnu::always_inline]] inline auto
+    dispatch_table(void const *const itbl) noexcept
+    {
+        if constexpr (has_slots<traits>) {
+            return SlotTable{itbl};
+        }
+        else {
+            return static_cast<InstrEval const *>(itbl);
+        }
+    }
+#endif
 }
 
 // Evaluate NEXT_OPCODE after advancing instr_ptr; it may be *instr_ptr.
@@ -1426,7 +1469,7 @@ namespace monad::vm::interpreter
     // Continue dispatch here instead of returning to mload. Gas and stack
     // checks have already run; do not repeat them.
     template <Traits traits>
-    [[gnu::noinline, gnu::cold]] MONAD_VM_INSTRUCTION_CALL void mload_grow(
+    [[gnu::noinline, gnu::cold]] MONAD_VM_TWIN_CALL void mload_grow(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
@@ -1465,7 +1508,7 @@ namespace monad::vm::interpreter
     // What mstore_grow does not take, through the generic path: capacity
     // growth, and a size past the transaction's memory limit.
     template <Traits traits>
-    [[gnu::noinline, gnu::cold]] MONAD_VM_INSTRUCTION_CALL void mstore_slow(
+    [[gnu::noinline, gnu::cold]] MONAD_VM_TWIN_CALL void mstore_slow(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
@@ -1480,7 +1523,7 @@ namespace monad::vm::interpreter
     // the register gas, and the only calls are tail calls, so neither this
     // twin nor mstore needs a frame.
     template <Traits traits>
-    [[gnu::noinline]] MONAD_VM_INSTRUCTION_CALL void mstore_grow(
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void mstore_grow(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
@@ -1653,7 +1696,7 @@ namespace monad::vm::interpreter
     // Isolate SHR/SAR register pressure to keep push<1> frame-free.
     // Gas and stack are already checked; instr_ptr still points to PUSH1.
     template <Traits traits>
-    [[gnu::noinline]] MONAD_VM_INSTRUCTION_CALL void push1_shr(
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push1_shr(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
@@ -1663,7 +1706,7 @@ namespace monad::vm::interpreter
     }
 
     template <Traits traits>
-    [[gnu::noinline]] MONAD_VM_INSTRUCTION_CALL void push1_sar(
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push1_sar(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
@@ -1677,7 +1720,7 @@ namespace monad::vm::interpreter
     // directly as the destination. Check gas and stack in opcode order, then
     // validate taken jumps. push<2> tail-calls the one its follower names.
     template <Traits traits>
-    [[gnu::noinline]] MONAD_VM_INSTRUCTION_CALL void push2_jump(
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push2_jump(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
@@ -1713,7 +1756,7 @@ namespace monad::vm::interpreter
     }
 
     template <Traits traits>
-    [[gnu::noinline]] MONAD_VM_INSTRUCTION_CALL void push2_jumpi(
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push2_jumpi(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
@@ -2283,7 +2326,7 @@ namespace monad::vm::interpreter
             SELFDESTRUCT, runtime::selfdestruct<traits>);
     }
 
-    MONAD_VM_INSTRUCTION_CALL inline void stop(
+    MONAD_VM_INLINE_INSTRUCTION_CALL void stop(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *const stack_bottom, uint256_t *const stack_top,
         int64_t const gas_remaining, uint8_t const *MONAD_VM_TBL_TYPE)
@@ -2293,7 +2336,7 @@ namespace monad::vm::interpreter
         handler_exit(ctx, Success);
     }
 
-    MONAD_VM_INSTRUCTION_CALL inline void invalid(
+    MONAD_VM_INLINE_INSTRUCTION_CALL void invalid(
         runtime::Context &ctx, Intercode const &, uint256_t const *,
         uint256_t *, int64_t const gas_remaining,
         uint8_t const *MONAD_VM_TBL_TYPE)

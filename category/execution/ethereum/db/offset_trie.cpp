@@ -831,7 +831,27 @@ OffsetTrie::encode_rlp(
                         digest = digest_at(w);
                     }
                     if (!digest) {
-                        dest = child_ref<priming_pass>(NodeId{w}, dest);
+#if defined(MONAD_ZKVM_ZISK)
+                        if constexpr (claims) {
+                            // Marked 1: a branch, an extension or a leaf --
+                            // checked_end rejects any other tag -- primed
+                            // before the walk marked it. Its slot holds its
+                            // entry if its RLP reached 32 bytes, and every
+                            // entry the constructor makes is valid.
+                            if (CachedHash const *const e =
+                                    blob_hash_slots_[w >> 2]) {
+                                dest = encode_rlp(e->h, dest);
+                            }
+                            else {
+                                dest = child_ref_compute<true>(
+                                    NodeId{w}, NodeViewBase{blob + w}, dest);
+                            }
+                        }
+                        else
+#endif
+                        {
+                            dest = child_ref<priming_pass>(NodeId{w}, dest);
+                        }
 #if defined(MONAD_ZKVM_ZISK)
                         if constexpr (priming_pass) {
                             // Where the ref of a child that can become dirty

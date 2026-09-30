@@ -299,8 +299,10 @@ static void keccak256_one_block(
 
     // `in` holds the pre-state already. Stage the copy the permutation will
     // consume, then keep the request and the permutation adjacent for the
-    // reason `keccak_permute` gives.
-    keccakf_state_copy(e.out, s);
+    // reason `keccak_permute` gives. The rate alone: a one-block pre-state's
+    // capacity is zero, and so is this slot's `out`, which nothing writes
+    // before the slot is published.
+    std::memcpy(e.out, s, 17 * sizeof(uint64_t));
     fcall_set_keccakf_index(keccakf_memo_used);
     zisk_keccakf(&e.out);
     // Published last: this is what puts the entry in range, so it must not
@@ -315,7 +317,11 @@ static void keccak256_one_block(
 // whose `out` is the post-state and is never written again, and leaves the
 // scratch holding the pre-state. A miss copies the scratch's `in` to its `out`,
 // permutes that, and publishes the slot. A full table permutes the spare the
-// same way without filing it.
+// same way without filing it. `First`: the sponge's first block, whose
+// capacity is zero, so a miss copies the rate alone -- the slot's `out` is
+// zero too, nothing writing it before the slot is published. The spare's is
+// not, and it gets the whole state.
+template <bool First>
 static inline uint64_t const *keccakf_memo_permute(uint64_t *const pre)
 {
     uint64_t const index = fcall_get_keccakf_index(pre);
@@ -324,10 +330,16 @@ static inline uint64_t const *keccakf_memo_permute(uint64_t *const pre)
         return keccakf_memo[index].out;
     }
     KeccakfEntry &e = keccakf_memo[keccakf_memo_used];
-    keccakf_state_copy(e.out, pre);
     if (keccakf_memo_used == KECCAKF_MEMO_ENTRIES) {
+        keccakf_state_copy(e.out, pre);
         zisk_keccakf(&e.out);
         return e.out;
+    }
+    if constexpr (First) {
+        std::memcpy(e.out, pre, 17 * sizeof(uint64_t));
+    }
+    else {
+        keccakf_state_copy(e.out, pre);
     }
     // Adjacent, for the reason `keccak_permute` gives.
     fcall_set_keccakf_index(keccakf_memo_used);
@@ -384,7 +396,7 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
     std::memcpy(pre, p, RATE);
     p += RATE;
     len -= RATE;
-    uint64_t const *post = keccakf_memo_permute(pre);
+    uint64_t const *post = keccakf_memo_permute<true>(pre);
 
     while (len >= RATE) {
         pre = keccakf_memo[keccakf_memo_used].in;
@@ -392,7 +404,7 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
             pre[i] = post[i] ^ load64(p + 8 * i);
         }
         std::memcpy(pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
-        post = keccakf_memo_permute(pre);
+        post = keccakf_memo_permute<false>(pre);
         p += RATE;
         len -= RATE;
     }
@@ -466,7 +478,7 @@ lanes0:
     std::memcpy(
         pre + whole + 1, post + whole + 1, (KECCAKF_LANES - 1 - whole) * 8);
     pre[16] ^= uint64_t{0x80} << 56;
-    post = keccakf_memo_permute(pre);
+    post = keccakf_memo_permute<false>(pre);
     std::memcpy(out, post, 32);
 
     if (pre == keccakf_memo[keccakf_memo_used].in) {

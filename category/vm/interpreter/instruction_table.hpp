@@ -4538,7 +4538,7 @@ namespace monad::vm::interpreter
 
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void revert(
-        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        runtime::Context &ctx, [[maybe_unused]] MONAD_VM_ANALYSIS_PARAM,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *MONAD_VM_TBL_TYPE)
     {
@@ -4550,7 +4550,7 @@ namespace monad::vm::interpreter
     MONAD_VM_INSTRUCTION_CALL void selfdestruct(
         runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
         uint256_t const *stack_bottom, uint256_t *stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+        int64_t gas_remaining, uint8_t const * /*instr_ptr*/ MONAD_VM_TBL_PARAM)
     {
         fuzz_tstore_stack(
             ctx, stack_bottom, stack_top, MONAD_VM_ANALYSIS.size());

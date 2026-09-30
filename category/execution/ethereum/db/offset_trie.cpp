@@ -494,6 +494,37 @@ bool OffsetTrie::patch_ref(
     // child's entry straight from Keccak, where child_ref would copy it into
     // the entry, into a ref of its own, and that ref over this one.
     if (ref_len == HASH_RLP_LEN) {
+        // The commonest child: a primed branch or extension the block has
+        // not rewritten, below a dirty ref. Its slots are read once, and its
+        // RLP is its patched priming RLP -- what encode_current would build
+        // after reading the same slots again. A patch that falls back to the
+        // full encode leaves it to the general path below.
+        uint64_t const v = static_cast<uint64_t>(child);
+        if (v < OVERLAY_BASE) {
+            NodeViewBase const original = get_original(child);
+            Tag const tag = original.tag();
+            CachedHash *const e = blob_hash_slots_[v >> 2];
+            if (blob_overlay_slots_[v >> 2] == nullptr &&
+                (tag == BRANCH || tag == EXT) && e != nullptr &&
+                e->rlp != nullptr) {
+                auto const patched = [&] {
+                    alignas(8) unsigned char buf[MAX_NODE_RLP];
+                    size_t const len = patch_rlp(*e, original, buf);
+                    if (len == 0) {
+                        return false;
+                    }
+                    MONAD_KECCAK_SITE(TRIE_ENCODE, len);
+                    monad_keccak256(
+                        buf + MAX_NODE_RLP - len, len, e->h.bytes);
+                    e->valid = true;
+                    return true;
+                };
+                if (e->valid || patched()) {
+                    std::memcpy(ref + 1, e->h.bytes, KECCAK256_SIZE);
+                    return true;
+                }
+            }
+        }
         NodeViewBase const node = get_current(child);
         Tag const tag = node.tag();
         if (tag == BRANCH || tag == EXT || tag == LEAF_ACCT ||

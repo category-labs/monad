@@ -599,7 +599,7 @@ public:
 };
 
 template <class... Fs>
-decltype(auto) match(NodeViewBase n, Fs &&...fs)
+[[gnu::always_inline]] decltype(auto) match(NodeViewBase n, Fs &&...fs)
 {
     Cases const v{std::forward<Fs>(fs)...};
     switch (n.tag()) {

@@ -52,8 +52,12 @@ public:
     SIGNAL SAFE.
 
     The buffer MUST remain within lifetime until the returned
-    unique ptr is destructed. If the input buffer is not big enough, the
-    process will be terminated.
+    unique ptr is destructed. The buffer may have any byte alignment;
+    alignment padding consumes part of its capacity. If the input buffer
+    cannot hold the backtrace object with remaining scratch storage, the
+    process will be terminated. Capture retains the innermost frames that
+    fit, reserving one address slot for a null terminator. If no frames fit,
+    an empty trace is returned.
     */
     static ptr capture(std::span<std::byte> storage) noexcept;
 

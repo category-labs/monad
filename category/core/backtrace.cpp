@@ -16,88 +16,38 @@
 #include <category/core/backtrace.hpp>
 #include <category/core/config.hpp>
 
-#include <boost/stacktrace/detail/frame_decl.hpp>
-#include <boost/stacktrace/stacktrace.hpp>
+#include <boost/stacktrace/frame.hpp>
+#include <boost/stacktrace/safe_dump_to.hpp>
 
 #include <algorithm>
-#include <cassert>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <new> // IWYU pragma: keep
 #include <span>
 #include <stdlib.h>
-#include <type_traits>
 
 #include <unistd.h>
 
 MONAD_NAMESPACE_BEGIN
 
-namespace detail
+using backtrace_address = boost::stacktrace::frame::native_frame_ptr_t;
+
+struct alignas(backtrace_address) stack_backtrace_impl final
+    : public stack_backtrace
 {
-    template <class T>
-    class FixedBufferAllocator
+    std::span<backtrace_address const> frames;
+
+    explicit stack_backtrace_impl(
+        std::span<backtrace_address> const storage) noexcept
     {
-        template <class U>
-        friend class FixedBufferAllocator;
-
-        std::span<std::byte> const buffer;
-        std::byte *&p;
-
-    public:
-        using value_type = T;
-        using size_type = size_t;
-        using difference_type = ptrdiff_t;
-        using propagate_on_container_move_assignment = std::true_type;
-        using is_always_equal = std::true_type;
-
-        constexpr FixedBufferAllocator(
-            std::span<std::byte> const buffer_, std::byte *&p_)
-            : buffer(buffer_)
-            , p(p_)
-        {
-            p = buffer.data();
-        }
-
-        template <class U>
-        constexpr FixedBufferAllocator( // NOLINT
-            FixedBufferAllocator<U> const &o)
-            : buffer(o.buffer)
-            , p(o.p)
-        {
-        }
-
-        [[nodiscard]] constexpr value_type *allocate(size_t const n)
-        {
-            auto *newp = p + sizeof(value_type) * n;
-            assert(size_t(newp - buffer.data()) <= buffer.size());
-            auto *ret = reinterpret_cast<value_type *>(p);
-            p = newp;
-            return ret;
-        }
-
-        constexpr void deallocate(value_type *, size_t) {}
-    };
-}
-
-struct stack_backtrace_impl final : public stack_backtrace
-{
-    using byte_allocator_type = detail::FixedBufferAllocator<std::byte>;
-    using stacktrace_allocator_type =
-        std::allocator_traits<byte_allocator_type>::rebind_alloc<
-            ::boost::stacktrace::stacktrace::allocator_type::value_type>;
-    using stacktrace_implementation_type =
-        ::boost::stacktrace::basic_stacktrace<stacktrace_allocator_type>;
-
-    std::byte *storage_end{nullptr};
-    byte_allocator_type main_alloc;
-    stacktrace_implementation_type stacktrace;
-
-    explicit stack_backtrace_impl(std::span<std::byte> const storage)
-        : main_alloc(storage, storage_end)
-        , stacktrace(stacktrace_allocator_type{main_alloc})
-    {
+        // The count includes a terminating null address. Deep stacks retain
+        // the innermost frames that fit in the supplied storage.
+        size_t const written = boost::stacktrace::safe_dump_to(
+            static_cast<void *>(storage.data()), storage.size_bytes());
+        frames = storage.first(written == 0 ? 0 : written - 1);
     }
 
     virtual void print(
@@ -123,16 +73,17 @@ struct stack_backtrace_impl final : public stack_backtrace
             }
             va_end(args);
         };
-        for (auto const &frame : stacktrace) {
-            write("\n%s   %p", indent_buffer, frame.address());
+        for (auto const *const address : frames) {
+            write("\n%s   %p", indent_buffer, address);
         }
         if (print_async_signal_unsafe_info) {
             write(
                 "\n\n%sAttempting async signal unsafe human readable "
                 "stacktrace (this may hang):",
                 indent_buffer);
-            for (auto const &frame : stacktrace) {
-                write("\n%s   %p:", indent_buffer, frame.address());
+            for (auto const *const address : frames) {
+                boost::stacktrace::frame const frame{address};
+                write("\n%s   %p:", indent_buffer, address);
                 write(" %s", frame.name().c_str());
                 if (frame.source_line() > 0) {
                     write(
@@ -150,9 +101,24 @@ struct stack_backtrace_impl final : public stack_backtrace
 stack_backtrace::ptr
 stack_backtrace::capture(std::span<std::byte> const storage) noexcept
 {
-    assert(storage.size() > sizeof(stack_backtrace_impl));
-    return ptr(new (storage.data()) stack_backtrace_impl(
-        storage.subspan(sizeof(stack_backtrace_impl))));
+    void *address = storage.data();
+    size_t remaining = storage.size();
+    if (!std::align(
+            alignof(stack_backtrace_impl),
+            sizeof(stack_backtrace_impl),
+            address,
+            remaining) ||
+        remaining <= sizeof(stack_backtrace_impl)) {
+        ::abort();
+    }
+    size_t const padding = storage.size() - remaining;
+    auto const scratch =
+        storage.subspan(padding + sizeof(stack_backtrace_impl));
+    // alignas on the implementation also aligns the storage immediately
+    // following it, because sizeof includes its trailing padding.
+    size_t const capacity = scratch.size() / sizeof(backtrace_address);
+    auto *const addresses = ::new (scratch.data()) backtrace_address[capacity];
+    return ptr(new (address) stack_backtrace_impl({addresses, capacity}));
 }
 
 extern "C" void monad_stack_backtrace_capture_and_print(

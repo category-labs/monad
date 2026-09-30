@@ -49,7 +49,7 @@ namespace monad::vm::runtime
             ctx->deduct_gas(size * bin<8>);
         }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_SELFTEST)
         guest_emit_log(
             host_of(*ctx),
             ctx->env.recipient,

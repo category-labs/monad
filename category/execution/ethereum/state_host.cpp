@@ -322,8 +322,12 @@ namespace monad::vm::runtime
         Host &host, Address const &address, bytes32_t const &key,
         bool const can_pay_cold_access, uint256_t &value) noexcept
     {
+    #if defined(MONAD_ZKVM_GAS_SELFTEST)
+        return host.sload_into(address, key, can_pay_cold_access, value);
+    #else
         return static_cast<StateHost<traits> &>(host).sload_into(
             address, key, can_pay_cold_access, value);
+    #endif
     }
 
     EXPLICIT_TRAITS(guest_sload_into);
@@ -333,8 +337,12 @@ namespace monad::vm::runtime
         Host &host, Address const &address, bytes32_t const &key,
         bytes32_t const &value, bool const can_pay_cold_access) noexcept
     {
+    #if defined(MONAD_ZKVM_GAS_SELFTEST)
+        return host.sstore_into(address, key, value, can_pay_cold_access);
+    #else
         return static_cast<StateHost<traits> &>(host).sstore_into(
             address, key, value, can_pay_cold_access);
+    #endif
     }
 
     EXPLICIT_TRAITS(guest_sstore_into);
@@ -343,7 +351,11 @@ namespace monad::vm::runtime
     AccessStatus
     guest_access_account(Host &host, Address const &address) noexcept
     {
+    #if defined(MONAD_ZKVM_GAS_SELFTEST)
+        return host.access_account(address);
+    #else
         return static_cast<StateHost<traits> &>(host).access_account(address);
+    #endif
     }
 
     EXPLICIT_TRAITS(guest_access_account);
@@ -351,7 +363,11 @@ namespace monad::vm::runtime
     template <Traits traits>
     vm::Result guest_call(Host &host, Message const &message) noexcept
     {
+    #if defined(MONAD_ZKVM_GAS_SELFTEST)
+        return host.call(message);
+    #else
         return static_cast<StateHost<traits> &>(host).call(message);
+    #endif
     }
 
     EXPLICIT_TRAITS(guest_call);
@@ -359,22 +375,34 @@ namespace monad::vm::runtime
     bytes32_t guest_get_transient_storage(
         Host const &host, Address const &address, bytes32_t const &key) noexcept
     {
+    #if defined(MONAD_ZKVM_GAS_SELFTEST)
+        return host.get_transient_storage(address, key);
+    #else
         return static_cast<StateHostBase const &>(host)
             .StateHostBase::get_transient_storage(address, key);
+    #endif
     }
 
     void guest_set_transient_storage(
         Host &host, Address const &address, bytes32_t const &key,
         bytes32_t const &value) noexcept
     {
+    #if defined(MONAD_ZKVM_GAS_SELFTEST)
+        host.set_transient_storage(address, key, value);
+    #else
         static_cast<StateHostBase &>(host).StateHostBase::set_transient_storage(
             address, key, value);
+    #endif
     }
 
     TxContext const *guest_get_tx_context(Host const &host) noexcept
     {
+    #if defined(MONAD_ZKVM_GAS_SELFTEST)
+        return host.get_tx_context();
+    #else
         return static_cast<StateHostBase const &>(host)
             .StateHostBase::get_tx_context();
+    #endif
     }
 
     size_t

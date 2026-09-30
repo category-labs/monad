@@ -233,6 +233,20 @@ namespace monad::vm::interpreter
      ((REQ).max_growth == 0 ||                                                 \
       stack_top.next_slot() < MONAD_VM_STACK_LIMIT + (1 - (REQ).max_growth)))
 
+// Charge gas now; pure sequences check it at the next checkpoint.
+// Fused JUMPI checks at the landing JUMPDEST if taken, or a later checkpoint.
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+    #define MONAD_VM_FUSED_CHARGE_PURE(REQ)                                    \
+        ((gas_remaining -= (REQ).gas, true) &&                                 \
+         ::monad::vm::interpreter::stack_holds<(REQ).min_required>(            \
+             stack_top, stack_lower_bound) &&                                  \
+         ((REQ).max_growth == 0 ||                                             \
+          stack_top.next_slot() <                                              \
+              MONAD_VM_STACK_LIMIT + (1 - (REQ).max_growth)))
+#else
+    #define MONAD_VM_FUSED_CHARGE_PURE(REQ) MONAD_VM_FUSED_CHARGE(REQ)
+#endif
+
 // Dispatch using OP2, the opcode already read at instr_ptr[1].
 // EQ/ISZERO's stack writes prevent GCC from reusing that load itself;
 // reusing it explicitly is safe because bytecode is immutable.
@@ -946,7 +960,7 @@ namespace monad::vm::interpreter
             *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
             static constexpr auto requirements =
                 fused_requirements<traits, EQ, PUSH2, JUMPI>();
-            if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE(requirements))) {
+            if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(requirements))) {
                 gas_remaining += requirements.gas;
                 MONAD_VM_CHECK(EQ);
                 // EQ frees a slot, so PUSH2 cannot overflow a valid stack.
@@ -995,7 +1009,7 @@ namespace monad::vm::interpreter
             *(instr_ptr + 4) == static_cast<std::uint8_t>(JUMPI)) {
             static constexpr auto requirements =
                 fused_requirements<traits, ISZERO, PUSH2, JUMPI>();
-            if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE(requirements))) {
+            if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(requirements))) {
                 gas_remaining += requirements.gas;
                 MONAD_VM_CHECK(ISZERO);
                 MONAD_VM_CHECK_AT(PUSH2, 0);
@@ -1764,7 +1778,7 @@ namespace monad::vm::interpreter
                     requirements == fused_requirements<traits, PUSH1, SHL>(),
                     "PUSH1 fusion mask holds followers with unequal "
                     "requirements; aggregate them per follower");
-                if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE(requirements))) {
+                if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(requirements))) {
                     gas_remaining += requirements.gas;
                     MONAD_VM_CHECK(PUSH1);
                     MONAD_VM_CHECK_AT(ADD, 1);
@@ -1843,11 +1857,15 @@ namespace monad::vm::interpreter
                     static constexpr auto jump_requirements =
                         fused_requirements<traits, PUSH2, JUMPI>();
                     if (MONAD_UNLIKELY(
-                            !MONAD_VM_FUSED_CHARGE(jump_requirements))) {
+                            !MONAD_VM_FUSED_CHARGE_PURE(jump_requirements))) {
                         gas_remaining += jump_requirements.gas;
                         MONAD_VM_CHECK(PUSH2);
                         MONAD_VM_CHECK_AT(JUMPI, 1);
                     }
+                    // Keep the sequence's gas deduction before the branch to
+                    // avoid extra register moves when dispatching either
+                    // outcome.
+                    MONAD_VM_LAUNDER(gas_remaining);
                     // The condition is the original top, below PUSH2's
                     // destination.
                     if (*stack_top) {
@@ -1924,7 +1942,7 @@ namespace monad::vm::interpreter
                 *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI)) {
                 static constexpr auto requirements =
                     fused_requirements<traits, DUP1, PUSH4, EQ, PUSH2, JUMPI>();
-                if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE(requirements))) {
+                if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(requirements))) {
                     gas_remaining += requirements.gas;
                     MONAD_VM_CHECK(DUP1);
                     MONAD_VM_CHECK_AT(PUSH4, 1);
@@ -1932,6 +1950,8 @@ namespace monad::vm::interpreter
                     MONAD_VM_CHECK_AT(PUSH2, 1);
                     MONAD_VM_CHECK_AT(JUMPI, 2);
                 }
+                // Keep the gas deduction before the branch, as in push2_jumpi.
+                MONAD_VM_LAUNDER(gas_remaining);
                 bool const take_jump =
                     (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} ==
                      *stack_top);
@@ -2281,6 +2301,12 @@ namespace monad::vm::interpreter
             runtime::StatusCode const code, runtime::Context &ctx,
             StackTop stack_top, int64_t const gas_remaining)
         {
+#if defined(MONAD_ZKVM_ZISK)
+            // Reject deferred gas exhaustion before returning or reverting.
+            if (MONAD_UNLIKELY(gas_remaining < 0)) {
+                ctx.exit(OutOfGas);
+            }
+#endif
             for (auto *result_loc : {&ctx.result.offset, &ctx.result.size}) {
                 std::copy_n(
                     as_bytes(*stack_top),
@@ -2336,6 +2362,12 @@ namespace monad::vm::interpreter
     {
         fuzz_tstore_stack(
             ctx, stack_lower_bound, stack_top, MONAD_VM_CODE_VIEW.size());
+#if defined(MONAD_ZKVM_ZISK)
+        // Reject deferred gas exhaustion before reporting success.
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            ctx.exit(OutOfGas);
+        }
+#endif
         ctx.gas_remaining = gas_remaining;
         handler_exit(ctx, Success);
     }
@@ -2362,4 +2394,5 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_CHECK_AT
 #undef MONAD_VM_CHARGE
 #undef MONAD_VM_FUSED_CHARGE
+#undef MONAD_VM_FUSED_CHARGE_PURE
 #undef MONAD_VM_CHECKED_RUNTIME_CALL

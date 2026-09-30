@@ -892,14 +892,15 @@ OffsetTrie::encode_rlp(
                 // Taken widened. A wire field reaching a 64-bit parameter is
                 // cheaper than a 32-bit one.
                 //
-                // Priming already validated all child IDs as blob offsets;
-                // only mutation needs the overlay and bounds checks here.
-                auto const blob_digest_at = [this](uint64_t const w) {
+                // Keep the blob address across byte stores, which may alias
+                // blob_ and otherwise force the compiler to reload it.
+                unsigned char const *const blob = blob_.data();
+                auto const blob_digest_at = [&](uint64_t const w) {
                     if constexpr (priming_pass) {
-                        // Before encoding a node, is_valid_offset checks that
-                        // each nonzero child points to an earlier node in the
-                        // blob. Inlined children were checked on earlier turns.
-                        return w != 0 && NodeViewBase{blob_.data() + w}.tag() ==
+                        // Children are validated before this read, either by
+                        // the constructor or by this encode's claim step.
+                        // Inlined children's references were checked earlier.
+                        return w != 0 && NodeViewBase{blob + w}.tag() ==
                                              Tag::DIGEST;
                     }
                     else {
@@ -992,7 +993,7 @@ OffsetTrie::encode_rlp(
                             // The tag alone decides: a null slot reads the
                             // blob's first byte, the magic's 'M' that read_root
                             // asserts, i.e. EMPTY, never DIGEST.
-                            if (NodeViewBase{blob_.data() + prev}.tag() !=
+                            if (NodeViewBase{blob + prev}.tag() !=
                                 Tag::DIGEST) {
                                 break;
                             }
@@ -1031,7 +1032,7 @@ OffsetTrie::encode_rlp(
                     // A complete branch needs at most 532 bytes, within
                     // MAX_NODE_RLP, so this copy needs no extra room check.
                     dest = dest.prepend_unchecked(
-                        blob_.data() + (below + HASH_RLP_LEN), digests_length);
+                        blob + (below + HASH_RLP_LEN), digests_length);
                     c = lo; // the next turn's decrement steps past the run
                 }
 #if defined(MONAD_ZKVM_ZISK)

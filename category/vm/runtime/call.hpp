@@ -23,7 +23,7 @@
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    void call(
+    MONAD_VM_RUNTIME_NOINLINE void call(
         Context *ctx, uint256_t *result_ptr, uint256_t const *gas_ptr,
         uint256_t const *address_ptr, uint256_t const *value_ptr,
         uint256_t const *args_offset_ptr, uint256_t const *args_size_ptr,
@@ -31,7 +31,7 @@ namespace monad::vm::runtime
         int64_t remaining_block_base_gas);
 
     template <Traits traits>
-    void callcode(
+    MONAD_VM_RUNTIME_NOINLINE void callcode(
         Context *ctx, uint256_t *result_ptr, uint256_t const *gas_ptr,
         uint256_t const *address_ptr, uint256_t const *value_ptr,
         uint256_t const *args_offset_ptr, uint256_t const *args_size_ptr,

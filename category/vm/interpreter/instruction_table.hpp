@@ -34,6 +34,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 #include <utility>
 
 #if defined(__has_attribute)
@@ -45,6 +46,48 @@
 #else
     #error "No compiler support for __has_attribute"
 #endif
+
+namespace monad::vm::interpreter
+{
+#if defined(MONAD_ZKVM_ZISK)
+    // The linker places handlers in opcode order, in 1 << slot_shift byte slots.
+    // Dispatch computes base + (opcode << slot_shift), without a pointer lookup.
+    inline constexpr size_t slot_shift = 10;
+
+    // The revisions whose handlers have slots: the EVM ones the guest runs.
+    // Other traits dispatch through their table.
+    template <Traits traits>
+    inline constexpr bool has_slots =
+        std::is_same_v<traits, EvmTraits<traits::evm_rev()>> &&
+        traits::evm_rev() >= EvmRevision::Berlin &&
+        traits::evm_rev() <= EvmRevision::Amsterdam;
+
+    struct SlotTable
+    {
+        void const *base;
+
+        [[gnu::always_inline]] InstrEval
+        operator[](size_t const opcode) const noexcept
+        {
+            return reinterpret_cast<InstrEval>(
+                reinterpret_cast<uintptr_t>(base) + (opcode << slot_shift));
+        }
+    };
+
+    // What MONAD_VM_TABLE_REF indexes: the slots' base, or the table.
+    template <Traits traits>
+    [[gnu::always_inline]] inline auto
+    dispatch_table(void const *const table_base) noexcept
+    {
+        if constexpr (has_slots<traits>) {
+            return SlotTable{table_base};
+        }
+        else {
+            return static_cast<InstrEval const *>(table_base);
+        }
+    }
+#endif
+}
 
 #define MONAD_VM_NEXT_N(OP, ADV)                                               \
     do {                                                                       \
@@ -1575,7 +1618,7 @@ namespace monad::vm::interpreter
             SELFDESTRUCT, runtime::selfdestruct<traits>);
     }
 
-    MONAD_VM_INSTRUCTION_CALL inline void stop(
+    MONAD_VM_INLINE_INSTRUCTION_CALL void stop(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *const stack_bottom, StackTop const stack_top,
         int64_t const gas_remaining, uint8_t const *MONAD_VM_TBL_TYPE)
@@ -1585,7 +1628,7 @@ namespace monad::vm::interpreter
         handler_exit(ctx, Success);
     }
 
-    MONAD_VM_INSTRUCTION_CALL inline void invalid(
+    MONAD_VM_INLINE_INSTRUCTION_CALL void invalid(
         runtime::Context &ctx, Intercode const &, uint256_t const *, StackTop,
         int64_t const gas_remaining, uint8_t const *MONAD_VM_TBL_TYPE)
     {

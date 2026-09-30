@@ -161,6 +161,16 @@ impl Backend {
             let align_ld = manifest_dir().join("align.ld");
             println!("cargo:rerun-if-changed={}", align_ld.display());
             println!("cargo:rustc-link-arg=-T{}", align_ld.display());
+
+            // The witness-execution guest only: the precompile test
+            // guest does not link the interpreter.
+            let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR unset"));
+            let slots_ld = out_dir.join("slots.ld");
+            std::fs::write(&slots_ld, zisk_slots_ld()).expect("write slots.ld");
+            println!(
+                "cargo:rustc-link-arg-bin=monad-zkvm-zisk=-T{}",
+                slots_ld.display()
+            );
         }
         println!("cargo:rustc-link-arg=--gc-sections");
         println!("cargo:rustc-link-search=native={}", build_dir.display());
@@ -292,6 +302,33 @@ const CMAKE_ENV: [&str; 3] = ["CMAKE", "CMAKE_GENERATOR", "CMAKE_PREFIX_PATH"];
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset"))
+}
+
+/// Lay out 1 KiB handler slots for Berlin (8) through Amsterdam (15), newest
+/// revision first, then in opcode order. Fill gaps with nops; empty or
+/// oversized slots fail the link.
+fn zisk_slots_ld() -> String {
+    const SLOT: usize = 0x400;
+    let mut ld = String::from(
+        "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
+         FILL(0x13000000)\n        monad_vm_slots = .;\n",
+    );
+    for (rank, rev) in (8..=15).rev().enumerate() {
+        for op in 0..256 {
+            let at = (rank * 256 + op) * SLOT;
+            ld += &format!(
+                "        . = monad_vm_slots + {at:#x};\n        \
+                 KEEP(*(.monad_vm_slot.{rev:02}.{op:02x}))\n        \
+                 ASSERT(. > monad_vm_slots + {at:#x}, \
+                 \"monad_vm_slots: slot {rev:02}.{op:02x} is empty\")\n"
+            );
+        }
+    }
+    ld += &format!(
+        "        . = monad_vm_slots + {:#x};\n    }}\n}} INSERT AFTER .text;\n",
+        8 * 256 * SLOT
+    );
+    ld
 }
 
 fn locate_repo_root(manifest: &Path) -> PathBuf {

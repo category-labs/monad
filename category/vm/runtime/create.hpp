@@ -21,7 +21,7 @@
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    void create(
+    MONAD_VM_RUNTIME_NOINLINE void create(
         Context *ctx, uint256_t *result_ptr, uint256_t const *value_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr,
         int64_t remaining_block_base_gas);

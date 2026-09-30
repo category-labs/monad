@@ -19,6 +19,7 @@
 
 namespace monad::vm::runtime
 {
+    MONAD_VM_RUNTIME_NOINLINE
     void blockhash(
         Context *ctx, uint256_t *result_ptr, uint256_t const *block_number_ptr);
 

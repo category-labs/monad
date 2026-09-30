@@ -17,12 +17,20 @@
 
 #include <category/core/assert.h>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/types.hpp>
 
 #include <evmc/evmc.h>
 
 #include <cstdint>
+
+#if defined(MONAD_ZKVM_ZISK)
+    #define MONAD_VM_GAS_TESTED(Instr, DYNAMIC)                                \
+        ::monad::vm::interpreter::gas_tested((Instr), (DYNAMIC))
+#else
+    #define MONAD_VM_GAS_TESTED(Instr, DYNAMIC) true
+#endif
 
 // Shared gas and stack checks; EXIT(status) selects how to leave on failure.
 #define MONAD_VM_CHECK_REQUIREMENTS(Instr, EXIT)                               \
@@ -43,8 +51,10 @@
         if constexpr (info.min_gas > 0) {                                      \
             gas_remaining -= info.min_gas;                                     \
                                                                                \
-            if (MONAD_UNLIKELY(gas_remaining < 0)) {                           \
-                GAS_EXIT(OutOfGas);                                            \
+            if constexpr (MONAD_VM_GAS_TESTED(Instr, info.dynamic_gas)) {      \
+                if (MONAD_UNLIKELY(gas_remaining < 0)) {                       \
+                    GAS_EXIT(OutOfGas);                                        \
+                }                                                              \
             }                                                                  \
         }                                                                      \
                                                                                \
@@ -113,6 +123,23 @@
 namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
+
+#if defined(MONAD_ZKVM_ZISK)
+    // Whether an opcode tests at once the gas its charge leaves. On ZisK only
+    // the opcodes after which the gas could be observed or a loop run do: the
+    // jumps, GAS, TSTORE, SELFDESTRUCT and every opcode with a dynamic cost,
+    // with STOP, RETURN and REVERT, which end the frame and test it in their
+    // handlers. Any other leaves a negative count to the next of those: it
+    // moves only the stack, memory the frame already has and the pc, which
+    // an exceptional halt discards, and the halt consumes all the gas and
+    // reverts the frame whichever opcode ran out.
+    consteval bool gas_tested(uint8_t const op, bool const dynamic_gas) noexcept
+    {
+        using enum compiler::EvmOpCode;
+        return dynamic_gas || op == JUMP || op == JUMPI || op == GAS ||
+               op == TSTORE || op == SELFDESTRUCT;
+    }
+#endif
 
 #if defined(MONAD_ZKVM_ZISK)
     // ctx.exit(OutOfGas) and ctx.exit(Error) from symbols of their own, for

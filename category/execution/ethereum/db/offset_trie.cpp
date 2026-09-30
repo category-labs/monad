@@ -515,12 +515,23 @@ size_t OffsetTrie::patch_rlp(
     uint64_t mask = e.dirty;
     if (node.tag() == BRANCH) {
         BranchView const b{node};
-        for (unsigned k = 0; mask != 0; ++k, mask >>= 1) {
-            size_t const n = rlp_ref_len(*p);
-            if ((mask & 1) != 0 && !patch_ref(b.child(k), p, n)) {
+        // Each dirty child's ref starts where the priming encode recorded it,
+        // in its window's head; `buf` has the same layout, its RLP ending at
+        // the same place. A dirty child is never a digest or empty, so its
+        // offset is recorded: zero would be a slot never written.
+        uint64_t const *const starts =
+            reinterpret_cast<uint64_t const *>(e.rlp + len - MAX_NODE_RLP);
+        while (mask != 0) {
+            unsigned const k = static_cast<unsigned>(std::countr_zero(mask));
+            mask &= mask - 1;
+            size_t const at = starts[k];
+            if (at == 0) {
                 return 0;
             }
-            p += n;
+            unsigned char *const ref = buf + at;
+            if (!patch_ref(b.child(k), ref, rlp_ref_len(*ref))) {
+                return 0;
+            }
         }
     }
     else {
@@ -778,6 +789,21 @@ OffsetTrie::encode_rlp(
                     uint64_t const w = *c;
                     if (!digest_at(w)) {
                         dest = child_ref<priming_pass>(NodeId{w}, dest);
+#if defined(MONAD_ZKVM_ZISK)
+                        if constexpr (priming_pass) {
+                            // Where the ref of a child that can become dirty
+                            // starts, for patch_rlp: at child index * 8 in the
+                            // buffer's head, which a branch's RLP never reaches.
+                            // A digest or an empty child never becomes dirty.
+                            static_assert(
+                                MAX_NODE_RLP - (3 + 16 * HASH_RLP_LEN + 1) >=
+                                16 * sizeof(uint64_t));
+                            if (w != 0) {
+                                reinterpret_cast<uint64_t *>(
+                                    dest.base())[c - first] = dest.size();
+                            }
+                        }
+#endif
                         continue;
                     }
                     // copy any contiguous digests directly into dest, since a

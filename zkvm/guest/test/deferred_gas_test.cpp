@@ -332,5 +332,40 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         }
     }
     check(selectors);
+    // Check every PUSH1 mask width, with and without the optional AND.
+    bool masks = true;
+    for (unsigned k = 0; k < 256; ++k) {
+        std::array<uint8_t, 32> expected{};
+        for (unsigned bit = 0; bit < k; ++bit) {
+            expected[31 - bit / 8] |= uint8_t{1} << (bit % 8);
+        }
+        for (bool apply : {false, true}) {
+            std::vector<uint8_t> code;
+            if (apply) {
+                code.push_back(PUSH32);
+                code.insert(code.end(), 32, 0xff);
+            }
+            code.insert(
+                code.end(),
+                {PUSH1, 1, PUSH1, 1, PUSH1, static_cast<uint8_t>(k), SHL, SUB});
+            if (apply) {
+                code.push_back(AND);
+            }
+            code.push_back(PUSH32);
+            code.insert(code.end(), expected.begin(), expected.end());
+            code.push_back(EQ);
+            size_t const jump = code.size();
+            code.insert(code.end(), {PUSH2, 0, 0, JUMPI, 0xfe});
+            code[jump + 2] = static_cast<uint8_t>(code.size());
+            code.insert(code.end(), {JUMPDEST, STOP});
+            int64_t const cost = apply ? 41 : 35;
+            auto const result = run(code, cost);
+            masks &= result.status == EVMC_SUCCESS && result.gas == 0 &&
+                     result.output == 0 && result.refund == 0 &&
+                     result.accesses == 0;
+            masks &= failed_cleanly(run(code, cost - 1));
+        }
+    }
+    check(masks);
     return failures;
 }

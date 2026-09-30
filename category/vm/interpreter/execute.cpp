@@ -175,7 +175,7 @@ namespace monad::vm::interpreter
         ctx.sub256_params.cin = 1;
         // What the jumps read of the code: the handlers' second argument is
         // the stack limit.
-        ctx.code_base = analysis.code();
+        ctx.landing_base = analysis.code() + 1;
         ctx.code_bound = analysis.size();
         ctx.jumpdest_words = analysis.jumpdest_words();
 #endif

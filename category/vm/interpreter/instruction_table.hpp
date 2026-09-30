@@ -317,7 +317,7 @@ namespace monad::vm::interpreter
             return p + 5;
         }
         auto const dst = static_cast<size_t>(detail::load_be_k<2>(p + 2));
-        if (MONAD_UNLIKELY(!analysis.is_jumpdest(dst))) {
+        if (MONAD_UNLIKELY(!analysis.is_jumpdest16(dst))) {
             ctx.exit(Error);
         }
         auto const *ip = analysis.code() + dst;
@@ -1783,7 +1783,7 @@ namespace monad::vm::interpreter
                             fused_requirements<traits, PUSH2, JUMP, JUMPDEST>();
                         if (MONAD_LIKELY(MONAD_VM_FUSED_CHARGE(requirements))) {
                             if (MONAD_UNLIKELY(
-                                    !analysis.is_jumpdest(destination))) {
+                                    !analysis.is_jumpdest16(destination))) {
                                 ctx.exit(Error);
                             }
                             instr_ptr = analysis.code() + destination + 1;
@@ -1796,7 +1796,7 @@ namespace monad::vm::interpreter
                                 stack_top.next_slot() >= stack_bottom);
                             MONAD_VM_CHARGE(JUMP);
                             if (MONAD_UNLIKELY(
-                                    !analysis.is_jumpdest(destination))) {
+                                    !analysis.is_jumpdest16(destination))) {
                                 ctx.exit(Error);
                             }
                             instr_ptr = swallow_jumpdest(
@@ -1831,7 +1831,7 @@ namespace monad::vm::interpreter
                         auto const destination = static_cast<size_t>(
                             detail::load_be_k<2>(instr_ptr + 1));
                         if (MONAD_UNLIKELY(
-                                !analysis.is_jumpdest(destination))) {
+                                !analysis.is_jumpdest16(destination))) {
                             ctx.exit(Error);
                         }
                         auto const *next_instruction =

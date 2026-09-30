@@ -48,7 +48,7 @@ SP1 zkEVM SDK source at build time.
 
   (cargo merges `.cargo/config.toml` up the tree, so this one file covers both
   `zkvm/zisk` and `zkvm/sp1/script`.)
-- [ZisK](https://github.com/0xPolygonHermez/zisk) ≥ v1.2.0-alpha
+- [ZisK](https://github.com/0xPolygonHermez/zisk) ≥ v1.3.1-alpha
   (`ziskup` from <https://github.com/0xPolygonHermez/zisk>) — installs
   `cargo-zisk`, `ziskemu`.
 - [SP1](https://docs.succinct.xyz/) ≥ v6.2.x (`sp1up` from
@@ -67,7 +67,7 @@ Report and release artifacts must use the audited profile:
 zkvm/zisk/build-official.sh
 ```
 
-The initial profile pins ZisK 1.2, GCC 15.2, the effective baseline codegen
+The initial profile pins ZisK 1.3.1, GCC 15.2, the effective baseline codegen
 flags, the full Monad commit and the resulting ELF digest. The compiler carries
 the ZisK DMA patch, but DMA lowering remains disabled until its own optimisation
 commit adds the flag and feature. The profile also requires the ZisK JUMPDEST

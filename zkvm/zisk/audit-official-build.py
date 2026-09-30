@@ -13,10 +13,10 @@ import subprocess
 
 
 PROFILE = "monad-zkvm-official-v2"
-RUNTIME_VERSION = "1.2.0-alpha"
-RUNTIME_REVISION = "fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3"
+RUNTIME_VERSION = "1.3.1-alpha"
+RUNTIME_REVISION = "306a9c934ba4947b1d586d69b67120f8b4c41466"
 RUNTIME_SOURCE = (
-    "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.2.0-alpha#"
+    "git+https://github.com/0xPolygonHermez/zisk.git?tag=v1.3.1-alpha#"
     + RUNTIME_REVISION
 )
 EXPECTED_COMPILER = ("GNU", "15.2.0")

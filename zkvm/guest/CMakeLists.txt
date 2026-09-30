@@ -58,9 +58,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
                                       "no-dirty-accounts"
                                       "no-merge-constraints"
                                       "jumpdest-precompile")
-    set(_monad_zkvm_runtime_version "1.2.0-alpha")
+    set(_monad_zkvm_runtime_version "1.3.1-alpha")
     set(_monad_zkvm_runtime_revision
-        "fbbc69bcd2ea9a78d1a438b4a897bc48ff0b00a3")
+        "306a9c934ba4947b1d586d69b67120f8b4c41466")
     if(MONAD_ZKVM_OFFICIAL_PROFILE AND
        NOT MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         message(FATAL_ERROR

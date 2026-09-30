@@ -2293,6 +2293,13 @@ namespace monad::vm::interpreter
             runtime::StatusCode const code, runtime::Context &ctx,
             uint256_t *stack_top, int64_t const gas_remaining)
         {
+#if defined(MONAD_ZKVM_ZISK)
+            // The frame ends here: the count an earlier opcode left
+            // negative is tested here (gas_tested).
+            if (MONAD_UNLIKELY(gas_remaining < 0)) {
+                ctx.exit(OutOfGas);
+            }
+#endif
             for (auto *result_loc : {&ctx.result.offset, &ctx.result.size}) {
                 std::copy_n(
                     as_bytes(*stack_top),
@@ -2348,6 +2355,12 @@ namespace monad::vm::interpreter
     {
         fuzz_tstore_stack(
             ctx, stack_bottom, stack_top, MONAD_VM_ANALYSIS.size());
+#if defined(MONAD_ZKVM_ZISK)
+        // As in return_impl.
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            ctx.exit(OutOfGas);
+        }
+#endif
         ctx.gas_remaining = gas_remaining;
         handler_exit(ctx, Success);
     }

@@ -78,6 +78,11 @@ namespace monad::vm::interpreter
             return pc < *code_size_ && jumpdest_map_.test(pc);
         }
 
+        uint64_t const *jumpdest_words() const noexcept
+        {
+            return jumpdest_map_.words();
+        }
+
         // Requires pc < 2^16: callers use load_be_k<2>, which combines exactly
         // two bytes and leaves the upper bits zero. A map that covers this
         // range, with zero bits beyond the code, needs no bounds check. Keep

@@ -56,10 +56,16 @@ namespace monad::vm::interpreter
             words_[i >> 6] |= uint64_t{1} << (i & 63);
         }
 
+        // Let FrameCode test the same bitmap without owning the map.
+        [[gnu::always_inline]] static bool
+        test(uint64_t const *const words, size_t const i) noexcept
+        {
+            return MONAD_VM_TEST_BIT(words[i >> 6], i);
+        }
+
         bool test(size_t const i) const noexcept
         {
-            // Read bit i % 64 from word i / 64.
-            return MONAD_VM_TEST_BIT(words_[i >> 6], i);
+            return test(words_, i);
         }
 
         size_t word_count() const noexcept
@@ -72,6 +78,10 @@ namespace monad::vm::interpreter
             return words_;
         }
 
+        uint64_t const *words() const noexcept
+        {
+            return words_;
+        }
     };
 }
 #endif

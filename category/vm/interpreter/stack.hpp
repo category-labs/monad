@@ -55,17 +55,28 @@
         /* Compare against pointer bounds: addition costs less than            \
          * subtracting pointers on ZisK. */                                    \
         uint256_t const *const stack_at = (stack_top) + (SHIFT);               \
-        MONAD_DEBUG_ASSERT(stack_at - stack_bottom <= 1024);                   \
+        MONAD_DEBUG_ASSERT(                                                    \
+            stack_at - (stack_bottom - MONAD_VM_STACK_BOTTOM_BIAS) <= 1024);   \
                                                                                \
-        /* For one operand, compare directly with stack_bottom to avoid        \
-         * computing stack_bottom + 1. */                                      \
-        if constexpr (info.min_stack == 1) {                                   \
+        /* A bound at the register or one above it compares with it directly,  \
+         * the non-strict and the strict test telling them apart: no bound to  \
+         * build. */                                                           \
+        if constexpr (info.min_stack == 0) {                                   \
+        }                                                                      \
+        else if constexpr (info.min_stack == MONAD_VM_STACK_BOTTOM_BIAS) {     \
+            if (MONAD_UNLIKELY(stack_at < stack_bottom)) {                     \
+                EXIT(Error);                                                   \
+            }                                                                  \
+        }                                                                      \
+        else if constexpr (info.min_stack == MONAD_VM_STACK_BOTTOM_BIAS + 1) { \
             if (MONAD_UNLIKELY(stack_at <= stack_bottom)) {                    \
                 EXIT(Error);                                                   \
             }                                                                  \
         }                                                                      \
-        else if constexpr (info.min_stack > 1) {                               \
-            if (MONAD_UNLIKELY(stack_at < stack_bottom + info.min_stack)) {    \
+        else {                                                                 \
+            if (MONAD_UNLIKELY(                                                \
+                    stack_at < stack_bottom + (info.min_stack -                \
+                                               MONAD_VM_STACK_BOTTOM_BIAS))) { \
                 EXIT(Error);                                                   \
             }                                                                  \
         }                                                                      \
@@ -112,6 +123,28 @@ namespace monad::vm::interpreter
         ctx.exit(Error);
     }
 #endif
+
+    // Whether the stack holds REQUIRED operands, stack_bottom being the
+    // argument, MONAD_VM_STACK_BOTTOM_BIAS slots above the bottom: the test
+    // MONAD_VM_CHECK_REQUIREMENTS_AT_EXITS makes.
+    template <int32_t Required>
+    [[gnu::always_inline]] inline bool stack_holds(
+        uint256_t const *const stack_top, uint256_t const *const stack_bottom)
+    {
+        if constexpr (Required == 0) {
+            return true;
+        }
+        else if constexpr (Required == MONAD_VM_STACK_BOTTOM_BIAS) {
+            return stack_top >= stack_bottom;
+        }
+        else if constexpr (Required == MONAD_VM_STACK_BOTTOM_BIAS + 1) {
+            return stack_top > stack_bottom;
+        }
+        else {
+            return stack_top >=
+                   stack_bottom + (Required - MONAD_VM_STACK_BOTTOM_BIAS);
+        }
+    }
 
     template <uint8_t Instr, Traits traits>
     [[gnu::always_inline]] inline void check_requirements(

@@ -17,7 +17,7 @@ CASES = [
     "BLOCKHASH after OOG", "SELFBALANCE after OOG", "TLOAD after OOG",
     "BLOCKHASH gas boundary", "SELFBALANCE gas boundary", "TLOAD gas boundary",
     "stack overflow", "CALL", "pure chain gas sweep", "exact-gas RETURN",
-    "exact-gas REVERT", "affordable host reads", "dynamic effects and copy loops",
+    "exact-gas REVERT", "affordable host reads", "dynamic effects, allocations and copy loops",
     "selector chain gas sweep", "mask widths and gas boundaries", "immediate AND masks",
 ]
 
@@ -48,7 +48,7 @@ def main():
         failures = [name for i, name in enumerate(state_cases) if state_mask & (1 << i)]
         raise SystemExit(f"FAIL State mask={state_mask:#x}: {', '.join(failures)}")
     print("PASS: 6 State rollback checks (5 production calls)")
-    print(f"PASS: {len(CASES)} gas boundary groups (1250 interpreter executions)")
+    print(f"PASS: {len(CASES)} gas boundary groups (1258 interpreter executions)")
 
 
 if __name__ == "__main__":

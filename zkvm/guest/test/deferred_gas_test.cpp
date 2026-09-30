@@ -311,6 +311,40 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         code.push_back(op);
         effects &= failed_cleanly(run(code, 2 * operands - 1));
     }
+    // The allocation suffix stores 0x80 at 0x40 and returns to its caller.
+    // Cover both the fused path and fallback for memory expansion or panic.
+    for (bool const initialized_memory : {false, true}) {
+        for (uint8_t const overflow_flag : {0, 1}) {
+            std::vector<uint8_t> code;
+            if (initialized_memory) {
+                code = {PUSH1, 0, PUSH1, 0x40, MSTORE};
+            }
+            code.push_back(PUSH2);
+            size_t const return_operand = code.size();
+            code.insert(
+                code.end(), {0, 0, PUSH1, 0x80, PUSH1, overflow_flag, PUSH8});
+            code.insert(code.end(), 8, 0xff);
+            code.insert(code.end(), {DUP3, GT, OR, PUSH2});
+            size_t const panic_operand = code.size();
+            code.insert(code.end(), {0, 0, JUMPI, PUSH1, 0x40, MSTORE, JUMP});
+            code[return_operand + 1] = static_cast<uint8_t>(code.size());
+            code.insert(
+                code.end(),
+                {JUMPDEST, PUSH1, 0x40, MLOAD, PUSH1, 0x80, EQ, PUSH2});
+            size_t const success_operand = code.size();
+            code.insert(code.end(), {0, 0, JUMPI});
+            code[panic_operand + 1] = static_cast<uint8_t>(code.size());
+            code.insert(code.end(), {JUMPDEST, 0xfe});
+            code[success_operand + 1] = static_cast<uint8_t>(code.size());
+            code.insert(code.end(), {JUMPDEST, STOP});
+            int64_t const cost = initialized_memory ? 93 : 84;
+            auto const result = run(code, cost);
+            effects &= overflow_flag
+                           ? failed_cleanly(result)
+                           : result.status == EVMC_SUCCESS && result.gas == 0;
+            effects &= failed_cleanly(run(code, cost - 1));
+        }
+    }
     // Compare batched copies with a byte model that preserves word order,
     // including overlap, partial lengths, zero turns and memory growth.
     for (auto const params : std::array<std::array<unsigned, 4>, 6>{

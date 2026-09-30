@@ -224,21 +224,6 @@ namespace monad::vm::interpreter
      ((REQ).max_growth == 0 ||                                                 \
       (stack_top) < ctx.stack_limit + (1 - (REQ).max_growth)))
 
-// The same test with the overflow bound written against stack_bottom, which
-// every handler already holds in a register. ctx.stack_limit is the same
-// address, the bottom + 1024, but reading it is a load that keeps ctx live,
-// and in PUSH2's JUMP/JUMPI arms that one register is what pushes gcc past the
-// caller-saved set into s0 and the frame that comes with it: four instructions
-// on every fused PUSH2. The other fused handlers have registers to spare and
-// are cheaper with the load, so only those two arms use this form.
-#define MONAD_VM_FUSED_CHARGE_BOTTOM(REQ)                                      \
-    (::monad::vm::interpreter::charge_gas(gas_remaining, (REQ).gas) &&         \
-     ::monad::vm::interpreter::stack_holds<(REQ).min_required>(                \
-         stack_top, stack_bottom) &&                                           \
-     ((REQ).max_growth == 0 ||                                                 \
-      (stack_top) < (stack_bottom) +                                           \
-                        (1025 - MONAD_VM_STACK_BOTTOM_BIAS - (REQ).max_growth)))
-
 // Dispatch using OP2, the opcode already read at instr_ptr[1].
 // EQ/ISZERO's stack writes prevent GCC from reusing that load itself;
 // reusing it explicitly is safe because bytecode is immutable.
@@ -1746,7 +1731,7 @@ namespace monad::vm::interpreter
         // With the JUMPDEST that a valid destination is.
         static constexpr auto monad_vm_req =
             fused_requirements<traits, PUSH2, JUMP, JUMPDEST>();
-        if (MONAD_LIKELY(MONAD_VM_FUSED_CHARGE_BOTTOM(monad_vm_req))) {
+        if (MONAD_LIKELY(MONAD_VM_FUSED_CHARGE(monad_vm_req))) {
             if (MONAD_UNLIKELY(!analysis.is_jumpdest16(monad_vm_dst))) {
                 ctx.exit(Error);
             }
@@ -1784,7 +1769,7 @@ namespace monad::vm::interpreter
             static_cast<size_t>(detail::load_be_k<2>(instr_ptr + 1));
         static constexpr auto monad_vm_reqi =
             fused_requirements<traits, PUSH2, JUMPI>();
-        if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_BOTTOM(monad_vm_reqi))) {
+        if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE(monad_vm_reqi))) {
             gas_remaining += monad_vm_reqi.gas;
             MONAD_VM_CHECK(PUSH2);
             MONAD_VM_CHECK_AT(JUMPI, 1);
@@ -2384,5 +2369,4 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_CHECK_AT
 #undef MONAD_VM_CHARGE
 #undef MONAD_VM_FUSED_CHARGE
-#undef MONAD_VM_FUSED_CHARGE_BOTTOM
 #undef MONAD_VM_CHECKED_RUNTIME_CALL

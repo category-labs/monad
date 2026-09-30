@@ -689,6 +689,13 @@ OffsetTrie::encode_rlp(
     [[maybe_unused]] node_id_wire_t const *const children_in)
 {
     MONAD_DEBUG_ASSERT(node.tag() != EMPTY && node.tag() != DIGEST);
+    if constexpr (claims) {
+        // The constructor hands the claims pass its branches only: the other
+        // arms, their buffers in the frame and the dispatch compile away.
+        if (node.tag() != BRANCH) {
+            std::unreachable();
+        }
+    }
     // Compact-encode `path` straight into d's tail as an RLP string; return
     // d shrunk. The compact form is clen = nibble_size/2 + 1 bytes (<= 33,
     // always a short string): write it directly, then prepend the

@@ -302,6 +302,16 @@ namespace monad::vm::interpreter
     }
 
 #if defined(MONAD_ZKVM_ZISK)
+    // The static gas of a sequence, a dynamic-cost opcode's at its minimum:
+    // for a caller that charges the dynamic part itself.
+    template <Traits traits, compiler::EvmOpCode... Ops>
+    consteval int64_t static_gas()
+    {
+        return (
+            static_cast<int64_t>(compiler::opcode_table<traits>[Ops].min_gas) +
+            ...);
+    }
+
     // Charge gas and tell whether it was covered. The sign of what is left is
     // one test; gcc would compare the gas before the charge instead, against a
     // constant it must load first.
@@ -1815,6 +1825,163 @@ namespace monad::vm::interpreter
         MONAD_VM_FUSED_NEXT(4, -1);
     }
 
+    // The word-by-word memory copy older Solidity compilers emit,
+    //
+    //     h: JUMPDEST DUP4 DUP2 LT ISZERO PUSH2 <end> JUMPI
+    //        DUP2 DUP2 ADD MLOAD DUP4 DUP3 ADD MSTORE PUSH1 0x20 ADD
+    //        PUSH2 <h> JUMP
+    //
+    // over [.. len dst src i]: a word a turn while i < len. The JUMPDEST
+    // falling through into DUP4 DUP2 dispatches here, instr_ptr on the DUP4,
+    // and the twin runs every turn at once from what the turns leave: the
+    // memory grown to the furthest word, the words copied as the turns copy
+    // them, i past len, and the gas of the turns and of the exit charged and
+    // tested once, at the JUMPI that leaves -- a checkpoint (stack.hpp).
+    // Whatever the fast path does not take -- another pattern, a word of 2^28
+    // or more, growth past the capacity or the bound, the stack's last slots
+    // -- runs the opcodes one by one. A loop entered by a jump to h runs them
+    // one by one too: its JUMPDEST is swallowed.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void copy_loop(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const *const p = instr_ptr;
+        auto const monad_vm_is = [p](size_t const k, auto const op) {
+            return p[k] == static_cast<std::uint8_t>(op);
+        };
+        auto const monad_vm_small = [](uint256_t const &x) {
+            return (x[1] | x[2] | x[3]) == 0 && x[0] < (uint64_t{1} << 28);
+        };
+        size_t const monad_vm_end = detail::load_be_k<2>(p + 5);
+        size_t const monad_vm_head = detail::load_be_k<2>(p + 20);
+        uint256_t const &monad_vm_i = stack_top[0];
+        uint256_t const &monad_vm_src = stack_top[-1];
+        uint256_t const &monad_vm_dst = stack_top[-2];
+        uint256_t const &monad_vm_len = stack_top[-3];
+        // The JUMPDEST before p is h, a JUMPDEST by its own dispatch.
+        if (!(monad_vm_is(2, LT) && monad_vm_is(3, ISZERO) &&
+              monad_vm_is(4, PUSH2) && monad_vm_is(7, JUMPI) &&
+              monad_vm_is(8, DUP2) && monad_vm_is(9, DUP2) &&
+              monad_vm_is(10, ADD) && monad_vm_is(11, MLOAD) &&
+              monad_vm_is(12, DUP4) && monad_vm_is(13, DUP3) &&
+              monad_vm_is(14, ADD) && monad_vm_is(15, MSTORE) &&
+              monad_vm_is(16, PUSH1) && p[17] == 0x20 && monad_vm_is(18, ADD) &&
+              monad_vm_is(19, PUSH2) && monad_vm_is(22, JUMP) &&
+              monad_vm_head ==
+                  static_cast<size_t>(p - 1 - MONAD_VM_ANALYSIS.code()) &&
+              stack_top - 3 >= stack_bottom &&
+              stack_top + 3 <= MONAD_VM_STACK_LIMIT &&
+              monad_vm_small(monad_vm_len) && monad_vm_small(monad_vm_i) &&
+              monad_vm_small(monad_vm_src) && monad_vm_small(monad_vm_dst) &&
+              monad_vm_i[0] < monad_vm_len[0])) {
+            MONAD_VM_DISPATCH(0, 0, *instr_ptr);
+        }
+
+        uint64_t const monad_vm_first = monad_vm_i[0];
+        uint64_t const monad_vm_s = monad_vm_src[0];
+        uint64_t const monad_vm_d = monad_vm_dst[0];
+        uint64_t const monad_vm_turns =
+            (monad_vm_len[0] - monad_vm_first + 31) >> 5;
+        uint64_t const monad_vm_last =
+            monad_vm_first + 32 * (monad_vm_turns - 1);
+        // The furthest words' offsets are MLOAD's and MSTORE's: under 2^28.
+        if (monad_vm_s + monad_vm_last >= (uint64_t{1} << 28) ||
+            monad_vm_d + monad_vm_last >= (uint64_t{1} << 28)) {
+            MONAD_VM_DISPATCH(0, 0, *instr_ptr);
+        }
+        uint64_t const monad_vm_far =
+            std::max(monad_vm_s, monad_vm_d) + monad_vm_last + 32;
+        int64_t monad_vm_expansion = 0;
+        if (monad_vm_far > ctx.memory.size) {
+            auto const monad_vm_words =
+                runtime::Context::memory_size_to_word_count(
+                    runtime::Bin<29>::unsafe_from(monad_vm_far));
+            auto const monad_vm_size =
+                runtime::Context::word_count_to_memory_size(monad_vm_words);
+            if (MONAD_UNLIKELY(
+                    ctx.memory.capacity < *monad_vm_size ||
+                    !ctx.is_memory_size_in_bound<traits>(monad_vm_size))) {
+                MONAD_VM_DISPATCH(0, 0, *instr_ptr);
+            }
+            auto const monad_vm_cost =
+                runtime::Context::memory_cost_from_word_count<traits>(
+                    monad_vm_words);
+            monad_vm_expansion = monad_vm_cost - ctx.memory.cost;
+            ctx.memory.size = *monad_vm_size;
+            ctx.memory.cost = monad_vm_cost;
+        }
+        // A turn from the head's DUP4 to the next head, and the exit.
+        static constexpr int64_t monad_vm_turn_gas = static_gas<
+            traits,
+            DUP4,
+            DUP2,
+            LT,
+            ISZERO,
+            PUSH2,
+            JUMPI,
+            DUP2,
+            DUP2,
+            ADD,
+            MLOAD,
+            DUP4,
+            DUP3,
+            ADD,
+            MSTORE,
+            PUSH1,
+            ADD,
+            PUSH2,
+            JUMP,
+            JUMPDEST>();
+        static constexpr int64_t monad_vm_exit_gas = static_gas<
+            traits,
+            DUP4,
+            DUP2,
+            LT,
+            ISZERO,
+            PUSH2,
+            JUMPI,
+            JUMPDEST>();
+        gas_remaining -=
+            monad_vm_turn_gas * static_cast<int64_t>(monad_vm_turns) +
+            monad_vm_exit_gas + monad_vm_expansion;
+        if (MONAD_UNLIKELY(!MONAD_VM_ANALYSIS.is_jumpdest16(monad_vm_end))) {
+            MONAD_VM_MUST_TAIL return ctx.exit(Error);
+        }
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+        }
+        uint8_t *const monad_vm_mem = ctx.memory.data;
+        uint64_t const monad_vm_bytes = 32 * monad_vm_turns;
+        // The turns read no word an earlier one wrote when the ranges are
+        // apart: one copy. Otherwise word by word, in their order.
+        if (monad_vm_d + monad_vm_bytes <= monad_vm_s ||
+            monad_vm_s + monad_vm_bytes <= monad_vm_d) {
+            std::memcpy(
+                monad_vm_mem + monad_vm_d + monad_vm_first,
+                monad_vm_mem + monad_vm_s + monad_vm_first,
+                monad_vm_bytes);
+        }
+        else {
+            for (uint64_t k = monad_vm_first; k <= monad_vm_last; k += 32) {
+                uint64_t monad_vm_word[4];
+                std::memcpy(monad_vm_word, monad_vm_mem + monad_vm_s + k, 32);
+                std::memcpy(monad_vm_mem + monad_vm_d + k, monad_vm_word, 32);
+            }
+        }
+        // i past len, where the exit's LT finds it.
+        stack_top[0] = uint256_t{monad_vm_last + 32};
+        instr_ptr = MONAD_VM_ANALYSIS.code() + monad_vm_end + 1;
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+            ctx,
+            MONAD_VM_ANALYSIS_ARG,
+            stack_bottom,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+
     // PUSH4 <mask> AND and PUSH20 <mask> AND, which Solidity cleans a
     // selector and an address with: the immediate applied to the top in
     // place, without the push. Apart from push<N>: in it the arm's
@@ -2400,7 +2567,26 @@ namespace monad::vm::interpreter
             static_cast<uint64_t>(instr_ptr - MONAD_VM_ANALYSIS.code()));
         MONAD_VM_CHECK(JUMPDEST);
 
+#if defined(MONAD_ZKVM_ZISK)
+        // Falling through into DUP4 DUP2 may enter a memory copy loop, which
+        // copy_loop runs whole: the dispatch's target, as push1_mask's.
+        instr_ptr += 1;
+        MONAD_VM_LAUNDER(instr_ptr);
+        bool const monad_vm_loop =
+            *instr_ptr == static_cast<std::uint8_t>(DUP4) &&
+            *(instr_ptr + 1) == static_cast<std::uint8_t>(DUP2);
+        auto const monad_vm_next =
+            monad_vm_loop ? &copy_loop<traits> : MONAD_VM_TABLE_REF[*instr_ptr];
+        MONAD_VM_MUST_TAIL return monad_vm_next(
+            ctx,
+            MONAD_VM_ANALYSIS_ARG,
+            stack_bottom,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+#else
         MONAD_VM_NEXT(JUMPDEST);
+#endif
     }
 
     // Logging

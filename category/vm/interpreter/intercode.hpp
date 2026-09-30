@@ -80,10 +80,23 @@ namespace monad::vm::interpreter
                 words_[i >> 6] |= uint64_t{1} << (i & 63);
             }
 
+#ifdef MONAD_ZKVM_ZISK
+            // Let FrameCode test the same bitmap without owning the map.
+            [[gnu::always_inline]] static bool
+            test(uint64_t const *const words, size_t const i) noexcept
+            {
+                return MONAD_VM_TEST_BIT(words[i >> 6], i);
+            }
+#endif
+
             bool test(size_t const i) const noexcept
             {
+#ifdef MONAD_ZKVM_ZISK
+                return test(words_, i);
+#else
                 // Read bit i % 64 from word i / 64.
                 return MONAD_VM_TEST_BIT(words_[i >> 6], i);
+#endif
             }
 
             size_t word_count() const noexcept
@@ -103,6 +116,13 @@ namespace monad::vm::interpreter
                 return words_.data();
 #endif
             }
+
+#if defined(MONAD_ZKVM_ZISK)
+            uint64_t const *words() const noexcept
+            {
+                return words_;
+            }
+#endif
         };
 
         explicit Intercode(std::span<uint8_t const> const);
@@ -138,6 +158,13 @@ namespace monad::vm::interpreter
         {
             return pc < *code_size_ && jumpdest_map_.test(pc);
         }
+
+#if defined(MONAD_ZKVM_ZISK)
+        uint64_t const *jumpdest_words() const noexcept
+        {
+            return jumpdest_map_.words();
+        }
+#endif
 
         // Requires pc < 2^16: callers use load_be_k<2>, which combines exactly
         // two bytes and leaves the upper bits zero. On ZisK the map covers

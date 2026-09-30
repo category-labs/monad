@@ -1729,6 +1729,91 @@ namespace monad::vm::interpreter
         MONAD_VM_FUSED_NEXT(3, 0);
     }
 
+    // The rest of PUSH1 1 PUSH1 1 PUSH1 <k> SHL SUB, the mask 2^k - 1 that
+    // Solidity builds to clean an address (k = 160) or a uint<k>, and of the
+    // AND that applies it more often than not. push<1>'s PUSH1 PUSH1 arm has
+    // pushed the two ones and dispatches here, instr_ptr on the third PUSH1;
+    // the ones' slots take the mask, or the AND consumes them.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push1_mask(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const monad_vm_k = static_cast<size_t>(*(instr_ptr + 1));
+        // The word holding bit k, whose low k % 64 bits the mask sets, the
+        // words below it all ones and those above it zero.
+        size_t const monad_vm_w = monad_vm_k >> 6;
+        uint64_t const monad_vm_low = (uint64_t{1} << (monad_vm_k & 63)) - 1;
+        if (*(instr_ptr + 4) == static_cast<std::uint8_t>(AND)) {
+            // After the ones: the value under them.
+            static constexpr auto monad_vm_req =
+                fused_requirements<traits, PUSH1, SHL, SUB, AND>();
+            if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
+                gas_remaining += monad_vm_req.gas;
+                MONAD_VM_CHECK(PUSH1);
+                MONAD_VM_CHECK_AT(SHL, 1);
+                MONAD_VM_CHECK_AT(SUB, 0);
+                MONAD_VM_CHECK_AT(AND, -1);
+            }
+            auto &monad_vm_x = *(stack_top - 2);
+            if (monad_vm_w == 2) {
+                monad_vm_x[2] &= monad_vm_low;
+                monad_vm_x[3] = 0;
+            }
+            else if (monad_vm_w == 1) {
+                monad_vm_x[1] &= monad_vm_low;
+                monad_vm_x[2] = 0;
+                monad_vm_x[3] = 0;
+            }
+            else if (monad_vm_w == 3) {
+                monad_vm_x[3] &= monad_vm_low;
+            }
+            else {
+                monad_vm_x[0] &= monad_vm_low;
+                monad_vm_x[1] = 0;
+                monad_vm_x[2] = 0;
+                monad_vm_x[3] = 0;
+            }
+            MONAD_VM_FUSED_NEXT(5, -2);
+        }
+        static constexpr auto monad_vm_req =
+            fused_requirements<traits, PUSH1, SHL, SUB>();
+        if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
+            gas_remaining += monad_vm_req.gas;
+            MONAD_VM_CHECK(PUSH1);
+            MONAD_VM_CHECK_AT(SHL, 1);
+            MONAD_VM_CHECK_AT(SUB, 0);
+        }
+        auto &monad_vm_y = *(stack_top - 1);
+        uint64_t const monad_vm_ones = ~uint64_t{0};
+        if (monad_vm_w == 2) {
+            monad_vm_y[0] = monad_vm_ones;
+            monad_vm_y[1] = monad_vm_ones;
+            monad_vm_y[2] = monad_vm_low;
+            monad_vm_y[3] = 0;
+        }
+        else if (monad_vm_w == 1) {
+            monad_vm_y[0] = monad_vm_ones;
+            monad_vm_y[1] = monad_vm_low;
+            monad_vm_y[2] = 0;
+            monad_vm_y[3] = 0;
+        }
+        else if (monad_vm_w == 3) {
+            monad_vm_y[0] = monad_vm_ones;
+            monad_vm_y[1] = monad_vm_ones;
+            monad_vm_y[2] = monad_vm_ones;
+            monad_vm_y[3] = monad_vm_low;
+        }
+        else {
+            monad_vm_y[0] = monad_vm_low;
+            monad_vm_y[1] = 0;
+            monad_vm_y[2] = 0;
+            monad_vm_y[3] = 0;
+        }
+        MONAD_VM_FUSED_NEXT(4, -1);
+    }
+
 #if defined(MONAD_ZKVM_ZISK)
     // PUSH2 <dst> JUMP and PUSH2 <dst> JUMPI, one twin each: use the immediate
     // directly as the destination. Check gas and stack in opcode order, then
@@ -1917,7 +2002,26 @@ namespace monad::vm::interpreter
                 uint8_t const monad_vm_imm2 = *(instr_ptr + 3);
                 interpreter::push(stack_top, uint256_t{monad_vm_imm1});
                 interpreter::push(stack_top + 1, uint256_t{monad_vm_imm2});
-                MONAD_VM_FUSED_NEXT(4, 2);
+                // Two ones before PUSH1 <k> SHL SUB build a mask, which
+                // push1_mask finishes: the dispatch's target, not a call of
+                // its own, which would copy the arguments away on every PUSH1.
+                instr_ptr += 4;
+                MONAD_VM_LAUNDER(instr_ptr);
+                bool const monad_vm_mask =
+                    monad_vm_imm1 == 1 && monad_vm_imm2 == 1 &&
+                    *instr_ptr == static_cast<std::uint8_t>(PUSH1) &&
+                    *(instr_ptr + 2) == static_cast<std::uint8_t>(SHL) &&
+                    *(instr_ptr + 3) == static_cast<std::uint8_t>(SUB);
+                auto const monad_vm_next = monad_vm_mask
+                                               ? &push1_mask<traits>
+                                               : MONAD_VM_TABLE_REF[*instr_ptr];
+                MONAD_VM_MUST_TAIL return monad_vm_next(
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top + 2,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
             }
         }
         // PUSH2 JUMP and PUSH2 JUMPI run in twins of their own: their arms

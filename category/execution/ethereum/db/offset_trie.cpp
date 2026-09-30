@@ -736,16 +736,23 @@ OffsetTrie::encode_rlp(
 #endif
                     --c;
                     uint64_t const w = *c;
+                    if (w == 0) {
+                        // An empty child needs no room test: a span is only
+                        // ever made whole, over MAX_NODE_RLP bytes, and a
+                        // branch's RLP is 532 at most.
+                        static_assert(
+                            3 + 16 * HASH_RLP_LEN + 1 <= MAX_NODE_RLP);
+                        dest = dest.prepend_unchecked(zx(0x80));
+                        continue;
+                    }
 #if defined(MONAD_ZKVM_ZISK)
                     if constexpr (claims) {
                         // The constructor's claim, before anything of the
                         // child is read: a node start the walk marked, not yet
                         // claimed by another parent (see is_valid_offset).
-                        if (w != 0) {
-                            MONAD_ASSERT(w < blob_size && marks[w] != 0);
-                            marks[w] = 0;
-                            claimed += DIGEST_NODE_LEN;
-                        }
+                        MONAD_ASSERT(w < blob_size && marks[w] != 0);
+                        marks[w] = 0;
+                        claimed += DIGEST_NODE_LEN;
                     }
 #endif
                     if (!digest_at(w)) {
@@ -759,10 +766,8 @@ OffsetTrie::encode_rlp(
                             static_assert(
                                 MAX_NODE_RLP - (3 + 16 * HASH_RLP_LEN + 1) >=
                                 16 * sizeof(uint64_t));
-                            if (w != 0) {
-                                reinterpret_cast<uint64_t *>(
-                                    dest.base())[c - first] = dest.size();
-                            }
+                            reinterpret_cast<uint64_t *>(
+                                dest.base())[c - first] = dest.size();
                         }
 #endif
                         continue;

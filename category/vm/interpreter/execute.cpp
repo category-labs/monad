@@ -119,7 +119,8 @@ namespace monad::vm::interpreter
             uint256_t *stack_ptr, void *)
         {
             StackTop const stack_top{stack_ptr};
-            auto const *const stack_bottom = stack_ptr;
+            auto const *const stack_bottom =
+                stack_ptr + MONAD_VM_STACK_BOTTOM_BIAS;
             auto const *const instr_ptr = analysis->code();
             auto const gas_remaining = ctx->gas_remaining;
 

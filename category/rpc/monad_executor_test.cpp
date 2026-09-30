@@ -8903,3 +8903,166 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_state_override_zeros_storage)
     monad_state_override_vec_destroy(state_overrides);
     monad_executor_destroy(executor);
 }
+
+TEST_F(EthCallFixture, selfdestruct_same_tx_with_state_trace)
+{
+    static constexpr auto from =
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
+
+    commit_sequential(
+        tdb,
+        StateDeltas(
+            {{from,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 10_ether, .code_hash = NULL_HASH}}}}}),
+        {},
+        BlockHeader{.number = 0});
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, StateDeltas({}), {}, BlockHeader{.number = i});
+    }
+
+    // ADDRESS SELFDESTRUCT
+    byte_string const tx_data = 0x30ff_bytes;
+    Transaction const tx{
+        .gas_limit = 200000u, .value = 1_ether, .data = tx_data};
+    BlockHeader const header{.number = 256};
+    commit_sequential(tdb, StateDeltas({}), {}, header);
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        STATEDIFF_TRACER,
+        true);
+    f.get();
+
+    ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+    std::vector<uint8_t> const encoded(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    // The created account, create(from, nonce 0) = 0xf989..., is absent.
+    auto const *const expected = R"({
+        "post": {
+            "0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56": {
+                "balance": "0x7ce66c50e2840000",
+                "nonce": 1
+            }
+        },
+        "pre": {
+            "0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56": {
+                "balance": "0x8ac7230489e80000"
+            }
+        }
+    })";
+    EXPECT_EQ(
+        nlohmann::json::parse(expected), nlohmann::json::from_cbor(encoded));
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, touched_empty_account_with_state_trace)
+{
+    static constexpr Address sender =
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
+    static constexpr Address recipient =
+        0xcccccccccccccccccccccccccccccccccccccccc_address;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 10_ether}}}},
+            {recipient, StateDelta{.account = {std::nullopt, Account{}}}}},
+        {},
+        BlockHeader{.number = 0});
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, StateDeltas({}), {}, BlockHeader{.number = i});
+    }
+
+    Transaction const tx{.gas_limit = 200'000u, .value = 0, .to = recipient};
+    BlockHeader const header{.number = 256};
+    commit_sequential(tdb, StateDeltas({}), {}, header);
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(sender)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    callback_context ctx;
+    boost::fibers::future<void> future = ctx.promise.get_future();
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        &ctx,
+        STATEDIFF_TRACER,
+        true);
+    future.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_GT(ctx.result->encoded_trace_len, 0);
+    auto const output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+    auto const *const expected = R"({
+        "post": {
+            "0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56": {
+                "nonce": 1
+            }
+        },
+        "pre": {
+            "0xcccccccccccccccccccccccccccccccccccccccc": {
+                "balance": "0x0"
+            },
+            "0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56": {
+                "balance": "0x8ac7230489e80000"
+            }
+        }
+    })";
+    EXPECT_EQ(nlohmann::json::parse(expected), output);
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}

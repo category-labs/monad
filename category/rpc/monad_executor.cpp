@@ -317,6 +317,10 @@ namespace
 
         execution_result.gas_refund = static_cast<int64_t>(gas_refund);
 
+        // Finalize account deletions such that accounts created and destructed
+        // during the same transaction are not reflected in the state trace.
+        state.destruct_suicides<traits>();
+        state.destruct_touched_dead();
         trace::run_tracer<traits>(state_tracer, state);
 
         return execution_result;

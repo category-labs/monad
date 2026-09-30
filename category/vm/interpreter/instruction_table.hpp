@@ -1810,6 +1810,43 @@ namespace monad::vm::interpreter
     }
 
 #if defined(MONAD_ZKVM_ZISK)
+    // PUSH4 <mask> AND and PUSH20 <mask> AND, which Solidity cleans a
+    // selector and an address with: the immediate applied to the top in
+    // place, without the push. Apart from push<N>: in it the arm's
+    // temporaries take a0, a1 and a6, which every PUSH4 and PUSH20 would
+    // then copy away at its first instruction.
+    template <size_t N, Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push_and(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        static constexpr auto monad_vm_req = fused_requirements<
+            traits,
+            static_cast<compiler::EvmOpCode>(PUSH0 + N),
+            AND>();
+        if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
+            gas_remaining += monad_vm_req.gas;
+            MONAD_VM_CHECK(PUSH0 + N);
+            MONAD_VM_CHECK_AT(AND, 1);
+        }
+        auto &monad_vm_x = *stack_top;
+        if constexpr (N == 4) {
+            monad_vm_x[0] &= detail::load_be_k<4>(instr_ptr + 1);
+            monad_vm_x[1] = 0;
+            monad_vm_x[2] = 0;
+            monad_vm_x[3] = 0;
+        }
+        else {
+            static_assert(N == 20);
+            monad_vm_x[0] &= detail::read_unaligned(instr_ptr + 13);
+            monad_vm_x[1] &= detail::read_unaligned(instr_ptr + 5);
+            monad_vm_x[2] &= detail::load_be_k<4>(instr_ptr + 1);
+            monad_vm_x[3] = 0;
+        }
+        MONAD_VM_FUSED_NEXT(N + 2, 0);
+    }
+
     // PUSH2 <dst> JUMP and PUSH2 <dst> JUMPI, one twin each: use the immediate
     // directly as the destination. Check gas and stack in opcode order, then
     // validate taken jumps. push<2> tail-calls the one its follower names.
@@ -1915,7 +1952,7 @@ namespace monad::vm::interpreter
         // Code padding makes the lookahead safe.
         // Reuse the next opcode for fusion checks and normal dispatch.
         [[maybe_unused]] uint8_t monad_vm_op2 = 0;
-        if constexpr (N == 1 || N == 2) {
+        if constexpr (N == 1 || N == 2 || N == 4 || N == 20) {
             monad_vm_op2 = *(instr_ptr + N + 1);
         }
         if constexpr (N == 1) {
@@ -2052,12 +2089,24 @@ namespace monad::vm::interpreter
             // the stack limit's load and copy instr_ptr away for it.
             MONAD_VM_LAUNDER(instr_ptr);
         }
+        // PUSH4 <mask> AND and PUSH20 <mask> AND in their twin.
+        if constexpr (N == 4 || N == 20) {
+            if (monad_vm_op2 == static_cast<std::uint8_t>(AND)) {
+                MONAD_VM_MUST_TAIL return push_and<N, traits>(
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+        }
 #endif
         MONAD_VM_CHECK(PUSH0 + N);
         push_impl<N, traits>::push(stack_top, instr_ptr);
 
 #if defined(MONAD_ZKVM_ZISK)
-        if constexpr (N == 1 || N == 2) {
+        if constexpr (N == 1 || N == 2 || N == 4 || N == 20) {
             MONAD_VM_NEXT_PUSH_OP(PUSH0 + N, monad_vm_op2);
         }
 #endif

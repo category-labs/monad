@@ -2011,10 +2011,12 @@ namespace monad::vm::interpreter
 
             // The copy's destination is the new top: step there first, so the
             // register the copy writes through is the one the dispatch passes
-            // on, not a second one moved into place after it.
+            // on, not a second one moved into place after it. Its source is
+            // the deepest operand, whose address the underflow test formed.
+            auto const *const source = stack_top - (N - 1);
             ++stack_top;
             MONAD_VM_LAUNDER(stack_top);
-            *stack_top = *(stack_top - N);
+            *stack_top = *source;
 
             MONAD_VM_DISPATCH(1, 0, *instr_ptr);
         }

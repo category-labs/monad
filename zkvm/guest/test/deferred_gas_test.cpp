@@ -311,6 +311,94 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         code.push_back(op);
         effects &= failed_cleanly(run(code, 2 * operands - 1));
     }
+    // Compare batched copies with a byte model that preserves word order,
+    // including overlap, partial lengths, zero turns and memory growth.
+    for (auto const params : std::array<std::array<unsigned, 4>, 6>{
+             {{0, 128, 64, 0},
+              {0, 16, 64, 0},
+              {16, 0, 64, 0},
+              {0, 0, 33, 0},
+              {0, 128, 0, 0},
+              {0, 128, 65, 32}}}) {
+        auto const [src, dst, len, first] = params;
+        std::array<uint8_t, 256> expected{};
+        std::vector<uint8_t> code;
+        for (unsigned word = 0; word < 4; ++word) {
+            code.push_back(PUSH32);
+            for (unsigned byte = 0; byte < 32; ++byte) {
+                uint8_t const v = static_cast<uint8_t>(word * 32 + byte + 1);
+                expected[word * 32 + byte] = v;
+                code.push_back(v);
+            }
+            code.insert(
+                code.end(), {PUSH1, static_cast<uint8_t>(word * 32), MSTORE});
+        }
+        unsigned turns = 0;
+        for (unsigned i = first; i < len; i += 32) {
+            std::array<uint8_t, 32> temp;
+            std::copy_n(expected.begin() + src + i, 32, temp.begin());
+            std::copy(temp.begin(), temp.end(), expected.begin() + dst + i);
+            ++turns;
+        }
+        for (unsigned v : {len, dst, src, first}) {
+            code.insert(
+                code.end(),
+                {PUSH2, static_cast<uint8_t>(v >> 8), static_cast<uint8_t>(v)});
+        }
+        size_t const head = code.size();
+        code.push_back(JUMPDEST);
+        size_t const body = code.size();
+        code.insert(
+            code.end(),
+            {DUP4,
+             DUP2,
+             LT,
+             ISZERO,
+             PUSH2,
+             0,
+             0,
+             JUMPI,
+             DUP2,
+             DUP2,
+             ADD,
+             MLOAD,
+             DUP4,
+             DUP3,
+             ADD,
+             MSTORE,
+             PUSH1,
+             32,
+             ADD,
+             PUSH2,
+             static_cast<uint8_t>(head >> 8),
+             static_cast<uint8_t>(head),
+             JUMP});
+        code[body + 5] = static_cast<uint8_t>(code.size() >> 8);
+        code[body + 6] = static_cast<uint8_t>(code.size());
+        code.push_back(JUMPDEST);
+        for (unsigned word = 0; word < 8; ++word) {
+            code.insert(
+                code.end(),
+                {PUSH1, static_cast<uint8_t>(word * 32), MLOAD, PUSH32});
+            code.insert(
+                code.end(),
+                expected.begin() + word * 32,
+                expected.begin() + (word + 1) * 32);
+            code.push_back(EQ);
+            size_t const jump = code.size();
+            code.insert(code.end(), {PUSH2, 0, 0, JUMPI, 0xfe});
+            code[jump + 1] = static_cast<uint8_t>(code.size() >> 8);
+            code[jump + 2] = static_cast<uint8_t>(code.size());
+            code.push_back(JUMPDEST);
+        }
+        code.push_back(STOP);
+        int64_t const cost = 307 + 67 * turns;
+        auto const result = run(code, cost);
+        effects &= result.status == EVMC_SUCCESS && result.gas == 0 &&
+                   result.accesses == 0;
+        effects &= failed_cleanly(run(code, cost - 1));
+        effects &= failed_cleanly(run(code, 61)); // OOG at loop entry.
+    }
     check(effects);
     // Two selector tests: first match, second match, or neither. Sweep gas
     // through both tests and the taken jump's JUMPDEST charge.

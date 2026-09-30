@@ -1729,6 +1729,7 @@ namespace monad::vm::interpreter
         MONAD_VM_FUSED_NEXT(3, 0);
     }
 
+#if defined(MONAD_ZKVM_ZISK)
     // The rest of PUSH1 1 PUSH1 1 PUSH1 <k> SHL SUB, the mask 2^k - 1 that
     // Solidity builds to clean an address (k = 160) or a uint<k>, and of the
     // AND that applies it more often than not. push<1>'s PUSH1 PUSH1 arm has
@@ -1814,7 +1815,6 @@ namespace monad::vm::interpreter
         MONAD_VM_FUSED_NEXT(4, -1);
     }
 
-#if defined(MONAD_ZKVM_ZISK)
     // PUSH4 <mask> AND and PUSH20 <mask> AND, which Solidity cleans a
     // selector and an address with: the immediate applied to the top in
     // place, without the push. Apart from push<N>: in it the arm's

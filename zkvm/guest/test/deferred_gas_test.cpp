@@ -367,5 +367,36 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         }
     }
     check(masks);
+    // Nonuniform immediate masks exercise byte order and all word boundaries.
+    bool immediate_masks = true;
+    for (unsigned width : {4u, 20u}) {
+        std::array<uint8_t, 32> value{};
+        std::array<uint8_t, 32> mask{};
+        std::array<uint8_t, 32> expected{};
+        for (unsigned i = 0; i < 32; ++i) {
+            value[i] = static_cast<uint8_t>(0xa5 ^ (i * 7));
+            if (i >= 32 - width) {
+                mask[i] = static_cast<uint8_t>(i * 13 + 1);
+            }
+            expected[i] = value[i] & mask[i];
+        }
+        std::vector<uint8_t> code{PUSH32};
+        code.insert(code.end(), value.begin(), value.end());
+        code.push_back(static_cast<uint8_t>(PUSH0 + width));
+        code.insert(code.end(), mask.end() - width, mask.end());
+        code.insert(code.end(), {AND, PUSH32});
+        code.insert(code.end(), expected.begin(), expected.end());
+        code.push_back(EQ);
+        size_t const jump = code.size();
+        code.insert(code.end(), {PUSH2, 0, 0, JUMPI, 0xfe});
+        code[jump + 2] = static_cast<uint8_t>(code.size());
+        code.insert(code.end(), {JUMPDEST, STOP});
+        auto const result = run(code, 29);
+        immediate_masks &= result.status == EVMC_SUCCESS && result.gas == 0 &&
+                           result.output == 0 && result.refund == 0 &&
+                           result.accesses == 0;
+        immediate_masks &= failed_cleanly(run(code, 28));
+    }
+    check(immediate_masks);
     return failures;
 }

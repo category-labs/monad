@@ -614,6 +614,11 @@ class OffsetTrie
     // chunks that never move, RLP_WINDOW_STRIDE apart: a multiple of eight,
     // so a kept RLP starts at the alignment an 8-aligned buffer's copy of it
     // does, which keeps encode_current's copy on DMA's cheap path.
+    // The constructor's copy of the branch it validates and primes: its
+    // payload lies at any offset, so reading the children in place crosses a
+    // word seven times in eight, and the priming encode copied them again.
+    alignas(8) node_id_wire_t primed_children_[16];
+
     static constexpr size_t RLP_WINDOW_STRIDE = 704;
     static_assert(RLP_WINDOW_STRIDE >= MAX_NODE_RLP && RLP_WINDOW_STRIDE % 8 == 0);
     unsigned char *rlp_window_{nullptr};
@@ -930,8 +935,12 @@ private:
 
     // The node's full canonical Ethereum RLP. Reads `node`'s fields and
     // resolves its children through child_ref.
+    // `children`, when given, is an aligned copy of a branch's sixteen
+    // children the caller already holds; otherwise the branch copies its own.
     template <bool priming_pass = false>
-    node_rlp_span encode_rlp(NodeViewBase node, node_rlp_span dest);
+    node_rlp_span encode_rlp(
+        NodeViewBase node, node_rlp_span dest,
+        node_id_wire_t const *children = nullptr);
 
     NodeId fresh_id();
 

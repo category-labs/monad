@@ -296,7 +296,9 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     // encode below validates -- it claims each child where it
                     // first reads it, before reading anything of the child's.
                     std::memcpy(
-                        primed_children_, b.payload(), sizeof(primed_children_));
+                        primed_slots_ + PRIMED_CHILDREN,
+                        b.payload(),
+                        16 * sizeof(node_id_wire_t));
 #else
                     unsigned char const *const p = b.payload();
                     uint64_t pair;
@@ -331,7 +333,9 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     node_rlp_span const rem =
                         node.tag() == BRANCH
                             ? encode_rlp<true, true>(
-                                  node, node_rlp_span{window}, primed_children_)
+                                  node,
+                                  node_rlp_span{window},
+                                  primed_slots_ + PRIMED_CHILDREN)
                             : encode_rlp<true>(
                                   node, node_rlp_span{window}); // priming pass
 #else
@@ -877,9 +881,13 @@ OffsetTrie::encode_rlp(
                     // the next. Not unrolled: gcc's copies of the body would
                     // pass lo and below between them in moves. A slot equal to
                     // `below` lies under w, so it is not an overlay id.
+                    // The claims pass has no bound test: its children lie over
+                    // the constructor's zero slot, which ends a run -- zero
+                    // equals `below` only when `below` is zero, and offset zero
+                    // is the magic, which the walk never marks.
                     uint64_t below = w - HASH_RLP_LEN;
 #pragma GCC unroll 1
-                    while (lo != first) {
+                    while (claims || lo != first) {
                         uint64_t const prev = lo[-1];
                         if (prev != below) {
                             break;

@@ -312,5 +312,25 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         effects &= failed_cleanly(run(code, 2 * operands - 1));
     }
     check(effects);
+    // Two selector tests: first match, second match, or neither. Sweep gas
+    // through both tests and the taken jump's JUMPDEST charge.
+    bool selectors = true;
+    for (uint8_t selector = 0; selector <= 2; ++selector) {
+        std::array<uint8_t, 27> const code{
+            PUSH1, selector, DUP1,  PUSH4, 0,    0,     0,    1,        EQ,
+            PUSH2, 0,        25,    JUMPI, DUP1, PUSH4, 0,    0,        0,
+            2,     EQ,       PUSH2, 0,     25,   JUMPI, STOP, JUMPDEST, STOP};
+        int64_t const cost = selector == 1 ? 26 : selector == 2 ? 48 : 47;
+        for (int64_t gas = 0; gas <= 50; ++gas) {
+            auto const result = run(code, gas);
+            selectors &= gas < cost
+                             ? failed_cleanly(result)
+                             : result.status == EVMC_SUCCESS &&
+                                   result.gas == gas - cost &&
+                                   result.refund == 0 && result.output == 0 &&
+                                   result.accesses == 0;
+        }
+    }
+    check(selectors);
     return failures;
 }

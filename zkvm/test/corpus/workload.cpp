@@ -16,6 +16,7 @@
 #include <zkvm/test/corpus/contracts/namespace_spoke_bytecode.hpp>
 #include <zkvm/test/corpus/genesis_bulk.hpp>
 #include <zkvm/test/corpus/scenarios.hpp>
+#include <zkvm/test/corpus/token_contracts.hpp>
 #include <zkvm/test/corpus/tx_sign.hpp>
 #include <zkvm/test/corpus/workload.hpp>
 
@@ -33,8 +34,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <string>
+#include <string_view>
 #include <utility>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -123,13 +126,17 @@ namespace corpus
         uint256_t const SIGNER_BALANCE = ETHER * 100;
         uint256_t const HOLDER_BALANCE = ETHER / 1000;
 
-        /// A holder needs an address, not a key: nobody signs for it. So this
-        /// is a keccak and not an EC multiplication -- which is what makes a
-        /// million of them affordable at all.
-        Address holder_address(bytes32_t const &seed, uint64_t const i)
+        /// keccak256(seed ‖ label ‖ be64(i))[12:]: an address nobody holds a
+        /// key for, so a keccak and not an EC multiplication. The label keeps
+        /// one role's addresses from ever meeting another's.
+        Address seeded_address(
+            bytes32_t const &seed, std::string_view const label,
+            uint64_t const i)
         {
             byte_string buf{seed.bytes, sizeof(seed.bytes)};
-            buf.append(reinterpret_cast<unsigned char const *>("holder"), 6);
+            buf.append(
+                reinterpret_cast<unsigned char const *>(label.data()),
+                label.size());
             for (unsigned b = 0; b < 8; ++b) {
                 buf.push_back(static_cast<unsigned char>(i >> (56 - 8 * b)));
             }
@@ -137,6 +144,14 @@ namespace corpus
             Address a;
             std::memcpy(a.bytes, h.bytes + 12, sizeof(a.bytes));
             return a;
+        }
+
+        /// A holder needs an address, not a key: nobody signs for it. So this
+        /// is a keccak and not an EC multiplication -- which is what makes a
+        /// million of them affordable at all.
+        Address holder_address(bytes32_t const &seed, uint64_t const i)
+        {
+            return seeded_address(seed, "holder", i);
         }
 
         Transaction call(
@@ -153,6 +168,16 @@ namespace corpus
                 .max_priority_fee_per_gas = PRIORITY_FEE};
             tx.sc.chain_id = 1;
             return tx;
+        }
+
+        bool is_token_preset(Preset const p)
+        {
+            return p == Preset::WholesaleCbdc || p == Preset::WorkerPayouts;
+        }
+
+        bool is_wholesale(Preset const p)
+        {
+            return p == Preset::Wholesale || p == Preset::WholesaleCbdc;
         }
 
         /// Signers per preset. Wholesale institutions all send, so they are
@@ -179,6 +204,11 @@ namespace corpus
         /// holders and the senders come from elsewhere.
         uint64_t pool_size(WorkloadSpec const &s)
         {
+            if (is_token_preset(s.preset)) {
+                // Every participant can be drawn; the roles' own bounds are
+                // checked in resolved().
+                return s.accounts;
+            }
             return s.preset == Preset::Wholesale ? signer_count(s)
                                                  : holder_count(s);
         }
@@ -191,7 +221,8 @@ namespace corpus
             return holder_address(s.seed, i);
         }
 
-        /// `distinct` distinct indices in [0, n), drawn by shape.
+        /// `distinct` distinct indices in [0, n), drawn by shape from a
+        /// generator started at `prng_seed`.
         ///
         /// Zipf collides heavily on its head, so the draw is capped and the
         /// shortfall filled by scanning up from index 0. That keeps the
@@ -200,15 +231,12 @@ namespace corpus
         /// and the distinct count is the whole point: it is what the cost
         /// depends on, so a shape that quietly delivered fewer would be
         /// comparing two different experiments.
-        std::vector<uint64_t> draw(
+        std::vector<uint64_t> draw_seeded(
             WorkloadSpec const &spec, uint64_t const n, uint64_t const distinct,
-            uint64_t const block)
+            uint32_t const prng_seed)
         {
             MONAD_ASSERT(distinct <= n);
-            small_prng rand{static_cast<uint32_t>(
-                static_cast<uint32_t>(spec.seed.bytes[0]) << 24 |
-                static_cast<uint32_t>(spec.seed.bytes[1]) << 16 |
-                static_cast<uint32_t>(block & 0xffff))};
+            small_prng rand{prng_seed};
 
             ankerl::unordered_dense::set<uint64_t> seen;
             seen.reserve(distinct);
@@ -255,12 +283,239 @@ namespace corpus
             }
             return out;
         }
+
+        /// The native presets' draw: one per block, keyed on the block.
+        std::vector<uint64_t> draw(
+            WorkloadSpec const &spec, uint64_t const n, uint64_t const distinct,
+            uint64_t const block)
+        {
+            return draw_seeded(
+                spec,
+                n,
+                distinct,
+                static_cast<uint32_t>(
+                    static_cast<uint32_t>(spec.seed.bytes[0]) << 24 |
+                    static_cast<uint32_t>(spec.seed.bytes[1]) << 16 |
+                    static_cast<uint32_t>(block & 0xffff)));
+        }
+
+        // ---- the token presets -------------------------------------------
+
+        /// A generator seed for one role's draw in one block. A token block
+        /// draws several roles, and two draws from one seed would pick the
+        /// same indices in each.
+        uint32_t
+        stream(bytes32_t const &seed, uint64_t const block, uint64_t const role)
+        {
+            byte_string buf{seed.bytes, sizeof(seed.bytes)};
+            for (uint64_t const v : {block, role}) {
+                for (unsigned b = 0; b < 8; ++b) {
+                    buf.push_back(
+                        static_cast<unsigned char>(v >> (56 - 8 * b)));
+                }
+            }
+            auto const h = to_bytes(keccak256(buf));
+            return static_cast<uint32_t>(h.bytes[0]) << 24 |
+                   static_cast<uint32_t>(h.bytes[1]) << 16 |
+                   static_cast<uint32_t>(h.bytes[2]) << 8 |
+                   static_cast<uint32_t>(h.bytes[3]);
+        }
+
+        /// Key indices only the token presets use, apart from every range
+        /// above.
+        constexpr uint64_t PLATFORM_INDEX = 3'000;
+        constexpr uint64_t BUSINESS_INDEX_BASE = 1'000'000;
+
+        constexpr uint64_t TOKEN_GAS = 150'000;
+        constexpr uint64_t PVP_GAS = 300'000;
+        /// A payroll run, "a single instruction covering many recipients".
+        constexpr uint64_t PAYROLL_BATCH = 40;
+        constexpr uint64_t BATCH_GAS = 40'000 * PAYROLL_BATCH;
+
+        /// Reserves carry eighteen decimals; the payout case's dollar tokens
+        /// carry six, as USDC does.
+        constexpr uint256_t USD = 1'000'000;
+
+        /// Every bank starts with this much of each currency it holds. A bank
+        /// pays at most once a block as debtor or as intermediary, and at
+        /// most 360M units, so this outlasts thousands of blocks.
+        uint256_t const BANK_RESERVES = ETHER * 1'000'000'000'000;
+        /// Payments are the document's 72 AAA against 60 BBB, scaled by this
+        /// and by one to five.
+        uint256_t const PAYMENT_SCALE = ETHER * 1'000'000;
+        uint256_t const RESERVE_REDEMPTION = ETHER * 1'000'000;
+
+        /// The document's example salary: 2,000 USD a month.
+        uint256_t const PAY = USD * 2'000;
+        /// "Very many accounts holding very small balances."
+        uint256_t const CONTRACTOR_BALANCE = USD * 150;
+        /// Contractors who send are drawn again and again over a run, so they
+        /// hold enough to spend 200 USD a block for thousands of blocks.
+        uint256_t const ACTIVE_BALANCE = USD * 1'000'000;
+        uint256_t const ACTIVE_SHARES = USD * 100'000;
+        uint256_t const PLATFORM_FLOAT = USD * 10'000'000'000;
+        uint256_t const BUSINESS_FUNDS = USD * 1'000'000'000;
+        uint256_t const DEPOSIT = USD * 100;
+        uint256_t const WITHDRAWAL = USD * 50;
+        uint256_t const CARD_SPEND = USD * 25;
+        uint256_t const REDEMPTION = USD * 200;
+        uint256_t const TO_L1 = USD * 100;
+
+        /// WholesaleCbdc's banks, by index: intermediaries first -- a tenth,
+        /// holding both currencies -- then the first currency's banks, then
+        /// the second's.
+        struct BankRoles
+        {
+            uint64_t intermediaries;
+            uint64_t first_end;
+            uint64_t count;
+
+            uint64_t first() const
+            {
+                return first_end - intermediaries;
+            }
+
+            uint64_t second() const
+            {
+                return count - first_end;
+            }
+        };
+
+        BankRoles bank_roles(WorkloadSpec const &s)
+        {
+            uint64_t const m = std::max<uint64_t>(2, s.accounts / 10);
+            return {m, m + (s.accounts - m) / 2, s.accounts};
+        }
+
+        /// A payment touches its debtor in the block that proposes it and all
+        /// three banks in the next, so a block that proposes p payments and
+        /// settles the last block's p touches about 4p banks.
+        uint64_t payments_per_block(WorkloadSpec const &s)
+        {
+            return std::max<uint64_t>(1, s.distinct / 4);
+        }
+
+        /// WorkerPayouts' contractors: a pool who send, with keys, and the
+        /// many who only receive, without -- the same split, for the same
+        /// reason, as signer_count and holder_count above.
+        struct PayoutRoles
+        {
+            uint64_t active;
+            uint64_t keyless;
+            uint64_t businesses;
+        };
+
+        PayoutRoles payout_roles(WorkloadSpec const &s)
+        {
+            uint64_t const active = std::min<uint64_t>(4096, s.accounts / 2);
+            return {
+                active,
+                s.accounts - active,
+                std::max<uint64_t>(4, s.accounts / 1000)};
+        }
+
+        /// How a block's `distinct` contractors split. Most are paid; a few
+        /// are admitted and paid in the same block; the rest use the vault or
+        /// leave by one of the three exits.
+        struct PayoutMix
+        {
+            uint64_t fresh;
+            uint64_t paid;
+            uint64_t earn;
+            uint64_t exits;
+            uint64_t batches;
+        };
+
+        PayoutMix payout_mix(WorkloadSpec const &s)
+        {
+            uint64_t const d = s.distinct;
+            uint64_t const fresh = d / 50;
+            uint64_t const paid = d * 80 / 100 - fresh;
+            uint64_t const earn = d * 10 / 100;
+            uint64_t const exits = d - fresh - paid - earn;
+            return {
+                fresh,
+                paid,
+                earn,
+                exits,
+                (fresh + paid + PAYROLL_BATCH - 1) / PAYROLL_BATCH};
+        }
+
+        /// Seeds one WrappedToken. Its storage has to follow its account into
+        /// the same chunk (genesis_bulk.hpp), so construction writes the
+        /// account and code, holders and allowances follow, and finish()
+        /// writes the supply they add up to.
+        class TokenSeeder
+        {
+        public:
+            TokenSeeder(GenesisSink &sink, Address const &token)
+                : sink_{sink}
+                , token_{token}
+            {
+                sink_.contract(
+                    token_, Account{.nonce = 1}, tokens::wrapped_token_code());
+            }
+
+            /// An admitted holder, with its balance.
+            void holder(Address const &h, uint256_t const &balance)
+            {
+                sink_.storage(
+                    token_,
+                    tokens::balance_slot(h),
+                    tokens::word(balance | tokens::ELIGIBLE));
+                supply_ += balance;
+            }
+
+            /// An allowance that transferFrom never spends down.
+            void unlimited(Address const &owner, Address const &spender)
+            {
+                sink_.storage(
+                    token_,
+                    tokens::allowance_slot(owner, spender),
+                    tokens::word(~uint256_t{0}));
+            }
+
+            void finish(
+                Address const &admin, Address const &spoke,
+                Address const &l1_bridge)
+            {
+                // The eligibility bit and the amount share a slot; this is
+                // the bound that keeps them apart.
+                MONAD_ASSERT(supply_ < tokens::ELIGIBLE);
+                auto const at = [](uint64_t const slot) {
+                    return tokens::word(uint256_t{slot});
+                };
+                sink_.storage(
+                    token_,
+                    at(tokens::TOTAL_SUPPLY_SLOT),
+                    tokens::word(supply_));
+                sink_.storage(
+                    token_, at(tokens::ADMIN_SLOT), tokens::word(admin));
+                sink_.storage(
+                    token_, at(tokens::SPOKE_SLOT), tokens::word(spoke));
+                sink_.storage(
+                    token_,
+                    at(tokens::L1_BRIDGE_SLOT),
+                    tokens::word(l1_bridge));
+            }
+
+        private:
+            GenesisSink &sink_;
+            Address token_;
+            uint256_t supply_{0};
+        };
     }
 
     Preset preset_from_name(std::string const &s)
     {
         if (s == "wholesale") {
             return Preset::Wholesale;
+        }
+        if (s == "wholesale-cbdc") {
+            return Preset::WholesaleCbdc;
+        }
+        if (s == "worker-payouts") {
+            return Preset::WorkerPayouts;
         }
         MONAD_ASSERT_PRINTF(s == "payouts", "unknown preset '%s'", s.c_str());
         return Preset::Payouts;
@@ -280,7 +535,17 @@ namespace corpus
 
     char const *name_of(Preset const p)
     {
-        return p == Preset::Wholesale ? "wholesale" : "payouts";
+        switch (p) {
+        case Preset::Wholesale:
+            return "wholesale";
+        case Preset::Payouts:
+            return "payouts";
+        case Preset::WholesaleCbdc:
+            return "wholesale-cbdc";
+        case Preset::WorkerPayouts:
+            return "worker-payouts";
+        }
+        MONAD_ABORT("unreachable");
     }
 
     char const *name_of(Shape const s)
@@ -303,10 +568,10 @@ namespace corpus
             // Wholesale is the design document's hundreds of institutions;
             // payouts is its 1.5M-per-payer scale, rounded to a round number
             // so a sweep is readable.
-            r.accounts = r.preset == Preset::Wholesale ? 500 : 1'000'000;
+            r.accounts = is_wholesale(r.preset) ? 500 : 1'000'000;
         }
         if (r.distinct == 0) {
-            r.distinct = r.preset == Preset::Wholesale ? 40 : 500;
+            r.distinct = is_wholesale(r.preset) ? 40 : 500;
         }
         MONAD_ASSERT(r.accounts > PAYERS + 2);
         MONAD_ASSERT(r.chunk > 0);
@@ -319,6 +584,41 @@ namespace corpus
             pool_size(r),
             r.accounts,
             name_of(r.preset));
+        if (r.preset == Preset::WholesaleCbdc) {
+            // Not `p`: MONAD_ASSERT_PRINTF declares a `char *p` of its own,
+            // which would shadow it in the argument list.
+            auto const b = bank_roles(r);
+            uint64_t const payments = payments_per_block(r);
+            MONAD_ASSERT_PRINTF(
+                payments <= b.intermediaries && payments + 1 <= b.first() &&
+                    payments + 1 <= b.second(),
+                "distinct=%lu is %lu payments a block, and %lu banks have "
+                "%lu intermediaries and %lu and %lu banks in each currency",
+                r.distinct,
+                payments,
+                r.accounts,
+                b.intermediaries,
+                b.first(),
+                b.second());
+        }
+        if (r.preset == Preset::WorkerPayouts) {
+            auto const c = payout_roles(r);
+            auto const m = payout_mix(r);
+            MONAD_ASSERT_PRINTF(
+                m.paid <= c.keyless && m.earn + m.exits <= c.active &&
+                    m.batches <= c.businesses,
+                "distinct=%lu pays %lu, moves %lu and funds %lu batches a "
+                "block, and %lu contractors have %lu who only receive, %lu "
+                "who send and %lu businesses",
+                r.distinct,
+                m.paid,
+                m.earn + m.exits,
+                m.batches,
+                r.accounts,
+                c.keyless,
+                c.active,
+                c.businesses);
+        }
         return r;
     }
 
@@ -334,11 +634,178 @@ namespace corpus
     Workload::Workload(WorkloadSpec spec)
         : spec_{spec.resolved()}
     {
+        if (spec_.preset == Preset::WholesaleCbdc) {
+            signers_.reserve(spec_.accounts);
+            for (uint64_t i = 0; i < spec_.accounts; ++i) {
+                signers_.push_back(
+                    address_of(derive_key(spec_.seed, SIGNER_INDEX_BASE + i)));
+            }
+        }
+        if (spec_.preset == Preset::WorkerPayouts) {
+            auto const c = payout_roles(spec_);
+            signers_.reserve(c.active);
+            for (uint64_t i = 0; i < c.active; ++i) {
+                signers_.push_back(
+                    address_of(derive_key(spec_.seed, SIGNER_INDEX_BASE + i)));
+            }
+            businesses_.reserve(c.businesses);
+            for (uint64_t i = 0; i < c.businesses; ++i) {
+                businesses_.push_back(address_of(
+                    derive_key(spec_.seed, BUSINESS_INDEX_BASE + i)));
+            }
+        }
+    }
+
+    Address Workload::token(unsigned const index) const
+    {
+        MONAD_ASSERT(index < 2);
+        return seeded_address(spec_.seed, "token", index);
+    }
+
+    Address Workload::settlement() const
+    {
+        return seeded_address(spec_.seed, "settlement", 0);
+    }
+
+    Address Workload::vault() const
+    {
+        return seeded_address(spec_.seed, "vault", 0);
     }
 
     std::function<void(GenesisSink &)> Workload::seeder() const
     {
         WorkloadSpec const spec = spec_;
+        Address const deployer =
+            address_of(derive_key(spec.seed, SPOKE_DEPLOYER_INDEX));
+        Address const l1_bridge = seeded_address(spec.seed, "l1-bridge", 0);
+
+        if (spec.preset == Preset::WholesaleCbdc) {
+            // Banks hold the currencies they are admitted to, and every one
+            // has approved the settlement contract on each, so settling a
+            // payment needs no approval of its own.
+            return [spec,
+                    deployer,
+                    l1_bridge,
+                    banks = signers_,
+                    spoke = spoke(),
+                    pvp = settlement(),
+                    t0 = token(0),
+                    t1 = token(1)](GenesisSink &sink) {
+                sink.account(deployer, Account{.balance = SIGNER_BALANCE});
+                for (auto const &b : banks) {
+                    sink.account(b, Account{.balance = SIGNER_BALANCE});
+                }
+                auto const roles = bank_roles(spec);
+                for (unsigned t = 0; t < 2; ++t) {
+                    TokenSeeder token{sink, t == 0 ? t0 : t1};
+                    for (uint64_t i = 0; i < roles.count; ++i) {
+                        bool const holds = i < roles.intermediaries ||
+                                           (t == 0) == (i < roles.first_end);
+                        if (holds) {
+                            token.holder(banks[i], BANK_RESERVES);
+                            token.unlimited(banks[i], pvp);
+                        }
+                    }
+                    // The central bank of that currency keeps its token's
+                    // eligibility list, and acts on nothing in a block.
+                    token.finish(
+                        seeded_address(spec.seed, "central-bank", t),
+                        spoke,
+                        l1_bridge);
+                }
+                sink.contract(
+                    pvp, Account{.nonce = 1}, tokens::pvp_settlement_code());
+            };
+        }
+
+        if (spec.preset == Preset::WorkerPayouts) {
+            return [spec,
+                    deployer,
+                    l1_bridge,
+                    active = signers_,
+                    businesses = businesses_,
+                    spoke = spoke(),
+                    vault = vault(),
+                    usd = token(0),
+                    fund = token(1)](GenesisSink &sink) {
+                auto const roles = payout_roles(spec);
+                Address const platform =
+                    address_of(derive_key(spec.seed, PLATFORM_INDEX));
+
+                sink.account(deployer, Account{.balance = SIGNER_BALANCE});
+                sink.account(platform, Account{.balance = PAYER_BALANCE});
+                for (auto const &b : businesses) {
+                    sink.account(b, Account{.balance = SIGNER_BALANCE});
+                }
+                for (auto const &a : active) {
+                    sink.account(a, Account{.balance = SIGNER_BALANCE});
+                }
+
+                // The contractors' dollar token. The platform keeps its
+                // eligibility list: admission follows the identity check it
+                // runs. A contractor who only receives has a balance slot
+                // and no account at all -- nothing it does creates one.
+                uint256_t const vault_assets =
+                    ACTIVE_SHARES * uint256_t{active.size()};
+                {
+                    TokenSeeder t{sink, usd};
+                    for (uint64_t i = 0; i < roles.keyless; ++i) {
+                        t.holder(
+                            holder_address(spec.seed, i), CONTRACTOR_BALANCE);
+                    }
+                    for (auto const &a : active) {
+                        t.holder(a, ACTIVE_BALANCE);
+                        t.unlimited(a, vault);
+                    }
+                    t.holder(platform, PLATFORM_FLOAT);
+                    t.holder(vault, vault_assets);
+                    t.holder(seeded_address(spec.seed, "card", 0), 0);
+                    t.holder(seeded_address(spec.seed, "redemption", 0), 0);
+                    t.finish(platform, spoke, l1_bridge);
+                }
+                // The businesses' stablecoin, which payroll is funded in.
+                {
+                    TokenSeeder t{sink, fund};
+                    for (auto const &b : businesses) {
+                        t.holder(b, BUSINESS_FUNDS);
+                    }
+                    t.holder(platform, 0);
+                    t.finish(
+                        seeded_address(spec.seed, "issuer", 1),
+                        spoke,
+                        l1_bridge);
+                }
+
+                // Every contractor who sends has been verified by the vault
+                // and holds shares in it.
+                auto const at = [](uint64_t const slot) {
+                    return tokens::word(uint256_t{slot});
+                };
+                sink.contract(
+                    vault, Account{.nonce = 1}, tokens::earn_vault_code());
+                sink.storage(
+                    vault, at(tokens::VAULT_ASSET_SLOT), tokens::word(usd));
+                for (auto const &a : active) {
+                    sink.storage(
+                        vault,
+                        tokens::vault_verified_slot(a),
+                        tokens::word(uint256_t{1}));
+                    sink.storage(
+                        vault,
+                        tokens::vault_shares_slot(a),
+                        tokens::word(ACTIVE_SHARES));
+                }
+                sink.storage(
+                    vault,
+                    at(tokens::VAULT_TOTAL_SHARES_SLOT),
+                    tokens::word(vault_assets));
+                sink.storage(
+                    vault,
+                    at(tokens::VAULT_ADMIN_SLOT),
+                    tokens::word(platform));
+            };
+        }
+
         return [spec](GenesisSink &sink) {
             sink.account(
                 address_of(derive_key(spec.seed, SPOKE_DEPLOYER_INDEX)),
@@ -411,6 +878,13 @@ namespace corpus
             return out;
         }
 
+        if (spec_.preset == Preset::WholesaleCbdc) {
+            return wholesale_cbdc_block(index);
+        }
+        if (spec_.preset == Preset::WorkerPayouts) {
+            return worker_payouts_block(index);
+        }
+
         uint64_t const signers = signer_count(spec_);
         auto const picks = draw(spec_, pool_size(spec_), spec_.distinct, index);
         auto const payer_key =
@@ -419,11 +893,11 @@ namespace corpus
 
         if (spec_.preset == Preset::Wholesale) {
             // Institutions moving large amounts between themselves, plus one
-            // anchor per block -- the MVP shape, where the anchoring is the
-            // point and the transfer count is small. The picks are consumed in
-            // disjoint pairs, so the block touches exactly `distinct`
-            // institutions and `distinct` means the same thing it means for
-            // payouts.
+            // anchor per block -- the low-volume shape, where the anchoring
+            // is the point and the transfer count is small. The picks are
+            // consumed in disjoint pairs, so the block touches exactly
+            // `distinct` institutions and `distinct` means the same thing it
+            // means for payouts.
             uint64_t const n = spec_.distinct / 2;
             for (uint64_t i = 0; i < n; ++i) {
                 out.txs.push_back(call(
@@ -487,6 +961,209 @@ namespace corpus
                 spec_.seed, SIGNER_INDEX_BASE + (picks[i] % signers)));
         }
         last_distinct_ = n + 2;
+        return out;
+    }
+
+    BlockSpec Workload::wholesale_cbdc_block(uint64_t const index)
+    {
+        BlockSpec out{};
+        auto const roles = bank_roles(spec_);
+        uint64_t const p = payments_per_block(spec_);
+        Address const pvp = settlement();
+        auto const key = [this](uint64_t const bank) {
+            return derive_key(spec_.seed, SIGNER_INDEX_BASE + bank);
+        };
+        ankerl::unordered_dense::set<uint64_t> touched;
+
+        // The last block's proposals, each settled by its intermediary: both
+        // legs in one transaction.
+        for (auto const &pr : proposed_) {
+            out.txs.push_back(call(pvp, PVP_GAS, uint256_t{0}, pr.settle));
+            out.keys.push_back(key(pr.intermediary));
+            touched.insert(pr.debtor);
+            touched.insert(pr.intermediary);
+            touched.insert(pr.creditor);
+        }
+
+        // This block's. Half the payments run from the first currency to the
+        // second and half the other way, alternating which half is the larger
+        // from block to block. Each currency's draw covers its debtors and
+        // its creditors at once, so no bank is both in one block; the one
+        // left over redeems.
+        uint64_t const forward = (p + index % 2) / 2;
+        bool const redeem_first = index % 2 == 1;
+        auto const first = draw_seeded(
+            spec_,
+            roles.first(),
+            p + (redeem_first ? 1 : 0),
+            stream(spec_.seed, index, 0));
+        auto const second = draw_seeded(
+            spec_,
+            roles.second(),
+            p + (redeem_first ? 0 : 1),
+            stream(spec_.seed, index, 1));
+        auto const middle = draw_seeded(
+            spec_, roles.intermediaries, p, stream(spec_.seed, index, 2));
+        auto const in_first = [&](uint64_t const j) {
+            return roles.intermediaries + first[j];
+        };
+        auto const in_second = [&](uint64_t const j) {
+            return roles.first_end + second[j];
+        };
+
+        std::vector<Proposal> next;
+        next.reserve(p);
+        for (uint64_t k = 0; k < p; ++k) {
+            bool const fwd = k < forward;
+            uint64_t const debtor = fwd ? in_first(k) : in_second(k);
+            uint64_t const creditor = fwd ? in_second(k) : in_first(k);
+            uint64_t const intermediary = middle[k];
+            // At the document's rate, 60 BBB costs 72 AAA.
+            uint256_t const m = PAYMENT_SCALE * uint256_t{1 + k % 5};
+            tokens::Payment const pay{
+                .ref = uint256_t{index} << 32 | uint256_t{k},
+                .token_a = token(fwd ? 0 : 1),
+                .debtor = signers_[debtor],
+                .intermediary = signers_[intermediary],
+                .amount_a = m * uint256_t{fwd ? 72u : 60u},
+                .token_b = token(fwd ? 1 : 0),
+                .creditor = signers_[creditor],
+                .amount_b = m * uint256_t{fwd ? 60u : 72u}};
+            out.txs.push_back(
+                call(pvp, PVP_GAS, uint256_t{0}, tokens::propose(pay)));
+            out.keys.push_back(key(debtor));
+            touched.insert(debtor);
+            next.push_back(Proposal{
+                .debtor = debtor,
+                .intermediary = intermediary,
+                .creditor = creditor,
+                .settle = tokens::settle(pay)});
+        }
+
+        // One bank a block redeems reserves to the L1: a burn here and a
+        // message through the spoke, so every block carries an anchor.
+        uint64_t const redeemer = redeem_first ? in_first(p) : in_second(p);
+        out.txs.push_back(call(
+            token(redeem_first ? 0 : 1),
+            SPOKE_GAS,
+            uint256_t{0},
+            tokens::withdraw_to_l1(RESERVE_REDEMPTION, signers_[redeemer])));
+        out.keys.push_back(key(redeemer));
+        touched.insert(redeemer);
+
+        proposed_ = std::move(next);
+        last_distinct_ = touched.size();
+        return out;
+    }
+
+    BlockSpec Workload::worker_payouts_block(uint64_t const index)
+    {
+        BlockSpec out{};
+        auto const roles = payout_roles(spec_);
+        auto const mix = payout_mix(spec_);
+        auto const platform_key = derive_key(spec_.seed, PLATFORM_INDEX);
+        Address const platform = address_of(platform_key);
+        Address const usd = token(0);
+
+        // Admission: the platform adds contractors who have passed its
+        // identity check to the token's eligibility list, and pays each its
+        // first salary in this block. A fresh contractor is a slot the trie
+        // does not have yet.
+        std::vector<Address> payees;
+        payees.reserve(mix.fresh + mix.paid);
+        for (uint64_t k = 0; k < mix.fresh; ++k) {
+            Address const c =
+                holder_address(spec_.seed, roles.keyless + onboarded_ + k);
+            out.txs.push_back(call(
+                usd, TOKEN_GAS, uint256_t{0}, tokens::set_eligible(c, true)));
+            out.keys.push_back(platform_key);
+            payees.push_back(c);
+        }
+        onboarded_ += mix.fresh;
+
+        // Payroll: each batch is one business funding the platform in its
+        // stablecoin, then the platform paying that batch's contractors in
+        // dollar tokens with a single call.
+        for (uint64_t const i : draw_seeded(
+                 spec_,
+                 roles.keyless,
+                 mix.paid,
+                 stream(spec_.seed, index, 0))) {
+            payees.push_back(holder_address(spec_.seed, i));
+        }
+        auto const funders = draw_seeded(
+            spec_, roles.businesses, mix.batches, stream(spec_.seed, index, 1));
+        for (uint64_t b = 0; b < mix.batches; ++b) {
+            size_t const lo = b * PAYROLL_BATCH;
+            size_t const hi = std::min(payees.size(), lo + PAYROLL_BATCH);
+            std::vector<Address> const to{
+                payees.begin() + static_cast<std::ptrdiff_t>(lo),
+                payees.begin() + static_cast<std::ptrdiff_t>(hi)};
+            std::vector<uint256_t> const value(to.size(), PAY);
+            out.txs.push_back(call(
+                token(1),
+                TOKEN_GAS,
+                uint256_t{0},
+                tokens::transfer(platform, PAY * uint256_t{to.size()})));
+            out.keys.push_back(
+                derive_key(spec_.seed, BUSINESS_INDEX_BASE + funders[b]));
+            out.txs.push_back(call(
+                usd,
+                BATCH_GAS,
+                uint256_t{0},
+                tokens::batch_transfer(to, value)));
+            out.keys.push_back(platform_key);
+        }
+
+        // Contractors acting on their own balances: half of the earn share
+        // deposits into the vault and half withdraws; the exits split evenly
+        // between card spend, redemption to local currency and a withdrawal
+        // to the L1.
+        auto const actors = draw_seeded(
+            spec_,
+            roles.active,
+            mix.earn + mix.exits,
+            stream(spec_.seed, index, 2));
+        for (uint64_t k = 0; k < actors.size(); ++k) {
+            uint64_t const a = actors[k];
+            if (k < mix.earn) {
+                out.txs.push_back(call(
+                    vault(),
+                    TOKEN_GAS,
+                    uint256_t{0},
+                    k % 2 == 0 ? tokens::vault_deposit(DEPOSIT)
+                               : tokens::vault_withdraw(WITHDRAWAL)));
+            }
+            else if (uint64_t const e = (k - mix.earn) % 3; e == 0) {
+                out.txs.push_back(call(
+                    usd,
+                    TOKEN_GAS,
+                    uint256_t{0},
+                    tokens::transfer(
+                        seeded_address(spec_.seed, "card", 0), CARD_SPEND)));
+            }
+            else if (e == 1) {
+                out.txs.push_back(call(
+                    usd,
+                    TOKEN_GAS,
+                    uint256_t{0},
+                    tokens::transfer(
+                        seeded_address(spec_.seed, "redemption", 0),
+                        REDEMPTION)));
+            }
+            else {
+                out.txs.push_back(call(
+                    usd,
+                    SPOKE_GAS,
+                    uint256_t{0},
+                    tokens::withdraw_to_l1(TO_L1, signers_[a])));
+            }
+            out.keys.push_back(derive_key(spec_.seed, SIGNER_INDEX_BASE + a));
+        }
+
+        // The contractors, the businesses that funded them and the platform.
+        // The vault and the two exit desks come on top.
+        last_distinct_ = payees.size() + actors.size() + funders.size() + 1;
         return out;
     }
 }

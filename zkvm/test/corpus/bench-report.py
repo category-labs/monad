@@ -16,7 +16,7 @@ import math
 import re
 import statistics as st
 
-PRESETS = ('wholesale', 'payouts')
+PRESETS = ('wholesale', 'payouts', 'wholesale-cbdc', 'worker-payouts')
 
 
 def load(paths, workload_only=True):

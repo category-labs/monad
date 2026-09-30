@@ -48,7 +48,7 @@ namespace
             stderr,
             "Usage: %s --out <dir> [--scenario all|transfers|evm|spoke]\n"
             "          [--seed <64 hex>] [--sk <64 hex>] [--salt <64 hex>]\n"
-            "       %s --out <dir> --preset wholesale|payouts\n"
+            "       %s --out <dir> --preset <preset>\n"
             "          [--accounts N] [--blocks N] [--distinct K]\n"
             "          [--shape zipf|uniform|hotset] [--zipf-s F]\n"
             "          [--chunk N] [--sweep K1,K2,...]\n"
@@ -80,7 +80,15 @@ namespace
             "ones,\n"
             "and exists to check that it does not change the cost.\n"
             "--sweep runs the same workload once per distinct value, writing\n"
-            "each into its own subdirectory.\n",
+            "each into its own subdirectory.\n"
+            "\n"
+            "The presets are the design document's two use cases, twice.\n"
+            "wholesale and payouts move native balances between EOAs.\n"
+            "wholesale-cbdc and worker-payouts follow the document's flows\n"
+            "over wrapped ERC-20 tokens: payment-versus-payment settlement\n"
+            "across two currencies, and payroll batches, an earn vault and\n"
+            "the three exits. For those two, --accounts counts banks or\n"
+            "contractors and --distinct the ones a block touches.\n",
             prog,
             prog,
             prog,
@@ -415,6 +423,22 @@ int main(int const argc, char **const argv)
                 auto const n_txs = spec_i.txs.size();
                 auto const intended = w.last_intended_distinct();
                 auto const e = builder.add_block(std::move(spec_i));
+                // A reverted transaction still makes a valid block, and every
+                // root still round-trips: the block simply does less than the
+                // workload says. So a benchmark block is judged on its
+                // receipts, and one that reverted anything is refused.
+                for (size_t t = 0; t < e.receipts.size(); ++t) {
+                    if (e.receipts[t].status != 1) {
+                        std::fprintf(
+                            stderr,
+                            "corpus-gen: %s block %lu, transaction %zu "
+                            "reverted\n",
+                            tag.c_str(),
+                            static_cast<unsigned long>(e.header.number),
+                            t);
+                        return 1;
+                    }
+                }
                 if (!emit(manifest, dir, tag, e, n_txs, intended)) {
                     return 1;
                 }

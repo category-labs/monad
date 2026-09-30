@@ -910,6 +910,7 @@ else()
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/genesis_bulk.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/witness_stats.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/corpus_builder.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/token_contracts.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/workload.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/scenarios.cpp")
 

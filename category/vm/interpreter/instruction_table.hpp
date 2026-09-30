@@ -219,28 +219,25 @@ namespace monad::vm::interpreter
 // Reuse the cached stack limit; the adjustment folds to zero for growth 1.
 #define MONAD_VM_FUSED_CHARGE(REQ)                                             \
     (::monad::vm::interpreter::charge_gas(gas_remaining, (REQ).gas) &&         \
-     ((REQ).min_required == 0 ||                                               \
-      ((REQ).min_required == 1                                                 \
-           ? (stack_top) > (stack_bottom)                                      \
-           : (stack_top) >= (stack_bottom) + (REQ).min_required)) &&           \
+     ::monad::vm::interpreter::stack_holds<(REQ).min_required>(                \
+         stack_top, stack_bottom) &&                                           \
      ((REQ).max_growth == 0 ||                                                 \
       (stack_top) < ctx.stack_limit + (1 - (REQ).max_growth)))
 
 // The same test with the overflow bound written against stack_bottom, which
 // every handler already holds in a register. ctx.stack_limit is the same
-// address, stack_bottom + 1024, but reading it is a load that keeps ctx live,
+// address, the bottom + 1024, but reading it is a load that keeps ctx live,
 // and in PUSH2's JUMP/JUMPI arms that one register is what pushes gcc past the
 // caller-saved set into s0 and the frame that comes with it: four instructions
 // on every fused PUSH2. The other fused handlers have registers to spare and
 // are cheaper with the load, so only those two arms use this form.
 #define MONAD_VM_FUSED_CHARGE_BOTTOM(REQ)                                      \
     (::monad::vm::interpreter::charge_gas(gas_remaining, (REQ).gas) &&         \
-     ((REQ).min_required == 0 ||                                               \
-      ((REQ).min_required == 1                                                 \
-           ? (stack_top) > (stack_bottom)                                      \
-           : (stack_top) >= (stack_bottom) + (REQ).min_required)) &&           \
+     ::monad::vm::interpreter::stack_holds<(REQ).min_required>(                \
+         stack_top, stack_bottom) &&                                           \
      ((REQ).max_growth == 0 ||                                                 \
-      (stack_top) < (stack_bottom) + (1025 - (REQ).max_growth)))
+      (stack_top) < (stack_bottom) +                                           \
+                        (1025 - MONAD_VM_STACK_BOTTOM_BIAS - (REQ).max_growth)))
 
 // Dispatch using OP2, the opcode already read at instr_ptr[1].
 // EQ/ISZERO's stack writes prevent GCC from reusing that load itself;
@@ -655,7 +652,8 @@ namespace monad::vm::interpreter
         monad::vm::runtime::debug_tstore_stack(
             &ctx,
             stack_top + 1,
-            static_cast<uint64_t>(stack_top - stack_bottom),
+            static_cast<uint64_t>(
+                stack_top - (stack_bottom - MONAD_VM_STACK_BOTTOM_BIAS)),
             0,
             base_offset);
     }
@@ -941,7 +939,8 @@ namespace monad::vm::interpreter
                 MONAD_VM_CHECK(EQ);
                 // EQ frees a slot, so PUSH2 cannot overflow a valid stack.
                 MONAD_DEBUG_ASSERT(
-                    (stack_top - 1) - stack_bottom <
+                    (stack_top - 1) -
+                        (stack_bottom - MONAD_VM_STACK_BOTTOM_BIAS) <
                     static_cast<std::ptrdiff_t>(
                         runtime::EvmStackAllocatorMeta::size));
                 MONAD_VM_CHARGE(PUSH2);
@@ -1757,7 +1756,8 @@ namespace monad::vm::interpreter
             gas_remaining += monad_vm_req.gas;
             MONAD_VM_CHECK(PUSH2);
             // PUSH2 supplies the operand required by JUMP.
-            MONAD_DEBUG_ASSERT(stack_top >= stack_bottom);
+            MONAD_DEBUG_ASSERT(
+                stack_top >= stack_bottom - MONAD_VM_STACK_BOTTOM_BIAS);
             MONAD_VM_CHARGE(JUMP);
             if (MONAD_UNLIKELY(!analysis.is_jumpdest16(monad_vm_dst))) {
                 ctx.exit(Error);

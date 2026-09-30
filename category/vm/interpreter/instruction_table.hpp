@@ -1820,6 +1820,9 @@ namespace monad::vm::interpreter
                             }
                             instr_ptr =
                                 MONAD_VM_CODE_VIEW.code() + destination + 1;
+                            // Discourage GCC from copying the destination
+                            // before the add.
+                            MONAD_VM_LAUNDER(instr_ptr);
                         }
                         else {
                             gas_remaining += requirements.gas;

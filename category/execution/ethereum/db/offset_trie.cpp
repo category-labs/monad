@@ -754,14 +754,18 @@ OffsetTrie::encode_rlp(
                 // Priming already validated all child IDs as blob offsets;
                 // only mutation needs the overlay check. get_original also
                 // checks bounds before access.
-                auto const blob_digest_at = [this](uint64_t const w) {
+                // The blob's address, held: the mark and digest byte stores
+                // below may alias any member, so gcc reloads blob_ after each.
+                unsigned char const *const blob = blob_.data();
+                auto const blob_digest_at = [this, blob](uint64_t const w) {
                     if constexpr (priming_pass) {
                         // No bounds test: the priming pass encodes only nodes
-                        // the constructor has walked, and before priming one it
-                        // asserted each of its children zero or a node start
-                        // the walk had marked, so at least HEADER_LEN and
-                        // inside the blob (is_valid_offset).
-                        return w != 0 && NodeViewBase{blob_.data() + w}.tag() ==
+                        // the constructor has walked, and each child was
+                        // asserted zero or a node start the walk had marked
+                        // before this read -- by the constructor, or, for a
+                        // branch it walks, by this encode's claim above -- so
+                        // at least HEADER_LEN and inside the blob.
+                        return w != 0 && NodeViewBase{blob + w}.tag() ==
                                              Tag::DIGEST;
                     }
                     else {
@@ -851,7 +855,7 @@ OffsetTrie::encode_rlp(
                             // The tag alone decides: a null slot reads the
                             // blob's first byte, the magic's 'M' that read_root
                             // asserts, i.e. EMPTY, never DIGEST.
-                            if (NodeViewBase{blob_.data() + prev}.tag() !=
+                            if (NodeViewBase{blob + prev}.tag() !=
                                 Tag::DIGEST) {
                                 break;
                             }
@@ -886,7 +890,7 @@ OffsetTrie::encode_rlp(
                         dest.last(digests_length).data();
                     std::memcpy(
                         digests,
-                        blob_.data() + (below + HASH_RLP_LEN),
+                        blob + (below + HASH_RLP_LEN),
                         digests_length);
 
                     dest = dest.shrink(digests_length);

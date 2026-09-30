@@ -88,6 +88,12 @@ struct node_rlp_span : private std::span<unsigned char>
         return std::span<unsigned char>::data() + size();
     }
 
+    // Start of the buffer, before the RLP stored at its end.
+    unsigned char *base() const
+    {
+        return std::span<unsigned char>::data();
+    }
+
     // Prepend n bytes to the encoded tail. Caller must ensure n <= size().
     node_rlp_span
     prepend_unchecked(unsigned char const *const src, size_t const n) const
@@ -636,16 +642,26 @@ class OffsetTrie
 #else
         uint64_t hash_valid;
 #endif
+#if defined(MONAD_ZKVM_ZISK)
+        // Saved RLP, patched in place. Dirty bits never clear: each patch
+        // revisits those children (branch bit k, extension bit 0).
+        unsigned char *priming_rlp;
+        uint64_t priming_rlp_len;
+        uint64_t dirty_children;
+#else
         // Pad std::pair<NodeId, NodeCacheEntry> to 64 bytes so unordered_dense can
         // convert between entry indices and addresses using shifts instead of
         // multiplication or division by 48. Trades extra memory for cheaper
         // indexing.
         [[maybe_unused]] uint64_t pad_[2];
+#endif
     };
 
+#if !defined(MONAD_ZKVM_ZISK)
     // Asserted, because losing it is silent: the index arithmetic goes back to
     // a reciprocal multiply and nothing else changes -- just a slower guest.
     static_assert(sizeof(std::pair<NodeId, NodeCacheEntry>) == 64);
+#endif
 
 #if defined(MONAD_ZKVM_ZISK)
     // Direct slots: blob offset / 4, or fresh id - OVERLAY_BASE.
@@ -676,6 +692,24 @@ class OffsetTrie
     unsigned char *claim_marks_{nullptr};
     // Claims made during priming, counted in DIGEST_NODE_LEN units per node.
     size_t claimed_bytes_{0};
+
+    // Keep hashed nodes' RLP at the end of stable windows. An 8-byte stride
+    // multiple gives source and destination the same alignment modulo eight
+    // when copied into an aligned buffer, keeping DMA copies cheap.
+    static constexpr size_t RLP_WINDOW_STRIDE = 704;
+    static_assert(RLP_WINDOW_STRIDE >= MAX_NODE_RLP && RLP_WINDOW_STRIDE % 8 == 0);
+    unsigned char *rlp_window_{nullptr};
+    unsigned char *rlp_windows_end_{nullptr};
+
+    void refill_rlp_windows();
+
+    // Mark a child ref for recomputation; bit 0 denotes an extension's child.
+    static void mark_dirty(NodeCacheEntry *const cached, unsigned const bit)
+    {
+        if (cached != nullptr) {
+            cached->dirty_children |= uint64_t{1} << bit;
+        }
+    }
 
     NodeCacheEntry *new_hash_entry()
     {
@@ -713,17 +747,21 @@ class OffsetTrie
 #endif
     }
 
-    // Invalidate without erasing.
-    void drop_hash(NodeId const id)
+    // Invalidate without erasing; the entry, or nullptr.
+    NodeCacheEntry *drop_hash(NodeId const id)
     {
 #if defined(MONAD_ZKVM_ZISK)
-        if (NodeCacheEntry *const cached = hash_slot(id)) {
+        NodeCacheEntry *const cached = hash_slot(id);
+        if (cached != nullptr) {
             cached->hash_stale = 1;
         }
+        return cached;
 #else
         if (auto const it = hashes_.find(id); it != hashes_.end()) {
             it->second.hash_valid = false;
+            return &it->second;
         }
+        return nullptr;
 #endif
     }
 
@@ -831,6 +869,12 @@ public:
     NodeId put_ext(NodeId, NibblesView, NodeId);
     NodeId put_storage(NodeId, NibblesView, bytes32_t const &);
     NodeId put_acct(NodeId, NibblesView, Account const &, NodeId);
+#if defined(MONAD_ZKVM_ZISK)
+    // Caller must verify unchanged nonce, balance and code hash. Retain an
+    // original leaf with the same storage edge and patchable RLP; mark its
+    // storage root dirty. Return false without changes if it cannot be kept.
+    bool keep_account_leaf(NodeId leaf, NodeId storage);
+#endif
     // Copies account data verbatim but appends a new path
     NodeId clone_acct(NodeId id, AccountLeafView acc, NibblesView new_path);
     std::pair<NodeId, NibblesView>
@@ -869,6 +913,16 @@ private:
     template <bool priming_pass>
     node_rlp_span child_ref_compute(
         NodeId const id, NodeViewBase const node, node_rlp_span dest);
+
+    // The current canonical RLP of `id`, whose current bytes are `node`, at
+    // the end of `buf`. On ZisK a primed node the block has not rewritten is
+    // its priming RLP with its dirty children's refs recomputed.
+    node_rlp_span encode_current(
+        NodeId id, NodeViewBase node, unsigned char (&buf)[MAX_NODE_RLP]);
+#if defined(MONAD_ZKVM_ZISK)
+    size_t patch_rlp(NodeCacheEntry const &cached, NodeViewBase node);
+    bool patch_ref(NodeId child, unsigned char *ref, size_t ref_len);
+#endif
 
     template <bool priming_pass>
     inline node_rlp_span child_ref(NodeId const id, node_rlp_span dest)

@@ -608,7 +608,16 @@ class OffsetTrie
     // ONE unsigned compare against a value already formed. read_root has
     // asserted blob_.size() >= HEADER_LEN before any lookup can run.
     uint64_t blob_span_;
+#if defined(MONAD_ZKVM_ZISK)
+    // Direct slots point to separately allocated byte_strings, or null.
+    // The objects stay put; replacing their contents may move their buffers.
+    // Blob nodes: index by id / 4.
+    byte_string **modified_blob_nodes_{nullptr};
+    // New nodes: index by id - OVERLAY_BASE.
+    byte_string **new_nodes_{nullptr};
+#else
     ankerl::unordered_dense::map<NodeId, byte_string, NodeIdHash> overlay_{};
+#endif
 
     // A cached hash, and whether it is still the node's. The entry stays where
     // it is with its flag down, and the next hash of that id overwrites it in
@@ -793,11 +802,24 @@ public:
     // has materialised: it reads as empty.
     NodeViewBase get_current(NodeId const id) const
     {
+#if defined(MONAD_ZKVM_ZISK)
+        uint64_t const v = static_cast<uint64_t>(id);
+        if (MONAD_LIKELY(v < OVERLAY_BASE)) {
+            // Validate the blob id before indexing its slot.
+            NodeViewBase const original = get_original(id);
+            byte_string const *const n = modified_blob_nodes_[v >> 2];
+            return n != nullptr ? NodeViewBase{n->data()} : original;
+        }
+        MONAD_ASSERT(v - OVERLAY_BASE < FRESH_HASH_SLOTS);
+        byte_string const *const n = new_nodes_[v - OVERLAY_BASE];
+        return n != nullptr ? NodeViewBase{n->data()} : empty();
+#else
         auto const it = overlay_.find(id);
         if (it != overlay_.end()) {
             return NodeViewBase{it->second.data()};
         }
         return is_overlay_id(id) ? empty() : get_original(id);
+#endif
     }
 
     // Walk the (pre-state) trie rooted at `id` following `key`; return the

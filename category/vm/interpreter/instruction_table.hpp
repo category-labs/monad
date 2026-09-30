@@ -218,10 +218,8 @@ namespace monad::vm::interpreter
 // Unneeded stack bounds compile away.
 #define MONAD_VM_FUSED_CHARGE_IMPL(REQ, STACK_BOUND)                           \
     (::monad::vm::interpreter::charge_gas(gas_remaining, (REQ).gas) &&         \
-     ((REQ).min_required == 0 ||                                               \
-      ((REQ).min_required == 1                                                 \
-           ? (stack_top) > (stack_bottom)                                      \
-           : (stack_top) >= (stack_bottom) + (REQ).min_required)) &&           \
+     ::monad::vm::interpreter::stack_holds<(REQ).min_required>(                \
+         stack_top, stack_bottom) &&                                           \
      ((REQ).max_growth == 0 || (stack_top) < (STACK_BOUND)))
 
 // Default for fused handlers: loading the cached limit is cheaper than
@@ -236,7 +234,7 @@ namespace monad::vm::interpreter
         REQ,                                                                   \
         (stack_bottom) + (static_cast<std::ptrdiff_t>(                         \
                               runtime::EvmStackAllocatorMeta::size) +          \
-                          1 - (REQ).max_growth))
+                          1 - MONAD_VM_STACK_BOTTOM_BIAS - (REQ).max_growth))
 
 // Dispatch using OP2, the opcode already read at instr_ptr[1].
 // EQ/ISZERO's stack writes prevent GCC from reusing that load itself;
@@ -651,7 +649,8 @@ namespace monad::vm::interpreter
         monad::vm::runtime::debug_tstore_stack(
             &ctx,
             stack_top + 1,
-            static_cast<uint64_t>(stack_top - stack_bottom),
+            static_cast<uint64_t>(
+                stack_top - (stack_bottom - MONAD_VM_STACK_BOTTOM_BIAS)),
             0,
             base_offset);
     }
@@ -936,7 +935,8 @@ namespace monad::vm::interpreter
                 MONAD_VM_CHECK(EQ);
                 // EQ frees a slot, so PUSH2 cannot overflow a valid stack.
                 MONAD_DEBUG_ASSERT(
-                    (stack_top - 1) - stack_bottom <
+                    (stack_top - 1) -
+                        (stack_bottom - MONAD_VM_STACK_BOTTOM_BIAS) <
                     static_cast<std::ptrdiff_t>(
                         runtime::EvmStackAllocatorMeta::size));
                 MONAD_VM_CHARGE(PUSH2);
@@ -1749,7 +1749,8 @@ namespace monad::vm::interpreter
             gas_remaining += monad_vm_req.gas;
             MONAD_VM_CHECK(PUSH2);
             // PUSH2 supplies the operand required by JUMP.
-            MONAD_DEBUG_ASSERT(stack_top >= stack_bottom);
+            MONAD_DEBUG_ASSERT(
+                stack_top >= stack_bottom - MONAD_VM_STACK_BOTTOM_BIAS);
             MONAD_VM_CHARGE(JUMP);
             if (MONAD_UNLIKELY(!analysis.is_jumpdest16(monad_vm_dst))) {
                 ctx.exit(Error);

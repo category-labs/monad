@@ -209,6 +209,18 @@ void PartialTrieDb::commit(
             }
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        // Keep an unchanged account leaf when only its storage hash needs
+        // updating. A different storage node ID still requires put_acct.
+        if (auto const &old = delta.account.first;
+            old.has_value() && old->nonce == new_account->nonce &&
+            old->balance == new_account->balance &&
+            old->code_hash == new_account->code_hash &&
+            trie_.keep_account_leaf(leaf, storage)) {
+            continue;
+        }
+#endif
+
         // The leaf records only the storage edge; state_root() derives the
         // root from the subtree itself, so there is nothing to bake in and no
         // reason to hash the subtree before it is asked for.

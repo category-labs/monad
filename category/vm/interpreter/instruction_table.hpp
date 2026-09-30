@@ -2008,13 +2008,27 @@ namespace monad::vm::interpreter
                 }
                 // The charge made here, as in push2_jumpi.
                 MONAD_VM_LAUNDER(gas_remaining);
-                bool const monad_vm_taken =
-                    (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} ==
-                     *stack_top);
+                // A contract's function dispatch is a chain of these tests,
+                // one a selector. The stack is the same before each of them,
+                // so a test not taken goes on to the next without a dispatch
+                // or the stack's tests; the tail padding keeps the lookahead
+                // past a test that ends the code in bounds.
+                while (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} !=
+                       *stack_top) {
+                    instr_ptr += 11;
+                    if (*instr_ptr != static_cast<std::uint8_t>(DUP1) ||
+                        *(instr_ptr + 1) != static_cast<std::uint8_t>(PUSH4) ||
+                        *(instr_ptr + 6) != static_cast<std::uint8_t>(EQ) ||
+                        *(instr_ptr + 7) != static_cast<std::uint8_t>(PUSH2) ||
+                        *(instr_ptr + 10) != static_cast<std::uint8_t>(JUMPI)) {
+                        MONAD_VM_DISPATCH(0, 0, *instr_ptr);
+                    }
+                    gas_remaining -= monad_vm_req.gas;
+                }
                 // fused_branch expects a pointer to EQ, followed by
                 // PUSH2 <dst> JUMPI.
-                instr_ptr = fused_branch(
-                    ctx, instr_ptr + 6, monad_vm_taken, gas_remaining);
+                instr_ptr =
+                    fused_branch(ctx, instr_ptr + 6, true, gas_remaining);
                 MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
                     ctx,
                     MONAD_VM_ANALYSIS_ARG,

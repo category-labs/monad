@@ -2013,6 +2013,86 @@ namespace monad::vm::interpreter
             instr_ptr MONAD_VM_TBL_ARG);
     }
 
+    // The end of Solidity's finalize_allocation,
+    //
+    //     PUSH8 0xffffffffffffffff DUP3 GT OR PUSH2 <panic> JUMPI
+    //     PUSH1 0x40 MSTORE JUMP
+    //
+    // Stack: [..., return address, new free memory pointer, overflow flag].
+    // Fuse only the successful path with memory already covering [0x40, 0x60).
+    // Other cases execute PUSH8 here, then resume ordinary dispatch.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push8_alloc(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const *const instructions = instr_ptr;
+        // Validate the three operands and two temporary slots before reading.
+        if (!stack_holds<3>(stack_top, stack_lower_bound) ||
+            stack_top.next_slot() > MONAD_VM_STACK_LIMIT - 2) {
+            MONAD_VM_CHECK(PUSH8);
+            push_impl<8, traits>::push(stack_top, instr_ptr);
+            MONAD_VM_NEXT_PUSH(PUSH8);
+        }
+        uint256_t const &pointer_wrapped = stack_top[0];
+        uint256_t const &free_memory_pointer = stack_top[-1];
+        uint256_t const &return_address = stack_top[-2];
+        uint64_t pointer_limit;
+        std::memcpy(&pointer_limit, instructions + 1, sizeof(pointer_limit));
+        auto const return_pc = static_cast<size_t>(return_address[0]);
+        if (!(pointer_limit == ~uint64_t{0} &&
+              opcode_at_is(instructions, 10, GT) &&
+              opcode_at_is(instructions, 11, OR) &&
+              opcode_at_is(instructions, 12, PUSH2) &&
+              opcode_at_is(instructions, 15, JUMPI) &&
+              opcode_at_is(instructions, 16, PUSH1) &&
+              instructions[17] == 0x40 &&
+              opcode_at_is(instructions, 18, MSTORE) &&
+              opcode_at_is(instructions, 19, JUMP) &&
+              (pointer_wrapped[0] | pointer_wrapped[1] | pointer_wrapped[2] |
+               pointer_wrapped[3]) == 0 &&
+              (free_memory_pointer[1] | free_memory_pointer[2] |
+               free_memory_pointer[3]) == 0 &&
+              ctx.memory.size >= 0x60 &&
+              (return_address[1] | return_address[2] | return_address[3]) ==
+                  0 &&
+              MONAD_VM_CODE_VIEW.is_jumpdest(return_pc))) {
+            // Execute PUSH8 directly to avoid re-entering this helper.
+            MONAD_VM_CHECK(PUSH8);
+            push_impl<8, traits>::push(stack_top, instr_ptr);
+            MONAD_VM_NEXT_PUSH(PUSH8);
+        }
+        static constexpr int64_t sequence_gas = static_gas<
+            traits,
+            PUSH8,
+            DUP3,
+            GT,
+            OR,
+            PUSH2,
+            JUMPI,
+            PUSH1,
+            MSTORE,
+            JUMP,
+            JUMPDEST>();
+        gas_remaining -= sequence_gas;
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+        }
+        runtime::mstore_at<traits>(
+            &ctx,
+            runtime::Memory::Offset::unsafe_from(0x40),
+            &free_memory_pointer);
+        instr_ptr = MONAD_VM_CODE_VIEW.code() + return_pc + 1;
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+            ctx,
+            MONAD_VM_DISPATCH_STATE_ARG,
+            stack_lower_bound,
+            stack_top - 3,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+
     // Fuse PUSH4/PUSH20 <mask> AND: replace the top value with value & mask.
     // Keep this helper separate to limit register pressure in ordinary PUSHs.
     template <size_t N, Traits traits>
@@ -2152,7 +2232,7 @@ namespace monad::vm::interpreter
         // Code padding makes the lookahead safe.
         // Reuse the next opcode for fusion checks and normal dispatch.
         [[maybe_unused]] uint8_t monad_vm_op2 = 0;
-        if constexpr (N == 1 || N == 2 || N == 4 || N == 20) {
+        if constexpr (N == 1 || N == 2 || N == 4 || N == 8 || N == 20) {
             monad_vm_op2 = *(instr_ptr + N + 1);
         }
         if constexpr (N == 1) {
@@ -2284,6 +2364,20 @@ namespace monad::vm::interpreter
             // Encourage GCC to retain instr_ptr while checking the stack limit.
             MONAD_VM_LAUNDER(instr_ptr);
         }
+        // Check the full allocation suffix in a separate helper.
+    #if !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+        if constexpr (N == 8) {
+            if (monad_vm_op2 == static_cast<std::uint8_t>(DUP3)) {
+                MONAD_VM_MUST_TAIL return push8_alloc<traits>(
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+        }
+    #endif
         // PUSH4 <mask> AND and PUSH20 <mask> AND in their twin.
         if constexpr (N == 4 || N == 20) {
             if (monad_vm_op2 == static_cast<std::uint8_t>(AND)) {
@@ -2301,7 +2395,7 @@ namespace monad::vm::interpreter
         push_impl<N, traits>::push(stack_top, instr_ptr);
 
 #if defined(MONAD_ZKVM_ZISK)
-        if constexpr (N == 1 || N == 2 || N == 4 || N == 20) {
+        if constexpr (N == 1 || N == 2 || N == 4 || N == 8 || N == 20) {
             MONAD_VM_NEXT_PUSH_OP(PUSH0 + N, monad_vm_op2);
         }
 #endif

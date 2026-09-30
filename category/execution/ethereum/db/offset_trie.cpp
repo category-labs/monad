@@ -757,7 +757,7 @@ OffsetTrie::encode_rlp(
                 // The blob's address, held: the mark and digest byte stores
                 // below may alias any member, so gcc reloads blob_ after each.
                 unsigned char const *const blob = blob_.data();
-                auto const blob_digest_at = [this, blob](uint64_t const w) {
+                auto const blob_digest_at = [&](uint64_t const w) {
                     if constexpr (priming_pass) {
                         // No bounds test: the priming pass encodes only nodes
                         // the constructor has walked, and each child was

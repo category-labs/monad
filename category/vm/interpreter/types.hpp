@@ -146,9 +146,10 @@ namespace monad::vm::interpreter
     {
         runtime::Context const &ctx;
 
+        // Recover the code start; code() + dst + 1 folds to landing_base + dst.
         [[gnu::always_inline]] uint8_t const *code() const noexcept
         {
-            return ctx.code_base;
+            return ctx.landing_base - 1;
         }
 
         [[gnu::always_inline]] size_t size() const noexcept

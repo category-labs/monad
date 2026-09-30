@@ -294,9 +294,10 @@ namespace monad::vm::runtime
         // SUB uses carry-in 1 for a + ~b + 1.
         ZiskAdd256Params sub256_params{nullptr, nullptr, 1, nullptr};
 
-        // Code metadata for handlers, whose second argument carries the stack
-        // limit on ZisK. execute() initializes these from the code analysis.
-        uint8_t const *code_base = nullptr;
+        // execute() initializes code metadata here; handlers pass the stack
+        // limit. Bias the code pointer by one so jumps can skip JUMPDEST with
+        // one add.
+        uint8_t const *landing_base = nullptr;
         size_t code_bound = 0;
         uint64_t const *jumpdest_words = nullptr;
 #endif

@@ -170,7 +170,7 @@ namespace monad::vm::interpreter
         ctx.add256_params.cin = 0;
         ctx.sub256_params.cin = 1;
         // Keep code metadata in ctx; handlers pass the stack limit instead.
-        ctx.code_base = analysis.code();
+        ctx.landing_base = analysis.code() + 1;
         ctx.code_bound = analysis.size();
         ctx.jumpdest_words = analysis.jumpdest_words();
 #endif

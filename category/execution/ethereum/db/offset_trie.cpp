@@ -351,14 +351,17 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
 #if defined(MONAD_ZKVM_ZISK)
                         // The sweep reaches each node once, so its slot is
                         // empty: the digest goes straight into a new entry.
+                        // Filled before the hash, which comes last: nothing
+                        // then lives across the call, where the entry and the
+                        // RLP's length were saved and reloaded around it.
                         CachedHash *const e = new_hash_entry();
-                        monad_keccak256(
-                            rem.rlp_data(), rem.rlp_size(), e->h.bytes);
                         e->valid = true;
                         e->rlp = rem.rlp_data();
                         e->rlp_len = rem.rlp_size();
                         blob_hash_slots_[node_offset >> 2] = e;
                         rlp_window_ += RLP_WINDOW_STRIDE;
+                        monad_keccak256(
+                            rem.rlp_data(), rem.rlp_size(), e->h.bytes);
 #else
                         monad_keccak256(
                             rem.rlp_data(), rem.rlp_size(), ch.h.bytes);

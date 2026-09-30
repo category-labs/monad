@@ -586,10 +586,12 @@ class OffsetTrie
         // is free: the padding below fixes the pair at 64 bytes either way.
         uint64_t valid;
 #if defined(MONAD_ZKVM_ZISK)
-        // A primed node's canonical RLP, where the priming sweep encoded it,
+        // A primed node's RLP, in the window the priming sweep encoded it in,
         // and the children whose refs have changed since: bit k for a
-        // branch's child k, bit 0 for an extension's. See encode_current.
-        unsigned char const *rlp;
+        // branch's child k, bit 0 for an extension's. A patch rewrites every
+        // dirty child's ref there, in place, so the window holds the priming
+        // RLP with those refs as the last patch left them. See encode_current.
+        unsigned char *rlp;
         uint64_t rlp_len;
         uint64_t dirty;
 #else
@@ -902,9 +904,7 @@ private:
     node_rlp_span encode_current(
         NodeId id, NodeViewBase node, unsigned char (&buf)[MAX_NODE_RLP]);
 #if defined(MONAD_ZKVM_ZISK)
-    size_t patch_rlp(
-        CachedHash const &e, NodeViewBase node,
-        unsigned char (&buf)[MAX_NODE_RLP]);
+    size_t patch_rlp(CachedHash const &e, NodeViewBase node);
     bool patch_ref(NodeId child, unsigned char *ref, size_t ref_len);
 #endif
 

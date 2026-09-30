@@ -293,7 +293,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             // entry and the RLP's length were saved and reloaded around it.
             CachedHash *const e = new_hash_entry();
             e->valid = true;
-            e->rlp = rem.rlp_data();
+            e->rlp = rem.base() + rem.size();
             e->rlp_len = rem.rlp_size();
             blob_hash_slots_[node_offset >> 2] = e;
             rlp_window_ += RLP_WINDOW_STRIDE;
@@ -444,25 +444,24 @@ namespace
 // The node's bytes are the ones it was primed with, so its RLP differs from
 // the priming RLP only in the refs of the children a descent has passed
 // through since -- which set their bits in `dirty` -- and each of those is
-// recomputed and written over its old ref. A ref whose length changed would
-// move everything after it: that case, zero, falls back to a full encode.
-size_t OffsetTrie::patch_rlp(
-    CachedHash const &e, NodeViewBase const node,
-    unsigned char (&buf)[MAX_NODE_RLP])
+// recomputed and written over its ref, in the window itself: `dirty` never
+// clears, so every patch rewrites all of them, and a ref is only written when
+// its length holds. A ref whose length changed would move everything after
+// it: that case, zero, falls back to a full encode.
+size_t OffsetTrie::patch_rlp(CachedHash const &e, NodeViewBase const node)
 {
     size_t const len = e.rlp_len;
-    unsigned char *const out = buf + MAX_NODE_RLP - len;
-    std::memcpy(out, e.rlp, len);
+    unsigned char *const out = e.rlp;
     unsigned char *p = out + rlp_list_header_len(out[0]);
     uint64_t mask = e.dirty;
     if (node.tag() == BRANCH) {
         BranchView const b{node};
         // Each dirty child's ref starts where the priming encode recorded it,
-        // in its window's head; `buf` has the same layout, its RLP ending at
-        // the same place. A dirty child is never a digest or empty, so its
-        // offset is recorded: zero would be a slot never written.
+        // in the window's head. A dirty child is never a digest or empty, so
+        // its offset is recorded: zero would be a slot never written.
+        unsigned char *const window = e.rlp + len - MAX_NODE_RLP;
         uint64_t const *const starts =
-            reinterpret_cast<uint64_t const *>(e.rlp + len - MAX_NODE_RLP);
+            reinterpret_cast<uint64_t const *>(window);
         while (mask != 0) {
             unsigned const k = static_cast<unsigned>(std::countr_zero(mask));
             mask &= mask - 1;
@@ -470,7 +469,7 @@ size_t OffsetTrie::patch_rlp(
             if (at == 0) {
                 return 0;
             }
-            unsigned char *const ref = buf + at;
+            unsigned char *const ref = window + at;
             if (!patch_ref(b.child(k), ref, rlp_ref_len(*ref))) {
                 return 0;
             }
@@ -508,14 +507,12 @@ bool OffsetTrie::patch_ref(
                 (tag == BRANCH || tag == EXT) && e != nullptr &&
                 e->rlp != nullptr) {
                 auto const patched = [&] {
-                    alignas(8) unsigned char buf[MAX_NODE_RLP];
-                    size_t const len = patch_rlp(*e, original, buf);
+                    size_t const len = patch_rlp(*e, original);
                     if (len == 0) {
                         return false;
                     }
                     MONAD_KECCAK_SITE(TRIE_ENCODE, len);
-                    monad_keccak256(
-                        buf + MAX_NODE_RLP - len, len, e->h.bytes);
+                    monad_keccak256(e->rlp, len, e->h.bytes);
                     e->valid = true;
                     return true;
                 };
@@ -572,8 +569,12 @@ OffsetTrie::node_rlp_span OffsetTrie::encode_current(
         (node.tag() == BRANCH || node.tag() == EXT)) {
         CachedHash const *const e = blob_hash_slots_[v >> 2];
         if (e != nullptr && e->rlp != nullptr) {
-            if (size_t const len = patch_rlp(*e, node, buf); len != 0) {
-                return node_rlp_span{buf}.shrink(len);
+            if (size_t const len = patch_rlp(*e, node); len != 0) {
+                // Patched where it is kept: the window is an RLP buffer like
+                // `buf`, its RLP ending at the same place.
+                auto &window = *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(
+                    e->rlp + len - MAX_NODE_RLP);
+                return node_rlp_span{window}.shrink(len);
             }
         }
     }

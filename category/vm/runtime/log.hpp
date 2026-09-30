@@ -21,27 +21,27 @@
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    void
+    MONAD_VM_RUNTIME_NOINLINE void
     log0(Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr);
 
     template <Traits traits>
-    void log1(
+    MONAD_VM_RUNTIME_NOINLINE void log1(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr);
 
     template <Traits traits>
-    void log2(
+    MONAD_VM_RUNTIME_NOINLINE void log2(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr, uint256_t const *topic2_ptr);
 
     template <Traits traits>
-    void log3(
+    MONAD_VM_RUNTIME_NOINLINE void log3(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr, uint256_t const *topic2_ptr,
         uint256_t const *topic3_ptr);
 
     template <Traits traits>
-    void log4(
+    MONAD_VM_RUNTIME_NOINLINE void log4(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr, uint256_t const *topic2_ptr,
         uint256_t const *topic3_ptr, uint256_t const *topic4_ptr);

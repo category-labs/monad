@@ -25,7 +25,7 @@
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    void
+    MONAD_VM_RUNTIME_NOINLINE void
     balance(Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr);
 
     inline void calldataload(
@@ -59,7 +59,7 @@ namespace monad::vm::runtime
         uint256_t const *offset_ptr, uint256_t const *size_ptr);
 
     template <Traits traits>
-    void extcodecopy(
+    MONAD_VM_RUNTIME_NOINLINE void extcodecopy(
         Context *ctx, uint256_t const *address_ptr,
         uint256_t const *dest_offset_ptr, uint256_t const *offset_ptr,
         uint256_t const *size_ptr);
@@ -70,10 +70,10 @@ namespace monad::vm::runtime
         uint256_t const *offset_ptr, uint256_t const *size_ptr);
 
     template <Traits traits>
-    void extcodehash(
+    MONAD_VM_RUNTIME_NOINLINE void extcodehash(
         Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr);
 
     template <Traits traits>
-    void extcodesize(
+    MONAD_VM_RUNTIME_NOINLINE void extcodesize(
         Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr);
 }

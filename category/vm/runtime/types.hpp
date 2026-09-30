@@ -33,6 +33,13 @@
 #include <variant>
 #include <vector>
 
+// Keep large runtime calls outside the interpreter's fixed-size opcode slots.
+#if defined(MONAD_ZKVM_ZISK)
+    #define MONAD_VM_RUNTIME_NOINLINE [[gnu::noinline]]
+#else
+    #define MONAD_VM_RUNTIME_NOINLINE
+#endif
+
 namespace monad::vm
 {
     class Host;

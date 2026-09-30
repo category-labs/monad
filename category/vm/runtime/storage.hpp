@@ -33,6 +33,7 @@ namespace monad::vm::runtime
         Context *ctx, uint256_t const *key_ptr, uint256_t const *value_ptr,
         int64_t remaining_block_base_gas);
 
+    MONAD_VM_RUNTIME_NOINLINE
     inline void tload(
         Context *const ctx, uint256_t *const result_ptr,
         uint256_t const *const key_ptr)
@@ -50,6 +51,7 @@ namespace monad::vm::runtime
         *result_ptr = load_be<uint256_t>(value);
     }
 
+    MONAD_VM_RUNTIME_NOINLINE
     inline void tstore(
         Context *const ctx, uint256_t const *const key_ptr,
         uint256_t const *const val_ptr)

@@ -96,6 +96,25 @@
     #define MONAD_VM_STACK_BOTTOM_BIAS 0
 #endif
 
+// A handler's second argument: the code's analysis, or on ZisK the stack's
+// last valid slot, which every handler that pushes compares with and would
+// otherwise load from ctx. On ZisK the jumps read what they need of the code
+// from ctx instead, through MONAD_VM_ANALYSIS (FrameCode); interpreter::execute
+// puts it there. MONAD_VM_STACK_LIMIT is the slot, wherever it is.
+#if defined(MONAD_ZKVM_ZISK)
+    #define MONAD_VM_ANALYSIS_TYPE uint256_t const *
+    #define MONAD_VM_ANALYSIS_PARAM uint256_t const *const stack_limit
+    #define MONAD_VM_ANALYSIS_ARG stack_limit
+    #define MONAD_VM_ANALYSIS (::monad::vm::interpreter::FrameCode{ctx})
+    #define MONAD_VM_STACK_LIMIT stack_limit
+#else
+    #define MONAD_VM_ANALYSIS_TYPE Intercode const &
+    #define MONAD_VM_ANALYSIS_PARAM Intercode const &analysis
+    #define MONAD_VM_ANALYSIS_ARG analysis
+    #define MONAD_VM_ANALYSIS analysis
+    #define MONAD_VM_STACK_LIMIT ctx.stack_limit
+#endif
+
 // On ZisK, pass the table base in a seventh register argument to avoid
 // reloading it at each dispatch: the slots' base where the revision has them
 // (dispatch_table, instruction_table.hpp), the table's otherwise.
@@ -118,8 +137,38 @@ namespace monad::vm::interpreter
     // Use void const * to avoid a recursive InstrEval type; dispatch casts it
     // back to a pointer to table entries.
     using InstrEval = void MONAD_VM_POINTER_CALL (*)(
-        runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
-        int64_t, uint8_t const *MONAD_VM_TBL_TYPE);
+        runtime::Context &, MONAD_VM_ANALYSIS_TYPE, uint256_t const *,
+        uint256_t *, int64_t, uint8_t const *MONAD_VM_TBL_TYPE);
 
     using InstrTable = std::array<InstrEval, 256>;
+
+#if defined(MONAD_ZKVM_ZISK)
+    // What the handlers read of the running code, from ctx: the same as the
+    // analysis's.
+    struct FrameCode
+    {
+        runtime::Context const &ctx;
+
+        [[gnu::always_inline]] uint8_t const *code() const noexcept
+        {
+            return ctx.code_base;
+        }
+
+        [[gnu::always_inline]] size_t size() const noexcept
+        {
+            return ctx.code_bound;
+        }
+
+        [[gnu::always_inline]] bool
+        is_jumpdest16(size_t const pc) const noexcept
+        {
+            return Intercode::JumpdestMap::test(ctx.jumpdest_words, pc);
+        }
+
+        [[gnu::always_inline]] bool is_jumpdest(size_t const pc) const noexcept
+        {
+            return pc < ctx.code_bound && is_jumpdest16(pc);
+        }
+    };
+#endif
 }

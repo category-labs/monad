@@ -548,7 +548,16 @@ class OffsetTrie
     // ONE unsigned compare against a value already formed. read_root has
     // asserted blob_.size() >= HEADER_LEN before any lookup can run.
     uint64_t blob_span_;
+#if defined(MONAD_ZKVM_ZISK)
+    // The overlay by id, laid out as the hashes are below: a blob id's node at
+    // blob_overlay_slots_[id / 4], a fresh id's at
+    // fresh_overlay_slots_[id - OVERLAY_BASE]. A slot holds the node's bytes or
+    // null; each is its own allocation, so an address outlives every insert.
+    byte_string **blob_overlay_slots_{nullptr};
+    byte_string **fresh_overlay_slots_{nullptr};
+#else
     ankerl::unordered_dense::map<NodeId, byte_string, NodeIdHash> overlay_{};
+#endif
 
     // A cached hash, and whether it is still the node's. The entry stays where
     // it is with its flag down, and the next hash of that id overwrites it in
@@ -666,6 +675,7 @@ class OffsetTrie
     // the shadow set, not to the blob: a bitmap over blob offsets would be
     // ~940 KB on a 7.5 MB witness. overlay_ is written in exactly two places
     // and never erased or cleared, so the filter never needs a bit unset.
+#if !defined(MONAD_ZKVM_ZISK)
     static constexpr unsigned OVERLAY_FILTER_WORDS = 512; // 32,768 bits
     std::array<uint64_t, OVERLAY_FILTER_WORDS> overlay_filter_{};
 
@@ -699,6 +709,7 @@ class OffsetTrie
         // position 0, & 1 returns 1 iff this bit is 1
         return (overlay_filter_[b >> 6] >> (b & 63)) & 1;
     }
+#endif
 
 public:
     // Wrap the read-only node blob, structurally validate it, and prime the
@@ -744,6 +755,19 @@ public:
     // has materialised: it reads as empty.
     NodeViewBase get_current(NodeId const id) const
     {
+#if defined(MONAD_ZKVM_ZISK)
+        uint64_t const v = static_cast<uint64_t>(id);
+        if (MONAD_LIKELY(v < OVERLAY_BASE)) {
+            // get_original asserts the id first: only a bounded id's slot is
+            // read.
+            NodeViewBase const original = get_original(id);
+            byte_string const *const n = blob_overlay_slots_[v >> 2];
+            return n != nullptr ? NodeViewBase{n->data()} : original;
+        }
+        MONAD_ASSERT(v - OVERLAY_BASE < FRESH_HASH_SLOTS);
+        byte_string const *const n = fresh_overlay_slots_[v - OVERLAY_BASE];
+        return n != nullptr ? NodeViewBase{n->data()} : empty();
+#else
         // 97.7 % of these lookups find nothing; the filter answers those in
         // ten instructions instead of forty-two. A negative is certain, so
         // this cannot skip a live entry.
@@ -755,6 +779,7 @@ public:
             return NodeViewBase{it->second.data()};
         }
         return is_overlay_id(id) ? empty() : get_original(id);
+#endif
     }
 
     // Walk the (pre-state) trie rooted at `id` following `key`; return the

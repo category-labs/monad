@@ -336,14 +336,17 @@ namespace corpus
         /// carry six, as USDC does.
         constexpr uint256_t USD = 1'000'000;
 
-        /// Every bank starts with this much of each currency it holds. A bank
-        /// pays at most once a block as debtor or as intermediary, and at
-        /// most 360M units, so this outlasts thousands of blocks.
-        uint256_t const BANK_RESERVES = ETHER * 1'000'000'000'000;
-        /// Payments are the document's 72 AAA against 60 BBB, scaled by this
-        /// and by one to five.
+        /// A payment is worth `units(c)` of currency c times this, times one
+        /// to five.
         uint256_t const PAYMENT_SCALE = ETHER * 1'000'000;
-        uint256_t const RESERVE_REDEMPTION = ETHER * 1'000'000;
+        uint256_t const RESERVE_REDEMPTION = PAYMENT_SCALE;
+        /// Every bank starts with this many PAYMENT_SCALEs of each currency
+        /// it holds. A bank is drawn at most once a block, and each draw costs
+        /// it at most one payment or one redemption, so resolved() can check
+        /// that a run never outspends it.
+        constexpr uint64_t BANK_RESERVES_IN_SCALE = 1'000'000;
+        uint256_t const BANK_RESERVES =
+            PAYMENT_SCALE * uint256_t{BANK_RESERVES_IN_SCALE};
 
         /// The document's example salary: 2,000 USD a month.
         uint256_t const PAY = USD * 2'000;
@@ -362,29 +365,102 @@ namespace corpus
         uint256_t const TO_L1 = USD * 100;
 
         /// WholesaleCbdc's banks, by index: intermediaries first -- a tenth,
-        /// holding both currencies -- then the first currency's banks, then
-        /// the second's.
+        /// holding every currency -- then each currency's own banks in turn,
+        /// the rest split evenly between them.
         struct BankRoles
         {
             uint64_t intermediaries;
-            uint64_t first_end;
             uint64_t count;
+            uint64_t currencies;
 
-            uint64_t first() const
+            /// The first bank whose currency is `c`. `currencies` gives the
+            /// end.
+            uint64_t begin(uint64_t const c) const
             {
-                return first_end - intermediaries;
+                return intermediaries +
+                       c * (count - intermediaries) / currencies;
             }
 
-            uint64_t second() const
+            uint64_t size(uint64_t const c) const
             {
-                return count - first_end;
+                return begin(c + 1) - begin(c);
+            }
+
+            bool holds(uint64_t const bank, uint64_t const c) const
+            {
+                return bank < intermediaries ||
+                       (bank >= begin(c) && bank < begin(c + 1));
             }
         };
 
         BankRoles bank_roles(WorkloadSpec const &s)
         {
             uint64_t const m = std::max<uint64_t>(2, s.accounts / 10);
-            return {m, m + (s.accounts - m) / 2, s.accounts};
+            return {m, s.accounts, s.currencies};
+        }
+
+        /// What a payment is worth in each currency, per PAYMENT_SCALE: the
+        /// document's 72 AAA for 60 BBB for the first two, made-up rates for
+        /// the rest. They only have to be affordable.
+        uint64_t units(uint64_t const c)
+        {
+            return c == 0 ? 72 : c == 1 ? 60 : 50 + 10 * c;
+        }
+
+        /// The stream each of a WholesaleCbdc block's draws takes: the first
+        /// two currencies, then the intermediaries, then the corridors, then
+        /// the currencies after the second. Adding currencies adds draws and
+        /// never renumbers one a smaller platform makes.
+        constexpr uint64_t INTERMEDIARY_STREAM = 2;
+        constexpr uint64_t CORRIDOR_STREAM = 3;
+
+        uint64_t currency_stream(uint64_t const c)
+        {
+            return c < 2 ? c : c + 2;
+        }
+
+        /// The currencies each of a block's `p` payments runs between, as
+        /// (the debtor's, the creditor's). A pair is drawn with weight
+        /// 1/(a+1) x 1/(b+1), so the first currency is on one side of most
+        /// payments and a few corridors carry most of the volume, the way a
+        /// hub currency does. Within a pair, the first half of its payments
+        /// run from the lower-ranked currency to the other and the rest back,
+        /// the larger half alternating from block to block: settlement flows
+        /// both ways.
+        std::vector<std::pair<uint64_t, uint64_t>>
+        corridors(WorkloadSpec const &s, uint64_t const p, uint64_t const index)
+        {
+            std::vector<std::pair<uint64_t, uint64_t>> pairs;
+            std::vector<double> upto;
+            double total = 0.0;
+            for (uint64_t a = 0; a < s.currencies; ++a) {
+                for (uint64_t b = a + 1; b < s.currencies; ++b) {
+                    total += 1.0 / static_cast<double>((a + 1) * (b + 1));
+                    pairs.emplace_back(a, b);
+                    upto.push_back(total);
+                }
+            }
+            small_prng rand{stream(s.seed, index, CORRIDOR_STREAM)};
+            std::vector<size_t> pick(p);
+            std::vector<uint64_t> in_pair(pairs.size(), 0);
+            for (auto &j : pick) {
+                double const u =
+                    (static_cast<double>(rand()) + 0.5) / 4294967296.0 * total;
+                j = static_cast<size_t>(
+                    std::lower_bound(upto.begin(), upto.end(), u) -
+                    upto.begin());
+                MONAD_ASSERT(j < pairs.size());
+                ++in_pair[j];
+            }
+            std::vector<uint64_t> seen(pairs.size(), 0);
+            std::vector<std::pair<uint64_t, uint64_t>> out;
+            out.reserve(p);
+            for (size_t const j : pick) {
+                auto const [a, b] = pairs[j];
+                bool const forward = seen[j]++ < (in_pair[j] + index % 2) / 2;
+                out.emplace_back(forward ? a : b, forward ? b : a);
+            }
+            return out;
         }
 
         /// A payment touches its debtor in the block that proposes it and all
@@ -573,6 +649,15 @@ namespace corpus
         if (r.distinct == 0) {
             r.distinct = is_wholesale(r.preset) ? 40 : 500;
         }
+        if (r.preset == Preset::WholesaleCbdc && r.currencies == 0) {
+            // Multi-currency settlement platforms run from four currencies
+            // to seven; the document's example is one payment between two.
+            r.currencies = 5;
+        }
+        MONAD_ASSERT_PRINTF(
+            r.currencies == 0 || r.preset == Preset::WholesaleCbdc,
+            "currencies=%lu: only wholesale-cbdc has currencies to count",
+            r.currencies);
         MONAD_ASSERT(r.accounts > PAYERS + 2);
         MONAD_ASSERT(r.chunk > 0);
         MONAD_ASSERT(r.zipf_s > 1.0);
@@ -590,16 +675,33 @@ namespace corpus
             auto const b = bank_roles(r);
             uint64_t const payments = payments_per_block(r);
             MONAD_ASSERT_PRINTF(
-                payments <= b.intermediaries && payments + 1 <= b.first() &&
-                    payments + 1 <= b.second(),
-                "distinct=%lu is %lu payments a block, and %lu banks have "
-                "%lu intermediaries and %lu and %lu banks in each currency",
+                r.currencies >= 2 && r.currencies < r.accounts,
+                "currencies=%lu: a payment is between two, and every "
+                "currency needs banks of its own",
+                r.currencies);
+            // A currency is on one side of a payment at most, and one bank a
+            // block redeems.
+            uint64_t smallest = b.size(0);
+            uint64_t dearest = 0;
+            for (uint64_t c = 0; c < r.currencies; ++c) {
+                smallest = std::min(smallest, b.size(c));
+                dearest = std::max(dearest, units(c));
+            }
+            MONAD_ASSERT_PRINTF(
+                payments <= b.intermediaries && payments + 1 <= smallest,
+                "distinct=%lu is %lu payments a block, and %lu banks over "
+                "%lu currencies have %lu intermediaries and as few as %lu "
+                "banks in one currency",
                 r.distinct,
                 payments,
                 r.accounts,
+                r.currencies,
                 b.intermediaries,
-                b.first(),
-                b.second());
+                smallest);
+            MONAD_ASSERT_PRINTF(
+                r.blocks * 5 * dearest <= BANK_RESERVES_IN_SCALE,
+                "blocks=%lu could spend more than a bank's reserves",
+                r.blocks);
         }
         if (r.preset == Preset::WorkerPayouts) {
             auto const c = payout_roles(r);
@@ -656,9 +758,11 @@ namespace corpus
         }
     }
 
-    Address Workload::token(unsigned const index) const
+    Address Workload::token(uint64_t const index) const
     {
-        MONAD_ASSERT(index < 2);
+        MONAD_ASSERT(
+            index <
+            (spec_.preset == Preset::WholesaleCbdc ? spec_.currencies : 2));
         return seeded_address(spec_.seed, "token", index);
     }
 
@@ -683,25 +787,26 @@ namespace corpus
             // Banks hold the currencies they are admitted to, and every one
             // has approved the settlement contract on each, so settling a
             // payment needs no approval of its own.
+            std::vector<Address> wrapped;
+            for (uint64_t c = 0; c < spec.currencies; ++c) {
+                wrapped.push_back(token(c));
+            }
             return [spec,
                     deployer,
                     l1_bridge,
                     banks = signers_,
+                    wrapped,
                     spoke = spoke(),
-                    pvp = settlement(),
-                    t0 = token(0),
-                    t1 = token(1)](GenesisSink &sink) {
+                    pvp = settlement()](GenesisSink &sink) {
                 sink.account(deployer, Account{.balance = SIGNER_BALANCE});
                 for (auto const &b : banks) {
                     sink.account(b, Account{.balance = SIGNER_BALANCE});
                 }
                 auto const roles = bank_roles(spec);
-                for (unsigned t = 0; t < 2; ++t) {
-                    TokenSeeder token{sink, t == 0 ? t0 : t1};
+                for (uint64_t t = 0; t < spec.currencies; ++t) {
+                    TokenSeeder token{sink, wrapped[t]};
                     for (uint64_t i = 0; i < roles.count; ++i) {
-                        bool const holds = i < roles.intermediaries ||
-                                           (t == 0) == (i < roles.first_end);
-                        if (holds) {
+                        if (roles.holds(i, t)) {
                             token.holder(banks[i], BANK_RESERVES);
                             token.unlimited(banks[i], pvp);
                         }
@@ -985,50 +1090,53 @@ namespace corpus
             touched.insert(pr.creditor);
         }
 
-        // This block's. Half the payments run from the first currency to the
-        // second and half the other way, alternating which half is the larger
-        // from block to block. Each currency's draw covers its debtors and
-        // its creditors at once, so no bank is both in one block; the one
-        // left over redeems.
-        uint64_t const forward = (p + index % 2) / 2;
-        bool const redeem_first = index % 2 == 1;
-        auto const first = draw_seeded(
-            spec_,
-            roles.first(),
-            p + (redeem_first ? 1 : 0),
-            stream(spec_.seed, index, 0));
-        auto const second = draw_seeded(
-            spec_,
-            roles.second(),
-            p + (redeem_first ? 0 : 1),
-            stream(spec_.seed, index, 1));
+        // This block's, over the corridors drawn for it. Each currency's draw
+        // covers its debtors, its creditors and the bank that redeems it at
+        // once, so no bank is two of them in one block.
+        auto const route = corridors(spec_, p, index);
+        uint64_t const redeemed = (index + 1) % spec_.currencies;
+        std::vector<uint64_t> need(spec_.currencies, 0);
+        for (auto const &[from, to] : route) {
+            ++need[from];
+            ++need[to];
+        }
+        ++need[redeemed];
+        std::vector<std::vector<uint64_t>> drawn(spec_.currencies);
+        for (uint64_t c = 0; c < spec_.currencies; ++c) {
+            drawn[c] = draw_seeded(
+                spec_,
+                roles.size(c),
+                need[c],
+                stream(spec_.seed, index, currency_stream(c)));
+        }
         auto const middle = draw_seeded(
-            spec_, roles.intermediaries, p, stream(spec_.seed, index, 2));
-        auto const in_first = [&](uint64_t const j) {
-            return roles.intermediaries + first[j];
-        };
-        auto const in_second = [&](uint64_t const j) {
-            return roles.first_end + second[j];
+            spec_,
+            roles.intermediaries,
+            p,
+            stream(spec_.seed, index, INTERMEDIARY_STREAM));
+        std::vector<uint64_t> used(spec_.currencies, 0);
+        auto const take = [&](uint64_t const c) {
+            return roles.begin(c) + drawn[c][used[c]++];
         };
 
         std::vector<Proposal> next;
         next.reserve(p);
         for (uint64_t k = 0; k < p; ++k) {
-            bool const fwd = k < forward;
-            uint64_t const debtor = fwd ? in_first(k) : in_second(k);
-            uint64_t const creditor = fwd ? in_second(k) : in_first(k);
+            auto const [from, to] = route[k];
+            uint64_t const debtor = take(from);
+            uint64_t const creditor = take(to);
             uint64_t const intermediary = middle[k];
             // At the document's rate, 60 BBB costs 72 AAA.
             uint256_t const m = PAYMENT_SCALE * uint256_t{1 + k % 5};
             tokens::Payment const pay{
                 .ref = uint256_t{index} << 32 | uint256_t{k},
-                .token_a = token(fwd ? 0 : 1),
+                .token_a = token(from),
                 .debtor = signers_[debtor],
                 .intermediary = signers_[intermediary],
-                .amount_a = m * uint256_t{fwd ? 72u : 60u},
-                .token_b = token(fwd ? 1 : 0),
+                .amount_a = m * uint256_t{units(from)},
+                .token_b = token(to),
                 .creditor = signers_[creditor],
-                .amount_b = m * uint256_t{fwd ? 60u : 72u}};
+                .amount_b = m * uint256_t{units(to)}};
             out.txs.push_back(
                 call(pvp, PVP_GAS, uint256_t{0}, tokens::propose(pay)));
             out.keys.push_back(key(debtor));
@@ -1040,11 +1148,12 @@ namespace corpus
                 .settle = tokens::settle(pay)});
         }
 
-        // One bank a block redeems reserves to the L1: a burn here and a
-        // message through the spoke, so every block carries an anchor.
-        uint64_t const redeemer = redeem_first ? in_first(p) : in_second(p);
+        // One bank a block redeems reserves to the L1, each currency in turn:
+        // a burn here and a message through the spoke, so every block carries
+        // an anchor.
+        uint64_t const redeemer = take(redeemed);
         out.txs.push_back(call(
-            token(redeem_first ? 0 : 1),
+            token(redeemed),
             SPOKE_GAS,
             uint256_t{0},
             tokens::withdraw_to_l1(RESERVE_REDEMPTION, signers_[redeemer])));

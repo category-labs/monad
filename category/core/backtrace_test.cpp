@@ -19,15 +19,20 @@
 #include <category/core/assert.h>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <span>
+#include <string>
 
 #include <gtest/gtest.h>
 
 #include <bits/time.h>
+#include <stdio.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -43,6 +48,102 @@ namespace
     func_a(std::span<std::byte> const storage)
     {
         return func_b(storage);
+    }
+
+    __attribute__((noinline)) monad::stack_backtrace::ptr
+    capture_deep(std::span<std::byte> const storage, unsigned const depth)
+    {
+        if (depth == 0) {
+            return func_a(storage);
+        }
+        auto trace = capture_deep(storage, depth - 1);
+        // Keep the recursive frames present in optimized builds.
+        asm volatile("" : : "r"(depth) : "memory");
+        return trace;
+    }
+
+    std::string
+    print_trace(monad::stack_backtrace const &trace, bool const symbolize)
+    {
+        auto const close_file = [](FILE *const file) { std::fclose(file); };
+        std::unique_ptr<FILE, decltype(close_file)> const output{
+            std::tmpfile(), close_file};
+        EXPECT_NE(output, nullptr);
+        if (!output) {
+            return {};
+        }
+        trace.print(fileno(output.get()), 0, symbolize);
+        EXPECT_EQ(std::fseek(output.get(), 0, SEEK_SET), 0);
+        std::string result;
+        char line[1024];
+        while (std::fgets(line, sizeof(line), output.get())) {
+            result += line;
+        }
+        EXPECT_EQ(std::ferror(output.get()), 0);
+        return result;
+    }
+
+    TEST(BacktraceTest, unaligned_storage)
+    {
+        alignas(64) std::array<std::byte, 16384 + 64> storage;
+        for (size_t offset = 0; offset < 64; ++offset) {
+            SCOPED_TRACE(offset);
+            auto const trace =
+                func_a(std::span{storage}.subspan(offset, 16384));
+            ASSERT_NE(trace, nullptr);
+            EXPECT_EQ(
+                reinterpret_cast<uintptr_t>(trace.get()) %
+                    alignof(monad::stack_backtrace),
+                0);
+        }
+    }
+
+    TEST(BacktraceTest, deep_unaligned_storage)
+    {
+        alignas(64) std::array<std::byte, 16384 + 1> storage;
+        auto const trace = capture_deep(std::span{storage}.subspan(1), 160);
+        ASSERT_NE(trace, nullptr);
+        auto const output = print_trace(*trace, false);
+        EXPECT_GT(std::count(output.begin(), output.end(), '\n') - 1, 128);
+    }
+
+    TEST(BacktraceDeathTest, empty_storage)
+    {
+        EXPECT_DEATH(monad::stack_backtrace::capture({}), "");
+    }
+
+    TEST(BacktraceDeathTest, insufficient_storage)
+    {
+        std::array<std::byte, 1> storage;
+        EXPECT_DEATH(monad::stack_backtrace::capture(storage), "");
+    }
+
+    TEST(BacktraceTest, truncated_stack_preserves_innermost_frames)
+    {
+        for (unsigned const depth : {32u, 160u}) {
+            SCOPED_TRACE(depth);
+            alignas(64) std::array<std::byte, 256 + 64> storage;
+            storage.fill(std::byte{0x5a});
+            auto const trace =
+                capture_deep(std::span{storage}.subspan(1, 256), depth);
+            ASSERT_NE(trace, nullptr);
+
+            auto const output = print_trace(*trace, false);
+            auto const frame_count =
+                std::count(output.begin(), output.end(), '\n') - 1;
+            EXPECT_GT(frame_count, 0);
+            EXPECT_LT(frame_count, depth);
+
+            auto const symbols = print_trace(*trace, true);
+            EXPECT_NE(symbols.find("func_a"), std::string::npos);
+            EXPECT_NE(symbols.find("func_b"), std::string::npos);
+            EXPECT_EQ(symbols.find("TestBody"), std::string::npos);
+
+            EXPECT_EQ(storage.front(), std::byte{0x5a});
+            for (size_t i = 257; i < storage.size(); ++i) {
+                EXPECT_EQ(storage[i], std::byte{0x5a});
+            }
+        }
     }
 
     TEST(BacktraceTest, works)

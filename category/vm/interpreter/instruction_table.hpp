@@ -2298,7 +2298,20 @@ namespace monad::vm::interpreter
     // VM Control
     namespace
     {
-        inline void return_impl [[noreturn]] (
+        // On ZisK, STOP/RETURN/REVERT return through the tail-call chain
+        // to the trampoline, avoiding longjmp's register reloads.
+        // Exits from runtime calls still use ctx.exit to unwind.
+        inline void
+        handler_exit(runtime::Context &ctx, runtime::StatusCode const code)
+        {
+#if defined(MONAD_ZKVM_ZISK)
+            ctx.result.status = code;
+#else
+            ctx.exit(code);
+#endif
+        }
+
+        inline void return_impl(
             runtime::StatusCode const code, runtime::Context &ctx,
             StackTop stack_top, int64_t const gas_remaining)
         {
@@ -2312,7 +2325,7 @@ namespace monad::vm::interpreter
             }
 
             ctx.gas_remaining = gas_remaining;
-            ctx.exit(code);
+            handler_exit(ctx, code);
         }
     }
 
@@ -2355,7 +2368,7 @@ namespace monad::vm::interpreter
     {
         fuzz_tstore_stack(ctx, stack_bottom, stack_top, analysis.size());
         ctx.gas_remaining = gas_remaining;
-        ctx.exit(Success);
+        handler_exit(ctx, Success);
     }
 
     MONAD_VM_INLINE_INSTRUCTION_CALL void invalid(

@@ -149,9 +149,11 @@ namespace monad::vm::interpreter
     {
         runtime::Context const &ctx;
 
+        // One byte before landing_base: a taken jump's code() + pc + 1, the
+        // byte after the JUMPDEST at pc, is then one add.
         [[gnu::always_inline]] uint8_t const *code() const noexcept
         {
-            return ctx.code_base;
+            return ctx.landing_base - 1;
         }
 
         [[gnu::always_inline]] size_t size() const noexcept

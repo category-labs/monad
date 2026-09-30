@@ -312,11 +312,12 @@ namespace monad::vm::runtime
         // SUB's, whose carry-in is the + 1 of a - b = a + ~b + 1.
         ZiskAdd256Params sub256_params{nullptr, nullptr, 1, nullptr};
 
-        // The running code as the interpreter's jumps read it: its padded
-        // bytes, its size and its JUMPDEST map, from its analysis. The
-        // handlers' second argument carries stack_limit instead
-        // (interpreter/types.hpp).
-        uint8_t const *code_base = nullptr;
+        // The running code as the interpreter's jumps read it, from its
+        // analysis: its padded bytes from the second on, where a taken jump
+        // to pc goes on at landing_base + pc, past the JUMPDEST it lands on;
+        // its size; and its JUMPDEST map. The handlers' second argument
+        // carries stack_limit instead (interpreter/types.hpp).
+        uint8_t const *landing_base = nullptr;
         size_t code_bound = 0;
         uint64_t const *jumpdest_words = nullptr;
 #endif

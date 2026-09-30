@@ -46,14 +46,30 @@ namespace corpus
 {
     class GenesisSink;
 
-    /// Which of the design document's two inverse cases to generate. They are
-    /// inverse in the parameter that costs: wholesale is hundreds of accounts
-    /// moving large amounts, payouts is over a million holders one payer fans
-    /// out to. The first is the MVP, the second sets the sizing.
+    /// Which of the design document's two use cases to generate, and in which
+    /// form. The two are inverse in the parameter that costs: wholesale is
+    /// hundreds of institutions moving large amounts, payouts is over a
+    /// million holders a platform pays out to. Wholesale is the cheap end;
+    /// payouts is the one sizing has to be done against.
+    ///
+    /// Each comes twice. Wholesale and Payouts move value as native balances
+    /// between EOAs, so a holder is an account leaf and nothing else is: the
+    /// cleaner experiment on one trie, and the one the dispersion law was
+    /// fitted on. WholesaleCbdc and WorkerPayouts follow the document's own
+    /// flows instead. Value is an ERC-20 per natively wrapped L1 token --
+    /// contracts/WrappedToken.sol, eligibility enforced in the token -- so a
+    /// holder is a storage slot. WholesaleCbdc settles cross-currency payments
+    /// payment-versus-payment, both legs in one transaction
+    /// (contracts/PvpSettlement.sol). WorkerPayouts funds payroll from
+    /// businesses, pays contractors in batches, and carries the earn vault
+    /// (contracts/EarnVault.sol) and the document's three exits: card,
+    /// redemption and withdrawal to the L1.
     enum class Preset
     {
         Wholesale,
         Payouts,
+        WholesaleCbdc,
+        WorkerPayouts,
     };
 
     /// How a block picks the accounts it touches. Uniform is the pessimistic
@@ -77,14 +93,17 @@ namespace corpus
     {
         Preset preset{Preset::Payouts};
         Shape shape{Shape::Zipf};
-        /// Accounts in the genesis state. Zero means "the preset's own
-        /// default" -- zero accounts is meaningless, so it carries no other
-        /// reading, and `resolved()` is what turns it into a number.
+        /// Accounts in the genesis state -- for the token presets, the
+        /// participants: banks for WholesaleCbdc, contractors for
+        /// WorkerPayouts. Zero means "the preset's own default" -- zero
+        /// accounts is meaningless, so it carries no other reading, and
+        /// `resolved()` is what turns it into a number.
         uint64_t accounts{0};
         /// Blocks to emit after the deploy block.
         uint64_t blocks{200};
-        /// Distinct accounts a block aims to touch. THE axis. Zero means the
-        /// preset's default, as above.
+        /// Distinct accounts a block aims to touch -- banks or contractors
+        /// for the token presets. THE axis. Zero means the preset's default,
+        /// as above.
         uint64_t distinct{0};
         double zipf_s{1.1};
         /// Accounts per genesis commit. See genesis_bulk.hpp: a StateDelta is
@@ -110,6 +129,8 @@ namespace corpus
     /// of the run deploys the NamespaceSpoke -- from the same key and nonce
     /// `--spoke-address` prints, so a compiled MONAD_ZKVM_L2_SPOKE stays
     /// valid -- and is reported like any other, since it is a real block.
+    /// The token presets deploy it the same way, so one configured guest
+    /// takes every preset's corpus.
     class Workload
     {
     public:
@@ -135,16 +156,52 @@ namespace corpus
         }
 
         /// Distinct accounts the last `block()` call aimed to touch, before
-        /// execution. The witness's own count is the measurement; this is what
-        /// was asked for, and the two differing is worth seeing.
+        /// execution -- for the token presets, the participants whose balances
+        /// it moves, which are slots and not accounts. The witness's own count
+        /// is the measurement; this is what was asked for, and the two
+        /// differing is worth seeing.
         uint64_t last_intended_distinct() const
         {
             return last_distinct_;
         }
 
+        /// Token presets: where the seeded contracts live. `token(0)` is the
+        /// payment token -- the first currency's reserves for WholesaleCbdc,
+        /// the contractors' dollar token for WorkerPayouts -- and `token(1)`
+        /// the other: the second currency's, or the businesses' stablecoin.
+        Address token(unsigned index) const;
+        Address settlement() const;
+        Address vault() const;
+
     private:
+        /// WholesaleCbdc: a payment proposed in one block, which its
+        /// intermediary settles in the next -- the banks it touches, by
+        /// index, and the call that settles it.
+        struct Proposal
+        {
+            uint64_t debtor;
+            uint64_t intermediary;
+            uint64_t creditor;
+            byte_string settle;
+        };
+
+        BlockSpec wholesale_cbdc_block(uint64_t index);
+        BlockSpec worker_payouts_block(uint64_t index);
+
         WorkloadSpec spec_;
         uint64_t last_distinct_{0};
+
+        /// Token presets only: the address behind every key a block signs
+        /// with, derived once -- each is an EC multiplication, and a block
+        /// names hundreds of them in its calldata. Banks for WholesaleCbdc;
+        /// for WorkerPayouts, the contractors who send.
+        std::vector<Address> signers_;
+        /// WorkerPayouts: the businesses that fund payroll.
+        std::vector<Address> businesses_;
+        /// WholesaleCbdc: the last block's proposals, for this one to settle.
+        std::vector<Proposal> proposed_;
+        /// WorkerPayouts: contractors admitted since genesis.
+        uint64_t onboarded_{0};
     };
 }
 

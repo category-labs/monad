@@ -16,6 +16,7 @@
 #include <zkvm/test/corpus/corpus_builder.hpp>
 #include <zkvm/test/corpus/genesis_bulk.hpp>
 #include <zkvm/test/corpus/scenarios.hpp>
+#include <zkvm/test/corpus/token_contracts.hpp>
 #include <zkvm/test/corpus/tx_sign.hpp>
 #include <zkvm/test/corpus/witness_stats.hpp>
 #include <zkvm/test/corpus/workload.hpp>
@@ -621,4 +622,278 @@ TEST(WorkloadDispersion, MoreDistinctAccountsCostMoreButSublinearly)
             static_cast<double>(large.touched_leaves()),
         static_cast<double>(small.blob_bytes) /
             static_cast<double>(small.touched_leaves()));
+}
+
+// ---------------------------------------------------------------------------
+// The token presets. A reverted transaction still executes, still makes a
+// valid block and still round-trips every root, so the roots say nothing about
+// whether the workload did what it says: the receipts do. Every transaction
+// of both presets has to succeed, and the logs have to add up to the flows.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    constexpr auto TRANSFER_TOPIC =
+        abi_encode_event_signature("Transfer(address,address,uint256)");
+
+    size_t transfer_logs(Receipt const &r)
+    {
+        size_t n = 0;
+        for (auto const &log : r.logs) {
+            n += !log.topics.empty() && log.topics[0] == TRANSFER_TOPIC;
+        }
+        return n;
+    }
+}
+
+TEST(WorkloadTokens, EveryWholesaleCbdcTransactionSucceeds)
+{
+    corpus::WorkloadSpec spec{};
+    spec.preset = corpus::Preset::WholesaleCbdc;
+    spec.accounts = 60;
+    spec.blocks = 3;
+    spec.distinct = 20;
+    // The seed the compiled spoke address was derived from, so the anchor is
+    // harvested from the spoke this run deploys.
+    spec.seed.bytes[31] = 1;
+    corpus::Workload w{spec};
+    corpus::CorpusBuilder b{
+        w.seeder(),
+        w.spec().chunk,
+        w.spec().gas_limit(),
+        OPERATOR_SK,
+        SALT_SECRET};
+
+    // distinct=20 is five payments a block: proposed in one, settled in the
+    // next, so blocks 2 and 3 each settle five -- two token transfers apiece,
+    // one per leg, in one transaction.
+    size_t settlements = 0;
+    for (uint64_t i = 0; i < w.block_count(); ++i) {
+        auto const e = b.add_block(w.block(b, i));
+        SCOPED_TRACE("block " + std::to_string(i));
+        EXPECT_EQ(guest_view(e.witness).state_root(), e.pre_root);
+        for (auto const &r : e.receipts) {
+            EXPECT_EQ(r.status, 1u);
+            settlements += transfer_logs(r) == 2;
+        }
+#ifdef MONAD_ZKVM_L2
+        // Every block after the deployment redeems reserves through the
+        // spoke, so every one of them carries an anchor.
+        EXPECT_EQ(e.namespace_anchor == bytes32_t{}, i == 0);
+#endif
+    }
+    EXPECT_EQ(settlements, 10u);
+}
+
+TEST(WorkloadTokens, EveryWorkerPayoutsTransactionSucceeds)
+{
+    corpus::WorkloadSpec spec{};
+    spec.preset = corpus::Preset::WorkerPayouts;
+    spec.accounts = 5'000;
+    spec.blocks = 2;
+    spec.distinct = 100;
+    spec.seed.bytes[31] = 1;
+    corpus::Workload w{spec};
+    corpus::CorpusBuilder b{
+        w.seeder(),
+        w.spec().chunk,
+        w.spec().gas_limit(),
+        OPERATOR_SK,
+        SALT_SECRET};
+
+    b.add_block(w.block(b, 0));
+    for (uint64_t i = 1; i < w.block_count(); ++i) {
+        auto const e = b.add_block(w.block(b, i));
+        SCOPED_TRACE("block " + std::to_string(i));
+        EXPECT_EQ(guest_view(e.witness).state_root(), e.pre_root);
+        size_t transfers = 0;
+        for (auto const &r : e.receipts) {
+            EXPECT_EQ(r.status, 1u);
+            transfers += transfer_logs(r);
+        }
+        // One transfer per contractor touched -- a salary, a deposit or
+        // withdrawal, or an exit -- and one per payroll batch funded: 100
+        // contractors, 80 of them paid in two batches of at most forty.
+        EXPECT_EQ(transfers, 102u);
+        // The contractors are in the token's storage, not the account trie.
+        EXPECT_GE(corpus::witness_stats(e.witness).storage_leaves, 100u);
+    }
+}
+
+namespace
+{
+    constexpr auto KEY_C =
+        0x0000000000000000000000000000000000000000000000000000000000000c33_bytes32;
+
+    Transaction contract_call(Address const &to, byte_string data)
+    {
+        Transaction tx{
+            .max_fee_per_gas = 0,
+            .gas_limit = 300'000,
+            .to = to,
+            .type = TransactionType::eip1559,
+            .data = std::move(data)};
+        tx.sc.chain_id = 1;
+        return tx;
+    }
+
+    Address fixed_address(unsigned char const tag)
+    {
+        Address a{};
+        a.bytes[19] = tag;
+        a.bytes[0] = 0xc0;
+        return a;
+    }
+
+    /// A token balance slot as the contract stores it, eligibility bit
+    /// included.
+    bytes32_t held(uint256_t const &balance)
+    {
+        return corpus::tokens::word(balance | corpus::tokens::ELIGIBLE);
+    }
+}
+
+// Eligibility is the token's, as the design asks: a balance moves only between
+// holders the token has admitted, whichever end is missing the bit and
+// whatever the balance says.
+TEST(WrappedToken, OnlyAdmittedHoldersMoveBalances)
+{
+    using namespace corpus::tokens;
+    Address const token = fixed_address(1);
+    Address const admitted = fixed_address(2);
+    Address const barred = fixed_address(3);
+    auto const a = corpus::address_of(KEY_A);
+    auto const b = corpus::address_of(KEY_B);
+
+    corpus::CorpusBuilder builder{
+        [&](corpus::GenesisSink &sink) {
+            sink.account(a, Account{.balance = 1'000'000});
+            sink.account(b, Account{.balance = 1'000'000});
+            sink.contract(token, Account{.nonce = 1}, wrapped_token_code());
+            sink.storage(token, balance_slot(a), held(1000));
+            sink.storage(token, balance_slot(admitted), held(0));
+            // A balance and no bit: never admitted, or since removed.
+            sink.storage(token, balance_slot(b), word(uint256_t{1000}));
+            sink.storage(
+                token,
+                word(uint256_t{TOTAL_SUPPLY_SLOT}),
+                word(uint256_t{2000}));
+        },
+        1000,
+        corpus::GAS_LIMIT,
+        OPERATOR_SK,
+        SALT_SECRET};
+
+    corpus::BlockSpec spec;
+    spec.txs.push_back(contract_call(token, transfer(barred, 10)));
+    spec.keys.push_back(KEY_A);
+    spec.txs.push_back(contract_call(token, transfer(admitted, 10)));
+    spec.keys.push_back(KEY_B);
+    spec.txs.push_back(contract_call(token, transfer(admitted, 10)));
+    spec.keys.push_back(KEY_A);
+    auto const e = builder.add_block(std::move(spec));
+
+    ASSERT_EQ(e.receipts.size(), 3u);
+    EXPECT_EQ(e.receipts[0].status, 0u) << "to a holder never admitted";
+    EXPECT_EQ(e.receipts[1].status, 0u) << "from a holder never admitted";
+    EXPECT_EQ(e.receipts[2].status, 1u);
+    auto &db = builder.db();
+    EXPECT_EQ(
+        db.read_storage(token, Incarnation{0, 0}, balance_slot(a)), held(990));
+    EXPECT_EQ(
+        db.read_storage(token, Incarnation{0, 0}, balance_slot(admitted)),
+        held(10));
+    EXPECT_EQ(
+        db.read_storage(token, Incarnation{0, 0}, balance_slot(b)),
+        word(uint256_t{1000}));
+}
+
+// "The two interbank legs are conditioned on one another and settle together
+// or not at all." The intermediary can pay the second leg of one payment and
+// not of the other: the one it can pay moves both legs, and the one it cannot
+// moves neither -- and stays pending, for the debtor to cancel or the
+// intermediary to settle once funded.
+TEST(PvpSettlement, BothLegsOrNeither)
+{
+    using namespace corpus::tokens;
+    Address const t0 = fixed_address(1);
+    Address const t1 = fixed_address(2);
+    Address const pvp = fixed_address(3);
+    auto const debtor = corpus::address_of(KEY_A);
+    auto const intermediary = corpus::address_of(KEY_B);
+    auto const creditor = corpus::address_of(KEY_C);
+    uint256_t const max = ~uint256_t{0};
+
+    corpus::CorpusBuilder builder{
+        [&](corpus::GenesisSink &sink) {
+            for (auto const &who : {debtor, intermediary, creditor}) {
+                sink.account(who, Account{.balance = 1'000'000});
+            }
+            sink.contract(t0, Account{.nonce = 1}, wrapped_token_code());
+            sink.storage(t0, balance_slot(debtor), held(1000));
+            sink.storage(t0, balance_slot(intermediary), held(0));
+            sink.storage(t0, allowance_slot(debtor, pvp), word(max));
+            sink.storage(
+                t0, word(uint256_t{TOTAL_SUPPLY_SLOT}), word(uint256_t{1000}));
+            sink.contract(t1, Account{.nonce = 1}, wrapped_token_code());
+            sink.storage(t1, balance_slot(intermediary), held(50));
+            sink.storage(t1, balance_slot(creditor), held(0));
+            sink.storage(t1, allowance_slot(intermediary, pvp), word(max));
+            sink.storage(
+                t1, word(uint256_t{TOTAL_SUPPLY_SLOT}), word(uint256_t{50}));
+            sink.contract(pvp, Account{.nonce = 1}, pvp_settlement_code());
+        },
+        1000,
+        corpus::GAS_LIMIT,
+        OPERATOR_SK,
+        SALT_SECRET};
+
+    Payment const affordable{
+        .ref = 1,
+        .token_a = t0,
+        .debtor = debtor,
+        .intermediary = intermediary,
+        .amount_a = 48,
+        .token_b = t1,
+        .creditor = creditor,
+        .amount_b = 40};
+    Payment unaffordable = affordable;
+    unaffordable.ref = 2;
+    unaffordable.amount_a = 72;
+    unaffordable.amount_b = 60;
+
+    corpus::BlockSpec spec;
+    spec.txs.push_back(contract_call(pvp, propose(unaffordable)));
+    spec.keys.push_back(KEY_A);
+    spec.txs.push_back(contract_call(pvp, propose(affordable)));
+    spec.keys.push_back(KEY_A);
+    // Only the intermediary may settle.
+    spec.txs.push_back(contract_call(pvp, settle(affordable)));
+    spec.keys.push_back(KEY_C);
+    spec.txs.push_back(contract_call(pvp, settle(unaffordable)));
+    spec.keys.push_back(KEY_B);
+    spec.txs.push_back(contract_call(pvp, settle(affordable)));
+    spec.keys.push_back(KEY_B);
+    auto const e = builder.add_block(std::move(spec));
+
+    ASSERT_EQ(e.receipts.size(), 5u);
+    EXPECT_EQ(e.receipts[0].status, 1u);
+    EXPECT_EQ(e.receipts[1].status, 1u);
+    EXPECT_EQ(e.receipts[2].status, 0u) << "settled by the creditor";
+    EXPECT_EQ(e.receipts[3].status, 0u) << "second leg unaffordable";
+    EXPECT_EQ(e.receipts[4].status, 1u);
+
+    auto &db = builder.db();
+    auto const slot = [&](Address const &c, bytes32_t const &k) {
+        return db.read_storage(c, Incarnation{0, 0}, k);
+    };
+    // The affordable payment moved both legs, and nothing else moved.
+    EXPECT_EQ(slot(t0, balance_slot(debtor)), held(952));
+    EXPECT_EQ(slot(t0, balance_slot(intermediary)), held(48));
+    EXPECT_EQ(slot(t1, balance_slot(intermediary)), held(10));
+    EXPECT_EQ(slot(t1, balance_slot(creditor)), held(40));
+    EXPECT_EQ(slot(pvp, pvp_pending_slot(payment_id(affordable))), bytes32_t{});
+    EXPECT_EQ(
+        slot(pvp, pvp_pending_slot(payment_id(unaffordable))),
+        word(uint256_t{1}));
 }

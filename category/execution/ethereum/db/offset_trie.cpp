@@ -140,9 +140,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
 #else
     hashes_.reserve(blob_.size() / 256);
 #endif
+#if defined(MONAD_ZKVM_ZISK)
+    blob_overlay_slots_ = static_cast<byte_string **>(
+        ::operator new((blob_.size() / 4 + 1) * sizeof(byte_string *)));
+    fresh_overlay_slots_ = static_cast<byte_string **>(
+        ::operator new(FRESH_HASH_SLOTS * sizeof(byte_string *)));
+#else
     // Reserve initial overlay capacity to avoid early rehashes.
     // The number of nodes created during commit is not known yet.
     overlay_.reserve(1024);
+#endif
 
     // A node's byte is set when the walk reaches it and cleared when a parent
     // claims it as a child.
@@ -815,12 +822,36 @@ void append_digest(byte_string &out, bytes32_t const &hash)
 NodeId OffsetTrie::fresh_id()
 {
     NodeId const fresh = next_id_;
+#if defined(MONAD_ZKVM_ZISK)
+    // Every fresh id has a slot in the fresh tables.
+    MONAD_ASSERT(static_cast<uint64_t>(fresh) - OVERLAY_BASE < FRESH_HASH_SLOTS);
+#endif
     next_id_ = NodeId{static_cast<uint64_t>(next_id_) + 1};
     return fresh;
 }
 
 NodeId OffsetTrie::put_node(NodeId const id, byte_string node)
 {
+#if defined(MONAD_ZKVM_ZISK)
+    if (id == NULL_ID) {
+        NodeId const fresh = fresh_id();
+        fresh_overlay_slots_[static_cast<uint64_t>(fresh) - OVERLAY_BASE] =
+            new byte_string(std::move(node));
+        return fresh;
+    }
+    drop_hash(id); // bytes changed; the cached hash is stale
+    uint64_t const v = static_cast<uint64_t>(id);
+    byte_string *&slot = v < OVERLAY_BASE
+                             ? blob_overlay_slots_[v >> 2]
+                             : fresh_overlay_slots_[v - OVERLAY_BASE];
+    if (slot == nullptr) {
+        slot = new byte_string(std::move(node));
+    }
+    else {
+        *slot = std::move(node);
+    }
+    return id;
+#else
     if (id == NULL_ID) {
         NodeId const fresh = fresh_id();
         overlay_filter_mark(fresh); // must precede/accompany every insert
@@ -831,6 +862,7 @@ NodeId OffsetTrie::put_node(NodeId const id, byte_string node)
     overlay_filter_mark(id);
     overlay_[id] = std::move(node);
     return id;
+#endif
 }
 
 NodeId OffsetTrie::put_branch(

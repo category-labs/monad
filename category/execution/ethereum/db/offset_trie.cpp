@@ -275,6 +275,12 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         node_rlp_span const rem =
             encode_rlp<true>(node, node_rlp_span{rlp_buf}); // priming pass
 #endif
+        // Marked and advanced before the hash, which ends the turn: the
+        // offsets die before the call instead of living across it.
+        node_offsets[node_offset] = 1;
+        unclaimed = unclaimed + DIGEST_NODE_LEN - (next_offset - node_offset);
+        node = NodeViewBase{base + next_offset};
+        seen = node_offsets.data() + next_offset;
         // Only hash-referenced nodes (canonical RLP >= 32 B) are cached;
         // smaller nodes are inlined by their parent, so caching their hash
         // would make child_ref emit a 32-byte ref where the trie inlines it.
@@ -297,11 +303,6 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             hashes_.insert_or_assign(NodeId{node_offset}, ch);
 #endif
         }
-
-        node_offsets[node_offset] = 1;
-        unclaimed = unclaimed + DIGEST_NODE_LEN - (next_offset - node_offset);
-        node = NodeViewBase{base + next_offset};
-        seen = node_offsets.data() + next_offset;
     }
     MONAD_ASSERT(node.bytes() == region_end); // nodes tile exactly
     is_valid_offset(root);

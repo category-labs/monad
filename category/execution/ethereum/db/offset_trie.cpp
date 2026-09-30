@@ -207,6 +207,11 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         // of the region
         auto next_offset =
             static_cast<uint64_t>(node.checked_end(region_end) - base);
+#if defined(MONAD_ZKVM_ZISK)
+        // Read once: the copy of a branch's children may alias the blob, so
+        // gcc would read the tag again to choose the priming encode.
+        Tag const tag = node.tag();
+#endif
 
         match(
             node,
@@ -240,59 +245,48 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                 [&](AccountLeafView a) { is_valid_offset(a.storage()); },
                 [](auto) {}});
 
-        match(
-            node,
-            Cases{
-                [](NullView) {},
-                [](DigestView) {},
-                [&](auto) {
+        // Digests were handled earlier; checked_end rejects invalid tags.
+        // Only branches, extensions and leaves remain to encode.
 #if defined(MONAD_ZKVM_ZISK)
-                    // Allocate another chunk when no RLP window remains.
-                    // Previous chunks stay alive for cached RLP pointers.
-                    if (MONAD_UNLIKELY(rlp_window_ == rlp_windows_end_)) {
-                        refill_rlp_windows();
-                    }
-                    // View the current window as a fixed-size byte array,
-                    // without allocating or copying it.
-                    auto &window = *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(
-                        rlp_window_);
-                    node_rlp_span const rem =
-                        node.tag() == BRANCH
-                            ? encode_rlp<true, true>(
-                                  node,
-                                  node_rlp_span{window},
-                                  primed_slots_ + PRIMED_CHILDREN_OFFSET)
-                            : encode_rlp<true>(
-                                  node, node_rlp_span{window}); // priming pass
+        // Keep retained RLP windows alive for cached pointers. Inline nodes
+        // let the next encoding reuse the current window.
+        if (MONAD_UNLIKELY(rlp_window_ == rlp_windows_end_)) {
+            refill_rlp_windows();
+        }
+        // View the current window as a fixed-size array without copying it.
+        auto &window =
+            *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(rlp_window_);
+        node_rlp_span const rem =
+            tag == BRANCH
+                ? encode_rlp<true, true>(
+                      node,
+                      node_rlp_span{window},
+                      primed_slots_ + PRIMED_CHILDREN_OFFSET)
+                : encode_rlp<true>(node, node_rlp_span{window}); // priming pass
 #else
-                    node_rlp_span const rem = encode_rlp<true>(
-                        node, node_rlp_span{rlp_buf}); // priming pass
+        node_rlp_span const rem =
+            encode_rlp<true>(node, node_rlp_span{rlp_buf}); // priming pass
 #endif
-                    // Only hash-referenced nodes (canonical RLP >= 32 B)
-                    // are cached; smaller nodes are inlined by their
-                    // parent, so caching their hash would make child_ref
-                    // emit a 32-byte ref where the trie inlines it.
-                    if (rem.rlp_size() >= 32) {
+        // Only hash-referenced nodes (canonical RLP >= 32 B) are cached;
+        // smaller nodes are inlined by their parent, so caching their hash
+        // would make child_ref emit a 32-byte ref where the trie inlines it.
+        if (rem.rlp_size() >= 32) {
 #if defined(MONAD_ZKVM_ZISK)
-                        // The sweep reaches each node once, so its slot is
-                        // empty: the digest goes straight into a new entry.
-                        NodeCacheEntry *const cached = new_hash_entry();
-                        monad_keccak256(
-                            rem.rlp_data(), rem.rlp_size(), cached->hash.bytes);
-                        // Retain this RLP for later patches.
-                        cached->priming_rlp = rem.base() + rem.size();
-                        cached->priming_rlp_len = rem.rlp_size();
-                        blob_node_cache_[node_offset >> 2] = cached;
-                        // Advance only for retained RLPs; inline nodes let
-                        // the next encoding reuse the current window.
-                        rlp_window_ += RLP_WINDOW_STRIDE;
+            // Each node is visited once, so its hash slot is empty.
+            // Fill the entry before Keccak to avoid preserving the entry
+            // pointer and RLP length across the call.
+            // Fresh ZisK pool entries already have hash_stale == 0.
+            NodeCacheEntry *const cached = new_hash_entry();
+            cached->priming_rlp = rem.base() + rem.size();
+            cached->priming_rlp_len = rem.rlp_size();
+            blob_node_cache_[node_offset >> 2] = cached;
+            rlp_window_ += RLP_WINDOW_STRIDE;
+            monad_keccak256(rem.rlp_data(), rem.rlp_size(), cached->hash.bytes);
 #else
-                        monad_keccak256(
-                            rem.rlp_data(), rem.rlp_size(), ch.hash.bytes);
-                        hashes_.insert_or_assign(NodeId{node_offset}, ch);
+            monad_keccak256(rem.rlp_data(), rem.rlp_size(), ch.hash.bytes);
+            hashes_.insert_or_assign(NodeId{node_offset}, ch);
 #endif
-                    }
-                }});
+        }
 
         node_offsets[node_offset] = 1;
         unclaimed = unclaimed + DIGEST_NODE_LEN - (next_offset - node_offset);

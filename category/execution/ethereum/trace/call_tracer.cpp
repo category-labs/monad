@@ -35,6 +35,7 @@
 
 #include <quill/bundled/fmt/ranges.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -175,7 +176,9 @@ CallTracer::CallTracer(
     , max_size_(max_size)
     , size_(0)
 {
-    frames_.reserve(128);
+    size_t const initial_capacity =
+        std::min<size_t>(128, max_size_ / sizeof(CallFrame));
+    frames_.reserve(initial_capacity);
 }
 
 void CallTracer::assert_fits(size_t const additional_size) const

@@ -127,6 +127,23 @@ TEST(CallTrace, enter_and_exit)
     EXPECT_EQ(call_frames[1].depth, 1);
 }
 
+TEST(CallTrace, initial_capacity_is_bounded_by_size_limit)
+{
+    constexpr size_t max_size = 2 * sizeof(CallFrame);
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, max_size};
+
+    EXPECT_EQ(call_frames.capacity(), 2);
+}
+
+TEST(CallTrace, unlimited_size_uses_target_initial_capacity)
+{
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+
+    EXPECT_EQ(call_frames.capacity(), 128);
+}
+
 TEST(CallTrace, frame_size_limit_throws)
 {
     evmc_message msg{.input_data = input, .input_size = sizeof(input)};

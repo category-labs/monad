@@ -524,6 +524,35 @@ size_t OffsetTrie::patch_rlp(
 bool OffsetTrie::patch_ref(
     NodeId const child, unsigned char *const ref, size_t const ref_len)
 {
+    // A hash ref over a child that still hashes, the common case: the digest
+    // goes straight over the old one -- ref[0] stays 0xa0 -- and into the
+    // child's entry straight from Keccak, where child_ref would copy it into
+    // the entry, into a ref of its own, and that ref over this one.
+    if (ref_len == HASH_RLP_LEN) {
+        NodeViewBase const node = get_current(child);
+        Tag const tag = node.tag();
+        if (tag == BRANCH || tag == EXT || tag == LEAF_ACCT ||
+            tag == LEAF_STORAGE) {
+            if (bytes32_t const *const hit = cached_hash(child)) {
+                std::memcpy(ref + 1, hit->bytes, KECCAK256_SIZE);
+                return true;
+            }
+            alignas(8) unsigned char buf[MAX_NODE_RLP];
+            node_rlp_span const rem = encode_current(child, node, buf);
+            if (rem.rlp_size() < 32) {
+                return false; // now inlined: the ref's length changes
+            }
+            CachedHash *&slot = hash_slot(child);
+            if (slot == nullptr) {
+                slot = new_hash_entry();
+            }
+            MONAD_KECCAK_SITE(TRIE_ENCODE, rem.rlp_size());
+            monad_keccak256(rem.rlp_data(), rem.rlp_size(), slot->h.bytes);
+            slot->valid = true;
+            std::memcpy(ref + 1, slot->h.bytes, KECCAK256_SIZE);
+            return true;
+        }
+    }
     unsigned char tmp[MAX_NODE_RLP];
     node_rlp_span const rem = child_ref<false>(child, node_rlp_span{tmp});
     if (rem.rlp_size() != ref_len) {

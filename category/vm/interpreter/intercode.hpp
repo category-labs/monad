@@ -43,15 +43,34 @@ namespace monad::vm::interpreter
         // precompile access, unlike std::vector<bool>'s opaque storage.
         class JumpdestMap
         {
+#if defined(MONAD_ZKVM_ZISK)
+            // Cover every PUSH2 destination (2^16 bits). This relies on fresh,
+            // zero-filled ZisK bump memory: allocations are never reused, and
+            // analysis leaves every bit beyond the code unset.
+            static constexpr size_t min_words = (size_t{1} << 16) / 64;
+            uint64_t *words_{nullptr};
+            size_t word_count_{0};
+#else
             std::vector<uint64_t> words_;
+#endif
 
         public:
             JumpdestMap() = default;
 
+#if defined(MONAD_ZKVM_ZISK)
+            explicit JumpdestMap(size_t const bits)
+                : words_{static_cast<uint64_t *>(::operator new(
+                      std::max((bits + 63) / 64, min_words) *
+                      sizeof(uint64_t)))}
+                , word_count_{std::max((bits + 63) / 64, min_words)}
+            {
+            }
+#else
             explicit JumpdestMap(size_t const bits)
                 : words_((bits + 63) / 64, 0)
             {
             }
+#endif
 
             void set(size_t const i) noexcept
             {
@@ -82,12 +101,20 @@ namespace monad::vm::interpreter
 
             size_t word_count() const noexcept
             {
+#if defined(MONAD_ZKVM_ZISK)
+                return word_count_;
+#else
                 return words_.size();
+#endif
             }
 
             uint64_t *words() noexcept
             {
+#if defined(MONAD_ZKVM_ZISK)
+                return words_;
+#else
                 return words_.data();
+#endif
             }
         };
 
@@ -123,6 +150,19 @@ namespace monad::vm::interpreter
         bool is_jumpdest(size_t const pc) const noexcept
         {
             return pc < *code_size_ && jumpdest_map_.test(pc);
+        }
+
+        // Requires pc < 2^16: callers use load_be_k<2>, which combines exactly
+        // two bytes and leaves the upper bits zero. On ZisK the map covers
+        // this range, with zero bits beyond the code. Keep size_t to avoid
+        // another zero-extension of the already decoded value.
+        bool is_jumpdest16(size_t const pc) const noexcept
+        {
+#if defined(MONAD_ZKVM_ZISK)
+            return jumpdest_map_.test(pc);
+#else
+            return is_jumpdest(pc);
+#endif
         }
 
         [[gnu::always_inline]]

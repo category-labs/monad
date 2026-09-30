@@ -13,7 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
+#include <category/execution/ethereum/db/storage_key.hpp>
+#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/db/page_cache.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/evm/monad/revision.h>
@@ -21,7 +24,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <vector>
 
 using namespace monad;
 
@@ -86,4 +91,96 @@ TEST(PageCache, cursor)
     auto const res = decode_cursor(storage_page_t{bad});
     ASSERT_TRUE(res.has_error());
     EXPECT_EQ(res.error(), PageCacheError::CursorOutOfOrder);
+}
+
+namespace
+{
+    std::vector<StorageKey> make_records(size_t const n)
+    {
+        std::vector<StorageKey> records;
+        for (size_t i = 0; i < n; ++i) {
+            records.emplace_back(
+                Address{0x1000 + i}, Incarnation{0, 0}, bytes32_t{i * 7 + 1});
+        }
+        return records;
+    }
+
+    // Byte i of the page, slot k holding bytes 32k .. 32k + 31.
+    uint8_t byte_at(storage_page_t const &page, size_t const i)
+    {
+        return page[static_cast<uint8_t>(i / 32)].bytes[i % 32];
+    }
+}
+
+TEST(PageCache, log_page_layout)
+{
+    auto const records = make_records(3);
+    storage_page_t const page = encode_log_page(0xaabb, 0xccdd, records);
+    EXPECT_EQ(byte_at(page, 6), 0xaa);
+    EXPECT_EQ(byte_at(page, 7), 0xbb);
+    EXPECT_EQ(byte_at(page, 14), 0xcc);
+    EXPECT_EQ(byte_at(page, 15), 0xdd);
+    EXPECT_EQ(byte_at(page, 16), 0);
+    EXPECT_EQ(byte_at(page, 17), 3);
+    for (size_t k = 0; k < 3; ++k) {
+        size_t const rec = 24 + 52 * k;
+        for (size_t i = 0; i < 20; ++i) {
+            EXPECT_EQ(byte_at(page, rec + i), records[k].bytes[i]);
+        }
+        for (size_t i = 0; i < 32; ++i) {
+            EXPECT_EQ(byte_at(page, rec + 20 + i), records[k].bytes[28 + i]);
+        }
+    }
+    // Header and three records fill 180 bytes, so slots 6 and up are zero.
+    for (uint8_t off = 6; off < storage_page_t::SLOTS; ++off) {
+        EXPECT_EQ(page[off], bytes32_t{}) << int{off};
+    }
+}
+
+TEST(PageCache, log_page_round_trip)
+{
+    for (size_t const n : {size_t{1}, size_t{2}, size_t{77}, size_t{78}}) {
+        auto const records = make_records(n);
+        auto const decoded =
+            decode_log_page(encode_log_page(42, 1234, records), 1234);
+        ASSERT_TRUE(decoded.has_value()) << n;
+        EXPECT_EQ(
+            decoded.value(),
+            (PageCacheLogPage{
+                .block_number = 42, .stamp = 1234, .records = records}));
+    }
+    // A full page uses 4,080 bytes, so the last 16 bytes of slot 127 are
+    // zero.
+    storage_page_t const full = encode_log_page(1, 0, make_records(78));
+    EXPECT_NE(byte_at(full, 4079), 0);
+    for (size_t i = 4080; i < 4096; ++i) {
+        EXPECT_EQ(byte_at(full, i), 0) << i;
+    }
+}
+
+TEST(PageCache, log_page_rejects)
+{
+    storage_page_t const page = encode_log_page(5, 10, make_records(4));
+    auto const wrong_stamp = decode_log_page(page, 11);
+    ASSERT_TRUE(wrong_stamp.has_error());
+    EXPECT_EQ(wrong_stamp.error(), PageCacheError::WrongStamp);
+
+    // A never-written ring index is an empty page: stamp 0 with no records.
+    auto const empty = decode_log_page(storage_page_t{}, 0);
+    ASSERT_TRUE(empty.has_error());
+    EXPECT_EQ(empty.error(), PageCacheError::BadRecordCount);
+
+    storage_page_t too_many = page;
+    bytes32_t word = too_many[0];
+    word.bytes[17] = 79;
+    too_many.set(0, word);
+    auto const bad_count = decode_log_page(too_many, 10);
+    ASSERT_TRUE(bad_count.has_error());
+    EXPECT_EQ(bad_count.error(), PageCacheError::BadRecordCount);
+
+    EXPECT_DEATH(encode_log_page(5, 10, {}), "records");
+    EXPECT_DEATH(encode_log_page(5, 10, make_records(79)), "records");
+    std::vector<StorageKey> const with_incarnation{
+        StorageKey{Address{1}, Incarnation{3, 0}, bytes32_t{uint64_t{1}}}};
+    EXPECT_DEATH(encode_log_page(5, 10, with_incarnation), "incarnation");
 }

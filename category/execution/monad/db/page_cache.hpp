@@ -19,10 +19,13 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
+#include <vector>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -108,14 +111,39 @@ struct PageCacheCursor
     operator==(PageCacheCursor const &, PageCacheCursor const &) = default;
 };
 
+// Log page: the records of one block that share one stamp. Read as the
+// page's 4,096 bytes, slot k holding bytes 32k .. 32k + 31: block number at
+// byte 0, the stamp at byte 8, record count n at byte 16 (2 bytes), zeros to
+// byte 24, then n records of address and page key, then zeros. A record is
+// the page's StorageKey with a zero incarnation.
+struct PageCacheLogPage
+{
+    uint64_t block_number{0};
+    uint64_t stamp{0};
+    std::vector<StorageKey> records;
+
+    friend bool
+    operator==(PageCacheLogPage const &, PageCacheLogPage const &) = default;
+};
+
 enum class PageCacheError
 {
     Success = 0,
     CursorOutOfOrder,
+    WrongStamp,
+    BadRecordCount,
 };
 
 storage_page_t encode_cursor(PageCacheCursor const &);
 Result<PageCacheCursor> decode_cursor(storage_page_t const &);
+
+storage_page_t encode_log_page(
+    uint64_t block_number, uint64_t stamp, std::span<StorageKey const>);
+// Reads exactly n records. Rejects a page whose stamp is not
+// `expected_stamp`, or whose n is 0 or above 78; a ring index never written
+// is an empty page, stamp 0 with n == 0.
+Result<PageCacheLogPage>
+decode_log_page(storage_page_t const &, uint64_t expected_stamp);
 
 MONAD_NAMESPACE_END
 

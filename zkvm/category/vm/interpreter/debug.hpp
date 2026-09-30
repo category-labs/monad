@@ -27,10 +27,12 @@ namespace monad::vm::interpreter
     constexpr auto debug_enabled = false;
 
     // No-op trace under the bare-metal zkVM environment, where there is
-    // no stderr to write to.
+    // no stderr to write to. Any analysis: on ZisK the handlers pass a view
+    // of the code (FrameCode).
+    template <typename Analysis>
     [[gnu::always_inline]]
     inline void trace(
-        [[maybe_unused]] Intercode const &analysis,
+        [[maybe_unused]] Analysis const &analysis,
         [[maybe_unused]] int64_t const gas_remaining,
         [[maybe_unused]] uint8_t const *const instr_ptr)
     {

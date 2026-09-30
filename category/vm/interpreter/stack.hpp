@@ -85,7 +85,7 @@
              * check. */                                                       \
             if constexpr (limit <= 1024) {                                     \
                 if (MONAD_UNLIKELY(                                            \
-                        stack_at >= ctx.stack_limit + (limit - 1024))) {       \
+                        stack_at >= MONAD_VM_STACK_LIMIT + (limit - 1024))) {  \
                     OVERFLOW_EXIT(Error);                                      \
                 }                                                              \
             }                                                                  \
@@ -134,12 +134,17 @@ namespace monad::vm::interpreter
         }
     }
 
-    template <uint8_t Instr, Traits traits>
+    template <uint8_t Instr, Traits traits, typename Analysis>
     [[gnu::always_inline]] inline void check_requirements(
-        runtime::Context &ctx, Intercode const &,
+        runtime::Context &ctx, Analysis const &,
         uint256_t const *const stack_lower_bound, StackTop const stack_top,
         int64_t &gas_remaining)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        // The handlers hold the limit in their second argument; this caller
+        // has the analysis there.
+        [[maybe_unused]] uint256_t const *const stack_limit = ctx.stack_limit;
+#endif
         MONAD_VM_CHECK_REQUIREMENTS(Instr, ctx.exit);
     }
 

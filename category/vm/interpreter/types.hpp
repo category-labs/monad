@@ -68,11 +68,31 @@
     #endif
 #endif
 
+/**
+ * On ZisK a revision's handlers are laid out in slots, one per opcode
+ * (execute.cpp), and the dispatch computes a handler's address from its opcode
+ * instead of loading it from a table. A handler is compiled into its slot and
+ * nowhere else; a twin a handler tail-calls stays a function of its own
+ * (MONAD_VM_TWIN_CALL), and a handler pointer carries no attribute
+ * (MONAD_VM_POINTER_CALL).
+ */
+#if defined(MONAD_ZKVM_ZISK)
+    #undef MONAD_VM_INSTRUCTION_CALL
+    #define MONAD_VM_INSTRUCTION_CALL __attribute__((always_inline)) inline
+    #define MONAD_VM_INLINE_INSTRUCTION_CALL MONAD_VM_INSTRUCTION_CALL
+    #define MONAD_VM_TWIN_CALL
+    #define MONAD_VM_POINTER_CALL
+#else
+    #define MONAD_VM_INLINE_INSTRUCTION_CALL MONAD_VM_INSTRUCTION_CALL inline
+    #define MONAD_VM_TWIN_CALL MONAD_VM_INSTRUCTION_CALL
+    #define MONAD_VM_POINTER_CALL MONAD_VM_INSTRUCTION_CALL
+#endif
+
 namespace monad::vm::interpreter
 {
-    // Use void const * to avoid a recursive InstrEval type; dispatch casts it
-    // back to a pointer to table entries.
-    using InstrEval = void MONAD_VM_INSTRUCTION_CALL (*)(
+    // Use void const * to pass either a slot base or a pointer table without
+    // making InstrEval recursive.
+    using InstrEval = void MONAD_VM_POINTER_CALL (*)(
         runtime::Context &, Intercode const &, uint256_t const *, StackTop,
         int64_t, uint8_t const *MONAD_VM_TBL_TYPE);
 

@@ -318,7 +318,7 @@ MONAD_NAMESPACE_END
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    AccessStatus guest_sload_into(
+    [[gnu::noinline]] AccessStatus guest_sload_into(
         Host &host, Address const &address, bytes32_t const &key,
         bool const can_pay_cold_access, uint256_t &value) noexcept
     {

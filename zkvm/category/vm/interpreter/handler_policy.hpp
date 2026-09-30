@@ -19,9 +19,10 @@
     #include_next <category/vm/interpreter/handler_policy.hpp>
 #else
 // On ZisK, pass the table base in a seventh register argument to avoid
-// reloading it at each dispatch.
+// reloading it at each dispatch: the slots' base where the revision has them
+// (dispatch_table, instruction_table.hpp), the table's otherwise.
     #define MONAD_VM_TBL_TYPE , void const *
     #define MONAD_VM_TBL_PARAM , void const *table_base
     #define MONAD_VM_TBL_ARG , table_base
-    #define MONAD_VM_TABLE_REF (static_cast<InstrEval const *>(table_base))
+    #define MONAD_VM_TABLE_REF (dispatch_table<traits>(table_base))
 #endif

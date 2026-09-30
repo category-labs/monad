@@ -112,6 +112,10 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         ::operator new((blob_.size() / 4 + 1) * sizeof(byte_string *)));
     new_nodes_ = static_cast<byte_string **>(
         ::operator new(FRESH_HASH_SLOTS * sizeof(byte_string *)));
+#else
+    // Reserve initial overlay capacity to avoid early rehashes.
+    // The number of nodes created during commit is not known yet.
+    overlay_.reserve(1024);
 #endif
 
     // A node's byte is set when the walk reaches it and cleared when a parent
@@ -178,6 +182,11 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         // of the region
         auto const next_offset =
             static_cast<uint64_t>(node.checked_end(region_end) - base);
+#if defined(MONAD_ZKVM_ZISK)
+        // Read once: the copy of a branch's children may alias the blob, so
+        // GCC could otherwise reload the tag before choosing the encoder.
+        Tag const tag = node.tag();
+#endif
 
         match(
             node,
@@ -217,65 +226,50 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                 [&](AccountLeafView a) { claim_child(a.storage()); },
                 [](auto) {}});
 
-        match(
-            node,
-            Cases{
-                [](NullView) {},
-                [](DigestView) {},
-                [&](auto) {
+        // Digests were handled earlier; checked_end rejects invalid tags.
+        // Only branches, extensions and leaves remain to encode.
 #if defined(MONAD_ZKVM_ZISK)
-                    // Keep retained windows alive; inline nodes reuse the
-                    // current one.
-                    if (MONAD_UNLIKELY(walk_window == walk_windows_end)) {
-                        refill_rlp_windows();
-                        walk_window = rlp_window_;
-                        walk_windows_end = rlp_windows_end_;
-                    }
-                    // View the current window as a fixed-size array without
-                    // copying it.
-                    auto &window =
-                        *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(
-                            walk_window);
-                    node_rlp_span const rem =
-                        node.tag() == BRANCH
-                            ? encode_rlp<true, true>(
-                                  node,
-                                  node_rlp_span{window},
-                                  primed_slots_ + PRIMED_CHILDREN_OFFSET)
-                            : encode_rlp<true>(
-                                  node, node_rlp_span{window}); // priming pass
+        // Keep retained RLP windows alive for cached pointers. Inline nodes
+        // let the next encoding reuse the current window.
+        if (MONAD_UNLIKELY(walk_window == walk_windows_end)) {
+            refill_rlp_windows();
+            walk_window = rlp_window_;
+            walk_windows_end = rlp_windows_end_;
+        }
+        // View the current window as a fixed-size array without copying it.
+        auto &window =
+            *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(walk_window);
+        node_rlp_span const rem =
+            tag == BRANCH
+                ? encode_rlp<true, true>(
+                      node,
+                      node_rlp_span{window},
+                      primed_slots_ + PRIMED_CHILDREN_OFFSET)
+                : encode_rlp<true>(node, node_rlp_span{window}); // priming pass
 #else
-                    node_rlp_span const rem = encode_rlp<true>(
-                        node, node_rlp_span{rlp_buf}); // priming pass
+        node_rlp_span const rem =
+            encode_rlp<true>(node, node_rlp_span{rlp_buf}); // priming pass
 #endif
-                    // Only hash-referenced nodes (canonical RLP >= 32 B)
-                    // are cached; smaller nodes are inlined by their
-                    // parent, so caching their hash would make child_ref
-                    // emit a 32-byte ref where the trie inlines it.
-                    if (rem.rlp_size() >= 32) {
+        // Only hash-referenced nodes (canonical RLP >= 32 B) are cached;
+        // smaller nodes are inlined by their parent, so caching their hash
+        // would make child_ref emit a 32-byte ref where the trie inlines it.
+        if (rem.rlp_size() >= 32) {
 #if defined(MONAD_ZKVM_ZISK)
-                        // The sweep reaches each node once, so its slot is
-                        // empty: the digest goes straight into a new entry.
-                        NodeCacheEntry *const cached = new_hash_entry();
-                        monad_keccak256(
-                            rem.rlp_data(), rem.rlp_size(), cached->hash.bytes);
-                        // Retain this RLP for later patches.
-                        cached->priming_rlp = rem.base() + rem.size();
-                        cached->priming_rlp_len = rem.rlp_size();
-                        walk_node_cache[node_offset >> 2] = cached;
-                        // Advance only for retained RLPs; inline nodes let
-                        // the next encoding reuse the current window.
-                        walk_window += RLP_WINDOW_STRIDE;
+            // Each node is visited once, so its hash slot is empty.
+            // Store the metadata before Keccak so it need not survive the call.
+            // Fresh ZisK pool entries already have hash_stale == 0.
+            NodeCacheEntry *const cached = new_hash_entry();
+            cached->priming_rlp = rem.base() + rem.size();
+            cached->priming_rlp_len = rem.rlp_size();
+            walk_node_cache[node_offset >> 2] = cached;
+            walk_window += RLP_WINDOW_STRIDE;
+            monad_keccak256(rem.rlp_data(), rem.rlp_size(), cached->hash.bytes);
 #else
-                        monad_keccak256(
-                            rem.rlp_data(),
-                            rem.rlp_size(),
-                            hash_entry.hash.bytes);
-                        hashes_.insert_or_assign(
-                            NodeId{node_offset}, hash_entry);
+            monad_keccak256(
+                rem.rlp_data(), rem.rlp_size(), hash_entry.hash.bytes);
+            hashes_.insert_or_assign(NodeId{node_offset}, hash_entry);
 #endif
-                    }
-                }});
+        }
 
         node_marks[node_offset] = 1;
         unclaimed_bytes =

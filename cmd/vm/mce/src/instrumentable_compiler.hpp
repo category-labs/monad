@@ -19,7 +19,6 @@
 #include <stopwatch.hpp>
 
 #include <category/core/assert.h>
-#include <category/core/log.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -29,9 +28,11 @@
 #include <valgrind/cachegrind.h>
 
 #include <cstdint>
+#include <cstdio>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <print>
 
 struct CompilerBinary
 {
@@ -96,8 +97,7 @@ public:
             monad::vm::compiler::native::compile_basic_blocks<traits>(
                 rt_, ir, config_);
         if (!nc->entrypoint()) {
-            LOG_ERROR("Compilation failed.");
-            monad::flush_logger();
+            std::println(stderr, "Compilation failed.");
             abort();
         }
 

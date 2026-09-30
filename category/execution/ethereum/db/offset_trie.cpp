@@ -222,7 +222,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     static_assert(std::endian::native == std::endian::little);
                     static_assert(
                         sizeof(uint64_t) == 2 * sizeof(node_id_wire_t));
+#if defined(MONAD_ZKVM_ZISK)
+                    // Validated from the aligned copy the priming encode below
+                    // takes too.
+                    std::memcpy(
+                        primed_children_, b.payload(), sizeof(primed_children_));
+                    unsigned char const *const p =
+                        reinterpret_cast<unsigned char const *>(primed_children_);
+#else
                     unsigned char const *const p = b.payload();
+#endif
                     uint64_t pair;
 #pragma GCC unroll 8
                     for (unsigned i = 0; i < 8; ++i) {
@@ -252,7 +261,9 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     auto &window = *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(
                         rlp_window_);
                     node_rlp_span const rem = encode_rlp<true>(
-                        node, node_rlp_span{window}); // priming pass
+                        node, node_rlp_span{window},
+                        node.tag() == BRANCH ? primed_children_
+                                             : nullptr); // priming pass
 #else
                     node_rlp_span const rem = encode_rlp<true>(
                         node, node_rlp_span{rlp_buf}); // priming pass
@@ -583,7 +594,9 @@ namespace
 
 template <bool priming_pass>
 OffsetTrie::node_rlp_span
-OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
+OffsetTrie::encode_rlp(
+    NodeViewBase const node, OffsetTrie::node_rlp_span dest,
+    [[maybe_unused]] node_id_wire_t const *const children_in)
 {
     MONAD_DEBUG_ASSERT(node.tag() != EMPTY && node.tag() != DIGEST);
     // Compact-encode `path` straight into d's tail as an RLP string; return
@@ -635,7 +648,16 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
             [&, wrap](BranchView b) -> node_rlp_span {
                 dest.back() = zx(0x80); // empty branch value, last element
                 dest = dest.shrink(1);
+#if defined(MONAD_ZKVM_ZISK)
+                alignas(8) node_id_wire_t own[16];
+                node_id_wire_t const *children = children_in;
+                if (children == nullptr) {
+                    std::memcpy(own, b.payload(), sizeof(own));
+                    children = own;
+                }
+#else
                 std::array<node_id_wire_t, 16> const children = b.children();
+#endif
 
                 // A digest is pre-state only, put_node never shadows a digest
                 // id and its original bytes are still its current bytes which
@@ -676,9 +698,14 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // Decremented after the test, not in it: `c-- != first` tests
                 // the value before the decrement, which gcc keeps in a copy
                 // every turn.
+#if defined(MONAD_ZKVM_ZISK)
+                node_id_wire_t const *const first = children;
+                for (node_id_wire_t const *c = first + 16; c != first;) {
+#else
                 node_id_wire_t const *const first = children.data();
                 for (node_id_wire_t const *c = first + children.size();
                      c != first;) {
+#endif
                     --c;
                     uint64_t const w = *c;
                     if (!digest_at(w)) {

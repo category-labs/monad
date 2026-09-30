@@ -1406,21 +1406,21 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
         }
         // old leaf + new key meet at a fresh branch, wrapped in an
         // extension for their shared prefix.
-        unsigned const cp = common_prefix_length(path, key);
-        MONAD_ASSERT(cp < path.nibble_size() && cp < key.nibble_size());
+        unsigned const common_nibbles = common_prefix_length(path, key);
+        MONAD_ASSERT(common_nibbles < path.nibble_size() && common_nibbles < key.nibble_size());
         std::array<node_id_wire_t, 16> children{};
-        children[path.get(cp)] =
-            to_node_id_wire_t(reput_old(path.substr(cp + 1)));
+        children[path.get(common_nibbles)] =
+            to_node_id_wire_t(reput_old(path.substr(common_nibbles + 1)));
         NodeId const leaf = fresh_id();
-        children[key.get(cp)] = to_node_id_wire_t(leaf);
-        if (cp > 0) {
+        children[key.get(common_nibbles)] = to_node_id_wire_t(leaf);
+        if (common_nibbles > 0) {
             NodeId const branch = put_branch(NULL_ID, children);
-            put_ext(id, key.substr(0, cp), branch);
+            put_ext(id, key.substr(0, common_nibbles), branch);
         }
         else {
             put_branch(id, children);
         }
-        return {leaf, key.substr(cp + 1)};
+        return {leaf, key.substr(common_nibbles + 1)};
     };
 
     return match(
@@ -1432,57 +1432,57 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
                 // materialises.
                 return {fresh_id(), key};
             },
-            [&](StorageLeafView l) -> std::pair<NodeId, NibblesView> {
-                bytes32_t const v = l.value();
+            [&](StorageLeafView leaf) -> std::pair<NodeId, NibblesView> {
+                bytes32_t const value = leaf.value();
                 return split_leaf(
-                    l.path(), [&](NibblesView const remaining_path) {
-                        return put_storage(NULL_ID, remaining_path, v);
+                    leaf.path(), [&](NibblesView const remaining_path) {
+                        return put_storage(NULL_ID, remaining_path, value);
                     });
             },
-            [&](AccountLeafView l) -> std::pair<NodeId, NibblesView> {
+            [&](AccountLeafView leaf) -> std::pair<NodeId, NibblesView> {
                 return split_leaf(
-                    l.path(), [&, l](NibblesView const remaining_path) {
-                        return clone_acct(NULL_ID, l, remaining_path);
+                    leaf.path(), [&, leaf](NibblesView const remaining_path) {
+                        return clone_acct(NULL_ID, leaf, remaining_path);
                     });
             },
-            [&](ExtView e) -> std::pair<NodeId, NibblesView> {
-                Nibbles const owned_path{e.path()};
+            [&](ExtView extension) -> std::pair<NodeId, NibblesView> {
+                Nibbles const owned_path{extension.path()};
                 NibblesView const path{owned_path};
-                NodeId child = e.child();
-                unsigned const cp = common_prefix_length(path, key);
-                if (cp == path.nibble_size()) { // full prefix -> descend
+                NodeId child = extension.child();
+                unsigned const common_nibbles = common_prefix_length(path, key);
+                if (common_nibbles == path.nibble_size()) { // full prefix -> descend
 #if defined(MONAD_ZKVM_ZISK)
                     mark_dirty(cached_node, 0);
 #endif
-                    return upsert_node(child, key.substr(cp));
+                    return upsert_node(child, key.substr(common_nibbles));
                 }
                 // diverge mid-extension
                 std::array<node_id_wire_t, 16> children{};
-                if (cp + 1 < path.nibble_size()) {
-                    child = put_ext(NULL_ID, path.substr(cp + 1), child);
+                if (common_nibbles + 1 < path.nibble_size()) {
+                    child = put_ext(NULL_ID, path.substr(common_nibbles + 1), child);
                 }
-                children[path.get(cp)] = to_node_id_wire_t(child);
+                children[path.get(common_nibbles)] = to_node_id_wire_t(child);
 
                 NodeId const leaf = fresh_id();
-                children[key.get(cp)] = to_node_id_wire_t(leaf);
+                children[key.get(common_nibbles)] = to_node_id_wire_t(leaf);
 
-                if (cp > 0) {
+                if (common_nibbles > 0) {
                     NodeId const branch = put_branch(NULL_ID, children);
-                    put_ext(id, key.substr(0, cp), branch);
+                    put_ext(id, key.substr(0, common_nibbles), branch);
                 }
                 else {
                     put_branch(id, children);
                 }
-                return {leaf, key.substr(cp + 1)};
+                return {leaf, key.substr(common_nibbles + 1)};
             },
-            [&](BranchView b) -> std::pair<NodeId, NibblesView> {
+            [&](BranchView branch) -> std::pair<NodeId, NibblesView> {
                 MONAD_ASSERT(key.nibble_size() > 0); // never ends at branch
-                unsigned const nib = key.get(0);
-                std::array<node_id_wire_t, 16> children = b.children();
-                NodeId const child = NodeId{children[nib]};
+                unsigned const child_index = key.get(0);
+                std::array<node_id_wire_t, 16> children = branch.children();
+                NodeId const child = NodeId{children[child_index]};
 #if defined(MONAD_ZKVM_ZISK)
                 if (child != NULL_ID) {
-                    mark_dirty(cached_node, nib);
+                    mark_dirty(cached_node, child_index);
                 }
 #endif
                 // Recurse into the slot: a NULL_ID child lets upsert_node
@@ -1491,7 +1491,7 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
                 // fills.
                 auto const result = upsert_node(child, key.substr(1));
                 if (child == NULL_ID) {
-                    children[nib] = to_node_id_wire_t(result.first);
+                    children[child_index] = to_node_id_wire_t(result.first);
                     put_branch(id, children);
                 }
                 return result;

@@ -7,6 +7,7 @@ on:
     types: [ opened, synchronize, reopened ]
     paths:
       - '.github/workflows/test-vm.yml'
+      - '.github/actions/docker-stage/**'
       - 'CMakeLists.txt'
       - 'cmake/**'
       - 'category/vm/**'
@@ -22,119 +23,82 @@ permissions:
   contents: read
 
 concurrency:
-  group: >
-    ${{
-      (github.event_name == 'push' && format('push-{0}-vm-tests', github.ref))
-      || (github.event_name == 'pull_request' && format('pr-{0}-vm-tests', github.event.pull_request.number))
-      || (github.event_name == 'workflow_dispatch' && format('workflow-dispatch-{0}-vm-tests', github.run_id))
-      || format('{0}-vm-tests', github.run_id)
-    }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref) || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-    build:
-        name: Test compiler
-        runs-on: ubuntu-26.04-32
-        strategy:
-          matrix:
-            build:
-              - CMAKE_BUILD_TYPE: RelWithDebInfo
-                TOOLCHAIN: gcc-avx2
-              - CMAKE_BUILD_TYPE: Debug
-                TOOLCHAIN: gcc-asan
+  build:
+    name: Test compiler
+    runs-on: ubuntu-26.04-32
+    strategy:
+      matrix:
+        build:
+          - CMAKE_BUILD_TYPE: RelWithDebInfo
+            TOOLCHAIN: gcc-avx2
+          - CMAKE_BUILD_TYPE: Debug
+            TOOLCHAIN: gcc-asan
+        compiler:
+          - CXX: g++-15
+            CC: gcc-15
+          - CXX: clang++-19
+            CC: clang-19
+        exclude:
+          # GCC's implementation of ASAN breaks the must-tail calling
+          # convention used by the interpreter, so we need to disable that
+          # configuration when running with sanitizers enabled.
+          - build:
+              CMAKE_BUILD_TYPE: Debug
+              TOOLCHAIN: gcc-asan
             compiler:
-              - CXX: g++-15
-                CC: gcc-15
-              - CXX: clang++-19
-                CC: clang-19
-            exclude:
-              # GCC's implementation of ASAN breaks the must-tail calling
-              # convention used by the interpreter, so we need to disable that
-              # configuration when running with sanitizers enabled.
-              - build:
-                  CMAKE_BUILD_TYPE: Debug
-                  TOOLCHAIN: gcc-asan
-                compiler:
-                  CXX: g++-15
-                  CC: gcc-15
+              CXX: g++-15
+              CC: gcc-15
 
-        steps:
-            - name: Configure git submodules
-              run: |
-                git config --global submodule.fetchJobs "$(nproc)"
-                git config --global submodule.LegacyTests.update none
-                git config --global submodule.third_party/tests.update none
-
-            - uses: actions/checkout@v4
-              with:
-                submodules: recursive
-
-            - name: Setup Docker Buildx
-              uses: docker/setup-buildx-action@v3
-
-            - name: Build `build_and_test_vm` stage
-              uses: docker/build-push-action@v5
-              with:
-                context: .
-                file: docker/Dockerfile
-                build-args: |-
-                  CC=${{ matrix.compiler.CC }}
-                  CXX=${{ matrix.compiler.CXX }}
-                  CMAKE_BUILD_TYPE=${{ matrix.build.CMAKE_BUILD_TYPE }}
-                  TOOLCHAIN=${{ matrix.build.TOOLCHAIN }}
-                  UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
-                ulimit: "memlock=-1:-1"
-                target: build_and_test_vm
-                cache-from: |
-                  type=gha,scope=base_vm_test
-                  type=gha,scope=base
-
-    fuzz:
-      name: VM Fuzz Tests
-      runs-on: ubuntu-26.04-32
-      steps:
-      - name: Configure git submodules
-        run: |
-          git config --global submodule.fetchJobs "$(nproc)"
-          git config --global submodule.LegacyTests.update none
-          git config --global submodule.third_party/tests.update none
-
+    steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Build `build_and_test_vm` stage
+        uses: ./.github/actions/docker-stage
+        with:
+          target: build_and_test_vm
+          build-args: |
+            CC=${{ matrix.compiler.CC }}
+            CXX=${{ matrix.compiler.CXX }}
+            CMAKE_BUILD_TYPE=${{ matrix.build.CMAKE_BUILD_TYPE }}
+            TOOLCHAIN=${{ matrix.build.TOOLCHAIN }}
+          cache-from: |
+            type=gha,scope=base_vm_test
+            type=gha,scope=base
+
+  fuzz:
+    name: VM Fuzz Tests
+    runs-on: ubuntu-26.04-32
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Build `vm_fuzz` stage
-        uses: docker/build-push-action@v5
+        uses: ./.github/actions/docker-stage
         with:
-          context: .
-          file: docker/Dockerfile
-          build-args: |-
-            UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
-          ulimit: "memlock=-1:-1"
           target: vm_fuzz
           cache-from: |
             type=gha,scope=base_vm_test
             type=gha,scope=base
 
-    python-code-quality:
-        name: Python code quality checks
-        runs-on: ubuntu-26.04
-        steps:
-            - uses: actions/checkout@v4
-              with:
-                submodules: false
+  python-code-quality:
+    name: Python code quality checks
+    runs-on: ubuntu-26.04
 
-            - name: Install uv
-              uses: astral-sh/setup-uv@v5
+    steps:
+      - uses: actions/checkout@v4
 
-            - name: Set up Python
-              uses: actions/setup-python@v5
-              with:
-                python-version-file: scripts/vm/benchmark-analysis/.python-version
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
 
-            - name: Check Python code
-              working-directory: scripts/vm/benchmark-analysis
-              run: make check
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: scripts/vm/benchmark-analysis/.python-version
+
+      - name: Check Python code
+        working-directory: scripts/vm/benchmark-analysis
+        run: make check

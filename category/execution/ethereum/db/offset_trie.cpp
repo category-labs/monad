@@ -1369,8 +1369,10 @@ OffsetTrie::upsert_node(NodeId id, NibblesView key)
                 [&](BranchView b) -> std::optional<Result> {
                     MONAD_ASSERT(key.nibble_size() > 0); // never ends at branch
                     unsigned const nib = key.get(0);
-                    NibblesView rest = key;
-                    rest.drop_front1();
+                    // The rest of the key, in place: nothing below reads the
+                    // key before it. Through a copy and back, gcc repacked the
+                    // view's parity and end into one register on every level.
+                    key.drop_front1();
                     // After drop_front1, as in find_original: read before it,
                     // the child is widened past its branch.
                     NodeId const child = b.child(nib);
@@ -1378,7 +1380,6 @@ OffsetTrie::upsert_node(NodeId id, NibblesView key)
 #if defined(MONAD_ZKVM_ZISK)
                         mark_dirty(self, nib);
 #endif
-                        key = rest;
                         id = child;
                         return std::nullopt;
                     }
@@ -1386,7 +1387,7 @@ OffsetTrie::upsert_node(NodeId id, NibblesView key)
                     // rewritten and its sixteen children are needed. Read them
                     // before recursing.
                     std::array<node_id_wire_t, 16> children = b.children();
-                    auto const result = upsert_node(NULL_ID, rest);
+                    auto const result = upsert_node(NULL_ID, key);
                     children[nib] = to_node_id_wire_t(result.first);
                     put_branch(id, children);
                     return result;

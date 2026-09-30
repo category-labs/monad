@@ -339,7 +339,7 @@ namespace monad::vm::interpreter
             return p + 5;
         }
         auto const dst = static_cast<size_t>(detail::load_be_k<2>(p + 2));
-        if (MONAD_UNLIKELY(!analysis.is_jumpdest(dst))) {
+        if (MONAD_UNLIKELY(!analysis.is_jumpdest16(dst))) {
             ctx.exit(Error);
         }
         auto const *ip = analysis.code() + dst;
@@ -1740,7 +1740,7 @@ namespace monad::vm::interpreter
         static constexpr auto monad_vm_req =
             fused_requirements<traits, PUSH2, JUMP, JUMPDEST>();
         if (MONAD_LIKELY(MONAD_VM_FUSED_CHARGE_BOTTOM(monad_vm_req))) {
-            if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) {
+            if (MONAD_UNLIKELY(!analysis.is_jumpdest16(monad_vm_dst))) {
                 ctx.exit(Error);
             }
             instr_ptr = analysis.code() + monad_vm_dst + 1;
@@ -1751,7 +1751,7 @@ namespace monad::vm::interpreter
             // PUSH2 supplies the operand required by JUMP.
             MONAD_DEBUG_ASSERT(stack_top >= stack_bottom);
             MONAD_VM_CHARGE(JUMP);
-            if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) {
+            if (MONAD_UNLIKELY(!analysis.is_jumpdest16(monad_vm_dst))) {
                 ctx.exit(Error);
             }
             instr_ptr = swallow_jumpdest(
@@ -1783,7 +1783,7 @@ namespace monad::vm::interpreter
         }
         // The condition is the original top, below PUSH2's destination.
         if (*stack_top) {
-            if (MONAD_UNLIKELY(!analysis.is_jumpdest(monad_vm_dst))) {
+            if (MONAD_UNLIKELY(!analysis.is_jumpdest16(monad_vm_dst))) {
                 ctx.exit(Error);
             }
             auto const *monad_vm_ip = analysis.code() + monad_vm_dst;

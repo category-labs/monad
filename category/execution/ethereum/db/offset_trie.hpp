@@ -626,6 +626,12 @@ class OffsetTrie
     // word seven times in eight, and the priming encode copied them again.
     alignas(8) node_id_wire_t primed_children_[16];
 
+    // The constructor's claim marks, for the branches whose priming encode
+    // claims their children, and the claims those encodes made, in the
+    // constructor's unit: DIGEST_NODE_LEN a claim.
+    unsigned char *claim_marks_{nullptr};
+    size_t claimed_bytes_{0};
+
     static constexpr size_t RLP_WINDOW_STRIDE = 704;
     static_assert(RLP_WINDOW_STRIDE >= MAX_NODE_RLP && RLP_WINDOW_STRIDE % 8 == 0);
     unsigned char *rlp_window_{nullptr};
@@ -944,7 +950,9 @@ private:
     // resolves its children through child_ref.
     // `children`, when given, is an aligned copy of a branch's sixteen
     // children the caller already holds; otherwise the branch copies its own.
-    template <bool priming_pass = false>
+    // `claims`: the priming encode of a branch the constructor has not
+    // validated claims its children itself, as it first reads them (ZisK).
+    template <bool priming_pass = false, bool claims = false>
     node_rlp_span encode_rlp(
         NodeViewBase node, node_rlp_span dest,
         node_id_wire_t const *children = nullptr);

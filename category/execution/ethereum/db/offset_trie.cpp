@@ -153,8 +153,9 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     overlay_.reserve(1024);
 #endif
 
-    // A node's byte is set when the walk reaches it and cleared when a parent
-    // claims it as a child.
+    // A node's byte is set when the walk reaches it -- to DIGEST for a digest,
+    // to 1 for any other node -- and cleared when a parent claims it as a
+    // child.
     // A child whose byte is clear is either previously unseen/invalid or
     // already claimed by a different parent.
     //
@@ -227,21 +228,21 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             uintptr_t const quad_end =
                 reinterpret_cast<uintptr_t>(region_end) - 3 * DIGEST_NODE_LEN;
             unsigned char const *p = node.bytes();
-            *seen = 1;
+            *seen = zx(DIGEST);
             seen += DIGEST_NODE_LEN;
             p += DIGEST_NODE_LEN;
             while (MONAD_LIKELY(reinterpret_cast<uintptr_t>(p) < quad_end)) {
                 if (MONAD_UNLIKELY(NodeViewBase{p}.tag() != DIGEST)) {
                     goto digest_run_end;
                 }
-                seen[0] = 1;
+                seen[0] = zx(DIGEST);
                 if (MONAD_UNLIKELY(
                         NodeViewBase{p + DIGEST_NODE_LEN}.tag() != DIGEST)) {
                     seen += DIGEST_NODE_LEN;
                     p += DIGEST_NODE_LEN;
                     goto digest_run_end;
                 }
-                seen[DIGEST_NODE_LEN] = 1;
+                seen[DIGEST_NODE_LEN] = zx(DIGEST);
                 if (MONAD_UNLIKELY(
                         NodeViewBase{p + 2 * DIGEST_NODE_LEN}.tag() !=
                         DIGEST)) {
@@ -249,7 +250,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     p += 2 * DIGEST_NODE_LEN;
                     goto digest_run_end;
                 }
-                seen[2 * DIGEST_NODE_LEN] = 1;
+                seen[2 * DIGEST_NODE_LEN] = zx(DIGEST);
                 if (MONAD_UNLIKELY(
                         NodeViewBase{p + 3 * DIGEST_NODE_LEN}.tag() !=
                         DIGEST)) {
@@ -257,13 +258,13 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     p += 3 * DIGEST_NODE_LEN;
                     goto digest_run_end;
                 }
-                seen[3 * DIGEST_NODE_LEN] = 1;
+                seen[3 * DIGEST_NODE_LEN] = zx(DIGEST);
                 seen += 4 * DIGEST_NODE_LEN;
                 p += 4 * DIGEST_NODE_LEN;
             }
             // Fewer than four nodes start inside the region from here.
             while (p < region_end && NodeViewBase{p}.tag() == DIGEST) {
-                *seen = 1;
+                *seen = zx(DIGEST);
                 seen += DIGEST_NODE_LEN;
                 p += DIGEST_NODE_LEN;
             }
@@ -812,17 +813,24 @@ OffsetTrie::encode_rlp(
                         dest = dest.prepend_unchecked(zx(0x80));
                         continue;
                     }
+                    bool digest;
 #if defined(MONAD_ZKVM_ZISK)
                     if constexpr (claims) {
                         // The constructor's claim, before anything of the
                         // child is read: a node start the walk marked, not yet
-                        // claimed by another parent (see is_valid_offset).
+                        // claimed by another parent (see is_valid_offset). The
+                        // mark is DIGEST for a digest and only for a digest.
                         MONAD_ASSERT(w < blob_size && marks[w] != 0);
+                        digest = marks[w] == DIGEST;
                         marks[w] = 0;
                         claimed += DIGEST_NODE_LEN;
                     }
+                    else
 #endif
-                    if (!digest_at(w)) {
+                    {
+                        digest = digest_at(w);
+                    }
+                    if (!digest) {
                         dest = child_ref<priming_pass>(NodeId{w}, dest);
 #if defined(MONAD_ZKVM_ZISK)
                         if constexpr (priming_pass) {
@@ -856,6 +864,20 @@ OffsetTrie::encode_rlp(
                         if (prev != below) {
                             break;
                         }
+#if defined(MONAD_ZKVM_ZISK)
+                        if constexpr (claims) {
+                            // Under w, so inside the blob. The mark alone
+                            // decides: a digest the walk marked and no parent
+                            // has claimed. Any other slot ends the run, and
+                            // the main loop's claim rejects it if it is not a
+                            // node start or is claimed already.
+                            if (marks[prev] != DIGEST) {
+                                break;
+                            }
+                            marks[prev] = 0;
+                        }
+                        else
+#endif
                         if constexpr (priming_pass) {
                             // The tag alone decides: a null slot reads the
                             // blob's first byte, the magic's 'M' that read_root
@@ -868,15 +890,6 @@ OffsetTrie::encode_rlp(
                         else if (!blob_digest_at(prev)) {
                             break;
                         }
-#if defined(MONAD_ZKVM_ZISK)
-                        if constexpr (claims) {
-                            // Under w, so inside the blob, and the digest after
-                            // it in the walk's exact tiling, so a node start:
-                            // only its claim is left.
-                            MONAD_ASSERT(marks[prev] != 0);
-                            marks[prev] = 0;
-                        }
-#endif
                         below -= HASH_RLP_LEN;
                         --lo;
                     }

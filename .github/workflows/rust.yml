@@ -11,13 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: >
-    ${{
-      (github.event_name == 'push' && format('push-{0}-rust', github.ref))
-      || (github.event_name == 'pull_request' && format('pr-{0}-rust', github.event.pull_request.number))
-      || (github.event_name == 'workflow_dispatch' && format('workflow-dispatch-{0}-rust', github.run_id))
-      || format('{0}-rust', github.run_id)
-    }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref) || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -25,41 +19,21 @@ jobs:
     runs-on: ubuntu-26.04-32
 
     steps:
-      - name: Configure git submodules
-        run: |
-          git config --global submodule.fetchJobs "$(nproc)"
-          git config --global submodule.LegacyTests.update none
-          git config --global submodule.third_party/tests.update none
-
-      - name: Checkout repo and submodules
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v4
 
       - name: Build `build_and_test_rust` stage
-        uses: docker/build-push-action@v5
+        uses: ./.github/actions/docker-stage
         with:
-          context: .
-          file: docker/Dockerfile
-          build-args: |-
+          target: build_and_test_rust
+          setup: true
+          submodules: true
+          build-args: |
             CC=gcc-15
             CXX=g++-15
-            UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
-          ulimit: "memlock=-1:-1"
-          target: build_and_test_rust
           cache-from: type=gha,scope=base_rust
 
       - name: Build `code_quality_rust` stage
-        uses: docker/build-push-action@v5
+        uses: ./.github/actions/docker-stage
         with:
-          context: .
-          file: docker/Dockerfile
-          build-args: |-
-            UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
-          ulimit: "memlock=-1:-1"
           target: code_quality_rust
           cache-from: type=gha,scope=base_rust
-

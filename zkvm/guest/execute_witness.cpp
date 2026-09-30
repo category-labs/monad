@@ -53,8 +53,30 @@
 extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void);
 #endif
 
+#ifdef MONAD_ZKVM_GAS_SELFTEST
+extern "C" std::uint32_t monad_zkvm_deferred_gas_test();
+extern "C" std::uint32_t monad_zkvm_deferred_gas_state_test();
+#endif
+
 extern "C" void monad_zkvm_execute_witness(void)
 {
+#ifdef MONAD_ZKVM_GAS_SELFTEST
+    {
+        std::uint32_t const failures = monad_zkvm_deferred_gas_test();
+        unsigned char out[32]{};
+        __builtin_memcpy(out, &failures, sizeof(failures));
+        // Distinguish a completed test run from an empty or witness output.
+        out[4] = 'G';
+        out[5] = 'A';
+        out[6] = 'S';
+        out[7] = '2';
+        std::uint32_t const state_failures =
+            monad_zkvm_deferred_gas_state_test();
+        __builtin_memcpy(out + 8, &state_failures, sizeof(state_failures));
+        write_output(out, sizeof(out));
+        return;
+    }
+#endif
 #ifdef MONAD_ZKVM_SELFTEST
     // Self-test build: no witness is read. The first four output bytes are a bitmask -- bit N set
     // means case N failed, all zero means every case passed. Padded to 32 so the harness that

@@ -27,6 +27,13 @@
 #include <cstddef>
 #include <cstdint>
 
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+    #define MONAD_VM_SHOULD_CHECK_GAS(Instr, DYNAMIC)                          \
+        ::monad::vm::interpreter::should_check_gas((Instr), (DYNAMIC))
+#else
+    #define MONAD_VM_SHOULD_CHECK_GAS(Instr, DYNAMIC) true
+#endif
+
 // Shared gas and stack checks; EXIT(status) selects how to leave on failure.
 #define MONAD_VM_CHECK_REQUIREMENTS(Instr, EXIT)                               \
     MONAD_VM_CHECK_REQUIREMENTS_AT(Instr, 0, EXIT)
@@ -47,8 +54,11 @@
         if constexpr (info.min_gas > 0) {                                      \
             gas_remaining -= info.min_gas;                                     \
                                                                                \
-            if (MONAD_UNLIKELY(gas_remaining < 0)) {                           \
-                GAS_EXIT(OutOfGas);                                            \
+            if constexpr (MONAD_VM_SHOULD_CHECK_GAS(                           \
+                              Instr, info.dynamic_gas)) {                      \
+                if (MONAD_UNLIKELY(gas_remaining < 0)) {                       \
+                    GAS_EXIT(OutOfGas);                                        \
+                }                                                              \
             }                                                                  \
         }                                                                      \
                                                                                \
@@ -96,6 +106,25 @@
 namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
+
+#if defined(MONAD_ZKVM_ZISK)
+    // Keep gas checks before observable effects and jumps. Other opcodes
+    // still charge gas, but may defer exhaustion to the next checkpoint.
+    // Host reads also need a checkpoint: even a discarded read may require
+    // a witness entry. STOP, RETURN and REVERT check before ending the frame.
+    consteval bool
+    should_check_gas(uint8_t const op, bool const dynamic_gas) noexcept
+    {
+        using enum compiler::EvmOpCode;
+        // Existing memory is frame-local; growth checks gas before resizing.
+        if (op == MLOAD || op == MSTORE || op == MSTORE8) {
+            return false;
+        }
+        return dynamic_gas || op == JUMP || op == JUMPI || op == GAS ||
+               op == TSTORE || op == SELFDESTRUCT || op == BLOCKHASH ||
+               op == SELFBALANCE || op == TLOAD;
+    }
+#endif
 
 #if defined(MONAD_ZKVM_ZISK)
     // Separate entry points for the same errors; keep them out of line.

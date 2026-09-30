@@ -642,3 +642,180 @@ extern "C" std::uint32_t monad_zkvm_revert_semantics_test(void)
 
     return failures;
 }
+
+#ifdef MONAD_ZKVM_GAS_SELFTEST
+    #include <category/execution/ethereum/block_hash_buffer.hpp>
+    #include <category/execution/ethereum/evmc_host.hpp>
+    #include <category/execution/ethereum/execute_message.hpp>
+    #include <category/vm/evm/opcodes.hpp>
+
+namespace
+{
+    using GasStateTraits = EvmTraits<MONAD_ETH_CANCUN>;
+    using enum vm::compiler::EvmOpCode;
+
+    // Only the backing database is fake. Opcode writes and frame rejection
+    // use the production EvmcHost, execute_call_message and State journal.
+    struct GasStateFixture
+    {
+        struct EmptyHashes final : BlockHashBuffer
+        {
+            bytes32_t zero{};
+
+            uint64_t n() const override
+            {
+                return 0;
+            }
+
+            bytes32_t const &get(uint64_t) const override
+            {
+                return zero;
+            }
+        } hashes;
+
+        StubDb db;
+        vm::VM vm;
+        BlockState block{db, vm};
+        State state{block, Incarnation{0, 0}};
+        NoopCallTracer call_tracer;
+        trace::StateTracer state_tracer{};
+        evmc_tx_context context{};
+        Transaction tx{};
+        ChainContext<GasStateTraits> chain{};
+        Address sender = addr(0x20);
+        Address recipient = addr(0x21);
+
+        explicit GasStateFixture(byte_string_view code)
+        {
+            db.put_account(0x20, Account{.balance = 100, .nonce = 7});
+            db.put_account(0x21, Account{.balance = 10, .nonce = 1});
+            db.put_storage(0x21, 0, key(7));
+            db.put_storage(0x21, 2, key(9));
+            state.set_code(recipient, code);
+            // This frame belongs to the caller and must survive child failure.
+            state.push();
+            state.set_storage(recipient, key(0), key(11));
+            state.set_transient_storage(recipient, key(0), key(55));
+            state.set_nonce(sender, 42);
+            state.store_log(Receipt::Log{.address = sender});
+        }
+
+        evmc::Result call(int64_t gas)
+        {
+            EvmcHost<GasStateTraits> host{
+                call_tracer,
+                state_tracer,
+                context,
+                hashes,
+                state,
+                tx,
+                0,
+                0,
+                chain};
+            auto memory = vm.message_memory_ref();
+            evmc_message message{
+                .kind = EVMC_CALL,
+                .depth = 1,
+                .gas = gas,
+                .recipient = recipient,
+                .sender = sender,
+                .code_address = recipient,
+                .memory_handle = memory.get(),
+                .memory = memory.get(),
+                .memory_capacity = vm.message_memory_capacity(),
+            };
+            message.value.bytes[31] = 3;
+            return execute_call_message<GasStateTraits>(&host, state, message);
+        }
+
+        bool parent_preserved()
+        {
+            return state.get_storage(recipient, key(0)) == key(11) &&
+                   state.get_storage(recipient, key(1)) == key(0) &&
+                   state.get_storage(recipient, key(2)) == key(9) &&
+                   state.get_transient_storage(recipient, key(0)) == key(55) &&
+                   state.get_transient_storage(recipient, key(1)) == key(0) &&
+                   state.get_balance(sender) == 100 &&
+                   state.get_balance(recipient) == 10 &&
+                   state.get_nonce(sender) == 42 && state.logs().size() == 1 &&
+                   state.logs()[0] == Receipt::Log{.address = sender};
+        }
+
+        bool writes_visible()
+        {
+            return state.get_storage(recipient, key(0)) == key(43) &&
+                   state.get_storage(recipient, key(1)) == key(99) &&
+                   state.get_storage(recipient, key(2)) == key(0) &&
+                   state.get_transient_storage(recipient, key(0)) == key(88) &&
+                   state.get_transient_storage(recipient, key(1)) == key(89) &&
+                   state.get_balance(sender) == 97 &&
+                   state.get_balance(recipient) == 13 &&
+                   state.get_nonce(sender) == 42 && state.logs().size() == 2 &&
+                   state.logs()[1] == Receipt::Log{.address = recipient};
+        }
+
+        bool reject_parent()
+        {
+            state.pop_reject();
+            return state.get_storage(recipient, key(0)) == key(7) &&
+                   state.get_storage(recipient, key(1)) == key(0) &&
+                   state.get_storage(recipient, key(2)) == key(9) &&
+                   state.get_transient_storage(recipient, key(0)) == key(0) &&
+                   state.get_transient_storage(recipient, key(1)) == key(0) &&
+                   state.get_nonce(sender) == 7 && state.logs().empty() &&
+                   state.get_balance(sender) == 100 &&
+                   state.get_balance(recipient) == 10;
+        }
+    };
+}
+
+extern "C" uint32_t monad_zkvm_deferred_gas_state_test()
+{
+    // Repeated overwrite, new slot, refund-producing deletion, transient
+    // overwrite and insertion, then a log. The final two PUSHes exhaust gas
+    // only after all of these writes have completed.
+    std::vector<uint8_t> code{
+        PUSH1, 42, PUSH1, 0, SSTORE, PUSH1, 43, PUSH1, 0, SSTORE,
+        PUSH1, 99, PUSH1, 1, SSTORE, PUSH1, 0,  PUSH1, 2, SSTORE,
+        PUSH1, 88, PUSH1, 0, TSTORE, PUSH1, 89, PUSH1, 1, TSTORE,
+        PUSH1, 0,  PUSH1, 0, LOG0,   PUSH1, 0,  PUSH1, 0, STOP};
+    uint32_t failures = 0;
+    int64_t consumed = 0;
+    {
+        GasStateFixture control{{code.data(), code.size()}};
+        auto const result = control.call(100'000);
+        if (result.status_code != EVMC_SUCCESS || result.gas_refund <= 0 ||
+            !control.writes_visible()) {
+            failures |= 1;
+        }
+        consumed = 100'000 - result.gas_left;
+        // A successful child must still be undone if its parent later fails.
+        if (!control.reject_parent()) {
+            failures |= 2;
+        }
+    }
+    if (failures != 0 || consumed <= 6) {
+        return failures | 1;
+    }
+
+    unsigned bit = 2;
+    for (uint8_t const ending :
+         {uint8_t(STOP), uint8_t(RETURN), uint8_t(REVERT), uint8_t(0xfe)}) {
+        code.back() = ending;
+        GasStateFixture fixture{{code.data(), code.size()}};
+        auto const result = fixture.call(consumed - 1);
+        bool const exceptional = ending == 0xfe
+                                     ? result.status_code != EVMC_SUCCESS &&
+                                           result.status_code != EVMC_REVERT
+                                     : result.status_code == EVMC_OUT_OF_GAS;
+        bool const restored = fixture.parent_preserved();
+        bool const parent_rejected = fixture.reject_parent();
+        if (!exceptional || result.gas_left != 0 || result.gas_refund != 0 ||
+            result.output_size != 0 || !restored || !parent_rejected) {
+            failures |= uint32_t{1} << bit;
+        }
+        ++bit;
+    }
+    return failures;
+}
+#endif

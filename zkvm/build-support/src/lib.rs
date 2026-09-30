@@ -161,17 +161,26 @@ impl Backend {
             println!("cargo:rerun-if-changed={}", align_ld.display());
             println!("cargo:rustc-link-arg=-T{}", align_ld.display());
 
-            // The witness-execution guest only: the precompile test
-            // guest does not link the interpreter.
-            let out_dir =
-                PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR unset"));
-            let slots_ld = out_dir.join("slots.ld");
-            std::fs::write(&slots_ld, zisk_slots_ld())
-                .expect("write slots.ld");
-            println!(
-                "cargo:rustc-link-arg-bin=monad-zkvm-zisk=-T{}",
-                slots_ld.display()
-            );
+            // The state-only self-test does not link the interpreter.
+            let definitions = extra_cmake_definitions();
+            let enabled = |name: &str| {
+                definitions.iter().rev().find(|(key, _)| key == name)
+                    .is_some_and(|(_, value)| matches!(
+                        value.to_ascii_uppercase().as_str(),
+                        "1" | "ON" | "YES" | "TRUE" | "Y"
+                    ))
+            };
+            if !enabled("MONAD_ZKVM_SELFTEST") || enabled("MONAD_ZKVM_GAS_SELFTEST") {
+                let out_dir =
+                    PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR unset"));
+                let slots_ld = out_dir.join("slots.ld");
+                std::fs::write(&slots_ld, zisk_slots_ld())
+                    .expect("write slots.ld");
+                println!(
+                    "cargo:rustc-link-arg-bin=monad-zkvm-zisk=-T{}",
+                    slots_ld.display()
+                );
+            }
         }
         println!("cargo:rustc-link-arg=--gc-sections");
         println!("cargo:rustc-link-search=native={}", build_dir.display());

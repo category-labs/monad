@@ -22,6 +22,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
 #include <category/core/config.hpp>
+#include <category/core/likely.h>
 #include <category/core/rlp/encode.hpp>
 #include <category/core/zisk_codegen.hpp>
 #include <category/execution/ethereum/core/account.hpp>
@@ -571,24 +572,85 @@ class OffsetTrie
     // a reciprocal multiply and nothing else changes -- just a slower guest.
     static_assert(sizeof(std::pair<NodeId, CachedHash>) == 64);
 
+#if defined(MONAD_ZKVM_ZISK)
+    // The cached hashes by id, reached without hashing it. A blob node's slot
+    // is blob_hash_slots_[id / 4]: no two node starts share four bytes, the
+    // shortest node -- an extension with an empty path -- being six long. A
+    // fresh node's is fresh_hash_slots_[id - OVERLAY_BASE]. A slot holds its
+    // entry's address or null, and entries are carved from chunks that never
+    // move. The tables are bump memory, which ZisK reads as zero until it is
+    // written, so nothing is cleared. Every lookup follows a get_original or
+    // get_current of the same id, which bounds a blob id by the blob.
+    static constexpr uint64_t FRESH_HASH_SLOTS = uint64_t{1} << 20;
+    CachedHash **blob_hash_slots_{nullptr};
+    CachedHash **fresh_hash_slots_{nullptr};
+    CachedHash *hash_pool_{nullptr};
+    CachedHash *hash_pool_end_{nullptr};
+
+    void refill_hash_pool(size_t entries);
+
+    CachedHash *new_hash_entry()
+    {
+        if (MONAD_UNLIKELY(hash_pool_ == hash_pool_end_)) {
+            refill_hash_pool(1024);
+        }
+        return hash_pool_++;
+    }
+
+    CachedHash *&hash_slot(NodeId const id) const
+    {
+        uint64_t const v = static_cast<uint64_t>(id);
+        if (MONAD_LIKELY(v < OVERLAY_BASE)) {
+            return blob_hash_slots_[v >> 2];
+        }
+        MONAD_ASSERT(v - OVERLAY_BASE < FRESH_HASH_SLOTS);
+        return fresh_hash_slots_[v - OVERLAY_BASE];
+    }
+#else
     ankerl::unordered_dense::map<NodeId, CachedHash, NodeIdHash> hashes_{};
+#endif
 
     // The cached hash of `id`, or nullptr: absent and present-but-invalid are
-    // the same answer. The pointer is into the table and dies at the next
-    // insert.
+    // the same answer. The pointer dies at the next insert.
     [[nodiscard]] bytes32_t const *cached_hash(NodeId const id) const
     {
+#if defined(MONAD_ZKVM_ZISK)
+        CachedHash const *const e = hash_slot(id);
+        return (e != nullptr && e->valid) ? &e->h : nullptr;
+#else
         auto const it = hashes_.find(id);
         return (it != hashes_.end() && it->second.valid) ? &it->second.h
                                                          : nullptr;
+#endif
     }
 
     // Invalidate without erasing.
     void drop_hash(NodeId const id)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if (CachedHash *const e = hash_slot(id)) {
+            e->valid = false;
+        }
+#else
         if (auto const it = hashes_.find(id); it != hashes_.end()) {
             it->second.valid = false;
         }
+#endif
+    }
+
+    // Cache `h` as the hash of `id`.
+    void store_hash(NodeId const id, bytes32_t const &h)
+    {
+#if defined(MONAD_ZKVM_ZISK)
+        CachedHash *&slot = hash_slot(id);
+        if (slot == nullptr) {
+            slot = new_hash_entry();
+        }
+        slot->h = h;
+        slot->valid = true;
+#else
+        hashes_.insert_or_assign(id, CachedHash{h, true});
+#endif
     }
 
     NodeId next_id_{OVERLAY_BASE}; // fresh-id counter (>= OVERLAY_BASE)

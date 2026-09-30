@@ -39,6 +39,7 @@ target_sources(monad-vm-interpreter PRIVATE
   "intercode.cpp"
   "intercode.hpp"
   "intrinsics.hpp"
+  "jumpdest_map.hpp"
   "jumpdest_scan.hpp"
   "push.hpp"
   "stack.hpp"

@@ -129,7 +129,17 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // are, which on the corpus is one entry per 430 blob bytes. The divisor
     // below is deliberately below that: over-reserving costs arena, which this
     // guest has, and under-reserving costs the rehash this is here to avoid.
+#if defined(MONAD_ZKVM_ZISK)
+    // The hash tables in place of the map: one slot per four blob bytes, one
+    // per fresh id, and a first chunk of entries sized as the map's reserve.
+    blob_hash_slots_ = static_cast<CachedHash **>(
+        ::operator new((blob_.size() / 4 + 1) * sizeof(CachedHash *)));
+    fresh_hash_slots_ = static_cast<CachedHash **>(
+        ::operator new(FRESH_HASH_SLOTS * sizeof(CachedHash *)));
+    refill_hash_pool(blob_.size() / 256 + 1);
+#else
     hashes_.reserve(blob_.size() / 256);
+#endif
     // Reserve initial overlay capacity to avoid early rehashes.
     // The number of nodes created during commit is not known yet.
     overlay_.reserve(1024);
@@ -146,11 +156,13 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // remains, without scanning node_offsets again.
     size_t unclaimed = static_cast<size_t>(region_end - node.bytes());
 
+#if !defined(MONAD_ZKVM_ZISK)
     // Reuse one CachedHash for the sweep: Keccak overwrites the hash directly,
     // avoiding per-node zeroing and an intermediate copy. All entries are
     // valid.
     CachedHash ch{};
     ch.valid = true;
+#endif
 
     // Read once: the byte stores below may alias anything, so gcc reloads a
     // member after each of them, twice a child pair.
@@ -230,9 +242,19 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     // emit a 32-byte ref where the trie inlines it.
                     if (rem.rlp_size() >= 32) {
                         MONAD_KECCAK_SITE(TRIE_PRIME, rem.rlp_size());
+#if defined(MONAD_ZKVM_ZISK)
+                        // The sweep reaches each node once, so its slot is
+                        // empty: the digest goes straight into a new entry.
+                        CachedHash *const e = new_hash_entry();
+                        monad_keccak256(
+                            rem.rlp_data(), rem.rlp_size(), e->h.bytes);
+                        e->valid = true;
+                        blob_hash_slots_[node_offset >> 2] = e;
+#else
                         monad_keccak256(
                             rem.rlp_data(), rem.rlp_size(), ch.h.bytes);
                         hashes_.insert_or_assign(NodeId{node_offset}, ch);
+#endif
                     }
                 }});
 
@@ -322,7 +344,7 @@ bytes32_t OffsetTrie::hash(NodeId const id)
                 MONAD_KECCAK_SITE(TRIE_PRIME, rem.rlp_size());
                 monad_keccak256(rem.rlp_data(), rem.rlp_size(), h.bytes);
 
-                hashes_.insert_or_assign(id, CachedHash{h, true});
+                store_hash(id, h);
                 return h;
             }});
 }
@@ -331,6 +353,16 @@ bytes32_t OffsetTrie::state_root()
 {
     return hash(root);
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+void OffsetTrie::refill_hash_pool(size_t const entries)
+{
+    // Never freed, and never moved: an entry's address stays its slot's.
+    hash_pool_ =
+        static_cast<CachedHash *>(::operator new(entries * sizeof(CachedHash)));
+    hash_pool_end_ = hash_pool_ + entries;
+}
+#endif
 
 template <bool priming_pass>
 OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
@@ -354,7 +386,7 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
     bytes32_t h;
     MONAD_KECCAK_SITE(TRIE_ENCODE, child_rlp_len);
     monad_keccak256(child_rlp, child_rlp_len, h.bytes);
-    hashes_.insert_or_assign(id, CachedHash{h, true});
+    store_hash(id, h);
     return encode_rlp(h, dest);
 }
 

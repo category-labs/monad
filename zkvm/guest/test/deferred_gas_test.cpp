@@ -193,17 +193,22 @@ namespace
         unsigned accesses;
     };
 
-    Outcome run(std::span<uint8_t const> code, int64_t gas)
+    template <typename Traits = GasTraits>
+    Outcome
+    run(std::span<uint8_t const> code, int64_t gas,
+        std::span<uint8_t const> input = {})
     {
         CountingHost host;
         evmc_message msg{};
         msg.gas = gas;
+        msg.input_data = input.data();
+        msg.input_size = input.size();
         auto ctx = runtime::Context::from(
             &CountingHost::get_interface(), host.to_context(), &msg, code);
         interpreter::Intercode analysis{code};
         std::array<uint256_t, 1024> stack;
-        interpreter::execute<GasTraits>(ctx, analysis, stack.data());
-        auto result = ctx.copy_to_evmc_result<GasTraits>();
+        interpreter::execute<Traits>(ctx, analysis, stack.data());
+        auto result = ctx.copy_to_evmc_result<Traits>();
         return {
             result.status_code,
             result.gas_left,
@@ -453,7 +458,110 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
                                    result.accesses == 0;
         }
     }
-    check(selectors);
+    // Exercise both prologues and all three selector encodings at every gas
+    // boundary. The bytecode checks the extracted value before stopping.
+    std::array<uint8_t, 8> const input{0x12, 0x34, 0x56, 0x78, 0, 0, 0, 0};
+    auto patch_jump = [](std::vector<uint8_t> &code, size_t push) {
+        code[push + 1] = static_cast<uint8_t>(code.size() >> 8);
+        code[push + 2] = static_cast<uint8_t>(code.size());
+    };
+    auto expect_top = [&](std::vector<uint8_t> &code, uint256_t value) {
+        code.push_back(PUSH32);
+        for (unsigned i = 32; i != 0; --i) {
+            code.push_back(static_cast<uint8_t>(
+                value[(i - 1) / 8] >> (8 * ((i - 1) % 8))));
+        }
+        code.push_back(EQ);
+        size_t const jump = code.size();
+        code.insert(code.end(), {PUSH2, 0, 0, JUMPI, 0xfe});
+        patch_jump(code, jump);
+        code.insert(code.end(), {JUMPDEST, STOP});
+    };
+    bool extraction = true;
+    for (bool taken : {false, true}) {
+        for (unsigned form = 0; form != 3; ++form) {
+            std::vector<uint8_t> code{PUSH1, 4, CALLDATASIZE, LT};
+            if (taken) {
+                code.push_back(ISZERO);
+            }
+            size_t const branch = code.size();
+            code.insert(code.end(), {PUSH2, 0, 0, JUMPI});
+            if (taken) {
+                code.push_back(STOP);
+                patch_jump(code, branch);
+                code.push_back(JUMPDEST);
+            }
+            if (form == 0) {
+                code.push_back(PUSH0);
+            }
+            else {
+                code.insert(code.end(), {PUSH1, 0});
+            }
+            code.push_back(CALLDATALOAD);
+            if (form < 2) {
+                code.insert(code.end(), {PUSH1, 224, SHR});
+            }
+            else {
+                code.insert(code.end(), {PUSH29, 1});
+                code.insert(code.end(), 28, 0);
+                code.insert(
+                    code.end(), {SWAP1, DIV, PUSH4, 255, 255, 255, 255, AND});
+            }
+            expect_top(code, uint256_t{0x12345678});
+            if (!taken) {
+                patch_jump(code, branch);
+                code.insert(code.end(), {JUMPDEST, STOP});
+            }
+            int64_t const cost = (taken ? 25 : 21) +
+                                 (form == 0   ? 11
+                                  : form == 1 ? 12
+                                              : 23) +
+                                 20;
+            for (int64_t gas = 0; gas <= cost + 1; ++gas) {
+                auto const r = run(code, gas, input);
+                extraction &= gas < cost ? failed_cleanly(r)
+                                         : r.status == EVMC_SUCCESS &&
+                                               r.gas == gas - cost;
+            }
+            for (size_t len = 0; len < 4; ++len) {
+                auto const r = run(code, 100, std::span{input}.first(len));
+                extraction &= r.status == EVMC_SUCCESS &&
+                              r.gas == 100 - (taken ? 24 : 22);
+            }
+            if (form == 0) {
+                extraction &= failed_cleanly(
+                    run<EvmTraits<MONAD_ETH_BERLIN>>(code, 100, input));
+            }
+        }
+    }
+    // One spare slot suffices for selector extraction; a full stack must fail.
+    for (size_t height : {size_t{1023}, size_t{1024}}) {
+        std::vector<uint8_t> code(height - 1, PUSH0);
+        code.insert(
+            code.end(),
+            {PUSH1,
+             4,
+             CALLDATASIZE,
+             LT,
+             PUSH2,
+             0,
+             0,
+             JUMPI,
+             PUSH0,
+             CALLDATALOAD,
+             PUSH1,
+             224,
+             SHR,
+             STOP});
+        auto const r = run(code, 10000, input);
+        extraction &=
+            height == 1023 ? r.status == EVMC_SUCCESS : failed_cleanly(r);
+    }
+    std::array<uint8_t, 7> const empty_selector{
+        CALLDATASIZE, LT, PUSH2, 0, 0, JUMPI, STOP};
+    extraction &= failed_cleanly(run(empty_selector, 100, input));
+
+    check(selectors && extraction);
     // Check every PUSH1 mask width, with and without the optional AND.
     bool masks = true;
     for (unsigned k = 0; k < 256; ++k) {

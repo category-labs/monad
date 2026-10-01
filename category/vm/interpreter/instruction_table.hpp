@@ -1231,12 +1231,165 @@ namespace monad::vm::interpreter
         MONAD_VM_NEXT(CALLDATALOAD);
     }
 
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+    // These fusions use deferred gas checks; eager mode keeps per-opcode
+    // dispatch. Recognize one of these selector extractions:
+    //
+    //     PUSH1 0 CALLDATALOAD PUSH1 0xe0 SHR
+    //     PUSH0 CALLDATALOAD PUSH1 0xe0 SHR
+    //     PUSH1 0 CALLDATALOAD PUSH29 1 << 224 SWAP1 DIV PUSH4 0xffffffff AND
+    //
+    // Charge its gas, push the first four calldata bytes and return the
+    // bytecode length. Return zero without changes for an unknown pattern.
+    // The caller guarantees four calldata bytes and room for two stack slots.
+    template <Traits traits>
+    [[gnu::always_inline]] inline size_t push_selector(
+        runtime::Context const &ctx, uint8_t const *const extraction_code,
+        StackTop const stack_top, int64_t &gas_remaining)
+    {
+        size_t extraction_length = 0;
+        if (traits::evm_rev() >= MONAD_ETH_SHANGHAI &&
+            opcode_at_is(extraction_code, 0, PUSH0)) {
+            if (opcode_at_is(extraction_code, 1, CALLDATALOAD) &&
+                opcode_at_is(extraction_code, 2, PUSH1) &&
+                extraction_code[3] == 0xe0 &&
+                opcode_at_is(extraction_code, 4, SHR)) {
+                gas_remaining -=
+                    static_gas<traits, PUSH0, CALLDATALOAD, PUSH1, SHR>();
+                extraction_length = 5;
+            }
+        }
+        else if (
+            opcode_at_is(extraction_code, 0, PUSH1) &&
+            extraction_code[1] == 0 &&
+            opcode_at_is(extraction_code, 2, CALLDATALOAD)) {
+            if (opcode_at_is(extraction_code, 3, PUSH1) &&
+                extraction_code[4] == 0xe0 &&
+                opcode_at_is(extraction_code, 5, SHR)) {
+                gas_remaining -=
+                    static_gas<traits, PUSH1, CALLDATALOAD, PUSH1, SHR>();
+                extraction_length = 6;
+            }
+            else if (
+                opcode_at_is(extraction_code, 3, PUSH29) &&
+                extraction_code[4] == 1 &&
+                opcode_at_is(extraction_code, 33, SWAP1) &&
+                opcode_at_is(extraction_code, 34, DIV) &&
+                opcode_at_is(extraction_code, 35, PUSH4) &&
+                opcode_at_is(extraction_code, 40, AND)) {
+                uint64_t divisor_zero_bytes_0, divisor_zero_bytes_1,
+                    divisor_zero_bytes_2;
+                uint32_t divisor_zero_bytes_3, selector_mask;
+                __builtin_memcpy(&divisor_zero_bytes_0, extraction_code + 5, 8);
+                __builtin_memcpy(
+                    &divisor_zero_bytes_1, extraction_code + 13, 8);
+                __builtin_memcpy(
+                    &divisor_zero_bytes_2, extraction_code + 21, 8);
+                __builtin_memcpy(
+                    &divisor_zero_bytes_3, extraction_code + 29, 4);
+                __builtin_memcpy(&selector_mask, extraction_code + 36, 4);
+                if ((divisor_zero_bytes_0 | divisor_zero_bytes_1 |
+                     divisor_zero_bytes_2 | divisor_zero_bytes_3) == 0 &&
+                    selector_mask == 0xffffffffu) {
+                    gas_remaining -= static_gas<
+                        traits,
+                        PUSH1,
+                        CALLDATALOAD,
+                        PUSH29,
+                        SWAP1,
+                        DIV,
+                        PUSH4,
+                        AND>();
+                    extraction_length = 41;
+                }
+            }
+        }
+        if (extraction_length != 0) {
+            stack_top[1] = uint256_t{detail::load_be_k<4>(ctx.env.input_data)};
+        }
+        return extraction_length;
+    }
+
+    // Fuse the calldata-size check with an optional selector extraction:
+    //
+    //     CALLDATASIZE LT PUSH2 <fallback> JUMPI          (not taken)
+    //     CALLDATASIZE LT ISZERO PUSH2 <dispatch> JUMPI   (taken)
+    //
+    // Requires 4 on the stack and at least four calldata bytes. Consume the
+    // 4, then extract the selector if the following code matches a known form.
+    // Otherwise execute CALLDATASIZE here and resume ordinary dispatch.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void calldata_selector(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const *const instructions = instr_ptr;
+        bool const falls_through = opcode_at_is(instructions, 2, PUSH2) &&
+                                   opcode_at_is(instructions, 5, JUMPI);
+        bool const jumps_to_dispatch = opcode_at_is(instructions, 2, ISZERO) &&
+                                       opcode_at_is(instructions, 3, PUSH2) &&
+                                       opcode_at_is(instructions, 6, JUMPI);
+        if (MONAD_UNLIKELY(!(
+                (falls_through || jumps_to_dispatch) &&
+                ctx.env.input_data_size >= 4 &&
+                stack_holds<1>(stack_top, stack_lower_bound) &&
+                stack_top.next_slot() < MONAD_VM_STACK_LIMIT &&
+                stack_top[0][0] == 4 &&
+                (stack_top[0][1] | stack_top[0][2] | stack_top[0][3]) == 0))) {
+            // Execute CALLDATASIZE directly to avoid re-entering this helper.
+            MONAD_VM_CHECK(CALLDATASIZE);
+            push(stack_top, ctx.env.input_data_size);
+            MONAD_VM_NEXT(CALLDATASIZE);
+        }
+        // A taken jump checks gas at JUMPDEST; otherwise the next checkpoint
+        // does.
+        uint8_t const *extraction_code;
+        if (falls_through) {
+            gas_remaining -=
+                static_gas<traits, CALLDATASIZE, LT, PUSH2, JUMPI>();
+            extraction_code = instructions + 6;
+        }
+        else {
+            gas_remaining -=
+                static_gas<traits, CALLDATASIZE, LT, ISZERO, PUSH2, JUMPI>();
+            extraction_code =
+                fused_branch(ctx, instructions + 2, true, gas_remaining);
+        }
+        size_t const extraction_length = push_selector<traits>(
+            ctx, extraction_code, stack_top - 1, gas_remaining);
+        instr_ptr = extraction_code + extraction_length;
+        MONAD_VM_LAUNDER(instr_ptr);
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+            ctx,
+            MONAD_VM_DISPATCH_STATE_ARG,
+            stack_lower_bound,
+            stack_top - (extraction_length == 0 ? 1 : 0),
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+
+#endif
+
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void calldatasize(
         runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+        // Recognize the selector prologue when LT follows CALLDATASIZE.
+        if (instr_ptr[1] == static_cast<std::uint8_t>(LT)) {
+            MONAD_VM_MUST_TAIL return calldata_selector<traits>(
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+
+#endif
         MONAD_VM_CHECK(CALLDATASIZE);
         push(stack_top, ctx.env.input_data_size);
 

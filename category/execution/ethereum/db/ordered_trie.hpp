@@ -17,7 +17,8 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
-#include <category/core/keccak.hpp>
+#include <category/core/trie_hash.hpp>
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
@@ -56,7 +57,7 @@ namespace detail
         }
     };
 
-    // Write the inline node RLP (<32 bytes) or its raw keccak (32 bytes) into
+    // Write the inline node RLP (<32 bytes) or its trie hash (32 bytes) into
     // ref_dest's tail and return the number of bytes written. A 32-byte
     // result is a hash: the caller prepends the RLP string header itself.
     // Only leaf encoding needs a dynamically sized buffer.
@@ -99,7 +100,7 @@ bytes32_t ordered_trie_root(R const &items)
     MONAD_KECCAK_SITE(BODY_ROOTS, ref_len);
 #endif
     return to_bytes(
-        keccak256({root.bytes + sizeof(root.bytes) - ref_len, ref_len}));
+        trie_hash({root.bytes + sizeof(root.bytes) - ref_len, ref_len}));
 }
 
 MONAD_NAMESPACE_END

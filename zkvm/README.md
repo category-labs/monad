@@ -314,6 +314,45 @@ preset, 1.20x at 100, 1.62x at 250 and 2.41x on the 130-transaction
 worker-payouts preset. Whether the proof follows the area is what
 `l2-latency` times as a fourth arm, on the blocks of up to 250 transactions.
 
+**The tries can be built on Poseidon2** (`MONAD_ZKVM_L2_TRIE_HASH=poseidon2`,
+default `keccak`). The hash is a property of the chain, so the host tree that
+generates its corpora and the guest that proves them are configured alike; a
+guest of the other kind recomputes a pre-state root no header holds, and halts.
+Every trie the chain commits to -- the state and storage tries, and the ordered
+tries behind the transactions, receipts and withdrawals roots -- then hashes its
+nodes and keys with `monad_poseidon2_256`, through
+[`category/core/trie_hash.hpp`](../category/core/trie_hash.hpp): ZisK's
+Poseidon2 precompile in the guest, the same permutation in software on the
+host. What Ethereum, a wallet or the L1 computes stays keccak: the KECCAK256
+opcode, code hashes, contract addresses, transaction hashes and signatures, the
+logs bloom, the block hash and the namespace anchor.
+
+Measured under ZisK 1.3.1-alpha on the latency corpora regenerated from the same
+seeds, the trie takes 86 to 95 % of a transfer block's Keccak-f permutations
+away from ten transactions up, for about 1.75 Poseidon2 calls each and 2 % more
+steps. What that does to the plan's area depends on the keccak that is left, and
+so on the block:
+
+| block | Poseidon2 trie | Poseidon2 trie, Keccak-f in software |
+|---|---:|---:|
+| 1 to 100 transfers | 1.00x | 0.79x |
+| 250 | 1.03x | 0.82x |
+| 500 | 1.05x | 0.91x |
+| 1,000 | 0.96x | 0.93x |
+| 2,000 | 0.85x | 0.94x |
+| 5,000 | 0.81x | 1.02x |
+| worker-payouts, 130 | 0.87x | 1.03x |
+
+On the precompile, the keccak left -- about 1.5 permutations a transfer -- still
+costs a whole Keccakf instance, so a small block gains nothing, and from 250
+transactions the Poseidon instances the trie adds cost more than it saves; the
+gain comes past 1,000, where the Keccakf instances it removes outnumber them.
+With the remainder in software (`MONAD_ZKVM_KECCAKF_SOFTWARE`) the instance goes:
+0.79x up to 100 transfers, where the keccak trie in software already overflows
+Main and Binary. A contract-heavy block keeps more keccak -- the EVM's, the
+bloom's -- and is better off on the precompile. `l2-latency` times both as two
+more arms.
+
 ### Swapping the encryption
 
 `MONAD_ZKVM_L2_CIPHER` selects the cipher suite and is the one L2 value with a

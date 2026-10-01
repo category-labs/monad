@@ -877,7 +877,7 @@ public:
     };
     EraseResult erase_node(NodeId, NibblesView);
 
-    // keccak of the (current) trie rooted at `id`; NULL_ID -> NULL_ROOT.
+    // Root hash of the (current) trie rooted at `id`; NULL_ID -> NULL_ROOT.
     // Serves the account root and the storage sub-root an account leaf spans.
     // Consults hashes_; recomputes + caches a missing id.
     //

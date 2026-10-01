@@ -45,6 +45,17 @@
 # difference is the encryption alone. Never a deployment.
 set(MONAD_ZKVM_L2_CIPHERS ecdh-poseidon2 plaintext)
 
+# MONAD_ZKVM_L2_TRIE_HASH is the other implementation choice with a default: the
+# hash every Merkle-Patricia trie of the chain is built with
+# (category/core/trie_hash.hpp). `keccak` is Ethereum's; `poseidon2` is ZisK's
+# Poseidon2 precompile, whose permutation takes about a fifth of keccak-f's
+# proving area for 88 bytes absorbed against 136. It is a property of the
+# chain, so the host tree that generates a corpus and the guest that proves it
+# must be configured alike -- and getting that wrong cannot produce a proof of
+# the wrong thing either: the guest recomputes a pre-state root the parent
+# header does not hold, and halts.
+set(MONAD_ZKVM_L2_TRIE_HASHES keccak poseidon2)
+
 set(MONAD_ZKVM_L2_REQUIRED
     MONAD_ZKVM_L2_CHAIN_ID
     MONAD_ZKVM_L2_NAMESPACE_ID
@@ -141,6 +152,15 @@ function(monad_l2_compile_definitions)
   if(NOT DEFINED MONAD_ZKVM_L2_CIPHER)
     set(MONAD_ZKVM_L2_CIPHER "ecdh-poseidon2")
   endif()
+  if(NOT DEFINED MONAD_ZKVM_L2_TRIE_HASH)
+    set(MONAD_ZKVM_L2_TRIE_HASH "keccak")
+  endif()
+  if(NOT MONAD_ZKVM_L2_TRIE_HASH IN_LIST MONAD_ZKVM_L2_TRIE_HASHES)
+    string(REPLACE ";" ", " _known "${MONAD_ZKVM_L2_TRIE_HASHES}")
+    message(FATAL_ERROR
+            "MONAD_ZKVM_L2_TRIE_HASH='${MONAD_ZKVM_L2_TRIE_HASH}' is not a trie "
+            "hash this tree implements; known: ${_known}.")
+  endif()
   if(NOT MONAD_ZKVM_L2_CIPHER IN_LIST MONAD_ZKVM_L2_CIPHERS)
     string(REPLACE ";" ", " _known "${MONAD_ZKVM_L2_CIPHERS}")
     message(FATAL_ERROR
@@ -179,12 +199,14 @@ function(monad_l2_compile_definitions)
   # so the selection is a #if and an unselected suite is not compiled at all.
   string(TOUPPER "${MONAD_ZKVM_L2_CIPHER}" _cipher_upper)
   string(REPLACE "-" "_" _cipher_macro "${_cipher_upper}")
+  string(TOUPPER "${MONAD_ZKVM_L2_TRIE_HASH}" _trie_hash_macro)
 
   # The address and the x-coordinate arrive as user-defined literals, so the
   # header needs no hex parser of its own.
   add_compile_definitions(
     MONAD_ZKVM_L2
     MONAD_L2_CIPHER_${_cipher_macro}
+    MONAD_L2_TRIE_HASH_${_trie_hash_macro}
     MONAD_L2_CHAIN_ID=${MONAD_ZKVM_L2_CHAIN_ID}
     MONAD_L2_NAMESPACE_ID=${MONAD_ZKVM_L2_NAMESPACE_ID}
     MONAD_L2_REVISION=${MONAD_ZKVM_L2_REVISION}

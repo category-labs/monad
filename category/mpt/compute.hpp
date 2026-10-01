@@ -20,6 +20,7 @@
 #include <category/core/rlp/encode.hpp>
 
 #include <category/core/mem/allocators.hpp>
+#include <category/core/trie_hash.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/merkle/compact_encode.hpp>
 #include <category/mpt/merkle/node_reference.hpp>
@@ -38,11 +39,11 @@ namespace detail
         unsigned char buffer[KECCAK256_SIZE];
         unsigned len{0};
 
-        void keccak_inplace_to_root_hash()
+        void trie_hash_inplace_to_root_hash()
         {
             MONAD_ASSERT(len <= KECCAK256_SIZE);
             if (len < KECCAK256_SIZE) {
-                monad_keccak256(buffer, len, buffer);
+                monad_trie_hash256(buffer, len, buffer);
                 len = KECCAK256_SIZE;
             }
         }
@@ -153,7 +154,7 @@ struct MerkleComputeBase : Compute
             MONAD_ASSERT(it != children.end());
             compute_hash_with_extra_nibble_to_state_(*it);
             // root data of a subtrie is always a hash
-            state.keccak_inplace_to_root_hash();
+            state.trie_hash_inplace_to_root_hash();
             return KECCAK256_SIZE;
         }
 
@@ -174,7 +175,7 @@ struct MerkleComputeBase : Compute
         // Compute hash to internal state and return hash length
         state.len = to_node_reference({branch_rlp, rlp_len}, state.buffer);
         // root data of merkle trie is always a hash
-        state.keccak_inplace_to_root_hash();
+        state.trie_hash_inplace_to_root_hash();
         return KECCAK256_SIZE;
     }
 
@@ -418,7 +419,7 @@ struct RootVarLenMerkleCompute : public VarLenMerkleCompute<LeafValueProcessor>
             Base::do_compute_node_data_len(children, value);
         }
         // root data of a merkle trie is always a hash
-        state.keccak_inplace_to_root_hash();
+        state.trie_hash_inplace_to_root_hash();
         return KECCAK256_SIZE;
     }
 

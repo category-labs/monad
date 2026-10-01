@@ -20,7 +20,7 @@ RUNTIME_SOURCE = (
     + RUNTIME_REVISION
 )
 EXPECTED_COMPILER = ("GNU", "15.2.0")
-EXPECTED_MARCH = "rv64ima_zicsr_zbb_zbs_zbkb"
+EXPECTED_MARCH = "rv64ima_zicsr_zba_zbb_zbs_zbkb"
 EXPECTED_MTUNE = "size"
 REQUIRED_FLAGS = (
     "-O3",
@@ -319,7 +319,7 @@ def main() -> int:
     if not readelf.is_file():
         fail(f"readelf not found beside compiler: {readelf}")
     attributes = run(str(readelf), "-A", str(elf))
-    for extension in ("zbb", "zbs", "zbkb"):
+    for extension in ("zba", "zbb", "zbs", "zbkb"):
         if extension not in attributes:
             fail(f"ELF attributes omit {extension}")
 
@@ -343,7 +343,7 @@ def main() -> int:
         "effective_flags": effective,
         "evidence": {
             "elf_marker": marker.decode(),
-            "elf_attributes": ["zbb", "zbs", "zbkb"],
+            "elf_attributes": ["zba", "zbb", "zbs", "zbkb"],
             "cargo_lock_sha256": sha256(repo / "zkvm/zisk/Cargo.lock"),
             "cmake_profile_sha256": sha256(profile_path),
         },

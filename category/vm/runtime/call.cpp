@@ -105,6 +105,45 @@ namespace monad::vm::runtime
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        // The message's addresses bound where they lie, not copied into
+        // locals of their own before being copied into the message: a
+        // 20-byte copy each. EIP-7702: if the code address starts with
+        // 0xEF0100, then treat it as a delegated call in the context of the
+        // current authority; the delegate is initialised from the call's own
+        // result, where an assignment is a 21-byte copy of the optional.
+        std::optional<Address> const delegate_address =
+            [&]() -> std::optional<Address> {
+            if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+                return evm::resolve_delegation(
+                    ctx->host, ctx->context, dest_address);
+            }
+            else {
+                return std::nullopt;
+            }
+        }();
+        Address const *code_address_p = &dest_address;
+        if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+            if (delegate_address) {
+                auto const access_status = host_of(*ctx).access_account(
+                    host_shim::addr(&*delegate_address));
+                ctx->gas_remaining -= (access_status == EVMC_ACCESS_COLD
+                                           ? traits::cold_account_cost()
+                                           : 0) +
+                                      100;
+                code_address_p = &*delegate_address;
+            }
+        }
+        Address const &code_address = *code_address_p;
+
+        Address const &recipient = (call_kind == EVMC_CALL || static_call)
+                                       ? dest_address
+                                       : ctx->env.recipient;
+
+        Address const &sender = (call_kind == EVMC_DELEGATECALL)
+                                    ? ctx->env.sender
+                                    : ctx->env.recipient;
+#else
         auto const code_address = [&]() -> Address {
             if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
                 // EIP-7702: if the code address starts with 0xEF0100, then
@@ -112,13 +151,8 @@ namespace monad::vm::runtime
                 // current authority.
                 if (auto delegate_address = evm::resolve_delegation(
                         ctx->host, ctx->context, dest_address)) {
-#if defined(MONAD_ZKVM_ZISK)
-                    auto const access_status = host_of(*ctx).access_account(
-                        host_shim::addr(&*delegate_address));
-#else
                     auto const access_status = ctx->host->access_account(
                         ctx->context, &*delegate_address);
-#endif
                     ctx->gas_remaining -= (access_status == EVMC_ACCESS_COLD
                                                ? traits::cold_account_cost()
                                                : 0) +
@@ -136,6 +170,7 @@ namespace monad::vm::runtime
         auto const sender = (call_kind == EVMC_DELEGATECALL)
                                 ? ctx->env.sender
                                 : ctx->env.recipient;
+#endif
 
         if (has_value) {
             ctx->gas_remaining -= 9000;

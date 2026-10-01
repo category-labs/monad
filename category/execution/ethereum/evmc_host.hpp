@@ -240,7 +240,11 @@ struct EvmcHost final : public EvmcHostBase
     {
         MONAD_TRY
         {
+#if defined(MONAD_ZKVM_ZISK)
+            if (is_precompile<traits>(as_monad(address))) {
+#else
             if (is_precompile<traits>(address)) {
+#endif
                 return EVMC_ACCESS_WARM;
             }
             return to_evmc_access_status(

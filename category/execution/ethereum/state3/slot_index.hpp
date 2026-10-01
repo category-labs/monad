@@ -61,6 +61,24 @@ key_equals(bytes32_t const &k, std::uint64_t const tail, bytes32_t const &e)
     if (a != tail) {
         return false;
     }
+#ifdef MONAD_ZKVM_ZISK
+    // A tail that matches is nearly always the key: the other three words by
+    // the DMA comparator (CSR 0x814, the length in the flag after it), one
+    // step and the words it reads, where they cost three steps each.
+    std::uint64_t differ;
+    __asm__(".option push\n\t"
+            ".option arch, +zicsr\n\t"
+            "csrrs %0, 0x814, %1\n\t"
+            "addi x0, %2, 24\n\t"
+            ".option pop"
+            : "=&r"(differ)
+            : "r"(e.bytes),
+              "r"(k.bytes),
+              "m"(*reinterpret_cast<unsigned char const(*)[24]>(e.bytes)),
+              "m"(*reinterpret_cast<unsigned char const(*)[24]>(k.bytes)));
+    (void)b;
+    return differ == 0;
+#else
     __builtin_memcpy(&a, e.bytes, 8);
     __builtin_memcpy(&b, k.bytes, 8);
     if (a != b) {
@@ -74,6 +92,7 @@ key_equals(bytes32_t const &k, std::uint64_t const tail, bytes32_t const &e)
     __builtin_memcpy(&a, e.bytes + 16, 8);
     __builtin_memcpy(&b, k.bytes + 16, 8);
     return a == b;
+#endif
 }
 
 #ifdef MONAD_ZKVM_ZISK

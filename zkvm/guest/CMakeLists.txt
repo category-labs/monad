@@ -90,6 +90,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # ZisK supports Zba/Zbb/Zbs/Zbkb since v1.3.0-alpha.
     # The fixed-address guest needs no PIC/GOT indirections.
     # -mtune=size favors direct unaligned word accesses over byte-wise loads.
+    # The interpreter keeps -mtune=generic-ooo, which runs fewer steps in its
+    # PUSH and DIV handlers.
     #
     # Append after cmake-rs's flags: the last -march wins.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
@@ -97,6 +99,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         string(APPEND CMAKE_C_FLAGS " ${_zisk_march} -fno-pic -mtune=size")
         string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} -fno-pic -mtune=size")
         string(APPEND CMAKE_ASM_FLAGS " ${_zisk_march}")
+        set(_monad_zkvm_interpreter_tune "-mtune=generic-ooo")
     endif()
 
     # Tune C++ inlining for both guests to reduce call overhead.
@@ -302,6 +305,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     add_subdirectory("${MONAD_ROOT}/category/vm/evm" evm)
     add_subdirectory("${MONAD_ROOT}/category/vm/runtime" runtime)
     add_subdirectory("${MONAD_ROOT}/category/vm/interpreter" interpreter)
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        target_compile_options(monad-vm-interpreter PRIVATE
+                               ${_monad_zkvm_interpreter_tune})
+    endif()
 
     # Strip x86-only assembly from the otherwise shared targets.
     monad_zkvm_drop_sources(monad-vm-runtime
@@ -414,7 +421,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         # build signatures do not depend on the checkout location.
         # Compilation still uses the original flags and paths.
         set(_official_signed_inputs
-            "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}\n${_dma_patch_sha}")
+            "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_interpreter_tune}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}\n${_dma_patch_sha}")
         string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}" "<guest>"
                _official_signed_inputs "${_official_signed_inputs}")
         string(SHA256 _official_build_signature "${_official_signed_inputs}")
@@ -447,7 +454,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "  \"cxx_flags\": \"${CMAKE_CXX_FLAGS}\",\n"
             "  \"cxx_flags_release\": \"${CMAKE_CXX_FLAGS_RELEASE}\",\n"
             "  \"asm_flags\": \"${CMAKE_ASM_FLAGS}\",\n"
-            "  \"asm_flags_release\": \"${CMAKE_ASM_FLAGS_RELEASE}\"\n"
+            "  \"asm_flags_release\": \"${CMAKE_ASM_FLAGS_RELEASE}\",\n"
+            "  \"interpreter_flags\": \"${_monad_zkvm_interpreter_tune}\"\n"
             "}\n")
     else()
         # Mark development builds explicitly in both the ELF and JSON profile.

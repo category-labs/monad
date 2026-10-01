@@ -27,6 +27,9 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/evm/delegation.hpp>
+#endif
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -175,6 +178,33 @@ size_t EvmcHostBase::copy_code(
     }
     stack_unwind();
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+std::optional<Address>
+EvmcHostBase::delegate_of(evmc::address const &address) const noexcept
+{
+    MONAD_TRY
+    {
+        if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
+            // As copy_code: the tracer is told of the code read.
+            bytes32_t const hash = state_.get_code_hash(as_monad(address));
+            if (hash == NULL_HASH) {
+                return std::nullopt;
+            }
+            auto const vcode = state_.read_code(hash);
+            MONAD_ASSERT(vcode);
+            trace::on_read_code(state_tracer_, hash, vcode->intercode());
+            return vm::evm::designation_of(vcode->intercode()->code_span());
+        }
+        return state_.delegate_of(as_monad(address));
+    }
+    MONAD_CATCH(...)
+    {
+        capture_current_exception();
+    }
+    stack_unwind();
+}
+#endif
 
 evmc_tx_context const *EvmcHostBase::get_tx_context() const noexcept
 {

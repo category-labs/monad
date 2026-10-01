@@ -2422,6 +2422,41 @@ namespace monad::vm::interpreter
                 gas_remaining,
                 instr_ptr MONAD_VM_TBL_ARG);
         }
+        else if constexpr (OP == MLOAD || OP == MSTORE) {
+            // The offset is the immediate: no word to read and bound, and
+            // inside the memory MLOAD and MSTORE charge only their static
+            // gas, which neither tests (stack.hpp). Outside, the push and
+            // then the follower's handler, which grows the memory.
+            auto const monad_vm_k = runtime::Memory::Offset::unsafe_from(
+                static_cast<runtime::Memory::Offset::rep>(*(instr_ptr + 1)));
+            if constexpr (OP == MLOAD) {
+                if (MONAD_LIKELY(ctx.memory.size >= *monad_vm_k + 32)) {
+                    gas_remaining -= static_gas<traits, PUSH1, MLOAD>();
+                    runtime::mload_at<traits>(&ctx, stack_top + 1, monad_vm_k);
+                    MONAD_VM_FUSED_NEXT(3, 1);
+                }
+            }
+            else {
+                // MSTORE's value is the top.
+                if (MONAD_LIKELY(
+                        stack_top >= stack_bottom &&
+                        ctx.memory.size >= *monad_vm_k + 32)) {
+                    gas_remaining -= static_gas<traits, PUSH1, MSTORE>();
+                    runtime::mstore_at<traits>(&ctx, monad_vm_k, stack_top);
+                    MONAD_VM_FUSED_NEXT(3, -1);
+                }
+            }
+            interpreter::push(stack_top, uint256_t{*(instr_ptr + 1)});
+            gas_remaining -= static_gas<traits, PUSH1>();
+            instr_ptr += 2;
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[OP](
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top + 1,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
         else {
             static_assert(OP == ADD || OP == SHL || OP == SHR || OP == SAR);
             // The result replaces the top; the pair's net stack change is

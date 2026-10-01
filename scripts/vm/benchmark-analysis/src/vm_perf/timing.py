@@ -26,7 +26,10 @@ def run_titles(binary: pathlib.Path, titles: list[tuple[str, str]], core: int) -
     for impl, title in titles:
         cmd = [tool("taskset"), "-c", str(core), str(binary), "--impl-filter", f"^{impl}$"]
         cmd += ["--title-filter", f"^{re.escape(title)}$"]
-        for _, _, seq, ms in parse_results(subprocess.run(cmd, capture_output=True, text=True).stdout):
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode:
+            raise RuntimeError(f"{binary} failed on {title}: {proc.stderr.strip()[-200:]}")
+        for _, _, seq, ms in parse_results(proc.stdout):
             best[micro_name((impl, title, seq))] = ms * 1e6
     return best
 

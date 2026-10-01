@@ -58,6 +58,8 @@ def main() -> None:
     sub.choices["impact"].add_argument("base")
     sub.choices["impact"].add_argument("head")
     sub.choices["impact"].add_argument("--timing", action="store_true", help="Also time changed micro benchmarks")
+    sub.choices["impact"].add_argument("--repeats", type=int, default=7, help="Timing rounds")
+    sub.choices["impact"].add_argument("--core", type=int, default=7, help="CPU to pin timing to")
     sub.choices["history"].add_argument("revisions")
     sub.choices["history"].add_argument("paths", nargs="*", default=VM_PATHS)
     sub.choices["validate"].add_argument("truth", type=pathlib.Path)
@@ -89,14 +91,18 @@ def main() -> None:
     args.output.mkdir(parents=True, exist_ok=True)
     if args.command == "impact":
         base, head = (git(args.source, "rev-parse", r).strip() for r in (args.base, args.head))
-        changes = diff(measure_commit(args, base), measure_commit(args, head), args.threshold, args.top)
+        before, after = measure_commit(args, base), measure_commit(args, head)
+        if not before or not after:
+            print(f"{base[:9] if not before else head[:9]} was not measured", file=sys.stderr)
+            sys.exit(2)
+        changes = diff(before, after, args.threshold, args.top)
         if args.timing:
             changed = {c["benchmark"] for c in changes if c["benchmark"].startswith("micro/")}
             cases_file = args.cases or args.output / "cases.json"
             cases = [(c[0], c[1], c[2]) for c in json.loads(cases_file.read_text())]
             binaries = [args.output / "bin" / sha / pathlib.Path(MICRO).name for sha in (base, head)]
             cases = [c for c in cases if micro_name(c) in changed]
-            timing = time_pair(binaries[0], binaries[1], cases, 7, 7)
+            timing = time_pair(binaries[0], binaries[1], cases, args.repeats, args.core)
             for change in changes:
                 if timed := timing.get(change["benchmark"]):
                     change["time"] = timed
@@ -110,8 +116,8 @@ def main() -> None:
         commits = [line.split(" ", 2) for line in git(args.source, *log).splitlines()]
         measured = [(c, r) for c in commits if (r := measure_commit(args, c[0]))]
         steps = [
-            {"commit": c[0], "subject": c[2], "changes": changes}
-            for (_, before), (c, after) in zip(measured, measured[1:])
+            {"since": p[0], "commit": c[0], "subject": c[2], "changes": changes}
+            for (p, before), (c, after) in zip(measured, measured[1:])
             if (changes := diff(before, after, args.threshold, args.top))
         ]
         print(json.dumps(steps, indent=2))

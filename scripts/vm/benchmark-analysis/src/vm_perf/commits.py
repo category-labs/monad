@@ -82,7 +82,8 @@ def build(source: pathlib.Path, build: pathlib.Path) -> None:
 
 
 def measure_commit(args: argparse.Namespace, commit: str) -> Report:
-    tag = hashlib.sha1(args.micro.encode()).hexdigest()[:8]
+    cases = args.cases or args.output / "cases.json"
+    tag = hashlib.sha1(f"{args.micro}\0{cases.resolve()}".encode()).hexdigest()[:8]
     path = args.output / f"{commit}-{tag}.json"
     if not path.exists():
         print(commit[:9], git(args.source, "log", "-1", "--format=%s", commit).strip(), file=sys.stderr)
@@ -93,7 +94,7 @@ def measure_commit(args: argparse.Namespace, commit: str) -> Report:
             binaries.mkdir(parents=True, exist_ok=True)
             for binary in (MCE, MICRO):
                 shutil.copy(args.build / binary, binaries / pathlib.Path(binary).name)
-            report = measure_build(args.build, args.cases or args.output / "cases.json", args.micro)
+            report = measure_build(args.build, cases, args.micro)
         except (RuntimeError, subprocess.CalledProcessError) as error:
             print(error, file=sys.stderr)
             report = {}

@@ -1047,6 +1047,27 @@ struct ZiskArith256Params
     uint64_t *dh;
 };
 
+// Whether the 32 bytes at a and at b, both 8-aligned, are equal, by the DMA
+// comparator (CSR 0x814, the length in the flag after it) as the Keccak-f memo
+// compares its states: one step and the words it reads, where gcc compares
+// them a word at a time, three steps a word.
+[[gnu::always_inline]] inline bool
+zisk_equal32(uint64_t const *const a, uint64_t const *const b) noexcept
+{
+    uint64_t differ;
+    asm(".option push\n\t"
+        ".option arch, +zicsr\n\t"
+        "csrrs %0, 0x814, %1\n\t"
+        "addi x0, %2, 32\n\t"
+        ".option pop"
+        : "=&r"(differ)
+        : "r"(a),
+          "r"(b),
+          "m"(*reinterpret_cast<uint64_t const(*)[4]>(a)),
+          "m"(*reinterpret_cast<uint64_t const(*)[4]>(b)));
+    return differ == 0;
+}
+
 // The quotient and remainder of u / v, v != 0, hinted by the executor (fcall
 // 19, FCALL_UINT256_DIV_ID) and checked as zisklib's div_rem256 checks them:
 // q·v + r == u in 512 bits and r < v, which only the true pair satisfies.
@@ -1083,7 +1104,8 @@ zisk_udivrem(uint256_t const &u, uint256_t const &v) noexcept
     uint256_t const q{qr[0], qr[1], qr[2], qr[3]};
     uint256_t const r{qr[4], qr[5], qr[6], qr[7]};
     MONAD_ASSERT(
-        std::memcmp(d, &u, sizeof(u)) == 0 && (d[4] | d[5] | d[6] | d[7]) == 0);
+        zisk_equal32(d, reinterpret_cast<uint64_t const *>(&u)) &&
+        zisk_equal32(d + 4, zisk_zero_limbs));
     MONAD_ASSERT(r < v);
     return {.quot = q, .rem = r};
 }

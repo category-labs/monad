@@ -27,8 +27,32 @@
 
 namespace monad::vm::runtime
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // Inline on ZisK, as tload is: called from SLOAD's handler, it was a
+    // call and a frame of its own on every SLOAD, inside the handler's.
+    // Both host calls in one. A cold access that the gas left cannot pay
+    // for exits below, before the value is read, as it did between them.
+    template <Traits traits>
+    [[gnu::always_inline]] inline void
+    sload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr)
+    {
+        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+
+        auto key = store_be_as<bytes32_t>(*key_ptr);
+        evmc_bytes32 value;
+        if (host_of(*ctx).sload_into(
+                host_shim::addr(&ctx->env.recipient),
+                host_shim::word(&key),
+                ctx->gas_remaining >= traits::cold_storage_cost(),
+                value) == EVMC_ACCESS_COLD) {
+            ctx->deduct_gas(traits::cold_storage_cost());
+        }
+        *result_ptr = load_be<uint256_t>(value);
+    }
+#else
     template <Traits traits>
     void sload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr);
+#endif
 
     template <Traits traits>
     void sstore(

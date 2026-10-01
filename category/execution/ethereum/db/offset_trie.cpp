@@ -481,6 +481,41 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
             : nullptr;
 #endif
     NodeViewBase found = empty();
+#if defined(MONAD_ZKVM_ZISK)
+    // Branches two levels a turn, a key byte's two nibbles, where the loop
+    // below reads the byte again for each and keeps the view's parity, a test
+    // and two arms a level. A node that is no branch leaves the walk to that
+    // loop, at the rest it has reached.
+    if (whole_key != nullptr) {
+        unsigned char const *k = whole_key;
+        unsigned odd = 0;
+        while (id != NULL_ID) {
+            NodeViewBase const high = get_original(id);
+            if (high.tag() != BRANCH) {
+                break;
+            }
+            if (k == whole_key + MAX_PATH_NIBBLES / 2) { // no value at a branch
+                return found;
+            }
+            unsigned const b = *k;
+            id = BranchView{high}.child(b >> 4);
+            if (id == NULL_ID) {
+                return found;
+            }
+            NodeViewBase const low = get_original(id);
+            if (low.tag() != BRANCH) {
+                odd = 1;
+                break;
+            }
+            id = BranchView{low}.child(b & 0xf);
+            ++k;
+        }
+        key = NibblesView{
+            2 * static_cast<unsigned>(k - whole_key) + odd,
+            MAX_PATH_NIBBLES,
+            whole_key};
+    }
+#endif
     while (id != NULL_ID) {
         NodeViewBase const node = get_original(id);
         // Most levels are branches: tested first, where the match's compare

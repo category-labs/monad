@@ -196,11 +196,12 @@ namespace
     template <typename Traits = GasTraits>
     Outcome
     run(std::span<uint8_t const> code, int64_t gas,
-        std::span<uint8_t const> input = {})
+        std::span<uint8_t const> input = {}, uint8_t call_value = 0)
     {
         CountingHost host;
         evmc_message msg{};
         msg.gas = gas;
+        msg.value.bytes[31] = call_value;
         msg.input_data = input.data();
         msg.input_size = input.size();
         auto ctx = runtime::Context::from(
@@ -629,6 +630,54 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         JUMPI,
         STOP};
     bounds &= failed_cleanly(run(empty_bounds, 100, input));
+    // Non-payable checks: zero value takes the fast path; nonzero reverts.
+    for (bool const push_zero : {false, true}) {
+        uint8_t const success_pc = push_zero ? 10 : 11;
+        std::vector<uint8_t> code{
+            CALLVALUE, DUP1, ISZERO, PUSH2, 0, success_pc, JUMPI};
+        if (push_zero) {
+            code.push_back(PUSH0);
+        }
+        else {
+            code.insert(code.end(), {PUSH1, 0});
+        }
+        code.insert(code.end(), {DUP1, REVERT, JUMPDEST, POP, STOP});
+        for (int64_t gas = 0; gas <= 25; ++gas) {
+            auto const result = run(code, gas);
+            extraction &= gas < 24 ? failed_cleanly(result)
+                                   : result.status == EVMC_SUCCESS &&
+                                         result.gas == gas - 24;
+        }
+        extraction &= run(code, 100, {}, 1).status == EVMC_REVERT;
+    }
+    for (bool const push_zero : {false, true}) {
+        std::vector<uint8_t> code{CALLVALUE, PUSH2, 0, 0, JUMPI};
+        if (push_zero) {
+            code.push_back(PUSH0);
+        }
+        else {
+            code.insert(code.end(), {PUSH1, 4});
+        }
+        code.insert(code.end(), {CALLDATASIZE, PUSH1, 3, NOT, ADD, SLT});
+        size_t const bound_branch = code.size();
+        code.insert(code.end(), {PUSH2, 0, 0, JUMPI, STOP});
+        patch_jump(code, 1);
+        patch_jump(code, bound_branch);
+        code.insert(code.end(), {JUMPDEST, PUSH1, 0, DUP1, REVERT});
+        int64_t const cost = push_zero ? 44 : 45;
+        for (int64_t gas = 0; gas <= cost + 1; ++gas) {
+            auto const result = run(code, gas, input);
+            extraction &= gas < cost ? failed_cleanly(result)
+                                     : result.status == EVMC_SUCCESS &&
+                                           result.gas == gas - cost;
+        }
+        extraction &= run(code, 100, input, 1).status == EVMC_REVERT;
+        extraction &=
+            run(code, 100, std::span{input}.first(3)).status == EVMC_REVERT;
+        auto const berlin = run<EvmTraits<MONAD_ETH_BERLIN>>(code, 100, input);
+        extraction &=
+            push_zero ? failed_cleanly(berlin) : berlin.status == EVMC_SUCCESS;
+    }
     check(selectors && extraction && bounds);
     // Check every PUSH1 mask width, with and without the optional AND.
     bool masks = true;

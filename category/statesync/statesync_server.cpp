@@ -18,9 +18,10 @@
 #include <category/core/basic_formatter.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
-#include <category/core/keccak.hpp>
 #include <category/core/log.hpp>
 #include <category/core/runtime/unaligned.hpp>
+#include <category/core/trie_hash.hpp>
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -132,7 +133,7 @@ bool send_deletion(
                      num_upserts,
                      upsert_bytes](Deletion const &deletion) {
         auto const &[addr, key] = deletion;
-        auto const hash = keccak256(addr.bytes);
+        auto const hash = trie_hash(addr.bytes);
         byte_string_view const view{hash.bytes, sizeof(hash.bytes)};
         if (!view.starts_with(prefix)) {
             return;

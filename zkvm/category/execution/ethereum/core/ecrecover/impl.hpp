@@ -18,6 +18,9 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/crypto/keccak.h>
+#ifdef MONAD_L2_SIGNATURE_HASH_POSEIDON2
+    #include <category/execution/ethereum/core/signature_hash.hpp>
+#endif
 
 #include <c-interface-accelerators/zkvm_accelerators.h>
 
@@ -79,13 +82,21 @@ MONAD_NAMESPACE_BEGIN
     auto const *const pubkey = pubkey_struct.data;
 #endif
 
-    // The guest's own sponge rather than zisklib's, which takes 141 steps for
-    // the block where this one takes 36, and runs past the Keccak-f memo:
+#ifdef MONAD_L2_SIGNATURE_HASH_POSEIDON2
+    // The chain's address hash, signature_hash.hpp's.
+    pubkey_address(std::span<uint8_t const, 64>{pubkey, 64}, out);
+#else
+    // Keccak's, spelled out rather than through pubkey_address, whose inlined
+    // code GCC lays out differently for the same digest: the default build
+    // keeps the bytes a tree without MONAD_ZKVM_L2_SIGNATURE_HASH compiles
+    // to. The guest's own sponge rather than zisklib's, which takes 141 steps
+    // for the block where this one takes 36, and runs past the Keccak-f memo:
     // a sender that recurs in the block recurs here too.
     uint8_t key_hash[KECCAK256_SIZE];
     monad_zkvm_keccak256_fast(pubkey, 64, key_hash);
 
     std::memcpy(out.data(), key_hash + 12, out.size());
+#endif
 
     return true;
 }

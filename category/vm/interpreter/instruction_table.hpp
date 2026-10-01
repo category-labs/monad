@@ -3327,15 +3327,64 @@ namespace monad::vm::interpreter
         MONAD_VM_FUSED_NEXT(4, -1);
     }
 
-    // The follower's JUMP/JUMPI slot enters here with instr_ptr on PUSH2.
+    // A fused follower's prefix enters here with instr_ptr on PUSH2.
     template <uint8_t OP, Traits traits>
     MONAD_VM_INSTRUCTION_CALL void push2_then(
         runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        static_assert(OP == JUMP || OP == JUMPI);
-        if constexpr (OP == JUMP) {
+        static_assert(OP == JUMP || OP == JUMPI || OP == MLOAD || OP == MSTORE);
+        if constexpr (OP == MLOAD || OP == MSTORE) {
+            // Decode the byte offset directly, without pushing it. Both pairs
+            // still need temporary stack space for PUSH2, even MSTORE.
+            // Memory expansion and missing values use the normal handler.
+            if (MONAD_UNLIKELY(stack_top.next_slot() >= MONAD_VM_STACK_LIMIT)) {
+                MONAD_VM_MUST_TAIL return ctx.exit(Error);
+            }
+            auto const memory_offset = runtime::Memory::Offset::unsafe_from(
+                static_cast<runtime::Memory::Offset::rep>(
+                    detail::load_be_k<2>(instr_ptr + 1)));
+            if constexpr (OP == MLOAD) {
+                if (MONAD_LIKELY(ctx.memory.size >= *memory_offset + 32)) {
+                    gas_remaining -= static_gas<traits, PUSH2, MLOAD>();
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+                    if (MONAD_UNLIKELY(gas_remaining < 0)) {
+                        MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+                    }
+    #endif
+                    runtime::mload_at<traits>(
+                        &ctx, stack_top.next_slot(), memory_offset);
+                    MONAD_VM_FUSED_NEXT(4, 1);
+                }
+            }
+            else {
+                if (MONAD_LIKELY(
+                        stack_holds<1>(stack_top, stack_lower_bound) &&
+                        ctx.memory.size >= *memory_offset + 32)) {
+                    gas_remaining -= static_gas<traits, PUSH2, MSTORE>();
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+                    if (MONAD_UNLIKELY(gas_remaining < 0)) {
+                        MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+                    }
+    #endif
+                    runtime::mstore_at<traits>(
+                        &ctx, memory_offset, &*stack_top);
+                    MONAD_VM_FUSED_NEXT(4, -1);
+                }
+            }
+            interpreter::push(stack_top, uint256_t{*memory_offset});
+            gas_remaining -= static_gas<traits, PUSH2>();
+            instr_ptr += 3;
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[OP](
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top + 1,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        else if constexpr (OP == JUMP) {
             MONAD_VM_MUST_TAIL return push2_jump_at<traits>(
                 ctx,
                 MONAD_VM_DISPATCH_STATE_ARG,

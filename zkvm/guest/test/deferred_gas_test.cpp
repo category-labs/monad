@@ -581,6 +581,69 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
             }
         }
     }
+    // Compare PUSH2 memory pairs with unfused PUSH3 at two-byte offsets.
+    for (unsigned offset : {0, 31, 255, 256, 4095, 65535}) {
+        for (bool warm : {false, true}) {
+            for (uint8_t push_opcode : {PUSH2, PUSH3}) {
+                std::vector<uint8_t> code;
+                auto const push_offset = [&] {
+                    code.push_back(push_opcode);
+                    if (push_opcode == PUSH3) {
+                        code.push_back(0);
+                    }
+                    code.insert(
+                        code.end(),
+                        {static_cast<uint8_t>(offset >> 8),
+                         static_cast<uint8_t>(offset)});
+                };
+                if (warm) {
+                    code.push_back(PUSH0);
+                    push_offset();
+                    code.push_back(MSTORE);
+                }
+                code.insert(code.end(), {PUSH1, 0xa5});
+                push_offset();
+                code.push_back(MSTORE);
+                push_offset();
+                code.insert(
+                    code.end(),
+                    {MLOAD, PUSH0, MSTORE, PUSH1, 32, PUSH0, RETURN});
+                int64_t const words = (offset + 63) / 32;
+                int64_t const cost =
+                    25 + (warm ? 8 : 0) + 3 * words + words * words / 512;
+                std::vector<uint8_t> expected(32);
+                expected.back() = 0xa5;
+                for (int64_t gas :
+                     {int64_t{0},
+                      int64_t{2},
+                      int64_t{3},
+                      int64_t{5},
+                      int64_t{6},
+                      cost - 1,
+                      cost,
+                      cost + 1}) {
+                    auto const result = run(code, gas);
+                    effects &= gas < cost
+                                   ? failed_cleanly(result)
+                                   : result.status == CallStatus::Success &&
+                                         result.gas == gas - cost &&
+                                         result.output_bytes == expected;
+                }
+            }
+        }
+    }
+    std::vector<uint8_t> push2_memory_stack{PUSH0, PUSH2, 0, 0, MSTORE};
+    push2_memory_stack.insert(
+        push2_memory_stack.end(), {PUSH2, 0, 0, MSTORE, STOP});
+    effects &= failed_cleanly(run(push2_memory_stack, 10000));
+    for (auto op : {MLOAD, MSTORE}) {
+        push2_memory_stack = {PUSH0, PUSH2, 0, 0, MSTORE};
+        push2_memory_stack.insert(push2_memory_stack.end(), 1024, PUSH0);
+        push2_memory_stack.insert(
+            push2_memory_stack.end(),
+            {PUSH2, 0, 0, static_cast<uint8_t>(op), STOP});
+        effects &= failed_cleanly(run(push2_memory_stack, 10000));
+    }
     // A warm memory range must not hide a missing MSTORE value or a full stack.
     std::vector<uint8_t> memory_stack{PUSH0, PUSH1, 0, MSTORE};
     memory_stack.insert(memory_stack.end(), {PUSH1, 0, MSTORE, STOP});

@@ -143,6 +143,42 @@ namespace monad::vm::interpreter
                 table_base);                                                   \
         }
 
+    // Both prefixes select a fusion: PUSH1 and PUSH2 with MLOAD/MSTORE.
+    #define MONAD_VM_LEAD_PAIRS(REV, NAME, OP)                                 \
+        MONAD_VM_LEAD_ASM(                                                     \
+            NAME,                                                              \
+            OP,                                                                \
+            MONAD_VM_HEAD2_JUMP(NAME, OP),                                     \
+            MONAD_VM_HEAD1_JUMP(NAME, OP))                                     \
+        MONAD_VM_HANDLER_DECL(                                                 \
+            NAME##_##OP, _push1, ".monad_vm_push1." #NAME "." #OP)             \
+        {                                                                      \
+            __attribute__((musttail)) return push1_then<                       \
+                0x##OP,                                                        \
+                EvmTraits<REV>>(                                               \
+                ctx,                                                           \
+                MONAD_VM_DISPATCH_STATE_ARG,                                   \
+                stack_lower_bound,                                             \
+                stack_top,                                                     \
+                gas_remaining,                                                 \
+                instr_ptr,                                                     \
+                table_base);                                                   \
+        }                                                                      \
+        MONAD_VM_HANDLER_DECL(                                                 \
+            NAME##_##OP, _push2, ".monad_vm_push2." #NAME "." #OP)             \
+        {                                                                      \
+            __attribute__((musttail)) return push2_then<                       \
+                0x##OP,                                                        \
+                EvmTraits<REV>>(                                               \
+                ctx,                                                           \
+                MONAD_VM_DISPATCH_STATE_ARG,                                   \
+                stack_lower_bound,                                             \
+                stack_top,                                                     \
+                gas_remaining,                                                 \
+                instr_ptr,                                                     \
+                table_base);                                                   \
+        }
+
     #define MONAD_VM_LEAD_TWIN(REV, NAME, OP)                                  \
         MONAD_VM_LEAD_ASM(                                                     \
             NAME, OP, MONAD_VM_HEAD2_JUMP(NAME, OP), MONAD_VM_HEAD1_PUSH)      \
@@ -161,7 +197,7 @@ namespace monad::vm::interpreter
                 table_base);                                                   \
         }
 
-    // PAIR selects a PUSH1 fusion; TWIN selects a PUSH2 jump fusion.
+    // PAIR selects PUSH1 only, TWIN PUSH2 only, and PAIRS both fusions.
     // All other opcodes use ordinary prefixes. Suffixes are opcode hex values.
     #define MONAD_VM_LEAD_OF_01 ~, PAIR // ADD
     #define MONAD_VM_LEAD_OF_0b ~, PAIR // SIGNEXTEND
@@ -171,8 +207,8 @@ namespace monad::vm::interpreter
     #define MONAD_VM_LEAD_OF_1c ~, PAIR // SHR
     #define MONAD_VM_LEAD_OF_1d ~, PAIR // SAR
     #define MONAD_VM_LEAD_OF_35 ~, PAIR // CALLDATALOAD
-    #define MONAD_VM_LEAD_OF_51 ~, PAIR // MLOAD
-    #define MONAD_VM_LEAD_OF_52 ~, PAIR // MSTORE
+    #define MONAD_VM_LEAD_OF_51 ~, PAIRS // MLOAD
+    #define MONAD_VM_LEAD_OF_52 ~, PAIRS // MSTORE
     #define MONAD_VM_LEAD_OF_56 ~, TWIN // JUMP
     #define MONAD_VM_LEAD_OF_57 ~, TWIN // JUMPI
     #define MONAD_VM_LEAD_OF_60 ~, PAIR // PUSH1
@@ -316,6 +352,7 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_LEAD_OF_0b
     #undef MONAD_VM_LEAD_OF_01
     #undef MONAD_VM_LEAD_TWIN
+    #undef MONAD_VM_LEAD_PAIRS
     #undef MONAD_VM_LEAD_PAIR
     #undef MONAD_VM_LEAD_PUSH
     #undef MONAD_VM_HANDLER_DECL

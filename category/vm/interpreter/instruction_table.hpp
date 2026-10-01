@@ -176,7 +176,7 @@ namespace monad::vm::interpreter
     // Where copy 0's handler sits in its slot, after copies 4 and 5 and its
     // own heads: the base the handlers carry points there, at opcode 0's
     // copy 0, and the other copies are lag_offset away.
-    inline constexpr size_t slot_lead = 1512;
+    inline constexpr size_t slot_lead = 1552;
 
     // Where they land, before each copy's handler: PUSH1's head pushes its
     // immediate and falls into the handler; PUSH2's makes its stack test,
@@ -196,7 +196,7 @@ namespace monad::vm::interpreter
         return head_back(copy, n) - lag_offset(copy);
     }
 
-    // Where SWAP1 lands in every copy: its head opens the copy's heads,
+    // Where SWAP1 lands in every copy: its head comes before PUSH2's,
     // swap1_back bytes before the handler. In copy R it takes a SWAP1
     // (R + 5) % 6 bytes behind, stepping a5 by 6 in copy 0.
     inline constexpr int swap1_back = 104;
@@ -218,6 +218,17 @@ namespace monad::vm::interpreter
     {
         unsigned const copy = (lag + 1) % lag_count;
         return dup_back - lag_offset(copy);
+    }
+
+    // The head of SWAP2 to SWAP16 comes before the DUPs', swapn_back bytes
+    // before the handler, the address of the word the top swaps with in a7.
+    inline constexpr int swapn_back = 184;
+
+    // What MONAD_VM_LEAD_DISPATCH_SRC takes for a SWAPn LAG bytes behind.
+    consteval int swapn_offset(unsigned const lag) noexcept
+    {
+        unsigned const copy = (lag + 1) % lag_count;
+        return swapn_back - lag_offset(copy);
     }
 
     // A tail call to a head in NEXT_OPCODE's slot, OFFSET bytes before its
@@ -3830,6 +3841,19 @@ namespace monad::vm::interpreter
         MONAD_VM_CHECK(SWAP1 + (N - 1));
 
 #if defined(MONAD_ZKVM_ZISK)
+        if constexpr (N >= 2 && has_slots<traits>) {
+            // SWAPn lands at a head of its follower's slot as the DUPs do,
+            // the word the top swaps with in a7: the swap there and a jump
+            // to the handler, or the pair it makes with POP or SWAP1 to
+            // SWAP4 (execute.cpp).
+            MONAD_VM_LEAD_DISPATCH_SRC(
+                swapn_offset(lag_of<traits>),
+                *(instr_ptr + 1),
+                stack_top,
+                gas_remaining,
+                instr_ptr - lag_of<traits>,
+                stack_top - N);
+        }
         if constexpr (N == 1 && has_slots<traits>) {
             // SWAP1 lands at a head of its follower's slot, as PUSH1 does:
             // the swap there and a jump to the handler, or the pair it makes
@@ -3983,6 +4007,34 @@ namespace monad::vm::interpreter
             stack_top[-1] = stack_top[0];
             stack_top[0] = *monad_t;
         }
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+    }
+
+    // SWAPn then SWAPm, SWAPn's tests and gas made, the word the top swaps
+    // with at SRC: the top's word goes to SRC, SRC's to the m-th below the
+    // top and that one's to the top, four copies where the two opcodes make
+    // six. When m is n they leave the stack as it was, as the two opcodes do.
+    // SWAP1 and SWAP2 swap words SWAPn has tested, n being 2 or more.
+    template <uint8_t OP, Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void swapn_then(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM,
+        uint256_t *const src)
+    {
+        static constexpr auto op = static_cast<compiler::EvmOpCode>(OP);
+        constexpr auto m = static_cast<std::ptrdiff_t>(OP - SWAP1 + 1);
+        if constexpr (m <= 2) {
+            gas_remaining -= static_gas<traits, op>();
+        }
+        else {
+            MONAD_VM_CHECK(op);
+        }
+        uint256_t *const monad_t = &ctx.swap_scratch;
+        *monad_t = *src;
+        *src = *stack_top;
+        *stack_top = *(stack_top - m);
+        *(stack_top - m) = *monad_t;
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
     }
 

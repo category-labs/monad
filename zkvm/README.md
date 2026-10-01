@@ -410,13 +410,20 @@ what a block costs, because twenty accounts and two blocks cannot. `--preset`
 generates a corpus at scale instead: a genesis of `--accounts` holders, then
 `--blocks` blocks that each aim to touch `--distinct` of them.
 
-**The emitted blocks are the chain's steady state.** A witness carries the
-ancestor headers `BLOCKHASH` may reach, up to the block hash buffer's 256, and
-each costs 0.345 M COST and 544 bytes -- so a 200-block corpus measured from
-genesis, whose median block carries about a hundred, understates a wholesale
-block by 13 %. In an L2 build the first `--warmup` blocks, 256 by default, run
-the same workload and are not emitted: every emitted witness carries 256
-ancestors.
+**A witness carries the ancestor headers its block reads.** The guest needs
+the parent -- the pre-state root is checked against it -- and the hash of each
+block `BLOCKHASH` reads, which it serves from the run of headers it is given
+and refuses to serve from outside it. So in an L2 build the generator ships
+the run back to the oldest block the block reads, and the parent alone when it
+reads none (`--ancestors reached`); `--ancestors all` ships every header the
+block hash buffer holds, up to 256, as a mainnet witness does. A header is 544
+bytes and 0.345 M COST, so a block that reads no hash -- no block of these
+presets does -- is 139 KB smaller and 88 M cheaper with the first. The first
+`--warmup` blocks, 256 by default, run the same workload and are not emitted,
+so every emitted block has the history a chain in its steady state has: a
+block that reads a hash finds it, and an `--ancestors all` witness carries all
+256 -- measured from genesis instead, a 200-block corpus understates a
+wholesale block by 13 %.
 
 ```sh
 # The design document's two inverse cases. Wholesale is hundreds of
@@ -463,21 +470,21 @@ plausible, wrong numbers.
 
 Both presets at two hundred blocks after the warm-up, generated and checked
 end to end. The figures are the L2 arm's; the control's witnesses -- the same
-chain with the plaintext suite -- are 1-5 % smaller, by what encryption adds to
-each transaction, and otherwise the same shape.
+chain with the plaintext suite -- are smaller by what encryption adds to each
+transaction, 102 bytes a transfer, and otherwise the same shape.
 
 | | `wholesale` | `payouts` |
 |---|---:|---:|
 | accounts | 500 | 1,000,000 |
 | blocks | 200 (257-456, after 256 of warm-up) | 200 |
 | transactions per block | 21 | 500 |
-| witness, median | 162 KB | 944 KB |
-| witness, min-max | 160-163 KB | 931-954 KB |
-| of which ancestor headers | 139 KB | 139 KB |
+| witness, median | 23 KB | 805 KB |
+| witness, min-max | 21-24 KB | 793-815 KB |
+| witness with `--ancestors all`, median | 162 KB | 944 KB |
 | leaves touched, median | 42 | 553 |
 | digests per leaf | 5.8 | 29.7 |
 | gas, median | 0.50 M | 11.45 M |
-| corpus size | 32 MB | 189 MB |
+| corpus size | 4.6 MB | 161 MB |
 
 Every witness in both is accepted by the guest under `ziskemu` (below). The
 chain holds: `post_root[n] == pre_root[n+1]` and
@@ -544,10 +551,11 @@ for, eligibility and both legs or neither, on the checked-in bytecode.
 | a block | settles the last block's 10 payments and proposes 10; one bank redeems reserves to the L1, each currency in turn | admits 10 contractors; pays 400 in 10 batches of 40, each funded by a business; 25 deposits into the vault and 25 withdrawals; 50 exits, by card, by redemption and to the L1 |
 | transactions | 21 | 130 |
 | gas, median | 1.25 M | 9.60 M |
-| witness, median (min-max) | 197 KB (193-200) | 1,004 KB (983-1,016) |
+| witness, median (min-max) | 58 KB (54-62) | 865 KB (845-877) |
+| witness with `--ancestors all`, median | 197 KB | 1,004 KB |
 | account / storage leaves touched | 28 / 75 | 115 / 616 |
 | digests per leaf | 6.8 | 25.4 |
-| corpus size | 39 MB | 201 MB |
+| corpus size | 12 MB | 173 MB |
 
 A contractor who only receives has a balance slot and no account: nothing it
 does creates one. So the million are in one storage trie, and the account trie
@@ -564,8 +572,9 @@ own, held by its own banks and by every intermediary. A payment's pair is drawn
 with weight 1/((a+1)(b+1)), so the first currency is on one side of 68 % of the
 payments and three corridors carry 58 % of them, the way a hub currency does,
 and each pair's payments run both ways. Five cost almost nothing more than two:
-block for block, `--currencies 2` has a 1.0 % smaller witness, and 0.6 % less
-of the cost above the floor, 0.264 G against 0.265 G. Three more token
+block for block, `--currencies 2` has a 2.0 KB smaller witness and costs 1.6 M
+less -- 0.6 % of what a block costs above the floor with every ancestor, 0.9 %
+without them. Three more token
 contracts' accounts in each block, against storage tries a little smaller:
 what a wholesale block costs is its payments, not how many currencies they are
 in.
@@ -578,11 +587,11 @@ touched; the blob is the witness's node field, the part dispersion moves.
 
 | distinct | leaves | digests | digests/leaf | witness | blob bytes/leaf | gas |
 |---:|---:|---:|---:|---:|---:|---:|
-| 50 | 58 | 2,405 | 41.5 | 251 KB | 1,693 | 1.2 M |
-| 200 | 223 | 7,847 | 35.2 | 511 KB | 1,462 | 4.6 M |
-| 500 | 552 | 16,550 | 30.0 | 948 KB | 1,265 | 11.4 M |
-| 2,000 | 2,192 | 49,484 | 22.6 | 2,755 KB | 990 | 45.7 M |
-| 5,000 | 5,447 | 97,164 | 17.8 | 5,665 KB | 811 | 114.3 M |
+| 50 | 58 | 2,405 | 41.5 | 113 KB | 1,693 | 1.2 M |
+| 200 | 223 | 7,847 | 35.2 | 373 KB | 1,462 | 4.6 M |
+| 500 | 552 | 16,550 | 30.0 | 810 KB | 1,265 | 11.4 M |
+| 2,000 | 2,192 | 49,484 | 22.6 | 2,616 KB | 990 | 45.7 M |
+| 5,000 | 5,447 | 97,164 | 17.8 | 5,526 KB | 811 | 114.3 M |
 
 Three things fall out of the witness, and the first is why this corpus exists
 at all.
@@ -609,10 +618,12 @@ state. A flat million-account trie separates them.
 `blob_bytes = 3996 x distinct^0.827`, **R2 0.9996**, on both arms -- doubling
 the distinct accounts costs **1.77x the bytes, not 2x**, because the extra
 paths land under prefixes the earlier ones already paid for. The witness adds
-the transactions to it, and a constant 139 KB of ancestors. But bytes are not
-what these blocks spend most on: measured, the variable cost goes as
-`distinct^0.88`, because each distinct account here is a transaction, and a
-transaction costs more than its share of the witness.
+the transactions to it, and with `--ancestors all` a constant 139 KB of
+ancestors. But bytes are not what these blocks spend most on: measured, the
+variable cost goes as `distinct^0.95` once the 88 M of ancestor headers is set
+aside, R2 0.99999 (`distinct^0.88` with them), because each distinct account
+here is a transaction, and a transaction costs more than its share of the
+witness.
 
 #### What a block costs
 
@@ -621,10 +632,12 @@ above and the sweep, 1,020 of them, on the L2 ELF and on the control, each run
 first checked against the manifest. The figures were taken with this series on
 71dcc0957, a base that pinned ZisK 1.2.0-alpha, and have not been re-taken on
 this tree, which pins 1.3.1-alpha and carries the base's later interpreter
-work: its absolute steps and COST may differ from these. COST is ZisK's own
-cost model (`ziskemu -X --stats`), taken through `zkvm-bench`'s
-`compare.run_zisk` so that a figure here and one in a `compare` report come
-from one parser.
+work: its absolute steps and COST may differ from these. They were also taken
+with every ancestor header in the witness, `--ancestors all`, which
+regenerates those corpora byte for byte; a block of the default corpora costs
+the table's ancestor row less. COST is ZisK's own cost model
+(`ziskemu -X --stats`), taken through `zkvm-bench`'s `compare.run_zisk` so that
+a figure here and one in a `compare` report come from one parser.
 
 **The control is the same chain without the encryption.** Both ELFs are L2
 builds of the same nine values; the control is configured with
@@ -679,10 +692,10 @@ string shows it: installing a release relinks the `zisk` rustup toolchain, and
 
 **A fixed 287,309,824 of it is the same on every block**: `Base`, ZisK's ROM
 and lookup tables (137 x 2^21), which the cost model charges once per run
-whatever the run proves. It is 64 % of a wholesale block. A guest that proved
-several blocks in one run -- this one proves one -- would pay it once, and on
-wholesale two blocks per run would save more than making the block itself
-free.
+whatever the run proves. It is 64 % of a wholesale block, and 79 % of one
+without its ancestors. A guest that proved several blocks in one run -- this
+one proves one -- would pay it once, and on wholesale two blocks per run would
+save more than making the block itself free.
 
 **The ancestor headers are another 88 M on every block, and the guest does not
 need most of them.** It accepts any contiguous run of headers that ends at the
@@ -692,8 +705,11 @@ parent alone when they read none. None of these blocks reads one -- no
 contract in the corpus calls `blockhash` -- and cut to the parent, ten blocks
 of each preset, one in twenty, still publish the values their manifests
 record, at 87-88 M less COST and 430 K fewer steps: 20 % of a wholesale block,
-54 % of what it costs above the floor, and 4 % of a payouts block. The
-generator ships all 256, so every figure here includes them.
+54 % of what it costs above the floor, and 4 % of a payouts block. So in an L2
+build the generator ships only that run by default, `--ancestors reached`, and
+`--ancestors all` keeps the shape this section was measured on. The laws below
+carry over: at their 661 COST a byte, the 139 KB the ancestors take are 92 M,
+against the 88 M they measure.
 
 **The rest follows the transactions first.** Over the 420 blocks of the
 transfer presets on the L2 arm,
@@ -849,6 +865,7 @@ would ever report them missing.
 | an ancestor is removed from the middle of the run | the contiguity check |
 | an "ancestor" sits at the block's own height | the parent-is-last check, `headers.empty()` |
 | one bit of `salt_secret` is flipped | the compiled salt commitment |
+| the run stops short of a block whose hash `BLOCKHASH` reads | the read itself, `WitnessBlockHashBuffer::get` |
 
 They drive the real runner as a subprocess, because a bad witness is signalled
 by aborting -- the thing under test is a process exit -- and they match on the
@@ -857,7 +874,11 @@ reason.
 
 Two details that decide whether these test anything. The run starts from a
 four-block chain and drops an ancestor from the MIDDLE: dropping the oldest
-would just make a shorter, valid run and prove nothing. And the first test
+would just make a shorter, valid run and prove nothing -- for a block that
+reads no hash. One that does is the other case, and the one that makes
+`--ancestors reached` sound: a block reading the hash three back, witnessed
+with exactly that run, is accepted, and the same run without its oldest header
+is refused by the read itself. And the first test
 asserts the untampered witness is accepted, without which a rejection below
 says nothing about the tampering.
 
@@ -893,7 +914,9 @@ It has been taken again on this tree, with the same levers and values built
 by 1.3.1-alpha's toolchain and run under its `ziskemu`: every one of those
 witnesses passes on the L2 ELF and on the control, and the mainnet ELF
 reproduces the 200 block hashes below. The corpora are this tree's own: its
-generator reproduces every one of them byte for byte.
+generator reproduces every one of them byte for byte with `--ancestors all`,
+and by default emits the same witnesses cut to the parent, every one of which
+passes on both arms too.
 
 What the encryption adds to each block is in
 [Where the encryption's share goes](#where-the-encryptions-share-goes).

@@ -43,10 +43,11 @@ namespace monad::vm::interpreter
     // sections. The handler is reached by a tail call: through a plain one,
     // gcc inlines it but turns its own tail calls to Context::exit into
     // calls, and every handler gets a frame.
-    // Each copy R (instruction_table.hpp's lag_offset) opens with 64 bytes of
-    // heads, where PUSH1 and PUSH2 land on the opcode after their immediate
-    // (push<1>, push<2>), and the linker script places the copy right after
-    // them. In copy R, PUSH1's head takes a PUSH1 (R + 5) % 7 bytes behind:
+    // Each copy R (instruction_table.hpp's lag_offset) opens with 104 bytes
+    // of heads, where SWAP1, PUSH2 and PUSH1 land on the opcode after them
+    // (swap<1>, push<2>, push<1>), and the linker script places the copy
+    // right after them. SWAP1's comes first (MONAD_VM_SWAP1_SWAP). In copy R,
+    // PUSH1's head takes a PUSH1 (R + 5) % 7 bytes behind:
     // the immediate pushed, PUSH1's gas charged, and a5 stepped by 7 when the
     // copy is 0 or 1, in a3, a4 and a5, the handlers' stack_top,
     // gas_remaining and instr_ptr; it falls into the copy. Before it, PUSH2's
@@ -57,11 +58,18 @@ namespace monad::vm::interpreter
     // JUMPI, PUSH2's head jumps to its pair (push2_then). The heads are
     // assembled without relaxation, so that nothing in them moves; a failed
     // stack test leaves through monad_vm_stack_overflow.
-    #define MONAD_VM_LEAD_SECTION(NAME, OP, SUFFIX, PAD, HEAD2, HEAD1, SIZE1)  \
+    #define MONAD_VM_LEAD_SECTION(                                             \
+        NAME, OP, SUFFIX, PAD, HEADS, HEAD2, HEAD1, SIZE1)                     \
         asm(".pushsection .monad_vm_lead" #SUFFIX "." #NAME "." #OP            \
             ",\"ax\",@progbits\n"                                              \
             ".option push\n"                                                   \
-            ".option norelax\n" PAD "1:\ttail monad_vm_stack_overflow\n"       \
+            ".option norelax\n"                                                \
+            ".type monad_vm_slot_" #NAME "_" #OP "_lead_swap1" #SUFFIX         \
+            ", @function\n"                                                    \
+            ".size monad_vm_slot_" #NAME "_" #OP "_lead_swap1" #SUFFIX         \
+            ", 40\n"                                                           \
+            "monad_vm_slot_" #NAME "_" #OP "_lead_swap1" #SUFFIX               \
+            ":\n" HEADS PAD "1:\ttail monad_vm_stack_overflow\n"               \
             ".type monad_vm_slot_" #NAME "_" #OP "_lead2" #SUFFIX              \
             ", @function\n"                                                    \
             ".size monad_vm_slot_" #NAME "_" #OP "_lead2" #SUFFIX ", 24\n"     \
@@ -91,13 +99,162 @@ namespace monad::vm::interpreter
         H1_5,                                                                  \
         H2_6,                                                                  \
         H1_6)                                                                  \
-        MONAD_VM_LEAD_SECTION(NAME, OP, , "", H2_0, H1_0, "32")                \
-        MONAD_VM_LEAD_SECTION(NAME, OP, _1, "", H2_1, H1_1, "32")              \
-        MONAD_VM_LEAD_SECTION(NAME, OP, _2, "\tnop\n", H2_2, H1_2, "28")       \
-        MONAD_VM_LEAD_SECTION(NAME, OP, _3, "\tnop\n", H2_3, H1_3, "28")       \
-        MONAD_VM_LEAD_SECTION(NAME, OP, _4, "\tnop\n", H2_4, H1_4, "28")       \
-        MONAD_VM_LEAD_SECTION(NAME, OP, _5, "\tnop\n", H2_5, H1_5, "28")       \
-        MONAD_VM_LEAD_SECTION(NAME, OP, _6, "\tnop\n", H2_6, H1_6, "28")
+        MONAD_VM_LEAD_SECTION(                                                 \
+            NAME,                                                              \
+            OP,                                                                \
+            ,                                                                  \
+            "",                                                                \
+            MONAD_VM_SWAP1_HEAD(NAME, OP, 0),                                  \
+            H2_0,                                                              \
+            H1_0,                                                              \
+            "32")                                                              \
+        MONAD_VM_LEAD_SECTION(                                                 \
+            NAME,                                                              \
+            OP,                                                                \
+            _1,                                                                \
+            "",                                                                \
+            MONAD_VM_SWAP1_HEAD(NAME, OP, 1),                                  \
+            H2_1,                                                              \
+            H1_1,                                                              \
+            "32")                                                              \
+        MONAD_VM_LEAD_SECTION(                                                 \
+            NAME,                                                              \
+            OP,                                                                \
+            _2,                                                                \
+            "\tnop\n",                                                         \
+            MONAD_VM_SWAP1_HEAD(NAME, OP, 2),                                  \
+            H2_2,                                                              \
+            H1_2,                                                              \
+            "28")                                                              \
+        MONAD_VM_LEAD_SECTION(                                                 \
+            NAME,                                                              \
+            OP,                                                                \
+            _3,                                                                \
+            "\tnop\n",                                                         \
+            MONAD_VM_SWAP1_HEAD(NAME, OP, 3),                                  \
+            H2_3,                                                              \
+            H1_3,                                                              \
+            "28")                                                              \
+        MONAD_VM_LEAD_SECTION(                                                 \
+            NAME,                                                              \
+            OP,                                                                \
+            _4,                                                                \
+            "\tnop\n",                                                         \
+            MONAD_VM_SWAP1_HEAD(NAME, OP, 4),                                  \
+            H2_4,                                                              \
+            H1_4,                                                              \
+            "28")                                                              \
+        MONAD_VM_LEAD_SECTION(                                                 \
+            NAME,                                                              \
+            OP,                                                                \
+            _5,                                                                \
+            "\tnop\n",                                                         \
+            MONAD_VM_SWAP1_HEAD(NAME, OP, 5),                                  \
+            H2_5,                                                              \
+            H1_5,                                                              \
+            "28")                                                              \
+        MONAD_VM_LEAD_SECTION(                                                 \
+            NAME,                                                              \
+            OP,                                                                \
+            _6,                                                                \
+            "\tnop\n",                                                         \
+            MONAD_VM_SWAP1_HEAD(NAME, OP, 6),                                  \
+            H2_6,                                                              \
+            H1_6,                                                              \
+            "28")
+
+    // SWAP1's head, 40 bytes ahead of the others: in copy R it takes a SWAP1
+    // (R + 6) % 7 bytes behind (swap1_offset). For most opcodes it is the
+    // swap through ctx's scratch word, a5 stepped by 7 in copy 0, and a jump
+    // to the copy; POP's makes SWAP1 POP whole, the top's word moved down
+    // once, and dispatches to POP's follower; JUMP's jumps to its pair.
+    #define MONAD_VM_SWAP1_SWAP                                                \
+        "\taddi t1, a0, 360\n"                                                 \
+        "\tcsrs 0x813, a3\n"                                                   \
+        "\taddi zero, t1, 32\n"                                                \
+        "\taddi t4, a3, -32\n"                                                 \
+        "\tcsrs 0x813, t4\n"                                                   \
+        "\taddi zero, a3, 32\n"                                                \
+        "\tcsrs 0x813, t1\n"                                                   \
+        "\taddi zero, t4, 32\n"
+    #define MONAD_VM_SWAP1_PLAIN_0(NAME, OP)                                   \
+        MONAD_VM_SWAP1_SWAP MONAD_VM_STEP7 "\tj monad_vm_slot_" #NAME "_" #OP  \
+                                           "\n"
+    #define MONAD_VM_SWAP1_PLAIN_R(NAME, OP, SUFFIX)                           \
+        MONAD_VM_SWAP1_SWAP "\tj monad_vm_slot_" #NAME "_" #OP SUFFIX          \
+                            "\n\tnop\n"
+    #define MONAD_VM_SWAP1_PLAIN_1(NAME, OP)                                   \
+        MONAD_VM_SWAP1_PLAIN_R(NAME, OP, "_1")
+    #define MONAD_VM_SWAP1_PLAIN_2(NAME, OP)                                   \
+        MONAD_VM_SWAP1_PLAIN_R(NAME, OP, "_2")
+    #define MONAD_VM_SWAP1_PLAIN_3(NAME, OP)                                   \
+        MONAD_VM_SWAP1_PLAIN_R(NAME, OP, "_3")
+    #define MONAD_VM_SWAP1_PLAIN_4(NAME, OP)                                   \
+        MONAD_VM_SWAP1_PLAIN_R(NAME, OP, "_4")
+    #define MONAD_VM_SWAP1_PLAIN_5(NAME, OP)                                   \
+        MONAD_VM_SWAP1_PLAIN_R(NAME, OP, "_5")
+    #define MONAD_VM_SWAP1_PLAIN_6(NAME, OP)                                   \
+        MONAD_VM_SWAP1_PLAIN_R(NAME, OP, "_6")
+    #define MONAD_VM_SWAP1_PLAIN(NAME, OP, R)                                  \
+        MONAD_VM_LEAD_CAT(MONAD_VM_SWAP1_PLAIN_, R)(NAME, OP)
+    // SWAP1 POP: the top's word one slot down, POP's gas, and POP's dispatch
+    // to the copy one byte further behind (NEXT, the follower's offset from
+    // a5, and JUMP, the copy's offset from the base).
+    #define MONAD_VM_SWAP1_POP_AT(STEP, NEXT, JUMP, PAD)                       \
+        STEP "\taddi t4, a3, -32\n"                                            \
+             "\tcsrs 0x813, a3\n"                                              \
+             "\taddi zero, t4, 32\n"                                           \
+             "\taddi a3, a3, -32\n"                                            \
+             "\taddi a4, a4, -2\n"                                             \
+             "\tlbu a7, " NEXT "(a5)\n"                                        \
+             "\tslli a7, a7, 12\n"                                             \
+             "\tadd t3, a6, a7\n" JUMP PAD
+    #define MONAD_VM_SWAP1_POP_0                                               \
+        MONAD_VM_SWAP1_POP_AT(MONAD_VM_STEP7, "1", "\tjr 576(t3)\n", "")
+    #define MONAD_VM_SWAP1_POP_1                                               \
+        MONAD_VM_SWAP1_POP_AT("", "2", "\tjr 1160(t3)\n", "\tnop\n")
+    #define MONAD_VM_SWAP1_POP_2                                               \
+        MONAD_VM_SWAP1_POP_AT("", "3", "\tjr 1744(t3)\n", "\tnop\n")
+    #define MONAD_VM_SWAP1_POP_3                                               \
+        MONAD_VM_SWAP1_POP_AT("", "4", "\tjr -1760(t3)\n", "\tnop\n")
+    #define MONAD_VM_SWAP1_POP_4                                               \
+        MONAD_VM_SWAP1_POP_AT("", "5", "\tjr -1176(t3)\n", "\tnop\n")
+    #define MONAD_VM_SWAP1_POP_5                                               \
+        MONAD_VM_SWAP1_POP_AT("", "6", "\tjr -592(t3)\n", "\tnop\n")
+    #define MONAD_VM_SWAP1_POP_6                                               \
+        MONAD_VM_SWAP1_POP_AT("", "7", "\taddi a5, a5, 7\n\tjr 0(t3)\n", "")
+    #define MONAD_VM_SWAP1_POP(NAME, OP, R)                                    \
+        MONAD_VM_LEAD_CAT(MONAD_VM_SWAP1_POP_, R)
+    #define MONAD_VM_SWAP1_JUMP(NAME, OP, R)                                   \
+        "\ttail monad_vm_slot_" #NAME "_" #OP "_swap1\n" MONAD_VM_NOP5         \
+        "\tnop\n\tnop\n\tnop\n"
+    #define MONAD_VM_SWAP1_OF_50 ~, POP
+    #define MONAD_VM_SWAP1_OF_56 ~, JUMP
+    #define MONAD_VM_SWAP1_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_SWAP1_, KIND)
+    #define MONAD_VM_SWAP1_HEAD(NAME, OP, R)                                   \
+        MONAD_VM_SWAP1_PICK(                                                   \
+            MONAD_VM_LEAD_KIND(MONAD_VM_SWAP1_OF_##OP, PLAIN, ~))(NAME, OP, R)
+    // SWAP1 JUMP's pair, past the slots: the jump does not read a5.
+    #define MONAD_VM_SWAP1_PAIR_PLAIN(REV, NAME, OP)
+    #define MONAD_VM_SWAP1_PAIR_POP(REV, NAME, OP)
+    #define MONAD_VM_SWAP1_PAIR_JUMP(REV, NAME, OP)                            \
+        MONAD_VM_HANDLER_DECL(                                                 \
+            NAME##_##OP, _swap1, ".monad_vm_swap1." #NAME "." #OP)             \
+        {                                                                      \
+            __attribute__((musttail)) return swap1_jump<EvmTraits<REV>>(       \
+                ctx,                                                           \
+                MONAD_VM_ANALYSIS_ARG,                                         \
+                stack_bottom,                                                  \
+                stack_top,                                                     \
+                gas_remaining,                                                 \
+                instr_ptr,                                                     \
+                itbl);                                                         \
+        }
+    #define MONAD_VM_SWAP1_PAIR_PICK(KIND)                                     \
+        MONAD_VM_LEAD_CAT(MONAD_VM_SWAP1_PAIR_, KIND)
+    #define MONAD_VM_SWAP1_PAIR(REV, NAME, OP)                                 \
+        MONAD_VM_SWAP1_PAIR_PICK(MONAD_VM_LEAD_KIND(                           \
+            MONAD_VM_SWAP1_OF_##OP, PLAIN, ~))(REV, NAME, OP)
 
     // PUSH2's stack test, leaving through EXIT, and its immediate in t3.
     #define MONAD_VM_PUSH2_READ_AT(EXIT, HIGH, LOW)                            \
@@ -234,7 +391,12 @@ namespace monad::vm::interpreter
         static_assert(                                                         \
             compiler::opcode_table<EvmTraits<REV>>[PUSH1].min_gas == 3 &&      \
             compiler::opcode_table<EvmTraits<REV>>[PUSH2].min_gas == 3 &&      \
-            sizeof(uint256_t) == 32 && slot_lead == 1816 &&                    \
+            sizeof(uint256_t) == 32 && slot_lead == 1864 &&                    \
+            swap1_back == 104 &&                                               \
+            offsetof(runtime::Context, swap_scratch) == 360 &&                 \
+            lag_offset(1) == 576 && lag_offset(2) == 1160 &&                   \
+            lag_offset(3) == 1744 && lag_offset(4) == -1760 &&                 \
+            lag_offset(5) == -1176 && lag_offset(6) == -592 &&                 \
             head_back(0, 1) == 32 && head_back(0, 2) == 56 &&                  \
             head_back(2, 1) == 28 && head_back(2, 2) == 52);                   \
         MONAD_VM_LEADS(                                                        \
@@ -464,10 +626,13 @@ namespace monad::vm::interpreter
     #define MONAD_VM_RELAY_OF_04 ~, RELAY
     #define MONAD_VM_RELAY_OF_06 ~, RELAY
     #define MONAD_VM_RELAY_OF_08 ~, RELAY
+    #define MONAD_VM_RELAY_OF_20 ~, RELAY
+    #define MONAD_VM_RELAY_OF_55 ~, RELAY
     #define MONAD_VM_SLOT_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_SLOT_, KIND)
 
     #define MONAD_VM_SLOT(REV, NAME, OP)                                       \
         MONAD_VM_LEAD(REV, NAME, OP)                                           \
+        MONAD_VM_SWAP1_PAIR(REV, NAME, OP)                                     \
         MONAD_VM_SLOT_PICK(MONAD_VM_LEAD_KIND(                                 \
             MONAD_VM_RELAY_OF_##OP, FULL, ~))(REV, NAME, OP)
 
@@ -520,6 +685,8 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_SLOTS_16
     #undef MONAD_VM_SLOT
     #undef MONAD_VM_SLOT_PICK
+    #undef MONAD_VM_RELAY_OF_55
+    #undef MONAD_VM_RELAY_OF_20
     #undef MONAD_VM_RELAY_OF_08
     #undef MONAD_VM_RELAY_OF_06
     #undef MONAD_VM_RELAY_OF_04
@@ -584,6 +751,35 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_STEP7
     #undef MONAD_VM_PUSH_T3
     #undef MONAD_VM_PUSH2_READ_AT
+    #undef MONAD_VM_SWAP1_PAIR
+    #undef MONAD_VM_SWAP1_PAIR_PICK
+    #undef MONAD_VM_SWAP1_PAIR_JUMP
+    #undef MONAD_VM_SWAP1_PAIR_POP
+    #undef MONAD_VM_SWAP1_PAIR_PLAIN
+    #undef MONAD_VM_SWAP1_HEAD
+    #undef MONAD_VM_SWAP1_PICK
+    #undef MONAD_VM_SWAP1_OF_56
+    #undef MONAD_VM_SWAP1_OF_50
+    #undef MONAD_VM_SWAP1_JUMP
+    #undef MONAD_VM_SWAP1_POP
+    #undef MONAD_VM_SWAP1_POP_6
+    #undef MONAD_VM_SWAP1_POP_5
+    #undef MONAD_VM_SWAP1_POP_4
+    #undef MONAD_VM_SWAP1_POP_3
+    #undef MONAD_VM_SWAP1_POP_2
+    #undef MONAD_VM_SWAP1_POP_1
+    #undef MONAD_VM_SWAP1_POP_0
+    #undef MONAD_VM_SWAP1_POP_AT
+    #undef MONAD_VM_SWAP1_PLAIN
+    #undef MONAD_VM_SWAP1_PLAIN_6
+    #undef MONAD_VM_SWAP1_PLAIN_5
+    #undef MONAD_VM_SWAP1_PLAIN_4
+    #undef MONAD_VM_SWAP1_PLAIN_3
+    #undef MONAD_VM_SWAP1_PLAIN_2
+    #undef MONAD_VM_SWAP1_PLAIN_1
+    #undef MONAD_VM_SWAP1_PLAIN_R
+    #undef MONAD_VM_SWAP1_PLAIN_0
+    #undef MONAD_VM_SWAP1_SWAP
     #undef MONAD_VM_LEADS
     #undef MONAD_VM_LEAD_SECTION
 #endif

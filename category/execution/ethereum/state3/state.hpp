@@ -487,6 +487,11 @@ public:
     size_t copy_code(
         Address const &, size_t offset, uint8_t *buffer, size_t buffer_size);
 
+#if defined(MONAD_ZKVM_ZISK)
+    // Read the EIP-7702 delegation target directly from cached code.
+    std::optional<Address> delegate_of(Address const &);
+#endif
+
     void set_code(Address const &, byte_string_view code);
 
     ////////////////////////////////////////

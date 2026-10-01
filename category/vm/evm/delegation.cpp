@@ -41,4 +41,20 @@ namespace monad::vm::evm
         auto const prefix = delegation_indicator_prefix();
         return std::equal(prefix.begin(), prefix.end(), code.begin());
     }
+
+    std::optional<Address> designation_of(std::span<uint8_t const> const code)
+    {
+        if (!is_delegated(code)) {
+            return std::nullopt;
+        }
+
+        // Copy the delegate address from the code.
+        Address designation;
+        std::ranges::copy(
+            code.subspan(
+                delegation_indicator_prefix_bytes.size(), sizeof(Address)),
+            designation.bytes);
+        return designation;
+    }
+
 }

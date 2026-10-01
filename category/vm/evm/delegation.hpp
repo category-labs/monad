@@ -34,4 +34,8 @@ namespace monad::vm::evm
     byte_string_view delegation_indicator_prefix();
 
     bool is_delegated(std::span<uint8_t const> code);
+
+    // Return the EIP-7702 delegate for exactly 0xEF0100 + a 20-byte address.
+    std::optional<Address> designation_of(std::span<uint8_t const> code);
+
 }

@@ -80,18 +80,18 @@ namespace monad::vm::interpreter
     // read and one step shorter than a table's.
     inline constexpr size_t slot_shift = 12;
 
-    // A slot holds seven copies of the opcode's handler, one per lag L: entered
+    // A slot holds six copies of the opcode's handler, one per lag L: entered
     // with instr_ptr L bytes ahead of a5, so that an opcode of N bytes
     // dispatches to its follower's copy L + N without stepping a5 while
     // L + N < lag_count (MONAD_VM_DISPATCH). lag_offset(L) is where the copy's
     // handler sits from the base the handlers carry: within a jalr's reach,
     // heads included. A handler too large for a copy is compiled once, past
     // the slots, and its copies jump there (execute.cpp).
-    inline constexpr unsigned lag_count = 7;
+    inline constexpr unsigned lag_count = 6;
 
     consteval int lag_offset(unsigned const lag) noexcept
     {
-        constexpr int at[lag_count] = {0, 576, 1160, 1744, -1760, -1176, -592};
+        constexpr int at[lag_count] = {0, 680, 1360, 2044, -1368, -684};
         return at[lag];
     }
 
@@ -173,16 +173,16 @@ namespace monad::vm::interpreter
     template <class T>
     using base_traits = typename LagOf<T>::base;
 
-    // Where copy 0's handler sits in its slot, after copies 4 to 6 and its
+    // Where copy 0's handler sits in its slot, after copies 4 and 5 and its
     // own heads: the base the handlers carry points there, at opcode 0's
     // copy 0, and the other copies are lag_offset away.
-    inline constexpr size_t slot_lead = 1864;
+    inline constexpr size_t slot_lead = 1512;
 
     // Where they land, before each copy's handler: PUSH1's head pushes its
     // immediate and falls into the handler; PUSH2's makes its stack test,
     // reads its immediate and jumps to the push in PUSH1's. In copy R, PUSH1's
-    // head takes a PUSH1 one (R + 5) % 7 bytes behind, PUSH2's a PUSH2
-    // (R + 4) % 7 behind; PUSH1's steps a5 in copies 0 and 1 only, and is four
+    // head takes a PUSH1 one (R + 4) % 6 bytes behind, PUSH2's a PUSH2
+    // (R + 3) % 6 behind; PUSH1's steps a5 in copies 0 and 1 only, and is four
     // bytes shorter in the others.
     consteval int head_back(unsigned const copy, unsigned const n) noexcept
     {
@@ -198,7 +198,7 @@ namespace monad::vm::interpreter
 
     // Where SWAP1 lands in every copy: its head opens the copy's heads,
     // swap1_back bytes before the handler. In copy R it takes a SWAP1
-    // (R + 6) % 7 bytes behind, stepping a5 by 7 in copy 0.
+    // (R + 5) % 6 bytes behind, stepping a5 by 6 in copy 0.
     inline constexpr int swap1_back = 104;
 
     // What MONAD_VM_LEAD_DISPATCH takes for a SWAP1 LAG bytes behind.
@@ -206,6 +206,18 @@ namespace monad::vm::interpreter
     {
         unsigned const copy = (lag + 1) % lag_count;
         return swap1_back - lag_offset(copy);
+    }
+
+    // The head of DUP2 to DUP16 comes before SWAP1's, dup_back bytes before
+    // the handler, and takes a DUPn as SWAP1's takes a SWAP1, the address of
+    // the word it copies in a7.
+    inline constexpr int dup_back = 144;
+
+    // What MONAD_VM_LEAD_DISPATCH_SRC takes for a DUPn LAG bytes behind.
+    consteval int dup_offset(unsigned const lag) noexcept
+    {
+        unsigned const copy = (lag + 1) % lag_count;
+        return dup_back - lag_offset(copy);
     }
 
     // A tail call to a head in NEXT_OPCODE's slot, OFFSET bytes before its
@@ -236,6 +248,39 @@ namespace monad::vm::interpreter
                            "r"(monad_vm_a4),                                   \
                            "r"(monad_vm_a5),                                   \
                            "r"(monad_vm_a6)                                    \
+                         : "memory");                                          \
+            __builtin_unreachable();                                           \
+        }                                                                      \
+        while (false)
+
+    // MONAD_VM_LEAD_DISPATCH with SRC in a7, for the head and the pairs past
+    // it.
+    #define MONAD_VM_LEAD_DISPATCH_SRC(OFFSET, NEXT_OPCODE, TOP, GAS, IP, SRC) \
+        do {                                                                   \
+            auto const monad_vm_head =                                         \
+                reinterpret_cast<uintptr_t>(itbl) +                            \
+                (static_cast<uintptr_t>(NEXT_OPCODE) << slot_shift);           \
+            register runtime::Context *monad_vm_a0 asm("a0") = &ctx;           \
+            register uint256_t const *monad_vm_a1 asm("a1") =                  \
+                MONAD_VM_ANALYSIS_ARG;                                         \
+            register uint256_t const *monad_vm_a2 asm("a2") = stack_bottom;    \
+            register uint256_t *monad_vm_a3 asm("a3") = (TOP);                 \
+            register int64_t monad_vm_a4 asm("a4") = (GAS);                    \
+            register uint8_t const *monad_vm_a5 asm("a5") = (IP);              \
+            register void const *monad_vm_a6 asm("a6") = itbl;                 \
+            register uint256_t const *monad_vm_a7 asm("a7") = (SRC);           \
+            asm volatile("jalr zero, %[off](%[head])"                          \
+                         :                                                     \
+                         : [head] "r"(monad_vm_head),                          \
+                           [off] "i"(-static_cast<int>(OFFSET)),               \
+                           "r"(monad_vm_a0),                                   \
+                           "r"(monad_vm_a1),                                   \
+                           "r"(monad_vm_a2),                                   \
+                           "r"(monad_vm_a3),                                   \
+                           "r"(monad_vm_a4),                                   \
+                           "r"(monad_vm_a5),                                   \
+                           "r"(monad_vm_a6),                                   \
+                           "r"(monad_vm_a7)                                    \
                          : "memory");                                          \
             __builtin_unreachable();                                           \
         }                                                                      \
@@ -374,7 +419,6 @@ namespace monad::vm::interpreter
                 MONAD_VM_LAG_TRY(3, NBYTES, DELTA, NEXT_OPCODE);               \
                 MONAD_VM_LAG_TRY(4, NBYTES, DELTA, NEXT_OPCODE);               \
                 MONAD_VM_LAG_TRY(5, NBYTES, DELTA, NEXT_OPCODE);               \
-                MONAD_VM_LAG_TRY(6, NBYTES, DELTA, NEXT_OPCODE);               \
             }                                                                  \
             {                                                                  \
                 instr_ptr += (NBYTES);                                         \
@@ -3736,6 +3780,19 @@ namespace monad::vm::interpreter
         }
         else {
             MONAD_VM_CHECK_OWN_OVERFLOW(DUP1 + (N - 1));
+            if constexpr (has_slots<traits>) {
+                // DUPn lands at a head of its follower's slot, as SWAP1 does,
+                // with the address of the word it copies: the copy there and
+                // a jump to the handler, or the pair it makes with ADD, AND,
+                // LT, GT or MSTORE (execute.cpp).
+                MONAD_VM_LEAD_DISPATCH_SRC(
+                    dup_offset(lag_of<traits>),
+                    *(instr_ptr + 1),
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr - lag_of<traits>,
+                    stack_top - (N - 1));
+            }
 
             // The copy's destination is the new top: step there first, so the
             // register the copy writes through is the one the dispatch passes
@@ -3780,6 +3837,7 @@ namespace monad::vm::interpreter
                 gas_remaining,
                 instr_ptr - lag_of<traits>);
         }
+
         // Reuse Context's scratch slot to avoid a local 32-byte stack frame.
         {
             uint256_t *const monad_t = &ctx.swap_scratch;
@@ -3921,6 +3979,88 @@ namespace monad::vm::interpreter
             stack_top[0] = *monad_t;
         }
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+    }
+
+    // DUPn then ADD, SUB, AND, LT, GT, MLOAD, MSTORE or SWAP1, DUPn's tests
+    // and gas made: the word DUPn copies, at SRC, is read where it lies
+    // instead of copied to the top. A load or a store that grows the memory
+    // makes the copy and takes its opcode's growth path.
+    template <uint8_t OP, Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void dup_then(
+        runtime::Context &entry_ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM,
+        uint256_t const *const src)
+    {
+        runtime::Context &ctx = held_in_a0(entry_ctx);
+        if constexpr (OP == MSTORE) {
+            MONAD_VM_CHECK_OWN_GAS(MSTORE);
+            auto const offset = ctx.get_memory_offset(*src);
+            if (MONAD_UNLIKELY(ctx.memory.size < *offset + 32)) {
+                *(stack_top + 1) = *src;
+                MONAD_VM_MUST_TAIL return mstore_grow<traits>(
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top + 1,
+                    gas_remaining,
+                    MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+            }
+            runtime::mstore_at<base_traits<traits>>(&ctx, offset, stack_top);
+            MONAD_VM_DISPATCH(1, -1, *instr_ptr);
+        }
+        else if constexpr (OP == MLOAD) {
+            MONAD_VM_CHECK_OWN_GAS(MLOAD);
+            auto const offset = ctx.get_memory_offset(*src);
+            if (MONAD_UNLIKELY(ctx.memory.size < *offset + 32)) {
+                *(stack_top + 1) = *src;
+                MONAD_VM_MUST_TAIL return mload_grow<quiet_traits<traits>>(
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top + 1,
+                    gas_remaining,
+                    MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+            }
+            runtime::mload_at<base_traits<traits>>(&ctx, stack_top + 1, offset);
+            MONAD_VM_DISPATCH(1, 1, *instr_ptr);
+        }
+        else if constexpr (OP == SWAP1) {
+            // The old top one slot up, the copied word under it.
+            gas_remaining -= static_gas<traits, SWAP1>();
+            *(stack_top + 1) = *stack_top;
+            *stack_top = *src;
+            MONAD_VM_DISPATCH(1, 1, *instr_ptr);
+        }
+        else {
+            gas_remaining -=
+                static_gas<traits, static_cast<compiler::EvmOpCode>(OP)>();
+            if constexpr (OP == ADD) {
+                ctx.add256_params.a = reinterpret_cast<uint64_t const *>(src);
+                zisk_add256(ctx.add256_params, *stack_top, *stack_top);
+            }
+            else if constexpr (OP == SUB) {
+                // As SUB: the copied word less the top, into the top.
+                ctx.sub256_params.a = reinterpret_cast<uint64_t const *>(src);
+                asm volatile("" ::: "memory");
+                auto &b = *stack_top;
+                for (size_t i = 0; i < 4; ++i) {
+                    b[i] = ~b[i];
+                }
+                zisk_add256(ctx.sub256_params, b, b);
+            }
+            else if constexpr (OP == LT) {
+                *stack_top = *src < *stack_top;
+            }
+            else if constexpr (OP == GT) {
+                *stack_top = *src > *stack_top;
+            }
+            else {
+                static_assert(OP == AND);
+                *stack_top = *src & *stack_top;
+            }
+            MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+        }
     }
 #endif
 

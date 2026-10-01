@@ -152,6 +152,7 @@ class ProfileTests(unittest.TestCase):
             "compiler_version": "15.2.0",
             "compiler_sha256": audit.sha256(self.compiler),
             "cxx_flags": self.flags, "cxx_flags_release": "",
+            "interpreter_flags": f"-mtune={audit.EXPECTED_INTERPRETER_MTUNE}",
         }
         marker = (
             f"{audit.PROFILE};runtime=ziskos-{audit.RUNTIME_VERSION};"
@@ -170,6 +171,12 @@ class ProfileTests(unittest.TestCase):
         flags_dir = directory / "CMakeFiles/monad-zkvm-guest-zisk.dir"
         flags_dir.mkdir(parents=True, exist_ok=True)
         (flags_dir / "flags.make").write_text("CXX_FLAGS = " + self.flags + "\n")
+        interpreter_dir = directory / "interpreter/CMakeFiles/monad-vm-interpreter.dir"
+        interpreter_dir.mkdir(parents=True, exist_ok=True)
+        (interpreter_dir / "flags.make").write_text(
+            "CXX_FLAGS = " + self.flags
+            + f" -mtune={audit.EXPECTED_INTERPRETER_MTUNE}\n"
+        )
         return profile_path
 
     def run_tool(self, *args):
@@ -240,6 +247,27 @@ class ProfileTests(unittest.TestCase):
         flags = self.build_dir / "CMakeFiles/monad-zkvm-guest-zisk.dir/flags.make"
         flags.write_text("CXX_FLAGS = " + self.flags + " -mno-zisk-dma\n")
         with self.assertRaisesRegex(SystemExit, "guest compile command has -mzisk-dma"):
+            self.run_audit()
+
+    def test_interpreter_tune_is_checked(self):
+        flags = (
+            self.build_dir
+            / "interpreter/CMakeFiles/monad-vm-interpreter.dir/flags.make"
+        )
+        flags.write_text("CXX_FLAGS = " + self.flags + "\n")
+        with self.assertRaisesRegex(
+            SystemExit, "interpreter compile command ends with -mtune=size"
+        ):
+            self.run_audit()
+        flags.unlink()
+        with self.assertRaisesRegex(SystemExit, "one interpreter flags.make, found 0"):
+            self.run_audit()
+
+    def test_profile_records_the_interpreter_tune(self):
+        profile = dict(self.profile)
+        del profile["interpreter_flags"]
+        self.profile_path.write_text(json.dumps(profile))
+        with self.assertRaisesRegex(SystemExit, "does not record the interpreter's tune"):
             self.run_audit()
 
 

@@ -41,6 +41,7 @@ RUNTIME_SOURCE = (
 EXPECTED_COMPILER = ("GNU", "15.2.0")
 EXPECTED_MARCH = "rv64ima_zicsr_zba_zbb_zbs_zbkb"
 EXPECTED_MTUNE = "size"
+EXPECTED_INTERPRETER_MTUNE = "generic-ooo"
 REQUIRED_FLAGS = (
     "-O3",
     "-mabi=lp64",
@@ -280,6 +281,18 @@ def main() -> int:
         fail(f"expected one guest flags.make, found {len(guest_flags)}")
     guest_text = guest_flags[0].read_text(errors="replace")
     check_flags(guest_text, "guest compile command")
+    interpreter_flags = list(build_dir.glob("**/monad-vm-interpreter.dir/flags.make"))
+    if len(interpreter_flags) != 1:
+        fail(f"expected one interpreter flags.make, found {len(interpreter_flags)}")
+    interpreter_text = interpreter_flags[0].read_text(errors="replace")
+    interpreter_mtune = flag_values(interpreter_text).get("-mtune")
+    if interpreter_mtune != EXPECTED_INTERPRETER_MTUNE:
+        fail(
+            f"interpreter compile command ends with -mtune={interpreter_mtune!s}, "
+            f"expected {EXPECTED_INTERPRETER_MTUNE}"
+        )
+    if profile.get("interpreter_flags") != f"-mtune={EXPECTED_INTERPRETER_MTUNE}":
+        fail("generated profile does not record the interpreter's tune")
 
     # Check header inclusion and empty definitions: removed calls let the linker
     # discard delete symbols, so the ELF alone cannot validate the const claim.

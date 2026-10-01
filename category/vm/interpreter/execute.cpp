@@ -34,11 +34,80 @@ extern "C" unsigned char const monad_vm_slots[];
 namespace monad::vm::interpreter
 {
 #if defined(MONAD_ZKVM_ZISK)
-    // The linker places each revision/opcode section in a fixed-size slot.
-    // Linker placement avoids assembler alignment padding that relaxation
-    // could remove. A musttail call preserves tail exits when GCC inlines
-    // the handler, avoiding an extra stack frame.
+    // Slots already provide calculable handler addresses. Their PUSH1 prefix
+    // adds a second entry, 32 bytes before the normal handler. PUSH1 has not
+    // executed when it enters here: most prefixes push its immediate, charge
+    // gas and fall into the handler. Fused prefixes jump to push1_then<OP>.
+    // Ordinary opcode dispatch skips the prefix. The ABI carries StackTop's
+    // next free slot in a3, gas in a4, and the PUSH1 instruction pointer in a5.
+    // Keep musttail: a normal call can give the inlined handler a stack frame.
+    #define MONAD_VM_LEAD_PUSH(REV, NAME, OP)                                  \
+        static_assert(                                                         \
+            compiler::opcode_table<EvmTraits<REV>>[PUSH1].min_gas == 3 &&      \
+            sizeof(uint256_t) == 32 && push1_prefix_size == 32);               \
+        asm(".pushsection .monad_vm_lead." #NAME "." #OP ",\"ax\",@progbits\n" \
+            ".type monad_vm_slot_" #NAME "_" #OP "_lead, @function\n"          \
+            "monad_vm_slot_" #NAME "_" #OP "_lead:\n"                          \
+            "\tlbu t3, 1(a5)\n"                                                \
+            "\tsd t3, 0(a3)\n"                                                 \
+            "\tsd zero, 8(a3)\n"                                               \
+            "\tsd zero, 16(a3)\n"                                              \
+            "\tsd zero, 24(a3)\n"                                              \
+            "\taddi a3, a3, 32\n"                                              \
+            "\taddi a4, a4, -3\n"                                              \
+            "\taddi a5, a5, 2\n"                                               \
+            ".size monad_vm_slot_" #NAME "_" #OP "_lead, . - "                 \
+            "monad_vm_slot_" #NAME "_" #OP "_lead\n"                           \
+            ".popsection");
+
+    #define MONAD_VM_LEAD_PAIR(REV, NAME, OP)                                  \
+        asm(".pushsection .monad_vm_lead." #NAME "." #OP ",\"ax\",@progbits\n" \
+            ".type monad_vm_slot_" #NAME "_" #OP "_lead, @function\n"          \
+            "monad_vm_slot_" #NAME "_" #OP "_lead:\n"                          \
+            "\tj monad_vm_slot_" #NAME "_" #OP "_push1\n"                      \
+            ".size monad_vm_slot_" #NAME "_" #OP "_lead, . - "                 \
+            "monad_vm_slot_" #NAME "_" #OP "_lead\n"                           \
+            ".popsection");                                                    \
+        extern "C" [[gnu::section(".monad_vm_push1." #NAME "." #OP)]] void     \
+            monad_vm_slot_##NAME##_##OP##_push1(                               \
+                runtime::Context &ctx,                                         \
+                MONAD_VM_DISPATCH_STATE_PARAM,                                 \
+                uint256_t const *const stack_lower_bound,                      \
+                StackTop const stack_top,                                      \
+                int64_t const gas_remaining,                                   \
+                uint8_t const *const instr_ptr,                                \
+                void const *const table_base)                                  \
+        {                                                                      \
+            __attribute__((musttail)) return push1_then<                       \
+                0x##OP,                                                        \
+                EvmTraits<REV>>(                                               \
+                ctx,                                                           \
+                MONAD_VM_DISPATCH_STATE_ARG,                                   \
+                stack_lower_bound,                                             \
+                stack_top,                                                     \
+                gas_remaining,                                                 \
+                instr_ptr,                                                     \
+                table_base);                                                   \
+        }
+
+    // The followers push1_then takes: ADD, SHL, SHR, SAR and PUSH1. The
+    // others' MONAD_VM_PUSH1_PAIR_xx is undefined, and MONAD_VM_LEAD_KIND
+    // takes the default after it.
+    #define MONAD_VM_PUSH1_PAIR_01 ~, PAIR // ADD
+    #define MONAD_VM_PUSH1_PAIR_1b ~, PAIR // SHL
+    #define MONAD_VM_PUSH1_PAIR_1c ~, PAIR // SHR
+    #define MONAD_VM_PUSH1_PAIR_1d ~, PAIR // SAR
+    #define MONAD_VM_PUSH1_PAIR_60 ~, PAIR // PUSH1
+    #define MONAD_VM_LEAD_SECOND(A, B, ...) B
+    #define MONAD_VM_LEAD_KIND(...) MONAD_VM_LEAD_SECOND(__VA_ARGS__)
+    #define MONAD_VM_LEAD_CAT(A, B) A##B
+    #define MONAD_VM_LEAD_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_LEAD_, KIND)
+    #define MONAD_VM_LEAD(REV, NAME, OP)                                       \
+        MONAD_VM_LEAD_PICK(MONAD_VM_LEAD_KIND(                                 \
+            MONAD_VM_PUSH1_PAIR_##OP, PUSH, ~))(REV, NAME, OP)
+
     #define MONAD_VM_SLOT(REV, NAME, OP)                                       \
+        MONAD_VM_LEAD(REV, NAME, OP)                                           \
         extern "C" [[gnu::section(".monad_vm_slot." #NAME "." #OP)]] void      \
             monad_vm_slot_##NAME##_##OP(                                       \
                 runtime::Context &ctx,                                         \
@@ -109,6 +178,18 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_SLOTS
     #undef MONAD_VM_SLOTS_16
     #undef MONAD_VM_SLOT
+    #undef MONAD_VM_LEAD
+    #undef MONAD_VM_LEAD_PICK
+    #undef MONAD_VM_LEAD_CAT
+    #undef MONAD_VM_LEAD_KIND
+    #undef MONAD_VM_LEAD_SECOND
+    #undef MONAD_VM_PUSH1_PAIR_60
+    #undef MONAD_VM_PUSH1_PAIR_1d
+    #undef MONAD_VM_PUSH1_PAIR_1c
+    #undef MONAD_VM_PUSH1_PAIR_1b
+    #undef MONAD_VM_PUSH1_PAIR_01
+    #undef MONAD_VM_LEAD_PAIR
+    #undef MONAD_VM_LEAD_PUSH
 #endif
 
     namespace
@@ -137,7 +218,8 @@ namespace monad::vm::interpreter
                 table_base = monad_vm_slots +
                              ((static_cast<unsigned>(EvmRevision::Amsterdam) -
                                static_cast<unsigned>(traits::evm_rev()))
-                              << 8 << slot_shift);
+                              << 8 << slot_shift) +
+                             push1_prefix_size;
             }
             else {
                 table_base = instruction_table<traits>.data();

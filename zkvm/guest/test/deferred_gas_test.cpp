@@ -278,6 +278,40 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
                                    r.gas == gas - 11 && r.output == 0 &&
                                    r.refund == 0 && r.accesses == 0;
     }
+    // Exercise all five pair prefixes plus an ordinary fall-through prefix.
+    for (auto op : {ADD, SHL, SHR, SAR, PUSH1, POP}) {
+        std::vector<uint8_t> code{PUSH0, PUSH1, 1, static_cast<uint8_t>(op)};
+        if (op == PUSH1) {
+            code.push_back(2);
+        }
+        code.push_back(STOP);
+        int64_t const cost = op == POP ? 7 : 8;
+        for (int64_t gas = 0; gas <= cost + 1; ++gas) {
+            auto const r = run(code, gas);
+            boundary &= gas < cost ? failed_cleanly(r)
+                                   : r.status == CallStatus::Success &&
+                                         r.gas == gas - cost;
+        }
+        // The temporary PUSH1 must still overflow a full stack.
+        code.insert(code.begin(), 1023, PUSH0);
+        boundary &= failed_cleanly(run(code, 10000));
+    }
+    // Consecutive PUSH1s must charge each immediate and stop at stack capacity.
+    for (size_t const count : {1, 2, 3, 1023, 1024, 1025}) {
+        std::vector<uint8_t> code;
+        for (size_t i = 0; i < count; ++i) {
+            code.insert(code.end(), {PUSH1, static_cast<uint8_t>(i)});
+        }
+        code.push_back(STOP);
+        int64_t const cost = 3 * static_cast<int64_t>(count);
+        for (int64_t const gas : {int64_t{0}, cost - 1, cost, cost + 1}) {
+            auto const result = run(code, gas);
+            boundary &= gas < cost || count > 1024
+                            ? failed_cleanly(result)
+                            : result.status == CallStatus::Success &&
+                                  result.gas == gas - cost;
+        }
+    }
     check(boundary);
     // At exactly the required gas, RETURN and REVERT retain their status.
     std::array<uint8_t, 5> const ret{PUSH1, 0, PUSH1, 0, RETURN};
@@ -677,6 +711,55 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
                                 : berlin.status == CallStatus::Success;
     }
     check(selectors && extraction && bounds);
+    // Check every PUSH1 mask width, with and without the optional AND.
+    bool masks = true;
+    for (unsigned k = 0; k < 256; ++k) {
+        std::array<uint8_t, 32> expected{};
+        for (unsigned bit = 0; bit < k; ++bit) {
+            expected[31 - bit / 8] |= uint8_t{1} << (bit % 8);
+        }
+        for (bool apply : {false, true}) {
+            std::vector<uint8_t> code;
+            if (apply) {
+                code.push_back(PUSH32);
+                code.insert(code.end(), 32, 0xff);
+            }
+            code.insert(
+                code.end(),
+                {PUSH1, 1, PUSH1, 1, PUSH1, static_cast<uint8_t>(k), SHL, SUB});
+            if (apply) {
+                code.push_back(AND);
+            }
+            code.push_back(PUSH32);
+            code.insert(code.end(), expected.begin(), expected.end());
+            code.push_back(EQ);
+            size_t const jump = code.size();
+            code.insert(code.end(), {PUSH2, 0, 0, JUMPI, 0xfe});
+            code[jump + 2] = static_cast<uint8_t>(code.size());
+            code.insert(code.end(), {JUMPDEST, STOP});
+            int64_t const cost = apply ? 41 : 35;
+            auto const result = run(code, cost);
+            masks &= result.status == CallStatus::Success && result.gas == 0 &&
+                     result.output == 0 && result.refund == 0 &&
+                     result.accesses == 0;
+            for (int64_t gas = 0; gas < cost; ++gas) {
+                masks &= failed_cleanly(run(code, gas));
+            }
+        }
+    }
+    // Omitting the stores must not omit the temporary stack growth checks.
+    for (unsigned initial_size : {1021, 1022, 1023, 1024}) {
+        std::vector<uint8_t> code(initial_size, PUSH0);
+        code.insert(
+            code.end(), {PUSH1, 1, PUSH1, 1, PUSH1, 160, SHL, SUB, STOP});
+        auto const result = run(code, 10000);
+        masks &= initial_size == 1021 ? result.status == CallStatus::Success
+                                      : failed_cleanly(result);
+    }
+    std::array<uint8_t, 10> const missing_mask_operand{
+        PUSH1, 1, PUSH1, 1, PUSH1, 160, SHL, SUB, AND, STOP};
+    masks &= failed_cleanly(run(missing_mask_operand, 100));
+    check(masks);
     // Nonuniform immediate masks exercise byte order and all word boundaries.
     bool immediate_masks = true;
     for (unsigned width : {4u, 20u}) {

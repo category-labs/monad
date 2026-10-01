@@ -73,6 +73,45 @@ namespace monad::vm::interpreter
     // Dispatch computes base + (opcode << slot_shift), without a pointer lookup.
     inline constexpr size_t slot_shift = 10;
 
+    // Two entry points inside each existing fixed-size slot:
+    // [PUSH1 prefix: 32 bytes][normal handler][optional fused pair]
+    //  ^ PUSH1 followed by OP  ^ OP alone
+    // The prefix executes the pending PUSH1, or jumps to a fused pair.
+    // Normal dispatch skips it; execute.cpp and the linker share this size.
+    inline constexpr size_t push1_prefix_size = 32;
+
+    // Jump to the follower's PUSH1 prefix with the handler arguments in a0-a6.
+    // Encoding -push1_prefix_size in jalr avoids a separate address adjustment.
+    #define MONAD_VM_PUSH1_PREFIX_DISPATCH(NEXT_OPCODE, TOP, GAS, IP)          \
+        do {                                                                   \
+            auto const follower_handler_address =                              \
+                reinterpret_cast<uintptr_t>(table_base) +                      \
+                (static_cast<uintptr_t>(NEXT_OPCODE) << slot_shift);           \
+            register runtime::Context *monad_vm_a0 asm("a0") = &ctx;           \
+            register uint256_t const *monad_vm_a1 asm("a1") =                  \
+                MONAD_VM_DISPATCH_STATE_ARG;                                   \
+            register uint256_t const *monad_vm_a2 asm("a2") =                  \
+                stack_lower_bound;                                             \
+            register uint256_t *monad_vm_a3 asm("a3") = (TOP).next_slot();     \
+            register int64_t monad_vm_a4 asm("a4") = (GAS);                    \
+            register uint8_t const *monad_vm_a5 asm("a5") = (IP);              \
+            register void const *monad_vm_a6 asm("a6") = table_base;           \
+            asm volatile("jalr zero, %[off](%[head])"                          \
+                         :                                                     \
+                         : [head] "r"(follower_handler_address),               \
+                           [off] "i"(-static_cast<int>(push1_prefix_size)),    \
+                           "r"(monad_vm_a0),                                   \
+                           "r"(monad_vm_a1),                                   \
+                           "r"(monad_vm_a2),                                   \
+                           "r"(monad_vm_a3),                                   \
+                           "r"(monad_vm_a4),                                   \
+                           "r"(monad_vm_a5),                                   \
+                           "r"(monad_vm_a6)                                    \
+                         : "memory");                                          \
+            __builtin_unreachable();                                           \
+        }                                                                      \
+        while (false)
+
     // The revisions whose handlers have slots: the EVM ones the guest runs.
     // Other traits dispatch through their table.
     template <Traits traits>
@@ -2394,7 +2433,250 @@ namespace monad::vm::interpreter
 
     // Stack
 
+    // Isolate SHR/SAR register pressure to keep push<1> frame-free.
+    // Gas and stack are already checked; instr_ptr still points to PUSH1.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push1_shr(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        *stack_top >>= uint256_t{*(instr_ptr + 1)};
+        MONAD_VM_FUSED_NEXT(3, 0);
+    }
+
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push1_sar(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        *stack_top = sar(uint256_t{*(instr_ptr + 1)}, *stack_top);
+        MONAD_VM_FUSED_NEXT(3, 0);
+    }
+
 #if defined(MONAD_ZKVM_ZISK)
+    // The first two PUSH1s reserve slots for [1, 1] without writing them.
+    // Finish 2^k - 1 without reading either slot.
+    // instr_ptr points at the remaining sequence:
+    //   offset:  0      1    2    3    4 (optional)
+    //            PUSH1  [k] SHL  SUB  AND
+    // Without AND: [..., unused, unused] -> [..., mask].
+    // With AND:    [..., x, unused, unused] -> [..., x & mask].
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push1_mask(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const mask_bits = static_cast<size_t>(*(instr_ptr + 1));
+        // k / 64 selects the boundary word; its low k % 64 bits are ones.
+        // Lower words are all ones, and higher words are zero.
+        size_t const boundary_word = mask_bits >> 6;
+        uint64_t const boundary_mask = (uint64_t{1} << (mask_bits & 63)) - 1;
+        if (*(instr_ptr + 4) == static_cast<std::uint8_t>(AND)) {
+            // Apply the mask directly to x, below the two reserved slots.
+            static constexpr auto requirements =
+                fused_requirements<traits, PUSH1, SHL, SUB, AND>();
+            if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(requirements))) {
+                gas_remaining += requirements.gas;
+                MONAD_VM_CHECK(PUSH1);
+                MONAD_VM_CHECK_AT(SHL, 1);
+                MONAD_VM_CHECK_AT(SUB, 0);
+                MONAD_VM_CHECK_AT(AND, -1);
+            }
+            auto &value = *(stack_top - 2);
+            if (boundary_word == 2) {
+                value[2] &= boundary_mask;
+                value[3] = 0;
+            }
+            else if (boundary_word == 1) {
+                value[1] &= boundary_mask;
+                value[2] = 0;
+                value[3] = 0;
+            }
+            else if (boundary_word == 3) {
+                value[3] &= boundary_mask;
+            }
+            else {
+                value[0] &= boundary_mask;
+                value[1] = 0;
+                value[2] = 0;
+                value[3] = 0;
+            }
+            MONAD_VM_FUSED_NEXT(5, -2);
+        }
+        static constexpr auto requirements =
+            fused_requirements<traits, PUSH1, SHL, SUB>();
+        if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(requirements))) {
+            gas_remaining += requirements.gas;
+            MONAD_VM_CHECK(PUSH1);
+            MONAD_VM_CHECK_AT(SHL, 1);
+            MONAD_VM_CHECK_AT(SUB, 0);
+        }
+        auto &mask = *(stack_top - 1);
+        uint64_t const all_ones = ~uint64_t{0};
+        if (boundary_word == 2) {
+            mask[0] = all_ones;
+            mask[1] = all_ones;
+            mask[2] = boundary_mask;
+            mask[3] = 0;
+        }
+        else if (boundary_word == 1) {
+            mask[0] = all_ones;
+            mask[1] = boundary_mask;
+            mask[2] = 0;
+            mask[3] = 0;
+        }
+        else if (boundary_word == 3) {
+            mask[0] = all_ones;
+            mask[1] = all_ones;
+            mask[2] = all_ones;
+            mask[3] = boundary_mask;
+        }
+        else {
+            mask[0] = boundary_mask;
+            mask[1] = 0;
+            mask[2] = 0;
+            mask[3] = 0;
+        }
+        MONAD_VM_FUSED_NEXT(4, -1);
+    }
+
+    // OP is the opcode AFTER PUSH1: PUSH1 7 ADD selects push1_then<ADD>,
+    // while PUSH1 7 PUSH1 9 selects push1_then<PUSH1>.
+    // instr_ptr still points to the first PUSH1, which has not executed yet.
+    // Slot dispatch already checked room for its temporary stack entry.
+    template <uint8_t OP, Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void push1_then(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        if constexpr (OP == PUSH1 && has_slots<traits>) {
+            // [PUSH1][a][PUSH1][b][OP]: push a, then enter OP's prefix with
+            // instr_ptr on the second PUSH1. This lets PUSH1 b fuse with OP.
+            // Without slots, keep the two-push path below: no prefix exists.
+            // Preserve the special two-ones path for push1_mask first.
+            uint8_t const first_immediate = *(instr_ptr + 1);
+            if (MONAD_UNLIKELY(
+                    first_immediate == 1 && *(instr_ptr + 3) == 1 &&
+                    *(instr_ptr + 4) == static_cast<std::uint8_t>(PUSH1) &&
+                    *(instr_ptr + 6) == static_cast<std::uint8_t>(SHL) &&
+                    *(instr_ptr + 7) == static_cast<std::uint8_t>(SUB))) {
+                static constexpr auto pair_requirements =
+                    fused_requirements<traits, PUSH1, PUSH1>();
+                if (MONAD_UNLIKELY(
+                        !MONAD_VM_FUSED_CHARGE_PURE(pair_requirements))) {
+                    gas_remaining += pair_requirements.gas;
+                    MONAD_VM_CHECK(PUSH1);
+                    MONAD_VM_CHECK_AT(PUSH1, 1);
+                }
+                // Skip pushing the two constant ones: push1_mask never reads
+                // them. Still advance stack_top by two and preserve their
+                // gas and stack checks.
+                instr_ptr += 4;
+                MONAD_VM_MUST_TAIL return push1_mask<traits>(
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top + 2,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+            interpreter::push(stack_top, uint256_t{first_immediate});
+            gas_remaining -= static_gas<traits, PUSH1>();
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+            // Re-entering a prefix bypasses push<1>'s check for the second
+            // PUSH1.
+            if (MONAD_UNLIKELY((gas_remaining < static_gas<traits, PUSH1>()))) {
+                MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+            }
+    #endif
+            if (MONAD_UNLIKELY(
+                    stack_top.next_slot() + 1 >= MONAD_VM_STACK_LIMIT)) {
+                MONAD_VM_MUST_TAIL return ctx.exit(Error);
+            }
+            MONAD_VM_PUSH1_PREFIX_DISPATCH(
+                *(instr_ptr + 4), stack_top + 1, gas_remaining, instr_ptr + 2);
+        }
+        else if constexpr (OP == PUSH1) {
+            // Fuse PUSH1 <a> PUSH1 <b>, saving one dispatch.
+            // The pair needs two free slots and 6 gas; the fallback preserves
+            // per-opcode checks and error order.
+            // Zero padding supplies a missing second immediate.
+            static constexpr auto pair_requirements =
+                fused_requirements<traits, PUSH1, PUSH1>();
+            if (MONAD_UNLIKELY(
+                    !MONAD_VM_FUSED_CHARGE_PURE(pair_requirements))) {
+                gas_remaining += pair_requirements.gas;
+                MONAD_VM_CHECK(PUSH1);
+                MONAD_VM_CHECK_AT(PUSH1, 1);
+            }
+            // Read both immediates before storing, so instr_ptr is no
+            // longer needed for these loads when dispatch advances it.
+            uint8_t const first_immediate = *(instr_ptr + 1);
+            uint8_t const second_immediate = *(instr_ptr + 3);
+            interpreter::push(stack_top, uint256_t{first_immediate});
+            interpreter::push(stack_top + 1, uint256_t{second_immediate});
+            // Continue in push1_mask when the two ones start a mask
+            // pattern. Select the tail-call target here to avoid a separate
+            // call.
+            instr_ptr += 4;
+            MONAD_VM_LAUNDER(instr_ptr);
+            bool const starts_mask =
+                first_immediate == 1 && second_immediate == 1 &&
+                *instr_ptr == static_cast<std::uint8_t>(PUSH1) &&
+                *(instr_ptr + 2) == static_cast<std::uint8_t>(SHL) &&
+                *(instr_ptr + 3) == static_cast<std::uint8_t>(SUB);
+            auto const next_handler = starts_mask
+                                          ? &push1_mask<traits>
+                                          : MONAD_VM_TABLE_REF[*instr_ptr];
+            MONAD_VM_MUST_TAIL return next_handler(
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top + 2,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        else {
+            static_assert(OP == ADD || OP == SHL || OP == SHR || OP == SAR);
+            // The pair replaces the top. Slot dispatch already checked
+            // room for the temporary PUSH1 value.
+            static constexpr auto pair_requirements = [] {
+                auto requirements = fused_requirements<
+                    traits,
+                    PUSH1,
+                    static_cast<compiler::EvmOpCode>(OP)>();
+                if (has_slots<traits>) {
+                    requirements.max_growth = 0;
+                }
+                return requirements;
+            }();
+            if (MONAD_UNLIKELY(
+                    !MONAD_VM_FUSED_CHARGE_PURE(pair_requirements))) {
+                gas_remaining += pair_requirements.gas;
+                MONAD_VM_CHECK(PUSH1);
+                MONAD_VM_CHECK_AT(OP, 1);
+            }
+            uint256_t const immediate{*(instr_ptr + 1)};
+            if constexpr (OP == ADD) {
+                *stack_top = immediate + *stack_top;
+            }
+            else if constexpr (OP == SHL) {
+                *stack_top <<= immediate;
+            }
+            else if constexpr (OP == SHR) {
+                *stack_top >>= immediate;
+            }
+            else {
+                *stack_top = sar(immediate, *stack_top);
+            }
+            MONAD_VM_FUSED_NEXT(3, 0);
+        }
+    }
+
     // Recognize this Solidity loop over [..., len, dst, src, i]:
     //   h: JUMPDEST DUP4 DUP2 LT ISZERO PUSH2 <end> JUMPI
     //      DUP2 DUP2 ADD MLOAD DUP4 DUP3 ADD MSTORE PUSH1 0x20 ADD
@@ -2714,30 +2996,48 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
 #if defined(MONAD_ZKVM_ZISK)
-        // Use PUSH1's immediate directly for ADD/SHL/SHR/SAR.
-        // The result replaces the top; the pair's net stack change is zero.
-        // Check PUSH1 before its follower, including temporary stack growth.
-        // Code padding makes the lookahead safe.
-        // Reuse the next opcode for fusion checks and normal dispatch.
+        // Code padding makes lookahead safe. Reuse the follower opcode
+        // for fusion checks, prefix dispatch and ordinary dispatch.
         [[maybe_unused]] uint8_t next_opcode = 0;
         if constexpr (N == 1 || N == 2 || N == 4 || N == 8 || N == 20) {
             next_opcode = *(instr_ptr + N + 1);
         }
-        if constexpr (N == 1) {
+        if constexpr (N == 1 && has_slots<traits>) {
+            // Enter the follower's prefix: it executes PUSH1 then falls
+            // through, or jumps to a fused pair. Check stack space first.
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+            // The prefix charges 3 gas; eager mode must reject before writing.
+            if (MONAD_UNLIKELY(gas_remaining < 3)) {
+                MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+            }
+    #endif
+            if (MONAD_UNLIKELY(stack_top.next_slot() >= MONAD_VM_STACK_LIMIT)) {
+                MONAD_VM_MUST_TAIL return ctx.exit(Error);
+            }
+            MONAD_VM_PUSH1_PREFIX_DISPATCH(
+                next_opcode, stack_top, gas_remaining, instr_ptr);
+        }
+        else if constexpr (N == 1) {
             // A bitmap keeps the check cheap on every PUSH1; testing four
             // opcodes separately regressed performance.
             constexpr std::uint64_t monad_vm_fuse_mask =
                 (1ull << static_cast<unsigned>(ADD)) |
-                (1ull << static_cast<unsigned>(SHL));
-            // PUSH1 and DUP2 exceed this mask's range.
-            // Filtering for these two opcodes first improves performance.
+                (1ull << static_cast<unsigned>(SHL)) |
+                (1ull << static_cast<unsigned>(SHR)) |
+                (1ull << static_cast<unsigned>(SAR));
+            // PUSH1 (handled below) and DUP2 exceed this mask's range.
+            // Filtering for these four opcodes first improves performance.
             if (next_opcode < 64 && ((monad_vm_fuse_mask >> next_opcode) & 1)) {
-                // These two followers share gas and stack requirements.
-                // Verify that ADD's checks cover both.
+                // These four followers share gas and stack requirements.
+                // Verify that ADD's checks cover all four.
                 static constexpr auto requirements =
                     fused_requirements<traits, PUSH1, ADD>();
                 static_assert(
-                    requirements == fused_requirements<traits, PUSH1, SHL>(),
+                    requirements == fused_requirements<traits, PUSH1, SHL>() &&
+                        requirements ==
+                            fused_requirements<traits, PUSH1, SHR>() &&
+                        requirements ==
+                            fused_requirements<traits, PUSH1, SAR>(),
                     "PUSH1 fusion mask holds followers with unequal "
                     "requirements; aggregate them per follower");
                 if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(requirements))) {
@@ -2752,11 +3052,39 @@ namespace monad::vm::interpreter
                 else if (next_opcode == static_cast<std::uint8_t>(SHL)) {
                     *stack_top <<= immediate;
                 }
-
+                else if (next_opcode == static_cast<std::uint8_t>(SHR)) {
+                    MONAD_VM_MUST_TAIL return push1_shr<traits>(
+                        ctx,
+                        MONAD_VM_DISPATCH_STATE_ARG,
+                        stack_lower_bound,
+                        stack_top,
+                        gas_remaining,
+                        instr_ptr MONAD_VM_TBL_ARG);
+                }
+                else {
+                    MONAD_VM_MUST_TAIL return push1_sar<traits>(
+                        ctx,
+                        MONAD_VM_DISPATCH_STATE_ARG,
+                        stack_lower_bound,
+                        stack_top,
+                        gas_remaining,
+                        instr_ptr MONAD_VM_TBL_ARG);
+                }
                 // Advance instr_ptr by 3 bytes, keep the stack size unchanged,
                 // and call the next opcode handler.
                 // Returns from the current handler.
                 MONAD_VM_FUSED_NEXT(3, 0);
+            }
+            // PUSH1 <a> PUSH1 <b>, tested outside of the previous mask
+            // because PUSH1 is #96 > 64.
+            if (next_opcode == static_cast<std::uint8_t>(PUSH1)) {
+                MONAD_VM_MUST_TAIL return push1_then<PUSH1, traits>(
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
             }
         }
         // Use PUSH2's immediate directly as the jump destination.
@@ -3465,3 +3793,7 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_FUSED_CHARGE
 #undef MONAD_VM_FUSED_CHARGE_PURE
 #undef MONAD_VM_CHECKED_RUNTIME_CALL
+
+#if defined(MONAD_ZKVM_ZISK)
+    #undef MONAD_VM_PUSH1_PREFIX_DISPATCH
+#endif

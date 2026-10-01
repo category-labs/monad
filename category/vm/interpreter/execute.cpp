@@ -109,6 +109,7 @@ namespace monad::vm::interpreter
     #define MONAD_VM_PUSH1_PAIR_1b ~, PAIR // SHL
     #define MONAD_VM_PUSH1_PAIR_1c ~, PAIR // SHR
     #define MONAD_VM_PUSH1_PAIR_1d ~, PAIR // SAR
+    #define MONAD_VM_PUSH1_PAIR_35 ~, PAIR // CALLDATALOAD
     #define MONAD_VM_PUSH1_PAIR_51 ~, PAIR // MLOAD
     #define MONAD_VM_PUSH1_PAIR_52 ~, PAIR // MSTORE
     #define MONAD_VM_PUSH1_PAIR_60 ~, PAIR // PUSH1
@@ -200,6 +201,7 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_PUSH1_PAIR_60
     #undef MONAD_VM_PUSH1_PAIR_52
     #undef MONAD_VM_PUSH1_PAIR_51
+    #undef MONAD_VM_PUSH1_PAIR_35
     #undef MONAD_VM_PUSH1_PAIR_19
     #undef MONAD_VM_PUSH1_PAIR_16
     #undef MONAD_VM_PUSH1_PAIR_0b

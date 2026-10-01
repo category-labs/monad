@@ -416,7 +416,27 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
                 SIGNEXTEND, immediate, true, signed_operand, expected, {});
         }
     }
-    for (auto const op : {NOT, AND, SIGNEXTEND}) {
+    std::array<uint8_t, 64> calldata;
+    for (size_t i = 0; i < calldata.size(); ++i) {
+        calldata[i] = static_cast<uint8_t>(i + 1);
+    }
+    for (size_t const length : {0, 1, 31, 32, 33, 64}) {
+        for (uint8_t const offset : {0, 1, 31, 32, 63, 64, 255}) {
+            std::array<uint8_t, 32> expected{};
+            for (size_t i = 0; i < expected.size() && offset + i < length;
+                 ++i) {
+                expected[i] = calldata[offset + i];
+            }
+            verify_immediate_pair(
+                CALLDATALOAD,
+                offset,
+                false,
+                {},
+                expected,
+                std::span{calldata}.first(length));
+        }
+    }
+    for (auto const op : {NOT, AND, SIGNEXTEND, CALLDATALOAD}) {
         if (op == AND || op == SIGNEXTEND) {
             std::array<uint8_t, 4> const code{
                 PUSH1, 0, static_cast<uint8_t>(op), STOP};

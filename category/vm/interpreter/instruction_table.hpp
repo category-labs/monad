@@ -2704,6 +2704,36 @@ namespace monad::vm::interpreter
             interpreter::push(stack_top, ~uint256_t{*(instr_ptr + 1)});
             MONAD_VM_FUSED_NEXT(3, 1);
         }
+        else if constexpr (OP == CALLDATALOAD) {
+            // Read at the immediate byte offset. A short read is padded with
+            // zeros; an offset past the calldata returns zero.
+            gas_remaining -= static_gas<traits, PUSH1, CALLDATALOAD>();
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+            if (MONAD_UNLIKELY(gas_remaining < 0)) {
+                MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+            }
+    #endif
+            uint8_t const immediate = *(instr_ptr + 1);
+            auto const available_bytes =
+                static_cast<int64_t>(ctx.env.input_data_size) -
+                int64_t{immediate};
+            auto &result = *stack_top.next_slot();
+            if (MONAD_LIKELY(available_bytes >= 32)) {
+                auto const *const input = ctx.env.input_data + immediate;
+                result[3] = load_be_unsafe<uint64_t>(input);
+                result[2] = load_be_unsafe<uint64_t>(input + 8);
+                result[1] = load_be_unsafe<uint64_t>(input + 16);
+                result[0] = load_be_unsafe<uint64_t>(input + 24);
+            }
+            else if (available_bytes > 0) {
+                result = runtime::uint256_load_bounded_be(
+                    ctx.env.input_data + immediate, available_bytes);
+            }
+            else {
+                result = 0;
+            }
+            MONAD_VM_FUSED_NEXT(3, 1);
+        }
         else if constexpr (OP == AND) {
             // Mask the existing top with the immediate byte.
             uint8_t const immediate = *(instr_ptr + 1);

@@ -3899,6 +3899,34 @@ namespace monad::vm::interpreter
             gas_remaining,
             new_ip MONAD_VM_TBL_ARG);
     }
+
+    // SWAP1 then DUP2 or SWAP2, SWAP1's test and gas made: a b -> b a b in
+    // three copies where the two opcodes make four, x y z -> y z x in four
+    // where they make six.
+    template <uint8_t OP, Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void swap1_then(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        if constexpr (OP == DUP2) {
+            MONAD_VM_CHECK_OWN_OVERFLOW(DUP2);
+            stack_top[1] = stack_top[0];
+            stack_top[0] = stack_top[-1];
+            stack_top[-1] = stack_top[1];
+            ++stack_top;
+        }
+        else {
+            static_assert(OP == SWAP2);
+            MONAD_VM_CHECK(SWAP2);
+            uint256_t *const monad_t = &ctx.swap_scratch;
+            *monad_t = stack_top[-2];
+            stack_top[-2] = stack_top[-1];
+            stack_top[-1] = stack_top[0];
+            stack_top[0] = *monad_t;
+        }
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+    }
 #endif
 
     template <Traits traits>

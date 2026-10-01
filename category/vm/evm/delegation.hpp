@@ -20,12 +20,17 @@
 #include <evmc/evmc.hpp>
 
 #include <optional>
+#include <span>
 
 namespace monad::vm::evm
 {
     evmc::bytes_view delegation_indicator_prefix();
 
     bool is_delegated(std::span<uint8_t const> code);
+
+    // The delegate a code designates (EIP-7702): the address after 0xEF0100,
+    // when the code is that prefix and an address; nothing otherwise.
+    std::optional<Address> designation_of(std::span<uint8_t const> code);
 
     std::optional<Address> resolve_delegation(
         evmc_host_interface const *, evmc_host_context *, Address const &);

@@ -30,6 +30,9 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/evm/delegation.hpp>
+#endif
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -990,6 +993,19 @@ size_t State::copy_code(
     MONAD_ASSERT(vcode);
     return vcode->intercode()->copy_code(offset, buffer, buffer_size);
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+std::optional<Address> State::delegate_of(Address const &address)
+{
+    auto const &account = recent_account(address);
+    if (MONAD_UNLIKELY(!account.has_value())) {
+        return std::nullopt;
+    }
+    vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
+    MONAD_ASSERT(vcode);
+    return vm::evm::designation_of(vcode->intercode()->code_span());
+}
+#endif
 
 void State::set_code(Address const &address, byte_string_view const code)
 {

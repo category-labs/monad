@@ -57,41 +57,39 @@ namespace monad::vm::evm
         return std::equal(prefix.begin(), prefix.end(), code.begin());
     }
 
-    std::optional<Address> resolve_delegation(
-        evmc_host_interface const *const host, evmc_host_context *const ctx,
-        Address const &addr)
+    std::optional<Address> designation_of(std::span<uint8_t const> const code)
     {
-        // Copy up to |code_size| bytes of the bytecode. Then test
-        // whether the code begins with the prefix 0xEF0100, if so,
-        // then drop these three bytes and interpret the remainder as
-        // the delegate address.
-        uint8_t code_buffer[delegation_indicator_size + 1];
-#if defined(MONAD_ZKVM_ZISK)
-        // Every caller in the guest passes monad's host: its method, not the
-        // C adapter.
-        (void)host;
-        size_t const actual_code_size = host_shim::of(ctx)->copy_code(
-            host_shim::addr(&addr),
-            0,
-            code_buffer,
-            delegation_indicator_size + 1);
-#else
-        size_t const actual_code_size = host->copy_code(
-            ctx, &addr, 0, code_buffer, delegation_indicator_size + 1);
-#endif
-
-        std::span const code{code_buffer, actual_code_size};
-
         if (!is_delegated(code)) {
             return std::nullopt;
         }
 
-        // Copy the delegate address from the code buffer.
+        // Copy the delegate address from the code.
         Address designation;
         std::ranges::copy(
             code.subspan(
                 delegation_indicator_prefix_bytes.size(), sizeof(Address)),
             designation.bytes);
         return designation;
+    }
+
+    std::optional<Address> resolve_delegation(
+        evmc_host_interface const *const host, evmc_host_context *const ctx,
+        Address const &addr)
+    {
+#if defined(MONAD_ZKVM_ZISK)
+        // Every caller in the guest passes monad's host: its method, which
+        // reads the code where it is kept.
+        (void)host;
+        return host_shim::of(ctx)->delegate_of(host_shim::addr(&addr));
+#else
+        // Copy up to |code_size| bytes of the bytecode. Then test
+        // whether the code begins with the prefix 0xEF0100, if so,
+        // then drop these three bytes and interpret the remainder as
+        // the delegate address.
+        uint8_t code_buffer[delegation_indicator_size + 1];
+        size_t const actual_code_size = host->copy_code(
+            ctx, &addr, 0, code_buffer, delegation_indicator_size + 1);
+        return designation_of({code_buffer, actual_code_size});
+#endif
     }
 }

@@ -546,7 +546,17 @@ extern "C" void monad_zkvm_execute_witness(void)
     write_output(block_hash.bytes, sizeof(block_hash.bytes));
 #endif
 #ifdef MONAD_ZKVM_KECCAK_SITES
-    // Append diagnostic counters after the unchanged 32-byte block hash.
+    // Append diagnostic counters after the unchanged public values. ZisK
+    // commits 64 words of public output and ziskos asserts past them, so the
+    // tail must fit behind what this build publishes.
+    #ifdef MONAD_ZKVM_L2
+    constexpr std::size_t publics = sizeof(block.header.parent_hash.bytes) +
+                                    sizeof(block_hash.bytes) +
+                                    sizeof(anchor.bytes) + sizeof(number.bytes);
+    #else
+    constexpr std::size_t publics = sizeof(block_hash.bytes);
+    #endif
+    static_assert(publics + monad::keccak_sites::size() <= 64 * 4);
     write_output(monad::keccak_sites::bytes(), monad::keccak_sites::size());
 #endif
 }

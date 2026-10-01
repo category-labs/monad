@@ -262,6 +262,88 @@ namespace
         return true;
     }
 
+    bool comparison_prefixes()
+    {
+        for (auto comparison : {LT, GT, SLT, SGT, EQ, ISZERO}) {
+            for (uint8_t operand : {0, 1}) {
+                // The high bit catches a partial 256-bit store and
+                // distinguishes signed from unsigned comparisons. Keep a second
+                // word for OR.
+                std::vector<uint8_t> prefix{PUSH32};
+                prefix.resize(33, 0);
+                prefix[1] = 0x80;
+                if (comparison != ISZERO) {
+                    prefix.push_back(DUP1);
+                }
+                if (comparison == EQ && operand == 1) {
+                    prefix.push_back(DUP1);
+                }
+                else {
+                    prefix.insert(prefix.end(), {PUSH3, 0, 0, operand});
+                }
+                prefix.push_back(static_cast<uint8_t>(comparison));
+                for (auto follower : {OR, POP, PUSH2, JUMPI, JUMPDEST}) {
+                    auto make_program = [&](bool separate) {
+                        auto code = prefix;
+                        for (unsigned i = 0; i < 7; ++i) {
+                            if (separate) {
+                                code.push_back(JUMPDEST);
+                            }
+                            code.push_back(ISZERO);
+                        }
+                        if (separate) {
+                            code.push_back(JUMPDEST);
+                        }
+                        if (follower == JUMPI) {
+                            // The taken path returns a word; the fallthrough
+                            // stops.
+                            auto const target =
+                                static_cast<uint8_t>(code.size() + 5);
+                            code.insert(
+                                code.end(),
+                                {PUSH2,
+                                 0,
+                                 target,
+                                 JUMPI,
+                                 STOP,
+                                 JUMPDEST,
+                                 PUSH1,
+                                 9});
+                        }
+                        else if (follower == PUSH2) {
+                            code.insert(code.end(), {PUSH2, 0x12, 0x34, POP});
+                        }
+                        else {
+                            code.push_back(static_cast<uint8_t>(follower));
+                        }
+                        code.insert(
+                            code.end(),
+                            {PUSH0, MSTORE, PUSH1, 32, PUSH0, RETURN});
+                        return code;
+                    };
+                    auto const program = make_program(false);
+                    auto const actual = run(program, 1000);
+                    auto const expected = run(make_program(true), 1008);
+                    if (actual.status != CallStatus::Success ||
+                        expected.status != CallStatus::Success ||
+                        actual.gas != expected.gas ||
+                        actual.output_bytes != expected.output_bytes ||
+                        !failed_cleanly(run(program, 999 - actual.gas))) {
+                        return false;
+                    }
+                }
+            }
+        }
+        std::vector<uint8_t> full_stack(1024, PUSH0);
+        full_stack.insert(
+            full_stack.end(), {ISZERO, ISZERO, PUSH2, 0, 0, JUMPI, STOP});
+        // The jump below is taken with the inverted comparison result.
+        std::array<uint8_t, 8> const invalid_jump{
+            PUSH0, PUSH0, LT, ISZERO, PUSH2, 0xff, 0xff, JUMPI};
+        return failed_cleanly(run(full_stack, 10000)) &&
+               failed_cleanly(run(invalid_jump, 100));
+    }
+
     bool swapn_prefixes()
     {
         for (unsigned depth = 2; depth <= 16; ++depth) {
@@ -976,7 +1058,9 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         effects &= failed_cleanly(run(code, cost - 1));
         effects &= failed_cleanly(run(code, 61)); // OOG at loop entry.
     }
-    check(effects && swap1_prefixes() && dup_prefixes() && swapn_prefixes());
+    check(
+        effects && swap1_prefixes() && dup_prefixes() && swapn_prefixes() &&
+        comparison_prefixes());
     // Two selector tests: first match, second match, or neither. Sweep gas
     // through both tests and the taken jump's JUMPDEST charge.
     bool selectors = true;

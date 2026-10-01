@@ -109,8 +109,10 @@ namespace monad::vm::interpreter
     inline constexpr int swapn_prefix_bytes = fuse_swapn ? 40 : 0;
     inline constexpr int copy_zero_start =
         fuse_dup ? 1368 : (fuse_swap1 ? 1760 : 1752);
+    inline constexpr int comparison_prefix_bytes = 28;
     inline constexpr int copy_prefix_bytes =
-        64 + (fuse_swap1 ? 40 : 0) + (fuse_dup ? 40 : 0) + swapn_prefix_bytes;
+        comparison_prefix_bytes + 64 + (fuse_swap1 ? 40 : 0) +
+        (fuse_dup ? 40 : 0) + swapn_prefix_bytes;
 
     consteval int lag_offset(unsigned const lag) noexcept
     {
@@ -201,7 +203,7 @@ namespace monad::vm::interpreter
     // handler, made by hand for the jump to take -OFFSET as its immediate:
     // through a function pointer gcc forms the head's address with an addi of
     // its own. The arguments are where the call would put them.
-    // DUPn also passes the address of the duplicated word in a7.
+    // a7 optionally carries a stack address or an unwritten comparison result.
     #define MONAD_VM_PREFIX_DISPATCH(OFFSET, NEXT_OPCODE, TOP, GAS, IP, ...)   \
         do {                                                                   \
             auto const follower_handler_address =                              \
@@ -216,8 +218,7 @@ namespace monad::vm::interpreter
             register int64_t monad_vm_a4 asm("a4") = (GAS);                    \
             register uint8_t const *monad_vm_a5 asm("a5") = (IP);              \
             register void const *monad_vm_a6 asm("a6") = table_base;           \
-            __VA_OPT__(register uint256_t const *monad_vm_a7 asm("a7") =       \
-                           (__VA_ARGS__);)                                     \
+            __VA_OPT__(register auto monad_vm_a7 asm("a7") = (__VA_ARGS__);)   \
             asm volatile(MONAD_VM_MARKED_TAIL_JUMP(prefix)                     \
                          :                                                     \
                          : [head] "r"(follower_handler_address),               \
@@ -231,6 +232,25 @@ namespace monad::vm::interpreter
                            "r"(monad_vm_a6)__VA_OPT__(, "r"(monad_vm_a7))      \
                          : "memory");                                          \
             __builtin_unreachable();                                           \
+        }                                                                      \
+        while (false)
+
+    // Reserve the EVM result slot and pass the boolean (0 or 1) in a7.
+    // The next prefix writes it as a 256-bit stack word only if needed;
+    // otherwise it consumes the register value directly.
+    // PREFIX_DISPATCH subtracts its offset from the opcode's base handler:
+    // +lag_offset selects the follower copy, then -copy_prefix_bytes reaches
+    // its comparison prefix instead of entering the ordinary handler.
+    #define MONAD_VM_COMPARISON_DISPATCH(NEXT_OPCODE, RESULT_TOP, RESULT)      \
+        do {                                                                   \
+            constexpr unsigned follower_lag = (traits::lag + 1) % lag_count;   \
+            MONAD_VM_PREFIX_DISPATCH(                                          \
+                copy_prefix_bytes - lag_offset(follower_lag),                  \
+                NEXT_OPCODE,                                                   \
+                RESULT_TOP,                                                    \
+                gas_remaining,                                                 \
+                instr_ptr + 1 - follower_lag,                                  \
+                static_cast<uint64_t>(RESULT));                                \
         }                                                                      \
         while (false)
 
@@ -435,7 +455,7 @@ namespace monad::vm::interpreter
 
 #if defined(MONAD_ZKVM_ZISK)
 // Separate selected error exits so GCC need not merge them and keep an extra
-// copy of ctx. Apply only to DUP2-16 overflow and MLOAD/MSTORE base gas checks.
+// copy of ctx. Used for selected stack-overflow and memory-op gas checks.
     #define MONAD_VM_EXIT_OWN_OUT_OF_GAS(CODE)                                 \
         MONAD_VM_MUST_TAIL return ::monad::vm::interpreter::exit_out_of_gas(ctx)
     #define MONAD_VM_EXIT_OWN_OVERFLOW(CODE)                                   \
@@ -1328,7 +1348,11 @@ namespace monad::vm::interpreter
         auto *next = stack_top.next_slot() - 1;
         MONAD_VM_LAUNDER(next);
         stack_top = StackTop{next};
-        *stack_top = *(stack_top + 1) < *stack_top;
+        bool const result = *(stack_top + 1) < *stack_top;
+        if constexpr (lag_dispatch<traits>) {
+            MONAD_VM_COMPARISON_DISPATCH(instr_ptr[1], stack_top, result);
+        }
+        *stack_top = result;
 
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
 #else
@@ -1352,7 +1376,11 @@ namespace monad::vm::interpreter
         auto *next = stack_top.next_slot() - 1;
         MONAD_VM_LAUNDER(next);
         stack_top = StackTop{next};
-        *stack_top = *(stack_top + 1) > *stack_top;
+        bool const result = *(stack_top + 1) > *stack_top;
+        if constexpr (lag_dispatch<traits>) {
+            MONAD_VM_COMPARISON_DISPATCH(instr_ptr[1], stack_top, result);
+        }
+        *stack_top = result;
 
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
 #else
@@ -1376,7 +1404,11 @@ namespace monad::vm::interpreter
         auto *next = stack_top.next_slot() - 1;
         MONAD_VM_LAUNDER(next);
         stack_top = StackTop{next};
-        *stack_top = slt(*(stack_top + 1), *stack_top);
+        bool const result = slt(*(stack_top + 1), *stack_top);
+        if constexpr (lag_dispatch<traits>) {
+            MONAD_VM_COMPARISON_DISPATCH(instr_ptr[1], stack_top, result);
+        }
+        *stack_top = result;
 
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
 #else
@@ -1400,7 +1432,11 @@ namespace monad::vm::interpreter
         auto *next = stack_top.next_slot() - 1;
         MONAD_VM_LAUNDER(next);
         stack_top = StackTop{next};
-        *stack_top = slt(*stack_top, *(stack_top + 1)); // swapped arguments
+        bool const result = slt(*stack_top, *(stack_top + 1));
+        if constexpr (lag_dispatch<traits>) {
+            MONAD_VM_COMPARISON_DISPATCH(instr_ptr[1], stack_top, result);
+        }
+        *stack_top = result;
 
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
 #else
@@ -1451,6 +1487,12 @@ namespace monad::vm::interpreter
         }
 #endif
         MONAD_VM_CHECK(EQ);
+#if defined(MONAD_ZKVM_ZISK)
+        if constexpr (lag_dispatch<traits>) {
+            MONAD_VM_COMPARISON_DISPATCH(
+                next_opcode, stack_top - 1, *stack_top == stack_top[-1]);
+        }
+#endif
         auto &&[a, b] = top_two(stack_top);
         b = (a == b);
 
@@ -1492,6 +1534,11 @@ namespace monad::vm::interpreter
         }
 #endif
         MONAD_VM_CHECK(ISZERO);
+#if defined(MONAD_ZKVM_ZISK)
+        if constexpr (lag_dispatch<traits>) {
+            MONAD_VM_COMPARISON_DISPATCH(next_opcode, stack_top, !*stack_top);
+        }
+#endif
         auto &a = *stack_top;
         a = !a;
 
@@ -4163,8 +4210,8 @@ namespace monad::vm::interpreter
             if constexpr (fuse_dup && lag_dispatch<traits>) {
                 constexpr unsigned follower_lag = (traits::lag + 1) % lag_count;
                 MONAD_VM_PREFIX_DISPATCH(
-                    copy_prefix_bytes - swapn_prefix_bytes -
-                        lag_offset(follower_lag),
+                    copy_prefix_bytes - comparison_prefix_bytes -
+                        swapn_prefix_bytes - lag_offset(follower_lag),
                     instr_ptr[1],
                     stack_top,
                     gas_remaining,
@@ -4209,7 +4256,8 @@ namespace monad::vm::interpreter
         if constexpr (N >= 2 && fuse_swapn && lag_dispatch<traits>) {
             constexpr unsigned follower_lag = (traits::lag + 1) % lag_count;
             MONAD_VM_PREFIX_DISPATCH(
-                copy_prefix_bytes - lag_offset(follower_lag),
+                copy_prefix_bytes - comparison_prefix_bytes -
+                    lag_offset(follower_lag),
                 instr_ptr[1],
                 stack_top,
                 gas_remaining,
@@ -4384,6 +4432,80 @@ namespace monad::vm::interpreter
             new_ip MONAD_VM_TBL_ARG);
     }
 
+    // Materialize the comparison when PUSH2 is followed by an ordinary opcode.
+    template <Traits traits>
+    [[gnu::noinline]] void comparison_push2_fallback(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM,
+        uint64_t const result)
+    {
+        *stack_top = uint256_t{result};
+        MONAD_VM_MUST_TAIL return push<2, traits>(
+            ctx,
+            MONAD_VM_DISPATCH_STATE_ARG,
+            stack_lower_bound,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+
+    template <uint8_t OP, Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void comparison_then(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM,
+        uint64_t const result)
+    {
+        if constexpr (OP == OR) {
+            MONAD_VM_CHECK(OR);
+            stack_top[-1][0] |= result;
+            MONAD_VM_DISPATCH(1, -1, *instr_ptr);
+        }
+        else {
+            static_assert(OP == PUSH2);
+            if (MONAD_UNLIKELY(instr_ptr[3] != static_cast<uint8_t>(JUMPI))) {
+                MONAD_VM_MUST_TAIL return comparison_push2_fallback<traits>(
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG,
+                    result);
+            }
+            static constexpr auto requirements =
+                fused_requirements<traits, PUSH2, JUMPI>();
+            if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(requirements))) {
+                gas_remaining += requirements.gas;
+                MONAD_VM_CHECK_OWN_OVERFLOW(PUSH2);
+                MONAD_VM_CHECK_AT(JUMPI, 1);
+            }
+            MONAD_VM_LAUNDER(gas_remaining);
+            if (result) {
+                auto const destination =
+                    static_cast<size_t>(detail::load_be_k<2>(instr_ptr + 1));
+                if (MONAD_UNLIKELY(
+                        !MONAD_VM_CODE_VIEW.is_jumpdest16(destination))) {
+                    // Tail-call the error exit so GCC restores any frame.
+                    MONAD_VM_MUST_TAIL return ctx.exit(Error);
+                }
+                instr_ptr = swallow_jumpdest(
+                    ctx,
+                    MONAD_VM_CODE_VIEW.code() + destination,
+                    gas_remaining);
+                MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top - 1,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+            MONAD_VM_FUSED_NEXT(4, -1);
+        }
+    }
+
     // The first swap already checked at least three stack words. A deeper
     // follower must check its own depth before either swap writes anything.
     template <uint8_t OP, Traits traits>
@@ -4495,11 +4617,10 @@ namespace monad::vm::interpreter
                     reinterpret_cast<uint64_t const *>(dup_source),
                     *stack_top);
             }
-            else if constexpr (OP == LT) {
-                *stack_top = *dup_source < *stack_top;
-            }
-            else if constexpr (OP == GT) {
-                *stack_top = *dup_source > *stack_top;
+            else if constexpr (OP == LT || OP == GT) {
+                bool const result = OP == LT ? *dup_source < *stack_top
+                                             : *dup_source > *stack_top;
+                MONAD_VM_COMPARISON_DISPATCH(instr_ptr[1], stack_top, result);
             }
             else {
                 static_assert(OP == AND);
@@ -4835,5 +4956,6 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_CHECKED_RUNTIME_CALL
 
 #if defined(MONAD_ZKVM_ZISK)
+    #undef MONAD_VM_COMPARISON_DISPATCH
     #undef MONAD_VM_PREFIX_DISPATCH
 #endif

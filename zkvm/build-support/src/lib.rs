@@ -345,8 +345,8 @@ fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset"))
 }
 
-/// Lay out 4-KiB opcode slots, newest revision first. Each enabled swap or DUP family
-/// reserves 40 prefix bytes per copy. Only DUP changes the number of copies.
+/// Lay out 4-KiB opcode slots, newest revision first. Each copy has 64 bytes for overflow
+/// and PUSH prefixes, 28 for comparisons, and 40 per enabled swap or DUP family.
 /// Fused pairs and oversized handlers follow the slots. The linker rejects
 /// misplaced entries and copies that exceed their region.
 fn zisk_slots_ld(fuse_swap1: bool, fuse_dup: bool, fuse_swapn: bool) -> String {
@@ -373,7 +373,7 @@ fn zisk_slots_ld(fuse_swap1: bool, fuse_dup: bool, fuse_swapn: bool) -> String {
             (3504, "_3", "3"),
         ]
     };
-    let prefix_size = 64
+    let prefix_size = 92
         + 40 * usize::from(fuse_swapn)
         + 40 * usize::from(fuse_swap1)
         + 40 * usize::from(fuse_dup);
@@ -411,6 +411,7 @@ fn zisk_slots_ld(fuse_swap1: bool, fuse_dup: bool, fuse_swapn: bool) -> String {
          KEEP(*(.monad_vm_push1*))\n        \
          KEEP(*(.monad_vm_push2*))\n        \
          KEEP(*(.monad_vm_swap1*))\n        \
+         KEEP(*(.monad_vm_bool*))\n        \
          KEEP(*(.monad_vm_swapn*))\n        \
          KEEP(*(.monad_vm_dup*))\n        \
          KEEP(*(.monad_vm_body*))\n    }}\n}} INSERT AFTER .text;\n",

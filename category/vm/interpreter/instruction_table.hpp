@@ -176,7 +176,7 @@ namespace monad::vm::interpreter
     // Where copy 0's handler sits in its slot, after copies 4 and 5 and its
     // own heads: the base the handlers carry points there, at opcode 0's
     // copy 0, and the other copies are lag_offset away.
-    inline constexpr size_t slot_lead = 1472;
+    inline constexpr size_t slot_lead = 1512;
 
     // Where they land, before each copy's handler: PUSH1's head pushes its
     // immediate and falls into the handler; PUSH2's makes its stack test,
@@ -206,6 +206,17 @@ namespace monad::vm::interpreter
     {
         unsigned const copy = (lag + 1) % lag_count;
         return swap1_back - lag_offset(copy);
+    }
+
+    // SWAP2's head comes before SWAP1's, swap2_back bytes before the
+    // handler, and takes a SWAP2 as SWAP1's takes a SWAP1.
+    inline constexpr int swap2_back = 144;
+
+    // What MONAD_VM_LEAD_DISPATCH takes for a SWAP2 LAG bytes behind.
+    consteval int swap2_offset(unsigned const lag) noexcept
+    {
+        unsigned const copy = (lag + 1) % lag_count;
+        return swap2_back - lag_offset(copy);
     }
 
     // A tail call to a head in NEXT_OPCODE's slot, OFFSET bytes before its
@@ -3791,6 +3802,15 @@ namespace monad::vm::interpreter
                 gas_remaining,
                 instr_ptr - lag_of<traits>);
         }
+        if constexpr (N == 2 && has_slots<traits>) {
+            // SWAP2 the same, at its own head: with POP or SWAP1 a pair.
+            MONAD_VM_LEAD_DISPATCH(
+                swap2_offset(lag_of<traits>),
+                *(instr_ptr + 1),
+                stack_top,
+                gas_remaining,
+                instr_ptr - lag_of<traits>);
+        }
         // Reuse Context's scratch slot to avoid a local 32-byte stack frame.
         {
             uint256_t *const monad_t = &ctx.swap_scratch;
@@ -3904,6 +3924,52 @@ namespace monad::vm::interpreter
             stack_top,
             gas_remaining,
             new_ip MONAD_VM_TBL_ARG);
+    }
+
+    // SWAP1 then DUP2 or SWAP2, SWAP1's test and gas made: a b -> b a b in
+    // three copies where the two opcodes make four, x y z -> y z x in four
+    // where they make six.
+    template <uint8_t OP, Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void swap1_then(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        if constexpr (OP == DUP2) {
+            MONAD_VM_CHECK_OWN_OVERFLOW(DUP2);
+            stack_top[1] = stack_top[0];
+            stack_top[0] = stack_top[-1];
+            stack_top[-1] = stack_top[1];
+            ++stack_top;
+        }
+        else {
+            static_assert(OP == SWAP2);
+            MONAD_VM_CHECK(SWAP2);
+            uint256_t *const monad_t = &ctx.swap_scratch;
+            *monad_t = stack_top[-2];
+            stack_top[-2] = stack_top[-1];
+            stack_top[-1] = stack_top[0];
+            stack_top[0] = *monad_t;
+        }
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+    }
+
+    // SWAP2 then SWAP1, SWAP2's test and gas made: x y z -> z x y in four
+    // copies where the two opcodes make six.
+    template <uint8_t OP, Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void swap2_then(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        static_assert(OP == SWAP1);
+        MONAD_VM_CHECK(SWAP1);
+        uint256_t *const monad_t = &ctx.swap_scratch;
+        *monad_t = stack_top[0];
+        stack_top[0] = stack_top[-1];
+        stack_top[-1] = stack_top[-2];
+        stack_top[-2] = *monad_t;
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
     }
 #endif
 

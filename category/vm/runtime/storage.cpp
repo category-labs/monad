@@ -36,6 +36,7 @@
 #endif
 namespace monad::vm::runtime
 {
+#if !defined(MONAD_ZKVM_ZISK)
     template <Traits traits>
     void sload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr)
     {
@@ -43,18 +44,6 @@ namespace monad::vm::runtime
 
         auto key = store_be_as<bytes32_t>(*key_ptr);
 
-#if defined(MONAD_ZKVM_ZISK)
-        // Both host calls in one. A cold access that the gas left cannot pay
-        // for exits below, before the value is read, as it did between them.
-        evmc_bytes32 value;
-        if (host_of(*ctx).sload_into(
-                host_shim::addr(&ctx->env.recipient),
-                host_shim::word(&key),
-                ctx->gas_remaining >= traits::cold_storage_cost(),
-                value) == EVMC_ACCESS_COLD) {
-            ctx->deduct_gas(traits::cold_storage_cost());
-        }
-#else
         auto const access_status =
             ctx->host->access_storage(ctx->context, &ctx->env.recipient, &key);
         if (access_status == EVMC_ACCESS_COLD) {
@@ -63,12 +52,12 @@ namespace monad::vm::runtime
 
         auto const value =
             ctx->host->get_storage(ctx->context, &ctx->env.recipient, &key);
-#endif
 
         *result_ptr = load_be<uint256_t>(value);
     }
 
     EXPLICIT_TRAITS(sload);
+#endif
 
     template <Traits traits>
     void sstore(

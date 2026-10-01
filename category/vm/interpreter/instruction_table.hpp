@@ -91,7 +91,7 @@ namespace monad::vm::interpreter
 
     consteval int lag_offset(unsigned const lag) noexcept
     {
-        constexpr int at[lag_count] = {0, 584, 1168, 1752, -1752, -1168, -584};
+        constexpr int at[lag_count] = {0, 576, 1160, 1744, -1760, -1176, -592};
         return at[lag];
     }
 
@@ -176,7 +176,7 @@ namespace monad::vm::interpreter
     // Where copy 0's handler sits in its slot, after copies 4 to 6 and its
     // own heads: the base the handlers carry points there, at opcode 0's
     // copy 0, and the other copies are lag_offset away.
-    inline constexpr size_t slot_lead = 1816;
+    inline constexpr size_t slot_lead = 1864;
 
     // Where they land, before each copy's handler: PUSH1's head pushes its
     // immediate and falls into the handler; PUSH2's makes its stack test,
@@ -194,6 +194,18 @@ namespace monad::vm::interpreter
     {
         unsigned const copy = (lag + n + 1) % lag_count;
         return head_back(copy, n) - lag_offset(copy);
+    }
+
+    // Where SWAP1 lands in every copy: its head opens the copy's heads,
+    // swap1_back bytes before the handler. In copy R it takes a SWAP1
+    // (R + 6) % 7 bytes behind, stepping a5 by 7 in copy 0.
+    inline constexpr int swap1_back = 104;
+
+    // What MONAD_VM_LEAD_DISPATCH takes for a SWAP1 LAG bytes behind.
+    consteval int swap1_offset(unsigned const lag) noexcept
+    {
+        unsigned const copy = (lag + 1) % lag_count;
+        return swap1_back - lag_offset(copy);
     }
 
     // A tail call to a head in NEXT_OPCODE's slot, OFFSET bytes before its
@@ -3642,7 +3654,10 @@ namespace monad::vm::interpreter
         if constexpr (N == 1) {
             monad_vm_op2 = *(instr_ptr + 1);
             // Check PUSH4 first; Intercode's tail padding makes lookahead
-            // through instr_ptr[10] safe.
+            // through instr_ptr[10] safe. A stack without the word DUP1
+            // copies, or the room for the two the sequence pushes, halts as
+            // DUP1 or PUSH4 would: the charge leaves gas to JUMPI, and every
+            // exceptional halt is the same to the block.
             if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH4) &&
                 *(instr_ptr + 6) == static_cast<std::uint8_t>(EQ) &&
                 *(instr_ptr + 7) == static_cast<std::uint8_t>(PUSH2) &&
@@ -3650,12 +3665,7 @@ namespace monad::vm::interpreter
                 static constexpr auto monad_vm_req =
                     fused_requirements<traits, DUP1, PUSH4, EQ, PUSH2, JUMPI>();
                 if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
-                    gas_remaining += monad_vm_req.gas;
-                    MONAD_VM_CHECK(DUP1);
-                    MONAD_VM_CHECK_AT(PUSH4, 1);
-                    MONAD_VM_CHECK_AT(EQ, 2);
-                    MONAD_VM_CHECK_AT(PUSH2, 1);
-                    MONAD_VM_CHECK_AT(JUMPI, 2);
+                    MONAD_VM_MUST_TAIL return ctx.exit(Error);
                 }
                 // The charge made here, as in push2_jumpi.
                 MONAD_VM_LAUNDER(gas_remaining);
@@ -3697,12 +3707,7 @@ namespace monad::vm::interpreter
                 static constexpr auto monad_vm_req =
                     fused_requirements<traits, DUP1, PUSH4, GT, PUSH2, JUMPI>();
                 if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
-                    gas_remaining += monad_vm_req.gas;
-                    MONAD_VM_CHECK(DUP1);
-                    MONAD_VM_CHECK_AT(PUSH4, 1);
-                    MONAD_VM_CHECK_AT(GT, 2);
-                    MONAD_VM_CHECK_AT(PUSH2, 1);
-                    MONAD_VM_CHECK_AT(JUMPI, 2);
+                    MONAD_VM_MUST_TAIL return ctx.exit(Error);
                 }
                 MONAD_VM_LAUNDER(gas_remaining);
                 bool const monad_vm_taken =
@@ -3763,6 +3768,18 @@ namespace monad::vm::interpreter
         MONAD_VM_CHECK(SWAP1 + (N - 1));
 
 #if defined(MONAD_ZKVM_ZISK)
+        if constexpr (N == 1 && has_slots<traits>) {
+            // SWAP1 lands at a head of its follower's slot, as PUSH1 does:
+            // the swap there and a jump to the handler, or the pair it makes
+            // with POP or JUMP (execute.cpp). Only the stack's test and the
+            // gas are made here.
+            MONAD_VM_LEAD_DISPATCH(
+                swap1_offset(lag_of<traits>),
+                *(instr_ptr + 1),
+                stack_top,
+                gas_remaining,
+                instr_ptr - lag_of<traits>);
+        }
         // Reuse Context's scratch slot to avoid a local 32-byte stack frame.
         {
             uint256_t *const monad_t = &ctx.swap_scratch;
@@ -3843,6 +3860,69 @@ namespace monad::vm::interpreter
             gas_remaining,
             new_ip MONAD_VM_TBL_ARG);
     }
+
+#if defined(MONAD_ZKVM_ZISK)
+    // SWAP1 JUMP, SWAP1's test and gas made: the destination is the word
+    // under the top, and the top takes its place.
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void swap1_jump(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *MONAD_VM_TBL_PARAM)
+    {
+        static constexpr auto monad_vm_req =
+            fused_requirements<traits, JUMP, JUMPDEST>();
+        uint8_t const *new_ip;
+        if (MONAD_LIKELY(MONAD_VM_FUSED_CHARGE(monad_vm_req))) {
+            new_ip = jump_impl(ctx, MONAD_VM_ANALYSIS, *(stack_top - 1)) + 1;
+        }
+        else {
+            gas_remaining += monad_vm_req.gas;
+            MONAD_VM_CHECK(JUMP);
+            new_ip = swallow_jumpdest(
+                ctx,
+                jump_impl(ctx, MONAD_VM_ANALYSIS, *(stack_top - 1)),
+                gas_remaining);
+        }
+        *(stack_top - 1) = *stack_top;
+        --stack_top;
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*new_ip](
+            ctx,
+            MONAD_VM_ANALYSIS_ARG,
+            stack_bottom,
+            stack_top,
+            gas_remaining,
+            new_ip MONAD_VM_TBL_ARG);
+    }
+
+    // SWAP1 then DUP2 or SWAP2, SWAP1's test and gas made: a b -> b a b in
+    // three copies where the two opcodes make four, x y z -> y z x in four
+    // where they make six.
+    template <uint8_t OP, Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void swap1_then(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        if constexpr (OP == DUP2) {
+            MONAD_VM_CHECK_OWN_OVERFLOW(DUP2);
+            stack_top[1] = stack_top[0];
+            stack_top[0] = stack_top[-1];
+            stack_top[-1] = stack_top[1];
+            ++stack_top;
+        }
+        else {
+            static_assert(OP == SWAP2);
+            MONAD_VM_CHECK(SWAP2);
+            uint256_t *const monad_t = &ctx.swap_scratch;
+            *monad_t = stack_top[-2];
+            stack_top[-2] = stack_top[-1];
+            stack_top[-1] = stack_top[0];
+            stack_top[0] = *monad_t;
+        }
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+    }
+#endif
 
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void jumpi(

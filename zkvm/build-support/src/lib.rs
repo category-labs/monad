@@ -466,7 +466,7 @@ fn manifest_dir() -> PathBuf {
 fn zisk_slots_ld() -> String {
     const SLOT: usize = 0x1000;
     // instruction_table.hpp's copies, in address order: where each copy's
-    // 64-byte lead starts in its slot, its sections' suffix, and the copy's.
+    // 104-byte lead starts in its slot, its sections' suffix, and the copy's.
     const COPIES: [(usize, &str, &str); 6] = [
         (0, "_4", "4"),
         (684, "_5", "5"),
@@ -475,7 +475,7 @@ fn zisk_slots_ld() -> String {
         (2728, "_2", "2"),
         (3412, "_3", "3"),
     ];
-    const LEAD: usize = 0x40;
+    const LEAD: usize = 0x68;
     let mut ld = String::from(
         "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
          FILL(0x13000000)\n        monad_vm_slots = .;\n",
@@ -510,6 +510,7 @@ fn zisk_slots_ld() -> String {
         "        . = monad_vm_slots + {:#x};\n        \
          KEEP(*(.monad_vm_push1*))\n        \
          KEEP(*(.monad_vm_push2*))\n        \
+         KEEP(*(.monad_vm_swap1*))\n        \
          KEEP(*(.monad_vm_body*))\n    }}\n}} INSERT AFTER .text;\n",
         8 * 256 * SLOT
     );

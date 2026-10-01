@@ -261,6 +261,55 @@ namespace
         return true;
     }
 
+    bool swapn_prefixes()
+    {
+        for (unsigned depth = 2; depth <= 16; ++depth) {
+            for (auto follower : {POP, SWAP1, SWAP2, SWAP3, SWAP4, JUMPDEST}) {
+                std::vector<uint8_t> code;
+                for (uint8_t word = 1; word <= 17; ++word) {
+                    code.insert(code.end(), {PUSH3, 0, 0, word});
+                }
+                code.push_back(static_cast<uint8_t>(SWAP1 + depth - 1));
+                auto reference = code;
+                reference.push_back(
+                    JUMPDEST); // Execute the two opcodes separately.
+                for (auto *program : {&code, &reference}) {
+                    program->push_back(static_cast<uint8_t>(follower));
+                    // Return every remaining word, including both swap
+                    // partners.
+                    unsigned const bytes = 32 * (follower == POP ? 16 : 17);
+                    for (unsigned offset = 0; offset < bytes; offset += 32) {
+                        program->insert(
+                            program->end(),
+                            {PUSH2,
+                             static_cast<uint8_t>(offset >> 8),
+                             static_cast<uint8_t>(offset),
+                             MSTORE});
+                    }
+                    program->insert(
+                        program->end(),
+                        {PUSH2,
+                         static_cast<uint8_t>(bytes >> 8),
+                         static_cast<uint8_t>(bytes),
+                         PUSH0,
+                         RETURN});
+                }
+                auto const expected = run(reference, 1001);
+                auto const actual = run(code, 1000);
+                if (actual.status != CallStatus::Success ||
+                    expected.status != CallStatus::Success ||
+                    actual.gas != expected.gas ||
+                    actual.output_bytes != expected.output_bytes ||
+                    !failed_cleanly(run(code, 999 - actual.gas))) {
+                    return false;
+                }
+            }
+        }
+        std::array<uint8_t, 6> const short_stack{
+            PUSH0, PUSH0, PUSH0, SWAP2, SWAP3, STOP};
+        return failed_cleanly(run(short_stack, 100));
+    }
+
     bool swap1_prefixes()
     {
         for (unsigned padding = 0; padding < 7; ++padding) {
@@ -904,7 +953,7 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         effects &= failed_cleanly(run(code, cost - 1));
         effects &= failed_cleanly(run(code, 61)); // OOG at loop entry.
     }
-    check(effects && swap1_prefixes() && dup_prefixes());
+    check(effects && swap1_prefixes() && dup_prefixes() && swapn_prefixes());
     // Two selector tests: first match, second match, or neither. Sweep gas
     // through both tests and the taken jump's JUMPDEST charge.
     bool selectors = true;

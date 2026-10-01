@@ -97,7 +97,7 @@ namespace monad::vm::interpreter
     inline constexpr int copy_zero_start =
         fuse_dup ? 1368 : (fuse_swap1 ? 1760 : 1752);
     inline constexpr int copy_prefix_bytes =
-        64 + (fuse_swap1 ? 40 : 0) + (fuse_dup ? 40 : 0);
+        104 + (fuse_swap1 ? 40 : 0) + (fuse_dup ? 40 : 0);
 
     consteval int lag_offset(unsigned const lag) noexcept
     {
@@ -4023,7 +4023,7 @@ namespace monad::vm::interpreter
             if constexpr (fuse_dup && lag_dispatch<traits>) {
                 constexpr unsigned follower_lag = (traits::lag + 1) % lag_count;
                 MONAD_VM_PREFIX_DISPATCH(
-                    copy_prefix_bytes - lag_offset(follower_lag),
+                    copy_prefix_bytes - 40 - lag_offset(follower_lag),
                     instr_ptr[1],
                     stack_top,
                     gas_remaining,
@@ -4065,6 +4065,16 @@ namespace monad::vm::interpreter
         MONAD_VM_CHECK(SWAP1 + (N - 1));
 
 #if defined(MONAD_ZKVM_ZISK)
+        if constexpr (N >= 2 && lag_dispatch<traits>) {
+            constexpr unsigned follower_lag = (traits::lag + 1) % lag_count;
+            MONAD_VM_PREFIX_DISPATCH(
+                copy_prefix_bytes - lag_offset(follower_lag),
+                instr_ptr[1],
+                stack_top,
+                gas_remaining,
+                instr_ptr + 1 - follower_lag,
+                &stack_top[-N]);
+        }
         if constexpr (N == 1 && fuse_swap1 && lag_dispatch<traits>) {
             // Enter the follower's SWAP1 prefix. At the last lag the follower
             // starts a new group, so pass its actual address in a5.
@@ -4231,6 +4241,38 @@ namespace monad::vm::interpreter
             stack_top,
             gas_remaining,
             new_ip MONAD_VM_TBL_ARG);
+    }
+
+    // The first swap already checked at least three stack words. A deeper
+    // follower must check its own depth before either swap writes anything.
+    template <uint8_t OP, Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void swapn_then(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM,
+        uint256_t *const swap_partner)
+    {
+        static_assert(OP >= SWAP1 && OP <= SWAP4);
+        constexpr auto follower = static_cast<compiler::EvmOpCode>(OP);
+        constexpr std::ptrdiff_t depth = OP - SWAP1 + 1;
+        if constexpr (depth <= 2) {
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+            MONAD_VM_CHARGE(follower);
+    #else
+            gas_remaining -= static_gas<traits, follower>();
+    #endif
+        }
+        else {
+            MONAD_VM_CHECK(follower);
+        }
+        // This order also restores the original stack when the partners
+        // coincide.
+        auto &second_partner = stack_top[-depth];
+        ctx.swap_scratch = *swap_partner;
+        *swap_partner = *stack_top;
+        *stack_top = second_partner;
+        second_partner = ctx.swap_scratch;
+        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
     }
 
     // DUPn has checked its operands and paid its gas. Memory growth needs

@@ -342,8 +342,8 @@ fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset"))
 }
 
-/// Lay out 4-KiB opcode slots, newest revision first. Each enabled follower family adds
-/// 40 prefix bytes. Disabling DUP restores the seventh handler copy.
+/// Lay out 4-KiB opcode slots, newest revision first. SWAP2–SWAP16 reserve 40 prefix
+/// bytes per copy. DUP and SWAP1 each add another 40 when enabled.
 /// Fused pairs and oversized handlers follow the slots. The linker rejects
 /// misplaced entries and copies that exceed their region.
 fn zisk_slots_ld(fuse_swap1: bool, fuse_dup: bool) -> String {
@@ -370,7 +370,7 @@ fn zisk_slots_ld(fuse_swap1: bool, fuse_dup: bool) -> String {
             (3504, "_3", "3"),
         ]
     };
-    let prefix_size = 64 + 40 * usize::from(fuse_swap1) + 40 * usize::from(fuse_dup);
+    let prefix_size = 104 + 40 * usize::from(fuse_swap1) + 40 * usize::from(fuse_dup);
     let mut ld = String::from(
         "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
          FILL(0x13000000)\n        monad_vm_slots = .;\n",
@@ -405,6 +405,7 @@ fn zisk_slots_ld(fuse_swap1: bool, fuse_dup: bool) -> String {
          KEEP(*(.monad_vm_push1*))\n        \
          KEEP(*(.monad_vm_push2*))\n        \
          KEEP(*(.monad_vm_swap1*))\n        \
+         KEEP(*(.monad_vm_swapn*))\n        \
          KEEP(*(.monad_vm_dup*))\n        \
          KEEP(*(.monad_vm_body*))\n    }}\n}} INSERT AFTER .text;\n",
         8 * 256 * SLOT

@@ -81,6 +81,35 @@ struct bytes32_t : evmc_bytes32
     friend constexpr bool
     operator==(bytes32_t const &a, bytes32_t const &b) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if !consteval {
+            // The last eight bytes tell most values apart, a hash's as a
+            // small big-endian number's (key_equals tests them first for the
+            // same reason). When they are equal the values nearly always
+            // are, and the 24 others go to the DMA comparator (CSR 0x814, the
+            // length in the flag after it): one step and the words it reads,
+            // where gcc compares a word at a time, three steps a word.
+            uint64_t a3;
+            uint64_t b3;
+            __builtin_memcpy(&a3, a.bytes + 24, sizeof(a3));
+            __builtin_memcpy(&b3, b.bytes + 24, sizeof(b3));
+            if (a3 != b3) {
+                return false;
+            }
+            uint64_t differ;
+            asm(".option push\n\t"
+                ".option arch, +zicsr\n\t"
+                "csrrs %0, 0x814, %1\n\t"
+                "addi x0, %2, 24\n\t"
+                ".option pop"
+                : "=&r"(differ)
+                : "r"(a.bytes),
+                  "r"(b.bytes),
+                  "m"(*reinterpret_cast<uint8_t const(*)[24]>(a.bytes)),
+                  "m"(*reinterpret_cast<uint8_t const(*)[24]>(b.bytes)));
+            return differ == 0;
+        }
+#endif
         return std::equal(a.bytes, a.bytes + 32, b.bytes);
     }
 

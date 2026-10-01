@@ -1284,7 +1284,48 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        MONAD_VM_CHECK(EXP);
+        {
+            // A power of two 2^s, s >= 1, to an exponent below 256, the byte
+            // shift older Solidity compiles to EXP (base 256), is 2^(s·e), or
+            // 0 past the word. Here, in the handler: the runtime call that
+            // takes every other power copies the base and the result through
+            // the stack around a call to exp(), some 110 steps.
+            uint256_t const &monad_vm_base = *stack_top;
+            uint256_t const &monad_vm_e = *(stack_top - 1);
+            uint64_t const monad_vm_b = monad_vm_base[0];
+            if ((monad_vm_base[1] | monad_vm_base[2] | monad_vm_base[3] |
+                 monad_vm_e[1] | monad_vm_e[2] | monad_vm_e[3]) == 0 &&
+                monad_vm_b > 1 && (monad_vm_b & (monad_vm_b - 1)) == 0 &&
+                monad_vm_e[0] < 256) {
+                // The dynamic gas, per byte of the exponent: one byte or none.
+                if (monad_vm_e[0] != 0) {
+                    gas_remaining -=
+                        runtime::exp_dynamic_gas_cost_multiplier<traits>();
+                    if (MONAD_UNLIKELY(gas_remaining < 0)) {
+                        MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+                    }
+                }
+                uint64_t const monad_vm_shift =
+                    static_cast<uint64_t>(std::countr_zero(monad_vm_b)) *
+                    monad_vm_e[0];
+                auto &&[a, b] = top_two(stack_top);
+                (void)a;
+                // The one bit written into its word, the others zero.
+                b = uint256_t{0};
+                if (monad_vm_shift < 256) {
+                    b[monad_vm_shift >> 6] = uint64_t{1}
+                                             << (monad_vm_shift & 63);
+                }
+                MONAD_VM_NEXT(EXP);
+            }
+        }
+        call_runtime(
+            runtime::exp<base_traits<traits>>, ctx, stack_top, gas_remaining);
+#else
         MONAD_VM_CHECKED_RUNTIME_CALL(EXP, runtime::exp<base_traits<traits>>);
+#endif
 
         MONAD_VM_NEXT(EXP);
     }

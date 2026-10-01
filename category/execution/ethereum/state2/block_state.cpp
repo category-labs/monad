@@ -88,12 +88,17 @@ bytes32_t BlockState::read_storage(
 {
     bool read_storage = false;
 #ifdef MONAD_ZKVM_ZISK
-    // Reuse the accessor across the database read: the guest is single-threaded,
+    // Reuse the entry across the database read: the guest is single-threaded,
     // map insertions preserve elements, and the read does not modify state_.
     // The host releases its TBB lock before reading the database.
-    StateDeltas::accessor it{};
-    MONAD_ASSERT(state_);
-    MONAD_ASSERT(state_->find(it, address));
+    if (storage_memo_ == nullptr || !(storage_memo_address_ == address)) {
+        StateDeltas::accessor found{};
+        MONAD_ASSERT(state_);
+        MONAD_ASSERT(state_->find(found, address));
+        storage_memo_address_ = address;
+        storage_memo_ = &*found;
+    }
+    StateDeltas::value_type *const it = storage_memo_;
 #endif
     // block state
     {

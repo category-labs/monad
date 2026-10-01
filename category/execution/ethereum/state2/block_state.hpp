@@ -60,6 +60,13 @@ class BlockState final
     /// incarnation (which, by definition, has no pre-state storage), so
     /// the slots they wipe are not pre-state reads and must not be added.
     SelfDestructStorageReads self_destruct_storage_reads_;
+#ifdef MONAD_ZKVM_ZISK
+    // The entry read_storage found last, and its address: a contract's slots
+    // are read in runs. state_ never erases and its values never move (a
+    // segmented map's), so the entry stays where it was for the block.
+    Address storage_memo_address_{};
+    StateDeltas::value_type *storage_memo_{nullptr};
+#endif
 
 public:
     BlockState(Db &, vm::VM &, Db *secondary_db = nullptr);

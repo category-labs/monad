@@ -59,6 +59,7 @@ namespace monad::vm::runtime
     EXPLICIT_TRAITS(sload);
 #endif
 
+#if !defined(MONAD_ZKVM_ZISK)
     template <Traits traits>
     void sstore(
         Context *ctx, uint256_t const *key_ptr, uint256_t const *value_ptr,
@@ -105,7 +106,7 @@ namespace monad::vm::runtime
             ctx->deduct_gas(gas_used);
         }
         else {
-#if defined(MONAD_ZKVM_ZISK)
+    #if defined(MONAD_ZKVM_ZISK)
             Host &host = host_of(*ctx);
             auto const &recipient = host_shim::addr(&ctx->env.recipient);
             auto const &slot = host_shim::word(&key);
@@ -115,7 +116,7 @@ namespace monad::vm::runtime
 
             auto const storage_status =
                 host.set_storage(recipient, slot, host_shim::word(&value));
-#else
+    #else
             auto const access_status = ctx->host->access_storage(
                 ctx->context, &ctx->env.recipient, &key);
             if (access_status == EVMC_ACCESS_COLD) {
@@ -124,7 +125,7 @@ namespace monad::vm::runtime
 
             auto const storage_status = ctx->host->set_storage(
                 ctx->context, &ctx->env.recipient, &key, &value);
-#endif
+    #endif
 
             auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
 
@@ -136,6 +137,7 @@ namespace monad::vm::runtime
     }
 
     EXPLICIT_TRAITS(sstore);
+#endif
 
 #ifdef MONAD_COMPILER_TESTING
     bool debug_tstore_stack(

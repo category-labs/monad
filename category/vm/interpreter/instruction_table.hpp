@@ -2530,6 +2530,31 @@ namespace monad::vm::interpreter
                 gas_remaining,
                 instr_ptr MONAD_VM_TBL_ARG);
         }
+        else if constexpr (OP >= SWAP1 && OP <= SWAP4) {
+            // The word n below the top moves up to where the push would put
+            // the immediate, and the immediate takes its place.
+            constexpr size_t monad_vm_n = OP - SWAP1 + 1;
+            uint8_t const monad_vm_k = *(instr_ptr + 1);
+            if (MONAD_LIKELY(stack_top + 1 - monad_vm_n >= stack_bottom)) {
+                gas_remaining -= static_gas<
+                    traits,
+                    PUSH1,
+                    static_cast<compiler::EvmOpCode>(OP)>();
+                *(stack_top + 1) = *(stack_top + 1 - monad_vm_n);
+                *(stack_top + 1 - monad_vm_n) = uint256_t{monad_vm_k};
+                MONAD_VM_FUSED_NEXT(3, 1);
+            }
+            interpreter::push(stack_top, uint256_t{monad_vm_k});
+            gas_remaining -= static_gas<traits, PUSH1>();
+            instr_ptr += 2;
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[OP](
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top + 1,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
         else if constexpr (OP == NOT) {
             // The immediate's complement, pushed.
             gas_remaining -= static_gas<traits, PUSH1, NOT>();

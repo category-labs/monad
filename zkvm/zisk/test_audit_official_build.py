@@ -161,7 +161,7 @@ class ProfileTests(unittest.TestCase):
         if args == (str(self.cargo), "--version"):
             return f"cargo-zisk {audit.RUNTIME_VERSION} test"
         if args == (str(self.readelf), "-A", str(self.elf)):
-            return "rv64ima_zicsr_zbb_zbs_zbkb"
+            return "rv64ima_zicsr_zba_zbb_zbs_zbkb"
         raise AssertionError(args)
 
     def run_audit(self):

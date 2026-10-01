@@ -87,13 +87,13 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     string(APPEND CMAKE_CXX_FLAGS
         " -mcmodel=medany -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti")
 
-    # ZisK supports Zbb/Zbs/Zbkb since v1.2.0-alpha.
+    # ZisK supports Zba/Zbb/Zbs/Zbkb since v1.3.0-alpha.
     # The fixed-address guest needs no PIC/GOT indirections.
     # -mtune=size favors direct unaligned word accesses over byte-wise loads.
     #
     # Append after cmake-rs's flags: the last -march wins.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
-        set(_zisk_march "-march=rv64ima_zicsr_zbb_zbs_zbkb -mabi=lp64")
+        set(_zisk_march "-march=rv64ima_zicsr_zba_zbb_zbs_zbkb -mabi=lp64")
         string(APPEND CMAKE_C_FLAGS " ${_zisk_march} -fno-pic -mtune=size")
         string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} -fno-pic -mtune=size")
         string(APPEND CMAKE_ASM_FLAGS " ${_zisk_march}")

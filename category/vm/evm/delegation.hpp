@@ -30,6 +30,9 @@ namespace monad::vm::evm
 
     bool is_delegated(std::span<uint8_t const> code);
 
+    // Return the EIP-7702 delegate for exactly 0xEF0100 + a 20-byte address.
+    std::optional<Address> designation_of(std::span<uint8_t const> code);
+
     std::optional<Address> resolve_delegation(
         evmc_host_interface const *, evmc_host_context *, Address const &);
 }

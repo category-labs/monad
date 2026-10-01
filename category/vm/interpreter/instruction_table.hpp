@@ -80,17 +80,18 @@ namespace monad::vm::interpreter
     // read and one step shorter than a table's.
     inline constexpr size_t slot_shift = 12;
 
-    // A slot holds four copies of the opcode's handler, one per lag L: entered
+    // A slot holds six copies of the opcode's handler, one per lag L: entered
     // with instr_ptr L bytes ahead of a5, so that an opcode of N bytes
     // dispatches to its follower's copy L + N without stepping a5 while
     // L + N < lag_count (MONAD_VM_DISPATCH). lag_offset(L) is where the copy's
     // handler sits from the base the handlers carry: within a jalr's reach,
-    // heads included.
-    inline constexpr unsigned lag_count = 4;
+    // heads included. A handler too large for a copy is compiled once, past
+    // the slots, and its copies jump there (execute.cpp).
+    inline constexpr unsigned lag_count = 6;
 
     consteval int lag_offset(unsigned const lag) noexcept
     {
-        constexpr int at[lag_count] = {0, 1024, -1992, -1024};
+        constexpr int at[lag_count] = {0, 680, 1360, 2044, -1368, -684};
         return at[lag];
     }
 
@@ -172,17 +173,17 @@ namespace monad::vm::interpreter
     template <class T>
     using base_traits = typename LagOf<T>::base;
 
-    // Where copy 0's handler sits in its slot, after copies 2 and 3 and its
+    // Where copy 0's handler sits in its slot, after copies 4 and 5 and its
     // own heads: the base the handlers carry points there, at opcode 0's
     // copy 0, and the other copies are lag_offset away.
-    inline constexpr size_t slot_lead = 2056;
+    inline constexpr size_t slot_lead = 1432;
 
     // Where they land, before each copy's handler: PUSH1's head pushes its
     // immediate and falls into the handler; PUSH2's makes its stack test,
     // reads its immediate and jumps to the push in PUSH1's. In copy R, PUSH1's
-    // head takes a PUSH1 one (R + 2) % 4 bytes behind, PUSH2's a PUSH2
-    // (R + 1) % 4 behind; the heads of copies 2 and 3 do not step a5, and
-    // PUSH1's is four bytes shorter there.
+    // head takes a PUSH1 one (R + 4) % 6 bytes behind, PUSH2's a PUSH2
+    // (R + 3) % 6 behind; PUSH1's steps a5 in copies 0 and 1 only, and is four
+    // bytes shorter in the others.
     consteval int head_back(unsigned const copy, unsigned const n) noexcept
     {
         return (n == 1 ? 32 : 56) - (copy >= 2 ? 4 : 0);
@@ -359,6 +360,8 @@ namespace monad::vm::interpreter
                 MONAD_VM_LAG_TRY(1, NBYTES, DELTA, NEXT_OPCODE);               \
                 MONAD_VM_LAG_TRY(2, NBYTES, DELTA, NEXT_OPCODE);               \
                 MONAD_VM_LAG_TRY(3, NBYTES, DELTA, NEXT_OPCODE);               \
+                MONAD_VM_LAG_TRY(4, NBYTES, DELTA, NEXT_OPCODE);               \
+                MONAD_VM_LAG_TRY(5, NBYTES, DELTA, NEXT_OPCODE);               \
             }                                                                  \
             {                                                                  \
                 instr_ptr += (NBYTES);                                         \

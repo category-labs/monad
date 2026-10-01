@@ -1532,6 +1532,14 @@ std::pair<NodeId, NibblesView>
 OffsetTrie::upsert_node(NodeId id, NibblesView key)
 {
     using Result = std::pair<NodeId, NibblesView>;
+#if defined(MONAD_ZKVM_ZISK)
+    // As in find_original: the leaf a whole key reaches is compared with its
+    // path by leaf_path_equals.
+    unsigned char const *const whole_key =
+        key.nibble_size() == MAX_PATH_NIBBLES && !key.begin_nibble()
+            ? key.data()
+            : nullptr;
+#endif
     // A descent to an existing child -- through a branch, or through an
     // extension whose whole path the key starts with -- is the next turn with
     // the child's id and the rest of the key: a call cost a frame a level.
@@ -1545,7 +1553,12 @@ OffsetTrie::upsert_node(NodeId id, NibblesView key)
         // displaced leaf's bytes.
         auto const split_leaf = [&](NibblesView const path,
                                     auto const &reput_old) -> Result {
-            if (path == key) { // exact match -> overwrite (reuse id + its path)
+            // exact match -> overwrite (reuse id + its path)
+#if defined(MONAD_ZKVM_ZISK)
+            if (leaf_path_equals(path, key, whole_key)) {
+#else
+            if (path == key) {
+#endif
                 return {id, key};
             }
             // old leaf + new key meet at a fresh branch, wrapped in an

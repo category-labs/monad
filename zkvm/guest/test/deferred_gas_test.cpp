@@ -353,6 +353,79 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
     check(reads);
 
     bool effects = true;
+    // Compare PUSH1 pairs with PUSH2 (same gas, no pair prefix), checking
+    // values and every gas budget through the exact success boundary.
+    auto const verify_immediate_pair =
+        [&](auto const op,
+            uint8_t const immediate,
+            bool const has_operand,
+            std::array<uint8_t, 32> const &operand,
+            std::array<uint8_t, 32> const &expected,
+            std::span<uint8_t const>
+                calldata) {
+            for (bool const fused : {false, true}) {
+                std::vector<uint8_t> code;
+                if (has_operand) {
+                    code.push_back(PUSH32);
+                    code.insert(code.end(), operand.begin(), operand.end());
+                }
+                code.push_back(fused ? PUSH1 : PUSH2);
+                if (!fused) {
+                    code.push_back(0);
+                }
+                code.insert(
+                    code.end(), {immediate, static_cast<uint8_t>(op), PUSH32});
+                code.insert(code.end(), expected.begin(), expected.end());
+                code.insert(code.end(), {EQ, PUSH2, 0, 0, JUMPI, 0xfe});
+                code[code.size() - 3] = static_cast<uint8_t>(code.size());
+                code.insert(code.end(), {JUMPDEST, STOP});
+                int64_t const cost =
+                    20 + (has_operand ? 3 : 0) + 3 + (op == SIGNEXTEND ? 5 : 3);
+                for (int64_t gas = 0; gas <= cost + 1; ++gas) {
+                    auto const result = run(code, gas, calldata);
+                    effects &= gas < cost
+                                   ? failed_cleanly(result)
+                                   : result.status == CallStatus::Success &&
+                                         result.gas == gas - cost;
+                }
+            }
+        };
+    std::array<uint8_t, 32> operand{};
+    operand.fill(0xa5);
+    for (uint8_t const immediate :
+         {0, 1, 7, 8, 9, 15, 16, 17, 23, 24, 25, 30, 31, 32, 255}) {
+        std::array<uint8_t, 32> expected;
+        expected.fill(0xff);
+        expected.back() = static_cast<uint8_t>(~immediate);
+        verify_immediate_pair(NOT, immediate, false, {}, expected, {});
+        expected.fill(0);
+        expected.back() = operand.back() & immediate;
+        verify_immediate_pair(AND, immediate, true, operand, expected, {});
+        for (uint8_t const sign_byte : {0x7f, 0x80}) {
+            auto signed_operand = operand;
+            expected = operand;
+            if (immediate < 32) {
+                size_t const sign_index = 31 - immediate;
+                signed_operand[sign_index] = sign_byte;
+                expected = signed_operand;
+                for (size_t i = 0; i < sign_index; ++i) {
+                    expected[i] = sign_byte & 0x80 ? 0xff : 0;
+                }
+            }
+            verify_immediate_pair(
+                SIGNEXTEND, immediate, true, signed_operand, expected, {});
+        }
+    }
+    for (auto const op : {NOT, AND, SIGNEXTEND}) {
+        if (op == AND || op == SIGNEXTEND) {
+            std::array<uint8_t, 4> const code{
+                PUSH1, 0, static_cast<uint8_t>(op), STOP};
+            effects &= failed_cleanly(run(code, 100));
+        }
+        std::vector<uint8_t> code(1024, PUSH0);
+        code.insert(code.end(), {PUSH1, 0, static_cast<uint8_t>(op), STOP});
+        effects &= failed_cleanly(run(code, 10000));
+    }
     // Exercise immediate memory pairs with and without expansion, including
     // unaligned offsets and exact gas boundaries. Verify the stored value.
     for (bool const initialized_memory : {false, true}) {

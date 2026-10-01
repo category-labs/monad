@@ -68,6 +68,15 @@ namespace monad::vm::interpreter
             ".size monad_vm_slot_" #NAME "_" #OP "_lead, . - "                 \
             "monad_vm_slot_" #NAME "_" #OP "_lead\n"                           \
             ".popsection");                                                    \
+        extern "C" [[gnu::section(".monad_vm_slot." #NAME "." #OP)]] void      \
+            monad_vm_slot_##NAME##_##OP(                                       \
+                runtime::Context &,                                            \
+                MONAD_VM_DISPATCH_STATE_TYPE,                                  \
+                uint256_t const *,                                             \
+                StackTop,                                                      \
+                int64_t,                                                       \
+                uint8_t const *,                                               \
+                void const *);                                                 \
         extern "C" [[gnu::section(".monad_vm_push1." #NAME "." #OP)]] void     \
             monad_vm_slot_##NAME##_##OP##_push1(                               \
                 runtime::Context &ctx,                                         \
@@ -80,7 +89,8 @@ namespace monad::vm::interpreter
         {                                                                      \
             __attribute__((musttail)) return push1_then<                       \
                 0x##OP,                                                        \
-                EvmTraits<REV>>(                                               \
+                EvmTraits<REV>,                                                \
+                monad_vm_slot_##NAME##_##OP>(                                  \
                 ctx,                                                           \
                 MONAD_VM_DISPATCH_STATE_ARG,                                   \
                 stack_lower_bound,                                             \
@@ -93,6 +103,9 @@ namespace monad::vm::interpreter
     // These opcodes use a fused PUSH1 pair; all others use the ordinary
     // PUSH1 prefix. The suffix is the opcode in hexadecimal.
     #define MONAD_VM_PUSH1_PAIR_01 ~, PAIR // ADD
+    #define MONAD_VM_PUSH1_PAIR_0b ~, PAIR // SIGNEXTEND
+    #define MONAD_VM_PUSH1_PAIR_16 ~, PAIR // AND
+    #define MONAD_VM_PUSH1_PAIR_19 ~, PAIR // NOT
     #define MONAD_VM_PUSH1_PAIR_1b ~, PAIR // SHL
     #define MONAD_VM_PUSH1_PAIR_1c ~, PAIR // SHR
     #define MONAD_VM_PUSH1_PAIR_1d ~, PAIR // SAR
@@ -187,6 +200,9 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_PUSH1_PAIR_60
     #undef MONAD_VM_PUSH1_PAIR_52
     #undef MONAD_VM_PUSH1_PAIR_51
+    #undef MONAD_VM_PUSH1_PAIR_19
+    #undef MONAD_VM_PUSH1_PAIR_16
+    #undef MONAD_VM_PUSH1_PAIR_0b
     #undef MONAD_VM_PUSH1_PAIR_1d
     #undef MONAD_VM_PUSH1_PAIR_1c
     #undef MONAD_VM_PUSH1_PAIR_1b

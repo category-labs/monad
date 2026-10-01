@@ -2547,7 +2547,8 @@ namespace monad::vm::interpreter
     // while PUSH1 7 PUSH1 9 selects push1_then<PUSH1>.
     // instr_ptr still points to the first PUSH1, which has not executed yet.
     // Slot dispatch already checked room for its temporary stack entry.
-    template <uint8_t OP, Traits traits>
+    // Slot wrappers also provide the normal handler for a direct fallback.
+    template <uint8_t OP, Traits traits, InstrEval fallback_handler = nullptr>
     MONAD_VM_INSTRUCTION_CALL void push1_then(
         runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
         uint256_t const *stack_lower_bound, StackTop stack_top,
@@ -2690,6 +2691,115 @@ namespace monad::vm::interpreter
                 stack_top + 1,
                 gas_remaining,
                 instr_ptr MONAD_VM_TBL_ARG);
+        }
+        else if constexpr (OP == NOT) {
+            // Push the complement directly, without first pushing the
+            // immediate.
+            gas_remaining -= static_gas<traits, PUSH1, NOT>();
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+            if (MONAD_UNLIKELY(gas_remaining < 0)) {
+                MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+            }
+    #endif
+            interpreter::push(stack_top, ~uint256_t{*(instr_ptr + 1)});
+            MONAD_VM_FUSED_NEXT(3, 1);
+        }
+        else if constexpr (OP == AND) {
+            // Mask the existing top with the immediate byte.
+            uint8_t const immediate = *(instr_ptr + 1);
+            if (MONAD_LIKELY(stack_holds<1>(stack_top, stack_lower_bound))) {
+                gas_remaining -= static_gas<traits, PUSH1, AND>();
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+                if (MONAD_UNLIKELY(gas_remaining < 0)) {
+                    MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+                }
+    #endif
+                auto &value = *stack_top;
+                value[0] &= immediate;
+                value[1] = 0;
+                value[2] = 0;
+                value[3] = 0;
+                MONAD_VM_FUSED_NEXT(3, 0);
+            }
+            interpreter::push(stack_top, uint256_t{immediate});
+            gas_remaining -= static_gas<traits, PUSH1>();
+            instr_ptr += 2;
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[OP](
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top + 1,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        else if constexpr (OP == SIGNEXTEND) {
+            // Extend the selected byte's sign within its 64-bit word, then
+            // fill higher words with that sign. Lower words stay unchanged.
+            // Keep a separate fast path for byte indices 0..7.
+            uint8_t const immediate = *(instr_ptr + 1);
+            if (MONAD_LIKELY(
+                    stack_holds<1>(stack_top, stack_lower_bound) &&
+                    immediate < 31)) {
+                gas_remaining -= static_gas<traits, PUSH1, SIGNEXTEND>();
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+                if (MONAD_UNLIKELY(gas_remaining < 0)) {
+                    MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+                }
+    #endif
+                auto &value = *stack_top;
+                if (MONAD_LIKELY(immediate < 8)) {
+                    unsigned const sign_shift = 56u - 8u * immediate;
+                    int64_t const signed_word =
+                        static_cast<int64_t>(value[0] << sign_shift) >>
+                        sign_shift;
+                    uint64_t const sign_fill =
+                        static_cast<uint64_t>(signed_word >> 63);
+                    value[0] = static_cast<uint64_t>(signed_word);
+                    value[1] = sign_fill;
+                    value[2] = sign_fill;
+                    value[3] = sign_fill;
+                }
+                else {
+                    unsigned const word_index = immediate >> 3;
+                    unsigned const sign_shift = 56u - 8u * (immediate & 7u);
+                    int64_t const signed_word =
+                        static_cast<int64_t>(value[word_index] << sign_shift) >>
+                        sign_shift;
+                    uint64_t const sign_fill =
+                        static_cast<uint64_t>(signed_word >> 63);
+                    value[word_index] = static_cast<uint64_t>(signed_word);
+                    if (word_index == 1) {
+                        value[2] = sign_fill;
+                        value[3] = sign_fill;
+                    }
+                    else if (word_index == 2) {
+                        value[3] = sign_fill;
+                    }
+                }
+                MONAD_VM_FUSED_NEXT(3, 0);
+            }
+            interpreter::push(stack_top, uint256_t{immediate});
+            gas_remaining -= static_gas<traits, PUSH1>();
+            instr_ptr += 2;
+            // Slots provide a known handler, avoiding a table lookup here.
+            if constexpr (fallback_handler != nullptr) {
+                MONAD_VM_MUST_TAIL return fallback_handler(
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top + 1,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+            else {
+                MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[OP](
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top + 1,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
         }
         else {
             static_assert(OP == ADD || OP == SHL || OP == SHR || OP == SAR);

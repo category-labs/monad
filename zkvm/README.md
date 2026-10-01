@@ -237,9 +237,10 @@ configuration to leave reachable.
 
 `MONAD_ZKVM_L2` builds a guest for the L2: transactions arrive encrypted, an
 end-of-block anchor of the messages emitted is published, and gas is metered
-but not priced. It is a mode and not an optimisation — the witness grows a
-seventh field, the chain changes, and the consensus rules with it — so a witness
-built for one setting is rejected outright by the other.
+but not priced. It is a mode and not an optimisation — the witness grows two
+fields, the operator secret and the blinder's, the chain changes, and the
+consensus rules with it — so a witness built for one setting is rejected
+outright by the other.
 
 Every deployment value is required and has none. A guest pointed at the wrong
 spoke, or decrypting under the wrong operator key, emits proofs the L1 hub
@@ -321,7 +322,18 @@ mode around it, of which `L2Sponge::charge`, validating that the declared SAFE
 pattern is being followed, is 24% on its own. In cells the margin narrows to
 about 7x, since the ECDH's work is precompiled and the sponge's is not. On the
 generated corpus the sponge is 1.5x the ECDH in steps; see
-[Where the L2's share goes](#where-the-l2s-share-goes).
+[Where the encryption's share goes](#where-the-encryptions-share-goes).
+
+**`plaintext` is the suite the others are measured against, and never a
+deployment.** [`l2_plaintext_suite.hpp`](guest/l2_plaintext_suite.hpp) takes a
+leaf to be the transaction it carries and binds no secret; in every other rule
+the guest is the L2 -- the chain id, the constant revision, unpriced gas, the
+blinded header and the anchor. An ELF built with it and the same nine values
+therefore runs the same chain as an encrypting one, and the difference between
+the two runs is what the encryption costs, which a comparison with the mainnet
+guest cannot isolate: its chain prices gas, publishes another output and
+follows a fork schedule. With it the transactions the L1 sequences are
+readable by anyone who reads the L1.
 
 ### The corpus
 
@@ -337,11 +349,20 @@ make the guest accept a shape it has no rules for: withdrawals and a
 put back because the header's `gas_used` was computed under L1 rules. A
 generated block has none of those shapes, so none of the levers exist here.
 
-**The corpus targets Paris, and the number is load-bearing.** The chain starts
-at block 15,537,394 with a timestamp below 1,681,338,455 -- Shanghai's. Paris
-is the one window with no withdrawals, no `requests_hash` and no blob fields,
-which is exactly the shape this chain accepts unaided. `MONAD_ZKVM_L2_REVISION`
-has to be `MONAD_ETH_PARIS` to match.
+**The corpus is the L2's own chain.** In an L2 build its genesis is block 0
+and holds what the design creates with the L2: the `NamespaceSpoke`, seeded at
+the compiled `MONAD_ZKVM_L2_SPOKE` from its runtime code with its two
+immutables written in where solc says the constructor writes them --
+`CorpusScenarios.TheGenesisSpokeIsTheDeployedSpoke` holds that byte for byte
+against a CREATE -- and, for the token presets, the wrapped tokens and their
+holders. Nothing about a block number decides its rules: the guest fixes the
+revision at compile time, `MONAD_ZKVM_L2_REVISION` as the type the block is
+executed with rather than a value looked up per block, and it has to be
+`MONAD_ETH_PARIS` -- the one revision with no withdrawals, no `requests_hash`
+and no blob fields, which is exactly the shape this chain accepts. A build
+without `MONAD_ZKVM_L2` generates a chain for the mainnet guest instead, whose
+schedule picks the revision from the number, so that chain starts at the Paris
+block, 15,537,394, with a timestamp below Shanghai's.
 
 Three scenarios: EOA transfers with a contract that fills storage slots and
 zeroes one; CREATE, logs, REVERT, SELFDESTRUCT and the legacy/2930/1559
@@ -359,7 +380,7 @@ cmake --build build --target monad-zkvm-corpus-gen monad-zkvm-x86-test-runner
 # Each witness makes the guest republish what the manifest records: the
 # parent block hash, the block hash, the anchor and the number.
 ./build/zkvm/guest/monad-zkvm-x86-test-runner \
-    --input /tmp/corpus/spoke-15537396.witness --output /tmp/out.bin
+    --input /tmp/corpus/spoke-00000002.witness --output /tmp/out.bin
 ```
 
 Note that the manifest still records both state roots even on the L2 arm. They
@@ -375,9 +396,12 @@ implementations of the same trie, so their agreement is evidence. The anchor is
 derived twice for the same reason -- the generator merkleises the receipts
 itself, the guest merkleises them in the epilogue.
 
-Building the same sources with `MONAD_ZKVM_L2=OFF` gives a plaintext corpus and
-the block-hash output, which is the cheaper check to run first: it exercises
-the generator and the trie without the cipher in the way.
+Configuring the L2 tree with `MONAD_ZKVM_L2_CIPHER=plaintext` gives the same
+chain with its transactions in the clear: the control the cost sections
+measure the encryption against (see [Swapping the
+encryption](#swapping-the-encryption)). Building with `MONAD_ZKVM_L2=OFF`
+gives a corpus for the mainnet guest and its block-hash output, which is the
+cheaper check of the generator and the trie.
 
 ### The benchmark corpus, and what it costs
 
@@ -385,6 +409,14 @@ The three scenarios above prove the generator works; they say nothing about
 what a block costs, because twenty accounts and two blocks cannot. `--preset`
 generates a corpus at scale instead: a genesis of `--accounts` holders, then
 `--blocks` blocks that each aim to touch `--distinct` of them.
+
+**The emitted blocks are the chain's steady state.** A witness carries the
+ancestor headers `BLOCKHASH` may reach, up to the block hash buffer's 256, and
+each costs 0.345 M COST and 544 bytes -- so a 200-block corpus measured from
+genesis, whose median block carries about a hundred, understates a wholesale
+block by 13 %. In an L2 build the first `--warmup` blocks, 256 by default, run
+the same workload and are not emitted: every emitted witness carries 256
+ancestors.
 
 ```sh
 # The design document's two inverse cases. Wholesale is hundreds of
@@ -429,32 +461,32 @@ plausible, wrong numbers.
 
 #### The two corpora
 
-Both presets at two hundred blocks, generated and checked end to end. The
-figures are the L2 arm's; the plaintext arm's witnesses are 4-5 % smaller and
-otherwise the same shape.
+Both presets at two hundred blocks after the warm-up, generated and checked
+end to end. The figures are the L2 arm's; the control's witnesses -- the same
+chain with the plaintext suite -- are 1-5 % smaller, by what encryption adds to
+each transaction, and otherwise the same shape.
 
 | | `wholesale` | `payouts` |
 |---|---:|---:|
 | accounts | 500 | 1,000,000 |
-| blocks | 201 (15,537,395-15,537,595) | 201 |
+| blocks | 200 (257-456, after 256 of warm-up) | 200 |
 | transactions per block | 21 | 500 |
-| witness, median | 78 KB | 859 KB |
-| witness, min-max | 23-132 KB | 798-916 KB |
+| witness, median | 162 KB | 944 KB |
+| witness, min-max | 160-163 KB | 931-954 KB |
+| of which ancestor headers | 139 KB | 139 KB |
 | leaves touched, median | 42 | 553 |
 | digests per leaf | 5.8 | 29.7 |
 | gas, median | 0.50 M | 11.45 M |
-| corpus size | 16 MB | 172 MB |
+| corpus size | 32 MB | 189 MB |
 
 Every witness in both is accepted by the guest under `ziskemu` (below). The
 chain holds: `post_root[n] == pre_root[n+1]` and
-`block_hash[n] == parent_hash[n+1]` across all 201, the numbers are contiguous,
-all 201 post-state roots are distinct -- the state moves every block rather than
-being re-proved -- and 200 of the 201 L2 blocks carry a non-zero anchor, which
-the guest republishes exactly. The first block of every corpus deploys the
-spoke, one transaction whatever the preset, and is left out of every figure
-below.
+`block_hash[n] == parent_hash[n+1]` across all 200, the numbers are contiguous,
+all 200 post-state roots are distinct -- the state moves every block rather than
+being re-proved -- and every block carries a non-zero anchor, which the guest
+republishes exactly.
 
-**Wholesale is about five times cheaper per block than payouts, and sixteen
+**Wholesale is about five times cheaper per block than payouts, and eleven
 times in the part of the cost that depends on the block** -- the design
 document's two inverse cases showing up in the measurement: wholesale is the
 cheap end, and payouts is what sizing has to be done against.
@@ -497,12 +529,12 @@ document's own flows, over three contracts in `zkvm/test/corpus/contracts/`:
   numbers in a slot, not which slots a block touches.
 
 All three are seeded at genesis together with their storage rather than
-deployed -- none has a constructor or an immutable -- and the spoke is deployed
-in the first block exactly as in the native presets, so one configured guest
-takes every corpus. The generator refuses a preset block in which any
-transaction reverted: a reverted transaction still makes a valid block that
-round-trips every root, and only its receipt says the block did less than the
-workload claims. `WrappedToken.OnlyAdmittedHoldersMoveBalances` and
+deployed -- none has a constructor or an immutable -- and so is the spoke, as
+in the native presets, so one configured guest takes every corpus. The
+generator refuses a preset block in which any transaction reverted: a reverted
+transaction still makes a valid block that round-trips every root, and only
+its receipt says the block did less than the workload claims.
+`WrappedToken.OnlyAdmittedHoldersMoveBalances` and
 `PvpSettlement.BothLegsOrNeither` hold the two properties the document asks
 for, eligibility and both legs or neither, on the checked-in bytecode.
 
@@ -512,17 +544,16 @@ for, eligibility and both legs or neither, on the checked-in bytecode.
 | a block | settles the last block's 10 payments and proposes 10; one bank redeems reserves to the L1, each currency in turn | admits 10 contractors; pays 400 in 10 batches of 40, each funded by a business; 25 deposits into the vault and 25 withdrawals; 50 exits, by card, by redemption and to the L1 |
 | transactions | 21 | 130 |
 | gas, median | 1.25 M | 9.60 M |
-| witness, median (min-max) | 114 KB (25-169) | 919 KB (860-981) |
+| witness, median (min-max) | 197 KB (193-200) | 1,004 KB (983-1,016) |
 | account / storage leaves touched | 28 / 75 | 115 / 616 |
-| digests per leaf | 6.9 | 25.4 |
-| corpus size | 22 MB | 176 MB |
+| digests per leaf | 6.8 | 25.4 |
+| corpus size | 39 MB | 201 MB |
 
 A contractor who only receives has a balance slot and no account: nothing it
 does creates one. So the million are in one storage trie, and the account trie
 holds only the few thousand who send -- the storage-trie variant the native
-presets leave out. Both corpora chain like the native ones, all 201 post-state
-roots of each are distinct, and every L2 block after the first carries a
-non-zero anchor.
+presets leave out. Both corpora chain like the native ones, all 200 post-state
+roots of each are distinct, and every block carries a non-zero anchor.
 
 **Five currencies, because the platforms are that size.** The document's
 example is one payment between two currencies, not the size of the platform --
@@ -533,24 +564,25 @@ own, held by its own banks and by every intermediary. A payment's pair is drawn
 with weight 1/((a+1)(b+1)), so the first currency is on one side of 68 % of the
 payments and three corridors carry 58 % of them, the way a hub currency does,
 and each pair's payments run both ways. Five cost almost nothing more than two:
-block for block, `--currencies 2` has a 1.9 % smaller witness, and 0.7 % less
-of the cost above the floor, 0.211 G against 0.212 G. Three more token
+block for block, `--currencies 2` has a 1.0 % smaller witness, and 0.6 % less
+of the cost above the floor, 0.264 G against 0.265 G. Three more token
 contracts' accounts in each block, against storage tries a little smaller:
 what a wholesale block costs is its payments, not how many currencies they are
 in.
 
 #### What the dispersion is worth
 
-Measured on this generator, 1,000,000 accounts, four blocks per point, L2 arm.
-`N` is the accounts in the trie, `K` the leaves a block touched.
+Measured on this generator, 1,000,000 accounts, four blocks per point after
+the warm-up, L2 arm. `N` is the accounts in the trie, `K` the leaves a block
+touched; the blob is the witness's node field, the part dispersion moves.
 
-| distinct | leaves | digests | digests/leaf | witness | bytes/leaf | gas |
+| distinct | leaves | digests | digests/leaf | witness | blob bytes/leaf | gas |
 |---:|---:|---:|---:|---:|---:|---:|
-| 50 | 58 | 2,394 | 41.5 | 113 KB | 1,964 | 1.2 M |
-| 200 | 222 | 7,747 | 34.8 | 370 KB | 1,661 | 4.6 M |
-| 500 | 552 | 16,430 | 29.8 | 806 KB | 1,462 | 11.4 M |
-| 2,000 | 2,190 | 48,938 | 22.4 | 2,579 KB | 1,179 | 45.7 M |
-| 5,000 | 5,440 | 96,674 | 17.8 | 5,477 KB | 1,007 | 114.3 M |
+| 50 | 58 | 2,405 | 41.5 | 251 KB | 1,693 | 1.2 M |
+| 200 | 223 | 7,847 | 35.2 | 511 KB | 1,462 | 4.6 M |
+| 500 | 552 | 16,550 | 30.0 | 948 KB | 1,265 | 11.4 M |
+| 2,000 | 2,192 | 49,484 | 22.6 | 2,755 KB | 990 | 45.7 M |
+| 5,000 | 5,447 | 97,164 | 17.8 | 5,665 KB | 811 | 114.3 M |
 
 Three things fall out of the witness, and the first is why this corpus exists
 at all.
@@ -558,14 +590,14 @@ at all.
 **The access distribution does not matter; the distinct count does.** A leaf
 touched twice in one block is free -- it is already in the witness -- so a
 distribution can only reach the cost through the number of distinct leaves it
-produces. Run with all three shapes at these five points (plaintext arm),
-uniform, Zipf and hot-set agree to within **0.2-1.6 %** in witness bytes and
-0.3-1.1 % in digests, with identical transaction counts, against a 2.3x swing
-in digests-per-leaf across the points themselves. Frozen as
+produces. Run with all three shapes at these five points, on a corpus for the
+mainnet guest, uniform, Zipf and hot-set agree to within **0.2-1.6 %** in
+witness bytes and 0.3-1.1 % in digests, with identical transaction counts,
+against a 2.3x swing in digests-per-leaf across the points themselves. Frozen as
 `WorkloadDispersion.TheShapeDoesNotChangeTheCostAtEqualDistinct`.
 
-**The depth law is measurable.** `digests/leaf = 14.5 x log16(N/K) - 9.5`,
-**R2 0.998** on the L2 arm, and `14.0 x log16(N/K) - 8.6` on the plaintext arm:
+**The depth law is measurable.** `digests/leaf = 14.6 x log16(N/K) - 9.5`,
+**R2 0.999**, the same on both arms because the cipher does not reach the blob:
 fourteen digests for each level a path diverges from its neighbours, less about
 nine for the top levels where every path is shared. The naive prediction was
 fifteen per level with no offset. Mainnet cannot establish this -- the same fit
@@ -573,147 +605,177 @@ over 504 mainnet witnesses gives **R2 0.065**, because mainnet mixes storage
 tries of wildly different sizes and confounds dispersion with the shape of the
 state. A flat million-account trie separates them.
 
-**The witness is sublinear in dispersion; the cost is not.**
-`witness_bytes = 4225 x distinct^0.843`, **R2 0.9999** (`4291 x distinct^0.830`
-in plaintext) -- doubling the distinct accounts costs **1.79x the bytes, not
-2x**, because the extra paths land under prefixes the earlier ones already paid
-for. But bytes are not what these blocks spend most on: measured, the variable
-cost goes as `distinct^0.96`, because each distinct account here is a
-transaction, and a transaction costs more than its share of the witness.
+**The blob is sublinear in dispersion; the cost is not.**
+`blob_bytes = 3996 x distinct^0.827`, **R2 0.9996**, on both arms -- doubling
+the distinct accounts costs **1.77x the bytes, not 2x**, because the extra
+paths land under prefixes the earlier ones already paid for. The witness adds
+the transactions to it, and a constant 139 KB of ancestors. But bytes are not
+what these blocks spend most on: measured, the variable cost goes as
+`distinct^0.88`, because each distinct account here is a transaction, and a
+transaction costs more than its share of the witness.
 
 #### What a block costs
 
-Measured under `ziskemu` 1.2.0-alpha, on every workload block of the four
-corpora and the sweep, both arms, each run first checked against the manifest. COST is
-ZisK's own cost model (`ziskemu -X --stats`), taken through `zkvm-bench`'s
+Measured under `ziskemu` 1.2.0-alpha on every workload block of the corpora
+above and the sweep, 1,020 of them, on the L2 ELF and on the control, each run
+first checked against the manifest. The figures were taken with this series on
+71dcc0957, a base that pinned ZisK 1.2.0-alpha, and have not been re-taken on
+this tree, which pins 1.3.1-alpha and carries the base's later interpreter
+work: its absolute steps and COST may differ from these. COST is ZisK's own
+cost model (`ziskemu -X --stats`), taken through `zkvm-bench`'s
 `compare.run_zisk` so that a figure here and one in a `compare` report come
 from one parser.
 
-```sh
-# Verify every witness against its manifest, then take steps and COST.
-export ZKVM_BENCH=<zkvm-bench checkout>
-zkvm/test/corpus/bench.py --arm l2 --elf <L2 ELF> --emu ~/.zisk/bin/ziskemu \
-    --corpus /tmp/wholesale /tmp/payouts /tmp/sweep --out l2.csv
-zkvm/test/corpus/bench.py --arm plain --elf <plaintext ELF> --emu ~/.zisk/bin/ziskemu \
-    --corpus /tmp/wholesale-plain /tmp/payouts-plain /tmp/sweep-plain --out plain.csv
+**The control is the same chain without the encryption.** Both ELFs are L2
+builds of the same nine values; the control is configured with
+`MONAD_ZKVM_L2_CIPHER=plaintext`, and so is the host tree that generates its
+corpora from the same seeds. Block for block the two arms execute the same
+transactions on the same state -- the pre- and post-state roots, the anchors
+and the node blobs are identical across all 1,020 pairs -- so what one costs
+over the other is the encryption and nothing else.
 
-# The document's flows in CSVs of their own: bench-report.py fits whatever it
-# is given, and the per-transaction fit below is the native presets'.
-zkvm/test/corpus/bench.py --arm l2 --elf <L2 ELF> --emu ~/.zisk/bin/ziskemu \
-    --corpus /tmp/wholesale-cbdc /tmp/worker-payouts --out l2-tokens.csv
+```sh
+# Verify every witness against its manifest, then take steps and COST. Both
+# ELFs publish the L2's four values, so both are the l2 arm.
+export ZKVM_BENCH=<zkvm-bench checkout>
+zkvm/test/corpus/bench.py --arm l2 --elf <L2 ELF> --emu <ziskemu> \
+    --corpus /tmp/l2/wholesale /tmp/l2/payouts /tmp/l2/sweep \
+    /tmp/l2/wholesale-cbdc /tmp/l2/worker-payouts --out l2.csv
+zkvm/test/corpus/bench.py --arm l2 --elf <control ELF> --emu <ziskemu> \
+    --corpus /tmp/control/wholesale /tmp/control/payouts /tmp/control/sweep \
+    /tmp/control/wholesale-cbdc /tmp/control/worker-payouts --out control.csv
 
 # A zkvm-bench generation reads as it is: <n>.witness against <n>.blockhash.
-zkvm/test/corpus/bench.py --arm plain --elf <plaintext ELF> --emu ~/.zisk/bin/ziskemu \
+zkvm/test/corpus/bench.py --arm plain --elf <mainnet ELF> --emu <ziskemu> \
     --corpus $ZKVM_BENCH/guests/monad/gen/r10zisk-rtp-25815000-25815199-cb7b6b1ae/witnesses \
     --out mainnet.csv
 
-zkvm/test/corpus/bench-report.py --l2 l2.csv --plain plain.csv --mainnet mainnet.csv
+zkvm/test/corpus/bench-report.py --l2 l2.csv --plain control.csv --mainnet mainnet.csv
 ```
 
 **The ELFs are built the way the benchmark builds its own**, and it matters: a
 bare `cargo-zisk build --release` leaves five of the six levers the official
 profile forces switched off, and measured 25 % more steps on a payouts block
-and 9 % more COST.
-The plaintext ELF is the official profile; the L2 one cannot be (the guest
-CMake refuses `MONAD_ZKVM_L2` there), so it is a dev build carrying the same six
-levers -- `ZISK_DMA`, `KECCAKF_MEMO`, `WIDE_MEMORY_SIZE`, `VARCODE_CACHE`,
-`NO_DIRTY_ACCOUNTS`, `NO_MERGE_CONSTRAINTS` -- with the DMA-patched GCC 15.2.0
-that `ZISK_DMA` needs. A plaintext dev build with those levers gives the
-official ELF's steps and COST exactly, on all 207 blocks compared, which is
-what licenses reading the L2 ELF as the official guest plus the L2.
+and 9 % more COST. The official profile refuses `MONAD_ZKVM_L2`, so both L2
+ELFs are dev builds carrying the same six levers -- `ZISK_DMA`, `KECCAKF_MEMO`,
+`WIDE_MEMORY_SIZE`, `VARCODE_CACHE`, `NO_DIRTY_ACCOUNTS`,
+`NO_MERGE_CONSTRAINTS` -- with the DMA-patched GCC 15.2.0 that `ZISK_DMA`
+needs, and the mainnet ELF is the same dev build without `MONAD_ZKVM_L2`. That
+one gives the official ELF's steps and COST exactly, on all 207 blocks
+compared, which is what licenses reading the L2 ELFs as the official guest plus
+the L2. All three were compiled with ZisK 1.2.0-alpha's own toolchain and run
+under its `ziskemu`. Which release built an ELF matters even where no version
+string shows it: installing a release relinks the `zisk` rustup toolchain, and
+1.3.1's emits other code than 1.2's under the same `rustc` version.
 
 | | `wholesale` | `payouts` | `wholesale-cbdc` | `worker-payouts` |
 |---|---:|---:|---:|---:|
-| steps, L2 | 0.58 M | 9.31 M | 1.28 M | 9.17 M |
-| COST, L2 | 0.396 G | 2.076 G | 0.500 G | 1.931 G |
+| steps, L2 | 0.84 M | 9.57 M | 1.54 M | 9.43 M |
+| COST, L2 | 0.450 G | 2.130 G | 0.553 G | 1.986 G |
 | of which fixed | 0.287 G | 0.287 G | 0.287 G | 0.287 G |
-| COST, plaintext | 0.386 G | 1.842 G | 0.486 G | 1.853 G |
-| share of a median mainnet block | 5 % | 26 % | 6 % | 24 % |
+| of which ancestors older than the parent | 0.088 G | 0.088 G | 0.088 G | 0.088 G |
+| COST, without encryption | 0.437 G | 1.839 G | 0.537 G | 1.889 G |
+| share of a median mainnet block | 6 % | 26 % | 7 % | 24 % |
 
 **A fixed 287,309,824 of it is the same on every block**: `Base`, ZisK's ROM
 and lookup tables (137 x 2^21), which the cost model charges once per run
-whatever the run proves. It is 73 % of a wholesale block. A guest that proved
+whatever the run proves. It is 64 % of a wholesale block. A guest that proved
 several blocks in one run -- this one proves one -- would pay it once, and on
 wholesale two blocks per run would save more than making the block itself
 free.
 
-**The rest follows the transactions first.** Over the 420 workload blocks of
-the L2 arm,
+**The ancestor headers are another 88 M on every block, and the guest does not
+need most of them.** It accepts any contiguous run of headers that ends at the
+parent and aborts on a `BLOCKHASH` outside it, so a witness need only carry
+the run back to the oldest block the transactions actually read, and the
+parent alone when they read none. None of these blocks reads one -- no
+contract in the corpus calls `blockhash` -- and cut to the parent, ten blocks
+of each preset, one in twenty, still publish the values their manifests
+record, at 87-88 M less COST and 430 K fewer steps: 20 % of a wholesale block,
+54 % of what it costs above the floor, and 4 % of a payouts block. The
+generator ships all 256, so every figure here includes them.
 
-    COST - base = 2.45 M x txs + 650 x witness_bytes + 7.2 M        R2 0.999999
+**The rest follows the transactions first.** Over the 420 blocks of the
+transfer presets on the L2 arm,
 
-and the plaintext arm gives 2.00 M per transaction and 667 per byte. The
-per-byte term is the trie's and is the same on both arms; the L2 is 0.45 M more
-per transaction, +22 %. A payouts block spends 1.22 G on its 500 transactions
-and 0.56 G on its 859 KB of witness.
+    COST - base = 2.43 M x txs + 661 x witness_bytes + 4.2 M        R2 0.999999
+
+and the control gives 1.93 M per transaction and 651 per byte. The per-byte
+term is the trie's and is the same on both arms; the encryption is 0.50 M more
+per transaction, +26 %. A payouts block spends 1.21 G on its 500 transactions
+and 0.62 G on its 944 KB of witness.
 
 **So prover cost is proportional to gas only above the floor.** On the payouts
-sweep `COST - base = 139 x gas`, R2 0.9994: for one transaction mix, the part
+sweep `COST - base = 140 x gas`, R2 0.9988: for one transaction mix, the part
 of the cost that depends on the block is linear in gas even though the witness
-is not. What makes COST per gas fall from 414 at 50 transfers to 141 at 5,000
+is not. What makes COST per gas fall from 488 at 50 transfers to 142 at 5,000
 is the fixed part, and the slope belongs to the mix -- outside the floor,
-wholesale spends 220 per gas and payouts 156.
+wholesale spends 328 per gas, over half of it on its ancestors, and payouts
+161.
 
 **The document's flows cost what their gas says, not what their transaction
 count says.** The per-transaction law above was fitted where a transaction is a
 transfer. On the token presets a transaction is a contract call -- for payroll,
 forty transfers -- and the law misses the part of the cost above the floor by
-38 % on `wholesale-cbdc` and 44 % on `worker-payouts`. Gas and witness bytes
-carry all four mixes: over their 800 workload blocks on the L2 arm,
+30 % on `wholesale-cbdc` and 42 % on `worker-payouts`. Gas and witness bytes
+carry every mix: over all 1,020 workload blocks of the L2 arm,
 
-    COST - base = 103 x gas + 707 x witness_bytes + 3.3 M        R2 0.99999
+    COST - base = 104.9 x gas + 687 x witness_bytes - 1.7 M        R2 0.999994
 
-within 0.4 % on every block of both payout presets, and within 0.2 % in the
-median on the two wholesale ones. Outside the floor the token presets spend 170
-and 171 per gas, inside the native range.
+within 1.0 % on every block of the five corpora, and 2.7 % at worst, on the
+sweep's 50-transfer blocks. Outside the floor the token presets spend 212 and
+177 per gas, inside the native range. The law describes this guest and not the
+mixes: on the control, the same two terms miss by up to 9 %.
 
-Settling payment versus payment doubles a wholesale block above the floor,
-0.212 G against 0.109 G: about forty banks either way, but reached through two
-tokens' storage and a settlement contract rather than as account leaves.
-Payroll goes the other way. `worker-payouts` touches as many contractors as
-`payouts` touches holders and costs 7 % less, 1.931 G against 2.076 G, because
-batching pays four hundred of them in ten transactions: 130 signatures to
-recover instead of 500 take secp256k1 from 0.19 G to 0.05 G, more than the
-mapping slots and the million-slot storage trie add in Keccak, 0.56 G to
-0.62 G.
+Settling payment versus payment costs a wholesale block 63 % more above the
+floor, 0.265 G against 0.162 G: about forty banks either way, but reached
+through tokens' storage and a settlement contract rather than as account
+leaves. Payroll goes the other way. `worker-payouts` touches as many
+contractors as `payouts` touches holders and costs 7 % less, 1.986 G against
+2.130 G, because batching pays four hundred of them in ten transactions: 130
+signatures to recover instead of 500 take secp256k1 from 0.19 G to 0.05 G,
+more than the mapping slots and the million-slot storage trie add in Keccak,
+0.59 G to 0.64 G.
 
-**Mainnet, on the same ELF.** The 200 canonical blocks 25,815,000-25,815,199
-(`zkvm-bench`'s `r10zisk-rtp` witnesses), every block hash reproduced: median
-**8.13 G** COST (p10 4.94, p90 12.20), 47.9 M steps, 6.61 MB of witness,
-1,195 COST per witness byte above the floor. A payouts block spends 2,082 per
-byte, 1.7 times as much: a transaction-dense L2 block is not a small mainnet
-block, and the mainnet law below does not carry over to it -- the transaction
-count is what it misses.
+**Mainnet, on the mainnet guest built the same way.** The 200 canonical blocks
+25,815,000-25,815,199 (`zkvm-bench`'s `r10zisk-rtp` witnesses), every block
+hash reproduced: median **8.13 G** COST (p10 4.94, p90 12.20), 47.9 M steps,
+6.61 MB of witness, 1,195 COST per witness byte above the floor. A payouts
+block spends 1,953 per byte, 1.6 times as much: a transaction-dense L2 block
+is not a small mainnet block, and the mainnet law below does not carry over to
+it -- the transaction count is what it misses.
 
-#### Where the L2's share goes
+#### Where the encryption's share goes
 
-Paired block for block against the plaintext arm, which executes the same
-transfers from the same seed:
+Paired block for block against the control, which executes the same
+transactions on the same state:
 
 | | steps | COST | COST - base |
 |---|---:|---:|---:|
-| `wholesale` | 1.14x | 1.03x | 1.10x |
-| `payouts` | 1.19x | 1.13x | 1.15x |
-| sweep, 50 to 5,000 transfers | 1.18-1.21x | 1.05-1.18x | 1.13-1.19x |
-| `wholesale-cbdc` | 1.08x | 1.03x | 1.07x |
-| `worker-payouts` | 1.06x | 1.04x | 1.05x |
+| `wholesale` | 1.12x | 1.03x | 1.08x |
+| `payouts` | 1.27x | 1.16x | 1.19x |
+| sweep, 50 to 5,000 transfers | 1.17-1.30x | 1.05-1.22x | 1.11-1.22x |
+| `wholesale-cbdc` | 1.08x | 1.03x | 1.06x |
+| `worker-payouts` | 1.08x | 1.05x | 1.06x |
 
-What the L2 adds is paid per transaction -- a leaf to decrypt, its sponges, a
-signature payload -- so it weighs less on the token presets, which reach the
-same participants through fewer, heavier transactions.
+The encryption is paid per transaction -- a leaf to decrypt, its ECDH and its
+sponges: 0.58-0.60 M COST and 102 bytes of witness a transfer, 0.75-0.76 M and
+140-142 bytes a token call, whose plaintext is longer. So it weighs less on
+the token presets, which reach the same participants through fewer, heavier
+transactions.
 
-Of the extra COST on a payouts block, 43 % is main-machine steps, 36 %
-precompiles (Poseidon2 9 %, secp256k1 15 %, Keccak 4 %) and 15 % memory. By
-function, on one 500-transaction block (`hotspots.py`, 9.14 M steps against
-7.61 M):
+Of the extra COST on a payouts block, 47 % is main-machine steps, 32 %
+precompiles (Poseidon2 8 %, secp256k1 12 %, Keccak 7 %) and 14 % memory. By
+function, on one 500-transaction block (`hotspots.py`, 9.58 M steps against
+7.56 M):
 
 - the software sponge around the Poseidon2 precompile, **0.96 M steps**:
   `L2Sponge::absorb` 0.51 M, the constructor 0.19 M, `squeeze` 0.16 M, byte
   packing 0.09 M;
 - the ECDH, mostly the GLV scalar multiplication, 0.66 M;
-- leaf decryption and the L2 block decode, 0.45 M;
-- less about 0.5 M the L2 does not do: gas pricing (`gas_price`, `checked_mul`,
-  the fee credits) and the plaintext decode.
+- leaf decryption, 0.33 M;
+- Keccak and allocation, 0.06 M. The L2 block decode costs the same on both
+  arms, so nothing else separates them.
 
 What keeps the sponge at that: it checks its declared I/O pattern once per call
 rather than once per element, absorbs and squeezes a rate block at a time, and
@@ -810,29 +872,33 @@ agrees with itself" from "the proved guest agrees": an x86 build has the native
 Poseidon2 permutation instead of `csrs 0x812` and libsecp256k1 instead of
 zisklib, so it is a different program.
 
-That step has been taken, under `ziskemu` 1.2.0-alpha -- the runtime
-`Cargo.lock` pins -- on the ELFs [the cost section](#what-a-block-costs)
-measures: the official plaintext profile, and the L2 arm as a dev build carrying
-the same six levers and the nine deployment values the tests use. Every witness
-the scenarios and the four presets generate passes, on both arms: the guest
-publishes exactly what the manifest recorded, the block hash on the plaintext
-arm and the four values on the L2 one, including the 1,021 L2 blocks whose
-anchor is non-zero.
+That step has been taken on the ELFs [the cost section](#what-a-block-costs)
+measures, under `ziskemu` 1.2.0-alpha: the L2 ELF and the control, dev builds
+carrying the same six levers and the nine deployment values the tests use.
+Every witness the scenarios and the five corpora generate passes, on both arms:
+the guest publishes exactly the four values the manifest recorded, including
+the 1,021 blocks of each arm whose anchor is non-zero.
 
-| | plaintext | L2 |
+| | L2 | without encryption |
 |---|---:|---:|
 | scenarios (transfers, evm, spoke) | 6 / 6 | 6 / 6 |
-| `wholesale`, 500 accounts | 201 / 201 | 201 / 201 |
-| `payouts`, 1,000,000 accounts | 201 / 201 | 201 / 201 |
-| the dispersion sweep, 50 to 5,000 distinct | 25 / 25 | 25 / 25 |
-| `wholesale-cbdc`, 500 banks in five currencies | 201 / 201 | 201 / 201 |
-| `wholesale-cbdc --currencies 2` | 201 / 201 | 201 / 201 |
-| `worker-payouts`, 1,000,000 contractors | 201 / 201 | 201 / 201 |
+| `wholesale`, 500 accounts | 200 / 200 | 200 / 200 |
+| `payouts`, 1,000,000 accounts | 200 / 200 | 200 / 200 |
+| the dispersion sweep, 50 to 5,000 distinct | 20 / 20 | 20 / 20 |
+| `wholesale-cbdc`, 500 banks in five currencies | 200 / 200 | 200 / 200 |
+| `wholesale-cbdc --currencies 2` | 200 / 200 | 200 / 200 |
+| `worker-payouts`, 1,000,000 contractors | 200 / 200 | 200 / 200 |
 
-What the L2 adds to each block is in
-[Where the L2's share goes](#where-the-l2s-share-goes).
+It has been taken again on this tree, with the same levers and values built
+by 1.3.1-alpha's toolchain and run under its `ziskemu`: every one of those
+witnesses passes on the L2 ELF and on the control, and the mainnet ELF
+reproduces the 200 block hashes below. The corpora are this tree's own: its
+generator reproduces every one of them byte for byte.
 
-The plaintext ELF also reproduces the canonical mainnet block hash of all 200
+What the encryption adds to each block is in
+[Where the encryption's share goes](#where-the-encryptions-share-goes).
+
+The mainnet ELF reproduces the canonical mainnet block hash of all 200
 blocks 25,815,000-25,815,199 from `zkvm-bench`'s `r10zisk-rtp` witnesses, 0.2 M
 to 95.1 M steps. Witnesses from before the blob grammar moved `DIGEST` to `0xa0`
 abort in the reader, which is expected: `ziskemu` exits 0 and leaves the output

@@ -81,6 +81,38 @@ struct bytes32_t : evmc_bytes32
     friend constexpr bool
     operator==(bytes32_t const &a, bytes32_t const &b) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if !consteval {
+            // Test the last word first, where small big-endian integers differ.
+            // If it matches, compare the remaining 24 bytes by DMA.
+            uint64_t a3;
+            uint64_t b3;
+            __builtin_memcpy(&a3, a.bytes + 24, sizeof(a3));
+            __builtin_memcpy(&b3, b.bytes + 24, sizeof(b3));
+            if (a3 != b3) {
+                return false;
+            }
+            // CSR 0x814 selects ZisK's DMA memory comparison precompile.
+            // ZisK decodes csrrs + addi as one DMA comparison:
+            // %0 is the result (zero if equal), %1 and %2 are the addresses.
+            // addi supplies the length, 24; it is not executed as an addition.
+            uint64_t differ;
+            // Enable CSR instructions locally, then restore assembler options.
+            asm(".option push\n\t"
+                ".option arch, +zicsr\n\t"
+                "csrrs %0, 0x814, %1\n\t"
+                "addi x0, %2, 24\n\t"
+                ".option pop"
+                // '&' prevents sharing a register with an input.
+                : "=&r"(differ)
+                : "r"(a.bytes),
+                  "r"(b.bytes),
+                  // Tell GCC about the reads; no copy is generated.
+                  "m"(*reinterpret_cast<uint8_t const(*)[24]>(a.bytes)),
+                  "m"(*reinterpret_cast<uint8_t const(*)[24]>(b.bytes)));
+            return differ == 0;
+        }
+#endif
         return std::equal(a.bytes, a.bytes + 32, b.bytes);
     }
 

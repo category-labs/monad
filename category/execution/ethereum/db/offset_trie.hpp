@@ -643,10 +643,10 @@ class OffsetTrie
     alignas(8) node_id_wire_t primed_slots_[2 + 16]{};
     static constexpr size_t PRIMED_CHILDREN = 2;
 
-    // The constructor's claim marks, for the branches whose priming encode
-    // claims their children, and the claims those encodes made, in the
-    // constructor's unit: DIGEST_NODE_LEN a claim.
-    unsigned char *claim_marks_{nullptr};
+    // The constructor's claim marks, a word per blob offset, for the
+    // branches whose priming encode claims their children, and the claims
+    // those encodes made, in the constructor's unit: DIGEST_NODE_LEN a claim.
+    uint64_t *claim_marks_{nullptr};
     size_t claimed_bytes_{0};
 
     // The priming sweep encodes each node at the end of its own window, which

@@ -2523,9 +2523,9 @@ namespace monad::vm::interpreter
     // PUSH1 and the opcode after its immediate, OP, run as one, instr_ptr on
     // the PUSH1. On a revision with slots, PUSH1 dispatches to the head of
     // OP's slot (push<1>), which for these followers jumps here (execute.cpp),
-    // PUSH1's own stack test made; push<1> tests the follower and calls this
-    // on the others.
-    template <uint8_t OP, Traits traits>
+    // PUSH1's own stack test made, and passes OP's handler as HANDLER; push<1>
+    // tests the follower and calls this on the others.
+    template <uint8_t OP, Traits traits, InstrEval HANDLER = nullptr>
     MONAD_VM_INSTRUCTION_CALL void push1_then(
         runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
         uint256_t const *stack_lower_bound, StackTop stack_top,
@@ -2627,7 +2627,7 @@ namespace monad::vm::interpreter
             else {
                 // MSTORE's value is the top.
                 if (MONAD_LIKELY(
-                        stack_top >= stack_lower_bound &&
+                        stack_holds<1>(stack_top, stack_lower_bound) &&
                         ctx.memory.size >= *monad_vm_k + 32)) {
                     gas_remaining -= static_gas<traits, PUSH1, MSTORE>();
                     runtime::mstore_at<traits>(&ctx, monad_vm_k, stack_top);
@@ -2650,7 +2650,7 @@ namespace monad::vm::interpreter
             // the immediate, and the immediate takes its place.
             constexpr size_t monad_vm_n = OP - SWAP1 + 1;
             uint8_t const monad_vm_k = *(instr_ptr + 1);
-            if (MONAD_LIKELY(stack_top + 1 - monad_vm_n >= stack_bottom)) {
+            if (MONAD_LIKELY(stack_top + 1 - monad_vm_n >= stack_lower_bound)) {
                 gas_remaining -= static_gas<
                     traits,
                     PUSH1,
@@ -2664,8 +2664,8 @@ namespace monad::vm::interpreter
             instr_ptr += 2;
             MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[OP](
                 ctx,
-                MONAD_VM_ANALYSIS_ARG,
-                stack_bottom,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
                 stack_top + 1,
                 gas_remaining,
                 instr_ptr MONAD_VM_TBL_ARG);
@@ -2701,38 +2701,16 @@ namespace monad::vm::interpreter
             }
             MONAD_VM_FUSED_NEXT(3, 1);
         }
-        else if constexpr (OP == AND || OP == SIGNEXTEND) {
-            // On the top, below the immediate: AND keeps its low byte,
-            // SIGNEXTEND of a byte in the low word extends it in two shifts.
-            // Other byte indices and an empty stack take the push and then
-            // the follower's handler.
+        else if constexpr (OP == AND) {
+            // On the top, below the immediate: its low byte kept.
             uint8_t const monad_vm_k = *(instr_ptr + 1);
-            if (MONAD_LIKELY(
-                    stack_top >= stack_lower_bound &&
-                    (OP == AND || monad_vm_k < 8))) {
-                gas_remaining -= static_gas<
-                    traits,
-                    PUSH1,
-                    static_cast<compiler::EvmOpCode>(OP)>();
+            if (MONAD_LIKELY(stack_holds<1>(stack_top, stack_lower_bound))) {
+                gas_remaining -= static_gas<traits, PUSH1, AND>();
                 auto &monad_vm_x = *stack_top;
-                if constexpr (OP == AND) {
-                    monad_vm_x[0] &= monad_vm_k;
-                    monad_vm_x[1] = 0;
-                    monad_vm_x[2] = 0;
-                    monad_vm_x[3] = 0;
-                }
-                else {
-                    unsigned const monad_vm_shift = 56u - 8u * monad_vm_k;
-                    int64_t const monad_vm_low =
-                        static_cast<int64_t>(monad_vm_x[0] << monad_vm_shift) >>
-                        monad_vm_shift;
-                    uint64_t const monad_vm_sign =
-                        static_cast<uint64_t>(monad_vm_low >> 63);
-                    monad_vm_x[0] = static_cast<uint64_t>(monad_vm_low);
-                    monad_vm_x[1] = monad_vm_sign;
-                    monad_vm_x[2] = monad_vm_sign;
-                    monad_vm_x[3] = monad_vm_sign;
-                }
+                monad_vm_x[0] &= monad_vm_k;
+                monad_vm_x[1] = 0;
+                monad_vm_x[2] = 0;
+                monad_vm_x[3] = 0;
                 MONAD_VM_FUSED_NEXT(3, 0);
             }
             interpreter::push(stack_top, uint256_t{monad_vm_k});
@@ -2745,6 +2723,75 @@ namespace monad::vm::interpreter
                 stack_top + 1,
                 gas_remaining,
                 instr_ptr MONAD_VM_TBL_ARG);
+        }
+        else if constexpr (OP == SIGNEXTEND) {
+            // On the top, below the immediate: the byte it names extended
+            // in two shifts in its word, the words above taking its sign;
+            // a byte of the low word, int8 to int64 and Solidity's int24
+            // ticks above all, without the word's index. A byte index of 31
+            // or more and an empty stack take the push and then SIGNEXTEND's
+            // handler, which HANDLER reaches by name: through the table, the
+            // address formed in a6 makes gcc copy the arguments away at the
+            // first instruction.
+            uint8_t const monad_vm_k = *(instr_ptr + 1);
+            if (MONAD_LIKELY(stack_holds<1>(stack_top, stack_lower_bound) && monad_vm_k < 31)) {
+                gas_remaining -= static_gas<traits, PUSH1, SIGNEXTEND>();
+                auto &monad_vm_x = *stack_top;
+                if (MONAD_LIKELY(monad_vm_k < 8)) {
+                    unsigned const monad_vm_shift = 56u - 8u * monad_vm_k;
+                    int64_t const monad_vm_low =
+                        static_cast<int64_t>(monad_vm_x[0] << monad_vm_shift) >>
+                        monad_vm_shift;
+                    uint64_t const monad_vm_sign =
+                        static_cast<uint64_t>(monad_vm_low >> 63);
+                    monad_vm_x[0] = static_cast<uint64_t>(monad_vm_low);
+                    monad_vm_x[1] = monad_vm_sign;
+                    monad_vm_x[2] = monad_vm_sign;
+                    monad_vm_x[3] = monad_vm_sign;
+                }
+                else {
+                    unsigned const monad_vm_w = monad_vm_k >> 3;
+                    unsigned const monad_vm_shift =
+                        56u - 8u * (monad_vm_k & 7u);
+                    int64_t const monad_vm_low =
+                        static_cast<int64_t>(
+                            monad_vm_x[monad_vm_w] << monad_vm_shift) >>
+                        monad_vm_shift;
+                    uint64_t const monad_vm_sign =
+                        static_cast<uint64_t>(monad_vm_low >> 63);
+                    monad_vm_x[monad_vm_w] =
+                        static_cast<uint64_t>(monad_vm_low);
+                    if (monad_vm_w == 1) {
+                        monad_vm_x[2] = monad_vm_sign;
+                        monad_vm_x[3] = monad_vm_sign;
+                    }
+                    else if (monad_vm_w == 2) {
+                        monad_vm_x[3] = monad_vm_sign;
+                    }
+                }
+                MONAD_VM_FUSED_NEXT(3, 0);
+            }
+            interpreter::push(stack_top, uint256_t{monad_vm_k});
+            gas_remaining -= static_gas<traits, PUSH1>();
+            instr_ptr += 2;
+            if constexpr (HANDLER != nullptr) {
+                MONAD_VM_MUST_TAIL return HANDLER(
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top + 1,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+            else {
+                MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[OP](
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top + 1,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
         }
         else {
             static_assert(OP == ADD || OP == SHL || OP == SHR || OP == SAR);

@@ -3957,8 +3957,9 @@ namespace monad::vm::interpreter
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
     }
 
-    // DUP2 then ADD, LT or AND, DUP2's tests and gas made: the second word
-    // is read where it lies instead of copied to the top.
+    // DUP2 then ADD, LT, AND or MSTORE, DUP2's tests and gas made: the second
+    // word is read where it lies instead of copied to the top. A store that
+    // grows the memory makes the copy and takes MSTORE's growth path.
     template <uint8_t OP, Traits traits>
     MONAD_VM_INSTRUCTION_CALL void dup2_then(
         runtime::Context &entry_ctx, MONAD_VM_ANALYSIS_PARAM,
@@ -3966,21 +3967,39 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         runtime::Context &ctx = held_in_a0(entry_ctx);
-        gas_remaining -=
-            static_gas<traits, static_cast<compiler::EvmOpCode>(OP)>();
-        if constexpr (OP == ADD) {
-            ctx.add256_params.a =
-                reinterpret_cast<uint64_t const *>(stack_top - 1);
-            zisk_add256(ctx.add256_params, *stack_top, *stack_top);
-        }
-        else if constexpr (OP == LT) {
-            *stack_top = *(stack_top - 1) < *stack_top;
+        if constexpr (OP == MSTORE) {
+            MONAD_VM_CHECK_OWN_GAS(MSTORE);
+            auto const offset = ctx.get_memory_offset(*(stack_top - 1));
+            if (MONAD_UNLIKELY(ctx.memory.size < *offset + 32)) {
+                *(stack_top + 1) = *(stack_top - 1);
+                MONAD_VM_MUST_TAIL return mstore_grow<traits>(
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top + 1,
+                    gas_remaining,
+                    MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+            }
+            runtime::mstore_at<base_traits<traits>>(&ctx, offset, stack_top);
+            MONAD_VM_DISPATCH(1, -1, *instr_ptr);
         }
         else {
-            static_assert(OP == AND);
-            *stack_top = *(stack_top - 1) & *stack_top;
+            gas_remaining -=
+                static_gas<traits, static_cast<compiler::EvmOpCode>(OP)>();
+            if constexpr (OP == ADD) {
+                ctx.add256_params.a =
+                    reinterpret_cast<uint64_t const *>(stack_top - 1);
+                zisk_add256(ctx.add256_params, *stack_top, *stack_top);
+            }
+            else if constexpr (OP == LT) {
+                *stack_top = *(stack_top - 1) < *stack_top;
+            }
+            else {
+                static_assert(OP == AND);
+                *stack_top = *(stack_top - 1) & *stack_top;
+            }
+            MONAD_VM_DISPATCH(1, 0, *instr_ptr);
         }
-        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
     }
 #endif
 

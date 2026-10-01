@@ -164,7 +164,7 @@ namespace monad::vm::interpreter
     // DUP2's head, 40 bytes ahead of SWAP1's: in copy R it takes a DUP2
     // (R + 5) % 6 bytes behind (dup2_offset). For most opcodes it is the copy
     // of the second word to the new top, a5 stepped by 6 in copy 0, and a
-    // jump to the copy; ADD's, LT's and AND's jump to their pair.
+    // jump to the copy; ADD's, LT's, AND's and MSTORE's jump to their pair.
     #define MONAD_VM_DUP2_COPY                                                 \
         "\taddi t4, a3, -32\n"                                                 \
         "\taddi a3, a3, 32\n"                                                  \
@@ -204,6 +204,7 @@ namespace monad::vm::interpreter
     #define MONAD_VM_DUP2_OF_01 ~, THEN
     #define MONAD_VM_DUP2_OF_10 ~, THEN
     #define MONAD_VM_DUP2_OF_16 ~, THEN
+    #define MONAD_VM_DUP2_OF_52 ~, THEN
     #define MONAD_VM_DUP2_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_DUP2_, KIND)
     #define MONAD_VM_DUP2_HEAD(NAME, OP, R)                                    \
         MONAD_VM_DUP2_PICK(                                                    \
@@ -854,6 +855,7 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_DUP2_THEN_IN
     #undef MONAD_VM_DUP2_HEAD
     #undef MONAD_VM_DUP2_PICK
+    #undef MONAD_VM_DUP2_OF_52
     #undef MONAD_VM_DUP2_OF_16
     #undef MONAD_VM_DUP2_OF_10
     #undef MONAD_VM_DUP2_OF_01

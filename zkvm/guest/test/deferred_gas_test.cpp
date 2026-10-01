@@ -332,6 +332,57 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
     check(reads);
 
     bool effects = true;
+    // Exercise immediate memory pairs with and without expansion, including
+    // unaligned offsets and exact gas boundaries. Verify the stored value.
+    for (bool const initialized_memory : {false, true}) {
+        for (uint8_t const offset : {0, 31, 64, 255}) {
+            std::vector<uint8_t> code;
+            if (initialized_memory) {
+                code = {PUSH0, PUSH2, 1, 0, MSTORE}; // Expand to 288 bytes.
+            }
+            code.insert(
+                code.end(),
+                {PUSH1,
+                 0xa5,
+                 PUSH1,
+                 offset,
+                 MSTORE,
+                 PUSH1,
+                 offset,
+                 MLOAD,
+                 PUSH1,
+                 0xa5,
+                 EQ,
+                 PUSH2,
+                 0,
+                 0,
+                 JUMPI,
+                 0xfe});
+            code[code.size() - 3] = static_cast<uint8_t>(code.size());
+            code.insert(code.end(), {JUMPDEST, STOP});
+            int64_t const memory_words =
+                (static_cast<int64_t>(offset) + 63) / 32;
+            int64_t const cost =
+                35 + (initialized_memory ? 35 : 3 * memory_words);
+            for (int64_t gas = 0; gas <= cost + 1; ++gas) {
+                auto const result = run(code, gas);
+                effects &= gas < cost ? failed_cleanly(result)
+                                      : result.status == CallStatus::Success &&
+                                            result.gas == gas - cost;
+            }
+        }
+    }
+    // A warm memory range must not hide a missing MSTORE value or a full stack.
+    std::vector<uint8_t> memory_stack{PUSH0, PUSH1, 0, MSTORE};
+    memory_stack.insert(memory_stack.end(), {PUSH1, 0, MSTORE, STOP});
+    effects &= failed_cleanly(run(memory_stack, 10000));
+    for (auto const op : {MLOAD, MSTORE}) {
+        memory_stack = {PUSH0, PUSH1, 0, MSTORE};
+        memory_stack.insert(memory_stack.end(), 1024, PUSH0);
+        memory_stack.insert(
+            memory_stack.end(), {PUSH1, 0, static_cast<uint8_t>(op), STOP});
+        effects &= failed_cleanly(run(memory_stack, 10000));
+    }
     for (auto const [op, operands] :
          std::array<std::pair<uint8_t, unsigned>, 8>{
              {{MSTORE, 2},

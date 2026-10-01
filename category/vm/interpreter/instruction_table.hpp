@@ -2640,6 +2640,57 @@ namespace monad::vm::interpreter
                 gas_remaining,
                 instr_ptr MONAD_VM_TBL_ARG);
         }
+        else if constexpr (OP == MLOAD || OP == MSTORE) {
+            // [PUSH1][offset][MLOAD/MSTORE]: read the byte offset directly,
+            // without pushing and rereading a 256-bit address. It is <= 255.
+            // MLOAD pushes the loaded value; MSTORE consumes the existing top.
+            // Fuse only when all 32 bytes are already in EVM memory.
+            // Charge both opcodes; eager mode also checks gas before access.
+            auto const memory_offset = runtime::Memory::Offset::unsafe_from(
+                static_cast<runtime::Memory::Offset::rep>(*(instr_ptr + 1)));
+            if constexpr (OP == MLOAD) {
+                if (MONAD_LIKELY(ctx.memory.size >= *memory_offset + 32)) {
+                    gas_remaining -= static_gas<traits, PUSH1, MLOAD>();
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+                    if (MONAD_UNLIKELY(gas_remaining < 0)) {
+                        MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+                    }
+    #endif
+                    runtime::mload_at<traits>(
+                        &ctx, stack_top.next_slot(), memory_offset);
+                    MONAD_VM_FUSED_NEXT(3, 1);
+                }
+            }
+            else {
+                // PUSH1 supplies the offset; the value to store is already on
+                // top.
+                if (MONAD_LIKELY(
+                        stack_holds<1>(stack_top, stack_lower_bound) &&
+                        ctx.memory.size >= *memory_offset + 32)) {
+                    gas_remaining -= static_gas<traits, PUSH1, MSTORE>();
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+                    if (MONAD_UNLIKELY(gas_remaining < 0)) {
+                        MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+                    }
+    #endif
+                    runtime::mstore_at<traits>(
+                        &ctx, memory_offset, &*stack_top);
+                    MONAD_VM_FUSED_NEXT(3, -1);
+                }
+            }
+            // Materialize PUSH1 and let the ordinary handler check operands
+            // and charge for memory expansion when needed.
+            interpreter::push(stack_top, uint256_t{*(instr_ptr + 1)});
+            gas_remaining -= static_gas<traits, PUSH1>();
+            instr_ptr += 2;
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[OP](
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top + 1,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
         else {
             static_assert(OP == ADD || OP == SHL || OP == SHR || OP == SAR);
             // The pair replaces the top. Slot dispatch already checked

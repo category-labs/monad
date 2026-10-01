@@ -511,7 +511,7 @@ fn zisk_slots_ld() -> String {
          KEEP(*(.monad_vm_push1*))\n        \
          KEEP(*(.monad_vm_push2*))\n        \
          KEEP(*(.monad_vm_swap1*))\n        \
-         KEEP(*(.monad_vm_dup2*))\n        \
+         KEEP(*(.monad_vm_dup*))\n        \
          KEEP(*(.monad_vm_body*))\n    }}\n}} INSERT AFTER .text;\n",
         8 * 256 * SLOT
     );

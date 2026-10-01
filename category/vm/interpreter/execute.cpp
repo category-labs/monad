@@ -63,10 +63,10 @@ namespace monad::vm::interpreter
             ",\"ax\",@progbits\n"                                              \
             ".option push\n"                                                   \
             ".option norelax\n"                                                \
-            ".type monad_vm_slot_" #NAME "_" #OP "_lead_dup2" #SUFFIX          \
+            ".type monad_vm_slot_" #NAME "_" #OP "_lead_dup" #SUFFIX           \
             ", @function\n"                                                    \
-            ".size monad_vm_slot_" #NAME "_" #OP "_lead_dup2" #SUFFIX ", 40\n" \
-            "monad_vm_slot_" #NAME "_" #OP "_lead_dup2" #SUFFIX ":\n" HEADS2   \
+            ".size monad_vm_slot_" #NAME "_" #OP "_lead_dup" #SUFFIX ", 40\n"  \
+            "monad_vm_slot_" #NAME "_" #OP "_lead_dup" #SUFFIX ":\n" HEADS2    \
             ".type monad_vm_slot_" #NAME "_" #OP "_lead_swap1" #SUFFIX         \
             ", @function\n"                                                    \
             ".size monad_vm_slot_" #NAME "_" #OP "_lead_swap1" #SUFFIX         \
@@ -105,7 +105,7 @@ namespace monad::vm::interpreter
             OP,                                                                \
             ,                                                                  \
             "",                                                                \
-            MONAD_VM_DUP2_HEAD(NAME, OP, 0),                                   \
+            MONAD_VM_DUP_HEAD(NAME, OP, 0),                                    \
             MONAD_VM_SWAP1_HEAD(NAME, OP, 0),                                  \
             H2_0,                                                              \
             H1_0,                                                              \
@@ -115,7 +115,7 @@ namespace monad::vm::interpreter
             OP,                                                                \
             _1,                                                                \
             "",                                                                \
-            MONAD_VM_DUP2_HEAD(NAME, OP, 1),                                   \
+            MONAD_VM_DUP_HEAD(NAME, OP, 1),                                    \
             MONAD_VM_SWAP1_HEAD(NAME, OP, 1),                                  \
             H2_1,                                                              \
             H1_1,                                                              \
@@ -125,7 +125,7 @@ namespace monad::vm::interpreter
             OP,                                                                \
             _2,                                                                \
             "\tnop\n",                                                         \
-            MONAD_VM_DUP2_HEAD(NAME, OP, 2),                                   \
+            MONAD_VM_DUP_HEAD(NAME, OP, 2),                                    \
             MONAD_VM_SWAP1_HEAD(NAME, OP, 2),                                  \
             H2_2,                                                              \
             H1_2,                                                              \
@@ -135,7 +135,7 @@ namespace monad::vm::interpreter
             OP,                                                                \
             _3,                                                                \
             "\tnop\n",                                                         \
-            MONAD_VM_DUP2_HEAD(NAME, OP, 3),                                   \
+            MONAD_VM_DUP_HEAD(NAME, OP, 3),                                    \
             MONAD_VM_SWAP1_HEAD(NAME, OP, 3),                                  \
             H2_3,                                                              \
             H1_3,                                                              \
@@ -145,7 +145,7 @@ namespace monad::vm::interpreter
             OP,                                                                \
             _4,                                                                \
             "\tnop\n",                                                         \
-            MONAD_VM_DUP2_HEAD(NAME, OP, 4),                                   \
+            MONAD_VM_DUP_HEAD(NAME, OP, 4),                                    \
             MONAD_VM_SWAP1_HEAD(NAME, OP, 4),                                  \
             H2_4,                                                              \
             H1_4,                                                              \
@@ -155,67 +155,71 @@ namespace monad::vm::interpreter
             OP,                                                                \
             _5,                                                                \
             "\tnop\n",                                                         \
-            MONAD_VM_DUP2_HEAD(NAME, OP, 5),                                   \
+            MONAD_VM_DUP_HEAD(NAME, OP, 5),                                    \
             MONAD_VM_SWAP1_HEAD(NAME, OP, 5),                                  \
             H2_5,                                                              \
             H1_5,                                                              \
             "28")
 
-    // DUP2's head, 40 bytes ahead of SWAP1's: in copy R it takes a DUP2
-    // (R + 5) % 6 bytes behind (dup2_offset). For most opcodes it is the copy
-    // of the second word to the new top, a5 stepped by 6 in copy 0, and a
-    // jump to the copy; ADD's, LT's, AND's and MSTORE's jump to their pair.
-    #define MONAD_VM_DUP2_COPY                                                 \
-        "\taddi t4, a3, -32\n"                                                 \
+    // The head of DUP2 to DUP16, 40 bytes ahead of SWAP1's: in copy R it
+    // takes a DUPn (R + 5) % 6 bytes behind (dup_offset), the word to copy at
+    // a7. For most opcodes it is the copy to the new top, a5 stepped by 6 in
+    // copy 0, and a jump to the copy; ADD's, AND's, LT's, GT's and MSTORE's
+    // jump to their pair, a7 as it came.
+    #define MONAD_VM_DUP_COPY                                                  \
         "\taddi a3, a3, 32\n"                                                  \
-        "\tcsrs 0x813, t4\n"                                                   \
+        "\tcsrs 0x813, a7\n"                                                   \
         "\taddi zero, a3, 32\n"
-    #define MONAD_VM_DUP2_PLAIN_0(NAME, OP)                                    \
-        MONAD_VM_DUP2_COPY MONAD_VM_STEP6 "\tj monad_vm_slot_" #NAME "_" #OP   \
-                                          "\n\tnop\n\tnop\n\tnop\n\tnop\n"
-    #define MONAD_VM_DUP2_PLAIN_R(NAME, OP, SUFFIX)                            \
-        MONAD_VM_DUP2_COPY "\tj monad_vm_slot_" #NAME "_" #OP SUFFIX           \
-                           "\n" MONAD_VM_NOP5
-    #define MONAD_VM_DUP2_PLAIN_1(NAME, OP)                                    \
-        MONAD_VM_DUP2_PLAIN_R(NAME, OP, "_1")
-    #define MONAD_VM_DUP2_PLAIN_2(NAME, OP)                                    \
-        MONAD_VM_DUP2_PLAIN_R(NAME, OP, "_2")
-    #define MONAD_VM_DUP2_PLAIN_3(NAME, OP)                                    \
-        MONAD_VM_DUP2_PLAIN_R(NAME, OP, "_3")
-    #define MONAD_VM_DUP2_PLAIN_4(NAME, OP)                                    \
-        MONAD_VM_DUP2_PLAIN_R(NAME, OP, "_4")
-    #define MONAD_VM_DUP2_PLAIN_5(NAME, OP)                                    \
-        MONAD_VM_DUP2_PLAIN_R(NAME, OP, "_5")
-    #define MONAD_VM_DUP2_PLAIN(NAME, OP, R)                                   \
-        MONAD_VM_LEAD_CAT(MONAD_VM_DUP2_PLAIN_, R)(NAME, OP)
-    #define MONAD_VM_DUP2_THEN_R(NAME, OP, SUFFIX)                             \
-        "\ttail monad_vm_slot_" #NAME "_" #OP "_dup2" SUFFIX                   \
-        "\n" MONAD_VM_NOP5 "\tnop\n\tnop\n\tnop\n"
-    #define MONAD_VM_DUP2_THEN_0(NAME, OP)                                     \
+    #define MONAD_VM_DUP_PLAIN_0(NAME, OP)                                     \
+        MONAD_VM_DUP_COPY MONAD_VM_STEP6 "\tj monad_vm_slot_" #NAME "_" #OP    \
+                                         "\n" MONAD_VM_NOP5
+    #define MONAD_VM_DUP_PLAIN_R(NAME, OP, SUFFIX)                             \
+        MONAD_VM_DUP_COPY "\tj monad_vm_slot_" #NAME "_" #OP SUFFIX            \
+                          "\n" MONAD_VM_NOP5 "\tnop\n"
+    #define MONAD_VM_DUP_PLAIN_1(NAME, OP) MONAD_VM_DUP_PLAIN_R(NAME, OP, "_1")
+    #define MONAD_VM_DUP_PLAIN_2(NAME, OP) MONAD_VM_DUP_PLAIN_R(NAME, OP, "_2")
+    #define MONAD_VM_DUP_PLAIN_3(NAME, OP) MONAD_VM_DUP_PLAIN_R(NAME, OP, "_3")
+    #define MONAD_VM_DUP_PLAIN_4(NAME, OP) MONAD_VM_DUP_PLAIN_R(NAME, OP, "_4")
+    #define MONAD_VM_DUP_PLAIN_5(NAME, OP) MONAD_VM_DUP_PLAIN_R(NAME, OP, "_5")
+    #define MONAD_VM_DUP_PLAIN(NAME, OP, R)                                    \
+        MONAD_VM_LEAD_CAT(MONAD_VM_DUP_PLAIN_, R)(NAME, OP)
+    #define MONAD_VM_DUP_THEN_R(NAME, OP, SUFFIX)                              \
+        "\ttail monad_vm_slot_" #NAME "_" #OP "_dup" SUFFIX "\n" MONAD_VM_NOP5 \
+        "\tnop\n\tnop\n\tnop\n"
+    #define MONAD_VM_DUP_THEN_0(NAME, OP)                                      \
         MONAD_VM_STEP6 "\ttail monad_vm_slot_" #NAME "_" #OP                   \
-                       "_dup2\n" MONAD_VM_NOP5 "\tnop\n\tnop\n"
-    #define MONAD_VM_DUP2_THEN_1(NAME, OP) MONAD_VM_DUP2_THEN_R(NAME, OP, "_1")
-    #define MONAD_VM_DUP2_THEN_2(NAME, OP) MONAD_VM_DUP2_THEN_R(NAME, OP, "_2")
-    #define MONAD_VM_DUP2_THEN_3(NAME, OP) MONAD_VM_DUP2_THEN_R(NAME, OP, "_3")
-    #define MONAD_VM_DUP2_THEN_4(NAME, OP) MONAD_VM_DUP2_THEN_R(NAME, OP, "_4")
-    #define MONAD_VM_DUP2_THEN_5(NAME, OP) MONAD_VM_DUP2_THEN_R(NAME, OP, "_5")
-    #define MONAD_VM_DUP2_THEN(NAME, OP, R)                                    \
-        MONAD_VM_LEAD_CAT(MONAD_VM_DUP2_THEN_, R)(NAME, OP)
-    #define MONAD_VM_DUP2_OF_01 ~, THEN
-    #define MONAD_VM_DUP2_OF_10 ~, THEN
-    #define MONAD_VM_DUP2_OF_16 ~, THEN
-    #define MONAD_VM_DUP2_OF_52 ~, THEN
-    #define MONAD_VM_DUP2_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_DUP2_, KIND)
-    #define MONAD_VM_DUP2_HEAD(NAME, OP, R)                                    \
-        MONAD_VM_DUP2_PICK(                                                    \
-            MONAD_VM_LEAD_KIND(MONAD_VM_DUP2_OF_##OP, PLAIN, ~))(NAME, OP, R)
-    // DUP2's pairs, past the slots, compiled with instr_ptr LAG bytes ahead
-    // of a5.
-    #define MONAD_VM_DUP2_THEN_IN(REV, NAME, OP, SUFFIX, LAG)                  \
-        MONAD_VM_HANDLER_DECL(                                                 \
-            NAME##_##OP, _dup2##SUFFIX, ".monad_vm_dup2." #NAME "." #OP)       \
+                       "_dup\n" MONAD_VM_NOP5 "\tnop\n\tnop\n"
+    #define MONAD_VM_DUP_THEN_1(NAME, OP) MONAD_VM_DUP_THEN_R(NAME, OP, "_1")
+    #define MONAD_VM_DUP_THEN_2(NAME, OP) MONAD_VM_DUP_THEN_R(NAME, OP, "_2")
+    #define MONAD_VM_DUP_THEN_3(NAME, OP) MONAD_VM_DUP_THEN_R(NAME, OP, "_3")
+    #define MONAD_VM_DUP_THEN_4(NAME, OP) MONAD_VM_DUP_THEN_R(NAME, OP, "_4")
+    #define MONAD_VM_DUP_THEN_5(NAME, OP) MONAD_VM_DUP_THEN_R(NAME, OP, "_5")
+    #define MONAD_VM_DUP_THEN(NAME, OP, R)                                     \
+        MONAD_VM_LEAD_CAT(MONAD_VM_DUP_THEN_, R)(NAME, OP)
+    #define MONAD_VM_DUP_OF_01 ~, THEN
+    #define MONAD_VM_DUP_OF_10 ~, THEN
+    #define MONAD_VM_DUP_OF_11 ~, THEN
+    #define MONAD_VM_DUP_OF_16 ~, THEN
+    #define MONAD_VM_DUP_OF_52 ~, THEN
+    #define MONAD_VM_DUP_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_DUP_, KIND)
+    #define MONAD_VM_DUP_HEAD(NAME, OP, R)                                     \
+        MONAD_VM_DUP_PICK(MONAD_VM_LEAD_KIND(MONAD_VM_DUP_OF_##OP, PLAIN, ~))( \
+            NAME, OP, R)
+    // DUPn's pairs, past the slots, compiled with instr_ptr LAG bytes ahead
+    // of a5: an eighth argument, a7, carries the word DUPn copies.
+    #define MONAD_VM_DUP_THEN_IN(REV, NAME, OP, SUFFIX, LAG)                   \
+        extern "C" [[gnu::section(".monad_vm_dup." #NAME "." #OP)]] void       \
+            monad_vm_slot_##NAME##_##OP##_dup##SUFFIX(                         \
+                runtime::Context &ctx,                                         \
+                MONAD_VM_ANALYSIS_PARAM,                                       \
+                uint256_t const *const stack_bottom,                           \
+                uint256_t *const stack_top,                                    \
+                int64_t const gas_remaining,                                   \
+                uint8_t const *const instr_ptr,                                \
+                void const *const itbl,                                        \
+                uint256_t const *const src)                                    \
         {                                                                      \
-            __attribute__((musttail)) return dup2_then<                        \
+            __attribute__((musttail)) return dup_then<                         \
                 0x##OP,                                                        \
                 MONAD_VM_LAGT(REV, LAG)>(                                      \
                 ctx,                                                           \
@@ -224,21 +228,22 @@ namespace monad::vm::interpreter
                 stack_top,                                                     \
                 gas_remaining,                                                 \
                 instr_ptr + (LAG),                                             \
-                itbl);                                                         \
+                itbl,                                                          \
+                src);                                                          \
         }
-    #define MONAD_VM_DUP2_PAIR_PLAIN(REV, NAME, OP)
-    #define MONAD_VM_DUP2_PAIR_THEN(REV, NAME, OP)                             \
-        MONAD_VM_DUP2_THEN_IN(REV, NAME, OP, , 0)                              \
-        MONAD_VM_DUP2_THEN_IN(REV, NAME, OP, _1, 1)                            \
-        MONAD_VM_DUP2_THEN_IN(REV, NAME, OP, _2, 2)                            \
-        MONAD_VM_DUP2_THEN_IN(REV, NAME, OP, _3, 3)                            \
-        MONAD_VM_DUP2_THEN_IN(REV, NAME, OP, _4, 4)                            \
-        MONAD_VM_DUP2_THEN_IN(REV, NAME, OP, _5, 5)
-    #define MONAD_VM_DUP2_PAIR_PICK(KIND)                                      \
-        MONAD_VM_LEAD_CAT(MONAD_VM_DUP2_PAIR_, KIND)
-    #define MONAD_VM_DUP2_PAIR(REV, NAME, OP)                                  \
-        MONAD_VM_DUP2_PAIR_PICK(MONAD_VM_LEAD_KIND(                            \
-            MONAD_VM_DUP2_OF_##OP, PLAIN, ~))(REV, NAME, OP)
+    #define MONAD_VM_DUP_PAIR_PLAIN(REV, NAME, OP)
+    #define MONAD_VM_DUP_PAIR_THEN(REV, NAME, OP)                              \
+        MONAD_VM_DUP_THEN_IN(REV, NAME, OP, , 0)                               \
+        MONAD_VM_DUP_THEN_IN(REV, NAME, OP, _1, 1)                             \
+        MONAD_VM_DUP_THEN_IN(REV, NAME, OP, _2, 2)                             \
+        MONAD_VM_DUP_THEN_IN(REV, NAME, OP, _3, 3)                             \
+        MONAD_VM_DUP_THEN_IN(REV, NAME, OP, _4, 4)                             \
+        MONAD_VM_DUP_THEN_IN(REV, NAME, OP, _5, 5)
+    #define MONAD_VM_DUP_PAIR_PICK(KIND)                                       \
+        MONAD_VM_LEAD_CAT(MONAD_VM_DUP_PAIR_, KIND)
+    #define MONAD_VM_DUP_PAIR(REV, NAME, OP)                                   \
+        MONAD_VM_DUP_PAIR_PICK(                                                \
+            MONAD_VM_LEAD_KIND(MONAD_VM_DUP_OF_##OP, PLAIN, ~))(REV, NAME, OP)
 
     // SWAP1's head, 40 bytes ahead of the others: in copy R it takes a SWAP1
     // (R + 5) % 6 bytes behind (swap1_offset). For most opcodes it is the
@@ -506,7 +511,7 @@ namespace monad::vm::interpreter
             compiler::opcode_table<EvmTraits<REV>>[PUSH1].min_gas == 3 &&      \
             compiler::opcode_table<EvmTraits<REV>>[PUSH2].min_gas == 3 &&      \
             sizeof(uint256_t) == 32 && slot_lead == 1512 &&                    \
-            swap1_back == 104 && dup2_back == 144 &&                           \
+            swap1_back == 104 && dup_back == 144 &&                            \
             offsetof(runtime::Context, swap_scratch) == 360 &&                 \
             lag_offset(1) == 680 && lag_offset(2) == 1360 &&                   \
             lag_offset(3) == 2044 && lag_offset(4) == -1368 &&                 \
@@ -733,7 +738,7 @@ namespace monad::vm::interpreter
     #define MONAD_VM_SLOT(REV, NAME, OP)                                       \
         MONAD_VM_LEAD(REV, NAME, OP)                                           \
         MONAD_VM_SWAP1_PAIR(REV, NAME, OP)                                     \
-        MONAD_VM_DUP2_PAIR(REV, NAME, OP)                                      \
+        MONAD_VM_DUP_PAIR(REV, NAME, OP)                                       \
         MONAD_VM_SLOT_PICK(MONAD_VM_LEAD_KIND(                                 \
             MONAD_VM_RELAY_OF_##OP, FULL, ~))(REV, NAME, OP)
 
@@ -848,34 +853,35 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_STEP6
     #undef MONAD_VM_PUSH_T3
     #undef MONAD_VM_PUSH2_READ_AT
-    #undef MONAD_VM_DUP2_PAIR
-    #undef MONAD_VM_DUP2_PAIR_PICK
-    #undef MONAD_VM_DUP2_PAIR_THEN
-    #undef MONAD_VM_DUP2_PAIR_PLAIN
-    #undef MONAD_VM_DUP2_THEN_IN
-    #undef MONAD_VM_DUP2_HEAD
-    #undef MONAD_VM_DUP2_PICK
-    #undef MONAD_VM_DUP2_OF_52
-    #undef MONAD_VM_DUP2_OF_16
-    #undef MONAD_VM_DUP2_OF_10
-    #undef MONAD_VM_DUP2_OF_01
-    #undef MONAD_VM_DUP2_THEN
-    #undef MONAD_VM_DUP2_THEN_5
-    #undef MONAD_VM_DUP2_THEN_4
-    #undef MONAD_VM_DUP2_THEN_3
-    #undef MONAD_VM_DUP2_THEN_2
-    #undef MONAD_VM_DUP2_THEN_1
-    #undef MONAD_VM_DUP2_THEN_0
-    #undef MONAD_VM_DUP2_THEN_R
-    #undef MONAD_VM_DUP2_PLAIN
-    #undef MONAD_VM_DUP2_PLAIN_5
-    #undef MONAD_VM_DUP2_PLAIN_4
-    #undef MONAD_VM_DUP2_PLAIN_3
-    #undef MONAD_VM_DUP2_PLAIN_2
-    #undef MONAD_VM_DUP2_PLAIN_1
-    #undef MONAD_VM_DUP2_PLAIN_R
-    #undef MONAD_VM_DUP2_PLAIN_0
-    #undef MONAD_VM_DUP2_COPY
+    #undef MONAD_VM_DUP_PAIR
+    #undef MONAD_VM_DUP_PAIR_PICK
+    #undef MONAD_VM_DUP_PAIR_THEN
+    #undef MONAD_VM_DUP_PAIR_PLAIN
+    #undef MONAD_VM_DUP_THEN_IN
+    #undef MONAD_VM_DUP_HEAD
+    #undef MONAD_VM_DUP_PICK
+    #undef MONAD_VM_DUP_OF_52
+    #undef MONAD_VM_DUP_OF_16
+    #undef MONAD_VM_DUP_OF_11
+    #undef MONAD_VM_DUP_OF_10
+    #undef MONAD_VM_DUP_OF_01
+    #undef MONAD_VM_DUP_THEN
+    #undef MONAD_VM_DUP_THEN_5
+    #undef MONAD_VM_DUP_THEN_4
+    #undef MONAD_VM_DUP_THEN_3
+    #undef MONAD_VM_DUP_THEN_2
+    #undef MONAD_VM_DUP_THEN_1
+    #undef MONAD_VM_DUP_THEN_0
+    #undef MONAD_VM_DUP_THEN_R
+    #undef MONAD_VM_DUP_PLAIN
+    #undef MONAD_VM_DUP_PLAIN_5
+    #undef MONAD_VM_DUP_PLAIN_4
+    #undef MONAD_VM_DUP_PLAIN_3
+    #undef MONAD_VM_DUP_PLAIN_2
+    #undef MONAD_VM_DUP_PLAIN_1
+    #undef MONAD_VM_DUP_PLAIN_R
+    #undef MONAD_VM_DUP_PLAIN_0
+    #undef MONAD_VM_DUP_COPY
     #undef MONAD_VM_SWAP1_PAIR_THEN
     #undef MONAD_VM_SWAP1_THEN_IN
     #undef MONAD_VM_SWAP1_THEN

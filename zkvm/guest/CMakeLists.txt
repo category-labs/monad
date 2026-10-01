@@ -61,6 +61,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # ZisK supports Zba/Zbb/Zbs/Zbkb.
     # The fixed-address guest needs no PIC/GOT indirections.
     # -mtune=size favors direct unaligned word accesses over byte-wise loads.
+    # The interpreter keeps -mtune=generic-ooo, which runs fewer steps in its
+    # PUSH and DIV handlers.
     #
     # Append after cmake-rs's flags: the last -march wins.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
@@ -68,6 +70,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         string(APPEND CMAKE_C_FLAGS " ${_zisk_march} -fno-pic -mtune=size")
         string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} -fno-pic -mtune=size")
         string(APPEND CMAKE_ASM_FLAGS " ${_zisk_march}")
+        set(_monad_zkvm_interpreter_tune "-mtune=generic-ooo")
     endif()
 
     # Tune C++ inlining for both guests to reduce call overhead.
@@ -249,6 +252,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     add_subdirectory("${MONAD_ROOT}/category/vm/evm" evm)
     add_subdirectory("${MONAD_ROOT}/category/vm/runtime" runtime)
     add_subdirectory("${MONAD_ROOT}/category/vm/interpreter" interpreter)
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        target_compile_options(monad-vm-interpreter PRIVATE
+                               ${_monad_zkvm_interpreter_tune})
+    endif()
 
     # Strip x86-only assembly from the otherwise shared targets.
     monad_zkvm_drop_sources(monad-vm-runtime

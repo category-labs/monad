@@ -2327,9 +2327,10 @@ namespace monad::vm::interpreter
 #if defined(MONAD_ZKVM_ZISK)
     // The rest of PUSH1 1 PUSH1 1 PUSH1 <k> SHL SUB, the mask 2^k - 1 that
     // Solidity builds to clean an address (k = 160) or a uint<k>, and of the
-    // AND that applies it more often than not. push<1>'s PUSH1 PUSH1 arm has
-    // pushed the two ones and dispatches here, instr_ptr on the third PUSH1;
-    // the ones' slots take the mask, or the AND consumes them.
+    // AND that applies it more often than not. push1_then's PUSH1 PUSH1 arm
+    // dispatches here, instr_ptr on the third PUSH1 and stack_top on the
+    // second one's slot; the first one's slot takes the mask, or the AND
+    // consumes them. Neither one is read, so the arm need not write them.
     template <Traits traits>
     [[gnu::noinline]] MONAD_VM_TWIN_CALL void push1_mask(
         runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
@@ -2440,8 +2441,8 @@ namespace monad::vm::interpreter
                     MONAD_VM_CHECK(PUSH1);
                     MONAD_VM_CHECK_AT(PUSH1, 1);
                 }
-                interpreter::push(stack_top, uint256_t{1});
-                interpreter::push(stack_top + 1, uint256_t{1});
+                // The ones are not written: push1_mask writes the mask over
+                // the first, or ANDs the word under them, and reads neither.
                 instr_ptr += 4;
                 MONAD_VM_MUST_TAIL return push1_mask<traits>(
                     ctx,

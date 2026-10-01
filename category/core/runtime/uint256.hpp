@@ -722,6 +722,30 @@ extern "C" void syscall_arith256_mod(ZiskArith256ModParams *params);
     return uint256_t{D[0], D[1], D[2], D[3]};
 }
 
+// The same precompile issued in place, its result written at d, which may be
+// one of its operands: the precompile reads every operand before it writes
+// (precompiles/arith_eq through MemBusHelpers::mem_aligned_op, reads at
+// MAX_MEM_OPS_BY_MAIN_STEP * step + 2, writes at + 3; the emulator's
+// opc_arith256_mod loads them all first). Every pointer 8-aligned.
+[[gnu::always_inline]] inline void zisk_arith256_mod_to(
+    uint64_t *const d, uint64_t const *const a, uint64_t const *const b,
+    uint64_t const *const c, uint64_t const *const mod) noexcept
+{
+    ZiskArith256ModParams p{a, b, c, mod, d};
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrs 0x802, %0\n\t"
+                 ".option pop"
+                 :
+                 : "r"(&p)
+                 : "memory");
+}
+
+// The operands MULMOD and ADDMOD add or multiply by, read by the precompile
+// where they lie, as zisklib's field code passes its own constants.
+alignas(8) inline constexpr uint64_t zisk_zero_limbs[4]{0, 0, 0, 0};
+alignas(8) inline constexpr uint64_t zisk_one_limbs[4]{1, 0, 0, 0};
+
 // ZisK add256 parameters (CSR 0x811): c = a + b + cin.
 // Operands and result use four little-endian 64-bit limbs;
 // the instruction returns the carry-out.

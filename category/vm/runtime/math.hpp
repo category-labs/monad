@@ -81,6 +81,19 @@ namespace monad::vm::runtime
             *result_ptr = 0;
             return;
         }
+#ifdef MONAD_ZKVM_ZISK
+        // (a*1 + b) mod n straight into the result's slot, which is n's: no
+        // call, no copy of the result through a local.
+        if !consteval {
+            zisk_arith256_mod_to(
+                reinterpret_cast<uint64_t *>(result_ptr),
+                reinterpret_cast<uint64_t const *>(a_ptr),
+                zisk_one_limbs,
+                reinterpret_cast<uint64_t const *>(b_ptr),
+                reinterpret_cast<uint64_t const *>(n_ptr));
+            return;
+        }
+#endif
 
         *result_ptr = addmod(*a_ptr, *b_ptr, *n_ptr);
     }
@@ -93,6 +106,18 @@ namespace monad::vm::runtime
             *result_ptr = 0;
             return;
         }
+#ifdef MONAD_ZKVM_ZISK
+        // (a*b + 0) mod n straight into the result's slot, as addmod does.
+        if !consteval {
+            zisk_arith256_mod_to(
+                reinterpret_cast<uint64_t *>(result_ptr),
+                reinterpret_cast<uint64_t const *>(a_ptr),
+                reinterpret_cast<uint64_t const *>(b_ptr),
+                zisk_zero_limbs,
+                reinterpret_cast<uint64_t const *>(n_ptr));
+            return;
+        }
+#endif
 
         *result_ptr = mulmod(*a_ptr, *b_ptr, *n_ptr);
     }

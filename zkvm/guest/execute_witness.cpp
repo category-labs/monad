@@ -51,9 +51,9 @@
 #include <utility>
 #include <vector>
 #ifdef MONAD_ZKVM_KECCAK_SITES
-#include <category/core/keccak_sites.hpp>
+    #include <category/core/keccak_sites.hpp>
 #else
-#define MONAD_KECCAK_SITE(s, len) ((void)0)
+    #define MONAD_KECCAK_SITE(s, len) ((void)0)
 #endif
 
 #ifdef MONAD_ZKVM_OFFICIAL_PROFILE
@@ -169,9 +169,9 @@ namespace
 extern "C" void monad_zkvm_execute_witness(void)
 {
 #ifdef MONAD_ZKVM_SELFTEST
-    // Self-test build: no witness is read. The first four output bytes are a bitmask -- bit N set
-    // means case N failed, all zero means every case passed. Padded to 32 so the harness that
-    // reads a root can read this too.
+    // Self-test build: no witness is read. The first four output bytes are a
+    // bitmask -- bit N set means case N failed, all zero means every case
+    // passed. Padded to 32 so the harness that reads a root can read this too.
     {
         std::uint32_t const failures = monad_zkvm_revert_semantics_test();
         unsigned char out[32]{};
@@ -185,10 +185,10 @@ extern "C" void monad_zkvm_execute_witness(void)
     read_input(&input, &input_len);
 
 #ifdef MONAD_ZKVM_L2
-    // Seven fields, the seventh being the transaction-decryption secret. A
-    // six-field witness fails here with InputTooShort, and a seven-field one
-    // given to a plaintext guest fails with InputTooLong -- which is why the
-    // envelope carries no version byte.
+    // Eight fields, the last two the transaction-decryption secret and the
+    // blinder's. A six-field witness fails here with InputTooShort, and an
+    // eight-field one given to a plaintext guest fails with InputTooLong --
+    // which is why the envelope carries no version byte.
     auto const witness = monad::parse_execution_witness_l2(
         monad::byte_string_view{input, input_len});
     MONAD_ASSERT(witness.has_value());
@@ -421,22 +421,31 @@ extern "C" void monad_zkvm_execute_witness(void)
 
 #ifdef MONAD_ZKVM_L2
     // A chain id of its own and a revision that is a constant, not a lookup:
-    // an L2 that starts at one revision has no fork schedule to consult.
+    // an L2 that starts at one revision has no fork schedule to consult. So the
+    // revision is a type here and not a value, and no block number reaches it.
     monad::MonadL2 const chain;
+    using L2Traits = monad::EvmTraits<monad::L2_REVISION>;
 #else
     monad::EthereumMainnet const chain;
 #endif
     monad::vm::VM vm;
     pdb.set_block_and_prefix(block.header.number, monad::bytes32_t{});
 
+#ifndef MONAD_ZKVM_L2
     monad_eth_revision const rev =
         chain.get_revision(block.header.number, block.header.timestamp);
+#endif
     // The parent is the one the loop above authenticated: its hash is this
     // block's parent_hash and its state root is the pre-state trie's.
     auto const valid = [&]() -> monad::Result<void> {
+#ifdef MONAD_ZKVM_L2
+        return monad::static_validate_block_with_parent<L2Traits>(
+            chain, block, parent_header);
+#else
         SWITCH_EVM_TRAITS(
             static_validate_block_with_parent, chain, block, parent_header);
         MONAD_ABORT("unsupported revision");
+#endif
     }();
     MONAD_ASSERT(valid.has_value());
 
@@ -451,6 +460,16 @@ extern "C" void monad_zkvm_execute_witness(void)
         root_transactions;
 #endif
     auto const root_result = [&]() -> monad::Result<monad::ZkvmBlockOutput> {
+#ifdef MONAD_ZKVM_L2
+        return monad::execute_block_zkvm<L2Traits>(
+            chain,
+            block,
+            root_transactions,
+            transaction_encodings,
+            pdb,
+            vm,
+            block_hash_buffer);
+#else
         SWITCH_EVM_TRAITS(
             execute_block_zkvm,
             chain,
@@ -461,6 +480,7 @@ extern "C" void monad_zkvm_execute_witness(void)
             vm,
             block_hash_buffer);
         MONAD_ABORT("unsupported revision");
+#endif
     }();
     MONAD_ASSERT(root_result.has_value());
 

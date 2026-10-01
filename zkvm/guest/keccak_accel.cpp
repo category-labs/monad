@@ -53,6 +53,140 @@ load64(unsigned char const *const p)
 // zisklib's own wrapper uses.
 extern "C" void syscall_keccak_f(uint64_t (*state)[25]);
 
+#ifdef MONAD_ZKVM_KECCAKF_SOFTWARE
+// Lever: every permutation in software, so that a block too small to fill a
+// Keccakf instance does not pay for one. A proof pays for at least one whole
+// instance of each state machine a run uses, and Keccakf's -- 14,462
+// permutations in 2^20 rows of 643 columns -- is about a fifth of what a block
+// of 1 to 250 L2 transactions plans, while such a block leaves most of its Main
+// instance (16.8 M steps) empty. Here a permutation is 4,138 steps and about
+// 2,400 Binary operations, so the lever pays only while the instances the block
+// plans anyway can take them: up to about 1,200 permutations nothing else
+// moves, the 2,100 of a 50-transaction block grow Binary to its next variant
+// for a smaller saving, and the 3,900 of a 100-transaction block take a second
+// Main instance and cost more than they save.
+// With the lever, no input of the L2 latency corpora reaches the precompile
+// through another door (the sender's key hash goes through this sponge too),
+// so the instance goes. CMake keeps the memo out: the executor files it from
+// precompile calls, so it would never hit.
+//
+// The rounds are the public-domain unrolled form (Van Keer, as in PQClean's
+// fips202.c): two rounds per iteration, A -> E -> A, so no lane is ever copied.
+// The rotations and chi's and-not compile to Zbb's rori and andn.
+    #define KECCAKF_SW_ROL(a, n) (((a) << (n)) | ((a) >> (64 - (n))))
+    // chi on one plane of the rho-pi output, into lanes Y<r>a .. Y<r>u.
+    #define KECCAKF_SW_ROW(Y, r, B0, B1, B2, B3, B4)                           \
+        do {                                                                   \
+            uint64_t const b0 = (B0), b1 = (B1), b2 = (B2), b3 = (B3),         \
+                           b4 = (B4);                                          \
+            Y##r##a = b0 ^ (~b1 & b2);                                         \
+            Y##r##e = b1 ^ (~b2 & b3);                                         \
+            Y##r##i = b2 ^ (~b3 & b4);                                         \
+            Y##r##o = b3 ^ (~b4 & b0);                                         \
+            Y##r##u = b4 ^ (~b0 & b1);                                         \
+        }                                                                      \
+        while (0)
+    // One round from the lanes X.. into the lanes Y..: theta, then rho and pi
+    // feeding each plane's chi, then iota.
+    #define KECCAKF_SW_ROUND(X, Y, rc)                                         \
+        do {                                                                   \
+            uint64_t const Ca = X##ba ^ X##ga ^ X##ka ^ X##ma ^ X##sa;         \
+            uint64_t const Ce = X##be ^ X##ge ^ X##ke ^ X##me ^ X##se;         \
+            uint64_t const Ci = X##bi ^ X##gi ^ X##ki ^ X##mi ^ X##si;         \
+            uint64_t const Co = X##bo ^ X##go ^ X##ko ^ X##mo ^ X##so;         \
+            uint64_t const Cu = X##bu ^ X##gu ^ X##ku ^ X##mu ^ X##su;         \
+            uint64_t const Da = Cu ^ KECCAKF_SW_ROL(Ce, 1);                    \
+            uint64_t const De = Ca ^ KECCAKF_SW_ROL(Ci, 1);                    \
+            uint64_t const Di = Ce ^ KECCAKF_SW_ROL(Co, 1);                    \
+            uint64_t const Do = Ci ^ KECCAKF_SW_ROL(Cu, 1);                    \
+            uint64_t const Du = Co ^ KECCAKF_SW_ROL(Ca, 1);                    \
+            KECCAKF_SW_ROW(                                                    \
+                Y,                                                             \
+                b,                                                             \
+                X##ba ^ Da,                                                    \
+                KECCAKF_SW_ROL(X##ge ^ De, 44),                                \
+                KECCAKF_SW_ROL(X##ki ^ Di, 43),                                \
+                KECCAKF_SW_ROL(X##mo ^ Do, 21),                                \
+                KECCAKF_SW_ROL(X##su ^ Du, 14));                               \
+            Y##ba ^= (rc);                                                     \
+            KECCAKF_SW_ROW(                                                    \
+                Y,                                                             \
+                g,                                                             \
+                KECCAKF_SW_ROL(X##bo ^ Do, 28),                                \
+                KECCAKF_SW_ROL(X##gu ^ Du, 20),                                \
+                KECCAKF_SW_ROL(X##ka ^ Da, 3),                                 \
+                KECCAKF_SW_ROL(X##me ^ De, 45),                                \
+                KECCAKF_SW_ROL(X##si ^ Di, 61));                               \
+            KECCAKF_SW_ROW(                                                    \
+                Y,                                                             \
+                k,                                                             \
+                KECCAKF_SW_ROL(X##be ^ De, 1),                                 \
+                KECCAKF_SW_ROL(X##gi ^ Di, 6),                                 \
+                KECCAKF_SW_ROL(X##ko ^ Do, 25),                                \
+                KECCAKF_SW_ROL(X##mu ^ Du, 8),                                 \
+                KECCAKF_SW_ROL(X##sa ^ Da, 18));                               \
+            KECCAKF_SW_ROW(                                                    \
+                Y,                                                             \
+                m,                                                             \
+                KECCAKF_SW_ROL(X##bu ^ Du, 27),                                \
+                KECCAKF_SW_ROL(X##ga ^ Da, 36),                                \
+                KECCAKF_SW_ROL(X##ke ^ De, 10),                                \
+                KECCAKF_SW_ROL(X##mi ^ Di, 15),                                \
+                KECCAKF_SW_ROL(X##so ^ Do, 56));                               \
+            KECCAKF_SW_ROW(                                                    \
+                Y,                                                             \
+                s,                                                             \
+                KECCAKF_SW_ROL(X##bi ^ Di, 62),                                \
+                KECCAKF_SW_ROL(X##go ^ Do, 55),                                \
+                KECCAKF_SW_ROL(X##ku ^ Du, 39),                                \
+                KECCAKF_SW_ROL(X##ma ^ Da, 41),                                \
+                KECCAKF_SW_ROL(X##se ^ De, 2));                                \
+        }                                                                      \
+        while (0)
+
+// Out of line: eight call sites, and each copy would be 1.7 KB of code.
+[[gnu::noinline]] static void keccakf_software(uint64_t *const st) noexcept
+{
+    static constexpr uint64_t RC[24] = {
+        0x0000000000000001, 0x0000000000008082, 0x800000000000808A,
+        0x8000000080008000, 0x000000000000808B, 0x0000000080000001,
+        0x8000000080008081, 0x8000000000008009, 0x000000000000008A,
+        0x0000000000000088, 0x0000000080008009, 0x000000008000000A,
+        0x000000008000808B, 0x800000000000008B, 0x8000000000008089,
+        0x8000000000008003, 0x8000000000008002, 0x8000000000000080,
+        0x000000000000800A, 0x800000008000000A, 0x8000000080008081,
+        0x8000000000008080, 0x0000000080000001, 0x8000000080008008};
+    uint64_t Aba = st[0], Abe = st[1], Abi = st[2], Abo = st[3], Abu = st[4];
+    uint64_t Aga = st[5], Age = st[6], Agi = st[7], Ago = st[8], Agu = st[9];
+    uint64_t Aka = st[10], Ake = st[11], Aki = st[12], Ako = st[13],
+             Aku = st[14];
+    uint64_t Ama = st[15], Ame = st[16], Ami = st[17], Amo = st[18],
+             Amu = st[19];
+    uint64_t Asa = st[20], Ase = st[21], Asi = st[22], Aso = st[23],
+             Asu = st[24];
+    uint64_t Eba, Ebe, Ebi, Ebo, Ebu, Ega, Ege, Egi, Ego, Egu, Eka, Eke, Eki,
+        Eko, Eku, Ema, Eme, Emi, Emo, Emu, Esa, Ese, Esi, Eso, Esu;
+    for (unsigned r = 0; r < 24; r += 2) {
+        KECCAKF_SW_ROUND(A, E, RC[r]);
+        KECCAKF_SW_ROUND(E, A, RC[r + 1]);
+    }
+    st[0] = Aba, st[1] = Abe, st[2] = Abi, st[3] = Abo, st[4] = Abu;
+    st[5] = Aga, st[6] = Age, st[7] = Agi, st[8] = Ago, st[9] = Agu;
+    st[10] = Aka, st[11] = Ake, st[12] = Aki, st[13] = Ako, st[14] = Aku;
+    st[15] = Ama, st[16] = Ame, st[17] = Ami, st[18] = Amo, st[19] = Amu;
+    st[20] = Asa, st[21] = Ase, st[22] = Asi, st[23] = Aso, st[24] = Asu;
+}
+
+    #undef KECCAKF_SW_ROUND
+    #undef KECCAKF_SW_ROW
+    #undef KECCAKF_SW_ROL
+
+// The precompile entry's name, so that every permutation below runs this.
+[[gnu::always_inline]] inline void zisk_keccakf(uint64_t (*state)[25]) noexcept
+{
+    keccakf_software(&(*state)[0]);
+}
+#else
 // ziskos' `syscall_keccak_f` is two instructions -- `csrs 0x800, a0` and the
 // return -- so the call costs more than the body: a `jal` in at 68 cells and a
 // `jalr` out at 68 plus the 60 its low-bit `and` is priced at, 196 cells on each
@@ -78,6 +212,7 @@ extern "C" void syscall_keccak_f(uint64_t (*state)[25]);
                  : "r"(state)
                  : "memory");
 }
+#endif
 
 // Keccak-f memo. OFF gives the exact control arm: the mechanism is compiled
 // out, not disabled, so an A/B measures the memo rather than a predicate.

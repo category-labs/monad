@@ -117,6 +117,11 @@ public:
         evmc::address const &, size_t offset, uint8_t *data,
         size_t size) const noexcept override;
 
+#if defined(MONAD_ZKVM_ZISK)
+    virtual std::optional<Address>
+    delegate_of(evmc::address const &) const noexcept override;
+#endif
+
     virtual evmc_tx_context const *get_tx_context() const noexcept override;
 
     virtual evmc::bytes32 get_block_hash(int64_t) const noexcept override;

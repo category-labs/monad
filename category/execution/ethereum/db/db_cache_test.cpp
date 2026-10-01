@@ -171,3 +171,63 @@ TEST(DbCacheTest, finalization_write_overwrites_readthrough_entry)
         cache.try_read_storage(ADDR, INC, KEY, 0, slot), CacheReadStatus::Hit);
     EXPECT_EQ(slot, VALUE2);
 }
+
+TEST(DbCacheTest, readthrough_hits_only_its_incarnation)
+{
+    DbCache cache;
+    Incarnation const inc_a{1, 0};
+    Incarnation const inc_b{2, 0};
+
+    bytes32_t slot;
+    EXPECT_EQ(
+        cache.try_read_storage(ADDR, inc_a, KEY, 0, slot),
+        CacheReadStatus::MissResolved);
+    cache.insert_storage_page(ADDR, inc_a, KEY, storage_page_t{VALUE1});
+    EXPECT_EQ(
+        cache.try_read_storage(ADDR, inc_a, KEY, 0, slot),
+        CacheReadStatus::Hit);
+    EXPECT_EQ(slot, VALUE1);
+
+    // One entry per (address, key): the same page read at another
+    // incarnation misses, and read-through does not overwrite the entry.
+    EXPECT_EQ(
+        cache.try_read_storage(ADDR, inc_b, KEY, 0, slot),
+        CacheReadStatus::MissResolved);
+    cache.insert_storage_page(ADDR, inc_b, KEY, storage_page_t{VALUE2});
+    EXPECT_EQ(
+        cache.try_read_storage(ADDR, inc_b, KEY, 0, slot),
+        CacheReadStatus::MissResolved);
+    EXPECT_EQ(
+        cache.try_read_storage(ADDR, inc_a, KEY, 0, slot),
+        CacheReadStatus::Hit);
+    EXPECT_EQ(slot, VALUE1);
+}
+
+TEST(DbCacheTest, recreated_account_never_reads_old_data)
+{
+    // A page cached for incarnation A, then the account is destroyed and
+    // recreated as incarnation B. Finalization writes B's pages, but an
+    // untouched page keeps A's data: reading it at B must miss so the db
+    // returns B's (empty) page.
+    DbCache cache;
+    Incarnation const inc_a{1, 0};
+    Incarnation const inc_b{5, 0};
+    cache.insert_storage_page(ADDR, inc_a, KEY, storage_page_t{VALUE1});
+    cache.insert_storage_page(ADDR, inc_a, OTHER_KEY, storage_page_t{VALUE1});
+
+    ProposalPostState post;
+    post.accounts[ADDR] = Account{.nonce = 1, .incarnation = inc_b};
+    post.storage[StorageKey{ADDR, inc_b, KEY}] = storage_page_t{VALUE2};
+    cache.update_proposal_state(std::move(post), 5, bytes32_t{5});
+    cache.on_finalize(5, bytes32_t{5});
+    cache.set_block_and_prefix(5, bytes32_t{5});
+
+    bytes32_t slot;
+    EXPECT_EQ(
+        cache.try_read_storage(ADDR, inc_b, KEY, 0, slot),
+        CacheReadStatus::Hit);
+    EXPECT_EQ(slot, VALUE2);
+    EXPECT_EQ(
+        cache.try_read_storage(ADDR, inc_b, OTHER_KEY, 0, slot),
+        CacheReadStatus::MissResolved);
+}

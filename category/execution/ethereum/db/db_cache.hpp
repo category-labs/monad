@@ -24,11 +24,13 @@
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/monad/state2/proposal_state.hpp>
 #include <category/vm/utils/lru_weight_cache.hpp>
 
 #include <cstdint>
+#include <cstring>
 #include <format>
 #include <memory>
 #include <optional>
@@ -46,6 +48,20 @@ enum class CacheReadStatus
                    // -> can't prove finalized-consistent -> don't cache miss
 };
 
+// A storage_ entry. storage_ is keyed by StorageKey with a zero incarnation,
+// the way the trie has no incarnation, so an address's page has one entry
+// across incarnations. `incarnation` is the one the page data belongs to, and
+// a read hits only for that incarnation. `stamp` and `size` are the page
+// cache's membership fields, meaningful only while the entry is protected in
+// storage_, and never touched by reads.
+struct StorageCacheEntry
+{
+    storage_page_t page;
+    Incarnation incarnation{0, 0};
+    uint64_t stamp{0};
+    uint64_t size{0};
+};
+
 // Encoding-agnostic LRU + proposal cache for accounts and storage leaves.
 // Storage values are held as storage_page_t, keyed by the trie key the
 // caller passes: slot_key (single slot at index 0) for slot encoding, or
@@ -57,11 +73,11 @@ class DbCache final
     using StorageKeyHashCompare = BytesHashCompare<StorageKey>;
     using AccountsCache =
         LruCache<Address, std::optional<Account>, AddressHashCompare>;
-    // The cache is slot-granular: keyed by slot_key, the value is a
-    // storage_page_t used as a single-slot container holding the value at
-    // index 0 only. This will be compatible for future page-granular reads.
+    // Keyed by the trie key the caller passes: slot_key on slot-encoded
+    // databases, where the page holds the value at index 0 only, and
+    // page_key on page-encoded ones.
     using StorageCache = vm::utils::LruWeightCache<
-        StorageKey, storage_page_t, StorageKeyHashCompare>;
+        StorageKey, StorageCacheEntry, StorageKeyHashCompare>;
 
     static constexpr uint32_t STORAGE_CACHE_MAX_BYTES = 256u * 1024 * 1024;
 
@@ -111,10 +127,10 @@ public:
         if (res.truncated) {
             return CacheReadStatus::MissTruncated;
         }
-        StorageKey const skey{address, incarnation, key};
         StorageCache::ConstAccessor acc{};
-        if (storage_.find(acc, skey)) {
-            result = acc->second.value_;
+        if (storage_.find(acc, storage_cache_key(address, key)) &&
+            serves(acc->second.value_, incarnation)) {
+            result = acc->second.value_.page;
             return CacheReadStatus::Hit;
         }
         return CacheReadStatus::MissResolved;
@@ -135,27 +151,29 @@ public:
         if (res.truncated) {
             return CacheReadStatus::MissTruncated;
         }
-        StorageKey const skey{address, incarnation, key};
         StorageCache::ConstAccessor acc{};
-        if (storage_.find(acc, skey)) {
-            result = acc->second.value_[slot_offset];
+        if (storage_.find(acc, storage_cache_key(address, key)) &&
+            serves(acc->second.value_, incarnation)) {
+            result = acc->second.value_.page[slot_offset];
             return CacheReadStatus::Hit;
         }
         return CacheReadStatus::MissResolved;
     }
 
     // Read-through: insert a finalized-consistent storage page fetched from
-    // disk after a `MissResolved` read. try_insert_no_overwrite leaves an
-    // entry a concurrent sibling read already cached untouched (all concurrent
-    // read-throughs resolve against the same finalized baseline, so a colliding
-    // entry holds the same page anyway).
+    // disk after a `MissResolved` read, linked as the newest unprotected
+    // entry. try_insert_no_overwrite leaves any existing entry untouched: a
+    // concurrent sibling read already cached the same page, or the entry is
+    // protected, or it holds another incarnation's data, which only costs
+    // hits until finalization or eviction replaces it.
     void insert_storage_page(
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key, storage_page_t const &page)
     {
-        StorageKey const skey{address, incarnation, key};
         storage_.try_insert_no_overwrite(
-            skey, page, static_cast<uint32_t>(page.byte_size()));
+            storage_cache_key(address, key),
+            StorageCacheEntry{.page = page, .incarnation = incarnation},
+            static_cast<uint32_t>(page.byte_size()));
     }
 
     void
@@ -199,13 +217,46 @@ public:
     }
 
 private:
+    static StorageKey
+    storage_cache_key(Address const &address, bytes32_t const &key)
+    {
+        return StorageKey{address, Incarnation{0, 0}, key};
+    }
+
+    static bool
+    serves(StorageCacheEntry const &entry, Incarnation const incarnation)
+    {
+        return entry.incarnation.to_int() == incarnation.to_int();
+    }
+
     void insert_in_lru_caches(ProposalPostState const &post_state)
     {
         for (auto const &[addr, acct] : post_state.accounts) {
             accounts_.insert(addr, acct);
         }
         for (auto const &[sk, leaf] : post_state.storage) {
-            storage_.insert(sk, leaf, static_cast<uint32_t>(leaf.byte_size()));
+            Address address;
+            Incarnation incarnation{0, 0};
+            bytes32_t key;
+            std::memcpy(address.bytes, sk.bytes, sizeof(Address));
+            std::memcpy(
+                &incarnation, sk.bytes + sizeof(Address), sizeof(Incarnation));
+            std::memcpy(
+                key.bytes,
+                sk.bytes + sizeof(Address) + sizeof(Incarnation),
+                sizeof(bytes32_t));
+            StorageKey const cache_key = storage_cache_key(address, key);
+            StorageCacheEntry entry{.page = leaf, .incarnation = incarnation};
+            // Keep the membership fields of an entry the page cache holds.
+            {
+                StorageCache::ConstAccessor acc{};
+                if (storage_.find(acc, cache_key)) {
+                    entry.stamp = acc->second.value_.stamp;
+                    entry.size = acc->second.value_.size;
+                }
+            }
+            storage_.insert(
+                cache_key, entry, static_cast<uint32_t>(leaf.byte_size()));
         }
     }
 };

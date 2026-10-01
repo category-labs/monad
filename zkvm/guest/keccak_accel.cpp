@@ -607,7 +607,7 @@ static void keccak256_sponge(
     // so the sponge needs no alignment case at all: one loop, one load per
     // lane, whatever `in` is aligned to.
     //
-    // load64 is one `ld` here because the guest is built -mtune=generic-ooo;
+    // load64 is one `ld` here because the guest is built -mtune=size;
     // under the default tuning it would be byte-staged and this loop would be
     // far worse than the branch it replaces. The two changes are coupled.
     //

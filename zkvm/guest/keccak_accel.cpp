@@ -211,17 +211,20 @@ static void keccak256_one_block(
 // A hit requires a valid index and an exact full-state match.
 // First allows a rate-only copy into a fresh output (both capacities zero).
 // Later blocks and the reused spare require all 200 bytes.
+// Lookup=false still computes the result and caches it if space permits.
 // A miss returns input_state + KECCAKF_LANES; a hit returns an earlier entry's
 // output. The caller writes the local count back after the digest.
-template <bool First>
+template <bool First, bool Lookup = true>
 static inline uint64_t const *
 keccakf_memo_permute(uint64_t *const input_state, uint64_t &entry_count)
 {
-    uint64_t const index = fcall_get_keccakf_index(input_state);
-    // Reject out-of-range hints before reading the table.
-    if (index < entry_count &&
-        keccakf_state_eq(keccakf_memo[index].in, input_state)) {
-        return keccakf_memo[index].out;
+    if constexpr (Lookup) {
+        uint64_t const index = fcall_get_keccakf_index(input_state);
+        // Reject out-of-range hints before reading the table.
+        if (index < entry_count &&
+            keccakf_state_eq(keccakf_memo[index].in, input_state)) {
+            return keccakf_memo[index].out;
+        }
     }
     uint64_t *const output_lanes = input_state + KECCAKF_LANES;
     auto *const output_state =
@@ -274,7 +277,10 @@ static void keccak256_memo_sponge(
     uint64_t const *output_state =
         keccakf_memo_permute<true>(input_state, entry_count);
 
-    while (remaining_bytes >= KECCAK_RATE) {
+    // Stop lookups after the first miss. This may forgo later hits, but
+    // skipped lookups run the real permutation and cache it when space permits.
+    bool keep_looking_up = output_state != input_state + KECCAKF_LANES;
+    while (keep_looking_up && remaining_bytes >= KECCAK_RATE) {
         input_state = keccakf_memo[entry_count].in;
         // Keep one opaque base pointer for the lanes to avoid extra saved
         // registers for their addresses.
@@ -287,6 +293,22 @@ static void keccak256_memo_sponge(
             output_state + RATE_WORDS,
             (KECCAKF_LANES - RATE_WORDS) * 8);
         output_state = keccakf_memo_permute<false>(input_state, entry_count);
+        keep_looking_up = output_state != input_state + KECCAKF_LANES;
+        input_cursor += KECCAK_RATE;
+        remaining_bytes -= KECCAK_RATE;
+    }
+    while (remaining_bytes >= KECCAK_RATE) {
+        input_state = keccakf_memo[entry_count].in;
+        asm("" : "+r"(input_state));
+        for (size_t i = 0; i < RATE_WORDS; ++i) {
+            input_state[i] = output_state[i] ^ load64(input_cursor + 8 * i);
+        }
+        std::memcpy(
+            input_state + RATE_WORDS,
+            output_state + RATE_WORDS,
+            (KECCAKF_LANES - RATE_WORDS) * 8);
+        output_state =
+            keccakf_memo_permute<false, false>(input_state, entry_count);
         input_cursor += KECCAK_RATE;
         remaining_bytes -= KECCAK_RATE;
     }
@@ -367,7 +389,10 @@ lanes0:
         output_state + full_tail_lanes + 1,
         (KECCAKF_LANES - 1 - full_tail_lanes) * 8);
     input_state[16] ^= uint64_t{0x80} << 56;
-    output_state = keccakf_memo_permute<false>(input_state, entry_count);
+    output_state =
+        keep_looking_up
+            ? keccakf_memo_permute<false>(input_state, entry_count)
+            : keccakf_memo_permute<false, false>(input_state, entry_count);
     std::memcpy(output, output_state, 32);
 
     // A hit or full table reuses this scratch; a miss advanced to a zero slot.

@@ -3833,61 +3833,101 @@ namespace monad::vm::interpreter
             // copies, or the room for the two the sequence pushes, halts as
             // DUP1 or PUSH4 would: the charge leaves gas to JUMPI, and every
             // exceptional halt is the same to the block.
+            // Two tests take this form, the dispatch's selector chain with EQ
+            // and its binary search with GT, and both end on one branch.
+            uint8_t const monad_vm_op6 = *(instr_ptr + 6);
             if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH4) &&
-                *(instr_ptr + 6) == static_cast<std::uint8_t>(EQ) &&
                 *(instr_ptr + 7) == static_cast<std::uint8_t>(PUSH2) &&
-                *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI)) {
-                static constexpr auto monad_vm_req =
-                    fused_requirements<traits, DUP1, PUSH4, EQ, PUSH2, JUMPI>();
-                if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
-                    MONAD_VM_MUST_TAIL return ctx.exit(Error);
-                }
-                // The charge made here, as in push2_jumpi.
-                MONAD_VM_LAUNDER(gas_remaining);
-                // A contract's function dispatch is a chain of these tests,
-                // one a selector. The stack is the same before each of them,
-                // so a test not taken goes on to the next without a dispatch
-                // or the stack's tests; the tail padding keeps the lookahead
-                // past a test that ends the code in bounds.
-                while (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} !=
-                       *stack_top) {
-                    instr_ptr += 11;
-                    if (*instr_ptr != static_cast<std::uint8_t>(DUP1) ||
-                        *(instr_ptr + 1) != static_cast<std::uint8_t>(PUSH4) ||
-                        *(instr_ptr + 6) != static_cast<std::uint8_t>(EQ) ||
-                        *(instr_ptr + 7) != static_cast<std::uint8_t>(PUSH2) ||
-                        *(instr_ptr + 10) != static_cast<std::uint8_t>(JUMPI)) {
-                        MONAD_VM_DISPATCH(0, 0, *instr_ptr);
+                *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI) &&
+                (monad_vm_op6 == static_cast<std::uint8_t>(EQ) ||
+                 monad_vm_op6 == static_cast<std::uint8_t>(GT))) {
+                bool monad_vm_taken = true;
+                if (monad_vm_op6 == static_cast<std::uint8_t>(EQ)) {
+                    static constexpr auto monad_vm_req = fused_requirements<
+                        traits,
+                        DUP1,
+                        PUSH4,
+                        EQ,
+                        PUSH2,
+                        JUMPI>();
+                    if (MONAD_UNLIKELY(
+                            !MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
+                        MONAD_VM_MUST_TAIL return ctx.exit(Error);
                     }
-                    gas_remaining -= monad_vm_req.gas;
+                    // The charge made here, as in push2_jumpi.
+                    MONAD_VM_LAUNDER(gas_remaining);
+                    // A contract's function dispatch is a chain of these
+                    // tests, one a selector. The stack is the same before each
+                    // of them, so a test not taken goes on to the next without
+                    // a dispatch or the stack's tests; the tail padding keeps
+                    // the lookahead past a test that ends the code in bounds.
+                    //
+                    // A test's first eight bytes, DUP1 PUSH4 <selector> EQ
+                    // PUSH2, are one unaligned word: the test matches when the
+                    // word is the one the selector makes, its bytes 2 to 5 the
+                    // selector's read big-endian, and the chain goes on while a
+                    // word has the frame's four bytes and JUMPI follows three
+                    // bytes on. Five byte reads and the selector's swap a test
+                    // become one load, one compare and the frame's. A selector
+                    // that does not fit four bytes matches none: the word it
+                    // wants is zero, and a test's word starts with DUP1.
+                    uint64_t monad_vm_frame =
+                        uint64_t{static_cast<std::uint8_t>(DUP1)} |
+                        uint64_t{static_cast<std::uint8_t>(PUSH4)} << 8 |
+                        uint64_t{static_cast<std::uint8_t>(EQ)} << 48 |
+                        uint64_t{static_cast<std::uint8_t>(PUSH2)} << 56;
+                    // Built once, for the word wanted and the chain's test.
+                    MONAD_VM_LAUNDER(monad_vm_frame);
+                    auto const test_word = [](uint8_t const *const p) {
+                        uint64_t w;
+                        asm("ld %0, %1"
+                            : "=r"(w)
+                            : "m"(*reinterpret_cast<uint8_t const(*)[8]>(p)));
+                        return w;
+                    };
+                    uint256_t const &monad_vm_sel = *stack_top;
+                    uint64_t const monad_vm_want =
+                        (monad_vm_sel[1] | monad_vm_sel[2] | monad_vm_sel[3] |
+                         (monad_vm_sel[0] >> 32)) == 0
+                            ? monad_vm_frame |
+                                  uint64_t{__builtin_bswap32(
+                                      static_cast<uint32_t>(monad_vm_sel[0]))}
+                                      << 16
+                            : 0;
+                    uint64_t monad_vm_word = test_word(instr_ptr);
+                    while (monad_vm_word != monad_vm_want) {
+                        instr_ptr += 11;
+                        monad_vm_word = test_word(instr_ptr);
+                        if ((monad_vm_word & 0xffff'0000'0000'ffff) !=
+                                monad_vm_frame ||
+                            *(instr_ptr + 10) !=
+                                static_cast<std::uint8_t>(JUMPI)) {
+                            MONAD_VM_DISPATCH(0, 0, *instr_ptr);
+                        }
+                        gas_remaining -= monad_vm_req.gas;
+                    }
                 }
-                // fused_branch expects a pointer to EQ, followed by
+                else {
+                    // The binary search: taken when the selector is below the
+                    // pivot.
+                    static constexpr auto monad_vm_req = fused_requirements<
+                        traits,
+                        DUP1,
+                        PUSH4,
+                        GT,
+                        PUSH2,
+                        JUMPI>();
+                    if (MONAD_UNLIKELY(
+                            !MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
+                        MONAD_VM_MUST_TAIL return ctx.exit(Error);
+                    }
+                    MONAD_VM_LAUNDER(gas_remaining);
+                    monad_vm_taken =
+                        (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} >
+                         *stack_top);
+                }
+                // fused_branch expects a pointer to EQ or GT, followed by
                 // PUSH2 <dst> JUMPI.
-                instr_ptr =
-                    fused_branch(ctx, instr_ptr + 6, true, gas_remaining);
-                MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
-                    ctx,
-                    MONAD_VM_ANALYSIS_ARG,
-                    stack_bottom,
-                    stack_top,
-                    gas_remaining,
-                    instr_ptr MONAD_VM_TBL_ARG);
-            }
-            // The dispatch's binary search: DUP1 PUSH4 <pivot> GT PUSH2 <dst>
-            // JUMPI, taken when the selector is below the pivot.
-            if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH4) &&
-                *(instr_ptr + 6) == static_cast<std::uint8_t>(GT) &&
-                *(instr_ptr + 7) == static_cast<std::uint8_t>(PUSH2) &&
-                *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI)) {
-                static constexpr auto monad_vm_req =
-                    fused_requirements<traits, DUP1, PUSH4, GT, PUSH2, JUMPI>();
-                if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
-                    MONAD_VM_MUST_TAIL return ctx.exit(Error);
-                }
-                MONAD_VM_LAUNDER(gas_remaining);
-                bool const monad_vm_taken =
-                    (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} >
-                     *stack_top);
                 instr_ptr = fused_branch(
                     ctx, instr_ptr + 6, monad_vm_taken, gas_remaining);
                 MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](

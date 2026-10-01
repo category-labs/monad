@@ -1029,6 +1029,7 @@ namespace monad::vm::interpreter
     #define MONAD_VM_RELAY_OF_04 ~, RELAY
     #define MONAD_VM_RELAY_OF_06 ~, RELAY
     #define MONAD_VM_RELAY_OF_08 ~, RELAY
+    #define MONAD_VM_RELAY_OF_0a ~, RELAY
     #define MONAD_VM_RELAY_OF_20 ~, RELAY
     #define MONAD_VM_RELAY_OF_55 ~, RELAY
     #define MONAD_VM_SLOT_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_SLOT_, KIND)
@@ -1093,6 +1094,7 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_SLOT_PICK
     #undef MONAD_VM_RELAY_OF_55
     #undef MONAD_VM_RELAY_OF_20
+    #undef MONAD_VM_RELAY_OF_0a
     #undef MONAD_VM_RELAY_OF_08
     #undef MONAD_VM_RELAY_OF_06
     #undef MONAD_VM_RELAY_OF_04

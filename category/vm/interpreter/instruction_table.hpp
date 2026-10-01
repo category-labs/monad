@@ -3898,13 +3898,17 @@ namespace monad::vm::interpreter
         [[maybe_unused]] uint8_t next_opcode = 0;
         if constexpr (N == 1) {
             next_opcode = *(instr_ptr + 1);
-            // Check PUSH4 first; Intercode's tail padding makes lookahead
-            // through instr_ptr[10] safe.
             if (fuse_solidity_selector &&
-                next_opcode == static_cast<std::uint8_t>(PUSH4) &&
-                *(instr_ptr + 6) == static_cast<std::uint8_t>(EQ) &&
-                *(instr_ptr + 7) == static_cast<std::uint8_t>(PUSH2) &&
-                *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI)) {
+                next_opcode == static_cast<uint8_t>(PUSH4) &&
+                opcode_at_is(instr_ptr, 7, PUSH2) &&
+                opcode_at_is(instr_ptr, 10, JUMPI) &&
+                (opcode_at_is(instr_ptr, 6, EQ) ||
+                 opcode_at_is(instr_ptr, 6, GT))) {
+                // EQ and GT consume the same operands and gas, including on the
+                // error path.
+                static_assert(
+                    fused_requirements<traits, EQ>() ==
+                    fused_requirements<traits, GT>());
                 static constexpr auto requirements =
                     fused_requirements<traits, DUP1, PUSH4, EQ, PUSH2, JUMPI>();
                 if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(requirements))) {
@@ -3917,85 +3921,70 @@ namespace monad::vm::interpreter
                     MONAD_VM_CHECK_AT(PUSH2, 1);
                     MONAD_VM_CHECK_AT(JUMPI, 2);
     #else
-                    // The deferred charge only fails the DUP1/PUSH4 stack
-                    // checks.
+                    // Only the stack checks can fail in deferred mode.
                     MONAD_VM_MUST_TAIL return ctx.exit(Error);
     #endif
                 }
-                // Keep the gas deduction before the branch, as in push2_jumpi.
                 MONAD_VM_LAUNDER(gas_remaining);
-                // Byte offsets within each 11-byte selector test:
-                //   0     1      2..5       6   7      8..9         10
-                //   DUP1  PUSH4  [selector] EQ  PUSH2  [destination] JUMPI
-                // Compare the selector at +2 with the value on the stack.
-                // A failed test preserves that value for the next test.
-                while (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} !=
-                       *stack_top) {
-                    instr_ptr += 11; // Skip the entire failed test.
-                    // Continue the loop only if the next bytes form another
-                    // selector test; otherwise leave via normal dispatch.
-                    // Tail padding makes these lookahead reads safe.
-                    if (*instr_ptr != static_cast<std::uint8_t>(DUP1) ||
-                        *(instr_ptr + 1) != static_cast<std::uint8_t>(PUSH4) ||
-                        *(instr_ptr + 6) != static_cast<std::uint8_t>(EQ) ||
-                        *(instr_ptr + 7) != static_cast<std::uint8_t>(PUSH2) ||
-                        *(instr_ptr + 10) != static_cast<std::uint8_t>(JUMPI)) {
-                        MONAD_VM_DISPATCH(0, 0, *instr_ptr);
-                    }
+                bool take_jump = true;
+                if (opcode_at_is(instr_ptr, 6, EQ)) {
+                    //   0     1      2..5       6   7      8..9         10
+                    //   DUP1  PUSH4  [selector] EQ  PUSH2  [destination] JUMPI
+                    // The first eight bytes fit in one little-endian load.
+                    uint64_t opcode_pattern =
+                        uint64_t{DUP1} | (uint64_t{PUSH4} << 8) |
+                        (uint64_t{EQ} << 48) | (uint64_t{PUSH2} << 56);
+                    MONAD_VM_LAUNDER(opcode_pattern);
+                    auto const load_test_bytes =
+                        [](uint8_t const *instructions) {
+                            uint64_t test_bytes;
+                            asm("ld %0, %1"
+                                : "=r"(test_bytes)
+                                : "m"(*reinterpret_cast<uint8_t const(*)[8]>(
+                                    instructions)));
+                            return test_bytes;
+                        };
+                    uint256_t const &selector = *stack_top;
+                    // A selector wider than PUSH4 cannot match. Zero is a safe
+                    // sentinel because every valid test starts with DUP1.
+                    uint64_t const matching_test_bytes =
+                        (selector[1] | selector[2] | selector[3] |
+                         (selector[0] >> 32)) == 0
+                            ? opcode_pattern |
+                                  (uint64_t{__builtin_bswap32(
+                                       static_cast<uint32_t>(selector[0]))}
+                                   << 16)
+                            : 0;
+                    uint64_t test_bytes = load_test_bytes(instr_ptr);
+                    while (test_bytes != matching_test_bytes) {
+                        // EQ was false, so JUMPI falls through. Stay in the
+                        // loop only if another selector test starts there.
+                        instr_ptr += 11;
+                        test_bytes = load_test_bytes(instr_ptr);
+                        // Ignore the immediate when recognizing the next test.
+                        // Intercode tail padding covers the lookahead.
+                        if ((test_bytes & 0xffff'0000'0000'ffff) !=
+                                opcode_pattern ||
+                            !opcode_at_is(instr_ptr, 10, JUMPI)) {
+                            MONAD_VM_DISPATCH(0, 0, *instr_ptr);
+                        }
     #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
-                    // The first test validated the unchanged stack.
-                    MONAD_VM_CHARGE(DUP1);
-                    MONAD_VM_CHARGE(PUSH4);
-                    MONAD_VM_CHARGE(EQ);
-                    MONAD_VM_CHARGE(PUSH2);
-                    MONAD_VM_CHARGE(JUMPI);
+                        MONAD_VM_CHARGE(DUP1);
+                        MONAD_VM_CHARGE(PUSH4);
+                        MONAD_VM_CHARGE(EQ);
+                        MONAD_VM_CHARGE(PUSH2);
+                        MONAD_VM_CHARGE(JUMPI);
     #else
-                    gas_remaining -= requirements.gas;
+                        gas_remaining -= requirements.gas;
     #endif
+                    }
                 }
-                // A selector matched: take its jump. fused_branch expects
-                // the EQ at +6, followed by PUSH2 <dst> JUMPI.
-                instr_ptr =
-                    fused_branch(ctx, instr_ptr + 6, true, gas_remaining);
-                MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
-                    ctx,
-                    MONAD_VM_DISPATCH_STATE_ARG,
-                    stack_lower_bound,
-                    stack_top,
-                    gas_remaining,
-                    instr_ptr MONAD_VM_TBL_ARG);
-            }
-            // Split the selector search around a pivot:
-            //   0     1      2..5    6   7      8..9         10
-            //   DUP1  PUSH4  [pivot] GT  PUSH2  [destination] JUMPI
-            // GT compares the top (pivot) with the value below (selector),
-            // so the jump is taken when selector < pivot.
-            if (fuse_solidity_selector &&
-                next_opcode == static_cast<std::uint8_t>(PUSH4) &&
-                *(instr_ptr + 6) == static_cast<std::uint8_t>(GT) &&
-                *(instr_ptr + 7) == static_cast<std::uint8_t>(PUSH2) &&
-                *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI)) {
-                static constexpr auto requirements =
-                    fused_requirements<traits, DUP1, PUSH4, GT, PUSH2, JUMPI>();
-                if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(requirements))) {
-    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE) ||                          \
-        defined(MONAD_ZKVM_NO_SWAP1_PREFIX)
-                    gas_remaining += requirements.gas;
-                    MONAD_VM_CHECK(DUP1);
-                    MONAD_VM_CHECK_AT(PUSH4, 1);
-                    MONAD_VM_CHECK_AT(GT, 2);
-                    MONAD_VM_CHECK_AT(PUSH2, 1);
-                    MONAD_VM_CHECK_AT(JUMPI, 2);
-    #else
-                    // The deferred charge only fails the DUP1/PUSH4 stack
-                    // checks.
-                    MONAD_VM_MUST_TAIL return ctx.exit(Error);
-    #endif
+                else {
+                    // GT branches when the stack selector is below the PUSH4
+                    // pivot.
+                    take_jump = uint256_t{detail::load_be_k<4>(instr_ptr + 2)} >
+                                *stack_top;
                 }
-                MONAD_VM_LAUNDER(gas_remaining);
-                bool const take_jump =
-                    (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} >
-                     *stack_top);
                 instr_ptr =
                     fused_branch(ctx, instr_ptr + 6, take_jump, gas_remaining);
                 MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](

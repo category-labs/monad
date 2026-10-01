@@ -284,7 +284,20 @@ ahead of the nine values -- with `RISCV_TOOLCHAIN_DIR` and
 `CC_/CXX_riscv64ima_zisk_zkvm_elf` pointing at the DMA-patched GCC 15.2.0
 that `ZISK_DMA` needs. Build each configuration in its own worktree:
 `cargo-zisk` writes to `target/elf` whatever `CARGO_TARGET_DIR` says, and the
-CMake cache there keeps options a later build does not mention.
+guest's CMake tree, `target/guest-build`, is shared by every cargo target dir
+and keeps options a later build does not mention.
+
+**An L2 build analyses JUMPDESTs in software** (`MONAD_ZKVM_JUMPDEST_SOFTWARE`,
+on by default there, refused by the official profile). ZisK proves at least
+one whole instance of every state machine a run uses, however little the run
+asks of it, and a block of 1 to 250 L2 transactions plans the same 18
+instances -- the JUMPDEST precompile's among them, for the code of the few
+contracts the L2 runs. In software the scan is about 9,600 steps a block, 1 %
+of a 50-transaction block, in a Main instance such a block leaves mostly empty,
+and the plan drops to 17 instances. Whether that shortens the proof is what
+`zkvm-bench`'s `cluster/tests/l2-latency` times, block for block, against
+`MONAD_ZKVM_JUMPDEST_SOFTWARE=OFF` -- which builds the guest of before the
+lever byte for byte.
 
 ### Swapping the encryption
 
@@ -632,12 +645,13 @@ above and the sweep, 1,020 of them, on the L2 ELF and on the control, each run
 first checked against the manifest. The figures were taken with this series on
 71dcc0957, a base that pinned ZisK 1.2.0-alpha, and have not been re-taken on
 this tree, which pins 1.3.1-alpha and carries the base's later interpreter
-work: its absolute steps and COST may differ from these. They were also taken
-with every ancestor header in the witness, `--ancestors all`, which
-regenerates those corpora byte for byte; a block of the default corpora costs
-the table's ancestor row less. COST is ZisK's own cost model
-(`ziskemu -X --stats`), taken through `zkvm-bench`'s `compare.run_zisk` so that
-a figure here and one in a `compare` report come from one parser.
+work: its absolute steps and COST may differ from these. They were taken with
+the JUMPDEST precompile, which an L2 build now leaves out, and with every
+ancestor header in the witness, `--ancestors all`, which regenerates those
+corpora byte for byte; a block of the default corpora costs the table's
+ancestor row less. COST is ZisK's own cost model (`ziskemu -X --stats`), taken
+through `zkvm-bench`'s `compare.run_zisk` so that a figure here and one in a
+`compare` report come from one parser.
 
 **The control is the same chain without the encryption.** Both ELFs are L2
 builds of the same nine values; the control is configured with

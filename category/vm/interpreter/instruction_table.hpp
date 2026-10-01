@@ -86,6 +86,39 @@ namespace monad::vm::interpreter
     // at opcode 0's handler.
     inline constexpr size_t slot_lead = 32;
 
+    // A tail call to the head of NEXT_OPCODE's slot, slot_lead bytes before
+    // its handler, made by hand for the jump to take -slot_lead as its
+    // offset: through a function pointer gcc forms the head's address with
+    // an addi of its own. The arguments are where the call would put them.
+    #define MONAD_VM_LEAD_DISPATCH(NEXT_OPCODE, TOP, GAS, IP)                  \
+        do {                                                                   \
+            auto const monad_vm_head =                                         \
+                reinterpret_cast<uintptr_t>(itbl) +                            \
+                (static_cast<uintptr_t>(NEXT_OPCODE) << slot_shift);           \
+            register runtime::Context *monad_vm_a0 asm("a0") = &ctx;           \
+            register uint256_t const *monad_vm_a1 asm("a1") =                  \
+                MONAD_VM_ANALYSIS_ARG;                                         \
+            register uint256_t const *monad_vm_a2 asm("a2") = stack_bottom;    \
+            register uint256_t *monad_vm_a3 asm("a3") = (TOP);                 \
+            register int64_t monad_vm_a4 asm("a4") = (GAS);                    \
+            register uint8_t const *monad_vm_a5 asm("a5") = (IP);              \
+            register void const *monad_vm_a6 asm("a6") = itbl;                 \
+            asm volatile("jalr zero, %[off](%[head])"                          \
+                         :                                                     \
+                         : [head] "r"(monad_vm_head),                          \
+                           [off] "i"(-static_cast<int>(slot_lead)),            \
+                           "r"(monad_vm_a0),                                   \
+                           "r"(monad_vm_a1),                                   \
+                           "r"(monad_vm_a2),                                   \
+                           "r"(monad_vm_a3),                                   \
+                           "r"(monad_vm_a4),                                   \
+                           "r"(monad_vm_a5),                                   \
+                           "r"(monad_vm_a6)                                    \
+                         : "memory");                                          \
+            __builtin_unreachable();                                           \
+        }                                                                      \
+        while (false)
+
     // The revisions whose handlers have slots: the EVM ones the guest runs.
     // Other traits dispatch through their table.
     template <Traits traits>
@@ -2388,7 +2421,47 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        if constexpr (OP == PUSH1) {
+        if constexpr (OP == PUSH1 && has_slots<traits>) {
+            // PUSH1 1 PUSH1 1 PUSH1 <k> SHL SUB builds the mask 2^k - 1,
+            // which push1_mask finishes from the two ones pushed. Any other
+            // PUSH1 <a> PUSH1 <b> pushes a, and the second PUSH1 lands in its
+            // own follower's slot, as push<1> would make it.
+            uint8_t const monad_vm_imm1 = *(instr_ptr + 1);
+            if (MONAD_UNLIKELY(
+                    monad_vm_imm1 == 1 && *(instr_ptr + 3) == 1 &&
+                    *(instr_ptr + 4) == static_cast<std::uint8_t>(PUSH1) &&
+                    *(instr_ptr + 6) == static_cast<std::uint8_t>(SHL) &&
+                    *(instr_ptr + 7) == static_cast<std::uint8_t>(SUB))) {
+                static constexpr auto monad_vm_reqp =
+                    fused_requirements<traits, PUSH1, PUSH1>();
+                if (MONAD_UNLIKELY(
+                        !MONAD_VM_FUSED_CHARGE_PURE(monad_vm_reqp))) {
+                    gas_remaining += monad_vm_reqp.gas;
+                    MONAD_VM_CHECK(PUSH1);
+                    MONAD_VM_CHECK_AT(PUSH1, 1);
+                }
+                interpreter::push(stack_top, uint256_t{1});
+                interpreter::push(stack_top + 1, uint256_t{1});
+                instr_ptr += 4;
+                MONAD_VM_MUST_TAIL return push1_mask<traits>(
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top + 2,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+            interpreter::push(stack_top, uint256_t{monad_vm_imm1});
+            if (MONAD_UNLIKELY(stack_top + 1 >= MONAD_VM_STACK_LIMIT)) {
+                MONAD_VM_MUST_TAIL return ctx.exit(Error);
+            }
+            MONAD_VM_LEAD_DISPATCH(
+                *(instr_ptr + 4),
+                stack_top + 1,
+                (gas_remaining - static_gas<traits, PUSH1>()),
+                instr_ptr + 2);
+        }
+        else if constexpr (OP == PUSH1) {
             // Fuse PUSH1 <a> PUSH1 <b>, saving one dispatch.
             // The pair needs two free slots and 6 gas; the fallback preserves
             // per-opcode checks and error order.
@@ -2959,34 +3032,8 @@ namespace monad::vm::interpreter
             if (MONAD_UNLIKELY(stack_top >= MONAD_VM_STACK_LIMIT)) {
                 MONAD_VM_MUST_TAIL return ctx.exit(Error);
             }
-            // The tail call by hand, for the jump to take -slot_lead as its
-            // offset: through the function pointer, gcc forms the head's
-            // address with an addi of its own, one step on every PUSH1. The
-            // arguments are where the call would put them.
-            auto const monad_vm_head =
-                reinterpret_cast<uintptr_t>(itbl) +
-                (static_cast<uintptr_t>(monad_vm_op2) << slot_shift);
-            register runtime::Context *monad_vm_a0 asm("a0") = &ctx;
-            register uint256_t const *monad_vm_a1 asm("a1") =
-                MONAD_VM_ANALYSIS_ARG;
-            register uint256_t const *monad_vm_a2 asm("a2") = stack_bottom;
-            register uint256_t *monad_vm_a3 asm("a3") = stack_top;
-            register int64_t monad_vm_a4 asm("a4") = gas_remaining;
-            register uint8_t const *monad_vm_a5 asm("a5") = instr_ptr;
-            register void const *monad_vm_a6 asm("a6") = itbl;
-            asm volatile("jalr zero, %[off](%[head])"
-                         :
-                         : [head] "r"(monad_vm_head),
-                           [off] "i"(-static_cast<int>(slot_lead)),
-                           "r"(monad_vm_a0),
-                           "r"(monad_vm_a1),
-                           "r"(monad_vm_a2),
-                           "r"(monad_vm_a3),
-                           "r"(monad_vm_a4),
-                           "r"(monad_vm_a5),
-                           "r"(monad_vm_a6)
-                         : "memory");
-            __builtin_unreachable();
+            MONAD_VM_LEAD_DISPATCH(
+                monad_vm_op2, stack_top, gas_remaining, instr_ptr);
         }
         else if constexpr (N == 1) {
             // A bitmap keeps the check cheap on every PUSH1; testing four

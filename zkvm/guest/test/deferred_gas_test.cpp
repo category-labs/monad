@@ -561,7 +561,60 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         CALLDATASIZE, LT, PUSH2, 0, 0, JUMPI, STOP};
     extraction &= failed_cleanly(run(empty_selector, 100, input));
 
-    check(selectors && extraction);
+    // Sweep the ABI bounds check's gas; check the computed remainder too.
+    bool bounds = true;
+    for (uint8_t offset : {uint8_t{0}, uint8_t{4}, uint8_t{9}}) {
+        std::vector<uint8_t> code{
+            PUSH1,
+            offset,
+            CALLDATASIZE,
+            SUB,
+            PUSH1,
+            4,
+            DUP2,
+            LT,
+            ISZERO,
+            PUSH2,
+            0,
+            14,
+            JUMPI,
+            0xfe,
+            JUMPDEST};
+        expect_top(code, uint256_t{input.size()} - offset);
+        for (int64_t gas = 0; gas <= 55; ++gas) {
+            auto const r = run(code, gas, input);
+            bounds &= gas < 54 ? failed_cleanly(r)
+                               : r.status == EVMC_SUCCESS && r.gas == gas - 54;
+        }
+    }
+    // The ABI sequence needs two spare slots for PUSH1 followed by DUP2.
+    for (size_t height : {size_t{1022}, size_t{1023}}) {
+        std::vector<uint8_t> code(height - 1, PUSH0);
+        code.insert(
+            code.end(),
+            {PUSH1, 0, CALLDATASIZE, SUB, PUSH1, 4, DUP2, LT, ISZERO});
+        size_t const jump = code.size();
+        code.insert(code.end(), {PUSH2, 0, 0, JUMPI, 0xfe});
+        patch_jump(code, jump);
+        code.insert(code.end(), {JUMPDEST, STOP});
+        auto const r = run(code, 10000, input);
+        bounds &= height == 1022 ? r.status == EVMC_SUCCESS : failed_cleanly(r);
+    }
+    std::array<uint8_t, 12> const empty_bounds{
+        CALLDATASIZE,
+        SUB,
+        PUSH1,
+        4,
+        DUP2,
+        LT,
+        ISZERO,
+        PUSH2,
+        0,
+        0,
+        JUMPI,
+        STOP};
+    bounds &= failed_cleanly(run(empty_bounds, 100, input));
+    check(selectors && extraction && bounds);
     // Check every PUSH1 mask width, with and without the optional AND.
     bool masks = true;
     for (unsigned k = 0; k < 256; ++k) {

@@ -455,22 +455,25 @@ fn manifest_dir() -> PathBuf {
 /// (category/vm/interpreter/execute.cpp): one per revision from BERLIN (8) to
 /// AMSTERDAM (15) and per opcode, 4 KiB each, the newest revision first and
 /// then in opcode order, so that a handler's address is `monad_vm_slots` plus
-/// its offset. A slot holds the handler's four copies (instruction_table.hpp's
-/// lag_offset), copies 2, 3, 0 and 1 in address order; each opens with LEAD
-/// bytes where PUSH1 and PUSH2 land on the opcode, then the copy, and last the
-/// pairs the landings jump to. The gaps are nops. A landing longer than LEAD or
-/// a copy that outgrows its region fails the link, since the location counter
-/// cannot move backwards, and so does a region left without a landing, or a
-/// copy that does not start right after its landing.
+/// its offset. A slot holds the handler's six copies (instruction_table.hpp's
+/// lag_offset), copies 4, 5, 0, 1, 2 and 3 in address order; each opens with
+/// LEAD bytes where PUSH1 and PUSH2 land on the opcode, then the copy. The
+/// pairs the landings jump to come past every slot, and so do the handlers
+/// too large for a copy, whose copies jump there. The gaps are nops. A
+/// landing longer than LEAD or a copy that outgrows its region fails the link,
+/// since the location counter cannot move backwards, and so does a region left
+/// without a landing, or a copy that does not start right after its landing.
 fn zisk_slots_ld() -> String {
     const SLOT: usize = 0x1000;
     // instruction_table.hpp's copies, in address order: where each copy's
     // 64-byte lead starts in its slot, its sections' suffix, and the copy's.
-    const COPIES: [(usize, &str, &str); 4] = [
-        (0, "_2", "2"),
-        (968, "_3", "3"),
-        (1992, "", ""),
-        (3016, "_1", "1"),
+    const COPIES: [(usize, &str, &str); 6] = [
+        (0, "_4", "4"),
+        (684, "_5", "5"),
+        (1368, "", ""),
+        (2048, "_1", "1"),
+        (2728, "_2", "2"),
+        (3412, "_3", "3"),
     ];
     const LEAD: usize = 0x40;
     let mut ld = String::from(
@@ -496,15 +499,18 @@ fn zisk_slots_ld() -> String {
                      . = monad_vm_slots + {entry:#x};\n        \
                      KEEP(*(.monad_vm_slot{copy}.{rev:02}.{op:02x}))\n        \
                      ASSERT(monad_vm_slot_{rev:02}_{op:02x}{symbol} == monad_vm_slots + {entry:#x}, \
-                     \"monad_vm_slots: handler {rev:02}.{op:02x}{symbol} is not after its landing\")\n        \
-                     KEEP(*(.monad_vm_push1{sections}.{rev:02}.{op:02x}))\n        \
-                     KEEP(*(.monad_vm_push2{sections}.{rev:02}.{op:02x}))\n"
+                     \"monad_vm_slots: handler {rev:02}.{op:02x}{symbol} is not after its landing\")\n"
                 );
             }
         }
     }
+    // The pairs the landings jump to, and the handlers too large for a copy,
+    // past every slot.
     ld += &format!(
-        "        . = monad_vm_slots + {:#x};\n    }}\n}} INSERT AFTER .text;\n",
+        "        . = monad_vm_slots + {:#x};\n        \
+         KEEP(*(.monad_vm_push1*))\n        \
+         KEEP(*(.monad_vm_push2*))\n        \
+         KEEP(*(.monad_vm_body*))\n    }}\n}} INSERT AFTER .text;\n",
         8 * 256 * SLOT
     );
     ld

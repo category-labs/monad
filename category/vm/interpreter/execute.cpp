@@ -164,8 +164,8 @@ namespace monad::vm::interpreter
     // The head of DUP2 to DUP16, 40 bytes ahead of SWAP1's: in copy R it
     // takes a DUPn (R + 5) % 6 bytes behind (dup_offset), the word to copy at
     // a7. For most opcodes it is the copy to the new top, a5 stepped by 6 in
-    // copy 0, and a jump to the copy; ADD's, AND's, LT's, GT's and MSTORE's
-    // jump to their pair, a7 as it came.
+    // copy 0, and a jump to the copy; ADD's, SUB's, AND's, LT's, GT's,
+    // MLOAD's, MSTORE's and SWAP1's jump to their pair, a7 as it came.
     #define MONAD_VM_DUP_COPY                                                  \
         "\taddi a3, a3, 32\n"                                                  \
         "\tcsrs 0x813, a7\n"                                                   \
@@ -197,10 +197,13 @@ namespace monad::vm::interpreter
     #define MONAD_VM_DUP_THEN(NAME, OP, R)                                     \
         MONAD_VM_LEAD_CAT(MONAD_VM_DUP_THEN_, R)(NAME, OP)
     #define MONAD_VM_DUP_OF_01 ~, THEN
+    #define MONAD_VM_DUP_OF_03 ~, THEN
     #define MONAD_VM_DUP_OF_10 ~, THEN
     #define MONAD_VM_DUP_OF_11 ~, THEN
     #define MONAD_VM_DUP_OF_16 ~, THEN
+    #define MONAD_VM_DUP_OF_51 ~, THEN
     #define MONAD_VM_DUP_OF_52 ~, THEN
+    #define MONAD_VM_DUP_OF_90 ~, THEN
     #define MONAD_VM_DUP_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_DUP_, KIND)
     #define MONAD_VM_DUP_HEAD(NAME, OP, R)                                     \
         MONAD_VM_DUP_PICK(MONAD_VM_LEAD_KIND(MONAD_VM_DUP_OF_##OP, PLAIN, ~))( \
@@ -860,10 +863,13 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_DUP_THEN_IN
     #undef MONAD_VM_DUP_HEAD
     #undef MONAD_VM_DUP_PICK
+    #undef MONAD_VM_DUP_OF_90
     #undef MONAD_VM_DUP_OF_52
+    #undef MONAD_VM_DUP_OF_51
     #undef MONAD_VM_DUP_OF_16
     #undef MONAD_VM_DUP_OF_11
     #undef MONAD_VM_DUP_OF_10
+    #undef MONAD_VM_DUP_OF_03
     #undef MONAD_VM_DUP_OF_01
     #undef MONAD_VM_DUP_THEN
     #undef MONAD_VM_DUP_THEN_5

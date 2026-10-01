@@ -1124,6 +1124,19 @@ udivrem(uint256_t const &u, uint256_t const &v) noexcept
 constexpr uint256_t
 addmod(uint256_t const &x, uint256_t const &y, uint256_t const &mod) noexcept
 {
+#ifdef MONAD_ZKVM_ZISK
+    // The precompile does (x*1 + y) mod m in one call, whatever the operands.
+    // The fast path below is three subb and an addc in software: on ZisK about
+    // 110 steps a call, a third of them compares of full words that the cost
+    // model prices, and a frame for the registers they hold. A call is a
+    // fraction of that and 1,440 cells of precompile.
+    if (!std::is_constant_evaluated()) {
+        if (mod == 0) {
+            return 0;
+        }
+        return zisk_arith256_mod(x, 1, y, mod);
+    }
+#endif
     // Fast path when mod >= 2^192 and x, y < 2*mod
     if (mod[3] && (x[3] <= mod[3]) && (y[3] <= mod[3])) {
         // x, y < 2 * mod
@@ -1146,17 +1159,6 @@ addmod(uint256_t const &x, uint256_t const &y, uint256_t const &mod) noexcept
             return xy_sum;
         }
     }
-#ifdef MONAD_ZKVM_ZISK
-    // Slow path only: the branch above (mod >= 2^192, the common EVM case) is
-    // a handful of subb/addc and stays. What follows in software is a 320/256
-    // udivrem; the precompile does (x*1 + y) mod m in one call.
-    if (!std::is_constant_evaluated()) {
-        if (mod == 0) {
-            return 0;
-        }
-        return zisk_arith256_mod(x, 1, y, mod);
-    }
-#endif
     words_t<uint256_t::num_words + 1> sum;
     uint64_t carry = 0;
 #pragma GCC unroll(4)

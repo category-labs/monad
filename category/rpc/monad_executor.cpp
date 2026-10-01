@@ -230,11 +230,21 @@ namespace
 
         tdb.set_block_and_prefix(block_number, block_id);
         BlockState block_state{tdb, vm};
-        // avoid conflict with block reward txn
-        Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
-        apply_state_overrides(block_state, incarnation, state_overrides);
+        // We use separate incarnations for execution and state overrides such
+        // that account overrides are not treated as fresh accounts, and thus
+        // potentially deleted during the account finalization step, meaning
+        // they would not be rendered in the state trace.
+        //
+        // `LAST_TX - {1,2}u` here to avoid conflicts with reward TX.
+        Incarnation const execution_incarnation{
+            block_number, Incarnation::LAST_TX - 1u};
+        Incarnation const override_incarnation{
+            block_number, Incarnation::LAST_TX - 2u};
 
-        State state{block_state, incarnation};
+        apply_state_overrides(
+            block_state, override_incarnation, state_overrides);
+
+        State state{block_state, execution_incarnation};
 
         // validate_transaction expects nonce to match.
         // However, eth_call doesn't take a nonce parameter.
@@ -245,7 +255,7 @@ namespace
         // Safe to pass empty code to validation here because the above override
         // will always mark this transaction as coming from an EOA.
         {
-            State state{block_state, incarnation};
+            State state{block_state, execution_incarnation};
             // validate_transaction expects the sender of a transaction is EOA,
             // not CA. However, eth_call allows the sender to be CA to simulate
             // a subroutine. Solving this issue by manually setting account to

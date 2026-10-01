@@ -9066,3 +9066,165 @@ TEST_F(EthCallFixture, touched_empty_account_with_state_trace)
     monad_state_override_destroy(state_override);
     monad_executor_destroy(executor);
 }
+
+// Since EIP-6780 SELFDESTRUCT deletes an account only if it was created in the
+// same transaction. A pre-existing account must remain, with its balance
+// transferred and set to zero. Thus, an account created using a state override
+// must also be retained after a SELFDESTRUCT operation.
+TEST_F(EthCallFixture, selfdestruct_preexisting_accounts_are_retained)
+{
+    static constexpr auto from =
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
+    static constexpr auto override_account =
+        0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address;
+    static constexpr auto full_state_account =
+        0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb_address;
+    static constexpr auto database_account =
+        0xcccccccccccccccccccccccccccccccccccccccc_address;
+
+    // CALLER SELFDESTRUCT
+    byte_string const code = 0x33ff_bytes;
+    auto const code_hash = to_bytes(keccak256(code));
+    auto const compiled_code = vm::make_shared_intercode(code);
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 10_ether,
+                          .code_hash = NULL_HASH,
+                      }}}},
+            {full_state_account,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 1000,
+                          .code_hash = code_hash,
+                          .nonce = 1,
+                      }}}},
+            {database_account,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 1000,
+                          .code_hash = code_hash,
+                          .nonce = 1,
+                      }}}},
+        },
+        Code{{code_hash, compiled_code}},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, StateDeltas{}, Code{}, BlockHeader{.number = i});
+    }
+
+    BlockHeader const header{.number = 256};
+    commit_sequential(tdb, StateDeltas{}, Code{}, header);
+
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+    auto *executor = create_executor(dbname.string());
+
+    enum class OverrideMode
+    {
+        None,
+        Account,
+        FullState,
+    };
+
+    std::vector<std::unique_ptr<callback_context>> contexts{};
+    auto run_trace = [&](Address const target, OverrideMode const mode) {
+        Transaction const tx{.gas_limit = 200'000u, .to = target};
+        auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+        auto *state_override = monad_state_override_create();
+
+        if (mode != OverrideMode::None) {
+            add_override_address(
+                state_override, target.bytes, sizeof(target.bytes));
+        }
+
+        if (mode == OverrideMode::Account) {
+            bytes32_t const balance = store_be_as<bytes32_t>(uint256_t{1000});
+            set_override_balance(
+                state_override,
+                target.bytes,
+                sizeof(target.bytes),
+                balance.bytes,
+                sizeof(balance));
+            set_override_nonce(
+                state_override, target.bytes, sizeof(target.bytes), 1);
+            set_override_code(
+                state_override,
+                target.bytes,
+                sizeof(target.bytes),
+                code.data(),
+                code.size());
+        }
+        else if (mode == OverrideMode::FullState) {
+            set_override_empty_state(
+                state_override, target.bytes, sizeof(target.bytes));
+        }
+
+        auto &ctx =
+            *contexts.emplace_back(std::make_unique<callback_context>());
+        auto future = ctx.promise.get_future();
+        monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            &ctx,
+            STATEDIFF_TRACER,
+            true);
+        future.get();
+
+        EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+        auto result = nlohmann::json::from_cbor(
+            ctx.result->encoded_trace,
+            ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+        monad_state_override_destroy(state_override);
+        return result;
+    };
+
+    auto assert_retained = [](nlohmann::json const &trace,
+                              Address const target) {
+        auto const key = std::format("0x{}", to_hex(target));
+
+        ASSERT_TRUE(trace["pre"].contains(key)) << trace.dump(2);
+        ASSERT_TRUE(trace["post"].contains(key)) << trace.dump(2);
+
+        EXPECT_EQ(trace["pre"][key]["balance"], "0x3e8");
+        EXPECT_EQ(trace["pre"][key]["code"], "0x33ff");
+        EXPECT_EQ(trace["pre"][key]["nonce"], 1);
+        EXPECT_EQ(trace["post"][key]["balance"], "0x0");
+        EXPECT_EQ(trace["post"][key].size(), 1);
+    };
+
+    assert_retained(
+        run_trace(override_account, OverrideMode::Account), override_account);
+    assert_retained(
+        run_trace(full_state_account, OverrideMode::FullState),
+        full_state_account);
+    assert_retained(
+        run_trace(database_account, OverrideMode::None), database_account);
+
+    monad_executor_destroy(executor);
+}

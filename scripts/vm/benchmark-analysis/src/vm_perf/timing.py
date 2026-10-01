@@ -21,26 +21,26 @@ from typing import Any
 from vm_perf.suites import Case, micro_name, parse_results, tool
 
 
-def run_titles(binary: pathlib.Path, titles: list[tuple[str, str]], core: int) -> dict[str, float]:
-    best = {}
-    for impl, title in titles:
-        cmd = [tool("taskset"), "-c", str(core), str(binary), "--impl-filter", f"^{impl}$"]
-        cmd += ["--title-filter", f"^{re.escape(title)}$"]
-        proc = subprocess.run(cmd, capture_output=True, text=True)
-        if proc.returncode:
-            raise RuntimeError(f"{binary} failed on {title}: {proc.stderr.strip()[-200:]}")
-        for _, _, seq, ms in parse_results(proc.stdout):
-            best[micro_name((impl, title, seq))] = ms * 1e6
-    return best
+def run_title(binary: pathlib.Path, impl: str, title: str, core: int) -> dict[str, float]:
+    cmd = [tool("taskset"), "-c", str(core), str(binary), "--impl-filter", f"^{impl}$"]
+    cmd += ["--title-filter", f"^{re.escape(title)}$"]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode:
+        raise RuntimeError(f"{binary} failed on {title}: {proc.stderr.strip()[-200:]}")
+    return {micro_name((impl, title, seq)): ms * 1e6 for _, _, seq, ms in parse_results(proc.stdout)}
 
 
 def time_pair(base: pathlib.Path, head: pathlib.Path, cases: list[Case], repeats: int, core: int) -> dict[str, Any]:
     titles = sorted({(impl, title) for impl, title, _ in cases})
+    wanted = {micro_name(c) for c in cases}
     samples: dict[str, dict[str, list[float]]] = {"base": {}, "head": {}}
-    for _ in range(repeats):
-        for label, binary in (("base", base), ("head", head)):
-            for name, ns in run_titles(binary, titles, core).items():
-                samples[label].setdefault(name, []).append(ns)
+    for r in range(repeats):
+        for i, (impl, title) in enumerate(titles):
+            order = [("base", base), ("head", head)][:: -1 if (r + i) % 2 else 1]
+            for label, binary in order:
+                for name, ns in run_title(binary, impl, title, core).items():
+                    if name in wanted:
+                        samples[label].setdefault(name, []).append(ns)
     result = {}
     for name in sorted(samples["base"].keys() & samples["head"].keys()):
         b, h = samples["base"][name], samples["head"][name]

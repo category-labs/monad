@@ -166,3 +166,5 @@ def main() -> None:
             }
         )
     print(json.dumps(rows, indent=2))
+    failed = ("not measured", "missed", "unexpected")
+    sys.exit(1 if any(any(f in row["verdict"] for f in failed) for row in rows) else 0)

@@ -359,6 +359,141 @@ namespace monad::vm::interpreter
         return gas_remaining >= 0;
     }
 
+    // Shift in place; the caller guarantees total_shift < 256.
+    // Each case fixes the whole-word offset, avoiding dynamic array indexing.
+    // Whole-word shifts only copy words; other shifts combine adjacent words.
+    [[gnu::always_inline]] inline void
+    shr_in_place(uint256_t &value, uint64_t const total_shift) noexcept
+    {
+        unsigned const intra_word_shift =
+            static_cast<unsigned>(total_shift & 63);
+        // Used only when intra_word_shift is nonzero, avoiding a shift by 64.
+        unsigned const cross_word_shift = 64 - intra_word_shift;
+        switch (total_shift >> 6) {
+        case 0: {
+            if (intra_word_shift == 0) {
+                break;
+            }
+            uint64_t const word0 = value[0], word1 = value[1], word2 = value[2],
+                           word3 = value[3];
+            value[0] =
+                (word0 >> intra_word_shift) | (word1 << cross_word_shift);
+            value[1] =
+                (word1 >> intra_word_shift) | (word2 << cross_word_shift);
+            value[2] =
+                (word2 >> intra_word_shift) | (word3 << cross_word_shift);
+            value[3] = word3 >> intra_word_shift;
+            break;
+        }
+        case 1: {
+            uint64_t const word1 = value[1], word2 = value[2], word3 = value[3];
+            if (intra_word_shift == 0) {
+                value[0] = word1;
+                value[1] = word2;
+                value[2] = word3;
+            }
+            else {
+                value[0] =
+                    (word1 >> intra_word_shift) | (word2 << cross_word_shift);
+                value[1] =
+                    (word2 >> intra_word_shift) | (word3 << cross_word_shift);
+                value[2] = word3 >> intra_word_shift;
+            }
+            value[3] = 0;
+            break;
+        }
+        case 2: {
+            uint64_t const word2 = value[2], word3 = value[3];
+            if (intra_word_shift == 0) {
+                value[0] = word2;
+                value[1] = word3;
+            }
+            else {
+                value[0] =
+                    (word2 >> intra_word_shift) | (word3 << cross_word_shift);
+                value[1] = word3 >> intra_word_shift;
+            }
+            value[2] = 0;
+            value[3] = 0;
+            break;
+        }
+        default: {
+            uint64_t const word3 = value[3];
+            value[0] = word3 >> intra_word_shift;
+            value[1] = 0;
+            value[2] = 0;
+            value[3] = 0;
+            break;
+        }
+        }
+    }
+
+    [[gnu::always_inline]] inline void
+    shl_in_place(uint256_t &value, uint64_t const total_shift) noexcept
+    {
+        unsigned const intra_word_shift =
+            static_cast<unsigned>(total_shift & 63);
+        // Used only when intra_word_shift is nonzero, avoiding a shift by 64.
+        unsigned const cross_word_shift = 64 - intra_word_shift;
+        switch (total_shift >> 6) {
+        case 0: {
+            if (intra_word_shift == 0) {
+                break;
+            }
+            uint64_t const word0 = value[0], word1 = value[1], word2 = value[2],
+                           word3 = value[3];
+            value[3] =
+                (word3 << intra_word_shift) | (word2 >> cross_word_shift);
+            value[2] =
+                (word2 << intra_word_shift) | (word1 >> cross_word_shift);
+            value[1] =
+                (word1 << intra_word_shift) | (word0 >> cross_word_shift);
+            value[0] = word0 << intra_word_shift;
+            break;
+        }
+        case 1: {
+            uint64_t const word0 = value[0], word1 = value[1], word2 = value[2];
+            if (intra_word_shift == 0) {
+                value[3] = word2;
+                value[2] = word1;
+                value[1] = word0;
+            }
+            else {
+                value[3] =
+                    (word2 << intra_word_shift) | (word1 >> cross_word_shift);
+                value[2] =
+                    (word1 << intra_word_shift) | (word0 >> cross_word_shift);
+                value[1] = word0 << intra_word_shift;
+            }
+            value[0] = 0;
+            break;
+        }
+        case 2: {
+            uint64_t const word0 = value[0], word1 = value[1];
+            if (intra_word_shift == 0) {
+                value[3] = word1;
+                value[2] = word0;
+            }
+            else {
+                value[3] =
+                    (word1 << intra_word_shift) | (word0 >> cross_word_shift);
+                value[2] = word0 << intra_word_shift;
+            }
+            value[1] = 0;
+            value[0] = 0;
+            break;
+        }
+        default: {
+            uint64_t const word0 = value[0];
+            value[3] = word0 << intra_word_shift;
+            value[2] = 0;
+            value[1] = 0;
+            value[0] = 0;
+            break;
+        }
+        }
+    }
+
     // After validating the destination, charge JUMPDEST's gas and skip it.
     // Invalid jumps must exit before this charge.
     [[gnu::always_inline]] inline uint8_t const *swallow_jumpdest(
@@ -1152,7 +1287,16 @@ namespace monad::vm::interpreter
         runtime::Context &ctx = held_in_a0(entry_ctx);
         MONAD_VM_CHECK(SHL);
         auto &&[shift, value] = top_two(stack_top);
+#if defined(MONAD_ZKVM_ZISK)
+        if ((shift[1] | shift[2] | shift[3]) == 0 && shift[0] < 256) {
+            shl_in_place(value, shift[0]);
+        }
+        else {
+            value = uint256_t{};
+        }
+#else
         value <<= shift;
+#endif
 
         MONAD_VM_NEXT(SHL);
     }
@@ -1166,7 +1310,16 @@ namespace monad::vm::interpreter
         runtime::Context &ctx = held_in_a0(entry_ctx);
         MONAD_VM_CHECK(SHR);
         auto &&[shift, value] = top_two(stack_top);
+#if defined(MONAD_ZKVM_ZISK)
+        if ((shift[1] | shift[2] | shift[3]) == 0 && shift[0] < 256) {
+            shr_in_place(value, shift[0]);
+        }
+        else {
+            value = uint256_t{};
+        }
+#else
         value >>= shift;
+#endif
 
         MONAD_VM_NEXT(SHR);
     }

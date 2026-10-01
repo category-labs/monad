@@ -2706,7 +2706,14 @@ namespace monad::vm::interpreter
             }
             uint256_t const monad_vm_imm{*(instr_ptr + 1)};
             if constexpr (OP == ADD) {
-                *stack_top = monad_vm_imm + *stack_top;
+                // Without a carry out of the low word, the words above stay.
+                uint64_t const monad_vm_low = (*stack_top)[0] + monad_vm_imm[0];
+                if (MONAD_LIKELY(monad_vm_low >= monad_vm_imm[0])) {
+                    (*stack_top)[0] = monad_vm_low;
+                }
+                else {
+                    *stack_top = monad_vm_imm + *stack_top;
+                }
             }
             else if constexpr (OP == SHL) {
                 *stack_top <<= monad_vm_imm;

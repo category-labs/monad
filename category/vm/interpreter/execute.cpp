@@ -36,7 +36,7 @@ namespace monad::vm::interpreter
 {
 #if defined(MONAD_ZKVM_ZISK)
     // One slot per revision and opcode: the opcode's handler, compiled into
-    // it six times. The section's name tells the linker script where to put
+    // it seven times. The section's name tells the linker script where to put
     // it (the revision in two decimal digits, the opcode in two hexadecimal
     // ones); an alignment attribute would not do it, since the assembler pads
     // to it with nops the linker relaxes away only after placing the
@@ -46,11 +46,11 @@ namespace monad::vm::interpreter
     // Each copy R (instruction_table.hpp's lag_offset) opens with 64 bytes of
     // heads, where PUSH1 and PUSH2 land on the opcode after their immediate
     // (push<1>, push<2>), and the linker script places the copy right after
-    // them. In copy R, PUSH1's head takes a PUSH1 (R + 4) % 6 bytes behind:
-    // the immediate pushed, PUSH1's gas charged, and a5 stepped by 6 when the
+    // them. In copy R, PUSH1's head takes a PUSH1 (R + 5) % 7 bytes behind:
+    // the immediate pushed, PUSH1's gas charged, and a5 stepped by 7 when the
     // copy is 0 or 1, in a3, a4 and a5, the handlers' stack_top,
     // gas_remaining and instr_ptr; it falls into the copy. Before it, PUSH2's
-    // head takes a PUSH2 (R + 3) % 6 bytes behind: its stack test, its
+    // head takes a PUSH2 (R + 4) % 7 bytes behind: its stack test, its
     // immediate read, and a jump to the push in PUSH1's head. Where PUSH1
     // pairs with the opcode (push1_then), both heads are jumps, to the pair
     // and to PUSH2's push in full, placed past the slots; for JUMP and
@@ -73,7 +73,7 @@ namespace monad::vm::interpreter
             "monad_vm_slot_" #NAME "_" #OP "_lead" #SUFFIX ":\n" HEAD1         \
             ".option pop\n"                                                    \
             ".popsection");
-    // The six copies' heads, copy 0 first.
+    // The seven copies' heads, copy 0 first.
     #define MONAD_VM_LEADS(                                                    \
         NAME,                                                                  \
         OP,                                                                    \
@@ -88,13 +88,16 @@ namespace monad::vm::interpreter
         H2_4,                                                                  \
         H1_4,                                                                  \
         H2_5,                                                                  \
-        H1_5)                                                                  \
+        H1_5,                                                                  \
+        H2_6,                                                                  \
+        H1_6)                                                                  \
         MONAD_VM_LEAD_SECTION(NAME, OP, , "", H2_0, H1_0, "32")                \
         MONAD_VM_LEAD_SECTION(NAME, OP, _1, "", H2_1, H1_1, "32")              \
         MONAD_VM_LEAD_SECTION(NAME, OP, _2, "\tnop\n", H2_2, H1_2, "28")       \
         MONAD_VM_LEAD_SECTION(NAME, OP, _3, "\tnop\n", H2_3, H1_3, "28")       \
         MONAD_VM_LEAD_SECTION(NAME, OP, _4, "\tnop\n", H2_4, H1_4, "28")       \
-        MONAD_VM_LEAD_SECTION(NAME, OP, _5, "\tnop\n", H2_5, H1_5, "28")
+        MONAD_VM_LEAD_SECTION(NAME, OP, _5, "\tnop\n", H2_5, H1_5, "28")       \
+        MONAD_VM_LEAD_SECTION(NAME, OP, _6, "\tnop\n", H2_6, H1_6, "28")
 
     // PUSH2's stack test, leaving through EXIT, and its immediate in t3.
     #define MONAD_VM_PUSH2_READ_AT(EXIT, HIGH, LOW)                            \
@@ -110,27 +113,29 @@ namespace monad::vm::interpreter
         "\tsd zero, 56(a3)\n"                                                  \
         "\taddi a3, a3, 32\n"                                                  \
         "\taddi a4, a4, -3\n"
-    #define MONAD_VM_STEP6 "\taddi a5, a5, 6\n"
+    #define MONAD_VM_STEP7 "\taddi a5, a5, 7\n"
     #define MONAD_VM_HEAD1_PUSH(IMM, STEP)                                     \
         "\tlbu t3, " IMM "(a5)\n3:\n" MONAD_VM_PUSH_T3 STEP
     #define MONAD_VM_HEAD2_PUSH(HIGH, LOW, STEP, PAD)                          \
         MONAD_VM_PUSH2_READ_AT("1b", HIGH, LOW) STEP "\tj 3f\n" PAD
     #define MONAD_VM_NOP5 "\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n"
     #define MONAD_VM_HEAD_TO(TARGET, PAD) "\ttail " TARGET "\n" PAD
-    // Copy by copy: PUSH1 from lag 4, 5, 0, 1, 2, 3; PUSH2 from lag 3, 4, 5,
-    // 0, 1, 2.
-    #define MONAD_VM_PLAIN1_0 MONAD_VM_HEAD1_PUSH("5", MONAD_VM_STEP6)
-    #define MONAD_VM_PLAIN1_1 MONAD_VM_HEAD1_PUSH("6", MONAD_VM_STEP6)
+    // Copy by copy: PUSH1 from lag 5, 6, 0, 1, 2, 3, 4; PUSH2 from lag 4, 5,
+    // 6, 0, 1, 2, 3.
+    #define MONAD_VM_PLAIN1_0 MONAD_VM_HEAD1_PUSH("6", MONAD_VM_STEP7)
+    #define MONAD_VM_PLAIN1_1 MONAD_VM_HEAD1_PUSH("7", MONAD_VM_STEP7)
     #define MONAD_VM_PLAIN1_2 MONAD_VM_HEAD1_PUSH("1", "")
     #define MONAD_VM_PLAIN1_3 MONAD_VM_HEAD1_PUSH("2", "")
     #define MONAD_VM_PLAIN1_4 MONAD_VM_HEAD1_PUSH("3", "")
     #define MONAD_VM_PLAIN1_5 MONAD_VM_HEAD1_PUSH("4", "")
-    #define MONAD_VM_PLAIN2_0 MONAD_VM_HEAD2_PUSH("4", "5", "", "\tnop\n")
-    #define MONAD_VM_PLAIN2_1 MONAD_VM_HEAD2_PUSH("5", "6", "", "\tnop\n")
-    #define MONAD_VM_PLAIN2_2 MONAD_VM_HEAD2_PUSH("6", "7", MONAD_VM_STEP6, "")
+    #define MONAD_VM_PLAIN1_6 MONAD_VM_HEAD1_PUSH("5", "")
+    #define MONAD_VM_PLAIN2_0 MONAD_VM_HEAD2_PUSH("5", "6", "", "\tnop\n")
+    #define MONAD_VM_PLAIN2_1 MONAD_VM_HEAD2_PUSH("6", "7", "", "\tnop\n")
+    #define MONAD_VM_PLAIN2_2 MONAD_VM_HEAD2_PUSH("7", "8", MONAD_VM_STEP7, "")
     #define MONAD_VM_PLAIN2_3 MONAD_VM_HEAD2_PUSH("1", "2", "", "\tnop\n")
     #define MONAD_VM_PLAIN2_4 MONAD_VM_HEAD2_PUSH("2", "3", "", "\tnop\n")
     #define MONAD_VM_PLAIN2_5 MONAD_VM_HEAD2_PUSH("3", "4", "", "\tnop\n")
+    #define MONAD_VM_PLAIN2_6 MONAD_VM_HEAD2_PUSH("4", "5", "", "\tnop\n")
     // A jump head to a pair, which the linker script places past the slots:
     // a tail of 8 bytes (one step on ZisK, which folds the auipc into the
     // jump), PUSH2's head 24 bytes, PUSH1's 32 in copies 0 and 1, 28 after.
@@ -187,22 +192,24 @@ namespace monad::vm::interpreter
                 instr_ptr + (LAG),                                             \
                 itbl);                                                         \
         }
-    // PUSH1's pairs, copy by copy: from lag 4, 5, 0, 1, 2, 3.
+    // PUSH1's pairs, copy by copy: from lag 5, 6, 0, 1, 2, 3, 4.
     #define MONAD_VM_PAIRS1(REV, NAME, OP, ...)                                \
-        MONAD_VM_PAIR_IN(REV, NAME, OP, push1, , 4, __VA_ARGS__)               \
-        MONAD_VM_PAIR_IN(REV, NAME, OP, push1, _1, 5, __VA_ARGS__)             \
+        MONAD_VM_PAIR_IN(REV, NAME, OP, push1, , 5, __VA_ARGS__)               \
+        MONAD_VM_PAIR_IN(REV, NAME, OP, push1, _1, 6, __VA_ARGS__)             \
         MONAD_VM_PAIR_IN(REV, NAME, OP, push1, _2, 0, __VA_ARGS__)             \
         MONAD_VM_PAIR_IN(REV, NAME, OP, push1, _3, 1, __VA_ARGS__)             \
         MONAD_VM_PAIR_IN(REV, NAME, OP, push1, _4, 2, __VA_ARGS__)             \
-        MONAD_VM_PAIR_IN(REV, NAME, OP, push1, _5, 3, __VA_ARGS__)
-    // PUSH2's: from lag 3, 4, 5, 0, 1, 2.
+        MONAD_VM_PAIR_IN(REV, NAME, OP, push1, _5, 3, __VA_ARGS__)             \
+        MONAD_VM_PAIR_IN(REV, NAME, OP, push1, _6, 4, __VA_ARGS__)
+    // PUSH2's: from lag 4, 5, 6, 0, 1, 2, 3.
     #define MONAD_VM_PAIRS2(REV, NAME, OP)                                     \
-        MONAD_VM_PAIR_IN(REV, NAME, OP, push2, , 3)                            \
-        MONAD_VM_PAIR_IN(REV, NAME, OP, push2, _1, 4)                          \
-        MONAD_VM_PAIR_IN(REV, NAME, OP, push2, _2, 5)                          \
+        MONAD_VM_PAIR_IN(REV, NAME, OP, push2, , 4)                            \
+        MONAD_VM_PAIR_IN(REV, NAME, OP, push2, _1, 5)                          \
+        MONAD_VM_PAIR_IN(REV, NAME, OP, push2, _2, 6)                          \
         MONAD_VM_PAIR_IN(REV, NAME, OP, push2, _3, 0)                          \
         MONAD_VM_PAIR_IN(REV, NAME, OP, push2, _4, 1)                          \
-        MONAD_VM_PAIR_IN(REV, NAME, OP, push2, _5, 2)
+        MONAD_VM_PAIR_IN(REV, NAME, OP, push2, _5, 2)                          \
+        MONAD_VM_PAIR_IN(REV, NAME, OP, push2, _6, 3)
     // PUSH2 in full before a follower PUSH1 pairs with, for copy SUFFIX's
     // head: from a lag of LAG, the immediate at HIGH and LOW, a5 stepped by
     // STEP, and a jump to the copy.
@@ -227,7 +234,7 @@ namespace monad::vm::interpreter
         static_assert(                                                         \
             compiler::opcode_table<EvmTraits<REV>>[PUSH1].min_gas == 3 &&      \
             compiler::opcode_table<EvmTraits<REV>>[PUSH2].min_gas == 3 &&      \
-            sizeof(uint256_t) == 32 && slot_lead == 1432 &&                    \
+            sizeof(uint256_t) == 32 && slot_lead == 1816 &&                    \
             head_back(0, 1) == 32 && head_back(0, 2) == 56 &&                  \
             head_back(2, 1) == 28 && head_back(2, 2) == 52);                   \
         MONAD_VM_LEADS(                                                        \
@@ -244,7 +251,9 @@ namespace monad::vm::interpreter
             MONAD_VM_PLAIN2_4,                                                 \
             MONAD_VM_PLAIN1_4,                                                 \
             MONAD_VM_PLAIN2_5,                                                 \
-            MONAD_VM_PLAIN1_5)
+            MONAD_VM_PLAIN1_5,                                                 \
+            MONAD_VM_PLAIN2_6,                                                 \
+            MONAD_VM_PLAIN1_6)
 
     #define MONAD_VM_LEAD_PAIR(REV, NAME, OP)                                  \
         MONAD_VM_LEADS(                                                        \
@@ -261,13 +270,16 @@ namespace monad::vm::interpreter
             MONAD_VM_TO2(NAME, OP, "_4"),                                      \
             MONAD_VM_TO1_SHORT(NAME, OP, "_4"),                                \
             MONAD_VM_TO2(NAME, OP, "_5"),                                      \
-            MONAD_VM_TO1_SHORT(NAME, OP, "_5"))                                \
-        MONAD_VM_PUSH2_IN(NAME, OP, , "4", "5", MONAD_VM_STEP6)                \
-        MONAD_VM_PUSH2_IN(NAME, OP, _1, "5", "6", MONAD_VM_STEP6)              \
-        MONAD_VM_PUSH2_IN(NAME, OP, _2, "6", "7", MONAD_VM_STEP6)              \
+            MONAD_VM_TO1_SHORT(NAME, OP, "_5"),                                \
+            MONAD_VM_TO2(NAME, OP, "_6"),                                      \
+            MONAD_VM_TO1_SHORT(NAME, OP, "_6"))                                \
+        MONAD_VM_PUSH2_IN(NAME, OP, , "5", "6", MONAD_VM_STEP7)                \
+        MONAD_VM_PUSH2_IN(NAME, OP, _1, "6", "7", MONAD_VM_STEP7)              \
+        MONAD_VM_PUSH2_IN(NAME, OP, _2, "7", "8", MONAD_VM_STEP7)              \
         MONAD_VM_PUSH2_IN(NAME, OP, _3, "1", "2", "")                          \
         MONAD_VM_PUSH2_IN(NAME, OP, _4, "2", "3", "")                          \
         MONAD_VM_PUSH2_IN(NAME, OP, _5, "3", "4", "")                          \
+        MONAD_VM_PUSH2_IN(NAME, OP, _6, "4", "5", "")                          \
         extern "C" [[gnu::section(".monad_vm_slot." #NAME "." #OP)]] void      \
             monad_vm_slot_##NAME##_##OP(                                       \
                 runtime::Context &,                                            \
@@ -295,7 +307,9 @@ namespace monad::vm::interpreter
             MONAD_VM_TO2(NAME, OP, "_4"),                                      \
             MONAD_VM_TO1_SHORT(NAME, OP, "_4"),                                \
             MONAD_VM_TO2(NAME, OP, "_5"),                                      \
-            MONAD_VM_TO1_SHORT(NAME, OP, "_5"))                                \
+            MONAD_VM_TO1_SHORT(NAME, OP, "_5"),                                \
+            MONAD_VM_TO2(NAME, OP, "_6"),                                      \
+            MONAD_VM_TO1_SHORT(NAME, OP, "_6"))                                \
         MONAD_VM_PAIRS1(REV, NAME, OP)                                         \
         MONAD_VM_PAIRS2(REV, NAME, OP)
 
@@ -314,7 +328,9 @@ namespace monad::vm::interpreter
             MONAD_VM_TO2(NAME, OP, "_4"),                                      \
             MONAD_VM_PLAIN1_4,                                                 \
             MONAD_VM_TO2(NAME, OP, "_5"),                                      \
-            MONAD_VM_PLAIN1_5)                                                 \
+            MONAD_VM_PLAIN1_5,                                                 \
+            MONAD_VM_TO2(NAME, OP, "_6"),                                      \
+            MONAD_VM_PLAIN1_6)                                                 \
         MONAD_VM_PAIRS2(REV, NAME, OP)
 
     // The followers push1_then takes: ADD, SIGNEXTEND, NOT, AND, SHL, SHR,
@@ -410,7 +426,8 @@ namespace monad::vm::interpreter
         MONAD_VM_COPY(REV, NAME, OP, _2, ".monad_vm_slot2", 2)                 \
         MONAD_VM_COPY(REV, NAME, OP, _3, ".monad_vm_slot3", 3)                 \
         MONAD_VM_COPY(REV, NAME, OP, _4, ".monad_vm_slot4", 4)                 \
-        MONAD_VM_COPY(REV, NAME, OP, _5, ".monad_vm_slot5", 5)
+        MONAD_VM_COPY(REV, NAME, OP, _5, ".monad_vm_slot5", 5)                 \
+        MONAD_VM_COPY(REV, NAME, OP, _6, ".monad_vm_slot6", 6)
 
     // A copy that jumps to the handler past the slots, a5 stepped by STEP.
     #define MONAD_VM_RELAY_IN(NAME, OP, SUFFIX, SECTION, STEP)                 \
@@ -425,11 +442,11 @@ namespace monad::vm::interpreter
             ", . - monad_vm_slot_" #NAME "_" #OP #SUFFIX "\n"                  \
             ".option pop\n"                                                    \
             ".popsection");
-    // A handler that outgrows a copy's region, DIV's and ADDMOD's: compiled
-    // once, past the slots, and each copy a jump there with a5 stepped by its
-    // lag (a call gcc made would inline the handler). The others'
-    // MONAD_VM_RELAY_OF_xx is undefined, and MONAD_VM_SLOT takes the full
-    // slot for them.
+    // A handler that outgrows a copy's region, DIV's, MOD's and ADDMOD's:
+    // compiled once, past the slots, and each copy a jump there with a5
+    // stepped by its lag (a call gcc made would inline the handler). The
+    // others' MONAD_VM_RELAY_OF_xx is undefined, and MONAD_VM_SLOT takes the
+    // full slot for them.
     #define MONAD_VM_SLOT_RELAY(REV, NAME, OP)                                 \
         MONAD_VM_HANDLER(REV, NAME, OP, _body, ".monad_vm_body")               \
         MONAD_VM_RELAY_IN(NAME, OP, , ".monad_vm_slot", "")                    \
@@ -441,8 +458,11 @@ namespace monad::vm::interpreter
             NAME, OP, _3, ".monad_vm_slot3", "\taddi a5, a5, 3\n")             \
         MONAD_VM_RELAY_IN(                                                     \
             NAME, OP, _4, ".monad_vm_slot4", "\taddi a5, a5, 4\n")             \
-        MONAD_VM_RELAY_IN(NAME, OP, _5, ".monad_vm_slot5", "\taddi a5, a5, 5\n")
+        MONAD_VM_RELAY_IN(                                                     \
+            NAME, OP, _5, ".monad_vm_slot5", "\taddi a5, a5, 5\n")             \
+        MONAD_VM_RELAY_IN(NAME, OP, _6, ".monad_vm_slot6", "\taddi a5, a5, 6\n")
     #define MONAD_VM_RELAY_OF_04 ~, RELAY
+    #define MONAD_VM_RELAY_OF_06 ~, RELAY
     #define MONAD_VM_RELAY_OF_08 ~, RELAY
     #define MONAD_VM_SLOT_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_SLOT_, KIND)
 
@@ -501,6 +521,7 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_SLOT
     #undef MONAD_VM_SLOT_PICK
     #undef MONAD_VM_RELAY_OF_08
+    #undef MONAD_VM_RELAY_OF_06
     #undef MONAD_VM_RELAY_OF_04
     #undef MONAD_VM_SLOT_RELAY
     #undef MONAD_VM_RELAY_IN
@@ -542,12 +563,14 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_TO1_SHORT
     #undef MONAD_VM_TO1_LONG
     #undef MONAD_VM_TO2
+    #undef MONAD_VM_PLAIN2_6
     #undef MONAD_VM_PLAIN2_5
     #undef MONAD_VM_PLAIN2_4
     #undef MONAD_VM_PLAIN2_3
     #undef MONAD_VM_PLAIN2_2
     #undef MONAD_VM_PLAIN2_1
     #undef MONAD_VM_PLAIN2_0
+    #undef MONAD_VM_PLAIN1_6
     #undef MONAD_VM_PLAIN1_5
     #undef MONAD_VM_PLAIN1_4
     #undef MONAD_VM_PLAIN1_3
@@ -558,7 +581,7 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_NOP5
     #undef MONAD_VM_HEAD2_PUSH
     #undef MONAD_VM_HEAD1_PUSH
-    #undef MONAD_VM_STEP6
+    #undef MONAD_VM_STEP7
     #undef MONAD_VM_PUSH_T3
     #undef MONAD_VM_PUSH2_READ_AT
     #undef MONAD_VM_LEADS

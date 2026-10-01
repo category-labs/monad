@@ -231,9 +231,9 @@ namespace monad::vm::interpreter
         return swapn_back - lag_offset(copy);
     }
 
-    // The head of LT, GT, SLT and SGT comes before SWAPn's, bool_back bytes
-    // before the handler, the result in a7 and its slot at the top, not yet
-    // written.
+    // The head of LT, GT, SLT, SGT, EQ and ISZERO comes before SWAPn's,
+    // bool_back bytes before the handler, the result in a7 and its slot at
+    // the top, not yet written.
     inline constexpr int bool_back = 212;
 
     // What MONAD_VM_LEAD_DISPATCH_BIT takes for a comparison LAG bytes
@@ -1492,6 +1492,18 @@ namespace monad::vm::interpreter
         }
 #endif
         MONAD_VM_CHECK(EQ);
+#if defined(MONAD_ZKVM_ZISK)
+        if constexpr (has_slots<traits>) {
+            // As LT's, the result to the follower's head.
+            MONAD_VM_LEAD_DISPATCH_BIT(
+                bool_offset(lag_of<traits>),
+                monad_vm_op2,
+                stack_top - 1,
+                gas_remaining,
+                instr_ptr - lag_of<traits>,
+                static_cast<uint64_t>(*stack_top == *(stack_top - 1)));
+        }
+#endif
         auto &&[a, b] = top_two(stack_top);
         b = (a == b);
 
@@ -1534,6 +1546,18 @@ namespace monad::vm::interpreter
         }
 #endif
         MONAD_VM_CHECK(ISZERO);
+#if defined(MONAD_ZKVM_ZISK)
+        if constexpr (has_slots<traits>) {
+            // As LT's, the result to the follower's head.
+            MONAD_VM_LEAD_DISPATCH_BIT(
+                bool_offset(lag_of<traits>),
+                monad_vm_op2,
+                stack_top,
+                gas_remaining,
+                instr_ptr - lag_of<traits>,
+                static_cast<uint64_t>(!*stack_top));
+        }
+#endif
         auto &a = *stack_top;
         a = !a;
 
@@ -4187,6 +4211,20 @@ namespace monad::vm::interpreter
                 instr_ptr MONAD_VM_TBL_ARG);
         }
         MONAD_VM_FUSED_NEXT(4, -1);
+    }
+
+    // A comparison then OR, its result BIT not yet written: the bit ORed into
+    // the low word of the operand under it.
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void bool_or(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM,
+        uint64_t const bit)
+    {
+        MONAD_VM_CHECK(OR);
+        (*(stack_top - 1))[0] |= bit;
+        MONAD_VM_DISPATCH(1, -1, *instr_ptr);
     }
 
     // DUPn then ADD, SUB, AND, LT, GT, MLOAD, MSTORE or SWAP1, DUPn's tests

@@ -192,13 +192,14 @@ namespace monad::vm::interpreter
             H1_5,                                                              \
             "28")
 
-    // The head of LT, GT, SLT and SGT, 28 bytes ahead of SWAPn's: in copy R
-    // it takes a comparison (R + 5) % 6 bytes behind (bool_offset), its
-    // result in a7, the result's slot the top. For most opcodes it is the
+    // The head of LT, GT, SLT, SGT, EQ and ISZERO, 28 bytes ahead of SWAPn's:
+    // in copy R it takes a comparison (R + 5) % 6 bytes behind (bool_offset),
+    // its result in a7, the result's slot the top. For most opcodes it is the
     // result written, a5 stepped by 6 in copy 0, and a jump to the copy;
     // ISZERO's negates a7, charges ISZERO's gas and lands at the same head of
-    // ISZERO's follower, the result still unwritten; PUSH2's jumps to its
-    // pair (bool_push2), which takes a JUMPI after the push on a7.
+    // ISZERO's follower, the result still unwritten; POP's drops it unwritten;
+    // PUSH2's jumps to its pair (bool_push2), which takes a JUMPI after the
+    // push on a7, and OR's to bool_or.
     #define MONAD_VM_BOOL_STORE                                                \
         "\tsd a7, 0(a3)\n"                                                     \
         "\tsd zero, 8(a3)\n"                                                   \
@@ -244,6 +245,27 @@ namespace monad::vm::interpreter
         MONAD_VM_BOOL_NOT_AT("", "6", "\tjr -212(t3)\n\tnop\n")
     #define MONAD_VM_BOOL_NOT(NAME, OP, R)                                     \
         MONAD_VM_LEAD_CAT(MONAD_VM_BOOL_NOT_, R)
+    // POP on the unwritten result: POP's gas and dispatch, as SWAP1 POP.
+    #define MONAD_VM_BOOL_POP_AT(STEP, NEXT, JUMP)                             \
+        STEP "\taddi a3, a3, -32\n"                                            \
+             "\taddi a4, a4, -2\n"                                             \
+             "\tlbu a7, " NEXT "(a5)\n"                                        \
+             "\tslli a7, a7, 12\n"                                             \
+             "\tadd t3, a6, a7\n" JUMP
+    #define MONAD_VM_BOOL_POP_0                                                \
+        MONAD_VM_BOOL_POP_AT(MONAD_VM_STEP6, "1", "\tjr 680(t3)\n")
+    #define MONAD_VM_BOOL_POP_1                                                \
+        MONAD_VM_BOOL_POP_AT("", "2", "\tjr 1360(t3)\n\tnop\n")
+    #define MONAD_VM_BOOL_POP_2                                                \
+        MONAD_VM_BOOL_POP_AT("", "3", "\tjr 2044(t3)\n\tnop\n")
+    #define MONAD_VM_BOOL_POP_3                                                \
+        MONAD_VM_BOOL_POP_AT("", "4", "\tjr -1368(t3)\n\tnop\n")
+    #define MONAD_VM_BOOL_POP_4                                                \
+        MONAD_VM_BOOL_POP_AT("", "5", "\tjr -684(t3)\n\tnop\n")
+    #define MONAD_VM_BOOL_POP_5                                                \
+        MONAD_VM_BOOL_POP_AT("", "6", "\taddi a5, a5, 6\n\tjr 0(t3)\n")
+    #define MONAD_VM_BOOL_POP(NAME, OP, R)                                     \
+        MONAD_VM_LEAD_CAT(MONAD_VM_BOOL_POP_, R)
     #define MONAD_VM_BOOL_THEN_R(NAME, OP, SUFFIX)                             \
         "\ttail monad_vm_slot_" #NAME "_" #OP "_bool" SUFFIX "\n" MONAD_VM_NOP5
     #define MONAD_VM_BOOL_THEN_0(NAME, OP)                                     \
@@ -257,13 +279,17 @@ namespace monad::vm::interpreter
     #define MONAD_VM_BOOL_THEN(NAME, OP, R)                                    \
         MONAD_VM_LEAD_CAT(MONAD_VM_BOOL_THEN_, R)(NAME, OP)
     #define MONAD_VM_BOOL_OF_15 ~, NOT
+    #define MONAD_VM_BOOL_OF_17 ~, THEN
+    #define MONAD_VM_BOOL_OF_50 ~, POP
     #define MONAD_VM_BOOL_OF_61 ~, THEN
+    #define MONAD_VM_BOOL_FN_17 bool_or
+    #define MONAD_VM_BOOL_FN_61 bool_push2
     #define MONAD_VM_BOOL_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_BOOL_, KIND)
     #define MONAD_VM_BOOL_HEAD(NAME, OP, R)                                    \
         MONAD_VM_BOOL_PICK(                                                    \
             MONAD_VM_LEAD_KIND(MONAD_VM_BOOL_OF_##OP, PLAIN, ~))(NAME, OP, R)
-    // PUSH2's pair, past the slots, compiled with instr_ptr LAG bytes ahead
-    // of a5, the comparison's result as an eighth argument.
+    // PUSH2's and OR's pairs, past the slots, compiled with instr_ptr LAG
+    // bytes ahead of a5, the comparison's result as an eighth argument.
     #define MONAD_VM_BOOL_THEN_IN(REV, NAME, OP, SUFFIX, LAG)                  \
         extern "C" [[gnu::section(".monad_vm_bool." #NAME "." #OP)]] void      \
             monad_vm_slot_##NAME##_##OP##_bool##SUFFIX(                        \
@@ -276,8 +302,8 @@ namespace monad::vm::interpreter
                 void const *const itbl,                                        \
                 uint64_t const bit)                                            \
         {                                                                      \
-            __attribute__((musttail)) return bool_push2<MONAD_VM_LAGT(         \
-                REV, LAG)>(                                                    \
+            __attribute__((musttail)) return MONAD_VM_BOOL_FN_##OP<            \
+                MONAD_VM_LAGT(REV, LAG)>(                                      \
                 ctx,                                                           \
                 MONAD_VM_ANALYSIS_ARG,                                         \
                 stack_bottom,                                                  \
@@ -289,6 +315,7 @@ namespace monad::vm::interpreter
         }
     #define MONAD_VM_BOOL_PAIR_PLAIN(REV, NAME, OP)
     #define MONAD_VM_BOOL_PAIR_NOT(REV, NAME, OP)
+    #define MONAD_VM_BOOL_PAIR_POP(REV, NAME, OP)
     #define MONAD_VM_BOOL_PAIR_THEN(REV, NAME, OP)                             \
         MONAD_VM_BOOL_THEN_IN(REV, NAME, OP, , 0)                              \
         MONAD_VM_BOOL_THEN_IN(REV, NAME, OP, _1, 1)                            \
@@ -1131,12 +1158,17 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_BOOL_PAIR
     #undef MONAD_VM_BOOL_PAIR_PICK
     #undef MONAD_VM_BOOL_PAIR_THEN
+    #undef MONAD_VM_BOOL_PAIR_POP
     #undef MONAD_VM_BOOL_PAIR_NOT
     #undef MONAD_VM_BOOL_PAIR_PLAIN
     #undef MONAD_VM_BOOL_THEN_IN
     #undef MONAD_VM_BOOL_HEAD
     #undef MONAD_VM_BOOL_PICK
+    #undef MONAD_VM_BOOL_FN_61
+    #undef MONAD_VM_BOOL_FN_17
     #undef MONAD_VM_BOOL_OF_61
+    #undef MONAD_VM_BOOL_OF_50
+    #undef MONAD_VM_BOOL_OF_17
     #undef MONAD_VM_BOOL_OF_15
     #undef MONAD_VM_BOOL_THEN
     #undef MONAD_VM_BOOL_THEN_5
@@ -1146,6 +1178,14 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_BOOL_THEN_1
     #undef MONAD_VM_BOOL_THEN_0
     #undef MONAD_VM_BOOL_THEN_R
+    #undef MONAD_VM_BOOL_POP
+    #undef MONAD_VM_BOOL_POP_5
+    #undef MONAD_VM_BOOL_POP_4
+    #undef MONAD_VM_BOOL_POP_3
+    #undef MONAD_VM_BOOL_POP_2
+    #undef MONAD_VM_BOOL_POP_1
+    #undef MONAD_VM_BOOL_POP_0
+    #undef MONAD_VM_BOOL_POP_AT
     #undef MONAD_VM_BOOL_NOT
     #undef MONAD_VM_BOOL_NOT_5
     #undef MONAD_VM_BOOL_NOT_4

@@ -65,6 +65,7 @@
 
 #include <category/core/config.hpp>
 #include <zkvm/guest/l2_cipher.hpp>
+#include <zkvm/guest/l2_plaintext_suite.hpp>
 
 #include <concepts>
 #include <optional>
@@ -128,6 +129,9 @@ concept L2CipherSuite = requires(
 /// ECDH on secp256k1, Poseidon2 masks over Goldilocks, a Poseidon2 tag over the
 /// ciphertext. See l2_cipher.hpp.
 using L2Cipher = L2EcdhPoseidon2;
+#elif defined(MONAD_L2_CIPHER_PLAINTEXT)
+/// No encryption: the measurement control. See l2_plaintext_suite.hpp.
+using L2Cipher = L2PlaintextSuite;
 #elif !defined(MONAD_ZKVM_L2)
 // Host test build: the default, per the note above.
 using L2Cipher = L2EcdhPoseidon2;

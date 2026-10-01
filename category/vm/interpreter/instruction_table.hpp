@@ -2854,13 +2854,34 @@ namespace monad::vm::interpreter
             if (MONAD_UNLIKELY(stack_top >= MONAD_VM_STACK_LIMIT)) {
                 MONAD_VM_MUST_TAIL return ctx.exit(Error);
             }
-            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF.lead(monad_vm_op2)(
-                ctx,
-                MONAD_VM_ANALYSIS_ARG,
-                stack_bottom,
-                stack_top,
-                gas_remaining,
-                instr_ptr MONAD_VM_TBL_ARG);
+            // The tail call by hand, for the jump to take -slot_lead as its
+            // offset: through the function pointer, gcc forms the head's
+            // address with an addi of its own, one step on every PUSH1. The
+            // arguments are where the call would put them.
+            auto const monad_vm_head =
+                reinterpret_cast<uintptr_t>(itbl) +
+                (static_cast<uintptr_t>(monad_vm_op2) << slot_shift);
+            register runtime::Context *monad_vm_a0 asm("a0") = &ctx;
+            register uint256_t const *monad_vm_a1 asm("a1") =
+                MONAD_VM_ANALYSIS_ARG;
+            register uint256_t const *monad_vm_a2 asm("a2") = stack_bottom;
+            register uint256_t *monad_vm_a3 asm("a3") = stack_top;
+            register int64_t monad_vm_a4 asm("a4") = gas_remaining;
+            register uint8_t const *monad_vm_a5 asm("a5") = instr_ptr;
+            register void const *monad_vm_a6 asm("a6") = itbl;
+            asm volatile("jalr zero, %[off](%[head])"
+                         :
+                         : [head] "r"(monad_vm_head),
+                           [off] "i"(-static_cast<int>(slot_lead)),
+                           "r"(monad_vm_a0),
+                           "r"(monad_vm_a1),
+                           "r"(monad_vm_a2),
+                           "r"(monad_vm_a3),
+                           "r"(monad_vm_a4),
+                           "r"(monad_vm_a5),
+                           "r"(monad_vm_a6)
+                         : "memory");
+            __builtin_unreachable();
         }
         else if constexpr (N == 1) {
             // A bitmap keeps the check cheap on every PUSH1; testing four

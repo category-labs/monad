@@ -70,12 +70,21 @@ namespace
 
 OriginalAccountState &State::original_account_state(Address const &address)
 {
+#ifdef MONAD_ZKVM_ZISK
+    if (orig_memo_ != nullptr && address == orig_memo_addr_) {
+        return *orig_memo_;
+    }
+#endif
     auto it = original_.find(address);
     if (it == original_.end()) {
         // block state
         auto const account = block_state_.read_account(address);
         it = original_.try_emplace(address, account).first;
     }
+#ifdef MONAD_ZKVM_ZISK
+    orig_memo_addr_ = address;
+    orig_memo_ = &it->second;
+#endif
     return it->second;
 }
 

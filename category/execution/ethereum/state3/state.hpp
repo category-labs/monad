@@ -243,6 +243,14 @@ class State
     std::uint64_t memo_epoch_{0};
     std::uint64_t frame_epoch_{1};
 
+#ifdef MONAD_ZKVM_ZISK
+    // The same for original_account_state: original_ never erases, so its
+    // rows never move. A transaction's sender is looked up there several
+    // times running.
+    alignas(8) Address orig_memo_addr_{};
+    OriginalAccountState *orig_memo_{nullptr};
+#endif
+
     bool const relaxed_validation_{false};
     ReserveBalance rb_;
 

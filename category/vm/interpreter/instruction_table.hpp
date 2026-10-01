@@ -3986,10 +3986,10 @@ namespace monad::vm::interpreter
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
     }
 
-    // DUPn then ADD, AND, LT, GT or MSTORE, DUPn's tests and gas made: the
-    // word DUPn copies, at SRC, is read where it lies instead of copied to
-    // the top. A store that grows the memory makes the copy and takes
-    // MSTORE's growth path.
+    // DUPn then ADD, SUB, AND, LT, GT, MLOAD, MSTORE or SWAP1, DUPn's tests
+    // and gas made: the word DUPn copies, at SRC, is read where it lies
+    // instead of copied to the top. A load or a store that grows the memory
+    // makes the copy and takes its opcode's growth path.
     template <uint8_t OP, Traits traits>
     MONAD_VM_INSTRUCTION_CALL void dup_then(
         runtime::Context &entry_ctx, MONAD_VM_ANALYSIS_PARAM,
@@ -4014,12 +4014,45 @@ namespace monad::vm::interpreter
             runtime::mstore_at<base_traits<traits>>(&ctx, offset, stack_top);
             MONAD_VM_DISPATCH(1, -1, *instr_ptr);
         }
+        else if constexpr (OP == MLOAD) {
+            MONAD_VM_CHECK_OWN_GAS(MLOAD);
+            auto const offset = ctx.get_memory_offset(*src);
+            if (MONAD_UNLIKELY(ctx.memory.size < *offset + 32)) {
+                *(stack_top + 1) = *src;
+                MONAD_VM_MUST_TAIL return mload_grow<quiet_traits<traits>>(
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top + 1,
+                    gas_remaining,
+                    MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+            }
+            runtime::mload_at<base_traits<traits>>(&ctx, stack_top + 1, offset);
+            MONAD_VM_DISPATCH(1, 1, *instr_ptr);
+        }
+        else if constexpr (OP == SWAP1) {
+            // The old top one slot up, the copied word under it.
+            gas_remaining -= static_gas<traits, SWAP1>();
+            *(stack_top + 1) = *stack_top;
+            *stack_top = *src;
+            MONAD_VM_DISPATCH(1, 1, *instr_ptr);
+        }
         else {
             gas_remaining -=
                 static_gas<traits, static_cast<compiler::EvmOpCode>(OP)>();
             if constexpr (OP == ADD) {
                 ctx.add256_params.a = reinterpret_cast<uint64_t const *>(src);
                 zisk_add256(ctx.add256_params, *stack_top, *stack_top);
+            }
+            else if constexpr (OP == SUB) {
+                // As SUB: the copied word less the top, into the top.
+                ctx.sub256_params.a = reinterpret_cast<uint64_t const *>(src);
+                asm volatile("" ::: "memory");
+                auto &b = *stack_top;
+                for (size_t i = 0; i < 4; ++i) {
+                    b[i] = ~b[i];
+                }
+                zisk_add256(ctx.sub256_params, b, b);
             }
             else if constexpr (OP == LT) {
                 *stack_top = *src < *stack_top;

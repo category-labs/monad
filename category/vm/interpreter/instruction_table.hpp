@@ -1210,9 +1210,15 @@ namespace monad::vm::interpreter
     [[gnu::always_inline]] inline bool
     call_value_is_zero(runtime::Context const &ctx) noexcept
     {
-        uint64_t w[4];
-        std::memcpy(w, ctx.env.value.bytes, sizeof(w));
-        return (w[0] | w[1] | w[2] | w[3]) == 0;
+        // Four loads, not one copy: a 32-byte memcpy is a DMA to the stack
+        // and four reloads.
+        unsigned char const *const v = ctx.env.value.bytes;
+        uint64_t w0, w1, w2, w3;
+        __builtin_memcpy(&w0, v, 8);
+        __builtin_memcpy(&w1, v + 8, 8);
+        __builtin_memcpy(&w2, v + 16, 8);
+        __builtin_memcpy(&w3, v + 24, 8);
+        return (w0 | w1 | w2 | w3) == 0;
     }
 
     // The via-IR ABI decoder's bound, at q:
@@ -1248,50 +1254,6 @@ namespace monad::vm::interpreter
         return static_cast<size_t>(r - q) + 10;
     }
 
-    // The via-IR decoder's bound from its CALLDATASIZE, k already pushed:
-    // over [.. k], k popped and the JUMPI not taken. calldatasize
-    // tail-calls it when PUSH1 3 follows; other bytes, a large k, a short
-    // calldata and too full a stack run the CALLDATASIZE here.
-    template <Traits traits>
-    [[gnu::noinline]] MONAD_VM_TWIN_CALL void calldata_bound_ir(
-        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
-        uint256_t const *stack_bottom, uint256_t *stack_top,
-        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
-    {
-        auto const *const p = instr_ptr;
-        uint256_t const &monad_vm_k = stack_top[0];
-        uint64_t const monad_vm_size = ctx.env.input_data_size;
-        if (MONAD_UNLIKELY(
-                !(p[3] == static_cast<std::uint8_t>(NOT) &&
-                  p[4] == static_cast<std::uint8_t>(ADD) &&
-                  p[5] == static_cast<std::uint8_t>(SLT) &&
-                  p[6] == static_cast<std::uint8_t>(PUSH2) &&
-                  p[9] == static_cast<std::uint8_t>(JUMPI) &&
-                  stack_top >= stack_bottom &&
-                  stack_top + 2 <= MONAD_VM_STACK_LIMIT &&
-                  (monad_vm_k[1] | monad_vm_k[2] | monad_vm_k[3]) == 0 &&
-                  monad_vm_k[0] < 256 && monad_vm_size >= 4 &&
-                  monad_vm_size - 4 >= monad_vm_k[0]))) {
-            // The CALLDATASIZE as calldatasize runs it: dispatched to, it
-            // would call this twin again.
-            MONAD_VM_CHECK(CALLDATASIZE);
-            push(stack_top, ctx.env.input_data_size);
-            MONAD_VM_NEXT(CALLDATASIZE);
-        }
-        // Pure opcodes and a JUMPI not taken: the sign of the count is left
-        // to the next checkpoint (MONAD_VM_FUSED_CHARGE_PURE).
-        gas_remaining -= static_gas<
-            traits,
-            CALLDATASIZE,
-            PUSH1,
-            NOT,
-            ADD,
-            SLT,
-            PUSH2,
-            JUMPI>();
-        MONAD_VM_FUSED_NEXT(10, -1);
-    }
-
     // The non-payable test of Solidity's legacy code generator,
     //
     //     CALLVALUE DUP1 ISZERO PUSH2 <ok> JUMPI PUSH1 0 DUP1 REVERT
@@ -1311,22 +1273,28 @@ namespace monad::vm::interpreter
             return p[k] == static_cast<std::uint8_t>(op);
         };
         // PUSH1 0 or PUSH0 before the DUP1 REVERT: ok is one byte nearer with
-        // PUSH0.
-        bool const monad_vm_push0 = monad_vm_is(7, PUSH0);
-        size_t const monad_vm_ok = monad_vm_push0 ? 10 : 11;
+        // PUSH0. Each arm reads its bytes at constant offsets.
+        size_t monad_vm_ok;
+        bool monad_vm_tail;
+        if (monad_vm_is(7, PUSH0)) {
+            monad_vm_ok = 10;
+            monad_vm_tail = monad_vm_is(8, DUP1) && monad_vm_is(9, REVERT) &&
+                            monad_vm_is(10, JUMPDEST) && monad_vm_is(11, POP);
+        }
+        else {
+            monad_vm_ok = 11;
+            monad_vm_tail = monad_vm_is(7, PUSH1) && p[8] == 0 &&
+                            monad_vm_is(9, DUP1) && monad_vm_is(10, REVERT) &&
+                            monad_vm_is(11, JUMPDEST) && monad_vm_is(12, POP);
+        }
         size_t const monad_vm_dst = detail::load_be_k<2>(p + 4);
         size_t const monad_vm_pos =
             static_cast<size_t>(p - MONAD_VM_ANALYSIS.code());
         // ok is a JUMPDEST where these bytes put it: an instruction's first
         // byte, read from this CALLVALUE on, so no map is needed.
         if (MONAD_UNLIKELY(
-                !(monad_vm_is(2, ISZERO) && monad_vm_is(3, PUSH2) &&
-                  monad_vm_is(6, JUMPI) &&
-                  (monad_vm_push0 || (monad_vm_is(7, PUSH1) && p[8] == 0)) &&
-                  monad_vm_is(monad_vm_ok - 2, DUP1) &&
-                  monad_vm_is(monad_vm_ok - 1, REVERT) &&
-                  monad_vm_is(monad_vm_ok, JUMPDEST) &&
-                  monad_vm_is(monad_vm_ok + 1, POP) &&
+                !(monad_vm_tail && monad_vm_is(2, ISZERO) &&
+                  monad_vm_is(3, PUSH2) && monad_vm_is(6, JUMPI) &&
                   monad_vm_dst == monad_vm_pos + monad_vm_ok &&
                   stack_top + 3 <= MONAD_VM_STACK_LIMIT &&
                   call_value_is_zero(ctx)))) {
@@ -1612,21 +1580,11 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
 #if defined(MONAD_ZKVM_ZISK)
-        // Solidity reads the calldata's size for three idioms, each with a
-        // twin: the dispatch prologue (LT follows), and the ABI decoder's
-        // bound of the via-IR generator (PUSH1 3) and of the legacy one (SUB).
+        // Solidity reads the calldata's size for two idioms, each with a
+        // twin: the dispatch prologue (LT follows) and the ABI decoder's
+        // bound (SUB follows).
         if (instr_ptr[1] == static_cast<std::uint8_t>(LT)) {
             MONAD_VM_MUST_TAIL return calldata_selector<traits>(
-                ctx,
-                MONAD_VM_ANALYSIS_ARG,
-                stack_bottom,
-                stack_top,
-                gas_remaining,
-                instr_ptr MONAD_VM_TBL_ARG);
-        }
-        if (instr_ptr[1] == static_cast<std::uint8_t>(PUSH1) &&
-            instr_ptr[2] == 3) {
-            MONAD_VM_MUST_TAIL return calldata_bound_ir<traits>(
                 ctx,
                 MONAD_VM_ANALYSIS_ARG,
                 stack_bottom,

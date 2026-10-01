@@ -208,15 +208,15 @@ namespace monad::vm::interpreter
         return swap1_back - lag_offset(copy);
     }
 
-    // SWAP2's head comes before SWAP1's, swap2_back bytes before the
-    // handler, and takes a SWAP2 as SWAP1's takes a SWAP1.
-    inline constexpr int swap2_back = 144;
+    // DUP2's head comes before SWAP1's, dup2_back bytes before the handler,
+    // and takes a DUP2 as SWAP1's takes a SWAP1.
+    inline constexpr int dup2_back = 144;
 
-    // What MONAD_VM_LEAD_DISPATCH takes for a SWAP2 LAG bytes behind.
-    consteval int swap2_offset(unsigned const lag) noexcept
+    // What MONAD_VM_LEAD_DISPATCH takes for a DUP2 LAG bytes behind.
+    consteval int dup2_offset(unsigned const lag) noexcept
     {
         unsigned const copy = (lag + 1) % lag_count;
-        return swap2_back - lag_offset(copy);
+        return dup2_back - lag_offset(copy);
     }
 
     // A tail call to a head in NEXT_OPCODE's slot, OFFSET bytes before its
@@ -3758,6 +3758,17 @@ namespace monad::vm::interpreter
         }
         else {
             MONAD_VM_CHECK_OWN_OVERFLOW(DUP1 + (N - 1));
+            if constexpr (N == 2 && has_slots<traits>) {
+                // DUP2 lands at a head of its follower's slot, as SWAP1
+                // does: the copy there and a jump to the handler, or the pair
+                // it makes with ADD, LT or AND (execute.cpp).
+                MONAD_VM_LEAD_DISPATCH(
+                    dup2_offset(lag_of<traits>),
+                    *(instr_ptr + 1),
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr - lag_of<traits>);
+            }
 
             // The copy's destination is the new top: step there first, so the
             // register the copy writes through is the one the dispatch passes
@@ -3802,15 +3813,7 @@ namespace monad::vm::interpreter
                 gas_remaining,
                 instr_ptr - lag_of<traits>);
         }
-        if constexpr (N == 2 && has_slots<traits>) {
-            // SWAP2 the same, at its own head: with POP or SWAP1 a pair.
-            MONAD_VM_LEAD_DISPATCH(
-                swap2_offset(lag_of<traits>),
-                *(instr_ptr + 1),
-                stack_top,
-                gas_remaining,
-                instr_ptr - lag_of<traits>);
-        }
+
         // Reuse Context's scratch slot to avoid a local 32-byte stack frame.
         {
             uint256_t *const monad_t = &ctx.swap_scratch;
@@ -3954,21 +3957,29 @@ namespace monad::vm::interpreter
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
     }
 
-    // SWAP2 then SWAP1, SWAP2's test and gas made: x y z -> z x y in four
-    // copies where the two opcodes make six.
+    // DUP2 then ADD, LT or AND, DUP2's tests and gas made: the second word
+    // is read where it lies instead of copied to the top.
     template <uint8_t OP, Traits traits>
-    MONAD_VM_INSTRUCTION_CALL void swap2_then(
-        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+    MONAD_VM_INSTRUCTION_CALL void dup2_then(
+        runtime::Context &entry_ctx, MONAD_VM_ANALYSIS_PARAM,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        static_assert(OP == SWAP1);
-        MONAD_VM_CHECK(SWAP1);
-        uint256_t *const monad_t = &ctx.swap_scratch;
-        *monad_t = stack_top[0];
-        stack_top[0] = stack_top[-1];
-        stack_top[-1] = stack_top[-2];
-        stack_top[-2] = *monad_t;
+        runtime::Context &ctx = held_in_a0(entry_ctx);
+        gas_remaining -=
+            static_gas<traits, static_cast<compiler::EvmOpCode>(OP)>();
+        if constexpr (OP == ADD) {
+            ctx.add256_params.a =
+                reinterpret_cast<uint64_t const *>(stack_top - 1);
+            zisk_add256(ctx.add256_params, *stack_top, *stack_top);
+        }
+        else if constexpr (OP == LT) {
+            *stack_top = *(stack_top - 1) < *stack_top;
+        }
+        else {
+            static_assert(OP == AND);
+            *stack_top = *(stack_top - 1) & *stack_top;
+        }
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
     }
 #endif

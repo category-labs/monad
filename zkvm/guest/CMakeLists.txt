@@ -70,15 +70,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
                 "and SP1 has neither. A software curve would measure the "
                 "software curve, not this protocol.")
         endif()
-        # The three public values fill 96 bytes, the anchor and the block
-        # number take it to 136, and the keccak-site tail is 2 * 19 * 4 = 152 --
-        # so 136 + 152 = 288 against ZisK's 256-byte committed output. The
-        # diagnostic build on its own already sits at 96 + 152 = 248.
-        if(MONAD_ZKVM_KECCAK_SITES)
-            message(FATAL_ERROR
-                "MONAD_ZKVM_L2 and MONAD_ZKVM_KECCAK_SITES together need 296 "
-                "bytes of public output against ZisK's 256-byte cap")
-        endif()
     endif()
 
     # Build-dependent optimisations must extend both the feature list and
@@ -272,7 +263,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # the Keccak-f[1600] precompile is reached by a different entry on each
     # (zkvm/guest/keccak_accel.cpp).
 
-    # Diagnostic counters after the 32-byte block hash; disabled by default.
+    # Diagnostic counters after the public values; disabled by default. They
+    # fit behind the L2's too (104 + 144 = 248 of ZisK's 256 bytes), which
+    # execute_witness.cpp checks at compile time.
     # Layout: little-endian u32 call counts, then permutation counts,
     # in the site order defined by zkvm/category/core/keccak_sites.hpp.
     option(MONAD_ZKVM_KECCAK_SITES "count keccak calls per call site" OFF)

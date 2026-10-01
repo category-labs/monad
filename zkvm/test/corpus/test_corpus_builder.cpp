@@ -233,6 +233,8 @@ TEST(CorpusBuilder, AncestorHeadersChainToTheParentAndThePreState)
     auto b = make_builder([](State &s) {
         s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
     });
+    // Every ancestor, so there is a run to chain whatever the build's default.
+    b.set_ancestors(corpus::Ancestors::All);
 
     corpus::Emitted last{};
     for (int i = 0; i < 3; ++i) {
@@ -280,6 +282,95 @@ TEST(CorpusBuilder, AncestorHeadersChainToTheParentAndThePreState)
         to_bytes(keccak256(rlp::encode_block_header(ancestors.back()))),
         last.header.parent_hash);
     EXPECT_EQ(ancestors.back().state_root, last.pre_root);
+}
+
+// ---------------------------------------------------------------------------
+// How far back field [3] reaches. Ancestors::Reached carries the run from the
+// oldest block whose hash the block read to the parent -- the parent alone for
+// a block that reads none, exactly three headers for one that reads three
+// blocks back -- and Ancestors::All every header the buffer holds. That the
+// guest accepts the shorter run, and refuses one shorter than the block reads,
+// is test_witness_rejection's to show.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    /// The block numbers field [3] carries, oldest first.
+    std::vector<uint64_t> ancestor_numbers(byte_string const &witness)
+    {
+#ifdef MONAD_ZKVM_L2
+        auto parsed = parse_execution_witness_l2(witness);
+        MONAD_ASSERT(parsed.has_value());
+        byte_string_view rest = parsed.value().base.encoded_headers;
+#else
+        auto parsed = parse_execution_witness(witness);
+        MONAD_ASSERT(parsed.has_value());
+        byte_string_view rest = parsed.value().encoded_headers;
+#endif
+        std::vector<uint64_t> numbers;
+        while (!rest.empty()) {
+            auto item = rlp::parse_string_metadata(rest);
+            MONAD_ASSERT(item.has_value());
+            byte_string_view hv = item.value();
+            auto const h = rlp::decode_block_header(hv);
+            MONAD_ASSERT(h.has_value());
+            numbers.push_back(h.value().number);
+        }
+        return numbers;
+    }
+
+    constexpr auto HASH_READER =
+        0x000000000000000000000000000000000000b10c_address;
+    /// SSTORE(0, BLOCKHASH(NUMBER - 3)): one hash, read three blocks back.
+    byte_string const READS_A_HASH =
+        byte_string{0x60, 0x03, 0x43, 0x03, 0x40, 0x60, 0x00, 0x55, 0x00};
+
+    corpus::BlockSpec one_call(Address const &to, uint64_t const gas)
+    {
+        corpus::BlockSpec spec;
+        Transaction tx{
+            .max_fee_per_gas = 0,
+            .gas_limit = gas,
+            .value = 1,
+            .to = to,
+            .type = TransactionType::eip1559};
+        tx.sc.chain_id = 1;
+        spec.txs.push_back(tx);
+        spec.keys.push_back(KEY_A);
+        return spec;
+    }
+}
+
+TEST(CorpusBuilder, AncestorsReachBackToTheOldestHashTheBlockReads)
+{
+    auto b = make_builder([](State &s) {
+        s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
+        s.create_contract(HASH_READER);
+        s.set_code(HASH_READER, READS_A_HASH);
+    });
+    b.set_ancestors(corpus::Ancestors::Reached);
+
+    for (int i = 0; i < 4; ++i) {
+        auto const e = b.add_block(one_call(corpus::address_of(KEY_B), 21000));
+        EXPECT_EQ(
+            ancestor_numbers(e.witness),
+            std::vector<uint64_t>{e.header.number - 1});
+    }
+
+    auto const read = b.add_block(one_call(HASH_READER, 100000));
+    ASSERT_EQ(read.receipts.at(0).status, 1u);
+    uint64_t const n = read.header.number;
+    EXPECT_EQ(
+        ancestor_numbers(read.witness),
+        (std::vector<uint64_t>{n - 3, n - 2, n - 1}));
+
+    b.set_ancestors(corpus::Ancestors::All);
+    auto const all = b.add_block(one_call(corpus::address_of(KEY_B), 21000));
+    std::vector<uint64_t> every;
+    for (uint64_t k = corpus::GENESIS_NUMBER; k < all.header.number; ++k) {
+        every.push_back(k);
+    }
+    EXPECT_EQ(ancestor_numbers(all.witness), every);
 }
 
 // ---------------------------------------------------------------------------

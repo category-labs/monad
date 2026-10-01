@@ -115,6 +115,10 @@ namespace monad::vm
         virtual runtime::SstoreStatus sstore_into(
             Address const &address, bytes32_t const &key,
             bytes32_t const &value, bool can_pay_cold_access) noexcept = 0;
+
+        /// Read the EIP-7702 delegate directly from the stored code.
+        virtual std::optional<Address>
+        delegate_of(monad_address const &address) const noexcept = 0;
 #endif
 
         /// Capture `std::current_exception()`.
@@ -147,28 +151,15 @@ namespace monad::vm
 
         std::optional<Address> resolve_delegation(Address const &addr) const
         {
-            // Copy up to |code_size| bytes of the bytecode. Then test
-            // whether the code begins with the prefix 0xEF0100, if so,
-            // then drop these three bytes and interpret the remainder as
-            // the delegate address.
+#if defined(MONAD_ZKVM_ZISK)
+            return delegate_of(addr);
+#else
+            // Read one extra byte to reject longer code.
             uint8_t code_buffer[evm::delegation_indicator_size + 1];
-            size_t const actual_code_size = copy_code(
+            size_t const size = copy_code(
                 addr, 0, code_buffer, evm::delegation_indicator_size + 1);
-
-            std::span const code{code_buffer, actual_code_size};
-
-            if (!evm::is_delegated(code)) {
-                return std::nullopt;
-            }
-
-            // Copy the delegate address from the code buffer.
-            Address designation;
-            std::ranges::copy(
-                code.subspan(
-                    evm::delegation_indicator_prefix_bytes.size(),
-                    sizeof(Address)),
-                designation.bytes);
-            return designation;
+            return evm::designation_of({code_buffer, size});
+#endif
         }
 
     private:
@@ -236,5 +227,8 @@ namespace monad::vm::runtime
     void guest_emit_log(
         Host &, Address const &, uint8_t const *, size_t, bytes32_t const[],
         size_t) noexcept;
+
+    std::optional<Address>
+    guest_delegate_of(Host const &, monad_address const &) noexcept;
 }
 #endif

@@ -1478,8 +1478,12 @@ namespace monad::vm::interpreter
                 // PUSH2 adds one value, restoring the original stack height.
                 MONAD_VM_CHECK_AT(JUMPI, 0);
             }
-            // Keep EQ's result in a C++ bool instead of the EVM stack.
-            bool const monad_vm_taken = (*stack_top == *(stack_top - 1));
+            // Keep EQ's result in a C++ bool instead of the EVM stack, the
+            // words compared by DMA (zisk_equal32): one step where gcc's
+            // compare is three a word, and half of EQ's run all four.
+            bool const monad_vm_taken = zisk_equal32(
+                reinterpret_cast<uint64_t const *>(stack_top),
+                reinterpret_cast<uint64_t const *>(stack_top - 1));
             instr_ptr =
                 fused_branch(ctx, instr_ptr, monad_vm_taken, gas_remaining);
             MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
@@ -1494,14 +1498,17 @@ namespace monad::vm::interpreter
         MONAD_VM_CHECK(EQ);
 #if defined(MONAD_ZKVM_ZISK)
         if constexpr (has_slots<traits>) {
-            // As LT's, the result to the follower's head.
+            // As LT's, the result to the follower's head; the words compared
+            // by DMA, as for the fused JUMPI above.
             MONAD_VM_LEAD_DISPATCH_BIT(
                 bool_offset(lag_of<traits>),
                 monad_vm_op2,
                 stack_top - 1,
                 gas_remaining,
                 instr_ptr - lag_of<traits>,
-                static_cast<uint64_t>(*stack_top == *(stack_top - 1)));
+                static_cast<uint64_t>(zisk_equal32(
+                    reinterpret_cast<uint64_t const *>(stack_top),
+                    reinterpret_cast<uint64_t const *>(stack_top - 1))));
         }
 #endif
         auto &&[a, b] = top_two(stack_top);

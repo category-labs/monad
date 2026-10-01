@@ -322,6 +322,95 @@ namespace monad::vm::interpreter
         return gas_remaining >= 0;
     }
 
+    // x >> k and x << k in place, for k under 256: one arm per whole words
+    // of the shift, whose few temporaries leave the handler without the frame
+    // the general shift needs for its run-time word index. A word's bits that
+    // cross into its neighbour move in two shifts, (w << 1) << (63 - b) and
+    // (w >> 1) >> (63 - b), which are also right for b = 0.
+    [[gnu::always_inline]] inline void
+    shr_in_place(uint256_t &x, uint64_t const k) noexcept
+    {
+        unsigned const b = static_cast<unsigned>(k & 63);
+        auto const down = [b](uint64_t const w) {
+            return (w << 1) << (63 - b);
+        };
+        switch (k >> 6) {
+        case 0: {
+            uint64_t const x0 = x[0], x1 = x[1], x2 = x[2], x3 = x[3];
+            x[0] = (x0 >> b) | down(x1);
+            x[1] = (x1 >> b) | down(x2);
+            x[2] = (x2 >> b) | down(x3);
+            x[3] = x3 >> b;
+            break;
+        }
+        case 1: {
+            uint64_t const x1 = x[1], x2 = x[2], x3 = x[3];
+            x[0] = (x1 >> b) | down(x2);
+            x[1] = (x2 >> b) | down(x3);
+            x[2] = x3 >> b;
+            x[3] = 0;
+            break;
+        }
+        case 2: {
+            uint64_t const x2 = x[2], x3 = x[3];
+            x[0] = (x2 >> b) | down(x3);
+            x[1] = x3 >> b;
+            x[2] = 0;
+            x[3] = 0;
+            break;
+        }
+        default: {
+            uint64_t const x3 = x[3];
+            x[0] = x3 >> b;
+            x[1] = 0;
+            x[2] = 0;
+            x[3] = 0;
+            break;
+        }
+        }
+    }
+
+    [[gnu::always_inline]] inline void
+    shl_in_place(uint256_t &x, uint64_t const k) noexcept
+    {
+        unsigned const b = static_cast<unsigned>(k & 63);
+        auto const up = [b](uint64_t const w) { return (w >> 1) >> (63 - b); };
+        switch (k >> 6) {
+        case 0: {
+            uint64_t const x0 = x[0], x1 = x[1], x2 = x[2], x3 = x[3];
+            x[3] = (x3 << b) | up(x2);
+            x[2] = (x2 << b) | up(x1);
+            x[1] = (x1 << b) | up(x0);
+            x[0] = x0 << b;
+            break;
+        }
+        case 1: {
+            uint64_t const x0 = x[0], x1 = x[1], x2 = x[2];
+            x[3] = (x2 << b) | up(x1);
+            x[2] = (x1 << b) | up(x0);
+            x[1] = x0 << b;
+            x[0] = 0;
+            break;
+        }
+        case 2: {
+            uint64_t const x0 = x[0], x1 = x[1];
+            x[3] = (x1 << b) | up(x0);
+            x[2] = x0 << b;
+            x[1] = 0;
+            x[0] = 0;
+            break;
+        }
+        default: {
+            uint64_t const x0 = x[0];
+            x[3] = x0 << b;
+            x[2] = 0;
+            x[1] = 0;
+            x[0] = 0;
+            break;
+        }
+        }
+    }
+
     // After validating the destination, charge JUMPDEST's gas and skip it.
     // Invalid jumps must exit before this charge.
     [[gnu::always_inline]] inline uint8_t const *swallow_jumpdest(
@@ -1112,7 +1201,16 @@ namespace monad::vm::interpreter
         runtime::Context &ctx = held_in_a0(entry_ctx);
         MONAD_VM_CHECK(SHL);
         auto &&[shift, value] = top_two(stack_top);
+#if defined(MONAD_ZKVM_ZISK)
+        if ((shift[1] | shift[2] | shift[3]) == 0 && shift[0] < 256) {
+            shl_in_place(value, shift[0]);
+        }
+        else {
+            value = uint256_t{};
+        }
+#else
         value <<= shift;
+#endif
 
         MONAD_VM_NEXT(SHL);
     }
@@ -1126,7 +1224,16 @@ namespace monad::vm::interpreter
         runtime::Context &ctx = held_in_a0(entry_ctx);
         MONAD_VM_CHECK(SHR);
         auto &&[shift, value] = top_two(stack_top);
+#if defined(MONAD_ZKVM_ZISK)
+        if ((shift[1] | shift[2] | shift[3]) == 0 && shift[0] < 256) {
+            shr_in_place(value, shift[0]);
+        }
+        else {
+            value = uint256_t{};
+        }
+#else
         value >>= shift;
+#endif
 
         MONAD_VM_NEXT(SHR);
     }

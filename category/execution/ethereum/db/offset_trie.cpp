@@ -393,26 +393,15 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
 #if defined(MONAD_ZKVM_ZISK)
 namespace
 {
-    // A leaf's stored path against the rest of the key that reached it. A
-    // stored path is left-aligned (path_view), so when the key's rest starts
-    // on a byte too the two are the same bytes, and the whole ones go to the
-    // DMA comparator (CSR 0x814, the length in the register after it): one
-    // step and the words it reads, where nibble_mismatch takes some fifteen
-    // steps for each sixteen nibbles. An odd count ends on the high nibble of
-    // a byte, compared alone: the path's low nibble there is padding, which
-    // nothing hashes and so nothing constrains.
-    [[gnu::always_inline]] inline bool
-    leaf_path_equals(NibblesView const path, NibblesView const key)
+    // Two runs of n nibbles that both start on a byte: the whole bytes go to
+    // the DMA comparator (CSR 0x814, the length in the register after it), one
+    // step and the words it reads, and an odd count's last nibble is compared
+    // alone, the high half of a byte whose low half is a stored path's
+    // padding, which nothing hashes and so nothing constrains.
+    [[gnu::always_inline]] inline bool aligned_nibbles_equal(
+        unsigned char const *const a, unsigned char const *const b,
+        unsigned const n)
     {
-        if (path.begin_nibble() || key.begin_nibble()) {
-            return path == key;
-        }
-        unsigned const n = path.nibble_size();
-        if (n != key.nibble_size()) {
-            return false;
-        }
-        unsigned char const *const a = path.data();
-        unsigned char const *const b = key.data();
         size_t const whole = n / 2;
         if ((n & 1) != 0 && ((a[whole] ^ b[whole]) & 0xf0) != 0) {
             return false;
@@ -436,11 +425,61 @@ namespace
                   unsigned char const(*)[MAX_PATH_NIBBLES / 2]>(b)));
         return differ == 0;
     }
+
+    // A leaf's stored path against the rest of the key that reached it, where
+    // nibble_mismatch takes some fifteen steps for each sixteen nibbles. A
+    // stored path starts on a byte (path_view). So does a rest at an even
+    // depth, which is then the same bytes; one at an odd depth is a suffix of
+    // the whole key, when the lookup was of one, and starts on a byte of that
+    // key moved up a nibble.
+    [[gnu::always_inline]] inline bool leaf_path_equals(
+        NibblesView const path, NibblesView const key,
+        unsigned char const *const whole_key)
+    {
+        unsigned const n = path.nibble_size();
+        if (n != key.nibble_size()) {
+            return false;
+        }
+        if (path.begin_nibble()) {
+            return path == key;
+        }
+        if (!key.begin_nibble()) {
+            return aligned_nibbles_equal(path.data(), key.data(), n);
+        }
+        if (whole_key == nullptr) {
+            return path == key;
+        }
+        uint64_t w[4];
+        for (size_t i = 0; i < 4; ++i) {
+            __builtin_memcpy(&w[i], whole_key + 8 * i, sizeof(w[i]));
+            w[i] = __builtin_bswap64(w[i]);
+        }
+        alignas(8) uint64_t up[4];
+        up[0] = __builtin_bswap64(w[0] << 4 | w[1] >> 60);
+        up[1] = __builtin_bswap64(w[1] << 4 | w[2] >> 60);
+        up[2] = __builtin_bswap64(w[2] << 4 | w[3] >> 60);
+        up[3] = __builtin_bswap64(w[3] << 4);
+        // The rest's first nibble is the key's 64 - n, which is up's 63 - n:
+        // even, as n is odd here.
+        return aligned_nibbles_equal(
+            path.data(),
+            reinterpret_cast<unsigned char const *>(up) +
+                (MAX_PATH_NIBBLES - 1 - n) / 2,
+            n);
+    }
 }
 #endif
 
 NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // The lookups are of whole keys, which leaf_path_equals reads again at an
+    // odd depth: the walk only ever drops a rest's front.
+    unsigned char const *const whole_key =
+        key.nibble_size() == MAX_PATH_NIBBLES && !key.begin_nibble()
+            ? key.data()
+            : nullptr;
+#endif
     NodeViewBase found = empty();
     while (id != NULL_ID) {
         NodeViewBase const node = get_original(id);
@@ -473,7 +512,7 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
                 },
                 [&](AccountLeafView l) -> NodeId {
 #if defined(MONAD_ZKVM_ZISK)
-                    if (leaf_path_equals(l.path(), key)) {
+                    if (leaf_path_equals(l.path(), key, whole_key)) {
 #else
                     if (l.path() == key) {
 #endif
@@ -483,7 +522,7 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
                 },
                 [&](StorageLeafView l) -> NodeId {
 #if defined(MONAD_ZKVM_ZISK)
-                    if (leaf_path_equals(l.path(), key)) {
+                    if (leaf_path_equals(l.path(), key, whole_key)) {
 #else
                     if (l.path() == key) {
 #endif

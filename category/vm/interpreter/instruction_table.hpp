@@ -1459,6 +1459,11 @@ namespace monad::vm::interpreter
        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
 #if defined(MONAD_ZKVM_ZISK)
+        auto const operands_equal = [stack_top] {
+            return zisk_equal32(
+                stack_top[0].as_words().data(),
+                stack_top[-1].as_words().data());
+        };
         // Fuse EQ PUSH2 <dst16> JUMPI. EQ frees a stack slot, so PUSH2
         // cannot overflow once EQ's operands are validated.
         uint8_t const next_opcode = *(instr_ptr + 1);
@@ -1479,9 +1484,8 @@ namespace monad::vm::interpreter
                 // PUSH2 adds one value, restoring the original stack height.
                 MONAD_VM_CHECK_AT(JUMPI, 0);
             }
-            // Keep EQ's result in a C++ bool instead of the EVM stack.
-            bool const take_jump = (*stack_top == *(stack_top - 1));
-            instr_ptr = fused_branch(ctx, instr_ptr, take_jump, gas_remaining);
+            instr_ptr =
+                fused_branch(ctx, instr_ptr, operands_equal(), gas_remaining);
             MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
                 ctx,
                 MONAD_VM_DISPATCH_STATE_ARG,
@@ -1493,17 +1497,15 @@ namespace monad::vm::interpreter
 #endif
         MONAD_VM_CHECK(EQ);
 #if defined(MONAD_ZKVM_ZISK)
+        bool const result = operands_equal();
         if constexpr (fuse_comparison && lag_dispatch<traits>) {
-            MONAD_VM_COMPARISON_DISPATCH(
-                next_opcode, stack_top - 1, *stack_top == stack_top[-1]);
+            MONAD_VM_COMPARISON_DISPATCH(next_opcode, stack_top - 1, result);
         }
-#endif
-        auto &&[a, b] = top_two(stack_top);
-        b = (a == b);
-
-#if defined(MONAD_ZKVM_ZISK)
+        stack_top[-1] = result;
         MONAD_VM_NEXT_OP(EQ, next_opcode);
 #else
+        auto &&[a, b] = top_two(stack_top);
+        b = (a == b);
         MONAD_VM_NEXT(EQ);
 #endif
     }

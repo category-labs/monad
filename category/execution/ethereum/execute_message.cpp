@@ -44,6 +44,18 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // A message's address bound as an Address, which adds no data member to
+    // evmc_address. Passed as it is, it converts into a temporary: a 20-byte
+    // copy each use.
+    [[gnu::always_inline]] inline Address const &
+    msg_address(evmc_address const &a) noexcept
+    {
+        static_assert(sizeof(Address) == sizeof(evmc_address));
+        static_assert(std::is_standard_layout_v<Address>);
+        return reinterpret_cast<Address const &>(a);
+    }
+#endif
 
     bool sender_has_balance(State &state, evmc_message const &msg) noexcept
     {
@@ -51,7 +63,12 @@ namespace
         // for optimistic execution, we do NOT require the original balance to
         // match exactly, just add a lower bound constraint to suffice for this
         // debit
+#if defined(MONAD_ZKVM_ZISK)
+        return state.record_balance_constraint_for_debit(
+            msg_address(msg.sender), value);
+#else
         return state.record_balance_constraint_for_debit(msg.sender, value);
+#endif
     }
 
     template <Traits traits>
@@ -60,9 +77,16 @@ namespace
         Address const &to)
     {
         uint256_t const value = load_be<uint256_t>(msg.value);
+#if defined(MONAD_ZKVM_ZISK)
+        Address const &from = msg_address(msg.sender);
+        state.subtract_from_balance(from, value);
+        state.add_to_balance(to, value);
+        host.emit_native_transfer_event(from, to, value);
+#else
         state.subtract_from_balance(msg.sender, value);
         state.add_to_balance(to, value);
         host.emit_native_transfer_event(msg.sender, to, value);
+#endif
     }
 
 } // anonymous namespace
@@ -121,7 +145,12 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
             return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
         }
         else if (!static_call) {
+#if defined(MONAD_ZKVM_ZISK)
+            transfer_balances<traits>(
+                state, host, msg, msg_address(msg.recipient));
+#else
             transfer_balances<traits>(state, host, msg, msg.recipient);
+#endif
         }
     }
 
@@ -133,7 +162,11 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
 
     if (msg.kind == EVMC_CALL && static_call) {
         // eip-161
+#if defined(MONAD_ZKVM_ZISK)
+        state.touch(msg_address(msg.recipient));
+#else
         state.touch(msg.recipient);
+#endif
     }
 
     return std::nullopt;
@@ -332,7 +365,11 @@ evmc::Result execute_call_message(
                 return std::move(maybe_result.value());
             }
         }
+#if defined(MONAD_ZKVM_ZISK)
+        auto const hash = state.get_code_hash(msg_address(msg.code_address));
+#else
         auto const hash = state.get_code_hash(msg.code_address);
+#endif
 #if defined(MONAD_ZKVM_VARCODE_CACHE)
         // The guest's VM keeps every varcode for the block and takes the
         // intercode from this one before it runs anything, so the State's

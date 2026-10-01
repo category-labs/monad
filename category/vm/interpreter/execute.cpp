@@ -99,13 +99,15 @@ namespace monad::vm::interpreter
                 itbl);                                                         \
         }
 
-    // The followers push1_then takes: ADD, SHL, SHR, SAR and PUSH1. The
-    // others' MONAD_VM_PUSH1_PAIR_xx is undefined, and MONAD_VM_LEAD_KIND
-    // takes the default after it.
+    // The followers push1_then takes: ADD, SHL, SHR, SAR, MLOAD, MSTORE and
+    // PUSH1. The others' MONAD_VM_PUSH1_PAIR_xx is undefined, and
+    // MONAD_VM_LEAD_KIND takes the default after it.
     #define MONAD_VM_PUSH1_PAIR_01 ~, PAIR
     #define MONAD_VM_PUSH1_PAIR_1b ~, PAIR
     #define MONAD_VM_PUSH1_PAIR_1c ~, PAIR
     #define MONAD_VM_PUSH1_PAIR_1d ~, PAIR
+    #define MONAD_VM_PUSH1_PAIR_51 ~, PAIR
+    #define MONAD_VM_PUSH1_PAIR_52 ~, PAIR
     #define MONAD_VM_PUSH1_PAIR_60 ~, PAIR
     #define MONAD_VM_LEAD_SECOND(A, B, ...) B
     #define MONAD_VM_LEAD_KIND(...) MONAD_VM_LEAD_SECOND(__VA_ARGS__)
@@ -193,6 +195,8 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_LEAD_KIND
     #undef MONAD_VM_LEAD_SECOND
     #undef MONAD_VM_PUSH1_PAIR_60
+    #undef MONAD_VM_PUSH1_PAIR_52
+    #undef MONAD_VM_PUSH1_PAIR_51
     #undef MONAD_VM_PUSH1_PAIR_1d
     #undef MONAD_VM_PUSH1_PAIR_1c
     #undef MONAD_VM_PUSH1_PAIR_1b

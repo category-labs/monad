@@ -17,6 +17,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/keccak.hpp>
+#include <category/core/trie_hash.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
@@ -82,7 +83,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                     storage_updates.push_front(
                         update_alloc_.emplace_back(Update{
                             .key = hash_alloc_.emplace_back(
-                                keccak256({key.bytes, sizeof(key.bytes)})),
+                                trie_hash({key.bytes, sizeof(key.bytes)})),
                             .value = delta.second == bytes32_t{}
                                          ? std::nullopt
                                          : std::make_optional<byte_string_view>(
@@ -106,7 +107,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 delta.account.first->incarnation != account->incarnation;
             account_updates.push_front(update_alloc_.emplace_back(Update{
                 .key = hash_alloc_.emplace_back(
-                    keccak256({addr.bytes, sizeof(addr.bytes)})),
+                    trie_hash({addr.bytes, sizeof(addr.bytes)})),
                 .value = value,
                 .incarnation = incarnation,
                 .next = std::move(storage_updates),

@@ -20,6 +20,7 @@
 #include <category/core/log.hpp>
 #include <category/core/nibble.h>
 #include <category/core/runtime/unaligned.hpp>
+#include <category/core/trie_hash.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
@@ -139,7 +140,7 @@ void check_snapshot_format(monad_snapshot_format const format)
 }
 
 // When the target is page-encoded, drain the accumulator into per-account
-// `next` lists. Each page becomes one Update keyed by keccak256(page_key)
+// `next` lists. Each page becomes one Update keyed by trie_hash(page_key)
 // with value encode_storage_page_db(page_key, page) (or std::nullopt if the
 // page is empty so the entry is a deletion). The encoded byte_strings are
 // kept alive in loader->bytes_alloc until the upsert completes; the Update
@@ -169,7 +170,7 @@ void monad_db_snapshot_loader_finalize_pages(
                 }
                 account_update.next.push_front(
                     loader->update_alloc.emplace_back(Update{
-                        .key = loader->hash_alloc.emplace_back(keccak256(
+                        .key = loader->hash_alloc.emplace_back(trie_hash(
                             {page_key.bytes, sizeof(page_key.bytes)})),
                         .value = value,
                         .incarnation = false,
@@ -251,7 +252,7 @@ uint64_t monad_db_snapshot_loader_read_account(
         loader->account_offset_to_update.at(shard).emplace(
             account_offset,
             Update{
-                .key = loader->hash_alloc.emplace_back(keccak256(address)),
+                .key = loader->hash_alloc.emplace_back(trie_hash(address)),
                 .value = before.substr(0, bytes_consumed),
                 .incarnation = false,
                 .next = UpdateList{},
@@ -769,7 +770,7 @@ void monad_db_snapshot_loader_load(
                 consumed = before.size() - storage_view.size();
                 update.next.push_front(loader->update_alloc.emplace_back(Update{
                     .key = loader->hash_alloc.emplace_back(
-                        keccak256(to_bytes(res.value().first))),
+                        trie_hash(to_bytes(res.value().first))),
                     .value = before.substr(0, consumed),
                     .next = UpdateList{},
                     .version = static_cast<int64_t>(loader->block)}));
@@ -779,7 +780,7 @@ void monad_db_snapshot_loader_load(
             // the same flush. A mid-loop flush would emit a page Update for
             // the slots seen so far; later slots in the same page would start
             // a fresh accumulator entry and the next flush would emit another
-            // Update for the same keccak256(page_key), causing the mpt
+            // Update for the same trie_hash(page_key), causing the mpt
             // upsert to overwrite the earlier page (set-not-merge). Defer
             // flushing until the unconditional final flush at end of load().
             //

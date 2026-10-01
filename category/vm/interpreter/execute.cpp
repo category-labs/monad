@@ -100,7 +100,7 @@ namespace monad::vm::interpreter
         }
 
     // The followers push1_then takes: ADD, SIGNEXTEND, NOT, AND, SHL, SHR,
-    // SAR, CALLDATALOAD, MLOAD, MSTORE and PUSH1. The others'
+    // SAR, CALLDATALOAD, MLOAD, MSTORE, PUSH1 and SWAP1 to SWAP4. The others'
     // MONAD_VM_PUSH1_PAIR_xx is undefined, and MONAD_VM_LEAD_KIND takes the
     // default after it.
     #define MONAD_VM_PUSH1_PAIR_01 ~, PAIR
@@ -114,6 +114,10 @@ namespace monad::vm::interpreter
     #define MONAD_VM_PUSH1_PAIR_51 ~, PAIR
     #define MONAD_VM_PUSH1_PAIR_52 ~, PAIR
     #define MONAD_VM_PUSH1_PAIR_60 ~, PAIR
+    #define MONAD_VM_PUSH1_PAIR_90 ~, PAIR
+    #define MONAD_VM_PUSH1_PAIR_91 ~, PAIR
+    #define MONAD_VM_PUSH1_PAIR_92 ~, PAIR
+    #define MONAD_VM_PUSH1_PAIR_93 ~, PAIR
     #define MONAD_VM_LEAD_SECOND(A, B, ...) B
     #define MONAD_VM_LEAD_KIND(...) MONAD_VM_LEAD_SECOND(__VA_ARGS__)
     #define MONAD_VM_LEAD_CAT(A, B) A##B
@@ -199,6 +203,10 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_LEAD_CAT
     #undef MONAD_VM_LEAD_KIND
     #undef MONAD_VM_LEAD_SECOND
+    #undef MONAD_VM_PUSH1_PAIR_93
+    #undef MONAD_VM_PUSH1_PAIR_92
+    #undef MONAD_VM_PUSH1_PAIR_91
+    #undef MONAD_VM_PUSH1_PAIR_90
     #undef MONAD_VM_PUSH1_PAIR_60
     #undef MONAD_VM_PUSH1_PAIR_52
     #undef MONAD_VM_PUSH1_PAIR_51

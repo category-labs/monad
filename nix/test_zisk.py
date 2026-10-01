@@ -97,12 +97,12 @@ class ZiskChecks(unittest.TestCase):
         jumpdest = "80000010: 81c52073 csrs 0x81c,a0\n"
         jumpdest += ("80000100 <monad_vm_slot_15_60>:\n"
                      " 80000100: 00050463 beqz a0,80000108\n"
-                     "80000104 <monad_vm_manual_jump_prefix_1>:\n"
+                     "80000104 <monad_vm_manual_jump_lag_1>:\n"
                      " 80000104: 00078067 jr a5\n"
                      "80000108 <monad_vm_manual_jump_prefix_2>:\n"
                      " 80000108: fe078067 jr -32(a5)\n")
         nm = ("80000000 00000004 T free\n80000100 0000000c T monad_vm_slot_15_60\n"
-              "80000104 t monad_vm_manual_jump_prefix_1\n80000108 t monad_vm_manual_jump_prefix_2\n")
+              "80000104 t monad_vm_manual_jump_lag_1\n80000108 t monad_vm_manual_jump_prefix_2\n")
         with patch.object(check.subprocess, "check_output", side_effect=[jumpdest, attrs, nm, "80000000: 00008067 ret\n"]):
             check.check_elf(elf, commit, "riscv-")
         with self.assertRaises(ValueError):
@@ -238,9 +238,9 @@ class ManualJumpChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "frame open"):
             check.check_hand_made_jumps(code, {0x108, 0x10c})
 
-    def test_missing_marker_fails(self):
+    def test_missing_marker_family_fails(self):
         with self.assertRaisesRegex(ValueError, "missing"):
-            check.manual_jump_addresses("100 t unrelated_label")
+            check.manual_jump_addresses("100 t monad_vm_manual_jump_lag_1")
 
     def test_invalid_or_missing_markers_fail(self):
         code = self.assembly(["nop", "jr\ta5"])

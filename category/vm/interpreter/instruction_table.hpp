@@ -71,21 +71,116 @@ namespace monad::vm::interpreter
 #if defined(MONAD_ZKVM_ZISK)
     // The linker places handlers in opcode order, in 1 << slot_shift byte slots.
     // Dispatch computes base + (opcode << slot_shift), without a pointer lookup.
-    inline constexpr size_t slot_shift = 10;
+    inline constexpr size_t slot_shift = 12;
 
-    // Each slot starts with [overflow exit: 8][PUSH2: 24][PUSH1: 32].
-    // Normal opcode dispatch enters the handler after these 64 bytes.
-    inline constexpr size_t slot_prefix_size = 64;
-    inline constexpr size_t push1_prefix_offset = 32;
-    inline constexpr size_t push2_prefix_offset = 56;
+    // Six copies encode the distance from register a5 to the current opcode:
+    // actual instruction = a5 + lag. For a short instruction, dispatch can
+    // select copy lag + length without advancing a5. At lag 6 or beyond,
+    // advance a5 and return to copy 0. The offsets fit jalr's immediate.
+    inline constexpr unsigned lag_count = 6;
+
+    consteval int lag_offset(unsigned const lag) noexcept
+    {
+        constexpr int handler_offsets[lag_count] = {
+            0, 680, 1360, 2044, -1368, -684};
+        return handler_offsets[lag];
+    }
+
+    // Each handler copy carries its EVM revision, instruction-pointer lag,
+    // and whether it can dispatch with a manual tail jump.
+    template <
+        Traits BaseTraits, unsigned LagBytes, bool AllowLaggedDispatch = true>
+    struct Lagged : BaseTraits
+    {
+        using base = BaseTraits;
+        static constexpr unsigned lag = LagBytes;
+        static constexpr bool allows_lagged_dispatch = AllowLaggedDispatch;
+    };
+
+    // Keep the lag, but let GCC emit tail calls and their required epilogues.
+    // Manual assembly jumps cannot restore a handler's native frame.
+    template <class T>
+    using compiler_dispatch_traits = Lagged<typename T::base, T::lag, false>;
+
+    // The opcodes whose handlers keep a frame on such a path, read off the
+    // objdump: the runtime's calls, the environment's, and the arithmetic
+    // that calls out. The official-build audit fails an ELF in which a jump
+    // made by hand still leaves with a frame open (check_hand_made_jumps).
+    consteval bool keeps_frame(uint8_t const op) noexcept
+    {
+        using enum compiler::EvmOpCode;
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+        // Extra checks make these handlers retain native frame/register state.
+        if (op == DUP1 || op == SLOTNUM) {
+            return true;
+        }
+    #endif
+        constexpr uint8_t ops[] = {MUL,          DIV,          SDIV,
+                                   MOD,          SMOD,         ADDMOD,
+                                   MULMOD,       EXP,          BYTE,
+                                   SAR,          SHA3,         ADDRESS,
+                                   BALANCE,      ORIGIN,       CALLER,
+                                   CALLDATALOAD, CALLDATACOPY, CODECOPY,
+                                   EXTCODESIZE,  EXTCODECOPY,  RETURNDATACOPY,
+                                   EXTCODEHASH,  BLOCKHASH,    COINBASE,
+                                   SELFBALANCE,  BLOBHASH,     MSTORE8,
+                                   SLOAD,        SSTORE,       TLOAD,
+                                   TSTORE,       MCOPY,        LOG0,
+                                   LOG1,         LOG2,         LOG3,
+                                   LOG4,         CREATE,       CALL,
+                                   CALLCODE,     DELEGATECALL, CREATE2,
+                                   STATICCALL,   DUPN,         SWAPN,
+                                   EXCHANGE};
+        for (uint8_t const opcode : ops) {
+            if (opcode == op) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // The followers whose PUSH1 pair keeps a frame on such a path.
+    consteval bool pair_keeps_frame(uint8_t const op) noexcept
+    {
+        using enum compiler::EvmOpCode;
+        return op == SHR || op == SAR || op == CALLDATALOAD;
+    }
+
+    // The revision's traits, for what is instantiated or specialised on them
+    // alone: the runtime's functions, the storage cost tables.
+    template <class T>
+    using base_traits = typename T::base;
+
+    // Where copy 0's handler sits in its slot, after copies 4 and 5 and its
+    // own heads: the base the handlers carry points there, at opcode 0's
+    // copy 0, and the other copies are lag_offset away.
+    inline constexpr size_t slot_handler_offset = 1432;
+
+    // Distance from a copy's handler to its PUSH1/PUSH2 prefix. Copies 0 and
+    // 1 need an extra instruction to advance a5, so their prefixes are longer.
+    consteval int prefix_back_offset(
+        unsigned const copy, unsigned const num_args) noexcept
+    {
+        return (num_args == 1 ? 32 : 56) - (copy >= 2 ? 4 : 0);
+    }
+
+    // Select the follower copy after PUSH<n>, then locate its push prefix.
+    consteval int push_prefix_offset(
+        unsigned const lag, unsigned const num_args) noexcept
+    {
+        unsigned const copy = (lag + num_args + 1) % lag_count;
+        return prefix_back_offset(copy, num_args) - lag_offset(copy);
+    }
 
     // Label the instruction for the ELF audit. Keep it on one assembly line
     // so GCC still estimates the size of the inline asm as one instruction.
     #define MONAD_VM_MARKED_TAIL_JUMP(KIND)                                    \
         "monad_vm_manual_jump_" #KIND "_%=: jalr zero, %[off](%[head])"
 
-    // Jump OFFSET bytes before the follower's handler with arguments in a0-a6.
-    // Encoding the offset in jalr avoids a separate address adjustment.
+    // A tail call to a head in NEXT_OPCODE's slot, OFFSET bytes before its
+    // handler, made by hand for the jump to take -OFFSET as its immediate:
+    // through a function pointer gcc forms the head's address with an addi of
+    // its own. The arguments are where the call would put them.
     #define MONAD_VM_PREFIX_DISPATCH(OFFSET, NEXT_OPCODE, TOP, GAS, IP)        \
         do {                                                                   \
             auto const follower_handler_address =                              \
@@ -116,13 +211,52 @@ namespace monad::vm::interpreter
         }                                                                      \
         while (false)
 
+    // Jump manually to copy TO of NEXT_OPCODE, as PREFIX_DISPATCH does.
+    // lag_offset(TO) selects the copy relative to its base handler.
+    // IP points TO bytes before the opcode; the copy accounts for that lag.
+    #define MONAD_VM_LAG_DISPATCH(TO, NEXT_OPCODE, TOP, GAS, IP)               \
+        do {                                                                   \
+            auto const handler_address =                                       \
+                reinterpret_cast<uintptr_t>(table_base) +                      \
+                (static_cast<uintptr_t>(NEXT_OPCODE) << slot_shift);           \
+            register runtime::Context *monad_vm_a0 asm("a0") = &ctx;           \
+            register uint256_t const *monad_vm_a1 asm("a1") =                  \
+                MONAD_VM_DISPATCH_STATE_ARG;                                   \
+            register uint256_t const *monad_vm_a2 asm("a2") =                  \
+                stack_lower_bound;                                             \
+            register uint256_t *monad_vm_a3 asm("a3") = (TOP).next_slot();     \
+            register int64_t monad_vm_a4 asm("a4") = (GAS);                    \
+            register uint8_t const *monad_vm_a5 asm("a5") = (IP);              \
+            register void const *monad_vm_a6 asm("a6") = table_base;           \
+            asm volatile(MONAD_VM_MARKED_TAIL_JUMP(lag)                        \
+                         :                                                     \
+                         : [head] "r"(handler_address),                        \
+                           [off] "i"(lag_offset(TO)),                          \
+                           "r"(monad_vm_a0),                                   \
+                           "r"(monad_vm_a1),                                   \
+                           "r"(monad_vm_a2),                                   \
+                           "r"(monad_vm_a3),                                   \
+                           "r"(monad_vm_a4),                                   \
+                           "r"(monad_vm_a5),                                   \
+                           "r"(monad_vm_a6)                                    \
+                         : "memory");                                          \
+            __builtin_unreachable();                                           \
+        }                                                                      \
+        while (false)
+
     // The revisions whose handlers have slots: the EVM ones the guest runs.
     // Other traits dispatch through their table.
     template <Traits traits>
     inline constexpr bool has_slots =
-        std::is_same_v<traits, EvmTraits<traits::evm_rev()>> &&
+        std::is_same_v<base_traits<traits>, EvmTraits<traits::evm_rev()>> &&
         traits::evm_rev() >= EvmRevision::Berlin &&
         traits::evm_rev() <= EvmRevision::Amsterdam;
+
+    // Whether a handler's dispatches go to its follower's lagging copies
+    // (MONAD_VM_DISPATCH): all but those of a handler that keeps a frame.
+    template <Traits traits>
+    inline constexpr bool lag_dispatch =
+        has_slots<traits> && traits::allows_lagged_dispatch;
 
     struct SlotTable
     {
@@ -148,11 +282,37 @@ namespace monad::vm::interpreter
             return static_cast<InstrEval const *>(table_base);
         }
     }
+#else
+    // One copy of each handler: its traits are the revision's.
+    template <class T>
+    using base_traits = T;
+
+    template <class T>
+    using compiler_dispatch_traits = T;
 #endif
 }
 
-// Evaluate NEXT_OPCODE after advancing instr_ptr; it may be *instr_ptr.
-#define MONAD_VM_DISPATCH(NBYTES, STACK_DELTA, NEXT_OPCODE)                    \
+// Pass a5 unchanged to an out-of-line helper. Its entry adds the compile-time
+// lag to recover the actual instruction pointer before reading bytecode.
+#if defined(MONAD_ZKVM_ZISK)
+    #define MONAD_VM_AS_CALLED(IP) ((IP) - traits::lag)
+    #define MONAD_VM_TWIN_ENTRY() (instr_ptr += traits::lag)
+    // Keep the incoming a5 value opaque, before adding the copy's lag.
+    #define MONAD_VM_LAUNDER_AS_CALLED(IP)                                     \
+        do {                                                                   \
+            auto *monad_vm_register_ip = MONAD_VM_AS_CALLED(IP);               \
+            MONAD_VM_LAUNDER(monad_vm_register_ip);                            \
+            (IP) = monad_vm_register_ip + traits::lag;                         \
+        }                                                                      \
+        while (false)
+#else
+    #define MONAD_VM_AS_CALLED(IP) (IP)
+    #define MONAD_VM_TWIN_ENTRY() ((void)0)
+    #define MONAD_VM_LAUNDER_AS_CALLED(IP) MONAD_VM_LAUNDER(IP)
+#endif
+
+// Advance to the actual instruction before reading NEXT_OPCODE and dispatching.
+#define MONAD_VM_DISPATCH_BASE(NBYTES, STACK_DELTA, NEXT_OPCODE)               \
     do {                                                                       \
         instr_ptr += (NBYTES);                                                 \
         MONAD_VM_LAUNDER(instr_ptr);                                           \
@@ -168,6 +328,35 @@ namespace monad::vm::interpreter
             instr_ptr MONAD_VM_TBL_ARG);                                       \
     }                                                                          \
     while (false)
+
+#if defined(MONAD_ZKVM_ZISK)
+    // A short, fixed advance can select the follower copy directly in jalr.
+    #define MONAD_VM_DISPATCH(NBYTES, STACK_DELTA, NEXT_OPCODE)                \
+        do {                                                                   \
+            constexpr auto next_lag = traits::lag + (NBYTES);                  \
+            if constexpr (                                                     \
+                ::monad::vm::interpreter::lag_dispatch<traits> &&              \
+                (NBYTES) > 0 &&                                                \
+                next_lag < ::monad::vm::interpreter::lag_count) {              \
+                instr_ptr += (NBYTES);                                         \
+                if constexpr (debug_enabled) {                                 \
+                    trace(MONAD_VM_CODE_VIEW, gas_remaining, instr_ptr);       \
+                }                                                              \
+                MONAD_VM_LAG_DISPATCH(                                         \
+                    next_lag,                                                  \
+                    (NEXT_OPCODE),                                             \
+                    stack_top + (STACK_DELTA),                                 \
+                    gas_remaining,                                             \
+                    instr_ptr - next_lag);                                     \
+            }                                                                  \
+            else {                                                             \
+                MONAD_VM_DISPATCH_BASE(NBYTES, STACK_DELTA, NEXT_OPCODE);      \
+            }                                                                  \
+        }                                                                      \
+        while (false)
+#else
+    #define MONAD_VM_DISPATCH MONAD_VM_DISPATCH_BASE
+#endif
 
 // Advance NBYTES through bytecode and STACK_DELTA slots on the EVM stack.
 #define MONAD_VM_FUSED_NEXT(NBYTES, STACK_DELTA)                               \
@@ -1030,7 +1219,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(EXP, runtime::exp<traits>);
+        MONAD_VM_CHECKED_RUNTIME_CALL(EXP, runtime::exp<base_traits<traits>>);
 
         MONAD_VM_NEXT(EXP);
     }
@@ -1400,7 +1589,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(SHA3, runtime::sha3<traits>);
+        MONAD_VM_CHECKED_RUNTIME_CALL(SHA3, runtime::sha3<base_traits<traits>>);
 
         MONAD_VM_NEXT(SHA3);
     }
@@ -1423,7 +1612,8 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(BALANCE, runtime::balance<traits>);
+        MONAD_VM_CHECKED_RUNTIME_CALL(
+            BALANCE, runtime::balance<base_traits<traits>>);
 
         MONAD_VM_NEXT(BALANCE);
     }
@@ -1532,6 +1722,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        MONAD_VM_TWIN_ENTRY();
         auto const *const instructions = instr_ptr;
         // PUSH0 occupies one byte less than PUSH1 0, shifting the success
         // label.
@@ -1577,7 +1768,8 @@ namespace monad::vm::interpreter
         if (MONAD_UNLIKELY(gas_remaining < 0)) {
             MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
         }
-        MONAD_VM_FUSED_NEXT(success_offset + 2, 0);
+        // Both non-payable checks span more bytes than the available lags.
+        MONAD_VM_DISPATCH_BASE(success_offset + 2, 0, *instr_ptr);
     }
 
     // Fuse CALLVALUE PUSH2 <revert> JUMPI when the call transfers zero wei.
@@ -1588,6 +1780,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        MONAD_VM_TWIN_ENTRY();
         auto const *const instructions = instr_ptr;
         if (MONAD_UNLIKELY(
                 !(instructions[4] == static_cast<std::uint8_t>(JUMPI) &&
@@ -1654,7 +1847,7 @@ namespace monad::vm::interpreter
                 stack_lower_bound,
                 stack_top,
                 gas_remaining,
-                instr_ptr MONAD_VM_TBL_ARG);
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
         }
         if (instr_ptr[1] == static_cast<std::uint8_t>(PUSH2)) {
             MONAD_VM_MUST_TAIL return callvalue_ir<traits>(
@@ -1663,7 +1856,7 @@ namespace monad::vm::interpreter
                 stack_lower_bound,
                 stack_top,
                 gas_remaining,
-                instr_ptr MONAD_VM_TBL_ARG);
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
         }
 #endif
         MONAD_VM_CHECK(CALLVALUE);
@@ -1811,6 +2004,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        MONAD_VM_TWIN_ENTRY();
         auto const *const instructions = instr_ptr;
         bool const falls_through = opcode_at_is(instructions, 2, PUSH2) &&
                                    opcode_at_is(instructions, 5, JUMPI);
@@ -1868,6 +2062,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        MONAD_VM_TWIN_ENTRY();
         auto const *const instructions = instr_ptr;
         uint64_t const calldata_size = ctx.env.input_data_size;
         if (MONAD_UNLIKELY(
@@ -1934,7 +2129,7 @@ namespace monad::vm::interpreter
                 stack_lower_bound,
                 stack_top,
                 gas_remaining,
-                instr_ptr MONAD_VM_TBL_ARG);
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
         }
         if (instr_ptr[1] == static_cast<std::uint8_t>(SUB)) {
             MONAD_VM_MUST_TAIL return calldata_bound<traits>(
@@ -1943,7 +2138,7 @@ namespace monad::vm::interpreter
                 stack_lower_bound,
                 stack_top,
                 gas_remaining,
-                instr_ptr MONAD_VM_TBL_ARG);
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
         }
 #endif
         MONAD_VM_CHECK(CALLDATASIZE);
@@ -1959,7 +2154,7 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(
-            CALLDATACOPY, runtime::calldatacopy<traits>);
+            CALLDATACOPY, runtime::calldatacopy<base_traits<traits>>);
 
         MONAD_VM_NEXT(CALLDATACOPY);
     }
@@ -1982,7 +2177,8 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(CODECOPY, runtime::codecopy<traits>);
+        MONAD_VM_CHECKED_RUNTIME_CALL(
+            CODECOPY, runtime::codecopy<base_traits<traits>>);
 
         MONAD_VM_NEXT(CODECOPY);
     }
@@ -2006,7 +2202,7 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(
-            EXTCODESIZE, runtime::extcodesize<traits>);
+            EXTCODESIZE, runtime::extcodesize<base_traits<traits>>);
 
         MONAD_VM_NEXT(EXTCODESIZE);
     }
@@ -2018,7 +2214,7 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(
-            EXTCODECOPY, runtime::extcodecopy<traits>);
+            EXTCODECOPY, runtime::extcodecopy<base_traits<traits>>);
 
         MONAD_VM_NEXT(EXTCODECOPY);
     }
@@ -2042,7 +2238,7 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(
-            RETURNDATACOPY, runtime::returndatacopy<traits>);
+            RETURNDATACOPY, runtime::returndatacopy<base_traits<traits>>);
 
         MONAD_VM_NEXT(RETURNDATACOPY);
     }
@@ -2054,7 +2250,7 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(
-            EXTCODEHASH, runtime::extcodehash<traits>);
+            EXTCODEHASH, runtime::extcodehash<base_traits<traits>>);
 
         MONAD_VM_NEXT(EXTCODEHASH);
     }
@@ -2220,7 +2416,9 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        call_runtime(runtime::mload<traits>, ctx, stack_top, gas_remaining);
+        MONAD_VM_TWIN_ENTRY();
+        call_runtime(
+            runtime::mload<base_traits<traits>>, ctx, stack_top, gas_remaining);
 
         MONAD_VM_NEXT(MLOAD);
     }
@@ -2236,15 +2434,16 @@ namespace monad::vm::interpreter
         ctx.gas_remaining = gas_remaining;
         auto const offset = ctx.get_memory_offset(*stack_top);
         if (MONAD_UNLIKELY(ctx.memory.size < *offset + 32)) {
-            MONAD_VM_MUST_TAIL return mload_grow<traits>(
+            MONAD_VM_MUST_TAIL return mload_grow<
+                compiler_dispatch_traits<traits>>(
                 ctx,
                 MONAD_VM_DISPATCH_STATE_ARG,
                 stack_lower_bound,
                 stack_top,
                 gas_remaining,
-                instr_ptr MONAD_VM_TBL_ARG);
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
         }
-        runtime::mload_at<traits>(&ctx, &*stack_top, offset);
+        runtime::mload_at<base_traits<traits>>(&ctx, &*stack_top, offset);
         gas_remaining = ctx.gas_remaining;
 
         MONAD_VM_NEXT(MLOAD);
@@ -2258,7 +2457,12 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        call_runtime(runtime::mstore<traits>, ctx, stack_top, gas_remaining);
+        MONAD_VM_TWIN_ENTRY();
+        call_runtime(
+            runtime::mstore<base_traits<traits>>,
+            ctx,
+            stack_top,
+            gas_remaining);
 
         MONAD_VM_NEXT(MSTORE);
     }
@@ -2271,6 +2475,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        MONAD_VM_TWIN_ENTRY();
         // mstore validated the offset, so its low word is all of it.
         auto const offset = runtime::Memory::Offset::unsafe_from(
             static_cast<runtime::Memory::Offset::rep>((*stack_top)[0]));
@@ -2281,13 +2486,14 @@ namespace monad::vm::interpreter
         if (MONAD_UNLIKELY(
                 ctx.memory.capacity < *new_size ||
                 !ctx.is_memory_size_in_bound<traits>(new_size))) {
-            MONAD_VM_MUST_TAIL return mstore_slow<traits>(
+            MONAD_VM_MUST_TAIL return mstore_slow<
+                compiler_dispatch_traits<traits>>(
                 ctx,
                 MONAD_VM_DISPATCH_STATE_ARG,
                 stack_lower_bound,
                 stack_top,
                 gas_remaining,
-                instr_ptr MONAD_VM_TBL_ARG);
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
         }
         auto const new_cost =
             runtime::Context::memory_cost_from_word_count<traits>(word_count);
@@ -2297,7 +2503,7 @@ namespace monad::vm::interpreter
         }
         ctx.memory.size = *new_size;
         ctx.memory.cost = new_cost;
-        runtime::mstore_at<traits>(&ctx, offset, &stack_top[-1]);
+        runtime::mstore_at<base_traits<traits>>(&ctx, offset, &stack_top[-1]);
 
         MONAD_VM_NEXT(MSTORE);
     }
@@ -2312,7 +2518,7 @@ namespace monad::vm::interpreter
         auto *top = stack_top.next_slot();
         MONAD_VM_LAUNDER(top);
         stack_top = StackTop{top};
-        MONAD_VM_LAUNDER(instr_ptr);
+        MONAD_VM_LAUNDER_AS_CALLED(instr_ptr);
         MONAD_VM_CHECK_OWN_GAS(MSTORE);
 
         // The base gas is already charged. In-bounds stores need no expansion
@@ -2325,9 +2531,9 @@ namespace monad::vm::interpreter
                 stack_lower_bound,
                 stack_top,
                 gas_remaining,
-                instr_ptr MONAD_VM_TBL_ARG);
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
         }
-        runtime::mstore_at<traits>(&ctx, offset, &stack_top[-1]);
+        runtime::mstore_at<base_traits<traits>>(&ctx, offset, &stack_top[-1]);
 
         MONAD_VM_NEXT(MSTORE);
     }
@@ -2338,7 +2544,8 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(MSTORE8, runtime::mstore8<traits>);
+        MONAD_VM_CHECKED_RUNTIME_CALL(
+            MSTORE8, runtime::mstore8<base_traits<traits>>);
 
         MONAD_VM_NEXT(MSTORE8);
     }
@@ -2349,7 +2556,8 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(MCOPY, runtime::mcopy<traits>);
+        MONAD_VM_CHECKED_RUNTIME_CALL(
+            MCOPY, runtime::mcopy<base_traits<traits>>);
 
         MONAD_VM_NEXT(MCOPY);
     }
@@ -2360,7 +2568,8 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(SSTORE, runtime::sstore<traits>);
+        MONAD_VM_CHECKED_RUNTIME_CALL(
+            SSTORE, runtime::sstore<base_traits<traits>>);
 
         MONAD_VM_NEXT(SSTORE);
     }
@@ -2371,7 +2580,8 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(SLOAD, runtime::sload<traits>);
+        MONAD_VM_CHECKED_RUNTIME_CALL(
+            SLOAD, runtime::sload<base_traits<traits>>);
 
         MONAD_VM_NEXT(SLOAD);
     }
@@ -2445,6 +2655,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        MONAD_VM_TWIN_ENTRY();
         *stack_top >>= uint256_t{*(instr_ptr + 1)};
         MONAD_VM_FUSED_NEXT(3, 0);
     }
@@ -2455,6 +2666,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        MONAD_VM_TWIN_ENTRY();
         *stack_top = sar(uint256_t{*(instr_ptr + 1)}, *stack_top);
         MONAD_VM_FUSED_NEXT(3, 0);
     }
@@ -2473,6 +2685,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        MONAD_VM_TWIN_ENTRY();
         auto const mask_bits = static_cast<size_t>(*(instr_ptr + 1));
         // k / 64 selects the boundary word; its low k % 64 bits are ones.
         // Lower words are all ones, and higher words are zero.
@@ -2596,7 +2809,7 @@ namespace monad::vm::interpreter
                     stack_lower_bound,
                     stack_top + 2,
                     gas_remaining,
-                    instr_ptr MONAD_VM_TBL_ARG);
+                    MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
             }
             interpreter::push(stack_top, uint256_t{first_immediate});
             gas_remaining -= static_gas<traits, PUSH1>();
@@ -2611,12 +2824,14 @@ namespace monad::vm::interpreter
                     stack_top.next_slot() + 1 >= MONAD_VM_STACK_LIMIT)) {
                 MONAD_VM_MUST_TAIL return ctx.exit(Error);
             }
+            // The second PUSH1 two bytes further behind, modulo the copies.
+            constexpr unsigned second_push_lag = (traits::lag + 2) % lag_count;
             MONAD_VM_PREFIX_DISPATCH(
-                push1_prefix_offset,
+                push_prefix_offset(second_push_lag, 1),
                 *(instr_ptr + 4),
                 stack_top + 1,
                 gas_remaining,
-                instr_ptr + 2);
+                instr_ptr + 2 - second_push_lag);
         }
         else if constexpr (OP == PUSH1) {
             // Fuse PUSH1 <a> PUSH1 <b>, saving one dispatch.
@@ -2682,7 +2897,7 @@ namespace monad::vm::interpreter
                         MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
                     }
     #endif
-                    runtime::mload_at<traits>(
+                    runtime::mload_at<base_traits<traits>>(
                         &ctx, stack_top.next_slot(), memory_offset);
                     MONAD_VM_FUSED_NEXT(3, 1);
                 }
@@ -2699,7 +2914,7 @@ namespace monad::vm::interpreter
                         MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
                     }
     #endif
-                    runtime::mstore_at<traits>(
+                    runtime::mstore_at<base_traits<traits>>(
                         &ctx, memory_offset, &*stack_top);
                     MONAD_VM_FUSED_NEXT(3, -1);
                 }
@@ -3145,6 +3360,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        MONAD_VM_TWIN_ENTRY();
         alignas(8) static constexpr uint8_t limit_pattern[16] = {
             255,
             255,
@@ -3208,7 +3424,7 @@ namespace monad::vm::interpreter
         if (MONAD_UNLIKELY(gas_remaining < 0)) {
             MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
         }
-        runtime::mstore_at<traits>(
+        runtime::mstore_at<base_traits<traits>>(
             &ctx,
             runtime::Memory::Offset::unsafe_from(0x40),
             &free_memory_pointer);
@@ -3230,6 +3446,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        MONAD_VM_TWIN_ENTRY();
         static constexpr auto requirements = fused_requirements<
             traits,
             static_cast<compiler::EvmOpCode>(PUSH0 + N),
@@ -3390,7 +3607,7 @@ namespace monad::vm::interpreter
                         MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
                     }
     #endif
-                    runtime::mload_at<traits>(
+                    runtime::mload_at<base_traits<traits>>(
                         &ctx, stack_top.next_slot(), memory_offset);
                     MONAD_VM_FUSED_NEXT(4, 1);
                 }
@@ -3405,7 +3622,7 @@ namespace monad::vm::interpreter
                         MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
                     }
     #endif
-                    runtime::mstore_at<traits>(
+                    runtime::mstore_at<base_traits<traits>>(
                         &ctx, memory_offset, &*stack_top);
                     MONAD_VM_FUSED_NEXT(4, -1);
                 }
@@ -3448,6 +3665,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        MONAD_VM_TWIN_ENTRY();
         MONAD_VM_MUST_TAIL return push2_jump_at<traits>(
             ctx,
             MONAD_VM_DISPATCH_STATE_ARG,
@@ -3463,6 +3681,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        MONAD_VM_TWIN_ENTRY();
         MONAD_VM_MUST_TAIL return push2_jumpi_at<traits>(
             ctx,
             MONAD_VM_DISPATCH_STATE_ARG,
@@ -3500,11 +3719,11 @@ namespace monad::vm::interpreter
                 MONAD_VM_MUST_TAIL return ctx.exit(Error);
             }
             MONAD_VM_PREFIX_DISPATCH(
-                push1_prefix_offset,
+                push_prefix_offset(traits::lag, 1),
                 next_opcode,
                 stack_top,
                 gas_remaining,
-                instr_ptr);
+                instr_ptr - traits::lag);
         }
         else if constexpr (N == 1) {
             // A bitmap keeps the check cheap on every PUSH1; testing four
@@ -3548,7 +3767,7 @@ namespace monad::vm::interpreter
                         stack_lower_bound,
                         stack_top,
                         gas_remaining,
-                        instr_ptr MONAD_VM_TBL_ARG);
+                        MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
                 }
                 else {
                     MONAD_VM_MUST_TAIL return push1_sar<traits>(
@@ -3557,7 +3776,7 @@ namespace monad::vm::interpreter
                         stack_lower_bound,
                         stack_top,
                         gas_remaining,
-                        instr_ptr MONAD_VM_TBL_ARG);
+                        MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
                 }
                 // Advance instr_ptr by 3 bytes, keep the stack size unchanged,
                 // and call the next opcode handler.
@@ -3585,11 +3804,11 @@ namespace monad::vm::interpreter
             }
     #endif
             MONAD_VM_PREFIX_DISPATCH(
-                push2_prefix_offset,
+                push_prefix_offset(traits::lag, 2),
                 next_opcode,
                 stack_top,
                 gas_remaining,
-                instr_ptr);
+                instr_ptr - traits::lag);
         }
         // Non-slot callers retain separate twins to reduce register pressure.
         if constexpr (N == 2) {
@@ -3606,7 +3825,7 @@ namespace monad::vm::interpreter
                         stack_lower_bound,
                         stack_top,
                         gas_remaining,
-                        instr_ptr MONAD_VM_TBL_ARG);
+                        MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
                 }
                 MONAD_VM_MUST_TAIL return push2_jumpi<traits>(
                     ctx,
@@ -3614,7 +3833,7 @@ namespace monad::vm::interpreter
                     stack_lower_bound,
                     stack_top,
                     gas_remaining,
-                    instr_ptr MONAD_VM_TBL_ARG);
+                    MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
             }
         }
         // Check the full allocation suffix in a separate helper.
@@ -3627,7 +3846,7 @@ namespace monad::vm::interpreter
                     stack_lower_bound,
                     stack_top,
                     gas_remaining,
-                    instr_ptr MONAD_VM_TBL_ARG);
+                    MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
             }
         }
     #endif
@@ -3640,7 +3859,7 @@ namespace monad::vm::interpreter
                     stack_lower_bound,
                     stack_top,
                     gas_remaining,
-                    instr_ptr MONAD_VM_TBL_ARG);
+                    MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
             }
         }
 #endif
@@ -4025,11 +4244,11 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         static constexpr auto impls = std::tuple{
-            &runtime::log0<traits>,
-            &runtime::log1<traits>,
-            &runtime::log2<traits>,
-            &runtime::log3<traits>,
-            &runtime::log4<traits>,
+            &runtime::log0<base_traits<traits>>,
+            &runtime::log1<base_traits<traits>>,
+            &runtime::log2<base_traits<traits>>,
+            &runtime::log3<base_traits<traits>>,
+            &runtime::log4<base_traits<traits>>,
         };
 
         MONAD_VM_CHECKED_RUNTIME_CALL(LOG0 + N, std::get<N>(impls));
@@ -4044,7 +4263,8 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(CREATE, runtime::create<traits>);
+        MONAD_VM_CHECKED_RUNTIME_CALL(
+            CREATE, runtime::create<base_traits<traits>>);
 
         MONAD_VM_NEXT(CREATE);
     }
@@ -4055,7 +4275,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(CALL, runtime::call<traits>);
+        MONAD_VM_CHECKED_RUNTIME_CALL(CALL, runtime::call<base_traits<traits>>);
 
         MONAD_VM_NEXT(CALL);
     }
@@ -4066,7 +4286,8 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(CALLCODE, runtime::callcode<traits>);
+        MONAD_VM_CHECKED_RUNTIME_CALL(
+            CALLCODE, runtime::callcode<base_traits<traits>>);
 
         MONAD_VM_NEXT(CALLCODE);
     }
@@ -4078,7 +4299,7 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECKED_RUNTIME_CALL(
-            DELEGATECALL, runtime::delegatecall<traits>);
+            DELEGATECALL, runtime::delegatecall<base_traits<traits>>);
 
         MONAD_VM_NEXT(DELEGATECALL);
     }
@@ -4089,7 +4310,8 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(CREATE2, runtime::create2<traits>);
+        MONAD_VM_CHECKED_RUNTIME_CALL(
+            CREATE2, runtime::create2<base_traits<traits>>);
 
         MONAD_VM_NEXT(CREATE2);
     }
@@ -4100,7 +4322,8 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(STATICCALL, runtime::staticcall<traits>);
+        MONAD_VM_CHECKED_RUNTIME_CALL(
+            STATICCALL, runtime::staticcall<base_traits<traits>>);
 
         MONAD_VM_NEXT(STATICCALL);
     }
@@ -4176,7 +4399,7 @@ namespace monad::vm::interpreter
         fuzz_tstore_stack(
             ctx, stack_lower_bound, stack_top, MONAD_VM_CODE_VIEW.size());
         MONAD_VM_CHECKED_RUNTIME_CALL(
-            SELFDESTRUCT, runtime::selfdestruct<traits>);
+            SELFDESTRUCT, runtime::selfdestruct<base_traits<traits>>);
     }
 
     MONAD_VM_INLINE_INSTRUCTION_CALL void stop(

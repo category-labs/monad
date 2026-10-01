@@ -318,43 +318,58 @@ fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset"))
 }
 
-/// The linker script that lays out the interpreter's handler slots
-/// (category/vm/interpreter/execute.cpp): one per revision from BERLIN (8) to
-/// AMSTERDAM (15) and per opcode, 1 KiB each, the newest revision first and
-/// then in opcode order, so that a handler's address is `monad_vm_slots` plus
-/// its offset. Each slot starts with PUSH2/PUSH1 prefixes and an overflow
-/// exit, followed by the handler and optional fused pairs. Gaps contain nops.
-/// Linker assertions enforce placement; exceeding a slot fails the link.
+/// Lay out 4-KiB opcode slots, newest revision first. Six handler copies
+/// encode instruction-pointer lags 0..5, in address order 4, 5, 0, 1, 2, 3.
+/// Each has a 64-byte prefix region. Fused pairs and oversized handlers follow
+/// the slots. Linker assertions reject missing or misplaced entries; moving
+/// the location counter backwards rejects a copy that exceeds its region.
 fn zisk_slots_ld() -> String {
-    const SLOT: usize = 0x400;
-    // instruction_table.hpp's slot_prefix_size.
-    const SLOT_PREFIX_SIZE: usize = 0x40;
+    const SLOT: usize = 0x1000;
+    // Prefix-region offset, prefix-section suffix, and handler-section suffix.
+    // Keep these offsets in sync with instruction_table.hpp::lag_offset.
+    const COPIES: [(usize, &str, &str); 6] = [
+        (0, "_4", "4"),
+        (684, "_5", "5"),
+        (1368, "", ""),
+        (2048, "_1", "1"),
+        (2728, "_2", "2"),
+        (3412, "_3", "3"),
+    ];
+    const PREFIX_SIZE: usize = 0x40;
     let mut ld = String::from(
         "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
          FILL(0x13000000)\n        monad_vm_slots = .;\n",
     );
     for (rank, rev) in (8..=15).rev().enumerate() {
         for op in 0..256 {
-            let at = (rank * 256 + op) * SLOT;
-            let entry = at + SLOT_PREFIX_SIZE;
-            ld += &format!(
-                "        . = monad_vm_slots + {at:#x};\n        \
-                 KEEP(*(.monad_vm_lead.{rev:02}.{op:02x}))\n        \
-                 ASSERT(. > monad_vm_slots + {at:#x}, \
-                 \"monad_vm_slots: slot {rev:02}.{op:02x} has no landing\")\n        \
-                 . = monad_vm_slots + {entry:#x};\n        \
-                 KEEP(*(.monad_vm_slot.{rev:02}.{op:02x}))\n        \
-                 ASSERT(. > monad_vm_slots + {entry:#x}, \
-                 \"monad_vm_slots: slot {rev:02}.{op:02x} is empty\")\n        \
-                 ASSERT(monad_vm_slot_{rev:02}_{op:02x} == monad_vm_slots + {entry:#x}, \
-                 \"monad_vm_slots: handler {rev:02}.{op:02x} is not after its landing\")\n        \
-                 KEEP(*(.monad_vm_push1.{rev:02}.{op:02x}))\n        \
-                 KEEP(*(.monad_vm_push2.{rev:02}.{op:02x}))\n"
-            );
+            let slot_address = (rank * 256 + op) * SLOT;
+            for (copy_offset, prefix_suffix, handler_suffix) in COPIES {
+                let prefix_address = slot_address + copy_offset;
+                let handler_address = prefix_address + PREFIX_SIZE;
+                let symbol_suffix = if handler_suffix.is_empty() {
+                    String::new()
+                } else {
+                    format!("_{handler_suffix}")
+                };
+                ld += &format!(
+                    "        . = monad_vm_slots + {prefix_address:#x};\n        \
+                     KEEP(*(.monad_vm_lead{prefix_suffix}.{rev:02}.{op:02x}))\n        \
+                     ASSERT(. > monad_vm_slots + {prefix_address:#x}, \
+                     \"monad_vm_slots: slot {rev:02}.{op:02x}{symbol_suffix} has no landing\")\n        \
+                     . = monad_vm_slots + {handler_address:#x};\n        \
+                     KEEP(*(.monad_vm_slot{handler_suffix}.{rev:02}.{op:02x}))\n        \
+                     ASSERT(monad_vm_slot_{rev:02}_{op:02x}{symbol_suffix} == monad_vm_slots + {handler_address:#x}, \
+                     \"monad_vm_slots: handler {rev:02}.{op:02x}{symbol_suffix} is not after its landing\")\n"
+                );
+            }
         }
     }
+    // Fused pairs and oversized handlers live outside the fixed-size slots.
     ld += &format!(
-        "        . = monad_vm_slots + {:#x};\n    }}\n}} INSERT AFTER .text;\n",
+        "        . = monad_vm_slots + {:#x};\n        \
+         KEEP(*(.monad_vm_push1*))\n        \
+         KEEP(*(.monad_vm_push2*))\n        \
+         KEEP(*(.monad_vm_body*))\n    }}\n}} INSERT AFTER .text;\n",
         8 * 256 * SLOT
     );
     ld

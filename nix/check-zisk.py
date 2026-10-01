@@ -146,7 +146,7 @@ BRANCHES = {
 }
 FUNCTION = re.compile(r"^([0-9a-f]+) <(.+)>:$")
 INSTRUCTION = re.compile(r"^\s+([0-9a-f]+):\s+([0-9a-f]{4,8})\s+(\S+)(?:\s+(.*))?$")
-MANUAL_JUMP = re.compile(r"monad_vm_manual_jump_(prefix)_\d+$")
+MANUAL_JUMP = re.compile(r"monad_vm_manual_jump_(prefix|lag)_\d+$")
 STACK_SLOT = re.compile(r"^(-?(?:0x[0-9a-f]+|\d+))\(sp\)$")
 CALLEE_SAVED = {f"s{n}" for n in range(12)}
 # Instructions whose first operand is not a destination register.
@@ -159,7 +159,7 @@ NO_DESTINATION = BRANCHES | {
 def check_hand_made_jumps(disassembly: str, marked_jumps, function_sizes=None) -> int:
     """Check marked tail jumps for open frames and unrestored saved registers.
 
-    Prefix dispatch marks its own jalr. GCC does not insert a
+    Prefix and lag dispatch mark their own jalr. GCC does not insert a
     tail-call epilogue for these instructions. Follow branches, merging all incoming states: sp must
     return to its entry value and s0-s11 must retain their caller's values.
     Recognize restores only from matching stack saves. This is a code-drift
@@ -293,12 +293,14 @@ def check_hand_made_jumps(disassembly: str, marked_jumps, function_sizes=None) -
 def manual_jump_addresses(symbols):
     # Local assembly labels have an address but need not have a symbol size.
     sites = set()
+    families = set()
     for line in symbols.splitlines():
         fields = line.split()
-        if fields and MANUAL_JUMP.fullmatch(fields[-1]):
+        if fields and (match := MANUAL_JUMP.fullmatch(fields[-1])):
             sites.add(int(fields[0], 16))
-    if not sites:
-        fail("ELF is missing manual jump markers for prefix dispatch")
+            families.add(match[1])
+    if families != {"prefix", "lag"}:
+        fail("ELF is missing manual jump markers for prefix or lag dispatch")
     return sites
 
 

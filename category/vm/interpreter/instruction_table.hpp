@@ -1231,12 +1231,208 @@ namespace monad::vm::interpreter
         MONAD_VM_NEXT(CALLER);
     }
 
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+    // Test whether the call transfers zero wei; byte order does not matter.
+    [[gnu::always_inline]] inline bool
+    call_value_is_zero(runtime::Context const &ctx) noexcept
+    {
+        // Separate 8-byte reads avoid staging a 32-byte DMA copy on the stack.
+        unsigned char const *const value_bytes = ctx.env.value.bytes;
+        uint64_t value_word_0, value_word_1, value_word_2, value_word_3;
+        __builtin_memcpy(&value_word_0, value_bytes, 8);
+        __builtin_memcpy(&value_word_1, value_bytes + 8, 8);
+        __builtin_memcpy(&value_word_2, value_bytes + 16, 8);
+        __builtin_memcpy(&value_word_3, value_bytes + 24, 8);
+        return (value_word_0 | value_word_1 | value_word_2 | value_word_3) == 0;
+    }
+
+    // Recognize a via-IR ABI check with a non-taken error branch:
+    //   PUSH0 (or PUSH1 <minimum>) CALLDATASIZE PUSH1 3 NOT ADD SLT
+    //   PUSH2 <revert> JUMPI
+    // Return its bytecode length when enough argument bytes follow the
+    // 4-byte selector; otherwise return zero. Needs three temporary slots.
+    template <Traits traits>
+    [[gnu::always_inline]] inline size_t ir_bound_length(
+        runtime::Context const &ctx, uint8_t const *const bound_code) noexcept
+    {
+        bool const push0 = bound_code[0] == static_cast<std::uint8_t>(PUSH0);
+        if (push0 && traits::evm_rev() < MONAD_ETH_SHANGHAI) {
+            return 0;
+        }
+        if (!push0 && bound_code[0] != static_cast<std::uint8_t>(PUSH1)) {
+            return 0;
+        }
+        size_t const minimum_argument_bytes = push0 ? 0 : bound_code[1];
+        auto const *const check_code = bound_code + (push0 ? 1 : 2);
+        if (!(check_code[0] == static_cast<std::uint8_t>(CALLDATASIZE) &&
+              check_code[1] == static_cast<std::uint8_t>(PUSH1) &&
+              check_code[2] == 3 &&
+              check_code[3] == static_cast<std::uint8_t>(NOT) &&
+              check_code[4] == static_cast<std::uint8_t>(ADD) &&
+              check_code[5] == static_cast<std::uint8_t>(SLT) &&
+              check_code[6] == static_cast<std::uint8_t>(PUSH2) &&
+              check_code[9] == static_cast<std::uint8_t>(JUMPI))) {
+            return 0;
+        }
+        uint64_t const calldata_size = ctx.env.input_data_size;
+        if (calldata_size < 4 || calldata_size - 4 < minimum_argument_bytes) {
+            return 0;
+        }
+        return static_cast<size_t>(check_code - bound_code) + 10;
+    }
+
+    // Legacy Solidity's non-payable check:
+    //   CALLVALUE DUP1 ISZERO PUSH2 <ok> JUMPI PUSH1 0 DUP1 REVERT
+    //   ok: JUMPDEST POP                     (or PUSH0 DUP1 REVERT)
+    // With zero value, jump over REVERT and remove the temporary CALLVALUE.
+    // Unsupported patterns use ordinary dispatch.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void callvalue_nonpayable(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const *const instructions = instr_ptr;
+        // PUSH0 occupies one byte less than PUSH1 0, shifting the success
+        // label.
+        size_t success_offset;
+        bool matches_revert_tail;
+        if (opcode_at_is(instructions, 7, PUSH0)) {
+            success_offset = 10;
+            matches_revert_tail = opcode_at_is(instructions, 8, DUP1) &&
+                                  opcode_at_is(instructions, 9, REVERT) &&
+                                  opcode_at_is(instructions, 10, JUMPDEST) &&
+                                  opcode_at_is(instructions, 11, POP);
+        }
+        else {
+            success_offset = 11;
+            matches_revert_tail = opcode_at_is(instructions, 7, PUSH1) &&
+                                  instructions[8] == 0 &&
+                                  opcode_at_is(instructions, 9, DUP1) &&
+                                  opcode_at_is(instructions, 10, REVERT) &&
+                                  opcode_at_is(instructions, 11, JUMPDEST) &&
+                                  opcode_at_is(instructions, 12, POP);
+        }
+        size_t const jump_destination = detail::load_be_k<2>(instructions + 4);
+        size_t const callvalue_offset =
+            static_cast<size_t>(instructions - MONAD_VM_CODE_VIEW.code());
+        // The full pattern proves this destination is a JUMPDEST instruction,
+        // so no bitmap lookup is needed.
+        if (MONAD_UNLIKELY(!(
+                matches_revert_tail && opcode_at_is(instructions, 2, ISZERO) &&
+                opcode_at_is(instructions, 3, PUSH2) &&
+                opcode_at_is(instructions, 6, JUMPI) &&
+                jump_destination == callvalue_offset + success_offset &&
+                stack_top.next_slot() <= MONAD_VM_STACK_LIMIT - 3 &&
+                call_value_is_zero(ctx)))) {
+            // Execute CALLVALUE directly to avoid re-entering this helper.
+            MONAD_VM_CHECK(CALLVALUE);
+            push(stack_top, load_be<uint256_t>(ctx.env.value));
+            MONAD_VM_NEXT(CALLVALUE);
+        }
+        // Charge through POP before checking gas: this path has no side
+        // effects.
+        gas_remaining -= static_gas<
+            traits,
+            CALLVALUE,
+            DUP1,
+            ISZERO,
+            PUSH2,
+            JUMPI,
+            JUMPDEST,
+            POP>();
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+        }
+        MONAD_VM_FUSED_NEXT(success_offset + 2, 0);
+    }
+
+    // Fuse CALLVALUE PUSH2 <revert> JUMPI when the call transfers zero wei.
+    // Also skip a recognized ABI length check when enough arguments exist.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void callvalue_ir(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const *const instructions = instr_ptr;
+        if (MONAD_UNLIKELY(
+                !(instructions[4] == static_cast<std::uint8_t>(JUMPI) &&
+                  stack_top.next_slot() <= MONAD_VM_STACK_LIMIT - 3 &&
+                  call_value_is_zero(ctx)))) {
+            // Execute CALLVALUE directly to avoid re-entering this helper.
+            MONAD_VM_CHECK(CALLVALUE);
+            push(stack_top, load_be<uint256_t>(ctx.env.value));
+            MONAD_VM_NEXT(CALLVALUE);
+        }
+        // These pure instructions defer the gas check to the next checkpoint.
+        gas_remaining -= static_gas<traits, CALLVALUE, PUSH2, JUMPI>();
+        size_t const calldata_check_bytecode_length =
+            ir_bound_length<traits>(ctx, instructions + 5);
+        if (calldata_check_bytecode_length != 0) {
+            gas_remaining -= instructions[5] == static_cast<std::uint8_t>(PUSH0)
+                                 ? static_gas<
+                                       traits,
+                                       PUSH0,
+                                       CALLDATASIZE,
+                                       PUSH1,
+                                       NOT,
+                                       ADD,
+                                       SLT,
+                                       PUSH2,
+                                       JUMPI>()
+                                 : static_gas<
+                                       traits,
+                                       PUSH1,
+                                       CALLDATASIZE,
+                                       PUSH1,
+                                       NOT,
+                                       ADD,
+                                       SLT,
+                                       PUSH2,
+                                       JUMPI>();
+        }
+        instr_ptr += 5 + calldata_check_bytecode_length;
+        MONAD_VM_LAUNDER(instr_ptr);
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+            ctx,
+            MONAD_VM_DISPATCH_STATE_ARG,
+            stack_lower_bound,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+#endif
+
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void callvalue(
         runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+        // Solidity reads the call's value for its non-payable test, each
+        // generator's in a twin: DUP1 follows in the legacy one, PUSH2 in
+        // the via-IR one.
+        if (instr_ptr[1] == static_cast<std::uint8_t>(DUP1)) {
+            MONAD_VM_MUST_TAIL return callvalue_nonpayable<traits>(
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        if (instr_ptr[1] == static_cast<std::uint8_t>(PUSH2)) {
+            MONAD_VM_MUST_TAIL return callvalue_ir<traits>(
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+#endif
         MONAD_VM_CHECK(CALLVALUE);
         push(stack_top, load_be<uint256_t>(ctx.env.value));
 

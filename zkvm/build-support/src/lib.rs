@@ -434,17 +434,29 @@ fn manifest_dir() -> PathBuf {
 
 /// The linker script that lays out the interpreter's handler slots
 /// (category/vm/interpreter/execute.cpp): one per revision from BERLIN (8) to
-/// AMSTERDAM (15) and per opcode, 1 KiB each, the newest revision first and
+/// AMSTERDAM (15) and per opcode, 4 KiB each, the newest revision first and
 /// then in opcode order, so that a handler's address is `monad_vm_slots` plus
-/// its offset. A slot holds where PUSH1 and PUSH2 land on the opcode in its
-/// first LEAD bytes, the handler right after them, and last the pairs the
-/// landings jump to. The gaps are nops. A landing longer than LEAD or a slot
-/// that outgrows its kilobyte fails the link, since the location counter
-/// cannot move backwards, and so does a slot left without a landing or a
-/// handler, or a handler that does not start right after its landing.
+/// its offset. A slot holds the handler's seven copies (instruction_table.hpp's
+/// lag_offset), copies 4, 5, 6, 0, 1, 2 and 3 in address order; each opens with
+/// LEAD bytes where PUSH1 and PUSH2 land on the opcode, then the copy. The
+/// pairs the landings jump to come past every slot, and so do the handlers
+/// too large for a copy, whose copies jump there. The gaps are nops. A
+/// landing longer than LEAD or a copy that outgrows its region fails the link,
+/// since the location counter cannot move backwards, and so does a region left
+/// without a landing, or a copy that does not start right after its landing.
 fn zisk_slots_ld() -> String {
-    const SLOT: usize = 0x400;
-    // instruction_table.hpp's slot_lead.
+    const SLOT: usize = 0x1000;
+    // instruction_table.hpp's copies, in address order: where each copy's
+    // 64-byte lead starts in its slot, its sections' suffix, and the copy's.
+    const COPIES: [(usize, &str, &str); 7] = [
+        (0, "_4", "4"),
+        (584, "_5", "5"),
+        (1168, "_6", "6"),
+        (1752, "", ""),
+        (2336, "_1", "1"),
+        (2920, "_2", "2"),
+        (3504, "_3", "3"),
+    ];
     const LEAD: usize = 0x40;
     let mut ld = String::from(
         "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
@@ -453,25 +465,34 @@ fn zisk_slots_ld() -> String {
     for (rank, rev) in (8..=15).rev().enumerate() {
         for op in 0..256 {
             let at = (rank * 256 + op) * SLOT;
-            let entry = at + LEAD;
-            ld += &format!(
-                "        . = monad_vm_slots + {at:#x};\n        \
-                 KEEP(*(.monad_vm_lead.{rev:02}.{op:02x}))\n        \
-                 ASSERT(. > monad_vm_slots + {at:#x}, \
-                 \"monad_vm_slots: slot {rev:02}.{op:02x} has no landing\")\n        \
-                 . = monad_vm_slots + {entry:#x};\n        \
-                 KEEP(*(.monad_vm_slot.{rev:02}.{op:02x}))\n        \
-                 ASSERT(. > monad_vm_slots + {entry:#x}, \
-                 \"monad_vm_slots: slot {rev:02}.{op:02x} is empty\")\n        \
-                 ASSERT(monad_vm_slot_{rev:02}_{op:02x} == monad_vm_slots + {entry:#x}, \
-                 \"monad_vm_slots: handler {rev:02}.{op:02x} is not after its landing\")\n        \
-                 KEEP(*(.monad_vm_push1.{rev:02}.{op:02x}))\n        \
-                 KEEP(*(.monad_vm_push2.{rev:02}.{op:02x}))\n"
-            );
+            for (start, sections, copy) in COPIES {
+                let lead = at + start;
+                let entry = lead + LEAD;
+                let symbol = if copy.is_empty() {
+                    String::new()
+                } else {
+                    format!("_{copy}")
+                };
+                ld += &format!(
+                    "        . = monad_vm_slots + {lead:#x};\n        \
+                     KEEP(*(.monad_vm_lead{sections}.{rev:02}.{op:02x}))\n        \
+                     ASSERT(. > monad_vm_slots + {lead:#x}, \
+                     \"monad_vm_slots: slot {rev:02}.{op:02x}{symbol} has no landing\")\n        \
+                     . = monad_vm_slots + {entry:#x};\n        \
+                     KEEP(*(.monad_vm_slot{copy}.{rev:02}.{op:02x}))\n        \
+                     ASSERT(monad_vm_slot_{rev:02}_{op:02x}{symbol} == monad_vm_slots + {entry:#x}, \
+                     \"monad_vm_slots: handler {rev:02}.{op:02x}{symbol} is not after its landing\")\n"
+                );
+            }
         }
     }
+    // The pairs the landings jump to, and the handlers too large for a copy,
+    // past every slot.
     ld += &format!(
-        "        . = monad_vm_slots + {:#x};\n    }}\n}} INSERT AFTER .text;\n",
+        "        . = monad_vm_slots + {:#x};\n        \
+         KEEP(*(.monad_vm_push1*))\n        \
+         KEEP(*(.monad_vm_push2*))\n        \
+         KEEP(*(.monad_vm_body*))\n    }}\n}} INSERT AFTER .text;\n",
         8 * 256 * SLOT
     );
     ld

@@ -246,6 +246,29 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
     endif()
 
+    # Lever: build each contract's JUMPDEST bitmap in software rather than with ZisK's
+    # precompile. A state machine a proof uses costs it at least one whole instance, however
+    # little the block asks of it, and a block of 1 to 250 L2 transactions plans the same 18
+    # instances -- JumpDest among them, for an analysis of the few contracts the L2 runs. The
+    # software scan moves that into Main, which such a block leaves mostly empty. On by default
+    # in an L2 build only: the official profile requires the precompile.
+    if(MONAD_ZKVM_L2)
+        set(_jumpdest_software_default ON)
+    else()
+        set(_jumpdest_software_default OFF)
+    endif()
+    option(MONAD_ZKVM_JUMPDEST_SOFTWARE
+           "build JUMPDEST bitmaps in software instead of with ZisK's precompile"
+           ${_jumpdest_software_default})
+    if(MONAD_ZKVM_JUMPDEST_SOFTWARE)
+        if(MONAD_ZKVM_OFFICIAL_PROFILE)
+            message(FATAL_ERROR
+                "MONAD_ZKVM_JUMPDEST_SOFTWARE drops the JUMPDEST precompile the official "
+                "profile requires")
+        endif()
+        add_compile_definitions(MONAD_ZKVM_JUMPDEST_SOFTWARE)
+    endif()
+
     # Expose the backend as a compile definition, for the places where the two
     # diverge: the ripemd160 accelerators place the digest at opposite ends of
     # their 32-byte output word, so the precompile shim normalises them

@@ -789,6 +789,7 @@ namespace monad::vm::interpreter
     #define MONAD_VM_RELAY_OF_04 ~, RELAY // DIV
     #define MONAD_VM_RELAY_OF_06 ~, RELAY // MOD
     #define MONAD_VM_RELAY_OF_08 ~, RELAY // ADDMOD
+    #define MONAD_VM_RELAY_OF_0a ~, RELAY // EXP
     // These bodies exceed a copy region with the current runtime inlining.
     #define MONAD_VM_RELAY_OF_37 ~, RELAY // CALLDATACOPY
     #define MONAD_VM_RELAY_OF_39 ~, RELAY // CODECOPY
@@ -888,6 +889,7 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_RELAY_OF_3e
     #undef MONAD_VM_RELAY_OF_55
     #undef MONAD_VM_RELAY_OF_5e
+    #undef MONAD_VM_RELAY_OF_0a
     #undef MONAD_VM_RELAY_OF_08
     #undef MONAD_VM_RELAY_OF_06
     #undef MONAD_VM_RELAY_OF_04

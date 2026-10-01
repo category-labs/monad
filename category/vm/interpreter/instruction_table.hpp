@@ -33,6 +33,7 @@
 #include <category/vm/utils/debug.hpp>
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -1219,7 +1220,39 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(EXP, runtime::exp<base_traits<traits>>);
+        MONAD_VM_CHECK(EXP);
+#if defined(MONAD_ZKVM_ZISK)
+        auto const &base = stack_top[0];
+        auto const &exponent = stack_top[-1];
+        uint64_t const base_word = base[0];
+        uint64_t const exponent_word = exponent[0];
+        if ((base[1] | base[2] | base[3] | exponent[1] | exponent[2] |
+             exponent[3]) == 0 &&
+            base_word > 1 && std::has_single_bit(base_word) &&
+            exponent_word < 256) {
+            // Only nonzero exponents here have a significant byte to charge.
+            if (exponent_word != 0) {
+                gas_remaining -=
+                    runtime::exp_dynamic_gas_cost_multiplier<traits>();
+                if (MONAD_UNLIKELY(gas_remaining < 0)) {
+                    MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+                }
+            }
+            // (2^s)^e has only bit s*e set. Bits beyond 255 vanish modulo
+            // 2^256.
+            uint64_t const result_bit =
+                static_cast<uint64_t>(std::countr_zero(base_word)) *
+                exponent_word;
+            auto &result = stack_top[-1];
+            result = uint256_t{0};
+            if (result_bit < 256) {
+                result[result_bit / 64] = uint64_t{1} << (result_bit % 64);
+            }
+            MONAD_VM_NEXT(EXP);
+        }
+#endif
+        call_runtime(
+            runtime::exp<base_traits<traits>>, ctx, stack_top, gas_remaining);
 
         MONAD_VM_NEXT(EXP);
     }

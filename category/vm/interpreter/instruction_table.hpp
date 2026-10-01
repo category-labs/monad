@@ -1231,12 +1231,222 @@ namespace monad::vm::interpreter
         MONAD_VM_NEXT(CALLDATALOAD);
     }
 
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+    // Aligned storage for the three selector-extraction patterns. Only the
+    // first 5, 6 or 41 bytes are compared; trailing padding is ignored.
+    alignas(8) inline constexpr unsigned char selector_push0_pattern[8] = {
+        static_cast<unsigned char>(PUSH0),
+        static_cast<unsigned char>(CALLDATALOAD),
+        static_cast<unsigned char>(PUSH1),
+        0xe0,
+        static_cast<unsigned char>(SHR)};
+    alignas(8) inline constexpr unsigned char selector_push1_pattern[8] = {
+        static_cast<unsigned char>(PUSH1),
+        0,
+        static_cast<unsigned char>(CALLDATALOAD),
+        static_cast<unsigned char>(PUSH1),
+        0xe0,
+        static_cast<unsigned char>(SHR)};
+    alignas(8) inline constexpr unsigned char selector_div_pattern[48] = {
+        static_cast<unsigned char>(PUSH1),
+        0,
+        static_cast<unsigned char>(CALLDATALOAD),
+        static_cast<unsigned char>(PUSH29),
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        static_cast<unsigned char>(SWAP1),
+        static_cast<unsigned char>(DIV),
+        static_cast<unsigned char>(PUSH4),
+        0xff,
+        0xff,
+        0xff,
+        0xff,
+        static_cast<unsigned char>(AND)};
+
+    // Compare N bytecode bytes with a constant pattern using ZisK's DMA
+    // comparator (CSR 0x814). The following instruction encodes the length.
+    template <size_t N, size_t M>
+    [[gnu::always_inline]] inline bool code_matches(
+        uint8_t const *const instructions,
+        unsigned char const (&pattern)[M]) noexcept
+    {
+        static_assert(N <= M);
+        uint64_t mismatch;
+        asm(".option push\n\t"
+            ".option arch, +zicsr\n\t"
+            "csrrs %0, 0x814, %1\n\t"
+            "addi x0, %2, %5\n\t"
+            ".option pop"
+            : "=&r"(mismatch)
+            : "r"(instructions),
+              "r"(pattern),
+              "m"(*reinterpret_cast<uint8_t const(*)[N]>(instructions)),
+              "m"(pattern),
+              "i"(N));
+        return mismatch == 0;
+    }
+
+    // These fusions use deferred gas checks; eager mode keeps per-opcode
+    // dispatch. Recognize one of these selector extractions:
+    //
+    //     PUSH1 0 CALLDATALOAD PUSH1 0xe0 SHR
+    //     PUSH0 CALLDATALOAD PUSH1 0xe0 SHR
+    //     PUSH1 0 CALLDATALOAD PUSH29 1 << 224 SWAP1 DIV PUSH4 0xffffffff AND
+    //
+    // Charge its gas, push the first four calldata bytes and return the
+    // bytecode length. Return zero without changes for an unknown pattern.
+    // The caller guarantees four calldata bytes and room for two stack slots.
+    template <Traits traits>
+    [[gnu::always_inline]] inline size_t push_selector(
+        runtime::Context const &ctx, uint8_t const *const extraction_code,
+        StackTop const stack_top, int64_t &gas_remaining)
+    {
+        size_t extraction_length = 0;
+        if (traits::evm_rev() >= MONAD_ETH_SHANGHAI &&
+            opcode_at_is(extraction_code, 0, PUSH0)) {
+            if (code_matches<5>(extraction_code, selector_push0_pattern)) {
+                gas_remaining -=
+                    static_gas<traits, PUSH0, CALLDATALOAD, PUSH1, SHR>();
+                extraction_length = 5;
+            }
+        }
+        else if (opcode_at_is(extraction_code, 0, PUSH1)) {
+            if (code_matches<6>(extraction_code, selector_push1_pattern)) {
+                gas_remaining -=
+                    static_gas<traits, PUSH1, CALLDATALOAD, PUSH1, SHR>();
+                extraction_length = 6;
+            }
+            // Offset 33 is safe with the code's 33-byte zero padding. A
+            // nonzero SWAP1 there guarantees enough real code for the 41-byte
+            // comparison to remain within the padded allocation.
+            else if (
+                opcode_at_is(extraction_code, 33, SWAP1) &&
+                code_matches<41>(extraction_code, selector_div_pattern)) {
+                gas_remaining -= static_gas<
+                    traits,
+                    PUSH1,
+                    CALLDATALOAD,
+                    PUSH29,
+                    SWAP1,
+                    DIV,
+                    PUSH4,
+                    AND>();
+                extraction_length = 41;
+            }
+        }
+        if (extraction_length != 0) {
+            stack_top[1] = uint256_t{detail::load_be_k<4>(ctx.env.input_data)};
+        }
+        return extraction_length;
+    }
+
+    // Fuse the calldata-size check with an optional selector extraction:
+    //
+    //     CALLDATASIZE LT PUSH2 <fallback> JUMPI          (not taken)
+    //     CALLDATASIZE LT ISZERO PUSH2 <dispatch> JUMPI   (taken)
+    //
+    // Requires 4 on the stack and at least four calldata bytes. Consume the
+    // 4, then extract the selector if the following code matches a known form.
+    // Otherwise execute CALLDATASIZE here and resume ordinary dispatch.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void calldata_selector(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const *const instructions = instr_ptr;
+        bool const falls_through = opcode_at_is(instructions, 2, PUSH2) &&
+                                   opcode_at_is(instructions, 5, JUMPI);
+        bool const jumps_to_dispatch = opcode_at_is(instructions, 2, ISZERO) &&
+                                       opcode_at_is(instructions, 3, PUSH2) &&
+                                       opcode_at_is(instructions, 6, JUMPI);
+        if (MONAD_UNLIKELY(!(
+                (falls_through || jumps_to_dispatch) &&
+                ctx.env.input_data_size >= 4 &&
+                stack_holds<1>(stack_top, stack_lower_bound) &&
+                stack_top.next_slot() < MONAD_VM_STACK_LIMIT &&
+                stack_top[0][0] == 4 &&
+                (stack_top[0][1] | stack_top[0][2] | stack_top[0][3]) == 0))) {
+            // Execute CALLDATASIZE directly to avoid re-entering this helper.
+            MONAD_VM_CHECK(CALLDATASIZE);
+            push(stack_top, ctx.env.input_data_size);
+            MONAD_VM_NEXT(CALLDATASIZE);
+        }
+        // A taken jump checks gas at JUMPDEST; otherwise the next checkpoint
+        // does.
+        uint8_t const *extraction_code;
+        if (falls_through) {
+            gas_remaining -=
+                static_gas<traits, CALLDATASIZE, LT, PUSH2, JUMPI>();
+            extraction_code = instructions + 6;
+        }
+        else {
+            gas_remaining -=
+                static_gas<traits, CALLDATASIZE, LT, ISZERO, PUSH2, JUMPI>();
+            extraction_code =
+                fused_branch(ctx, instructions + 2, true, gas_remaining);
+        }
+        size_t const extraction_length = push_selector<traits>(
+            ctx, extraction_code, stack_top - 1, gas_remaining);
+        instr_ptr = extraction_code + extraction_length;
+        MONAD_VM_LAUNDER(instr_ptr);
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+            ctx,
+            MONAD_VM_DISPATCH_STATE_ARG,
+            stack_lower_bound,
+            stack_top - (extraction_length == 0 ? 1 : 0),
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+
+#endif
+
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void calldatasize(
         runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+        // Recognize the selector prologue when LT follows CALLDATASIZE.
+        if (instr_ptr[1] == static_cast<std::uint8_t>(LT)) {
+            MONAD_VM_MUST_TAIL return calldata_selector<traits>(
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+
+#endif
         MONAD_VM_CHECK(CALLDATASIZE);
         push(stack_top, ctx.env.input_data_size);
 

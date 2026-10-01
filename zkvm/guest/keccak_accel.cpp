@@ -320,14 +320,20 @@ static void keccak256_one_block(
 // same way without filing it. `First`: the sponge's first block, whose
 // capacity is zero, so a miss copies the rate alone -- the slot's `out` is
 // zero too, nothing writing it before the slot is published. The spare's is
-// not, and it gets the whole state.
-template <bool First>
+// not, and it gets the whole state. Without `Lookup` the pre-state is filed and
+// permuted without the hint request: the miss a caller knows it has.
+//
+// A miss returns the slot's own `out`, `pre + KECCAKF_LANES`, and a hit an
+// earlier entry's: the caller tells the two apart by that address.
+template <bool First, bool Lookup = true>
 static inline uint64_t const *keccakf_memo_permute(uint64_t *const pre)
 {
-    uint64_t const index = fcall_get_keccakf_index(pre);
-    if (index < keccakf_memo_used &&
-        keccakf_state_eq(keccakf_memo[index].in, pre)) {
-        return keccakf_memo[index].out;
+    if constexpr (Lookup) {
+        uint64_t const index = fcall_get_keccakf_index(pre);
+        if (index < keccakf_memo_used &&
+            keccakf_state_eq(keccakf_memo[index].in, pre)) {
+            return keccakf_memo[index].out;
+        }
     }
     KeccakfEntry &e = keccakf_memo[keccakf_memo_used];
     if (keccakf_memo_used == KECCAKF_MEMO_ENTRIES) {
@@ -398,13 +404,36 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
     len -= RATE;
     uint64_t const *post = keccakf_memo_permute<true>(pre);
 
-    while (len >= RATE) {
+    // From the first miss, every later pre-state of this input is new as well:
+    // a block xors into the rate alone, so one of them could be filed only if an
+    // earlier permutation's output had the capacity of this one's, whose input
+    // was never filed. The blocks after a miss are filed without the hint
+    // request, three steps and a priced range test each: two in three of the
+    // sponge's requests.
+    bool look = post != pre + KECCAKF_LANES;
+    while (look && len >= RATE) {
         pre = keccakf_memo[keccakf_memo_used].in;
+        // Opaque, so that the lanes are reached at offsets from it: seen
+        // through, gcc forms each lane's address from the table's base in a
+        // register of its own, ten of them saved and restored on entry.
+        asm("" : "+r"(pre));
         for (size_t i = 0; i < WORDS; ++i) {
             pre[i] = post[i] ^ load64(p + 8 * i);
         }
         std::memcpy(pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
         post = keccakf_memo_permute<false>(pre);
+        look = post != pre + KECCAKF_LANES;
+        p += RATE;
+        len -= RATE;
+    }
+    while (len >= RATE) {
+        pre = keccakf_memo[keccakf_memo_used].in;
+        asm("" : "+r"(pre));
+        for (size_t i = 0; i < WORDS; ++i) {
+            pre[i] = post[i] ^ load64(p + 8 * i);
+        }
+        std::memcpy(pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
+        post = keccakf_memo_permute<false, false>(pre);
         p += RATE;
         len -= RATE;
     }
@@ -478,7 +507,8 @@ lanes0:
     std::memcpy(
         pre + whole + 1, post + whole + 1, (KECCAKF_LANES - 1 - whole) * 8);
     pre[16] ^= uint64_t{0x80} << 56;
-    post = keccakf_memo_permute<false>(pre);
+    post = look ? keccakf_memo_permute<false>(pre)
+                : keccakf_memo_permute<false, false>(pre);
     std::memcpy(out, post, 32);
 
     if (pre == keccakf_memo[keccakf_memo_used].in) {

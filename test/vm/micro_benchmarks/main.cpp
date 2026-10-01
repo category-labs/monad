@@ -660,8 +660,7 @@ static std::vector<EvmBuilder<traits>> operator*(
 
 static uint256_t rand_uint256()
 {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
+    static std::mt19937 gen{};
     static std::uniform_int_distribution<uint64_t> d(
         0, std::numeric_limits<uint64_t>::max());
     return {d(gen), d(gen), d(gen), d(gen)};

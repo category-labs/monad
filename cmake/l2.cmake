@@ -56,6 +56,15 @@ set(MONAD_ZKVM_L2_CIPHERS ecdh-poseidon2 plaintext)
 # header does not hold, and halts.
 set(MONAD_ZKVM_L2_TRIE_HASHES keccak poseidon2)
 
+# MONAD_ZKVM_L2_SIGNATURE_HASH, the third: the hashes the chain's signatures are
+# bound with (category/execution/ethereum/core/signature_hash.hpp) -- the digest
+# an ECDSA signature signs and the hash that turns the key it recovers into an
+# address. `keccak` is Ethereum's, and what a stock wallet signs; `poseidon2`
+# takes both off Keccak-f, for a signer built for this chain. Getting it wrong
+# proves nothing false: a transaction signed the other way recovers to an
+# account that holds nothing, and fails as one.
+set(MONAD_ZKVM_L2_SIGNATURE_HASHES keccak poseidon2)
+
 set(MONAD_ZKVM_L2_REQUIRED
     MONAD_ZKVM_L2_CHAIN_ID
     MONAD_ZKVM_L2_NAMESPACE_ID
@@ -161,6 +170,15 @@ function(monad_l2_compile_definitions)
             "MONAD_ZKVM_L2_TRIE_HASH='${MONAD_ZKVM_L2_TRIE_HASH}' is not a trie "
             "hash this tree implements; known: ${_known}.")
   endif()
+  if(NOT DEFINED MONAD_ZKVM_L2_SIGNATURE_HASH)
+    set(MONAD_ZKVM_L2_SIGNATURE_HASH "keccak")
+  endif()
+  if(NOT MONAD_ZKVM_L2_SIGNATURE_HASH IN_LIST MONAD_ZKVM_L2_SIGNATURE_HASHES)
+    string(REPLACE ";" ", " _known "${MONAD_ZKVM_L2_SIGNATURE_HASHES}")
+    message(FATAL_ERROR
+            "MONAD_ZKVM_L2_SIGNATURE_HASH='${MONAD_ZKVM_L2_SIGNATURE_HASH}' is "
+            "not a signature hash this tree implements; known: ${_known}.")
+  endif()
   if(NOT MONAD_ZKVM_L2_CIPHER IN_LIST MONAD_ZKVM_L2_CIPHERS)
     string(REPLACE ";" ", " _known "${MONAD_ZKVM_L2_CIPHERS}")
     message(FATAL_ERROR
@@ -200,6 +218,7 @@ function(monad_l2_compile_definitions)
   string(TOUPPER "${MONAD_ZKVM_L2_CIPHER}" _cipher_upper)
   string(REPLACE "-" "_" _cipher_macro "${_cipher_upper}")
   string(TOUPPER "${MONAD_ZKVM_L2_TRIE_HASH}" _trie_hash_macro)
+  string(TOUPPER "${MONAD_ZKVM_L2_SIGNATURE_HASH}" _signature_hash_macro)
 
   # The address and the x-coordinate arrive as user-defined literals, so the
   # header needs no hex parser of its own.
@@ -207,6 +226,7 @@ function(monad_l2_compile_definitions)
     MONAD_ZKVM_L2
     MONAD_L2_CIPHER_${_cipher_macro}
     MONAD_L2_TRIE_HASH_${_trie_hash_macro}
+    MONAD_L2_SIGNATURE_HASH_${_signature_hash_macro}
     MONAD_L2_CHAIN_ID=${MONAD_ZKVM_L2_CHAIN_ID}
     MONAD_L2_NAMESPACE_ID=${MONAD_ZKVM_L2_NAMESPACE_ID}
     MONAD_L2_REVISION=${MONAD_ZKVM_L2_REVISION}

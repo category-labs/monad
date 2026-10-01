@@ -157,6 +157,42 @@ namespace monad::vm::interpreter
                 itbl);                                                         \
         }
 
+    // PUSH1's and PUSH2's pairs both: push1_then's and push2_then's.
+    #define MONAD_VM_LEAD_PAIRS(REV, NAME, OP)                                 \
+        MONAD_VM_LEAD_ASM(                                                     \
+            NAME,                                                              \
+            OP,                                                                \
+            MONAD_VM_HEAD2_JUMP(NAME, OP),                                     \
+            MONAD_VM_HEAD1_JUMP(NAME, OP))                                     \
+        MONAD_VM_HANDLER_DECL(                                                 \
+            NAME##_##OP, _push1, ".monad_vm_push1." #NAME "." #OP)             \
+        {                                                                      \
+            __attribute__((musttail)) return push1_then<                       \
+                0x##OP,                                                        \
+                EvmTraits<REV>>(                                               \
+                ctx,                                                           \
+                MONAD_VM_ANALYSIS_ARG,                                         \
+                stack_bottom,                                                  \
+                stack_top,                                                     \
+                gas_remaining,                                                 \
+                instr_ptr,                                                     \
+                itbl);                                                         \
+        }                                                                      \
+        MONAD_VM_HANDLER_DECL(                                                 \
+            NAME##_##OP, _push2, ".monad_vm_push2." #NAME "." #OP)             \
+        {                                                                      \
+            __attribute__((musttail)) return push2_then<                       \
+                0x##OP,                                                        \
+                EvmTraits<REV>>(                                               \
+                ctx,                                                           \
+                MONAD_VM_ANALYSIS_ARG,                                         \
+                stack_bottom,                                                  \
+                stack_top,                                                     \
+                gas_remaining,                                                 \
+                instr_ptr,                                                     \
+                itbl);                                                         \
+        }
+
     #define MONAD_VM_LEAD_TWIN(REV, NAME, OP)                                  \
         MONAD_VM_LEAD_ASM(                                                     \
             NAME, OP, MONAD_VM_HEAD2_JUMP(NAME, OP), MONAD_VM_HEAD1_PUSH)      \
@@ -177,8 +213,9 @@ namespace monad::vm::interpreter
 
     // The followers push1_then takes: ADD, SIGNEXTEND, NOT, AND, SHL, SHR,
     // SAR, CALLDATALOAD, MLOAD, MSTORE, PUSH1 and SWAP1 to SWAP4; and those
-    // push2_then takes, JUMP and JUMPI. The others' MONAD_VM_LEAD_OF_xx is
-    // undefined, and MONAD_VM_LEAD_KIND takes the default after it.
+    // push2_then takes, JUMP, JUMPI, MLOAD and MSTORE. The others'
+    // MONAD_VM_LEAD_OF_xx is undefined, and MONAD_VM_LEAD_KIND takes the
+    // default after it.
     #define MONAD_VM_LEAD_OF_01 ~, PAIR
     #define MONAD_VM_LEAD_OF_0b ~, PAIR
     #define MONAD_VM_LEAD_OF_16 ~, PAIR
@@ -187,8 +224,8 @@ namespace monad::vm::interpreter
     #define MONAD_VM_LEAD_OF_1c ~, PAIR
     #define MONAD_VM_LEAD_OF_1d ~, PAIR
     #define MONAD_VM_LEAD_OF_35 ~, PAIR
-    #define MONAD_VM_LEAD_OF_51 ~, PAIR
-    #define MONAD_VM_LEAD_OF_52 ~, PAIR
+    #define MONAD_VM_LEAD_OF_51 ~, PAIRS
+    #define MONAD_VM_LEAD_OF_52 ~, PAIRS
     #define MONAD_VM_LEAD_OF_56 ~, TWIN
     #define MONAD_VM_LEAD_OF_57 ~, TWIN
     #define MONAD_VM_LEAD_OF_60 ~, PAIR
@@ -305,6 +342,7 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_LEAD_OF_0b
     #undef MONAD_VM_LEAD_OF_01
     #undef MONAD_VM_LEAD_TWIN
+    #undef MONAD_VM_LEAD_PAIRS
     #undef MONAD_VM_LEAD_PAIR
     #undef MONAD_VM_LEAD_PUSH
     #undef MONAD_VM_HANDLER_DECL

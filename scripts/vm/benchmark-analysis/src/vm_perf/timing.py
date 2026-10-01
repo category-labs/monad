@@ -31,6 +31,8 @@ def run_title(binary: pathlib.Path, impl: str, title: str, core: int) -> dict[st
 
 
 def time_pair(base: pathlib.Path, head: pathlib.Path, cases: list[Case], repeats: int, core: int) -> dict[str, Any]:
+    if repeats < 1:
+        raise RuntimeError("timing needs at least one repeat")
     titles = sorted({(impl, title) for impl, title, _ in cases})
     wanted = {micro_name(c) for c in cases}
     samples: dict[str, dict[str, list[float]]] = {"base": {}, "head": {}}

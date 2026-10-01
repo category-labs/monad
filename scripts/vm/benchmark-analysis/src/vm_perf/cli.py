@@ -131,6 +131,9 @@ def main() -> None:
             names = sorted(set.intersection(*(set(r) for _, r in measured)))
             html = history_plot([c for c, _ in measured], [r for _, r in measured], names)
             (args.output / "index.html").write_text(html)
+        if skipped := sorted({c[0][:9] for c in commits} - {c[0][:9] for c, _ in measured}):
+            print(f"Not measured: {', '.join(skipped)}", file=sys.stderr)
+            sys.exit(1)
         return
 
     rows = []

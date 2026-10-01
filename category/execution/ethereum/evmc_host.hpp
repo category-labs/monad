@@ -48,16 +48,11 @@ MONAD_NAMESPACE_BEGIN
 static_assert(sizeof(vm::Host) == 24);
 static_assert(alignof(vm::Host) == 8);
 
-// Pass EVMC arguments as Monad references at the host boundary to avoid
-// temporary copies from converting constructors.
-[[gnu::always_inline]] inline Address const &
+// Borrow the common EVMC base; State only copies addresses it retains.
+[[gnu::always_inline]] inline evmc_address const &
 as_monad(evmc::address const &a) noexcept
 {
-    static_assert(sizeof(Address) == sizeof(evmc::address));
-    static_assert(std::is_standard_layout_v<Address>);
-    static_assert(std::is_standard_layout_v<evmc::address>);
-    return reinterpret_cast<Address const &>(
-        static_cast<evmc_address const &>(a));
+    return a;
 }
 
 [[gnu::always_inline]] inline bytes32_t const &
@@ -191,9 +186,10 @@ struct EvmcHost final : public EvmcHostBase
     {
         MONAD_TRY
         {
+            evmc_address const &from = address;
+            evmc_address const &to = beneficiary;
             auto const [result, transferred_balance] =
-                state_.selfdestruct<traits>(
-                    as_monad(address), as_monad(beneficiary));
+                state_.selfdestruct<traits>(from, to);
 
             call_tracer_.on_self_destruct(
                 address, beneficiary, transferred_balance);
@@ -249,7 +245,11 @@ struct EvmcHost final : public EvmcHostBase
     {
         MONAD_TRY
         {
+#if defined(MONAD_ZKVM_ZISK)
+            if (is_precompile<traits>(as_monad(address))) {
+#else
             if (is_precompile<traits>(address)) {
+#endif
                 return EVMC_ACCESS_WARM;
             }
             return to_evmc_access_status(

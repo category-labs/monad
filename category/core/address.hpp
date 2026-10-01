@@ -34,6 +34,50 @@
 
 MONAD_NAMESPACE_BEGIN
 
+// Compare the common EVMC base without constructing an owning Address.
+constexpr bool
+address_equal(evmc_address const &a, evmc_address const &b) noexcept
+{
+#if defined(MONAD_ZKVM_ZISK)
+    if !consteval {
+        // Reject on the first eight bytes, then compare the remaining 12
+        // with ZisK DMA (CSR 0x814). The following addi encodes the second
+        // pointer and byte count.
+        uint64_t a0;
+        uint64_t b0;
+        std::memcpy(&a0, a.bytes, sizeof(a0));
+        std::memcpy(&b0, b.bytes, sizeof(b0));
+        if (a0 != b0) {
+            return false;
+        }
+        uint64_t differ;
+        asm(".option push\n\t"
+            ".option arch, +zicsr\n\t"
+            "csrrs %0, 0x814, %1\n\t"
+            "addi x0, %2, 12\n\t"
+            ".option pop"
+            : "=&r"(differ)
+            : "r"(a.bytes + 8),
+              "r"(b.bytes + 8),
+              "m"(*reinterpret_cast<uint8_t const(*)[12]>(a.bytes + 8)),
+              "m"(*reinterpret_cast<uint8_t const(*)[12]>(b.bytes + 8)));
+        return differ == 0;
+    }
+#endif
+    return std::equal(a.bytes, a.bytes + 20, b.bytes);
+}
+
+struct AddressEqual
+{
+    using is_transparent = void;
+
+    constexpr bool
+    operator()(evmc_address const &a, evmc_address const &b) const noexcept
+    {
+        return address_equal(a, b);
+    }
+};
+
 struct Address : evmc_address
 {
     constexpr Address() noexcept
@@ -78,33 +122,9 @@ struct Address : evmc_address
     friend constexpr bool
     operator==(Address const &a, Address const &b) noexcept
     {
-#if defined(MONAD_ZKVM_ZISK)
-        if !consteval {
-            // Reject on the first eight bytes, then compare the remaining 12
-            // with ZisK DMA (CSR 0x814). The following addi encodes the second
-            // pointer and byte count.
-            uint64_t a0;
-            uint64_t b0;
-            std::memcpy(&a0, a.bytes, sizeof(a0));
-            std::memcpy(&b0, b.bytes, sizeof(b0));
-            if (a0 != b0) {
-                return false;
-            }
-            uint64_t differ;
-            asm(".option push\n\t"
-                ".option arch, +zicsr\n\t"
-                "csrrs %0, 0x814, %1\n\t"
-                "addi x0, %2, 12\n\t"
-                ".option pop"
-                : "=&r"(differ)
-                : "r"(a.bytes + 8),
-                  "r"(b.bytes + 8),
-                  "m"(*reinterpret_cast<uint8_t const(*)[12]>(a.bytes + 8)),
-                  "m"(*reinterpret_cast<uint8_t const(*)[12]>(b.bytes + 8)));
-            return differ == 0;
-        }
-#endif
-        return std::equal(a.bytes, a.bytes + 20, b.bytes);
+        return monad::address_equal(
+            static_cast<evmc_address const &>(a),
+            static_cast<evmc_address const &>(b));
     }
 
     friend constexpr auto
@@ -120,7 +140,7 @@ static_assert(alignof(Address) == 1);
 static_assert(std::is_standard_layout_v<Address>);
 static_assert(std::is_trivially_copyable_v<Address>);
 
-constexpr bool is_zero(Address const &addr)
+constexpr bool is_zero(evmc_address const &addr)
 {
     return std::ranges::all_of(addr.bytes, [](auto const b) { return b == 0; });
 }
@@ -145,8 +165,10 @@ MONAD_NAMESPACE_END
 template <>
 struct std::hash<monad::Address>
 {
+    using is_transparent = void;
+
     [[gnu::always_inline]] inline size_t
-    operator()(monad::Address const &x) const noexcept
+    operator()(evmc_address const &x) const noexcept
     {
 #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
         // Guest map keys are initialized from the witness header.
@@ -162,9 +184,10 @@ template <>
 struct ankerl::unordered_dense::hash<monad::Address>
 {
     using is_avalanching = void;
+    using is_transparent = void;
 
     [[gnu::always_inline]] inline uint64_t
-    operator()(monad::Address const &x) const noexcept
+    operator()(evmc_address const &x) const noexcept
     {
         return std::hash<monad::Address>{}(x);
     }

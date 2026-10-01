@@ -45,9 +45,15 @@ namespace detail
 {
     template <class K, class V>
     class HashMapWithAccessor
-        : public ankerl::unordered_dense::segmented_map<K, V>
+        : public ankerl::unordered_dense::segmented_map<
+              K, V, ankerl::unordered_dense::hash<K>,
+              std::conditional_t<
+                  std::is_same_v<K, Address>, AddressEqual, std::equal_to<K>>>
     {
-        using Base = ankerl::unordered_dense::segmented_map<K, V>;
+        using Base = ankerl::unordered_dense::segmented_map<
+            K, V, ankerl::unordered_dense::hash<K>,
+            std::conditional_t<
+                std::is_same_v<K, Address>, AddressEqual, std::equal_to<K>>>;
 
     public:
         using Base::Base;

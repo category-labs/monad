@@ -41,10 +41,10 @@ class CommitBuilder;
 struct Db
 {
     virtual bool is_page_encoded() const = 0;
-    virtual std::optional<Account> read_account(Address const &) = 0;
+    virtual std::optional<Account> read_account(evmc_address const &) = 0;
 
     virtual bytes32_t
-    read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
+    read_storage(evmc_address const &, Incarnation, bytes32_t const &key) = 0;
 
     virtual storage_page_t read_storage_page(
         Address const &, Incarnation, bytes32_t const &page_key) = 0;

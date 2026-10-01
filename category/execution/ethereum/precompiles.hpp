@@ -55,10 +55,10 @@ may_be_precompile(evmc_address const &address) noexcept
 }
 
 template <Traits traits>
-bool is_eth_precompile(Address const &);
+bool is_eth_precompile(evmc_address const &);
 
 template <Traits traits>
-bool is_precompile(Address const &);
+bool is_precompile(evmc_address const &);
 
 template <Traits traits>
 std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &);

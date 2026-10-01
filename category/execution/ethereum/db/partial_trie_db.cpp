@@ -62,7 +62,7 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-std::optional<Account> PartialTrieDb::read_account(Address const &addr)
+std::optional<Account> PartialTrieDb::read_account(evmc_address const &addr)
 {
     auto const key = keccak256(addr.bytes);
     // This descent already reaches the account's leaf, and the leaf carries its storage root -- so
@@ -74,7 +74,7 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
                 // An absent account is worth caching too, and NULL_ID is what read_storage would
                 // have concluded: otherwise every storage read against it re-descends to find the
                 // same nothing.
-                sroot_addr_ = addr;
+                static_cast<evmc_address &>(sroot_addr_) = addr;
                 sroot_id_ = mpt::NULL_ID;
                 sroot_valid_ = true;
 #ifdef MONAD_ZKVM_ZISK
@@ -83,7 +83,7 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
                 return std::nullopt;
             },
             [&](mpt::AccountLeafView l) -> std::optional<Account> {
-                sroot_addr_ = addr;
+                static_cast<evmc_address &>(sroot_addr_) = addr;
                 sroot_id_ = l.storage();
                 sroot_valid_ = true;
 #ifdef MONAD_ZKVM_ZISK
@@ -97,16 +97,16 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
 }
 
 bytes32_t PartialTrieDb::read_storage(
-    Address const &addr, Incarnation, bytes32_t const &slot)
+    evmc_address const &addr, Incarnation, bytes32_t const &slot)
 {
     mpt::NodeId sroot;
-    if (sroot_valid_ && sroot_addr_ == addr) {
+    if (sroot_valid_ && address_equal(sroot_addr_, addr)) {
         sroot = sroot_id_;
     }
 #ifdef MONAD_ZKVM_ZISK
     else if (auto const it = sroots_.find(addr); it != sroots_.end()) {
         sroot = it->second;
-        sroot_addr_ = addr;
+        static_cast<evmc_address &>(sroot_addr_) = addr;
         sroot_id_ = sroot;
         sroot_valid_ = true;
     }
@@ -121,7 +121,7 @@ bytes32_t PartialTrieDb::read_storage(
                 [](auto) -> mpt::NodeId {
                     MONAD_ABORT("incorrect node type returned in read_storage");
                 }});
-        sroot_addr_ = addr;
+        static_cast<evmc_address &>(sroot_addr_) = addr;
         sroot_id_ = sroot;
         sroot_valid_ = true;
 #ifdef MONAD_ZKVM_ZISK

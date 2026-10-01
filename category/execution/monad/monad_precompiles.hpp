@@ -31,7 +31,7 @@ MONAD_NAMESPACE_BEGIN
 class State;
 
 template <Traits traits>
-bool is_precompile(Address const &);
+bool is_precompile(evmc_address const &);
 
 template <Traits traits>
 std::optional<evmc::Result> check_call_precompile(

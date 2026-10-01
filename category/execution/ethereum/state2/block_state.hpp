@@ -64,21 +64,21 @@ public:
         return vm_;
     }
 
-    std::optional<Account> read_account(Address const &);
+    std::optional<Account> read_account(evmc_address const &);
 
-    bytes32_t read_storage(Address const &, Incarnation, bytes32_t const &key);
+    bytes32_t
+    read_storage(evmc_address const &, Incarnation, bytes32_t const &key);
 
 #ifdef MONAD_ZKVM_ZISK
     // Find or load the account entry. Its pointer stays valid for the block:
     // segmented storage preserves pointers on insert, and entries are not erased.
-    StateDelta &read_account_delta(Address const &);
+    StateDelta &read_account_delta(evmc_address const &);
 
     // Read using the supplied delta, without copying the returned slot value.
     // The reference points into block storage, or to a static zero value;
     // use it before that slot is modified or erased.
     bytes32_t const &read_storage(
-        StateDelta &, Address const &, Incarnation,
-        bytes32_t const &key);
+        StateDelta &, evmc_address const &, Incarnation, bytes32_t const &key);
 #endif
 
     vm::SharedVarcode read_code(bytes32_t const &);

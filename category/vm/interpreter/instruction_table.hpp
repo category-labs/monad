@@ -73,16 +73,15 @@ namespace monad::vm::interpreter
     // Dispatch computes base + (opcode << slot_shift), without a pointer lookup.
     inline constexpr size_t slot_shift = 10;
 
-    // Two entry points inside each existing fixed-size slot:
-    // [PUSH1 prefix: 32 bytes][normal handler][optional fused pair]
-    //  ^ PUSH1 followed by OP  ^ OP alone
-    // The prefix executes the pending PUSH1, or jumps to a fused pair.
-    // Normal dispatch skips it; execute.cpp and the linker share this size.
-    inline constexpr size_t push1_prefix_size = 32;
+    // Each slot starts with [overflow exit: 8][PUSH2: 24][PUSH1: 32].
+    // Normal opcode dispatch enters the handler after these 64 bytes.
+    inline constexpr size_t slot_prefix_size = 64;
+    inline constexpr size_t push1_prefix_offset = 32;
+    inline constexpr size_t push2_prefix_offset = 56;
 
-    // Jump to the follower's PUSH1 prefix with the handler arguments in a0-a6.
-    // Encoding -push1_prefix_size in jalr avoids a separate address adjustment.
-    #define MONAD_VM_PUSH1_PREFIX_DISPATCH(NEXT_OPCODE, TOP, GAS, IP)          \
+    // Jump OFFSET bytes before the follower's handler with arguments in a0-a6.
+    // Encoding the offset in jalr avoids a separate address adjustment.
+    #define MONAD_VM_PREFIX_DISPATCH(OFFSET, NEXT_OPCODE, TOP, GAS, IP)        \
         do {                                                                   \
             auto const follower_handler_address =                              \
                 reinterpret_cast<uintptr_t>(table_base) +                      \
@@ -99,7 +98,7 @@ namespace monad::vm::interpreter
             asm volatile("jalr zero, %[off](%[head])"                          \
                          :                                                     \
                          : [head] "r"(follower_handler_address),               \
-                           [off] "i"(-static_cast<int>(push1_prefix_size)),    \
+                           [off] "i"(-static_cast<int>(OFFSET)),               \
                            "r"(monad_vm_a0),                                   \
                            "r"(monad_vm_a1),                                   \
                            "r"(monad_vm_a2),                                   \
@@ -2598,8 +2597,12 @@ namespace monad::vm::interpreter
                     stack_top.next_slot() + 1 >= MONAD_VM_STACK_LIMIT)) {
                 MONAD_VM_MUST_TAIL return ctx.exit(Error);
             }
-            MONAD_VM_PUSH1_PREFIX_DISPATCH(
-                *(instr_ptr + 4), stack_top + 1, gas_remaining, instr_ptr + 2);
+            MONAD_VM_PREFIX_DISPATCH(
+                push1_prefix_offset,
+                *(instr_ptr + 4),
+                stack_top + 1,
+                gas_remaining,
+                instr_ptr + 2);
         }
         else if constexpr (OP == PUSH1) {
             // Fuse PUSH1 <a> PUSH1 <b>, saving one dispatch.
@@ -3234,6 +3237,154 @@ namespace monad::vm::interpreter
         MONAD_VM_FUSED_NEXT(N + 2, 0);
     }
 
+    // Slot wrappers inline these bodies; non-slot callers use separate twins.
+    // Use the immediate destination; preserve gas, stack and jump checks.
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void push2_jump_at(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        // Decode PUSH2's destination with the shared big-endian reader
+        // to favor the cheaper packh sequence on ZisK.
+        auto const destination =
+            static_cast<size_t>(detail::load_be_k<2>(instr_ptr + 1));
+        // Include the destination JUMPDEST in the upfront gas charge.
+        static constexpr auto requirements =
+            fused_requirements<traits, PUSH2, JUMP, JUMPDEST>();
+        if (MONAD_LIKELY(MONAD_VM_FUSED_CHARGE(requirements))) {
+            if (MONAD_UNLIKELY(
+                    !MONAD_VM_CODE_VIEW.is_jumpdest16(destination))) {
+                ctx.exit(Error);
+            }
+            instr_ptr = MONAD_VM_CODE_VIEW.code() + destination + 1;
+            // Discourage GCC from copying the destination before the add.
+            MONAD_VM_LAUNDER(instr_ptr);
+        }
+        else {
+            gas_remaining += requirements.gas;
+            MONAD_VM_CHECK(PUSH2);
+            // PUSH2 supplies the operand required by JUMP.
+            MONAD_DEBUG_ASSERT(
+                stack_top.next_slot() >=
+                stack_lower_bound - MONAD_VM_STACK_LOWER_BOUND_BIAS);
+            MONAD_VM_CHARGE(JUMP);
+            if (MONAD_UNLIKELY(
+                    !MONAD_VM_CODE_VIEW.is_jumpdest16(destination))) {
+                ctx.exit(Error);
+            }
+            instr_ptr = swallow_jumpdest(
+                ctx, MONAD_VM_CODE_VIEW.code() + destination, gas_remaining);
+        }
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+            ctx,
+            MONAD_VM_DISPATCH_STATE_ARG,
+            stack_lower_bound,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void push2_jumpi_at(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        static constexpr auto jump_requirements =
+            fused_requirements<traits, PUSH2, JUMPI>();
+        if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(jump_requirements))) {
+            gas_remaining += jump_requirements.gas;
+            MONAD_VM_CHECK(PUSH2);
+            MONAD_VM_CHECK_AT(JUMPI, 1);
+        }
+        // Keep the sequence's gas deduction before the branch to avoid
+        // extra register moves when dispatching either outcome.
+        MONAD_VM_LAUNDER(gas_remaining);
+        // The condition is the original top, below PUSH2's destination.
+        if (*stack_top) {
+            // An untaken jump does not need its destination decoded.
+            auto const destination =
+                static_cast<size_t>(detail::load_be_k<2>(instr_ptr + 1));
+            if (MONAD_UNLIKELY(
+                    !MONAD_VM_CODE_VIEW.is_jumpdest16(destination))) {
+                ctx.exit(Error);
+            }
+            auto const *next_instruction =
+                MONAD_VM_CODE_VIEW.code() + destination;
+            next_instruction =
+                swallow_jumpdest(ctx, next_instruction, gas_remaining);
+            instr_ptr = next_instruction;
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top - 1, // Consume JUMPI's condition.
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        // Skip the pair and consume the condition when the jump is not taken.
+        MONAD_VM_FUSED_NEXT(4, -1);
+    }
+
+    // The follower's JUMP/JUMPI slot enters here with instr_ptr on PUSH2.
+    template <uint8_t OP, Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void push2_then(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        static_assert(OP == JUMP || OP == JUMPI);
+        if constexpr (OP == JUMP) {
+            MONAD_VM_MUST_TAIL return push2_jump_at<traits>(
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        else {
+            MONAD_VM_MUST_TAIL return push2_jumpi_at<traits>(
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+    }
+
+    // Non-slot dispatch keeps separate twins to avoid enlarging PUSH2.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push2_jump(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        MONAD_VM_MUST_TAIL return push2_jump_at<traits>(
+            ctx,
+            MONAD_VM_DISPATCH_STATE_ARG,
+            stack_lower_bound,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push2_jumpi(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        MONAD_VM_MUST_TAIL return push2_jumpi_at<traits>(
+            ctx,
+            MONAD_VM_DISPATCH_STATE_ARG,
+            stack_lower_bound,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
 #endif
 
     template <size_t N, Traits traits>
@@ -3262,8 +3413,12 @@ namespace monad::vm::interpreter
             if (MONAD_UNLIKELY(stack_top.next_slot() >= MONAD_VM_STACK_LIMIT)) {
                 MONAD_VM_MUST_TAIL return ctx.exit(Error);
             }
-            MONAD_VM_PUSH1_PREFIX_DISPATCH(
-                next_opcode, stack_top, gas_remaining, instr_ptr);
+            MONAD_VM_PREFIX_DISPATCH(
+                push1_prefix_offset,
+                next_opcode,
+                stack_top,
+                gas_remaining,
+                instr_ptr);
         }
         else if constexpr (N == 1) {
             // A bitmap keeps the check cheap on every PUSH1; testing four
@@ -3335,7 +3490,22 @@ namespace monad::vm::interpreter
                     instr_ptr MONAD_VM_TBL_ARG);
             }
         }
-        // Use PUSH2's immediate directly as the jump destination.
+        if constexpr (N == 2 && has_slots<traits>) {
+            // The follower's PUSH2 prefix checks stack space and pushes the
+            // immediate, or enters the fused JUMP/JUMPI pair.
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+            if (MONAD_UNLIKELY(gas_remaining < 3)) {
+                MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+            }
+    #endif
+            MONAD_VM_PREFIX_DISPATCH(
+                push2_prefix_offset,
+                next_opcode,
+                stack_top,
+                gas_remaining,
+                instr_ptr);
+        }
+        // Non-slot callers retain separate twins to reduce register pressure.
         if constexpr (N == 2) {
             // Match JUMP and JUMPI with one range check: they are consecutive.
             // size_t and not unsigned for the difference: a 32-bit subtract
@@ -3344,98 +3514,21 @@ namespace monad::vm::interpreter
                 static_cast<size_t>(next_opcode) - static_cast<size_t>(JUMP);
             if (monad_vm_jump <= 1u) {
                 if (monad_vm_jump == 0) {
-                    {
-                        // Decode PUSH2's destination with the shared big-endian
-                        // reader to favor the cheaper packh sequence on ZisK.
-                        auto const destination = static_cast<size_t>(
-                            detail::load_be_k<2>(instr_ptr + 1));
-                        // Include the destination JUMPDEST in the upfront gas
-                        // charge.
-                        static constexpr auto requirements =
-                            fused_requirements<traits, PUSH2, JUMP, JUMPDEST>();
-                        if (MONAD_LIKELY(MONAD_VM_FUSED_CHARGE(requirements))) {
-                            if (MONAD_UNLIKELY(
-                                    !MONAD_VM_CODE_VIEW.is_jumpdest16(
-                                        destination))) {
-                                ctx.exit(Error);
-                            }
-                            instr_ptr =
-                                MONAD_VM_CODE_VIEW.code() + destination + 1;
-                            // Discourage GCC from copying the destination
-                            // before the add.
-                            MONAD_VM_LAUNDER(instr_ptr);
-                        }
-                        else {
-                            gas_remaining += requirements.gas;
-                            MONAD_VM_CHECK(PUSH2);
-                            // PUSH2 supplies the operand required by JUMP.
-                            MONAD_DEBUG_ASSERT(
-                                stack_top.next_slot() >=
-                                stack_lower_bound -
-                                    MONAD_VM_STACK_LOWER_BOUND_BIAS);
-                            MONAD_VM_CHARGE(JUMP);
-                            if (MONAD_UNLIKELY(
-                                    !MONAD_VM_CODE_VIEW.is_jumpdest16(
-                                        destination))) {
-                                ctx.exit(Error);
-                            }
-                            instr_ptr = swallow_jumpdest(
-                                ctx,
-                                MONAD_VM_CODE_VIEW.code() + destination,
-                                gas_remaining);
-                        }
-                        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF
-                            [*instr_ptr](
-                                ctx,
-                                MONAD_VM_DISPATCH_STATE_ARG,
-                                stack_lower_bound,
-                                stack_top,
-                                gas_remaining,
-                                instr_ptr MONAD_VM_TBL_ARG);
-                    }
+                    MONAD_VM_MUST_TAIL return push2_jump<traits>(
+                        ctx,
+                        MONAD_VM_DISPATCH_STATE_ARG,
+                        stack_lower_bound,
+                        stack_top,
+                        gas_remaining,
+                        instr_ptr MONAD_VM_TBL_ARG);
                 }
-                {
-                    static constexpr auto jump_requirements =
-                        fused_requirements<traits, PUSH2, JUMPI>();
-                    if (MONAD_UNLIKELY(
-                            !MONAD_VM_FUSED_CHARGE_PURE(jump_requirements))) {
-                        gas_remaining += jump_requirements.gas;
-                        MONAD_VM_CHECK(PUSH2);
-                        MONAD_VM_CHECK_AT(JUMPI, 1);
-                    }
-                    // Keep the sequence's gas deduction before the branch to
-                    // avoid extra register moves when dispatching either
-                    // outcome.
-                    MONAD_VM_LAUNDER(gas_remaining);
-                    // The condition is the original top, below PUSH2's
-                    // destination.
-                    if (*stack_top) {
-                        // An untaken jump does not need its destination
-                        // decoded.
-                        auto const destination = static_cast<size_t>(
-                            detail::load_be_k<2>(instr_ptr + 1));
-                        if (MONAD_UNLIKELY(!MONAD_VM_CODE_VIEW.is_jumpdest16(
-                                destination))) {
-                            ctx.exit(Error);
-                        }
-                        auto const *next_instruction =
-                            MONAD_VM_CODE_VIEW.code() + destination;
-                        next_instruction = swallow_jumpdest(
-                            ctx, next_instruction, gas_remaining);
-                        instr_ptr = next_instruction;
-                        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF
-                            [*instr_ptr](
-                                ctx,
-                                MONAD_VM_DISPATCH_STATE_ARG,
-                                stack_lower_bound,
-                                stack_top - 1, // Consume JUMPI's condition.
-                                gas_remaining,
-                                instr_ptr MONAD_VM_TBL_ARG);
-                    }
-                    // Skip the pair and consume the condition when the jump is
-                    // not taken.
-                    MONAD_VM_FUSED_NEXT(4, -1);
-                }
+                MONAD_VM_MUST_TAIL return push2_jumpi<traits>(
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
             }
         }
         // Check the full allocation suffix in a separate helper.
@@ -4043,5 +4136,5 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_CHECKED_RUNTIME_CALL
 
 #if defined(MONAD_ZKVM_ZISK)
-    #undef MONAD_VM_PUSH1_PREFIX_DISPATCH
+    #undef MONAD_VM_PREFIX_DISPATCH
 #endif

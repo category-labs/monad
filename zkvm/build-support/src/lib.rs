@@ -322,13 +322,13 @@ fn manifest_dir() -> PathBuf {
 /// (category/vm/interpreter/execute.cpp): one per revision from BERLIN (8) to
 /// AMSTERDAM (15) and per opcode, 1 KiB each, the newest revision first and
 /// then in opcode order, so that a handler's address is `monad_vm_slots` plus
-/// its offset. Each slot starts with a PUSH1 prefix, followed by the handler
-/// and an optional fused PUSH1 pair. Gaps contain nops. Linker assertions
-/// enforce prefix/handler placement; exceeding a slot fails the link.
+/// its offset. Each slot starts with PUSH2/PUSH1 prefixes and an overflow
+/// exit, followed by the handler and optional fused pairs. Gaps contain nops.
+/// Linker assertions enforce placement; exceeding a slot fails the link.
 fn zisk_slots_ld() -> String {
     const SLOT: usize = 0x400;
-    // instruction_table.hpp's push1_prefix_size.
-    const PUSH1_PREFIX_SIZE: usize = 0x20;
+    // instruction_table.hpp's slot_prefix_size.
+    const SLOT_PREFIX_SIZE: usize = 0x40;
     let mut ld = String::from(
         "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
          FILL(0x13000000)\n        monad_vm_slots = .;\n",
@@ -336,7 +336,7 @@ fn zisk_slots_ld() -> String {
     for (rank, rev) in (8..=15).rev().enumerate() {
         for op in 0..256 {
             let at = (rank * 256 + op) * SLOT;
-            let entry = at + PUSH1_PREFIX_SIZE;
+            let entry = at + SLOT_PREFIX_SIZE;
             ld += &format!(
                 "        . = monad_vm_slots + {at:#x};\n        \
                  KEEP(*(.monad_vm_lead.{rev:02}.{op:02x}))\n        \
@@ -348,7 +348,8 @@ fn zisk_slots_ld() -> String {
                  \"monad_vm_slots: slot {rev:02}.{op:02x} is empty\")\n        \
                  ASSERT(monad_vm_slot_{rev:02}_{op:02x} == monad_vm_slots + {entry:#x}, \
                  \"monad_vm_slots: handler {rev:02}.{op:02x} is not after its landing\")\n        \
-                 KEEP(*(.monad_vm_push1.{rev:02}.{op:02x}))\n"
+                 KEEP(*(.monad_vm_push1.{rev:02}.{op:02x}))\n        \
+                 KEEP(*(.monad_vm_push2.{rev:02}.{op:02x}))\n"
             );
         }
     }

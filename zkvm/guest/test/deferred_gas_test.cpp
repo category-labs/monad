@@ -396,6 +396,39 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
                 }
             }
         };
+    // PUSH2 must decode both bytes and work with ordinary and fused-PUSH1
+    // followers, which use different prefix paths.
+    for (unsigned immediate : {0, 1, 255, 256, 0x1234, 65535}) {
+        for (bool pair_follower : {false, true}) {
+            std::vector<uint8_t> code{
+                PUSH2,
+                static_cast<uint8_t>(immediate >> 8),
+                static_cast<uint8_t>(immediate)};
+            if (pair_follower) {
+                code.insert(code.end(), {NOT, NOT});
+            }
+            else {
+                code.insert(code.end(), {DUP1, POP});
+            }
+            code.insert(code.end(), {PUSH0, MSTORE, PUSH1, 32, PUSH0, RETURN});
+            std::vector<uint8_t> expected(32);
+            expected[30] = static_cast<uint8_t>(immediate >> 8);
+            expected[31] = static_cast<uint8_t>(immediate);
+            int64_t const cost = pair_follower ? 22 : 21;
+            for (int64_t gas = 0; gas <= cost + 1; ++gas) {
+                auto const result = run(code, gas);
+                effects &= gas < cost ? failed_cleanly(result)
+                                      : result.status == CallStatus::Success &&
+                                            result.gas == gas - cost &&
+                                            result.output_bytes == expected;
+            }
+        }
+    }
+    for (auto follower : {STOP, NOT, JUMP, JUMPI}) {
+        std::vector<uint8_t> code(1024, PUSH0);
+        code.insert(code.end(), {PUSH2, 0, 0, static_cast<uint8_t>(follower)});
+        effects &= failed_cleanly(run(code, 10000));
+    }
     std::array<uint8_t, 32> operand{};
     operand.fill(0xa5);
     for (uint8_t const immediate :

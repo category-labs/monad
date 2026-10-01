@@ -23,6 +23,8 @@ namespace monad::vm::runtime
     void blockhash(
         Context *ctx, uint256_t *result_ptr, uint256_t const *block_number_ptr);
 
+    // Keep the runtime body outside the fixed-size interpreter slot on ZisK.
+    MONAD_VM_RUNTIME_NOINLINE
     void selfbalance(Context *ctx, uint256_t *result_ptr);
 
     void blobhash(Context *ctx, uint256_t *result_ptr, uint256_t const *index);

@@ -249,6 +249,11 @@ class ManualJumpChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "frame open"):
             check.check_hand_made_jumps(code, {0x108, 0x10c})
 
+    def test_swap1_pop_prefix_is_a_marked_lag_dispatch(self):
+        symbols = ("100 t monad_vm_manual_jump_prefix_1\n"
+                   "104 t monad_vm_manual_jump_lag_swap1_pop_15_6\n")
+        self.assertEqual(check.manual_jump_addresses(symbols), {0x100, 0x104})
+
     def test_missing_marker_family_fails(self):
         with self.assertRaisesRegex(ValueError, "missing"):
             check.manual_jump_addresses("100 t monad_vm_manual_jump_lag_1")

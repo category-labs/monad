@@ -320,7 +320,7 @@ fn manifest_dir() -> PathBuf {
 
 /// Lay out 4-KiB opcode slots, newest revision first. Six handler copies
 /// encode instruction-pointer lags 0..5, in address order 4, 5, 0, 1, 2, 3.
-/// Each has a 64-byte prefix region. Fused pairs and oversized handlers follow
+/// Each has a 104-byte prefix region. Fused pairs and oversized handlers follow
 /// the slots. Linker assertions reject missing or misplaced entries; moving
 /// the location counter backwards rejects a copy that exceeds its region.
 fn zisk_slots_ld() -> String {
@@ -335,7 +335,7 @@ fn zisk_slots_ld() -> String {
         (2728, "_2", "2"),
         (3412, "_3", "3"),
     ];
-    const PREFIX_SIZE: usize = 0x40;
+    const PREFIX_SIZE: usize = 104;
     let mut ld = String::from(
         "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
          FILL(0x13000000)\n        monad_vm_slots = .;\n",
@@ -369,6 +369,7 @@ fn zisk_slots_ld() -> String {
         "        . = monad_vm_slots + {:#x};\n        \
          KEEP(*(.monad_vm_push1*))\n        \
          KEEP(*(.monad_vm_push2*))\n        \
+         KEEP(*(.monad_vm_swap1*))\n        \
          KEEP(*(.monad_vm_body*))\n    }}\n}} INSERT AFTER .text;\n",
         8 * 256 * SLOT
     );

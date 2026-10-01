@@ -226,6 +226,85 @@ namespace
                r.status != CallStatus::Revert && r.gas == 0 && r.refund == 0 &&
                r.output == 0 && r.accesses == 0;
     }
+
+    bool swap1_prefixes()
+    {
+        for (unsigned padding = 0; padding < 7; ++padding) {
+            for (auto follower : {PC, POP, DUP2, SWAP2, JUMP}) {
+                // Three distinct words, bottom to top. PC POP shifts the lag
+                // without changing them. PUSH3 avoids a fused push/swap.
+                std::vector<uint8_t> code{
+                    PUSH3, 0, 0, 0x11, PUSH3, 0, 0, 0x22, PUSH3, 0, 0, 0x33};
+                for (unsigned i = 0; i < padding; ++i) {
+                    code.insert(code.end(), {PC, POP});
+                }
+                code.insert(
+                    code.end(), {SWAP1, static_cast<uint8_t>(follower)});
+                std::vector<uint8_t> top_first;
+                int64_t gas = 9 + 4 * padding + 3;
+                switch (follower) {
+                case PC:
+                    code.push_back(POP);
+                    top_first = {0x22, 0x33, 0x11};
+                    gas += 4;
+                    break;
+                case POP:
+                    top_first = {0x33, 0x11};
+                    gas += 2;
+                    break;
+                case DUP2:
+                    top_first = {0x33, 0x22, 0x33, 0x11};
+                    gas += 3;
+                    break;
+                case SWAP2:
+                    top_first = {0x11, 0x33, 0x22};
+                    gas += 3;
+                    break;
+                case JUMP:
+                    code.push_back(
+                        0xfe); // A failed jump must not fall through.
+                    code[7] = static_cast<uint8_t>(code.size());
+                    code.push_back(JUMPDEST);
+                    top_first = {0x33, 0x11};
+                    gas += 9;
+                    break;
+                default:
+                    return false;
+                }
+                std::vector<uint8_t> expected(32 * top_first.size());
+                for (size_t i = 0; i < top_first.size(); ++i) {
+                    code.insert(
+                        code.end(),
+                        {PUSH2, 0, static_cast<uint8_t>(32 * i), MSTORE});
+                    expected[32 * i + 31] = top_first[i];
+                    gas += 9; // PUSH2, MSTORE and one new memory word.
+                }
+                code.insert(
+                    code.end(),
+                    {PUSH2,
+                     0,
+                     static_cast<uint8_t>(expected.size()),
+                     PUSH0,
+                     RETURN});
+                gas += 5;
+                auto const result = run(code, gas);
+                if (result.status != CallStatus::Success || result.gas != 0 ||
+                    result.output_bytes != expected ||
+                    !failed_cleanly(run(code, gas - 1))) {
+                    return false;
+                }
+            }
+        }
+        std::array<uint8_t, 4> short_swap{PUSH0, PUSH0, SWAP1, SWAP2};
+        std::array<uint8_t, 6> bad_jump{
+            PUSH0, PUSH0, SWAP1, JUMP, JUMPDEST, STOP};
+        std::vector<uint8_t> full_stack(1024, PUSH0);
+        full_stack.insert(full_stack.end(), {SWAP1, DUP2, STOP});
+        return failed_cleanly(run(short_swap, 100)) &&
+               failed_cleanly(run(bad_jump, 100)) &&
+               failed_cleanly(run(full_stack, 10000));
+    }
+
 }
 
 extern "C" uint32_t monad_zkvm_deferred_gas_test()
@@ -791,7 +870,7 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         effects &= failed_cleanly(run(code, cost - 1));
         effects &= failed_cleanly(run(code, 61)); // OOG at loop entry.
     }
-    check(effects);
+    check(effects && swap1_prefixes());
     // Two selector tests: first match, second match, or neither. Sweep gas
     // through both tests and the taken jump's JUMPDEST charge.
     bool selectors = true;

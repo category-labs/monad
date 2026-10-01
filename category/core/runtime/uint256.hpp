@@ -1020,6 +1020,32 @@ struct ZiskArith256Params
     uint64_t *dh;
 };
 
+// Compare two 8-byte-aligned 32-byte blocks via ZisK DMA.
+// On CSR 0x814, ZisK's transpiler reads the immediately following addi
+// for the second pointer and length, emitting one comparison for the pair.
+// One asm block prevents the compiler from inserting code between them.
+[[gnu::always_inline]] inline bool
+zisk_equal32(uint64_t const *const a, uint64_t const *const b) noexcept
+{
+    uint64_t differ;
+    // Enable CSR instructions locally, then restore the assembler options.
+    asm(".option push\n\t"
+        ".option arch, +zicsr\n\t"
+        // DMA comparison (0x814): a (%1) in, difference flag (%0) out.
+        "csrrs %0, 0x814, %1\n\t"
+        // Metadata for ZisK: b (%2), length 32; no b + 32 is computed.
+        "addi x0, %2, 32\n\t"
+        ".option pop"
+        // %0: register output; '&' prevents overlap with input registers.
+        : "=&r"(differ)
+        : "r"(a), // %1
+          "r"(b), // %2
+          // Declare both 32-byte reads so the compiler preserves their data.
+          "m"(*reinterpret_cast<uint64_t const(*)[4]>(a)),
+          "m"(*reinterpret_cast<uint64_t const(*)[4]>(b)));
+    return differ == 0; // Zero means all 32 bytes match.
+}
+
 // Verify the executor's division hint: q·v + r == u in 512 bits and
 // r < v (requires v != 0). Calling fcall 19 directly avoids
 // div_rem256_c's extra copies and zero-initialisation.
@@ -1053,7 +1079,8 @@ zisk_udivrem(uint256_t const &u, uint256_t const &v) noexcept
     uint256_t const q{qr[0], qr[1], qr[2], qr[3]};
     uint256_t const r{qr[4], qr[5], qr[6], qr[7]};
     MONAD_ASSERT(
-        std::memcmp(d, &u, sizeof(u)) == 0 && (d[4] | d[5] | d[6] | d[7]) == 0);
+        zisk_equal32(d, reinterpret_cast<uint64_t const *>(&u)) &&
+        zisk_equal32(d + 4, zisk_zero_limbs));
     MONAD_ASSERT(r < v);
     return {.quot = q, .rem = r};
 }

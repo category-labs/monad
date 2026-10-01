@@ -299,6 +299,21 @@ and the plan drops to 17 instances. Whether that shortens the proof is what
 `MONAD_ZKVM_JUMPDEST_SOFTWARE=OFF` -- which builds the guest of before the
 lever byte for byte.
 
+**Keccak-f can run in software too** (`MONAD_ZKVM_KECCAKF_SOFTWARE`, off by
+default, with `MONAD_ZKVM_KECCAKF_MEMO=OFF`, refused by the official profile).
+The Keccakf instance -- 14,462 permutations in 2^20 rows of 643 columns -- is
+about a fifth of the plan of a block of 1 to 250 L2 transactions, which runs
+from a hundred to nine thousand permutations. In software a permutation is
+4,138 steps and about 2,400 Binary operations: a small block's Main and Binary
+instances absorb them, a larger block's overflow. Measured under ZisK
+1.3.1-alpha on the latency corpora, the instance areas taken from the proving
+key's starkinfo (2^nBitsExt x columns, plus the compressor), the plan of a
+block with the lever against the default build's is 0.79x for the transfer
+blocks of up to 25 transactions, 0.85x at 50 and on the 21-transaction token
+preset, 1.20x at 100, 1.62x at 250 and 2.41x on the 130-transaction
+worker-payouts preset. Whether the proof follows the area is what
+`l2-latency` times as a fourth arm, on the blocks of up to 250 transactions.
+
 ### Swapping the encryption
 
 `MONAD_ZKVM_L2_CIPHER` selects the cipher suite and is the one L2 value with a

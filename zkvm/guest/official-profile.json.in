@@ -17,5 +17,6 @@
   "cxx_flags": "@CMAKE_CXX_FLAGS@",
   "cxx_flags_release": "@CMAKE_CXX_FLAGS_RELEASE@",
   "asm_flags": "@CMAKE_ASM_FLAGS@",
-  "asm_flags_release": "@CMAKE_ASM_FLAGS_RELEASE@"
+  "asm_flags_release": "@CMAKE_ASM_FLAGS_RELEASE@",
+  "interpreter_flags": "@_monad_zkvm_interpreter_tune@"
 }

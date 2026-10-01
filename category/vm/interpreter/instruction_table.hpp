@@ -2268,11 +2268,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-#if defined(MONAD_ZKVM_ZISK)
-        shr_in_place(*stack_top, *(instr_ptr + 1));
-#else
         *stack_top >>= uint256_t{*(instr_ptr + 1)};
-#endif
         MONAD_VM_FUSED_NEXT(3, 0);
     }
 

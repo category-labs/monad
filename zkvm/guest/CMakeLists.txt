@@ -120,7 +120,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         " -mcmodel=medany -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti")
 
     # ZisK-only codegen flags.
-    #  - -march adds Zbb/Zbs/Zbkb, transpiled natively by ZisK >= v1.2.0-alpha.
+    #  - -march adds Zba/Zbb/Zbs/Zbkb, transpiled natively by ZisK >= v1.3.0-alpha
+    #    (sh<n>add and slli.uw are single Binary / BinaryExtension operations).
     #  - -fno-pic: cmake-rs injects cc-rs's -fPIC, but the guest is a
     #    statically linked fixed-address ELF, so PIC only buys GOT
     #    indirections on global accesses.
@@ -129,7 +130,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # overrides CMAKE_*_FLAGS, and the -march must land after cc-rs's
     # -march=rv64ima — the last flag wins.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
-        set(_zisk_march "-march=rv64ima_zicsr_zbb_zbs_zbkb -mabi=lp64")
+        set(_zisk_march "-march=rv64ima_zicsr_zba_zbb_zbs_zbkb -mabi=lp64")
         string(APPEND CMAKE_C_FLAGS " ${_zisk_march} -fno-pic")
         string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} -fno-pic")
         string(APPEND CMAKE_ASM_FLAGS " ${_zisk_march}")

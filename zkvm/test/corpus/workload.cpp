@@ -16,6 +16,7 @@
 #include <zkvm/test/corpus/contracts/namespace_spoke_bytecode.hpp>
 #include <zkvm/test/corpus/genesis_bulk.hpp>
 #include <zkvm/test/corpus/scenarios.hpp>
+#include <zkvm/test/corpus/spoke_code.hpp>
 #include <zkvm/test/corpus/token_contracts.hpp>
 #include <zkvm/test/corpus/tx_sign.hpp>
 #include <zkvm/test/corpus/workload.hpp>
@@ -29,6 +30,9 @@
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#ifdef MONAD_ZKVM_L2
+    #include <category/execution/ethereum/namespace_anchor.hpp>
+#endif
 
 #include <ankerl/unordered_dense.h>
 
@@ -111,6 +115,9 @@ namespace corpus
         /// derived from exactly that key at nonce 0, so a compiled
         /// MONAD_ZKVM_L2_SPOKE has to keep naming it.
         constexpr uint64_t SPOKE_DEPLOYER_INDEX = 200;
+
+        /// The constructor's first argument, wherever the spoke comes from.
+        constexpr uint64_t SPOKE_NAMESPACE_CHAIN_ID = 1;
         constexpr uint64_t PAYER_INDEX_BASE = 1'000;
         constexpr uint64_t SIGNER_INDEX_BASE = 2'000'000;
 
@@ -152,6 +159,27 @@ namespace corpus
         Address holder_address(bytes32_t const &seed, uint64_t const i)
         {
             return seeded_address(seed, "holder", i);
+        }
+
+        /// What a genesis holds for the spoke. In an L2 build, the spoke
+        /// itself, as its constructor would have left it, at the address the
+        /// guest is compiled with: the design creates it with the L2, so its
+        /// chain does not deploy it. Outside one, the funded account the deploy
+        /// block sends it from.
+        void seed_spoke(GenesisSink &sink, WorkloadSpec const &spec)
+        {
+#ifdef MONAD_ZKVM_L2
+            sink.contract(
+                L2_NAMESPACE_SPOKE,
+                Account{.nonce = 1},
+                namespace_spoke_code(
+                    SPOKE_NAMESPACE_CHAIN_ID,
+                    address_of(derive_key(spec.seed, PAYER_INDEX_BASE))));
+#else
+            sink.account(
+                address_of(derive_key(spec.seed, SPOKE_DEPLOYER_INDEX)),
+                Account{.balance = SIGNER_BALANCE});
+#endif
         }
 
         Transaction call(
@@ -658,6 +686,14 @@ namespace corpus
             r.currencies == 0 || r.preset == Preset::WholesaleCbdc,
             "currencies=%lu: only wholesale-cbdc has currencies to count",
             r.currencies);
+#ifndef MONAD_ZKVM_L2
+        // This chain starts at the Paris block with its deploy block, and the
+        // emitted blocks are all of it.
+        MONAD_ASSERT_PRINTF(
+            r.warmup == 0,
+            "warmup=%lu: only an L2 build has a chain to warm up",
+            r.warmup);
+#endif
         MONAD_ASSERT(r.accounts > PAYERS + 2);
         MONAD_ASSERT(r.chunk > 0);
         MONAD_ASSERT(r.zipf_s > 1.0);
@@ -779,8 +815,6 @@ namespace corpus
     std::function<void(GenesisSink &)> Workload::seeder() const
     {
         WorkloadSpec const spec = spec_;
-        Address const deployer =
-            address_of(derive_key(spec.seed, SPOKE_DEPLOYER_INDEX));
         Address const l1_bridge = seeded_address(spec.seed, "l1-bridge", 0);
 
         if (spec.preset == Preset::WholesaleCbdc) {
@@ -792,13 +826,12 @@ namespace corpus
                 wrapped.push_back(token(c));
             }
             return [spec,
-                    deployer,
                     l1_bridge,
                     banks = signers_,
                     wrapped,
                     spoke = spoke(),
                     pvp = settlement()](GenesisSink &sink) {
-                sink.account(deployer, Account{.balance = SIGNER_BALANCE});
+                seed_spoke(sink, spec);
                 for (auto const &b : banks) {
                     sink.account(b, Account{.balance = SIGNER_BALANCE});
                 }
@@ -825,7 +858,6 @@ namespace corpus
 
         if (spec.preset == Preset::WorkerPayouts) {
             return [spec,
-                    deployer,
                     l1_bridge,
                     active = signers_,
                     businesses = businesses_,
@@ -837,7 +869,7 @@ namespace corpus
                 Address const platform =
                     address_of(derive_key(spec.seed, PLATFORM_INDEX));
 
-                sink.account(deployer, Account{.balance = SIGNER_BALANCE});
+                seed_spoke(sink, spec);
                 sink.account(platform, Account{.balance = PAYER_BALANCE});
                 for (auto const &b : businesses) {
                     sink.account(b, Account{.balance = SIGNER_BALANCE});
@@ -912,9 +944,7 @@ namespace corpus
         }
 
         return [spec](GenesisSink &sink) {
-            sink.account(
-                address_of(derive_key(spec.seed, SPOKE_DEPLOYER_INDEX)),
-                Account{.balance = SIGNER_BALANCE});
+            seed_spoke(sink, spec);
             for (uint64_t i = 0; i < PAYERS; ++i) {
                 sink.account(
                     address_of(derive_key(spec.seed, PAYER_INDEX_BASE + i)),
@@ -937,6 +967,9 @@ namespace corpus
 
     Address Workload::spoke() const
     {
+#ifdef MONAD_ZKVM_L2
+        return L2_NAMESPACE_SPOKE;
+#else
         // keccak256(rlp([deployer, 0]))[12:] -- a CREATE from the deployer at
         // nonce 0, which is what the deploy block spends that account's first
         // transaction on. Derived here rather than read from the builder so a
@@ -952,11 +985,21 @@ namespace corpus
         Address a;
         std::memcpy(a.bytes, h.bytes + 12, sizeof(a.bytes));
         return a;
+#endif
     }
 
     uint64_t Workload::block_count() const
     {
+#ifdef MONAD_ZKVM_L2
+        return spec_.warmup + spec_.blocks;
+#else
         return spec_.blocks + 1;
+#endif
+    }
+
+    bool Workload::measured(uint64_t const index) const
+    {
+        return index >= spec_.warmup;
     }
 
     BlockSpec Workload::block(CorpusBuilder &b, uint64_t const index)
@@ -966,14 +1009,18 @@ namespace corpus
             return out;
         }
 
-        auto const deployer_key = derive_key(spec_.seed, SPOKE_DEPLOYER_INDEX);
+#ifdef MONAD_ZKVM_L2
+        (void)b;
+#else
         if (index == 0) {
+            auto const deployer_key =
+                derive_key(spec_.seed, SPOKE_DEPLOYER_INDEX);
             MONAD_ASSERT(
                 b.next_contract_address(address_of(deployer_key)) == spoke());
             // The deploy block. Constructor arguments are appended to the
             // creation bytecode: (uint64 namespaceChainId, address operator).
             byte_string data = hex_bytes(NAMESPACE_SPOKE_CREATION_HEX);
-            push_word(data, uint256_t{1});
+            push_word(data, uint256_t{SPOKE_NAMESPACE_CHAIN_ID});
             push_word(
                 data, address_of(derive_key(spec_.seed, PAYER_INDEX_BASE)));
             out.txs.push_back(
@@ -982,6 +1029,7 @@ namespace corpus
             last_distinct_ = 2;
             return out;
         }
+#endif
 
         if (spec_.preset == Preset::WholesaleCbdc) {
             return wholesale_cbdc_block(index);

@@ -46,6 +46,12 @@ namespace corpus
 {
     class GenesisSink;
 
+#ifdef MONAD_ZKVM_L2
+    /// An L2 chain starts where a chain starts. It has no fork schedule -- its
+    /// revision is a constant compiled into the guest -- so no number decides
+    /// its rules, and its genesis is block 0.
+    inline constexpr uint64_t GENESIS_NUMBER = 0;
+#else
     /// The synthetic chain starts here, and the number is load-bearing.
     ///
     /// The non-L2 guest instantiates EthereumMainnet, whose schedule picks the
@@ -54,12 +60,21 @@ namespace corpus
     /// exact shape the L2 guest accepts with no lever -- so a corpus generated
     /// here needs none of the scaffolding the rewritten-mainnet corpus did.
     inline constexpr uint64_t GENESIS_NUMBER = 15'537'394;
+#endif
     /// Below SHANGHAI_ACTIVATION_TIMESTAMP (1'681'338'455), and every block
     /// steps by 12s, so a corpus would have to run past 1.5 million blocks to
     /// leave the window.
     inline constexpr uint64_t GENESIS_TIMESTAMP = 1'663'224'179;
     inline constexpr uint64_t BLOCK_TIME = 12;
     inline constexpr uint64_t GAS_LIMIT = 30'000'000;
+
+    /// The id a block is committed and finalized under. Not the number
+    /// itself: TrieDb refuses the zero id, and an L2 genesis is block 0. The
+    /// id never reaches a hash, so it changes nothing a witness carries.
+    inline bytes32_t commit_id(uint64_t const number)
+    {
+        return bytes32_t{number + 1};
+    }
 
     /// One block's worth of input. `keys[i]` signs `txs[i]`; the builder fills
     /// each nonce from the sender's account and signs last, because the nonce

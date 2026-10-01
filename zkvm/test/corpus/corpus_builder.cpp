@@ -50,8 +50,8 @@
 #include <utility>
 
 #ifdef MONAD_ZKVM_L2
-    #include <category/execution/ethereum/namespace_anchor.hpp>
     #include <category/execution/ethereum/db/ordered_trie.hpp>
+    #include <category/execution/ethereum/namespace_anchor.hpp>
     #include <zkvm/guest/l2_cipher.hpp>
     #include <zkvm/guest/l2_config.hpp>
     #include <zkvm/guest/l2_ecdh.hpp>
@@ -142,7 +142,7 @@ namespace corpus
         }
     }
 
-#ifdef MONAD_ZKVM_L2
+#if defined(MONAD_L2_CIPHER_ECDH_POSEIDON2)
     namespace
     {
         /// A fresh ephemeral scalar per leaf, derived so a regenerated corpus
@@ -211,9 +211,9 @@ namespace corpus
             tdb_,
             *released.state,
             released.code,
-            bytes32_t{GENESIS_NUMBER},
+            commit_id(GENESIS_NUMBER),
             genesis);
-        tdb_.finalize(GENESIS_NUMBER, bytes32_t{GENESIS_NUMBER});
+        tdb_.finalize(GENESIS_NUMBER, commit_id(GENESIS_NUMBER));
         tdb_.set_block_and_prefix(GENESIS_NUMBER);
 
         seal_genesis(tdb_.read_eth_header());
@@ -253,7 +253,9 @@ namespace corpus
 
     void CorpusBuilder::check_operator_key() const
     {
-#ifdef MONAD_ZKVM_L2
+        // Only a suite with a key has one to check: the plaintext suite binds
+        // no secret, so any corpus secret makes the same leaves.
+#if defined(MONAD_L2_CIPHER_ECDH_POSEIDON2)
         // Checked once, against a throwaway header: the context's key
         // material does not depend on the block, only its epoch does, and a
         // secret that does not match the compiled operator key can never
@@ -409,13 +411,13 @@ namespace corpus
             tdb_,
             *released.state,
             released.code,
-            bytes32_t{number},
+            commit_id(number),
             header,
             receipts,
             {},
             senders,
             block.transactions);
-        tdb_.finalize(number, bytes32_t{number});
+        tdb_.finalize(number, commit_id(number));
         tdb_.set_block_and_prefix(number);
 
         BlockHeader const sealed = tdb_.read_eth_header();
@@ -474,6 +476,10 @@ namespace corpus
             // type byte and payload with no string wrapper.
             byte_string const plain =
                 rlp::encode_transaction(block.transactions[i]);
+    #if defined(MONAD_L2_CIPHER_PLAINTEXT)
+            // The control: the leaf is the transaction.
+            leaves.emplace_back(plain);
+    #else
             auto const ctx = l2_cipher_context(sealed);
             auto const r = ephemeral(sk_, number, i);
             unsigned char nonce[16] = {};
@@ -488,6 +494,7 @@ namespace corpus
                 std::span<unsigned char const>{plain.data(), plain.size()},
                 leaf));
             leaves.emplace_back(leaf.begin(), leaf.end());
+    #endif
             ++encrypted;
         }
         published.transactions_root = ordered_trie_root(leaves);

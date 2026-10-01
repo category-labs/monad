@@ -49,12 +49,6 @@ MONAD_NAMESPACE_BEGIN
 
 namespace corpus
 {
-    /// How many pre-genesis heights the sink may spend on chunks. Chunk `i`
-    /// commits at GENESIS_NUMBER - MAX_CHUNKS + i, so the run stays strictly
-    /// below the genesis height and leaves the sealed-header chain and the
-    /// block hash buffer -- both of which start at GENESIS_NUMBER -- untouched.
-    inline constexpr size_t MAX_GENESIS_CHUNKS = 1024;
-
     /// Accumulates a genesis state and commits it in chunks.
     ///
     /// Chunking is not an optimisation. sizeof(StateDelta) == 752 (a static

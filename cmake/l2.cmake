@@ -39,7 +39,11 @@
 # zkvm/guest/CMakeLists.txt. The macro is derived from the name below, so there
 # is nothing to keep in step by hand, and nothing in the proved path changes at
 # all -- it names no cipher.
-set(MONAD_ZKVM_L2_CIPHERS ecdh-poseidon2)
+#
+# `plaintext` is not a cipher. It is the control the others are measured
+# against: the same L2 chain with its leaves in the clear, so that the
+# difference is the encryption alone. Never a deployment.
+set(MONAD_ZKVM_L2_CIPHERS ecdh-poseidon2 plaintext)
 
 set(MONAD_ZKVM_L2_REQUIRED
     MONAD_ZKVM_L2_CHAIN_ID
@@ -71,6 +75,9 @@ function(monad_l2_cipher_sources GUEST_DIR OUT_VAR)
         "${GUEST_DIR}/l2_ecdh.cpp"
         "${GUEST_DIR}/l2_cipher.cpp"
         PARENT_SCOPE)
+  elseif(MONAD_ZKVM_L2_CIPHER STREQUAL "plaintext")
+    # Header-only: l2_plaintext_suite.hpp.
+    set(${OUT_VAR} "" PARENT_SCOPE)
   else()
     # Unreachable: monad_l2_compile_definitions rejects an unknown name, and it
     # runs first. Said out loud so a suite added to MONAD_ZKVM_L2_CIPHERS

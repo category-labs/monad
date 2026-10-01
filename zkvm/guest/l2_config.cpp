@@ -52,6 +52,13 @@ bytes32_t l2_state_salt(
     return to_bytes(keccak256(buf));
 }
 
+#if defined(MONAD_L2_CIPHER_PLAINTEXT)
+L2Cipher::Context l2_cipher_context(BlockHeader const &)
+{
+    // The plaintext suite takes nothing from the block or the deployment.
+    return L2Cipher::Context{};
+}
+#else
 L2Cipher::Context l2_cipher_context(BlockHeader const &header)
 {
     L2Cipher::Context ctx{};
@@ -70,5 +77,6 @@ L2Cipher::Context l2_cipher_context(BlockHeader const &header)
     ctx.constants_digest = l2_constants_digest(ctx);
     return ctx;
 }
+#endif
 
 MONAD_NAMESPACE_END

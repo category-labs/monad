@@ -23,3 +23,10 @@ has a constructor or an immutable, so the corpus seeds code and storage at
 genesis. The slots token_contracts.hpp writes are the ones --storage-layout
 reports; the corpus tests would catch a mismatch, because a transfer from a
 slot that does not carry the eligibility bit reverts.
+
+namespace_spoke_runtime.hpp is the same NamespaceSpoke compiled the same way,
+taken as runtime code from solc --standard-json, whose
+evm.deployedBytecode.immutableReferences gives where the constructor writes
+its two immutables (AST 441, NAMESPACE_CHAIN_ID: offset 348; AST 444,
+OPERATOR: offsets 285, 439, 774). The creation code it compiles to is
+byte-identical to the one in namespace_spoke_bytecode.hpp.

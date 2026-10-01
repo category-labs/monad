@@ -13,14 +13,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <zkvm/test/corpus/contracts/namespace_spoke_bytecode.hpp>
 #include <zkvm/test/corpus/corpus_builder.hpp>
 #include <zkvm/test/corpus/genesis_bulk.hpp>
 #include <zkvm/test/corpus/scenarios.hpp>
+#include <zkvm/test/corpus/spoke_code.hpp>
 #include <zkvm/test/corpus/token_contracts.hpp>
 #include <zkvm/test/corpus/tx_sign.hpp>
 #include <zkvm/test/corpus/witness_stats.hpp>
 #include <zkvm/test/corpus/workload.hpp>
 
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
@@ -116,7 +119,7 @@ namespace
     PartialTrieDb guest_view(byte_string const &witness)
     {
 #ifdef MONAD_ZKVM_L2
-        // Seven fields here and six otherwise, and each shape rejects the
+        // Eight fields here and six otherwise, and each shape rejects the
         // other loudly rather than silently mis-parsing -- which is the whole
         // argument for there being no version byte.
         auto parsed = parse_execution_witness_l2(witness);
@@ -361,6 +364,51 @@ TEST(CorpusScenarios, TheSpokeEmitsHarvestableMessages)
     EXPECT_TRUE(found_scenario);
 }
 
+// ---------------------------------------------------------------------------
+// An L2 genesis seeds the spoke rather than deploying it, from its runtime code
+// with the two immutables written in where solc says the constructor writes
+// them. That is only the spoke if it is byte for byte what a deployment
+// leaves, so deploy one and compare.
+// ---------------------------------------------------------------------------
+
+TEST(CorpusScenarios, TheGenesisSpokeIsTheDeployedSpoke)
+{
+    auto const deployer = corpus::address_of(KEY_A);
+    Address const op = corpus::address_of(KEY_B);
+    auto b = make_builder([&](State &s) {
+        s.add_to_balance(deployer, 1000000000000000000_u256);
+    });
+    Address const at = b.next_contract_address(deployer);
+
+    auto init = from_hex(corpus::NAMESPACE_SPOKE_CREATION_HEX);
+    ASSERT_TRUE(init.has_value());
+    byte_string data = std::move(init).value();
+    for (auto const &w :
+         {corpus::tokens::word(uint256_t{7}), corpus::tokens::word(op)}) {
+        data.append(w.bytes, sizeof(w.bytes));
+    }
+    Transaction tx{
+        .max_fee_per_gas = 0,
+        .gas_limit = 2'000'000,
+        .type = TransactionType::eip1559,
+        .data = std::move(data)};
+    tx.sc.chain_id = 1;
+    corpus::BlockSpec spec;
+    spec.txs.push_back(tx);
+    spec.keys.push_back(KEY_A);
+    auto const e = b.add_block(std::move(spec));
+    ASSERT_EQ(e.receipts.size(), 1u);
+    ASSERT_EQ(e.receipts[0].status, 1u);
+
+    auto const acct = b.db().read_account(at);
+    ASSERT_TRUE(acct.has_value());
+    auto const code = b.db().read_code(acct->code_hash);
+    ASSERT_TRUE(code);
+    EXPECT_EQ(
+        byte_string(code->code(), code->size()),
+        corpus::namespace_spoke_code(7, op));
+}
+
 #ifdef MONAD_ZKVM_L2
 // ---------------------------------------------------------------------------
 // The blinder. Two properties, and the second is the one that matters: a
@@ -555,6 +603,7 @@ TEST(WorkloadDispersion, TheShapeDoesNotChangeTheCostAtEqualDistinct)
         spec.shape = shape;
         spec.accounts = 20'000;
         spec.blocks = 2;
+        spec.warmup = 0;
         spec.distinct = 200;
         corpus::Workload w{spec};
         corpus::CorpusBuilder b{
@@ -596,7 +645,8 @@ TEST(WorkloadDispersion, MoreDistinctAccountsCostMoreButSublinearly)
         spec.preset = corpus::Preset::Payouts;
         spec.shape = corpus::Shape::Uniform;
         spec.accounts = 20'000;
-        spec.blocks = 1;
+        spec.blocks = 2;
+        spec.warmup = 0;
         spec.distinct = distinct;
         corpus::Workload w{spec};
         corpus::CorpusBuilder b{
@@ -605,7 +655,9 @@ TEST(WorkloadDispersion, MoreDistinctAccountsCostMoreButSublinearly)
             w.spec().gas_limit(),
             OPERATOR_SK,
             SALT_SECRET};
-        // Block 0 deploys; block 1 is the first one that draws.
+        // Block 1 is measured on every build: outside an L2 one block 0
+        // deploys the spoke, inside one the genesis already holds it and block
+        // 0 is a first draw.
         b.add_block(w.block(b, 0));
         auto const e = b.add_block(w.block(b, 1));
         return corpus::witness_stats(e.witness);
@@ -655,6 +707,7 @@ TEST(WorkloadTokens, EveryWholesaleCbdcTransactionSucceeds)
         spec.preset = corpus::Preset::WholesaleCbdc;
         spec.accounts = 60;
         spec.blocks = 3;
+        spec.warmup = 0;
         spec.distinct = 20;
         spec.currencies = currencies;
         // The seed the compiled spoke address was derived from, so the anchor
@@ -691,9 +744,9 @@ TEST(WorkloadTokens, EveryWholesaleCbdcTransactionSucceeds)
                 }
             }
 #ifdef MONAD_ZKVM_L2
-            // Every block after the deployment redeems reserves through the
-            // spoke, so every one of them carries an anchor.
-            EXPECT_EQ(e.namespace_anchor == bytes32_t{}, i == 0);
+            // The genesis holds the spoke and every block redeems reserves
+            // through it, so every block carries an anchor.
+            EXPECT_NE(e.namespace_anchor, bytes32_t{});
 #endif
         }
         EXPECT_EQ(settlements, 10u);
@@ -707,6 +760,7 @@ TEST(WorkloadTokens, EveryWorkerPayoutsTransactionSucceeds)
     spec.preset = corpus::Preset::WorkerPayouts;
     spec.accounts = 5'000;
     spec.blocks = 2;
+    spec.warmup = 0;
     spec.distinct = 100;
     spec.seed.bytes[31] = 1;
     corpus::Workload w{spec};

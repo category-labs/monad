@@ -34,6 +34,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <zkvm/test/corpus/corpus_builder.hpp>
 
 #include <cstdint>
@@ -100,8 +101,20 @@ namespace corpus
         /// accounts is meaningless, so it carries no other reading, and
         /// `resolved()` is what turns it into a number.
         uint64_t accounts{0};
-        /// Blocks to emit after the deploy block.
+        /// Blocks to emit after the deploy block -- after the warm-up, in an L2
+        /// build, which has no deploy block.
         uint64_t blocks{200};
+        /// L2 builds: blocks executed before the first emitted one, so every
+        /// emitted witness carries the ancestor headers a chain in its steady
+        /// state carries -- the block hash buffer's 256 -- rather than the
+        /// handful a chain just out of genesis has. Each costs about 0.35 M
+        /// COST, so a corpus that starts at genesis understates small blocks.
+        /// Always zero outside an L2 build.
+#ifdef MONAD_ZKVM_L2
+        uint64_t warmup{BlockHashBuffer::N};
+#else
+        uint64_t warmup{0};
+#endif
         /// Distinct accounts a block aims to touch -- banks or contractors
         /// for the token presets. THE axis. Zero means the preset's default,
         /// as above.
@@ -130,12 +143,16 @@ namespace corpus
     /// `spec.seed`.
     void seed_workload(GenesisSink &, WorkloadSpec const &);
 
-    /// Drives a builder through the workload's blocks, emitting each. Block 0
-    /// of the run deploys the NamespaceSpoke -- from the same key and nonce
-    /// `--spoke-address` prints, so a compiled MONAD_ZKVM_L2_SPOKE stays
-    /// valid -- and is reported like any other, since it is a real block.
-    /// The token presets deploy it the same way, so one configured guest
-    /// takes every preset's corpus.
+    /// Drives a builder through the workload's blocks, emitting each.
+    ///
+    /// In an L2 build the chain is the L2's own: genesis is block 0 and holds
+    /// the NamespaceSpoke at the address the guest is compiled with, as the
+    /// design creates it with the L2, so every block is a workload block --
+    /// the first `warmup` of them executed and not emitted.
+    ///
+    /// Outside one, block 0 of the run deploys the spoke -- from the same key
+    /// and nonce `--spoke-address` prints -- and is reported like any other,
+    /// since it is a real block.
     class Workload
     {
     public:
@@ -144,16 +161,23 @@ namespace corpus
         /// The genesis seeder to hand CorpusBuilder's bulk constructor.
         std::function<void(GenesisSink &)> seeder() const;
 
-        /// The spoke address, known before any block runs because CREATE
-        /// addresses are a function of deployer and nonce.
+        /// The spoke address: the compiled MONAD_ZKVM_L2_SPOKE in an L2 build,
+        /// and otherwise where the deploy block's CREATE puts it, known before
+        /// any block runs because a CREATE address is a function of deployer
+        /// and nonce.
         Address spoke() const;
 
         /// The next block's transactions, or an empty spec once the run is
-        /// done. `index` counts from 0, and 0 is the deploy block.
+        /// done. `index` counts from 0; outside an L2 build, 0 is the deploy
+        /// block.
         BlockSpec block(CorpusBuilder &, uint64_t index);
 
-        /// Total blocks the run emits, deploy block included.
+        /// Total blocks the run executes: the warm-up and the emitted ones,
+        /// or the deploy block and the emitted ones.
         uint64_t block_count() const;
+
+        /// Whether block `index` is one to emit rather than warm-up.
+        bool measured(uint64_t index) const;
 
         WorkloadSpec const &spec() const
         {

@@ -54,7 +54,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # this branch is a standalone project and sees none of the root's options.
     #
     # A witness built for one setting is rejected outright by the other -- six
-    # RLP fields against seven, InputTooShort one way and InputTooLong the
+    # RLP fields against eight, InputTooShort one way and InputTooLong the
     # other -- which is why the envelope needs no version byte.
     option(MONAD_ZKVM_L2
            "L2 semantics: encrypted transactions, message anchor, no gas economics"
@@ -914,14 +914,16 @@ else()
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/witness_stats.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/corpus_builder.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/token_contracts.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/spoke_code.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/workload.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/scenarios.cpp")
 
-    # In an L2 tree the generator encrypts the leaves and emits a seven-field
-    # witness, so it needs the cipher sources. The ciphertext transactions root
+    # In an L2 tree the generator makes each leaf with the selected cipher
+    # suite and emits an eight-field witness, so it needs that suite's sources
+    # -- none for the plaintext control. The transactions root over the leaves
     # needs none: ordered_trie_root is a template in db/ordered_trie.hpp. Out
-    # of one, the same sources build a plaintext corpus and none of this is
-    # compiled.
+    # of one, the same sources build a corpus for the mainnet guest and none of
+    # this is compiled.
     set(_corpus_extra "")
     set(_corpus_libs "")
     if(MONAD_ZKVM_L2)

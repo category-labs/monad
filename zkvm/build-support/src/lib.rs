@@ -455,11 +455,16 @@ fn manifest_dir() -> PathBuf {
 /// (category/vm/interpreter/execute.cpp): one per revision from BERLIN (8) to
 /// AMSTERDAM (15) and per opcode, 1 KiB each, the newest revision first and
 /// then in opcode order, so that a handler's address is `monad_vm_slots` plus
-/// its offset. The gaps are nops. A handler that outgrows its slot fails the
-/// link, since the location counter cannot move backwards, and so does a slot
-/// left empty.
+/// its offset. A slot holds where PUSH1 lands on the opcode in its first
+/// LEAD bytes, the handler right after them, and last whatever PUSH1 pair
+/// the landing jumps to. The gaps are nops. A landing longer than LEAD or a
+/// slot that outgrows its kilobyte fails the link, since the location counter
+/// cannot move backwards, and so does a slot left without a landing or a
+/// handler, or a handler that does not start right after its landing.
 fn zisk_slots_ld() -> String {
     const SLOT: usize = 0x400;
+    // instruction_table.hpp's slot_lead.
+    const LEAD: usize = 0x20;
     let mut ld = String::from(
         "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
          FILL(0x13000000)\n        monad_vm_slots = .;\n",
@@ -467,11 +472,19 @@ fn zisk_slots_ld() -> String {
     for (rank, rev) in (8..=15).rev().enumerate() {
         for op in 0..256 {
             let at = (rank * 256 + op) * SLOT;
+            let entry = at + LEAD;
             ld += &format!(
                 "        . = monad_vm_slots + {at:#x};\n        \
-                 KEEP(*(.monad_vm_slot.{rev:02}.{op:02x}))\n        \
+                 KEEP(*(.monad_vm_lead.{rev:02}.{op:02x}))\n        \
                  ASSERT(. > monad_vm_slots + {at:#x}, \
-                 \"monad_vm_slots: slot {rev:02}.{op:02x} is empty\")\n"
+                 \"monad_vm_slots: slot {rev:02}.{op:02x} has no landing\")\n        \
+                 . = monad_vm_slots + {entry:#x};\n        \
+                 KEEP(*(.monad_vm_slot.{rev:02}.{op:02x}))\n        \
+                 ASSERT(. > monad_vm_slots + {entry:#x}, \
+                 \"monad_vm_slots: slot {rev:02}.{op:02x} is empty\")\n        \
+                 ASSERT(monad_vm_slot_{rev:02}_{op:02x} == monad_vm_slots + {entry:#x}, \
+                 \"monad_vm_slots: handler {rev:02}.{op:02x} is not after its landing\")\n        \
+                 KEEP(*(.monad_vm_push1.{rev:02}.{op:02x}))\n"
             );
         }
     }

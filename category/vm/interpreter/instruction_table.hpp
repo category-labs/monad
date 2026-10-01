@@ -80,6 +80,12 @@ namespace monad::vm::interpreter
     // read and one step shorter than a table's.
     inline constexpr size_t slot_shift = 10;
 
+    // The bytes at the head of every slot, before its handler: where PUSH1
+    // lands, on the opcode after its immediate (push<1>). execute.cpp fills
+    // them, and the base the handlers carry points past the first of them,
+    // at opcode 0's handler.
+    inline constexpr size_t slot_lead = 32;
+
     // The revisions whose handlers have slots: the EVM ones the guest runs.
     // Other traits dispatch through their table.
     template <Traits traits>
@@ -97,6 +103,15 @@ namespace monad::vm::interpreter
         {
             return reinterpret_cast<InstrEval>(
                 reinterpret_cast<uintptr_t>(base) + (opcode << slot_shift));
+        }
+
+        // The head of the opcode's slot, slot_lead bytes before its handler.
+        [[gnu::always_inline]] InstrEval
+        lead(size_t const opcode) const noexcept
+        {
+            return reinterpret_cast<InstrEval>(
+                reinterpret_cast<uintptr_t>(base) + (opcode << slot_shift) -
+                slot_lead);
         }
     };
 
@@ -2362,6 +2377,93 @@ namespace monad::vm::interpreter
         MONAD_VM_FUSED_NEXT(4, -1);
     }
 
+    // PUSH1 and the opcode after its immediate, OP, run as one, instr_ptr on
+    // the PUSH1. On a revision with slots, PUSH1 dispatches to the head of
+    // OP's slot (push<1>), which for these followers jumps here (execute.cpp),
+    // PUSH1's own stack test made; push<1> tests the follower and calls this
+    // on the others.
+    template <uint8_t OP, Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void push1_then(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        if constexpr (OP == PUSH1) {
+            // Fuse PUSH1 <a> PUSH1 <b>, saving one dispatch.
+            // The pair needs two free slots and 6 gas; the fallback preserves
+            // per-opcode checks and error order.
+            // Zero padding supplies a missing second immediate.
+            static constexpr auto monad_vm_reqp =
+                fused_requirements<traits, PUSH1, PUSH1>();
+            if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_reqp))) {
+                gas_remaining += monad_vm_reqp.gas;
+                MONAD_VM_CHECK(PUSH1);
+                MONAD_VM_CHECK_AT(PUSH1, 1);
+            }
+            // Both immediates read before either store, so the old
+            // instr_ptr dies before the dispatch forms the new one.
+            uint8_t const monad_vm_imm1 = *(instr_ptr + 1);
+            uint8_t const monad_vm_imm2 = *(instr_ptr + 3);
+            interpreter::push(stack_top, uint256_t{monad_vm_imm1});
+            interpreter::push(stack_top + 1, uint256_t{monad_vm_imm2});
+            // Two ones before PUSH1 <k> SHL SUB build a mask, which
+            // push1_mask finishes: the dispatch's target, not a call of
+            // its own, which would copy the arguments away on every PUSH1.
+            instr_ptr += 4;
+            MONAD_VM_LAUNDER(instr_ptr);
+            bool const monad_vm_mask =
+                monad_vm_imm1 == 1 && monad_vm_imm2 == 1 &&
+                *instr_ptr == static_cast<std::uint8_t>(PUSH1) &&
+                *(instr_ptr + 2) == static_cast<std::uint8_t>(SHL) &&
+                *(instr_ptr + 3) == static_cast<std::uint8_t>(SUB);
+            auto const monad_vm_next = monad_vm_mask
+                                           ? &push1_mask<traits>
+                                           : MONAD_VM_TABLE_REF[*instr_ptr];
+            MONAD_VM_MUST_TAIL return monad_vm_next(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top + 2,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        else {
+            static_assert(OP == ADD || OP == SHL || OP == SHR || OP == SAR);
+            // The result replaces the top; the pair's net stack change is
+            // zero. Its growth is PUSH1's, whose test push<1> has made where
+            // the slots bring it here.
+            static constexpr auto monad_vm_req = [] {
+                auto r = fused_requirements<
+                    traits,
+                    PUSH1,
+                    static_cast<compiler::EvmOpCode>(OP)>();
+                if (has_slots<traits>) {
+                    r.max_growth = 0;
+                }
+                return r;
+            }();
+            if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
+                gas_remaining += monad_vm_req.gas;
+                MONAD_VM_CHECK(PUSH1);
+                MONAD_VM_CHECK_AT(OP, 1);
+            }
+            uint256_t const monad_vm_imm{*(instr_ptr + 1)};
+            if constexpr (OP == ADD) {
+                *stack_top = monad_vm_imm + *stack_top;
+            }
+            else if constexpr (OP == SHL) {
+                *stack_top <<= monad_vm_imm;
+            }
+            else if constexpr (OP == SHR) {
+                *stack_top >>= monad_vm_imm;
+            }
+            else {
+                *stack_top = sar(monad_vm_imm, *stack_top);
+            }
+            MONAD_VM_FUSED_NEXT(3, 0);
+        }
+    }
+
     // The word-by-word memory copy older Solidity compilers emit,
     //
     //     h: JUMPDEST DUP4 DUP2 LT ISZERO PUSH2 <end> JUMPI
@@ -2736,7 +2838,46 @@ namespace monad::vm::interpreter
         if constexpr (N == 1 || N == 2 || N == 4 || N == 8 || N == 20) {
             monad_vm_op2 = *(instr_ptr + N + 1);
         }
-        if constexpr (N == 1) {
+        if constexpr (N == 1 && has_slots<traits>) {
+            // PUSH1 lands at the head of its follower's slot, slot_lead bytes
+            // before the follower's handler (execute.cpp): for most opcodes
+            // the push itself, which falls into the handler, and for those
+            // push1_then fuses with it a jump there. Neither the follower's
+            // tests nor a dispatch of the push's own; only the stack's test
+            // is made here, the push's gas charged at the head.
+            if (MONAD_UNLIKELY(stack_top >= MONAD_VM_STACK_LIMIT)) {
+                MONAD_VM_MUST_TAIL return ctx.exit(Error);
+            }
+            // The tail call by hand, for the jump to take -slot_lead as its
+            // offset: through the function pointer, gcc forms the head's
+            // address with an addi of its own, one step on every PUSH1. The
+            // arguments are where the call would put them.
+            auto const monad_vm_head =
+                reinterpret_cast<uintptr_t>(itbl) +
+                (static_cast<uintptr_t>(monad_vm_op2) << slot_shift);
+            register runtime::Context *monad_vm_a0 asm("a0") = &ctx;
+            register uint256_t const *monad_vm_a1 asm("a1") =
+                MONAD_VM_ANALYSIS_ARG;
+            register uint256_t const *monad_vm_a2 asm("a2") = stack_bottom;
+            register uint256_t *monad_vm_a3 asm("a3") = stack_top;
+            register int64_t monad_vm_a4 asm("a4") = gas_remaining;
+            register uint8_t const *monad_vm_a5 asm("a5") = instr_ptr;
+            register void const *monad_vm_a6 asm("a6") = itbl;
+            asm volatile("jalr zero, %[off](%[head])"
+                         :
+                         : [head] "r"(monad_vm_head),
+                           [off] "i"(-static_cast<int>(slot_lead)),
+                           "r"(monad_vm_a0),
+                           "r"(monad_vm_a1),
+                           "r"(monad_vm_a2),
+                           "r"(monad_vm_a3),
+                           "r"(monad_vm_a4),
+                           "r"(monad_vm_a5),
+                           "r"(monad_vm_a6)
+                         : "memory");
+            __builtin_unreachable();
+        }
+        else if constexpr (N == 1) {
             // A bitmap keeps the check cheap on every PUSH1; testing four
             // opcodes separately regressed performance.
             constexpr std::uint64_t monad_vm_fuse_mask =
@@ -2795,44 +2936,14 @@ namespace monad::vm::interpreter
                 // Returns from the current handler.
                 MONAD_VM_FUSED_NEXT(3, 0);
             }
-            // Fuse PUSH1 <a> PUSH1 <b>, saving one dispatch.
-            // The pair needs two free slots and 6 gas; the fallback preserves
-            // per-opcode checks and error order.
-            // Zero padding supplies a missing second immediate.
-            // Tested outside of the previous mask because PUSH1 is #96 > 64.
+            // PUSH1 <a> PUSH1 <b>, tested outside of the previous mask
+            // because PUSH1 is #96 > 64.
             if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH1)) {
-                static constexpr auto monad_vm_reqp =
-                    fused_requirements<traits, PUSH1, PUSH1>();
-                if (MONAD_UNLIKELY(
-                        !MONAD_VM_FUSED_CHARGE_PURE(monad_vm_reqp))) {
-                    gas_remaining += monad_vm_reqp.gas;
-                    MONAD_VM_CHECK(PUSH1);
-                    MONAD_VM_CHECK_AT(PUSH1, 1);
-                }
-                // Both immediates read before either store, so the old
-                // instr_ptr dies before the dispatch forms the new one.
-                uint8_t const monad_vm_imm1 = *(instr_ptr + 1);
-                uint8_t const monad_vm_imm2 = *(instr_ptr + 3);
-                interpreter::push(stack_top, uint256_t{monad_vm_imm1});
-                interpreter::push(stack_top + 1, uint256_t{monad_vm_imm2});
-                // Two ones before PUSH1 <k> SHL SUB build a mask, which
-                // push1_mask finishes: the dispatch's target, not a call of
-                // its own, which would copy the arguments away on every PUSH1.
-                instr_ptr += 4;
-                MONAD_VM_LAUNDER(instr_ptr);
-                bool const monad_vm_mask =
-                    monad_vm_imm1 == 1 && monad_vm_imm2 == 1 &&
-                    *instr_ptr == static_cast<std::uint8_t>(PUSH1) &&
-                    *(instr_ptr + 2) == static_cast<std::uint8_t>(SHL) &&
-                    *(instr_ptr + 3) == static_cast<std::uint8_t>(SUB);
-                auto const monad_vm_next = monad_vm_mask
-                                               ? &push1_mask<traits>
-                                               : MONAD_VM_TABLE_REF[*instr_ptr];
-                MONAD_VM_MUST_TAIL return monad_vm_next(
+                MONAD_VM_MUST_TAIL return push1_then<PUSH1, traits>(
                     ctx,
                     MONAD_VM_ANALYSIS_ARG,
                     stack_bottom,
-                    stack_top + 2,
+                    stack_top,
                     gas_remaining,
                     instr_ptr MONAD_VM_TBL_ARG);
             }

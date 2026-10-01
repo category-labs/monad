@@ -80,10 +80,11 @@ struct Address : evmc_address
     {
 #if defined(MONAD_ZKVM_ZISK)
         if !consteval {
-            // Read as gcc expands the comparison, two 8-byte words then four
-            // bytes, but the four through lwu: gcc's lw sign-extends both
-            // sides of an equality the extension cannot change, and ZisK
-            // charges a signextend_w for each.
+            // The first eight bytes tell most addresses apart; when they are
+            // equal the addresses nearly always are, and the twelve others
+            // go to the DMA comparator (CSR 0x814, the length in the flag
+            // after it): one step and the words it reads, where two words
+            // and a four-byte read cost six steps and two 4-byte accesses.
             uint64_t a0;
             uint64_t b0;
             std::memcpy(&a0, a.bytes, sizeof(a0));
@@ -91,22 +92,18 @@ struct Address : evmc_address
             if (a0 != b0) {
                 return false;
             }
-            uint64_t a1;
-            uint64_t b1;
-            std::memcpy(&a1, a.bytes + 8, sizeof(a1));
-            std::memcpy(&b1, b.bytes + 8, sizeof(b1));
-            if (a1 != b1) {
-                return false;
-            }
-            uint64_t a2;
-            uint64_t b2;
-            asm("lwu %0, %1"
-                : "=r"(a2)
-                : "m"(*reinterpret_cast<uint8_t const(*)[4]>(a.bytes + 16)));
-            asm("lwu %0, %1"
-                : "=r"(b2)
-                : "m"(*reinterpret_cast<uint8_t const(*)[4]>(b.bytes + 16)));
-            return a2 == b2;
+            uint64_t differ;
+            asm(".option push\n\t"
+                ".option arch, +zicsr\n\t"
+                "csrrs %0, 0x814, %1\n\t"
+                "addi x0, %2, 12\n\t"
+                ".option pop"
+                : "=&r"(differ)
+                : "r"(a.bytes + 8),
+                  "r"(b.bytes + 8),
+                  "m"(*reinterpret_cast<uint8_t const(*)[12]>(a.bytes + 8)),
+                  "m"(*reinterpret_cast<uint8_t const(*)[12]>(b.bytes + 8)));
+            return differ == 0;
         }
 #endif
         return std::equal(a.bytes, a.bytes + 20, b.bytes);

@@ -1205,12 +1205,245 @@ namespace monad::vm::interpreter
         MONAD_VM_NEXT(CALLER);
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    // Whether the call carries no value: the big-endian word in four reads.
+    [[gnu::always_inline]] inline bool
+    call_value_is_zero(runtime::Context const &ctx) noexcept
+    {
+        uint64_t w[4];
+        std::memcpy(w, ctx.env.value.bytes, sizeof(w));
+        return (w[0] | w[1] | w[2] | w[3]) == 0;
+    }
+
+    // The via-IR ABI decoder's bound, at q:
+    //
+    //     PUSH0 (or PUSH1 <k>) CALLDATASIZE PUSH1 3 NOT ADD SLT
+    //     PUSH2 <revert> JUMPI
+    //
+    // its length in bytes when the JUMPI is not taken -- the calldata past
+    // the selector at least k long -- and 0 when the bytes differ or the
+    // jump is taken. Pushes three words at most.
+    [[gnu::always_inline]] inline size_t ir_bound_length(
+        runtime::Context const &ctx, uint8_t const *const q) noexcept
+    {
+        bool const push0 = q[0] == static_cast<std::uint8_t>(PUSH0);
+        if (!push0 && q[0] != static_cast<std::uint8_t>(PUSH1)) {
+            return 0;
+        }
+        size_t const k = push0 ? 0 : q[1];
+        auto const *const r = q + (push0 ? 1 : 2);
+        if (!(r[0] == static_cast<std::uint8_t>(CALLDATASIZE) &&
+              r[1] == static_cast<std::uint8_t>(PUSH1) && r[2] == 3 &&
+              r[3] == static_cast<std::uint8_t>(NOT) &&
+              r[4] == static_cast<std::uint8_t>(ADD) &&
+              r[5] == static_cast<std::uint8_t>(SLT) &&
+              r[6] == static_cast<std::uint8_t>(PUSH2) &&
+              r[9] == static_cast<std::uint8_t>(JUMPI))) {
+            return 0;
+        }
+        uint64_t const size = ctx.env.input_data_size;
+        if (size < 4 || size - 4 < k) {
+            return 0;
+        }
+        return static_cast<size_t>(r - q) + 10;
+    }
+
+    // The via-IR decoder's bound from its CALLDATASIZE, k already pushed:
+    // over [.. k], k popped and the JUMPI not taken. calldatasize
+    // tail-calls it when PUSH1 3 follows; other bytes, a large k, a short
+    // calldata and too full a stack run the CALLDATASIZE here.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void calldata_bound_ir(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const *const p = instr_ptr;
+        uint256_t const &monad_vm_k = stack_top[0];
+        uint64_t const monad_vm_size = ctx.env.input_data_size;
+        if (MONAD_UNLIKELY(
+                !(p[3] == static_cast<std::uint8_t>(NOT) &&
+                  p[4] == static_cast<std::uint8_t>(ADD) &&
+                  p[5] == static_cast<std::uint8_t>(SLT) &&
+                  p[6] == static_cast<std::uint8_t>(PUSH2) &&
+                  p[9] == static_cast<std::uint8_t>(JUMPI) &&
+                  stack_top >= stack_bottom &&
+                  stack_top + 2 <= MONAD_VM_STACK_LIMIT &&
+                  (monad_vm_k[1] | monad_vm_k[2] | monad_vm_k[3]) == 0 &&
+                  monad_vm_k[0] < 256 && monad_vm_size >= 4 &&
+                  monad_vm_size - 4 >= monad_vm_k[0]))) {
+            // The CALLDATASIZE as calldatasize runs it: dispatched to, it
+            // would call this twin again.
+            MONAD_VM_CHECK(CALLDATASIZE);
+            push(stack_top, ctx.env.input_data_size);
+            MONAD_VM_NEXT(CALLDATASIZE);
+        }
+        // Pure opcodes and a JUMPI not taken: the sign of the count is left
+        // to the next checkpoint (MONAD_VM_FUSED_CHARGE_PURE).
+        gas_remaining -= static_gas<
+            traits,
+            CALLDATASIZE,
+            PUSH1,
+            NOT,
+            ADD,
+            SLT,
+            PUSH2,
+            JUMPI>();
+        MONAD_VM_FUSED_NEXT(10, -1);
+    }
+
+    // The non-payable test of Solidity's legacy code generator,
+    //
+    //     CALLVALUE DUP1 ISZERO PUSH2 <ok> JUMPI PUSH1 0 DUP1 REVERT
+    //     ok: JUMPDEST POP                     (or PUSH0 DUP1 REVERT ..)
+    //
+    // without value: the jump to ok taken, the stack as it was. callvalue
+    // tail-calls it when DUP1 follows; other bytes, a value and too full a
+    // stack run the CALLVALUE here, as callvalue does.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void callvalue_nonpayable(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const *const p = instr_ptr;
+        auto const monad_vm_is = [p](size_t const k, auto const op) {
+            return p[k] == static_cast<std::uint8_t>(op);
+        };
+        // PUSH1 0 or PUSH0 before the DUP1 REVERT: ok is one byte nearer with
+        // PUSH0.
+        bool const monad_vm_push0 = monad_vm_is(7, PUSH0);
+        size_t const monad_vm_ok = monad_vm_push0 ? 10 : 11;
+        size_t const monad_vm_dst = detail::load_be_k<2>(p + 4);
+        size_t const monad_vm_pos =
+            static_cast<size_t>(p - MONAD_VM_ANALYSIS.code());
+        // ok is a JUMPDEST where these bytes put it: an instruction's first
+        // byte, read from this CALLVALUE on, so no map is needed.
+        if (MONAD_UNLIKELY(
+                !(monad_vm_is(2, ISZERO) && monad_vm_is(3, PUSH2) &&
+                  monad_vm_is(6, JUMPI) &&
+                  (monad_vm_push0 || (monad_vm_is(7, PUSH1) && p[8] == 0)) &&
+                  monad_vm_is(monad_vm_ok - 2, DUP1) &&
+                  monad_vm_is(monad_vm_ok - 1, REVERT) &&
+                  monad_vm_is(monad_vm_ok, JUMPDEST) &&
+                  monad_vm_is(monad_vm_ok + 1, POP) &&
+                  monad_vm_dst == monad_vm_pos + monad_vm_ok &&
+                  stack_top + 3 <= MONAD_VM_STACK_LIMIT &&
+                  call_value_is_zero(ctx)))) {
+            // The CALLVALUE as callvalue runs it: dispatched to, it would
+            // call this twin again.
+            MONAD_VM_CHECK(CALLVALUE);
+            push(stack_top, load_be<uint256_t>(ctx.env.value));
+            MONAD_VM_NEXT(CALLVALUE);
+        }
+        // The taken JUMPI's checkpoint, on the JUMPDEST it lands on, after
+        // the POP's charge: an exceptional halt either way.
+        gas_remaining -= static_gas<
+            traits,
+            CALLVALUE,
+            DUP1,
+            ISZERO,
+            PUSH2,
+            JUMPI,
+            JUMPDEST,
+            POP>();
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+        }
+        MONAD_VM_FUSED_NEXT(monad_vm_ok + 2, 0);
+    }
+
+    // The non-payable test of the via-IR code generator, CALLVALUE PUSH2
+    // <revert> JUMPI, without value: the JUMPI not taken; and the decoder's
+    // bound that commonly follows (ir_bound_length) with it when it holds.
+    // callvalue tail-calls it when PUSH2 follows; other bytes, a value and
+    // too full a stack run the CALLVALUE here, as callvalue does.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void callvalue_ir(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const *const p = instr_ptr;
+        if (MONAD_UNLIKELY(
+                !(p[4] == static_cast<std::uint8_t>(JUMPI) &&
+                  stack_top + 3 <= MONAD_VM_STACK_LIMIT &&
+                  call_value_is_zero(ctx)))) {
+            // The CALLVALUE as callvalue runs it: dispatched to, it would
+            // call this twin again.
+            MONAD_VM_CHECK(CALLVALUE);
+            push(stack_top, load_be<uint256_t>(ctx.env.value));
+            MONAD_VM_NEXT(CALLVALUE);
+        }
+        // Pure opcodes and JUMPIs not taken: the sign of the count is left
+        // to the next checkpoint (MONAD_VM_FUSED_CHARGE_PURE).
+        gas_remaining -= static_gas<traits, CALLVALUE, PUSH2, JUMPI>();
+        size_t const monad_vm_bound = ir_bound_length(ctx, p + 5);
+        if (monad_vm_bound != 0) {
+            gas_remaining -=
+                p[5] == static_cast<std::uint8_t>(PUSH0)
+                    ? static_gas<
+                          traits,
+                          PUSH0,
+                          CALLDATASIZE,
+                          PUSH1,
+                          NOT,
+                          ADD,
+                          SLT,
+                          PUSH2,
+                          JUMPI>()
+                    : static_gas<
+                          traits,
+                          PUSH1,
+                          CALLDATASIZE,
+                          PUSH1,
+                          NOT,
+                          ADD,
+                          SLT,
+                          PUSH2,
+                          JUMPI>();
+        }
+        instr_ptr += 5 + monad_vm_bound;
+        MONAD_VM_LAUNDER(instr_ptr);
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+            ctx,
+            MONAD_VM_ANALYSIS_ARG,
+            stack_bottom,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+#endif
+
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void callvalue(
         runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        // Solidity reads the call's value for its non-payable test, each
+        // generator's in a twin: DUP1 follows in the legacy one, PUSH2 in
+        // the via-IR one.
+        if (instr_ptr[1] == static_cast<std::uint8_t>(DUP1)) {
+            MONAD_VM_MUST_TAIL return callvalue_nonpayable<traits>(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        if (instr_ptr[1] == static_cast<std::uint8_t>(PUSH2)) {
+            MONAD_VM_MUST_TAIL return callvalue_ir<traits>(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+#endif
         MONAD_VM_CHECK(CALLVALUE);
         push(stack_top, load_be<uint256_t>(ctx.env.value));
 
@@ -1379,11 +1612,21 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
 #if defined(MONAD_ZKVM_ZISK)
-        // Solidity reads the calldata's size for two idioms, each with a
-        // twin: the dispatch prologue (LT follows) and the ABI decoder's
-        // bound (SUB follows).
+        // Solidity reads the calldata's size for three idioms, each with a
+        // twin: the dispatch prologue (LT follows), and the ABI decoder's
+        // bound of the via-IR generator (PUSH1 3) and of the legacy one (SUB).
         if (instr_ptr[1] == static_cast<std::uint8_t>(LT)) {
             MONAD_VM_MUST_TAIL return calldata_selector<traits>(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        if (instr_ptr[1] == static_cast<std::uint8_t>(PUSH1) &&
+            instr_ptr[2] == 3) {
+            MONAD_VM_MUST_TAIL return calldata_bound_ir<traits>(
                 ctx,
                 MONAD_VM_ANALYSIS_ARG,
                 stack_bottom,

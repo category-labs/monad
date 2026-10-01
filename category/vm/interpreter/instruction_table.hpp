@@ -3230,7 +3230,16 @@ namespace monad::vm::interpreter
             }
             uint256_t const immediate{*(instr_ptr + 1)};
             if constexpr (OP == ADD) {
-                *stack_top = immediate + *stack_top;
+                // PUSH1 supplies one byte (0..255), so all upper words of the
+                // immediate are zero. Without a carry from the low 64-bit
+                // word, the upper words of the sum stay unchanged.
+                uint64_t const low_sum = (*stack_top)[0] + immediate[0];
+                if (MONAD_LIKELY(low_sum >= immediate[0])) {
+                    (*stack_top)[0] = low_sum;
+                }
+                else {
+                    *stack_top = immediate + *stack_top;
+                }
             }
             else if constexpr (OP == SHL) {
                 *stack_top <<= immediate;

@@ -559,6 +559,28 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
                 }
             }
         };
+    // Check no carry, carries across each 64-bit boundary and 256-bit wrap.
+    for (uint8_t const immediate : {0, 1, 2, 255}) {
+        for (unsigned full_words = 0; full_words <= 4; ++full_words) {
+            for (uint8_t const low_byte : {0, 1, 254, 255}) {
+                std::array<uint8_t, 32> addend{};
+                addend.fill(0x42);
+                for (unsigned i = 0; i < full_words * 8; ++i) {
+                    addend[31 - i] = 0xff;
+                }
+                addend[31] = low_byte;
+                auto expected = addend;
+                unsigned carry = immediate;
+                for (unsigned i = 32; i != 0; --i) {
+                    unsigned const sum = expected[i - 1] + carry;
+                    expected[i - 1] = static_cast<uint8_t>(sum);
+                    carry = sum >> 8;
+                }
+                verify_immediate_pair(
+                    ADD, immediate, true, addend, expected, {});
+            }
+        }
+    }
     // PUSH2 must decode both bytes and work with ordinary and fused-PUSH1
     // followers, which use different prefix paths.
     for (unsigned immediate : {0, 1, 255, 256, 0x1234, 65535}) {

@@ -62,13 +62,13 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
 }
 
 #ifdef MONAD_ZKVM_ZISK
-StateDelta &BlockState::read_account_delta(Address const &address)
+StateDelta &BlockState::read_account_delta(evmc_address const &address)
 {
     // Find or insert in one lookup; read the DB only when creating an entry.
     struct Read
     {
         Db &db;
-        Address const &address;
+        evmc_address const &address;
 
         operator StateDelta() const
         {
@@ -82,26 +82,27 @@ StateDelta &BlockState::read_account_delta(Address const &address)
 }
 #endif
 
-std::optional<Account> BlockState::read_account(Address const &address)
+std::optional<Account> BlockState::read_account(evmc_address const &address)
 {
 #ifdef MONAD_ZKVM_ZISK
     return read_account_delta(address).account.second;
 #else
+    Address const owned_address{address};
     // block state
     {
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_);
-        if (MONAD_LIKELY(state_->find(it, address))) {
+        if (MONAD_LIKELY(state_->find(it, owned_address))) {
             return it->second.account.second;
         }
     }
     // database
     {
-        auto const result = db_.read_account(address);
+        auto const result = db_.read_account(owned_address);
         StateDeltas::const_accessor it{};
         state_->emplace(
             it,
-            address,
+            owned_address,
             StateDelta{.account = {result, result}, .storage = {}});
         return it->second.account.second;
     }
@@ -110,8 +111,8 @@ std::optional<Account> BlockState::read_account(Address const &address)
 
 #ifdef MONAD_ZKVM_ZISK
 bytes32_t const &BlockState::read_storage(
-    StateDelta &delta, Address const &address, Incarnation const incarnation,
-    bytes32_t const &key)
+    StateDelta &delta, evmc_address const &address,
+    Incarnation const incarnation, bytes32_t const &key)
 {
     // Keep using the supplied entry across the DB read: guest execution is
     // single-threaded, and map insertions preserve pointers.
@@ -133,7 +134,7 @@ bytes32_t const &BlockState::read_storage(
     struct Read
     {
         BlockState &self;
-        Address const &address;
+        evmc_address const &address;
         Incarnation incarnation;
         bytes32_t const &key;
         bool in_db;
@@ -169,20 +170,22 @@ bytes32_t const &BlockState::read_storage(
 #endif
 
 bytes32_t BlockState::read_storage(
-    Address const &address, Incarnation const incarnation, bytes32_t const &key)
+    evmc_address const &address, Incarnation const incarnation,
+    bytes32_t const &key)
 {
 #ifdef MONAD_ZKVM_ZISK
-    StateDeltas::accessor it{};
     MONAD_ASSERT(state_);
-    MONAD_ASSERT(state_->find(it, address));
+    auto const it = state_->find(address);
+    MONAD_ASSERT(it != state_->end());
     return read_storage(it->second, address, incarnation, key);
 #else
+    Address const owned_address{address};
     bool read_storage = false;
     // block state
     {
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_);
-        MONAD_ASSERT(state_->find(it, address));
+        MONAD_ASSERT(state_->find(it, owned_address));
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return {};
@@ -203,13 +206,14 @@ bytes32_t BlockState::read_storage(
     {
         bytes32_t result{};
         if (read_storage) {
-            result = db_.read_storage(address, incarnation, key);
+            result = db_.read_storage(owned_address, incarnation, key);
             MONAD_ASSERT(
-                !secondary_db_ || secondary_db_->read_storage(
-                                      address, incarnation, key) == result);
+                !secondary_db_ ||
+                secondary_db_->read_storage(owned_address, incarnation, key) ==
+                    result);
         }
         StateDeltas::accessor it{};
-        MONAD_ASSERT(state_->find(it, address));
+        MONAD_ASSERT(state_->find(it, owned_address));
         // The host must recheck the account after releasing the lock for the read.
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {

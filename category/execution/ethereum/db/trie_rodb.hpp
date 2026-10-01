@@ -79,7 +79,8 @@ public:
         block_number_ = block_number;
     }
 
-    virtual std::optional<Account> read_account(Address const &addr) override
+    virtual std::optional<Account>
+    read_account(evmc_address const &addr) override
     {
         auto acc_leaf_res = db_.find(
             prefix_cursor_,
@@ -100,7 +101,7 @@ public:
     }
 
     virtual bytes32_t read_storage(
-        Address const &addr, Incarnation, bytes32_t const &key) override
+        evmc_address const &addr, Incarnation, bytes32_t const &key) override
     {
         // On a page-encoded db the storage leaf is the page that contains the
         // slot, keyed by page_key; the slot value lives at its offset within.

@@ -131,7 +131,7 @@ namespace
             return false;
         }
 
-        std::optional<Account> read_account(Address const &a) override
+        std::optional<Account> read_account(evmc_address const &a) override
         {
             for (auto const &e : accounts) {
                 if (e.set && e.id == a.bytes[19]) {
@@ -141,8 +141,8 @@ namespace
             return std::nullopt;
         }
 
-        bytes32_t
-        read_storage(Address const &a, Incarnation, bytes32_t const &k) override
+        bytes32_t read_storage(
+            evmc_address const &a, Incarnation, bytes32_t const &k) override
         {
             for (auto const &e : storage) {
                 if (e.set && e.id == a.bytes[19] && e.slot == k.bytes[31]) {

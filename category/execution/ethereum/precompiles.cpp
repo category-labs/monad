@@ -65,7 +65,8 @@ static std::optional<uint64_t> fmap_optional(byte_string_view const a)
 }
 
 template <Traits traits>
-std::optional<PrecompiledContract> resolve_precompile(Address const &address)
+std::optional<PrecompiledContract>
+resolve_precompile(evmc_address const &address)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
 
@@ -160,7 +161,7 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 EXPLICIT_TRAITS(resolve_precompile);
 
 template <Traits traits>
-bool is_eth_precompile(Address const &address)
+bool is_eth_precompile(evmc_address const &address)
 {
     return resolve_precompile<traits>(address).has_value();
 }
@@ -168,7 +169,7 @@ bool is_eth_precompile(Address const &address)
 EXPLICIT_TRAITS(is_eth_precompile);
 
 template <Traits traits>
-bool is_precompile(Address const &address)
+bool is_precompile(evmc_address const &address)
 {
     return is_eth_precompile<traits>(address);
 }

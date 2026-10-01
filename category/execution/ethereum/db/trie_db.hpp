@@ -71,9 +71,9 @@ public:
     void reset_root(::monad::mpt::Node::SharedPtr root, uint64_t block_number);
     ::monad::mpt::Node::SharedPtr const &get_root() const;
 
-    virtual std::optional<Account> read_account(Address const &) override;
-    virtual bytes32_t
-    read_storage(Address const &, Incarnation, bytes32_t const &key) override;
+    virtual std::optional<Account> read_account(evmc_address const &) override;
+    virtual bytes32_t read_storage(
+        evmc_address const &, Incarnation, bytes32_t const &key) override;
     virtual storage_page_t read_storage_page(
         Address const &, Incarnation, bytes32_t const &page_key) override;
     virtual vm::SharedIntercode read_code(bytes32_t const &) override;

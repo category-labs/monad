@@ -69,14 +69,15 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
-bool is_precompile(Address const &address)
+bool is_precompile(evmc_address const &address)
 {
     // Note that if new Monad-specific precompiles are added, identifying them
     // as a precompile should be gated behind the revision they were activated
     // in.
     return is_eth_precompile<traits>(address) ||
-           (address == staking::STAKING_CA) ||
-           (traits::monad_rev() >= MONAD_NINE && address == RESERVE_BALANCE_CA);
+           address_equal(address, staking::STAKING_CA) ||
+           (traits::monad_rev() >= MONAD_NINE &&
+            address_equal(address, RESERVE_BALANCE_CA));
 }
 
 EXPLICIT_MONAD_TRAITS(is_precompile);

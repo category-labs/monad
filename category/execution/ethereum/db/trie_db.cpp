@@ -101,8 +101,10 @@ Node::SharedPtr const &TrieDb::get_root() const
     return curr_root_;
 }
 
-std::optional<Account> TrieDb::read_account(Address const &addr)
+std::optional<Account> TrieDb::read_account(evmc_address const &address)
 {
+    // Native cache APIs still take Address.
+    Address const addr{address};
     std::optional<Account> result;
     auto const status = cache_ ? cache_->try_read_account(addr, result)
                                : CacheReadStatus::MissTruncated;
@@ -132,8 +134,10 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
 }
 
 bytes32_t TrieDb::read_storage(
-    Address const &addr, Incarnation const incarnation, bytes32_t const &key)
+    evmc_address const &address, Incarnation const incarnation,
+    bytes32_t const &key)
 {
+    Address const addr{address};
     bytes32_t const lookup_key = storage_lookup_key(key);
     uint8_t const lookup_offset = page_encoded_ ? compute_slot_offset(key) : 0;
     bytes32_t result{};

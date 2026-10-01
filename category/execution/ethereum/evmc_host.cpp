@@ -145,10 +145,11 @@ EvmcHostBase::get_code_hash(evmc::address const &address) const noexcept
 {
     MONAD_TRY
     {
-        if (state_.account_is_dead(as_monad(address))) {
+        evmc_address const &account = address;
+        if (state_.account_is_dead(account)) {
             return bytes32_t{};
         }
-        return state_.get_code_hash(as_monad(address));
+        return state_.get_code_hash(account);
     }
     MONAD_CATCH(...)
     {

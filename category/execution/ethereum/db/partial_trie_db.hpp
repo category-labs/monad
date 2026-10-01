@@ -57,7 +57,10 @@ class PartialTrieDb final : public Db
     // Cache storage roots across account switches; NULL_ID also caches absence.
     // Entries refer to the immutable pre-state, so they need no invalidation
     // during the block's reads.
-    mutable ankerl::unordered_dense::map<Address, mpt::NodeId> sroots_{};
+    mutable ankerl::unordered_dense::map<
+        Address, mpt::NodeId, ankerl::unordered_dense::hash<Address>,
+        AddressEqual>
+        sroots_{};
 #endif
     CodeIndex codes_;
     uint64_t block_number_{0};
@@ -83,10 +86,10 @@ public:
         return false;
     }
 
-    std::optional<Account> read_account(Address const &) override;
+    std::optional<Account> read_account(evmc_address const &) override;
 
     bytes32_t
-    read_storage(Address const &, Incarnation, bytes32_t const &) override;
+    read_storage(evmc_address const &, Incarnation, bytes32_t const &) override;
 
     storage_page_t
     read_storage_page(Address const &, Incarnation, bytes32_t const &) override

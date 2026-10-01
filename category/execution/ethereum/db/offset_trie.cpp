@@ -390,6 +390,55 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     MONAD_ASSERT(unclaimed == 0);
 }
 
+#if defined(MONAD_ZKVM_ZISK)
+namespace
+{
+    // A leaf's stored path against the rest of the key that reached it. A
+    // stored path is left-aligned (path_view), so when the key's rest starts
+    // on a byte too the two are the same bytes, and the whole ones go to the
+    // DMA comparator (CSR 0x814, the length in the register after it): one
+    // step and the words it reads, where nibble_mismatch takes some fifteen
+    // steps for each sixteen nibbles. An odd count ends on the high nibble of
+    // a byte, compared alone: the path's low nibble there is padding, which
+    // nothing hashes and so nothing constrains.
+    [[gnu::always_inline]] inline bool
+    leaf_path_equals(NibblesView const path, NibblesView const key)
+    {
+        if (path.begin_nibble() || key.begin_nibble()) {
+            return path == key;
+        }
+        unsigned const n = path.nibble_size();
+        if (n != key.nibble_size()) {
+            return false;
+        }
+        unsigned char const *const a = path.data();
+        unsigned char const *const b = key.data();
+        size_t const whole = n / 2;
+        if ((n & 1) != 0 && ((a[whole] ^ b[whole]) & 0xf0) != 0) {
+            return false;
+        }
+        if (whole == 0) {
+            return true;
+        }
+        uint64_t differ;
+        asm(".option push\n\t"
+            ".option arch, +zicsr\n\t"
+            "csrrs %0, 0x814, %1\n\t"
+            "add x0, %2, %3\n\t"
+            ".option pop"
+            : "=&r"(differ)
+            : "r"(a),
+              "r"(b),
+              "r"(whole),
+              "m"(*reinterpret_cast<
+                  unsigned char const(*)[MAX_PATH_NIBBLES / 2]>(a)),
+              "m"(*reinterpret_cast<
+                  unsigned char const(*)[MAX_PATH_NIBBLES / 2]>(b)));
+        return differ == 0;
+    }
+}
+#endif
+
 NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
 {
     NodeViewBase found = empty();
@@ -423,13 +472,21 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
                     return e.child();
                 },
                 [&](AccountLeafView l) -> NodeId {
+#if defined(MONAD_ZKVM_ZISK)
+                    if (leaf_path_equals(l.path(), key)) {
+#else
                     if (l.path() == key) {
+#endif
                         found = l;
                     }
                     return NULL_ID;
                 },
                 [&](StorageLeafView l) -> NodeId {
+#if defined(MONAD_ZKVM_ZISK)
+                    if (leaf_path_equals(l.path(), key)) {
+#else
                     if (l.path() == key) {
+#endif
                         found = l;
                     }
                     return NULL_ID;

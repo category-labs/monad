@@ -85,7 +85,7 @@ namespace monad::vm::interpreter
     inline constexpr bool fuse_swap1 = true;
     #endif
     inline constexpr int copy_zero_start = 1368;
-    inline constexpr int copy_prefix_bytes = fuse_swap1 ? 104 : 64;
+    inline constexpr int copy_prefix_bytes = fuse_swap1 ? 144 : 104;
 
     consteval int lag_offset(unsigned const lag) noexcept
     {
@@ -156,10 +156,10 @@ namespace monad::vm::interpreter
         return prefix_back_offset(copy, num_args) - lag_offset(copy);
     }
 
-    // SWAP1 enters the first prefix of its follower's copy.
+    // SWAP1 enters after the follower's 40-byte DUP prefix.
     consteval int swap1_prefix_offset(unsigned const follower_lag) noexcept
     {
-        return copy_prefix_bytes - lag_offset(follower_lag);
+        return 104 - lag_offset(follower_lag);
     }
 
     // Label the instruction for the ELF audit. Keep it on one assembly line
@@ -171,7 +171,8 @@ namespace monad::vm::interpreter
     // handler, made by hand for the jump to take -OFFSET as its immediate:
     // through a function pointer gcc forms the head's address with an addi of
     // its own. The arguments are where the call would put them.
-    #define MONAD_VM_PREFIX_DISPATCH(OFFSET, NEXT_OPCODE, TOP, GAS, IP)        \
+    // DUPn also passes the address of the duplicated word in a7.
+    #define MONAD_VM_PREFIX_DISPATCH(OFFSET, NEXT_OPCODE, TOP, GAS, IP, ...)   \
         do {                                                                   \
             auto const follower_handler_address =                              \
                 reinterpret_cast<uintptr_t>(table_base) +                      \
@@ -185,6 +186,8 @@ namespace monad::vm::interpreter
             register int64_t monad_vm_a4 asm("a4") = (GAS);                    \
             register uint8_t const *monad_vm_a5 asm("a5") = (IP);              \
             register void const *monad_vm_a6 asm("a6") = table_base;           \
+            __VA_OPT__(register uint256_t const *monad_vm_a7 asm("a7") =       \
+                           (__VA_ARGS__);)                                     \
             asm volatile(MONAD_VM_MARKED_TAIL_JUMP(prefix)                     \
                          :                                                     \
                          : [head] "r"(follower_handler_address),               \
@@ -195,7 +198,7 @@ namespace monad::vm::interpreter
                            "r"(monad_vm_a3),                                   \
                            "r"(monad_vm_a4),                                   \
                            "r"(monad_vm_a5),                                   \
-                           "r"(monad_vm_a6)                                    \
+                           "r"(monad_vm_a6)__VA_OPT__(, "r"(monad_vm_a7))      \
                          : "memory");                                          \
             __builtin_unreachable();                                           \
         }                                                                      \
@@ -4008,6 +4011,16 @@ namespace monad::vm::interpreter
         else {
             MONAD_VM_CHECK_OWN_OVERFLOW(DUP1 + (N - 1));
 
+            if constexpr (lag_dispatch<traits>) {
+                constexpr unsigned follower_lag = (traits::lag + 1) % lag_count;
+                MONAD_VM_PREFIX_DISPATCH(
+                    copy_prefix_bytes - lag_offset(follower_lag),
+                    instr_ptr[1],
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr + 1 - follower_lag,
+                    &stack_top[1 - N]);
+            }
             push(stack_top, stack_top[-(N - 1)]);
 
             MONAD_VM_NEXT(DUP1 + (N - 1));
@@ -4209,6 +4222,103 @@ namespace monad::vm::interpreter
             stack_top,
             gas_remaining,
             new_ip MONAD_VM_TBL_ARG);
+    }
+
+    // DUPn has checked its operands and paid its gas. Memory growth needs
+    // the ordinary stack layout, so materialize the duplicate on that path.
+    template <uint8_t OP, Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void dup_then(
+        runtime::Context &entry_ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM,
+        uint256_t const *const dup_source)
+    {
+        runtime::Context &ctx = held_in_a0(entry_ctx);
+        if constexpr (OP == MSTORE) {
+            // DUPn checked the operands and room for its copy.
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+            MONAD_VM_CHECK_OWN_GAS(MSTORE);
+    #else
+            static_assert(!should_check_gas(
+                MSTORE, compiler::opcode_table<traits>[MSTORE].dynamic_gas));
+            gas_remaining -= static_gas<traits, MSTORE>();
+    #endif
+            auto const offset = ctx.get_memory_offset(*dup_source);
+            if (MONAD_UNLIKELY(ctx.memory.size < *offset + 32)) {
+                *(stack_top + 1) = *dup_source;
+                MONAD_VM_MUST_TAIL return mstore_grow<traits>(
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top + 1,
+                    gas_remaining,
+                    MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+            }
+            runtime::mstore_at<base_traits<traits>>(&ctx, offset, &*stack_top);
+            MONAD_VM_DISPATCH(1, -1, *instr_ptr);
+        }
+        else if constexpr (OP == MLOAD) {
+            // DUPn checked the operands and room for its copy.
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+            MONAD_VM_CHECK_OWN_GAS(MLOAD);
+    #else
+            static_assert(!should_check_gas(
+                MLOAD, compiler::opcode_table<traits>[MLOAD].dynamic_gas));
+            gas_remaining -= static_gas<traits, MLOAD>();
+    #endif
+            auto const offset = ctx.get_memory_offset(*dup_source);
+            if (MONAD_UNLIKELY(ctx.memory.size < *offset + 32)) {
+                *(stack_top + 1) = *dup_source;
+                MONAD_VM_MUST_TAIL return mload_grow<
+                    compiler_dispatch_traits<traits>>(
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top + 1,
+                    gas_remaining,
+                    MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+            }
+            runtime::mload_at<base_traits<traits>>(
+                &ctx, stack_top.next_slot(), offset);
+            MONAD_VM_DISPATCH(1, 1, *instr_ptr);
+        }
+        else if constexpr (OP == SWAP1) {
+            // The old top one slot up, the copied word under it.
+            MONAD_VM_CHECK(SWAP1);
+            *(stack_top + 1) = *stack_top;
+            *stack_top = *dup_source;
+            MONAD_VM_DISPATCH(1, 1, *instr_ptr);
+        }
+        else {
+            MONAD_VM_CHECK(static_cast<compiler::EvmOpCode>(OP));
+            if constexpr (OP == ADD) {
+                ctx.add256_params.a =
+                    reinterpret_cast<uint64_t const *>(dup_source);
+                zisk_add256(ctx.add256_params, *stack_top, *stack_top);
+            }
+            else if constexpr (OP == SUB) {
+                // SUB computes the duplicated value minus the original top.
+                ctx.sub256_params.a =
+                    reinterpret_cast<uint64_t const *>(dup_source);
+                asm volatile("" ::: "memory");
+                auto &top_word = *stack_top;
+                for (size_t i = 0; i < 4; ++i) {
+                    top_word[i] = ~top_word[i];
+                }
+                zisk_add256(ctx.sub256_params, top_word, top_word);
+            }
+            else if constexpr (OP == LT) {
+                *stack_top = *dup_source < *stack_top;
+            }
+            else if constexpr (OP == GT) {
+                *stack_top = *dup_source > *stack_top;
+            }
+            else {
+                static_assert(OP == AND);
+                *stack_top = *dup_source & *stack_top;
+            }
+            MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+        }
     }
 
     // Stack words from bottom to top: SWAP1 DUP2 maps [a,b] to [b,a,b];

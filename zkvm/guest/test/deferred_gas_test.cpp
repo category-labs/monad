@@ -227,6 +227,40 @@ namespace
                r.output == 0 && r.accesses == 0;
     }
 
+    bool dup_prefixes()
+    {
+        for (unsigned depth = 2; depth <= 16; ++depth) {
+            for (auto follower :
+                 {ADD, SUB, AND, LT, GT, SWAP1, MLOAD, MSTORE, POP}) {
+                std::vector<uint8_t> code;
+                for (unsigned i = 0; i < 16; ++i) {
+                    code.insert(
+                        code.end(), {PUSH3, 0, 0, static_cast<uint8_t>(i + 1)});
+                }
+                code.push_back(static_cast<uint8_t>(DUP1 + depth - 1));
+                auto reference = code;
+                // JUMPDEST separates DUPn from its follower and costs one gas.
+                reference.push_back(JUMPDEST);
+                for (auto *program : {&code, &reference}) {
+                    program->push_back(static_cast<uint8_t>(follower));
+                    program->insert(
+                        program->end(),
+                        {PUSH2, 0, 64, MSTORE, PUSH1, 96, PUSH0, RETURN});
+                }
+                auto const expected = run(reference, 1001);
+                auto const actual = run(code, 1000);
+                if (expected.status != CallStatus::Success ||
+                    actual.status != CallStatus::Success ||
+                    actual.gas != expected.gas ||
+                    actual.output_bytes != expected.output_bytes ||
+                    !failed_cleanly(run(code, 999 - actual.gas))) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     bool swap1_prefixes()
     {
         for (unsigned padding = 0; padding < 7; ++padding) {
@@ -870,7 +904,7 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         effects &= failed_cleanly(run(code, cost - 1));
         effects &= failed_cleanly(run(code, 61)); // OOG at loop entry.
     }
-    check(effects && swap1_prefixes());
+    check(effects && swap1_prefixes() && dup_prefixes());
     // Two selector tests: first match, second match, or neither. Sweep gas
     // through both tests and the taken jump's JUMPDEST charge.
     bool selectors = true;

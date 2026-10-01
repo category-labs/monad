@@ -3086,8 +3086,45 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        static_assert(OP == JUMP || OP == JUMPI);
-        if constexpr (OP == JUMP) {
+        static_assert(OP == JUMP || OP == JUMPI || OP == MLOAD || OP == MSTORE);
+        if constexpr (OP == MLOAD || OP == MSTORE) {
+            // As push1_then's, the offset two bytes: PUSH2's stack test,
+            // then the memory's size alone; outside it, the push and the
+            // follower's handler.
+            if (MONAD_UNLIKELY(stack_top >= MONAD_VM_STACK_LIMIT)) {
+                MONAD_VM_MUST_TAIL return ctx.exit(Error);
+            }
+            auto const monad_vm_k = runtime::Memory::Offset::unsafe_from(
+                static_cast<runtime::Memory::Offset::rep>(
+                    detail::load_be_k<2>(instr_ptr + 1)));
+            if constexpr (OP == MLOAD) {
+                if (MONAD_LIKELY(ctx.memory.size >= *monad_vm_k + 32)) {
+                    gas_remaining -= static_gas<traits, PUSH2, MLOAD>();
+                    runtime::mload_at<traits>(&ctx, stack_top + 1, monad_vm_k);
+                    MONAD_VM_FUSED_NEXT(4, 1);
+                }
+            }
+            else {
+                if (MONAD_LIKELY(
+                        stack_top >= stack_bottom &&
+                        ctx.memory.size >= *monad_vm_k + 32)) {
+                    gas_remaining -= static_gas<traits, PUSH2, MSTORE>();
+                    runtime::mstore_at<traits>(&ctx, monad_vm_k, stack_top);
+                    MONAD_VM_FUSED_NEXT(4, -1);
+                }
+            }
+            interpreter::push(stack_top, uint256_t{*monad_vm_k});
+            gas_remaining -= static_gas<traits, PUSH2>();
+            instr_ptr += 3;
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[OP](
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top + 1,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        else if constexpr (OP == JUMP) {
             MONAD_VM_MUST_TAIL return push2_jump_at<traits>(
                 ctx,
                 MONAD_VM_ANALYSIS_ARG,

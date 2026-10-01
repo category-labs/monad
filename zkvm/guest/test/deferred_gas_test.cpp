@@ -186,6 +186,7 @@ namespace
         int64_t refund;
         size_t output;
         unsigned accesses;
+        std::vector<uint8_t> output_bytes;
     };
 
     template <typename Traits = GasTraits>
@@ -209,7 +210,12 @@ namespace
             result.gas_left,
             result.gas_refund,
             result.output_size,
-            host.accesses};
+            host.accesses,
+            result.output_size == 0
+                ? std::vector<uint8_t>{}
+                : std::vector<uint8_t>{
+                      result.output_data,
+                      result.output_data + result.output_size}};
     }
 
     bool failed_cleanly(Outcome const &r)
@@ -445,6 +451,62 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         std::vector<uint8_t> code(1024, PUSH0);
         code.insert(code.end(), {PUSH1, 0, static_cast<uint8_t>(op), STOP});
         effects &= failed_cleanly(run(code, 10000));
+    }
+    // Compare fused swaps with ordinary PUSH2 + SWAP, including missing
+    // operands and every gas budget through successful execution.
+    for (unsigned depth = 1; depth <= 4; ++depth) {
+        for (unsigned count = 0; count <= 5; ++count) {
+            std::vector<uint8_t> fused;
+            for (unsigned value = 1; value <= count; ++value) {
+                fused.insert(
+                    fused.end(), {PUSH2, 0, static_cast<uint8_t>(value)});
+            }
+            auto ordinary = fused;
+            auto const swap = static_cast<uint8_t>(SWAP1 + depth - 1);
+            fused.insert(fused.end(), {PUSH1, 0xa5, swap});
+            ordinary.insert(ordinary.end(), {PUSH2, 0, 0xa5, swap});
+            // Return every resulting word so misplaced values are observable.
+            for (unsigned word = 0; word <= count; ++word) {
+                for (auto *code : {&fused, &ordinary}) {
+                    code->insert(
+                        code->end(),
+                        {PUSH2, 0, static_cast<uint8_t>(32 * word), MSTORE});
+                }
+            }
+            for (auto *code : {&fused, &ordinary}) {
+                code->insert(
+                    code->end(),
+                    {PUSH2,
+                     0,
+                     static_cast<uint8_t>(32 * (count + 1)),
+                     PUSH0,
+                     RETURN});
+            }
+            auto const successful = run(fused, 120);
+            effects &= count >= depth ? successful.status == CallStatus::Success
+                                      : failed_cleanly(successful);
+            if (count >= depth) {
+                std::vector<uint8_t> expected_bytes(32 * (count + 1));
+                for (unsigned word = 0; word <= count; ++word) {
+                    expected_bytes[32 * word + 31] = static_cast<uint8_t>(
+                        word == 0 ? count - depth + 1
+                                  : (word == depth ? 0xa5 : count - word + 1));
+                }
+                effects &= successful.output_bytes == expected_bytes;
+            }
+            for (int64_t gas = 0; gas <= 120; ++gas) {
+                auto const actual = run(fused, gas);
+                auto const expected = run(ordinary, gas);
+                effects &= actual.status == expected.status &&
+                           actual.gas == expected.gas &&
+                           actual.output_bytes == expected.output_bytes;
+            }
+        }
+        std::vector<uint8_t> full(1024, PUSH0);
+        full.insert(
+            full.end(),
+            {PUSH1, 1, static_cast<uint8_t>(SWAP1 + depth - 1), STOP});
+        effects &= failed_cleanly(run(full, 10000));
     }
     // Exercise immediate memory pairs with and without expansion, including
     // unaligned offsets and exact gas boundaries. Verify the stored value.

@@ -113,6 +113,10 @@ namespace monad::vm::interpreter
     #define MONAD_VM_PUSH1_PAIR_51 ~, PAIR // MLOAD
     #define MONAD_VM_PUSH1_PAIR_52 ~, PAIR // MSTORE
     #define MONAD_VM_PUSH1_PAIR_60 ~, PAIR // PUSH1
+    #define MONAD_VM_PUSH1_PAIR_90 ~, PAIR // SWAP1
+    #define MONAD_VM_PUSH1_PAIR_91 ~, PAIR // SWAP2
+    #define MONAD_VM_PUSH1_PAIR_92 ~, PAIR // SWAP3
+    #define MONAD_VM_PUSH1_PAIR_93 ~, PAIR // SWAP4
     #define MONAD_VM_LEAD_SECOND(A, B, ...) B
     #define MONAD_VM_LEAD_KIND(...) MONAD_VM_LEAD_SECOND(__VA_ARGS__)
     #define MONAD_VM_LEAD_CAT(A, B) A##B
@@ -198,6 +202,10 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_LEAD_CAT
     #undef MONAD_VM_LEAD_KIND
     #undef MONAD_VM_LEAD_SECOND
+    #undef MONAD_VM_PUSH1_PAIR_93
+    #undef MONAD_VM_PUSH1_PAIR_92
+    #undef MONAD_VM_PUSH1_PAIR_91
+    #undef MONAD_VM_PUSH1_PAIR_90
     #undef MONAD_VM_PUSH1_PAIR_60
     #undef MONAD_VM_PUSH1_PAIR_52
     #undef MONAD_VM_PUSH1_PAIR_51

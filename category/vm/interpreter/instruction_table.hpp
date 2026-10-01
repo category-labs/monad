@@ -2692,6 +2692,39 @@ namespace monad::vm::interpreter
                 gas_remaining,
                 instr_ptr MONAD_VM_TBL_ARG);
         }
+        else if constexpr (OP >= SWAP1 && OP <= SWAP4) {
+            // Move the selected existing word into the new top slot, then
+            // put the immediate in its old slot: one copy instead of a swap.
+            constexpr size_t swap_depth = OP - SWAP1 + 1;
+            uint8_t const immediate = *(instr_ptr + 1);
+            if (MONAD_LIKELY(
+                    stack_holds<swap_depth>(stack_top, stack_lower_bound))) {
+                gas_remaining -= static_gas<
+                    traits,
+                    PUSH1,
+                    static_cast<compiler::EvmOpCode>(OP)>();
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+                if (MONAD_UNLIKELY(gas_remaining < 0)) {
+                    MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+                }
+    #endif
+                *stack_top.next_slot() =
+                    stack_top[1 - static_cast<std::ptrdiff_t>(swap_depth)];
+                stack_top[1 - static_cast<std::ptrdiff_t>(swap_depth)] =
+                    uint256_t{immediate};
+                MONAD_VM_FUSED_NEXT(3, 1);
+            }
+            interpreter::push(stack_top, uint256_t{immediate});
+            gas_remaining -= static_gas<traits, PUSH1>();
+            instr_ptr += 2;
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[OP](
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top + 1,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
         else if constexpr (OP == NOT) {
             // Push the complement directly, without first pushing the
             // immediate.

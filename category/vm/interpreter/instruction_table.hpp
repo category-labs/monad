@@ -81,16 +81,22 @@ namespace monad::vm::interpreter
     inline constexpr size_t slot_shift = 10;
 
     // The bytes at the head of every slot, before its handler: where PUSH1
-    // lands, on the opcode after its immediate (push<1>). execute.cpp fills
-    // them, and the base the handlers carry points past the first of them,
-    // at opcode 0's handler.
-    inline constexpr size_t slot_lead = 32;
+    // and PUSH2 land, on the opcode after their immediate (push<1>,
+    // push<2>). execute.cpp fills them, and the base the handlers carry
+    // points past the first of them, at opcode 0's handler.
+    inline constexpr size_t slot_lead = 64;
 
-    // A tail call to the head of NEXT_OPCODE's slot, slot_lead bytes before
-    // its handler, made by hand for the jump to take -slot_lead as its
-    // offset: through a function pointer gcc forms the head's address with
-    // an addi of its own. The arguments are where the call would put them.
-    #define MONAD_VM_LEAD_DISPATCH(NEXT_OPCODE, TOP, GAS, IP)                  \
+    // Where they land, before the handler: PUSH1's head pushes its
+    // immediate and falls into the handler; PUSH2's makes its stack test,
+    // reads its immediate and jumps to the push in PUSH1's.
+    inline constexpr size_t lead_push1 = 32;
+    inline constexpr size_t lead_push2 = 56;
+
+    // A tail call to a head in NEXT_OPCODE's slot, OFFSET bytes before its
+    // handler, made by hand for the jump to take -OFFSET as its immediate:
+    // through a function pointer gcc forms the head's address with an addi of
+    // its own. The arguments are where the call would put them.
+    #define MONAD_VM_LEAD_DISPATCH(OFFSET, NEXT_OPCODE, TOP, GAS, IP)          \
         do {                                                                   \
             auto const monad_vm_head =                                         \
                 reinterpret_cast<uintptr_t>(itbl) +                            \
@@ -106,7 +112,7 @@ namespace monad::vm::interpreter
             asm volatile("jalr zero, %[off](%[head])"                          \
                          :                                                     \
                          : [head] "r"(monad_vm_head),                          \
-                           [off] "i"(-static_cast<int>(slot_lead)),            \
+                           [off] "i"(-static_cast<int>(OFFSET)),               \
                            "r"(monad_vm_a0),                                   \
                            "r"(monad_vm_a1),                                   \
                            "r"(monad_vm_a2),                                   \
@@ -136,15 +142,6 @@ namespace monad::vm::interpreter
         {
             return reinterpret_cast<InstrEval>(
                 reinterpret_cast<uintptr_t>(base) + (opcode << slot_shift));
-        }
-
-        // The head of the opcode's slot, slot_lead bytes before its handler.
-        [[gnu::always_inline]] InstrEval
-        lead(size_t const opcode) const noexcept
-        {
-            return reinterpret_cast<InstrEval>(
-                reinterpret_cast<uintptr_t>(base) + (opcode << slot_shift) -
-                slot_lead);
         }
     };
 
@@ -2452,6 +2449,7 @@ namespace monad::vm::interpreter
                 MONAD_VM_MUST_TAIL return ctx.exit(Error);
             }
             MONAD_VM_LEAD_DISPATCH(
+                lead_push1,
                 *(instr_ptr + 4),
                 stack_top + 1,
                 (gas_remaining - static_gas<traits, PUSH1>()),
@@ -2993,7 +2991,7 @@ namespace monad::vm::interpreter
     // directly as the destination. Check gas and stack in opcode order, then
     // validate taken jumps. push<2> tail-calls the one its follower names.
     template <Traits traits>
-    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push2_jump(
+    MONAD_VM_INSTRUCTION_CALL void push2_jump_at(
         runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
@@ -3039,7 +3037,7 @@ namespace monad::vm::interpreter
     }
 
     template <Traits traits>
-    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push2_jumpi(
+    MONAD_VM_INSTRUCTION_CALL void push2_jumpi_at(
         runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
@@ -3078,6 +3076,68 @@ namespace monad::vm::interpreter
         // Returns from the current handler.
         MONAD_VM_FUSED_NEXT(4, -1);
     }
+
+    // PUSH2 and the opcode after its immediate, OP, as one: where the slots
+    // compile it into JUMP's and JUMPI's (execute.cpp), PUSH2's head jumps
+    // here, instr_ptr on the PUSH2.
+    template <uint8_t OP, Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void push2_then(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        static_assert(OP == JUMP || OP == JUMPI);
+        if constexpr (OP == JUMP) {
+            MONAD_VM_MUST_TAIL return push2_jump_at<traits>(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        else {
+            MONAD_VM_MUST_TAIL return push2_jumpi_at<traits>(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+    }
+
+    // The two as functions of their own, for push<2> where the slots do not
+    // compile them into JUMP's and JUMPI's.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push2_jump(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        MONAD_VM_MUST_TAIL return push2_jump_at<traits>(
+            ctx,
+            MONAD_VM_ANALYSIS_ARG,
+            stack_bottom,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push2_jumpi(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        MONAD_VM_MUST_TAIL return push2_jumpi_at<traits>(
+            ctx,
+            MONAD_VM_ANALYSIS_ARG,
+            stack_bottom,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
 #endif
 
     template <size_t N, Traits traits>
@@ -3098,7 +3158,7 @@ namespace monad::vm::interpreter
             monad_vm_op2 = *(instr_ptr + N + 1);
         }
         if constexpr (N == 1 && has_slots<traits>) {
-            // PUSH1 lands at the head of its follower's slot, slot_lead bytes
+            // PUSH1 lands at the head of its follower's slot, lead_push1 bytes
             // before the follower's handler (execute.cpp): for most opcodes
             // the push itself, which falls into the handler, and for those
             // push1_then fuses with it a jump there. Neither the follower's
@@ -3108,7 +3168,7 @@ namespace monad::vm::interpreter
                 MONAD_VM_MUST_TAIL return ctx.exit(Error);
             }
             MONAD_VM_LEAD_DISPATCH(
-                monad_vm_op2, stack_top, gas_remaining, instr_ptr);
+                lead_push1, monad_vm_op2, stack_top, gas_remaining, instr_ptr);
         }
         else if constexpr (N == 1) {
             // A bitmap keeps the check cheap on every PUSH1; testing four
@@ -3180,6 +3240,13 @@ namespace monad::vm::interpreter
                     gas_remaining,
                     instr_ptr MONAD_VM_TBL_ARG);
             }
+        }
+        if constexpr (N == 2 && has_slots<traits>) {
+            // PUSH2 lands as PUSH1 does, at a head of its own in its
+            // follower's slot (execute.cpp): the stack's test and the push
+            // there, and for JUMP and JUMPI a jump to their pair.
+            MONAD_VM_LEAD_DISPATCH(
+                lead_push2, monad_vm_op2, stack_top, gas_remaining, instr_ptr);
         }
         // PUSH2 JUMP and PUSH2 JUMPI run in twins of their own: their arms
         // want a0 and a6 for temporaries, and inlined here they would make

@@ -96,7 +96,8 @@ struct AccountOverride
     uint256_t balance;
 };
 
-using AccountOverrideMap = std::unordered_map<Address, AccountOverride>;
+using AccountOverrideMap = std::unordered_map<
+    Address, AccountOverride, std::hash<Address>, AddressEqual>;
 
 class MonadRunloopTrieDb : public Db
 {
@@ -120,7 +121,8 @@ public:
         return triedb_.is_page_encoded();
     }
 
-    virtual std::optional<Account> read_account(Address const &address) override
+    virtual std::optional<Account>
+    read_account(monad_address const &address) override
     {
         auto acct = triedb_.read_account(address);
         auto const over_it = account_override_.find(address);
@@ -137,7 +139,7 @@ public:
     }
 
     virtual bytes32_t read_storage(
-        Address const &address, Incarnation const incarnation,
+        monad_address const &address, Incarnation const incarnation,
         bytes32_t const &key) override
     {
         return triedb_.read_storage(address, incarnation, key);

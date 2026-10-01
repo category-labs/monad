@@ -156,8 +156,10 @@ struct StateHost final : public StateHostBase
     {
         MONAD_TRY
         {
+            monad_address const &from = address;
+            monad_address const &to = beneficiary;
             auto const [result, transferred_balance] =
-                state_.selfdestruct<traits>(address, beneficiary);
+                state_.selfdestruct<traits>(from, to);
 
             call_tracer_.on_self_destruct(
                 address, beneficiary, transferred_balance);
@@ -213,15 +215,22 @@ struct StateHost final : public StateHostBase
     {
         MONAD_TRY
         {
-            if (is_precompile<traits>(address)) {
+#if defined(MONAD_ZKVM_ZISK)
+            if (is_precompile<traits>(address))
+#else
+            if (is_precompile<traits>(address))
+#endif
+            {
                 return AccessStatus::Warm;
             }
             return state_.access_account(address);
         }
+
         MONAD_CATCH(...)
         {
             capture_current_exception();
         }
+
         stack_unwind();
     }
 

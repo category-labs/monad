@@ -2457,6 +2457,82 @@ namespace monad::vm::interpreter
                 gas_remaining,
                 instr_ptr MONAD_VM_TBL_ARG);
         }
+        else if constexpr (OP == NOT) {
+            // The immediate's complement, pushed.
+            gas_remaining -= static_gas<traits, PUSH1, NOT>();
+            interpreter::push(stack_top, ~uint256_t{*(instr_ptr + 1)});
+            MONAD_VM_FUSED_NEXT(3, 1);
+        }
+        else if constexpr (OP == CALLDATALOAD) {
+            // The calldata's word at the immediate, pushed: read in four
+            // words where the calldata holds all of it.
+            gas_remaining -= static_gas<traits, PUSH1, CALLDATALOAD>();
+            uint8_t const monad_vm_k = *(instr_ptr + 1);
+            auto const monad_vm_n =
+                static_cast<int64_t>(ctx.env.input_data_size) -
+                int64_t{monad_vm_k};
+            auto &monad_vm_r = *(stack_top + 1);
+            if (MONAD_LIKELY(monad_vm_n >= 32)) {
+                auto const *const monad_vm_s = ctx.env.input_data + monad_vm_k;
+                monad_vm_r[3] = load_be_unsafe<uint64_t>(monad_vm_s);
+                monad_vm_r[2] = load_be_unsafe<uint64_t>(monad_vm_s + 8);
+                monad_vm_r[1] = load_be_unsafe<uint64_t>(monad_vm_s + 16);
+                monad_vm_r[0] = load_be_unsafe<uint64_t>(monad_vm_s + 24);
+            }
+            else if (monad_vm_n > 0) {
+                monad_vm_r = runtime::uint256_load_bounded_be(
+                    ctx.env.input_data + monad_vm_k, monad_vm_n);
+            }
+            else {
+                monad_vm_r = 0;
+            }
+            MONAD_VM_FUSED_NEXT(3, 1);
+        }
+        else if constexpr (OP == AND || OP == SIGNEXTEND) {
+            // On the top, below the immediate: AND keeps its low byte,
+            // SIGNEXTEND of a byte in the low word extends it in two shifts.
+            // Other byte indices and an empty stack take the push and then
+            // the follower's handler.
+            uint8_t const monad_vm_k = *(instr_ptr + 1);
+            if (MONAD_LIKELY(
+                    stack_top >= stack_bottom &&
+                    (OP == AND || monad_vm_k < 8))) {
+                gas_remaining -= static_gas<
+                    traits,
+                    PUSH1,
+                    static_cast<compiler::EvmOpCode>(OP)>();
+                auto &monad_vm_x = *stack_top;
+                if constexpr (OP == AND) {
+                    monad_vm_x[0] &= monad_vm_k;
+                    monad_vm_x[1] = 0;
+                    monad_vm_x[2] = 0;
+                    monad_vm_x[3] = 0;
+                }
+                else {
+                    unsigned const monad_vm_shift = 56u - 8u * monad_vm_k;
+                    int64_t const monad_vm_low =
+                        static_cast<int64_t>(monad_vm_x[0] << monad_vm_shift) >>
+                        monad_vm_shift;
+                    uint64_t const monad_vm_sign =
+                        static_cast<uint64_t>(monad_vm_low >> 63);
+                    monad_vm_x[0] = static_cast<uint64_t>(monad_vm_low);
+                    monad_vm_x[1] = monad_vm_sign;
+                    monad_vm_x[2] = monad_vm_sign;
+                    monad_vm_x[3] = monad_vm_sign;
+                }
+                MONAD_VM_FUSED_NEXT(3, 0);
+            }
+            interpreter::push(stack_top, uint256_t{monad_vm_k});
+            gas_remaining -= static_gas<traits, PUSH1>();
+            instr_ptr += 2;
+            MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[OP](
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top + 1,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
         else {
             static_assert(OP == ADD || OP == SHL || OP == SHR || OP == SAR);
             // The result replaces the top; the pair's net stack change is

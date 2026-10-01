@@ -312,13 +312,18 @@ static void keccak256_one_block(
 // First marks the digest's first block: copy only the rate into a fresh
 // slot's `out`, since both capacities are zero. The reused spare needs all
 // 200 bytes.
-template <bool First>
+// Lookup=false skips the hint; still permute and cache when space permits.
+// A miss returns this slot's `out` (pre + KECCAKF_LANES); a hit returns an
+// earlier entry's `out`, letting the caller distinguish them by address.
+template <bool First, bool Lookup = true>
 static inline uint64_t const *keccakf_memo_permute(uint64_t *const pre)
 {
-    uint64_t const index = fcall_get_keccakf_index(pre);
-    if (index < keccakf_memo_used &&
-        keccakf_state_eq(keccakf_memo[index].in, pre)) {
-        return keccakf_memo[index].out;
+    if constexpr (Lookup) {
+        uint64_t const index = fcall_get_keccakf_index(pre);
+        if (index < keccakf_memo_used &&
+            keccakf_state_eq(keccakf_memo[index].in, pre)) {
+            return keccakf_memo[index].out;
+        }
     }
     KeccakfEntry &e = keccakf_memo[keccakf_memo_used];
     if (keccakf_memo_used == KECCAKF_MEMO_ENTRIES) {
@@ -367,13 +372,31 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
     len -= KECCAK_RATE;
     uint64_t const *post = keccakf_memo_permute<true>(pre);
 
-    while (len >= KECCAK_RATE) {
+    // Stop lookups after the first miss. This may forgo later hits, but
+    // skipped lookups run the real permutation and cache it when space permits.
+    bool look = post != pre + KECCAKF_LANES;
+    while (look && len >= KECCAK_RATE) {
         pre = keccakf_memo[keccakf_memo_used].in;
+        // Keep one opaque base pointer for the lanes to avoid extra saved
+        // registers for their addresses.
+        asm("" : "+r"(pre));
         for (size_t i = 0; i < WORDS; ++i) {
             pre[i] = post[i] ^ load64(p + 8 * i);
         }
         std::memcpy(pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
         post = keccakf_memo_permute<false>(pre);
+        look = post != pre + KECCAKF_LANES;
+        p += KECCAK_RATE;
+        len -= KECCAK_RATE;
+    }
+    while (len >= KECCAK_RATE) {
+        pre = keccakf_memo[keccakf_memo_used].in;
+        asm("" : "+r"(pre));
+        for (size_t i = 0; i < WORDS; ++i) {
+            pre[i] = post[i] ^ load64(p + 8 * i);
+        }
+        std::memcpy(pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
+        post = keccakf_memo_permute<false, false>(pre);
         p += KECCAK_RATE;
         len -= KECCAK_RATE;
     }
@@ -434,7 +457,8 @@ lanes0:
     std::memcpy(
         pre + whole + 1, post + whole + 1, (KECCAKF_LANES - 1 - whole) * 8);
     pre[16] ^= uint64_t{0x80} << 56;
-    post = keccakf_memo_permute<false>(pre);
+    post = look ? keccakf_memo_permute<false>(pre)
+                : keccakf_memo_permute<false, false>(pre);
     std::memcpy(out, post, 32);
 
     if (pre == keccakf_memo[keccakf_memo_used].in) {

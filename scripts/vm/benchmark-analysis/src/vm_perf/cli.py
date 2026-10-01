@@ -138,6 +138,8 @@ def main() -> None:
 
     rows = []
     for entry in json.loads(args.truth.read_text()):
+        if entry["direction"] not in ("faster", "slower", "none", "any"):
+            raise ValueError(f"unknown direction {entry['direction']!r} for {entry['commit']}")
         commit = git(here, "rev-parse", entry["commit"]).strip()
         parent = git(here, "rev-parse", entry.get("base", f"{commit}^1")).strip()
         before, after = measure_commit(args, parent), measure_commit(args, commit)
@@ -154,7 +156,7 @@ def main() -> None:
             verdict = "pass" if not changes else f"{len(changes)} unexpected changes"
         elif entry["direction"] == "any":
             verdict = f"{better} faster, {worse} slower"
-        else:
+        elif entry["direction"] in ("faster", "slower"):
             right = better if entry["direction"] == "faster" else worse
             verdict = f"pass ({right} benchmarks)" if right else "missed"
         best = max(hits, key=lambda c: abs(c["change_percent"]), default=None)

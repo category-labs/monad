@@ -84,4 +84,6 @@ $ uv run --project scripts/vm/benchmark-analysis \
 times every micro benchmark whose count changed, natively and interleaved,
 because instruction counts miss memory stalls. `history` measures every VM
 commit in a range and plots it, and `validate` checks a list of commits whose
-effect is known.
+effect is known. The list is a JSON array of objects with a `commit`, an
+`expect` regex over benchmark names, a `direction` (`faster`, `slower`, `none`
+or `any`), and optionally a `base` (default `<commit>^1`) and a `note`.

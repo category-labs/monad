@@ -97,7 +97,7 @@ def measure_commit(args: argparse.Namespace, commit: str) -> Report:
             report = measure_build(args.build, cases, args.micro)
         except (RuntimeError, subprocess.CalledProcessError) as error:
             print(error, file=sys.stderr)
-            report = {}
+            return {}
         path.write_text(json.dumps(report))
     result: Report = json.loads(path.read_text())
     return result

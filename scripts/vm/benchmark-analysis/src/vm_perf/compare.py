@@ -41,6 +41,13 @@ def diff(before: Report, after: Report, threshold: float, top: int) -> list[dict
     return sorted(changes, key=lambda c: -c["change_percent"])
 
 
+def slower(change: dict[str, Any]) -> bool:
+    timed = change.get("time")
+    if timed and timed["significant"]:
+        return bool(timed["change_percent"] > 0)
+    return bool(change["after"] > change["before"])
+
+
 def summary(changes: list[dict[str, Any]], limit: int = 8) -> str:
     groups: dict[str, list[dict[str, Any]]] = {}
     for c in changes:
@@ -54,8 +61,8 @@ def summary(changes: list[dict[str, Any]], limit: int = 8) -> str:
     lines = []
     for kind in ["compile", "micro/compiler", "micro/interpreter"]:
         rows = groups.get(kind, [])
-        slower, faster = sum(c["after"] > c["before"] for c in rows), sum(c["after"] < c["before"] for c in rows)
-        lines.append(f"## {titles[kind]}: {slower} slower, {faster} faster")
+        worse = sum(slower(c) for c in rows)
+        lines.append(f"## {titles[kind]}: {worse} slower, {len(rows) - worse} faster")
         for c in sorted(rows, key=lambda c: -abs(c["change_percent"]))[:limit]:
             name = c["benchmark"].split("/", 2)[-1] if kind != "compile" else c["benchmark"]
             top = c["functions"][0]["function"][:80] if c["functions"] else ""

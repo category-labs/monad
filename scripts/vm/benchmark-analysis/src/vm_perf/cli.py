@@ -18,11 +18,25 @@ import json
 import pathlib
 import re
 import sys
+from typing import Any
 
 from vm_perf.commits import VM_PATHS, git, history_plot, measure_commit
-from vm_perf.compare import diff, summary
+from vm_perf.compare import diff, slower, summary
 from vm_perf.suites import CORE, MICRO, measure_build, micro_name
 from vm_perf.timing import time_pair
+
+
+def add_timing(args: argparse.Namespace, base: str, head: str, changes: list[dict[str, Any]]) -> None:
+    changed = {c["benchmark"] for c in changes if c["benchmark"].startswith("micro/")}
+    cases_file = args.cases or args.output / "cases.json"
+    cases = [(c[0], c[1], c[2]) for c in json.loads(cases_file.read_text())]
+    cases = [c for c in cases if micro_name(c) in changed]
+    binaries = [args.output / "bin" / sha / pathlib.Path(MICRO).name for sha in (base, head)]
+    timing = time_pair(binaries[0], binaries[1], cases, args.repeats, args.core)
+    for change in changes:
+        if timed := timing.get(change["benchmark"]):
+            change["time"] = timed
+            change["time_disagrees"] = timed["significant"] and slower(change) != (change["after"] > change["before"])
 
 
 def main() -> None:
@@ -55,11 +69,12 @@ def main() -> None:
         s.add_argument("--build", type=pathlib.Path, required=True, help="Build directory it owns")
         s.add_argument("-o", "--output", type=pathlib.Path, required=True, help="Directory for cached reports")
         s.add_argument("--cases", type=pathlib.Path, help="Micro benchmark case list to share across runs")
-    sub.choices["impact"].add_argument("base")
-    sub.choices["impact"].add_argument("head")
-    sub.choices["impact"].add_argument("--timing", action="store_true", help="Also time changed micro benchmarks")
-    sub.choices["impact"].add_argument("--repeats", type=int, default=7, help="Timing rounds")
-    sub.choices["impact"].add_argument("--core", type=int, default=7, help="CPU to pin timing to")
+    sub.choices["impact"].add_argument("base", nargs="?", default="origin/main")
+    sub.choices["impact"].add_argument("head", nargs="?", default="HEAD")
+    for name in ("impact", "validate"):
+        sub.choices[name].add_argument("--timing", action="store_true", help="Also time changed micro benchmarks")
+        sub.choices[name].add_argument("--repeats", type=int, default=7, help="Timing rounds")
+        sub.choices[name].add_argument("--core", type=int, default=7, help="CPU to pin timing to")
     sub.choices["history"].add_argument("revisions")
     sub.choices["history"].add_argument("paths", nargs="*", default=VM_PATHS)
     sub.choices["validate"].add_argument("truth", type=pathlib.Path)
@@ -89,31 +104,22 @@ def main() -> None:
         sys.exit(1 if any(c["after"] > c["before"] for c in changes) else 0)
 
     args.output.mkdir(parents=True, exist_ok=True)
+    here = pathlib.Path.cwd()
     if args.command == "impact":
-        base, head = (git(args.source, "rev-parse", r).strip() for r in (args.base, args.head))
+        base, head = (git(here, "rev-parse", r).strip() for r in (args.base, args.head))
         before, after = measure_commit(args, base), measure_commit(args, head)
         if not before or not after:
             print(f"{base[:9] if not before else head[:9]} was not measured", file=sys.stderr)
             sys.exit(2)
         changes = diff(before, after, args.threshold, args.top)
         if args.timing:
-            changed = {c["benchmark"] for c in changes if c["benchmark"].startswith("micro/")}
-            cases_file = args.cases or args.output / "cases.json"
-            cases = [(c[0], c[1], c[2]) for c in json.loads(cases_file.read_text())]
-            binaries = [args.output / "bin" / sha / pathlib.Path(MICRO).name for sha in (base, head)]
-            cases = [c for c in cases if micro_name(c) in changed]
-            timing = time_pair(binaries[0], binaries[1], cases, args.repeats, args.core)
-            for change in changes:
-                if timed := timing.get(change["benchmark"]):
-                    change["time"] = timed
-                    slower = timed["change_percent"] > 0
-                    change["time_disagrees"] = timed["significant"] and slower != (change["after"] > change["before"])
+            add_timing(args, base, head, changes)
         (args.output / f"impact-{base[:9]}-{head[:9]}.md").write_text(summary(changes) + "\n")
         print(json.dumps(changes, indent=2))
-        sys.exit(1 if any(c["after"] > c["before"] for c in changes) else 0)
+        sys.exit(1 if any(slower(c) for c in changes) else 0)
     if args.command == "history":
         log = ["log", "--first-parent", "--reverse", "--format=%H %cs %s", args.revisions, "--", *args.paths]
-        commits = [line.split(" ", 2) for line in git(args.source, *log).splitlines()]
+        commits = [line.split(" ", 2) for line in git(here, *log).splitlines()]
         measured = [(c, r) for c in commits if (r := measure_commit(args, c[0]))]
         steps = [
             {"since": p[0], "commit": c[0], "subject": c[2], "changes": changes}
@@ -129,21 +135,24 @@ def main() -> None:
 
     rows = []
     for entry in json.loads(args.truth.read_text()):
-        commit = git(args.source, "rev-parse", entry["commit"]).strip()
-        parent = git(args.source, "rev-parse", entry.get("base", f"{commit}^1")).strip()
+        commit = git(here, "rev-parse", entry["commit"]).strip()
+        parent = git(here, "rev-parse", entry.get("base", f"{commit}^1")).strip()
         before, after = measure_commit(args, parent), measure_commit(args, commit)
         changes = diff(before, after, args.threshold, args.top) if before and after else []
+        if changes and args.timing:
+            add_timing(args, parent, commit, changes)
         (args.output / f"validate-{parent[:9]}-{commit[:9]}.json").write_text(json.dumps(changes, indent=1))
         hits = [c for c in changes if re.search(entry["expect"], c["benchmark"])]
-        faster, slower = sum(c["after"] < c["before"] for c in hits), sum(c["after"] > c["before"] for c in hits)
+        worse = sum(slower(c) for c in hits)
+        better = len(hits) - worse
         if not before or not after:
             verdict = "not measured"
         elif entry["direction"] == "none":
             verdict = "pass" if not changes else f"{len(changes)} unexpected changes"
         elif entry["direction"] == "any":
-            verdict = f"{faster} faster, {slower} slower"
+            verdict = f"{better} faster, {worse} slower"
         else:
-            right = faster if entry["direction"] == "faster" else slower
+            right = better if entry["direction"] == "faster" else worse
             verdict = f"pass ({right} benchmarks)" if right else "missed"
         best = max(hits, key=lambda c: abs(c["change_percent"]), default=None)
         rows.append(

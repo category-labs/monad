@@ -46,7 +46,10 @@
 
 #include <ankerl/unordered_dense.h>
 
+#include <atomic>
 #include <cstring>
+#include <limits>
+#include <optional>
 #include <utility>
 
 #ifdef MONAD_ZKVM_L2
@@ -76,6 +79,50 @@ namespace corpus
 
     namespace
     {
+        /// What execution reads the block hash buffer through: the builder's
+        /// own, recording the oldest block whose hash was asked for. The guest
+        /// executes the same block and makes the same reads, so the run from
+        /// that block to the parent is every hash it will need -- which is how
+        /// far back an Ancestors::Reached witness reaches.
+        class RecordingBlockHashBuffer final : public BlockHashBuffer
+        {
+            BlockHashBuffer const &inner_;
+            /// Atomic though the pool is one fiber: get() is const, and a
+            /// plain member would be a data race the day the pool is not.
+            mutable std::atomic<uint64_t> oldest_{
+                std::numeric_limits<uint64_t>::max()};
+
+        public:
+            explicit RecordingBlockHashBuffer(BlockHashBuffer const &inner)
+                : inner_{inner}
+            {
+            }
+
+            uint64_t n() const override
+            {
+                return inner_.n();
+            }
+
+            bytes32_t const &get(uint64_t const n) const override
+            {
+                uint64_t seen = oldest_.load(std::memory_order_relaxed);
+                while (n < seen && !oldest_.compare_exchange_weak(
+                                       seen, n, std::memory_order_relaxed)) {
+                }
+                return inner_.get(n);
+            }
+
+            /// The oldest block whose hash was read, if any was.
+            std::optional<uint64_t> oldest() const
+            {
+                uint64_t const o = oldest_.load(std::memory_order_relaxed);
+                if (o == std::numeric_limits<uint64_t>::max()) {
+                    return std::nullopt;
+                }
+                return o;
+            }
+        };
+
 #ifdef MONAD_ZKVM_L2
         /// The blinder goes in extra_data, whose 32-byte cap is exactly its
         /// width (block_rlp.cpp enforces EXTRA_DATA_MAX_LENGTH).
@@ -354,7 +401,8 @@ namespace corpus
         bytes32_t const pre_root = tdb_.state_root();
         auto const pre_cursor = accounts_cursor(mdb_, tdb_, number - 1);
 
-        // --- execute
+        // --- execute, through a recorder of the block hashes it reads
+        RecordingBlockHashBuffer const recorder{block_hashes_};
         BlockState block_state{tdb_, impl_->vm};
         BlockMetrics metrics;
         auto const recovered = recover_senders(block.transactions, impl_->pool);
@@ -384,7 +432,7 @@ namespace corpus
             senders,
             authorities,
             block_state,
-            block_hashes_,
+            recorder,
             impl_->pool.fiber_group(),
             metrics,
             call_tracers,
@@ -426,10 +474,19 @@ namespace corpus
 
         // --- field [3]: ascending, contiguous, ending at the parent, and the
         // --- newest carrying the pre-state root the blob was built against.
-        // --- Taken from what the commit sealed, never rebuilt.
+        // --- Taken from what the commit sealed, never rebuilt. ancestors_ sets
+        // --- how far back it reaches: every header the buffer holds, or the
+        // --- run back to the oldest one execution read -- the parent alone
+        // --- when it read none.
+        size_t const all = std::min<size_t>(sealed_.size(), BlockHashBuffer::N);
+        size_t keep = all;
+        if (ancestors_ == Ancestors::Reached) {
+            auto const oldest = recorder.oldest();
+            keep = oldest.has_value() ? number - *oldest : 1;
+            MONAD_ASSERT(keep >= 1 && keep <= all);
+        }
+        MONAD_ASSERT(sealed_[sealed_.size() - keep].number + keep == number);
         std::vector<byte_string> ancestors;
-        size_t const keep =
-            std::min<size_t>(sealed_.size(), BlockHashBuffer::N);
         for (size_t i = sealed_.size() - keep; i < sealed_.size(); ++i) {
             ancestors.push_back(rlp::encode_block_header(sealed_[i]));
         }

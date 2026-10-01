@@ -76,6 +76,29 @@ namespace corpus
         return bytes32_t{number + 1};
     }
 
+    /// How far back a witness's ancestor headers, field [3], reach.
+    enum class Ancestors
+    {
+        /// From the oldest block whose hash the block's execution read to the
+        /// parent, and the parent alone when it read none. That is all the
+        /// guest needs: its block hash buffer serves exactly the run it is
+        /// given and aborts on a read outside it, so a run too short for the
+        /// block is a proof that does not exist, never a wrong one.
+        Reached,
+        /// Every ancestor the block hash buffer can serve, up to its 256: the
+        /// shape a mainnet witness has.
+        All,
+    };
+
+#ifdef MONAD_ZKVM_L2
+    /// A block that reads no hash would otherwise carry, and the guest hash
+    /// and decode, 256 headers it never uses.
+    inline constexpr Ancestors DEFAULT_ANCESTORS = Ancestors::Reached;
+#else
+    /// The mainnet guest's corpora keep the shape of a mainnet witness.
+    inline constexpr Ancestors DEFAULT_ANCESTORS = Ancestors::All;
+#endif
+
     /// One block's worth of input. `keys[i]` signs `txs[i]`; the builder fills
     /// each nonce from the sender's account and signs last, because the nonce
     /// is inside the signing preimage.
@@ -152,6 +175,12 @@ namespace corpus
             return next_number_;
         }
 
+        /// How far back the next witnesses' field [3] reaches.
+        void set_ancestors(Ancestors const a)
+        {
+            ancestors_ = a;
+        }
+
         TrieDb &db()
         {
             return tdb_;
@@ -178,6 +207,7 @@ namespace corpus
         /// Filled as blocks are sealed. Not init_block_hash_buffer_from_triedb,
         /// which asserts is_on_disk() -- and this db is in memory.
         BlockHashBufferFinalized block_hashes_;
+        Ancestors ancestors_{DEFAULT_ANCESTORS};
         bytes32_t sk_{};
         bytes32_t salt_secret_{};
     };

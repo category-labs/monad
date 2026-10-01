@@ -39,3 +39,29 @@ def diff(before: Report, after: Report, threshold: float, top: int) -> list[dict
             change["sequence_before"], change["sequence_after"] = b["total"], a["total"]
         changes.append(change | {"functions": [{"function": f, "delta": deltas[f]} for f in functions]})
     return sorted(changes, key=lambda c: -c["change_percent"])
+
+
+def summary(changes: list[dict[str, Any]], limit: int = 8) -> str:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for c in changes:
+        kind = (
+            c["benchmark"].split("/")[0]
+            if c["benchmark"].startswith("compile/")
+            else "/".join(c["benchmark"].split("/")[:2])
+        )
+        groups.setdefault(kind, []).append(c)
+    titles = {"compile": "Compile time", "micro/compiler": "Compiled code", "micro/interpreter": "Interpreter"}
+    lines = []
+    for kind in ["compile", "micro/compiler", "micro/interpreter"]:
+        rows = groups.get(kind, [])
+        slower, faster = sum(c["after"] > c["before"] for c in rows), sum(c["after"] < c["before"] for c in rows)
+        lines.append(f"## {titles[kind]}: {slower} slower, {faster} faster")
+        for c in sorted(rows, key=lambda c: -abs(c["change_percent"]))[:limit]:
+            name = c["benchmark"].split("/", 2)[-1] if kind != "compile" else c["benchmark"]
+            top = c["functions"][0]["function"][:80] if c["functions"] else ""
+            time = ""
+            if t := c.get("time"):
+                time = f", time {t['change_percent']:+.1f}%" + ("" if t["significant"] else " (noise)")
+                time += " **disagrees**" if c.get("time_disagrees") else ""
+            lines.append(f"- {c['change_percent']:+.2f}% instructions{time} `{name}` ({top})")
+    return "\n".join(lines)

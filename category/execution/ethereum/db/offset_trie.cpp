@@ -105,8 +105,15 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // addresses read as zero. Unmarked offsets therefore still fail
     // validation.
     // free is a no-op on this guest, so no deallocation is needed.
-    std::span<unsigned char> const node_offsets{
-        static_cast<unsigned char *>(::operator new(blob_.size())),
+    //
+    // A word per offset, not a byte: ZisK prices a byte's write at 66 cells
+    // and its read at 41, an aligned word's at 18 and 16, and every node's
+    // mark is written once by the walk, then read and cleared by its claim.
+    // Only the words at node starts are ever touched, the rest of the eight
+    // times larger array never.
+    std::span<uint64_t> const node_offsets{
+        static_cast<uint64_t *>(
+            ::operator new(blob_.size() * sizeof(uint64_t))),
         blob_.size()};
     claim_marks_ = node_offsets.data();
 #else
@@ -121,7 +128,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     //
     // Invariant, established here and maintained by both arms:
     //     seen == node_offsets.data() + (node.bytes() - base)
-    unsigned char *seen = node_offsets.data() + node_offset;
+    auto *seen = node_offsets.data() + node_offset;
 
     // Sized before the sweep fills it. unordered_dense rehashes on growth, and
     // a rehash recomputes the hash of every entry it already holds and moves it
@@ -153,25 +160,25 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     overlay_.reserve(1024);
 #endif
 
-    // A node's byte is set when the walk reaches it -- to DIGEST for a digest,
+    // A node's mark is set when the walk reaches it -- to DIGEST for a digest,
     // to 1 for any other node -- and cleared when a parent claims it as a
     // child.
-    // A child whose byte is clear is either previously unseen/invalid or
+    // A child whose mark is clear is either previously unseen/invalid or
     // already claimed by a different parent.
     //
-    // `unclaimed` is DIGEST_NODE_LEN times the number of bytes currently set.
+    // `unclaimed` is DIGEST_NODE_LEN times the number of marks currently set.
     // The walk marks each offset once -- it advances monotonically, one node a
-    // turn -- and is_valid_offset only claims a byte that is still set, so no
-    // node is claimed twice and the bytes still set are exactly the marks less
-    // the claims: none exactly when every node has been claimed, the check the
+    // turn -- and is_valid_offset only claims a mark that is still set, so no
+    // node is claimed twice and the marks still set are exactly the nodes not
+    // yet claimed: none exactly when every node has been claimed, the check the
     // constructor ends on, without reading the blob-sized array back.
     //
     // The scale keeps the DIGEST arm, nine nodes in ten, off the count. It
     // starts at the region's length, which the nodes tile exactly -- the assert
     // after the walk checks that before the count is read -- so the length
-    // already holds DIGEST_NODE_LEN for each DIGEST node's mark, and the general
-    // arm trades its own node's length for the DIGEST_NODE_LEN of its mark. A
-    // claim takes DIGEST_NODE_LEN away.
+    // already holds DIGEST_NODE_LEN for each DIGEST node's mark, and the
+    // general arm trades its own node's length for the DIGEST_NODE_LEN of its
+    // mark. A claim takes DIGEST_NODE_LEN away.
     size_t unclaimed = static_cast<size_t>(region_end - node.bytes());
 
 #if !defined(MONAD_ZKVM_ZISK)
@@ -228,21 +235,21 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             uintptr_t const quad_end =
                 reinterpret_cast<uintptr_t>(region_end) - 3 * DIGEST_NODE_LEN;
             unsigned char const *p = node.bytes();
-            *seen = zx(DIGEST);
+            *seen = DIGEST;
             seen += DIGEST_NODE_LEN;
             p += DIGEST_NODE_LEN;
             while (MONAD_LIKELY(reinterpret_cast<uintptr_t>(p) < quad_end)) {
                 if (MONAD_UNLIKELY(NodeViewBase{p}.tag() != DIGEST)) {
                     goto digest_run_end;
                 }
-                seen[0] = zx(DIGEST);
+                seen[0] = DIGEST;
                 if (MONAD_UNLIKELY(
                         NodeViewBase{p + DIGEST_NODE_LEN}.tag() != DIGEST)) {
                     seen += DIGEST_NODE_LEN;
                     p += DIGEST_NODE_LEN;
                     goto digest_run_end;
                 }
-                seen[DIGEST_NODE_LEN] = zx(DIGEST);
+                seen[DIGEST_NODE_LEN] = DIGEST;
                 if (MONAD_UNLIKELY(
                         NodeViewBase{p + 2 * DIGEST_NODE_LEN}.tag() !=
                         DIGEST)) {
@@ -250,7 +257,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     p += 2 * DIGEST_NODE_LEN;
                     goto digest_run_end;
                 }
-                seen[2 * DIGEST_NODE_LEN] = zx(DIGEST);
+                seen[2 * DIGEST_NODE_LEN] = DIGEST;
                 if (MONAD_UNLIKELY(
                         NodeViewBase{p + 3 * DIGEST_NODE_LEN}.tag() !=
                         DIGEST)) {
@@ -258,13 +265,13 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     p += 3 * DIGEST_NODE_LEN;
                     goto digest_run_end;
                 }
-                seen[3 * DIGEST_NODE_LEN] = zx(DIGEST);
+                seen[3 * DIGEST_NODE_LEN] = DIGEST;
                 seen += 4 * DIGEST_NODE_LEN;
                 p += 4 * DIGEST_NODE_LEN;
             }
             // Fewer than four nodes start inside the region from here.
             while (p < region_end && NodeViewBase{p}.tag() == DIGEST) {
-                *seen = zx(DIGEST);
+                *seen = DIGEST;
                 seen += DIGEST_NODE_LEN;
                 p += DIGEST_NODE_LEN;
             }
@@ -845,7 +852,7 @@ OffsetTrie::encode_rlp(
                 };
 
 #if defined(MONAD_ZKVM_ZISK)
-                [[maybe_unused]] unsigned char *const marks = claim_marks_;
+                [[maybe_unused]] uint64_t *const marks = claim_marks_;
                 [[maybe_unused]] size_t const blob_size = blob_.size();
                 [[maybe_unused]] size_t claimed = 0;
                 static_assert(DIGEST_NODE_LEN == HASH_RLP_LEN);

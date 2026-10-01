@@ -18,7 +18,7 @@
 
 // Hash-map key hashing for the zkVM guest, and the 64-bit-constant load it rests on.
 //
-// The guest builds -march=rv64ima_zicsr_zbb_zbs_zbkb, so rev8, clz, ctz and cpop are single
+// The guest builds -march=rv64ima_zicsr_zba_zbb_zbs_zbkb, so rev8, clz, ctz and cpop are single
 // instructions and std::byteswap / std::countl_zero / std::popcount reach them directly. The
 // software fallbacks that once lived here for a bare rv64ima build are therefore not carried:
 // under Zbb gcc never goes through them, and -ffunction-sections plus gc-sections drops them

@@ -86,19 +86,17 @@ namespace monad::vm::interpreter
     // points past the first of them, at opcode 0's handler.
     inline constexpr size_t slot_lead = 64;
 
-    // Where they land, before the handler: PUSH1's tail pushes t3, the
-    // immediate push<1> read, and falls into the handler; PUSH2's head, given
-    // its immediate's first byte in t3, makes its stack test, joins the
-    // second and falls into PUSH1's tail.
-    inline constexpr size_t lead_push1 = 28;
-    inline constexpr size_t lead_push2 = 44;
+    // Where they land, before the handler: PUSH1's head pushes its
+    // immediate and falls into the handler; PUSH2's makes its stack test,
+    // reads its immediate and jumps to the push in PUSH1's.
+    inline constexpr size_t lead_push1 = 32;
+    inline constexpr size_t lead_push2 = 56;
 
     // A tail call to a head in NEXT_OPCODE's slot, OFFSET bytes before its
     // handler, made by hand for the jump to take -OFFSET as its immediate:
     // through a function pointer gcc forms the head's address with an addi of
-    // its own. The arguments are where the call would put them, and IMM in
-    // t3, where PUSH1's tail reads the word to push.
-    #define MONAD_VM_LEAD_DISPATCH(OFFSET, NEXT_OPCODE, TOP, GAS, IP, IMM)     \
+    // its own. The arguments are where the call would put them.
+    #define MONAD_VM_LEAD_DISPATCH(OFFSET, NEXT_OPCODE, TOP, GAS, IP)          \
         do {                                                                   \
             auto const monad_vm_head =                                         \
                 reinterpret_cast<uintptr_t>(itbl) +                            \
@@ -111,7 +109,6 @@ namespace monad::vm::interpreter
             register int64_t monad_vm_a4 asm("a4") = (GAS);                    \
             register uint8_t const *monad_vm_a5 asm("a5") = (IP);              \
             register void const *monad_vm_a6 asm("a6") = itbl;                 \
-            register uint64_t monad_vm_t3 asm("t3") = (IMM);                   \
             asm volatile("jalr zero, %[off](%[head])"                          \
                          :                                                     \
                          : [head] "r"(monad_vm_head),                          \
@@ -122,8 +119,7 @@ namespace monad::vm::interpreter
                            "r"(monad_vm_a3),                                   \
                            "r"(monad_vm_a4),                                   \
                            "r"(monad_vm_a5),                                   \
-                           "r"(monad_vm_a6),                                   \
-                           "r"(monad_vm_t3)                                    \
+                           "r"(monad_vm_a6)                                    \
                          : "memory");                                          \
             __builtin_unreachable();                                           \
         }                                                                      \
@@ -2468,8 +2464,7 @@ namespace monad::vm::interpreter
                 *(instr_ptr + 4),
                 stack_top + 1,
                 (gas_remaining - static_gas<traits, PUSH1>()),
-                instr_ptr + 2,
-                *(instr_ptr + 3));
+                instr_ptr + 2);
         }
         else if constexpr (OP == PUSH1) {
             // Fuse PUSH1 <a> PUSH1 <b>, saving one dispatch.
@@ -3184,12 +3179,7 @@ namespace monad::vm::interpreter
                 MONAD_VM_MUST_TAIL return ctx.exit(Error);
             }
             MONAD_VM_LEAD_DISPATCH(
-                lead_push1,
-                monad_vm_op2,
-                stack_top,
-                gas_remaining,
-                instr_ptr,
-                *(instr_ptr + 1));
+                lead_push1, monad_vm_op2, stack_top, gas_remaining, instr_ptr);
         }
         else if constexpr (N == 1) {
             // A bitmap keeps the check cheap on every PUSH1; testing four
@@ -3264,16 +3254,10 @@ namespace monad::vm::interpreter
         }
         if constexpr (N == 2 && has_slots<traits>) {
             // PUSH2 lands as PUSH1 does, at a head of its own in its
-            // follower's slot (execute.cpp), its immediate's first byte in
-            // t3: the stack's test and the push there, falling into the
-            // handler, and for JUMP and JUMPI a jump to their pair.
+            // follower's slot (execute.cpp): the stack's test and the push
+            // there, and for JUMP and JUMPI a jump to their pair.
             MONAD_VM_LEAD_DISPATCH(
-                lead_push2,
-                monad_vm_op2,
-                stack_top,
-                gas_remaining,
-                instr_ptr,
-                *(instr_ptr + 1));
+                lead_push2, monad_vm_op2, stack_top, gas_remaining, instr_ptr);
         }
         // PUSH2 JUMP and PUSH2 JUMPI run in twins of their own: their arms
         // want a0 and a6 for temporaries, and inlined here they would make

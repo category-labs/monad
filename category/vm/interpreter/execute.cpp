@@ -46,37 +46,38 @@ namespace monad::vm::interpreter
     // A slot's first slot_lead bytes are where PUSH1 and PUSH2 land, on the
     // opcode after their immediate (push<1>, push<2>), and the linker script
     // places the handler right after them. lead_push1 bytes before the
-    // handler, PUSH1's tail: the immediate push<1> left in t3 pushed, PUSH1's
-    // gas charged and instr_ptr moved past it, in a3, a4 and a5, the
-    // handlers' stack_top, gas_remaining and instr_ptr; it falls into the
-    // handler. lead_push2 bytes before it, PUSH2's head: its stack test, its
-    // immediate's second byte joined to the first push<2> left in t3, one
-    // more byte of instr_ptr, falling into PUSH1's tail. Where PUSH1 pairs
-    // with the opcode (push1_then), both are jumps, to the pair and to
-    // PUSH2's push in full, compiled into the end of the slot; for JUMP and
-    // JUMPI, PUSH2's head jumps to its pair (push2_then). The heads are
-    // assembled without relaxation, so that nothing in them moves; a failed
-    // stack test leaves through monad_vm_stack_overflow.
+    // handler, PUSH1's head: the immediate pushed, PUSH1's gas charged and
+    // instr_ptr moved past it, in a3, a4 and a5, the handlers' stack_top,
+    // gas_remaining and instr_ptr; it falls into the handler. lead_push2
+    // bytes before it, PUSH2's head: its stack test, its immediate read,
+    // one more byte of instr_ptr, and a jump to the push in PUSH1's head.
+    // Where PUSH1 pairs with the opcode (push1_then), both heads are jumps,
+    // to the pair and to PUSH2's push in full, compiled into the end of the
+    // slot; for JUMP and JUMPI, PUSH2's head jumps to its pair (push2_then).
+    // The heads are assembled without relaxation, so that nothing in them
+    // moves; a failed stack test leaves through monad_vm_stack_overflow.
     #define MONAD_VM_LEAD_ASM(NAME, OP, HEAD2, HEAD1)                          \
         asm(".pushsection .monad_vm_lead." #NAME "." #OP ",\"ax\",@progbits\n" \
             ".option push\n"                                                   \
             ".option norelax\n"                                                \
-            "\tnop\n\tnop\n\tnop\n"                                            \
             "1:\ttail monad_vm_stack_overflow\n"                               \
             ".type monad_vm_slot_" #NAME "_" #OP "_lead2, @function\n"         \
-            ".size monad_vm_slot_" #NAME "_" #OP "_lead2, 16\n"                \
+            ".size monad_vm_slot_" #NAME "_" #OP "_lead2, 24\n"                \
             "monad_vm_slot_" #NAME "_" #OP "_lead2:\n" HEAD2                   \
             ".type monad_vm_slot_" #NAME "_" #OP "_lead, @function\n"          \
-            ".size monad_vm_slot_" #NAME "_" #OP "_lead, 28\n"                 \
+            ".size monad_vm_slot_" #NAME "_" #OP "_lead, 32\n"                 \
             "monad_vm_slot_" #NAME "_" #OP "_lead:\n" HEAD1 ".option pop\n"    \
             ".popsection");
 
-    #define MONAD_VM_HEAD2_PUSH                                                \
-        "\tbgeu a3, a1, 1b\n"                                                  \
+    // PUSH2's stack test, leaving through EXIT, and its immediate in t3.
+    #define MONAD_VM_PUSH2_READ(EXIT)                                          \
+        "\tbgeu a3, a1, " EXIT "\n"                                            \
+        "\tlbu t3, 1(a5)\n"                                                    \
         "\tlbu t4, 2(a5)\n"                                                    \
         "\tpackh t3, t4, t3\n"                                                 \
         "\taddi a5, a5, 1\n"
-    #define MONAD_VM_HEAD1_PUSH                                                \
+    // The push of t3 and the rest of PUSH1.
+    #define MONAD_VM_PUSH_T3                                                   \
         "\tsd t3, 32(a3)\n"                                                    \
         "\tsd zero, 40(a3)\n"                                                  \
         "\tsd zero, 48(a3)\n"                                                  \
@@ -84,11 +85,14 @@ namespace monad::vm::interpreter
         "\taddi a3, a3, 32\n"                                                  \
         "\taddi a4, a4, -3\n"                                                  \
         "\taddi a5, a5, 2\n"
+    #define MONAD_VM_HEAD2_PUSH MONAD_VM_PUSH2_READ("1b") "\tj 3f\n"
+    #define MONAD_VM_HEAD1_PUSH "\tlbu t3, 1(a5)\n3:\n" MONAD_VM_PUSH_T3
     #define MONAD_VM_HEAD2_JUMP(NAME, OP)                                      \
-        "\tj monad_vm_slot_" #NAME "_" #OP "_push2\n\tnop\n\tnop\n\tnop\n"
+        "\tj monad_vm_slot_" #NAME "_" #OP "_push2\n"                          \
+        "\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n"
     #define MONAD_VM_HEAD1_JUMP(NAME, OP)                                      \
         "\tj monad_vm_slot_" #NAME "_" #OP "_push1\n"                          \
-        "\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n"
+        "\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n\tnop\n"
 
     #define MONAD_VM_HANDLER_DECL(NAME, SUFFIX, SECTION)                       \
         extern "C"                                                             \
@@ -105,8 +109,8 @@ namespace monad::vm::interpreter
         static_assert(                                                         \
             compiler::opcode_table<EvmTraits<REV>>[PUSH1].min_gas == 3 &&      \
             compiler::opcode_table<EvmTraits<REV>>[PUSH2].min_gas == 3 &&      \
-            sizeof(uint256_t) == 32 && slot_lead == 64 && lead_push1 == 28 &&  \
-            lead_push2 == 44);                                                 \
+            sizeof(uint256_t) == 32 && slot_lead == 64 && lead_push1 == 32 &&  \
+            lead_push2 == 56);                                                 \
         MONAD_VM_LEAD_ASM(NAME, OP, MONAD_VM_HEAD2_PUSH, MONAD_VM_HEAD1_PUSH)
 
     #define MONAD_VM_LEAD_PAIR(REV, NAME, OP)                                  \
@@ -120,11 +124,8 @@ namespace monad::vm::interpreter
             ".option push\n"                                                   \
             ".option norelax\n"                                                \
             ".type monad_vm_slot_" #NAME "_" #OP "_push2, @function\n"         \
-            "monad_vm_slot_" #NAME "_" #OP "_push2:\n"                         \
-            "\tbgeu a3, a1, 2f\n"                                              \
-            "\tlbu t4, 2(a5)\n"                                                \
-            "\tpackh t3, t4, t3\n"                                             \
-            "\taddi a5, a5, 1\n" MONAD_VM_HEAD1_PUSH                           \
+            "monad_vm_slot_" #NAME "_" #OP                                     \
+            "_push2:\n" MONAD_VM_PUSH2_READ("2f") MONAD_VM_PUSH_T3             \
             "\tj monad_vm_slot_" #NAME "_" #OP "\n"                            \
             "2:\ttail monad_vm_stack_overflow\n"                               \
             ".size monad_vm_slot_" #NAME "_" #OP "_push2, . - "                \
@@ -311,6 +312,8 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_HEAD2_JUMP
     #undef MONAD_VM_HEAD1_PUSH
     #undef MONAD_VM_HEAD2_PUSH
+    #undef MONAD_VM_PUSH_T3
+    #undef MONAD_VM_PUSH2_READ
     #undef MONAD_VM_LEAD_ASM
 #endif
 

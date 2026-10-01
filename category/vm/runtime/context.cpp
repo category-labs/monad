@@ -157,6 +157,37 @@ namespace monad::vm::runtime
             return CallStatus::OutOfGas;
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        // Read the 64-bit limbs directly to avoid staging a 32-byte copy on the
+        // stack.
+        auto const load_limb = [](uint8_t const *const bytes,
+                                  unsigned const index) {
+            uint64_t limb;
+            __builtin_memcpy(&limb, bytes + sizeof(limb) * index, sizeof(limb));
+            return limb;
+        };
+        auto const fits_memory_offset = [&](uint8_t const *const bytes) {
+            return ((load_limb(bytes, 0) >> Memory::offset_bits) |
+                    load_limb(bytes, 1) | load_limb(bytes, 2) |
+                    load_limb(bytes, 3)) == 0;
+        };
+        if (!fits_memory_offset(result.size)) {
+            return CallStatus::OutOfGas;
+        }
+
+        auto const size = Memory::Offset::unsafe_from(
+            static_cast<Memory::Offset::rep>(load_limb(result.size, 0)));
+        if (*size == 0) {
+            return std::span<uint8_t const>({});
+        }
+
+        if (!fits_memory_offset(result.offset)) {
+            return CallStatus::OutOfGas;
+        }
+
+        auto const offset = Memory::Offset::unsafe_from(
+            static_cast<Memory::Offset::rep>(load_limb(result.offset, 0)));
+#else
         auto const size_word = std::bit_cast<uint256_t>(result.size);
         if (!is_bounded_by_bits<Memory::offset_bits>(size_word)) {
             return CallStatus::OutOfGas;
@@ -175,6 +206,7 @@ namespace monad::vm::runtime
 
         auto const offset =
             Memory::Offset::unsafe_from(static_cast<uint32_t>(offset_word));
+#endif
 
         auto const memory_end = offset + size;
 

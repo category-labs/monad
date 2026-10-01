@@ -15,11 +15,13 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.hpp>
 
 #include <exception>
+#include <optional>
 #include <type_traits>
 
 namespace monad::vm
@@ -56,6 +58,10 @@ namespace monad::vm
         virtual evmc_access_status sload_into(
             evmc::address const &addr, evmc::bytes32 const &key,
             bool can_pay_cold_access, evmc_bytes32 &value) noexcept = 0;
+
+        /// Read the EIP-7702 delegate directly from the stored code.
+        virtual std::optional<Address>
+        delegate_of(evmc::address const &addr) const noexcept = 0;
 #endif
 
         /// Capture `std::current_exception()`.

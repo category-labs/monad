@@ -27,6 +27,10 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/vm/code.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/evm/delegation.hpp>
+#endif
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -153,6 +157,23 @@ EvmcHostBase::get_code_hash(evmc::address const &address) const noexcept
     stack_unwind();
 }
 
+namespace
+{
+    // Load code and notify the tracer, or return empty for NULL_HASH.
+    vm::SharedVarcode read_code_for_tracer(
+        State &state, trace::StateTracer &tracer, evmc::address const &address)
+    {
+        bytes32_t const hash = state.get_code_hash(as_monad(address));
+        if (hash == NULL_HASH) {
+            return {};
+        }
+        auto vcode = state.read_code(hash);
+        MONAD_ASSERT(vcode);
+        trace::on_read_code(tracer, hash, vcode->intercode());
+        return vcode;
+    }
+}
+
 size_t EvmcHostBase::copy_code(
     evmc::address const &address, size_t const offset, uint8_t *const data,
     size_t const size) const
@@ -160,14 +181,11 @@ size_t EvmcHostBase::copy_code(
     MONAD_TRY
     {
         if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
-            bytes32_t const hash = state_.get_code_hash(as_monad(address));
-            if (hash != NULL_HASH) {
-                auto const vcode = state_.read_code(hash);
-                MONAD_ASSERT(vcode);
-                trace::on_read_code(state_tracer_, hash, vcode->intercode());
-                return vcode->intercode()->copy_code(offset, data, size);
+            auto const vcode = read_code_for_tracer(state_, state_tracer_, address);
+            if (!vcode) {
+                return 0;
             }
-            return 0;
+            return vcode->intercode()->copy_code(offset, data, size);
         }
         return state_.copy_code(as_monad(address), offset, data, size);
     }
@@ -177,6 +195,29 @@ size_t EvmcHostBase::copy_code(
     }
     stack_unwind();
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+std::optional<Address>
+EvmcHostBase::delegate_of(evmc::address const &address) const noexcept
+{
+    MONAD_TRY
+    {
+        if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
+            auto const vcode = read_code_for_tracer(state_, state_tracer_, address);
+            if (!vcode) {
+                return std::nullopt;
+            }
+            return vm::evm::designation_of(vcode->intercode()->code_span());
+        }
+        return state_.delegate_of(as_monad(address));
+    }
+    MONAD_CATCH(...)
+    {
+        capture_current_exception();
+    }
+    stack_unwind();
+}
+#endif
 
 evmc_tx_context const *EvmcHostBase::get_tx_context() const noexcept
 {

@@ -27,10 +27,11 @@
 #include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/vm/code.hpp>
 #include <category/vm/evm/storage_status.hpp>
 #include <category/vm/evm/tx_context.hpp>
-
 #if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/evm/delegation.hpp>
     #include <category/vm/evm/explicit_traits.hpp>
 #endif
 
@@ -136,6 +137,23 @@ bytes32_t StateHostBase::get_code_hash(Address const &address) const
     stack_unwind();
 }
 
+namespace
+{
+    // Load code and notify the tracer, or return empty for NULL_HASH.
+    vm::SharedVarcode read_code_for_tracer(
+        State &state, trace::StateTracer &tracer, monad_address const &address)
+    {
+        bytes32_t const hash = state.get_code_hash(address);
+        if (hash == NULL_HASH) {
+            return {};
+        }
+        auto vcode = state.read_code(hash);
+        MONAD_ASSERT(vcode);
+        trace::on_read_code(tracer, hash, vcode->intercode());
+        return vcode;
+    }
+}
+
 size_t StateHostBase::copy_code(
     Address const &address, size_t const offset, uint8_t *const data,
     size_t const size) const
@@ -143,14 +161,12 @@ size_t StateHostBase::copy_code(
     MONAD_TRY
     {
         if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
-            bytes32_t const hash = state_.get_code_hash(address);
-            if (hash != NULL_HASH) {
-                auto const vcode = state_.read_code(hash);
-                MONAD_ASSERT(vcode);
-                trace::on_read_code(state_tracer_, hash, vcode->intercode());
-                return vcode->intercode()->copy_code(offset, data, size);
+            auto const vcode =
+                read_code_for_tracer(state_, state_tracer_, address);
+            if (!vcode) {
+                return 0;
             }
-            return 0;
+            return vcode->intercode()->copy_code(offset, data, size);
         }
         return state_.copy_code(address, offset, data, size);
     }
@@ -160,6 +176,30 @@ size_t StateHostBase::copy_code(
     }
     stack_unwind();
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+std::optional<Address>
+StateHostBase::delegate_of(monad_address const &address) const noexcept
+{
+    MONAD_TRY
+    {
+        if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
+            auto const vcode =
+                read_code_for_tracer(state_, state_tracer_, address);
+            if (!vcode) {
+                return std::nullopt;
+            }
+            return vm::evm::designation_of(vcode->intercode()->code_span());
+        }
+        return state_.delegate_of(address);
+    }
+    MONAD_CATCH(...)
+    {
+        capture_current_exception();
+    }
+    stack_unwind();
+}
+#endif
 
 vm::TxContext const *StateHostBase::get_tx_context() const noexcept
 {
@@ -358,6 +398,13 @@ namespace monad::vm::runtime
     {
         static_cast<StateHostBase &>(host).StateHostBase::emit_log(
             address, data, data_size, topics, num_topics);
+    }
+
+    std::optional<Address>
+    guest_delegate_of(Host const &host, monad_address const &address) noexcept
+    {
+        return static_cast<StateHostBase const &>(host)
+            .StateHostBase::delegate_of(address);
     }
 }
 #endif

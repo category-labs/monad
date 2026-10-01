@@ -116,7 +116,11 @@ namespace monad::vm::runtime
                 // treat it as a delegated call in the context of the
                 // current authority.
                 if (auto delegate_address =
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_SELFTEST)
+                        guest_delegate_of(host_of(*ctx), dest_address)) {
+#else
                         ctx->host->resolve_delegation(dest_address)) {
+#endif
 #if defined(MONAD_ZKVM_ZISK)
                     auto const access_status = guest_access_account<traits>(
                         host_of(*ctx), *delegate_address);

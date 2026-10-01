@@ -84,6 +84,11 @@ public:
         Address const &, size_t offset, uint8_t *data,
         size_t size) const override;
 
+#if defined(MONAD_ZKVM_ZISK)
+    virtual std::optional<Address>
+    delegate_of(monad_address const &) const noexcept override;
+#endif
+
     virtual vm::TxContext const *get_tx_context() const noexcept override;
 
     virtual bytes32_t get_block_hash(int64_t) const override;

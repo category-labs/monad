@@ -216,6 +216,121 @@ def check_dirty_accounts(build_dir: pathlib.Path, repo: pathlib.Path) -> None:
         fail("compile commands are missing State or the guest entry point")
 
 
+BRANCHES = {
+    "beq", "bne", "blt", "bge", "bltu", "bgeu", "beqz", "bnez",
+    "blez", "bgez", "bltz", "bgtz", "bgt", "ble", "bgtu", "bleu",
+}
+FUNCTION = re.compile(r"^([0-9a-f]+) <(.+)>:$")
+INSTRUCTION = re.compile(r"^\s+([0-9a-f]+):\t[0-9a-f ]+\t(\S+)(?:\t(.*))?$")
+OFFSET_JUMP = re.compile(r"^(-?\d+)\(\w+\)$")
+CALLEE_SAVED = {"fp"} | {f"s{n}" for n in range(12)}
+# The mnemonics whose first operand is not a register they write.
+NO_DESTINATION = BRANCHES | {
+    "sd", "sw", "sh", "sb", "j", "jr", "ret", "unimp", "nop", "fence",
+    "ecall", "ebreak", "csrs", "csrc", "csrw", "csrsi", "csrci", "csrwi",
+}
+
+
+def check_hand_made_jumps(disassembly: str) -> int:
+    """Count the interpreter's jumps with an offset; fail on one with a frame open.
+
+    MONAD_VM_LEAD_DISPATCH writes a tail call by hand, an asm `jalr zero,
+    IMM(reg)` then __builtin_unreachable(), for the immediate gcc never puts in
+    an indirect jump. gcc emits a frame's epilogue (sp, ra, the saved
+    registers) before its own tail calls only, so such a jump is sound only
+    where no frame is open. Nor does gcc keep s0-s11 on a path that ends in
+    __builtin_unreachable(): it may write one there without saving it, and the
+    caller's value is lost. Each interpreter function is walked from its entry
+    along its branches with sp's adjustments and the callee-saved registers
+    written and not reloaded from the stack; a `jr IMM(reg)`, IMM != 0,
+    reached with sp moved, or written otherwise than by an addi, or with such a
+    register written, fails.
+    """
+    functions: dict[str, list[tuple[int, str, str]]] = {}
+    current = None
+    for line in disassembly.splitlines():
+        header = FUNCTION.match(line)
+        if header:
+            name = header.group(2)
+            if not name.startswith(".L"):
+                current = (
+                    functions.setdefault(name, [])
+                    if name.startswith(
+                        ("monad_vm_slot_", "_ZN5monad2vm11interpreter")
+                    )
+                    else None
+                )
+            continue
+        instruction = INSTRUCTION.match(line)
+        if instruction and current is not None:
+            current.append(
+                (
+                    int(instruction.group(1), 16),
+                    instruction.group(2),
+                    instruction.group(3) or "",
+                )
+            )
+    count = 0
+    for name, code in functions.items():
+        if not any(
+            m == "jr" and OFFSET_JUMP.match(o) and not o.startswith("0(")
+            for _, m, o in code
+        ):
+            continue
+        index = {pc: i for i, (pc, _, _) in enumerate(code)}
+        depth: dict[int, int | None] = {code[0][0]: 0}
+        written: dict[int, frozenset[str]] = {code[0][0]: frozenset()}
+        work = [code[0][0]]
+        while work:
+            pc = work.pop()
+            i = index[pc]
+            _, mnemonic, operands = code[i]
+            sp = depth[pc]
+            dirty = written[pc]
+            if operands.startswith("sp,"):
+                parts = operands.split(",")
+                if mnemonic == "addi" and parts[1] == "sp" and sp is not None:
+                    sp += int(parts[2])
+                else:
+                    sp = None
+            destination = operands.split(",")[0].split()[0] if operands else ""
+            if mnemonic not in NO_DESTINATION and destination in CALLEE_SAVED:
+                if mnemonic == "ld" and operands.endswith("(sp)"):
+                    dirty = dirty - {destination}
+                else:
+                    dirty = dirty | {destination}
+            following = code[i + 1][0] if i + 1 < len(code) else None
+            if mnemonic == "j":
+                successors = [int(operands.split()[0], 16)]
+            elif mnemonic in BRANCHES:
+                target = int(operands.split(",")[-1].split()[0], 16)
+                successors = [target, following]
+            elif mnemonic in ("jr", "ret", "unimp"):
+                jump = OFFSET_JUMP.match(operands) if mnemonic == "jr" else None
+                if jump and jump.group(1) != "0":
+                    count += 1
+                    if sp != 0:
+                        fail(
+                            f"{name} jumps with an offset at {pc:x} with its "
+                            "frame open"
+                        )
+                    if dirty:
+                        fail(
+                            f"{name} jumps with an offset at {pc:x} with "
+                            f"{', '.join(sorted(dirty))} written and not "
+                            "restored"
+                        )
+                successors = []
+            else:
+                successors = [following]
+            for successor in successors:
+                if successor in index and successor not in depth:
+                    depth[successor] = sp
+                    written[successor] = dirty
+                    work.append(successor)
+    return count
+
+
 def check_runtime(repo: pathlib.Path) -> dict[str, str]:
     lock_path = repo / "zkvm/zisk/Cargo.lock"
     packages: list[dict[str, str]] = []
@@ -399,6 +514,7 @@ def main() -> int:
     jumpdest_syscalls = len(re.findall(r"\bcsrs\s+0x81c,", disassembly))
     if jumpdest_syscalls == 0:
         fail("ELF does not contain the ZisK JUMPDEST syscall")
+    offset_jumps = check_hand_made_jumps(disassembly)
 
     signature = str(profile.get("build_signature", ""))
     if len(signature) != 64:
@@ -422,6 +538,7 @@ def main() -> int:
             "elf_marker": marker.decode(),
             "elf_attributes": ["zba", "zbb", "zbs", "zbkb"],
             "jumpdest_syscalls": jumpdest_syscalls,
+            "interpreter_offset_jumps": offset_jumps,
             "cargo_lock_sha256": sha256(repo / "zkvm/zisk/Cargo.lock"),
             "cmake_profile_sha256": sha256(profile_path),
         },

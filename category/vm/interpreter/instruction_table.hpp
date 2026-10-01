@@ -831,6 +831,21 @@ namespace monad::vm::interpreter
         runtime::Context &ctx = held_in_a0(entry_ctx);
         MONAD_VM_CHECK(SIGNEXTEND);
         auto &&[b, x] = top_two(stack_top);
+#if defined(MONAD_ZKVM_ZISK)
+        // Solidity's int8 to int64: the sign byte in the low word, which two
+        // shifts extend, and its sign in the three words above -- against
+        // the general case's masks and run of stores at a run-time index.
+        if ((b[1] | b[2] | b[3]) == 0 && b[0] < 8) {
+            unsigned const shift = static_cast<unsigned>(56 - 8 * b[0]);
+            int64_t const low = static_cast<int64_t>(x[0] << shift) >> shift;
+            uint64_t const sign = static_cast<uint64_t>(low >> 63);
+            x[0] = static_cast<uint64_t>(low);
+            x[1] = sign;
+            x[2] = sign;
+            x[3] = sign;
+            MONAD_VM_NEXT(SIGNEXTEND);
+        }
+#endif
         signextend_to(b, x);
 
         MONAD_VM_NEXT(SIGNEXTEND);

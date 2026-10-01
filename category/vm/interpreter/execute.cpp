@@ -77,6 +77,15 @@ namespace monad::vm::interpreter
             ".size monad_vm_slot_" #NAME "_" #OP "_lead, . - "                 \
             "monad_vm_slot_" #NAME "_" #OP "_lead\n"                           \
             ".popsection");                                                    \
+        extern "C" [[gnu::section(".monad_vm_slot." #NAME "." #OP)]] void      \
+            monad_vm_slot_##NAME##_##OP(                                       \
+                runtime::Context &,                                            \
+                MONAD_VM_ANALYSIS_TYPE,                                        \
+                uint256_t const *,                                             \
+                uint256_t *,                                                   \
+                int64_t,                                                       \
+                uint8_t const *,                                               \
+                void const *);                                                 \
         extern "C" [[gnu::section(".monad_vm_push1." #NAME "." #OP)]] void     \
             monad_vm_slot_##NAME##_##OP##_push1(                               \
                 runtime::Context &ctx,                                         \
@@ -89,7 +98,8 @@ namespace monad::vm::interpreter
         {                                                                      \
             __attribute__((musttail)) return push1_then<                       \
                 0x##OP,                                                        \
-                EvmTraits<REV>>(                                               \
+                EvmTraits<REV>,                                                \
+                monad_vm_slot_##NAME##_##OP>(                                  \
                 ctx,                                                           \
                 MONAD_VM_ANALYSIS_ARG,                                         \
                 stack_bottom,                                                  \

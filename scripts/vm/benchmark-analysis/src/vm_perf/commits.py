@@ -48,9 +48,12 @@ def prepare(source: pathlib.Path, commit: str, cache: pathlib.Path) -> None:
     ref = re.search(r"repository: category-labs/evmone(?:(?!uses:).)*?ref: (\S+)", workflow, re.S)
     if ref is None:
         raise RuntimeError(f"no evmone ref at {commit}")
-    if not cache.exists():
+    if cache.exists():
+        subprocess.run(["git", "-C", str(cache), "fetch", "-q", EVMONE, "+refs/heads/*:refs/heads/*"], check=True)
+    else:
         subprocess.run(["git", "clone", "-q", "--bare", EVMONE, str(cache)], check=True)
-    (source / "third_party/evmone").mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(source / "third_party/evmone", ignore_errors=True)
+    (source / "third_party/evmone").mkdir(parents=True)
     date = git(source, "log", "-1", "--format=%cI", "HEAD").strip()
     at = subprocess.run(
         ["git", "-C", str(cache), "rev-list", "-1", f"--before={date}", ref.group(1)], capture_output=True

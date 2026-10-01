@@ -293,6 +293,31 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         if(NOT MONAD_ZKVM_KECCAKF_MEMO)
             add_compile_definitions(MONAD_ZKVM_KECCAKF_MEMO=0)
         endif()
+
+        # Lever: every Keccak-f in software (zkvm/guest/keccak_accel.cpp), so a
+        # block too small to fill a Keccakf instance does not pay for one -- about
+        # a fifth of what a block of 1 to 250 L2 transactions plans. Off by
+        # default: a permutation is 4,138 steps here, which the Main and Binary
+        # instances of a small block absorb and those of a larger one overflow
+        # (zkvm/README.md has the measured break-even). The memo is filed from
+        # precompile calls, so the lever needs it off, and the official profile,
+        # which requires the memo, refuses it.
+        option(MONAD_ZKVM_KECCAKF_SOFTWARE
+               "run Keccak-f in software instead of with ZisK's precompile" OFF)
+        if(MONAD_ZKVM_KECCAKF_SOFTWARE)
+            if(MONAD_ZKVM_OFFICIAL_PROFILE)
+                message(FATAL_ERROR
+                    "MONAD_ZKVM_KECCAKF_SOFTWARE leaves out the Keccak-f precompile "
+                    "and the memo the official profile requires")
+            endif()
+            if(MONAD_ZKVM_KECCAKF_MEMO)
+                message(FATAL_ERROR
+                    "MONAD_ZKVM_KECCAKF_SOFTWARE needs -DMONAD_ZKVM_KECCAKF_MEMO=OFF: "
+                    "the executor files the memo from precompile calls, so with the "
+                    "permutation in software it would never hit")
+            endif()
+            add_compile_definitions(MONAD_ZKVM_KECCAKF_SOFTWARE)
+        endif()
         # Expose the no-op operator delete declarations to every ZisK C++ file.
         string(APPEND CMAKE_CXX_FLAGS
                " -include ${CMAKE_CURRENT_SOURCE_DIR}/nodelete.hpp")

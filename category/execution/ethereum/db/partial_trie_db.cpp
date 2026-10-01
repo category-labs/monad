@@ -62,7 +62,7 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-std::optional<Account> PartialTrieDb::read_account(Address const &address)
+std::optional<Account> PartialTrieDb::read_account(evmc_address const &address)
 {
     auto const key = keccak256(address.bytes);
     // Reuse the storage root found by this account lookup for later slot reads.
@@ -71,7 +71,7 @@ std::optional<Account> PartialTrieDb::read_account(Address const &address)
         Cases{
             [&](mpt::NullView) -> std::optional<Account> {
                 // Cache absence too, so slot reads need not repeat this lookup.
-                storage_memo_address_ = address;
+                static_cast<evmc_address &>(storage_memo_address_) = address;
                 storage_memo_root_ = mpt::NULL_ID;
                 storage_memo_valid_ = true;
 #ifdef MONAD_ZKVM_ZISK
@@ -80,7 +80,7 @@ std::optional<Account> PartialTrieDb::read_account(Address const &address)
                 return std::nullopt;
             },
             [&](mpt::AccountLeafView leaf) -> std::optional<Account> {
-                storage_memo_address_ = address;
+                static_cast<evmc_address &>(storage_memo_address_) = address;
                 storage_memo_root_ = leaf.storage();
                 storage_memo_valid_ = true;
 #ifdef MONAD_ZKVM_ZISK
@@ -95,17 +95,17 @@ std::optional<Account> PartialTrieDb::read_account(Address const &address)
 }
 
 bytes32_t PartialTrieDb::read_storage(
-    Address const &address, Incarnation, bytes32_t const &slot)
+    evmc_address const &address, Incarnation, bytes32_t const &slot)
 {
     mpt::NodeId storage_root;
-    if (storage_memo_valid_ && storage_memo_address_ == address) {
+    if (storage_memo_valid_ && address_equal(storage_memo_address_, address)) {
         storage_root = storage_memo_root_;
     }
 #ifdef MONAD_ZKVM_ZISK
     else if (auto const cached_root = storage_roots_by_address_.find(address);
              cached_root != storage_roots_by_address_.end()) {
         storage_root = cached_root->second;
-        storage_memo_address_ = address;
+        static_cast<evmc_address &>(storage_memo_address_) = address;
         storage_memo_root_ = storage_root;
         storage_memo_valid_ = true;
     }
@@ -120,7 +120,7 @@ bytes32_t PartialTrieDb::read_storage(
                 [](auto) -> mpt::NodeId {
                     MONAD_ABORT("incorrect node type returned in read_storage");
                 }});
-        storage_memo_address_ = address;
+        static_cast<evmc_address &>(storage_memo_address_) = address;
         storage_memo_root_ = storage_root;
         storage_memo_valid_ = true;
 #ifdef MONAD_ZKVM_ZISK

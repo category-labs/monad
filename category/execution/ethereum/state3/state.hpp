@@ -53,7 +53,7 @@ class DirtyAccounts
 public:
     // Deduplicate entries for frame merging and reserve-balance tracking.
     // Returns true on insertion; current callers ignore the result.
-    bool emplace(Address const &address)
+    bool emplace(evmc_address const &address)
     {
         for (auto const &existing_address : addresses_) {
             if (__builtin_memcmp(
@@ -63,7 +63,7 @@ public:
                 return false;
             }
         }
-        addresses_.push_back(address);
+        addresses_.emplace_back(address);
         return true;
     }
 
@@ -96,7 +96,10 @@ public:
 class State
 {
     template <typename K, typename V>
-    using Map = ankerl::unordered_dense::segmented_map<K, V>;
+    using Map = ankerl::unordered_dense::segmented_map<
+        K, V, ankerl::unordered_dense::hash<K>,
+        std::conditional_t<
+            std::is_same_v<K, Address>, AddressEqual, std::equal_to<K>>>;
 
     template <typename K>
     using Set = ankerl::unordered_dense::segmented_set<K>;
@@ -152,6 +155,15 @@ class State
         // A full-width payload index avoids zero-extension and keeps Undo
         // at 32 bytes, so vector::size() can use a shift to count elements.
         std::uint64_t payload_index;
+
+        Undo(
+            evmc_address const &address, Kind record_kind,
+            std::uint64_t payload_position)
+            : address{address}
+            , kind{record_kind}
+            , payload_index{payload_position}
+        {
+        }
     };
 
     static_assert(sizeof(Undo) == 32);
@@ -188,22 +200,24 @@ class State
     static_assert(sizeof(SlotUndo) == 128);
 
     // Record a new current_ entry so rollback can erase it.
-    void journal_created(Address const &address);
+    void journal_created(evmc_address const &address);
 
-    void journal_account(Address const &address, AccountState const &row);
+    void journal_account(evmc_address const &address, AccountState const &row);
+    void journal_balance(
+        evmc_address const &address, uint256_t const &previous_state);
+    void journal_code_hash(
+        evmc_address const &address, bytes32_t const &previous_state);
     void
-    journal_balance(Address const &address, uint256_t const &previous_state);
-    void
-    journal_code_hash(Address const &address, bytes32_t const &previous_state);
-    void journal_nonce(Address const &address, std::uint64_t previous_state);
-    void journal_flag(Address const &address, Undo::Kind kind);
-    void journal_warm_slot(Address const &address, bytes32_t const &key);
+    journal_nonce(evmc_address const &address, std::uint64_t previous_state);
+    void journal_flag(evmc_address const &address, Undo::Kind kind);
+    void journal_warm_slot(evmc_address const &address, bytes32_t const &key);
     void journal_slot(
-        Address const &address, bytes32_t const &key,
+        evmc_address const &address, bytes32_t const &key,
         bytes32_t const *previous_value);
     void journal_transient(
-        Address const &address, AccountState const &row, bytes32_t const &key);
-    void journal_pages(Address const &address, AccountState const &row);
+        evmc_address const &address, AccountState const &row,
+        bytes32_t const &key);
+    void journal_pages(evmc_address const &address, AccountState const &row);
 
     // True when a frame is open, i.e. when anything could still roll back.
     [[nodiscard]] bool journalling() const
@@ -307,21 +321,22 @@ class State
         ChainContext<traits> const &);
 
 public:
-    OriginalAccountState &original_account_state(Address const &);
+    OriginalAccountState &original_account_state(evmc_address const &);
 
 private:
     // Reads may reuse the memo but never populate it: only the mutation path
     // registers dirty accounts and sets the corresponding epoch.
-    [[nodiscard]] AccountState *cached_current_account(Address const &address)
+    [[nodiscard]] AccountState *
+    cached_current_account(evmc_address const &address)
     {
         if (current_memo_state_ != nullptr &&
-            address == current_memo_address_) {
+            address_equal(address, current_memo_address_)) {
             return current_memo_state_;
         }
         return nullptr;
     }
 
-    AccountState const &recent_account_state(Address const &);
+    AccountState const &recent_account_state(evmc_address const &);
 
     // Return the visible state and its original row without looking up
     // the original again when a current row already exists.
@@ -331,29 +346,29 @@ private:
         OriginalAccountState *original;
     };
 
-    AccountReadRows rows_for_read(Address const &);
+    AccountReadRows rows_for_read(evmc_address const &);
 
-    AccountState &current_account_state(Address const &);
+    AccountState &current_account_state(evmc_address const &);
 
     // Whether SELFDESTRUCT to the account itself destroys the balance.
     template <Traits traits>
-    bool selfdestruct_to_self_burns(Address const &);
+    bool selfdestruct_to_self_burns(evmc_address const &);
 
-    void zero_storage(Address const &, AccountState &);
+    void zero_storage(evmc_address const &, AccountState &);
 
     // Warm a slot in an already located account.
     template <Traits traits>
-    monad_access_status
-    access_storage_of(AccountState &, Address const &, bytes32_t const &key);
+    monad_access_status access_storage_of(
+        AccountState &, evmc_address const &, bytes32_t const &key);
 
     // Read a slot from an account already located in current_.
     [[gnu::always_inline]] inline void current_storage_into(
-        AccountState const &, Address const &, bytes32_t const &key,
+        AccountState const &, evmc_address const &, bytes32_t const &key,
         evmc_bytes32 &out);
 
-    std::optional<Account> const &recent_account(Address const &);
+    std::optional<Account> const &recent_account(evmc_address const &);
 
-    std::optional<Account> &current_account(Address const &);
+    std::optional<Account> &current_account(evmc_address const &);
 
 public:
     State(BlockState &, Incarnation, bool relaxed_validation = false);
@@ -390,29 +405,29 @@ public:
     vm::VM &vm();
 
 public:
-    void set_original_nonce(Address const &, uint64_t nonce);
+    void set_original_nonce(evmc_address const &, uint64_t nonce);
 
     ////////////////////////////////////////
 
-    bool account_exists(Address const &);
+    bool account_exists(evmc_address const &);
 
-    bool account_is_dead(Address const &);
+    bool account_is_dead(evmc_address const &);
 
-    bool account_has_code_or_nonce(Address const &);
+    bool account_has_code_or_nonce(evmc_address const &);
 
-    uint64_t get_nonce(Address const &);
+    uint64_t get_nonce(evmc_address const &);
 
-    uint256_t get_balance(Address const &);
+    uint256_t get_balance(evmc_address const &);
 
-    uint256_t get_original_balance(Address const &);
+    uint256_t get_original_balance(evmc_address const &);
 
-    bytes32_t get_code_hash(Address const &);
+    bytes32_t get_code_hash(evmc_address const &);
 
-    bool is_destructed(Address const &);
+    bool is_destructed(evmc_address const &);
 
-    bool is_current_incarnation(Address const &);
+    bool is_current_incarnation(evmc_address const &);
 
-    bytes32_t get_storage(Address const &address, bytes32_t const &key)
+    bytes32_t get_storage(evmc_address const &address, bytes32_t const &key)
     {
         evmc_bytes32 value;
         get_storage_into(address, key, value);
@@ -420,50 +435,52 @@ public:
     }
 
     // Write into the caller's buffer to avoid copies between word types.
-    void
-    get_storage_into(Address const &, bytes32_t const &key, evmc_bytes32 &out);
+    void get_storage_into(
+        evmc_address const &, bytes32_t const &key, evmc_bytes32 &out);
 
-    bytes32_t get_transient_storage(Address const &, bytes32_t const &key);
+    bytes32_t get_transient_storage(evmc_address const &, bytes32_t const &key);
 
-    bool is_touched(Address const &);
+    bool is_touched(evmc_address const &);
 
     ////////////////////////////////////////
 
-    void set_nonce(Address const &, uint64_t nonce);
+    void set_nonce(evmc_address const &, uint64_t nonce);
 
-    void add_to_balance(Address const &, uint256_t const &delta);
+    void add_to_balance(evmc_address const &, uint256_t const &delta);
 
-    void subtract_from_balance(Address const &, uint256_t const &delta);
+    void subtract_from_balance(evmc_address const &, uint256_t const &delta);
 
-    monad_storage_status
-    set_storage(Address const &, bytes32_t const &key, bytes32_t const &value);
+    monad_storage_status set_storage(
+        evmc_address const &, bytes32_t const &key, bytes32_t const &value);
 
     void set_transient_storage(
-        Address const &, bytes32_t const &key, bytes32_t const &value);
+        evmc_address const &, bytes32_t const &key, bytes32_t const &value);
 
-    void touch(Address const &);
+    void touch(evmc_address const &);
 
-    monad_access_status access_account(Address const &);
+    monad_access_status access_account(evmc_address const &);
 
     template <Traits traits>
-    monad_access_status access_storage(Address const &, bytes32_t const &key);
+    monad_access_status
+    access_storage(evmc_address const &, bytes32_t const &key);
 
 #if defined(MONAD_ZKVM_ZISK)
     // Warm and read a slot with one account lookup; see vm::Host::sload_into.
     template <Traits traits>
     monad_access_status sload_into(
-        Address const &, bytes32_t const &key, bool can_pay_cold_access,
+        evmc_address const &, bytes32_t const &key, bool can_pay_cold_access,
         evmc_bytes32 &out);
 #endif
 
     monad_page_storage_status update_page(
-        Address const &, bytes32_t const &key, monad_storage_status status);
+        evmc_address const &, bytes32_t const &key,
+        monad_storage_status status);
 
     ////////////////////////////////////////
 
     template <Traits traits>
     std::pair<bool, uint256_t>
-    selfdestruct(Address const &, Address const &beneficiary);
+    selfdestruct(evmc_address const &, evmc_address const &beneficiary);
 
     // YP (87)
     template <Traits traits>
@@ -480,23 +497,24 @@ public:
     // Use it immediately: a later code lookup may replace the cached value.
     vm::SharedVarcode const &read_code_ref(bytes32_t const &code_hash);
 
-    vm::SharedVarcode get_code(Address const &);
+    vm::SharedVarcode get_code(evmc_address const &);
 
-    size_t get_code_size(Address const &);
+    size_t get_code_size(evmc_address const &);
 
     size_t copy_code(
-        Address const &, size_t offset, uint8_t *buffer, size_t buffer_size);
+        evmc_address const &, size_t offset, uint8_t *buffer,
+        size_t buffer_size);
 
 #if defined(MONAD_ZKVM_ZISK)
     // Read the EIP-7702 delegation target directly from cached code.
-    std::optional<Address> delegate_of(Address const &);
+    std::optional<Address> delegate_of(evmc_address const &);
 #endif
 
-    void set_code(Address const &, byte_string_view code);
+    void set_code(evmc_address const &, byte_string_view code);
 
     ////////////////////////////////////////
 
-    void create_contract(Address const &);
+    void create_contract(evmc_address const &);
 
     /**
      * Creates an account that cannot be selfdestructed after Cancun.
@@ -510,7 +528,7 @@ public:
      * authority processing; changes to the state during that step are specified
      * to take place before any of the actual transactions in a block.
      */
-    void create_account_no_rollback(Address const &);
+    void create_account_no_rollback(evmc_address const &);
 
     ////////////////////////////////////////
 
@@ -532,13 +550,13 @@ public:
 
     ////////////////////////////////////////
 
-    void set_to_state_incarnation(Address const &);
+    void set_to_state_incarnation(evmc_address const &);
 
     // RELAXED MERGE
     // if original and current can be adjusted to satisfy min balance, adjust
     // both values for merge
     bool try_fix_account_mismatch(
-        Address const &, std::optional<Account> const &actual);
+        evmc_address const &, std::optional<Account> const &actual);
 
     /**
      * Checks whether the account currently has enough balance to cover `debit`
@@ -550,7 +568,7 @@ public:
      * a stateful helper rather than a pure predicate.
      */
     bool record_balance_constraint_for_debit(
-        Address const &, uint256_t const &debit);
+        evmc_address const &, uint256_t const &debit);
 };
 
 MONAD_NAMESPACE_END

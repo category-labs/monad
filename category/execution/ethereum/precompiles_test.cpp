@@ -810,7 +810,8 @@ namespace
         unsigned &failures)
     {
         bool const expected = address_is_precompile<traits>(address);
-        bool const resolved = is_eth_precompile<traits>(address);
+        evmc_address const &base = address;
+        bool const resolved = is_eth_precompile<traits>(base);
 
         if (resolved != expected && failures++ < 8) {
             ADD_FAILURE() << what << " " << k << ": 0x" << to_hex(address)

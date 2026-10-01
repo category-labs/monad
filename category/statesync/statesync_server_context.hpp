@@ -101,10 +101,10 @@ struct monad_statesync_server_context final : public monad::Db
     virtual bool is_page_encoded() const override;
 
     virtual std::optional<monad::Account>
-    read_account(monad::Address const &addr) override;
+    read_account(evmc_address const &addr) override;
 
     virtual monad::bytes32_t read_storage(
-        monad::Address const &addr, monad::Incarnation,
+        evmc_address const &addr, monad::Incarnation,
         monad::bytes32_t const &key) override;
 
     virtual monad::storage_page_t read_storage_page(

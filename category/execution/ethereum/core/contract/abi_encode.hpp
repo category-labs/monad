@@ -38,7 +38,7 @@ MONAD_NAMESPACE_BEGIN
 //
 // https://docs.soliditylang.org/en/latest/abi-spec.html#types
 //////////////////////////////////////////////////////////////
-constexpr bytes32_t abi_encode_address(Address const &address)
+constexpr bytes32_t abi_encode_address(evmc_address const &address)
 {
     bytes32_t output{};
     std::copy_n(address.bytes, sizeof(Address), &output.bytes[12]);

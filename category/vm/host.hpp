@@ -97,7 +97,7 @@ namespace monad::vm
             runtime_context_->stack_unwind();
         }
 
-        std::optional<Address> resolve_delegation(Address const &addr) const
+        std::optional<Address> resolve_delegation(evmc_address const &addr) const
         {
 #if defined(MONAD_ZKVM_ZISK)
             return delegate_of(reinterpret_cast<evmc::address const &>(addr));

@@ -286,6 +286,9 @@ namespace
             },
             OPERATOR_SK,
             SALT_SECRET};
+        // Every ancestor: these blocks read no hash, and the runs the tests
+        // below cut have to be longer than the parent alone.
+        b.set_ancestors(corpus::Ancestors::All);
         corpus::Emitted last{};
         for (unsigned i = 0; i < blocks; ++i) {
             corpus::BlockSpec spec;
@@ -391,4 +394,79 @@ TEST(WitnessRejection, AnAncestorAtTheBlockHeightIsRefused)
     auto const r = run_guest(tampered, "own-height");
     EXPECT_NE(r.status, 0) << "an ancestor at the current height was accepted";
     EXPECT_NE(r.output.find("headers.empty()"), std::string::npos) << r.output;
+}
+
+namespace
+{
+    constexpr auto HASH_READER =
+        0x000000000000000000000000000000000000b10c_address;
+    /// SSTORE(0, BLOCKHASH(NUMBER - 3)): one hash, read three blocks back.
+    byte_string const READS_A_HASH =
+        byte_string{0x60, 0x03, 0x43, 0x03, 0x40, 0x60, 0x00, 0x55, 0x00};
+
+    corpus::BlockSpec one_call(Address const &to, uint64_t const gas)
+    {
+        corpus::BlockSpec spec;
+        Transaction tx{
+            .max_fee_per_gas = 100,
+            .gas_limit = gas,
+            .value = 1,
+            .to = to,
+            .type = TransactionType::eip1559,
+            .max_priority_fee_per_gas = 1};
+        tx.sc.chain_id = 1;
+        spec.txs.push_back(tx);
+        spec.keys.push_back(KEY_A);
+        return spec;
+    }
+
+    /// Four transfers, then a block whose transaction reads the hash of the
+    /// block three back, witnessed with Ancestors::Reached: its field [3] is
+    /// that block to the parent and nothing older.
+    corpus::Emitted build_reading_chain()
+    {
+        corpus::CorpusBuilder b{
+            [](State &s) {
+                s.add_to_balance(
+                    corpus::address_of(KEY_A), 1000000000000000000_u256);
+                s.create_contract(HASH_READER);
+                s.set_code(HASH_READER, READS_A_HASH);
+            },
+            OPERATOR_SK,
+            SALT_SECRET};
+        b.set_ancestors(corpus::Ancestors::Reached);
+        for (unsigned i = 0; i < 4; ++i) {
+            b.add_block(one_call(corpus::address_of(KEY_B), 21000));
+        }
+        auto e = b.add_block(one_call(HASH_READER, 100000));
+        MONAD_ASSERT(e.receipts.at(0).status == 1);
+        return e;
+    }
+}
+
+// What makes Ancestors::Reached sound is the guest, not the generator: the
+// run back to the oldest hash the block reads is all it needs...
+TEST(WitnessRejection, TheRunTheBlockReadsIsAccepted)
+{
+    auto const e = build_reading_chain();
+    ASSERT_EQ(ancestor_count(e.witness), 3u);
+
+    auto const r = run_guest(e.witness, "reached");
+    EXPECT_EQ(r.status, 0) << r.output;
+}
+
+// ...and a run one header short of it is refused. That run is still
+// contiguous and still ends at the parent, so the ancestor walk accepts it and
+// only the read can catch it, in WitnessBlockHashBuffer::get. A buffer that
+// answered with the zero hash, as BlockHashBufferFinalized does for a slot
+// never written, would prove an execution the EVM does not perform.
+TEST(WitnessRejection, ARunShortOfAHashTheBlockReadsIsRefused)
+{
+    auto const e = build_reading_chain();
+    auto const tampered = drop_ancestors(e.witness, {0});
+    ASSERT_EQ(ancestor_count(tampered), 2u);
+
+    auto const r = run_guest(tampered, "short-run");
+    EXPECT_NE(r.status, 0) << "a hash outside the ancestor run was answered";
+    EXPECT_NE(r.output.find("not in witness"), std::string::npos) << r.output;
 }

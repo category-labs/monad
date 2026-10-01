@@ -105,11 +105,12 @@ namespace corpus
         /// build, which has no deploy block.
         uint64_t blocks{200};
         /// L2 builds: blocks executed before the first emitted one, so every
-        /// emitted witness carries the ancestor headers a chain in its steady
-        /// state carries -- the block hash buffer's 256 -- rather than the
-        /// handful a chain just out of genesis has. Each costs about 0.35 M
-        /// COST, so a corpus that starts at genesis understates small blocks.
-        /// Always zero outside an L2 build.
+        /// emitted block has the history a chain in its steady state has --
+        /// the block hash buffer's 256 -- rather than the handful a chain just
+        /// out of genesis has. A block that reads a hash finds it, and a
+        /// witness built with Ancestors::All carries all 256 headers instead
+        /// of a number that grows with the block. Always zero outside an L2
+        /// build.
 #ifdef MONAD_ZKVM_L2
         uint64_t warmup{BlockHashBuffer::N};
 #else

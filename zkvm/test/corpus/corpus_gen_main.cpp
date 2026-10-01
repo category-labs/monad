@@ -48,11 +48,12 @@ namespace
             stderr,
             "Usage: %s --out <dir> [--scenario all|transfers|evm|spoke]\n"
             "          [--seed <64 hex>] [--sk <64 hex>] [--salt <64 hex>]\n"
+            "          [--ancestors all|reached]\n"
             "       %s --out <dir> --preset <preset>\n"
             "          [--accounts N] [--blocks N] [--distinct K]\n"
             "          [--shape zipf|uniform|hotset] [--zipf-s F]\n"
             "          [--chunk N] [--sweep K1,K2,...] [--currencies N]\n"
-            "          [--warmup N]\n"
+            "          [--warmup N] [--ancestors all|reached]\n"
             "       %s --pubkey <64 hex secret>\n"
             "       %s --spoke-address [--seed <64 hex>]\n"
             "       %s --salt-commitment <64 hex secret>\n"
@@ -94,9 +95,15 @@ namespace
             "five by default.\n"
             "\n"
             "In an L2 build the chain is the L2's own: genesis is block 0 and\n"
-            "holds the spoke, and --warmup blocks (256 by default, the\n"
-            "ancestors a witness carries in steady state) run before the\n"
-            "first emitted one.\n",
+            "holds the spoke, and --warmup blocks (256 by default, as far as\n"
+            "BLOCKHASH reaches) run before the first emitted one.\n"
+            "\n"
+            "--ancestors sets how far back a witness's ancestor headers go:\n"
+            "reached, back to the oldest block whose hash the block reads and\n"
+            "the parent alone when it reads none, which is all the guest\n"
+            "needs; or all, every header the block hash buffer holds, as a\n"
+            "mainnet witness carries them. reached by default in an L2 build,\n"
+            "all otherwise.\n",
             prog,
             prog,
             prog,
@@ -145,6 +152,7 @@ int main(int const argc, char **const argv)
     bool want_spoke = false;
     bool want_preset = false;
     monad::corpus::WorkloadSpec wl{};
+    monad::corpus::Ancestors ancestors = monad::corpus::DEFAULT_ANCESTORS;
     std::vector<uint64_t> sweep;
 
     auto const parse_hex32 = [](std::string_view h,
@@ -234,6 +242,20 @@ int main(int const argc, char **const argv)
         }
         else if (arg == "--warmup" && i + 1 < argc) {
             wl.warmup = std::strtoull(argv[++i], nullptr, 10);
+        }
+        else if (arg == "--ancestors" && i + 1 < argc) {
+            std::string_view const v{argv[++i]};
+            if (v == "all") {
+                ancestors = monad::corpus::Ancestors::All;
+            }
+            else if (v == "reached") {
+                ancestors = monad::corpus::Ancestors::Reached;
+            }
+            else {
+                std::fprintf(
+                    stderr, "corpus-gen: --ancestors is all or reached\n");
+                return 1;
+            }
         }
         else if (arg == "--currencies" && i + 1 < argc) {
             wl.currencies = std::strtoull(argv[++i], nullptr, 10);
@@ -415,7 +437,8 @@ int main(int const argc, char **const argv)
             std::fprintf(
                 stderr,
                 "corpus-gen: %s/%s accounts=%lu warmup=%lu blocks=%lu "
-                "distinct=%lu currencies=%lu chunk=%zu gas_limit=%lu\n",
+                "distinct=%lu currencies=%lu chunk=%zu gas_limit=%lu "
+                "ancestors=%s\n",
                 monad::corpus::name_of(r.preset),
                 monad::corpus::name_of(r.shape),
                 static_cast<unsigned long>(r.accounts),
@@ -424,10 +447,12 @@ int main(int const argc, char **const argv)
                 static_cast<unsigned long>(r.distinct),
                 static_cast<unsigned long>(r.currencies),
                 r.chunk,
-                static_cast<unsigned long>(r.gas_limit()));
+                static_cast<unsigned long>(r.gas_limit()),
+                ancestors == monad::corpus::Ancestors::All ? "all" : "reached");
 
             monad::corpus::CorpusBuilder builder{
                 w.seeder(), r.chunk, r.gas_limit(), sk, salt};
+            builder.set_ancestors(ancestors);
             std::fprintf(
                 stderr,
                 "corpus-gen: genesis seeded, spoke at %s\n",
@@ -483,6 +508,7 @@ int main(int const argc, char **const argv)
             continue;
         }
         monad::corpus::CorpusBuilder builder{s.genesis, sk, salt};
+        builder.set_ancestors(ancestors);
         for (auto &spec : s.blocks(builder)) {
             auto const n_txs = spec.txs.size();
             auto const e = builder.add_block(std::move(spec));

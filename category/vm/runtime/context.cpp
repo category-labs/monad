@@ -211,6 +211,35 @@ namespace monad::vm::runtime
             return EVMC_OUT_OF_GAS;
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        // The words read where they lie: a bit_cast to uint256_t stages the
+        // 32 bytes on the stack, a DMA copy, and reads them back from there.
+        auto const word = [](uint8_t const *const p, unsigned const i) {
+            uint64_t w;
+            __builtin_memcpy(&w, p + 8 * i, sizeof(w));
+            return w;
+        };
+        auto const bounded = [&](uint8_t const *const p) {
+            return ((word(p, 0) >> Memory::offset_bits) | word(p, 1) |
+                    word(p, 2) | word(p, 3)) == 0;
+        };
+        if (!bounded(result.size)) {
+            return EVMC_OUT_OF_GAS;
+        }
+
+        auto const size = Memory::Offset::unsafe_from(
+            static_cast<uint32_t>(word(result.size, 0)));
+        if (*size == 0) {
+            return std::span<uint8_t const>({});
+        }
+
+        if (!bounded(result.offset)) {
+            return EVMC_OUT_OF_GAS;
+        }
+
+        auto const offset = Memory::Offset::unsafe_from(
+            static_cast<uint32_t>(word(result.offset, 0)));
+#else
         auto const size_word = std::bit_cast<uint256_t>(result.size);
         if (!is_bounded_by_bits<Memory::offset_bits>(size_word)) {
             return EVMC_OUT_OF_GAS;
@@ -229,6 +258,7 @@ namespace monad::vm::runtime
 
         auto const offset =
             Memory::Offset::unsafe_from(static_cast<uint32_t>(offset_word));
+#endif
 
         auto const memory_end = offset + size;
 

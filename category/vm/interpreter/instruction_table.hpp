@@ -79,6 +79,11 @@ namespace monad::vm::interpreter
     inline constexpr size_t push1_prefix_offset = 32;
     inline constexpr size_t push2_prefix_offset = 56;
 
+    // Label the instruction for the ELF audit. Keep it on one assembly line
+    // so GCC still estimates the size of the inline asm as one instruction.
+    #define MONAD_VM_MARKED_TAIL_JUMP(KIND)                                    \
+        "monad_vm_manual_jump_" #KIND "_%=: jalr zero, %[off](%[head])"
+
     // Jump OFFSET bytes before the follower's handler with arguments in a0-a6.
     // Encoding the offset in jalr avoids a separate address adjustment.
     #define MONAD_VM_PREFIX_DISPATCH(OFFSET, NEXT_OPCODE, TOP, GAS, IP)        \
@@ -95,7 +100,7 @@ namespace monad::vm::interpreter
             register int64_t monad_vm_a4 asm("a4") = (GAS);                    \
             register uint8_t const *monad_vm_a5 asm("a5") = (IP);              \
             register void const *monad_vm_a6 asm("a6") = table_base;           \
-            asm volatile("jalr zero, %[off](%[head])"                          \
+            asm volatile(MONAD_VM_MARKED_TAIL_JUMP(prefix)                     \
                          :                                                     \
                          : [head] "r"(follower_handler_address),               \
                            [off] "i"(-static_cast<int>(OFFSET)),               \

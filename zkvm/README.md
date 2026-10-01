@@ -353,6 +353,48 @@ Main and Binary. A contract-heavy block keeps more keccak -- the EVM's, the
 bloom's -- and is better off on the precompile. `l2-latency` times both as two
 more arms.
 
+**The signatures can be bound with Poseidon2 too**
+(`MONAD_ZKVM_L2_SIGNATURE_HASH=poseidon2`, default `keccak`). The curve stays
+secp256k1 and the signature ECDSA -- its recovery already runs on ZisK's curve
+precompiles, beside the encryption's ECDH. What changes is the two hashes keccak
+supplies: the digest a transaction's or an authorization's signature signs, and
+the hash that turns the public key it recovers into an address, both
+`monad_poseidon2_256` over a label of their own (`monad-l2/tx-sig/v1`,
+`monad-l2/address/v1`), through
+[`signature_hash.hpp`](../category/execution/ethereum/core/signature_hash.hpp).
+A stock wallet cannot sign for such a chain, since it signs keccak digests. The
+address hash applies wherever the chain turns a key into an address -- a
+sender, an authority, the ECRECOVER precompile -- so a key's address here is not
+its Ethereum one, and the spoke, CREATE-derived from its deployer's address,
+moves with it: `corpus-gen --spoke-address` in a tree configured this way prints
+the chain's (`0x056bfe3f1ca91a3ac44b15ac68bc450b29faa04e` for the default seed).
+Withdrawals name their L1 recipient, so bridging does not depend on the two
+addresses agreeing.
+
+Measured on corpora regenerated from the same seeds with both the tries and the
+signatures on Poseidon2, every witness of which passes on both guests: the
+keccak left falls from about 1.5 permutations a transfer to 0.3 -- the EVM's,
+the anchor's and the bloom's, and per block the code hashes, the block hash and
+the salt -- for two more Poseidon2 calls a transaction. With that remainder in
+software, the plan's area against the keccak chain's:
+
+| block | Poseidon2 trie, Keccak-f in software | and Poseidon2 signatures |
+|---|---:|---:|
+| 1 to 100 transfers | 0.79x | 0.79x |
+| 250 | 0.82x | 0.82x |
+| 500 | 0.91x | 0.88x |
+| 1,000 | 0.93x | 0.87x |
+| 2,000 | 0.94x | 0.81x |
+| 5,000 | 1.02x | 0.78x |
+| worker-payouts, 130 | 1.03x | 1.03x |
+
+Up to 250 transactions keccak has nothing more to give: the plan is the 16
+instances such a block needs whatever it hashes with. Past that, the signatures
+were most of what was left, and without them the remainder fits in software at
+every size, so one configuration is the cheapest across the whole sweep. A
+contract-heavy block keeps the EVM's keccak and is still better off on the
+precompile. `l2-latency` times it as one more arm.
+
 ### Swapping the encryption
 
 `MONAD_ZKVM_L2_CIPHER` selects the cipher suite and is the one L2 value with a

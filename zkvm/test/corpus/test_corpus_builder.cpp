@@ -26,8 +26,10 @@
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/poseidon2.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/core/signature_hash.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 #include <category/execution/ethereum/db/partial_trie_db.hpp>
@@ -41,6 +43,8 @@
 #include <cmath>
 #include <cstring>
 #include <functional>
+#include <span>
+#include <string_view>
 
 #include <gtest/gtest.h>
 
@@ -87,6 +91,46 @@ TEST(CorpusSigner, SenderRecovers)
     auto const sender = recover_sender(tx);
     ASSERT_TRUE(sender.has_value());
     EXPECT_EQ(sender.value(), corpus::address_of(KEY_A));
+}
+
+// The two hashes a signature is bound with are the chain's: keccak256 in a
+// default build, and in one configured with MONAD_ZKVM_L2_SIGNATURE_HASH=
+// poseidon2 the Poseidon2 sponge over the labels below -- restated here rather
+// than read from signature_hash.hpp, since a label that moves moves every
+// address of the chain.
+TEST(CorpusSigner, TheChainsHashesBindTheSignature)
+{
+    unsigned char key[64];
+    for (unsigned i = 0; i < sizeof(key); ++i) {
+        key[i] = static_cast<unsigned char>(3 * i + 1);
+    }
+    byte_string const encoding{0x02, 0xc5, 0x01, 0x80, 0x80, 0x80, 0x80};
+
+    Address address;
+    pubkey_address(std::span<uint8_t const, 64>{key, 64}, address.bytes);
+    monad_hash256 const digest = signing_digest(encoding);
+
+    unsigned char want_address[32];
+    unsigned char want_digest[32];
+#ifdef MONAD_L2_SIGNATURE_HASH_POSEIDON2
+    auto const sponge =
+        [](std::string_view label, byte_string_view body, unsigned char *out) {
+            byte_string in{
+                reinterpret_cast<unsigned char const *>(label.data()),
+                label.size()};
+            in.append(body);
+            monad_poseidon2_256(in.data(), in.size(), out);
+        };
+    sponge("monad-l2/address/v1", {key, sizeof(key)}, want_address);
+    sponge("monad-l2/tx-sig/v1", encoding, want_digest);
+    // And neither is what Ethereum computes for the same bytes.
+    EXPECT_NE(0, std::memcmp(digest.bytes, keccak256(encoding).bytes, 32));
+#else
+    monad_keccak256(key, sizeof(key), want_address);
+    monad_keccak256(encoding.data(), encoding.size(), want_digest);
+#endif
+    EXPECT_EQ(0, std::memcmp(address.bytes, want_address + 12, 20));
+    EXPECT_EQ(0, std::memcmp(digest.bytes, want_digest, 32));
 }
 
 TEST(CorpusBuilder, OneTransferBlockRoundTrips)

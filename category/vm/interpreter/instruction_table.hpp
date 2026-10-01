@@ -1448,15 +1448,81 @@ namespace monad::vm::interpreter
     }
 
 #if defined(MONAD_ZKVM_ZISK)
-    // Solidity's dispatch prologue,
+    // The selector's extraction at q, in one of three forms,
     //
-    //     PUSH1 4 CALLDATASIZE LT PUSH2 <fallback> JUMPI
-    //     PUSH1 0 CALLDATALOAD PUSH1 0xe0 SHR      (or PUSH0 CALLDATALOAD ..)
+    //     PUSH1 0 CALLDATALOAD PUSH1 0xe0 SHR
+    //     PUSH0 CALLDATALOAD PUSH1 0xe0 SHR
+    //     PUSH1 0 CALLDATALOAD PUSH29 1 << 224 SWAP1 DIV PUSH4 0xffffffff AND
     //
-    // from the CALLDATASIZE, over [.. 4] and at least four bytes of calldata:
-    // the selector in place of the 4, the JUMPI not taken. calldatasize
-    // tail-calls it when LT follows; other bytes, a shorter calldata and too
-    // full a stack run the CALLDATASIZE here, as calldatasize does.
+    // the last the code generators before 0.5 wrote: its length in bytes, its
+    // gas charged and the selector pushed at stack_top + 1; 0 for other bytes,
+    // with nothing done. Each form reads its bytes at constant offsets. The
+    // forms push one word at most above stack_top + 1.
+    template <Traits traits>
+    [[gnu::always_inline]] inline size_t push_selector(
+        runtime::Context const &ctx, uint8_t const *const q,
+        uint256_t *const stack_top, int64_t &gas_remaining)
+    {
+        auto const is = [q](size_t const k, auto const op) {
+            return q[k] == static_cast<std::uint8_t>(op);
+        };
+        size_t length = 0;
+        if (is(0, PUSH0)) {
+            if (is(1, CALLDATALOAD) && is(2, PUSH1) && q[3] == 0xe0 &&
+                is(4, SHR)) {
+                gas_remaining -=
+                    static_gas<traits, PUSH0, CALLDATALOAD, PUSH1, SHR>();
+                length = 5;
+            }
+        }
+        else if (is(0, PUSH1) && q[1] == 0 && is(2, CALLDATALOAD)) {
+            if (is(3, PUSH1) && q[4] == 0xe0 && is(5, SHR)) {
+                gas_remaining -=
+                    static_gas<traits, PUSH1, CALLDATALOAD, PUSH1, SHR>();
+                length = 6;
+            }
+            else if (
+                is(3, PUSH29) && q[4] == 1 && is(33, SWAP1) && is(34, DIV) &&
+                is(35, PUSH4) && is(40, AND)) {
+                uint64_t w0, w1, w2;
+                uint32_t w3, mask;
+                __builtin_memcpy(&w0, q + 5, 8);
+                __builtin_memcpy(&w1, q + 13, 8);
+                __builtin_memcpy(&w2, q + 21, 8);
+                __builtin_memcpy(&w3, q + 29, 4);
+                __builtin_memcpy(&mask, q + 36, 4);
+                if ((w0 | w1 | w2 | w3) == 0 && mask == 0xffffffffu) {
+                    gas_remaining -= static_gas<
+                        traits,
+                        PUSH1,
+                        CALLDATALOAD,
+                        PUSH29,
+                        SWAP1,
+                        DIV,
+                        PUSH4,
+                        AND>();
+                    length = 41;
+                }
+            }
+        }
+        if (length != 0) {
+            stack_top[1] = uint256_t{detail::load_be_k<4>(ctx.env.input_data)};
+        }
+        return length;
+    }
+
+    // Solidity's dispatch prologue, from the CALLDATASIZE, over [.. 4] and at
+    // least four bytes of calldata, in either of its forms,
+    //
+    //     PUSH1 4 CALLDATASIZE LT PUSH2 <fallback> JUMPI          (not taken)
+    //     PUSH1 4 CALLDATASIZE LT ISZERO PUSH2 <dispatch> JUMPI   (taken)
+    //
+    // the 4 consumed and the selector's extraction that follows, at the
+    // straight line or the dispatch, run with it (push_selector): the selector
+    // in place of the 4. calldatasize tail-calls it when LT follows; other
+    // bytes, a shorter calldata and too full a stack run the CALLDATASIZE
+    // here, as calldatasize does. An invalid destination exits as the JUMPI
+    // would.
     template <Traits traits>
     [[gnu::noinline]] MONAD_VM_TWIN_CALL void calldata_selector(
         runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
@@ -1467,56 +1533,45 @@ namespace monad::vm::interpreter
         auto const monad_vm_is = [p](size_t const k, auto const op) {
             return p[k] == static_cast<std::uint8_t>(op);
         };
-        // PUSH1 0 or PUSH0 before the CALLDATALOAD: the sequence is one byte
-        // shorter with PUSH0.
-        bool const monad_vm_push0 = monad_vm_is(6, PUSH0);
-        size_t const monad_vm_k = monad_vm_push0 ? 7 : 8;
-        uint256_t &monad_vm_b = stack_top[0];
-        if (MONAD_UNLIKELY(!(
-                monad_vm_is(2, PUSH2) && monad_vm_is(5, JUMPI) &&
-                (monad_vm_push0 || (monad_vm_is(6, PUSH1) && p[7] == 0)) &&
-                monad_vm_is(monad_vm_k, CALLDATALOAD) &&
-                monad_vm_is(monad_vm_k + 1, PUSH1) &&
-                p[monad_vm_k + 2] == 0xe0 && monad_vm_is(monad_vm_k + 3, SHR) &&
-                ctx.env.input_data_size >= 4 && stack_top >= stack_bottom &&
-                stack_top + 1 <= MONAD_VM_STACK_LIMIT && monad_vm_b[0] == 4 &&
-                (monad_vm_b[1] | monad_vm_b[2] | monad_vm_b[3]) == 0))) {
+        uint256_t const &monad_vm_b = stack_top[0];
+        bool const monad_vm_straight =
+            monad_vm_is(2, PUSH2) && monad_vm_is(5, JUMPI);
+        bool const monad_vm_taken = monad_vm_is(2, ISZERO) &&
+                                    monad_vm_is(3, PUSH2) &&
+                                    monad_vm_is(6, JUMPI);
+        if (MONAD_UNLIKELY(
+                !((monad_vm_straight || monad_vm_taken) &&
+                  ctx.env.input_data_size >= 4 && stack_top >= stack_bottom &&
+                  stack_top + 1 <= MONAD_VM_STACK_LIMIT && monad_vm_b[0] == 4 &&
+                  (monad_vm_b[1] | monad_vm_b[2] | monad_vm_b[3]) == 0))) {
             // The CALLDATASIZE as calldatasize runs it: dispatched to, it
             // would call this twin again.
             MONAD_VM_CHECK(CALLDATASIZE);
             push(stack_top, ctx.env.input_data_size);
             MONAD_VM_NEXT(CALLDATASIZE);
         }
-        // Pure opcodes and a JUMPI not taken: the sign of the count is left
-        // to the next checkpoint (MONAD_VM_FUSED_CHARGE_PURE).
-        gas_remaining -= monad_vm_push0 ? static_gas<
-                                              traits,
-                                              CALLDATASIZE,
-                                              LT,
-                                              PUSH2,
-                                              JUMPI,
-                                              PUSH0,
-                                              CALLDATALOAD,
-                                              PUSH1,
-                                              SHR>()
-                                        : static_gas<
-                                              traits,
-                                              CALLDATASIZE,
-                                              LT,
-                                              PUSH2,
-                                              JUMPI,
-                                              PUSH1,
-                                              CALLDATALOAD,
-                                              PUSH1,
-                                              SHR>();
-        monad_vm_b = uint256_t{detail::load_be_k<4>(ctx.env.input_data)};
-        instr_ptr += monad_vm_k + 4;
+        // Pure opcodes and a JUMPI: the sign of the count is left to the next
+        // checkpoint, which for the taken jump is its JUMPDEST (fused_branch).
+        uint8_t const *monad_vm_q;
+        if (monad_vm_straight) {
+            gas_remaining -=
+                static_gas<traits, CALLDATASIZE, LT, PUSH2, JUMPI>();
+            monad_vm_q = p + 6;
+        }
+        else {
+            gas_remaining -=
+                static_gas<traits, CALLDATASIZE, LT, ISZERO, PUSH2, JUMPI>();
+            monad_vm_q = fused_branch(ctx, p + 2, true, gas_remaining);
+        }
+        size_t const monad_vm_n = push_selector<traits>(
+            ctx, monad_vm_q, stack_top - 1, gas_remaining);
+        instr_ptr = monad_vm_q + monad_vm_n;
         MONAD_VM_LAUNDER(instr_ptr);
         MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
             ctx,
             MONAD_VM_ANALYSIS_ARG,
             stack_bottom,
-            stack_top,
+            stack_top - (monad_vm_n == 0 ? 1 : 0),
             gas_remaining,
             instr_ptr MONAD_VM_TBL_ARG);
     }

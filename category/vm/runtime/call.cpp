@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <utility>
 
 namespace monad::vm::runtime
@@ -110,41 +111,45 @@ namespace monad::vm::runtime
             }
         }
 
-        auto const code_address = [&]() -> Address {
+        // Keep the delegate alive until its address is copied into the message.
+        auto const delegate_address = [&]() -> std::optional<Address> {
             if constexpr (traits::eip_7702_active()) {
-                // EIP-7702: if the code address starts with 0xEF0100, then
-                // treat it as a delegated call in the context of the
-                // current authority.
-                if (auto delegate_address =
 #if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_SELFTEST)
-                        guest_delegate_of(host_of(*ctx), dest_address)) {
+                return guest_delegate_of(host_of(*ctx), dest_address);
 #else
-                        ctx->host->resolve_delegation(dest_address)) {
+                return ctx->host->resolve_delegation(dest_address);
 #endif
-#if defined(MONAD_ZKVM_ZISK)
-                    auto const access_status = guest_access_account<traits>(
-                        host_of(*ctx), *delegate_address);
-#else
-                    auto const access_status =
-                        ctx->host->access_account(*delegate_address);
-#endif
-                    ctx->gas_remaining -= (access_status == AccessStatus::Cold
-                                               ? traits::cold_account_cost()
-                                               : 0) +
-                                          100;
-                    return *delegate_address;
-                }
             }
-            return dest_address;
+            return std::nullopt;
         }();
+        if (delegate_address) {
+#if defined(MONAD_ZKVM_ZISK)
+            auto const access_status =
+                guest_access_account<traits>(host_of(*ctx), *delegate_address);
+#else
+            auto const access_status =
+                ctx->host->access_account(*delegate_address);
+#endif
+            ctx->gas_remaining -= (access_status == AccessStatus::Cold
+                                       ? traits::cold_account_cost()
+                                       : 0) +
+                                  100;
+        }
 
-        auto const recipient = (call_kind == CallKind::Call || static_call)
-                                   ? dest_address
-                                   : ctx->env.recipient;
-
-        auto const sender = (call_kind == CallKind::DelegateCall)
-                                ? ctx->env.sender
-                                : ctx->env.recipient;
+#if defined(MONAD_ZKVM_ZISK)
+        using MessageAddress = Address const &;
+#else
+        using MessageAddress = Address const;
+#endif
+        MessageAddress code_address =
+            delegate_address ? *delegate_address : dest_address;
+        MessageAddress recipient =
+            (call_kind == vm::CallKind::Call || static_call)
+                ? dest_address
+                : ctx->env.recipient;
+        MessageAddress sender = call_kind == vm::CallKind::DelegateCall
+                                    ? ctx->env.sender
+                                    : ctx->env.recipient;
 
         if (call_kind == CallKind::Call) {
             if (has_value && !ctx->host->account_exists(dest_address)) {

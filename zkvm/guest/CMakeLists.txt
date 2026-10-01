@@ -267,16 +267,25 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         # guest reads 4-byte child ids out of a witness blob that never aligns
         # them, so it pays that everywhere. ZisK executes the unaligned load
         # directly -- 504 of 504 corpus blocks give byte-identical public
-        # values with this on.
+        # values with a tuning that says so.
+        #
+        # -mtune=size says so, and it prices every instruction at one, as ZisK
+        # prices a step: a multiply by a small constant stays one `mul`, free
+        # under FROPS, instead of a shNadd + slli pair, and a division by a
+        # constant stays one `div`. The interpreter keeps -mtune=generic-ooo,
+        # which says so too: under size its PUSH and DIV handlers run more
+        # steps than the rest of the guest saves.
         #
         # ZisK only: the SP1 emulator's handling of unaligned access has not
         # been established, and the same flag there would be a guess.
         #
         # Here rather than lower down: the official profile signs
-        # CMAKE_{C,CXX}_FLAGS, and a flag appended after that signature would
-        # leave two differently-built guests claiming one identity.
-        string(APPEND CMAKE_C_FLAGS " -mtune=generic-ooo")
-        string(APPEND CMAKE_CXX_FLAGS " -mtune=generic-ooo")
+        # CMAKE_{C,CXX}_FLAGS and the interpreter's tune, and a flag appended
+        # after that signature would leave two differently-built guests
+        # claiming one identity.
+        string(APPEND CMAKE_C_FLAGS " -mtune=size")
+        string(APPEND CMAKE_CXX_FLAGS " -mtune=size")
+        set(_monad_zkvm_interpreter_tune "-mtune=generic-ooo")
 
         # Every C++ TU is told that operator delete does nothing, because the
         # definitions that say so are alone in libstdcxx.cpp and nothing else can
@@ -494,6 +503,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     add_subdirectory("${MONAD_ROOT}/category/vm/evm" evm)
     add_subdirectory("${MONAD_ROOT}/category/vm/runtime" runtime)
     add_subdirectory("${MONAD_ROOT}/category/vm/interpreter" interpreter)
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        target_compile_options(monad-vm-interpreter PRIVATE
+                               ${_monad_zkvm_interpreter_tune})
+    endif()
 
     # Strip x86-only assembly from the otherwise shared targets.
     monad_zkvm_drop_sources(monad-vm-runtime
@@ -611,7 +624,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         # flags -- two different identities, which is exactly the comparison it exists to make.
         # The fold applies to the signature alone; every compile command keeps the real path.
         set(_official_signed_inputs
-            "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}\n${_dma_patch_sha}")
+            "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_interpreter_tune}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}\n${_dma_patch_sha}")
         string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}" "<guest>"
                _official_signed_inputs "${_official_signed_inputs}")
         string(SHA256 _official_build_signature "${_official_signed_inputs}")
@@ -646,7 +659,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "  \"cxx_flags\": \"${CMAKE_CXX_FLAGS}\",\n"
             "  \"cxx_flags_release\": \"${CMAKE_CXX_FLAGS_RELEASE}\",\n"
             "  \"asm_flags\": \"${CMAKE_ASM_FLAGS}\",\n"
-            "  \"asm_flags_release\": \"${CMAKE_ASM_FLAGS_RELEASE}\"\n"
+            "  \"asm_flags_release\": \"${CMAKE_ASM_FLAGS_RELEASE}\",\n"
+            "  \"interpreter_flags\": \"${_monad_zkvm_interpreter_tune}\"\n"
             "}\n")
     else()
         # A guest built without the profile must say so. Left silent it is

@@ -3669,7 +3669,10 @@ namespace monad::vm::interpreter
         if constexpr (N == 1) {
             monad_vm_op2 = *(instr_ptr + 1);
             // Check PUSH4 first; Intercode's tail padding makes lookahead
-            // through instr_ptr[10] safe.
+            // through instr_ptr[10] safe. A stack without the word DUP1
+            // copies, or the room for the two the sequence pushes, halts as
+            // DUP1 or PUSH4 would: the charge leaves gas to JUMPI, and every
+            // exceptional halt is the same to the block.
             if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH4) &&
                 *(instr_ptr + 6) == static_cast<std::uint8_t>(EQ) &&
                 *(instr_ptr + 7) == static_cast<std::uint8_t>(PUSH2) &&
@@ -3677,12 +3680,7 @@ namespace monad::vm::interpreter
                 static constexpr auto monad_vm_req =
                     fused_requirements<traits, DUP1, PUSH4, EQ, PUSH2, JUMPI>();
                 if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
-                    gas_remaining += monad_vm_req.gas;
-                    MONAD_VM_CHECK(DUP1);
-                    MONAD_VM_CHECK_AT(PUSH4, 1);
-                    MONAD_VM_CHECK_AT(EQ, 2);
-                    MONAD_VM_CHECK_AT(PUSH2, 1);
-                    MONAD_VM_CHECK_AT(JUMPI, 2);
+                    MONAD_VM_MUST_TAIL return ctx.exit(Error);
                 }
                 // The charge made here, as in push2_jumpi.
                 MONAD_VM_LAUNDER(gas_remaining);
@@ -3724,12 +3722,7 @@ namespace monad::vm::interpreter
                 static constexpr auto monad_vm_req =
                     fused_requirements<traits, DUP1, PUSH4, GT, PUSH2, JUMPI>();
                 if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
-                    gas_remaining += monad_vm_req.gas;
-                    MONAD_VM_CHECK(DUP1);
-                    MONAD_VM_CHECK_AT(PUSH4, 1);
-                    MONAD_VM_CHECK_AT(GT, 2);
-                    MONAD_VM_CHECK_AT(PUSH2, 1);
-                    MONAD_VM_CHECK_AT(JUMPI, 2);
+                    MONAD_VM_MUST_TAIL return ctx.exit(Error);
                 }
                 MONAD_VM_LAUNDER(gas_remaining);
                 bool const monad_vm_taken =

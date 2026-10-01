@@ -42,12 +42,11 @@ namespace corpus
         size_t total_slots{0};
         bool finished{false};
 
-        /// Commit `deltas` under `header` and start a fresh chunk. The block
-        /// id is the height, which is what the other constructor uses for
-        /// genesis and which keeps every chunk's id distinct.
+        /// Commit `deltas` under `header` and start a fresh chunk, under the
+        /// id the other constructor commits its genesis under.
         void commit(BlockHeader const &header)
         {
-            auto const id = bytes32_t{header.number};
+            auto const id = commit_id(header.number);
             test::commit_simple(tdb, deltas, code, id, header);
             tdb.finalize(header.number, id);
             tdb.set_block_and_prefix(header.number);
@@ -56,26 +55,20 @@ namespace corpus
             pending = 0;
         }
 
-        /// Flush a full chunk at its own pre-genesis height. These headers are
-        /// never published, never enter the sealed chain and never reach a
-        /// witness, so they carry no state blinder and nothing validates them
-        /// -- but their timestamps still ascend and still sit under Shanghai,
-        /// because a header trie full of nonsense is a trap for whoever reads
-        /// it next.
+        /// Flush a full chunk at the genesis height itself. An in-memory
+        /// TrieDb upserts onto the version it holds, so every chunk lands in
+        /// the genesis version and the final commit in finish() overwrites
+        /// the placeholder header these carry: nothing below genesis is ever
+        /// written, which a chain starting at block 0 could not afford, and
+        /// the sealed-header chain and the block hash buffer both start at
+        /// the one header finish() commits.
         void flush_chunk()
         {
-            MONAD_ASSERT_PRINTF(
-                chunk_index < MAX_GENESIS_CHUNKS,
-                "genesis seeding wants more than %zu chunks: raise "
-                "chunk_accounts, or MAX_GENESIS_CHUNKS and with it the "
-                "pre-genesis span",
-                MAX_GENESIS_CHUNKS);
-            uint64_t const remaining = MAX_GENESIS_CHUNKS - chunk_index;
             commit(BlockHeader{
                 .difficulty = 0,
-                .number = GENESIS_NUMBER - remaining,
+                .number = GENESIS_NUMBER,
                 .gas_limit = GAS_LIMIT,
-                .timestamp = GENESIS_TIMESTAMP - remaining * BLOCK_TIME,
+                .timestamp = GENESIS_TIMESTAMP,
                 .base_fee_per_gas = uint256_t{0}});
             ++chunk_index;
         }

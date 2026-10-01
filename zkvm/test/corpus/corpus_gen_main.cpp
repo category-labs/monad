@@ -25,7 +25,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/keccak.hpp>
-#ifdef MONAD_ZKVM_L2
+#if defined(MONAD_L2_CIPHER_ECDH_POSEIDON2)
     #include <zkvm/guest/l2_ecdh.hpp>
 #endif
 
@@ -52,6 +52,7 @@ namespace
             "          [--accounts N] [--blocks N] [--distinct K]\n"
             "          [--shape zipf|uniform|hotset] [--zipf-s F]\n"
             "          [--chunk N] [--sweep K1,K2,...] [--currencies N]\n"
+            "          [--warmup N]\n"
             "       %s --pubkey <64 hex secret>\n"
             "       %s --spoke-address [--seed <64 hex>]\n"
             "       %s --salt-commitment <64 hex secret>\n"
@@ -90,7 +91,12 @@ namespace
             "the three exits. For those two, --accounts counts banks or\n"
             "contractors and --distinct the ones a block touches.\n"
             "--currencies sets how many currencies wholesale-cbdc settles,\n"
-            "five by default.\n",
+            "five by default.\n"
+            "\n"
+            "In an L2 build the chain is the L2's own: genesis is block 0 and\n"
+            "holds the spoke, and --warmup blocks (256 by default, the\n"
+            "ancestors a witness carries in steady state) run before the\n"
+            "first emitted one.\n",
             prog,
             prog,
             prog,
@@ -226,6 +232,9 @@ int main(int const argc, char **const argv)
         else if (arg == "--chunk" && i + 1 < argc) {
             wl.chunk = std::strtoull(argv[++i], nullptr, 10);
         }
+        else if (arg == "--warmup" && i + 1 < argc) {
+            wl.warmup = std::strtoull(argv[++i], nullptr, 10);
+        }
         else if (arg == "--currencies" && i + 1 < argc) {
             wl.currencies = std::strtoull(argv[++i], nullptr, 10);
         }
@@ -279,7 +288,7 @@ int main(int const argc, char **const argv)
     }
 
     if (want_pubkey) {
-#ifdef MONAD_ZKVM_L2
+#if defined(MONAD_L2_CIPHER_ECDH_POSEIDON2)
         auto const k = monad::l2_scalar_from_be(
             std::span<unsigned char const, 32>{pubkey_of.bytes, 32});
         if (!monad::l2_scalar_is_valid(k)) {
@@ -304,7 +313,8 @@ int main(int const argc, char **const argv)
 #else
         std::fprintf(
             stderr,
-            "corpus-gen: --pubkey needs an L2 build; this one has no curve\n");
+            "corpus-gen: --pubkey needs an L2 build with a curve; this one "
+            "has none\n");
         return 1;
 #endif
     }
@@ -404,11 +414,12 @@ int main(int const argc, char **const argv)
 
             std::fprintf(
                 stderr,
-                "corpus-gen: %s/%s accounts=%lu blocks=%lu distinct=%lu "
-                "currencies=%lu chunk=%zu gas_limit=%lu\n",
+                "corpus-gen: %s/%s accounts=%lu warmup=%lu blocks=%lu "
+                "distinct=%lu currencies=%lu chunk=%zu gas_limit=%lu\n",
                 monad::corpus::name_of(r.preset),
                 monad::corpus::name_of(r.shape),
                 static_cast<unsigned long>(r.accounts),
+                static_cast<unsigned long>(r.warmup),
                 static_cast<unsigned long>(r.blocks),
                 static_cast<unsigned long>(r.distinct),
                 static_cast<unsigned long>(r.currencies),
@@ -444,6 +455,9 @@ int main(int const argc, char **const argv)
                             t);
                         return 1;
                     }
+                }
+                if (!w.measured(i)) {
+                    continue; // warm-up: executed, sealed, not emitted
                 }
                 if (!emit(manifest, dir, tag, e, n_txs, intended)) {
                     return 1;

@@ -4,8 +4,9 @@
     bench-report.py --l2 L2.csv [...] --plain PLAIN.csv [...] [--mainnet M.csv]
 
 Rows are paired across the arms on (corpus, number): both arms are generated
-from one seed and one preset, so block n executes the same transfers in both,
-and only the encryption and the header blinder differ.
+from one seed and one preset on the same L2 chain, so block n executes the same
+transactions on the same state in both, and only the cipher suite differs --
+the plaintext arm is the L2 built with MONAD_ZKVM_L2_CIPHER=plaintext.
 
 `base` is ZisK's fixed ROM-and-tables cost, the same on every run, so the fits
 are taken on COST - base: the part of the cost that depends on the block.
@@ -17,6 +18,10 @@ import re
 import statistics as st
 
 PRESETS = ('wholesale', 'payouts', 'wholesale-cbdc', 'worker-payouts')
+# A transaction of these is one transfer, so a cost per transaction is a
+# property of the mix; on the token presets a transaction is a contract call of
+# any size, and gas is what measures it.
+TRANSFER_PRESETS = ('wholesale', 'payouts')
 
 
 def load(paths, workload_only=True):
@@ -32,16 +37,18 @@ def load(paths, workload_only=True):
     # spoke) exercise the rules and are checked for correctness by bench.py,
     # but they are not a load and their blocks are not comparable.
     rows = [r for r in rows if r['scenario'] in PRESETS]
-    # The first block of every generated corpus deploys the spoke: one
+    # A corpus from a chain that deploys the spoke starts with that block: one
     # transaction, whatever the preset. It is setup, not workload, and it would
-    # sit in every sweep point at that point's nominal dispersion.
+    # sit in every sweep point at that point's nominal dispersion. An L2 corpus
+    # has none -- its genesis holds the spoke and its first emitted block comes
+    # after the warm-up -- so a first block is dropped only when it is that
+    # deployment.
     first = {}
     for r in rows:
         c = r['corpus']
         first[c] = min(first.get(c, int(r['number'])), int(r['number']))
-    setup = [r for r in rows if int(r['number']) == first[r['corpus']]]
-    assert all(r['txs'] == '1' for r in setup), 'a first block is not the 1-tx deployment'
-    return [r for r in rows if int(r['number']) != first[r['corpus']]]
+    return [r for r in rows
+            if not (int(r['number']) == first[r['corpus']] and r['txs'] == '1')]
 
 
 def f(r, k):
@@ -138,15 +145,32 @@ def least_squares(A, y):
     return [v[i] / M[i][i] for i in range(n)]
 
 
-def per_tx_and_byte(title, rows):
+def fit_two(rows, x, w):
+    """COST - base ~ a x + b w + c, with R2 and the worst relative miss."""
     ys = [var(r) for r in rows]
-    A = [[f(r, 'txs'), f(r, 'witness_bytes'), 1.0] for r in rows]
+    A = [[f(r, x), f(r, w), 1.0] for r in rows]
     a, b, c = least_squares(A, ys)
+    ps = [a * p[0] + b * p[1] + c for p in A]
     my = st.mean(ys)
-    ss = sum((y - (a * p[0] + b * p[1] + c)) ** 2 for y, p in zip(ys, A))
+    ss = sum((y - p) ** 2 for y, p in zip(ys, ps))
     tot = sum((y - my) ** 2 for y in ys)
-    print(f'- {title}, all {len(rows)} workload blocks: `COST - base = {a:,.0f} x txs + '
-          f'{b:,.0f} x witness_bytes + {c / 1e6:,.1f} M`, R2 {1 - ss / tot:.5f}')
+    return a, b, c, 1 - ss / tot, max(abs(p - y) / y for y, p in zip(ys, ps))
+
+
+def signed(c):
+    return f"{'+' if c >= 0 else '-'} {abs(c) / 1e6:,.1f} M"
+
+
+def laws(title, rows):
+    transfers = [r for r in rows if r['scenario'] in TRANSFER_PRESETS]
+    if transfers:
+        a, b, c, r2, worst = fit_two(transfers, 'txs', 'witness_bytes')
+        print(f'- {title}, the {len(transfers)} blocks of the transfer presets: '
+              f'`COST - base = {a:,.0f} x txs + {b:,.0f} x witness_bytes {signed(c)}`, '
+              f'R2 {r2:.7f}, worst miss {worst:.1%}')
+    a, b, c, r2, worst = fit_two(rows, 'gas_used', 'witness_bytes')
+    print(f'- {title}, all {len(rows)} workload blocks: `COST - base = {a:,.1f} x gas + '
+          f'{b:,.1f} x witness_bytes {signed(c)}`, R2 {r2:.7f}, worst miss {worst:.1%}')
 
 
 def sweep(title, rows):
@@ -173,7 +197,6 @@ def sweep(title, rows):
     print(f'\n- `COST - base = {a:,.0f} x distinct^{b:.3f}`, R2 {r2:.4f}')
     print(f'- `COST - base = {k:,.0f} x witness_bytes`, R2 {r2k:.4f}')
     print(f'- `COST - base = {kg:,.0f} x gas`, R2 {r2g:.4f}')
-    per_tx_and_byte(title, rows)
 
 
 def mainnet(rows):
@@ -199,6 +222,9 @@ def main():
     paired(l2, plain)
     sweep('L2 arm', l2)
     sweep('Plaintext arm', plain)
+    print('\n### The cost laws\n')
+    laws('L2 arm', l2)
+    laws('Plaintext arm', plain)
     if a.mainnet:
         mainnet(load([a.mainnet], workload_only=False))
 

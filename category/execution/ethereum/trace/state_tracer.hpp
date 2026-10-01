@@ -25,8 +25,10 @@
 #include <immer/map.hpp>
 #include <nlohmann/json_fwd.hpp>
 
+#include <functional>
 #include <memory>
 #include <span>
+#include <type_traits>
 #include <variant>
 
 MONAD_NAMESPACE_BEGIN
@@ -36,8 +38,12 @@ struct Transaction;
 
 namespace trace
 {
+    // State::Map's type, so that State::original() binds to it.
     template <typename Key, typename Elem>
-    using Map = ankerl::unordered_dense::segmented_map<Key, Elem>;
+    using Map = ankerl::unordered_dense::segmented_map<
+        Key, Elem, ankerl::unordered_dense::hash<Key>,
+        std::conditional_t<
+            std::is_same_v<Key, Address>, AddressEqual, std::equal_to<Key>>>;
 
     template <class Key>
     using Set = ankerl::unordered_dense::set<Key>;

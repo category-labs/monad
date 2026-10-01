@@ -44,28 +44,29 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
-
-    bool sender_has_balance(State &state, vm::Message const &msg) noexcept
+    bool sender_has_balance(
+        State &state, vm::Message const &msg,
+        monad_address const &sender) noexcept
     {
         uint256_t const value = load_be<uint256_t>(msg.value);
         // for optimistic execution, we do NOT require the original balance to
         // match exactly, just add a lower bound constraint to suffice for this
         // debit
-        return state.record_balance_constraint_for_debit(msg.sender, value);
+        return state.record_balance_constraint_for_debit(sender, value);
     }
 
     template <Traits traits>
     void transfer_balances(
         State &state, StateHost<traits> &host, vm::Message const &msg,
-        Address const &to)
+        monad_address const &from, monad_address const &to)
     {
         uint256_t const value = load_be<uint256_t>(msg.value);
-        state.subtract_from_balance(msg.sender, value);
+        state.subtract_from_balance(from, value);
         state.add_to_balance(to, value);
         emit_native_transfer_logs<traits>(
             state,
             host.get_call_tracer(),
-            msg.sender,
+            from,
             to,
             value,
             host.log_native_transfers_);
@@ -120,26 +121,30 @@ pre_call(StateHost<traits> &host, vm::Message const &msg, State &state)
         msg.flags & std::to_underlying(vm::CallFlags::Static);
 
     if (msg.kind != vm::CallKind::DelegateCall) {
-        if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
+        // Reuse the sender for the balance check and transfer.
+        monad_address const &sender = msg.sender;
+        if (MONAD_UNLIKELY(!sender_has_balance(state, msg, sender))) {
             // The pushed frame exits before bytecode, account access, or
             // storage access, so there is no access-list metadata to capture.
             state.pop_reject();
             return vm::Result{CallStatus::InsufficientBalance, msg.gas};
         }
         else if (!static_call) {
-            transfer_balances<traits>(state, host, msg, msg.recipient);
+            monad_address const &recipient = msg.recipient;
+            transfer_balances<traits>(state, host, msg, sender, recipient);
         }
     }
 
     if constexpr (!traits::eip_7702_active()) {
         MONAD_ASSERT(
             msg.kind != vm::CallKind::Call ||
-            msg.recipient == msg.code_address);
+            address_equal(msg.recipient, msg.code_address));
     }
 
     if (msg.kind == vm::CallKind::Call && static_call) {
         // eip-161
-        state.touch(msg.recipient);
+        monad_address const &recipient = msg.recipient;
+        state.touch(recipient);
     }
 
     return std::nullopt;
@@ -198,7 +203,8 @@ vm::Result execute_create_message(
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
 
-    if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
+    monad_address const &sender = msg.sender;
+    if (MONAD_UNLIKELY(!sender_has_balance(state, msg, sender))) {
         /**
          * for Ethereum, at depth = 0, the sender always has sufficient
          * balance here as the transaction would be invalid otherwise
@@ -210,9 +216,9 @@ vm::Result execute_create_message(
          */
         if constexpr (traits::bumps_nonce_on_unfunded_create()) {
             if (!msg.depth) {
-                uint64_t const nonce = state.get_nonce(msg.sender);
+                uint64_t const nonce = state.get_nonce(sender);
                 MONAD_ASSERT(nonce != UINT64_MAX);
-                state.set_nonce(msg.sender, nonce + 1);
+                state.set_nonce(sender, nonce + 1);
             }
         }
         vm::Result result{CallStatus::InsufficientBalance, msg.gas};
@@ -220,23 +226,23 @@ vm::Result execute_create_message(
         return result;
     }
 
-    auto const nonce = state.get_nonce(msg.sender);
+    auto const nonce = state.get_nonce(sender);
     if (nonce == UINT64_MAX) {
         // this overflow can only happen for msg.depth != 0
         vm::Result result{CallStatus::ArgumentOutOfRange, msg.gas};
         call_tracer.on_exit(result);
         return result;
     }
-    state.set_nonce(msg.sender, nonce + 1);
+    state.set_nonce(sender, nonce + 1);
 
     Address const contract_address = [&] {
         if (msg.kind == vm::CallKind::Create) {
-            return create_contract_address(msg.sender, nonce); // YP Eqn. 85
+            return create_contract_address(sender, nonce); // YP Eqn. 85
         }
         else { // msg.kind == vm::CallKind::Create2
             auto const code_hash = keccak256({msg.input_data, msg.input_size});
             return create2_contract_address(
-                msg.sender, msg.create2_salt, code_hash);
+                sender, msg.create2_salt, code_hash);
         }
     }();
 
@@ -255,7 +261,7 @@ vm::Result execute_create_message(
 
     // EIP-161
     state.set_nonce(contract_address, 1);
-    transfer_balances<traits>(state, *host, msg, contract_address);
+    transfer_balances<traits>(state, *host, msg, sender, contract_address);
 
     vm::Message const m_call{
         .kind = vm::CallKind::Call,
@@ -341,7 +347,8 @@ vm::Result execute_call_message(
                 return std::move(maybe_result.value());
             }
         }
-        auto const hash = state.get_code_hash(msg.code_address);
+        monad_address const &code_address = msg.code_address;
+        auto const hash = state.get_code_hash(code_address);
 #if defined(MONAD_ZKVM_VARCODE_CACHE)
         // The VM cache keeps this entry alive throughout execution.
         auto const &code = state.read_code_ref(hash);

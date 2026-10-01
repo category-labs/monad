@@ -49,12 +49,13 @@ bool NullDb::is_page_encoded() const
     return false;
 }
 
-std::optional<Account> NullDb::read_account(Address const &)
+std::optional<Account> NullDb::read_account(monad_address const &)
 {
     return std::nullopt;
 }
 
-bytes32_t NullDb::read_storage(Address const &, Incarnation, bytes32_t const &)
+bytes32_t
+NullDb::read_storage(monad_address const &, Incarnation, bytes32_t const &)
 {
     return {};
 }

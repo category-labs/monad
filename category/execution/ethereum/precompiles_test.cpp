@@ -812,7 +812,8 @@ namespace
         unsigned const case_index, unsigned &failures)
     {
         bool const expected = reference_is_precompile<traits>(address);
-        bool const resolved = is_eth_precompile<traits>(address);
+        monad_address const &base = address;
+        bool const resolved = is_eth_precompile<traits>(base);
 
         if (resolved != expected && failures++ < 8) {
             ADD_FAILURE() << case_label << " " << case_index << ": 0x"

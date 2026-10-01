@@ -73,10 +73,12 @@ OriginalAccountState::OriginalAccountState(StateDelta &delta)
 }
 #endif
 
-OriginalAccountState &State::original_account_state(Address const &address)
+OriginalAccountState &
+State::original_account_state(monad_address const &address)
 {
 #ifdef MONAD_ZKVM_ZISK
-    if (original_memo_state_ != nullptr && address == original_memo_address_) {
+    if (original_memo_state_ != nullptr &&
+        address_equal(address, original_memo_address_)) {
         return *original_memo_state_;
     }
 
@@ -86,7 +88,7 @@ OriginalAccountState &State::original_account_state(Address const &address)
     struct DeferredAccountDelta
     {
         BlockState &block_state;
-        Address const &address;
+        monad_address const &address;
 
         // If the row is missing, try_emplace constructs OriginalAccountState.
         // Its constructor needs StateDelta&, so C++ invokes this conversion.
@@ -103,7 +105,7 @@ OriginalAccountState &State::original_account_state(Address const &address)
         original_
             .try_emplace(address, DeferredAccountDelta{block_state_, address})
             .first->second;
-    original_memo_address_ = address;
+    static_cast<monad_address &>(original_memo_address_) = address;
     original_memo_state_ = &row;
     return row;
 #else
@@ -117,7 +119,7 @@ OriginalAccountState &State::original_account_state(Address const &address)
 #endif
 }
 
-AccountState const &State::recent_account_state(Address const &address)
+AccountState const &State::recent_account_state(monad_address const &address)
 {
     if (AccountState *const cached = cached_current_account(address);
         cached != nullptr) {
@@ -132,11 +134,12 @@ AccountState const &State::recent_account_state(Address const &address)
     return original_account_state(address);
 }
 
-AccountState &State::current_account_state(Address const &address)
+AccountState &State::current_account_state(monad_address const &address)
 {
     // Reuse the cached account. When dirty tracking is enabled, register
     // it again if the frame epoch changed.
-    if (current_memo_state_ != nullptr && address == current_memo_address_) {
+    if (current_memo_state_ != nullptr &&
+        address_equal(address, current_memo_address_)) {
 #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
         if (current_memo_epoch_ != frame_epoch_) {
             if (!dirty_.empty()) {
@@ -175,7 +178,7 @@ AccountState &State::current_account_state(Address const &address)
     }
 #endif
     (void)created;
-    current_memo_address_ = address;
+    static_cast<monad_address &>(current_memo_address_) = address;
     current_memo_state_ = &it->second;
 #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     current_memo_epoch_ = frame_epoch_;
@@ -184,7 +187,7 @@ AccountState &State::current_account_state(Address const &address)
 }
 
 // Save each mutation separately. Outside a frame, no undo record is needed.
-void State::journal_created(Address const &address)
+void State::journal_created(monad_address const &address)
 {
     if (!journalling()) {
         return;
@@ -192,7 +195,8 @@ void State::journal_created(Address const &address)
     undo_.emplace_back(address, Undo::Kind::Created, 0);
 }
 
-void State::journal_account(Address const &address, AccountState const &row)
+void State::journal_account(
+    monad_address const &address, AccountState const &row)
 {
     if (!journalling()) {
         return;
@@ -203,7 +207,7 @@ void State::journal_account(Address const &address, AccountState const &row)
 }
 
 void State::journal_balance(
-    Address const &address, uint256_t const &previous_value)
+    monad_address const &address, uint256_t const &previous_value)
 {
     if (!journalling()) {
         return;
@@ -218,7 +222,7 @@ void State::journal_balance(
 }
 
 void State::journal_code_hash(
-    Address const &address, bytes32_t const &previous_value)
+    monad_address const &address, bytes32_t const &previous_value)
 {
     if (!journalling()) {
         return;
@@ -228,7 +232,7 @@ void State::journal_code_hash(
 }
 
 void State::journal_nonce(
-    Address const &address, std::uint64_t const previous_value)
+    monad_address const &address, std::uint64_t const previous_value)
 {
     if (!journalling()) {
         return;
@@ -237,7 +241,7 @@ void State::journal_nonce(
     undo_u64_.push_back(previous_value);
 }
 
-void State::journal_flag(Address const &address, Undo::Kind const kind)
+void State::journal_flag(monad_address const &address, Undo::Kind const kind)
 {
     if (!journalling()) {
         return;
@@ -245,7 +249,8 @@ void State::journal_flag(Address const &address, Undo::Kind const kind)
     undo_.emplace_back(address, kind, 0);
 }
 
-void State::journal_warm_slot(Address const &address, bytes32_t const &key)
+void State::journal_warm_slot(
+    monad_address const &address, bytes32_t const &key)
 {
     if (!journalling()) {
         return;
@@ -256,7 +261,7 @@ void State::journal_warm_slot(Address const &address, bytes32_t const &key)
 
 // Reuse the caller's lookup to save the old value without another probe.
 void State::journal_slot(
-    Address const &address, bytes32_t const &key,
+    monad_address const &address, bytes32_t const &key,
     bytes32_t const *const previous_value)
 {
     if (!journalling()) {
@@ -279,7 +284,7 @@ void State::journal_slot(
 }
 
 void State::journal_transient(
-    Address const &address, AccountState const &row, bytes32_t const &key)
+    monad_address const &address, AccountState const &row, bytes32_t const &key)
 {
     if (!journalling()) {
         return;
@@ -301,7 +306,7 @@ void State::journal_transient(
 #endif
 }
 
-void State::journal_pages(Address const &address, AccountState const &row)
+void State::journal_pages(monad_address const &address, AccountState const &row)
 {
     if (!journalling()) {
         return;
@@ -310,7 +315,7 @@ void State::journal_pages(Address const &address, AccountState const &row)
     undo_pages_.push_back(row.page_tracker_);
 }
 
-std::optional<Account> &State::current_account(Address const &address)
+std::optional<Account> &State::current_account(monad_address const &address)
 {
     return current_account_state(address).account_;
 }
@@ -625,7 +630,7 @@ vm::VM &State::vm()
     return block_state_.vm();
 }
 
-State::AccountReadRows State::rows_for_read(Address const &address)
+State::AccountReadRows State::rows_for_read(monad_address const &address)
 {
     auto const it = current_.find(address);
     if (it != current_.end()) {
@@ -637,12 +642,14 @@ State::AccountReadRows State::rows_for_read(Address const &address)
     return {&original, &original};
 }
 
-std::optional<Account> const &State::recent_account(Address const &address)
+std::optional<Account> const &
+State::recent_account(monad_address const &address)
 {
     return recent_account_state(address).account_;
 }
 
-void State::set_original_nonce(Address const &address, uint64_t const nonce)
+void State::set_original_nonce(
+    monad_address const &address, uint64_t const nonce)
 {
     auto &account_state = original_account_state(address);
     auto &account = account_state.account_;
@@ -652,17 +659,17 @@ void State::set_original_nonce(Address const &address, uint64_t const nonce)
     account->nonce = nonce;
 }
 
-bool State::account_exists(Address const &address)
+bool State::account_exists(monad_address const &address)
 {
     return recent_account(address).has_value();
 }
 
-bool State::account_is_dead(Address const &address)
+bool State::account_is_dead(monad_address const &address)
 {
     return is_dead(recent_account(address));
 }
 
-bool State::account_has_code_or_nonce(Address const &address)
+bool State::account_has_code_or_nonce(monad_address const &address)
 {
     auto const &account = recent_account(address);
     if (!account.has_value()) {
@@ -673,7 +680,7 @@ bool State::account_has_code_or_nonce(Address const &address)
     return account_val.nonce > 0 || account_val.code_hash != NULL_HASH;
 }
 
-uint64_t State::get_nonce(Address const &address)
+uint64_t State::get_nonce(monad_address const &address)
 {
     auto const &account = recent_account(address);
     if (MONAD_LIKELY(account.has_value())) {
@@ -682,7 +689,7 @@ uint64_t State::get_nonce(Address const &address)
     return 0;
 }
 
-uint256_t State::get_balance(Address const &address)
+uint256_t State::get_balance(monad_address const &address)
 {
     auto const [visible, original] = rows_for_read(address);
     original->set_validate_exact_balance();
@@ -693,12 +700,12 @@ uint256_t State::get_balance(Address const &address)
     return 0;
 }
 
-uint256_t State::get_original_balance(Address const &address)
+uint256_t State::get_original_balance(monad_address const &address)
 {
     return original_account_state(address).get_balance_pessimistic();
 }
 
-bytes32_t State::get_code_hash(Address const &address)
+bytes32_t State::get_code_hash(monad_address const &address)
 {
     auto const &account = recent_account(address);
     if (MONAD_LIKELY(account.has_value())) {
@@ -707,13 +714,13 @@ bytes32_t State::get_code_hash(Address const &address)
     return NULL_HASH;
 }
 
-bool State::is_destructed(Address const &address)
+bool State::is_destructed(monad_address const &address)
 {
     auto const &account_state = recent_account_state(address);
     return account_state.is_destructed();
 }
 
-bool State::is_current_incarnation(Address const &address)
+bool State::is_current_incarnation(monad_address const &address)
 {
     auto const &account = recent_account(address);
     if (MONAD_LIKELY(account.has_value())) {
@@ -723,7 +730,7 @@ bool State::is_current_incarnation(Address const &address)
 }
 
 inline void State::current_storage_into(
-    AccountState const &account_state, Address const &address,
+    AccountState const &account_state, monad_address const &address,
     bytes32_t const &key, bytes32_t &out)
 {
     auto const &account = account_state.account_;
@@ -763,7 +770,7 @@ inline void State::current_storage_into(
 }
 
 void State::get_storage_into(
-    Address const &address, bytes32_t const &key, bytes32_t &out)
+    monad_address const &address, bytes32_t const &key, bytes32_t &out)
 {
     AccountState *current_state = cached_current_account(address);
     if (current_state == nullptr) {
@@ -803,18 +810,18 @@ void State::get_storage_into(
 }
 
 bytes32_t
-State::get_transient_storage(Address const &address, bytes32_t const &key)
+State::get_transient_storage(monad_address const &address, bytes32_t const &key)
 {
     return recent_account_state(address).get_transient_storage(key);
 }
 
-bool State::is_touched(Address const &address)
+bool State::is_touched(monad_address const &address)
 {
     auto const it = current_.find(address);
     return it != current_.end() && it->second.is_touched();
 }
 
-void State::set_nonce(Address const &address, uint64_t const nonce)
+void State::set_nonce(monad_address const &address, uint64_t const nonce)
 {
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
@@ -828,7 +835,7 @@ void State::set_nonce(Address const &address, uint64_t const nonce)
     account.value().nonce = nonce;
 }
 
-void State::add_to_balance(Address const &address, uint256_t const &delta)
+void State::add_to_balance(monad_address const &address, uint256_t const &delta)
 {
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
@@ -850,11 +857,13 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
     if (account_state.touch()) {
         journal_flag(address, Undo::Kind::FlagTouched);
     }
-    rb_.on_credit(address);
+    if (rb_.tracking_enabled()) {
+        rb_.on_credit(Address{address});
+    }
 }
 
 void State::subtract_from_balance(
-    Address const &address, uint256_t const &delta)
+    monad_address const &address, uint256_t const &delta)
 {
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
@@ -874,19 +883,21 @@ void State::subtract_from_balance(
     if (account_state.touch()) {
         journal_flag(address, Undo::Kind::FlagTouched);
     }
-    rb_.on_debit(address);
+    if (rb_.tracking_enabled()) {
+        rb_.on_debit(Address{address});
+    }
 }
 
 StorageStatus State::set_storage(
-    Address const &address, bytes32_t const &key, bytes32_t const &value)
+    monad_address const &address, bytes32_t const &key, bytes32_t const &value)
 {
 #ifdef MONAD_ZKVM_ZISK
     return set_storage_of(current_account_state(address), address, key, value);
 }
 
 inline StorageStatus State::set_storage_of(
-    AccountState &account_state, Address const &address, bytes32_t const &key,
-    bytes32_t const &value)
+    AccountState &account_state, monad_address const &address,
+    bytes32_t const &key, bytes32_t const &value)
 {
 #endif
     bytes32_t original_value;
@@ -929,7 +940,7 @@ inline StorageStatus State::set_storage_of(
 }
 
 void State::set_transient_storage(
-    Address const &address, bytes32_t const &key, bytes32_t const &value)
+    monad_address const &address, bytes32_t const &key, bytes32_t const &value)
 {
     auto &account_state = current_account_state(address);
 #ifdef MONAD_ZKVM_ZISK
@@ -954,7 +965,7 @@ void State::set_transient_storage(
 #endif
 }
 
-void State::touch(Address const &address)
+void State::touch(monad_address const &address)
 {
     auto &account_state = current_account_state(address);
     if (account_state.touch()) {
@@ -962,7 +973,7 @@ void State::touch(Address const &address)
     }
 }
 
-AccessStatus State::access_account(Address const &address)
+AccessStatus State::access_account(monad_address const &address)
 {
     auto &account_state = current_account_state(address);
     auto const status = account_state.access();
@@ -974,7 +985,8 @@ AccessStatus State::access_account(Address const &address)
 
 template <Traits traits>
 [[gnu::always_inline]] inline AccessStatus State::access_storage_of(
-    AccountState &account_state, Address const &address, bytes32_t const &key)
+    AccountState &account_state, monad_address const &address,
+    bytes32_t const &key)
 {
     auto const slot_status = account_state.access_storage(key);
     if (slot_status == AccessStatus::Cold) {
@@ -988,7 +1000,8 @@ template <Traits traits>
 }
 
 template <Traits traits>
-AccessStatus State::access_storage(Address const &address, bytes32_t const &key)
+AccessStatus
+State::access_storage(monad_address const &address, bytes32_t const &key)
 {
     return access_storage_of<traits>(
         current_account_state(address), address, key);
@@ -1000,7 +1013,7 @@ EXPLICIT_TRAITS_MEMBER(State::access_storage);
 // Warm and read the slot using the same account lookup.
 template <Traits traits>
 AccessStatus State::sload_into(
-    Address const &address, bytes32_t const &key,
+    monad_address const &address, bytes32_t const &key,
     bool const can_pay_cold_access, bytes32_t &out)
 {
     auto &account_state = current_account_state(address);
@@ -1016,7 +1029,7 @@ EXPLICIT_TRAITS_MEMBER(State::sload_into);
 
 template <Traits traits>
 vm::runtime::SstoreStatus State::sstore_into(
-    Address const &address, bytes32_t const &key, bytes32_t const &value,
+    monad_address const &address, bytes32_t const &key, bytes32_t const &value,
     bool const can_pay_cold_access)
 {
     auto &account_state = current_account_state(address);
@@ -1032,7 +1045,8 @@ EXPLICIT_TRAITS_MEMBER(State::sstore_into);
 #endif
 
 PageStorageStatus State::update_page(
-    Address const &address, bytes32_t const &key, StorageStatus const status)
+    monad_address const &address, bytes32_t const &key,
+    StorageStatus const status)
 {
     auto &account_state = current_account_state(address);
     journal_pages(address, account_state);
@@ -1040,7 +1054,8 @@ PageStorageStatus State::update_page(
 }
 
 template <Traits traits>
-bool State::selfdestruct_to_self_burns([[maybe_unused]] Address const &address)
+bool State::selfdestruct_to_self_burns(
+    [[maybe_unused]] monad_address const &address)
 {
     if constexpr (!traits::eip_6780_active()) {
         return true;
@@ -1054,13 +1069,13 @@ bool State::selfdestruct_to_self_burns([[maybe_unused]] Address const &address)
 }
 
 template <Traits traits>
-std::pair<bool, uint256_t>
-State::selfdestruct(Address const &address, Address const &beneficiary)
+std::pair<bool, uint256_t> State::selfdestruct(
+    monad_address const &address, monad_address const &beneficiary)
 {
     auto &account_state = current_account_state(address);
     uint256_t const balance = get_balance(address);
 
-    if (address != beneficiary) {
+    if (!address_equal(address, beneficiary)) {
         add_to_balance(beneficiary, balance);
         subtract_from_balance(address, balance);
     }
@@ -1073,7 +1088,9 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
         journal_flag(address, Undo::Kind::FlagDestructed);
     }
     // Recompute reserve-balance status after setting the destructed flag.
-    rb_.on_debit(address);
+    if (rb_.tracking_enabled()) {
+        rb_.on_debit(Address{address});
+    }
     return {inserted, balance};
 }
 
@@ -1082,7 +1099,8 @@ EXPLICIT_TRAITS_MEMBER(State::selfdestruct);
 // Overwrite every slot this transaction touched with zero: a slot only read has
 // an entry in the original map, a slot written has one in both. Zero rather
 // than remove, since a missing entry reads through to the pre-destruct value.
-void State::zero_storage(Address const &address, AccountState &account_state)
+void State::zero_storage(
+    monad_address const &address, AccountState &account_state)
 {
     auto const orig = original_.find(address);
     MONAD_ASSERT(orig != original_.end());
@@ -1182,7 +1200,7 @@ vm::SharedVarcode State::read_code(bytes32_t const &code_hash)
     return read_code_ref(code_hash);
 }
 
-vm::SharedVarcode State::get_code(Address const &address)
+vm::SharedVarcode State::get_code(monad_address const &address)
 {
     auto const &account = recent_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
@@ -1191,7 +1209,7 @@ vm::SharedVarcode State::get_code(Address const &address)
     return read_code(account.value().code_hash);
 }
 
-size_t State::get_code_size(Address const &address)
+size_t State::get_code_size(monad_address const &address)
 {
     auto const &account = recent_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
@@ -1203,7 +1221,7 @@ size_t State::get_code_size(Address const &address)
 }
 
 size_t State::copy_code(
-    Address const &address, size_t const offset, uint8_t *const buffer,
+    monad_address const &address, size_t const offset, uint8_t *const buffer,
     size_t const buffer_size)
 {
     auto const &account = recent_account(address);
@@ -1216,7 +1234,7 @@ size_t State::copy_code(
 }
 
 #if defined(MONAD_ZKVM_ZISK)
-std::optional<Address> State::delegate_of(Address const &address)
+std::optional<Address> State::delegate_of(monad_address const &address)
 {
     auto const &account = recent_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
@@ -1228,7 +1246,7 @@ std::optional<Address> State::delegate_of(Address const &address)
 }
 #endif
 
-void State::set_code(Address const &address, byte_string_view const code)
+void State::set_code(monad_address const &address, byte_string_view const code)
 {
     auto &account = current_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
@@ -1239,10 +1257,12 @@ void State::set_code(Address const &address, byte_string_view const code)
     code_[code_hash] = vm().try_insert_varcode_raw(code_hash, code);
     journal_code_hash(address, account.value().code_hash);
     account.value().code_hash = code_hash;
-    rb_.on_set_code(address, code);
+    if (rb_.tracking_enabled()) {
+        rb_.on_set_code(Address{address}, code);
+    }
 }
 
-void State::create_contract(Address const &address)
+void State::create_contract(monad_address const &address)
 {
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
@@ -1272,7 +1292,7 @@ void State::create_contract(Address const &address)
  * authority processing; changes to the state during that step are specified
  * to take place before any of the actual transactions in a block.
  */
-void State::create_account_no_rollback(Address const &address)
+void State::create_account_no_rollback(monad_address const &address)
 {
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
@@ -1307,7 +1327,7 @@ void State::store_log(Receipt::Log &&log)
     logs_.push_back(std::move(log));
 }
 
-void State::set_to_state_incarnation(Address const &address)
+void State::set_to_state_incarnation(monad_address const &address)
 {
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
@@ -1322,7 +1342,7 @@ void State::set_to_state_incarnation(Address const &address)
 // if original and current can be adjusted to satisfy min balance, adjust
 // both values for merge
 bool State::try_fix_account_mismatch(
-    Address const &address, std::optional<Account> const &actual)
+    monad_address const &address, std::optional<Account> const &actual)
 {
     auto const original_it = original_.find(address);
     MONAD_ASSERT(original_it != original_.end());
@@ -1383,7 +1403,7 @@ bool State::try_fix_account_mismatch(
 }
 
 bool State::record_balance_constraint_for_debit(
-    Address const &address, uint256_t const &debit)
+    monad_address const &address, uint256_t const &debit)
 {
     auto const [visible, original] = rows_for_read(address);
     auto const &account = visible->account_;

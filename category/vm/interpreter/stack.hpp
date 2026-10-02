@@ -17,24 +17,35 @@
 
 #include <category/core/assert.h>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/types.hpp>
 
 #include <evmc/evmc.h>
 
+#include <concepts>
 #include <cstdint>
 
 namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
 
-    template <uint8_t Instr, Traits traits>
+    template <auto Instr, Traits traits>
     [[gnu::always_inline]] inline void check_requirements(
         runtime::Context &ctx, Intercode const &,
         uint256_t const *const stack_bottom, uint256_t *const stack_top,
         int64_t &gas_remaining)
     {
-        static constexpr auto info = compiler::opcode_table<traits>[Instr];
+        static constexpr auto info = [] {
+            if constexpr (std::same_as<
+                              decltype(Instr),
+                              compiler::ExtensionSelector>) {
+                return compiler::extension_opcode_table<traits>[Instr];
+            }
+            else {
+                return compiler::opcode_table<traits>[Instr];
+            }
+        }();
 
         if constexpr (info.min_gas > 0) {
             gas_remaining -= info.min_gas;

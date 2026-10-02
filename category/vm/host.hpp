@@ -15,11 +15,16 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
+#include <category/core/assert.h>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.hpp>
 
+#include <cstddef>
 #include <exception>
+#include <vector>
 
 namespace monad::vm
 {
@@ -58,7 +63,30 @@ namespace monad::vm
             runtime_context_->stack_unwind();
         }
 
+        Address call_frame_sender(size_t const depth) const noexcept
+        {
+            MONAD_ASSERT(depth < call_frame_senders_.size());
+            return call_frame_senders_[depth];
+        }
+
+        void set_call_frame_sender(size_t const depth, Address const &sender)
+        {
+            if (depth >= call_frame_senders_.size()) {
+                call_frame_senders_.resize(depth + 1);
+            }
+            call_frame_senders_[depth] = sender;
+        }
+
     private:
+        template <Traits traits>
+        void enter_call_frame(runtime::Context const &ctx)
+        {
+            if constexpr (traits::mip_18_active()) {
+                set_call_frame_sender(
+                    static_cast<size_t>(ctx.env.depth), ctx.env.sender);
+            }
+        }
+
         [[gnu::always_inline]]
         void rethrow_on_active_exception()
         {
@@ -80,5 +108,6 @@ namespace monad::vm
 
         runtime::Context *runtime_context_{nullptr};
         mutable std::exception_ptr active_exception_;
+        std::vector<Address> call_frame_senders_;
     };
 }

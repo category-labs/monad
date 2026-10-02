@@ -16,6 +16,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/environment.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -67,5 +68,20 @@ namespace monad::vm::runtime
                           ? load_be<uint256_t>(static_cast<bytes32_t>(
                                 c.blob_hashes[static_cast<size_t>(*index)]))
                           : 0;
+    }
+
+    void callern(
+        Context *const ctx, uint256_t *const result_ptr,
+        uint256_t const *const n_ptr)
+    {
+        auto const depth = static_cast<uint64_t>(ctx->env.depth);
+        if (*n_ptr > depth) {
+            *result_ptr = 0;
+            return;
+        }
+        // TODO(EXE-173): read ctx->host once Context holds a vm::Host.
+        auto const *const host = Host::from_context<Host>(ctx->context);
+        *result_ptr = uint256_from_address(
+            host->call_frame_sender(depth - static_cast<uint64_t>(*n_ptr)));
     }
 }

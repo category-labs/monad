@@ -86,9 +86,11 @@ namespace monad
         { T::eip_7951_active() } -> std::same_as<bool>;
         { T::eip_7981_active() } -> std::same_as<bool>;
         { T::mip_3_active() } -> std::same_as<bool>;
+        { T::mip_7_active() } -> std::same_as<bool>;
         { T::mip_8_active() } -> std::same_as<bool>;
         { T::mip_11_active() } -> std::same_as<bool>;
         { T::mip_12_active() } -> std::same_as<bool>;
+        { T::mip_18_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
         // If true, BLOBHASH/BLOBBASEFEE exist and return
         // stub data. Separate from eip_4844_active.
@@ -204,6 +206,16 @@ namespace monad
         }
 
         static consteval bool mip_11_active() noexcept
+        {
+            return false;
+        }
+
+        static consteval bool mip_7_active() noexcept
+        {
+            return false;
+        }
+
+        static consteval bool mip_18_active() noexcept
         {
             return false;
         }
@@ -396,6 +408,16 @@ namespace monad
         }
 
         static consteval bool mip_12_active() noexcept
+        {
+            return Rev >= MONAD_NEXT;
+        }
+
+        static consteval bool mip_7_active() noexcept
+        {
+            return Rev >= MONAD_NEXT;
+        }
+
+        static consteval bool mip_18_active() noexcept
         {
             return Rev >= MONAD_NEXT;
         }

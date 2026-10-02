@@ -299,6 +299,14 @@ void BlockState::merge(State const &state)
     auto const &current = state.current();
     auto const &code = state.code();
     for (auto const &[address, account_state] : current) {
+#ifdef MONAD_ZKVM_ZISK
+        // A transaction that deploys nothing leaves the State's code empty.
+        // gcc tests that for every account: as far as it knows, code_'s
+        // insertions could change the State's map.
+        if (code.empty()) {
+            break;
+        }
+#endif
         auto const &account = account_state.account_;
         if (account.has_value()) {
             auto const it = code.find(account.value().code_hash);

@@ -14,8 +14,10 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
+#include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/core/rlp/config.hpp>
+#include <category/core/rlp/decode_error.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/signature_rlp.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
@@ -29,6 +31,9 @@ MONAD_RLP_NAMESPACE_BEGIN
 Result<SignatureAndChain> decode_sc(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(auto const v, decode_unsigned<uint256_t>(enc));
+    if (MONAD_UNLIKELY(v < 35u && v != 27u && v != 28u)) {
+        return DecodeError::NonCanonical;
+    }
 
     SignatureAndChain sc;
     sc.from_v(v);

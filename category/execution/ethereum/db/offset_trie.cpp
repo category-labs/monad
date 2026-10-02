@@ -205,6 +205,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
 #if !defined(MONAD_ZKVM_ZISK)
     unsigned char rlp_buf[MAX_NODE_RLP];
 #endif
+#if defined(MONAD_ZKVM_ZISK)
+    // The windows and the hash slots, held for the walk: the hash that ends a
+    // turn is a call, and the priming encode stores through pointers gcc
+    // cannot tell from the members, so it read each of them again on every
+    // node and wrote the window back. Only the walk uses the windows, and the
+    // slots do not move. The window goes back to its member after the walk.
+    unsigned char *walk_window = rlp_window_;
+    unsigned char *walk_windows_end = rlp_windows_end_;
+    CachedHash **const walk_hash_slots = blob_hash_slots_;
+#endif
 
     while (node.bytes() < region_end) {
         // In range by the loop's own condition: the walk runs while
@@ -333,11 +343,13 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
 #if defined(MONAD_ZKVM_ZISK)
         // Encoded where a hashed node keeps it: see CachedHash::rlp. An
         // inlined node's window is reused.
-        if (MONAD_UNLIKELY(rlp_window_ == rlp_windows_end_)) {
+        if (MONAD_UNLIKELY(walk_window == walk_windows_end)) {
             refill_rlp_windows();
+            walk_window = rlp_window_;
+            walk_windows_end = rlp_windows_end_;
         }
         auto &window =
-            *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(rlp_window_);
+            *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(walk_window);
         node_rlp_span const rem =
             tag == BRANCH
                 ? encode_rlp<true, true>(
@@ -369,8 +381,8 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             e->valid = true;
             e->rlp = rem.base() + rem.size();
             e->rlp_len = rem.rlp_size();
-            blob_hash_slots_[node_offset >> 2] = e;
-            rlp_window_ += RLP_WINDOW_STRIDE;
+            walk_hash_slots[node_offset >> 2] = e;
+            walk_window += RLP_WINDOW_STRIDE;
             monad_keccak256(rem.rlp_data(), rem.rlp_size(), e->h.bytes);
 #else
             monad_keccak256(rem.rlp_data(), rem.rlp_size(), ch.h.bytes);
@@ -381,6 +393,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     MONAD_ASSERT(node.bytes() == region_end); // nodes tile exactly
     is_valid_offset(root);
 #if defined(MONAD_ZKVM_ZISK)
+    rlp_window_ = walk_window;
     unclaimed -= claimed_bytes_;
     claim_marks_ = nullptr;
 #endif

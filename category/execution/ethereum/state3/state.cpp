@@ -157,7 +157,15 @@ AccountState &State::current_account_state(Address const &address)
         MONAD_GUEST_SITE(ACCT_FIND_MISS);
         // original
         auto &account_state = original_account_state(address);
+#if defined(MONAD_ZKVM_ZISK)
+        // Built from the account alone: an original row keeps nothing else
+        // in its AccountState part, its original slots being in
+        // prestate_storage_, and a copy of its empty containers tested and
+        // copied each of them.
+        it = current_.try_emplace(address, account_state.account_).first;
+#else
         it = current_.try_emplace(address, account_state).first;
+#endif
         it->second.orig_ = &account_state;
         created = true;
         // Record creation separately from dirty tracking.

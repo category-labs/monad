@@ -95,8 +95,8 @@ namespace monad::vm::runtime
         auto const dest_address = address_from_uint256(address);
 
 #if defined(MONAD_ZKVM_ZISK)
-        auto const access_status =
-            host_of(*ctx).access_account(host_shim::addr(&dest_address));
+        auto const access_status = guest_access_account<traits>(
+            host_of(*ctx), host_shim::addr(&dest_address));
 #else
         auto const access_status =
             ctx->host->access_account(ctx->context, &dest_address);
@@ -124,8 +124,8 @@ namespace monad::vm::runtime
         Address const *code_address_p = &dest_address;
         if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
             if (delegate_address) {
-                auto const access_status = host_of(*ctx).access_account(
-                    host_shim::addr(delegate_address));
+                auto const access_status = guest_access_account<traits>(
+                    host_of(*ctx), host_shim::addr(delegate_address));
                 ctx->gas_remaining -= (access_status == EVMC_ACCESS_COLD
                                            ? traits::cold_account_cost()
                                            : 0) +
@@ -241,7 +241,8 @@ namespace monad::vm::runtime
 
 #if defined(MONAD_ZKVM_ZISK)
         // What the C adapter does, without its frame.
-        auto const result = host_of(*ctx).call(message).release_raw();
+        auto const result =
+            guest_call<traits>(host_of(*ctx), message).release_raw();
 #else
         auto const result = ctx->host->call(ctx->context, &message);
 #endif

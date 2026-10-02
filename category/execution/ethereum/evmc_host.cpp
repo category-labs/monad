@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #if defined(MONAD_ZKVM_ZISK)
     #include <category/vm/evm/delegation.hpp>
+    #include <category/vm/evm/explicit_traits.hpp>
 #endif
 
 #include <evmc/evmc.h>
@@ -310,3 +311,81 @@ void EvmcHostBase::set_transient_storage(
 }
 
 MONAD_NAMESPACE_END
+#if defined(MONAD_ZKVM_ZISK)
+
+// The runtime's direct calls to the guest's one host (vm/host.hpp): each
+// method named, so no vtable is read, and inlined here.
+namespace monad::vm::runtime
+{
+    template <Traits traits>
+    evmc_access_status guest_sload_into(
+        Host &host, evmc::address const &addr, evmc::bytes32 const &key,
+        bool const read_cold, evmc_bytes32 &value) noexcept
+    {
+        return static_cast<EvmcHost<traits> &>(host)
+            .EvmcHost<traits>::sload_into(addr, key, read_cold, value);
+    }
+
+    EXPLICIT_EVM_TRAITS(guest_sload_into);
+
+    template <Traits traits>
+    evmc_access_status guest_access_storage(
+        Host &host, evmc::address const &addr,
+        evmc::bytes32 const &key) noexcept
+    {
+        return static_cast<EvmcHost<traits> &>(host)
+            .EvmcHost<traits>::access_storage(addr, key);
+    }
+
+    EXPLICIT_EVM_TRAITS(guest_access_storage);
+
+    template <Traits traits>
+    evmc_access_status
+    guest_access_account(Host &host, evmc::address const &addr) noexcept
+    {
+        return static_cast<EvmcHost<traits> &>(host)
+            .EvmcHost<traits>::access_account(addr);
+    }
+
+    EXPLICIT_EVM_TRAITS(guest_access_account);
+
+    template <Traits traits>
+    evmc::Result guest_call(Host &host, evmc_message const &msg) noexcept
+    {
+        return static_cast<EvmcHost<traits> &>(host).EvmcHost<traits>::call(
+            msg);
+    }
+
+    EXPLICIT_EVM_TRAITS(guest_call);
+
+    evmc_storage_status guest_set_storage(
+        Host &host, evmc::address const &addr, evmc::bytes32 const &key,
+        evmc::bytes32 const &value) noexcept
+    {
+        return static_cast<EvmcHostBase &>(host).EvmcHostBase::set_storage(
+            addr, key, value);
+    }
+
+    evmc::bytes32 guest_get_transient_storage(
+        Host const &host, evmc::address const &addr,
+        evmc::bytes32 const &key) noexcept
+    {
+        return static_cast<EvmcHostBase const &>(host)
+            .EvmcHostBase::get_transient_storage(addr, key);
+    }
+
+    void guest_set_transient_storage(
+        Host &host, evmc::address const &addr, evmc::bytes32 const &key,
+        evmc::bytes32 const &value) noexcept
+    {
+        static_cast<EvmcHostBase &>(host).EvmcHostBase::set_transient_storage(
+            addr, key, value);
+    }
+
+    evmc_tx_context const *guest_get_tx_context(Host const &host) noexcept
+    {
+        return static_cast<EvmcHostBase const &>(host)
+            .EvmcHostBase::get_tx_context();
+    }
+}
+#endif

@@ -18,6 +18,7 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <cstdint>
@@ -36,10 +37,10 @@ namespace monad::vm::runtime
         Context *const ctx, uint256_t *const result_ptr,
         uint256_t const *const key_ptr)
     {
-        auto key = store_be_as<bytes32_t>(*key_ptr);
+        auto const key = store_be_as<bytes32_t>(*key_ptr);
 
-        auto const value = ctx->host->get_transient_storage(
-            ctx->context, &ctx->env.recipient, &key);
+        auto const value =
+            ctx->host->get_transient_storage(ctx->env.recipient, key);
 
         *result_ptr = load_be<uint256_t>(value);
     }
@@ -52,11 +53,10 @@ namespace monad::vm::runtime
             ctx->exit(StatusCode::Error);
         }
 
-        auto key = store_be_as<bytes32_t>(*key_ptr);
-        auto val = store_be_as<bytes32_t>(*val_ptr);
+        auto const key = store_be_as<bytes32_t>(*key_ptr);
+        auto const val = store_be_as<bytes32_t>(*val_ptr);
 
-        ctx->host->set_transient_storage(
-            ctx->context, &ctx->env.recipient, &key, &val);
+        ctx->host->set_transient_storage(ctx->env.recipient, key, val);
     }
 
     bool debug_tstore_stack(

@@ -23,6 +23,7 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/utils/debug.hpp>
 
 #include <category/vm/vm.hpp>
@@ -86,9 +87,13 @@ evmc::Result BlockchainTestVM::execute(
     // SWITCH_EVM_TRAITS switches on a monad_eth_revision named `rev`.
     monad_eth_revision const rev = from_evmc_revision(evmc_rev);
     MONAD_ASSERT(rev >= constants::EARLIEST_SUPPORTED_EVM_FORK);
+    MONAD_ASSERT(host == &evmc::Host::get_interface());
+    auto *const vm_host =
+        dynamic_cast<vm::Host *>(evmc::Host::from_context(context));
+    MONAD_ASSERT(vm_host);
+
     auto *const prev_rt_ctx = rt_ctx_;
-    auto new_rt_ctx =
-        runtime::Context::from(host, context, msg, {code, code_size});
+    auto new_rt_ctx = runtime::Context::from(*vm_host, msg, {code, code_size});
     rt_ctx_ = &new_rt_ctx;
 
     auto res = [&] {

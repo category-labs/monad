@@ -68,30 +68,50 @@ namespace
     }
 }
 
+#ifdef MONAD_ZKVM_ZISK
+OriginalAccountState::OriginalAccountState(StateDeltas::value_type &entry)
+    : AccountState{entry.second.account.second}
+    , delta_{&entry}
+{
+}
+#endif
+
 OriginalAccountState &State::original_account_state(Address const &address)
 {
 #ifdef MONAD_ZKVM_ZISK
     if (orig_memo_ != nullptr && address == orig_memo_addr_) {
         return *orig_memo_;
     }
-#endif
+
+    // One probe: a missing row is built where the search for it ended, from
+    // the block's entry, found or read only then. A find and then an
+    // emplace would hash and probe the address twice.
+    struct Entry
+    {
+        BlockState &block_state;
+        Address const &address;
+
+        operator StateDeltas::value_type &() const
+        {
+            return block_state.read_account_delta(address);
+        }
+    };
+
+    OriginalAccountState &row =
+        original_.try_emplace(address, Entry{block_state_, address})
+            .first->second;
+    orig_memo_addr_ = address;
+    orig_memo_ = &row;
+    return row;
+#else
     auto it = original_.find(address);
     if (it == original_.end()) {
         // block state
-#ifdef MONAD_ZKVM_ZISK
-        auto &entry = block_state_.read_account_delta(address);
-        it = original_.try_emplace(address, entry.second.account.second).first;
-        it->second.delta_ = &entry;
-#else
         auto const account = block_state_.read_account(address);
         it = original_.try_emplace(address, account).first;
-#endif
     }
-#ifdef MONAD_ZKVM_ZISK
-    orig_memo_addr_ = address;
-    orig_memo_ = &it->second;
-#endif
     return it->second;
+#endif
 }
 
 AccountState const &State::recent_account_state(Address const &address)

@@ -356,6 +356,11 @@ public:
     {
     }
 
+#ifdef MONAD_ZKVM_ZISK
+    // The row the block's entry for the account gives, keeping the entry.
+    explicit OriginalAccountState(std::pair<Address, StateDelta> &entry);
+#endif
+
     [[nodiscard]] bool validate_exact_balance() const
     {
         return validate_exact_balance_;

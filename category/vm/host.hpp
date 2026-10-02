@@ -66,8 +66,9 @@ namespace monad::vm
 
         /// EIP-7702's delegate of `addr`, read where its code is kept: through
         /// copy_code, the code's first bytes were copied out, at a run-time
-        /// length, on every message call.
-        virtual std::optional<Address>
+        /// length, on every message call. It is returned where it lies in
+        /// the code, or null.
+        virtual Address const *
         delegate_of(evmc::address const &addr) const noexcept = 0;
 #endif
 

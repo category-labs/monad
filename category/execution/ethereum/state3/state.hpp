@@ -445,8 +445,9 @@ public:
         Address const &, size_t offset, uint8_t *buffer, size_t buffer_size);
 
 #if defined(MONAD_ZKVM_ZISK)
-    // EIP-7702's delegate of the address, read where its code is kept.
-    std::optional<Address> delegate_of(Address const &);
+    // EIP-7702's delegate of the address, read where its code is kept, and
+    // returned where it lies in the code, or null.
+    Address const *delegate_of(Address const &);
 #endif
 
     void set_code(Address const &, byte_string_view code);

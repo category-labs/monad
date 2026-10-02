@@ -32,6 +32,16 @@ namespace monad::vm::evm
     // when the code is that prefix and an address; nothing otherwise.
     std::optional<Address> designation_of(std::span<uint8_t const> code);
 
+#if defined(MONAD_ZKVM_ZISK)
+    // designation_of's address where it lies in the code, or null: no
+    // optional to fill and return through memory, so the methods that pass
+    // the delegate on are jumps.
+    Address const *delegate_in(std::span<uint8_t const> code);
+
+    Address const *resolve_delegation(
+        evmc_host_interface const *, evmc_host_context *, Address const &);
+#else
     std::optional<Address> resolve_delegation(
         evmc_host_interface const *, evmc_host_context *, Address const &);
+#endif
 }

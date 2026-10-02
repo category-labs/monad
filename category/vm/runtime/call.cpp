@@ -110,28 +110,27 @@ namespace monad::vm::runtime
         // locals of their own before being copied into the message: a
         // 20-byte copy each. EIP-7702: if the code address starts with
         // 0xEF0100, then treat it as a delegated call in the context of the
-        // current authority; the delegate is initialised from the call's own
-        // result, where an assignment is a 21-byte copy of the optional.
-        std::optional<Address> const delegate_address =
-            [&]() -> std::optional<Address> {
+        // current authority; the delegate is the address where it lies in
+        // the code, which the host returns.
+        Address const *const delegate_address = [&]() -> Address const * {
             if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
                 return evm::resolve_delegation(
                     ctx->host, ctx->context, dest_address);
             }
             else {
-                return std::nullopt;
+                return nullptr;
             }
         }();
         Address const *code_address_p = &dest_address;
         if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
             if (delegate_address) {
                 auto const access_status = host_of(*ctx).access_account(
-                    host_shim::addr(&*delegate_address));
+                    host_shim::addr(delegate_address));
                 ctx->gas_remaining -= (access_status == EVMC_ACCESS_COLD
                                            ? traits::cold_account_cost()
                                            : 0) +
                                       100;
-                code_address_p = &*delegate_address;
+                code_address_p = delegate_address;
             }
         }
         Address const &code_address = *code_address_p;

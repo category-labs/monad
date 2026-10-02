@@ -4,6 +4,7 @@ on:
   push:
     branches: ["main"]
     paths:
+      - '.github/actions/docker-stage/**'
       - 'docker/Dockerfile'
       - 'scripts/ubuntu-build/**'
   workflow_dispatch:
@@ -16,33 +17,19 @@ jobs:
     runs-on: ubuntu-26.04-32
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          submodules: false
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v4
 
       - name: Build and cache `base` stage
-        uses: docker/build-push-action@v5
+        uses: ./.github/actions/docker-stage
         with:
-          context: .
-          file: docker/Dockerfile
-          build-args: |-
-            UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
-          ulimit: "memlock=-1:-1"
           target: base
           cache-to: type=gha,scope=base
+          submodules: false
 
       - name: Build and cache `base_rust` stage
-        uses: docker/build-push-action@v5
+        uses: ./.github/actions/docker-stage
         with:
-          context: .
-          file: docker/Dockerfile
-          build-args: |-
-            UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
-          ulimit: "memlock=-1:-1"
           target: base_rust
           cache-from: type=gha,scope=base
           cache-to: type=gha,scope=base_rust
+          setup: false

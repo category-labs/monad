@@ -4,20 +4,14 @@ on:
   push:
     branches: ["main"]
   pull_request:
-    types: [ opened, synchronize, reopened, edited ]
+    types: [ opened, synchronize, reopened ]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: >
-    ${{
-      (github.event_name == 'push' && format('push-{0}-code-quality', github.ref))
-      || (github.event_name == 'pull_request' && format('pr-{0}-code-quality', github.event.pull_request.number))
-      || (github.event_name == 'workflow_dispatch' && format('workflow-dispatch-{0}-code-quality', github.run_id))
-      || format('{0}-code-quality', github.run_id)
-    }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref) || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -26,58 +20,45 @@ jobs:
     runs-on: ubuntu-26.04
     env:
       LLVM_VERSION: '19'
+
     steps:
       - uses: actions/checkout@v4
-        with:
-            submodules: false
+
       - name: Install clang-format-${{ env.LLVM_VERSION }}
         run: |
           sudo apt install -y clang-format-${{ env.LLVM_VERSION }}
+
       - name: Run clang-format check
         run: |
-          find category cmd test -regex '.*\.\(cpp\|hpp\|c\|h\)' -exec clang-format-${{ env.LLVM_VERSION }} -style=file --dry-run --Werror {} + 
+          find category cmd test -regex '.*\.\(cpp\|hpp\|c\|h\)' -exec clang-format-${{ env.LLVM_VERSION }} -style=file --dry-run --Werror {} +
 
   traits-check:
-      name: Trait instantiation check
-      runs-on: ubuntu-26.04
-      steps:
-          - uses: actions/checkout@v4
-            with:
-              submodules: false
+    name: Trait instantiation check
+    runs-on: ubuntu-26.04
 
-          - name: Install uv
-            uses: astral-sh/setup-uv@v5
+    steps:
+      - uses: actions/checkout@v4
 
-          - name: Set up Python
-            uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
 
-          - name: Check instantiations
-            run: uv run scripts/check-trait-instantiations.py category
+      - name: Set up Python
+        uses: actions/setup-python@v5
+
+      - name: Check instantiations
+        run: uv run scripts/check-trait-instantiations.py category
 
   clang-tidy:
     name: Check clang-tidy
     runs-on: ubuntu-26.04-32
+
     steps:
-        - name: Tell git to do submodules in parallel
-          run: |
-            git config --global submodule.fetchJobs "$(nproc)"
+      - uses: actions/checkout@v4
 
-        - uses: actions/checkout@v4
-          with:
-            submodules: recursive
-
-        - name: Setup Docker Buildx
-          uses: docker/setup-buildx-action@v3
-
-        - name: Build `code_quality` stage
-          uses: docker/build-push-action@v5
-          with:
-            context: .
-            file: docker/Dockerfile
-            build-args: |-
-              UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
-            ulimit: "memlock=-1:-1"
-            target: code_quality
-            cache-from: |
-              type=gha,scope=base_vm_test
-              type=gha,scope=base
+      - name: Build `code_quality` stage
+        uses: ./.github/actions/docker-stage
+        with:
+          target: code_quality
+          cache-from: |
+            type=gha,scope=base_vm_test
+            type=gha,scope=base

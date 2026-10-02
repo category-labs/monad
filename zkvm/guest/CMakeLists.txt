@@ -272,6 +272,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # execute_witness.cpp checks at compile time.
     # Layout: little-endian u32 call counts, then permutation counts,
     # in the site order defined by zkvm/category/core/keccak_sites.hpp.
+    option(MONAD_ZKVM_ADD256_SOFTWARE "EXPERIMENT: EVM ADD/SUB in software" OFF)
+    if(MONAD_ZKVM_ADD256_SOFTWARE)
+        add_compile_definitions(MONAD_ZKVM_ADD256_SOFTWARE)
+    endif()
     option(MONAD_ZKVM_KECCAK_SITES "count keccak calls per call site" OFF)
     if(MONAD_ZKVM_KECCAK_SITES)
         add_compile_definitions(MONAD_ZKVM_KECCAK_SITES)

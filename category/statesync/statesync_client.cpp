@@ -16,9 +16,9 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/chain_hash.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
@@ -203,7 +203,7 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
                 auto const v = tgrt.number - i - 1;
                 auto const &hdr = ctx->hdrs[v % ctx->hdrs.size()];
                 auto const rlp = rlp::encode_block_header(hdr);
-                auto const hash = to_bytes(keccak256(rlp));
+                auto const hash = to_bytes(header_hash(rlp));
                 if (hash != expected) {
                     return false;
                 }

@@ -22,11 +22,11 @@
 #include <category/core/config.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/hex.hpp>
-#include <category/core/keccak.hpp>
 #include <category/core/log.hpp>
 #include <category/core/procfs/statm.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/chain_hash.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
@@ -142,7 +142,7 @@ bool validate_delayed_execution_results(
         }
 
         auto const block_hash =
-            to_bytes(keccak256(rlp::encode_block_header(result)));
+            to_bytes(header_hash(rlp::encode_block_header(result)));
         if (MONAD_UNLIKELY(
                 block_hash != block_hash_buffer.get(result.number))) {
             LOG_ERROR(
@@ -288,7 +288,7 @@ Result<BlockExecOutput> propose_block(
             is_first_block ? bytes32_t{} : consensus_header.parent_id());
     });
     block.header.parent_hash =
-        to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
+        to_bytes(header_hash(rlp::encode_block_header(db.read_eth_header())));
 
     // EIP-7843: surface the Monad consensus round to execution via the EL
     // header's slot_number (in-memory only for now; not RLP-encoded). It is
@@ -356,7 +356,7 @@ Result<BlockExecOutput> propose_block(
     // Commit prologue: computation of the Ethereum block hash to append to
     // the circular hash buffer
     exec_output.eth_block_hash =
-        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
+        to_bytes(header_hash(rlp::encode_block_header(exec_output.eth_header)));
     block_hash_chain.propose(
         exec_output.eth_block_hash,
         block.header.number,

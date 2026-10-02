@@ -19,6 +19,7 @@
 #include <category/core/keccak.hpp>
 #include <category/core/trie_hash.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/chain_hash.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -317,7 +318,7 @@ CommitBuilder &CommitBuilder::add_block_header(BlockHeader const &header)
 
     UpdateList block_hash_nested_updates;
     block_hash_nested_updates.push_front(update_alloc_.emplace_back(Update{
-        .key = hash_alloc_.emplace_back(keccak256(eth_header_rlp)),
+        .key = hash_alloc_.emplace_back(header_hash(eth_header_rlp)),
         .value = bytes_alloc_.emplace_back(rlp::encode_unsigned(header.number)),
         .incarnation = false,
         .next = UpdateList{},

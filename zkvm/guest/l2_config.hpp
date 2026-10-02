@@ -108,12 +108,18 @@ inline constexpr bool L2_OPERATOR_PK_ODD = MONAD_L2_OPERATOR_PK_ODD != 0;
 /// before this is anything but a prototype.
 inline constexpr std::uint64_t L2_EPOCH_BLOCKS = MONAD_L2_EPOCH_BLOCKS;
 
-/// keccak256 of the blinder secret the witness must supply.
+/// l2_salt_commitment of the blinder secret the witness must supply.
 ///
 /// A commitment and not the secret, because the secret is what the guest must
 /// not contain -- the ELF is public, and a blinder anyone can read blinds
 /// nothing.
 inline constexpr bytes32_t L2_SALT_COMMITMENT = MONAD_L2_SALT_COMMITMENT;
+
+/// The commitment to a blinder secret: keccak256 of it, or under
+/// MONAD_ZKVM_L2_HASH=poseidon2 the Poseidon2 sponge over a label and it. The
+/// generator prints it for a deployment (--salt-commitment) and the guest
+/// checks the witness's secret against the compiled one.
+bytes32_t l2_salt_commitment(std::span<unsigned char const, 32> salt_secret);
 
 /// The per-block state blinder, which goes in the header's extra_data and so
 /// into the block hash.
@@ -134,6 +140,9 @@ inline constexpr bytes32_t L2_SALT_COMMITMENT = MONAD_L2_SALT_COMMITMENT;
 /// blocks with the same state publish the same hash. On a low-volume chain
 /// that reveals which blocks changed nothing, and a return to an earlier hash
 /// reveals a cycle.
+///
+/// Hashed with the chain's hash (MONAD_ZKVM_L2_HASH): keccak256, or the
+/// Poseidon2 sponge, over the same label, secret and number.
 ///
 /// Derived rather than stored, so nothing has to persist between blocks and
 /// the chain of commitments needs no extra bookkeeping to line up. The

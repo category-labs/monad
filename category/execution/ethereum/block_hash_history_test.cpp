@@ -93,7 +93,7 @@ namespace
 
             Transaction const tx{};
             BlockHeader const header = {.number = current_block_number};
-            evmc_tx_context const tx_context = get_tx_context<Trait>(
+            vm::TxContext const tx_context = get_tx_context<Trait>(
                 tx,
                 sender,
                 header,

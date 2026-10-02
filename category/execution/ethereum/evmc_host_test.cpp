@@ -47,34 +47,39 @@ using namespace monad;
 
 using db_t = TrieDb;
 
-bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
+namespace monad::vm
 {
-    return !std::memcmp(
-               lhs.tx_gas_price.bytes,
-               rhs.tx_gas_price.bytes,
-               sizeof(evmc_bytes32)) &&
-           !std::memcmp(
-               lhs.tx_origin.bytes,
-               rhs.tx_origin.bytes,
-               sizeof(evmc_address)) &&
-           !std::memcmp(
-               lhs.block_coinbase.bytes,
-               rhs.block_coinbase.bytes,
-               sizeof(evmc_address)) &&
-           lhs.block_number == rhs.block_number &&
-           lhs.block_timestamp == rhs.block_timestamp &&
-           lhs.block_gas_limit == rhs.block_gas_limit &&
-           !std::memcmp(
-               lhs.block_prev_randao.bytes,
-               rhs.block_prev_randao.bytes,
-               sizeof(evmc_bytes32)) &&
-           !std::memcmp(
-               lhs.chain_id.bytes, rhs.chain_id.bytes, sizeof(evmc_bytes32)) &&
-           !std::memcmp(
-               lhs.block_base_fee.bytes,
-               rhs.block_base_fee.bytes,
-               sizeof(evmc_bytes32)) &&
-           lhs.block_round == rhs.block_round;
+    bool operator==(TxContext const &lhs, TxContext const &rhs)
+    {
+        return !std::memcmp(
+                   lhs.tx_gas_price.bytes,
+                   rhs.tx_gas_price.bytes,
+                   sizeof(evmc_bytes32)) &&
+               !std::memcmp(
+                   lhs.tx_origin.bytes,
+                   rhs.tx_origin.bytes,
+                   sizeof(evmc_address)) &&
+               !std::memcmp(
+                   lhs.block_coinbase.bytes,
+                   rhs.block_coinbase.bytes,
+                   sizeof(evmc_address)) &&
+               lhs.block_number == rhs.block_number &&
+               lhs.block_timestamp == rhs.block_timestamp &&
+               lhs.block_gas_limit == rhs.block_gas_limit &&
+               !std::memcmp(
+                   lhs.block_prev_randao.bytes,
+                   rhs.block_prev_randao.bytes,
+                   sizeof(evmc_bytes32)) &&
+               !std::memcmp(
+                   lhs.chain_id.bytes,
+                   rhs.chain_id.bytes,
+                   sizeof(evmc_bytes32)) &&
+               !std::memcmp(
+                   lhs.block_base_fee.bytes,
+                   rhs.block_base_fee.bytes,
+                   sizeof(evmc_bytes32)) &&
+               lhs.block_round == rhs.block_round;
+    }
 }
 
 TYPED_TEST(TraitsTest, get_tx_context)
@@ -102,7 +107,7 @@ TYPED_TEST(TraitsTest, get_tx_context)
 
     auto const result = get_tx_context<typename TestFixture::Trait>(
         tx, from, hdr, 1, default_blob_schedule<typename TestFixture::Trait>());
-    evmc_tx_context ctx{
+    vm::TxContext ctx{
         .tx_origin = from,
         .block_coinbase = bene,
         .block_number = 15'000'000,

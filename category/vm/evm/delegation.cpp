@@ -72,16 +72,31 @@ namespace monad::vm::evm
         return designation;
     }
 
-    std::optional<Address> resolve_delegation(
+#if defined(MONAD_ZKVM_ZISK)
+    Address const *delegate_in(std::span<uint8_t const> const code)
+    {
+        if (!is_delegated(code)) {
+            return nullptr;
+        }
+        static_assert(sizeof(Address) == sizeof(evmc_address));
+        return reinterpret_cast<Address const *>(
+            code.data() + delegation_indicator_prefix_bytes.size());
+    }
+
+    Address const *resolve_delegation(
         evmc_host_interface const *const host, evmc_host_context *const ctx,
         Address const &addr)
     {
-#if defined(MONAD_ZKVM_ZISK)
         // Every caller in the guest passes monad's host: its method, which
         // reads the code where it is kept.
         (void)host;
         return host_shim::of(ctx)->delegate_of(host_shim::addr(&addr));
+    }
 #else
+    std::optional<Address> resolve_delegation(
+        evmc_host_interface const *const host, evmc_host_context *const ctx,
+        Address const &addr)
+    {
         // Copy up to |code_size| bytes of the bytecode. Then test
         // whether the code begins with the prefix 0xEF0100, if so,
         // then drop these three bytes and interpret the remainder as
@@ -90,6 +105,6 @@ namespace monad::vm::evm
         size_t const actual_code_size = host->copy_code(
             ctx, &addr, 0, code_buffer, delegation_indicator_size + 1);
         return designation_of({code_buffer, actual_code_size});
-#endif
     }
+#endif
 }

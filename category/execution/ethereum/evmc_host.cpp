@@ -180,7 +180,7 @@ size_t EvmcHostBase::copy_code(
 }
 
 #if defined(MONAD_ZKVM_ZISK)
-std::optional<Address>
+Address const *
 EvmcHostBase::delegate_of(evmc::address const &address) const noexcept
 {
     MONAD_TRY
@@ -189,12 +189,13 @@ EvmcHostBase::delegate_of(evmc::address const &address) const noexcept
             // As copy_code: the tracer is told of the code read.
             bytes32_t const hash = state_.get_code_hash(as_monad(address));
             if (hash == NULL_HASH) {
-                return std::nullopt;
+                return nullptr;
             }
+            // The code stays in the VM's cache after this copy is gone.
             auto const vcode = state_.read_code(hash);
             MONAD_ASSERT(vcode);
             trace::on_read_code(state_tracer_, hash, vcode->intercode());
-            return vm::evm::designation_of(vcode->intercode()->code_span());
+            return vm::evm::delegate_in(vcode->intercode()->code_span());
         }
         return state_.delegate_of(as_monad(address));
     }

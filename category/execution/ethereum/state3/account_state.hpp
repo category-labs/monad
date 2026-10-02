@@ -105,7 +105,13 @@ public:
         // allocating for unused storage. The indexed path already has
         // sufficient capacity.
         if (MONAD_UNLIKELY(v_.capacity() == 0)) {
+#ifdef MONAD_ZKVM_ZISK
+            // Thirty-two on the guest, whose bump allocator charges the same
+            // for any size: a row past eight would copy itself as it doubled.
+            v_.reserve(32);
+#else
             v_.reserve(8);
+#endif
         }
         v_.emplace_back(key, value);
 #ifdef MONAD_ZKVM_ZISK
@@ -309,7 +315,13 @@ public:
     void insert(bytes32_t const &k, bytes32_t const &v)
     {
         if (MONAD_UNLIKELY(v_.capacity() == 0)) {
+#ifdef MONAD_ZKVM_ZISK
+            // Thirty-two on the guest, whose bump allocator charges the same
+            // for any size: a row past eight would copy itself as it doubled.
+            v_.reserve(32);
+#else
             v_.reserve(8);
+#endif
         }
         v_.emplace_back(k, v);
 #ifdef MONAD_ZKVM_ZISK

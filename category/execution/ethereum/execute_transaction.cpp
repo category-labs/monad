@@ -23,6 +23,9 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#endif
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
@@ -108,6 +111,28 @@ constexpr void irrevocable_change(
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
+#if defined(MONAD_ZKVM_ZISK)
+
+namespace
+{
+    // The guest's one Chain is EthereumMainnet, the only Chain vtable in its
+    // ELF: its methods by name, where through Chain each call loaded the
+    // vtable and its slot and ended in a jalr, whose low-bit clear is a
+    // priced and.
+    [[gnu::always_inline]] inline auto guest_chain_id(Chain const &chain)
+    {
+        return static_cast<EthereumMainnet const &>(chain)
+            .EthereumMainnet::get_chain_id();
+    }
+
+    [[gnu::always_inline]] inline auto
+    guest_blob_schedule(Chain const &chain, uint64_t const timestamp)
+    {
+        return static_cast<EthereumMainnet const &>(chain)
+            .EthereumMainnet::get_blob_schedule(timestamp);
+    }
+}
+#endif
 
 template <Traits traits>
 ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
@@ -272,7 +297,11 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         sender_,
         header_.base_fee_per_gas.value_or(0),
         header_.excess_blob_gas.value_or(0),
+#if defined(MONAD_ZKVM_ZISK)
+        guest_blob_schedule(chain_, header_.timestamp));
+#else
         chain_.get_blob_schedule(header_.timestamp));
+#endif
 
     uint64_t auth_refund = 0u;
     if constexpr (traits::eip_7702_active()) {
@@ -371,8 +400,13 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         tx_,
         sender_,
         header_,
+#if defined(MONAD_ZKVM_ZISK)
+        guest_chain_id(chain_),
+        guest_blob_schedule(chain_, header_.timestamp));
+#else
         chain_.get_chain_id(),
         chain_.get_blob_schedule(header_.timestamp));
+#endif
     EvmcHost<traits> host{
         call_tracer_,
         state_tracer_,
@@ -475,8 +509,13 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             tx_,
             header_.base_fee_per_gas,
             header_.excess_blob_gas,
+#if defined(MONAD_ZKVM_ZISK)
+            guest_chain_id(chain_),
+            guest_blob_schedule(chain_, header_.timestamp),
+#else
             chain_.get_chain_id(),
             chain_.get_blob_schedule(header_.timestamp),
+#endif
             tokens_);
         if (validation_result.has_error()) {
             prev_.wait();
@@ -545,8 +584,13 @@ Result<Receipt> ExecuteTransaction<traits>::execute(SequentialExecutionToken)
             tx_,
             header_.base_fee_per_gas,
             header_.excess_blob_gas,
+#if defined(MONAD_ZKVM_ZISK)
+            guest_chain_id(chain_),
+            guest_blob_schedule(chain_, header_.timestamp),
+#else
             chain_.get_chain_id(),
             chain_.get_blob_schedule(header_.timestamp),
+#endif
             tokens_);
         if (validation_result.has_error()) {
             return std::move(validation_result).as_failure();

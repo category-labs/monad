@@ -34,6 +34,7 @@
 #include <benchmark/benchmark.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -175,7 +176,7 @@ namespace
                 adapter.get_interface(),
                 adapter.to_context(),
                 to_evmc_revision(rev),
-                *msg,
+                std::bit_cast<evmc_message>(*msg),
                 code,
                 code_size);
         };

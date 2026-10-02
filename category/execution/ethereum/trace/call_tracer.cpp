@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/status_code.h>
 
 #include <evmc/evmc.h>
@@ -70,7 +71,7 @@ namespace
     }
 }
 
-void NoopCallTracer::on_enter(evmc_message const &) {}
+void NoopCallTracer::on_enter(vm::Message const &) {}
 
 void NoopCallTracer::on_exit(evmc::Result const &) {}
 
@@ -98,7 +99,7 @@ CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
     positions_.push(0);
 }
 
-void CallTracer::on_enter(evmc_message const &msg)
+void CallTracer::on_enter(vm::Message const &msg)
 {
     MONAD_ASSERT(!positions_.empty());
 
@@ -108,16 +109,18 @@ void CallTracer::on_enter(evmc_message const &msg)
     auto const depth = static_cast<uint64_t>(msg.depth);
 
     // This is to conform with quicknode RPC
-    Address const from =
-        msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE
-            ? msg.recipient
-            : msg.sender;
+    Address const from = msg.kind == vm::CallKind::DelegateCall ||
+                                 msg.kind == vm::CallKind::CallCode
+                             ? msg.recipient
+                             : msg.sender;
 
     std::optional<Address> to;
-    if (msg.kind == EVMC_CALL) {
+    if (msg.kind == vm::CallKind::Call) {
         to = msg.recipient;
     }
-    else if (msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE) {
+    else if (
+        msg.kind == vm::CallKind::DelegateCall ||
+        msg.kind == vm::CallKind::CallCode) {
         to = msg.code_address;
     }
 
@@ -125,17 +128,17 @@ void CallTracer::on_enter(evmc_message const &msg)
         .type =
             [kind = msg.kind] {
                 switch (kind) {
-                case EVMC_CALL:
+                case vm::CallKind::Call:
                     return CallType::CALL;
-                case EVMC_DELEGATECALL:
+                case vm::CallKind::DelegateCall:
                     return CallType::DELEGATECALL;
-                case EVMC_CALLCODE:
+                case vm::CallKind::CallCode:
                     return CallType::CALLCODE;
-                case EVMC_CREATE:
+                case vm::CallKind::Create:
                     return CallType::CREATE;
-                case EVMC_CREATE2:
+                case vm::CallKind::Create2:
                     return CallType::CREATE2;
-                case EVMC_EOFCREATE:
+                case vm::CallKind::EofCreate:
                     MONAD_ABORT(); // unsupported
                 }
                 MONAD_ABORT(); // unreachable

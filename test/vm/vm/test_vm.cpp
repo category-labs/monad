@@ -21,6 +21,7 @@
 #include <category/core/hex.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/host.hpp>
@@ -33,6 +34,7 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -95,8 +97,9 @@ evmc::Result BlockchainTestVM::execute(
     MONAD_ASSERT(adapter);
 
     auto *const prev_rt_ctx = rt_ctx_;
+    auto const message = std::bit_cast<vm::Message>(*msg);
     auto new_rt_ctx =
-        runtime::Context::from(adapter->host(), msg, {code, code_size});
+        runtime::Context::from(adapter->host(), &message, {code, code_size});
     rt_ctx_ = &new_rt_ctx;
 
     auto res = [&] {

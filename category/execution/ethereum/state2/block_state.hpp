@@ -60,13 +60,6 @@ class BlockState final
     /// incarnation (which, by definition, has no pre-state storage), so
     /// the slots they wipe are not pre-state reads and must not be added.
     SelfDestructStorageReads self_destruct_storage_reads_;
-#ifdef MONAD_ZKVM_ZISK
-    // The entry read_storage found last, and its address: a contract's slots
-    // are read in runs. state_ never erases and its values never move (a
-    // segmented map's), so the entry stays where it was for the block.
-    Address storage_memo_address_{};
-    StateDeltas::value_type *storage_memo_{nullptr};
-#endif
 
 public:
     BlockState(Db &, vm::VM &, Db *secondary_db = nullptr);
@@ -79,6 +72,18 @@ public:
     std::optional<Account> read_account(Address const &);
 
     bytes32_t read_storage(Address const &, Incarnation, bytes32_t const &key);
+
+#ifdef MONAD_ZKVM_ZISK
+    // The account's entry, read from the database if the block has none. Its
+    // address stays valid for the block: state_ never erases, and its values
+    // never move (a segmented map's).
+    StateDeltas::value_type &read_account_delta(Address const &);
+
+    // read_storage on the entry read_account_delta returned for the address.
+    bytes32_t read_storage(
+        StateDeltas::value_type &, Address const &, Incarnation,
+        bytes32_t const &key);
+#endif
 
     vm::SharedVarcode read_code(bytes32_t const &);
 

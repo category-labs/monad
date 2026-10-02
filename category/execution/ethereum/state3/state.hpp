@@ -154,7 +154,23 @@ class State
         // would incorrectly include it in the commit set.
         bool had_value;
         // Power-of-two size for cheaper vector::size(), as in Undo.
+#ifdef MONAD_ZKVM_ZISK
+        // Left as it is: built as an aggregate, the record was zeroed whole,
+        // a 128-byte memset before its fields were written.
+        unsigned char pad_[63];
+
+        // For resize's truncation, which never builds one.
+        SlotUndo() = default;
+
+        SlotUndo(bytes32_t const &k, bytes32_t const &v, bool const had)
+            : key{k}
+            , value{v}
+            , had_value{had}
+        {
+        }
+#else
         unsigned char pad_[63]{};
+#endif
     };
 
     static_assert(sizeof(SlotUndo) == 128);

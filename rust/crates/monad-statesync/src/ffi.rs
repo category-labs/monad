@@ -14,9 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 pub use self::bindings::{
-    monad_chain_config, monad_chain_config_CHAIN_CONFIG_ETHEREUM_MAINNET,
-    monad_chain_config_CHAIN_CONFIG_HIVE_NET, monad_chain_config_CHAIN_CONFIG_MONAD_DEVNET,
-    monad_chain_config_CHAIN_CONFIG_MONAD_MAINNET, monad_chain_config_CHAIN_CONFIG_MONAD_TESTNET,
     monad_statesync_client, monad_statesync_client_context, monad_statesync_client_handle_done,
     monad_statesync_client_handle_target, monad_statesync_client_handle_upsert, monad_sync_done,
     monad_sync_request, monad_sync_type_SYNC_TYPE_DONE, monad_sync_type_SYNC_TYPE_REQUEST,
@@ -60,7 +57,6 @@ fn add_client_prefixes_as_new_peers(ctx: *mut monad_statesync_client_context, cl
 /// Thin unsafe wrapper around statesync_client_context that handles destruction and finalization
 /// checking
 pub struct StateSyncCtx {
-    chain_config: monad_chain_config,
     dbname_path: *const ::std::os::raw::c_char,
     sq_thread_cpu: Option<::std::os::raw::c_uint>,
     request_ctx: StateSyncContext,
@@ -75,7 +71,6 @@ pub struct StateSyncCtx {
 impl StateSyncCtx {
     /// Initialize StateSyncCtx. There should only ever be *one* StateSyncCtx at any given time.
     pub fn new(
-        chain_config: monad_chain_config,
         dbname_path: *const ::std::os::raw::c_char,
         sq_thread_cpu: Option<::std::os::raw::c_uint>,
         request_ctx: StateSyncContext,
@@ -87,13 +82,11 @@ impl StateSyncCtx {
         assert!(unsafe { bindings::monad_statesync_client_compatible(client_version) });
 
         Self {
-            chain_config,
             dbname_path,
             sq_thread_cpu,
             request_ctx,
             statesync_send_request,
             client_version,
-
             ctx: None,
         }
     }
@@ -105,7 +98,6 @@ impl StateSyncCtx {
     pub fn get_or_create_ctx(&mut self) -> *mut monad_statesync_client_context {
         *self.ctx.get_or_insert_with(|| unsafe {
             self::bindings::monad_statesync_client_context_create(
-                self.chain_config,
                 self.dbname_path,
                 self.sq_thread_cpu
                     .unwrap_or(self::bindings::MONAD_SQPOLL_DISABLED),
@@ -120,7 +112,6 @@ impl StateSyncCtx {
     ) -> *mut monad_statesync_client_context {
         *self.ctx.get_or_insert_with(|| unsafe {
             let ctx = self::bindings::monad_statesync_client_context_create(
-                self.chain_config,
                 self.dbname_path,
                 self.sq_thread_cpu
                     .unwrap_or(self::bindings::MONAD_SQPOLL_DISABLED),

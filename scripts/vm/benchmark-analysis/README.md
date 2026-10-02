@@ -72,3 +72,18 @@ them in about twenty. `compare` prints, as JSON, each benchmark that changed by
 more than `--threshold` percent (default 0.1) and the functions behind the
 change, and exits with 1 if any benchmark got slower.
 
+`impact`, `history` and `validate` check out, build and measure commits
+themselves in a spare worktree with initialised submodules, and cache a report
+and the binaries per commit:
+```console
+$ uv run --project scripts/vm/benchmark-analysis \
+    vm-perf impact origin/main HEAD --timing \
+    --source ../spare --build ../spare-build -o perf
+```
+`impact` compares two commits and writes a Markdown summary. `--timing` also
+times every micro benchmark whose count changed, natively and interleaved,
+because instruction counts miss memory stalls. `history` measures every VM
+commit in a range and plots it, and `validate` checks a list of commits whose
+effect is known. The list is a JSON array of objects with a `commit`, an
+`expect` regex over benchmark names, a `direction` (`faster`, `slower`, `none`
+or `any`), and optionally a `base` (default `<commit>^1`) and a `note`.

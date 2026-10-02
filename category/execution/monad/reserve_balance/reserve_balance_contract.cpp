@@ -67,7 +67,7 @@ MONAD_ANONYMOUS_NAMESPACE_END
 MONAD_NAMESPACE_BEGIN
 
 ReserveBalanceContract::ReserveBalanceContract(
-    State &state, CallTracerBase &tracer)
+    State &state, CallTracerBase &tracer, bool)
     : state_{state}
     , call_tracer_{tracer}
 {

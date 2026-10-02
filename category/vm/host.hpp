@@ -16,6 +16,9 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/evm/traits.hpp>
+#endif
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.hpp>
@@ -293,5 +296,38 @@ namespace monad::vm::runtime
         MONAD_DEBUG_ASSERT(ctx.host == &Host::get_interface());
         return *host_shim::of(ctx.context);
     }
+
+    // The guest's one host is EvmcHost<traits>, final, on EvmcHostBase, and
+    // these call its methods by name: through Host, each call loads the
+    // vtable and its slot, and the jalr's low-bit clear is a priced and.
+    // Defined in evmc_host.cpp, which inlines each method into its own.
+    template <Traits traits>
+    evmc_access_status guest_sload_into(
+        Host &, evmc::address const &, evmc::bytes32 const &, bool,
+        evmc_bytes32 &) noexcept;
+
+    template <Traits traits>
+    evmc_access_status guest_access_storage(
+        Host &, evmc::address const &, evmc::bytes32 const &) noexcept;
+
+    template <Traits traits>
+    evmc_access_status
+    guest_access_account(Host &, evmc::address const &) noexcept;
+
+    template <Traits traits>
+    evmc::Result guest_call(Host &, evmc_message const &) noexcept;
+
+    evmc_storage_status guest_set_storage(
+        Host &, evmc::address const &, evmc::bytes32 const &,
+        evmc::bytes32 const &) noexcept;
+
+    evmc::bytes32 guest_get_transient_storage(
+        Host const &, evmc::address const &, evmc::bytes32 const &) noexcept;
+
+    void guest_set_transient_storage(
+        Host &, evmc::address const &, evmc::bytes32 const &,
+        evmc::bytes32 const &) noexcept;
+
+    evmc_tx_context const *guest_get_tx_context(Host const &) noexcept;
 }
 #endif

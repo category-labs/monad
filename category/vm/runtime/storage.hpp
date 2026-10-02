@@ -41,7 +41,8 @@ namespace monad::vm::runtime
 
         auto key = store_be_as<bytes32_t>(*key_ptr);
         evmc_bytes32 value;
-        if (host_of(*ctx).sload_into(
+        if (guest_sload_into<traits>(
+                host_of(*ctx),
                 host_shim::addr(&ctx->env.recipient),
                 host_shim::word(&key),
                 ctx->gas_remaining >= traits::cold_storage_cost(),
@@ -101,12 +102,13 @@ namespace monad::vm::runtime
             Host &host = host_of(*ctx);
             auto const &recipient = host_shim::addr(&ctx->env.recipient);
             auto const &slot = host_shim::word(&key);
-            if (host.access_storage(recipient, slot) == EVMC_ACCESS_COLD) {
+            if (guest_access_storage<traits>(host, recipient, slot) ==
+                EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
             }
 
-            auto const storage_status =
-                host.set_storage(recipient, slot, host_shim::word(&value));
+            auto const storage_status = guest_set_storage(
+                host, recipient, slot, host_shim::word(&value));
 
             auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
 
@@ -134,8 +136,10 @@ namespace monad::vm::runtime
 
 #if defined(MONAD_ZKVM_ZISK)
         // As SLOAD: the host's method, not its C adapter.
-        auto const value = host_of(*ctx).get_transient_storage(
-            host_shim::addr(&ctx->env.recipient), host_shim::word(&key));
+        auto const value = guest_get_transient_storage(
+            host_of(*ctx),
+            host_shim::addr(&ctx->env.recipient),
+            host_shim::word(&key));
 #else
         auto const value = ctx->host->get_transient_storage(
             ctx->context, &ctx->env.recipient, &key);
@@ -156,7 +160,8 @@ namespace monad::vm::runtime
         auto val = store_be_as<bytes32_t>(*val_ptr);
 
 #if defined(MONAD_ZKVM_ZISK)
-        host_of(*ctx).set_transient_storage(
+        guest_set_transient_storage(
+            host_of(*ctx),
             host_shim::addr(&ctx->env.recipient),
             host_shim::word(&key),
             host_shim::word(&val));

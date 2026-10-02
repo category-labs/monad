@@ -245,6 +245,14 @@ void EvmcHostBase::emit_log(
     MONAD_TRY
     {
         Receipt::Log log{.data = {data, data_size}, .address = address};
+#if defined(MONAD_ZKVM_ZISK)
+        // A topic's bytes are a bytes32_t's, so the topics are taken as one
+        // range: one allocation and one copy, where a loop of emplace_back
+        // tested the capacity and widened an unsigned index for each topic.
+        static_assert(sizeof(bytes32_t) == sizeof(evmc::bytes32));
+        auto const *const first = reinterpret_cast<bytes32_t const *>(topics);
+        log.topics.assign(first, first + num_topics);
+#else
         // Reserved: a LOG4 pushes four topics into an empty vector, which
         // reallocates at one, two and four and copies the run forward each
         // time -- 3 allocations and 7 topic copies vs 1 allocation and 4
@@ -254,6 +262,7 @@ void EvmcHostBase::emit_log(
             // Copy directly into the vector, avoiding a conversion temporary.
             log.topics.emplace_back(as_monad(topics[i]));
         }
+#endif
         // The tracer first, so the state can take the log rather than copy
         // it. Both are pure sinks and the order between them is free; one of
         // the two has to own its own copy and the other does not, and the

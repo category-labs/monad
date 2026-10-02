@@ -298,11 +298,24 @@ State::State(
     constexpr size_t FLOOR = 16;
     original_.reserve(FLOOR);
     current_.reserve(FLOOR);
+#ifdef MONAD_ZKVM_ZISK
+    // Every slot a transaction warms or writes is journalled here, and one
+    // that touches more than sixteen copied these as they doubled. The
+    // guest's bump allocator charges the same for any size and touches no
+    // memory, so they start at sixty-four.
+    constexpr size_t SLOT_FLOOR = 64;
+    undo_.reserve(SLOT_FLOOR);
+    undo_accts_.reserve(FLOOR);
+    undo_words_.reserve(SLOT_FLOOR);
+    undo_u64_.reserve(FLOOR);
+    undo_slots_.reserve(SLOT_FLOOR);
+#else
     undo_.reserve(FLOOR);
     undo_accts_.reserve(FLOOR);
     undo_words_.reserve(FLOOR);
     undo_u64_.reserve(FLOOR);
     undo_slots_.reserve(FLOOR);
+#endif
     undo_marks_.reserve(FLOOR);
     logs_.reserve(FLOOR);
     log_marks_.reserve(FLOOR);

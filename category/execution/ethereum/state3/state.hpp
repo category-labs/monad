@@ -351,6 +351,34 @@ private:
     [[gnu::always_inline]] inline void current_storage_into(
         AccountState const &, evmc_address const &, bytes32_t const &key,
         evmc_bytes32 &out);
+#if defined(MONAD_ZKVM_ZISK)
+
+    // Reuse the memo only when current_account_state needs no bookkeeping.
+    [[nodiscard]] AccountState *memoised_current(evmc_address const &address)
+    {
+    #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+        if (memo_epoch_ != frame_epoch_) {
+            return nullptr;
+        }
+    #endif
+        return memoised(address);
+    }
+
+    // Keep slow paths out of line. Account arguments come last to preserve
+    // sload_into's argument registers when tail-calling these helpers.
+    [[gnu::noinline]] monad_access_status sload_cold(
+        evmc_address const &, bytes32_t const &key, bool can_pay_cold_access,
+        evmc_bytes32 &out, AccountState &);
+
+    [[gnu::noinline]] monad_access_status sload_read(
+        evmc_address const &, bytes32_t const &key, evmc_bytes32 &out,
+        OriginalAccountState &);
+
+    template <Traits traits>
+    [[gnu::noinline]] monad_access_status sload_full(
+        evmc_address const &, bytes32_t const &key, bool can_pay_cold_access,
+        evmc_bytes32 &out);
+#endif
 
     std::optional<Account> const &recent_account(evmc_address const &);
 

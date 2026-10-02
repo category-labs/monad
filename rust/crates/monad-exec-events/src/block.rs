@@ -74,8 +74,8 @@ impl ExecutedBlock {
             excess_blob_gas: Some(0),
             parent_beacon_block_root: Some(alloy_primitives::B256::ZERO),
             requests_hash: Some(alloy_primitives::B256::ZERO),
-            block_access_list_hash: None,
-            slot_number: None,
+            block_access_list_hash: Some(alloy_primitives::B256::ZERO),
+            slot_number: Some(self.start.round),
         }
     }
 

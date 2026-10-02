@@ -356,8 +356,8 @@ namespace monad::vm::compiler::native
         bool mulmod_opt();
         void mulmod(int64_t remaining_base_gas);
 
-        template <typename T, size_t N>
-        void array_leading_zeros(std::array<T, N> const &);
+        template <typename T>
+        void array_leading_zeros(std::array<T, 4> const &, Gpq256 const &);
         template <typename T, size_t N>
         void array_byte_width(std::array<T, N> const &);
 

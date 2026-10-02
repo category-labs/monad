@@ -39,10 +39,12 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <variant>
@@ -157,7 +159,13 @@ int main(int argc, char *argv[])
 
     int return_code = RUN_ALL_TESTS();
 
-    if (::testing::UnitTest::GetInstance()->test_to_run_count() == 0) {
+    // gtest gives the first runnable test to shard 0, so only it is empty
+    // when nothing matched.
+    char const *const shard_index = std::getenv("GTEST_SHARD_INDEX");
+    bool const first_shard =
+        shard_index == nullptr || std::string_view{shard_index} == "0";
+    if (first_shard &&
+        ::testing::UnitTest::GetInstance()->test_to_run_count() == 0) {
         LOG_ERROR("No tests were run.");
         return_code = -1;
     }

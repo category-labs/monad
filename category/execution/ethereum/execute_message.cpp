@@ -44,6 +44,26 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // Zero has the same representation in either byte order.
+    // memcpy reads each word without requiring alignment or type aliasing.
+    [[gnu::always_inline]] inline bool
+    is_zero_value(evmc_bytes32 const &v) noexcept
+    {
+        uint64_t w0;
+        uint64_t w1;
+        uint64_t w2;
+        uint64_t w3;
+        __builtin_memcpy(&w0, v.bytes, sizeof(w0));
+        __builtin_memcpy(&w1, v.bytes + 8, sizeof(w1));
+        __builtin_memcpy(&w2, v.bytes + 16, sizeof(w2));
+        __builtin_memcpy(&w3, v.bytes + 24, sizeof(w3));
+        return (w0 | w1 | w2 | w3) == 0;
+    }
+
+    constexpr uint256_t zero_value{};
+#endif
+
     bool sender_has_balance(
         State &state, evmc_message const &msg,
         evmc_address const &sender) noexcept
@@ -54,6 +74,27 @@ namespace
         // debit
         return state.record_balance_constraint_for_debit(sender, value);
     }
+
+#if defined(MONAD_ZKVM_ZISK)
+    bool sender_has_balance(
+        State &state, evmc_address const &sender,
+        uint256_t const &value) noexcept
+    {
+        return state.record_balance_constraint_for_debit(sender, value);
+    }
+
+    template <Traits traits>
+    void transfer_balances(
+        State &state, EvmcHost<traits> &host, evmc_address const &from,
+        evmc_address const &to, uint256_t const &value)
+    {
+        state.subtract_from_balance(from, value);
+        state.add_to_balance(to, value);
+        emit_native_transfer_logs<traits>(
+            state, host.get_call_tracer(), from, to, value,
+            host.log_native_transfers_);
+    }
+#endif
 
     template <Traits traits>
     void transfer_balances(
@@ -122,7 +163,32 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
     if (msg.kind != EVMC_DELEGATECALL) {
         // Reuse the sender for the balance check and transfer.
         evmc_address const &sender = msg.sender;
+#if defined(MONAD_ZKVM_ZISK) && defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+        // Skip decoding and the balance check for zero; keep transfer handling.
+        if (MONAD_LIKELY(is_zero_value(msg.value))) {
+            if (!static_call) {
+                transfer_balances<traits>(
+                    state, host, sender, msg.recipient, zero_value);
+            }
+        }
+        else if (uint256_t const value = load_be<uint256_t>(msg.value);
+                 MONAD_UNLIKELY(!sender_has_balance(state, sender, value))) {
+            // No bytecode or access-list changes occurred in this frame.
+            state.pop_reject();
+            return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
+        }
+        else if (!static_call) {
+            transfer_balances<traits>(
+                state, host, sender, msg.recipient, value);
+        }
+#else
+    #if defined(MONAD_ZKVM_ZISK)
+        // Decode once and reuse the value for the balance check and transfer.
+        uint256_t const value = load_be<uint256_t>(msg.value);
+        if (MONAD_UNLIKELY(!sender_has_balance(state, sender, value))) {
+    #else
         if (MONAD_UNLIKELY(!sender_has_balance(state, msg, sender))) {
+    #endif
             // The pushed frame exits before bytecode, account access, or
             // storage access, so there is no access-list metadata to capture.
             state.pop_reject();
@@ -130,8 +196,13 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
         }
         else if (!static_call) {
             evmc_address const &recipient = msg.recipient;
+    #if defined(MONAD_ZKVM_ZISK)
+            transfer_balances<traits>(state, host, sender, recipient, value);
+    #else
             transfer_balances<traits>(state, host, msg, sender, recipient);
+    #endif
         }
+#endif
     }
 
     if constexpr (!traits::eip_7702_active()) {

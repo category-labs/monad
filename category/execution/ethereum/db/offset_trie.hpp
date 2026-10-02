@@ -442,6 +442,80 @@ public:
         return path_view(rlp_end(code_hash_end(child_end(payload()))));
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    // Decode directly from the leaf to avoid temporary Results and copies.
+    // Require the 0xa0 code-hash prefix and canonical RLP integers.
+    Account account() const
+    {
+        unsigned char const *const code_hash = code_hash_rlp().data();
+        MONAD_ASSERT(code_hash[0] == 0x80 + sizeof(bytes32_t));
+        byte_string_view nonce_balance = nonce_balance_rlp();
+        uint64_t const nonce = unsigned_field<uint64_t>(nonce_balance);
+        uint256_t const balance = unsigned_field<uint256_t>(nonce_balance);
+        MONAD_ASSERT(nonce_balance.empty());
+        Account account{.balance = balance, .code_hash = {}, .nonce = nonce};
+        std::memcpy(account.code_hash.bytes, code_hash + 1, sizeof(bytes32_t));
+        return account;
+    }
+
+private:
+    // Decode a canonical RLP integer and advance encoded past it.
+    // Word loads may start up to seven bytes before the integer's payload.
+    // Those bytes remain inside the leaf, whose code hash precedes both fields.
+    template <class T>
+    [[gnu::always_inline]] static T unsigned_field(byte_string_view &encoded)
+    {
+        static_assert(sizeof(T) == 8 || sizeof(T) == 32);
+        MONAD_ASSERT(!encoded.empty());
+        unsigned const prefix = encoded[0];
+        if (prefix < 0x80) {
+            MONAD_ASSERT(prefix != 0);
+            encoded.remove_prefix(1);
+            return T{prefix};
+        }
+        size_t const payload_size = prefix - 0x80;
+        MONAD_ASSERT(
+            payload_size <= sizeof(T) && payload_size < encoded.size());
+        unsigned char const *const payload = encoded.data() + 1;
+        encoded.remove_prefix(1 + payload_size);
+        if (payload_size == 0) {
+            return T{0};
+        }
+        MONAD_ASSERT(
+            payload[0] != 0 && (payload_size != 1 || payload[0] >= 0x80));
+        // Read least-significant words first, starting at the payload end.
+        // For a partial word, mask out bytes preceding the payload.
+        auto const load_word = [payload,
+                                payload_size](size_t const word_index) {
+            size_t const remaining_bytes = payload_size - 8 * word_index;
+            uint64_t const loaded_word =
+                load_be_unsafe<uint64_t>(payload + remaining_bytes - 8);
+            return remaining_bytes >= 8
+                       ? loaded_word
+                       : loaded_word &
+                             ((uint64_t{1} << (8 * remaining_bytes)) - 1);
+        };
+        if constexpr (sizeof(T) == 8) {
+            return load_word(0);
+        }
+        else {
+            T value{load_word(0)};
+            // Read additional words only when the encoded value needs them.
+            if (payload_size > 8) {
+                value[1] = load_word(1);
+                if (payload_size > 16) {
+                    value[2] = load_word(2);
+                    if (payload_size > 24) {
+                        value[3] = load_word(3);
+                    }
+                }
+            }
+            return value;
+        }
+    }
+
+public:
+#else
     // lazily RLP-decode the account (fields for read_account)
     Account account() const
     {
@@ -464,6 +538,7 @@ public:
         MONAD_ASSERT(nonce_balance.empty());
         return acct;
     }
+#endif
 };
 
 class StorageLeafView : public NodeViewBase

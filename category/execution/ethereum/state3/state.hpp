@@ -87,6 +87,11 @@ class State
     using Set = ankerl::unordered_dense::segmented_set<K>;
 
     BlockState &block_state_;
+#if defined(MONAD_ZKVM_ZISK)
+    // The block's VM, kept here so vm() is inline: a message call asked
+    // another translation unit for it.
+    vm::VM &vm_;
+#endif
 
     Incarnation const incarnation_;
 
@@ -341,7 +346,14 @@ public:
 
     ////////////////////////////////////////
 
+#if defined(MONAD_ZKVM_ZISK)
+    vm::VM &vm()
+    {
+        return vm_;
+    }
+#else
     vm::VM &vm();
+#endif
 
 public:
     void set_original_nonce(Address const &, uint64_t nonce);

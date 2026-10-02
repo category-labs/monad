@@ -1108,11 +1108,16 @@ vm::SharedVarcode State::get_code(Address const &address)
 
 size_t State::get_code_size(Address const &address)
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // Without an account, NULL_HASH's code, whose size is zero.
+    vm::SharedVarcode const &vcode = code_ref_of(address).code;
+#else
     auto const &account = recent_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
     }
     vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
+#endif
     MONAD_ASSERT(vcode);
     return vcode->intercode()->size();
 }
@@ -1121,23 +1126,66 @@ size_t State::copy_code(
     Address const &address, size_t const offset, uint8_t *const buffer,
     size_t const buffer_size)
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // Without an account, NULL_HASH's code, which copies nothing.
+    vm::SharedVarcode const &vcode = code_ref_of(address).code;
+#else
     auto const &account = recent_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
     }
     vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
+#endif
     MONAD_ASSERT(vcode);
     return vcode->intercode()->copy_code(offset, buffer, buffer_size);
 }
 
 #if defined(MONAD_ZKVM_ZISK)
+// One search for the account's row, then its code from the block's entry
+// for the account when the entry read it under the account's hash. A search
+// of the VM's cache is 80 steps, and the State's one remembered code misses
+// whenever calls alternate between contracts.
+State::CodeRef State::code_ref_of(Address const &address)
+{
+    AccountState const *row = memoised(address);
+    OriginalAccountState *orig = nullptr;
+    if (row != nullptr) {
+        orig = row->orig_;
+    }
+    else {
+        auto const rows = rows_for_read(address);
+        row = rows.recent;
+        orig = rows.orig;
+    }
+    auto const &account = row->account_;
+    if (MONAD_UNLIKELY(!account.has_value())) {
+        return {NULL_HASH, read_code_ref(NULL_HASH)};
+    }
+    bytes32_t const &hash = account.value().code_hash;
+    #if defined(MONAD_ZKVM_VARCODE_CACHE)
+    StateDelta &entry = orig->delta_->second;
+    if (entry.code != nullptr && entry.code_hash == hash) {
+        return {hash, *entry.code};
+    }
+    // Code deployed by this transaction: the State's own, not the VM's, and
+    // gone with the State. A code is the same for a hash wherever it is
+    // kept, so the order of the two searches does not matter.
+    if (auto const it = code_.find(hash); it != code_.end()) {
+        return {hash, it->second};
+    }
+    vm::SharedVarcode const &code = block_state_.read_code_ref(hash);
+    entry.code = &code;
+    entry.code_hash = hash;
+    return {hash, code};
+    #else
+    return {hash, read_code_ref(hash)};
+    #endif
+}
+
 Address const *State::delegate_of(Address const &address)
 {
-    auto const &account = recent_account(address);
-    if (MONAD_UNLIKELY(!account.has_value())) {
-        return nullptr;
-    }
-    vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
+    // Without an account, NULL_HASH's code, which delegates nowhere.
+    vm::SharedVarcode const &vcode = code_ref_of(address).code;
     MONAD_ASSERT(vcode);
     return vm::evm::delegate_in(vcode->intercode()->code_span());
 }

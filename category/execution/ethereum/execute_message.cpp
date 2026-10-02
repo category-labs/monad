@@ -393,14 +393,18 @@ evmc::Result execute_call_message(
             }
         }
 #if defined(MONAD_ZKVM_ZISK)
-        // The account's own hash, by reference: the code is read with it
-        // at once, and the guest's VM does not keep it.
-        bytes32_t const &hash =
-            state.code_hash_ref(msg_address(msg.code_address));
+        // The account's own hash and code, by reference, from one search
+        // for its row: the block's entry for the account keeps the code,
+        // the guest's VM does not keep the hash, and the VM takes the
+        // intercode from the code before it runs anything.
+        auto const [hash, code] =
+            state.code_ref_of(msg_address(msg.code_address));
 #else
         auto const hash = state.get_code_hash(msg.code_address);
 #endif
-#if defined(MONAD_ZKVM_VARCODE_CACHE)
+#if defined(MONAD_ZKVM_ZISK)
+        // The code came with the hash.
+#elif defined(MONAD_ZKVM_VARCODE_CACHE)
         // The guest's VM keeps every varcode for the block and takes the
         // intercode from this one before it runs anything, so the State's
         // own copy is enough, though a nested read_code replaces it.

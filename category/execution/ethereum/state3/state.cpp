@@ -315,6 +315,9 @@ State::State(
     BlockState &block_state, Incarnation const incarnation,
     bool const relaxed_validation)
     : block_state_{block_state}
+#if defined(MONAD_ZKVM_ZISK)
+    , vm_{block_state.vm()}
+#endif
     , incarnation_{incarnation}
     , relaxed_validation_{relaxed_validation}
     , rb_{this}
@@ -597,10 +600,12 @@ void State::pop_reject()
     --version_;
 }
 
+#if !defined(MONAD_ZKVM_ZISK)
 vm::VM &State::vm()
 {
     return block_state_.vm();
 }
+#endif
 
 State::RowPair State::rows_for_read(evmc_address const &address)
 {

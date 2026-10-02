@@ -53,6 +53,12 @@ class PartialTrieDb final : public Db
     // sroot_valid_ separates "nothing cached" from "cached the zero address",
     // which is a real address.
     mutable bool sroot_valid_{false};
+#ifdef MONAD_ZKVM_ZISK
+    // Cache storage roots across account switches; NULL_ID also caches absence.
+    // Entries refer to the immutable pre-state, so they need no invalidation
+    // during the block's reads.
+    mutable ankerl::unordered_dense::map<Address, mpt::NodeId> sroots_{};
+#endif
     CodeIndex codes_;
     uint64_t block_number_{0};
     BlockHeader last_committed_header_{};
@@ -62,6 +68,10 @@ public:
         : trie_(std::move(trie))
         , codes_(std::move(codes))
     {
+#ifdef MONAD_ZKVM_ZISK
+        // Estimate one account per 4 KiB of blob to reduce rehashing.
+        sroots_.reserve(trie_.blob_size() >> 12);
+#endif
     }
 
 public:
